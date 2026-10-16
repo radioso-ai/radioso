@@ -427,6 +427,75 @@ export const registerAssistantPublicChatPaths = (
   });
 
   registry.registerPath({
+    method: "post",
+    path: "/api/v1/public/chat/{token}/voice/sessions",
+    tags: ["Assistant"],
+    summary: "Start a voice session for the current public chat session",
+    description: [
+      "Opens a session on the vendor agent the agent's `voice.runtime` names, with the workspace's own API key for that vendor,",
+      "and returns the vendor's signed URL with a fresh Radioso session key. The vendor key never leaves the backend.",
+      "Only a website embed public session may start one: send it as `x-radioso-public-session`, from an origin the website embed admits, as for a chat message.",
+      "A browser on another origin calls `/api/public/chat/{token}/voice/sessions` on the Radioso app host, which answers the CORS preflight and relays here.",
+      "The signed URL is valid for 15 minutes and opens sessions for whoever holds it in that window, so it is a bearer credential: the response is `Cache-Control: no-store`.",
+      "Starts spend their own budgets, per visitor session and per workspace, before the vendor is called.",
+    ].join(" "),
+    operationId: "createPublicVoiceSession",
+    security: [{ [security.anonymousSessionCookieScheme.name]: [] }],
+    request: {
+      params: schemas.tokenPathParamsSchema,
+      body: {
+        content: {
+          "application/json": {
+            schema: schemas.PublicVoiceSessionRequestSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Voice session started",
+        content: {
+          "application/json": {
+            schema: schemas.PublicVoiceSessionResponseSchema,
+          },
+        },
+      },
+      400: {
+        description: "Request validation failed",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Public session not found or not a website embed session, or the agent takes no voice sessions: voice is off or no vendor agent is bound",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      429: {
+        description: "The visitor session's or the workspace's voice session start budget is spent",
+        content: {
+          "application/json": {
+            schema: schemas.RateLimitExceededSchema,
+          },
+        },
+      },
+      503: {
+        description: "`voice_unavailable`: the session could not be started (the workspace's vendor key is missing or unreadable, or the vendor did not start it)",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
     method: "get",
     path: "/api/v1/public/chat/{token}",
     tags: ["Assistant"],

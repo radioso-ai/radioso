@@ -85,6 +85,7 @@ const storedVoice = {
     it: { acknowledge: [], check: ["Controllo subito per te, ci vorrà solo un momento."] },
   },
   fallbackLine: { en: "Sorry, this is taking much longer than it should, could you ask me again?" },
+  runtime: { vendor: "elevenlabs" as const, agentId: "agent_01jxk2v9qbe8n7r6t5w4", region: "us" as const },
 };
 const storedMechanics = {
   en: { greeting: ["Hi! How can I help?"], thanks: [], farewell: ["Goodbye!"], acknowledgement: [] },
@@ -102,6 +103,7 @@ describe("AgentService voice and mechanics replies proposals", () => {
       enabled: true,
       bridgeLines: { en: { acknowledge: ["Thanks, I have noted that, so let me take the next step."], check: [] } },
       fallbackLine: {},
+      runtime: null,
     };
 
     const prepared = await service.prepareFieldProposal("workspace-1", "agent-1", { settingKey: "voice", value: proposed });
@@ -127,7 +129,7 @@ describe("AgentService voice and mechanics replies proposals", () => {
 
     await expect(service.prepareFieldProposal("workspace-1", "agent-1", {
       settingKey: "voice",
-      value: { enabled: true, bridgeLines: { en: { acknowledge: [], check: ["a".repeat(201)] } }, fallbackLine: {} },
+      value: { enabled: true, bridgeLines: { en: { acknowledge: [], check: ["a".repeat(201)] } }, fallbackLine: {}, runtime: null },
     })).rejects.toThrow(/Invalid voice setting value.*bridgeLines\.en\.check\.0/);
     await expect(service.prepareFieldProposal("workspace-1", "agent-1", {
       settingKey: "voice",
@@ -167,6 +169,7 @@ describe("AgentService voice and mechanics replies proposals", () => {
     // Postgres jsonb returns object keys in its own order, so key order carries no meaning here.
     const service = serviceWith({ voice: storedVoice, mechanicsReplies: storedMechanics });
     const reordered = {
+      runtime: storedVoice.runtime,
       fallbackLine: storedVoice.fallbackLine,
       bridgeLines: { it: storedVoice.bridgeLines.it, en: storedVoice.bridgeLines.en },
       enabled: true,

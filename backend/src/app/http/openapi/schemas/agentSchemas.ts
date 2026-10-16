@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { publicChatSessionSchema } from "../../routes/publicChatRouteSchemas.js";
+import { publicChatSessionSchema, publicVoiceSessionStartSchema } from "../../routes/publicChatRouteSchemas.js";
 import { createRevisionCandidateBodySchema, publishRevisionBodySchema } from "../../routes/agentRevisionRequestSchemas.js";
 import {
   agentChannelChatSchema,
@@ -13,6 +13,7 @@ import {
   AGENT_MECHANICS_REPLIES_MAX_LOCALES,
   agentMechanicsRepliesSchema,
   agentSurfacePositions,
+  agentVoiceSettingsInputSchema,
   agentVoiceSettingsSchema,
   authoredDirectiveRouteValues,
   authoredDirectiveSurfaceValues,
@@ -27,6 +28,7 @@ import {
 import { skillDisplayMetadataSchema, skillOutcomeStatusSchema } from "../../../../modules/skills/public.js";
 import { exactContentItemSchema } from "../../../../shared/domain/exactContent.js";
 import { LOCALE_TAG_PATTERN } from "../../../../shared/domain/locale.js";
+import { VOICE_VENDORS } from "../../../../shared/domain/voiceVendor.js";
 import { AGENT_BUNDLE_SCHEMA_VERSION } from "../../../../modules/agentBundle/public.js";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
@@ -121,7 +123,20 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     agentVoiceSettingsSchema.openapi({
       description:
         "How the agent sounds on the voice channel. `bridgeLines` and `fallbackLine` are keyed by language tag "
-        + "(at most 10 each); each style holds at most 5 lines of 1 to 200 characters. An update replaces the block whole.",
+        + "(at most 10 each); each style holds at most 5 lines of 1 to 200 characters. `runtime` binds the agent to one "
+        + "vendor agent (the vendor's own agent id, 1 to 128 letters, digits, underscores and hyphens), which a voice "
+        + "session start opens, in the data residency region of the vendor account (`region`, which picks the vendor host); "
+        + "null binds none. An update replaces the block whole.",
+    }),
+  );
+
+  const AgentVoiceSettingsUpdateSchema = registry.register(
+    "AgentVoiceSettingsUpdate",
+    agentVoiceSettingsInputSchema.openapi({
+      description:
+        "The `voice` block as an update sends it: `AgentVoiceSettings`, except that `runtime` may be left out, "
+        + "which binds the agent to no vendor agent, and `runtime.region` may be left out for the vendor's default region, `us`. "
+        + "A key either object does not name is refused. The update replaces the block whole.",
     }),
   );
 
@@ -241,7 +256,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       greetingInstruction: z.string().max(200).optional(),
       assistantDefaultLocale: z.string().max(35).nullable().optional(),
       proactiveGreetingEnabled: z.boolean().optional(),
-      voice: AgentVoiceSettingsSchema.optional(),
+      voice: AgentVoiceSettingsUpdateSchema.optional(),
       mechanicsReplies: AgentMechanicsRepliesSchema.optional(),
       publicDescription: z.string().max(500).optional(),
       agentCardEnabled: z.boolean().optional(),
@@ -714,6 +729,33 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     publicChatSessionSchema,
   );
 
+  const PublicVoiceSessionRequestSchema = registry.register(
+    "PublicVoiceSessionRequest",
+    publicVoiceSessionStartSchema.openapi({
+      description: "`locale` is the caller's language tag; without it the agent's default language applies, then `en`.",
+    }),
+  );
+
+  const PublicVoiceSessionResponseSchema = registry.register(
+    "PublicVoiceSessionResponse",
+    z.object({
+      vendor: z.enum(VOICE_VENDORS).openapi({ description: "The voice runtime the session opens on: the agent's `voice.runtime.vendor`." }),
+      signedUrl: z.string().url().openapi({
+        description: "The vendor's URL for opening a session on the agent's vendor agent. On `elevenlabs` it is valid for 15 minutes and is not limited to one session: "
+          + "for that window anyone holding it can open sessions billed to the workspace's vendor account, so treat it as a bearer credential. "
+          + "Hand it to the vendor's client once and never store, log or share it.",
+      }),
+      sessionKey: z.string().uuid().openapi({
+        description: "Radioso's key for this session: a correlation handle, not a credential. The page hands it to the vendor, which sends it back on every turn "
+          + "so the whole call is one conversation that joins the website visitor who started it; on `elevenlabs` it travels as the custom LLM extra body's `session_key`.",
+      }),
+      locale: z.string().openapi({ description: "The caller's language tag: the request's, else the agent's default language, else `en`. The page hands it to the vendor beside `sessionKey`." }),
+      expiresAt: z.string().datetime().optional().openapi({
+        description: "When `signedUrl` stops opening sessions: Radioso computes it from the validity the vendor documents (15 minutes on `elevenlabs`) and the time it asked for the URL.",
+      }),
+    }),
+  );
+
   const WorkspaceIngestionReprocessResponseSchema = registry.register(
     "WorkspaceIngestionReprocessResponse",
     z.object({
@@ -1172,6 +1214,8 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     RoutineValidationResultSchema,
     PublicChatSessionResponseSchema,
     PublicChatSessionRequestSchema,
+    PublicVoiceSessionRequestSchema,
+    PublicVoiceSessionResponseSchema,
     WorkspaceIngestionReprocessResponseSchema,
     AgentConfigRefPlaceholderSchema,
     AgentBundleAgentConfigSchema,

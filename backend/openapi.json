@@ -2434,7 +2434,8 @@
               "openai",
               "openai-compatible",
               "gemini",
-              "claude"
+              "claude",
+              "elevenlabs"
             ]
           },
           "updatedAt": {
@@ -3376,6 +3377,127 @@
               "minLength": 1,
               "maxLength": 200
             }
+          },
+          "runtime": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "vendor": {
+                "type": "string",
+                "enum": [
+                  "elevenlabs"
+                ]
+              },
+              "agentId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "region": {
+                "type": "string",
+                "enum": [
+                  "us",
+                  "eu",
+                  "in",
+                  "sg"
+                ]
+              }
+            },
+            "required": [
+              "vendor",
+              "agentId",
+              "region"
+            ]
+          }
+        },
+        "required": [
+          "enabled",
+          "bridgeLines",
+          "fallbackLine",
+          "runtime"
+        ],
+        "description": "How the agent sounds on the voice channel. `bridgeLines` and `fallbackLine` are keyed by language tag (at most 10 each); each style holds at most 5 lines of 1 to 200 characters. `runtime` binds the agent to one vendor agent (the vendor's own agent id, 1 to 128 letters, digits, underscores and hyphens), which a voice session start opens, in the data residency region of the vendor account (`region`, which picks the vendor host); null binds none. An update replaces the block whole."
+      },
+      "AgentVoiceSettingsUpdate": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "bridgeLines": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "acknowledge": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "maxItems": 5
+                },
+                "check": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "maxItems": 5
+                }
+              },
+              "required": [
+                "acknowledge",
+                "check"
+              ]
+            }
+          },
+          "fallbackLine": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "runtime": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "vendor": {
+                "type": "string",
+                "enum": [
+                  "elevenlabs"
+                ]
+              },
+              "agentId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "region": {
+                "type": "string",
+                "enum": [
+                  "us",
+                  "eu",
+                  "in",
+                  "sg"
+                ]
+              }
+            },
+            "required": [
+              "vendor",
+              "agentId"
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -3383,7 +3505,8 @@
           "bridgeLines",
           "fallbackLine"
         ],
-        "description": "How the agent sounds on the voice channel. `bridgeLines` and `fallbackLine` are keyed by language tag (at most 10 each); each style holds at most 5 lines of 1 to 200 characters. An update replaces the block whole."
+        "additionalProperties": false,
+        "description": "The `voice` block as an update sends it: `AgentVoiceSettings`, except that `runtime` may be left out, which binds the agent to no vendor agent, and `runtime.region` may be left out for the vendor's default region, `us`. A key either object does not name is refused. The update replaces the block whole."
       },
       "AgentMechanicsReplies": {
         "type": "object",
@@ -3811,7 +3934,7 @@
             "type": "boolean"
           },
           "voice": {
-            "$ref": "#/components/schemas/AgentVoiceSettings"
+            "$ref": "#/components/schemas/AgentVoiceSettingsUpdate"
           },
           "mechanicsReplies": {
             "$ref": "#/components/schemas/AgentMechanicsReplies"
@@ -8520,6 +8643,53 @@
         },
         "required": [
           "channel"
+        ]
+      },
+      "PublicVoiceSessionRequest": {
+        "type": "object",
+        "properties": {
+          "locale": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "description": "`locale` is the caller's language tag; without it the agent's default language applies, then `en`."
+      },
+      "PublicVoiceSessionResponse": {
+        "type": "object",
+        "properties": {
+          "vendor": {
+            "type": "string",
+            "enum": [
+              "elevenlabs"
+            ],
+            "description": "The voice runtime the session opens on: the agent's `voice.runtime.vendor`."
+          },
+          "signedUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "The vendor's URL for opening a session on the agent's vendor agent. On `elevenlabs` it is valid for 15 minutes and is not limited to one session: for that window anyone holding it can open sessions billed to the workspace's vendor account, so treat it as a bearer credential. Hand it to the vendor's client once and never store, log or share it."
+          },
+          "sessionKey": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Radioso's key for this session: a correlation handle, not a credential. The page hands it to the vendor, which sends it back on every turn so the whole call is one conversation that joins the website visitor who started it; on `elevenlabs` it travels as the custom LLM extra body's `session_key`."
+          },
+          "locale": {
+            "type": "string",
+            "description": "The caller's language tag: the request's, else the agent's default language, else `en`. The page hands it to the vendor beside `sessionKey`."
+          },
+          "expiresAt": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When `signedUrl` stops opening sessions: Radioso computes it from the validity the vendor documents (15 minutes on `elevenlabs`) and the time it asked for the URL."
+          }
+        },
+        "required": [
+          "vendor",
+          "signedUrl",
+          "sessionKey",
+          "locale"
         ]
       },
       "WorkspaceIngestionReprocessResponse": {
@@ -33713,7 +33883,8 @@
                 "openai",
                 "openai-compatible",
                 "gemini",
-                "claude"
+                "claude",
+                "elevenlabs"
               ]
             },
             "required": true,
@@ -33786,7 +33957,8 @@
                 "openai",
                 "openai-compatible",
                 "gemini",
-                "claude"
+                "claude",
+                "elevenlabs"
               ]
             },
             "required": true,
@@ -58219,6 +58391,93 @@
           }
         },
         "description": "Anonymous session continuity is maintained by an HttpOnly cookie set by the server.\n\nThe cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential."
+      }
+    },
+    "/api/v1/public/chat/{token}/voice/sessions": {
+      "post": {
+        "tags": [
+          "Assistant"
+        ],
+        "summary": "Start a voice session for the current public chat session",
+        "description": "Opens a session on the vendor agent the agent's `voice.runtime` names, with the workspace's own API key for that vendor, and returns the vendor's signed URL with a fresh Radioso session key. The vendor key never leaves the backend. Only a website embed public session may start one: send it as `x-radioso-public-session`, from an origin the website embed admits, as for a chat message. A browser on another origin calls `/api/public/chat/{token}/voice/sessions` on the Radioso app host, which answers the CORS preflight and relays here. The signed URL is valid for 15 minutes and opens sessions for whoever holds it in that window, so it is a bearer credential: the response is `Cache-Control: no-store`. Starts spend their own budgets, per visitor session and per workspace, before the vendor is called.",
+        "operationId": "createPublicVoiceSession",
+        "security": [
+          {
+            "anonymousSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "token",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicVoiceSessionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Voice session started",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PublicVoiceSessionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Public session not found or not a website embed session, or the agent takes no voice sessions: voice is off or no vendor agent is bound",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The visitor session's or the workspace's voice session start budget is spent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitExceededResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`voice_unavailable`: the session could not be started (the workspace's vendor key is missing or unreadable, or the vendor did not start it)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/public/chat/{token}/history/{conversationId}": {

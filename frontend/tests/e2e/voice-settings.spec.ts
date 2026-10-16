@@ -8,6 +8,7 @@ const SHORT_ACKNOWLEDGEMENT = "Got it.";
 const ITALIAN_BRIDGE_LINE = "Controllo subito per te, ci vorrà solo un momento.";
 const FALLBACK_LINE = "Sorry, this is taking much longer than it should, could you ask me again?";
 const GREETING = "Hi! How can I help you today?";
+const VENDOR_AGENT_ID = "agent_01jxk2v9qbe8n7r6t5w4";
 const noReplies = { thanks: [], farewell: [], acknowledgement: [] };
 
 const openVoiceCard = async (page: Page, agentId = defaultAgentId) => {
@@ -32,15 +33,19 @@ const save = async (card: ReturnType<Page["locator"]>) => {
   await expect(card.getByText("Saved", { exact: true })).toBeVisible();
 };
 
-test("an operator writes voice lines in two languages, trims them back, and finds the result after a reload", async ({ page }) => {
+test("an operator binds the ElevenLabs agent, writes voice lines in two languages, trims them back, and finds the result after a reload", async ({ page }) => {
   const agentUpdates: unknown[] = [];
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, { agentUpdates });
 
   const card = await openVoiceCard(page);
-  const voiceSwitch = card.getByRole("switch", { name: "Voice lines on calls" });
+  const voiceSwitch = card.getByRole("switch", { name: "Voice channel" });
   await expect(voiceSwitch).not.toBeChecked();
   await voiceSwitch.click();
+  await expect(card.getByLabel("Voice runtime")).toContainText("ElevenLabs");
+  await card.getByLabel("ElevenLabs agent id").fill(`  ${VENDOR_AGENT_ID}  `);
+  await card.getByLabel("Data residency").click();
+  await page.getByRole("option", { name: "European Union" }).click();
 
   const english = await addLanguage(card, "English");
   await english.getByRole("button", { name: "Add check line" }).click();
@@ -78,11 +83,17 @@ test("an operator writes voice lines in two languages, trims them back, and find
           it: { acknowledge: [], check: [ITALIAN_BRIDGE_LINE] },
         },
         fallbackLine: {},
+        runtime: { vendor: "elevenlabs", agentId: VENDOR_AGENT_ID, region: "eu" },
       },
       mechanicsReplies: { en: { greeting: [GREETING], ...noReplies } },
     },
     {
-      voice: { enabled: true, bridgeLines: { en: { acknowledge: [], check: [BRIDGE_LINE] } }, fallbackLine: { en: FALLBACK_LINE } },
+      voice: {
+        enabled: true,
+        bridgeLines: { en: { acknowledge: [], check: [BRIDGE_LINE] } },
+        fallbackLine: { en: FALLBACK_LINE },
+        runtime: { vendor: "elevenlabs", agentId: VENDOR_AGENT_ID, region: "eu" },
+      },
       mechanicsReplies: { en: { greeting: [GREETING], ...noReplies } },
     },
   ]);
@@ -90,7 +101,9 @@ test("an operator writes voice lines in two languages, trims them back, and find
   await page.reload();
 
   const reloaded = page.locator("#voice-channel");
-  await expect(reloaded.getByRole("switch", { name: "Voice lines on calls" })).toBeChecked();
+  await expect(reloaded.getByRole("switch", { name: "Voice channel" })).toBeChecked();
+  await expect(reloaded.getByLabel("ElevenLabs agent id")).toHaveValue(VENDOR_AGENT_ID);
+  await expect(reloaded.getByLabel("Data residency")).toContainText("European Union");
   const reloadedEnglish = reloaded.getByRole("group", { name: "Voice lines: English" });
   await expect(reloadedEnglish.getByRole("textbox", { name: "Check line 1" })).toHaveValue(BRIDGE_LINE);
   await expect(reloadedEnglish.getByRole("textbox", { name: "Check line 2" })).toHaveCount(0);
@@ -100,27 +113,34 @@ test("an operator writes voice lines in two languages, trims them back, and find
   await expect(reloaded.getByRole("group", { name: /^Voice lines: / })).toHaveCount(1);
 });
 
-test("an operator clears the voice lines, then the quick replies, and each clear is sent as an empty block", async ({ page }) => {
+test("an operator unbinds the ElevenLabs agent, clears the voice lines, then the quick replies, and each clear is sent as an empty block", async ({ page }) => {
   const agentUpdates: unknown[] = [];
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     agentUpdates,
     agentSettingsOverrides: {
-      voice: { enabled: true, bridgeLines: { en: { acknowledge: [], check: [BRIDGE_LINE] } }, fallbackLine: { en: FALLBACK_LINE } },
+      voice: {
+        enabled: true,
+        bridgeLines: { en: { acknowledge: [], check: [BRIDGE_LINE] } },
+        fallbackLine: { en: FALLBACK_LINE },
+        runtime: { vendor: "elevenlabs", agentId: VENDOR_AGENT_ID, region: "eu" },
+      },
       mechanicsReplies: { en: { greeting: [GREETING], ...noReplies } },
     },
   });
 
   const card = await openVoiceCard(page);
+  await expect(card.getByLabel("ElevenLabs agent id")).toHaveValue(VENDOR_AGENT_ID);
+  await card.getByLabel("ElevenLabs agent id").fill("");
   const english = card.getByRole("group", { name: "Voice lines: English" });
-  await card.getByRole("switch", { name: "Voice lines on calls" }).click();
+  await card.getByRole("switch", { name: "Voice channel" }).click();
   await english.getByRole("button", { name: "Remove check line 1" }).click();
   await english.getByLabel("Fallback line").fill("");
   await save(card);
 
   await page.reload();
   const afterVoiceClear = page.locator("#voice-channel");
-  await expect(afterVoiceClear.getByRole("switch", { name: "Voice lines on calls" })).not.toBeChecked();
+  await expect(afterVoiceClear.getByRole("switch", { name: "Voice channel" })).not.toBeChecked();
   // The quick replies the operator left alone are still there.
   const reloadedEnglish = afterVoiceClear.getByRole("group", { name: "Voice lines: English" });
   await expect(reloadedEnglish.getByRole("textbox", { name: "Greeting line 1" })).toHaveValue(GREETING);
@@ -139,12 +159,12 @@ test("an operator clears the voice lines, then the quick replies, and each clear
 
   // Each save carries both blocks whole and nothing else, so every other agent setting stays as stored.
   expect(agentUpdates).toEqual([
-    { voice: { enabled: false, bridgeLines: {}, fallbackLine: {} }, mechanicsReplies: { en: { greeting: [GREETING], ...noReplies } } },
-    { voice: { enabled: false, bridgeLines: {}, fallbackLine: {} }, mechanicsReplies: {} },
+    { voice: { enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null }, mechanicsReplies: { en: { greeting: [GREETING], ...noReplies } } },
+    { voice: { enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null }, mechanicsReplies: {} },
   ]);
 
   await page.reload();
-  await expect(page.locator("#voice-channel").getByRole("switch", { name: "Voice lines on calls" })).toBeVisible();
+  await expect(page.locator("#voice-channel").getByRole("switch", { name: "Voice channel" })).toBeVisible();
   await expect(page.locator("#voice-channel").getByRole("group", { name: /^Voice lines: / })).toHaveCount(0);
 });
 
@@ -160,14 +180,14 @@ test("switching to another agent shows that agent's own lines before its voice s
     agentUpdates,
     agentSettingsOverrides: {
       internalName: "support-desk",
-      voice: { enabled: true, bridgeLines: { en: { acknowledge: [], check: [BRIDGE_LINE] } }, fallbackLine: {} },
+      voice: { enabled: true, bridgeLines: { en: { acknowledge: [], check: [BRIDGE_LINE] } }, fallbackLine: {}, runtime: null },
     },
     extraAgents: [{
       settings: {
         id: otherAgentId,
         name: "Sales",
         internalName: "sales-desk",
-        voice: { enabled: false, bridgeLines: { en: { acknowledge: [], check: [otherBridgeLine] } }, fallbackLine: {} },
+        voice: { enabled: false, bridgeLines: { en: { acknowledge: [], check: [otherBridgeLine] } }, fallbackLine: {}, runtime: null },
         mechanicsReplies: {},
       },
       readGate: otherAgentRead,
@@ -187,11 +207,11 @@ test("switching to another agent shows that agent's own lines before its voice s
   releaseOtherAgent();
   const otherCard = page.locator("#voice-channel");
   await expect(otherCard.getByRole("textbox", { name: "Check line 1" })).toHaveValue(otherBridgeLine);
-  await expect(otherCard.getByRole("switch", { name: "Voice lines on calls" })).not.toBeChecked();
+  await expect(otherCard.getByRole("switch", { name: "Voice channel" })).not.toBeChecked();
   await save(otherCard);
 
   expect(otherAgentUpdates).toEqual([{
-    voice: { enabled: false, bridgeLines: { en: { acknowledge: [], check: [otherBridgeLine] } }, fallbackLine: {} },
+    voice: { enabled: false, bridgeLines: { en: { acknowledge: [], check: [otherBridgeLine] } }, fallbackLine: {}, runtime: null },
     mechanicsReplies: {},
   }]);
   expect(agentUpdates).toEqual([]);

@@ -13,6 +13,7 @@ const voice = {
     en: "Sorry, that is taking longer than it should. Could you ask me again?",
     it: "Scusa, ci sto mettendo troppo. Puoi ripetere la domanda?",
   },
+  runtime: { vendor: "elevenlabs", agentId: "agent_01jxk2v9qbe8n7r6t5w4", region: "eu" },
 };
 
 const agentWithToken = async (email: string) => {
@@ -37,7 +38,7 @@ describe("agent voice settings contract", () => {
   it("starts an agent with voice off and nothing authored", async () => {
     const { created } = await agentWithToken("agent-voice-default@example.com");
 
-    expect(created.voice).toEqual({ enabled: false, bridgeLines: {}, fallbackLine: {} });
+    expect(created.voice).toEqual({ enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null });
   });
 
   it("round-trips the voice block through the agent settings API", async () => {
@@ -55,6 +56,54 @@ describe("agent voice settings contract", () => {
 
     expect(updated.body.voice).toEqual(voice);
     expect(refetched.body.voice).toEqual(voice);
+  });
+
+  it("stores a block written without runtime as bound to no vendor agent", async () => {
+    const { app, authorization, agentId } = await agentWithToken("agent-voice-without-runtime@example.com");
+    const { runtime: _runtime, ...withoutRuntime } = voice;
+
+    const updated = await request(app)
+      .put(`/api/v1/agents/${agentId}`)
+      .set("Authorization", authorization)
+      .send({ voice: withoutRuntime })
+      .expect(200);
+
+    expect(updated.body.voice).toEqual({ ...withoutRuntime, runtime: null });
+  });
+
+  it("binds a runtime written without a region in the vendor's default region", async () => {
+    const { app, authorization, agentId } = await agentWithToken("agent-voice-default-region@example.com");
+
+    const updated = await request(app)
+      .put(`/api/v1/agents/${agentId}`)
+      .set("Authorization", authorization)
+      .send({ voice: { ...voice, runtime: { vendor: "elevenlabs", agentId: "agent_42" } } })
+      .expect(200);
+
+    expect(updated.body.voice.runtime).toEqual({ vendor: "elevenlabs", agentId: "agent_42", region: "us" });
+  });
+
+  it("refuses a region the vendor has no host for", async () => {
+    const { app, authorization, agentId } = await agentWithToken("agent-voice-bad-region@example.com");
+
+    await request(app)
+      .put(`/api/v1/agents/${agentId}`)
+      .set("Authorization", authorization)
+      .send({ voice: { ...voice, runtime: { vendor: "elevenlabs", agentId: "agent_42", region: "mars" } } })
+      .expect(400);
+  });
+
+  it("refuses a voice block carrying a key it does not name, naming the key", async () => {
+    const { app, authorization, agentId } = await agentWithToken("agent-voice-extra-key@example.com");
+
+    const refused = await request(app)
+      .put(`/api/v1/agents/${agentId}`)
+      .set("Authorization", authorization)
+      .send({ voice: { ...voice, apiKey: "xi-secret-0123456789" } })
+      .expect(400);
+
+    expect(JSON.stringify(refused.body.error)).toContain("apiKey");
+    expect(JSON.stringify(refused.body)).not.toContain("xi-secret-0123456789");
   });
 
   it("keeps the voice block when a dashboard save sends the other settings without it", async () => {

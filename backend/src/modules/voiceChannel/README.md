@@ -3,7 +3,10 @@
 Voice owns spoken sessions with an agent. A voice runtime (ElevenLabs Agents,
 or a runtime we control) handles audio, speech recognition and synthesis; this
 module turns each finished caller utterance into one chat turn on the
-session's conversation and hands the reply back as sentence-sized speech.
+session's conversation and hands the reply back as sentence-sized speech. It
+also starts a session for a page: it opens one on the vendor agent the Radioso
+agent is bound to, with the workspace's own vendor key, and mints the session
+key the runtime sends back on every turn.
 
 For the broader repository map, see
 [`docs/architecture/code-map.md`](../../../../docs/architecture/code-map.md).
@@ -33,7 +36,11 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   routine state and locale (tag structure only, never the lines' words);
   `voiceSessionMemory.ts` is the in-process memory of each session between its
   requests (the newest request, the last bridge, the last exchange);
-  `voiceTurnMetrics.ts` names the turn's series.
+  `voiceTurnMetrics.ts` names the turn's series;
+  `voiceSessionStartService.ts` starts a session: it reads the agent's
+  `voice.enabled` and `voice.runtime`, the workspace's key for that vendor
+  through `VoiceVendorCredentialReader`, asks that vendor's
+  `VoiceSessionStarter` for the session, and mints the session key (a UUID).
 - `persistence/` maps `(agent_id, vendor, session_key)` to a conversation in
   `voice_sessions`. The first binding wins.
 - `adapters/*` translate one wire to the domain port and back, and nothing
@@ -42,7 +49,10 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   data: where the session key and the caller's locale travel, the default
   transport, the flush and keep-alive deltas a runtime needs, and the suffix
   it appends to a reply the caller cut short. Vendor field names live there
-  and in `requestSchema.ts`, never in the domain.
+  and in `requestSchema.ts`, never in the domain. `adapters/elevenlabs/` is
+  the ElevenLabs `VoiceSessionStarter`: the signed-URL request with the key in
+  `xi-api-key`, its response, its 15-minute validity and its 5-second timeout,
+  over an injected `fetch`.
 
 Dependency direction is adapter → `VoiceTurnPort` → chat. The service reaches
 chat through the narrow `VoiceChatPort` (`streamTurn`) and imports chat only
@@ -60,14 +70,23 @@ helpers and the shared chat message limit from `app/http`
 ## Entry points
 
 - `public.ts` — `VoiceTurnPort`, `VoiceTurnService`, `VoiceSessionRepository`,
-  `registerOpenAiCompletionsRoute`.
-- `backend/src/app/composition/voiceChannel.ts` — builds the port over
-  Postgres, `AssistantChatService.streamAnswer`, the agent repository (voice
+  `registerOpenAiCompletionsRoute`; `VoiceSessionStartPort`,
+  `VoiceSessionStartResult`, `VoiceSessionStartService`,
+  `createElevenLabsSessionStarter`.
+- `backend/src/app/composition/voiceChannel.ts` — builds the port over a
+  session store, `AssistantChatService.streamAnswer`, the agent repository (voice
   settings and default locale), the routine state store, the conversation
   ownership reader (`handoff/public.ts`), the message repository as chat's
   `ReplyInterruptionMarker` and the audit service (the
   `voice.reply_interrupted` and `voice.reply_replayed` notes, built by
   `createVoiceTurnNotes`); exposed as `AppDependencies.voiceTurns`.
+  `createVoiceSessionStartComposition` in the same file builds the session
+  start over the agent repository, the ElevenLabs starter with `fetch`, the
+  workspace credential store's `getApiKey` as the credential reader, and the
+  start registry; exposed as `AppDependencies.voiceSessionStarts`.
+  `app/server/dependencies.ts` builds one `VoiceSessionRepository` and hands it
+  to both: the turn reads bindings and starts from it, and the start records
+  into it.
 - The agent's `voice` settings block belongs to the agents module
   (`agents/voiceSettings.ts`, stored in `behavior_settings.voice`, served on
   `GET`/`PUT /api/v1/agents/:agentId`). This module reads it: the services
@@ -79,16 +98,70 @@ helpers and the shared chat message limit from `app/http`
   REST agent channel, behind `requireRestAgentChannelCredential` (an
   `agent-api` grant whose agent matches the path) and the REST agent-channel
   rate limiters.
+- `backend/src/app/http/routes/publicVoiceSessionRoute.ts` — mounts
+  `POST /api/v1/public/chat/:token/voice/sessions` on the public chat router,
+  behind the router's public session check (launch token, website embed
+  origin, signed visitor session), a website-embed-only check, and
+  `publicVoiceSessionStartRateLimiter`
+  (`app/http/middleware/publicVoiceSessionRateLimiter.ts`), and maps
+  `VoiceSessionStartResult` to HTTP. A page on another origin reaches it
+  through the frontend proxy `frontend/app/api/public/chat/[token]/voice/sessions/route.ts`,
+  which answers the CORS preflight.
 
 ## Decisions to keep
 
+- **Session start.** The voice domain owns the ports: `VoiceSessionStarter`
+  (`startSession({ vendorAgentId, region, credential })` → `{ signedUrl, expiresAt? }`,
+  one adapter per vendor), `VoiceVendorCredentialReader`
+  (`read({ workspaceId, vendor })` → `present`, `missing` or `unreadable`;
+  it rejects only when the store cannot be read), and the start registry
+  (`VoiceSessionStartRegistry` and `VoiceSessionStartLookup`, implemented by
+  `VoiceSessionRepository`). The key lives in the workspace credential store
+  (`workspace_provider_credentials`, the same encryption, audit events and
+  redaction as the model provider keys, written through
+  `PUT /api/v1/settings/credentials/elevenlabs`); composition adapts the
+  store's `getApiKey`, and there is no deployment fallback. A start needs a
+  website embed public session, `voice.enabled` and a bound `voice.runtime`;
+  otherwise it is a 404. Every other failure (no key, an unreadable key, a
+  store or registry that cannot be reached, a vendor that refuses or does not
+  answer) is one `503 voice_unavailable` with no detail, and the outcome label
+  and the warn log say which. The vendor list is `VOICE_VENDORS` in
+  `shared/domain/voiceVendor.ts`, which the runtime binding, the credential
+  store and the starters share. Starts spend their own budgets before the
+  vendor call: per visitor session (signed public session id plus request
+  source), per request source alone (so re-minting public sessions does not
+  refill it), and per workspace, `PUBLIC_VOICE_SESSION_START_*` in `env.ts`.
+- **The signed URL is a bearer credential.** An ElevenLabs signed URL is valid
+  for 15 minutes and opens sessions for whoever holds it until then, so it
+  goes only to the page that asked, with `Cache-Control: no-store`, and never
+  into a log, metric or row. The ElevenLabs starter follows no redirect, reads
+  at most 16 KB, and returns only a `wss://` URL on the host of the account's
+  data residency region. One table in the adapter maps `voice.runtime.region`
+  (`us`, `eu`, `in`, `sg`) to the host the request goes to and the signed URL
+  must be on, so a start for an EU account calls
+  `api.eu.residency.elevenlabs.io` and refuses a URL from any other host. A
+  body that stalls past the 5 s request limit is a `timeout`, not a malformed
+  answer.
+- **The session key is a correlation handle.** The start mints it (a UUID) and
+  records it in `voice_sessions` with the visitor's public session and visitor
+  key until `VOICE_BEHAVIOR.sessionStartTtlMs` (60 minutes: the signed URL's
+  15 minutes, `elevenLabsSignedUrlValidityMs`, bound the session's open, not
+  its first turn); the session's
+  first turn reads that visitor and passes its grouping key (the visitor key,
+  else the public session id, as the embed's chat does) to chat, so the call
+  joins the website visitor, then binds the conversation onto the same row. It
+  grants nothing: the completions route still admits only the REST
+  credential, and a key the page mints itself works the same and joins no
+  visitor. An agent's starts whose first turn never came are deleted at its
+  next start.
 - **Not in OpenAPI.** The completions route speaks a vendor-owned wire format,
   OpenAI chat completions as voice runtimes call it, not Radioso's API
   contract, so it has no operation in `openApiPaths.ts` and no SDK method; it is
   documented in `docs/voice-channel.md`. (The REST agent channel,
   `createAgentChannelChatResponse`, is Radioso's own contract and is
   registered.) The `voice` member of `ConversationChannelContext` is in
-  OpenAPI, because history responses return it.
+  OpenAPI, because history responses return it. The session start is
+  Radioso's own contract and is registered as `createPublicVoiceSession`.
 - **Ray coverage.** The route is a deferred exclusion in
   `tests/unit/operatorCopilot/catalogCoverage.ts`
   (`internalRuntimeCoverageExclusions.voiceCompletionsAdapter`): a voice
@@ -96,7 +169,11 @@ helpers and the shared chat message limit from `app/http`
   to author: `voice` has an `agentInputFieldSchemas` entry, so
   `propose_agent_setting` and `prepare_agent_settings` carry it whole, and
   `agent_configuration` returns the stored block. Operators edit it in the
-  Voice card on the agent's Channels → API page.
+  Voice card on the agent's Channels → API page, `runtime` included. The
+  session start is a permanent exclusion (`createPublicVoiceSession`): a
+  visitor's page calls it. Its vendor key is on the never-list
+  (`provider_credential_writes`), so `agentSettingWholeBlockNote` sends the
+  operator to Settings for it.
 - **Turn policy.** Runs only while the agent's `voice.enabled` is true; with
   voice off a turn runs exactly as a plain chat turn. The bridge fires when the
   turn starts searching, 400 ms after it starts composing without speech, or
@@ -291,9 +368,10 @@ helpers and the shared chat message limit from `app/http`
   again on the next report of the same reply, where the mark is idempotent,
   and the log line and the metric follow the recorded note. The stored reply
   keeps its full text.
-- **ElevenLabs session key.** ElevenLabs sends no conversation id; the page
-  that starts the session mints `session_key` and passes it as the custom LLM
-  extra body, which arrives as `elevenlabs_extra_body.session_key`. Dynamic
+- **ElevenLabs session key.** ElevenLabs sends no conversation id; Radioso's
+  session start or the page that starts the session mints `session_key`, and
+  the page passes it as the custom LLM extra body, which arrives as
+  `elevenlabs_extra_body.session_key`. Dynamic
   variables inside the extra body are not interpolated.
 - **Disconnects** follow the REST agent channel: the turn keeps running after
   the vendor hangs up, and is aborted only past the post-disconnect ceiling.
@@ -324,6 +402,18 @@ frame ends with one generic OpenAI error frame. Never the utterance, the reply
 or an internal error message. Chat-side spans, metrics and failure logs cover the
 turn itself.
 
+A session start records `voice_session_start_total` (`vendor`: the bound
+vendor or `none`; `outcome`: `started`, `agent_not_found`, `voice_off`,
+`no_runtime`, `credential_missing`, `credential_unreadable`,
+`credential_read_failed`, `registration_failed`, `vendor_failed`). A start
+that fails logs `Voice session start failed` at warn with `workspaceId`,
+`agentId`, `vendor` and `outcome`, plus `errorClass` when something threw and
+the vendor's `reason` and `vendorStatus` when it answered. A first turn whose
+start cannot be read logs `Voice session start could not be read; the turn
+runs without its visitor` at warn with `agentId`, `vendor` and `errorClass`.
+Never the key, the signed URL or the session key. Credential writes are audited by the credential store
+(`workspace_provider_credentials.set` and `.remove`, `metadata.provider`).
+
 The policy records `voice_turn_first_speech_ms` (histogram, `bridged`),
 `voice_bridge_emitted_total` (`style`, `locale_resolved`: `no` when the agent
 had no line, so nothing was spoken) and `voice_turn_limit_total`
@@ -350,5 +440,8 @@ turn cancelled mid-reply with `stage: "persisting"`.
   presenters that keep it out of HTTP responses)
 - `cd backend && pnpm exec vitest run tests/contract/agent-voice-settings.contract.test.ts`
   (the settings round trip and the dashboard-save safety check)
+- `cd backend && pnpm exec vitest run tests/contract/public-voice-session.contract.test.ts tests/contract/settings-credentials.contract.test.ts`
+  (the session start through the embed's public session, with a fake vendor
+  `fetch`; the ElevenLabs key in the credential store)
 - `cd backend && pnpm exec vitest run tests/integration/voice-session-repository.integration.test.ts`
   (needs the disposable integration database; see the code map)

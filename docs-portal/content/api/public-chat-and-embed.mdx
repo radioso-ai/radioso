@@ -206,7 +206,10 @@ GET  /api/v1/public/chat/{token}/tail/{conversationId}
 GET  /api/v1/public/chat/{token}/events/{conversationId}
 GET  /api/v1/public/chat/{token}/embed-config
 GET  /api/v1/public/chat/{token}/assistant-logo
+POST /api/v1/public/chat/{token}/voice/sessions
 ```
+
+`POST /api/v1/public/chat/{token}/voice/sessions` starts a voice call for a website embed public session: it opens a session on the agent's voice runtime with the workspace's vendor key and returns the vendor's signed URL and a session key for the page to hand the vendor's client. A browser on another origin calls it on the Radioso app host as `POST /api/public/chat/{token}/voice/sessions`, which answers the CORS preflight. Starts have their own small budgets, and every failure to start reads as `503 voice_unavailable`.
 
 ## Common failure modes
 

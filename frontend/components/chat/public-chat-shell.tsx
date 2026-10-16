@@ -619,7 +619,6 @@ function PublicChatContent({
   // advertisement is the gate.
   const contactAvailable =
     intakeActions.some((action) => action.skillName === HUMAN_CONTACT_SKILL_NAME)
-  const contactDisabled = isLoading || isHydrating || isLoadingOlderMessages
   const clearDisabled = isLoading || isHydrating || isLoadingOlderMessages
   // A turn that failed before producing any text renders the localized failure copy —
   // the cause-specific one when the agent is out of conversation quota, the generic one
@@ -639,18 +638,21 @@ function PublicChatContent({
     )),
     [copy.publicChatAgentUnavailableMessage, copy.publicChatMessageFailedMessage, messages],
   )
-  const lastMessageIdRef = useRef<string | null>(null)
+  const messageIdsNewestFirstRef = useRef<readonly string[]>([])
   useEffect(() => {
-    lastMessageIdRef.current = messages.at(-1)?.id ?? null
+    messageIdsNewestFirstRef.current = messages.map((message) => message.id).reverse()
   }, [messages])
-  const readLastMessageId = useCallback(() => lastMessageIdRef.current, [])
+  const readMessageIdsNewestFirst = useCallback(() => messageIdsNewestFirstRef.current, [])
   // Talk needs both the agent's voice and a page that can ask for the microphone.
   const voiceOffered = surface === 'embed' && voiceAvailable && canAskForMicrophone()
-  const voice = useVoiceSession({ token: publicChatToken, locale: visitorLocale, currentMessageId: readLastMessageId, offered: voiceOffered })
-  const { isActive: isVoiceCallActive, stop: stopVoiceCall } = voice
+  const voice = useVoiceSession({ token: publicChatToken, locale: visitorLocale, precedingMessageIds: readMessageIdsNewestFirst, offered: voiceOffered })
+  const { isActive: isVoiceCallActive, stop: stopVoiceCall, reset: resetVoiceCall } = voice
   useEffect(() => {
     if (!panelOpen && isVoiceCallActive) stopVoiceCall()
   }, [isVoiceCallActive, panelOpen, stopVoiceCall])
+  // A call holds the conversation like a text turn does: what would send a typed message waits.
+  const callInProgress = voiceOffered && isVoiceCallActive
+  const contactDisabled = isLoading || isHydrating || isLoadingOlderMessages || callInProgress
   // Lines said on a call sit in the thread where they were said, marked as spoken.
   const threadMessages = useMemo(
     () => interleaveVoiceTranscript(
@@ -661,10 +663,18 @@ function PublicChatContent({
         content: line.text,
         status: 'complete' as const,
         spokenLabel: copy.publicChatSpokenLabel,
-        afterMessageId: line.afterMessageId,
+        afterMessageIds: line.afterMessageIds,
       })),
     ),
     [copy.publicChatSpokenLabel, visibleMessages, voice.lines],
+  )
+  // Spoken lines stream in like a reply: they keep the view at the bottom rather than pinning
+  // the caller's line to the top the way a typed message is.
+  const scrollMessages = useMemo(
+    () => threadMessages.map((message) => ('spokenLabel' in message && message.spokenLabel
+      ? { id: message.id, role: 'spoken', status: message.status }
+      : message)),
+    [threadMessages],
   )
   const skillCatalog = useMemo(() => skillCatalogFromPublicIntakeActions(intakeActions), [intakeActions])
   const hasUserMessage = visibleMessages.some((message) => message.role === 'user')
@@ -672,11 +682,20 @@ function PublicChatContent({
   const greetingMessage = visibleMessages.find((message) => message.role === 'assistant') ?? null
 
   const { isAtBottom, scrollToBottom, scrollToLatestTurn } = useChatScroll({
-    messages: threadMessages,
+    messages: scrollMessages,
     containerRef: messagesScrollRef,
     sentinelRef: messagesEndRef,
     pinUserMessage: !isCompactKeyboardLayout,
   })
+  const isAtBottomRef = useRef(isAtBottom)
+  useEffect(() => {
+    isAtBottomRef.current = isAtBottom
+  }, [isAtBottom])
+  const spokenLineCount = voice.lines.length
+  useEffect(() => {
+    // A visitor who scrolled up to read stays where they are.
+    if (spokenLineCount > 0 && isAtBottomRef.current) scrollToBottom('smooth')
+  }, [scrollToBottom, spokenLineCount])
 
   useEffect(() => {
     if (surface !== 'public' || typeof document === 'undefined') {
@@ -780,7 +799,7 @@ function PublicChatContent({
   }, [composerShown, input.length, isHydrating, isUnavailable, surface])
 
   const handleSuggestionSelect = (suggestion: ChatSuggestion, messageId: string) => {
-    if (isLoading) return
+    if (isLoading || callInProgress) return
 
     if (suggestion.action?.kind === 'start_intent') {
       void sendMessage(suggestion.text, {
@@ -811,6 +830,7 @@ function PublicChatContent({
 
   const handleStartNewChat = async () => {
     setInput('')
+    resetVoiceCall()
     if (onStartNewChat) {
       await onStartNewChat()
       return
@@ -1135,7 +1155,9 @@ function PublicChatContent({
                   inputRef={inputRef}
                   isLoading={isLoading}
                   compact={isCompactKeyboardLayout}
-                  accessory={voiceOffered ? <VoiceTalkButton theme={theme} copy={copy} onPress={voice.talk} /> : null}
+                  accessory={voiceOffered ? (
+                    <VoiceTalkButton theme={theme} copy={copy} onPress={voice.talk} disabled={isLoading || isHydrating} />
+                  ) : null}
                 />
               )}
               {!isCompactKeyboardLayout ? (

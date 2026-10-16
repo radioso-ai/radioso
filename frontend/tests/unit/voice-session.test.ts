@@ -85,7 +85,7 @@ const line = (overrides: Partial<IncomingVoiceTranscriptLine>): IncomingVoiceTra
   id: 'voice-line-1',
   speaker: 'caller',
   text: 'Hello',
-  afterMessageId: 'greeting',
+  afterMessageIds: ['greeting'],
   ...overrides,
 })
 
@@ -108,7 +108,7 @@ describe('voice transcript lines', () => {
       speaker: 'agent',
       text: 'We open at ten',
       corrects: 'We open at ten and close at four on Sundays.',
-      afterMessageId: 'later',
+      afterMessageIds: ['later'],
     }))
 
     expect(corrected).toEqual([{ ...lines[0], text: 'We open at ten' }, lines[1]])
@@ -122,37 +122,65 @@ describe('voice transcript lines', () => {
     expect(corrected).toEqual([{ ...lines[0], text: 'We open' }])
   })
 
-  it('removes a reply the caller talked over before any of it was spoken, and adds a correction it cannot place', () => {
+  it('removes a reply the caller talked over before any of it was spoken', () => {
     const lines = [line({ id: 'a', speaker: 'agent', text: 'We open at ten.' })]
 
     expect(appendVoiceTranscriptLine(lines, line({ id: 'b', speaker: 'agent', text: '', corrects: 'We open at ten.' }))).toEqual([])
-    expect(appendVoiceTranscriptLine(lines, line({ id: 'c', speaker: 'agent', text: 'Hello', corrects: 'Hello there' }))).toEqual([
-      lines[0],
-      { id: 'c', speaker: 'agent', text: 'Hello', afterMessageId: 'greeting' },
-    ])
+  })
+
+  it('applies a correction whose text matches no line to the latest agent line, never as a new line', () => {
+    const lines = [
+      line({ id: 'a', speaker: 'agent', text: 'Hello there, how can I help?' }),
+      line({ id: 'b', speaker: 'caller', text: 'Opening hours?' }),
+      line({ id: 'c', speaker: 'agent', text: 'We open at ten  and close at four.' }),
+    ]
+
+    const corrected = appendVoiceTranscriptLine(lines, line({ id: 'd', speaker: 'agent', text: 'We open at ten', corrects: 'We open at ten and close at four.' }))
+
+    expect(corrected).toEqual([lines[0], lines[1], { ...lines[2], text: 'We open at ten' }])
+  })
+
+  it('drops a correction when there is no agent line to correct', () => {
+    const lines = [line({ id: 'a', speaker: 'caller', text: 'Hi' })]
+
+    expect(appendVoiceTranscriptLine(lines, line({ id: 'b', speaker: 'agent', text: 'Hel', corrects: 'Hello there' }))).toBe(lines)
   })
 
   it('replaces an agent reply the vendor reports again, keeping its place', () => {
     const lines = [
       line({ id: 'a', speaker: 'agent', text: 'We open at', responseId: 'r1' }),
-      line({ id: 'b', speaker: 'caller', text: 'Thanks', afterMessageId: 'greeting' }),
+      line({ id: 'b', speaker: 'caller', text: 'Thanks' }),
     ]
-    const replaced = appendVoiceTranscriptLine(lines, line({ id: 'c', speaker: 'agent', text: 'We open at ten.', responseId: 'r1', afterMessageId: 'later' }))
+    const replaced = appendVoiceTranscriptLine(lines, line({ id: 'c', speaker: 'agent', text: 'We open at ten.', responseId: 'r1', afterMessageIds: ['later'] }))
     expect(replaced).toEqual([
-      { id: 'a', speaker: 'agent', text: 'We open at ten.', responseId: 'r1', afterMessageId: 'greeting' },
+      { id: 'a', speaker: 'agent', text: 'We open at ten.', responseId: 'r1', afterMessageIds: ['greeting'] },
       lines[1],
     ])
   })
 
-  it('places each line after the chat message it followed, and lines whose message is gone at the end', () => {
+  it('places each line after the chat message it followed', () => {
     const messages = [{ id: 'greeting' }, { id: 'question' }, { id: 'answer' }]
     const lines = [
-      { id: 'v1', afterMessageId: 'question' },
-      { id: 'v2', afterMessageId: 'question' },
-      { id: 'v3', afterMessageId: 'cleared' },
-      { id: 'v0', afterMessageId: null },
+      { id: 'v1', afterMessageIds: ['question', 'greeting'] },
+      { id: 'v2', afterMessageIds: ['question', 'greeting'] },
+      { id: 'v0', afterMessageIds: [] },
     ]
-    expect(interleaveVoiceTranscript(messages, lines).map((entry) => entry.id)).toEqual(['v0', 'greeting', 'question', 'v1', 'v2', 'answer', 'v3'])
+    expect(interleaveVoiceTranscript(messages, lines).map((entry) => entry.id)).toEqual(['v0', 'greeting', 'question', 'v1', 'v2', 'answer'])
+  })
+
+  it('keeps a line near its place when the message it followed leaves the thread: after the nearest one still there', () => {
+    const before = [{ id: 'greeting' }, { id: 'question' }, { id: 'pending-reply' }]
+    const lines = [{ id: 'v1', afterMessageIds: ['pending-reply', 'question', 'greeting'] }]
+    expect(interleaveVoiceTranscript(before, lines).map((entry) => entry.id)).toEqual(['greeting', 'question', 'pending-reply', 'v1'])
+
+    const after = [{ id: 'greeting' }, { id: 'question' }, { id: 'stored-reply' }, { id: 'next-question' }]
+
+    expect(interleaveVoiceTranscript(after, lines).map((entry) => entry.id)).toEqual(['greeting', 'question', 'v1', 'stored-reply', 'next-question'])
+  })
+
+  it('puts a line first when none of the messages before it is left', () => {
+    const lines = [{ id: 'v1', afterMessageIds: ['cleared'] }]
+    expect(interleaveVoiceTranscript([{ id: 'fresh' }], lines).map((entry) => entry.id)).toEqual(['v1', 'fresh'])
   })
 
   it('leaves the thread as it is when nothing was said', () => {

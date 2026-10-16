@@ -8,7 +8,7 @@ import {
   voiceSessionReducer,
   type VoiceSessionEvent,
   type VoiceSessionState,
-  type VoiceTranscriptLine,
+  type IncomingVoiceTranscriptLine,
 } from '@/lib/voice-session'
 
 const run = (events: VoiceSessionEvent[], from: VoiceSessionState = initialVoiceSessionState) =>
@@ -30,6 +30,10 @@ describe('voice session state', () => {
     const ended = run([{ type: 'stop_pressed' }], speaking)
     expect(ended).toEqual({ status: 'ended' })
     expect(isVoiceCallActive(ended)).toBe(false)
+  })
+
+  it('takes a call stopped before it connected back to Talk, with no notice', () => {
+    expect(run([{ type: 'talk_pressed' }, { type: 'stop_pressed' }])).toEqual({ status: 'idle' })
   })
 
   it('ends a live call the vendor closed', () => {
@@ -71,7 +75,7 @@ describe('voice session state', () => {
   })
 })
 
-const line = (overrides: Partial<VoiceTranscriptLine>): VoiceTranscriptLine => ({
+const line = (overrides: Partial<IncomingVoiceTranscriptLine>): IncomingVoiceTranscriptLine => ({
   id: 'voice-line-1',
   speaker: 'caller',
   text: 'Hello',
@@ -80,11 +84,46 @@ const line = (overrides: Partial<VoiceTranscriptLine>): VoiceTranscriptLine => (
 })
 
 describe('voice transcript lines', () => {
-  it('appends lines in the order they arrive and drops empty ones', () => {
+  it('appends lines in the order they arrive and hands back the same lines for a blank one', () => {
     const first = appendVoiceTranscriptLine([], line({ id: 'a', text: 'Do you open on Sunday?' }))
     const second = appendVoiceTranscriptLine(first, line({ id: 'b', speaker: 'agent', text: 'Yes, from ten.' }))
     expect(second.map((entry) => entry.text)).toEqual(['Do you open on Sunday?', 'Yes, from ten.'])
-    expect(appendVoiceTranscriptLine(second, line({ id: 'c', text: '   ' }))).toEqual(second)
+    expect(appendVoiceTranscriptLine(second, line({ id: 'c', text: '   ' }))).toBe(second)
+  })
+
+  it('shows what was spoken of a reply the caller talked over, in its place', () => {
+    const lines = [
+      line({ id: 'a', speaker: 'agent', text: 'We open at ten and close at four on Sundays.' }),
+      line({ id: 'b', speaker: 'caller', text: 'Ten is fine.' }),
+    ]
+
+    const corrected = appendVoiceTranscriptLine(lines, line({
+      id: 'c',
+      speaker: 'agent',
+      text: 'We open at ten',
+      corrects: 'We open at ten and close at four on Sundays.',
+      afterMessageId: 'later',
+    }))
+
+    expect(corrected).toEqual([{ ...lines[0], text: 'We open at ten' }, lines[1]])
+  })
+
+  it('corrects a reply by its vendor id when the vendor names one', () => {
+    const lines = [line({ id: 'a', speaker: 'agent', text: 'We open at ten and close at four.', responseId: 'r1' })]
+
+    const corrected = appendVoiceTranscriptLine(lines, line({ id: 'b', speaker: 'agent', text: 'We open', corrects: 'something else', responseId: 'r1' }))
+
+    expect(corrected).toEqual([{ ...lines[0], text: 'We open' }])
+  })
+
+  it('removes a reply the caller talked over before any of it was spoken, and adds a correction it cannot place', () => {
+    const lines = [line({ id: 'a', speaker: 'agent', text: 'We open at ten.' })]
+
+    expect(appendVoiceTranscriptLine(lines, line({ id: 'b', speaker: 'agent', text: '', corrects: 'We open at ten.' }))).toEqual([])
+    expect(appendVoiceTranscriptLine(lines, line({ id: 'c', speaker: 'agent', text: 'Hello', corrects: 'Hello there' }))).toEqual([
+      lines[0],
+      { id: 'c', speaker: 'agent', text: 'Hello', afterMessageId: 'greeting' },
+    ])
   })
 
   it('replaces an agent reply the vendor reports again, keeping its place', () => {

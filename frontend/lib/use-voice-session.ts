@@ -31,13 +31,9 @@ export function useVoiceSession({
   offered: boolean
 }) {
   const [state, dispatch] = useReducer(voiceSessionReducer, initialVoiceSessionState)
-  const [lines, setLines] = useState<VoiceTranscriptLine[]>([])
+  const [lines, setLines] = useState<readonly VoiceTranscriptLine[]>([])
   const callRef = useRef<VoiceCall | null>(null)
   const lineCountRef = useRef(0)
-  const currentMessageIdRef = useRef(currentMessageId)
-  useEffect(() => {
-    currentMessageIdRef.current = currentMessageId
-  }, [currentMessageId])
 
   const stop = useCallback(() => {
     callRef.current?.stop()
@@ -56,22 +52,25 @@ export function useVoiceSession({
       },
       {
         onEvent: (event) => {
-          // A call that failed or dropped is over: a new press may start another.
+          // A call that failed or dropped is over: stopping it drops whatever the vendor still
+          // delivers, and a new press may start another.
           if (event.type === 'microphone_refused' || event.type === 'start_refused' || event.type === 'disconnected') {
+            call.stop()
             if (callRef.current === call) callRef.current = null
           }
           dispatch(event)
         },
         onLine: (line) => {
+          if (!line.text.trim() && line.corrects === undefined) return
           lineCountRef.current += 1
           const id = `voice-line-${lineCountRef.current}`
-          const afterMessageId = currentMessageIdRef.current()
+          const afterMessageId = currentMessageId()
           setLines((current) => appendVoiceTranscriptLine(current, { ...line, id, afterMessageId }))
         },
       },
     )
     callRef.current = call
-  }, [locale, token])
+  }, [currentMessageId, locale, token])
 
   useEffect(() => {
     if (offered) prepareVoiceRuntimes()

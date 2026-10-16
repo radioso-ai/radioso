@@ -14,6 +14,8 @@ export interface VoiceRuntimeLine {
   text: string
   /** The vendor's id for one agent reply, when it reports the same reply more than once. */
   responseId?: string
+  /** The reply text this line corrects: the caller talked over it, and `text` is what was spoken. */
+  corrects?: string
 }
 
 /** What a vendor's browser client reports about an open session. */

@@ -47,7 +47,9 @@ export function voiceSessionReducer(state: VoiceSessionState, event: VoiceSessio
       // A vendor may report who is speaking before it reports the connection.
       return isVoiceCallActive(state) ? { status: 'live', mode: event.mode } : state
     case 'stop_pressed':
-      return isVoiceCallActive(state) ? { status: 'ended' } : state
+      // Stopping a call that never connected takes it back without a notice: nothing was said.
+      if (state.status === 'connecting') return { status: 'idle' }
+      return state.status === 'live' ? { status: 'ended' } : state
     case 'disconnected':
       // A call that drops before it connects never started; one that drops later ended.
       if (state.status === 'connecting') return { status: 'failed', problem: 'unavailable' }
@@ -66,18 +68,52 @@ export interface VoiceTranscriptLine {
   afterMessageId: string | null
 }
 
-export function appendVoiceTranscriptLine(
-  lines: readonly VoiceTranscriptLine[],
-  line: VoiceTranscriptLine,
-): VoiceTranscriptLine[] {
-  if (!line.text.trim()) return [...lines]
+/**
+ * A line as it arrives. `corrects` is the agent reply it replaces: when the caller talks over a
+ * reply, the vendor reports the part that was actually spoken, with the text it reported before.
+ */
+export type IncomingVoiceTranscriptLine = VoiceTranscriptLine & { corrects?: string }
+
+/** The line an incoming one replaces: the same vendor reply, else the latest agent line with the corrected text. */
+const replacedLineIndex = (lines: readonly VoiceTranscriptLine[], line: IncomingVoiceTranscriptLine): number => {
   if (line.responseId) {
     const index = lines.findIndex((existing) => existing.responseId === line.responseId)
-    if (index >= 0) {
-      return lines.map((existing, at) => (at === index ? { ...line, id: existing.id, afterMessageId: existing.afterMessageId } : existing))
-    }
+    if (index >= 0) return index
   }
-  return [...lines, line]
+  if (line.corrects === undefined) return -1
+  const original = line.corrects.trim()
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    if (lines[index].speaker === 'agent' && lines[index].text.trim() === original) return index
+  }
+  return -1
+}
+
+/**
+ * Adds a line to the transcript, or replaces the line of the reply it reports again. A blank line
+ * changes nothing (the same array comes back, so the thread does not re-render), except a blank
+ * correction, which removes the reply: the caller talked over it before any of it was spoken.
+ */
+export function appendVoiceTranscriptLine(
+  lines: readonly VoiceTranscriptLine[],
+  line: IncomingVoiceTranscriptLine,
+): readonly VoiceTranscriptLine[] {
+  const entry: VoiceTranscriptLine = {
+    id: line.id,
+    speaker: line.speaker,
+    text: line.text,
+    afterMessageId: line.afterMessageId,
+    ...(line.responseId ? { responseId: line.responseId } : {}),
+  }
+  const blank = !entry.text.trim()
+  if (blank && line.corrects === undefined) return lines
+  const index = replacedLineIndex(lines, line)
+  if (index < 0) return blank ? lines : [...lines, entry]
+  if (blank) return lines.filter((_existing, at) => at !== index)
+  return lines.map((existing, at) => (
+    at === index
+      ? { ...entry, id: existing.id, afterMessageId: existing.afterMessageId, ...(existing.responseId && !entry.responseId ? { responseId: existing.responseId } : {}) }
+      : existing
+  ))
 }
 
 /**

@@ -47,6 +47,16 @@ Implementations live outside it, and application composition
 - `backend/src/app/worker/backgroundJobWorkerTaskRoutes.ts`: the drain route
   the Cloud Task and the Cloud Scheduler recovery sweep call, and the
   dead-letter retention sweep route.
+- `backend/src/modules/facets/infra/facetExtractionBackgroundJobStore.ts`: a
+  module-owned store. Per-message facet extraction runs its own
+  `facet_extraction_jobs` table through this runtime instead of
+  `background_jobs`, because the table's rows stay readable after completion
+  (coverage reads, backfills) and nothing is deleted on success. Audience
+  Pulse's workspace-scoped batch drain stays on its own path over the same
+  table — the generic claim filters by kind only, not by workspace or message
+  window, so a bespoke store adapter is one way to bridge an existing queue
+  onto this runtime without a data migration, but it cannot express every
+  access pattern the queue it replaces had.
 
 ## Semantics
 

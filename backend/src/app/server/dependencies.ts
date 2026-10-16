@@ -4,7 +4,11 @@ import { emailChannelConfigGaps, getEnv, parseEmailChannelConfig, type Env } fro
 import { AgentRevisionRuntimeRepository } from "../../db/repositories/agentRevisionRuntimeRepository.js";
 import { createAgentPublicProfileComposition } from "../composition/agentDiscovery.js";
 import { createAgentToolCatalogComposition } from "../composition/agentToolCatalog.js";
-import { createVoiceChannelComposition, createVoiceSessionStartComposition } from "../composition/voiceChannel.js";
+import {
+  createVoiceChannelComposition,
+  createVoiceSessionStartComposition,
+  refreshEmbedConfigsOnVoiceVendorKeyChange,
+} from "../composition/voiceChannel.js";
 import { VoiceSessionRepository } from "../../modules/voiceChannel/public.js";
 import { createPostgresDeliveryFailures } from "../composition/deliveryFailures.js";
 import {
@@ -1253,6 +1257,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   ]);
   // One store for voice sessions: the turn's bindings, and the starts the turn and the session start share.
   const voiceSessions = new VoiceSessionRepository(infrastructure.database.kysely);
+  refreshEmbedConfigsOnVoiceVendorKeyChange({ credentials: workspaceProviderCredentialsService, embedConfigs: agentService });
   // One service starts sessions and tells the website embed whether to offer them, by the same gate.
   const voiceSessionStarts = createVoiceSessionStartComposition({
     agentRepository: repositories.agentRepository,

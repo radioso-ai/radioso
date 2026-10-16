@@ -27,8 +27,13 @@ const embedWorkspace = async (options: {
   vendorKey?: string | null;
   vendorFetch?: VendorFetch;
   envOverrides?: Partial<Env>;
+  embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
 } = {}) => {
-  const created = createTestApp({ voiceVendorFetch: options.vendorFetch, envOverrides: options.envOverrides });
+  const created = createTestApp({
+    voiceVendorFetch: options.vendorFetch,
+    envOverrides: options.envOverrides,
+    embedConfigCacheInvalidator: options.embedConfigCacheInvalidator,
+  });
   const { app } = created;
   const operator = await issueTestSession(app, `voice-start-${randomUUID()}@example.com`);
   const dashboard = adminSessionHeaders(operator);
@@ -370,5 +375,38 @@ describe("public voice session start contract", () => {
       expect.objectContaining({ workspaceId: operator.workspaceId, eventStatus: "success", metadata: { agentId, before: false, after: true } }),
       expect.objectContaining({ workspaceId: operator.workspaceId, eventStatus: "success", metadata: { agentId, before: true, after: false } }),
     ]);
+  });
+
+  it("still serves the agent to the dashboard when the credential store cannot be read, without its voice readiness", async () => {
+    const { app, dashboard, agentId, repositories } = await embedWorkspace();
+    vi.spyOn(repositories.workspaceProviderCredentialsRepository, "findByWorkspaceAndProvider").mockRejectedValue(new Error("connection refused"));
+
+    const response = await request(app).get(`/api/v1/agents/${agentId}`).set(dashboard).expect(200);
+
+    expect(response.body.id).toBe(agentId);
+    expect(response.body).not.toHaveProperty("voiceCallReadiness");
+  });
+
+  it("drops the CDN-cached embed config when the workspace stores or removes its vendor key, so the Talk button follows at once", async () => {
+    const invalidateForToken = vi.fn(async () => undefined);
+    const { app, dashboard, launchToken } = await embedWorkspace({ vendorKey: null, embedConfigCacheInvalidator: { invalidateForToken } });
+    invalidateForToken.mockClear();
+
+    await request(app).put("/api/v1/settings/credentials/elevenlabs").set(dashboard).send({ apiKey: VENDOR_KEY }).expect(204);
+    expect(invalidateForToken).toHaveBeenCalledWith(launchToken);
+
+    invalidateForToken.mockClear();
+    await request(app).delete("/api/v1/settings/credentials/elevenlabs").set(dashboard).expect(204);
+    expect(invalidateForToken).toHaveBeenCalledWith(launchToken);
+  });
+
+  it("leaves the embed config cached when a model provider key changes", async () => {
+    const invalidateForToken = vi.fn(async () => undefined);
+    const { app, dashboard } = await embedWorkspace({ embedConfigCacheInvalidator: { invalidateForToken } });
+    invalidateForToken.mockClear();
+
+    await request(app).put("/api/v1/settings/credentials/openai").set(dashboard).send({ apiKey: "sk-test-0123456789" }).expect(204);
+
+    expect(invalidateForToken).not.toHaveBeenCalled();
   });
 });

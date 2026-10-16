@@ -42,6 +42,7 @@ class EncryptionNotConfiguredError extends AppError {
 
 export class WorkspaceProviderCredentialsService {
   private decryptErrorListener: ((error: unknown, provider: WorkspaceCredentialProvider) => void) | undefined;
+  private changeListener: ((change: { workspaceId: string; provider: WorkspaceCredentialProvider }) => Promise<void>) | undefined;
 
   constructor(
     private readonly repository: WorkspaceProviderCredentialsRepositoryPort,
@@ -56,6 +57,25 @@ export class WorkspaceProviderCredentialsService {
 
   onDecryptError(listener: (error: unknown, provider: WorkspaceCredentialProvider) => void): void {
     this.decryptErrorListener = listener;
+  }
+
+  /**
+   * Called after a key is stored or removed, so what reads the key's presence can drop what it
+   * cached from it. Best effort: a listener that fails is logged and never fails the write.
+   */
+  onChange(listener: (change: { workspaceId: string; provider: WorkspaceCredentialProvider }) => Promise<void>): void {
+    this.changeListener = listener;
+  }
+
+  private async notifyChange(workspaceId: string, provider: WorkspaceCredentialProvider): Promise<void> {
+    try {
+      await this.changeListener?.({ workspaceId, provider });
+    } catch (error) {
+      this.logger?.warn(
+        { workspaceId, provider, errorClass: error instanceof Error ? error.name : typeof error },
+        "Workspace credential change listener failed",
+      );
+    }
   }
 
   async setApiKey(input: SetApiKeyInput): Promise<void> {
@@ -102,6 +122,7 @@ export class WorkspaceProviderCredentialsService {
       }
       throw error;
     }
+    await this.notifyChange(input.workspaceId, input.provider);
   }
 
   async getApiKey(workspaceId: string, provider: WorkspaceCredentialProvider): Promise<string | undefined> {
@@ -161,6 +182,7 @@ export class WorkspaceProviderCredentialsService {
         eventStatus: "success",
         provider,
       });
+      await this.notifyChange(workspaceId, provider);
     }
     return removed;
   }

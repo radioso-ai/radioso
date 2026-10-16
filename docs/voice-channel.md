@@ -299,12 +299,21 @@ is its own conversation: the Inbox and Activity list it with the source
 The embed's chat runs in an iframe on your Radioso app host, so the launcher
 grants that iframe the microphone with `allow="microphone"` when the agent
 takes voice calls. A host page that sends a `Permissions-Policy` header
-denying the microphone, such as `microphone=()`, takes it away again, and the
-embed then shows no **Talk** button. Allow it for the app host instead:
+denying the microphone, such as `microphone=()`, takes it away again. Chrome
+and Edge show the frame the policy, and the embed then shows no **Talk**
+button; Firefox and Safari do not show it, so there the embed hides **Talk**
+only when the browser reports the microphone permission as denied, and
+otherwise the visitor reads the microphone line on pressing it. Allow the
+microphone for the app host instead:
 
 ```text
 Permissions-Policy: microphone=(self "https://app.radioso.ai")
 ```
+
+Browsers that cannot set the microphone's sample rate, Firefox among them,
+resample the call's audio with a small WebAssembly module that the app host
+serves; the chat frame's content security policy allows it to compile
+(`'wasm-unsafe-eval'`, on the frame alone).
 
 The voice controls' wording is part of the embed copy, translated into the
 embed's built-in languages: `publicChatTalkLabel`, `publicChatEndCallLabel`,

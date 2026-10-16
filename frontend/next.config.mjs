@@ -4,9 +4,11 @@ import { fileURLToPath } from 'node:url';
 const frontendRoot = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_STANDALONE_MCP_URL = process.env.NODE_ENV === "production" ? "" : "http://localhost:8787/mcp";
 
-const buildCspDirectives = ({ frameAncestors }) => [
+// `allowsWasm`: the chat frame's voice client compiles its resampler, a WebAssembly worklet, in
+// browsers that cannot set the microphone's sample rate (Firefox). Only the frame gets it.
+const buildCspDirectives = ({ frameAncestors, allowsWasm = false }) => [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
+  `script-src 'self' 'unsafe-inline'${allowsWasm ? " 'wasm-unsafe-eval'" : ""}${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
   "script-src-attr 'none'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: http: https:",
@@ -21,7 +23,7 @@ const buildCspDirectives = ({ frameAncestors }) => [
 ].filter(Boolean).join("; ");
 
 const cspDirectives = buildCspDirectives({ frameAncestors: "frame-ancestors 'self'" });
-const embedCspDirectives = buildCspDirectives({ frameAncestors: "" });
+const embedCspDirectives = buildCspDirectives({ frameAncestors: "", allowsWasm: true });
 
 const securityHeaders = [
   {

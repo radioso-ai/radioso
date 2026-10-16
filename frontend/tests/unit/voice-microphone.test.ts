@@ -2,49 +2,65 @@
 
 import { afterEach, describe, expect, it } from 'vitest'
 
-import { canAskForMicrophone } from '@/lib/voice-call'
+import { canAskForMicrophone, readMicrophoneSignals } from '@/lib/voice-call'
 
-const setPage = ({ secureContext, mediaDevices, microphoneAllowed }: { secureContext: boolean; mediaDevices: unknown; microphoneAllowed?: boolean }) => {
-  Object.defineProperty(window, 'isSecureContext', { configurable: true, value: secureContext })
-  Object.defineProperty(navigator, 'mediaDevices', { configurable: true, value: mediaDevices })
-  Object.defineProperty(document, 'featurePolicy', {
-    configurable: true,
-    value: microphoneAllowed === undefined ? undefined : { allowsFeature: (feature: string) => feature !== 'microphone' || microphoneAllowed },
-  })
-}
+const secure = { secureContext: true, mediaDevices: true }
 
 describe('whether a page can ask for the microphone', () => {
+  it('cannot on a page served over plain http, or without the media devices API', () => {
+    expect(canAskForMicrophone({ secureContext: false, mediaDevices: true })).toBe(false)
+    expect(canAskForMicrophone({ secureContext: true, mediaDevices: false })).toBe(false)
+  })
+
+  it("follows the frame's permissions policy where the browser exposes it", () => {
+    expect(canAskForMicrophone({ ...secure, policyAllows: false, permission: 'granted' })).toBe(false)
+    expect(canAskForMicrophone({ ...secure, policyAllows: true })).toBe(true)
+  })
+
+  it('reads a denied microphone permission as a denied policy where the browser exposes no policy', () => {
+    expect(canAskForMicrophone({ ...secure, permission: 'denied' })).toBe(false)
+    expect(canAskForMicrophone({ ...secure, permission: 'prompt' })).toBe(true)
+    expect(canAskForMicrophone({ ...secure, permission: 'granted' })).toBe(true)
+  })
+
+  it('can ask where the browser exposes neither', () => {
+    expect(canAskForMicrophone(secure)).toBe(true)
+  })
+})
+
+describe('the microphone signals a page reads', () => {
+  const define = (target: object, key: string, value: unknown) => Object.defineProperty(target, key, { configurable: true, value })
   afterEach(() => {
-    setPage({ secureContext: false, mediaDevices: undefined })
+    define(document, 'featurePolicy', undefined)
+    define(navigator, 'permissions', undefined)
+    define(navigator, 'mediaDevices', undefined)
+    define(window, 'isSecureContext', false)
   })
 
-  it('can on a secure page with the media devices API', () => {
-    setPage({ secureContext: true, mediaDevices: { getUserMedia: async () => ({}) } })
+  it('reads the policy and leaves the permission alone where the policy is exposed', async () => {
+    define(window, 'isSecureContext', true)
+    define(navigator, 'mediaDevices', { getUserMedia: async () => ({}) })
+    define(document, 'featurePolicy', { allowsFeature: (feature: string) => feature !== 'microphone' })
+    let queried = false
+    define(navigator, 'permissions', { query: async () => { queried = true; return { state: 'granted' } } })
 
-    expect(canAskForMicrophone()).toBe(true)
+    expect(await readMicrophoneSignals()).toEqual({ secureContext: true, mediaDevices: true, policyAllows: false })
+    expect(queried).toBe(false)
   })
 
-  it('cannot on a page served over plain http, which browsers never give a microphone', () => {
-    setPage({ secureContext: false, mediaDevices: { getUserMedia: async () => ({}) } })
+  it('asks for the permission state where the policy is not exposed', async () => {
+    define(window, 'isSecureContext', true)
+    define(navigator, 'mediaDevices', { getUserMedia: async () => ({}) })
+    define(navigator, 'permissions', { query: async () => ({ state: 'denied' }) })
 
-    expect(canAskForMicrophone()).toBe(false)
+    expect(await readMicrophoneSignals()).toEqual({ secureContext: true, mediaDevices: true, permission: 'denied' })
   })
 
-  it("cannot where the frame's permissions policy denies the microphone, as a host page's header can", () => {
-    setPage({ secureContext: true, mediaDevices: { getUserMedia: async () => ({}) }, microphoneAllowed: false })
+  it('reads neither where the browser does not know the microphone permission', async () => {
+    define(window, 'isSecureContext', true)
+    define(navigator, 'mediaDevices', { getUserMedia: async () => ({}) })
+    define(navigator, 'permissions', { query: async () => { throw new TypeError("'microphone' is not a valid permission name") } })
 
-    expect(canAskForMicrophone()).toBe(false)
-  })
-
-  it('can where the permissions policy allows it', () => {
-    setPage({ secureContext: true, mediaDevices: { getUserMedia: async () => ({}) }, microphoneAllowed: true })
-
-    expect(canAskForMicrophone()).toBe(true)
-  })
-
-  it('cannot where the browser has no media devices API', () => {
-    setPage({ secureContext: true, mediaDevices: undefined })
-
-    expect(canAskForMicrophone()).toBe(false)
+    expect(await readMicrophoneSignals()).toEqual({ secureContext: true, mediaDevices: true })
   })
 })

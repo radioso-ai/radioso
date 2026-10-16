@@ -6,7 +6,7 @@ export type {
   VoiceSessionVisitor,
   VoiceTurnPort,
 } from "./domain.js";
-export { VoiceTurnService, type VoiceChatTurnRequest, type VoiceTurnNotes } from "./services/voiceTurnService.js";
+export { VoiceTurnService, type VoiceChatTurnRequest, type VoiceSessionStore, type VoiceTurnNotes } from "./services/voiceTurnService.js";
 export { VoiceSessionStartService } from "./services/voiceSessionStartService.js";
 export { createElevenLabsSessionStarter } from "./adapters/elevenlabs/sessionStarter.js";
 export { VoiceSessionRepository } from "./persistence/voiceSessionRepository.js";

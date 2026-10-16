@@ -73,17 +73,20 @@ helpers and the shared chat message limit from `app/http`
   `registerOpenAiCompletionsRoute`; `VoiceSessionStartPort`,
   `VoiceSessionStartResult`, `VoiceSessionStartService`,
   `createElevenLabsSessionStarter`.
-- `backend/src/app/composition/voiceChannel.ts` — builds the port over
-  Postgres, `AssistantChatService.streamAnswer`, the agent repository (voice
+- `backend/src/app/composition/voiceChannel.ts` — builds the port over a
+  session store, `AssistantChatService.streamAnswer`, the agent repository (voice
   settings and default locale), the routine state store, the conversation
   ownership reader (`handoff/public.ts`), the message repository as chat's
   `ReplyInterruptionMarker` and the audit service (the
   `voice.reply_interrupted` and `voice.reply_replayed` notes, built by
   `createVoiceTurnNotes`); exposed as `AppDependencies.voiceTurns`.
   `createVoiceSessionStartComposition` in the same file builds the session
-  start over the agent repository, the ElevenLabs starter with `fetch`, and
-  the workspace credential store's `getApiKey` as the credential reader;
-  exposed as `AppDependencies.voiceSessionStarts`.
+  start over the agent repository, the ElevenLabs starter with `fetch`, the
+  workspace credential store's `getApiKey` as the credential reader, and the
+  start registry; exposed as `AppDependencies.voiceSessionStarts`.
+  `app/server/dependencies.ts` builds one `VoiceSessionRepository` and hands it
+  to both: the turn reads bindings and starts from it, and the start records
+  into it.
 - The agent's `voice` settings block belongs to the agents module
   (`agents/voiceSettings.ts`, stored in `behavior_settings.voice`, served on
   `GET`/`PUT /api/v1/agents/:agentId`). This module reads it: the services

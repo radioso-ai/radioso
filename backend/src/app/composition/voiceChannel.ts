@@ -2,13 +2,14 @@ import { randomUUID } from "node:crypto";
 
 import type { ChatStreamEvent, ReplyInterruptionMarker } from "../../modules/chat/contracts/index.js";
 import {
-  VoiceSessionRepository,
   VoiceSessionStartService,
   VoiceTurnService,
   createElevenLabsSessionStarter,
   type VoiceChatTurnRequest,
+  type VoiceSessionStartLookup,
   type VoiceSessionStartPort,
   type VoiceSessionStartRegistry,
+  type VoiceSessionStore,
   type VoiceTurnNotes,
   type VoiceTurnPort,
 } from "../../modules/voiceChannel/public.js";
@@ -17,7 +18,6 @@ import type { AuditPort } from "../../modules/audit/contracts/index.js";
 import { isHumanOwned, type ConversationOwnershipReader } from "../../modules/handoff/public.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
-import type { Db } from "../../shared/infra/kysely/types.js";
 import type { VoiceVendor } from "../../shared/domain/voiceVendor.js";
 import { ProviderConfigurationError } from "../../shared/infra/llm/providerTypes.js";
 
@@ -63,13 +63,14 @@ export const createVoiceTurnNotes = (deps: {
 });
 
 /**
- * The voice channel's turn port: sessions over Postgres, the same streaming chat turn the REST
+ * The voice channel's turn port: sessions and their starts over one store (`VoiceSessionRepository`
+ * in production, the same instance the session start records into), the same streaming chat turn the REST
  * agent channel runs, the agent's voice settings and the conversation's routine state and owner for
  * the turn policy, and notes on a previous turn's stored reply. Vendor adapters mount over this
  * port in the HTTP layer.
  */
 export const createVoiceChannelComposition = (deps: {
-  db: Db;
+  sessions: VoiceSessionStore & VoiceSessionStartLookup;
   assistantChatService: {
     streamAnswer(input: VoiceChatTurnRequest & { stream: true }): AsyncIterable<ChatStreamEvent>;
   };
@@ -82,8 +83,8 @@ export const createVoiceChannelComposition = (deps: {
   logger: AppLogger;
 }): VoiceTurnPort =>
   new VoiceTurnService({
-    sessions: new VoiceSessionRepository(deps.db),
-    starts: new VoiceSessionRepository(deps.db),
+    sessions: deps.sessions,
+    starts: deps.sessions,
     chat: { streamTurn: (request) => deps.assistantChatService.streamAnswer({ ...request, stream: true }) },
     agents: voiceProfileSource(deps.agentRepository),
     // A conversation's routine state is keyed by the conversation id.

@@ -270,13 +270,13 @@ variable "action_dispatch_recovery_schedule" {
 }
 
 variable "action_dispatch_recovery_max_jobs" {
-  description = "Maximum drain batches each scheduled action-dispatch recovery request may process. A batch is up to the worker's configured action-dispatch batch size (rows), not a single row."
+  description = "Maximum individual action-dispatch jobs each scheduled recovery request may drain in one call, bounded further by the drain route's own time budget. Defaults well above one pushed wake's own batch, since this sweep exists to clear a backlog a push never reached."
   type        = number
-  default     = 10
+  default     = 200
 
   validation {
-    condition     = var.action_dispatch_recovery_max_jobs >= 1 && var.action_dispatch_recovery_max_jobs <= 50
-    error_message = "action_dispatch_recovery_max_jobs must be between 1 and 50."
+    condition     = var.action_dispatch_recovery_max_jobs >= 1 && var.action_dispatch_recovery_max_jobs <= 500
+    error_message = "action_dispatch_recovery_max_jobs must be between 1 and 500."
   }
 }
 

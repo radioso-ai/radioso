@@ -245,7 +245,9 @@ When a visitor presses **Talk**:
    start budget.
 2. The embed asks Radioso for a session with its public session, in the
    language it asked the greeting in when it knows one, and opens the session
-   with the ElevenLabs client, which the embed downloads only at this point.
+   with the ElevenLabs client. The embed downloads that client at this point;
+   on an iPhone or iPad it downloads it as soon as the panel offers **Talk**,
+   because the client unlocks audio during the tap that starts the call.
 3. The composer gives way to a call bar that reads **Connecting…**, then
    **Listening** while the visitor talks and **Speaking** while the agent
    answers, with **End call** beside it. The visitor can talk over the agent:

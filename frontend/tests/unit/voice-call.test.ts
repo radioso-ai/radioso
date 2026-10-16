@@ -1,11 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import type { PublicVoiceSessionStart } from '@/lib/api-public-voice'
-import { runVoiceCall, type VoiceCallDependencies } from '@/lib/voice-call'
+import { runVoiceCall, type VoiceCallDependencies, type VoiceSessionStart } from '@/lib/voice-call'
 import type { VoiceRuntime, VoiceRuntimeCallbacks } from '@/lib/voice-runtime'
 import type { VoiceSessionEvent } from '@/lib/voice-session'
 
-const started: PublicVoiceSessionStart = {
+const started: VoiceSessionStart = {
   kind: 'started',
   session: { vendor: 'elevenlabs', signedUrl: 'wss://vendor.test/session?sig=1', sessionKey: 'session-key-1', locale: 'it' },
 }

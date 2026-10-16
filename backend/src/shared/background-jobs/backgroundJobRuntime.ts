@@ -1,5 +1,6 @@
 import { AppError } from "../domain/errors.js";
 import { traceOperation } from "../observability/tracing/operations.js";
+import { stringifyUnknown } from "../text/stringifyUnknown.js";
 import { NonRetryableBackgroundJobError } from "./jobKind.js";
 import type {
   BackgroundJobClaim,
@@ -115,6 +116,12 @@ const errorSummary = (error: unknown): string => {
 
 const isBackgroundJobSkipped = (result: BackgroundJobSkipped | void): result is BackgroundJobSkipped =>
   typeof result === "object" && result !== null && "skipped" in result;
+
+/** The raw error's own message, for a failure hook's `errorMessage` — `undefined` means no underlying error (a synthetic failure). */
+const errorMessageOf = (error: unknown): string | null => {
+  if (error === undefined) return null;
+  return error instanceof Error ? error.message : stringifyUnknown(error);
+};
 
 /**
  * Runs durable background jobs: claims a due job under a lease, runs the handler registered for
@@ -242,8 +249,9 @@ export class BackgroundJobRuntime {
     const startedAt = Date.now();
     if (claim.attempt > handler.policy.maxAttempts) {
       // Every earlier attempt was claimed and never finished: the worker died or stalled past the
-      // lease each time. Running it again would exceed the budget the kind declared.
-      return this.deadLetter(claim, handler, "BackgroundJobLeaseExpiredError", startedAt);
+      // lease each time. Running it again would exceed the budget the kind declared. There is no
+      // underlying error to hand a hook here — every earlier attempt's was its own.
+      return this.deadLetter(claim, handler, "BackgroundJobLeaseExpiredError", startedAt, undefined);
     }
     const execution = await this.execute(claim, handler);
     if (!execution.ok) {
@@ -328,10 +336,10 @@ export class BackgroundJobRuntime {
   ): Promise<RunOutcome> {
     const summary = errorSummary(error);
     if (error instanceof NonRetryableBackgroundJobError || claim.attempt >= handler.policy.maxAttempts) {
-      return this.deadLetter(claim, handler, summary, startedAt);
+      return this.deadLetter(claim, handler, summary, startedAt, error);
     }
     const delaySeconds = this.retryDelaySeconds(handler.policy, claim.attempt);
-    const availableAt = await this.scheduleRetry(claim, handler, summary, delaySeconds);
+    const availableAt = await this.scheduleRetry(claim, handler, summary, delaySeconds, error);
     if (!availableAt) {
       return this.record(claim, "superseded", startedAt);
     }
@@ -362,6 +370,7 @@ export class BackgroundJobRuntime {
     handler: BackgroundJobHandlerRegistration,
     summary: string,
     delaySeconds: number,
+    rawError: unknown,
   ): Promise<Date | null> {
     if (!handler.onAttemptFailed) {
       return this.options.store.retry(claim, { error: summary, delaySeconds });
@@ -375,6 +384,7 @@ export class BackgroundJobRuntime {
             attempt: claim.attempt,
             idempotencyKey: claim.idempotencyKey,
             error: summary,
+            errorMessage: errorMessageOf(rawError),
             transaction,
           });
         } catch (error) {
@@ -401,8 +411,9 @@ export class BackgroundJobRuntime {
     handler: BackgroundJobHandlerRegistration,
     summary: string,
     startedAt: number,
+    rawError: unknown,
   ): Promise<RunOutcome> {
-    const parked = await this.park(claim, handler, summary);
+    const parked = await this.park(claim, handler, summary, rawError);
     if (!parked) {
       return this.record(claim, "superseded", startedAt);
     }
@@ -420,6 +431,7 @@ export class BackgroundJobRuntime {
     claim: BackgroundJobClaim,
     handler: BackgroundJobHandlerRegistration,
     summary: string,
+    rawError: unknown,
   ): Promise<boolean> {
     if (!handler.onDeadLetter) {
       return this.options.store.deadLetter(claim, { error: summary });
@@ -433,6 +445,7 @@ export class BackgroundJobRuntime {
             attempt: claim.attempt,
             idempotencyKey: claim.idempotencyKey,
             error: summary,
+            errorMessage: errorMessageOf(rawError),
             transaction,
           });
         } catch (error) {

@@ -552,6 +552,38 @@ describe("BackgroundJobRuntime", () => {
       });
       expect(JSON.stringify(errorReporter.report.mock.calls)).not.toContain("SENTINEL");
     });
+
+    it("carries the underlying error's own message separately from the stored summary, and null for a synthetic failure", async () => {
+      const realErrorCalls: { error: string; errorMessage: string | null }[] = [];
+      const onDeadLetterReal = vi.fn(async (_payload: unknown, context: { error: string; errorMessage: string | null }) => {
+        realErrorCalls.push({ error: context.error, errorMessage: context.errorMessage });
+      });
+      const { queue, runtime } = setup([
+        backgroundJobHandler(REFRESH, async () => {
+          throw new Error("provider said SENTINEL-detail-456");
+        }, { onDeadLetter: onDeadLetterReal }),
+      ]);
+      await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }));
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        await runtime.drain({ maxJobs: 1 });
+        vi.setSystemTime(Date.now() + 3_600_000);
+      }
+      expect(realErrorCalls).toEqual([{ error: "Error", errorMessage: "provider said SENTINEL-detail-456" }]);
+
+      const syntheticCalls: { errorMessage: string | null }[] = [];
+      const onDeadLetterSynthetic = vi.fn(async (_payload: unknown, context: { errorMessage: string | null }) => {
+        syntheticCalls.push({ errorMessage: context.errorMessage });
+      });
+      const { runtime: otherRuntime, store } = setup([backgroundJobHandler(REFRESH, async () => {}, { onDeadLetter: onDeadLetterSynthetic })]);
+      await store.insert(backgroundJobRequest(REFRESH, { subjectId: "s2" }, { idempotencyKey: "s2" }));
+      for (let attempt = 1; attempt <= 3; attempt += 1) {
+        await store.claimNext({ kinds: [{ kind: REFRESH.kind, leaseSeconds: 60 }], asOf: clock.now() });
+        vi.setSystemTime(Date.now() + 61_000);
+      }
+      await otherRuntime.drain({ maxJobs: 1 });
+      // A lease-expired dead-letter has no attempt's own error to report — the hook gets null.
+      expect(syntheticCalls).toEqual([{ errorMessage: null }]);
+    });
   });
 
   describe("retry backoff schedule", () => {
@@ -793,6 +825,23 @@ describe("BackgroundJobRuntime", () => {
         metadata: expect.objectContaining({ kind: "test.short", hookError: "Error" }),
       });
       expect(JSON.stringify(errorReporter.report.mock.calls)).not.toContain("SENTINEL");
+    });
+
+    it("carries the underlying error's own message separately from the stored summary", async () => {
+      const realErrorCalls: { error: string; errorMessage: string | null }[] = [];
+      const onAttemptFailedReal = vi.fn(async (_payload: unknown, context: { error: string; errorMessage: string | null }) => {
+        realErrorCalls.push({ error: context.error, errorMessage: context.errorMessage });
+      });
+      const { queue, runtime } = setup([
+        backgroundJobHandler(REFRESH, async () => {
+          throw new Error("provider said SENTINEL-detail-789");
+        }, { onAttemptFailed: onAttemptFailedReal }),
+      ]);
+      await queue.enqueue(backgroundJobRequest(REFRESH, { subjectId: "s1" }));
+
+      await runtime.drain({ maxJobs: 1 });
+
+      expect(realErrorCalls).toEqual([{ error: "Error", errorMessage: "provider said SENTINEL-detail-789" }]);
     });
   });
 

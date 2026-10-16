@@ -98,28 +98,51 @@ helpers and the shared chat message limit from `app/http`
 - `backend/src/app/http/routes/publicVoiceSessionRoute.ts` — mounts
   `POST /api/v1/public/chat/:token/voice/sessions` on the public chat router,
   behind the router's public session check (launch token, website embed
-  origin, signed visitor session) and `publicVoiceSessionStartRateLimiters`,
-  and maps `VoiceSessionStartResult` to HTTP.
+  origin, signed visitor session), a website-embed-only check, and
+  `publicVoiceSessionStartRateLimiter`
+  (`app/http/middleware/publicVoiceSessionRateLimiter.ts`), and maps
+  `VoiceSessionStartResult` to HTTP. A page on another origin reaches it
+  through the frontend proxy `frontend/app/api/public/chat/[token]/voice/sessions/route.ts`,
+  which answers the CORS preflight.
 
 ## Decisions to keep
 
-- **Session start.** The voice domain owns two ports: `VoiceSessionStarter`
+- **Session start.** The voice domain owns the ports: `VoiceSessionStarter`
   (`startSession({ vendorAgentId, credential })` → `{ signedUrl, expiresAt? }`,
-  one adapter per vendor) and `VoiceVendorCredentialReader`
-  (`read({ workspaceId, vendor })` → `{ apiKey } | null`). The key lives in
-  the workspace credential store (`workspace_provider_credentials`, the same
-  encryption, audit events and redaction as the model provider keys, written
-  through `PUT /api/v1/settings/credentials/elevenlabs`); composition hands
-  the reader the store's `getApiKey`, and there is no deployment fallback, so a
-  workspace without its own key gets `credential_missing`. A start needs
-  `voice.enabled` and a bound `voice.runtime`; otherwise it is `unavailable`
-  (404). The vendor list is `VOICE_VENDORS` in `shared/domain/voiceVendor.ts`,
-  which the runtime binding, the credential store and the starters share. The
-  route answers `409 voice_vendor_credential_missing` or
-  `voice_vendor_credential_unreadable`, and `502 voice_vendor_unavailable`,
-  each with `details.vendor`; the response carries `Cache-Control: no-store`.
-  The minted session key is not stored: the first turn binds it, as with a
-  key the page mints itself.
+  one adapter per vendor), `VoiceVendorCredentialReader`
+  (`read({ workspaceId, vendor })` → `present`, `missing` or `unreadable`;
+  it rejects only when the store cannot be read), and the start registry
+  (`VoiceSessionStartRegistry` and `VoiceSessionStartLookup`, implemented by
+  `VoiceSessionRepository`). The key lives in the workspace credential store
+  (`workspace_provider_credentials`, the same encryption, audit events and
+  redaction as the model provider keys, written through
+  `PUT /api/v1/settings/credentials/elevenlabs`); composition adapts the
+  store's `getApiKey`, and there is no deployment fallback. A start needs a
+  website embed public session, `voice.enabled` and a bound `voice.runtime`;
+  otherwise it is a 404. Every other failure (no key, an unreadable key, a
+  store or registry that cannot be reached, a vendor that refuses or does not
+  answer) is one `503 voice_unavailable` with no detail, and the outcome label
+  and the warn log say which. The vendor list is `VOICE_VENDORS` in
+  `shared/domain/voiceVendor.ts`, which the runtime binding, the credential
+  store and the starters share. Starts spend their own budgets before the
+  vendor call: per visitor session (signed public session id plus request
+  source) and per workspace, `PUBLIC_VOICE_SESSION_START_*` in `env.ts`.
+- **The signed URL is a bearer credential.** An ElevenLabs signed URL is valid
+  for 15 minutes and opens sessions for whoever holds it until then, so it
+  goes only to the page that asked, with `Cache-Control: no-store`, and never
+  into a log, metric or row. The ElevenLabs starter follows no redirect, reads
+  at most 16 KB, and returns only a `wss://` URL on an allow-listed host
+  (`api.elevenlabs.io`).
+- **The session key is a correlation handle.** The start mints it (a UUID) and
+  records it in `voice_sessions` with the visitor's public session and visitor
+  key until `VOICE_BEHAVIOR.sessionStartTtlMs` (15 minutes); the session's
+  first turn reads that visitor and passes its grouping key (the visitor key,
+  else the public session id, as the embed's chat does) to chat, so the call
+  joins the website visitor, then binds the conversation onto the same row. It
+  grants nothing: the completions route still admits only the REST
+  credential, and a key the page mints itself works the same and joins no
+  visitor. An agent's starts whose first turn never came are deleted at its
+  next start.
 - **Not in OpenAPI.** The completions route speaks a vendor-owned wire format,
   OpenAI chat completions as voice runtimes call it, not Radioso's API
   contract, so it has no operation in `openApiPaths.ts` and no SDK method; it is
@@ -334,9 +357,10 @@ helpers and the shared chat message limit from `app/http`
   again on the next report of the same reply, where the mark is idempotent,
   and the log line and the metric follow the recorded note. The stored reply
   keeps its full text.
-- **ElevenLabs session key.** ElevenLabs sends no conversation id; the page
-  that starts the session mints `session_key` and passes it as the custom LLM
-  extra body, which arrives as `elevenlabs_extra_body.session_key`. Dynamic
+- **ElevenLabs session key.** ElevenLabs sends no conversation id; Radioso's
+  session start or the page that starts the session mints `session_key`, and
+  the page passes it as the custom LLM extra body, which arrives as
+  `elevenlabs_extra_body.session_key`. Dynamic
   variables inside the extra body are not interpolated.
 - **Disconnects** follow the REST agent channel: the turn keeps running after
   the vendor hangs up, and is aborted only past the post-disconnect ceiling.
@@ -370,11 +394,13 @@ turn itself.
 A session start records `voice_session_start_total` (`vendor`: the bound
 vendor or `none`; `outcome`: `started`, `agent_not_found`, `voice_off`,
 `no_runtime`, `credential_missing`, `credential_unreadable`,
-`vendor_failed`). It logs `Voice vendor refused the session start` at warn
-with `workspaceId`, `agentId`, `vendor`, `errorClass`, and the vendor's
-`reason` and `vendorStatus` when it answered, and `Voice session start could
-not read the vendor credential` at warn with the same ids. Never the key or
-the signed URL. Credential writes are audited by the credential store
+`credential_read_failed`, `registration_failed`, `vendor_failed`). A start
+that fails logs `Voice session start failed` at warn with `workspaceId`,
+`agentId`, `vendor` and `outcome`, plus `errorClass` when something threw and
+the vendor's `reason` and `vendorStatus` when it answered. A first turn whose
+start cannot be read logs `Voice session start could not be read; the turn
+runs without its visitor` at warn with `agentId`, `vendor` and `errorClass`.
+Never the key, the signed URL or the session key. Credential writes are audited by the credential store
 (`workspace_provider_credentials.set` and `.remove`, `metadata.provider`).
 
 The policy records `voice_turn_first_speech_ms` (histogram, `bridged`),

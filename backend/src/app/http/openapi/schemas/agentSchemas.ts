@@ -13,6 +13,7 @@ import {
   AGENT_MECHANICS_REPLIES_MAX_LOCALES,
   agentMechanicsRepliesSchema,
   agentSurfacePositions,
+  agentVoiceSettingsInputSchema,
   agentVoiceSettingsSchema,
   authoredDirectiveRouteValues,
   authoredDirectiveSurfaceValues,
@@ -125,6 +126,15 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
         + "(at most 10 each); each style holds at most 5 lines of 1 to 200 characters. `runtime` binds the agent to one "
         + "vendor agent (the vendor's own agent id, 1 to 128 letters, digits, underscores and hyphens), which a voice "
         + "session start opens; null binds none. An update replaces the block whole.",
+    }),
+  );
+
+  const AgentVoiceSettingsUpdateSchema = registry.register(
+    "AgentVoiceSettingsUpdate",
+    agentVoiceSettingsInputSchema.openapi({
+      description:
+        "The `voice` block as an update sends it: `AgentVoiceSettings`, except that `runtime` may be left out, "
+        + "which binds the agent to no vendor agent. The update replaces the block whole.",
     }),
   );
 
@@ -244,7 +254,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       greetingInstruction: z.string().max(200).optional(),
       assistantDefaultLocale: z.string().max(35).nullable().optional(),
       proactiveGreetingEnabled: z.boolean().optional(),
-      voice: AgentVoiceSettingsSchema.optional(),
+      voice: AgentVoiceSettingsUpdateSchema.optional(),
       mechanicsReplies: AgentMechanicsRepliesSchema.optional(),
       publicDescription: z.string().max(500).optional(),
       agentCardEnabled: z.boolean().optional(),
@@ -729,10 +739,13 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     z.object({
       vendor: z.enum(VOICE_VENDORS).openapi({ description: "The voice runtime the session opens on: the agent's `voice.runtime.vendor`." }),
       signedUrl: z.string().url().openapi({
-        description: "The vendor's URL that opens one session on the agent's vendor agent. Hand it to the vendor's client before `expiresAt`; never store or log it.",
+        description: "The vendor's URL for opening a session on the agent's vendor agent. On `elevenlabs` it is valid for 15 minutes and is not limited to one session: "
+          + "for that window anyone holding it can open sessions billed to the workspace's vendor account, so treat it as a bearer credential. "
+          + "Hand it to the vendor's client once and never store, log or share it.",
       }),
       sessionKey: z.string().uuid().openapi({
-        description: "Radioso's key for this session. The page hands it to the vendor, which sends it back on every turn so the whole call is one conversation; on `elevenlabs` it travels as the custom LLM extra body's `session_key`.",
+        description: "Radioso's key for this session: a correlation handle, not a credential. The page hands it to the vendor, which sends it back on every turn "
+          + "so the whole call is one conversation that joins the website visitor who started it; on `elevenlabs` it travels as the custom LLM extra body's `session_key`.",
       }),
       locale: z.string().openapi({ description: "The caller's language tag: the request's, else the agent's default language, else `en`. The page hands it to the vendor beside `sessionKey`." }),
       expiresAt: z.string().datetime().optional().openapi({ description: "When `signedUrl` stops opening sessions, when the vendor states it." }),

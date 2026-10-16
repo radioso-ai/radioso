@@ -2121,7 +2121,7 @@ components:
               type: string
             launcherPosition:
               type: string
-              enum: &a14
+              enum: &a15
                 - bottom-right
                 - bottom-left
             theme:
@@ -2268,7 +2268,7 @@ components:
           properties:
             vendor:
               type: string
-              enum: &a29
+              enum: &a14
                 - elevenlabs
             agentId:
               type: string
@@ -2278,12 +2278,68 @@ components:
           required:
             - vendor
             - agentId
+          additionalProperties: false
       required:
         - enabled
         - bridgeLines
         - fallbackLine
         - runtime
       description: How the agent sounds on the voice channel. `bridgeLines` and `fallbackLine` are keyed by language tag (at most 10 each); each style holds at most 5 lines of 1 to 200 characters. `runtime` binds the agent to one vendor agent (the vendor's own agent id, 1 to 128 letters, digits, underscores and hyphens), which a voice session start opens; null binds none. An update replaces the block whole.
+    AgentVoiceSettingsUpdate:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        bridgeLines:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              acknowledge:
+                type: array
+                items:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                maxItems: 5
+              check:
+                type: array
+                items:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                maxItems: 5
+            required:
+              - acknowledge
+              - check
+        fallbackLine:
+          type: object
+          additionalProperties:
+            type: string
+            minLength: 1
+            maxLength: 200
+        runtime:
+          type:
+            - object
+            - "null"
+          properties:
+            vendor:
+              type: string
+              enum: *a14
+            agentId:
+              type: string
+              minLength: 1
+              maxLength: 128
+              pattern: ^[A-Za-z0-9_-]+$
+          required:
+            - vendor
+            - agentId
+          additionalProperties: false
+      required:
+        - enabled
+        - bridgeLines
+        - fallbackLine
+      description: "The `voice` block as an update sends it: `AgentVoiceSettings`, except that `runtime` may be left out, which binds the agent to no vendor agent. The update replaces the block whole."
     AgentMechanicsReplies:
       type: object
       additionalProperties:
@@ -2584,7 +2640,7 @@ components:
         proactiveGreetingEnabled:
           type: boolean
         voice:
-          $ref: "#/components/schemas/AgentVoiceSettings"
+          $ref: "#/components/schemas/AgentVoiceSettingsUpdate"
         mechanicsReplies:
           $ref: "#/components/schemas/AgentMechanicsReplies"
         publicDescription:
@@ -2652,7 +2708,7 @@ components:
                   maxLength: 80
                 launcherPosition:
                   type: string
-                  enum: *a14
+                  enum: *a15
                 theme:
                   type: object
                   properties:
@@ -3737,7 +3793,7 @@ components:
               type: integer
             reentryMode:
               type: string
-              enum: &a16
+              enum: &a17
                 - once_per_conversation
                 - always
                 - semantic
@@ -3749,7 +3805,7 @@ components:
                   type: array
                   items:
                     type: string
-                    enum: &a17
+                    enum: &a18
                       - answered
                       - partial
                       - unanswered
@@ -3759,7 +3815,7 @@ components:
                   type: array
                   items:
                     type: string
-                    enum: &a18
+                    enum: &a19
                       - sufficient_evidence
                       - insufficient_evidence
                       - conflicting_evidence
@@ -3790,7 +3846,7 @@ components:
                 pattern: ^[A-Za-z_][A-Za-z0-9_]*$
               type:
                 type: string
-                enum: &a19
+                enum: &a20
                   - text
                   - number
                   - boolean
@@ -3816,7 +3872,7 @@ components:
               - required
               - ordinal
             additionalProperties: false
-          default: &a20 []
+          default: &a21 []
         steps:
           type: array
           items:
@@ -3829,7 +3885,7 @@ components:
                 pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
               kind:
                 type: string
-                enum: &a21
+                enum: &a22
                   - chat
                   - tool
                   - action
@@ -3917,10 +3973,10 @@ components:
                       pattern: ^[A-Za-z_][A-Za-z0-9_]*$
                   mode:
                     type: string
-                    enum: &a22
+                    enum: &a23
                       - typed
                       - untyped
-                default: &a23 {}
+                default: &a24 {}
               instruction:
                 type: string
                 minLength: 1
@@ -3974,7 +4030,7 @@ components:
                 pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
               guardKind:
                 type: string
-                enum: &a24
+                enum: &a25
                   - llm
                   - default
                   - slot_filled
@@ -4008,7 +4064,7 @@ components:
                 type:
                   - string
                   - "null"
-                enum: &a25
+                enum: &a26
                   - is_true
                   - is_false
                   - equals
@@ -4046,7 +4102,7 @@ components:
                 type:
                   - string
                   - "null"
-                enum: &a26
+                enum: &a27
                   - days
                   - weeks
                   - months
@@ -4060,7 +4116,7 @@ components:
               - guardKind
               - ordinal
             additionalProperties: false
-          default: &a27 []
+          default: &a28 []
         terminals:
           type: array
           items:
@@ -4073,7 +4129,7 @@ components:
                 pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
               kind:
                 type: string
-                enum: &a15
+                enum: &a16
                   - complete
                   - handoff
               instruction:
@@ -4127,8 +4183,8 @@ components:
               type: array
               items:
                 type: string
-                enum: *a15
-              default: &a28 []
+                enum: *a16
+              default: &a29 []
             destinationRef:
               type: string
               maxLength: 300
@@ -4190,7 +4246,7 @@ components:
                   type: integer
                 reentryMode:
                   type: string
-                  enum: *a16
+                  enum: *a17
                 coverageCriteria:
                   type: object
                   properties:
@@ -4198,13 +4254,13 @@ components:
                       type: array
                       items:
                         type: string
-                        enum: *a17
+                        enum: *a18
                       minItems: 1
                     reasons:
                       type: array
                       items:
                         type: string
-                        enum: *a18
+                        enum: *a19
                       minItems: 1
                   required:
                     - coverage
@@ -4230,7 +4286,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_]*$
                   type:
                     type: string
-                    enum: *a19
+                    enum: *a20
                   required:
                     type: boolean
                   description:
@@ -4251,7 +4307,7 @@ components:
                   - required
                   - ordinal
                 additionalProperties: false
-              default: *a20
+              default: *a21
             steps:
               type: array
               items:
@@ -4264,7 +4320,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
                   kind:
                     type: string
-                    enum: *a21
+                    enum: *a22
                   toolRef:
                     type:
                       - string
@@ -4348,8 +4404,8 @@ components:
                           pattern: ^[A-Za-z_][A-Za-z0-9_]*$
                       mode:
                         type: string
-                        enum: *a22
-                    default: *a23
+                        enum: *a23
+                    default: *a24
                   instruction:
                     type: string
                     minLength: 1
@@ -4403,7 +4459,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
                   guardKind:
                     type: string
-                    enum: *a24
+                    enum: *a25
                   guardText:
                     type:
                       - string
@@ -4431,7 +4487,7 @@ components:
                     type:
                       - string
                       - "null"
-                    enum: *a25
+                    enum: *a26
                   fieldValue:
                     anyOf:
                       - type: string
@@ -4456,7 +4512,7 @@ components:
                     type:
                       - string
                       - "null"
-                    enum: *a26
+                    enum: *a27
                   ordinal:
                     type: integer
                     minimum: 0
@@ -4466,7 +4522,7 @@ components:
                   - guardKind
                   - ordinal
                 additionalProperties: false
-              default: *a27
+              default: *a28
             terminals:
               type: array
               items:
@@ -4479,7 +4535,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
                   kind:
                     type: string
-                    enum: *a15
+                    enum: *a16
                   instruction:
                     type:
                       - string
@@ -4530,7 +4586,7 @@ components:
                   type: array
                   items:
                     type: string
-                    enum: *a15
+                    enum: *a16
                 destinationRef:
                   type: string
                   maxLength: 300
@@ -4655,7 +4711,7 @@ components:
               type: integer
             reentryMode:
               type: string
-              enum: *a16
+              enum: *a17
               default: once_per_conversation
             coverageCriteria:
               type: object
@@ -4664,13 +4720,13 @@ components:
                   type: array
                   items:
                     type: string
-                    enum: *a17
+                    enum: *a18
                   minItems: 1
                 reasons:
                   type: array
                   items:
                     type: string
-                    enum: *a18
+                    enum: *a19
                   minItems: 1
               required:
                 - coverage
@@ -4696,7 +4752,7 @@ components:
                 pattern: ^[A-Za-z_][A-Za-z0-9_]*$
               type:
                 type: string
-                enum: *a19
+                enum: *a20
               required:
                 type: boolean
               description:
@@ -4717,7 +4773,7 @@ components:
               - required
               - ordinal
             additionalProperties: false
-          default: *a20
+          default: *a21
         steps:
           type: array
           items:
@@ -4730,7 +4786,7 @@ components:
                 pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
               kind:
                 type: string
-                enum: *a21
+                enum: *a22
               toolRef:
                 type:
                   - string
@@ -4814,8 +4870,8 @@ components:
                       pattern: ^[A-Za-z_][A-Za-z0-9_]*$
                   mode:
                     type: string
-                    enum: *a22
-                default: *a23
+                    enum: *a23
+                default: *a24
               instruction:
                 type: string
                 minLength: 1
@@ -4869,7 +4925,7 @@ components:
                 pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
               guardKind:
                 type: string
-                enum: *a24
+                enum: *a25
               guardText:
                 type:
                   - string
@@ -4897,7 +4953,7 @@ components:
                 type:
                   - string
                   - "null"
-                enum: *a25
+                enum: *a26
               fieldValue:
                 anyOf:
                   - type: string
@@ -4922,7 +4978,7 @@ components:
                 type:
                   - string
                   - "null"
-                enum: *a26
+                enum: *a27
               ordinal:
                 type: integer
                 minimum: 0
@@ -4932,7 +4988,7 @@ components:
               - guardKind
               - ordinal
             additionalProperties: false
-          default: *a27
+          default: *a28
         terminals:
           type: array
           items:
@@ -4945,7 +5001,7 @@ components:
                 pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
               kind:
                 type: string
-                enum: *a15
+                enum: *a16
               instruction:
                 type:
                   - string
@@ -4997,8 +5053,8 @@ components:
               type: array
               items:
                 type: string
-                enum: *a15
-              default: *a28
+                enum: *a16
+              default: *a29
             destinationRef:
               type: string
               maxLength: 300
@@ -5113,7 +5169,7 @@ components:
                   type: integer
                 reentryMode:
                   type: string
-                  enum: *a16
+                  enum: *a17
                   default: once_per_conversation
                 coverageCriteria:
                   type: object
@@ -5122,13 +5178,13 @@ components:
                       type: array
                       items:
                         type: string
-                        enum: *a17
+                        enum: *a18
                       minItems: 1
                     reasons:
                       type: array
                       items:
                         type: string
-                        enum: *a18
+                        enum: *a19
                       minItems: 1
                   required:
                     - coverage
@@ -5154,7 +5210,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_]*$
                   type:
                     type: string
-                    enum: *a19
+                    enum: *a20
                   required:
                     type: boolean
                   description:
@@ -5175,7 +5231,7 @@ components:
                   - required
                   - ordinal
                 additionalProperties: false
-              default: *a20
+              default: *a21
             steps:
               type: array
               items:
@@ -5188,7 +5244,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
                   kind:
                     type: string
-                    enum: *a21
+                    enum: *a22
                   toolRef:
                     type:
                       - string
@@ -5272,8 +5328,8 @@ components:
                           pattern: ^[A-Za-z_][A-Za-z0-9_]*$
                       mode:
                         type: string
-                        enum: *a22
-                    default: *a23
+                        enum: *a23
+                    default: *a24
                   instruction:
                     type: string
                     minLength: 1
@@ -5327,7 +5383,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
                   guardKind:
                     type: string
-                    enum: *a24
+                    enum: *a25
                   guardText:
                     type:
                       - string
@@ -5355,7 +5411,7 @@ components:
                     type:
                       - string
                       - "null"
-                    enum: *a25
+                    enum: *a26
                   fieldValue:
                     anyOf:
                       - type: string
@@ -5380,7 +5436,7 @@ components:
                     type:
                       - string
                       - "null"
-                    enum: *a26
+                    enum: *a27
                   ordinal:
                     type: integer
                     minimum: 0
@@ -5390,7 +5446,7 @@ components:
                   - guardKind
                   - ordinal
                 additionalProperties: false
-              default: *a27
+              default: *a28
             terminals:
               type: array
               items:
@@ -5403,7 +5459,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
                   kind:
                     type: string
-                    enum: *a15
+                    enum: *a16
                   instruction:
                     type:
                       - string
@@ -5455,8 +5511,8 @@ components:
                   type: array
                   items:
                     type: string
-                    enum: *a15
-                  default: *a28
+                    enum: *a16
+                  default: *a29
                 destinationRef:
                   type: string
                   maxLength: 300
@@ -5777,16 +5833,16 @@ components:
       properties:
         vendor:
           type: string
-          enum: *a29
+          enum: *a14
           description: "The voice runtime the session opens on: the agent's `voice.runtime.vendor`."
         signedUrl:
           type: string
           format: uri
-          description: The vendor's URL that opens one session on the agent's vendor agent. Hand it to the vendor's client before `expiresAt`; never store or log it.
+          description: "The vendor's URL for opening a session on the agent's vendor agent. On `elevenlabs` it is valid for 15 minutes and is not limited to one session: for that window anyone holding it can open sessions billed to the workspace's vendor account, so treat it as a bearer credential. Hand it to the vendor's client once and never store, log or share it."
         sessionKey:
           type: string
           format: uuid
-          description: Radioso's key for this session. The page hands it to the vendor, which sends it back on every turn so the whole call is one conversation; on `elevenlabs` it travels as the custom LLM extra body's `session_key`.
+          description: "Radioso's key for this session: a correlation handle, not a credential. The page hands it to the vendor, which sends it back on every turn so the whole call is one conversation that joins the website visitor who started it; on `elevenlabs` it travels as the custom LLM extra body's `session_key`."
         locale:
           type: string
           description: "The caller's language tag: the request's, else the agent's default language, else `en`. The page hands it to the vendor beside `sessionKey`."
@@ -6173,7 +6229,7 @@ components:
                   type: string
                 launcherPosition:
                   type: string
-                  enum: *a14
+                  enum: *a15
                 theme:
                   type: object
                   properties:
@@ -6297,7 +6353,7 @@ components:
                   type: integer
                 reentryMode:
                   type: string
-                  enum: *a16
+                  enum: *a17
                   default: once_per_conversation
                 coverageCriteria:
                   type: object
@@ -6306,13 +6362,13 @@ components:
                       type: array
                       items:
                         type: string
-                        enum: *a17
+                        enum: *a18
                       minItems: 1
                     reasons:
                       type: array
                       items:
                         type: string
-                        enum: *a18
+                        enum: *a19
                       minItems: 1
                   required:
                     - coverage
@@ -6338,7 +6394,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_]*$
                   type:
                     type: string
-                    enum: *a19
+                    enum: *a20
                   required:
                     type: boolean
                   description:
@@ -6359,7 +6415,7 @@ components:
                   - required
                   - ordinal
                 additionalProperties: false
-              default: *a20
+              default: *a21
             steps:
               type: array
               items:
@@ -6372,7 +6428,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
                   kind:
                     type: string
-                    enum: *a21
+                    enum: *a22
                   toolRef:
                     type:
                       - string
@@ -6456,8 +6512,8 @@ components:
                           pattern: ^[A-Za-z_][A-Za-z0-9_]*$
                       mode:
                         type: string
-                        enum: *a22
-                    default: *a23
+                        enum: *a23
+                    default: *a24
                   instruction:
                     type: string
                     minLength: 1
@@ -6511,7 +6567,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
                   guardKind:
                     type: string
-                    enum: *a24
+                    enum: *a25
                   guardText:
                     type:
                       - string
@@ -6539,7 +6595,7 @@ components:
                     type:
                       - string
                       - "null"
-                    enum: *a25
+                    enum: *a26
                   fieldValue:
                     anyOf:
                       - type: string
@@ -6564,7 +6620,7 @@ components:
                     type:
                       - string
                       - "null"
-                    enum: *a26
+                    enum: *a27
                   ordinal:
                     type: integer
                     minimum: 0
@@ -6574,7 +6630,7 @@ components:
                   - guardKind
                   - ordinal
                 additionalProperties: false
-              default: *a27
+              default: *a28
             terminals:
               type: array
               items:
@@ -6587,7 +6643,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
                   kind:
                     type: string
-                    enum: *a15
+                    enum: *a16
                   instruction:
                     type:
                       - string
@@ -6639,8 +6695,8 @@ components:
                   type: array
                   items:
                     type: string
-                    enum: *a15
-                  default: *a28
+                    enum: *a16
+                  default: *a29
                 destinationRef:
                   type: string
                   maxLength: 300
@@ -6978,7 +7034,7 @@ components:
                   type: string
                 launcherPosition:
                   type: string
-                  enum: *a14
+                  enum: *a15
                 theme:
                   type: object
                   properties:
@@ -11566,7 +11622,7 @@ components:
           type: string
         type:
           type: string
-          enum: *a19
+          enum: *a20
         required:
           type: boolean
         description:
@@ -37654,7 +37710,7 @@ paths:
       tags:
         - Assistant
       summary: Start a voice session for the current public chat session
-      description: Opens a session on the vendor agent the agent's `voice.runtime` names, with the workspace's own API key for that vendor, and returns the vendor's signed URL with a fresh Radioso session key. The key never leaves the backend. Send the public session as `x-radioso-public-session`, from an origin the website embed admits, as for a chat message.
+      description: "Opens a session on the vendor agent the agent's `voice.runtime` names, with the workspace's own API key for that vendor, and returns the vendor's signed URL with a fresh Radioso session key. The vendor key never leaves the backend. Only a website embed public session may start one: send it as `x-radioso-public-session`, from an origin the website embed admits, as for a chat message. A browser on another origin calls `/api/public/chat/{token}/voice/sessions` on the Radioso app host, which answers the CORS preflight and relays here. The signed URL is valid for 15 minutes and opens sessions for whoever holds it in that window, so it is a bearer credential: the response is `Cache-Control: no-store`. Starts spend their own budgets, per visitor session and per workspace, before the vendor is called."
       operationId: createPublicVoiceSession
       security:
         - anonymousSessionCookie: []
@@ -37684,25 +37740,19 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
-          description: "Public session not found, or the agent takes no voice sessions: voice is off or no vendor agent is bound"
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ErrorResponse"
-        "409":
-          description: "The workspace holds no readable API key for the agent's voice vendor: `voice_vendor_credential_missing` or `voice_vendor_credential_unreadable`, with `details.vendor`"
+          description: "Public session not found or not a website embed session, or the agent takes no voice sessions: voice is off or no vendor agent is bound"
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
         "429":
-          description: Voice session start rate limit exceeded
+          description: The visitor session's or the workspace's voice session start budget is spent
           content:
             application/json:
               schema:
                 $ref: "#/components/schemas/RateLimitExceededResponse"
-        "502":
-          description: "The voice vendor did not start the session: `voice_vendor_unavailable`, with `details.vendor`"
+        "503":
+          description: "`voice_unavailable`: the session could not be started (the workspace's vendor key is missing or unreadable, or the vendor did not start it)"
           content:
             application/json:
               schema:

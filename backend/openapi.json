@@ -3400,7 +3400,8 @@
             "required": [
               "vendor",
               "agentId"
-            ]
+            ],
+            "additionalProperties": false
           }
         },
         "required": [
@@ -3410,6 +3411,83 @@
           "runtime"
         ],
         "description": "How the agent sounds on the voice channel. `bridgeLines` and `fallbackLine` are keyed by language tag (at most 10 each); each style holds at most 5 lines of 1 to 200 characters. `runtime` binds the agent to one vendor agent (the vendor's own agent id, 1 to 128 letters, digits, underscores and hyphens), which a voice session start opens; null binds none. An update replaces the block whole."
+      },
+      "AgentVoiceSettingsUpdate": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "bridgeLines": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "acknowledge": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "maxItems": 5
+                },
+                "check": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200
+                  },
+                  "maxItems": 5
+                }
+              },
+              "required": [
+                "acknowledge",
+                "check"
+              ]
+            }
+          },
+          "fallbackLine": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "runtime": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "vendor": {
+                "type": "string",
+                "enum": [
+                  "elevenlabs"
+                ]
+              },
+              "agentId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              }
+            },
+            "required": [
+              "vendor",
+              "agentId"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "enabled",
+          "bridgeLines",
+          "fallbackLine"
+        ],
+        "description": "The `voice` block as an update sends it: `AgentVoiceSettings`, except that `runtime` may be left out, which binds the agent to no vendor agent. The update replaces the block whole."
       },
       "AgentMechanicsReplies": {
         "type": "object",
@@ -3837,7 +3915,7 @@
             "type": "boolean"
           },
           "voice": {
-            "$ref": "#/components/schemas/AgentVoiceSettings"
+            "$ref": "#/components/schemas/AgentVoiceSettingsUpdate"
           },
           "mechanicsReplies": {
             "$ref": "#/components/schemas/AgentMechanicsReplies"
@@ -8571,12 +8649,12 @@
           "signedUrl": {
             "type": "string",
             "format": "uri",
-            "description": "The vendor's URL that opens one session on the agent's vendor agent. Hand it to the vendor's client before `expiresAt`; never store or log it."
+            "description": "The vendor's URL for opening a session on the agent's vendor agent. On `elevenlabs` it is valid for 15 minutes and is not limited to one session: for that window anyone holding it can open sessions billed to the workspace's vendor account, so treat it as a bearer credential. Hand it to the vendor's client once and never store, log or share it."
           },
           "sessionKey": {
             "type": "string",
             "format": "uuid",
-            "description": "Radioso's key for this session. The page hands it to the vendor, which sends it back on every turn so the whole call is one conversation; on `elevenlabs` it travels as the custom LLM extra body's `session_key`."
+            "description": "Radioso's key for this session: a correlation handle, not a credential. The page hands it to the vendor, which sends it back on every turn so the whole call is one conversation that joins the website visitor who started it; on `elevenlabs` it travels as the custom LLM extra body's `session_key`."
           },
           "locale": {
             "type": "string",
@@ -58302,7 +58380,7 @@
           "Assistant"
         ],
         "summary": "Start a voice session for the current public chat session",
-        "description": "Opens a session on the vendor agent the agent's `voice.runtime` names, with the workspace's own API key for that vendor, and returns the vendor's signed URL with a fresh Radioso session key. The key never leaves the backend. Send the public session as `x-radioso-public-session`, from an origin the website embed admits, as for a chat message.",
+        "description": "Opens a session on the vendor agent the agent's `voice.runtime` names, with the workspace's own API key for that vendor, and returns the vendor's signed URL with a fresh Radioso session key. The vendor key never leaves the backend. Only a website embed public session may start one: send it as `x-radioso-public-session`, from an origin the website embed admits, as for a chat message. A browser on another origin calls `/api/public/chat/{token}/voice/sessions` on the Radioso app host, which answers the CORS preflight and relays here. The signed URL is valid for 15 minutes and opens sessions for whoever holds it in that window, so it is a bearer credential: the response is `Cache-Control: no-store`. Starts spend their own budgets, per visitor session and per workspace, before the vendor is called.",
         "operationId": "createPublicVoiceSession",
         "security": [
           {
@@ -58351,17 +58429,7 @@
             }
           },
           "404": {
-            "description": "Public session not found, or the agent takes no voice sessions: voice is off or no vendor agent is bound",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "The workspace holds no readable API key for the agent's voice vendor: `voice_vendor_credential_missing` or `voice_vendor_credential_unreadable`, with `details.vendor`",
+            "description": "Public session not found or not a website embed session, or the agent takes no voice sessions: voice is off or no vendor agent is bound",
             "content": {
               "application/json": {
                 "schema": {
@@ -58371,7 +58439,7 @@
             }
           },
           "429": {
-            "description": "Voice session start rate limit exceeded",
+            "description": "The visitor session's or the workspace's voice session start budget is spent",
             "content": {
               "application/json": {
                 "schema": {
@@ -58380,8 +58448,8 @@
               }
             }
           },
-          "502": {
-            "description": "The voice vendor did not start the session: `voice_vendor_unavailable`, with `details.vendor`",
+          "503": {
+            "description": "`voice_unavailable`: the session could not be started (the workspace's vendor key is missing or unreadable, or the vendor did not start it)",
             "content": {
               "application/json": {
                 "schema": {

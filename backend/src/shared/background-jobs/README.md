@@ -17,19 +17,21 @@ The substrate owns:
 
 - `defineBackgroundJob`: a kind's name, zod payload schema, duplicate-key mode
   (`onDuplicateKey`), and policy (`maxAttempts`, `leaseSeconds`,
-  `timeoutSeconds`, `retryBaseDelaySeconds`).
+  `timeoutSeconds`, `retryBaseDelaySeconds`, and optionally `retryDelaysSeconds`
+  — see Retries below).
 - `backgroundJobRequest`: a validated job to write, with an optional
   `idempotencyKey` and `runAfter`.
 - `backgroundJobHandler`: the function that runs one kind. It receives the
-  parsed payload and `{ jobId, attempt, signal }`, and takes an optional
-  `onDeadLetter` hook.
+  parsed payload and `{ jobId, attempt, signal }`, resolves with a
+  `BackgroundJobSkipped` to mean "done, but delivered nothing by design," and
+  takes optional `onAttemptFailed` and `onDeadLetter` hooks.
 - `BackgroundJobQueue`: the producer port. `enqueue` resolves once the job is
   stored and wakes a worker without the caller waiting on it;
   `enqueueInTransaction` writes inside the caller's transaction, and the caller
   calls `wake()` once that transaction commits.
 - `BackgroundJobRuntime`: claims a due job under a lease, runs its handler while
   renewing the lease, then deletes it, requeues it for a requested rerun,
-  retries it with a doubling backoff, or dead-letters it.
+  retries it with a doubling (or explicit) backoff, or dead-letters it.
 - `BackgroundJobStore` and `BackgroundJobWriter`: the ports the runtime and the
   queue write through.
 
@@ -74,12 +76,33 @@ Implementations live outside it, and application composition
   writes afterwards races the retry. Every complete, retry, and dead-letter
   write is fenced on the claim token. Handlers must be idempotent: a crash
   between a side effect and the job's deletion runs the job again.
-- **Retries.** A failed run returns to waiting after
-  `retryBaseDelaySeconds * 2^(attempt - 1)`, capped at an hour, and wakes a
-  worker for that time. `NonRetryableBackgroundJobError` dead-letters at once,
-  and so does a stored payload that no longer matches its schema. A job whose
-  every lease expired without finishing is dead-lettered on its next claim
-  past `maxAttempts`.
+- **Claim eligibility is fixed for a whole drain.** Every claim inside one
+  `drain()` call uses that call's start time, not a fresh clock read per claim.
+  A job this same call just retried (or a lease it just reclaimed) is not
+  eligible again until the next wake, poll tick, or recovery sweep, even when
+  its delay is as short as the facet queue's 1 s first step — so one drain
+  (especially a long recovery sweep) can never burn a job's whole retry budget
+  on itself.
+- **Retries.** A failed run returns to waiting after a delay the kind's policy
+  decides, and wakes a worker for that time. The default is doubling:
+  `retryBaseDelaySeconds * 2^(attempt - 1)`, capped at an hour — right for a
+  provider call whose transient failures cluster. A kind with its own retry
+  contract sets an explicit `retryDelaysSeconds` schedule instead (indexed by
+  attempt; the last entry repeats past the end of the list) — `[60]` for a flat
+  60 s backoff, `[1, 5, 15]` for a three-step one.
+  `NonRetryableBackgroundJobError` dead-letters at once, and so does a stored
+  payload that no longer matches its schema. A job whose every lease expired
+  without finishing is dead-lettered on its next claim past `maxAttempts`.
+- **Per-attempt failure hook.** `backgroundJobHandler(kind, handle, {
+  onAttemptFailed })` runs `onAttemptFailed(payload, { jobId, attempt,
+  idempotencyKey, error, transaction })` once per attempt the runtime is about
+  to retry — never the terminal attempt, which goes to `onDeadLetter` instead.
+  It runs inside the same write-back that reschedules the retry, fenced the
+  same way `onDeadLetter` is: an attempt whose claim was already taken over
+  never runs it, and a hook that throws rolls back with the reschedule, which
+  is then written again without it. Use it for bookkeeping that must track
+  every attempt, not just the kind's eventual outcome (for example, the
+  action outbox's per-attempt delivery telemetry).
 - **What a failure stores and reports.** `last_error` holds the error's class,
   plus an `AppError` code when there is one, for example
   `AppError [provider_unavailable]`. Never the message or stack, which can
@@ -103,6 +126,13 @@ Implementations live outside it, and application composition
   failure is reported by shape.
 - **Completion.** A completed job is deleted, because a payload can carry
   conversation identifiers or content.
+- **Skipped outcome.** A handler resolves `run` with `{ skipped: "reason" }`
+  to mean it ran to completion but a configured transport deliberately
+  delivered nothing — distinct from an ordinary completion in the drain result
+  and metrics (`outcome: "skipped"`), though the generic `background_jobs`
+  store has no distinct row state for it and just completes the job as usual.
+  A store backing a table with its own terminal "skipped" state (the action
+  outbox's `routine_action_requests.status`) records it there instead.
 
 ## Time Budget
 
@@ -158,10 +188,13 @@ each tick runs up to ten jobs, each under its own deadline.
    and add it to the handler list `backend/src/app/server/dependencies.ts`
    passes to `backgroundJobs.createRuntime`. The runtime refuses two handlers
    for one kind, and a worker claims only kinds it has handlers for. Let a
-   failure the job should retry reject; resolve only when the work is done or
-   deliberately skipped. When the module has to record that the work was given
-   up, pass `{ onDeadLetter: (payload, { idempotencyKey, transaction }) => … }`
-   as the third argument and write through `transaction`.
+   failure the job should retry reject; resolve with nothing when the work is
+   done, or `{ skipped: "reason" }` when it ran but a configured transport
+   deliberately delivered nothing. When the module has to record that the work
+   was given up, pass `{ onDeadLetter: (payload, { idempotencyKey, transaction
+   }) => … }` as the third argument and write through `transaction`; to track
+   every retried attempt (not just the eventual outcome), add `onAttemptFailed`
+   alongside it, with the same shape.
 
 4. Test the handler as business behaviour, and the producer's enqueue with a
    recording queue. `tests/support/inMemoryBackgroundJobStore.ts` gives runtime
@@ -172,7 +205,7 @@ No migration, route, queue, or schedule is needed per kind.
 ## Observability
 
 Every run records `background_jobs_total{kind,outcome}` (outcome `completed`,
-`requeued`, `retried`, `dead_lettered`, or `superseded`),
+`skipped`, `requeued`, `retried`, `dead_lettered`, or `superseded`),
 `background_job_run_duration_ms{kind,outcome}`, and
 `background_job_wait_ms{kind}`, a `background_job.run` span with the kind and
 attempt, and a log line with the job id, kind, attempt, outcome, duration, and

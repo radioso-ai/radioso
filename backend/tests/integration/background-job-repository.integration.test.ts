@@ -99,7 +99,7 @@ describeIntegration("BackgroundJobRepository (Postgres)", () => {
     const id = await insert("s1", { runAfter: future });
 
     expect(await row(id)).toMatchObject({ status: "pending", attempts: 0, payload: { subjectId: "s1" } });
-    expect(await repository.claimNext({ kinds: KINDS })).toBeNull();
+    expect(await repository.claimNext({ kinds: KINDS, asOf: new Date() })).toBeNull();
   });
 
   it("folds a duplicate key into a live job, and accepts the key again once that job is gone", async () => {
@@ -107,7 +107,7 @@ describeIntegration("BackgroundJobRepository (Postgres)", () => {
     expect(await repository.insert(backgroundJobRequest(REFRESH, { subjectId: "s1" }, { idempotencyKey: "s1" })))
       .toEqual({ inserted: false });
 
-    const claim = await repository.claimNext({ kinds: KINDS });
+    const claim = await repository.claimNext({ kinds: KINDS, asOf: new Date() });
     expect(claim?.id).toBe(id);
     // The same key under another kind is unrelated work.
     expect((await repository.insert(backgroundJobRequest(EVENT, { subjectId: "s1" }, { idempotencyKey: "s1" }))).inserted)
@@ -120,7 +120,7 @@ describeIntegration("BackgroundJobRepository (Postgres)", () => {
 
   it("lets a dead-lettered key be enqueued again", async () => {
     await insert("s1", { idempotencyKey: "s1" });
-    const claim = await repository.claimNext({ kinds: KINDS });
+    const claim = await repository.claimNext({ kinds: KINDS, asOf: new Date() });
     expect(await repository.deadLetter(claim!, { error: "Error" })).toBe(true);
 
     expect((await repository.insert(backgroundJobRequest(REFRESH, { subjectId: "s1" }, { idempotencyKey: "s1" }))).inserted)
@@ -132,7 +132,7 @@ describeIntegration("BackgroundJobRepository (Postgres)", () => {
     const older = await insert("older", { runAfter: new Date(Date.now() - 60_000) });
     await insert("newer");
 
-    const claim = await repository.claimNext({ kinds: KINDS });
+    const claim = await repository.claimNext({ kinds: KINDS, asOf: new Date() });
 
     expect(claim).toMatchObject({ id: older, kind: REFRESH.kind, attempt: 1, payload: { subjectId: "older" } });
     const stored = await row(older);
@@ -143,7 +143,7 @@ describeIntegration("BackgroundJobRepository (Postgres)", () => {
   it("never hands the same job to two concurrent claimers", async () => {
     const ids = await Promise.all(Array.from({ length: 20 }, (_, index) => insert(`s${index}`)));
 
-    const claims = await Promise.all(Array.from({ length: 30 }, () => repository.claimNext({ kinds: KINDS })));
+    const claims = await Promise.all(Array.from({ length: 30 }, () => repository.claimNext({ kinds: KINDS, asOf: new Date() })));
 
     const claimedIds = claims.flatMap((claim) => (claim ? [claim.id] : []));
     expect(claimedIds).toHaveLength(20);
@@ -158,7 +158,7 @@ describeIntegration("BackgroundJobRepository (Postgres)", () => {
       await client.query("BEGIN");
       await client.query("SELECT id FROM background_jobs WHERE id = $1 FOR UPDATE", [locked]);
 
-      const claim = await repository.claimNext({ kinds: KINDS });
+      const claim = await repository.claimNext({ kinds: KINDS, asOf: new Date() });
 
       expect(claim?.id).toBe(free);
       await client.query("ROLLBACK");
@@ -169,25 +169,25 @@ describeIntegration("BackgroundJobRepository (Postgres)", () => {
 
   it("renews a live claim's lease, and refuses a claim that was taken over", async () => {
     const id = await insert("s1");
-    const stale = await repository.claimNext({ kinds: KINDS });
+    const stale = await repository.claimNext({ kinds: KINDS, asOf: new Date() });
     await database.query("UPDATE background_jobs SET lease_expires_at = now() + interval '5 seconds' WHERE id = $1", [id]);
 
     expect(await repository.renewLease(stale!, { leaseSeconds: 60 })).toBe(true);
     expect((await row(id)).lease_expires_at!.getTime()).toBeGreaterThan(Date.now() + 50_000);
 
     await expireLease(id);
-    const fresh = await repository.claimNext({ kinds: KINDS });
+    const fresh = await repository.claimNext({ kinds: KINDS, asOf: new Date() });
     expect(fresh).toMatchObject({ id, attempt: 2 });
     expect(await repository.renewLease(stale!, { leaseSeconds: 60 })).toBe(false);
   });
 
   it("reclaims a job whose lease expired and fences the stale claim out of every write", async () => {
     const id = await insert("s1");
-    const stale = await repository.claimNext({ kinds: KINDS });
-    expect(await repository.claimNext({ kinds: KINDS })).toBeNull();
+    const stale = await repository.claimNext({ kinds: KINDS, asOf: new Date() });
+    expect(await repository.claimNext({ kinds: KINDS, asOf: new Date() })).toBeNull();
 
     await expireLease(id);
-    const fresh = await repository.claimNext({ kinds: KINDS });
+    const fresh = await repository.claimNext({ kinds: KINDS, asOf: new Date() });
 
     expect(fresh).toMatchObject({ id, attempt: 2 });
     expect(fresh!.token).not.toBe(stale!.token);
@@ -199,7 +199,7 @@ describeIntegration("BackgroundJobRepository (Postgres)", () => {
 
   it("deletes a completed job", async () => {
     const id = await insert("s1");
-    const claim = await repository.claimNext({ kinds: KINDS });
+    const claim = await repository.claimNext({ kinds: KINDS, asOf: new Date() });
 
     expect(await repository.complete(claim!)).toBe("deleted");
     expect(await row(id)).toBeUndefined();
@@ -207,7 +207,7 @@ describeIntegration("BackgroundJobRepository (Postgres)", () => {
 
   it("returns a retried job to waiting after its delay, keeping the error", async () => {
     const id = await insert("s1");
-    const claim = await repository.claimNext({ kinds: KINDS });
+    const claim = await repository.claimNext({ kinds: KINDS, asOf: new Date() });
 
     const availableAt = await repository.retry(claim!, { error: "AppError [provider_unavailable]", delaySeconds: 30 });
 
@@ -219,12 +219,12 @@ describeIntegration("BackgroundJobRepository (Postgres)", () => {
       lease_expires_at: null,
       claim_token: null,
     });
-    expect(await repository.claimNext({ kinds: KINDS })).toBeNull();
+    expect(await repository.claimNext({ kinds: KINDS, asOf: new Date() })).toBeNull();
   });
 
   it("refuses to store an error longer than a class and a code", async () => {
     await insert("s1");
-    const claim = await repository.claimNext({ kinds: KINDS });
+    const claim = await repository.claimNext({ kinds: KINDS, asOf: new Date() });
 
     await expect(repository.retry(claim!, { error: "x".repeat(500), delaySeconds: 30 })).rejects.toThrow();
   });
@@ -233,7 +233,7 @@ describeIntegration("BackgroundJobRepository (Postgres)", () => {
     const receipt = await repository.insert(
       backgroundJobRequest(REFRESH, { subjectId: "SENTINEL-visitor-message" }, { idempotencyKey: "key-1" }),
     );
-    const claim = await repository.claimNext({ kinds: KINDS });
+    const claim = await repository.claimNext({ kinds: KINDS, asOf: new Date() });
     expect(claim).toMatchObject({ idempotencyKey: "key-1", payload: { subjectId: "SENTINEL-visitor-message" } });
 
     expect(await repository.deadLetter(claim!, { error: "Error" })).toBe(true);
@@ -254,7 +254,7 @@ describeIntegration("BackgroundJobRepository (Postgres)", () => {
 
   it("commits a dead-letter hook's writes with the park, and rolls both back when the hook throws", async () => {
     const id = await insert("s1", { idempotencyKey: "s1" });
-    const claim = await repository.claimNext({ kinds: KINDS });
+    const claim = await repository.claimNext({ kinds: KINDS, asOf: new Date() });
     const markerCount = async () =>
       Number((await database.query<{ count: string }>("SELECT count(*) AS count FROM background_jobs WHERE kind = 'test.event'"))[0].count);
 
@@ -274,9 +274,9 @@ describeIntegration("BackgroundJobRepository (Postgres)", () => {
 
   it("never runs the hook for a claim that was taken over", async () => {
     const id = await insert("s1");
-    const stale = await repository.claimNext({ kinds: KINDS });
+    const stale = await repository.claimNext({ kinds: KINDS, asOf: new Date() });
     await expireLease(id);
-    await repository.claimNext({ kinds: KINDS });
+    await repository.claimNext({ kinds: KINDS, asOf: new Date() });
     let hookRan = false;
 
     expect(await repository.deadLetter(stale!, { error: "Error" }, async () => {
@@ -298,10 +298,10 @@ describeIntegration("BackgroundJobRepository (Postgres)", () => {
   it("parks a dead-lettered job with its error until the retention window passes", async () => {
     const dead = await insert("dead");
     const live = await insert("live", { runAfter: new Date(Date.now() + 60_000) });
-    const claim = await repository.claimNext({ kinds: KINDS });
+    const claim = await repository.claimNext({ kinds: KINDS, asOf: new Date() });
     expect(await repository.deadLetter(claim!, { error: "Error" })).toBe(true);
     expect(await row(dead)).toMatchObject({ status: "dead", last_error: "Error" });
-    expect(await repository.claimNext({ kinds: KINDS })).toBeNull();
+    expect(await repository.claimNext({ kinds: KINDS, asOf: new Date() })).toBeNull();
 
     expect(await repository.deleteBefore({ cutoff: new Date(Date.now() - 60_000), limit: 10 })).toBe(0);
     expect(await repository.deleteBefore({ cutoff: new Date(Date.now() + 1_000), limit: 10 })).toBe(1);
@@ -325,7 +325,7 @@ describeIntegration("BackgroundJobRepository (Postgres)", () => {
   describe("a duplicate key that arrives while the job runs", () => {
     it("reruns a level-triggered job when the producer's transaction commits while the run completes", async () => {
       const id = await insert("s1", { idempotencyKey: "s1" });
-      const running = await repository.claimNext({ kinds: KINDS });
+      const running = await repository.claimNext({ kinds: KINDS, asOf: new Date() });
       let commitProducer!: () => void;
       const producerMayCommit = new Promise<void>((resolve) => {
         commitProducer = resolve;
@@ -358,12 +358,12 @@ describeIntegration("BackgroundJobRepository (Postgres)", () => {
         claim_token: null,
         lease_expires_at: null,
       });
-      expect(await repository.claimNext({ kinds: KINDS })).toMatchObject({ id, attempt: 1 });
+      expect(await repository.claimNext({ kinds: KINDS, asOf: new Date() })).toMatchObject({ id, attempt: 1 });
     });
 
     it("deletes the job when the producer that asked for a rerun rolls back", async () => {
       const id = await insert("s1", { idempotencyKey: "s1" });
-      const running = await repository.claimNext({ kinds: KINDS });
+      const running = await repository.claimNext({ kinds: KINDS, asOf: new Date() });
 
       await expect(database.kysely.transaction().execute(async (trx) => {
         await repository.insert(backgroundJobRequest(REFRESH, { subjectId: "s1" }, { idempotencyKey: "s1" }), trx);
@@ -376,7 +376,7 @@ describeIntegration("BackgroundJobRepository (Postgres)", () => {
 
     it("drops a one-shot job's duplicate", async () => {
       const receipt = await repository.insert(backgroundJobRequest(EVENT, { subjectId: "e1" }, { idempotencyKey: "e1" }));
-      const running = await repository.claimNext({ kinds: EVENT_KINDS });
+      const running = await repository.claimNext({ kinds: EVENT_KINDS, asOf: new Date() });
 
       expect(await repository.insert(backgroundJobRequest(EVENT, { subjectId: "e1" }, { idempotencyKey: "e1" })))
         .toEqual({ inserted: false });
@@ -403,11 +403,11 @@ describeIntegration("BackgroundJobRepository (Postgres)", () => {
       await duplicateFolded;
 
       // A run that started now would read state from before the producer's change.
-      expect(await repository.claimNext({ kinds: KINDS })).toBeNull();
+      expect(await repository.claimNext({ kinds: KINDS, asOf: new Date() })).toBeNull();
 
       commitProducer();
       await producer;
-      expect(await repository.claimNext({ kinds: KINDS })).toMatchObject({ id });
+      expect(await repository.claimNext({ kinds: KINDS, asOf: new Date() })).toMatchObject({ id });
     });
   });
 });

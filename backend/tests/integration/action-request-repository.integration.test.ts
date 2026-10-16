@@ -4,8 +4,10 @@ import pg from "pg";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ActionRequestRepository } from "../../src/db/repositories/actionRequestRepository.js";
+import { ActionDispatchSkippedError, type ActionHandler } from "../../src/modules/chat/services/actions/actionDispatcher.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
+import { createActionDispatchTestRuntime } from "../support/actionDispatchTestRuntime.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
@@ -249,6 +251,64 @@ describeIntegration("ActionRequestRepository (Postgres)", () => {
       expect(row?.status).toBe("skipped");
       expect(row?.last_error).toBe("mail_not_dispatched:driver=log");
       expect(row?.attempts).toBe(1);
+    });
+  });
+
+  // End-to-end through the real runtime (#1509): an action enqueued transactionally with other
+  // writes, exactly as a turn does through `PostgresAssistantTurnPersistence`, then drained by
+  // `BackgroundJobRuntime` running the real `createActionDispatchJobHandler` adapter and the real
+  // `ActionHandlerRegistry` over this store — no in-memory fakes anywhere in the path.
+  describe("end-to-end through the real runtime", () => {
+    it("recovers from two transient failures before succeeding, running the per-attempt hook exactly twice", async () => {
+      const recordFailureOutcome = vi.fn(async () => undefined);
+      let calls = 0;
+      const handler: ActionHandler = {
+        handle: vi.fn(async () => {
+          calls += 1;
+          if (calls <= 2) {
+            throw new Error("provider_unavailable");
+          }
+        }),
+        recordFailureOutcome,
+      };
+      const { dispatchPending } = createActionDispatchTestRuntime(database.kysely, [{ type: fixtureType, handler }]);
+
+      // Mirrors how a turn writes its action transactionally with the rest of its own writes.
+      const actionId = await database.kysely.transaction().execute(async (trx) => {
+        const txOutbox = new ActionRequestRepository(trx);
+        const { id } = await txOutbox.enqueue({ type: fixtureType, payload: { a: 1 } });
+        return id;
+      });
+      created.push(actionId);
+
+      expect(await dispatchPending(1)).toMatchObject({ claimed: 1, retried: 1 });
+      expect(await dispatchPending(1)).toMatchObject({ claimed: 1, retried: 1 });
+      expect(await dispatchPending(1)).toMatchObject({ claimed: 1, completed: 1 });
+
+      expect(recordFailureOutcome).toHaveBeenCalledTimes(2);
+      expect(recordFailureOutcome).toHaveBeenNthCalledWith(1, expect.objectContaining({ outcome: "retry" }));
+      expect(recordFailureOutcome).toHaveBeenNthCalledWith(2, expect.objectContaining({ outcome: "retry" }));
+      const row = (await database.query<{ status: string }>(`SELECT status FROM routine_action_requests WHERE id = $1`, [actionId]))[0];
+      expect(row?.status).toBe("dispatched");
+    });
+
+    it("marks the action skipped when the handler deliberately does not deliver", async () => {
+      const handler: ActionHandler = {
+        handle: vi.fn(async () => {
+          throw new ActionDispatchSkippedError("mail_not_dispatched:driver=log");
+        }),
+      };
+      const { dispatchPending } = createActionDispatchTestRuntime(database.kysely, [{ type: fixtureType, handler }]);
+      const { id: actionId } = await enqueue();
+
+      expect(await dispatchPending(1)).toMatchObject({ claimed: 1, skipped: 1 });
+
+      const row = (await database.query<{ status: string; last_error: string | null }>(
+        `SELECT status, last_error FROM routine_action_requests WHERE id = $1`,
+        [actionId],
+      ))[0];
+      expect(row?.status).toBe("skipped");
+      expect(row?.last_error).toBe("mail_not_dispatched:driver=log");
     });
   });
 });

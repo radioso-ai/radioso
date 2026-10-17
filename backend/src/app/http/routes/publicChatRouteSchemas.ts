@@ -130,7 +130,6 @@ export const publicVoiceSessionStartSchema = z.object({
 /** A Radioso-minted session key in a public voice session path. */
 export const publicVoiceSessionParamsSchema = z.object({ sessionKey: z.string().uuid() });
 
-
 /**
  * The vendor's id for the call the page opened. It names a recording at the vendor and travels in
  * a vendor URL, so it is held to identifier characters.

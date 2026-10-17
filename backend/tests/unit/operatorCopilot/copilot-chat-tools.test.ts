@@ -317,18 +317,16 @@ describe("copilot chat readers", () => {
     const transcriptOf = async () =>
       ((await tool.createTool(context(null)).invoke({ conversationId }, {} as never)) as { transcript: Record<string, unknown> }).transcript;
 
+    // The voice channel's one answer for every reader: a boolean for a call, null otherwise.
     ports.getConversation.mockResolvedValue(detail("voice"));
-    ports.isRecordingAvailable.mockResolvedValue(true);
+    ports.recordingAvailability.mockResolvedValue(true);
     expect((await transcriptOf()).recordingAvailable).toBe(true);
-    expect(ports.isRecordingAvailable).toHaveBeenCalledWith({ workspaceId: "workspace-1", conversationId });
+    expect(ports.recordingAvailability).toHaveBeenCalledWith({ workspaceId: "workspace-1", conversationId, sourceChannel: "voice" });
 
-    ports.isRecordingAvailable.mockRejectedValue(new Error("connection refused"));
-    expect((await transcriptOf()).recordingAvailable).toBeNull();
-
-    ports.isRecordingAvailable.mockClear();
     ports.getConversation.mockResolvedValue(detail("website_embed"));
+    ports.recordingAvailability.mockResolvedValue(null);
     expect((await transcriptOf()).recordingAvailable).toBeNull();
-    expect(ports.isRecordingAvailable).not.toHaveBeenCalled();
+    expect(ports.recordingAvailability).toHaveBeenLastCalledWith({ workspaceId: "workspace-1", conversationId, sourceChannel: "website_embed" });
   });
 
   it("reads feedback outcomes only for an operator who holds Quality access now", async () => {

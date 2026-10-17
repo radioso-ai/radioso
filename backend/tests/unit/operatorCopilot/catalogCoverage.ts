@@ -525,7 +525,6 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   reportPublicVoiceVendorConversation: visitorVoiceVendorConversationReport,
   getConversationRecording: voiceRecordingAudio,
 
-
   listPendingDecisions: "workspace_triage",
   createAgentDirective: "propose_directive",
   updateAgentDirective: "propose_directive",

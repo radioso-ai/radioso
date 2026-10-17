@@ -539,7 +539,6 @@ export const registerAssistantPublicChatPaths = (
     },
   });
 
-
   registry.registerPath({
     method: "get",
     path: "/api/v1/public/chat/{token}",

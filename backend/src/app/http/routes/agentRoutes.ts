@@ -10,9 +10,9 @@ import {
 import { presentRevisionState } from "./agentRevisionPresenters.js";
 import { registerAgentChannelChatRoute } from "./agentChannelChatRoute.js";
 import { registerAgentVoiceRoutes } from "./agentVoiceRoute.js";
+import { errorClassOf } from "../../../shared/observability/errorClass.js";
 import { acceptWorkspaceIdFromQuery } from "../middleware/acceptWorkspaceIdFromQuery.js";
 import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
-
 import { holdsWorkspacePermission, requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireSurfaceExtension } from "../shared/requireSurfaceExtension.js";
 import { validateBody } from "../middleware/validate.js";
@@ -312,7 +312,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
         ? null
         : await dependencies.voiceSessionAvailability.readiness({ workspaceId, voice: agent.voice }).catch((error: unknown) => {
           dependencies.logger.warn(
-            { workspaceId, agentId: parsed.agentId, errorClass: error instanceof Error ? error.name : typeof error },
+            { workspaceId, agentId: parsed.agentId, errorClass: errorClassOf(error) },
             "Voice call readiness could not be read",
           );
           return null;
@@ -702,8 +702,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
   });
 
   // The dashboard renders the logo in an `<img>`, which cannot carry the workspace header.
-  router.get("/:agentId/assistant-logo", acceptWorkspaceIdFromQuery,
- workspaceSession, agentRead, async (req, res, next) => {
+  router.get("/:agentId/assistant-logo", acceptWorkspaceIdFromQuery, workspaceSession, agentRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsed = agentParamsSchema.parse(req.params);

@@ -262,8 +262,7 @@ export const createApiNode = (
     documentSearchHistoryService: {} as AppDependencies["documentSearchHistoryService"],
     conversationErasure: {} as AppDependencies["conversationErasure"],
     // Email conversations have no call recording.
-    voiceRecordings: { isAvailable: async () => false },
-    logger,
+    voiceRecordings: { availability: async () => null },
 
   }));
   app.use(createErrorHandler());

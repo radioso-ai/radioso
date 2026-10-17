@@ -189,8 +189,7 @@ export const createVoiceRecordingComposition = (deps: {
 };
 
 /**
- * The embed config says whether the embed offers calls,
- which follows the voice vendor key's
+ * The embed config says whether the embed offers calls, which follows the voice vendor key's
  * presence, and a CDN may hold it for minutes: storing or removing a voice vendor key drops the
  * workspace's cached embed configs, so the Talk button follows at once. Model provider keys leave
  * them alone.

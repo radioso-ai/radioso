@@ -205,8 +205,8 @@ later still is its own conversation with no visitor. Each start mints a new key.
 optional in the request. It tells Radioso which language the caller speaks, so
 bridge and fallback lines come in that language; leave it out and the response
 carries the agent's default locale, or `en`. `recordingNotice` is the agent's
-recording notice in that language, present only when the agent has one for
-it: show it to the caller as the call starts.
+recording notice for the call, present when the agent wrote one: show it to
+the caller as the call starts. See [The recording notice](#the-recording-notice).
 
 Every start opens a session ElevenLabs bills to your account, so starts spend
 their own small budgets before ElevenLabs is called: by default 3 per visitor
@@ -787,61 +787,90 @@ Radioso keeps no audio. What it keeps is where to find it: when the website
 embed (or [your own page](#start-sessions-from-your-own-page)) has opened a
 session that Radioso started, it reports ElevenLabs's id for the call with
 `POST /api/v1/public/chat/{token}/voice/sessions/{sessionKey}/vendor-conversation`
-and `{ "vendorConversationId": "conv_…" }`. Radioso takes it once, from the
-same website embed public session the session was started for, within an
-hour of the start, and answers `204`; anything else, a second report
-included, is `404`, and an id that is not 1 to 128 letters, digits,
-underscores and hyphens is `400`. Radioso only ever uses the id to look the
-recording up with the workspace's own ElevenLabs key. A session your page
-starts without Radioso's session start has no recording in Radioso.
+and `{ "vendorConversationId": "conv_…" }`. Before storing it, Radioso asks
+ElevenLabs, with the workspace's key and on the account's region host, which
+agent the conversation was held on, and stores the id only when that is the
+ElevenLabs agent the session was started on. So a visitor cannot attach
+another call from the same ElevenLabs account. Radioso takes the id once, from the same website
+embed public session the session was started for, within an hour of the
+start, and only ever uses it to look the recording up with the workspace's
+own key. A session your page starts without Radioso's session start has no
+recording in Radioso.
+
+| Status | `error.code` | What it means |
+|---|---|---|
+| `204` | | The id is stored. |
+| `400` | `validation_error` | The session key is not a UUID, or the id is not 1 to 128 letters, digits, underscores and hyphens. |
+| `404` | `not_found` | No session this public session started waits for an id (it has one, its start expired, or Radioso never started it), or ElevenLabs holds no such conversation on the session's agent. Sending it again changes nothing. |
+| `503` | `voice_unavailable` | Radioso could not check the id with ElevenLabs now. Send it again. |
+
+The website embed sends the report with `keepalive`, so it still goes out
+when the page closes. It tries once more when the report does not get
+through, and again as the call ends if no `204` came back. The log line
+`Voice vendor conversation report was refused` or `… could not be checked`
+names the `outcome` (`no_session`, `vendor_agent_mismatch`,
+`vendor_not_found`, `already_reported`, `credential_*`, `vendor_failed`,
+`store_failed`), and `voice_vendor_conversation_report_total` counts them,
+`recorded` included.
 
 ### Listen in the Inbox
 
 Teammates who can read the workspace's conversations hear the call from the
 Inbox: a voice conversation whose call has a recording shows **Listen** in
-the header, and the call plays in the pane. Behind it, a dashboard session's
-conversation detail (`GET /api/v1/history/chat/{conversationId}`) carries
-`recording: { "available": true }` when the page reported the call and the
-workspace holds an ElevenLabs key Radioso can read. Radioso answers that from
-its own records, without asking ElevenLabs, so a call that has just ended can
-read as available a little before ElevenLabs has its audio. Machine
+the header, and the call plays in the pane. Each conversation starts silent,
+so going back to one never resumes its player. Behind it, a dashboard
+session's conversation detail (`GET /api/v1/history/chat/{conversationId}`)
+carries `recording: { "available": true }` when the page reported the call
+and the workspace holds an ElevenLabs key Radioso can read. Radioso answers
+that from its own records, without asking ElevenLabs, so a call that has just
+ended can read as available a little before ElevenLabs has its audio. Machine
 credentials get no `recording`. Ray's `conversation_transcript` says the same
 as `recordingAvailable`, and Ray never hears the audio.
 
 The player streams from
 `GET /api/v1/conversations/{conversationId}/recording`: Radioso asks
-ElevenLabs for the call's audio (`audio/mpeg`) on the host of the account's
-data residency region, with the workspace's key, and passes it on with
-`Cache-Control: private, no-store`. The key, the ElevenLabs URL and the
+ElevenLabs for the call's audio (`audio/mpeg`, unencoded) on the host of the
+account's data residency region, with the workspace's key, and passes it on
+with `Cache-Control: private, no-store`. The key, the ElevenLabs URL and the
 ElevenLabs id never reach the browser. The route takes dashboard sessions
-only, with the history read permission. An `<audio>` element cannot send
+only, with the history read permission, and only from the dashboard's own
+pages. A browser request whose `Sec-Fetch-Site` is anything but
+`same-origin` gets `403`, so a link on another site cannot start a play
+under a teammate's name. `HEAD` gets `405`. An `<audio>` element cannot send
 `X-Workspace-Id`, so the workspace may come as a `workspaceId` query
 parameter, checked against the session the same way. A `Range` header naming
-one byte range goes on to ElevenLabs, and the answer is `206` when ElevenLabs
-honours it; when it ignores the range, the whole recording comes back with
-`200`.
+one byte range (`bytes=1000-`, `bytes=1000-1999` or `bytes=-500`) goes on to
+ElevenLabs. The answer is `206` with ElevenLabs's `Content-Range` when
+ElevenLabs honours it, and the whole recording with `200` when it ignores
+the range. A stream that stops sending for 15 seconds while the player waits
+for it is closed.
 
 | Status | `error.code` | What it means |
 |---|---|---|
 | `404` | `not_found` | The conversation has no recording in Radioso, or ElevenLabs holds no audio for the call yet (it finishes the recording shortly after the call ends). |
+| `416` | | The byte range lies past the end of the recording; `Content-Range` names its length. |
 | `503` | `recording_unavailable` | There is a recording and it could not be read now. |
 
 The backend log line `Voice recording could not be read` says why, as
-`outcome`: `no_recording`, `vendor_not_found`, `credential_missing`,
-`credential_unreadable` (enter the ElevenLabs key again),
-`credential_read_failed` or `store_failed` (Radioso could not reach its
-database), `vendor_failed` (ElevenLabs refused or did not answer within
-5 seconds; `vendorStatus: 401` means the stored key is wrong), or
-`audit_failed`. The `voice_recording_fetch_total` metric counts every outcome,
-`served` included. Log lines and metrics carry ids only.
+`outcome`: `store_failed` or `credential_read_failed` (Radioso could not
+reach its database), `vendor_not_found`, `credential_missing`,
+`credential_unreadable` (enter the ElevenLabs key again), `vendor_failed`
+(ElevenLabs refused, did not answer within 5 seconds, or answered with
+something that is not audio; `vendorStatus: 401` means the stored key is
+wrong), or `audit_failed`. The `voice_recording_fetch_total` metric counts
+every outcome, `served`, `no_recording` and `range_not_satisfiable`
+included. A teammate who closes the player or seeks while ElevenLabs is
+still answering leaves no log line, no count and no audit event. Log lines
+and metrics carry ids only.
 
 ### Every play is audited
 
 Every answer that carries audio first records a `conversation.recording_played`
 audit event with the conversation id, the teammate's user id, the vendor, and
-`partial: true` when the player asked for a byte range, as it does when it
-starts or seeks, so one listen can be several events. When the audit event
-cannot be written, the recording does not play.
+`partial: true` when the audio sent starts past the first byte, as it does
+when the player seeks. A player that reads a recording in parts leaves one
+event per part. When the audit event cannot be written, the recording does
+not play.
 
 ### Deletion and retention
 
@@ -849,16 +878,34 @@ The recording lives in your ElevenLabs account until it is deleted there,
 by you or by the retention you set on the ElevenLabs agent, or until Radioso
 deletes it. Deleting a workspace or the organization asks ElevenLabs to
 delete each call's conversation, audio included, on the account's region
-host, after the deletion has gone through: Radioso reads the recordings and
-the key first, because the deletion takes both with it. Each deleted
-recording is recorded as a `conversation.recording_deleted` audit event with
-the conversation id and `deletedWorkspaceId`. The deletion never waits on
-ElevenLabs: a call ElevenLabs refuses to delete, or does not answer for,
-stays in your ElevenLabs account and is logged as
-`Voice recording was left at the vendor` with its conversation id. Radioso
-asks for at most 20 seconds, four calls at a time, and logs how many it left
-when that time runs out; `voice_recording_delete_total` counts each outcome.
-Delete those from the ElevenLabs dashboard.
+host, after the deletion has gone through. That includes a call whose first
+turn never came, which has no conversation in Radioso. Radioso reads the
+recordings and the key first, because the deletion takes both with it.
+Deleting an agent deletes no recording: its conversations stay, and so do
+their recordings, which still play from the Inbox and go when their
+workspace does.
+
+Each recording Radioso deletes is recorded as a
+`conversation.recording_deleted` audit event with the conversation id, the
+vendor, `outcome` (`deleted`, or `already_absent` when ElevenLabs no longer
+held it) and `deletedWorkspaceId`. When a workspace is deleted, the event
+belongs to the organization, so the organization keeps its proof of erasure.
+When the organization itself is deleted, the event names it as
+`deletedAccountId`.
+
+The deletion never waits on ElevenLabs. An organization's workspaces are
+worked through in order, four calls at a time, for at most 20 seconds in
+all. A recording ElevenLabs refuses to delete or does not answer for, and
+every recording still queued when the time runs out, stays in your
+ElevenLabs account and is logged as `Voice recording was left at the vendor`
+with its `conversationId` and `vendorConversationId`. Radioso does not try
+again, so delete those from the ElevenLabs dashboard by that id.
+`voice_recording_delete_total` counts each outcome.
+
+Recordings are deleted with the workspace's ElevenLabs key. Once you remove
+that key, or replace it with a key for another ElevenLabs account, Radioso
+can neither play nor delete the recordings made on the old account. They
+stay there until you delete them in ElevenLabs.
 
 ### Data residency
 
@@ -874,11 +921,14 @@ Some jurisdictions require telling a caller the call is recorded. Write the
 notice per language on the agent's **Voice** card, under **Recording
 notice**, or as `recordingNotice` in the `voice` block, keyed by language tag
 like `fallbackLine`, one line of 1 to 200 characters each. The website embed
-shows the notice for the call's language above the call bar for the whole
-call, and a session start hands your own page the same line as
-`recordingNotice`. The agent does not speak it: the caller first hears
-ElevenLabs's own first message, so to have the call say it out loud, put the
-same words in the ElevenLabs agent's first message.
+shows the notice above the call bar for the whole call, and a session start
+hands your own page the same line as `recordingNotice`. The notice is in the
+call's language. When the agent has none in that language, it is in the
+agent's default language, then English, then whichever notice you wrote
+first, so a caller is always told when the agent has a notice at all. The
+agent does not speak it: the caller first hears ElevenLabs's own first
+message, so to have the call say it out loud, put the same words in the
+ElevenLabs agent's first message.
 
 ## Limits and failure modes
 

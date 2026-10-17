@@ -438,7 +438,7 @@ describeIntegration("held reply visibility (Postgres, research B9)", () => {
   });
 
   it("keeps held drafts out of Ray's conversation transcript and turn traces", async () => {
-    const tools = createChatCopilotTools({ chatHistoryService: api.history, voiceRecordings: { isAvailable: async () => false } });
+    const tools = createChatCopilotTools({ chatHistoryService: api.history, voiceRecordings: { availability: async () => null } });
     for (const { name, conversationId: id } of threads) {
       const context = {
         workspaceId: workspaceId(),

@@ -101,7 +101,6 @@ export const registerPublicVoiceSessionRoute = (
     },
   );
 
-
   router.post(
     "/:token/voice/sessions",
     dependencies.publicSession,

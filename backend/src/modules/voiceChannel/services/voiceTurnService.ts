@@ -1,4 +1,5 @@
 import type { ChatStreamEvent, ChatTurnHandoffReason, ConversationTurnSupersession } from "../../chat/contracts/index.js";
+import { errorClassOf } from "../../../shared/observability/errorClass.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { VOICE_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { VOICE_SOURCE_CHANNEL } from "../../../shared/domain/conversationSource.js";
@@ -238,9 +239,6 @@ const channelContextFor = (input: VoiceTurnInput): VoiceChannelContext => ({
   sessionKey: input.session.sessionKey,
   transport: input.transport,
 });
-
-const errorClassOf = (error: unknown): string =>
-  error instanceof Error ? error.constructor.name : typeof error;
 
 /**
  * Runs one caller turn as a chat turn on the session's conversation and re-cuts the reply into

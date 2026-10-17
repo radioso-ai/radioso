@@ -6,6 +6,7 @@ import type {
   VendorHeldConversationDataEraser,
   VendorHeldConversationDataErasure,
 } from "../../../shared/domain/vendorHeldConversationData.js";
+import { errorClassOf } from "../../../shared/observability/errorClass.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { createWorkspacePublicRouteKey } from "../domain/publicRouteKey.js";
 import {
@@ -185,7 +186,7 @@ export class WorkspaceService {
       workspaces = await this.workspaceRepository.listByAccountId(accountId);
     } catch (error) {
       this.vendorHeld.logger.warn(
-        { accountId, errorClass: error instanceof Error ? error.name : typeof error },
+        { accountId, errorClass: errorClassOf(error) },
         "Workspaces whose vendor-held data to erase could not be read",
       );
       return { afterDeletion: async () => undefined };
@@ -206,7 +207,7 @@ export class WorkspaceService {
       return { erase: () => prepared.erase().catch(() => undefined) };
     } catch (error) {
       this.vendorHeld.logger.warn(
-        { accountId: erasure.account?.id ?? null, errorClass: error instanceof Error ? error.name : typeof error },
+        { accountId: erasure.account?.id ?? null, errorClass: errorClassOf(error) },
         "Vendor-held data to erase could not be read",
       );
       return nothing;

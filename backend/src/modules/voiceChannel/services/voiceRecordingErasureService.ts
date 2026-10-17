@@ -6,7 +6,8 @@ import type {
   VoiceRecordingToErase,
   VoiceVendorCredential,
 } from "../domain.js";
-import { errorClassOf, recordingErrorFields, type VoiceRecordingDependencies } from "./voiceRecordingService.js";
+import { errorClassOf } from "../../../shared/observability/errorClass.js";
+import { recordingErrorFields, type VoiceRecordingDependencies } from "./voiceRecordingService.js";
 
 /** At most this many vendor deletes run at once, so a large organization does not flood the vendor. */
 const DELETE_CONCURRENCY = 4;

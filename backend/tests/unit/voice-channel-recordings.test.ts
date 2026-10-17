@@ -163,10 +163,12 @@ describe("voice vendor conversation report", () => {
 });
 
 describe("voice recording availability", () => {
+  const call = { workspaceId, conversationId, sourceChannel: "voice" };
+
   it("is available when the conversation's session has a vendor conversation and the workspace holds a readable key", async () => {
     const { service, credentials, source } = harness();
 
-    await expect(service.isAvailable({ workspaceId, conversationId })).resolves.toBe(true);
+    await expect(service.availability(call)).resolves.toBe(true);
     expect(credentials.presence).toHaveBeenCalledWith({ workspaceId, vendor: "elevenlabs" });
     expect(credentials.read).not.toHaveBeenCalled();
     expect(source.fetchRecording).not.toHaveBeenCalled();
@@ -177,7 +179,22 @@ describe("voice recording availability", () => {
     ["the workspace holds no key for the vendor", { stored: "missing" as const }],
     ["the backend cannot decrypt the key", { stored: "unreadable" as const }],
   ])("is not available when %s", async (_case, overrides) => {
-    await expect(harness(overrides).service.isAvailable({ workspaceId, conversationId })).resolves.toBe(false);
+    await expect(harness(overrides).service.availability(call)).resolves.toBe(false);
+  });
+
+  it("says nothing of a recording for a conversation that is not a call, and reads nothing for it", async () => {
+    const { service, store } = harness();
+
+    await expect(service.availability({ ...call, sourceChannel: "website_embed" })).resolves.toBeNull();
+    await expect(service.availability({ ...call, sourceChannel: null })).resolves.toBeNull();
+    expect(store.findRecording).not.toHaveBeenCalled();
+  });
+
+  it("says nothing, and logs ids only, when the stores cannot be read", async () => {
+    const { service, logger } = harness({ stored: new Error("connection refused") });
+
+    await expect(service.availability(call)).resolves.toBeNull();
+    expect(logger.warn).toHaveBeenCalledWith({ workspaceId, conversationId, errorClass: "Error" }, "Voice recording availability could not be read");
   });
 });
 

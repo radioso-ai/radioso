@@ -1,5 +1,5 @@
 import { isVoiceVendor, isVoiceVendorRegion } from "../../../shared/domain/voiceVendor.js";
-import { currentTimestamp } from "../../../shared/infra/kysely/sqlHelpers.js";
+import { currentTimestamp, isUniqueViolation } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
 import type {
   VoiceRecordingLocation,
@@ -15,12 +15,6 @@ import type {
   VoiceSessionVisitor,
   VoiceVendorConversationReport,
 } from "../domain.js";
-
-/** Postgres' unique violation: the vendor conversation id is already another session's. */
-const UNIQUE_VIOLATION = "23505";
-
-const isUniqueViolation = (error: unknown): boolean =>
-  typeof error === "object" && error !== null && (error as { code?: unknown }).code === UNIQUE_VIOLATION;
 
 interface RecordingRow {
   vendor: string;
@@ -161,6 +155,7 @@ export class VoiceSessionRepository implements VoiceSessionStartRegistry, VoiceS
         .executeTakeFirst();
       return Number(updated.numUpdatedRows) > 0;
     } catch (error) {
+      // The vendor conversation id is already another session's.
       if (isUniqueViolation(error)) return false;
       throw error;
     }

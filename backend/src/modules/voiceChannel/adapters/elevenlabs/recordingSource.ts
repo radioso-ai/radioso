@@ -7,7 +7,12 @@ import { ELEVENLABS_API_HOST_OF_REGION } from "./hosts.js";
 /** How long the vendor has to answer; once it has, the audio streams for as long as it lasts. */
 const REQUEST_TIMEOUT_MS = 5_000;
 /** One byte range, the only kind an audio element asks for. Header syntax, not vocabulary. */
-const SINGLE_BYTE_RANGE = /^bytes=\d*-\d*$/;
+const SINGLE_BYTE_RANGE = /^bytes=(\d+-\d*|-\d+)$/;
+/**
+ * How long the audio may go without a byte while the listener waits for one. A listener who pauses
+ * reads nothing, so a pause never counts; a vendor that stops sending lets go of the socket.
+ */
+const BODY_IDLE_TIMEOUT_MS = 15_000;
 /** ElevenLabs serves a conversation's audio as MP3. */
 const DEFAULT_AUDIO_TYPE = "audio/mpeg";
 /** What the vendor answers with when it holds no audio under the id: the call is unknown, or has not finished. */
@@ -59,6 +64,8 @@ interface VendorExchange {
   signal: AbortSignal;
   /** Ends the limit; the listener can still stop the body. */
   answered(): void;
+  /** Stops the request and its body. */
+  abort(reason: Error): void;
   /** Ends the limit and lets go of the listener. */
   release(): void;
 }
@@ -88,11 +95,66 @@ const openExchange = async (
   try {
     // Identity, so the lengths and ranges the vendor names are the bytes that arrive.
     const response = await fetch(url, { ...init, headers: { ...init.headers, "accept-encoding": "identity" }, redirect: "error", signal: controller.signal });
-    return { response, signal: controller.signal, answered, release };
+    return { response, signal: controller.signal, answered, abort: (reason) => controller.abort(reason), release };
   } catch (error) {
     release();
+    if (listener?.aborted) throw new VoiceRecordingRequestError("abandoned");
     throw new VoiceRecordingRequestError(isTimeout(error, controller.signal) ? "timeout" : "unreachable");
   }
+};
+
+/**
+ * The vendor's body, read only when the listener asks for more, with a stall limit on each read the
+ * vendor leaves waiting. `ended` runs once the body is done, whichever way.
+ */
+const watchedBody = (
+  body: ReadableStream<Uint8Array>,
+  idleMs: number,
+  stall: (error: VoiceRecordingRequestError) => void,
+  ended: () => void,
+): ReadableStream<Uint8Array> => {
+  const reader = body.getReader();
+  let finished = false;
+  const end = (): void => {
+    if (finished) return;
+    finished = true;
+    ended();
+  };
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const stalled = new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new VoiceRecordingRequestError("timeout")), idleMs);
+      });
+      try {
+        const chunk = await Promise.race([reader.read(), stalled]);
+        if (chunk.done) {
+          controller.close();
+          end();
+          return;
+        }
+        controller.enqueue(chunk.value);
+      } catch (error) {
+        const failure = error instanceof VoiceRecordingRequestError ? error : new VoiceRecordingRequestError("unreachable");
+        stall(failure);
+        await reader.cancel(failure).catch(() => undefined);
+        controller.error(failure);
+        end();
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+    async cancel(reason) {
+      await reader.cancel(reason).catch(() => undefined);
+      end();
+    },
+  }, { highWaterMark: 0 });
+};
+
+/** Whether a body arrives encoded, so its declared length and ranges name other bytes than the audio's. */
+const isEncoded = (response: Response): boolean => {
+  const encoding = response.headers.get("content-encoding")?.trim().toLowerCase();
+  return Boolean(encoding) && encoding !== "identity";
 };
 
 /**
@@ -105,8 +167,11 @@ export const createElevenLabsRecordingSource = (dependencies: {
   fetch: RecordingFetch;
   /** The vendor's answer limit; tests only. */
   requestTimeoutMs?: number;
+  /** The audio's stall limit; tests only. */
+  bodyIdleTimeoutMs?: number;
 }): VoiceRecordingSource => {
   const timeoutMs = dependencies.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
+  const idleMs = dependencies.bodyIdleTimeoutMs ?? BODY_IDLE_TIMEOUT_MS;
   return {
     describeConversation: async ({ vendorConversationId, region, credential }) => {
       const exchange = await openExchange(
@@ -140,7 +205,8 @@ export const createElevenLabsRecordingSource = (dependencies: {
     },
     fetchRecording: async ({ vendorConversationId, region, credential, range, signal }) => {
       const headers: Record<string, string> = { "xi-api-key": credential.apiKey };
-      if (range && SINGLE_BYTE_RANGE.test(range.trim())) headers.range = range.trim();
+      const asked = range?.trim();
+      if (asked && SINGLE_BYTE_RANGE.test(asked)) headers.range = asked;
       const exchange = await openExchange(
         dependencies.fetch,
         `${conversationUrl(region, vendorConversationId)}/audio`,
@@ -148,32 +214,36 @@ export const createElevenLabsRecordingSource = (dependencies: {
         timeoutMs,
         signal,
       );
-      // The limit covers the answer; the audio then streams for as long as it lasts.
+      // The limit covers the answer; the audio then streams for as long as it keeps arriving.
       exchange.answered();
       const { response } = exchange;
-      if (NOT_FOUND_STATUSES.has(response.status)) {
+      const refuse = async (error: VoiceRecordingRequestError): Promise<never> => {
         await discardBody(response);
-        throw new VoiceRecordingRequestError("not_found", response.status);
+        exchange.release();
+        throw error;
+      };
+      if (NOT_FOUND_STATUSES.has(response.status)) return refuse(new VoiceRecordingRequestError("not_found", response.status));
+      if (response.status === 416) {
+        return refuse(new VoiceRecordingRequestError("range_not_satisfiable", 416, response.headers.get("content-range") ?? undefined));
       }
-      if (response.status !== 200 && response.status !== 206) {
-        await discardBody(response);
-        throw new VoiceRecordingRequestError("rejected", response.status);
-      }
+      if (response.status !== 200 && response.status !== 206) return refuse(new VoiceRecordingRequestError("rejected", response.status));
       const contentType = response.headers.get("content-type") ?? DEFAULT_AUDIO_TYPE;
-      if (!response.body || !isAudio(contentType)) {
-        await discardBody(response);
-        throw new VoiceRecordingRequestError("malformed_response", response.status);
+      const encoded = isEncoded(response);
+      const contentRange = response.headers.get("content-range") ?? undefined;
+      const partial = response.status === 206;
+      // A part that does not say which bytes it holds, or holds encoded bytes, cannot be passed on as a part.
+      if (!response.body || !isAudio(contentType) || (partial && (!contentRange || encoded))) {
+        return refuse(new VoiceRecordingRequestError("malformed_response", response.status));
       }
-      const contentLength = declaredLength(response);
-      const contentRange = response.headers.get("content-range");
+      const contentLength = encoded ? undefined : declaredLength(response);
       const acceptRanges = response.headers.get("accept-ranges");
       const recording: VoiceRecordingStream = {
-        status: response.status === 206 && contentRange ? 206 : 200,
-        body: response.body,
+        status: partial ? 206 : 200,
+        body: watchedBody(response.body, idleMs, (error) => exchange.abort(error), () => exchange.release()),
         contentType,
         ...(contentLength === undefined ? {} : { contentLength }),
-        ...(response.status === 206 && contentRange ? { contentRange } : {}),
-        ...(acceptRanges ? { acceptRanges } : {}),
+        ...(partial && contentRange ? { contentRange } : {}),
+        ...(acceptRanges && !encoded ? { acceptRanges } : {}),
       };
       return recording;
     },

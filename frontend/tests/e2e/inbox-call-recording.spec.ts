@@ -32,8 +32,11 @@ const conversation = {
   preview: "When do you open on Saturday?",
 };
 
-const conversationDetail = (recording: { available: boolean } | undefined) => ({
-  conversationId,
+const otherConversationId = "conversation-voice-other";
+const otherConversation = { ...conversation, id: otherConversationId, preview: "Do you deliver on Sundays?" };
+
+const conversationDetail = (recording: { available: boolean } | undefined, id = conversationId) => ({
+  conversationId: id,
   workspaceId,
   agentId: defaultAgentId,
   agentName: "Gioia",
@@ -52,7 +55,9 @@ const conversationDetail = (recording: { available: boolean } | undefined) => ({
   nextCursor: null,
   messages: [
     { id: "user-message-saturday", role: "user" as const, source: "customer" as const, content: "When do you open on Saturday?", createdAt: nowIso },
-    { id: "assistant-message-saturday", role: "assistant" as const, source: "ai_agent" as const, content: "We open at ten on Saturdays.", createdAt: nowIso },
+    id === conversationId
+      ? { id: "assistant-message-saturday", role: "assistant" as const, source: "ai_agent" as const, content: "We open at ten on Saturdays.", createdAt: nowIso }
+      : { id: "assistant-message-sunday", role: "assistant" as const, source: "ai_agent" as const, content: "We deliver every day but Sunday.", createdAt: nowIso },
   ],
   ...(recording ? { recording } : {}),
 });
@@ -82,12 +87,17 @@ const openConversation = async (page: Page, options: { recording?: { available: 
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     historyItems: {
-      items: [{ kind: "chat", id: conversationId, sortAt: nowIso, conversation }],
-      total: 1,
+      items: [
+        { kind: "chat", id: conversationId, sortAt: nowIso, conversation },
+        { kind: "chat", id: otherConversationId, sortAt: nowIso, conversation: otherConversation },
+      ],
+      total: 2,
       nextCursor: null,
       hasMore: false,
     },
+    historyList: { conversations: [conversation, otherConversation], total: 2, nextCursor: null, hasMore: false },
     conversationDetail: conversationDetail(options.recording),
+    conversationDetails: { [otherConversationId]: conversationDetail(options.recording, otherConversationId) },
   });
   const recordingRequests: URL[] = [];
   await page.route("**/backend/api/v1/conversations/*/recording**", async (route) => {
@@ -119,6 +129,25 @@ test("a call with a recording offers Listen, which plays it from the recording r
 
   await response.getByRole("button", { name: "Listen" }).click();
   await expect(player).toHaveCount(0);
+});
+
+test("coming back to a conversation never resumes its player: a play is only ever a press", async ({ page }) => {
+  const { response, recordingRequests } = await openConversation(page, { recording: { available: true } });
+  await response.getByRole("button", { name: "Listen" }).click();
+  await expect(response.getByLabel("Call recording")).toBeVisible();
+  await expect.poll(() => recordingRequests.length).toBeGreaterThan(0);
+
+  await page.getByText("Do you deliver on Sundays?").first().click();
+  await expect(response.getByText("We deliver every day but Sunday.")).toBeVisible();
+  await expect(response.getByLabel("Call recording")).toHaveCount(0);
+  await page.getByText("When do you open on Saturday?").first().click();
+  await expect(response.getByText("We open at ten on Saturdays.")).toBeVisible();
+
+  const requestsBeforeReturn = recordingRequests.length;
+  await expect(response.getByRole("button", { name: "Listen" })).toHaveAttribute("aria-pressed", "false");
+  await expect(response.getByLabel("Call recording")).toHaveCount(0);
+  await page.waitForTimeout(300);
+  expect(recordingRequests.length).toBe(requestsBeforeReturn);
 });
 
 test("a call whose recording cannot be read says so in the player's place", async ({ page }) => {

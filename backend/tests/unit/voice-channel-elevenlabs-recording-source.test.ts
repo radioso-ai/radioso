@@ -11,9 +11,35 @@ type RecordingFetch = Parameters<typeof createElevenLabsRecordingSource>[0]["fet
 const audioResponse = (status: number, bytes: string, headers: Record<string, string> = {}) =>
   new Response(new TextEncoder().encode(bytes), { status, headers: { "content-type": "audio/mpeg", ...headers } });
 
-const sourceWith = (respond: (url: string, init: Parameters<RecordingFetch>[1]) => Promise<Response>, requestTimeoutMs?: number) => {
+const sourceWith = (
+  respond: (url: string, init: Parameters<RecordingFetch>[1]) => Promise<Response>,
+  requestTimeoutMs?: number,
+  bodyIdleTimeoutMs?: number,
+) => {
   const fetch = vi.fn<RecordingFetch>((url, init) => respond(url, init));
-  return { fetch, source: createElevenLabsRecordingSource({ fetch, ...(requestTimeoutMs ? { requestTimeoutMs } : {}) }) };
+  return {
+    fetch,
+    source: createElevenLabsRecordingSource({
+      fetch,
+      ...(requestTimeoutMs ? { requestTimeoutMs } : {}),
+      ...(bodyIdleTimeoutMs ? { bodyIdleTimeoutMs } : {}),
+    }),
+  };
+};
+
+/** A vendor body the test feeds by hand. */
+const manualBody = () => {
+  let controller: ReadableStreamDefaultController<Uint8Array> | null = null;
+  const body = new ReadableStream<Uint8Array>({
+    start(started) {
+      controller = started;
+    },
+  });
+  return {
+    body,
+    push: (text: string) => controller!.enqueue(new TextEncoder().encode(text)),
+    close: () => controller!.close(),
+  };
 };
 
 const rejectionOf = async (promise: Promise<unknown>): Promise<VoiceRecordingRequestError> => {
@@ -77,12 +103,91 @@ describe("ElevenLabs recording source", () => {
     expect(recording.contentRange).toBeUndefined();
   });
 
-  it("leaves a range header that is not one byte range behind", async () => {
+  it.each(["bytes=0-1,5-6", "bytes=-", "bytes=a-b", "items=0-5"])("leaves %s, which is not one byte range, behind", async (range) => {
     const { fetch, source } = sourceWith(async () => audioResponse(200, "ID3audio"));
 
-    await source.fetchRecording({ vendorConversationId, region: "us", credential, range: "bytes=0-1,5-6" });
+    await source.fetchRecording({ vendorConversationId, region: "us", credential, range });
 
     expect(fetch.mock.calls[0][1].headers).toEqual({ "xi-api-key": credential.apiKey, "accept-encoding": "identity" });
+  });
+
+  it.each(["bytes=0-", "bytes=10-20", "bytes=-500"])("passes the single byte range %s on", async (range) => {
+    const { fetch, source } = sourceWith(async () => audioResponse(200, "ID3audio"));
+
+    await source.fetchRecording({ vendorConversationId, region: "us", credential, range });
+
+    expect(fetch.mock.calls[0][1].headers).toMatchObject({ range });
+  });
+
+  it("refuses a partial answer that does not say which bytes it carries", async () => {
+    const { source } = sourceWith(async () => audioResponse(206, "aud"));
+
+    const error = await rejectionOf(source.fetchRecording({ vendorConversationId, region: "us", credential, range: "bytes=3-5" }));
+
+    expect(error).toMatchObject({ reason: "malformed_response", vendorStatus: 206 });
+  });
+
+  it("passes a range the vendor cannot satisfy on, with the vendor's length", async () => {
+    const { source } = sourceWith(async () => new Response(null, { status: 416, headers: { "content-range": "bytes */8" } }));
+
+    const error = await rejectionOf(source.fetchRecording({ vendorConversationId, region: "us", credential, range: "bytes=50-" }));
+
+    expect(error).toMatchObject({ reason: "range_not_satisfiable", vendorStatus: 416, contentRange: "bytes */8" });
+  });
+
+  it("names no length or range for a body the vendor encoded anyway, and refuses an encoded partial answer", async () => {
+    const encoded = sourceWith(async () => audioResponse(200, "ID3audio", { "content-encoding": "gzip", "content-length": "5" }));
+    const whole = await encoded.source.fetchRecording({ vendorConversationId, region: "us", credential });
+    expect(whole.contentLength).toBeUndefined();
+
+    const encodedPart = sourceWith(async () => audioResponse(206, "aud", { "content-encoding": "gzip", "content-range": "bytes 3-5/8" }));
+    expect((await rejectionOf(encodedPart.source.fetchRecording({ vendorConversationId, region: "us", credential, range: "bytes=3-5" }))).reason)
+      .toBe("malformed_response");
+  });
+
+  it("gives up on a body that stalls while the listener waits for it, and stops the vendor's body", async () => {
+    const vendor = manualBody();
+    let vendorSignal: AbortSignal | null = null;
+    const { source } = sourceWith(async (_url, init) => {
+      vendorSignal = init.signal;
+      return new Response(vendor.body, { status: 200, headers: { "content-type": "audio/mpeg" } });
+    }, undefined, 20);
+
+    const recording = await source.fetchRecording({ vendorConversationId, region: "us", credential });
+    const reader = recording.body.getReader();
+    vendor.push("ID3");
+    await expect(reader.read()).resolves.toMatchObject({ done: false });
+
+    await expect(reader.read()).rejects.toMatchObject({ reason: "timeout" });
+    expect(vendorSignal!.aborted).toBe(true);
+  });
+
+  it("waits as long as the listener pauses: only a read the vendor leaves unanswered counts", async () => {
+    const vendor = manualBody();
+    const { source } = sourceWith(async () => new Response(vendor.body, { status: 200, headers: { "content-type": "audio/mpeg" } }), undefined, 20);
+
+    const recording = await source.fetchRecording({ vendorConversationId, region: "us", credential });
+    const reader = recording.body.getReader();
+    vendor.push("ID3");
+    await reader.read();
+    await new Promise((resolve) => setTimeout(resolve, 60));
+    vendor.push("more");
+    vendor.close();
+
+    await expect(reader.read()).resolves.toMatchObject({ done: false });
+    await expect(reader.read()).resolves.toMatchObject({ done: true });
+  });
+
+  it("reads a listener who went away before the vendor answered as abandoned, not as the vendor timing out", async () => {
+    const listener = new AbortController();
+    const { source } = sourceWith((_url, init) => new Promise((_resolve, reject) => {
+      init.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+      listener.abort();
+    }));
+
+    const error = await rejectionOf(source.fetchRecording({ vendorConversationId, region: "us", credential, signal: listener.signal }));
+
+    expect(error.reason).toBe("abandoned");
   });
 
   it("reads an unknown conversation, or one without audio yet, as not found", async () => {

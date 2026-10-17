@@ -166,14 +166,17 @@ export class VoiceSessionRepository implements VoiceSessionStartRegistry, VoiceS
     }
   }
 
+  /** Only for a conversation that still exists and belongs to the workspace, whatever the session row says. */
   async findRecording(input: { workspaceId: string; conversationId: string }): Promise<VoiceRecordingRef | null> {
     const row = await this.db
       .selectFrom("voice_sessions")
-      .select(["conversation_id", "vendor", "vendor_region", "vendor_conversation_id"])
-      .where("workspace_id", "=", input.workspaceId)
-      .where("conversation_id", "=", input.conversationId)
-      .where("vendor_conversation_id", "is not", null)
-      .orderBy("created_at", "desc")
+      .innerJoin("conversations", "conversations.id", "voice_sessions.conversation_id")
+      .select(["voice_sessions.vendor", "voice_sessions.vendor_region", "voice_sessions.vendor_conversation_id"])
+      .where("voice_sessions.workspace_id", "=", input.workspaceId)
+      .where("conversations.workspace_id", "=", input.workspaceId)
+      .where("voice_sessions.conversation_id", "=", input.conversationId)
+      .where("voice_sessions.vendor_conversation_id", "is not", null)
+      .orderBy("voice_sessions.created_at", "desc")
       .limit(1)
       .executeTakeFirst();
     const location = row ? locationOf(row) : null;

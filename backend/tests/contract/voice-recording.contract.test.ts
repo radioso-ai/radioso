@@ -1,8 +1,11 @@
 import { randomUUID } from "node:crypto";
 
+import type { AddressInfo } from "node:net";
+
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
+import { createLogger } from "../../src/shared/observability/logger.js";
 import { adminSessionHeaders, createTestApp, issueTestToken } from "../support/testApp.js";
 
 const SITE = "https://example.com";
@@ -48,10 +51,14 @@ const vendorStandIn = (region: "us" | "eu", answers: { audio?: VendorAnswer; rem
  * visitor starts a session, the page reports the vendor's conversation id, and the voice runtime
  * sends the session's first turn, which binds the conversation.
  */
-const recordedWorkspace = async (options: { region?: "us" | "eu"; vendorFetch?: ReturnType<typeof vendorStandIn> } = {}) => {
+const recordedWorkspace = async (options: {
+  region?: "us" | "eu";
+  vendorFetch?: ReturnType<typeof vendorStandIn>;
+  logger?: Parameters<typeof createTestApp>[0] extends infer Overrides ? Overrides extends { logger?: infer Logger } ? Logger : never : never;
+} = {}) => {
   const region = options.region ?? "eu";
   const vendorFetch = options.vendorFetch ?? vendorStandIn(region);
-  const created = createTestApp({ voiceVendorFetch: vendorFetch });
+  const created = createTestApp({ voiceVendorFetch: vendorFetch, ...(options.logger ? { logger: options.logger } : {}) });
   const { app, dependencies } = created;
   const operator = await issueTestToken(app, `voice-recording-${randomUUID()}@example.com`);
   const dashboard = adminSessionHeaders(operator);
@@ -277,6 +284,98 @@ describe("voice recording contract", () => {
     expect(partial.headers["content-range"]).toBe(`bytes 3-5/${AUDIO.length}`);
     const audioCall = vendorFetch.mock.calls.find(([url]) => urlOf(url).endsWith("/audio"))!;
     expect(audioCall[1]?.headers).toEqual({ "xi-api-key": VENDOR_KEY, range: "bytes=3-5", "accept-encoding": "identity" });
+  });
+
+  it("audits a play as partial only when the audio sent starts past the recording's first byte", async () => {
+    let contentRange = `bytes 0-5/${AUDIO.length}`;
+    const vendorFetch = vendorStandIn("eu", {
+      audio: () => new Response("ID3-fa", { status: 206, headers: { "content-type": "audio/mpeg", "content-range": contentRange } }),
+    });
+    const { app, dashboard, recordedCall, recordingEvents } = await recordedWorkspace({ vendorFetch });
+    const { conversationId } = await recordedCall();
+
+    await request(app).get(`/api/v1/conversations/${conversationId}/recording`).set({ ...dashboard, Range: "bytes=0-" }).expect(206);
+    contentRange = `bytes 6-11/${AUDIO.length}`;
+    await request(app).get(`/api/v1/conversations/${conversationId}/recording`).set({ ...dashboard, Range: "bytes=6-" }).expect(206);
+
+    expect(recordingEvents("conversation.recording_played").map((event) => event.metadata?.partial)).toEqual([false, true]);
+  });
+
+  it("passes a range past the recording's end through as 416, auditing nothing", async () => {
+    const vendorFetch = vendorStandIn("eu", { audio: () => new Response(null, { status: 416, headers: { "content-range": `bytes */${AUDIO.length}` } }) });
+    const { app, dashboard, recordedCall, recordingEvents } = await recordedWorkspace({ vendorFetch });
+    const { conversationId } = await recordedCall();
+
+    const response = await request(app).get(`/api/v1/conversations/${conversationId}/recording`).set({ ...dashboard, Range: "bytes=9000-" }).expect(416);
+
+    expect(response.headers["content-range"]).toBe(`bytes */${AUDIO.length}`);
+    expect(recordingEvents("conversation.recording_played")).toEqual([]);
+  });
+
+  it("answers 503 for a partial answer that does not say which bytes it carries, and names no length for an encoded body", async () => {
+    let answer = () => new Response("3-f", { status: 206, headers: { "content-type": "audio/mpeg" } });
+    const vendorFetch = vendorStandIn("eu", { audio: () => answer() });
+    const { app, dashboard, recordedCall } = await recordedWorkspace({ vendorFetch });
+    const { conversationId } = await recordedCall();
+
+    await request(app).get(`/api/v1/conversations/${conversationId}/recording`).set({ ...dashboard, Range: "bytes=3-5" }).expect(503);
+
+    answer = () => new Response(AUDIO, { status: 200, headers: { "content-type": "audio/mpeg", "content-encoding": "gzip", "content-length": "7" } });
+    const encoded = await request(app).get(`/api/v1/conversations/${conversationId}/recording`).set(dashboard).expect(200);
+    expect(encoded.headers["content-length"]).not.toBe("7");
+    expect(encoded.headers["content-encoding"]).toBeUndefined();
+  });
+
+  it("refuses HEAD, and a play another site starts in a teammate's browser, auditing neither", async () => {
+    const { app, dashboard, recordedCall, recordingEvents } = await recordedWorkspace();
+    const { conversationId } = await recordedCall();
+    const path = `/api/v1/conversations/${conversationId}/recording`;
+
+    const head = await request(app).head(path).set(dashboard).expect(405);
+    expect(head.headers.allow).toBe("GET");
+    await request(app).get(path).set({ ...dashboard, "Sec-Fetch-Site": "cross-site" }).expect(403);
+    await request(app).get(path).set({ ...dashboard, "Sec-Fetch-Site": "same-site" }).expect(403);
+    await request(app).get(path).set({ ...dashboard, "Sec-Fetch-Site": "none" }).expect(403);
+    expect(recordingEvents("conversation.recording_played")).toEqual([]);
+
+    await request(app).get(path).set({ ...dashboard, "Sec-Fetch-Site": "same-origin" }).expect(200);
+    expect(recordingEvents("conversation.recording_played")).toHaveLength(1);
+  });
+
+  it("lets a listener who closes the player while the vendor answers go quietly: no warn, no audit", async () => {
+    const warn = vi.fn();
+    const logger = Object.assign(Object.create(createLogger("silent")) as ReturnType<typeof createLogger>, { warn });
+    let vendorAsked: () => void = () => undefined;
+    const asked = new Promise<void>((resolve) => {
+      vendorAsked = resolve;
+    });
+    const vendorFetch = vendorStandIn("eu", {
+      audio: (_url, init) => new Promise<Response>((_resolve, reject) => {
+        vendorAsked();
+        init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+      }),
+    });
+    const { app, dashboard, operator, recordedCall, recordingEvents } = await recordedWorkspace({ vendorFetch, logger });
+    const { conversationId } = await recordedCall();
+    const server = app.listen(0);
+    try {
+      const { port } = server.address() as AddressInfo;
+      const viewer = new AbortController();
+      const play = fetch(`http://127.0.0.1:${port}/api/v1/conversations/${conversationId}/recording`, {
+        headers: { Cookie: operator.cookie, "X-Workspace-Id": operator.workspaceId },
+        signal: viewer.signal,
+      }).catch(() => null);
+      await asked;
+      viewer.abort();
+      await play;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(warn.mock.calls.filter(([, message]) => message === "Voice recording could not be read")).toEqual([]);
+      expect(recordingEvents("conversation.recording_played")).toEqual([]);
+      void dashboard;
+    } finally {
+      server.close();
+    }
   });
 
   it("answers 404 when the vendor holds no audio yet, and 503 when it cannot be read, auditing neither", async () => {

@@ -239,7 +239,14 @@ export function InboxResponseView({
   const emailFacts = useConversationEmailFacts(workspaceId, conversationId, isEmailConversation)
   // A call's recording plays only when the teammate presses Listen, for the conversation it belongs to.
   const recordingAvailable = conversationDetail?.conversationId === conversationId && conversationDetail?.recording?.available === true
-  const [listeningTo, setListeningTo] = useState<string | null>(null)
+  const [listening, setListening] = useState(false)
+  // Each conversation starts silent: coming back to one never resumes its player, so a play is
+  // only ever a teammate's press, and only a press is audited.
+  const [listeningConversationId, setListeningConversationId] = useState(conversationId)
+  if (listeningConversationId !== conversationId) {
+    setListeningConversationId(conversationId)
+    setListening(false)
+  }
 
   const refreshEmailFacts = emailFacts.refresh
 
@@ -385,8 +392,8 @@ export function InboxResponseView({
         <div className="flex shrink-0 items-center gap-3">
           {recordingAvailable ? (
             <ListenToRecordingButton
-              listening={listeningTo === conversationId}
-              onToggle={() => setListeningTo((current) => (current === conversationId ? null : conversationId))}
+              listening={listening}
+              onToggle={() => setListening((current) => !current)}
             />
           ) : null}
           <button
@@ -399,7 +406,7 @@ export function InboxResponseView({
           </button>
         </div>
       </header>
-      {recordingAvailable && conversationId && listeningTo === conversationId ? (
+      {recordingAvailable && conversationId && listening ? (
         <ConversationRecordingPlayer key={conversationId} workspaceId={workspaceId} conversationId={conversationId} />
       ) : null}
 

@@ -1,4 +1,4 @@
-import { heardPrefixLength, spokenLength } from "./speechText.js";
+import { heardSpeechOf, type ReachedSpeech } from "./heardSpeech.js";
 
 /** One request's place in its session, from its arrival until its turn ends. */
 export interface VoiceTurnClaim {
@@ -15,13 +15,6 @@ export interface VoiceTurnClaim {
   settled: boolean;
 }
 
-/** What the caller could hear of a turn, in order. */
-export interface VoiceSpokenTurn {
-  /** What was spoken ahead of the reply, in order: a teammate's replies, then the bridge line. */
-  ahead: string[];
-  reply: string;
-}
-
 /** A turn's stored answer. */
 export interface VoiceStoredReply {
   messageId: string;
@@ -36,8 +29,8 @@ export interface VoiceExchange {
   conversationId: string;
   /** The stored answer; null when the conversation keeps the user message without one. */
   reply: VoiceStoredReply | null;
-  /** What was spoken; null when the caller heard the fallback line in place of the reply. */
-  spoken: VoiceSpokenTurn | null;
+  /** What the turn spoke, piece by piece; null when the caller heard the fallback line in place of the reply. */
+  spoken: ReachedSpeech | null;
   /** When the runtime hung up on the turn, or a newer request overtook it, before its outcome. */
   cutOffAt: number | null;
 }
@@ -73,7 +66,7 @@ interface SessionState {
   /** Chat turns still running for the session's requests. */
   chatTurns: number;
   lastBridge: { at: number; claim: VoiceTurnClaim } | null;
-  lastExchange: { exchange: VoiceExchange; sequence: number; interruptionNote: InterruptionNote } | null;
+  lastExchange: { exchange: VoiceExchange; sequence: number } | null;
   touchedAt: number;
 }
 
@@ -107,6 +100,8 @@ export const cutOffAt = (claim: VoiceTurnClaim): number | null => {
  */
 export class VoiceSessionMemory {
   private readonly sessions = new Map<string, SessionState>();
+  /** Where each settled exchange's interruption note stands, whether or not it is still the session's newest. */
+  private readonly interruptionNotes = new WeakMap<VoiceExchange, InterruptionNote>();
   private readonly retainMs: number;
   private arrivals = 0;
 
@@ -140,9 +135,12 @@ export class VoiceSessionMemory {
     if (state.newest === claim) {
       state.newest = null;
     }
-    if (exchange && (state.lastExchange === null || state.lastExchange.sequence < claim.sequence)) {
+    if (exchange) {
       // A reply stored as its heard part carries its marker already, so no report of it is noted again.
-      state.lastExchange = { exchange, sequence: claim.sequence, interruptionNote: exchange.reply?.partial ? "recorded" : "none" };
+      this.interruptionNotes.set(exchange, exchange.reply?.partial ? "recorded" : "none");
+    }
+    if (exchange && (state.lastExchange === null || state.lastExchange.sequence < claim.sequence)) {
+      state.lastExchange = { exchange, sequence: claim.sequence };
     }
   }
 
@@ -187,35 +185,42 @@ export class VoiceSessionMemory {
   }
 
   /**
-   * Reserves the newest exchange's reply as far as the caller heard it, while the vendor reports it
-   * cut short and no note of it is recorded or being written; null when the report is no strict
-   * prefix of what was spoken, or the reply is a heard part stored marked.
+   * Reserves the session's newest exchange's reply as far as the caller heard it; see
+   * {@link reserveInterruptionOf}.
    */
   reserveInterruption(sessionKey: string, heardUntil: string): VoiceReplyInterruptionReservation | null {
-    const last = this.sessions.get(sessionKey)?.lastExchange;
-    const { reply, spoken, conversationId } = last?.exchange ?? {};
-    if (!last || last.interruptionNote !== "none" || !reply || !spoken || !conversationId) {
+    const last = this.sessions.get(sessionKey)?.lastExchange?.exchange;
+    return last ? this.reserveInterruptionOf(last, heardUntil) : null;
+  }
+
+  /**
+   * Reserves `exchange`'s reply as far as the caller heard it, while the vendor reports it cut
+   * short and no note of it is recorded or being written; null when the report is no prefix of
+   * what was spoken, leaves none of the reply's words out, or the reply is a heard part stored
+   * marked.
+   */
+  reserveInterruptionOf(exchange: VoiceExchange, heardUntil: string): VoiceReplyInterruptionReservation | null {
+    const { reply, spoken, conversationId } = exchange;
+    if (this.interruptionNotes.get(exchange) !== "none" || !reply || !spoken) {
       return null;
     }
-    const whole = [...spoken.ahead, spoken.reply].join(" ");
-    const heard = heardPrefixLength(whole, heardUntil);
-    if (heard === null) {
+    const heard = heardSpeechOf(spoken, heardUntil);
+    if (!heard || heard.answerHeardCharacterCount >= heard.answerSpokenCharacterCount) {
       return null;
     }
-    last.interruptionNote = "pending";
-    const beforeReply = spoken.ahead.reduce((characters, text) => characters + spokenLength(text) + 1, 0);
+    this.interruptionNotes.set(exchange, "pending");
     return {
       interruption: {
         conversationId,
         assistantMessageId: reply.messageId,
-        heardCharacterCount: Math.max(0, heard - beforeReply),
-        spokenCharacterCount: spokenLength(spoken.reply),
+        heardCharacterCount: heard.answerHeardCharacterCount,
+        spokenCharacterCount: heard.answerSpokenCharacterCount,
       },
       recorded: () => {
-        last.interruptionNote = "recorded";
+        this.interruptionNotes.set(exchange, "recorded");
       },
       failed: () => {
-        last.interruptionNote = "none";
+        this.interruptionNotes.set(exchange, "none");
       },
     };
   }

@@ -109,37 +109,13 @@ export const sourcedSpokenText = (text: string, position: SpeechPosition = WHOLE
 export const spokenText = (text: string, position: SpeechPosition = WHOLE_TEXT): string => sourcedSpokenText(text, position).text;
 
 /** Spoken text as two renderings of it agree on: zero-width spaces dropped, whitespace single, ends trimmed. */
-const comparable = (text: string): string => text.replace(/\u200B/gu, "").replace(/\s+/gu, " ").trim();
+export const comparableSpeech = (text: string): string => text.replace(/\u200B/gu, "").replace(/\s+/gu, " ").trim();
 
 /** The length of spoken text in characters (code points), as the caller's runtime renders it. */
-export const spokenLength = (text: string): number => Array.from(comparable(text)).length;
+export const spokenLength = (text: string): number => Array.from(comparableSpeech(text)).length;
 
 /** What is left after a heard prefix carries no words: only punctuation and whitespace. */
 const WORDLESS = /^[\p{P}\s]*$/u;
 
 /** Whether spoken text holds anything to say: more than punctuation and whitespace. */
 export const hasSpokenWords = (text: string): boolean => !WORDLESS.test(text);
-
-/**
- * How many characters of `spoken` the caller heard, by `heard`, the runtime's record of it, once
- * both are compared as plainly spaced text: all of them when `heard` leaves out nothing but
- * punctuation, as when a reply ending in "..." was heard whole; null when `heard` is no prefix of it.
- */
-export const heardLength = (spoken: string, heard: string): number | null => {
-  const whole = comparable(spoken);
-  const prefix = comparable(heard);
-  if (!whole.startsWith(prefix)) {
-    return null;
-  }
-  return Array.from(hasSpokenWords(whole.slice(prefix.length)) ? prefix : whole).length;
-};
-
-/**
- * How many characters of `spoken` the caller heard, when `heard` (the runtime's record of it, cut
- * short) is a strict prefix of it once both are compared as plainly spaced text; null when it is
- * not, or when all it leaves out is punctuation, as when a reply ending in "..." was heard whole.
- */
-export const heardPrefixLength = (spoken: string, heard: string): number | null => {
-  const length = heardLength(spoken, heard);
-  return length === null || length === spokenLength(spoken) ? null : length;
-};

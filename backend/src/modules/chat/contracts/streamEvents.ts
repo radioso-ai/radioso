@@ -39,8 +39,11 @@ export type ChatStreamEvent =
       conversationId: string;
       reason: "superseded";
       stage: ConversationTurnStage;
-      /** The part of the reply that reached the listener, stored as the turn's reply, cut short. */
-      assistantMessageId?: string;
+      /**
+       * The reply the turn keeps: the part of it that reached the listener, stored cut short
+       * (`partial`), or the whole reply, stored before the cut.
+       */
+      storedReply?: { assistantMessageId: string; partial: boolean };
     }
   | {
       type: "suggestions";

@@ -213,20 +213,23 @@ function InterruptedReplyBadge({ interruption }: { interruption: ReplyInterrupti
   )
 }
 
+const OPERATOR_REPLY_SPEECH_BADGES = {
+  pending: { Icon: Clock, label: 'Pending', tooltip: 'The caller hears this on their next turn.' },
+  spoken: { Icon: Volume2, label: 'Spoken', tooltip: 'Spoken to the caller on the call.' },
+  skipped: { Icon: VolumeX, label: 'Not spoken: no words to say', tooltip: 'A call speaks words only, and this reply has none.' },
+} as const satisfies Record<OperatorReplySpeech['state'], { Icon: typeof Clock; label: string; tooltip: string }>
+
 function OperatorReplySpeechBadge({ speech }: { speech: OperatorReplySpeech }) {
-  const spoken = speech.state === 'spoken'
-  const Icon = spoken ? Volume2 : Clock
+  const { Icon, label, tooltip } = OPERATOR_REPLY_SPEECH_BADGES[speech.state]
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <Badge variant="outline" tabIndex={0} className="w-fit cursor-default gap-1 px-2 py-0 text-[11px] font-medium">
           <Icon aria-hidden="true" className="size-3" />
-          {spoken ? 'Spoken' : 'Pending'}
+          {label}
         </Badge>
       </TooltipTrigger>
-      <TooltipContent side="bottom">
-        {spoken ? 'Spoken to the caller on the call.' : 'The caller hears this on their next turn.'}
-      </TooltipContent>
+      <TooltipContent side="bottom">{tooltip}</TooltipContent>
     </Tooltip>
   )
 }

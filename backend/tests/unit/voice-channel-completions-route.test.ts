@@ -1041,7 +1041,7 @@ describe("voice completions route outcomes", () => {
         notes: {
           replyInterrupted: vi.fn(async () => {}),
           replyReplayed: vi.fn(() => new Promise<void>(() => {})),
-          operatorRepliesSpoken: vi.fn(async () => {}),
+          operatorRepliesSpoken: vi.fn(async () => [] as string[]),
         },
       });
       // The runtime hung up on the session's first turn before its outcome, so its stored answer is replayable.

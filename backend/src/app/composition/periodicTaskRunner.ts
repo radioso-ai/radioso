@@ -5,13 +5,14 @@ import type { AppLogger } from "../../shared/observability/logger.js";
 const DEFAULT_STOP_GRACE_MS = 10_000;
 
 /**
- * Drives one `ApplicationPeriodicTaskRegistration` on a timer. Mirrors
- * `CredentialExpiryWarningService` (`backend/src/modules/machineAccess/services/
- * credentialExpiryWarningService.ts`) with one deliberate difference: `start()` schedules the
- * first run and returns without waiting for it, so a backlog or a hung call on that first run
- * never blocks `startApiRuntime`'s call to `listen()` (and therefore a platform readiness
- * probe). Otherwise the same shape: run on the configured interval; never overlap a run with
- * the previous one still in flight; `unref()` the timer so it never holds the process open; a
+ * Drives one `ApplicationPeriodicTaskRegistration` on a timer, started from the worker
+ * runtime's poll loop (`startWorkerRuntime.ts`) — never the API, which has no CPU allocation
+ * once a request ends and may run at zero instances. Mirrors `CredentialExpiryWarningService`
+ * (`backend/src/modules/machineAccess/services/credentialExpiryWarningService.ts`) with one
+ * deliberate difference: `start()` schedules the first run and returns without waiting for it,
+ * so a backlog or a hung call on that first run never blocks the runtime's own startup.
+ * Otherwise the same shape: run on the configured interval; never overlap a run with the
+ * previous one still in flight; `unref()` the timer so it never holds the process open; a
  * throwing run is logged and never crashes the process; `stop()` stops scheduling and waits for
  * any in-flight run to finish, bounded by `stopGraceMs`.
  */
@@ -90,7 +91,7 @@ export interface PeriodicTasksLifecycle {
 
 /** Aggregates every registered periodic task behind one start/stop pair, mirroring the shape
  *  of the other single-lifecycle objects (`credentialExpiryWarningLifecycle`,
- *  `realtimePublisherLifecycle`) `startApiRuntime.ts` already drives. */
+ *  `realtimePublisherLifecycle`) the runtime already drives. */
 export const createPeriodicTasksLifecycle = (tasks: readonly PeriodicTaskRunner[]): PeriodicTasksLifecycle => ({
   async start() {
     await Promise.all(tasks.map((task) => task.start()));

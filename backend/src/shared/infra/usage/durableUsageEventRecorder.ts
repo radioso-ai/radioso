@@ -26,6 +26,35 @@ const resolveAccountId = async (
   return workspace?.account_id ?? null;
 };
 
+const MESSAGE_LINK_CONSTRAINT = "usage_events_message_id_fkey";
+
+/** The insert named a message that no longer exists. */
+const isMissingMessageLink = (error: unknown): boolean =>
+  typeof error === "object"
+  && error !== null
+  && (error as { code?: unknown }).code === "23503"
+  && (error as { constraint?: unknown }).constraint === MESSAGE_LINK_CONSTRAINT;
+
+/**
+ * Inserts with the event's message link, and again without it when that message was deleted
+ * between the call and the write: a voice turn's user message is deleted when a newer utterance
+ * replaces it, while a call it already made may still be recording. The spend is the record; the
+ * link is context.
+ */
+const withMessageLinkFallback = async <T>(
+  messageId: string | null | undefined,
+  insert: (messageId: string | null) => Promise<T>,
+): Promise<T> => {
+  try {
+    return await insert(messageId ?? null);
+  } catch (error) {
+    if (!messageId || !isMissingMessageLink(error)) {
+      throw error;
+    }
+    return insert(null);
+  }
+};
+
 /**
  * OSS durable usage-event recorder. Writes immutable events to `usage_events`
  * (plus `embedding_usage_items`) and best-effort maintains the derived
@@ -52,7 +81,7 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
     const totalTokens = (event.inputTokens ?? 0) + (event.outputTokens ?? 0);
     const eventId = randomUUID();
 
-    const inserted = await this.db.transaction().execute(async (trx) => {
+    const inserted = await withMessageLinkFallback(event.messageId, (messageId) => this.db.transaction().execute(async (trx) => {
       const insertedRow = await trx
         .insertInto("usage_events")
         .values({
@@ -65,7 +94,7 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
           document_id: event.documentId ?? null,
           document_revision: event.documentRevision ?? null,
           conversation_id: event.conversationId ?? null,
-          message_id: event.messageId ?? null,
+          message_id: messageId,
           job_id: event.jobId ?? null,
           surface: event.surface ?? "embedding",
           operation: event.operation ?? "embedding",
@@ -110,7 +139,7 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
       }
 
       return true;
-    });
+    }));
 
     if (inserted && accountId && event.status === "succeeded") {
       await this.upsertDailyRollupBestEffort(accountId, occurredAt, {
@@ -162,7 +191,7 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
     const totalTokens = event.totalTokens ?? ((event.inputTokens ?? 0) + (event.outputTokens ?? 0));
     const eventId = randomUUID();
 
-    const inserted = await this.db.transaction().execute(async (trx) => {
+    const inserted = await withMessageLinkFallback(event.messageId, (messageId) => this.db.transaction().execute(async (trx) => {
       const insertedRow = await trx
         .insertInto("usage_events")
         .values({
@@ -172,7 +201,7 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
           workspace_id: event.workspaceId,
           agent_id: event.agentId ?? null,
           conversation_id: event.conversationId ?? null,
-          message_id: event.messageId ?? null,
+          message_id: messageId,
           surface: event.surface,
           operation: event.operation,
           provider: event.provider,
@@ -196,7 +225,7 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
         .executeTakeFirst();
 
       return Boolean(insertedRow);
-    });
+    }));
 
     if (inserted && accountId && event.status === "succeeded") {
       await this.upsertDailyRollupBestEffort(accountId, occurredAt, {

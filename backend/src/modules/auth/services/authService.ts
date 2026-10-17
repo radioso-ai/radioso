@@ -1144,6 +1144,8 @@ export class AuthService {
         organizationName: account?.name ?? null,
       },
     });
+    // What vendors hold for the organization's conversations is read while its workspaces exist.
+    const vendorHeld = await this.dependencies.workspaceService.prepareAccountDeletion(input.accountId);
     if (this.dependencies.personalCredentialLifecycle) {
       const deleted = await this.dependencies.personalCredentialLifecycle.deleteAccount({
         accountId: input.accountId,
@@ -1152,6 +1154,7 @@ export class AuthService {
       });
       if (!deleted) throw conflict("Organization could not be deleted");
       this.dependencies.auditService.logRecorded?.(auditEvent);
+      await vendorHeld.afterDeletion();
       return { accountId: input.accountId };
     }
     await this.dependencies.personalCredentialTermination?.endAccount({
@@ -1164,6 +1167,7 @@ export class AuthService {
     }
 
     await this.dependencies.auditService.record(auditEvent);
+    await vendorHeld.afterDeletion();
 
     return { accountId: input.accountId };
   }

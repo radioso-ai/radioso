@@ -175,6 +175,7 @@ export interface ResolvedLlmConfig {
 }
 
 import { AppError } from "../../domain/errors.js";
+import type { VoiceVendor } from "../../domain/voiceVendor.js";
 
 type ProviderMisconfigurationKind =
   | "missing_api_key"
@@ -187,7 +188,8 @@ type ProviderMisconfigurationKind =
 interface ProviderMisconfigurationDetails {
   providerIssue: "configuration_invalid";
   kind: ProviderMisconfigurationKind;
-  provider?: LlmProviderName;
+  /** A voice vendor only for `credential_unreadable`: the workspace credential store holds both kinds of key. */
+  provider?: LlmProviderName | VoiceVendor;
   capability?: LlmCapabilityName;
   setting?: string;
   remediation?: string;

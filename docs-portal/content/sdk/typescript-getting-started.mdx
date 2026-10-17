@@ -1,7 +1,7 @@
 ---
 title: "TypeScript SDK getting started"
 description: "Create a Radioso client for role-aware workspace automation."
-last_updated: 2026-09-18
+last_updated: 2026-10-17
 ---
 
 # TypeScript SDK getting started
@@ -119,6 +119,8 @@ client.history.listSearches(...)
 client.history.getChat(...)
 client.history.getSearch(...)
 client.history.listVisitorConversations(...)
+client.history.deleteChat(...)       // permanent erasure
+client.history.deleteVisitor(...)
 
 client.chat.create(...)              // assistant chat
 client.chat.listHistory(...)

@@ -170,6 +170,12 @@ const emailConnectionRemoval = deferred(
 const emailConnectionHealthProbe = deferred(
   "Deferred: the health check is a probe — no persisted change, real work against the mail server — and it lands with the channel tools rather than ahead of them.",
 );
+const notifySkillRecipientStatesRead = permanent(
+  "Permanent exclusion: the Skills form's per-skill recipient states. Ray reads recipient states for every destination an ending can name through operator_notice_destinations, and reads each notify skill's recipient list through agent_skills.",
+);
+const notificationConfirmationResendIsOperatorInitiated = permanent(
+  "Permanent exclusion: re-sending a recipient confirmation is an owner/admin-initiated external email with a workspace daily cap. Ray reads recipient state through operator_notice_destinations but does not spend that anti-abuse allowance.",
+);
 const emailChannelConfiguration = deferred(
   "Deferred (FR-047): mailboxes, sending domains, the forwarding setup check and inbound retries decide which customer mail reaches which agent and from which domain it is answered, which is customer-visible routing and needs a proposal card. Ray reads the channel through email_channel_configuration and email_channel_events.",
 );
@@ -178,6 +184,9 @@ const deliveryDecisionIsAPersons = permanent(
 );
 const heldReplyDiscardIsAPersons = permanent(
   "Permanent exclusion: discarding a held reply is an audited decision that the customer hears nothing from the agent and the conversation waits for a teammate, so it stays with a person in the Inbox. Ray reads held replies through held_replies.",
+);
+const erasureIsAPersons = permanent(
+  "Permanent exclusion: erasing a conversation or a visitor destroys a data subject's records with no undo, and the audit event that answers their request names the person who decided it, so erasure stays with a person in the dashboard or an automated request pipeline over the API.",
 );
 const rawCustomerMail = permanent(
   "Permanent exclusion: raw customer mail and its headers are never model input; Ray reads an email conversation's facts through email_conversation_facts instead.",
@@ -202,6 +211,9 @@ const accountScope = permanent("Permanent exclusion: this is account-scoped rath
 const endUserSurface = permanent("Permanent exclusion: this is an end-user or inbound integration surface, not an operator-copilot tool.");
 const authOrRegistration = permanent("Permanent exclusion: authentication and registration are not an operator-copilot surface.");
 const personalProfile = permanent("Permanent exclusion: a profile is the signed-in person's own identity, not workspace configuration; only that person edits their name.");
+const visitorVoiceSessionStart = permanent("Permanent exclusion: a visitor's page starts a voice session from the website embed's public session. The operator configures what it opens through the agent's voice block (voice.runtime, which propose_agent_setting covers) and the workspace's vendor key in Settings, which the never-list's provider_credential_writes keeps from Ray. Whether the embed's widget shows Talk is its voiceCallsOffered switch, which only the operator turns on in the dashboard (propose_workspace_setting leaves it off its payload, see workspaceSettingAuthoring.ts); the start itself is gated by voice readiness alone.");
+const visitorVoiceVendorConversationReport = permanent("Permanent exclusion: the website embed's page reports the vendor's id for the call it opened, once, from the visitor's public session. It records where the call's recording lives; nothing about it is operator configuration.");
+const voiceRecordingAudio = permanent("Permanent exclusion: the response is the call's audio, binary media a teammate listens to in the Inbox with each play audited against them, not a Ray operation. Ray's conversation_transcript says whether a voice conversation has a recording (recordingAvailable), and the transcript carries what was said.");
 const agentDiscoveryDocument = permanent("Permanent exclusion: the public discovery documents are read by a visiting agent, not by an operator. They render what the operator already controls through the agent's card and walk-in settings, which `propose_agent_setting` covers.");
 const copilotUiOnly = permanent("Permanent exclusion: this endpoint is the operator copilot UI/control surface, not a tool Ray may call.");
 const ambientOperatorRuntime = permanent("Permanent exclusion: this is ambient operator-dashboard runtime transport, not an action Ray may call.");
@@ -233,6 +245,11 @@ export const internalRuntimeCoverageExclusions = {
   ),
   activityCallerKindFilter: permanent(
     "Permanent exclusion: caller kind is a read-only Activity view control. conversation_history_search already reads the underlying conversation data, including caller kind; Ray cannot operate a dashboard filter.",
+  ),
+  // `POST /api/v1/agents/:agentId/voice/:dialect/v1/chat/completions` speaks a vendor-owned OpenAI wire
+  // format, not Radioso's API contract, so it has no OpenAPI operation for the catalog map above.
+  voiceCompletionsAdapter: deferred(
+    "Deferred exclusion: vendor-facing wire adapter; operators configure what it says through the agent's `voice` block, which propose_agent_setting and prepare_agent_settings carry.",
   ),
 } as const;
 
@@ -376,6 +393,8 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ], channelConnectionStatusRead),
   ...coverage(["getWorkspaceSlackManifest"], slackSelfHostManifest),
   ...coverage(["listWorkspaceEmailSkillActivity"], emailSkillActivityRead),
+  ...coverage(["resendNotificationRecipientConfirmation"], notificationConfirmationResendIsOperatorInitiated),
+  ...coverage(["listNotifySkillRecipients"], notifySkillRecipientStatesRead),
   ...coverage(["createWorkspaceEmailConnection", "updateWorkspaceEmailConnection"], emailConnectionConfiguration),
   ...coverage(["deleteWorkspaceEmailConnection"], emailConnectionRemoval),
   ...coverage(["checkWorkspaceEmailConnectionHealth"], emailConnectionHealthProbe),
@@ -396,6 +415,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ...coverage(["acknowledgeDeliveryFailure", "resolveDeliveryFailure"], deliveryDecisionIsAPersons),
   ...coverage(["releaseHeldReply"], neverListExclusion("unattended_live_customer_reply")),
   ...coverage(["discardHeldReply"], heldReplyDiscardIsAPersons),
+  ...coverage(["deleteHistoryConversation", "deleteHistoryVisitor"], erasureIsAPersons),
   ...coverage(["updateConnectorConfig", "enableConnector", "disableConnector"], connectorConfiguration),
   ...coverage(["syncConnector"], connectorManualSync),
   ...coverage(["deleteAgentRoutine"], routineStructuralEditing),
@@ -501,6 +521,9 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "tailPublicChatHistoryConversation",
     "streamPublicChatConversationEvents",
   ], endUserSurface),
+  createPublicVoiceSession: visitorVoiceSessionStart,
+  reportPublicVoiceVendorConversation: visitorVoiceVendorConversationReport,
+  getConversationRecording: voiceRecordingAudio,
 
   listPendingDecisions: "workspace_triage",
   createAgentDirective: "propose_directive",

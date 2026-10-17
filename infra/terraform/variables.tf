@@ -270,14 +270,61 @@ variable "action_dispatch_recovery_schedule" {
 }
 
 variable "action_dispatch_recovery_max_jobs" {
-  description = "Maximum drain batches each scheduled action-dispatch recovery request may process. A batch is up to the worker's configured action-dispatch batch size (rows), not a single row."
+  description = "Maximum individual action-dispatch jobs each scheduled recovery request may drain in one call, bounded further by the drain route's own time budget. Defaults well above one pushed wake's own batch, since this sweep exists to clear a backlog a push never reached."
+  type        = number
+  default     = 200
+
+  validation {
+    condition     = var.action_dispatch_recovery_max_jobs >= 1 && var.action_dispatch_recovery_max_jobs <= 500
+    error_message = "action_dispatch_recovery_max_jobs must be between 1 and 500."
+  }
+}
+
+# --- Background jobs (background_jobs) ---
+# Durable work the worker runs, such as conversation summary refresh. The backend and
+# the worker push a Cloud Task when they write a job (or schedule one for a retry's due
+# time); the recovery sweep below drains jobs whose push was lost or never sent and
+# reclaims jobs whose lease expired, and a daily sweep removes old dead-lettered jobs.
+
+variable "background_job_task_queue_name" {
+  description = "Cloud Tasks queue name used to wake the worker for background jobs."
+  type        = string
+  default     = "radioso-background-jobs"
+}
+
+variable "background_job_task_max_dispatches_per_second" {
+  description = "Cloud Tasks dispatch rate for background job wakes."
+  type        = number
+  default     = 10
+}
+
+variable "background_job_task_max_concurrent_dispatches" {
+  description = "Maximum concurrent Cloud Tasks dispatches for background job wakes. Each dispatch can run model calls, so this bounds the worker's concurrent background model work."
+  type        = number
+  default     = 10
+}
+
+variable "background_job_recovery_schedule" {
+  description = "Optional cron schedule for the background job recovery sweep, covering wakes that were lost or never sent and jobs whose lease expired."
+  type        = string
+  default     = null
+}
+
+variable "background_job_recovery_max_jobs" {
+  description = "Maximum background jobs each scheduled recovery request may run. Jobs run one after another inside the drain's 240 s budget, which also stops claiming once the next job's deadline no longer fits."
   type        = number
   default     = 10
 
   validation {
-    condition     = var.action_dispatch_recovery_max_jobs >= 1 && var.action_dispatch_recovery_max_jobs <= 50
-    error_message = "action_dispatch_recovery_max_jobs must be between 1 and 50."
+    condition     = var.background_job_recovery_max_jobs >= 1 && var.background_job_recovery_max_jobs <= 50
+    error_message = "background_job_recovery_max_jobs must be between 1 and 50."
   }
+}
+
+variable "background_job_retention_schedule" {
+  description = "Optional cron schedule for the sweep that removes dead-lettered background jobs once their 14-day retention window has passed."
+  type        = string
+  default     = null
 }
 
 # --- Email channel (inbound email conversations) ---
@@ -364,6 +411,30 @@ variable "copilot_retention_schedule" {
 
 variable "slack_inbound_event_retention_schedule" {
   description = "Optional cron schedule for the Slack inbound-event dedup ledger sweep. The worker deletes event ids older than SLACK_INBOUND_EVENT_RETENTION_DAYS only when this sweep runs, so a deployment without it keeps the ledger forever."
+  type        = string
+  default     = null
+}
+
+variable "credential_expiry_warning_schedule" {
+  description = "Optional cron schedule for the machine-access credential expiry warning scan. The document worker's own poll loop scans daily; this sweep is the production worker task service's push-driven equivalent."
+  type        = string
+  default     = null
+}
+
+# --- Generic registerPeriodicTask contributions ---
+# `registerPeriodicTask` lets any application module schedule a recurring background task
+# (e.g. EE's usage-limit alert sweep below); the worker task route that drains one is generic
+# by registration id (/internal/tasks/periodic-tasks/{task_id}/run), but each task still needs
+# its own Cloud Scheduler job here, the same way every named retention sweep above does.
+
+variable "usage_limit_alert_sweep_schedule" {
+  description = "Optional cron schedule for the Enterprise usage-limit alert sweep (registerPeriodicTask id ee-usage-limit-alerts). Only created when radioso_edition is enterprise. Cloud Scheduler's minimum granularity is one minute, matching the dispatcher's own ~1 minute alert-latency design."
+  type        = string
+  default     = null
+}
+
+variable "billing_auto_top_up_sweep_schedule" {
+  description = "Optional cron schedule for the Enterprise auto-top-up sweep (registerPeriodicTask id ee-billing-auto-top-up). Only created when radioso_edition is enterprise. Cloud Scheduler's minimum granularity is one minute, matching AUTO_TOP_UP_SWEEP_INTERVAL_MS (60s) in ee/packages/backend-module/src/billing/applicationModule.ts."
   type        = string
   default     = null
 }

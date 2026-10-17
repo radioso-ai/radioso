@@ -112,6 +112,9 @@ const createEphemeralMessageRepository = (): MessageRepositoryPort => ({
   async summarizeByConversationIds() {
     return new Map();
   },
+  async deleteUserMessage() {
+    return false;
+  },
   async create(input) {
     return {
       id: input.id ?? randomUUID(),
@@ -240,6 +243,7 @@ export const createEphemeralChatTurnEffectProfile = (
     messageRepository: createEphemeralMessageRepository(),
     auditService: {
       async record() {},
+      async recordForLiveConversation() {},
       async getLatestSuccessfulChatAnswerMetadata() {
         return null;
       },

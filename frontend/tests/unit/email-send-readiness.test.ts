@@ -57,6 +57,11 @@ describe('conversationSendUnavailableReason', () => {
     expect(conversationSendUnavailableReason({ state: 'known', provider: 'email' }, { facts: facts('ok'), error: null })).toBeNull()
   })
 
+  it('offers no Send on a voice conversation, since a written reply never reaches the caller', () => {
+    expect(conversationSendUnavailableReason({ state: 'known', provider: 'voice' }, unread))
+      .toBe('Written replies don’t reach a voice caller.')
+  })
+
   it('sends on any other known channel', () => {
     expect(conversationSendUnavailableReason({ state: 'known', provider: null }, unread)).toBeNull()
     expect(conversationSendUnavailableReason({ state: 'known', provider: 'slack' }, unread)).toBeNull()

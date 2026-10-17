@@ -1,14 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { NoopActionDrainDispatcher } from "../../src/modules/chat/services/actions/actionDrainDispatcher.js";
-
-describe("NoopActionDrainDispatcher", () => {
-  it("resolves without doing anything", async () => {
-    const dispatcher = new NoopActionDrainDispatcher();
-    await expect(dispatcher.requestDrain()).resolves.toBeUndefined();
-  });
-});
-
+// `NoopActionDrainDispatcher` is now `NoopBackgroundJobWake` (#1509); it already has its own
+// coverage in `tests/unit/default-composition.test.ts` and the background-jobs suite, so this
+// file keeps only the `DrainTriggeringActionOutbox` tests that cover action-outbox behaviour.
 describe("DrainTriggeringActionOutbox", () => {
   it("enqueues through the inner outbox, then requests a drain", async () => {
     const { DrainTriggeringActionOutbox } = await import(

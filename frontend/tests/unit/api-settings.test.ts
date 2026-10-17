@@ -49,6 +49,8 @@ const responseAgent = (behavior: AssistantBehaviorSettings): AgentSettings => ({
   greetingInstruction: '',
   assistantDefaultLocale: null,
   proactiveGreetingEnabled: false,
+  voice: { enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null },
+  mechanicsReplies: {},
   assistantBootstrapActive: false,
   surfaceSettings: {
     authenticatedChat: { enabled: true },
@@ -62,6 +64,7 @@ const responseAgent = (behavior: AssistantBehaviorSettings): AgentSettings => ({
       theme: behavior.theme,
       copy: {},
       expertOverrides: {},
+      voiceCallsOffered: false,
     },
   },
 } as AgentSettings)

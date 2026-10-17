@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from "express";
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
@@ -6,8 +7,9 @@ import { agentSkillCreateSchema, agentSkillUpdateSchema } from "../../../modules
 import { builtInAnswerSkillDefinitions } from "../../../modules/chat/public.js";
 import { resolveRetrievalSkillSettings } from "../../../modules/retrieval/public.js";
 import type { SkillCapabilityDescriptor } from "../../../modules/skills/public.js";
-import { badRequest, forbidden } from "../../../shared/domain/errors.js";
+import { badRequest, notFound, forbidden } from "../../../shared/domain/errors.js";
 import {
+  normalizeRecipientEmail,
   recipientEmailChangeMetadata,
   recipientEmailsFromDeliveryConfig,
 } from "../../../shared/domain/recipientEmailAudit.js";
@@ -27,9 +29,11 @@ type AgentSkillRouteDependencies = Pick<
   | "skillCapabilityRegistry"
   | "retrievalDefaultsProvider"
   | "operatorNoticeDestinations"
+  | "notificationRecipientPolicy"
 >;
 
 const uuidSchema = z.string().uuid();
+const recipientConfirmationResendSchema = z.object({ email: z.string().trim().email().max(320) }).strict();
 
 const parseUuid = (raw: unknown, field: string): string => {
   const parsed = uuidSchema.safeParse(raw);
@@ -151,6 +155,59 @@ export const createAgentSkillRoutes = (dependencies: AgentSkillRouteDependencies
       next(error);
     }
   });
+
+  // Every notify skill delivers contact requests whatever its invocation mode, so its recipients
+  // count as configured alongside the default destination's.
+  const configuredRecipientEmails = async (workspaceId: string, agentId: string): Promise<string[]> => {
+    const [destinations, skills] = await Promise.all([
+      dependencies.operatorNoticeDestinations.read({ workspaceId, agentId }),
+      dependencies.agentSkillsService.list(workspaceId, agentId),
+    ]);
+    return [
+      ...destinations.default.recipientEmails,
+      ...skills.filter((skill) => skill.capability === "notify").flatMap((skill) => recipientEmailsFromDeliveryConfig(skill.config)),
+    ];
+  };
+
+  // Names a notify skill's recipient emails, which are personal data: workspace sessions only.
+  router.get("/:agentId/skills/:skillId/notification-recipients", workspaceSession, agentRead, async (req, res, next) => {
+    try {
+      const { workspaceId, agentId } = await resolveAgent(req, res);
+      const skillId = parseUuid(req.params.skillId, "skillId");
+      const skill = (await dependencies.agentSkillsService.list(workspaceId, agentId)).find((candidate) => candidate.id === skillId);
+      if (!skill) throw notFound("Skill not found");
+      const emails = skill.capability === "notify" ? recipientEmailsFromDeliveryConfig(skill.config) : [];
+      res.status(200).json({ recipients: await dependencies.notificationRecipientPolicy.describe(workspaceId, emails) });
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post(
+    "/:agentId/notification-recipient-confirmations/resend",
+    workspaceSession,
+    agentManage,
+    validateBody(recipientConfirmationResendSchema),
+    async (req, res, next) => {
+      try {
+        const { workspaceId, agentId } = await resolveAgent(req, res);
+        await requireRecipientManagement(dependencies, res);
+        const normalizedEmail = normalizeRecipientEmail(req.body.email);
+        const configured = (await configuredRecipientEmails(workspaceId, agentId))
+          .some((email) => normalizeRecipientEmail(email) === normalizedEmail);
+        if (!configured) throw badRequest("The recipient is not configured for this agent");
+        const sent = await dependencies.notificationRecipientPolicy.resendConfirmation({
+          workspaceId,
+          agentId,
+          email: normalizedEmail,
+          idempotencyKey: randomUUID(),
+        });
+        res.status(202).json({ sent });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   router.post(
     "/:agentId/skills",

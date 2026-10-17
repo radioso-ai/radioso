@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Router, type RequestHandler } from "express";
+import { Router } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
@@ -9,7 +9,10 @@ import {
 } from "./agentRevisionRoutes.js";
 import { presentRevisionState } from "./agentRevisionPresenters.js";
 import { registerAgentChannelChatRoute } from "./agentChannelChatRoute.js";
-import { requireWorkspaceSession, WORKSPACE_HEADER } from "../middleware/requireWorkspaceSession.js";
+import { registerAgentVoiceRoutes } from "./agentVoiceRoute.js";
+import { errorClassOf } from "../../../shared/observability/errorClass.js";
+import { acceptWorkspaceIdFromQuery } from "../middleware/acceptWorkspaceIdFromQuery.js";
+import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
 import { holdsWorkspacePermission, requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireSurfaceExtension } from "../shared/requireSurfaceExtension.js";
 import { validateBody } from "../middleware/validate.js";
@@ -103,12 +106,16 @@ export const agentBodySchema = z.object({
   greetingInstruction: agentInputFieldSchemas.greetingInstruction.optional(),
   assistantDefaultLocale: agentInputFieldSchemas.assistantDefaultLocale.optional(),
   proactiveGreetingEnabled: agentInputFieldSchemas.proactiveGreetingEnabled.optional(),
+  // Optional with no default: `validateBody` replaces the body with this parse, and a default
+  // would reset the stored block on every save that leaves it out.
+  voice: agentInputFieldSchemas.voice.optional(),
+  mechanicsReplies: agentInputFieldSchemas.mechanicsReplies.optional(),
   chatModelOverride: agentInputFieldSchemas.chatModelOverride.optional(),
   skillSettings: agentInputFieldSchemas.skillSettings.optional(),
   surfaceSettings: agentInputFieldSchemas.surfaceSettings.omit({ extensions: true }).optional(),
 });
 
-type AgentRouteDependencies = AgentRevisionRouteDependencies & Pick<AppDependencies, "accountAccessService" | "accessGrantService" | "agentRepository" | "agentService" | "agentToolCatalog" | "assistantChatService" | "conversationRepository" | "authoredDirectiveService" | "directiveAuthorService" | "skillAuthoringCatalog" | "routineDefinitionService" | "routineDraftAssistService" | "agentSurfaceExtensions" | "documentStorage" | "logger" | "metricsRegistry" | "visitorGeoResolver" | "abuseControlService" | "auditService">;
+type AgentRouteDependencies = AgentRevisionRouteDependencies & Pick<AppDependencies, "accountAccessService" | "accessGrantService" | "agentRepository" | "agentService" | "agentToolCatalog" | "assistantChatService" | "conversationRepository" | "authoredDirectiveService" | "directiveAuthorService" | "skillAuthoringCatalog" | "routineDefinitionService" | "routineDraftAssistService" | "agentSurfaceExtensions" | "documentStorage" | "logger" | "metricsRegistry" | "visitorGeoResolver" | "abuseControlService" | "auditService" | "voiceTurns" | "voiceSessionAvailability">;
 
 const proposedAgentRecipientEmails = (body: unknown): string[] | null => {
   if (!body || typeof body !== "object" || Array.isArray(body)
@@ -290,6 +297,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
   });
 
   registerAgentChannelChatRoute(router, dependencies);
+  registerAgentVoiceRoutes(router, dependencies);
 
   router.get("/:agentId", workspaceSession, agentRead, async (req, res, next) => {
     try {
@@ -297,7 +305,22 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
       const { authPrincipal } = res.locals as { authPrincipal?: AgentRoutePrincipal };
       const parsed = agentParamsSchema.parse(req.params);
       const agent = await dependencies.agentService.get(workspaceId, parsed.agentId);
-      res.status(200).json(presentAgentForPrincipal(agent, authPrincipal));
+      // Dashboard sessions see whether the agent's voice is ready for calls and what is missing;
+      // machine credentials read the configuration alone. A credential store that cannot be read
+      // leaves readiness out rather than failing the agent's page.
+      const voiceCallReadiness = isMachinePrincipal(authPrincipal)
+        ? null
+        : await dependencies.voiceSessionAvailability.readiness({ workspaceId, voice: agent.voice }).catch((error: unknown) => {
+          dependencies.logger.warn(
+            { workspaceId, agentId: parsed.agentId, errorClass: errorClassOf(error) },
+            "Voice call readiness could not be read",
+          );
+          return null;
+        });
+      res.status(200).json({
+        ...presentAgentForPrincipal(agent, authPrincipal),
+        ...(voiceCallReadiness ? { voiceCallReadiness } : {}),
+      });
     } catch (error) {
       next(error);
     }
@@ -653,6 +676,16 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
             metadata: { agentId: parsed.agentId, ...publicAccessChange },
           });
         }
+        const voiceCallsOffered = { before: current.surfaceSettings.websiteEmbed.voiceCallsOffered, after: agent.surfaceSettings.websiteEmbed.voiceCallsOffered };
+        if (voiceCallsOffered.before !== voiceCallsOffered.after) {
+          await dependencies.auditService.record({
+            accountId: accountId ?? null,
+            workspaceId,
+            eventType: "website_embed.voice_calls_offered.changed",
+            eventStatus: "success",
+            metadata: { agentId: parsed.agentId, before: voiceCallsOffered.before, after: voiceCallsOffered.after },
+          });
+        }
       }
       if (customInstruction !== undefined) {
         agent = await dependencies.agentService.update(workspaceId, parsed.agentId, { customInstruction });
@@ -668,20 +701,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
     }
   });
 
-  /**
-   * The dashboard renders the logo in an `<img>`, which cannot carry the workspace
-   * header. Accept the workspace as a query selector for this one read and let the
-   * session middleware check it against the caller's account exactly as it does the
-   * header — the query carries a selection, never an authorisation.
-   */
-  const acceptWorkspaceIdFromQuery: RequestHandler = (req, _res, next) => {
-    const selected = req.query.workspaceId;
-    if (typeof selected === "string" && !req.header(WORKSPACE_HEADER)) {
-      req.headers[WORKSPACE_HEADER.toLowerCase()] = selected;
-    }
-    next();
-  };
-
+  // The dashboard renders the logo in an `<img>`, which cannot carry the workspace header.
   router.get("/:agentId/assistant-logo", acceptWorkspaceIdFromQuery, workspaceSession, agentRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };

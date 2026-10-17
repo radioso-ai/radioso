@@ -293,4 +293,29 @@ describe("SlackPostActionHandler", () => {
     expect(calls[0][0].text).toHaveLength(SLACK_MAX_MESSAGE_TEXT_LENGTH);
     expect(calls[1][0].text).toBe("tail");
   });
+
+  describe("recordFailureOutcome", () => {
+    it("never logs the caught error's free text, which may carry a provider response or a signed URL", async () => {
+      const credentials: SlackPostCredentialResolver = {
+        findInstallationById: vi.fn(async () => installation),
+        markNeedsReauthForInstallation: vi.fn(async () => true),
+        resolveBotTokenForInstallation: vi.fn(async () => "xoxb-token"),
+      };
+      const warn = vi.fn();
+      const handler = new SlackPostActionHandler({ credentials, logger: { info: vi.fn(), warn } });
+      const secret = "https://hooks.slack.com/services/T0/B0/SECRETTOKEN123";
+
+      await handler.recordFailureOutcome({
+        payload: { installationId: installation.id, channelId: "CSUPPORT", text: "hi", kind: "gap_escalation" },
+        context,
+        outcome: "failed",
+        error: `Slack API call failed: ${secret}`,
+      });
+
+      expect(warn).toHaveBeenCalledTimes(1);
+      const loggedText = JSON.stringify(warn.mock.calls);
+      expect(loggedText).not.toContain(secret);
+      expect(loggedText).not.toContain("SECRETTOKEN123");
+    });
+  });
 });

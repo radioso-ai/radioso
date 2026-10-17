@@ -360,7 +360,7 @@ describe("ConversationSummaryService", () => {
     expect(save).not.toHaveBeenCalled();
   });
 
-  it("tolerates a model failure without throwing and logs a content-free failure event", async () => {
+  it("fails the refresh on a model failure, so the job that runs it retries, and logs a content-free failure event", async () => {
     const store = inMemoryStore();
     const save = vi.spyOn(store, "save");
     const generator: ConversationSummaryGenerator = {
@@ -371,7 +371,7 @@ describe("ConversationSummaryService", () => {
     const logger = { debug: vi.fn(), warn: vi.fn() };
     const service = new ConversationSummaryService(store, messageReader(fifteenMessages()), generator, inMemoryTitleWriter(), blankEarlyTitleGenerator(), logger, config);
 
-    await expect(service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" })).resolves.toBeUndefined();
+    await expect(service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" })).rejects.toThrow("provider exploded");
 
     expect(save).not.toHaveBeenCalled();
     expect(logger.warn).toHaveBeenCalledWith(
@@ -764,5 +764,24 @@ describe("conversationSummary behavior config", () => {
     const { CHAT_BEHAVIOR } = await import("../../src/shared/domain/behaviorConfig.js");
     expect(CHAT_BEHAVIOR.conversationSummary.maxEarlyTitleAttempts).toBeGreaterThan(0);
     expect(CHAT_BEHAVIOR.conversationSummary.maxEarlyTitleAttempts).toBeLessThanOrEqual(3);
+  });
+
+  it("fails the refresh when the summary cannot be saved", async () => {
+    const store = inMemoryStore();
+    vi.spyOn(store, "save").mockRejectedValue(new Error("db unavailable"));
+    const generator: ConversationSummaryGenerator = { generate: vi.fn(async () => ({ summary: "Summary." })) };
+    const service = new ConversationSummaryService(store, messageReader(fifteenMessages()), generator, inMemoryTitleWriter(), blankEarlyTitleGenerator(), undefined, config);
+
+    await expect(service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" })).rejects.toThrow("db unavailable");
+  });
+
+  it("hands the caller's abort signal to every model call", async () => {
+    const generator: ConversationSummaryGenerator = { generate: vi.fn(async () => ({ summary: "Summary." })) };
+    const service = new ConversationSummaryService(inMemoryStore(), messageReader(fifteenMessages()), generator, inMemoryTitleWriter(), blankEarlyTitleGenerator(), undefined, config);
+    const signal = new AbortController().signal;
+
+    await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" }, { signal });
+
+    expect(generator.generate).toHaveBeenCalledWith(expect.objectContaining({ signal }));
   });
 });

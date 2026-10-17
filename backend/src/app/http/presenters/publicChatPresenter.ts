@@ -145,7 +145,8 @@ export const stripPublicChatCitationArtifacts = <T extends {
   answerCoverage?: unknown;
   interactionTrace?: unknown;
   debug?: unknown;
-}>(payload: T, exposeCitations: boolean): Omit<T, "citations" | "answerSegments" | "suggestions" | "route" | "activitySummary" | "activityTrace" | "answerCoverage" | "interactionTrace" | "debug"> & {
+  handoff?: unknown;
+}>(payload: T, exposeCitations: boolean): Omit<T, "citations" | "answerSegments" | "suggestions" | "route" | "activitySummary" | "activityTrace" | "answerCoverage" | "interactionTrace" | "debug" | "handoff"> & {
   citations?: ChatCitation[];
   answerSegments?: AnswerSegment[];
   suggestions?: ChatSuggestion[];
@@ -160,6 +161,7 @@ export const stripPublicChatCitationArtifacts = <T extends {
     answerCoverage: _answerCoverage,
     interactionTrace: _interactionTrace,
     debug: _debug,
+    handoff: _handoff,
     ...publicPayload
   } = payload;
 

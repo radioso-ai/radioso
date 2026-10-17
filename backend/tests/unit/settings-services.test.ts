@@ -10,7 +10,8 @@ import type {
 } from "../../src/modules/settings/contracts/services.js";
 import { IngestionSettingsService } from "../../src/modules/settings/services/ingestionSettingsService.js";
 import { PlatformSettingsService } from "../../src/modules/settings/services/platformSettingsService.js";
-import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { websiteEmbedFixture } from "../support/websiteEmbedFixture.js";
 
 const transitionState = (
   overrides: Partial<EmbeddingModelTransitionState> = {},
@@ -59,12 +60,14 @@ describe("settings services", () => {
     overrides: Partial<AgentRecord> = {},
   ): AgentRecord => ({
     ...unpublishedAgentPublicIdentity(),
+    voice: defaultAgentVoiceSettings(),
     id: `${workspace.id}-agent`,
     workspaceId: workspace.id,
     name: workspace.assistantName,
     greetingInstruction: workspace.greetingInstruction,
     assistantDefaultLocale: workspace.assistantDefaultLocale,
     proactiveGreetingEnabled: workspace.proactiveGreetingEnabled,
+    mechanicsReplies: {},
     suggestedQuestionsEnabled: true,
     assistantLinkUtmEnabled: true,
     citationDisplayEnabled: true,
@@ -95,7 +98,7 @@ describe("settings services", () => {
         enabled: workspace.anonymousChatEnabled,
         token: workspace.anonymousChatToken,
       },
-      websiteEmbed: {
+      websiteEmbed: websiteEmbedFixture({
         enabled: workspace.websiteEmbedEnabled,
         token: workspace.websiteEmbedToken,
         allowedOrigins: workspace.websiteEmbedAllowedOrigins,
@@ -109,7 +112,7 @@ describe("settings services", () => {
         },
         copy: {},
         expertOverrides: {},
-      },
+      }),
       extensions: {},
     },
     createdAt: new Date("2026-01-01T00:00:00.000Z"),

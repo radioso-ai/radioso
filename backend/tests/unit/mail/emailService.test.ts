@@ -258,6 +258,28 @@ describe("mail service", () => {
     expect(body.tags).toEqual([{ name: "kind", value: "password_reset" }]);
   });
 
+  it("adds RFC 8058 one-click unsubscribe headers without putting the URL in transport logs", async () => {
+    const fetchMock = vi.fn(async (_url: unknown, _init?: RequestInit) =>
+      new Response(PROVIDER_ACCEPTED_BODY, { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    await resendDriver().send({
+      to: "ada@example.com",
+      from: { email: "noreply@example.com" },
+      subject: "Operator notice",
+      text: "Hello",
+      kind: "operator_notice",
+      listUnsubscribeUrl: "https://api.example.com/revoke?token=signed",
+    });
+
+    const body = JSON.parse(fetchMock.mock.calls[0]?.[1]?.body as string) as { headers?: unknown };
+    expect(body.headers).toEqual({
+      "List-Unsubscribe": "<https://api.example.com/revoke?token=signed>",
+      "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    });
+  });
+
   it("omits Resend tags when a message declares no kind", async () => {
     const fetchMock = vi.fn(async (_url: unknown, _init?: RequestInit) =>
       new Response(PROVIDER_ACCEPTED_BODY, { status: 200 }),
@@ -339,6 +361,8 @@ describe("mail service", () => {
       {
         kind: "channel_reply",
         idempotencyKeyHash: expect.stringMatching(/^[0-9a-f]{16}$/),
+        toBytes: Buffer.byteLength(CHANNEL_REPLY_SECRETS.to, "utf8"),
+        subjectBytes: Buffer.byteLength(CHANNEL_REPLY_SECRETS.subject, "utf8"),
         textBytes: Buffer.byteLength(CHANNEL_REPLY_SECRETS.text, "utf8"),
         hasHtml: true,
         hasThreading: true,
@@ -349,6 +373,43 @@ describe("mail service", () => {
       expect(logged).not.toContain(secret);
     }
     expect(logged).not.toContain("conv_1");
+  });
+
+  it("logs only redacted facts about confirmation and unsubscribe-bearing notices", async () => {
+    const spies = consoleSpies();
+    const driver = driverOf(createMailService({ MAIL_DRIVER: "log" }));
+    const address = "francesco@example.com";
+    const confirmToken = "confirm-token-that-must-not-be-logged";
+    const revokeToken = "revoke-token-that-must-not-be-logged";
+
+    await driver.send({
+      to: address,
+      from: { email: "noreply@example.com" },
+      kind: "recipient_confirmation",
+      subject: "Confirm notifications",
+      text: `https://api.example.com/confirm?token=${confirmToken}`,
+      listUnsubscribeUrl: `https://api.example.com/revoke?token=${revokeToken}`,
+      idempotencyKey: "notification-recipient-confirmation:private",
+    });
+    await driver.send({
+      to: address,
+      from: { email: "noreply@example.com" },
+      kind: "operator_notice",
+      subject: "Routine ending",
+      text: "Private notification",
+      listUnsubscribeUrl: `https://api.example.com/revoke?token=${revokeToken}`,
+      idempotencyKey: "operator-notice:private",
+    });
+
+    const logged = everythingLogged(spies);
+    expect(logged).not.toContain(address);
+    expect(logged).not.toContain(confirmToken);
+    expect(logged).not.toContain(revokeToken);
+    expect(spies[0]).toHaveBeenCalledWith("email.send", expect.objectContaining({
+      kind: "recipient_confirmation",
+      idempotencyKeyHash: expect.stringMatching(/^[0-9a-f]{16}$/),
+      toBytes: Buffer.byteLength(address, "utf8"),
+    }));
   });
 
   it("hashes a channel reply's idempotency key the same way every time", async () => {

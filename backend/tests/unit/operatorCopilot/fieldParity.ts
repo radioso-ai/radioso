@@ -174,6 +174,7 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
       "contactRequestDelivery", "theme", "branding", "retrievalEnabled", "sourceScope", "greetingInstruction",
       "assistantDefaultLocale", "proactiveGreetingEnabled", "chatModelOverride", "skillSettings", "surfaceSettings",
       "publicDescription", "agentCardEnabled", "publicAgentAccessEnabled", "walkInConversationsPerHour",
+      "voice", "mechanicsReplies",
     ], agentSettingGenericKeyValue),
   },
   propose_context_variable: {
@@ -250,7 +251,7 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
     ...fields(["embeddingModel"], ingestionEmbeddingModelNeverList),
   },
   prepare_agent_settings: {
-    ...fields(["name", "internalName", "customInstruction", "assistantLinkUtmEnabled", "citationDisplayEnabled", "contactRequestsEnabled", "webhookExportsEnabled", "handoffOnRetrievalMiss", "contactRequestDelivery", "theme", "branding", "greetingInstruction", "assistantDefaultLocale", "proactiveGreetingEnabled", "publicDescription", "agentCardEnabled", "publicAgentAccessEnabled", "walkInConversationsPerHour"], reviewedAgentSettingsPatch),
+    ...fields(["name", "internalName", "customInstruction", "assistantLinkUtmEnabled", "citationDisplayEnabled", "contactRequestsEnabled", "webhookExportsEnabled", "handoffOnRetrievalMiss", "contactRequestDelivery", "theme", "branding", "greetingInstruction", "assistantDefaultLocale", "proactiveGreetingEnabled", "publicDescription", "agentCardEnabled", "publicAgentAccessEnabled", "walkInConversationsPerHour", "voice", "mechanicsReplies"], reviewedAgentSettingsPatch),
     ...fields(["suggestedQuestionsEnabled", "retrievalEnabled", "sourceScope", "chatModelOverride", "skillSettings", "surfaceSettings"], reviewedAgentSettingsDedicatedOwnerFlow),
   },
   send_test_chat_message: {
@@ -277,4 +278,12 @@ export const fieldExclusions: Record<string, Record<string, FieldParityExclusion
 //            list, where the whole operation had been uncovered. Its three unreached fields
 //            (mode, testValues, seedConversationId) are the part of that deferral still open, now
 //            recorded field by field rather than retired with the operation.
+//   11 -> 13 updateAgent gained the agent's `voice` block, which neither propose_agent_setting nor
+//            prepare_agent_settings carries until a voice settings UI and a reviewed Ray descriptor exist.
+//   13 -> 15 updateAgent gained the agent's `mechanicsReplies` block, which neither
+//            propose_agent_setting nor prepare_agent_settings carries until a settings UI and a
+//            reviewed Ray descriptor exist.
+//   15 -> 11 agentInputFieldSchemas and the reviewed agent-settings patch gained `voice` and
+//            `mechanicsReplies`, so propose_agent_setting and prepare_agent_settings both carry
+//            them; the four deferrals the two blocks added (two each) are retired.
 export const maxDeferredFieldParityExclusions = 11;

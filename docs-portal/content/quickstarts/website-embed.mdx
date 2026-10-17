@@ -1,7 +1,7 @@
 ---
 title: Embed on your website
 description: Launch the Radioso embed flow against a local test site, then adapt it for production.
-last_updated: 2026-10-07
+last_updated: 2026-10-17
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -138,6 +138,12 @@ For `chat.citation_clicked` and `chat.link_clicked`, Radioso sends link metadata
 Every conversation the widget starts records what the visit looked like at that moment: the request's IP address, country, region, and city when a load balancer or CDN supplied them, the browser's `User-Agent` and `Accept-Language` header, the page the widget opened on, and the page that referred the visitor there. None of this reaches the model directly. The page, referrer, language, and region make up the `visitor_request` context variable a directive can read — see [Context variables](/operators/context-variables#visitor-request) for the six fields and how the entry page is gated. The IP address and raw browser string stay operator-only, visible in the Inbox conversation drawer's Visitor panel.
 
 The launcher also keeps a durable visitor key in the host page's `localStorage`, scoped to the embed token so two different embeds on the same site don't collide. The key's only job is grouping every conversation that browser starts under one visitor row for operators. It does not resume a session and it does not let the widget read a previous conversation's history — each tab still opens its own chat session, and a returning visitor still starts a fresh conversation. Where `localStorage` is unavailable, such as private browsing or a storage-blocking extension, the widget falls back to per-tab behavior silently and groups nothing across visits.
+
+## Talking to the agent
+
+When you offer calls on the website, the widget's composer shows a microphone button, **Talk**, beside Send. A visitor presses it, allows the microphone, and talks to the agent out loud: a call bar shows **Listening** and **Speaking**, the visitor can talk over a reply, and what both of them say appears in the panel marked **Spoken**. **End call** or closing the panel ends the call, and the Inbox lists it as a voice conversation next to that visitor's chats.
+
+Offering calls is your choice and starts off. Turn on **Offer calls on the website** under **Website widget** on the agent's **Web chat** page. You can turn it on once the agent's voice is ready: the **Voice channel** on, an ElevenLabs agent bound to it, and an ElevenLabs key under **Settings → Providers → Voice runtime keys**; until then the switch names what is missing. The snippet stays the same. The button shows only on pages served over https, because browsers give no microphone to plain http pages. If your site sends a `Permissions-Policy` header that denies the microphone, allow it for your Radioso app host, or the widget shows no Talk button. Each call spends one voice session start, which has its own small budget per visitor; see [Voice session start rate limits](/operators/deployment#voice-session-start-rate-limits). A visitor past it, or a call Radioso cannot start, reads "Talking isn't available right now. Try again later."
 
 ## Recommended launch sequence
 

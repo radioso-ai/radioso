@@ -2,7 +2,8 @@ import { randomUUID } from "node:crypto";
 
 import { sql } from "kysely";
 
-import { toJsonb } from "../../../../shared/infra/kysely/sqlHelpers.js";
+import type { ConversationDataEraser, ConversationErasureScope } from "../../../../shared/domain/conversationDataErasure.js";
+import { anyOf, toJsonb } from "../../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../../shared/infra/kysely/types.js";
 
 export interface WhatsAppContactRecord {
@@ -352,5 +353,39 @@ export class PostgresWhatsAppPersistence implements WhatsAppPersistencePort {
 
   nextLocalOutboundWamid(): string {
     return `local-${randomUUID()}`;
+  }
+}
+
+/**
+ * Erases the WhatsApp transport log of a number whose conversation is erased: the raw inbound and
+ * outbound payloads, message text included, keyed by the number rather than the conversation. The
+ * number is found through its contact row, which cascades with the conversation, so this runs first.
+ *
+ * A number has one contact row, pointing at its latest conversation; a message after the
+ * conversation timeout starts a new conversation and moves the row. The log cannot be split by
+ * conversation, so erasing the number's latest conversation erases the whole log for the number,
+ * earlier conversations' entries included. Erasing an earlier conversation reaches no number, and
+ * its entries stay until the number's latest conversation is erased. A workspace's log cascades
+ * with the workspace.
+ */
+export class WhatsAppMessageLogEraser implements ConversationDataEraser {
+  readonly owner = "whatsapp";
+
+  constructor(private readonly db: Db) {}
+
+  async erase(scope: ConversationErasureScope): Promise<number> {
+    if (scope.kind === "workspace" || scope.conversationIds.length === 0) {
+      return 0;
+    }
+    const result = await this.db
+      .deleteFrom("connector_whatsapp_message_log")
+      .where("workspace_id", "=", scope.workspaceId)
+      .where("wa_id", "in", (eb) => eb
+        .selectFrom("connector_whatsapp_contacts")
+        .select("wa_id")
+        .where("workspace_id", "=", scope.workspaceId)
+        .where((inner) => anyOf(inner.ref("conversation_id"), scope.conversationIds, "uuid[]")))
+      .executeTakeFirst();
+    return Number(result.numDeletedRows);
   }
 }

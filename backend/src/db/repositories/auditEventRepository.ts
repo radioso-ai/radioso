@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { anyOf, castText, jsonbKeyText, jsonbSet, toJsonb, toSanitizedJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
+import type { ConversationDataEraser, ConversationErasureScope } from "../../shared/domain/conversationDataErasure.js";
 
 export interface AuditEventRecord {
   id: string;
@@ -22,6 +23,19 @@ export interface AuditEventRepositoryPort {
     eventStatus: string;
     metadata?: Record<string, unknown>;
   }): Promise<AuditEventRecord>;
+  /**
+   * Creates the event only if the named conversation still exists, checked and written in one
+   * transaction. Returns null, writing nothing, when it does not (a different workspace counts
+   * as not existing). See the implementation for why the existence check takes `FOR SHARE`.
+   */
+  createIfConversationLive(input: {
+    accountId?: string | null;
+    workspaceId: string;
+    conversationId: string;
+    eventType: string;
+    eventStatus: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<AuditEventRecord | null>;
   listChatAnswerEventsByConversationId(workspaceId: string, conversationId: string): Promise<AuditEventRecord[]>;
   listUnansweredChatAnswerEventsByUserMessageIds(
     workspaceId: string,
@@ -105,6 +119,48 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
       .executeTakeFirstOrThrow();
 
     return mapAuditEvent(row as AuditEventRow);
+  }
+
+  async createIfConversationLive(input: {
+    accountId?: string | null;
+    workspaceId: string;
+    conversationId: string;
+    eventType: string;
+    eventStatus: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<AuditEventRecord | null> {
+    return this.db.transaction().execute(async (trx) => {
+      const conversation = await trx
+        .selectFrom("conversations")
+        .select("id")
+        .where("id", "=", input.conversationId)
+        .where("workspace_id", "=", input.workspaceId)
+        // `FOR SHARE`, not `FOR KEY SHARE`: a live erasure locks this row with `FOR NO KEY
+        // UPDATE` (`ConversationRepository.lockForUpdate`), a mode Postgres designs to *not*
+        // conflict with `FOR KEY SHARE` — that is what lets a foreign-key check on an unrelated
+        // insert proceed without waiting on an ordinary column update. `FOR SHARE` is the
+        // row-level mode that *does* conflict with `FOR NO KEY UPDATE`, so this either waits for
+        // an in-progress erasure to finish (and then finds the row gone) or, started first,
+        // forces a later erasure to wait for this transaction to commit before it locks the row.
+        .forShare()
+        .executeTakeFirst();
+      if (!conversation) {
+        return null;
+      }
+      const row = await trx
+        .insertInto("audit_events")
+        .values({
+          id: randomUUID(),
+          account_id: input.accountId ?? null,
+          workspace_id: input.workspaceId,
+          event_type: input.eventType,
+          event_status: input.eventStatus,
+          metadata_json: toSanitizedJsonb(input.metadata ?? {}),
+        })
+        .returning(auditEventColumns)
+        .executeTakeFirstOrThrow();
+      return mapAuditEvent(row as AuditEventRow);
+    });
   }
 
   async listChatAnswerEventsByConversationId(workspaceId: string, conversationId: string): Promise<AuditEventRecord[]> {
@@ -287,5 +343,45 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
       .executeTakeFirst();
 
     return row ? mapAuditEvent(row as AuditEventRow) : null;
+  }
+}
+
+/**
+ * The audit events that hold a turn's conversation-derived content: suggestions, rewritten queries,
+ * retrieval diagnostics and turn traces, keyed by the conversation id in their metadata. Every other
+ * event that names a conversation records ids and outcome codes only, and stays as the record of
+ * what happened.
+ */
+const CONVERSATION_CONTENT_EVENT_TYPES = ["chat.answer", "chat.suspended"] as const;
+
+/**
+ * Erases a conversation's turn events. `audit_events.workspace_id` is SET NULL on workspace
+ * deletion, so the workspace scope runs before that cascade, or the events would outlive it.
+ */
+export class ConversationAuditEraser implements ConversationDataEraser {
+  readonly owner = "audit";
+
+  constructor(private readonly db: Db) {}
+
+  async erase(scope: ConversationErasureScope): Promise<number> {
+    if (scope.kind === "conversations" && scope.conversationIds.length === 0) {
+      return 0;
+    }
+    let erased = 0;
+    // One statement per event type, so each can use its own partial index.
+    for (const eventType of CONVERSATION_CONTENT_EVENT_TYPES) {
+      const result = await this.db
+        .deleteFrom("audit_events")
+        .where("workspace_id", "=", scope.workspaceId)
+        .where("event_type", "=", eventType)
+        .$if(scope.kind === "conversations", (qb) => qb.where((eb) => anyOf(
+          jsonbKeyText(eb.ref("metadata_json"), "conversationId"),
+          scope.kind === "conversations" ? scope.conversationIds : [],
+          "text[]",
+        )))
+        .executeTakeFirst();
+      erased += Number(result.numDeletedRows);
+    }
+    return erased;
   }
 }

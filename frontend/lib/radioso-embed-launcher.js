@@ -15,6 +15,7 @@
   const FULLSCREEN_MESSAGE = 'radioso:embed:fullscreen'
   const RESET_SESSION_MESSAGE = 'radioso:embed:reset-session'
   const TYPING_MESSAGE = 'radioso:embed:typing'
+  const PANEL_VISIBILITY_MESSAGE = 'radioso:embed:panel-visibility'
   const STYLE_ELEMENT_ID = 'radioso-embed-style'
   const AGENT_CARD_LINK_ID = 'radioso-agent-card-link'
   const ATTENTION_PRESETS = new Set(['none', 'breathe', 'pulse', 'nudge', 'bounce-in'])
@@ -87,6 +88,15 @@
       publicChatAgentUnavailableMessage: 'Este asistente no está disponible en este momento. Inténtalo de nuevo más tarde.',
       skillReceiptSubmittedLabel: 'Enviado',
       skillReceiptFailedLabel: 'No se pudo enviar',
+      publicChatTalkLabel: 'Hablar',
+      publicChatEndCallLabel: 'Terminar llamada',
+      publicChatVoiceConnectingStatus: 'Conectando…',
+      publicChatVoiceListeningStatus: 'Escuchando',
+      publicChatVoiceSpeakingStatus: 'Hablando',
+      publicChatVoiceEndedStatus: 'Llamada finalizada',
+      publicChatVoiceMicrophoneError: 'Para hablar, se necesita tu micrófono.',
+      publicChatVoiceUnavailableError: 'Hablar no está disponible ahora. Inténtalo más tarde.',
+      publicChatSpokenLabel: 'Por voz',
     },
     fr: {
       launcherDefaultLabel: 'Discutez avec nous',
@@ -117,6 +127,15 @@
       publicChatAgentUnavailableMessage: "Cet assistant n'est pas disponible pour le moment. Veuillez réessayer plus tard.",
       skillReceiptSubmittedLabel: 'Envoyé',
       skillReceiptFailedLabel: "Échec de l'envoi",
+      publicChatTalkLabel: 'Parler',
+      publicChatEndCallLabel: 'Raccrocher',
+      publicChatVoiceConnectingStatus: 'Connexion…',
+      publicChatVoiceListeningStatus: "À l'écoute",
+      publicChatVoiceSpeakingStatus: 'Parle',
+      publicChatVoiceEndedStatus: 'Appel terminé',
+      publicChatVoiceMicrophoneError: 'Pour parler, il faut un micro autorisé.',
+      publicChatVoiceUnavailableError: "La voix n'est pas disponible pour le moment. Réessayez plus tard.",
+      publicChatSpokenLabel: 'Vocal',
     },
     de: {
       launcherDefaultLabel: 'Mit uns chatten',
@@ -147,6 +166,15 @@
       publicChatAgentUnavailableMessage: 'Dieser Assistent ist derzeit nicht verfügbar. Bitte versuchen Sie es später erneut.',
       skillReceiptSubmittedLabel: 'Gesendet',
       skillReceiptFailedLabel: 'Senden fehlgeschlagen',
+      publicChatTalkLabel: 'Sprechen',
+      publicChatEndCallLabel: 'Auflegen',
+      publicChatVoiceConnectingStatus: 'Verbindung wird hergestellt…',
+      publicChatVoiceListeningStatus: 'Hört zu',
+      publicChatVoiceSpeakingStatus: 'Spricht',
+      publicChatVoiceEndedStatus: 'Anruf beendet',
+      publicChatVoiceMicrophoneError: 'Zum Sprechen braucht es Ihr Mikrofon.',
+      publicChatVoiceUnavailableError: 'Sprechen ist gerade nicht möglich. Versuchen Sie es später erneut.',
+      publicChatSpokenLabel: 'Gesprochen',
     },
     it: {
       launcherDefaultLabel: 'Chatta con noi',
@@ -177,6 +205,15 @@
       publicChatAgentUnavailableMessage: 'Questo assistente non è disponibile al momento. Riprova più tardi.',
       skillReceiptSubmittedLabel: 'Inviato',
       skillReceiptFailedLabel: 'Invio non riuscito',
+      publicChatTalkLabel: 'Parla',
+      publicChatEndCallLabel: 'Termina chiamata',
+      publicChatVoiceConnectingStatus: 'Connessione…',
+      publicChatVoiceListeningStatus: 'In ascolto',
+      publicChatVoiceSpeakingStatus: 'Sta parlando',
+      publicChatVoiceEndedStatus: 'Chiamata terminata',
+      publicChatVoiceMicrophoneError: 'Per parlare serve il microfono.',
+      publicChatVoiceUnavailableError: 'Parlare non è possibile al momento. Riprova più tardi.',
+      publicChatSpokenLabel: 'A voce',
     },
     pt: {
       launcherDefaultLabel: 'Fale conosco',
@@ -207,6 +244,15 @@
       publicChatAgentUnavailableMessage: 'Este assistente não está disponível neste momento. Tente novamente mais tarde.',
       skillReceiptSubmittedLabel: 'Enviado',
       skillReceiptFailedLabel: 'Falha ao enviar',
+      publicChatTalkLabel: 'Falar',
+      publicChatEndCallLabel: 'Terminar chamada',
+      publicChatVoiceConnectingStatus: 'A ligar…',
+      publicChatVoiceListeningStatus: 'A ouvir',
+      publicChatVoiceSpeakingStatus: 'A falar',
+      publicChatVoiceEndedStatus: 'Chamada terminada',
+      publicChatVoiceMicrophoneError: 'Para falar, é preciso o microfone.',
+      publicChatVoiceUnavailableError: 'Falar não está disponível agora. Tente mais tarde.',
+      publicChatSpokenLabel: 'Por voz',
     },
     nl: {
       launcherDefaultLabel: 'Chat met ons',
@@ -237,6 +283,15 @@
       publicChatAgentUnavailableMessage: 'Deze assistent is momenteel niet beschikbaar. Probeer het later opnieuw.',
       skillReceiptSubmittedLabel: 'Verzonden',
       skillReceiptFailedLabel: 'Verzenden mislukt',
+      publicChatTalkLabel: 'Praten',
+      publicChatEndCallLabel: 'Gesprek beëindigen',
+      publicChatVoiceConnectingStatus: 'Verbinden…',
+      publicChatVoiceListeningStatus: 'Luistert',
+      publicChatVoiceSpeakingStatus: 'Spreekt',
+      publicChatVoiceEndedStatus: 'Gesprek beëindigd',
+      publicChatVoiceMicrophoneError: 'Om te praten is je microfoon nodig.',
+      publicChatVoiceUnavailableError: 'Praten is nu niet beschikbaar. Probeer het later opnieuw.',
+      publicChatSpokenLabel: 'Gesproken',
     },
     pl: {
       launcherDefaultLabel: 'Porozmawiaj z nami',
@@ -267,6 +322,15 @@
       publicChatAgentUnavailableMessage: 'Ten asystent jest obecnie niedostępny. Spróbuj ponownie później.',
       skillReceiptSubmittedLabel: 'Wysłano',
       skillReceiptFailedLabel: 'Nie udało się wysłać',
+      publicChatTalkLabel: 'Mów',
+      publicChatEndCallLabel: 'Zakończ rozmowę',
+      publicChatVoiceConnectingStatus: 'Łączenie…',
+      publicChatVoiceListeningStatus: 'Słucham',
+      publicChatVoiceSpeakingStatus: 'Mówię',
+      publicChatVoiceEndedStatus: 'Rozmowa zakończona',
+      publicChatVoiceMicrophoneError: 'Do rozmowy potrzebny jest mikrofon.',
+      publicChatVoiceUnavailableError: 'Rozmowa głosowa jest teraz niedostępna. Spróbuj później.',
+      publicChatSpokenLabel: 'Głosowo',
     },
     zh: {
       launcherDefaultLabel: '与我们聊天',
@@ -296,6 +360,15 @@
       publicChatAgentUnavailableMessage: '该助手目前不可用。请稍后再试。',
       skillReceiptSubmittedLabel: '已提交',
       skillReceiptFailedLabel: '无法提交',
+      publicChatTalkLabel: '说话',
+      publicChatEndCallLabel: '结束通话',
+      publicChatVoiceConnectingStatus: '正在连接…',
+      publicChatVoiceListeningStatus: '正在聆听',
+      publicChatVoiceSpeakingStatus: '正在说话',
+      publicChatVoiceEndedStatus: '通话已结束',
+      publicChatVoiceMicrophoneError: '语音通话需要使用麦克风。',
+      publicChatVoiceUnavailableError: '语音通话暂时不可用，请稍后再试。',
+      publicChatSpokenLabel: '语音',
     },
     ja: {
       launcherDefaultLabel: 'チャットでお問い合わせ',
@@ -326,6 +399,15 @@
       publicChatAgentUnavailableMessage: 'このアシスタントは現在利用できません。しばらくしてからもう一度お試しください。',
       skillReceiptSubmittedLabel: '送信しました',
       skillReceiptFailedLabel: '送信できませんでした',
+      publicChatTalkLabel: '話す',
+      publicChatEndCallLabel: '通話を終了',
+      publicChatVoiceConnectingStatus: '接続中…',
+      publicChatVoiceListeningStatus: '聞いています',
+      publicChatVoiceSpeakingStatus: '話しています',
+      publicChatVoiceEndedStatus: '通話が終了しました',
+      publicChatVoiceMicrophoneError: '話すにはマイクが必要です。',
+      publicChatVoiceUnavailableError: '現在、音声でお話しできません。後でもう一度お試しください。',
+      publicChatSpokenLabel: '音声',
     },
     ru: {
       launcherDefaultLabel: 'Напишите нам',
@@ -356,6 +438,15 @@
       publicChatAgentUnavailableMessage: 'Этот ассистент сейчас недоступен. Пожалуйста, попробуйте позже.',
       skillReceiptSubmittedLabel: 'Отправлено',
       skillReceiptFailedLabel: 'Не удалось отправить',
+      publicChatTalkLabel: 'Говорить',
+      publicChatEndCallLabel: 'Завершить звонок',
+      publicChatVoiceConnectingStatus: 'Подключение…',
+      publicChatVoiceListeningStatus: 'Слушаю',
+      publicChatVoiceSpeakingStatus: 'Говорю',
+      publicChatVoiceEndedStatus: 'Звонок завершён',
+      publicChatVoiceMicrophoneError: 'Чтобы говорить, нужен микрофон.',
+      publicChatVoiceUnavailableError: 'Голосовой разговор сейчас недоступен. Попробуйте позже.',
+      publicChatSpokenLabel: 'Голосом',
     },
   }
 
@@ -445,6 +536,15 @@
     'publicChatAgentUnavailableMessage',
     'skillReceiptSubmittedLabel',
     'skillReceiptFailedLabel',
+    'publicChatTalkLabel',
+    'publicChatEndCallLabel',
+    'publicChatVoiceConnectingStatus',
+    'publicChatVoiceListeningStatus',
+    'publicChatVoiceSpeakingStatus',
+    'publicChatVoiceEndedStatus',
+    'publicChatVoiceMicrophoneError',
+    'publicChatVoiceUnavailableError',
+    'publicChatSpokenLabel',
   ]
 
   const themeOverrideKeys = [
@@ -1078,7 +1178,8 @@
     // hidden panel would defer loading and defeat the warm-up.
     iframe.loading = 'eager'
     iframe.referrerPolicy = 'no-referrer-when-downgrade'
-    iframe.allow = 'clipboard-read; clipboard-write'
+    // The frame asks for the microphone only when the agent takes voice calls here.
+    iframe.allow = options.voiceAvailable ? 'clipboard-read; clipboard-write; microphone' : 'clipboard-read; clipboard-write'
     iframe.style.border = '0'
     iframe.style.width = '100%'
     iframe.style.height = '100%'
@@ -1488,6 +1589,8 @@
       'page.read': pageReadCapabilityForContext(pageContextMode, pageContext),
     }
     const avatarUrl = resolveAvatarUrl(config.assistantLogoUrl, scriptUrl) || new URL('/radioso-icon.svg', scriptUrl).toString()
+    // The agent takes voice calls from this embed; the frame then shows Talk and may ask for the microphone.
+    const voiceAvailable = Boolean(config.voice && config.voice.available === true)
 
     const proactiveGreetingAttr =
       typeof script.dataset.radiosoProactiveGreeting === 'string'
@@ -1800,6 +1903,7 @@
         copyOverrides,
         theme,
         themeOverrides,
+        voiceAvailable,
       })
       panel.appendChild(iframe)
       return iframe
@@ -1843,6 +1947,7 @@
             signedIdentity: identityProvider ? null : identitySetting,
             identityProvider,
             resumed,
+            voice: { available: voiceAvailable },
           }, scriptUrl.origin)
         })
         .catch((error) => {
@@ -2045,6 +2150,9 @@
       }
       panel.setAttribute('aria-hidden', isOpen ? 'false' : 'true')
       button.setAttribute('aria-expanded', isOpen ? 'true' : 'false')
+      if (iframe && iframe.contentWindow) {
+        iframe.contentWindow.postMessage({ type: PANEL_VISIBILITY_MESSAGE, open: isOpen }, scriptUrl.origin)
+      }
     }
 
     const dismissTeaser = (persist) => {

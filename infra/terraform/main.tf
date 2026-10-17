@@ -35,6 +35,17 @@ locals {
     var.action_dispatch_recovery_schedule,
     "*/5 * * * *",
   )
+  # Every 5 minutes by default: the push path wakes the worker for normal work, so this only
+  # catches lost wakes and expired leases; a summary refresh a few minutes late is harmless.
+  background_job_recovery_schedule = coalesce(
+    var.background_job_recovery_schedule,
+    "*/5 * * * *",
+  )
+  # Daily: dead-lettered jobs are kept 14 days for inspection, so a day of lateness is immaterial.
+  background_job_retention_schedule = coalesce(
+    var.background_job_retention_schedule,
+    "15 5 * * *",
+  )
   # Daily is the right cadence for a retention window measured in months: the sweep is the only
   # trigger retention has under the task runtime, and a day of lateness on a 90-day window is
   # immaterial next to the cost of scanning for expired rows every few minutes.
@@ -51,6 +62,24 @@ locals {
   slack_inbound_event_retention_schedule = coalesce(
     var.slack_inbound_event_retention_schedule,
     "45 4 * * *",
+  )
+  # Matches the document worker's own daily interval (DAILY_SCAN_INTERVAL_MS in
+  # credentialExpiryWarningService.ts).
+  credential_expiry_warning_schedule = coalesce(
+    var.credential_expiry_warning_schedule,
+    "15 4 * * *",
+  )
+  # Every minute: Cloud Scheduler's own minimum granularity, matching the dispatcher's
+  # ALERT_SWEEP_INTERVAL_MS (60s) poll-loop cadence.
+  usage_limit_alert_sweep_schedule = coalesce(
+    var.usage_limit_alert_sweep_schedule,
+    "* * * * *",
+  )
+  # Every minute: Cloud Scheduler's own minimum granularity, matching AUTO_TOP_UP_SWEEP_INTERVAL_MS
+  # (60s) in applicationModule.ts.
+  billing_auto_top_up_sweep_schedule = coalesce(
+    var.billing_auto_top_up_sweep_schedule,
+    "* * * * *",
   )
   # Recovery only (lease recovery, domain refresh, send reconciliation claims, event-log
   # retention) — scheduled drains carry the normal-path work (research B7, B12).

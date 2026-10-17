@@ -42,7 +42,7 @@ import type { Env } from "../../config/env.js";
 import type { ApplicationModule, MailTransportPort } from "../applicationModule.js";
 import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 import { buildConversationLinkResolver } from "../conversationLinkResolver.js";
-import { buildContactDeliveryResolver } from "../contactDelivery.js";
+import { buildContactDeliveryResolver, buildNotificationRecipientPolicy } from "../contactDelivery.js";
 
 /** Reads the per-agent contact-requests flag and delivery config for the advertiser. */
 interface AgentContactFlagLookup {
@@ -89,6 +89,7 @@ const buildOperatorNotificationDispatcher = (input: {
   mailService: MailTransportPort;
   assertPublicWebsiteUrl: (url: string) => Promise<void>;
   admission: NotificationDeliveryAdmissionPort;
+  recipientPolicy: ReturnType<typeof buildNotificationRecipientPolicy>;
 }): OperatorNotificationDispatcher => {
   const recipients = buildContactDeliveryResolver(input.database);
   const conversationLinks = buildConversationLinkResolver({ database: input.database, appBaseUrl: input.env.APP_BASE_URL });
@@ -100,6 +101,7 @@ const buildOperatorNotificationDispatcher = (input: {
       new FetchContactWebhookHttpClient(input.assertPublicWebsiteUrl, { fetchImpl: fetchPublicUrl }),
       conversationLinks,
       input.admission,
+      input.recipientPolicy,
     ),
     new SlackOperatorNotificationSink({
       installations: new SlackInstallationRepository(input.database.kysely),
@@ -154,7 +156,8 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
       type: CONTACT_SEND_ACTION_TYPE,
       requiredCapabilities: [capabilityNames.humanContact.request],
       queuedFrom: "routine_action_step",
-      handler: ({ database, logger, mailService, usageLimitPolicy, auditService, assertPublicWebsiteUrl, errorReporter }) => {
+      handler: ({ database, env, logger, mailService, usageLimitPolicy, auditService, assertPublicWebsiteUrl, errorReporter, metrics }) => {
+        const recipientPolicy = buildNotificationRecipientPolicy({ database, env, mailer: mailService, logger, metrics });
         return new ContactSendActionHandler(
           mailService,
           buildContactDeliveryResolver(database),
@@ -164,6 +167,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
           new FetchContactWebhookHttpClient(assertPublicWebsiteUrl, { fetchImpl: fetchPublicUrl }),
           errorReporter,
           buildNotificationDeliveryAdmission({ database, usageLimitPolicy, auditService, logger }),
+          recipientPolicy,
         );
       },
     });
@@ -176,7 +180,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
         requiredCapabilities: [capabilityNames.humanContact.request],
         // The turn that reaches the ending queues it; an author sets the notice on the ending.
         queuedFrom: "chat_turn",
-        handler: ({ database, env, logger, mailService, usageLimitPolicy, auditService, assertPublicWebsiteUrl }) => new RoutineEndingNotifyActionHandler({
+        handler: ({ database, env, logger, mailService, usageLimitPolicy, auditService, assertPublicWebsiteUrl, metrics }) => new RoutineEndingNotifyActionHandler({
           ending,
           dispatcher: buildOperatorNotificationDispatcher({
             database,
@@ -185,6 +189,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
             mailService,
             assertPublicWebsiteUrl,
             admission: buildNotificationDeliveryAdmission({ database, usageLimitPolicy, auditService, logger }),
+            recipientPolicy: buildNotificationRecipientPolicy({ database, env, mailer: mailService, logger, metrics }),
           }),
           subjects: new RepositoryRoutineEndingNotificationSubjectResolver(
             new AgentRepository(database.kysely),
@@ -199,7 +204,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
       requiredCapabilities: [capabilityNames.humanContact.request],
       // The turn that reaches an approval step queues it.
       queuedFrom: "chat_turn",
-      handler: ({ database, env, logger, mailService, usageLimitPolicy, auditService, assertPublicWebsiteUrl }) => {
+      handler: ({ database, env, logger, mailService, usageLimitPolicy, auditService, assertPublicWebsiteUrl, metrics }) => {
         return new ApprovalRequestActionHandler(
           buildOperatorNotificationDispatcher({
             database,
@@ -208,6 +213,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
             mailService,
             assertPublicWebsiteUrl,
             admission: buildNotificationDeliveryAdmission({ database, usageLimitPolicy, auditService, logger }),
+            recipientPolicy: buildNotificationRecipientPolicy({ database, env, mailer: mailService, logger, metrics }),
           }),
           new ConversationRepository(database.kysely),
         );

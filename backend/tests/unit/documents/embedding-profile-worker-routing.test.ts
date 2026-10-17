@@ -125,7 +125,7 @@ describe("embedding profile worker routing", () => {
     expect((await documents.findByIdAndWorkspaceId(document.id, document.workspaceId))?.status).toBe("ready");
   });
 
-  it("blocks the pinned transition before failing retry-exhausted profile work", async () => {
+  it("claims the job before recording a retry-exhausted transition failure", async () => {
     const documents = new InMemoryDocumentRepository();
     const jobs = new InMemoryDocumentProcessingJobRepository(documents);
     const document = await documents.create({
@@ -184,8 +184,13 @@ describe("embedding profile worker routing", () => {
       workspaceProfileGeneration: "2",
       failureKind: "retry_exhausted",
     });
-    expect(recordFailure.mock.invocationCallOrder[0]).toBeLessThan(
-      markFailed.mock.invocationCallOrder[0],
+    // markFailed is the atomic claim: it is fenced on status='processing', so
+    // it must run (and succeed) before recordFailure, not after. Recording a
+    // transition failure before confirming the claim would let a run that
+    // was not actually dead complete the job first and then see its success
+    // followed by a recorded failure.
+    expect(markFailed.mock.invocationCallOrder[0]).toBeLessThan(
+      recordFailure.mock.invocationCallOrder[0],
     );
     expect(jobs.items.get(queued.id)).toMatchObject({
       status: "failed",
@@ -263,7 +268,7 @@ describe("embedding profile worker routing", () => {
     expect(jobs.items.get(queued.id)?.status).toBe("failed");
   });
 
-  it("leaves terminal profile work recoverable when transition failure recording fails", async () => {
+  it("still ends the job failed when recording the transition failure itself throws", async () => {
     const documents = new InMemoryDocumentRepository();
     const jobs = new InMemoryDocumentProcessingJobRepository(documents);
     const document = await documents.create({
@@ -317,8 +322,16 @@ describe("embedding profile worker routing", () => {
     await expect(worker.runOnce()).rejects.toThrow(
       "transition store unavailable",
     );
-    expect(markFailed).not.toHaveBeenCalled();
-    expect(jobs.items.get(queued.id)?.status).toBe("processing");
+    // markFailed is the atomic claim and runs first — it already committed
+    // before recordFailure threw, so the job correctly shows "failed" (it
+    // did fail) even though the transition's own failure was never
+    // recorded. Nothing retries recordFailure for an already-terminal job,
+    // but this is strictly safer than the alternative: calling markFailed
+    // only after recordFailure would let a run that was not actually dead
+    // complete the job between the two calls, and then record a failure
+    // after that success.
+    expect(markFailed).toHaveBeenCalledTimes(1);
+    expect(jobs.items.get(queued.id)?.status).toBe("failed");
   });
 
   it("releases an in-flight profile job on restart even when the document is ready", async () => {

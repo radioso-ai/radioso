@@ -11,6 +11,7 @@ export {
   EvalMessageCaseService,
 } from "./services/evalMessageCaseService.js";
 export { EvalMessageCaseRepository } from "./services/evalMessageCaseRepository.js";
+export { EvalConversationEraser } from "./services/evalConversationEraser.js";
 export {
   EvalCaseService,
 } from "./services/evalCaseService.js";

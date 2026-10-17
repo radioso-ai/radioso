@@ -21,6 +21,15 @@ import type { SuiteAssertion } from "./scoring.js";
  * agent binding; `agentConfigOverride` exists only for cases that deliberately probe a
  * config change.
  */
+/**
+ * A case carrying this tag holds its `llm_judge` assertions to zero rate-drop tolerance: the share
+ * of samples in which no judge verdict failed may not fall below the case's recorded pass rate.
+ * It is for judges whose single failure is the defect itself (a quick reply that states a fact),
+ * where the suite's general tolerance would let a reply recorded at five in five make a claim in
+ * two samples of five and still pass.
+ */
+export const ZERO_TOLERANCE_JUDGE_TAG = "judge-zero-tolerance";
+
 export interface ConversationQualityCase {
   id: string;
   name: string;
@@ -99,6 +108,7 @@ const suiteAssertionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("turn_grounding_verdict"), verdict: z.enum(["grounded", "degraded", "no_support"]) }),
   z.object({ type: z.literal("turn_answer_coverage"), coverage: z.enum(["answered", "partial", "unanswered", "unclear"]) }),
   z.object({ type: z.literal("turn_persists_no_reply") }),
+  z.object({ type: z.literal("turn_reply_source"), source: z.enum(["turn_planning", "composer"]) }),
 ]);
 
 /** Turn inputs a review turn has no way to take: it answers a recorded message with its history. */

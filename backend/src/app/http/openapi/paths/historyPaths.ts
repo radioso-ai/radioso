@@ -189,17 +189,68 @@ export const registerHistoryPaths = (
   });
 
   registry.registerPath({
+    method: "delete",
+    path: "/api/v1/history/chat/{conversationId}",
+    tags: ["History"],
+    summary: "Permanently delete a conversation and everything derived from it",
+    description: "Erases the conversation, its messages, and every record derived from it: summaries, routine and decision state, held replies, email threads and inbound mail, session-scoped context values, and the turn audit events that carry its content. The billing ledger keeps its usage rows without the link. Records one `conversation.erased` audit event with counts only. Requires workspace.history.delete. There is no undo.",
+    operationId: "deleteHistoryConversation",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.conversationParamsSchema,
+    },
+    responses: {
+      204: { description: "Conversation deleted" },
+      400: {
+        description: "Request validation failed",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      403: {
+        description: "Caller lacks workspace.history.delete",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Conversation not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
     method: "get",
     path: "/api/v1/history/chat/{conversationId}/tail",
     tags: ["History"],
     summary: "Poll new messages for a saved assistant conversation",
+    description: "Returns the messages after `cursor`. It also returns an assistant reply the client has already seen once the caller has marked it interrupted, carrying `interruption`, in time order with the new messages. Merge messages by `id`, so a re-delivered message replaces the one you hold.",
     operationId: "tailHistoryConversation",
     security: [{ [security.bearerAuthScheme.name]: [] }],
     request: {
       params: schemas.conversationParamsSchema,
       query: z.object({
         limit: z.number().int().min(1).max(100).optional(),
-        cursor: z.string().min(1).optional(),
+        cursor: z.string().min(1).optional().openapi({
+          description: "The previous tail's `cursor`, or the detail's `tailCursor`, passed back as returned. Without it, the newest page.",
+        }),
         activityCursor: z.string().min(1).optional().openapi({
           description: "The previous tail's `activityCursor`, passed back as returned: opaque, and a string no tail returned is refused with 400. The response's `activity` then carries only the events in a recent window, so it can repeat events the caller already holds; without it, the whole timeline.",
         }),
@@ -279,6 +330,54 @@ export const registerHistoryPaths = (
       },
       401: {
         description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Visitor not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "delete",
+    path: "/api/v1/history/visitors/{visitorId}",
+    tags: ["History"],
+    summary: "Permanently delete a visitor, every conversation they had, and everything derived from them",
+    description: "Erases each of the visitor's conversations as `DELETE /api/v1/history/chat/{conversationId}` does, then the customer-scoped context values for the visitor's verified customer id, then the visitor record. Records one `visitor.erased` audit event with counts only. Requires workspace.history.delete. There is no undo.",
+    operationId: "deleteHistoryVisitor",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      params: schemas.visitorConversationsParamsSchema,
+    },
+    responses: {
+      204: { description: "Visitor deleted" },
+      400: {
+        description: "Request validation failed",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      403: {
+        description: "Caller lacks workspace.history.delete",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,

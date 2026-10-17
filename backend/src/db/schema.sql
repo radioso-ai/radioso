@@ -3419,6 +3419,22 @@ CREATE TABLE public.pending_decisions (
 
 
 --
+-- Name: pending_registration_tickets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pending_registration_tickets (
+    id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    account_id uuid NOT NULL,
+    token_hash text NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    activated_at timestamp with time zone,
+    used_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: retrieval_settings; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -5942,6 +5958,22 @@ ALTER TABLE ONLY public.password_reset_tokens
 
 ALTER TABLE ONLY public.pending_decisions
     ADD CONSTRAINT pending_decisions_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pending_registration_tickets pending_registration_tickets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pending_registration_tickets
+    ADD CONSTRAINT pending_registration_tickets_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pending_registration_tickets pending_registration_tickets_token_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pending_registration_tickets
+    ADD CONSTRAINT pending_registration_tickets_token_hash_key UNIQUE (token_hash);
 
 
 --
@@ -12011,6 +12043,22 @@ ALTER TABLE ONLY public.pending_decisions
 
 ALTER TABLE ONLY public.pending_decisions
     ADD CONSTRAINT pending_decisions_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: pending_registration_tickets pending_registration_tickets_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pending_registration_tickets
+    ADD CONSTRAINT pending_registration_tickets_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: pending_registration_tickets pending_registration_tickets_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pending_registration_tickets
+    ADD CONSTRAINT pending_registration_tickets_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
 
 
 --

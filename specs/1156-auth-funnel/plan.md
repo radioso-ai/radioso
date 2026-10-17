@@ -12,7 +12,7 @@ Finish the auth funnel by adding route-addressable auth pages and by introducing
 
 **Dependencies**: Express, Zod, Kysely/PostgreSQL, Vitest/Supertest, Playwright
 
-**Storage**: PostgreSQL migration `217_auth_pending_registration_tickets.sql`
+**Storage**: PostgreSQL migration `232_auth_pending_registration_tickets.sql`
 
 **Public contract**: register response gains an optional development URL; verify response creates a session cookie; new pending-session exchange endpoint
 

@@ -1,6 +1,7 @@
 # Voice Channel Module
 
-Voice owns spoken sessions with an agent. A voice runtime (ElevenLabs Agents,
+Voice owns spoken sessions with an agent, and where each call's recording
+lives. A voice runtime (ElevenLabs Agents,
 or a runtime we control) handles audio, speech recognition and synthesis; this
 module turns each finished caller utterance into one chat turn on the
 session's conversation and hands the reply back as sentence-sized speech. It
@@ -52,8 +53,19 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   `refreshEmbedConfigsOnVoiceVendorKeyChange` drops the workspace's
   CDN-cached embed configs when a voice vendor key is stored or removed, so
   that yes or no follows the key at once.
+  `voiceRecordingService.ts` is a call's recording as the operator meets it:
+  the page's report of the vendor's conversation id
+  (`VoiceVendorConversationReportPort`), whether a conversation has a
+  recording (`VoiceRecordingAvailabilityPort`, from `voice_sessions` and the
+  key's presence, no vendor call) and a play (`VoiceRecordingPlaybackPort`),
+  audited through `VoiceRecordingAudit` before the audio is handed on;
+  `voiceRecordingErasureService.ts` deletes recordings at the vendor when
+  their workspace or organization is deleted (`VoiceRecordingErasurePort`,
+  the shared `VendorHeldConversationDataEraser`).
 - `persistence/` maps `(agent_id, vendor, session_key)` to a conversation in
-  `voice_sessions`. The first binding wins.
+  `voice_sessions`. The first binding wins. A Radioso-started row also holds
+  the vendor account's region and, once reported, the vendor's conversation
+  id (`VoiceRecordingStore`).
 - `adapters/*` translate one wire to the domain port and back, and nothing
   else. `adapters/openaiCompletions/` is the OpenAI chat-completions wire;
   vendors that share it differ only by a dialect in `dialects.ts`, which is
@@ -63,7 +75,11 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   and in `requestSchema.ts`, never in the domain. `adapters/elevenlabs/` is
   the ElevenLabs `VoiceSessionStarter`: the signed-URL request with the key in
   `xi-api-key`, its response, its 15-minute validity and its 5-second timeout,
-  over an injected `fetch`.
+  over an injected `fetch`, and the ElevenLabs `VoiceRecordingSource`
+  (`recordingSource.ts`): the conversation's audio and its deletion, with the
+  key in `xi-api-key`, one byte range passed on, a non-audio answer refused,
+  and a 5-second limit on the answer that leaves the audio itself unbounded.
+  Both use the region host table in `hosts.ts`.
 
 Dependency direction is adapter → `VoiceTurnPort` → chat. The service reaches
 chat through the narrow `VoiceChatPort` (`streamTurn`) and imports chat only
@@ -83,7 +99,9 @@ helpers and the shared chat message limit from `app/http`
 - `public.ts` — `VoiceTurnPort`, `VoiceTurnService`, `VoiceSessionRepository`,
   `registerOpenAiCompletionsRoute`; `VoiceSessionStartPort`,
   `VoiceSessionStartResult`, `VoiceSessionStartService`,
-  `createElevenLabsSessionStarter`.
+  `createElevenLabsSessionStarter`; the recording ports,
+  `VoiceRecordingService`, `VoiceRecordingErasureService`,
+  `VoiceRecordingAudit` and `createElevenLabsRecordingSource`.
 - `backend/src/app/composition/voiceChannel.ts` — builds the port over a
   session store, `AssistantChatService.streamAnswer`, the agent repository (voice
   settings and default locale), the routine state store, the conversation
@@ -97,7 +115,21 @@ helpers and the shared chat message limit from `app/http`
   start registry; exposed as `AppDependencies.voiceSessionStarts`.
   `app/server/dependencies.ts` builds one `VoiceSessionRepository` and hands it
   to both: the turn reads bindings and starts from it, and the start records
-  into it.
+  into it. `createVoiceRecordingComposition` builds the recording services
+  over the same repository, the ElevenLabs recording source with `fetch`, the
+  same credential reader and the audit service
+  (`conversation.recording_played` and `conversation.recording_deleted`,
+  built by `createVoiceRecordingAudit`); the playback is
+  `AppDependencies.voiceRecordings`, Ray's catalog reads its availability,
+  and the erasure is the workspace service's
+  `VendorHeldConversationDataEraser`.
+- `backend/src/app/http/routes/conversationRecordingRoutes.ts` — mounts
+  `GET /api/v1/conversations/:conversationId/recording` (dashboard sessions,
+  `workspace.history.read`, `sessionOnly` in `apiPrincipalRoutePolicy.ts`),
+  streaming the audio with `Cache-Control: private, no-store`; `404` for no
+  recording or no audio yet, `503 recording_unavailable` otherwise.
+  `historyRoutes.ts` adds `recording: { available }` to a voice
+  conversation's detail for dashboard sessions.
 - The agent's `voice` settings block belongs to the agents module
   (`agents/voiceSettings.ts`, stored in `behavior_settings.voice`, served on
   `GET`/`PUT /api/v1/agents/:agentId`). This module reads it: the services
@@ -161,6 +193,24 @@ helpers and the shared chat message limit from `app/http`
   `api.eu.residency.elevenlabs.io` and refuses a URL from any other host. A
   body that stalls past the 5 s request limit is a `timeout`, not a malformed
   answer.
+- **Recordings stay with the vendor.** Radioso stores where the recording
+  is, never the audio: the region at the start and the vendor's id for the
+  call, which the page reports once through
+  `POST /api/v1/public/chat/:token/voice/sessions/:sessionKey/vendor-conversation`
+  (website embed sessions, the same public session as the start, the
+  session-read budget). The id is taken only for a session Radioso started
+  for that public session while its start is unexpired, at most once, and is
+  unique per vendor and region; it is only ever used to look the recording
+  up with the workspace's own key, and no response carries it. A self-minted
+  session key has no recording. Each answer that carries audio is audited
+  first; an audit that fails refuses the play. A workspace or organization
+  deletion reads the recordings and the key before the cascade takes both,
+  then asks the vendor to delete each, four at a time for at most 20 s; a
+  refusal is logged and never fails the deletion. The route is a permanent
+  coverage exclusion (`getConversationRecording`: binary audio a teammate
+  hears); Ray's `conversation_transcript` carries `recordingAvailable`. The
+  agent's optional `voice.recordingNotice` is shown by the embed, not spoken:
+  the session start hands it to the page in the session's language.
 - **The session key is a correlation handle.** The start mints it (a UUID) and
   records it in `voice_sessions` with the visitor's public session and visitor
   key until `VOICE_BEHAVIOR.sessionStartTtlMs` (60 minutes: the signed URL's
@@ -445,6 +495,19 @@ waiting). The service records `voice_turn_superseded_total` (`stage`:
 outcome. Labels are closed enums; no line text, locale tag or id. The chat registry's `chat_turn_cancellations_total` counts a voice
 turn cancelled mid-reply with `stage: "persisting"`.
 
+A recording play records `voice_recording_fetch_total` (`vendor`, or `none`
+before one is known; `outcome`: `served`, `no_recording`, `store_failed`,
+`credential_missing`, `credential_unreadable`, `credential_read_failed`,
+`vendor_not_found`, `vendor_failed`, `audit_failed`) and, unless served,
+`Voice recording could not be read` at warn with `workspaceId`,
+`conversationId`, `vendor`, `outcome` and the vendor's `reason` and
+`vendorStatus`. A deletion records `voice_recording_delete_total` (`outcome`:
+`deleted`, `vendor_failed`, `credential_*`, `deadline_passed`) and logs
+`Voice recording was left at the vendor` at warn per recording, or once with
+`recordingCount` when the 20 s ran out. A refused report logs `Voice vendor
+conversation report was refused` with `workspaceId` and `agentId`. Never the
+key, the vendor URL, the vendor's conversation id or any audio.
+
 ## Tests
 
 - `cd backend && pnpm exec vitest run tests/unit/voice-channel-*.test.ts` (the
@@ -462,5 +525,8 @@ turn cancelled mid-reply with `stage: "persisting"`.
 - `cd backend && pnpm exec vitest run tests/contract/public-voice-session.contract.test.ts tests/contract/settings-credentials.contract.test.ts`
   (the session start through the embed's public session, with a fake vendor
   `fetch`; the ElevenLabs key in the credential store)
+- `cd backend && pnpm exec vitest run tests/contract/voice-recording.contract.test.ts`
+  (the report, the detail flag, playback through a fake vendor `fetch`, and
+  deletion with the workspace)
 - `cd backend && pnpm exec vitest run tests/integration/voice-session-repository.integration.test.ts`
   (needs the disposable integration database; see the code map)

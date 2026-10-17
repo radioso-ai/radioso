@@ -101,6 +101,8 @@ Use `GET /api/v1/history/chat/{conversationId}/tail` to read messages created af
 
 The voice channel marks a reply as interrupted on the caller's next request, so the mark usually lands on a reply you already hold. The dashboard tail returns that reply again, once, with its `interruption`, in time order with the new messages. Merge tail messages into the transcript by `id`, so the returned message replaces the one you hold.
 
+A voice conversation's detail, read by a dashboard session, carries `recording: { "available": true }` when the call has a recording you can play: the website embed told Radioso which voice vendor conversation the call was, and the workspace holds a vendor key Radioso can read. Radioso answers it from its own records, so a call that has just ended can read as available shortly before the vendor has its audio. Play it with `GET /api/v1/conversations/{conversationId}/recording`, which streams the vendor's audio (`audio/mpeg`) with `Cache-Control: private, no-store`, passes one `Range` byte range on, and records a `conversation.recording_played` audit event for every answer that carries audio. It takes dashboard sessions only; an `<audio>` element can pass the workspace as `?workspaceId=` instead of the `X-Workspace-Id` header. `404` means there is no recording, or the vendor holds no audio for the call yet; `503 recording_unavailable` means it could not be read now. Machine credentials get no `recording` on the detail.
+
 A conversation detail response can also include `visitor` (`id`, `firstSeenAt`, `conversationCount`, `verified`), `requestContext` (the request facts Radioso observed when the conversation opened, including `clientIp`), and `entryReferrer` — the same fields the dashboard's Visitor panel shows, gated behind the same operator session or credential as the rest of detail. A conversation summary carries `visitorCountry` alongside them, so a list view can show a country without fetching each conversation's detail.
 
 Use `GET /api/v1/history/visitors/{visitorId}/conversations` to page through a visitor's other conversations — the same summaries `GET /api/v1/history/chat` returns, scoped to one visitor. Pass `exclude` to drop one conversation id from the results, typically the one already open. This route needs `workspace.history.read`, same as the rest of history.
@@ -147,6 +149,7 @@ DELETE /api/v1/history/chat/{conversationId}
 GET  /api/v1/history/chat/{conversationId}/tail
 GET  /api/v1/history/visitors/{visitorId}/conversations
 DELETE /api/v1/history/visitors/{visitorId}
+GET  /api/v1/conversations/{conversationId}/recording
 GET  /api/v1/history/search
 GET  /api/v1/history/search/{searchId}
 ```

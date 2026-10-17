@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "Create and edit dashboard routines in the Document view, read the Map, connect skills, and try a change in a test chat before it ships."
-last_updated: 2026-10-11
+last_updated: 2026-10-17
 ---
 
 # Authoring Routines
@@ -311,6 +311,11 @@ starts on **No reply-to** until you choose. When the guest never gave that
 field, the email goes out with no reply-to. Rename the field and the ending
 follows; the editor will not remove a field an ending replies to.
 
+When the routine has an email field and a notifying ending's **Replies go to**
+is **No reply-to**, a note under the select reads "Replies won't reach the visitor. Choose
+their email field." The ending still saves and the routine still publishes, so
+a routine with nobody worth replying to stays as it is.
+
 A step the visitor keeps answering without giving what it needs is asked again
 up to three times, then asks differently once. When some branch row leads to a
 **Hand off** ending, a visitor who still gives the step nothing goes to a
@@ -331,6 +336,9 @@ skill that is no longer an enabled, routine-named notify skill on the agent
 **(unavailable)** next to the note. An ending whose **Replies go to** names a
 field that is no longer an email field gets `operator_notice_reply_to_slot_invalid`,
 and its select shows that field as **(not an email field)**.
+
+The **Replies go to** reminder (`operator_notice_reply_to_unset`) sits outside
+these validation notes and never stops the routine from saving or publishing.
 
 ## Map
 

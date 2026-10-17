@@ -4,9 +4,11 @@ import { fileURLToPath } from 'node:url';
 const frontendRoot = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_STANDALONE_MCP_URL = process.env.NODE_ENV === "production" ? "" : "http://localhost:8787/mcp";
 
-const buildCspDirectives = ({ frameAncestors }) => [
+// `allowsWasm`: the chat frame's voice client compiles its resampler, a WebAssembly worklet, in
+// browsers that cannot set the microphone's sample rate (Firefox). Only the frame gets it.
+const buildCspDirectives = ({ frameAncestors, allowsWasm = false }) => [
   "default-src 'self'",
-  `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
+  `script-src 'self' 'unsafe-inline'${allowsWasm ? " 'wasm-unsafe-eval'" : ""}${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`,
   "script-src-attr 'none'",
   "style-src 'self' 'unsafe-inline'",
   "img-src 'self' data: blob: http: https:",
@@ -21,7 +23,7 @@ const buildCspDirectives = ({ frameAncestors }) => [
 ].filter(Boolean).join("; ");
 
 const cspDirectives = buildCspDirectives({ frameAncestors: "frame-ancestors 'self'" });
-const embedCspDirectives = buildCspDirectives({ frameAncestors: "" });
+const embedCspDirectives = buildCspDirectives({ frameAncestors: "", allowsWasm: true });
 
 const securityHeaders = [
   {
@@ -42,11 +44,15 @@ const securityHeaders = [
   },
 ];
 
-const embedSecurityHeaders = securityHeaders.map((header) => (
-  header.key === "Content-Security-Policy"
-    ? { ...header, value: embedCspDirectives }
-    : header
-));
+// The chat frame may use the microphone for a voice call; the host page delegates it with the
+// iframe's `allow="microphone"`, which the launcher sets only when the agent takes voice calls.
+const voicePermissionsPolicy = "camera=(), microphone=(self), geolocation=()";
+
+const embedSecurityHeaders = securityHeaders.map((header) => {
+  if (header.key === "Content-Security-Policy") return { ...header, value: embedCspDirectives };
+  if (header.key === "Permissions-Policy") return { ...header, value: voicePermissionsPolicy };
+  return header;
+});
 
 const resolvePublicMcpUrl = () => {
   if (process.env.NEXT_PUBLIC_MCP_URL) {
@@ -115,6 +121,13 @@ const nextConfig = {
       {
         source: "/embed-frame",
         headers: embedSecurityHeaders,
+      },
+      {
+        // The embed test page hosts the launcher like a customer's site, which usually sends no
+        // microphone policy and so lets the launcher's `allow="microphone"` reach the frame, even
+        // when the frame is on another origin.
+        source: "/embed-test",
+        headers: [{ key: "Permissions-Policy", value: "camera=(), microphone=*, geolocation=()" }],
       },
       {
         source: "/oauth/operator-mcp/consent",

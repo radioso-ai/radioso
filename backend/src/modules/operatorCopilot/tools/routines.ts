@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { canonicalRoutineAuthoringDraft, endingNotifiesOperators, projectRoutineToPortableDocument, ROUTINE_DEFINITION_LIMITS, routineDefinitionDraftInputSchema, routineFieldPatchSchema, type RoutineDefinition } from "../../routines/public.js";
+import { canonicalRoutineAuthoringDraft, endingNotifiesOperators, projectRoutineToPortableDocument, ROUTINE_DEFINITION_LIMITS, routineAdvisoriesWithMessages, routineDefinitionDraftInputSchema, routineFieldPatchSchema, type RoutineDefinition } from "../../routines/public.js";
 import type {
   CopilotMcpInvocationReconciliation,
   CopilotMcpProposalRecoveryPort,
@@ -65,6 +65,10 @@ const validateRoutineOutputSchema = z.object({
   diagnosticCount: z.number().int().nonnegative(),
   diagnosticsTruncated: z.boolean(),
   diagnostics: z.array(routineDiagnosticSchema).max(copilotRoutineDiagnosticLimit),
+  // Non-blocking findings, such as a notifying ending with no reply-to. They never affect `ok`.
+  advisoryCount: z.number().int().nonnegative(),
+  advisoriesTruncated: z.boolean(),
+  advisories: z.array(routineDiagnosticSchema).max(copilotRoutineDiagnosticLimit),
 });
 
 export interface CopilotRoutineValidationResult {
@@ -142,11 +146,11 @@ export const createRoutineDefinitionCopilotTools = (deps: RoutineDefinitionCopil
     // nothing, and is safe to retry. Declaring it a probe would tell a transport not to retry a
     // call that is free and deterministic.
     name: "validate_routine", shape: "read", verificationCost: () => 0, uiLabel: "Validating routine", contributingModule: "routines", dashboardSubject: { type: "routine" }, requiredPermissions: ["workspace.agents.read"],
-    description: "Check one routine for structural problems — unreachable steps, dangling references, unknown skills — and report each diagnostic.",
+    description: "Check one routine for structural problems — unreachable steps, dangling references, unknown skills — and report each diagnostic. Also reports non-blocking advisories, such as a notifying ending with no reply-to, that never block compile, validation, or publish.",
     inputSchema: validateRoutineInputSchema, outputSchema: validateRoutineOutputSchema,
     createTool: (context) => ({
       name: "validate_routine",
-      description: "Check one routine for structural problems — unreachable steps, dangling references, unknown skills — and report each diagnostic.",
+      description: "Check one routine for structural problems — unreachable steps, dangling references, unknown skills — and report each diagnostic. Also reports non-blocking advisories, such as a notifying ending with no reply-to, that never block compile, validation, or publish.",
       inputSchema: validateRoutineInputSchema,
       outputSchema: validateRoutineOutputSchema,
       invoke: async ({ agentId, routineId }) => {
@@ -154,6 +158,7 @@ export const createRoutineDefinitionCopilotTools = (deps: RoutineDefinitionCopil
         const resolvedRoutineId = requiredRoutine(routineId);
         const routine = await deps.routineDefinitionService.get(context.workspaceId, resolvedAgentId, resolvedRoutineId);
         const validation = await deps.routineDefinitionService.validate(context.workspaceId, resolvedAgentId, { id: resolvedRoutineId });
+        const advisories = routineAdvisoriesWithMessages(routine);
         return {
           routineId: routine.id,
           name: routine.name,
@@ -162,6 +167,9 @@ export const createRoutineDefinitionCopilotTools = (deps: RoutineDefinitionCopil
           diagnosticCount: validation.diagnostics.length,
           diagnosticsTruncated: validation.diagnostics.length > copilotRoutineDiagnosticLimit,
           diagnostics: validation.diagnostics.slice(0, copilotRoutineDiagnosticLimit).map((diagnostic) => ({ ...diagnostic })),
+          advisoryCount: advisories.length,
+          advisoriesTruncated: advisories.length > copilotRoutineDiagnosticLimit,
+          advisories: advisories.slice(0, copilotRoutineDiagnosticLimit),
         };
       },
     }),
@@ -339,8 +347,15 @@ const describeNamedRoutine = async (
 
 
 const routineProposalOutputSchema = proposalOutputSchema.extend({
-  /** What the proposed routine still fails on, so Ray can fix it rather than shipping a broken card. */
-  validation: z.object({ ok: z.boolean(), diagnostics: z.array(routineDiagnosticSchema).max(copilotRoutineDiagnosticLimit) }),
+  /**
+   * What the proposed routine still fails on, so Ray can fix it rather than shipping a broken
+   * card, plus non-blocking advisories worth a second look (never affecting `ok`).
+   */
+  validation: z.object({
+    ok: z.boolean(),
+    diagnostics: z.array(routineDiagnosticSchema).max(copilotRoutineDiagnosticLimit),
+    advisories: z.array(routineDiagnosticSchema).max(copilotRoutineDiagnosticLimit),
+  }),
 });
 const routineProposalIdentitySchema = {
   agentId: idSchema.optional(),
@@ -369,6 +384,7 @@ const routineEditDescription = `Propose an edit to an existing routine's wording
 const routineValidationOutput = (draft: CopilotRoutineProposalDraft) => ({
   ok: draft.diagnostics.length === 0,
   diagnostics: draft.diagnostics.slice(0, copilotRoutineDiagnosticLimit).map((diagnostic) => ({ ...diagnostic })),
+  advisories: draft.advisories.slice(0, copilotRoutineDiagnosticLimit),
 });
 
 export interface RoutineProposalCopilotToolDependencies extends CopilotProposalEvidenceDependencies, CopilotProposalToolDependencies {
@@ -395,12 +411,13 @@ const routineEditProposalPayloadSchema = z.object({
  * routine proposal tools since each writes `targetType: "routine"` and the reconstruction
  * (targetLabel/summary from name/rationale) is identical; only the payload schema differs.
  *
- * `validation` cannot be faithfully reconstructed: the diagnostics a draft call computes are
- * reported to the caller in the moment but never persisted on the proposal row (see
+ * `validation` cannot be faithfully reconstructed: the diagnostics and advisories a draft call
+ * computes are reported to the caller in the moment but never persisted on the proposal row (see
  * CopilotRoutineProposalDraft — only `payload`, `targetLabel`, and `summary` survive to storage).
- * A recovered response therefore always reports `{ ok: true, diagnostics: [] }` rather than
- * guessing; the routine's real diagnostics remain visible whenever the proposal or routine is next
- * read or validated. This is a known limitation, not a claim that the routine is clean.
+ * A recovered response therefore always reports `{ ok: true, diagnostics: [], advisories: [] }`
+ * rather than guessing; the routine's real diagnostics and advisories remain visible whenever the
+ * proposal or routine is next read or validated. This is a known limitation, not a claim that the
+ * routine is clean.
  */
 const reconcileRoutineProposalPayload = (
   proposal: CopilotProposal,
@@ -416,7 +433,7 @@ const reconcileRoutineProposalPayload = (
       targetType: "routine" as const,
       targetLabel: payload.data.name,
       summary: payload.data.rationale ?? payload.data.name,
-      validation: { ok: true, diagnostics: [] },
+      validation: { ok: true, diagnostics: [], advisories: [] },
       ...proposalEvidenceOutput(proposal.evidence),
     },
   };

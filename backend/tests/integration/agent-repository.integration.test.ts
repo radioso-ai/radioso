@@ -17,6 +17,7 @@ import {
 import { PlatformSettingsService } from "../../src/modules/settings/services/platformSettingsService.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
+import { websiteEmbedFixture } from "../support/websiteEmbedFixture.js";
 
 // Real-Postgres characterization of AgentRepository. This is the only coverage that
 // exercises the actual SQL (now Kysely) end to end: the agent projection (correlated
@@ -36,7 +37,7 @@ describeIntegration("AgentRepository (Postgres)", () => {
   const sourceA = randomUUID();
   const sourceB = randomUUID();
 
-  const websiteEmbedDefaults = (): WebsiteEmbedSurfaceSettings => ({
+  const websiteEmbedDefaults = (): WebsiteEmbedSurfaceSettings => websiteEmbedFixture({
     enabled: false,
     token: null,
     allowedOrigins: [],
@@ -256,6 +257,32 @@ describeIntegration("AgentRepository (Postgres)", () => {
     expect(reread?.sourceScope).toEqual({ mode: "all" });
   });
 
+  it("stores the voice block with the agent and keeps it through updates that omit it", async () => {
+    const voice = {
+      enabled: true,
+      bridgeLines: { en: { acknowledge: ["Got it."], check: ["One moment."] } },
+      fallbackLine: { en: "Sorry, could you ask me again?" },
+      runtime: { vendor: "elevenlabs" as const, agentId: "agent_01jxk2v9qbe8n7r6t5w4", region: "eu" as const },
+    };
+    const created = await repository.create(workspaceId, { name: "Voice", voice });
+
+    // A dashboard save names its own fields; the stored behavior settings are rewritten whole.
+    await repository.update(created.id, workspaceId, {
+      name: "Voice renamed",
+      greetingInstruction: "Greet briefly.",
+      citationDisplayEnabled: false,
+      surfaceSettings: { anonymousChat: { enabled: false } },
+    });
+    await repository.update(created.id, workspaceId, { customInstruction: "Answer briefly." });
+    const reread = await repository.findByIdAndWorkspaceId(created.id, workspaceId);
+
+    expect(reread?.voice).toEqual(voice);
+    expect(reread?.name).toBe("Voice renamed");
+
+    const switchedOff = await repository.update(created.id, workspaceId, { voice: { ...voice, enabled: false } });
+    expect(switchedOff.voice).toEqual({ ...voice, enabled: false });
+  });
+
   it("does not rewrite source links when an unrelated patch follows source deletion", async () => {
     const deletedSourceId = randomUUID();
     await database.query(
@@ -309,6 +336,17 @@ describeIntegration("AgentRepository (Postgres)", () => {
     await expect(repository.applyProposalPatch(agent.id, workspaceId, { assistantDefaultLocale: "fi" }, {
       expectedFields: [{ key: "assistantDefaultLocale", value: "en" }],
     })).resolves.toEqual({ outcome: "changed", fields: ["assistantDefaultLocale"] });
+  });
+
+  it("applies a voice proposal prepared before the runtime binding, whose expected block has no runtime", async () => {
+    const voice = { enabled: true, bridgeLines: { en: { acknowledge: [], check: ["One moment."] } }, fallbackLine: {} };
+    const agent = await repository.create(workspaceId, { name: "Voice proposal fence", voice: { ...voice, runtime: null } });
+
+    const applied = await repository.applyProposalPatch(agent.id, workspaceId, { voice: { ...voice, enabled: false, runtime: null } }, {
+      expectedFields: [{ key: "voice", value: voice }],
+    });
+
+    expect(applied).toMatchObject({ outcome: "applied", agent: { voice: { enabled: false, runtime: null } } });
   });
 
   it("keeps timestamp-era proposal writes as a row-version fence", async () => {
@@ -468,6 +506,24 @@ describeIntegration("AgentRepository (Postgres)", () => {
       recipientEmails: [],
       webhook: null,
     });
+  });
+
+  it("reads voice as off when stored behavior predates the setting or holds an unreadable block", async () => {
+    const predates = await repository.findByIdAndWorkspaceId(await seedAgentRow(), workspaceId);
+    const unreadable = await repository.findByIdAndWorkspaceId(
+      await seedAgentRow({ behaviorSettings: { voice: { enabled: "yes", bridgeLines: [] } } }),
+      workspaceId,
+    );
+
+    expect(predates?.voice).toEqual({ enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null });
+    expect(unreadable?.voice).toEqual({ enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null });
+  });
+
+  it("keeps a stored voice block written before the runtime binding, bound to no vendor agent", async () => {
+    const storedBlock = { enabled: true, bridgeLines: { en: { acknowledge: [], check: ["One moment."] } }, fallbackLine: {} };
+    const agent = await repository.findByIdAndWorkspaceId(await seedAgentRow({ behaviorSettings: { voice: storedBlock } }), workspaceId);
+
+    expect(agent?.voice).toEqual({ ...storedBlock, runtime: null });
   });
 
   it("parses retrieval-miss handoff behavior from behavior settings", async () => {

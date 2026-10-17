@@ -1,7 +1,7 @@
 ---
 title: "Human Takeover"
 description: "Operator API and contract for taking over conversations, suppressing AI while handling manual responses, and reading who did what to a conversation."
-last_updated: 2026-10-11
+last_updated: 2026-10-17
 ---
 
 # Human Takeover
@@ -737,10 +737,23 @@ when a new handoff or approval arrives while the dashboard is open.
 
 An **Open in debug view** link, available from either lens, opens the
 conversation drawer: transcript, Debug, Flow, a button to continue the
-conversation in test chat, and a button to send it to Eval. The drawer is for
+conversation in test chat, and a button to send it to Eval. Owners and admins
+also get **Delete conversation**, which erases it permanently through
+`DELETE /api/v1/history/chat/{conversationId}`. The drawer is for
 inspecting and testing a conversation — replying, taking over, handing back,
 and approving or rejecting a pending decision all happen from the reading
 pane instead.
+
+A voice call started from the website widget shows **Listen** in the header,
+next to **Open in debug view**, once the widget has told Radioso which
+ElevenLabs conversation the call was. Listen plays the call in the pane,
+streamed from your ElevenLabs account through Radioso with the workspace's
+key; nothing is fetched until you press it, and every play is recorded in the
+audit log as `conversation.recording_played` with your user id. ElevenLabs
+finishes a recording shortly after the call ends, so until then the player
+reads "The recording can't be played right now." The conversation detail
+says whether a call has one as `recording: { "available": true }`. See
+[Voice channel → Recordings](voice-channel.md#recordings).
 
 Ray reads the same queue. Ask it what is waiting and it lists the open
 approvals, handoffs, and commented negative feedback longest wait first, each row

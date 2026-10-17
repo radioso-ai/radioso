@@ -59,9 +59,10 @@ import {
   runWithModelCallTrace,
 } from "../../src/shared/observability/tracing/modelCallTraceContext.js";
 import { buildTurnTraceEnvelope } from "../../src/modules/chat/services/turnTraceEnvelope.js";
-import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
 import { ChatTurnAssembly } from "../../src/modules/chat/services/chatTurnAssembly.js";
 import type { ChatGatewayInput } from "../../src/modules/chat/contracts/chatGateway.js";
+import { websiteEmbedFixture } from "../support/websiteEmbedFixture.js";
 
 const conversation = (): ConversationRecord => ({
   id: "conv_1",
@@ -94,6 +95,7 @@ const message = (overrides: Partial<MessageRecord> = {}): MessageRecord => ({
 
 const agent = (): AgentRecord => ({
   ...unpublishedAgentPublicIdentity(),
+  voice: defaultAgentVoiceSettings(),
   id: "agent_1",
   workspaceId: "workspace_1",
   name: "Support",
@@ -121,11 +123,12 @@ const agent = (): AgentRecord => ({
   greetingInstruction: "",
   assistantDefaultLocale: null,
   proactiveGreetingEnabled: false,
+  mechanicsReplies: {},
   chatModelOverride: null,
   surfaceSettings: {
     authenticatedChat: { enabled: true },
     anonymousChat: { enabled: false, token: null },
-    websiteEmbed: {
+    websiteEmbed: websiteEmbedFixture({
       enabled: false,
       token: null,
       allowedOrigins: [],
@@ -139,7 +142,7 @@ const agent = (): AgentRecord => ({
       },
       copy: {},
       expertOverrides: {},
-    },
+    }),
     extensions: {},
   },
   createdAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -1477,6 +1480,40 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
       "skill_dispatch",
       "compose",
     ]);
+  });
+
+  it("hands the turn's cancel signal to a non-streamed render", async () => {
+    const controller = new AbortController();
+    const renderSignals: Array<AbortSignal | undefined> = [];
+    const retrievalSkill: TurnSkill = {
+      definition: { name: RETRIEVAL_TURN_SKILL, outcomeKinds: [RETRIEVAL_OUTCOME_KIND] },
+      selects: () => true,
+      dispatch: (s) => buildRetrievalTurnOutcome(s),
+      renderer: {
+        supports: (outcome) => outcome.kind === RETRIEVAL_OUTCOME_KIND,
+        render: async (_outcome, ctx) => {
+          renderSignals.push(ctx.signal);
+          return {
+            answer: "rendered",
+            skillName: RETRIEVAL_TURN_SKILL,
+            skillOutcome: "completed",
+            skillStatus: "completed",
+          };
+        },
+      },
+    };
+
+    await runPreparedChatTurnWithConversationEngine({
+      engine: new DefaultConversationEngine(),
+      session: session(),
+      chatAnswerPresenter,
+      turnSkillSelector: new ChatTurnSkillSelector([retrievalSkill], new DefaultTurnSelectionStrategy()),
+      turnSkills: [retrievalSkill],
+      query: "Where is my order?",
+      signal: controller.signal,
+    });
+
+    expect(renderSignals).toEqual([controller.signal]);
   });
 
   // F1: `buildDirectiveTurnWiring`'s matcher adapter (`conversationProcessTurnInput.ts`)

@@ -1,4 +1,5 @@
 import { removeDetachedPunctuationSpacing, STRANDABLE_PUNCTUATION } from "./citationTextNormalization.js";
+import { canonicalizeUnsourcedMarkers, endsInInlineCode } from "./unsourcedMarkerCanonicalization.js";
 
 const COMPLETE_ANCHOR = /\[\[\d+\]\]/g;
 const ANY_BRACKET_ANCHOR = /\[\[[^\]]*?\]\]/g;
@@ -21,8 +22,17 @@ export class CitationAnchorSanitizer {
   // can decide: drop it if punctuation follows (the anchor stranded it), keep it
   // otherwise (it was a genuine paragraph break).
   private pendingLineBreak = "";
+  // Whether the text released so far left an inline code span open on its last line, so
+  // a `[?]` the next chunk carries inside that span is read as content, not a marker.
+  private inInlineCode = false;
 
   push(chunk: string): string {
+    const released = this.release(chunk);
+    this.inInlineCode = endsInInlineCode(released, this.inInlineCode);
+    return released;
+  }
+
+  private release(chunk: string): string {
     let combined = `${this.carry}${chunk ?? ""}`;
     this.carry = "";
 
@@ -34,6 +44,7 @@ export class CitationAnchorSanitizer {
       }
     }
 
+    combined = canonicalizeUnsourcedMarkers(combined, this.inInlineCode);
     const reflowed = combined.replace(DETACHED_ANCHOR_BEFORE_PUNCTUATION, "");
     const stripped = stripCompleteAnchors(reflowed);
 
@@ -44,9 +55,12 @@ export class CitationAnchorSanitizer {
       return stripped.slice(0, start);
     }
 
-    if (stripped.endsWith("[")) {
-      this.carry = "[";
-      return stripped.slice(0, -1);
+    // A trailing `[` or `[?` may open an anchor or a single-bracket `[?]` the next chunk
+    // completes.
+    const openBracketTail = stripped.match(/\[\??$/)?.[0];
+    if (openBracketTail) {
+      this.carry = openBracketTail;
+      return stripped.slice(0, -openBracketTail.length);
     }
 
     // The combined buffer ended with a detached anchor whose punctuation, if any, will
@@ -72,6 +86,7 @@ export class CitationAnchorSanitizer {
   flush(): string {
     this.carry = "";
     this.pendingLineBreak = "";
+    this.inInlineCode = false;
     return "";
   }
 }

@@ -1,7 +1,7 @@
 ---
 title: "Document processing"
 description: "Operating the document worker and understanding the implications for user-visible behavior."
-last_updated: 2026-09-01
+last_updated: 2026-10-17
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -58,7 +58,7 @@ If metadata extraction is enabled for the run, the worker queues a separate, low
 - `documentMetadata` on a document source holds the tags stamped onto every chunk that source produces. A document's own metadata wins on any key the two share, and the tags land on existing chunks the next time those documents process — which is what a source reprocess is for.
 - `WORKER_DISPATCH_DRIVER` decides whether jobs stay local or are dispatched to Cloud Tasks.
 - `WORKER_TASK_AUTH_TOKEN` authenticates every Cloud Tasks and recovery request at the worker application boundary; use the same value on dispatchers and workers and preserve `X-Radioso-Worker-Token` through any proxy.
-- `DOCUMENT_PROCESSING_JOB_LEASE_MS` defines how long a claimed job stays leased before later recovery logic can reclaim it.
+- `DOCUMENT_PROCESSING_JOB_LEASE_MS` defines how long a claimed job stays leased before recovery logic can reclaim it. A job whose lease keeps expiring — typically a document large enough that embedding it does not finish inside one worker request — gets a bounded number of reclaim attempts. Once that limit is reached, the job ends `failed` with a structural reason instead of being handed out again, so a document too large for one request fails visibly rather than re-embedding forever.
 
 Reprocessing can target a single document, a single source, or the whole workspace. Source reprocessing queues eligible documents for that source only and reports queued and skipped counts.
 

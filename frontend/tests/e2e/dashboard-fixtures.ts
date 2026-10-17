@@ -471,6 +471,8 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchema
   greetingInstruction: settings.assistant.greetingInstruction,
   assistantDefaultLocale: settings.assistant.assistantDefaultLocale,
   proactiveGreetingEnabled: settings.assistant.proactiveGreetingEnabled,
+  voice: { enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null },
+  mechanicsReplies: {},
   assistantBootstrapActive: settings.assistant.assistantBootstrapActive,
   logo: null,
   retrievalEnabled: true,
@@ -494,6 +496,7 @@ const buildDefaultAgentSettings = (settings: PlatformSettingsFixture): ApiSchema
       theme: settings.channels.websiteEmbedTheme,
       copy: settings.channels.websiteEmbedCopy,
       expertOverrides: settings.channels.websiteEmbedExpertOverrides,
+      voiceCallsOffered: false,
     },
   },
   createdAt: nowIso,
@@ -1028,6 +1031,18 @@ export const installDashboardApiMocks = async (
     humanReplyResponse?: ApiSchemas["HumanReplyMessageResponse"];
     resolveDecisionResponse?: unknown;
     agentUpdates?: unknown[];
+    /** Merged over the default agent's settings before the first request. */
+    agentSettingsOverrides?: Partial<ApiSchemas["ConversationAgent"]>;
+    /**
+     * More agents beside the default one: each is listed by GET /agents and served on GET/PUT
+     * /agents/:id from its own settings; every route under /agents/:id/ answers as the default
+     * agent's. `readGate` holds GET /agents/:id until it resolves; `updates` collects PUT bodies.
+     */
+    extraAgents?: Array<{
+      settings: Partial<ApiSchemas["ConversationAgent"]> & { id: string };
+      readGate?: Promise<void>;
+      updates?: unknown[];
+    }>;
     directiveUpdates?: DirectiveMutationFixture[];
     directives?: AuthoredDirectiveDraftFixture[];
     builtIns?: BuiltInDirectiveFixture[];
@@ -1041,6 +1056,8 @@ export const installDashboardApiMocks = async (
     webhookDestinationUpdates?: WebhookDestinationMutationFixture[];
     requestLog?: string[];
     providerEncryptionConfigured?: boolean;
+    /** What `GET /agents/:id` says of the agent's voice readiness. Defaults to the voice channel missing. */
+    voiceCallReadiness?: ApiSchemas["VoiceCallReadiness"];
     providerCredentialUpdates?: Array<{ method: "PUT" | "DELETE"; provider: string; body?: unknown }>;
     llmModelUpdates?: Array<unknown>;
     /** Per capability, the model the plan runs instead of the preference. Defaults to none. */
@@ -1097,7 +1114,8 @@ export const installDashboardApiMocks = async (
     agentPublicIdCounter += 1;
     return `ag_${String(agentPublicIdCounter).padStart(22, "m")}`;
   };
-  let agentSettings = buildDefaultAgentSettings(platformSettings);
+  let agentSettings = { ...buildDefaultAgentSettings(platformSettings), ...options.agentSettingsOverrides };
+  const extraAgents = (options.extraAgents ?? []).map((extra) => ({ ...extra, current: { ...agentSettings, ...extra.settings } }));
   let agentRevisionState = baseAgentRevisionState();
   let nextTestExecutionIndex = 1;
   const testExecutions = new Map<string, {
@@ -1206,8 +1224,9 @@ export const installDashboardApiMocks = async (
   ];
   const routineSkillCatalog = options.routineSkillCatalog ?? [];
   const operatorNoticeDestinations: OperatorNoticeDestinations = options.operatorNoticeDestinations ?? {
-    default: { skillName: null, via: "workspace_owner", recipientEmails: ["owner@example.com"], recipientsFromWorkspaceOwner: true, webhookConfigured: false },
+    default: { skillName: null, via: "workspace_owner", recipientEmails: ["owner@example.com"], recipients: [{ email: "owner@example.com", state: "confirmed" }], recipientsFromWorkspaceOwner: true, webhookConfigured: false },
     skills: [],
+    dailyEmailAllowance: null,
   };
   let webhookDestinations = options.webhookDestinations ?? [];
   let nextWebhookDestinationIndex = webhookDestinations.length + 1;
@@ -1470,8 +1489,26 @@ export const installDashboardApiMocks = async (
   await page.route("**/backend/api/v1/**", async (route) => {
     const request = route.request();
     const url = new URL(request.url());
-    const path = url.pathname.replace(/^\/backend\/api\/v1/, "");
-    options.requestLog?.push(`${request.method()} ${path}${url.search}`);
+    const requestedPath = url.pathname.replace(/^\/backend\/api\/v1/, "");
+    options.requestLog?.push(`${request.method()} ${requestedPath}${url.search}`);
+
+    const extraAgent = extraAgents.find((extra) => requestedPath === `/agents/${extra.settings.id}`);
+    if (extraAgent && request.method() === "GET") {
+      await extraAgent.readGate;
+      await json(route, extraAgent.current);
+      return;
+    }
+    if (extraAgent && request.method() === "PUT") {
+      const body = request.postDataJSON() as Partial<typeof agentSettings>;
+      extraAgent.updates?.push(body);
+      extraAgent.current = { ...extraAgent.current, ...body, updatedAt: nowIso };
+      await json(route, extraAgent.current);
+      return;
+    }
+    const extraAgentSubroute = extraAgents.find((extra) => requestedPath.startsWith(`/agents/${extra.settings.id}/`));
+    const path = extraAgentSubroute
+      ? requestedPath.replace(`/agents/${extraAgentSubroute.settings.id}/`, `/agents/${defaultAgentId}/`)
+      : requestedPath;
 
     if (request.method() === "GET" && path === `/workspace/resolve/${workspaceKey}`) {
       await json(route, {
@@ -1665,7 +1702,7 @@ export const installDashboardApiMocks = async (
     }
 
     if (request.method() === "GET" && path === "/agents") {
-      await json(route, { agents: [agentSettings] });
+      await json(route, { agents: [agentSettings, ...extraAgents.map((extra) => extra.current)] });
       return;
     }
 
@@ -2206,7 +2243,7 @@ export const installDashboardApiMocks = async (
 
     if (path === `/agents/${defaultAgentId}`) {
       if (request.method() === "GET") {
-        await json(route, agentSettings);
+        await json(route, { ...agentSettings, voiceCallReadiness: options.voiceCallReadiness ?? { ready: false, missing: "voice_channel" } });
         return;
       }
 
@@ -2590,6 +2627,14 @@ export const installDashboardApiMocks = async (
 
     if (path === `/agents/${defaultAgentId}/operator-notice-destinations` && request.method() === "GET") {
       await json(route, operatorNoticeDestinations);
+      return;
+    }
+
+    const notifySkillRecipientsMatch = path.match(new RegExp(`^/agents/${defaultAgentId}/skills/([^/]+)/notification-recipients$`));
+    if (notifySkillRecipientsMatch && request.method() === "GET") {
+      const skill = agentSkills.find((item) => item.id === notifySkillRecipientsMatch[1]);
+      const delivery = skill?.config?.delivery as { recipientEmails?: string[] } | undefined;
+      await json(route, { recipients: (delivery?.recipientEmails ?? []).map((email) => ({ email, state: "confirmed" })) });
       return;
     }
 

@@ -5,8 +5,10 @@ import type { CopilotToolDescriptor } from "../contracts.js";
 import { requireCurrentCopilotPermissions } from "../authorization.js";
 import { persistReviewedPreparation, recoverReviewedPreparation, reviewedPreparationConfirmation, type ReviewedPreparationDependencies } from "./reviewedPreparation.js";
 import { reviewedConfirmationSchema } from "../reviewedOperation.js";
+import { agentSettingWholeBlockNote } from "./shared.js";
 
 const NAME = "prepare_agent_settings";
+const DESCRIPTION = `Prepare several settings for one agent as one digest-bound operation. customInstruction is an agent draft and needs prepare_agent_publication before customers see it; other settings are live at execution. ${agentSettingWholeBlockNote}`;
 const inputSchema = z.object({ agentId: z.string().uuid(), patch: agentReviewedSettingsPatchSchema, rationale: z.string().min(1).max(1_000).optional() }).strict();
 const outputSchema = z.object({
   proposalId: z.string().uuid(), reviewDigest: z.string().min(1).max(200), expiresAt: z.string().datetime(),
@@ -25,7 +27,7 @@ export interface AgentSettingsReviewedPreparationDependencies extends ReviewedPr
 
 export const createAgentSettingsReviewedPreparationTool = (deps: AgentSettingsReviewedPreparationDependencies): CopilotToolDescriptor<z.infer<typeof inputSchema>, z.infer<typeof outputSchema>> => ({
   name: NAME, shape: "propose", verificationCost: () => 0, uiLabel: "Preparing agent settings", contributingModule: "agents",
-  description: "Prepare several settings for one agent as one digest-bound operation. customInstruction is an agent draft and needs prepare_agent_publication before customers see it; other settings are live at execution.",
+  description: DESCRIPTION,
   inputSchema, outputSchema, requiredPermissions: ["workspace.agents.manage"], dashboardSubject: { type: "agent" }, surfaces: ["mcp"],
   describeEntity: (input) => ({ type: "agent", id: input.agentId }),
   reconcileMcpInvocation: async ({ invocation, context, staleBefore, now }) => {
@@ -36,7 +38,7 @@ export const createAgentSettingsReviewedPreparationTool = (deps: AgentSettingsRe
     const confirmation = reviewedPreparationConfirmation(deps, recovered.proposal);
     return review.success && confirmation ? { status: "recovered" as const, output: { proposalId: recovered.proposal.id, reviewDigest: recovered.proposal.reviewDigest, expiresAt: recovered.proposal.expiresAt.toISOString(), confirmation, review: review.data } } : { status: "conflict" as const };
   },
-  createTool: (context) => ({ name: NAME, description: "Prepare several settings for one agent as one digest-bound operation. customInstruction is an agent draft and needs prepare_agent_publication before customers see it; other settings are live at execution.", inputSchema, outputSchema, invoke: async (raw) => {
+  createTool: (context) => ({ name: NAME, description: DESCRIPTION, inputSchema, outputSchema, invoke: async (raw) => {
     const input = inputSchema.parse(raw); await requireCurrentCopilotPermissions(context, ["workspace.agents.manage"]);
     const patch: AgentReviewedSettingsPatch = input.patch;
     const prepared: AgentFieldsProposalPreparation = await deps.agentSettings.prepareFieldsProposal(context.workspaceId, input.agentId, patch);

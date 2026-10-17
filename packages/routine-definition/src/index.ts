@@ -691,8 +691,52 @@ export const mapRoutineOperatorNoticeText = <
  */
 export const endingNotifiesOperators = (terminal: {
   kind: RoutineTerminalKind;
-  operatorNotice?: RoutineOperatorNotice;
+  // Only presence matters, so an editing draft's partial notice qualifies as well as the stored one.
+  operatorNotice?: Readonly<Partial<RoutineOperatorNotice>>;
 }): boolean => terminal.kind === "handoff" || terminal.operatorNotice !== undefined;
+
+/**
+ * Advisory routine-definition codes: signals worth an author's attention that never block
+ * compile, validation, or publish, unlike {@link RoutineValidationCode}. Kept in a separate
+ * enum so a transport cannot confuse the two kinds of finding, and so the contract test pinning
+ * `routineValidationCodes` to the OpenAPI enum never has to carry one of these.
+ */
+export const routineAdvisoryCodes = ["operator_notice_reply_to_unset"] as const;
+export type RoutineAdvisoryCode = typeof routineAdvisoryCodes[number];
+
+export interface RoutineAdvisory {
+  readonly code: RoutineAdvisoryCode;
+  readonly location: string;
+  readonly stableStepId: string;
+}
+
+/**
+ * Advisory check: an ending that notifies operators (see {@link endingNotifiesOperators}) but
+ * names no `replyToSlot`, on a routine that declares at least one email field. Unset is a
+ * legitimate authoring choice — some routines collect no address worth replying to — so this
+ * never blocks compile, validation, or publish. The input is narrow so a stored definition and
+ * the editor's draft both pass themselves in.
+ */
+export const routineAdvisories = (definition: {
+  readonly slots: ReadonlyArray<{ readonly key: string; readonly type: RoutineSlotType }>;
+  readonly terminals: ReadonlyArray<{
+    readonly stableStepId: string;
+    readonly kind: RoutineTerminalKind;
+    readonly operatorNotice?: { readonly replyToSlot?: string };
+  }>;
+}): RoutineAdvisory[] => {
+  if (!definition.slots.some((slot) => slot.type === "email")) return [];
+  const advisories: RoutineAdvisory[] = [];
+  for (const terminal of definition.terminals) {
+    if (!endingNotifiesOperators(terminal) || terminal.operatorNotice?.replyToSlot) continue;
+    advisories.push({
+      code: "operator_notice_reply_to_unset",
+      location: `step:${terminal.stableStepId}.operatorNotice.replyToSlot`,
+      stableStepId: terminal.stableStepId,
+    });
+  }
+  return advisories;
+};
 export type RoutineValidationCode = typeof routineValidationCodes[number];
 export type RoutineCompletionExportTriggerKind = typeof routineCompletionExportTriggerKinds[number];
 export type RoutineInputBinding = z.infer<typeof routineInputBindingSchema>;

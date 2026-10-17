@@ -15,7 +15,7 @@ import { setTraceAttributes, traceOperation } from "../../../shared/observabilit
 
 export const SLACK_SKILLS_ADAPTER = "slack-skills";
 
-export interface SlackEscalationExecutorOptions {
+interface SlackEscalationExecutorOptions {
   skills: Pick<SlackSkillDefinitionRepositoryPort, "findEnabledByName">;
   outbox: SlackPostOutboxPort;
 }
@@ -71,11 +71,13 @@ export class SlackEscalationExecutor implements SkillExecutorPort {
     }
 
     const sourceId = idempotencySource(invocation, definition.skillName);
-    const conversationRef = conversationId ?? sourceId;
+    const conversationRef = conversationId || sourceId;
     await enqueueSlackPostAction(this.options.outbox, {
       workspaceId,
       accountId,
-      conversationId,
+      // The outbox row's conversation link cascades with a stored conversation. A private test's
+      // conversation is never stored, so its post carries the id only as the payload's reference.
+      conversationId: conversationId && isStoredConversation(invocation) ? conversationId : null,
       idempotencyKey: slackPostIdempotencyKey({ kind: "routine_post", sourceId }),
       payload: {
         installationId: definition.installationId,
@@ -121,6 +123,9 @@ const missingInputs = (input: Partial<Record<SlackSkillInputKey, unknown>>): Sla
   if (!isNonEmptyString(input.text)) missing.push("text");
   return missing;
 };
+
+const isStoredConversation = (invocation: SkillInvocation): boolean =>
+  invocation.context?.conversationDurability !== "ephemeral";
 
 const stringContext = (invocation: SkillInvocation, key: string): string =>
   typeof invocation.context?.[key] === "string" ? invocation.context[key] : "";

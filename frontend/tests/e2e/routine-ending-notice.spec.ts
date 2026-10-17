@@ -220,10 +220,13 @@ test("replies to an ending's notice go to the email field its author picks, and 
   // Two addresses, so nothing is picked for the author; only email fields are offered.
   const repliesGoTo = documentEditor.getByRole("combobox", { name: "Replies go to" });
   await expect(repliesGoTo).toContainText("No reply-to");
+  // No reply-to on a notifying ending, with an email field the routine could use: the hint fires.
+  await expect(documentEditor.getByText("Replies won't reach the visitor. Choose their email field.")).toBeVisible();
   await repliesGoTo.click();
   await expect(page.getByRole("option", { name: "guest_name" })).toHaveCount(0);
   await expect(page.getByRole("option", { name: "buyer_email" })).toBeVisible();
   await page.getByRole("option", { name: "recipient_email" }).click();
+  await expect(documentEditor.getByText("Replies won't reach the visitor. Choose their email field.")).toHaveCount(0);
   await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
 
   await expect.poll(

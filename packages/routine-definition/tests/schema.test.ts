@@ -5,6 +5,7 @@ import {
   endingNotifiesOperators,
   mapRoutineOperatorNoticeText,
   ROUTINE_DEFINITION_LIMITS,
+  routineAdvisories,
   routineDefinitionDraftEditingInputSchema,
   routineDefinitionDraftUpdateInputSchema,
   routineDefinitionSchema,
@@ -476,5 +477,58 @@ describe("routine ending operator notice", () => {
     expect(endingNotifiesOperators({ kind: "handoff", operatorNotice: { subject: null, intro: null } })).toBe(true);
     expect(endingNotifiesOperators({ kind: "complete" })).toBe(false);
     expect(endingNotifiesOperators({ kind: "complete", operatorNotice: { subject: null, intro: null } })).toBe(true);
+  });
+});
+
+describe("routineAdvisories", () => {
+  const emailSlots = [{ key: "guest_email", type: "email" as const }];
+
+  it("flags a hand-off ending with no notice when the routine has an email slot", () => {
+    expect(routineAdvisories({ slots: emailSlots, terminals: [{ stableStepId: "end_handoff", kind: "handoff" }] })).toEqual([
+      { code: "operator_notice_reply_to_unset", location: "step:end_handoff.operatorNotice.replyToSlot", stableStepId: "end_handoff" },
+    ]);
+  });
+
+  it("reports nothing for a completion with no operator notice, because it does not notify", () => {
+    expect(routineAdvisories({ slots: emailSlots, terminals: [{ stableStepId: "end_complete", kind: "complete" }] })).toEqual([]);
+  });
+
+  it("flags a completion that carries a notice but no reply-to, when the routine has an email slot", () => {
+    expect(routineAdvisories({
+      slots: emailSlots,
+      terminals: [{ stableStepId: "end_complete", kind: "complete", operatorNotice: { subject: null, intro: null } }],
+    })).toEqual([
+      { code: "operator_notice_reply_to_unset", location: "step:end_complete.operatorNotice.replyToSlot", stableStepId: "end_complete" },
+    ]);
+  });
+
+  it("reports nothing once a reply-to slot is set, hand-off or completion", () => {
+    expect(routineAdvisories({
+      slots: emailSlots,
+      terminals: [
+        { stableStepId: "end_handoff", kind: "handoff", operatorNotice: { replyToSlot: "guest_email" } },
+        { stableStepId: "end_complete", kind: "complete", operatorNotice: { subject: null, intro: null, replyToSlot: "guest_email" } },
+      ],
+    })).toEqual([]);
+  });
+
+  it("reports nothing when the routine declares no email slot", () => {
+    expect(routineAdvisories({
+      slots: [{ key: "guest_name", type: "text" as const }],
+      terminals: [{ stableStepId: "end_handoff", kind: "handoff" }],
+    })).toEqual([]);
+  });
+
+  it("flags two notifying endings with no reply-to, in terminal order", () => {
+    expect(routineAdvisories({
+      slots: emailSlots,
+      terminals: [
+        { stableStepId: "end_a", kind: "handoff" },
+        { stableStepId: "end_b", kind: "complete", operatorNotice: { subject: null, intro: null } },
+      ],
+    })).toEqual([
+      { code: "operator_notice_reply_to_unset", location: "step:end_a.operatorNotice.replyToSlot", stableStepId: "end_a" },
+      { code: "operator_notice_reply_to_unset", location: "step:end_b.operatorNotice.replyToSlot", stableStepId: "end_b" },
+    ]);
   });
 });

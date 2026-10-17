@@ -5,6 +5,7 @@ import {
   projectRoutineForReview,
   applyOperatorMcpRoutineTransform,
   RoutineTransformError,
+  routineAdvisoriesWithMessages,
   routineDefinitionDraftInputSchema,
   routineSlotSchema,
   routineStepSchema,
@@ -94,6 +95,10 @@ const outputSchema = z.object({
   expiresAt: z.string().datetime(),
   confirmation: reviewedConfirmationSchema,
   diagnostics: z.array(z.object({ code: z.string(), location: z.string(), message: z.string() })).max(40),
+  // Non-blocking signals worth a second look — e.g. a notifying ending with no reply-to — that
+  // never block preparation and never affect whether a diagnostic refuses it. Defaults to `[]`
+  // so a snapshot persisted before this field existed still recovers.
+  advisories: z.array(z.object({ code: z.string(), location: z.string(), message: z.string() })).max(40).default([]),
   review: z.object({
     before: z.record(z.unknown()),
     after: z.record(z.unknown()),
@@ -134,21 +139,23 @@ const boundedRoutineReview = (routine: RoutineReviewInput) => {
 };
 const storedReviewSnapshot = (input: {
   readonly diagnostics: ReadonlyArray<{ code: string; location: string; message: string }>;
+  readonly advisories: ReadonlyArray<{ code: string; location: string; message: string }>;
   readonly review: z.infer<typeof outputSchema.shape.review>;
   readonly fullReview: { readonly before: unknown; readonly after: unknown };
-}) => ({ diagnostics: input.diagnostics, review: input.review, fullReview: input.fullReview });
+}) => ({ diagnostics: input.diagnostics, advisories: input.advisories, review: input.review, fullReview: input.fullReview });
 const reviewOutput = (input: {
   readonly proposalId: string;
   readonly reviewDigest: string;
   readonly expiresAt: Date;
   readonly confirmation: z.infer<typeof reviewedConfirmationSchema>;
-  readonly snapshot: { readonly diagnostics: unknown; readonly review: unknown };
+  readonly snapshot: { readonly diagnostics: unknown; readonly advisories?: unknown; readonly review: unknown };
 }) => outputSchema.parse({
   proposalId: input.proposalId,
   reviewDigest: input.reviewDigest,
   expiresAt: input.expiresAt.toISOString(),
   confirmation: input.confirmation,
   diagnostics: input.snapshot.diagnostics,
+  advisories: input.snapshot.advisories ?? [],
   review: input.snapshot.review,
 });
 
@@ -182,7 +189,7 @@ export const createRoutineStructuralPreparationTool = (
     if (!invocation.operationId) return { status: "conflict" };
     const recovered = await deps.proposalRecovery.recoverOperatorMcpProposal({ invocationId: invocation.id, grantId: invocation.grantId, workspaceId: context.workspaceId, operatorUserId: context.operatorUserId, operationId: invocation.operationId, descriptorName: "prepare_routine_structure", inputDigest: invocation.inputDigest, staleBefore, now });
     if (recovered.status !== "recovered" || recovered.proposal.targetType !== "routine" || !recovered.proposal.reviewDigest || !recovered.proposal.expiresAt) return recovered.status === "recovered" ? { status: "conflict" } : recovered;
-    const snapshot = z.object({ diagnostics: outputSchema.shape.diagnostics, review: outputSchema.shape.review }).safeParse(recovered.proposal.reviewSnapshot);
+    const snapshot = z.object({ diagnostics: outputSchema.shape.diagnostics, advisories: outputSchema.shape.advisories, review: outputSchema.shape.review }).safeParse(recovered.proposal.reviewSnapshot);
     const confirmation = reviewedPreparationConfirmation(deps, recovered.proposal);
     if (!snapshot.success || !confirmation) return { status: "conflict" };
     return { status: "recovered", output: { proposalId: recovered.proposal.id, reviewDigest: recovered.proposal.reviewDigest, expiresAt: recovered.proposal.expiresAt.toISOString(), confirmation, ...snapshot.data } };
@@ -204,7 +211,7 @@ export const createRoutineStructuralPreparationTool = (
         const payload = { kind: "create" as const, draft: input.draft };
         const versionToken = blocking ? `blocked:${blocking.id}:${blocking.updatedAt.toISOString()}` : "open";
         const after = boundedRoutineReview(input.draft);
-        const reviewSnapshot = storedReviewSnapshot({ diagnostics: validation.diagnostics.slice(0, reviewLimit), review: { before: {}, after: after.summary, truncated: after.truncated, detailAvailable: after.truncated, beforeConnections: [], afterConnections: connectionsForReview(input.draft.transitions ?? []), connectionsTruncated: (input.draft.transitions?.length ?? 0) > reviewLimit, operations: [{ kind: "create" }], operationsTruncated: false }, fullReview: { before: {}, after: after.full } });
+        const reviewSnapshot = storedReviewSnapshot({ diagnostics: validation.diagnostics.slice(0, reviewLimit), advisories: routineAdvisoriesWithMessages(input.draft).slice(0, reviewLimit), review: { before: {}, after: after.summary, truncated: after.truncated, detailAvailable: after.truncated, beforeConnections: [], afterConnections: connectionsForReview(input.draft.transitions ?? []), connectionsTruncated: (input.draft.transitions?.length ?? 0) > reviewLimit, operations: [{ kind: "create" }], operationsTruncated: false }, fullReview: { before: {}, after: after.full } });
         const stored = await persistReviewedPreparation({ deps, context, targetType: "routine", targetRef, payload, versionToken, reviewSnapshot, operation: "prepare_routine_structure", metadata: { kind: input.kind }, effect: routineDraftChangeEffect(input.kind) });
         return reviewOutput({ proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt, confirmation: stored.confirmation, snapshot: reviewSnapshot });
       }
@@ -215,7 +222,8 @@ export const createRoutineStructuralPreparationTool = (
         const payload = { kind: "delete" as const };
         const versionToken = current.updatedAt.toISOString();
         const before = boundedRoutineReview(current);
-        const reviewSnapshot = storedReviewSnapshot({ diagnostics: [], review: { before: before.summary, after: {}, truncated: before.truncated, detailAvailable: before.truncated, beforeConnections: connectionsForReview(current.transitions ?? []), afterConnections: [], connectionsTruncated: (current.transitions?.length ?? 0) > reviewLimit, operations: [{ kind: "delete" }], operationsTruncated: false }, fullReview: { before: before.full, after: {} } });
+        // Nothing survives a delete to advise on.
+        const reviewSnapshot = storedReviewSnapshot({ diagnostics: [], advisories: [], review: { before: before.summary, after: {}, truncated: before.truncated, detailAvailable: before.truncated, beforeConnections: connectionsForReview(current.transitions ?? []), afterConnections: [], connectionsTruncated: (current.transitions?.length ?? 0) > reviewLimit, operations: [{ kind: "delete" }], operationsTruncated: false }, fullReview: { before: before.full, after: {} } });
         const stored = await persistReviewedPreparation({ deps, context, targetType: "routine", targetRef, payload, versionToken, reviewSnapshot, operation: "prepare_routine_structure", metadata: { kind: input.kind }, effect: routineDraftChangeEffect(input.kind) });
         return reviewOutput({ proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt, confirmation: stored.confirmation, snapshot: reviewSnapshot });
       }
@@ -253,7 +261,7 @@ export const createRoutineStructuralPreparationTool = (
       const afterConnections = connectionsForReview(draft.transitions ?? []);
       const before = boundedRoutineReview(current);
       const after = boundedRoutineReview(draft);
-      const reviewSnapshot = storedReviewSnapshot({ diagnostics: validation.diagnostics.slice(0, 40), review: { before: before.summary, after: after.summary, truncated: before.truncated || after.truncated, detailAvailable: before.truncated || after.truncated, beforeConnections, afterConnections, connectionsTruncated: (current.transitions?.length ?? 0) > reviewLimit || (draft.transitions?.length ?? 0) > reviewLimit, operations: input.operations.slice(0, reviewLimit), operationsTruncated: input.operations.length > reviewLimit }, fullReview: { before: before.full, after: after.full } });
+      const reviewSnapshot = storedReviewSnapshot({ diagnostics: validation.diagnostics.slice(0, 40), advisories: routineAdvisoriesWithMessages(draft).slice(0, 40), review: { before: before.summary, after: after.summary, truncated: before.truncated || after.truncated, detailAvailable: before.truncated || after.truncated, beforeConnections, afterConnections, connectionsTruncated: (current.transitions?.length ?? 0) > reviewLimit || (draft.transitions?.length ?? 0) > reviewLimit, operations: input.operations.slice(0, reviewLimit), operationsTruncated: input.operations.length > reviewLimit }, fullReview: { before: before.full, after: after.full } });
       const stored = await persistReviewedPreparation({ deps, context, targetType: "routine", targetRef, payload, versionToken, reviewSnapshot, operation: "prepare_routine_structure", metadata: { kind: input.kind }, effect: routineDraftChangeEffect("edit") });
       return reviewOutput({ proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt, confirmation: stored.confirmation, snapshot: reviewSnapshot });
     },

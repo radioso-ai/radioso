@@ -1,8 +1,6 @@
-import type { MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
+import type { MessageCreateInput } from "../../../db/repositories/messageRepository.js";
 import { stripResidualCitationSyntax } from "./citationAnchorParser.js";
 import { canonicalizeUnsourcedMarkers } from "./unsourcedMarkerCanonicalization.js";
-
-type MessageCreateInput = Parameters<MessageRepositoryPort["create"]>[0];
 
 /**
  * The part of a reply that reached its listener, as the conversation stores it: the composer's

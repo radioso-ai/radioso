@@ -168,6 +168,9 @@ export interface MessageRepositoryPort {
   deleteUserMessage(input: { workspaceId: string; conversationId: string; messageId: string }): Promise<boolean>;
 }
 
+/** What a stored message is created from. */
+export type MessageCreateInput = Parameters<MessageRepositoryPort["create"]>[0];
+
 export interface MessageRow {
   id: string;
   conversation_id: string;

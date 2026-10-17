@@ -60,6 +60,12 @@ export interface DeliveredReplyPart {
   text: string;
   heardCharacterCount: number;
   spokenCharacterCount: number;
+  /**
+   * The channel's own audit record of the cut, ids and counts only, never what was said: written
+   * in the transaction that stores the part, with the conversation's and the stored message's ids
+   * added to its metadata as `conversationId` and `assistantMessageId`.
+   */
+  auditEvent?: { eventType: string; metadata: Record<string, unknown> };
 }
 
 /**

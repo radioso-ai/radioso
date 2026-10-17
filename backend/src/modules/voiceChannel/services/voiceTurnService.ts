@@ -12,6 +12,7 @@ import { VOICE_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { VOICE_SOURCE_CHANNEL } from "../../../shared/domain/conversationSource.js";
 import type { AgentVoiceSettings } from "../../agents/public.js";
 import {
+  VOICE_REPLY_INTERRUPTED_EVENT,
   VoiceTurnIncompleteError,
   type VoiceChannelContext,
   type VoiceSessionRef,
@@ -125,9 +126,8 @@ interface VoiceTurnTiming {
 /** Durable notes on a session's turns, keyed to their stored replies. Never the reply's text. */
 export interface VoiceTurnNotes {
   /**
-   * The caller spoke over a stored reply: how much of it they heard. `partial: false`, the vendor
-   * replayed the whole stored reply cut short, so it is marked now; `partial: true`, chat stored
-   * only the heard part of a reply cut off mid-stream, already marked.
+   * The vendor replayed a reply that had finished cut short: how much of it the caller heard. (A
+   * reply cut off while it streamed is stored marked, and audited, by chat with its heard part.)
    */
   replyInterrupted(note: {
     workspaceId: string;
@@ -135,7 +135,6 @@ export interface VoiceTurnNotes {
     assistantMessageId: string;
     heardCharacterCount: number;
     spokenCharacterCount: number;
-    partial: boolean;
   }): Promise<void>;
   /** An identical re-request heard the stored reply again, without a new turn. */
   replyReplayed(note: { workspaceId: string; conversationId: string; assistantMessageId: string }): Promise<void>;
@@ -575,28 +574,13 @@ export class VoiceTurnService implements VoiceTurnPort {
 
   private reserveInterruptionNote(input: VoiceTurnInput, sessionKey: string, heardUntil: string): void {
     const reservation = this.memory.reserveInterruption(sessionKey, heardUntil);
-    if (reservation) {
-      this.writeInterruptionNote(input, { ...reservation.interruption, partial: false }, reservation);
+    if (!reservation) {
+      return;
     }
-  }
-
-  /**
-   * Writes an interrupted reply's note off the turn's path, and counts and logs it once it is
-   * recorded. `settles`, when the session waits on the note: told whether it was recorded.
-   */
-  private writeInterruptionNote(
-    input: VoiceTurnInput,
-    interruption: Omit<Parameters<VoiceTurnNotes["replyInterrupted"]>[0], "workspaceId">,
-    settles?: { recorded(): void; failed(): void },
-  ): void {
+    const { interruption } = reservation;
     const recorded = (): void => {
-      settles?.recorded();
-      recordVoiceReplyInterrupted(this.dependencies.metrics, interruption.partial);
-      this.dependencies.logger.info({
-        agentId: input.session.agentId,
-        vendor: input.session.vendor,
-        ...interruption,
-      }, "Voice reply was interrupted");
+      reservation.recorded();
+      this.reportInterruption(input, { ...interruption, partial: false });
     };
     const notes = this.dependencies.notes;
     if (!notes) {
@@ -604,9 +588,22 @@ export class VoiceTurnService implements VoiceTurnPort {
       return;
     }
     withinNoteTimeout(notes.replyInterrupted({ workspaceId: input.session.workspaceId, ...interruption })).then(recorded, (error: unknown) => {
-      settles?.failed();
+      reservation.failed();
       this.warnNoteFailed(input, interruption.conversationId, error);
     });
+  }
+
+  /** Counts and logs an interrupted reply once its record is durable. Ids and counts only. */
+  private reportInterruption(
+    input: VoiceTurnInput,
+    interruption: { conversationId: string; assistantMessageId: string; heardCharacterCount: number; spokenCharacterCount: number; partial: boolean },
+  ): void {
+    recordVoiceReplyInterrupted(this.dependencies.metrics, interruption.partial);
+    this.dependencies.logger.info({
+      agentId: input.session.agentId,
+      vendor: input.session.vendor,
+      ...interruption,
+    }, "Voice reply was interrupted");
   }
 
   private warnNoteFailed(input: VoiceTurnInput, conversationId: string, error: unknown): void {
@@ -735,8 +732,9 @@ export class VoiceTurnService implements VoiceTurnPort {
           // A newer turn on the conversation superseded this one and owns the reply now. Chat kept
           // the part the caller heard, when some did, as this turn's reply, marked cut short.
           if (event.assistantMessageId && record.deliveredPart && record.conversationId) {
+            // Stored with its audit event in one transaction, so it is counted as it commits.
             record.reply = { messageId: event.assistantMessageId, text: record.deliveredPart.text.trimEnd(), partial: true };
-            this.writeInterruptionNote(input, {
+            this.reportInterruption(input, {
               conversationId: record.conversationId,
               assistantMessageId: event.assistantMessageId,
               heardCharacterCount: record.deliveredPart.heardCharacterCount,
@@ -783,10 +781,11 @@ export class VoiceTurnService implements VoiceTurnPort {
       return null;
     }
     const writtenLength = writtenLengthSpokenAs(record.written, spoken);
+    const counts = { heardCharacterCount: heard.answerHeardCharacterCount, spokenCharacterCount: heard.answerSpokenCharacterCount };
     return {
       text: writtenLength === null ? spoken : record.written.slice(0, writtenLength),
-      heardCharacterCount: heard.answerHeardCharacterCount,
-      spokenCharacterCount: heard.answerSpokenCharacterCount,
+      ...counts,
+      auditEvent: { eventType: VOICE_REPLY_INTERRUPTED_EVENT, metadata: { ...counts, partial: true } },
     };
   }
 

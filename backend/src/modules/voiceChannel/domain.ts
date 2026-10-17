@@ -89,6 +89,9 @@ export interface VoiceTurnPort {
 
 export type VoiceChannelContext = Extract<ConversationChannelContext, { provider: "voice" }>;
 
+/** The audit event a reply the caller spoke over leaves: ids and character counts, never the text. */
+export const VOICE_REPLY_INTERRUPTED_EVENT = "voice.reply_interrupted";
+
 /** A vendor's API key, held by the workspace and read only to start that vendor's sessions. */
 export interface VoiceVendorCredential {
   apiKey: string;

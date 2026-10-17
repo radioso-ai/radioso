@@ -30,6 +30,32 @@ export class AuditService {
     this.logRecorded(attributedEvent);
   }
 
+  async recordForLiveConversation(
+    event: AuditEventInput,
+    conversation: { workspaceId: string; conversationId: string },
+  ): Promise<void> {
+    const contextualMetadata = requestAuditMetadata(event.eventType);
+    const attributedEvent: AuditEventInput = contextualMetadata
+      ? { ...event, metadata: { ...event.metadata, ...contextualMetadata } }
+      : event;
+    const created = await this.auditEventRepository.createIfConversationLive({
+      accountId: attributedEvent.accountId,
+      workspaceId: conversation.workspaceId,
+      conversationId: conversation.conversationId,
+      eventType: attributedEvent.eventType,
+      eventStatus: attributedEvent.eventStatus,
+      metadata: attributedEvent.metadata,
+    });
+    if (!created) {
+      this.logger.debug(
+        { workspaceId: conversation.workspaceId, conversationId: conversation.conversationId },
+        "chat_answer_audit_skipped_conversation_erased",
+      );
+      return;
+    }
+    this.logRecorded(attributedEvent);
+  }
+
   logRecorded(event: AuditEventInput): void {
     this.logger.info(
       {

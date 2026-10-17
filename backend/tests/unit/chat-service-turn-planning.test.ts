@@ -32,13 +32,16 @@ import {
 import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
 import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelInferencePipeline.js";
 import type { FallbackReplyComposer } from "../../src/modules/chat/services/fallbackReplyComposer.js";
+import type { ChatGateway } from "../../src/modules/chat/contracts/chatGateway.js";
+import { SKILL_TURN_OUTCOME } from "../../src/modules/chat/services/assistantTurnOutcomeTypes.js";
+import { HANDOFF_NOTIFY_ACTION_TYPE } from "../../src/modules/chat/services/routines/contactRoutine.js";
 import type { ModelUsageEvent, UsageEventRecorder } from "../../src/shared/domain/usageEventRecorder.js";
 import {
   createAuditService,
   InMemoryConversationRepository,
   InMemoryMessageRepository,
 } from "../support/fakes.js";
-import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
 import {
   ApplicationModuleCoordinator,
   createApplicationExtensionRegistry,
@@ -47,6 +50,7 @@ import { createContactRoutineApplicationModule } from "../../src/app/composition
 import { createPublishedRoutineRegistrationSource } from "../../src/app/composition/routineDefinitionSource.js";
 import { contactRoutineDefinition } from "../../src/modules/chat/services/routines/contactRoutine.js";
 import { createRoutineTurnProvider } from "../../src/modules/routines/turnProvider.js";
+import { websiteEmbedFixture } from "../support/websiteEmbedFixture.js";
 
 const fallbackReplyComposer: FallbackReplyComposer = {
   async composeNoContext() {
@@ -65,10 +69,14 @@ const planJson = (input: {
     operation: "metadata" | "lookup" | "summarize" | "transform" | null;
     resolvedRequest: string | null;
   };
+  quickReply?: unknown;
+  openQuestion?: boolean;
+  requestPresent?: boolean;
+  isIdentityQuestion?: boolean;
 }): string =>
   JSON.stringify({
     route: input.route,
-    isIdentityQuestion: false,
+    isIdentityQuestion: input.isIdentityQuestion ?? false,
     intentTopic: null,
     rewrite: input.route === "retrieval"
       ? {
@@ -102,6 +110,9 @@ const planJson = (input: {
     })),
     directiveClassifications: input.directiveClassifications ?? [],
     ...(input.pageRead ? { pageRead: input.pageRead } : {}),
+    requestPresent: input.requestPresent ?? false,
+    openQuestion: input.openQuestion ?? false,
+    ...(input.quickReply === undefined ? {} : { quickReply: input.quickReply }),
   });
 
 const capturingUsageRecorder = (): UsageEventRecorder & { events: ModelUsageEvent[] } => {
@@ -310,6 +321,7 @@ const publishedRuntimeResolver = (
 /** A published agent with no override or authored behavior; spread and override per test. */
 const baseAgentRecord = (): AgentRecord => ({
   ...unpublishedAgentPublicIdentity(),
+  voice: defaultAgentVoiceSettings(),
   id: "agent-1",
   workspaceId: "workspace-1",
   name: "Support",
@@ -331,11 +343,12 @@ const baseAgentRecord = (): AgentRecord => ({
   greetingInstruction: "",
   assistantDefaultLocale: null,
   proactiveGreetingEnabled: false,
+  mechanicsReplies: {},
   chatModelOverride: null,
   surfaceSettings: {
     authenticatedChat: { enabled: true },
     anonymousChat: { enabled: false, token: null },
-    websiteEmbed: {
+    websiteEmbed: websiteEmbedFixture({
       enabled: false,
       token: null,
       allowedOrigins: [],
@@ -344,7 +357,7 @@ const baseAgentRecord = (): AgentRecord => ({
       theme: { brand: "#000000", brandText: "#ffffff", surface: "#ffffff", text: "#000000" },
       copy: {},
       expertOverrides: {},
-    },
+    }),
     extensions: {},
   },
   authoredDirectives: [],
@@ -356,6 +369,8 @@ const buildService = (input: {
   chatGateway: ChatServiceOptions["chatGateway"];
   staged: ReturnType<typeof countingStagedPorts>;
   messageRepository?: InMemoryMessageRepository;
+  conversationRepository?: InMemoryConversationRepository;
+  conversationOwnershipReader?: ChatServiceOptions["conversationOwnershipReader"];
   directiveSteering?: ChatServiceOptions["directiveSteering"];
   routine?: {
     routineStore: ChatServiceOptions["routineStore"];
@@ -370,17 +385,22 @@ const buildService = (input: {
     clarifier: NonNullable<ChatServiceOptions["clarifier"]>;
     clarificationStore: NonNullable<ChatServiceOptions["clarificationStore"]>;
   };
+  fallbackReplyComposer?: FallbackReplyComposer;
+  assistantTurnPersistence?: ChatServiceOptions["assistantTurnPersistence"];
+  quickReplyLaneEnabled?: boolean;
 }): ChatService =>
   new ChatService({
-    conversationRepository: new InMemoryConversationRepository(),
+    conversationRepository: input.conversationRepository ?? new InMemoryConversationRepository(),
     messageRepository: input.messageRepository ?? new InMemoryMessageRepository(),
+    conversationOwnershipReader: input.conversationOwnershipReader,
     retrievalTurn: new RetrievalTurnController(input.pipeline as never),
     chatGateway: input.chatGateway,
     auditService: createAuditService(),
     turnRuntime: buildChatTurnRuntime({
       chatGateway: input.chatGateway,
-      fallbackReplyComposer,
+      fallbackReplyComposer: input.fallbackReplyComposer ?? fallbackReplyComposer,
       skillOutcomeCapabilities: { supportsGroundedAnswer: () => true },
+      ...(input.quickReplyLaneEnabled === undefined ? {} : { quickReplyLaneEnabled: input.quickReplyLaneEnabled }),
     }),
     turnRouter: input.staged.turnRouter,
     responseLanguageDetector: input.staged.responseLanguageDetector,
@@ -403,9 +423,15 @@ const buildService = (input: {
       : undefined,
     turnPlanInterpretationContextSettings: input.turnPlanInterpretationContextSettings,
     contextVariableRepository: input.contextVariableRepository,
+    assistantTurnPersistence: input.assistantTurnPersistence,
     ...(input.planner
       ? {
-          turnPlanCoordinator: new TurnPlanCoordinator(new TurnPlanService(input.planner)),
+          turnPlanCoordinator: new TurnPlanCoordinator(
+            new TurnPlanService(input.planner),
+            undefined,
+            undefined,
+            input.quickReplyLaneEnabled === undefined ? {} : { quickReplyLaneEnabled: input.quickReplyLaneEnabled },
+          ),
         }
       : {}),
   });
@@ -1460,6 +1486,554 @@ describe("chat service fused turn planning", () => {
 
     expect(response.answer).toContain("Hi there!");
     expect(receivedPreviewRoutineIds).toEqual([draftRoutineId]);
+  });
+});
+
+/**
+ * A page-context answer whose envelope commits a decline but writes no text is worded by
+ * the grounded-miss composer; the reason stays the one the page envelope committed, so
+ * only a content gap hands the visitor to a person (#1499 review round 3).
+ */
+describe("a page-context decline committed without text", () => {
+  const blankPageDeclineGateway = (outcome: "no_support" | "out_of_scope", attempts: string[]): ChatGateway => {
+    const raw = JSON.stringify({
+      coverage: "unanswered_insufficient_evidence",
+      requestFocus: "the plan prices",
+      outcome,
+      answer: "",
+      v: 2,
+      claims: [],
+      suggestions: [],
+      grounding: "degraded",
+    });
+    return {
+      async answer(input) {
+        attempts.push(input.usageContext.attemptKey);
+        return raw;
+      },
+      async *streamAnswer(input) {
+        attempts.push(input.usageContext.attemptKey);
+        yield raw;
+      },
+    };
+  };
+
+  const capturingAssistantTurnPersistence = () => ({
+    completeAssistantTurn: vi.fn(async (input) => ({ message: {
+      id: input.assistantMessage.id!,
+      conversationId: input.assistantMessage.conversationId,
+      workspaceId: input.assistantMessage.workspaceId,
+      role: "assistant" as const,
+      content: input.assistantMessage.content,
+      metadata: input.assistantMessage.metadata,
+      skillName: input.assistantMessage.skillName,
+      skillOutcome: input.assistantMessage.skillOutcome,
+      skillStatus: input.assistantMessage.skillStatus,
+      createdAt: new Date(),
+    }, committedFacts: { insertedActionTypes: [], decisionCreated: false, ownershipChanged: false } })),
+  } satisfies NonNullable<ChatServiceOptions["assistantTurnPersistence"]>);
+
+  it.each([
+    {
+      committed: "out_of_scope",
+      composedReason: "content_gap",
+      skillOutcome: SKILL_TURN_OUTCOME.RETRIEVAL_OUT_OF_SCOPE.outcome,
+      handsOff: false,
+    },
+    {
+      committed: "no_support",
+      composedReason: "out_of_scope",
+      skillOutcome: SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT.outcome,
+      handsOff: true,
+    },
+  ] as const)("keeps a committed $committed when the decline model calls it $composedReason", async (testCase) => {
+    for (const stream of [false, true]) {
+      const attempts: string[] = [];
+      const assistantTurnPersistence = capturingAssistantTurnPersistence();
+      const service = buildService({
+        planner: plannerFactory({ completions: [planJson({
+          route: "retrieval",
+          pageRead: { required: true, operation: "lookup", resolvedRequest: "the plan prices" },
+        })] }),
+        pipeline: retrievalPipeline([]),
+        chatGateway: blankPageDeclineGateway(testCase.committed, attempts),
+        staged: countingStagedPorts(),
+        agentService: { resolve: async () => ({ ...baseAgentRecord(), handoffOnRetrievalMiss: true }) },
+        fallbackReplyComposer: {
+          async composeNoContext() {
+            return { text: "Prices are not on this page.", declineReason: testCase.composedReason };
+          },
+        },
+        assistantTurnPersistence,
+      });
+      const request = {
+        workspaceId: "workspace-1",
+        query: "How much does the Pro plan cost?",
+        stream,
+        pageContext: { pageUrl: "https://example.com/pricing", content: "Plans and features, without prices." },
+      };
+
+      if (stream) {
+        for await (const _event of service.streamAnswer(request)) {
+          // Drain the public stream to its lifecycle boundary.
+        }
+      } else {
+        await service.answer(request);
+      }
+
+      // The answer came from the visitor's page: nothing was retrieved, the page was read.
+      expect(attempts).toEqual([stream ? "stream_page_context" : "page_context"]);
+      const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
+      expect(persisted.assistantMessage.content).toBe("Prices are not on this page.");
+      expect(persisted.assistantMessage.skillOutcome).toBe(testCase.skillOutcome);
+      if (testCase.handsOff) {
+        expect(persisted.ownershipHandoff).toEqual({ reason: "retrieval_miss" });
+        expect(persisted.actions).toContainEqual(expect.objectContaining({ type: HANDOFF_NOTIFY_ACTION_TYPE }));
+      } else {
+        expect(persisted.ownershipHandoff).toBeNull();
+        expect(persisted.actions ?? []).not.toContainEqual(expect.objectContaining({ type: HANDOFF_NOTIFY_ACTION_TYPE }));
+      }
+    }
+  });
+});
+
+describe("chat service quick-reply lane", () => {
+  const greeting = { kind: "greeting", language: "en", text: "Hello! What can I help you with today?" } as const;
+
+  const modelCallOperations = (response: { turnTrace?: { spine: { stages: Array<{ kind: string; outputs?: Record<string, unknown> }> } } }) =>
+    ((response.turnTrace?.spine.stages.find((stage) => stage.kind === "model_calls")?.outputs?.modelCalls ?? []) as Array<{ operation: string }>)
+      .map((call) => call.operation)
+      .sort();
+
+  const composeStage = (response: { turnTrace?: { spine: { stages: Array<{ kind: string; outputs?: Record<string, unknown> }> } } }) =>
+    response.turnTrace?.spine.stages.find((stage) => stage.kind === "compose");
+
+  const alwaysOnSignOff = {
+    name: "sign-off",
+    condition: { kind: "always" as const },
+    action: "Close every reply with a short, friendly invitation to ask more.",
+  };
+
+  it("answers a greeting with the planner's own reply in exactly one model call", async () => {
+    const staged = countingStagedPorts();
+    const messageRepository = new InMemoryMessageRepository();
+    const planner = plannerFactory({ completions: [planJson({ route: "direct", quickReply: greeting })] });
+    const service = buildService({
+      planner,
+      pipeline: directPipeline("hi there"),
+      chatGateway: pipelineChatGateway("A composed reply that must not appear."),
+      staged,
+      messageRepository,
+    });
+
+    const response = await service.answer({ workspaceId: "workspace-1", query: "hi there", stream: false });
+
+    expect(response.answer).toBe(greeting.text);
+    expect(response.route).toMatchObject({ type: "direct" });
+    expect(response.answerCoverage).toMatchObject({ availability: "not_recorded" });
+    expect(planner.completeCalls()).toBe(1);
+    expect(staged.routerClassify).not.toHaveBeenCalled();
+    expect(staged.languageDetect).not.toHaveBeenCalled();
+    expect(response.turnTrace?.summary).toMatchObject({ totalLlmCalls: 1 });
+    expect(modelCallOperations(response)).toEqual(["turn_planning"]);
+    expect(composeStage(response)?.outputs).toMatchObject({ source: "turn_planning", quickReplyKind: "greeting", quickReplyWording: "planner" });
+    expect(composeStage(response)?.outputs).not.toHaveProperty("modelCallIds");
+    const messages = await messageRepository.listByConversationId("workspace-1", response.conversationId);
+    expect(messages.map((message) => [message.role, message.content])).toEqual([
+      ["user", "hi there"],
+      ["assistant", greeting.text],
+    ]);
+  });
+
+  it("composes a greeting in two model calls, with no quick-reply wording in the planner prompt, when the lane is switched off", async () => {
+    const staged = countingStagedPorts();
+    // A planner that still writes a quick reply (a cached prompt, a mixed deploy) parses, and is ignored.
+    const planner = plannerFactory({ completions: [planJson({ route: "direct", quickReply: greeting })] });
+    const service = buildService({
+      planner,
+      pipeline: directPipeline("hi there"),
+      chatGateway: pipelineChatGateway("Hi! How can I help?"),
+      staged,
+      quickReplyLaneEnabled: false,
+      directiveSteering: createRouteScopedDirectiveSteering({
+        capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+        registrations: [{ directive: alwaysOnSignOff }],
+      }),
+      agentRevisionRuntimeResolver: publishedRuntimeResolver({
+        customInstruction: "You are Pip, Acme's cheerful support assistant.",
+        directives: [],
+        routines: [],
+        contextVariableEnablements: [],
+      }),
+    });
+
+    const response = await service.answer({ workspaceId: "workspace-1", query: "hi there", stream: false });
+
+    expect(response.answer).toBe("Hi! How can I help?");
+    expect(response.route).toMatchObject({ type: "direct" });
+    expect(modelCallOperations(response)).toEqual(["answer", "turn_planning"]);
+    expect(composeStage(response)?.outputs).not.toHaveProperty("quickReplyKind");
+    expect(staged.routerClassify).not.toHaveBeenCalled();
+    const prompt = planner.prompts()[0] ?? "";
+    expect(prompt).not.toContain("Quick Reply Rules");
+    expect(prompt).not.toContain("Standing Instructions For Any Reply You Write");
+    expect(prompt).not.toContain("quickReply");
+  });
+
+  it("streams the planner's reply as committed text after one model call", async () => {
+    const staged = countingStagedPorts();
+    const planner = plannerFactory({ completions: [planJson({ route: "direct", quickReply: greeting })] });
+    const service = buildService({
+      planner,
+      pipeline: directPipeline("hi there"),
+      chatGateway: pipelineChatGateway("A composed reply that must not appear."),
+      staged,
+    });
+
+    const events: ChatStreamEvent[] = [];
+    for await (const event of service.streamAnswer({ workspaceId: "workspace-1", query: "hi there", stream: true })) {
+      events.push(event);
+    }
+
+    const composingAt = events.findIndex((event) => event.type === "status" && event.stage === "composing");
+    const firstChunkAt = events.findIndex((event) => event.type === "chunk");
+    const doneAt = events.findIndex((event) => event.type === "done");
+    expect(composingAt).toBeGreaterThanOrEqual(0);
+    expect(firstChunkAt).toBeGreaterThan(composingAt);
+    expect(doneAt).toBeGreaterThan(firstChunkAt);
+    const streamed = events.flatMap((event) => (event.type === "chunk" ? [event.text] : [])).join("");
+    expect(streamed).toBe(greeting.text);
+    const done = events[doneAt] as Extract<ChatStreamEvent, { type: "done" }>;
+    expect(done.route).toMatchObject({ type: "direct" });
+    expect(done.answer).toBe(greeting.text);
+    expect(done.answerCoverage).toMatchObject({ availability: "not_recorded" });
+    expect(done.turnTrace?.summary).toMatchObject({ totalLlmCalls: 1 });
+    expect(composeStage(done)?.outputs).toMatchObject({ source: "turn_planning", quickReplyKind: "greeting" });
+    expect(planner.completeCalls()).toBe(1);
+  });
+
+  it("keeps the planner's reply when the turn's answer rules are the always-on directives it wrote under", async () => {
+    const planner = plannerFactory({ completions: [planJson({ route: "direct", quickReply: greeting })] });
+    const service = buildService({
+      planner,
+      pipeline: directPipeline("hi there"),
+      chatGateway: pipelineChatGateway("A composed reply that must not appear."),
+      staged: countingStagedPorts(),
+      directiveSteering: createRouteScopedDirectiveSteering({
+        capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+        registrations: [{ directive: alwaysOnSignOff }],
+      }),
+    });
+
+    const response = await service.answer({ workspaceId: "workspace-1", query: "hi there", stream: false });
+
+    expect(planner.prompts()[0]).toContain("Standing Instructions For Any Reply You Write");
+    expect(planner.prompts()[0]).toContain(alwaysOnSignOff.action);
+    expect(response.answer).toBe(greeting.text);
+    expect(modelCallOperations(response)).toEqual(["turn_planning"]);
+  });
+
+  it("gives the planner the agent's custom instruction for the reply it writes", async () => {
+    const customInstruction = "You are Pip, Acme's cheerful support assistant.";
+    const planner = plannerFactory({ completions: [planJson({ route: "direct", quickReply: greeting })] });
+    const service = buildService({
+      planner,
+      pipeline: directPipeline("hi there"),
+      chatGateway: pipelineChatGateway("A composed reply that must not appear."),
+      staged: countingStagedPorts(),
+      agentRevisionRuntimeResolver: publishedRuntimeResolver({
+        customInstruction,
+        directives: [],
+        routines: [],
+        contextVariableEnablements: [],
+      }),
+    });
+
+    const response = await service.answer({ workspaceId: "workspace-1", query: "hi there", stream: false });
+
+    const prompt = planner.prompts()[0] ?? "";
+    const standingBlock = prompt.slice(prompt.indexOf("Standing Instructions For Any Reply You Write"));
+    expect(prompt).toContain("Standing Instructions For Any Reply You Write");
+    expect(standingBlock).toContain(customInstruction);
+    expect(response.answer).toBe(greeting.text);
+  });
+
+  it("speaks the agent's authored line for the mechanic instead of the planner's words", async () => {
+    const mechanicsReplies = {
+      en: { greeting: ["Hi! I'm here whenever you need me."], thanks: [], farewell: [], acknowledgement: [] },
+    };
+    const planner = plannerFactory({
+      completions: [planJson({ route: "direct", quickReply: { kind: "greeting", language: "en", text: "Hello! What can I help you with today?" } })],
+    });
+    const service = buildService({
+      planner,
+      pipeline: directPipeline("hi there"),
+      chatGateway: pipelineChatGateway("A composed reply that must not appear."),
+      staged: countingStagedPorts(),
+      agentService: { resolve: async () => ({ ...baseAgentRecord(), mechanicsReplies }) },
+    });
+
+    const response = await service.answer({ workspaceId: "workspace-1", query: "hi there", stream: false });
+
+    expect(response.answer).toBe("Hi! I'm here whenever you need me.");
+    expect(modelCallOperations(response)).toEqual(["turn_planning"]);
+    expect(composeStage(response)?.outputs).toMatchObject({
+      source: "turn_planning",
+      quickReplyKind: "greeting",
+      quickReplyWording: "authored",
+    });
+  });
+
+  it("composes the reply, speaking neither the planner's words nor an authored line, when the planner names its language instead of tagging it", async () => {
+    const mechanicsReplies = {
+      en: { greeting: ["Hi! I'm here whenever you need me."], thanks: [], farewell: [], acknowledgement: [] },
+    };
+    const planner = plannerFactory({
+      completions: [planJson({ route: "direct", quickReply: { kind: "greeting", language: "English", text: "Hello! What can I help you with today?" } })],
+    });
+    const service = buildService({
+      planner,
+      pipeline: directPipeline("hi there"),
+      chatGateway: pipelineChatGateway("Hi! How can I help?"),
+      staged: countingStagedPorts(),
+      agentService: { resolve: async () => ({ ...baseAgentRecord(), mechanicsReplies }) },
+    });
+
+    const response = await service.answer({ workspaceId: "workspace-1", query: "hi there", stream: false });
+
+    expect(response.answer).toBe("Hi! How can I help?");
+    expect(response.route).toMatchObject({ type: "direct" });
+    expect(modelCallOperations(response)).toEqual(["answer", "turn_planning"]);
+    expect(composeStage(response)?.outputs).not.toHaveProperty("quickReplyWording");
+  });
+
+  it("composes the reply when the planner's own words carry a price", async () => {
+    const planner = plannerFactory({
+      completions: [planJson({
+        route: "direct",
+        quickReply: { kind: "greeting", language: "en", text: "Welcome! Pro costs $99 and is SOC 2 certified." },
+      })],
+    });
+    const service = buildService({
+      planner,
+      pipeline: directPipeline("Hello"),
+      chatGateway: pipelineChatGateway("Hello! How can I help?"),
+      staged: countingStagedPorts(),
+    });
+
+    const response = await service.answer({ workspaceId: "workspace-1", query: "Hello", stream: false });
+
+    expect(response.answer).toBe("Hello! How can I help?");
+    expect(modelCallOperations(response)).toEqual(["answer", "turn_planning"]);
+  });
+
+  it("composes a greeting that carries a request instead of answering only the greeting", async () => {
+    const planner = plannerFactory({
+      completions: [planJson({ route: "direct", requestPresent: true, quickReply: { kind: "greeting", language: "en", text: "Good morning!" } })],
+    });
+    const service = buildService({
+      planner,
+      pipeline: directPipeline("Good morning! I'd like to cancel my subscription."),
+      chatGateway: pipelineChatGateway("Good morning! I can help you cancel your subscription."),
+      staged: countingStagedPorts(),
+    });
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      query: "Good morning! I'd like to cancel my subscription.",
+      stream: false,
+    });
+
+    expect(response.answer).toBe("Good morning! I can help you cancel your subscription.");
+    expect(modelCallOperations(response)).toEqual(["answer", "turn_planning"]);
+    expect(composeStage(response)?.outputs).not.toHaveProperty("source");
+  });
+
+  it("composes the reply when the planner marks the assistant's question as still open", async () => {
+    const planner = plannerFactory({
+      completions: [planJson({ route: "direct", openQuestion: true, quickReply: { kind: "acknowledgement", language: "en", text: "Got it." } })],
+    });
+    const service = buildService({
+      planner,
+      pipeline: directPipeline("ok"),
+      chatGateway: pipelineChatGateway("Which plan do you mean, Pro or Team?"),
+      staged: countingStagedPorts(),
+    });
+
+    const response = await service.answer({ workspaceId: "workspace-1", query: "ok", stream: false });
+
+    expect(response.answer).toBe("Which plan do you mean, Pro or Team?");
+    expect(modelCallOperations(response)).toEqual(["answer", "turn_planning"]);
+    expect(composeStage(response)?.outputs).not.toHaveProperty("source");
+  });
+
+  it("composes the reply when a conditional answer directive applies to the turn", async () => {
+    const planner = plannerFactory({
+      completions: [
+        planJson({
+          route: "direct",
+          directiveClassifications: [{ name: "first-visit-welcome", matched: true, confidence: 0.95 }],
+          quickReply: greeting,
+        }),
+      ],
+    });
+    const service = buildService({
+      planner,
+      pipeline: directPipeline("hi there"),
+      chatGateway: pipelineChatGateway("Welcome! Here is our first-visit offer."),
+      staged: countingStagedPorts(),
+      directiveSteering: createRouteScopedDirectiveSteering({
+        capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+        registrations: [
+          { directive: alwaysOnSignOff },
+          {
+            directive: {
+              name: "first-visit-welcome",
+              condition: { kind: "contextual", description: "the visitor greets the assistant for the first time" },
+              action: "Mention the first-visit offer.",
+            },
+          },
+        ],
+      }),
+    });
+
+    const response = await service.answer({ workspaceId: "workspace-1", query: "hi there", stream: false });
+
+    expect(response.answer).toBe("Welcome! Here is our first-visit offer.");
+    expect(modelCallOperations(response)).toEqual(["answer", "turn_planning"]);
+    expect(composeStage(response)?.outputs).not.toHaveProperty("source");
+  });
+
+  it("composes the reply when the planner returns kind none", async () => {
+    const planner = plannerFactory({ completions: [planJson({ route: "direct", quickReply: { kind: "none", text: "" } })] });
+    const service = buildService({
+      planner,
+      pipeline: directPipeline("hi there"),
+      chatGateway: pipelineChatGateway("Hi! How can I help?"),
+      staged: countingStagedPorts(),
+    });
+
+    const response = await service.answer({ workspaceId: "workspace-1", query: "hi there", stream: false });
+
+    expect(response.answer).toBe("Hi! How can I help?");
+    expect(modelCallOperations(response)).toEqual(["answer", "turn_planning"]);
+  });
+
+  it("composes the reply on an identity question even when the planner wrote one", async () => {
+    const planner = plannerFactory({
+      completions: [planJson({ route: "direct", isIdentityQuestion: true, quickReply: greeting })],
+    });
+    const service = buildService({
+      planner,
+      pipeline: directPipeline("hi, who are you?"),
+      chatGateway: pipelineChatGateway("I'm Support, Acme's assistant."),
+      staged: countingStagedPorts(),
+    });
+
+    const response = await service.answer({ workspaceId: "workspace-1", query: "hi, who are you?", stream: false });
+
+    expect(response.answer).toBe("I'm Support, Acme's assistant.");
+    expect(modelCallOperations(response)).toEqual(["answer", "turn_planning"]);
+  });
+
+  it("composes the reply when the planner's quick reply is malformed, still routing from the plan", async () => {
+    const staged = countingStagedPorts();
+    const planner = plannerFactory({
+      completions: [planJson({ route: "direct", quickReply: { kind: "greeting", language: "en", text: "   " } })],
+    });
+    const service = buildService({
+      planner,
+      pipeline: directPipeline("hi there"),
+      chatGateway: pipelineChatGateway("Hi! How can I help?"),
+      staged,
+    });
+
+    const response = await service.answer({ workspaceId: "workspace-1", query: "hi there", stream: false });
+
+    expect(response.answer).toBe("Hi! How can I help?");
+    expect(response.route).toMatchObject({ type: "direct" });
+    expect(modelCallOperations(response)).toEqual(["answer", "turn_planning"]);
+    expect(staged.routerClassify).not.toHaveBeenCalled();
+    expect(staged.languageDetect).not.toHaveBeenCalled();
+  });
+
+  it("leaves a human-owned conversation's turn unchanged: no plan and no reply", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
+    const planner = plannerFactory({ completions: [planJson({ route: "direct", quickReply: greeting })] });
+    const service = buildService({
+      planner,
+      pipeline: directPipeline("hi there"),
+      chatGateway: pipelineChatGateway("A composed reply that must not appear."),
+      staged: countingStagedPorts(),
+      conversationRepository,
+      conversationOwnershipReader: {
+        load: vi.fn(async () => ({
+          conversationId: conversation.id,
+          workspaceId: "workspace-1",
+          state: "human_owned" as const,
+          ownerAccountId: "account-1",
+          ownerUserId: "user-1",
+          ownerProfile: null,
+          ownerStoredLabel: "Operator",
+          reason: "operator_takeover",
+          version: 1,
+          takenOverAt: new Date(0),
+          createdAt: new Date(0),
+          updatedAt: new Date(0),
+        })),
+      },
+    });
+
+    const response = await service.answer({
+      workspaceId: "workspace-1",
+      conversationId: conversation.id,
+      query: "hi there",
+      stream: false,
+    });
+
+    expect(response.answer).toBe("");
+    expect(response.ownership).toEqual({ state: "human_owned", suppressed: true });
+    expect(planner.completeCalls()).toBe(0);
+  });
+
+  it("never uses a planner reply while a routine is active: the planner is bypassed", async () => {
+    const planner = plannerFactory({ completions: [planJson({ route: "direct", quickReply: greeting })] });
+    const routineStore: NonNullable<ChatServiceOptions["routineStore"]> = {
+      loadActive: async () => ({
+        sessionId: "s",
+        routineId: "contact.request",
+        path: ["ask_email"],
+        variables: {},
+        status: "active",
+      }),
+      save: async () => {},
+      clear: async () => {},
+    };
+    const routineProvider: NonNullable<ChatServiceOptions["routineProvider"]> = {
+      forTurn: async () => ({
+        activator: { activate: async () => null },
+        runner: {
+          resume: async () => ({
+            response: { answer: "What is your email?" },
+            nextState: { sessionId: "s", routineId: "contact.request", path: ["ask_email"], variables: {}, status: "active" },
+          }),
+        },
+      }),
+    };
+    const service = buildService({
+      planner,
+      pipeline: directPipeline("hi there"),
+      chatGateway: pipelineChatGateway("unused"),
+      staged: countingStagedPorts(),
+      routine: { routineStore, routineProvider },
+    });
+
+    const response = await service.answer({ workspaceId: "workspace-1", query: "hi there", stream: false });
+
+    expect(response.answer).toContain("What is your email?");
+    expect(response.answer).not.toContain(greeting.text);
+    expect(planner.completeCalls()).toBe(0);
   });
 });
 

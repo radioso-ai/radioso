@@ -34,6 +34,25 @@ describe("openapi contract", () => {
     expect(metadata?.properties?.label).toEqual({ type: "string", minLength: 1, maxLength: 80 });
   });
 
+  it("bounds the agent's authored mechanics replies by language-tag key shape and locale count", () => {
+    const schema = createOpenApiDocument().components?.schemas?.AgentMechanicsReplies as {
+      type?: string;
+      maxProperties?: number;
+      propertyNames?: { type?: string; pattern?: string };
+    } | undefined;
+
+    expect(schema?.type).toBe("object");
+    expect(schema?.maxProperties).toBe(10);
+    expect(schema?.propertyNames?.type).toBe("string");
+    const keyPattern = new RegExp(schema?.propertyNames?.pattern ?? "(?!)");
+    for (const key of ["en", "it-IT", "zh-Hant-TW", "es-419"]) {
+      expect(keyPattern.test(key)).toBe(true);
+    }
+    for (const key of ["English", "en_US", "e", ""]) {
+      expect(keyPattern.test(key)).toBe(false);
+    }
+  });
+
   it("advertises the browser-safe realtime enablement flag on workspace route resolution", () => {
     const document = createOpenApiDocument();
     const schema = document.components?.schemas?.WorkspaceRouteResolutionResponse as {

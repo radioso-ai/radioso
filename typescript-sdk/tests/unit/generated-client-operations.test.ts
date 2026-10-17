@@ -42,6 +42,7 @@ describe("generated client operation coverage", () => {
       "listHistory",
       "listChatHistory",
       "getHistoryConversation",
+      "deleteHistoryConversation",
       "getLegacyHistoryConversation",
       "listHistorySearches",
       "getHistorySearch",
@@ -86,5 +87,15 @@ describe("generated client operation coverage", () => {
     expect(clientSource).toContain("crawlWebsite(");
     expect(clientSource).toContain("listCrawlJobs(");
     expect(clientSource).toContain("deleteCrawlJob(");
+  });
+
+  it("wires the conversation and visitor erasure operations", () => {
+    const clientSource = readFileSync(new URL("../../src/generated/client.ts", import.meta.url), "utf8");
+    const operationIds = operationIdsForPaths(["/api/v1/history/visitors/{visitorId}"]);
+
+    expect(operationIds).toEqual(["deleteHistoryVisitor"]);
+    for (const operationId of ["deleteHistoryConversation", "deleteHistoryVisitor"]) {
+      expect(clientSource).toContain(`${operationId}(`);
+    }
   });
 });

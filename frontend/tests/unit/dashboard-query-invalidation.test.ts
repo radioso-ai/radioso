@@ -51,14 +51,14 @@ describe('dashboard query invalidation coordinator', () => {
     const recentlyClosed = dashboardQueryKeys.attention.recentlyClosed(workspaceId, { limit: 10 })
 
     expect(INVALIDATION_KINDS.filter((kind) => matchesWorkspaceInvalidation(kind, recentlyClosed, workspaceId)))
-      .toEqual(['conversation.ownership_changed', 'hitl.decision_resolved', 'quality.triage_changed'])
+      .toEqual(['conversation.ownership_changed', 'conversation.deleted', 'hitl.decision_resolved', 'quality.triage_changed'])
   })
 
   it('refreshes held replies, which are approvals, on the approval events and on a takeover that supersedes them', () => {
     const heldReplies = dashboardQueryKeys.attention.heldReplies(workspaceId, { limit: 50 })
 
     expect(INVALIDATION_KINDS.filter((kind) => matchesWorkspaceInvalidation(kind, heldReplies, workspaceId)))
-      .toEqual(['conversation.ownership_changed', 'hitl.decision_created', 'hitl.decision_resolved'])
+      .toEqual(['conversation.ownership_changed', 'conversation.deleted', 'hitl.decision_created', 'hitl.decision_resolved'])
   })
 
   it('rejects unrelated workspaces and non-owning query families', () => {
@@ -98,7 +98,7 @@ describe('dashboard query invalidation coordinator', () => {
     }
   })
 
-  it('exhaustively enforces the 12-kind matrix across every dashboard family and history variant', () => {
+  it('exhaustively enforces the 13-kind matrix across every dashboard family and history variant', () => {
     const familyKeys = {
       documentList: dashboardQueryKeys.documents.list(workspaceId, { sourceId: null, page: 1, pageSize: 25 }),
       crawlActivity: dashboardQueryKeys.documents.crawlActivity(workspaceId, { recentSinceMinutes: 60 }),
@@ -122,6 +122,10 @@ describe('dashboard query invalidation coordinator', () => {
       'conversation.turn_committed': ['historyAll', 'historyChat'],
       'conversation.contact_delivery_changed': ['historyAll', 'historyContact'],
       'conversation.ownership_changed': ['historyAll', 'historyChat', 'humanOwned', 'heldReplies'],
+      // An erased conversation leaves every list it was on: history, attention, and quality.
+      'conversation.deleted': [
+        'historyAll', 'historyChat', 'historyContact', 'qualityStats', 'qualityTurns', 'decisions', 'humanOwned', 'heldReplies',
+      ],
       'search.created': ['historyAll', 'historySearch'],
       'hitl.decision_created': ['decisions', 'heldReplies'],
       'hitl.decision_resolved': ['decisions', 'heldReplies'],

@@ -1,13 +1,25 @@
 import express from "express";
 import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
 
 import { createActionDispatchWorkerTaskRoutes } from "../../src/app/worker/actionDispatchWorkerTaskRoutes.js";
+import {
+  BackgroundJobRuntime,
+  backgroundJobHandler,
+  backgroundJobRequest,
+  defineBackgroundJob,
+} from "../../src/shared/background-jobs/index.js";
+import { InMemoryBackgroundJobStore } from "../support/inMemoryBackgroundJobStore.js";
 
-const buildApp = (actionDispatchWorker: { drain: ReturnType<typeof vi.fn> }) => {
+const drained = { claimed: 1, completed: 1, skipped: 0, requeued: 0, retried: 0, deadLettered: 0, superseded: 0 };
+const DRAIN_PATH = "/internal/tasks/actions/drain";
+const RECOVER_PATH = "/internal/tasks/actions/recover";
+
+const buildApp = (drain: ReturnType<typeof vi.fn>, reportActionOutboxQueueState: ReturnType<typeof vi.fn> = vi.fn(async () => undefined)) => {
   const app = express();
   app.use(express.json());
-  app.use(createActionDispatchWorkerTaskRoutes({ actionDispatchWorker: actionDispatchWorker as never }));
+  app.use(createActionDispatchWorkerTaskRoutes({ actionDispatchJobRuntime: { drain } as never, reportActionOutboxQueueState }));
   app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
     res.status(500).json({ error: "internal" });
   });
@@ -16,116 +28,135 @@ const buildApp = (actionDispatchWorker: { drain: ReturnType<typeof vi.fn> }) => 
 
 describe("createActionDispatchWorkerTaskRoutes", () => {
   describe("POST /internal/tasks/actions/drain", () => {
-    it("triggers exactly one drain and responds 204", async () => {
-      const drain = vi.fn().mockResolvedValue({ dispatched: 1, retried: 0, failed: 0, skipped: 0 });
-      const app = buildApp({ drain });
+    it("asks for up to a full batch per pushed wake, inside the drain's time budget", async () => {
+      const drain = vi.fn(async () => drained);
 
-      const response = await request(app).post("/internal/tasks/actions/drain").send({});
+      const response = await request(buildApp(drain)).post(DRAIN_PATH).send({});
 
-      expect(response.status).toBe(204);
-      expect(drain).toHaveBeenCalledOnce();
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(drained);
+      expect(drain).toHaveBeenCalledWith({ maxJobs: 20, budgetMs: 270_000, startedAt: expect.any(Number) });
     });
 
-    it("responds 204 even when the drain is a no-op (nothing pending) or already in flight", async () => {
-      const drain = vi.fn().mockResolvedValue(null);
-      const app = buildApp({ drain });
+    it("drains every action a single turn enqueued from one pushed wake, against the real runtime", async () => {
+      const clock = { now: () => new Date() };
+      const store = new InMemoryBackgroundJobStore(clock);
+      const job = defineBackgroundJob({
+        kind: "test.two_action_turn",
+        payload: z.object({ actionId: z.string() }),
+        onDuplicateKey: "ignore",
+      });
+      const handled: string[] = [];
+      const runtime = new BackgroundJobRuntime({
+        store,
+        handlers: [backgroundJobHandler(job, async (payload) => { handled.push(payload.actionId); })],
+        logger: { debug: () => undefined, warn: () => undefined, error: () => undefined },
+      });
+      // Mirrors a turn that enqueues two routine actions transactionally, then sends one push.
+      await store.insert(backgroundJobRequest(job, { actionId: "a1" }));
+      await store.insert(backgroundJobRequest(job, { actionId: "a2" }));
 
-      const response = await request(app).post("/internal/tasks/actions/drain").send({});
+      const response = await request(
+        express()
+          .use(express.json())
+          .use(createActionDispatchWorkerTaskRoutes({
+            actionDispatchJobRuntime: runtime,
+            reportActionOutboxQueueState: vi.fn(async () => undefined),
+          })),
+      )
+        .post(DRAIN_PATH)
+        .send({});
 
-      expect(response.status).toBe(204);
+      expect(response.status).toBe(200);
+      expect(response.body).toMatchObject({ claimed: 2, completed: 2 });
+      expect(handled.sort()).toEqual(["a1", "a2"]);
+    });
+
+    it("reports the outbox queue state after a successful push drain", async () => {
+      const drain = vi.fn(async () => drained);
+      const reportActionOutboxQueueState = vi.fn(async () => undefined);
+
+      const response = await request(buildApp(drain, reportActionOutboxQueueState)).post(DRAIN_PATH).send({});
+
+      expect(response.status).toBe(200);
+      expect(reportActionOutboxQueueState).toHaveBeenCalledTimes(1);
     });
 
     it("forwards an unexpected drain error to the error handler instead of hanging", async () => {
-      const drain = vi.fn().mockRejectedValue(new Error("db down"));
-      const app = buildApp({ drain });
+      const drain = vi.fn(async () => {
+        throw new Error("db down");
+      });
 
-      const response = await request(app).post("/internal/tasks/actions/drain").send({});
+      const response = await request(buildApp(drain)).post(DRAIN_PATH).send({});
 
       expect(response.status).toBe(500);
-    });
-  });
-
-  describe("POST /internal/tasks/actions/recover", () => {
-    it("drains repeatedly until a batch does no work, bounded by maxJobs", async () => {
-      const drain = vi
-        .fn()
-        .mockResolvedValueOnce({ dispatched: 5, retried: 0, failed: 0, skipped: 0 })
-        .mockResolvedValueOnce({ dispatched: 3, retried: 0, failed: 0, skipped: 0 })
-        .mockResolvedValueOnce({ dispatched: 0, retried: 0, failed: 0, skipped: 0 });
-      const app = buildApp({ drain });
-
-      const response = await request(app).post("/internal/tasks/actions/recover").send({ maxJobs: 10 });
-
-      expect(response.status).toBe(200);
-      expect(response.body).toEqual({ processedBatchCount: 2 });
-      expect(drain).toHaveBeenCalledTimes(3);
-    });
-
-    it("continues after a batch that only skipped terminal actions", async () => {
-      const drain = vi
-        .fn()
-        .mockResolvedValueOnce({ dispatched: 0, retried: 0, failed: 0, skipped: 5 })
-        .mockResolvedValueOnce({ dispatched: 1, retried: 0, failed: 0, skipped: 0 })
-        .mockResolvedValueOnce({ dispatched: 0, retried: 0, failed: 0, skipped: 0 });
-      const app = buildApp({ drain });
-
-      const response = await request(app).post("/internal/tasks/actions/recover").send({ maxJobs: 10 });
-
-      expect(response.status).toBe(200);
-      expect(response.body).toEqual({ processedBatchCount: 2 });
-      expect(drain).toHaveBeenCalledTimes(3);
-    });
-
-    it("stops after maxJobs batches even if every batch found work", async () => {
-      const drain = vi.fn().mockResolvedValue({ dispatched: 1, retried: 0, failed: 0, skipped: 0 });
-      const app = buildApp({ drain });
-
-      const response = await request(app).post("/internal/tasks/actions/recover").send({ maxJobs: 3 });
-
-      expect(response.status).toBe(200);
-      expect(response.body).toEqual({ processedBatchCount: 3 });
-      expect(drain).toHaveBeenCalledTimes(3);
-    });
-
-    it("treats a null (already-draining) result as done and stops the loop", async () => {
-      const drain = vi.fn().mockResolvedValue(null);
-      const app = buildApp({ drain });
-
-      const response = await request(app).post("/internal/tasks/actions/recover").send({ maxJobs: 5 });
-
-      expect(response.status).toBe(200);
-      expect(response.body).toEqual({ processedBatchCount: 0 });
-      expect(drain).toHaveBeenCalledTimes(1);
-    });
-
-    it("defaults maxJobs when the body is empty", async () => {
-      const drain = vi.fn().mockResolvedValue(null);
-      const app = buildApp({ drain });
-
-      const response = await request(app).post("/internal/tasks/actions/recover").send();
-
-      expect(response.status).toBe(200);
-      expect(drain).toHaveBeenCalledTimes(1);
     });
 
     it("rejects an invalid payload with 400", async () => {
       const drain = vi.fn();
-      const app = buildApp({ drain });
 
-      const response = await request(app).post("/internal/tasks/actions/recover").send({ maxJobs: "not-a-number" });
+      const response = await request(buildApp(drain)).post(DRAIN_PATH).send({ maxJobs: "not-a-number" });
+
+      expect(response.status).toBe(400);
+      expect(drain).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("POST /internal/tasks/actions/recover", () => {
+    it("asks for well above one push's batch under the same budget, defaulting to the recovery sweep's own size", async () => {
+      const drain = vi.fn(async () => drained);
+
+      const response = await request(buildApp(drain)).post(RECOVER_PATH).send({});
+
+      expect(response.status).toBe(200);
+      expect(response.body).toEqual(drained);
+      expect(drain).toHaveBeenCalledWith({ maxJobs: 200, budgetMs: 270_000, startedAt: expect.any(Number) });
+    });
+
+    it("honors an explicit maxJobs", async () => {
+      const drain = vi.fn(async () => drained);
+
+      await request(buildApp(drain)).post(RECOVER_PATH).send({ maxJobs: 10 });
+
+      expect(drain).toHaveBeenCalledWith({ maxJobs: 10, budgetMs: 270_000, startedAt: expect.any(Number) });
+    });
+
+    it("reports the outbox queue state after a successful recovery sweep", async () => {
+      const drain = vi.fn(async () => drained);
+      const reportActionOutboxQueueState = vi.fn(async () => undefined);
+
+      const response = await request(buildApp(drain, reportActionOutboxQueueState)).post(RECOVER_PATH).send({});
+
+      expect(response.status).toBe(200);
+      expect(reportActionOutboxQueueState).toHaveBeenCalledTimes(1);
+    });
+
+    it("rejects an invalid payload with 400", async () => {
+      const drain = vi.fn();
+
+      const response = await request(buildApp(drain)).post(RECOVER_PATH).send({ maxJobs: "not-a-number" });
 
       expect(response.status).toBe(400);
       expect(drain).not.toHaveBeenCalled();
     });
 
-    it("caps maxJobs at 50", async () => {
+    it("caps maxJobs at 500", async () => {
       const drain = vi.fn();
-      const app = buildApp({ drain });
 
-      const response = await request(app).post("/internal/tasks/actions/recover").send({ maxJobs: 51 });
+      const response = await request(buildApp(drain)).post(RECOVER_PATH).send({ maxJobs: 501 });
 
       expect(response.status).toBe(400);
       expect(drain).not.toHaveBeenCalled();
+    });
+
+    it("forwards an unexpected drain error to the error handler", async () => {
+      const drain = vi.fn(async () => {
+        throw new Error("db down");
+      });
+
+      const response = await request(buildApp(drain)).post(RECOVER_PATH).send({});
+
+      expect(response.status).toBe(500);
     });
   });
 });

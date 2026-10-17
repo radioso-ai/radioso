@@ -8,7 +8,30 @@ import { AgentRepository } from "../../db/repositories/agentRepository.js";
 import { ConversationRepository } from "../../db/repositories/conversationRepository.js";
 import { WorkspaceRepository } from "../../db/repositories/workspaceRepository.js";
 import { AgentSkillRepository } from "../../modules/agentSkills/repository.js";
+import {
+  NotificationDeliveryAdmissionService,
+  NotificationRecipientConfirmationMailer,
+  NotificationRecipientPolicyService,
+  NotificationRecipientTokenSigner,
+  type NotificationRecipientPolicyPort,
+} from "../../modules/operatorNotifications/public.js";
+import {
+  NotificationRecipientIdentityRepository,
+  NotificationRecipientStateRepository,
+} from "../../db/repositories/notificationRecipientStateRepository.js";
+import { NotificationDeliveryOutcomeRepository } from "../../db/repositories/notificationDeliveryOutcomeRepository.js";
 import type { Database } from "../../shared/infra/database.js";
+import type { UsageLimitPolicy } from "../../shared/domain/usageLimitPolicy.js";
+import type { AppLogger } from "../../shared/observability/logger.js";
+import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
+import type { Env } from "../config/env.js";
+import type { MailTransportPort } from "./applicationModule.js";
+
+export const notificationRecipientPublicApiBase = (env: Pick<Env, "APP_BASE_URL" | "CONNECTOR_PUBLIC_BASE_URL" | "PORT">): string => {
+  if (env.CONNECTOR_PUBLIC_BASE_URL) return env.CONNECTOR_PUBLIC_BASE_URL.replace(/\/+$/u, "");
+  if (env.APP_BASE_URL) return `${env.APP_BASE_URL.replace(/\/+$/u, "")}/backend`;
+  return `http://localhost:${env.PORT}`;
+};
 
 /**
  * The one place the default contact destination is wired: a named notify skill, then
@@ -27,10 +50,51 @@ export const buildContactDeliveryResolver = (database: Database): ConfiguredCont
   );
 
 /** Shows an operator where a routine ending's notice goes, through the resolver that sends it. */
-export const buildOperatorNoticeDestinationsReader = (database: Database): OperatorNoticeDestinationsReader => {
+export const buildOperatorNoticeDestinationsReader = (
+  database: Database,
+  recipientPolicy: Pick<NotificationRecipientPolicyPort, "describe">,
+  usageLimitPolicy: UsageLimitPolicy,
+): OperatorNoticeDestinationsReader => {
   const skills = new AgentSkillRepository(database.kysely);
   return new OperatorNoticeDestinationsReader({
     skills: { listByAgent: (workspaceId, agentId) => skills.listByAgent(workspaceId, agentId) },
     resolver: buildContactDeliveryResolver(database),
+    recipientPolicy,
+    emailAllowance: new NotificationDeliveryAdmissionService(
+      new NotificationDeliveryOutcomeRepository(database.kysely),
+      usageLimitPolicy,
+    ),
+  });
+};
+
+export const buildNotificationRecipientPolicy = (input: {
+  database: Database;
+  env: Env;
+  mailer: MailTransportPort;
+  logger: AppLogger;
+  metrics: MetricsRegistry | null;
+  states?: NotificationRecipientStateRepository;
+}): NotificationRecipientPolicyPort => {
+  const states = input.states ?? new NotificationRecipientStateRepository(input.database.kysely);
+  const signer = new NotificationRecipientTokenSigner(input.env.SESSION_COOKIE_SECRET);
+  const confirmationMailer = new NotificationRecipientConfirmationMailer({
+    mailer: input.mailer,
+    signer,
+    publicBaseUrl: notificationRecipientPublicApiBase(input.env),
+    logger: input.logger,
+    metrics: input.metrics,
+  });
+  return new NotificationRecipientPolicyService({
+    enabled: input.env.NOTIFICATION_RECIPIENT_CONFIRMATION_ENABLED,
+    states,
+    sendConfirmation: async (request) => {
+      if (!request.recipientId) throw new Error("Confirmation recipient state was not reserved");
+      if (request.generation === undefined) throw new Error("Confirmation recipient generation was not reserved");
+      return confirmationMailer.send({ ...request, recipientId: request.recipientId, generation: request.generation });
+    },
+    revocationUrl: (recipientId) => confirmationMailer.revocationUrl(recipientId),
+    identity: new NotificationRecipientIdentityRepository(input.database.kysely),
+    logger: input.logger,
+    metrics: input.metrics,
   });
 };

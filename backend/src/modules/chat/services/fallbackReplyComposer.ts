@@ -13,6 +13,7 @@ import { isProviderCredentialError } from "../../../shared/infra/llm/providerErr
 import type { ChatGatewayUsageContext } from "../contracts/chatGateway.js";
 import { resolveChatLocale } from "./chatLocale.js";
 import { appendRoutineLeadBack, appendSteeringBlock } from "../../../shared/infra/prompts/steeringPromptRenderer.js";
+import { canonicalizeUnsourcedMarkers } from "./unsourcedMarkerCanonicalization.js";
 
 export interface FallbackReplyInput {
   query: string;
@@ -56,7 +57,7 @@ const normalizeWhitespace = (value: string | undefined): string =>
 // Keep model-authored markdown structure, but strip citation artifacts and noisy spacing
 // before the fallback response is shown to users.
 const normalizeModelResponse = (value: string | undefined): string => {
-  const normalized = (value ?? "")
+  const normalized = canonicalizeUnsourcedMarkers(value ?? "")
     .replace(/^["'`]+|["'`]+$/g, "")
     .replace(/\r\n?/g, "\n")
     .replace(/\[\[[^\]]*\]\]/g, "")

@@ -16,10 +16,10 @@ export class ConversationErasureRepository {
   async lockVisitor(
     workspaceId: string,
     visitorId: string,
-  ): Promise<{ verifiedCustomerId: string | null; conversationIds: string[] } | null> {
+  ): Promise<{ verifiedCustomerId: string | null; visitorKey: string | null; conversationIds: string[] } | null> {
     const visitor = await this.db
       .selectFrom("visitors")
-      .select("verified_customer_id")
+      .select(["verified_customer_id", "visitor_key"])
       .where("id", "=", visitorId)
       .where("workspace_id", "=", workspaceId)
       .forUpdate()
@@ -35,6 +35,7 @@ export class ConversationErasureRepository {
       .execute();
     return {
       verifiedCustomerId: visitor.verified_customer_id,
+      visitorKey: visitor.visitor_key,
       conversationIds: conversations.map((conversation) => conversation.id),
     };
   }

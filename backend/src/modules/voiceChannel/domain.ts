@@ -1,6 +1,6 @@
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
 
-import type { ConversationErasureScope, VendorHeldConversationDataEraser } from "../../shared/domain/conversationDataErasure.js";
+import type { VendorHeldConversationDataEraser, VendorHeldConversationDataScope } from "../../shared/domain/conversationDataErasure.js";
 import type { VoiceVendor, VoiceVendorRegion } from "../../shared/domain/voiceVendor.js";
 
 import type { AgentVoiceSettings } from "../agents/public.js";
@@ -285,14 +285,19 @@ export interface VoiceRecordingStore {
   /** The recording of a conversation of the workspace, when its page reported one. */
   findRecording(input: { workspaceId: string; conversationId: string }): Promise<VoiceRecordingRef | null>;
   /**
-   * Every recording in an erasure's scope: the conversations named, or everything the workspace
-   * holds, a call whose first turn never came and a call whose agent was deleted included.
+   * Every recording in an erasure's scope: the conversations named, the calls the website embed
+   * started for a visitor's key, or everything the workspace holds, a call whose first turn never
+   * came and a call whose agent was deleted included. Locks every session row in scope for update,
+   * with a recording or without, so a report cannot slip in between the read and the rows' erasure.
    */
   listRecordings(scope: VoiceRecordingScope): Promise<VoiceRecordingToErase[]>;
 }
 
-/** The conversations an erasure removes, or a whole workspace just before it is deleted. */
-export type VoiceRecordingScope = ConversationErasureScope;
+/**
+ * The conversations an erasure removes, the calls a visitor started before any conversation of
+ * theirs (by the visitor's key), or a whole workspace just before it is deleted.
+ */
+export type VoiceRecordingScope = VendorHeldConversationDataScope;
 
 /**
  * A recording as the vendor serves it. `status` is 206 when the vendor answered a byte range, with

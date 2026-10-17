@@ -1682,7 +1682,7 @@
         {
           "id": "delete-a-visitor",
           "heading": "Delete a visitor",
-          "body": "A visitor groups the conversations one browser, or one verified customer, had with your agents. To delete the person rather than a single conversation, take the `visitor.id` from the conversation detail (`GET /api/v1/history/chat/{conversationId}`) and send:\n\n```http\nDELETE /api/v1/history/visitors/{visitorId}\n```\n\nRadioso deletes each of the visitor's conversations as above, then the customer-scoped context values your site pushed for the visitor's verified customer id, then the visitor record itself. Visitor deletion is available over the API; the dashboard deletes one conversation at a time."
+          "body": "A visitor groups the conversations one browser, or one verified customer, had with your agents. To delete the person rather than a single conversation, take the `visitor.id` from the conversation detail (`GET /api/v1/history/chat/{conversationId}`) and send:\n\n```http\nDELETE /api/v1/history/visitors/{visitorId}\n```\n\nRadioso deletes each of the visitor's conversations as above, then the customer-scoped context values your site pushed for the visitor's verified customer id, then the voice calls the website widget started for the visitor that never reached a first turn, recordings included, then the visitor record itself. Visitor deletion is available over the API; the dashboard deletes one conversation at a time."
         },
         {
           "id": "who-can-delete",
@@ -1712,7 +1712,7 @@
         {
           "id": "common-failure-modes",
           "heading": "Common failure modes",
-          "body": "* **`403`** — the caller lacks `workspace.history.delete`: a member session, or a member credential.\n* **`404`** — the conversation or visitor belongs to another workspace, or is already gone.\n* **The Delete conversation button is missing** — your role on this workspace is member: neither your organization role nor a workspace grant makes you an admin here. Ask an owner or admin, or ask for an admin grant on the workspace."
+          "body": "* **`403`** — the caller lacks `workspace.history.delete`: a member session, or a member credential.\n* **`404`** — the conversation or visitor belongs to another workspace, or is already gone.\n* **`500` on a conversation or visitor with voice calls** — Radioso could not read where the calls' recordings are, so it deleted nothing rather than lose them. Send the same request again.\n* **The Delete conversation button is missing** — your role on this workspace is member: neither your organization role nor a workspace grant makes you an admin here. Ask an owner or admin, or ask for an admin grant on the workspace."
         },
         {
           "id": "read-next",

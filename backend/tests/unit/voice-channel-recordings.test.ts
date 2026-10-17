@@ -410,7 +410,19 @@ describe("voice recording erasure", () => {
     const prepared = await eraser.prepare(workspaceDeletion);
 
     await expect(prepared.erase()).resolves.toBeUndefined();
-    expect(logger.warn).toHaveBeenCalledWith({ workspaceId, errorClass: "Error" }, "Voice recordings to delete could not be read");
+    expect(logger.warn).toHaveBeenCalledWith({ workspaceId, scope: "workspace", errorClass: "Error" }, "Voice recordings to delete could not be read");
+  });
+
+  it("fails an erasure of named conversations or a visitor whose recordings cannot be read, so it runs again", async () => {
+    for (const scope of [
+      { kind: "conversations" as const, workspaceId, conversationIds: [conversationId] },
+      { kind: "visitor_key" as const, workspaceId, visitorKey: "visitor-key-1" },
+    ]) {
+      const { eraser, logger } = harness({ recordings: new Error("connection refused") });
+
+      await expect(eraser.prepare({ account: { id: accountId, deleted: false }, scopes: [scope] })).rejects.toThrow("connection refused");
+      expect(logger.warn).toHaveBeenCalledWith({ workspaceId, scope: scope.kind, errorClass: "Error" }, "Voice recordings to delete could not be read");
+    }
   });
 
   it("works through an organization's workspaces in order under one budget, and names every recording it left past it", async () => {

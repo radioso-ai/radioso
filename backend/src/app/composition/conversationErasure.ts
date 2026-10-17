@@ -12,7 +12,9 @@ import { VoiceSessionEraser } from "../../modules/voiceChannel/public.js";
 import type { ConversationErasureUnitOfWork } from "../../modules/privacy/public.js";
 import type {
   ConversationDataEraser,
+  VendorHeldConversationDataEraser,
   VerifiedCustomerDataEraser,
+  VisitorKeyDataEraser,
 } from "../../shared/domain/conversationDataErasure.js";
 import type { DB, Db } from "../../shared/infra/kysely/types.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
@@ -22,6 +24,8 @@ import { lockConversationsInOrder, runTransactionWithDeadlockRetry } from "./con
 /** An owning module's eraser, bound to the transaction that runs it. */
 type ConversationDataEraserBinding = (trx: Db) => ConversationDataEraser;
 type VerifiedCustomerDataEraserBinding = (trx: Db) => VerifiedCustomerDataEraser;
+type VisitorKeyDataEraserBinding = (trx: Db) => VisitorKeyDataEraser;
+type VendorHeldConversationDataEraserBinding = (trx: Db) => VendorHeldConversationDataEraser;
 
 /**
  * Every module's eraser for the conversation-derived rows its tables keep where no foreign key
@@ -45,6 +49,11 @@ export const defaultVerifiedCustomerDataErasers: readonly VerifiedCustomerDataEr
   (trx) => new ContextVariableValueEraser(trx),
 ];
 
+/** Every module's eraser for the rows an erased visitor left by their key before any conversation. */
+export const defaultVisitorKeyDataErasers: readonly VisitorKeyDataEraserBinding[] = [
+  (trx) => new VoiceSessionEraser(trx),
+];
+
 /**
  * Runs one erasure in one Postgres transaction: the conversation and visitor locks, every module's
  * eraser, the delete and its cascade, and the audit event, which carries the request's credential
@@ -57,9 +66,13 @@ export const createPostgresConversationErasureUnitOfWork = (deps: {
   logger: Pick<AppLogger, "warn">;
   conversationErasers?: readonly ConversationDataEraserBinding[];
   verifiedCustomerErasers?: readonly VerifiedCustomerDataEraserBinding[];
+  visitorKeyErasers?: readonly VisitorKeyDataEraserBinding[];
+  /** What vendors hold for the erased subjects, read in the erasure's own transaction. */
+  vendorHeldData?: VendorHeldConversationDataEraserBinding;
 }): ConversationErasureUnitOfWork => {
   const conversationErasers = deps.conversationErasers ?? defaultConversationDataErasers;
   const verifiedCustomerErasers = deps.verifiedCustomerErasers ?? defaultVerifiedCustomerDataErasers;
+  const visitorKeyErasers = deps.visitorKeyErasers ?? defaultVisitorKeyDataErasers;
   return {
     run: (work) => runTransactionWithDeadlockRetry(deps.db, (trx) => {
       const subjects = new ConversationErasureRepository(trx);
@@ -73,6 +86,8 @@ export const createPostgresConversationErasureUnitOfWork = (deps: {
         },
         conversationErasers: conversationErasers.map((bind) => bind(trx)),
         verifiedCustomerErasers: verifiedCustomerErasers.map((bind) => bind(trx)),
+        visitorKeyErasers: visitorKeyErasers.map((bind) => bind(trx)),
+        vendorHeldData: deps.vendorHeldData ? deps.vendorHeldData(trx) : null,
         audit: {
           record: async (event) => {
             await audit.create({ ...event, metadata: { ...event.metadata, ...requestAuditMetadata(event.eventType) } });

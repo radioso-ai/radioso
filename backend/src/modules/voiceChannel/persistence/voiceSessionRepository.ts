@@ -185,13 +185,16 @@ export class VoiceSessionRepository implements VoiceSessionStartRegistry, VoiceS
     let query = this.db
       .selectFrom("voice_sessions")
       .select(["conversation_id", "vendor", "vendor_region", "vendor_conversation_id"])
-      .where("workspace_id", "=", scope.workspaceId)
-      .where("vendor_conversation_id", "is not", null);
+      .where("workspace_id", "=", scope.workspaceId);
     if (scope.kind === "conversations") query = query.where("conversation_id", "in", [...scope.conversationIds]);
-    const rows = await query.orderBy("created_at", "asc").execute();
+    if (scope.kind === "visitor_key") query = query.where("started_visitor_key", "=", scope.visitorKey);
+    // Every row in scope, recorded or not yet, so a report waits for the erasure rather than landing
+    // on a row about to go.
+    const rows = await query.orderBy("created_at", "asc").forUpdate().execute();
     return rows.flatMap((row) => {
       const location = locationOf(row);
       return location ? [{ ...location, workspaceId: scope.workspaceId, conversationId: row.conversation_id }] : [];
     });
   }
+
 }

@@ -38,8 +38,8 @@ interface ErasureItem {
 }
 
 /**
- * Deletes recordings at the vendor when Radioso deletes their conversations, a workspace or an
- * organization. `prepare` reads each scope's recordings and the workspace's vendor key, in order,
+ * Deletes recordings at the vendor when Radioso deletes their conversations, a visitor, a workspace
+ * or an organization. `prepare` reads each scope's recordings and the workspace's vendor key, in order,
  * while both still exist (a workspace's deletion takes its key with it); `erase` asks the vendor to
  * delete each one after the deletion went through, all scopes in one queue under one concurrency
  * limit and one deadline, and never rejects, so a vendor that refuses or cannot be reached never
@@ -55,8 +55,16 @@ export class VoiceRecordingErasureService implements VoiceRecordingErasurePort {
 
   async prepare(erasure: VendorHeldConversationDataErasure): Promise<{ erase(): Promise<void> }> {
     const items: ErasureItem[] = [];
+    // A call can be in two scopes at once (a visitor's conversation, started by their key): once is enough.
+    const seen = new Set<string>();
     for (const scope of erasure.scopes) {
-      items.push(...await this.prepareScope(scope));
+      for (const item of await this.prepareScope(scope)) {
+        const { vendor, region, vendorConversationId } = item.recording;
+        const key = `${vendor}:${region}:${vendorConversationId}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        items.push(item);
+      }
     }
     if (items.length === 0) return { erase: async () => undefined };
     return { erase: () => this.erase(erasure, items) };
@@ -67,7 +75,13 @@ export class VoiceRecordingErasureService implements VoiceRecordingErasurePort {
     try {
       recordings = await this.dependencies.recordings.listRecordings(scope);
     } catch (error) {
-      this.dependencies.logger.warn({ workspaceId: scope.workspaceId, errorClass: errorClassOf(error) }, "Voice recordings to delete could not be read");
+      this.dependencies.logger.warn(
+        { workspaceId: scope.workspaceId, scope: scope.kind, errorClass: errorClassOf(error) },
+        "Voice recordings to delete could not be read",
+      );
+      // An erasure of named conversations or a visitor fails whole rather than lose where their
+      // recordings are; a workspace's deletion goes on without them.
+      if (scope.kind !== "workspace") throw error;
       return [];
     }
     const items: ErasureItem[] = [];

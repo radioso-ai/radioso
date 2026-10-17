@@ -28,7 +28,7 @@ A visitor groups the conversations one browser, or one verified customer, had wi
 DELETE /api/v1/history/visitors/{visitorId}
 ```
 
-Radioso deletes each of the visitor's conversations as above, then the customer-scoped context values your site pushed for the visitor's verified customer id, then the visitor record itself. Visitor deletion is available over the API; the dashboard deletes one conversation at a time.
+Radioso deletes each of the visitor's conversations as above, then the customer-scoped context values your site pushed for the visitor's verified customer id, then the voice calls the website widget started for the visitor that never reached a first turn, recordings included, then the visitor record itself. Visitor deletion is available over the API; the dashboard deletes one conversation at a time.
 
 ## Who can delete
 
@@ -94,6 +94,7 @@ Deleting a workspace deletes every conversation and visitor in it, with the same
 
 - **`403`** — the caller lacks `workspace.history.delete`: a member session, or a member credential.
 - **`404`** — the conversation or visitor belongs to another workspace, or is already gone.
+- **`500` on a conversation or visitor with voice calls** — Radioso could not read where the calls' recordings are, so it deleted nothing rather than lose them. Send the same request again.
 - **The Delete conversation button is missing** — your role on this workspace is member: neither your organization role nor a workspace grant makes you an admin here. Ask an owner or admin, or ask for an admin grant on the workspace.
 
 ## Read next

@@ -24,6 +24,7 @@ import type { AgentRecord } from "../../modules/agents/public.js";
 import type { AuditPort } from "../../modules/audit/contracts/index.js";
 import { isHumanOwned, type ConversationOwnershipReader } from "../../modules/handoff/public.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import { isVoiceVendor, type VoiceVendor } from "../../shared/domain/voiceVendor.js";
 import { ProviderConfigurationError } from "../../shared/infra/llm/providerTypes.js";
@@ -170,12 +171,19 @@ const createVoiceRecordingAudit = (auditService: Pick<AuditPort, "record">): Voi
  */
 export const createVoiceRecordingComposition = (deps: {
   recordings: VoiceRecordingStore;
+  /** The same store over another handle: a conversation erasure's transaction. */
+  recordingsIn: (db: Db) => VoiceRecordingStore;
   credentials: VoiceVendorCredentialStore;
   fetch: typeof globalThis.fetch;
   auditService: Pick<AuditPort, "record">;
   metricsRegistry: MetricsRegistry | null;
   logger: AppLogger;
-}): { recordings: VoiceRecordingService; erasure: VoiceRecordingErasureService } => {
+}): {
+  recordings: VoiceRecordingService;
+  erasure: VoiceRecordingErasureService;
+  /** The erasure reading and locking the recordings in a conversation erasure's transaction. */
+  erasureIn: (db: Db) => VoiceRecordingErasureService;
+} => {
   const dependencies = {
     recordings: deps.recordings,
     credentials: voiceVendorCredentialReader(deps.credentials),
@@ -184,7 +192,11 @@ export const createVoiceRecordingComposition = (deps: {
     metrics: deps.metricsRegistry,
     logger: deps.logger,
   };
-  return { recordings: new VoiceRecordingService(dependencies), erasure: new VoiceRecordingErasureService(dependencies) };
+  return {
+    recordings: new VoiceRecordingService(dependencies),
+    erasure: new VoiceRecordingErasureService(dependencies),
+    erasureIn: (db) => new VoiceRecordingErasureService({ ...dependencies, recordings: deps.recordingsIn(db) }),
+  };
 };
 
 /**

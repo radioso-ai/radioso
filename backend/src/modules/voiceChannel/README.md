@@ -227,11 +227,15 @@ helpers and the shared chat message limit from `app/http`
   the bytes sent. Every deletion that reaches a recording reads the
   recordings and the key before anything removes them, then asks the vendor
   to delete each once it committed, four at a time for at most 20 s in all:
-  the privacy module's conversation and visitor erasure
-  (`ConversationErasureService`'s `vendorHeldData`, before its erasers run;
-  `persistence/voiceSessionEraser.ts` is the `voice-channel` eraser that then
-  removes the rows), and workspace and organization deletion (the workspace
-  service's hook) (deletes still in flight at
+  the privacy module's conversation and visitor erasure (the unit of work's
+  `vendorHeldData`, bound to the erasure's transaction by
+  `createVoiceRecordingComposition`'s `erasureIn`, read with the session rows
+  locked before its erasers run, and a failed read failing the erasure; a
+  visitor's scope adds their key, for calls no turn ever bound;
+  `persistence/voiceSessionEraser.ts` is the `voice-channel` conversation and
+  visitor-key eraser that then removes the rows), and workspace and
+  organization deletion (the workspace service's hook, best-effort before the
+  deleting transaction) (deletes still in flight at
   the deadline are aborted); what is left is logged with its ids and never
   fails the deletion. Deleting an agent deletes no
   recording. The route is a permanent coverage exclusion

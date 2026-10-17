@@ -882,9 +882,14 @@ deletes it. Deleting the conversation (`DELETE /api/v1/history/chat/{conversatio
 its visitor (`DELETE /api/v1/history/visitors/{visitorId}`), the workspace or
 the organization asks ElevenLabs to delete each call's conversation, audio
 included, on the account's region host, after the deletion has gone through.
-A workspace or organization deletion also reaches a call whose first turn
-never came, which has no conversation in Radioso. Radioso reads the
-recordings and the key first, because the deletion takes both with it.
+A visitor deletion also reaches a call the widget started for that visitor
+whose first turn never came, which has no conversation in Radioso, by the
+visitor's key; a workspace or organization deletion reaches every such call.
+Radioso reads the recordings and the key first, because the deletion takes
+both with it. For a conversation or a visitor that read runs in the
+deletion's own transaction and holds the call's session rows, so a report
+arriving meanwhile waits; when it fails, the deletion fails whole and can be
+sent again, rather than go on without knowing where the recordings are.
 Deleting an agent deletes no recording: its conversations stay, and so do
 their recordings, which still play from the Inbox and go when their
 workspace does. Radioso's record of where a recording is also outlives the

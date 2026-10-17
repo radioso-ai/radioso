@@ -857,14 +857,17 @@ const createInMemoryVoiceSessions = (): VoiceSessionStore & VoiceSessionStartReg
   const started = new Map<string, InMemoryVoiceStart>();
   const keyOf = (session: { workspaceId: string; agentId: string; vendor: string; sessionKey: string }) =>
     JSON.stringify([session.workspaceId, session.agentId, session.vendor, session.sessionKey]);
-  const recordings = (): VoiceRecordingToErase[] =>
+  const recordings = (): Array<{ recording: VoiceRecordingToErase; visitorKey: string | null }> =>
     [...started.entries()].flatMap(([key, start]) => start.vendorConversationId
       ? [{
-        workspaceId: start.session.workspaceId,
-        conversationId: bound.get(key) ?? null,
-        vendor: "elevenlabs" as const,
-        region: start.vendorAgent.region,
-        vendorConversationId: start.vendorConversationId,
+        recording: {
+          workspaceId: start.session.workspaceId,
+          conversationId: bound.get(key) ?? null,
+          vendor: "elevenlabs" as const,
+          region: start.vendorAgent.region,
+          vendorConversationId: start.vendorConversationId,
+        },
+        visitorKey: start.visitor.visitorKey,
       }]
       : []);
   const reportable = (report: { workspaceId: string; agentId: string; sessionKey: string; publicSessionId: string }) =>
@@ -897,12 +900,18 @@ const createInMemoryVoiceSessions = (): VoiceSessionStore & VoiceSessionStartReg
       return true;
     },
     findRecording: async ({ workspaceId, conversationId }) => {
-      const recording = recordings().find((candidate) => candidate.workspaceId === workspaceId && candidate.conversationId === conversationId);
+      const recording = recordings()
+        .map((candidate) => candidate.recording)
+        .find((candidate) => candidate.workspaceId === workspaceId && candidate.conversationId === conversationId);
       return recording ? { conversationId, vendor: recording.vendor, region: recording.region, vendorConversationId: recording.vendorConversationId } : null;
     },
     listRecordings: async (scope) =>
-      recordings().filter((recording) => recording.workspaceId === scope.workspaceId
-        && (scope.kind === "workspace" || (recording.conversationId !== null && scope.conversationIds.includes(recording.conversationId)))),
+      recordings()
+        .filter(({ recording, visitorKey }) => recording.workspaceId === scope.workspaceId
+          && (scope.kind === "workspace"
+            || (scope.kind === "conversations" && recording.conversationId !== null && scope.conversationIds.includes(recording.conversationId))
+            || (scope.kind === "visitor_key" && visitorKey === scope.visitorKey)))
+        .map(({ recording }) => recording),
     findStartedVisitor: async (session) => {
       const start = started.get(keyOf(session));
       if (!start || bound.has(keyOf(session)) || start.expiresAt.getTime() <= Date.now()) return null;
@@ -1508,6 +1517,8 @@ export const createTestDependencies = (overrides: {
   });
   const voiceRecordings = createVoiceRecordingComposition({
     recordings: voiceSessions,
+    // The in-memory app has no transactions: every handle reads the same store.
+    recordingsIn: () => voiceSessions,
     credentials: workspaceProviderCredentialsService,
     fetch: voiceVendorFetch,
     auditService,

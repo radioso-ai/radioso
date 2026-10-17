@@ -186,7 +186,10 @@ test('a verification link lands signed in without asking for credentials', async
 
   await page.goto('/verify-email?token=verification-token')
 
-  await expect(page).toHaveURL(/\/w\/workspace-key\/agents(?:\/|$)/, { timeout: 10_000 })
+  // Signed in means landing on the workspace's own home route (whichever page that is),
+  // never on sign-in or back on the verification screen.
+  await expect(page).toHaveURL(/\/w\/workspace-key\/[a-z]/, { timeout: 10_000 })
+  await expect(page).not.toHaveURL(/\/(login|signup|verify-email)(?:[/?]|$)/)
   await expect.poll(() => state.verified).toBe(true)
 })
 

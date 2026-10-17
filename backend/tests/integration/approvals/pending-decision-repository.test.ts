@@ -121,7 +121,6 @@ describeIfDatabase("PendingDecisionRepository Postgres integration", () => {
     await client.query(`SET search_path TO ${schema}, public`);
     database = createClientBackedDatabase(client);
     await applyTestMigration(database, "104_pending_decisions.sql");
-    await applyTestMigration(database, "205_conversation_activity.sql");
     // listPending LEFT JOINs conversations to exclude operator-test sources; this per-test
     // schema doesn't run the full init migration, so create the minimal shape it reads.
     await database.execute(
@@ -130,7 +129,8 @@ describeIfDatabase("PendingDecisionRepository Postgres integration", () => {
          workspace_id UUID NOT NULL,
          source_channel TEXT
        )`,
-    );
+       );
+    await database.execute("ALTER TABLE pending_decisions ADD COLUMN decided_by_user_id UUID NULL");
     repository = new PendingDecisionRepository(database.kysely);
   });
 
@@ -279,7 +279,7 @@ describeIfDatabase("PendingDecisionRepository Postgres integration", () => {
 
     await database.execute(
       `INSERT INTO conversations (id, workspace_id, source_channel) VALUES
-         ($1, $5, 'website_embed'),
+         ($1, $5, 'email'),
          ($2, $5, NULL),
          ($3, $5, 'authenticated_chat'),
          ($4, $5, 'workbench_replay')`,
@@ -296,5 +296,11 @@ describeIfDatabase("PendingDecisionRepository Postgres integration", () => {
     const ids = new Set(pending.map((record) => record.id));
 
     expect(ids).toEqual(new Set([real.id, nullSource.id, orphan.id]));
+    await expect(repository.listPending({ workspaceId, channel: "email" })).resolves.toMatchObject([
+      { id: real.id, sourceChannel: "email" },
+    ]);
+    await expect(repository.listPending({ workspaceId, agentId: real.agentId, channel: "email" })).resolves.toMatchObject([
+      { id: real.id },
+    ]);
   });
 });

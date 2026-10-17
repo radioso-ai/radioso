@@ -17,3 +17,7 @@ export const VOICE_VENDOR_REGIONS = ["us", "eu", "in", "sg"] as const;
 export type VoiceVendorRegion = (typeof VOICE_VENDOR_REGIONS)[number];
 
 export const DEFAULT_VOICE_VENDOR_REGION: VoiceVendorRegion = "us";
+
+export const isVoiceVendor = (value: string): value is VoiceVendor => (VOICE_VENDORS as readonly string[]).includes(value);
+
+export const isVoiceVendorRegion = (value: string): value is VoiceVendorRegion => (VOICE_VENDOR_REGIONS as readonly string[]).includes(value);

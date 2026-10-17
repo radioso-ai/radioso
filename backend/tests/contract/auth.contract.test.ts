@@ -1,5 +1,5 @@
 import request from "supertest";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createTestApp, issueTestSession, issueTestToken } from "../support/testApp.js";
 import type {
@@ -97,7 +97,8 @@ describe("auth contract", () => {
     expect(response.body.displayName).toBeNull();
     expect(response.body.token).toBeUndefined();
     expect(response.body.requiresEmailVerification).toBe(true);
-    expect(response.headers["set-cookie"]).toBeUndefined();
+    expect(response.headers["set-cookie"]?.[0]).toContain("radioso_pending_registration=");
+    expect(response.body.pendingTicket).toBeUndefined();
     expect(repositories.auditEventRepository.items).toEqual(expect.arrayContaining([
       expect.objectContaining({
         eventType: "auth.register",
@@ -105,6 +106,69 @@ describe("auth contract", () => {
         metadata: expect.objectContaining({ verificationMode: "email_verification" }),
       }),
     ]));
+  });
+
+  it("returns a development verification URL only when explicitly enabled", async () => {
+    const development = createTestApp({
+      envOverrides: {
+        NODE_ENV: "development",
+        AUTH_EXPOSE_EMAIL_VERIFICATION_LINK: true,
+      },
+    });
+    const hidden = createTestApp();
+
+    const visibleResponse = await request(development.app).post("/api/v1/auth/register").send({
+      email: "visible-link@example.com",
+      password: "verysecurepassword",
+    });
+    const hiddenResponse = await request(hidden.app).post("/api/v1/auth/register").send({
+      email: "hidden-link@example.com",
+      password: "verysecurepassword",
+    });
+    const resendResponse = await request(development.app).post("/api/v1/auth/email-verification/resend").send({
+      email: "visible-link@example.com",
+    });
+
+    expect(visibleResponse.body.developmentVerificationUrl).toMatch(/^http:\/\/localhost:3000\/verify-email\?token=/);
+    expect(hiddenResponse.body.developmentVerificationUrl).toBeUndefined();
+    expect(resendResponse.body).toEqual({ accepted: true });
+  });
+
+  it("rate limits the constant-shape pending-session exchange", async () => {
+    const { app } = createTestApp({ envOverrides: { AUTH_RATE_LIMIT_MAX_ATTEMPTS: 1 } });
+
+    const attempts = await Promise.all(Array.from({ length: 13 }, () =>
+      request(app).post("/api/v1/auth/email-verification/pending-session"),
+    ));
+
+    expect(attempts.slice(0, 12).every((attempt) => attempt.status === 200)).toBe(true);
+    expect(attempts[12]?.status).toBe(429);
+  });
+
+  it("allows a browser-bound pending ticket to poll through several real sliding windows", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-13T10:00:00.000Z"));
+    try {
+      const { app } = createTestApp();
+      const registration = await request(app).post("/api/v1/auth/register").send({
+        email: "sustained-poll@example.com",
+        password: "verysecurepassword",
+      });
+      const pendingCookie = [registration.headers["set-cookie"]].flat().find((cookie) =>
+        cookie.startsWith("radioso_pending_registration="),
+      );
+
+      for (let attempt = 0; attempt < 31; attempt += 1) {
+        const response = await request(app)
+          .post("/api/v1/auth/email-verification/pending-session")
+          .set("Cookie", pendingCookie ?? "");
+        expect(response.status).toBe(200);
+        expect(response.body).toEqual({ ready: false });
+        vi.advanceTimersByTime(6_000);
+      }
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("auto-verifies new password registrations and creates a session in development", async () => {

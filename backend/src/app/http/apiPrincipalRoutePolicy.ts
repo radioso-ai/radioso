@@ -73,6 +73,8 @@ const sessionOnly = (method: string, pathPattern: string, permission = "session"
 const declarations: readonly PolicyDeclaration[] = [
   sessionOnly("GET", "/api/v1/workspace", "workspace.list"),
   allow("GET", "/api/v1/workspace/summary", "workspace.summary.read"),
+  allow("GET", "/api/v1/workspace/setup-state", "workspace.summary.read"),
+  allow("PATCH", "/api/v1/workspace/setup-state", "workspace.credentials.manage"),
   sessionOnly("GET", "/api/v1/workspace/resolve/:workspaceKey", "workspace.resolve"),
   sessionOnly("POST", "/api/v1/workspace", "workspace.create"),
   sessionOnly("PATCH", "/api/v1/workspace/:workspaceId", "workspace.rename"),
@@ -311,6 +313,8 @@ const declarations: readonly PolicyDeclaration[] = [
   ].map(([method, path, permission]) => sessionOnly(method, path, permission)),
   // The Inbox's recently closed strip: read from the takeover surface, so it takes the same permission.
   sessionOnly("GET", "/api/v1/conversations/recently-closed", "workspace.conversation.takeover"),
+  // A call's recording is a teammate's to hear in the Inbox, with each play audited against them.
+  sessionOnly("GET", "/api/v1/conversations/:conversationId/recording", "workspace.history.read"),
   ...[
     ["GET", "/api/v1/conversations/operators"],
     ["POST", "/api/v1/conversations/:conversationId/takeover"],

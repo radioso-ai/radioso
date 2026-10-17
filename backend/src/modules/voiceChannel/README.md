@@ -1,6 +1,7 @@
 # Voice Channel Module
 
-Voice owns spoken sessions with an agent. A voice runtime (ElevenLabs Agents,
+Voice owns spoken sessions with an agent, and where each call's recording
+lives. A voice runtime (ElevenLabs Agents,
 or a runtime we control) handles audio, speech recognition and synthesis; this
 module turns each finished caller utterance into one chat turn on the
 session's conversation and hands the reply back as sentence-sized speech. It
@@ -52,8 +53,28 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   `refreshEmbedConfigsOnVoiceVendorKeyChange` drops the workspace's
   CDN-cached embed configs when a voice vendor key is stored or removed, so
   that yes or no follows the key at once.
+  `voiceRecordingService.ts` is a call's recording as the operator meets it:
+  the page's report of the vendor's conversation id
+  (`VoiceVendorConversationReportPort`, stored only once the vendor's
+  `describeConversation` names the vendor agent the session was started on),
+  whether a conversation has a recording (`VoiceRecordingAvailabilityPort`'s
+  `availability`: from `voice_sessions` and the key's presence, no vendor
+  call, null for a conversation that is not a call or cannot be read; the
+  history detail and Ray's transcript both ask it) and a play
+  (`VoiceRecordingPlaybackPort`), audited through `VoiceRecordingAudit`
+  before the audio is handed on; `voiceRecordingErasureService.ts` deletes
+  recordings at the vendor when their conversation, visitor, workspace or
+  organization is deleted (`VoiceRecordingErasurePort`, the shared
+  `VendorHeldConversationDataEraser` in `shared/domain/conversationDataErasure.ts`:
+  one erasure per deletion, its scopes in order under one concurrency limit
+  and one deadline).
 - `persistence/` maps `(agent_id, vendor, session_key)` to a conversation in
-  `voice_sessions`. The first binding wins.
+  `voice_sessions`. The first binding wins. A Radioso-started row also holds
+  the vendor agent it opened on, that account's region and, once reported and
+  confirmed, the vendor's conversation id (`VoiceRecordingStore`). A row that
+  holds that id outlives its agent, its conversation (both links are SET
+  NULL) and the next start's cleanup; it goes with its workspace. A session
+  whose conversation is gone is unbound, and its next turn binds a new one.
 - `adapters/*` translate one wire to the domain port and back, and nothing
   else. `adapters/openaiCompletions/` is the OpenAI chat-completions wire;
   vendors that share it differ only by a dialect in `dialects.ts`, which is
@@ -63,7 +84,14 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   and in `requestSchema.ts`, never in the domain. `adapters/elevenlabs/` is
   the ElevenLabs `VoiceSessionStarter`: the signed-URL request with the key in
   `xi-api-key`, its response, its 15-minute validity and its 5-second timeout,
-  over an injected `fetch`.
+  over an injected `fetch`, and the ElevenLabs `VoiceRecordingSource`
+  (`recordingSource.ts`): the conversation's audio and its deletion, with the
+  key in `xi-api-key`, one byte range passed on, a non-audio answer refused,
+  and a 5-second limit on the answer that leaves the audio itself unbounded.
+  `describeConversation` reads the conversation document (64 KB cap) for its
+  `agent_id`. The audio stops when it stalls for 15 s while the listener
+  waits; a listener who pauses never trips it. Both adapters use the region
+  host table in `hosts.ts` and the body helpers in `fetchHelpers.ts`.
 
 Dependency direction is adapter → `VoiceTurnPort` → chat. The service reaches
 chat through the narrow `VoiceChatPort` (`streamTurn`) and imports chat only
@@ -83,21 +111,44 @@ helpers and the shared chat message limit from `app/http`
 - `public.ts` — `VoiceTurnPort`, `VoiceTurnService`, `VoiceSessionRepository`,
   `registerOpenAiCompletionsRoute`; `VoiceSessionStartPort`,
   `VoiceSessionStartResult`, `VoiceSessionStartService`,
-  `createElevenLabsSessionStarter`.
+  `createElevenLabsSessionStarter`; the recording ports,
+  `VoiceRecordingService`, `VoiceRecordingErasureService`,
+  `VoiceRecordingAudit` and `createElevenLabsRecordingSource`.
 - `backend/src/app/composition/voiceChannel.ts` — builds the port over a
   session store, `AssistantChatService.streamAnswer`, the agent repository (voice
   settings and default locale), the routine state store, the conversation
   ownership reader (`handoff/public.ts`), the message repository as chat's
-  `ReplyInterruptionMarker` and the audit service (the
-  `voice.reply_interrupted` and `voice.reply_replayed` notes, built by
-  `createVoiceTurnNotes`); exposed as `AppDependencies.voiceTurns`.
+  `OperatorReplySpeechClaims` (with `randomUUID` minting each turn's claim id)
+  and `ReplyInterruptionMarker`, and the audit service (the
+  `voice.reply_interrupted`, `voice.reply_replayed` and
+  `voice.operator_reply_spoken` notes, built by `createVoiceTurnNotes`);
+  exposed as `AppDependencies.voiceTurns`. The test app builds its port
+  through the same function.
   `createVoiceSessionStartComposition` in the same file builds the session
   start over the agent repository, the ElevenLabs starter with `fetch`, the
   workspace credential store's `getApiKey` as the credential reader, and the
   start registry; exposed as `AppDependencies.voiceSessionStarts`.
   `app/server/dependencies.ts` builds one `VoiceSessionRepository` and hands it
   to both: the turn reads bindings and starts from it, and the start records
-  into it.
+  into it. `createVoiceRecordingComposition` builds the recording services
+  over the same repository, the ElevenLabs recording source with `fetch`, the
+  same credential reader and the audit service
+  (`conversation.recording_played` and `conversation.recording_deleted`,
+  built by `createVoiceRecordingAudit`); the playback is
+  `AppDependencies.voiceRecordings`, Ray's catalog reads its availability,
+  and the erasure is the workspace service's
+  `VendorHeldConversationDataEraser`.
+- `backend/src/app/http/routes/conversationRecordingRoutes.ts` — mounts
+  `GET /api/v1/conversations/:conversationId/recording` (dashboard sessions,
+  `workspace.history.read`, `sessionOnly` in `apiPrincipalRoutePolicy.ts`),
+  streaming the audio with `Cache-Control: private, no-store`; `404` for no
+  recording or no audio yet, `416` for a range past the end,
+  `503 recording_unavailable` otherwise. `HEAD` is `405`, and a browser
+  request whose `Sec-Fetch-Site` is not `same-origin` is `403`. A listener who
+  goes away before the vendor answers gets no answer and leaves no warn,
+  count or audit.
+  `historyRoutes.ts` adds `recording: { available }` to a voice
+  conversation's detail for dashboard sessions.
 - The agent's `voice` settings block belongs to the agents module
   (`agents/voiceSettings.ts`, stored in `behavior_settings.voice`, served on
   `GET`/`PUT /api/v1/agents/:agentId`). This module reads it: the services
@@ -161,6 +212,41 @@ helpers and the shared chat message limit from `app/http`
   `api.eu.residency.elevenlabs.io` and refuses a URL from any other host. A
   body that stalls past the 5 s request limit is a `timeout`, not a malformed
   answer.
+- **Recordings stay with the vendor.** Radioso stores where the recording
+  is, never the audio: the vendor agent and region at the start and the
+  vendor's id for the call, which the page reports once through
+  `POST /api/v1/public/chat/:token/voice/sessions/:sessionKey/vendor-conversation`
+  (website embed sessions, the same public session as the start, the
+  session-read budget). The id is taken only for a session Radioso started
+  for that public session while its start is unexpired, at most once, only
+  after the vendor says the conversation was held on the session's vendor
+  agent (one vendor call per report, none for a report no session waits
+  for; a vendor that does not show the conversation yet is a retryable 503,
+  only another agent's conversation is a final 404), and is unique per
+  vendor and region; it is only ever used to look the
+  recording up with the workspace's own key, and no response carries it. A
+  self-minted session key has no recording. Each answer that carries audio is
+  audited first; an audit that fails refuses the play, and `partial` follows
+  the bytes sent. Every deletion that reaches a recording reads the
+  recordings and the key before anything removes them, then asks the vendor
+  to delete each once it committed, four at a time for at most 20 s in all:
+  the privacy module's conversation and visitor erasure (the unit of work's
+  `vendorHeldData`, bound to the erasure's transaction by
+  `createVoiceRecordingComposition`'s `erasureIn`, read with the session rows
+  locked before its erasers run, and a failed read failing the erasure; a
+  visitor's scope adds their key, for calls no turn ever bound;
+  `persistence/voiceSessionEraser.ts` is the `voice-channel` conversation and
+  visitor-key eraser that then removes the rows), and workspace and
+  organization deletion (the workspace service's hook, best-effort before the
+  deleting transaction) (deletes still in flight at
+  the deadline are aborted); what is left is logged with its ids and never
+  fails the deletion. Deleting an agent deletes no
+  recording. The route is a permanent coverage exclusion
+  (`getConversationRecording`: binary audio a teammate hears); Ray's
+  `conversation_transcript` carries `recordingAvailable`. The agent's
+  optional `voice.recordingNotice` is shown by the embed, not spoken: the
+  session start hands it to the page in the call's language, else the
+  agent's default, else English, else the first one written.
 - **The session key is a correlation handle.** The start mints it (a UUID) and
   records it in `voice_sessions` with the visitor's public session and visitor
   key until `VOICE_BEHAVIOR.sessionStartTtlMs` (60 minutes: the signed URL's
@@ -232,7 +318,8 @@ helpers and the shared chat message limit from `app/http`
   suppressed means this turn handed off: `callback_requested` (with
   `handoffReason`) when `done.handoff.collectedSlotCount > 0`, else
   `continue`. Suppressed means a person owned the conversation at turn start:
-  `continue`, and the speech is chat's waiting message as chat wrote it.
+  `continue`, and the speech is the teammate's pending replies, else chat's
+  waiting message as chat wrote it.
   Anything else is `continue`. "Captured contact details" is structural: chat's
   `handoff` report counts the declared slots the ending routine held a value
   for (the keys of the engine's `handoff.collected`, counted in
@@ -298,11 +385,57 @@ helpers and the shared chat message limit from `app/http`
   exchange stays in an orphaned conversation (logged as a warn). This stays an
   in-process guarantee until a database-level session claim lands with
   Phase 0.
-- **Operator takeover reaches no one.** `customerReplyDelivery.ts` has no
-  `voice` deliverer, so an operator's Inbox reply never reaches the caller; the
-  Inbox offers no Send on a voice conversation
-  (`frontend/lib/email-send-readiness.ts`). Until an operator writes, each caller
-  turn hears the chat service's waiting line; after that, silence.
+- **A teammate's reply is spoken on the caller's next turn, once.** A call
+  speaks only when the runtime asks, on the caller's next utterance, and there
+  is no push channel, so an Inbox reply waits for that request. The handoff
+  module stores a reply on a voice conversation with `speech: { state:
+  "pending" }` (`operatorRepliesAreSpoken` in
+  `chat/contracts/operatorReplySpeech.ts`); `customerReplyDelivery.ts` has no
+  `voice` deliverer and needs none. The voice domain knows one chat-side port
+  of the reply, `OperatorReplySpeechClaims` (the turn service's mandatory
+  `operatorReplies.claims`): `claimPendingOperatorReplies` claims and reads
+  the conversation's pending replies in one UPDATE ... RETURNING (`[{ messageId,
+  text }]`, oldest first), and `markOperatorRepliesSpoken`,
+  `skipOperatorReplies` and `releaseOperatorReplies` settle what the turn
+  still holds. Chat owns what a reply means and how it is stored.
+  Exactly-once is a fact in the stored state, not in process memory: a reply
+  is `pending`, `claimed` (with `claimedAt` and the turn's `claimTurnId`),
+  `spoken` (`spokenAt`) or `skipped`; every change is one conditional UPDATE,
+  so two turns on two instances never both hold a reply, and a claim older
+  than `VOICE_BEHAVIOR.operatorReplyClaimExpiryMs` (60 s) reads as pending
+  again. `services/operatorReplySpeaker.ts` is one turn's side of it: it
+  claims beside the turn's profile, routine and owner reads, cuts each reply
+  with `wholeTextSpeech` (`speechSegmenter.ts`, through `speechText.ts`, so
+  markdown is removed and every piece ends in whitespace; a reply with no
+  words is skipped), and settles once. The turn speaks what it claimed after
+  its `conversation` event, ahead of chat's answer and outside the turn
+  policy, whoever owns the conversation. On a human-owned turn chat answers
+  nothing once a teammate has written (its waiting line stops at the first
+  human reply in its ten-message history window), so the replies take the
+  waiting line's place and the turn ends `continue`; after a hand-back the
+  agent's answer follows under its turn limit, and `mayBridge` holds the
+  bridge line back once a reply was spoken. A replay of a lost answer claims
+  the pending replies too and speaks them before the answer; one overtaken
+  while it claims ends `continue` and hands its claim back. The turn settles
+  as its outcome leaves, before a turn-limit drain: when the outcome left
+  before a newer request overtook it or the runtime hung up (`cutOffAt`), the
+  replies are marked spoken (the first `spokenAt` stays), then counted, then
+  audited through the `operatorRepliesSpoken` note (`voice.operator_reply_spoken`,
+  conversation id and marked ids, never the text); otherwise they go back to
+  pending. A request that overtook a turn of the session whose outcome had
+  not left (`VoiceTurnClaim.overtook`, in process) settles that turn's claim
+  as unheard, within the note timeout, before it claims, so a caller who
+  speaks over a reply hears it on that turn; across instances that turn is
+  not visible, and the reply waits for it or for the claim's expiry. A
+  settling write that fails warns and leaves the claim to expire; an audit
+  that fails after the mark is logged and not retried. "Spoken" means the
+  turn that sent the reply completed, not that the caller heard it to the
+  end: the runtime may still be playing it when the caller speaks over it,
+  and the reply stays Spoken although the next request's history shows it
+  cut short (#1530). The session's interruption bookkeeping counts the
+  replies as spoken ahead of the reply (`VoiceSpokenTurn.ahead`, before the
+  bridge line), so a reply cut short after them is marked with its own
+  characters only.
 - **Newest utterance wins.** ElevenLabs does not abort the HTTP stream when
   the caller interrupts: the next utterance arrives as a new request while the
   previous reply may still stream. Every voice chat turn runs with
@@ -399,7 +532,8 @@ helpers and the shared chat message limit from `app/http`
 
 One log per turn with `agentId`, `vendor`, `transport`, `conversationId`,
 `result`, `durationMs` and `speechPieceCount`, `outcome` (the kind the runtime
-received) and `handoffReason` (when the turn handed off), plus `bridged`,
+received), `handoffReason` (when the turn handed off) and
+`spokenOperatorReplies` (when it spoke a teammate's replies), plus `bridged`,
 `turnLimitReached` and `fallbackSpoken` when the voice policy ran: `Voice turn
 reached the turn limit` at warn when the limit fired, else `Voice turn finished` at info
 (`completed`, `replayed`, `superseded` with `supersededAt`: `before_speech` or
@@ -410,7 +544,9 @@ recorded; a note that fails to record, or takes longer than 5 s, logs `Voice
 turn note could not be recorded` at warn, and an interrupted reply the
 conversation no longer holds logs `Voice reply to mark interrupted was not
 found` at warn (workspace, conversation and message ids) and writes no audit
-event. A warn when a concurrent first turn bound the session to another
+event. `Voice turn could not update the teammate's pending replies` at warn
+with `agentId`, `vendor`, `conversationId`, `errorClass` and `step`
+(`claim`, `mark`, `skip`, `release`). A warn when a concurrent first turn bound the session to another
 conversation, and a warn naming only `dialect` and `agentId` when a request
 carries no usable session key (a 400). Once per agent per process, when a
 turn's bridge line is below the dialect's minimum, `Voice bridge line is
@@ -439,11 +575,31 @@ had no line, so nothing was spoken) and `voice_turn_limit_total`
 (`locale_resolved`: `no` when there was no fallback line and the turn kept
 waiting). The service records `voice_turn_superseded_total` (`stage`:
 `before_speech`, `after_speech`), `voice_turn_replayed_total`,
-`voice_reply_interrupted_total` and `voice_turn_outcome_total` (`kind`:
+`voice_reply_interrupted_total`, `voice_operator_reply_spoken_total` (one
+per teammate reply a completed turn recorded as spoken, no labels) and
+`voice_turn_outcome_total` (`kind`:
 `continue`, `callback_requested`; `handoff_reason`: `routine_handoff`,
 `routine_stuck`, `retrieval_miss`, `none`), once per turn that sent an
 outcome. Labels are closed enums; no line text, locale tag or id. The chat registry's `chat_turn_cancellations_total` counts a voice
 turn cancelled mid-reply with `stage: "persisting"`.
+
+A recording play records `voice_recording_fetch_total` (`vendor`, or `none`
+before one is known; `outcome`: `served`, `no_recording`, `store_failed`,
+`credential_missing`, `credential_unreadable`, `credential_read_failed`,
+`vendor_not_found`, `range_not_satisfiable`, `vendor_failed`, `audit_failed`)
+and, for a failure, `Voice recording could not be read` at warn with
+`workspaceId`, `conversationId`, `vendor`, `outcome` and the vendor's `reason`
+and `vendorStatus`. A report records `voice_vendor_conversation_report_total`
+(`recorded`, `no_session`, `vendor_not_found`, `vendor_agent_mismatch`,
+`already_reported`, `store_failed`, `credential_*`, `vendor_failed`) and logs
+`Voice vendor conversation report was refused` or `… could not be checked`
+with `workspaceId`, `agentId`, `vendor` and `outcome`. A deletion records
+`voice_recording_delete_total` (`deleted`, `already_absent`, `vendor_failed`,
+`credential_*`, `deadline_passed`) and logs `Voice recording was left at the
+vendor` at warn for every recording it leaves, past the deadline included,
+with `conversationId` and `vendorConversationId` so an operator can delete
+it at the vendor. Otherwise never the vendor's conversation id, and never
+the key, the vendor URL or any audio.
 
 ## Tests
 
@@ -462,5 +618,11 @@ turn cancelled mid-reply with `stage: "persisting"`.
 - `cd backend && pnpm exec vitest run tests/contract/public-voice-session.contract.test.ts tests/contract/settings-credentials.contract.test.ts`
   (the session start through the embed's public session, with a fake vendor
   `fetch`; the ElevenLabs key in the credential store)
+- `cd backend && pnpm exec vitest run tests/contract/voice-operator-reply.contract.test.ts`
+  (an Inbox reply on a human-owned call spoken on the next turn, then marked
+  and audited; a reply pending at hand-back spoken before the agent's answer)
+- `cd backend && pnpm exec vitest run tests/contract/voice-recording.contract.test.ts`
+  (the report, the detail flag, playback through a fake vendor `fetch`, and
+  deletion with the workspace)
 - `cd backend && pnpm exec vitest run tests/integration/voice-session-repository.integration.test.ts`
   (needs the disposable integration database; see the code map)

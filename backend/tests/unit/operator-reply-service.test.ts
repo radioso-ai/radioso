@@ -105,6 +105,16 @@ describe("OperatorReplyService", () => {
     expect(scope.outbox.enqueue).not.toHaveBeenCalled();
   });
 
+  it("stores a reply on a call as pending speech, for the caller's next turn to speak", async () => {
+    const { service } = createService();
+    const scope = writeScope();
+    const call = { ...conversation, sourceChannel: "voice", channelContext: { provider: "voice" as const, vendor: "elevenlabs", sessionKey: "conv_abc", transport: "web" as const } };
+
+    await service.write(scope, { ...replyFrom(), conversation: call, channel: null });
+
+    expect(scope.messages.create).toHaveBeenCalledWith(expect.objectContaining({ source: "human_agent", content: "Human reply", pendingSpeech: true }));
+  });
+
   it("queues the reply's channel delivery on the caller's outbox, keyed by the message it wrote", async () => {
     const { service } = createService();
     const scope = writeScope();

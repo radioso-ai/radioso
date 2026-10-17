@@ -39,6 +39,7 @@ import type {
 } from "../../modules/retrieval/public.js";
 import type { AuthService } from "../../modules/auth/services/authService.js";
 import type { EmailVerificationService } from "../../modules/auth/services/emailVerificationService.js";
+import type { AuthFunnelService } from "../../modules/auth/services/authFunnelService.js";
 import type { PasswordResetService } from "../../modules/auth/services/passwordResetService.js";
 import type { AccountAccessService } from "../../modules/account/services/accountAccessService.js";
 import type { AgentRevisionService } from "../../modules/agents/public.js";
@@ -69,7 +70,14 @@ import type { Database } from "../../shared/infra/database.js";
 import type { Env } from "../config/env.js";
 import type { VisitorGeoResolver } from "../../shared/domain/visitorGeoResolver.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
-import type { VoiceSessionAvailabilityPort, VoiceSessionStartPort, VoiceTurnPort } from "../../modules/voiceChannel/public.js";
+import type {
+  VoiceRecordingAvailabilityPort,
+  VoiceRecordingPlaybackPort,
+  VoiceSessionAvailabilityPort,
+  VoiceSessionStartPort,
+  VoiceTurnPort,
+  VoiceVendorConversationReportPort,
+} from "../../modules/voiceChannel/public.js";
 import type { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
 import type { WorkspaceProviderCredentialsService } from "../../modules/security/credentials/services/workspaceProviderCredentialsService.js";
 import type { WebhookDestinationPublicAdapter } from "../../modules/webhooks/public.js";
@@ -201,6 +209,7 @@ export interface AppDependencies {
   accessGrantService: AccessGrantService;
   passwordResetService: PasswordResetService;
   emailVerificationService: EmailVerificationService;
+  authFunnelService: AuthFunnelService;
   accountAccessService: AccountAccessService;
   accountInvitationService: AccountInvitationService;
   apiPrincipalAuthenticator: ApiPrincipalAuthenticator;
@@ -287,6 +296,7 @@ export interface AppDependencies {
   chatService: ChatService;
   approvalDecisionService: ApprovalDecisionService;
   closeApprovalResumeEffectJournal(): Promise<void>;
+  closeAbuseControlRepository?(): Promise<void>;
   /** Who handles a human-owned conversation: take over, reply, transfer, hand back. */
   conversationOwnershipService: ConversationOwnershipService;
   /** Records a customer message without running a turn; connectors reach it through their chat port. */
@@ -359,6 +369,12 @@ export interface AppDependencies {
   voiceSessionStarts: VoiceSessionStartPort;
   /** Whether a page should offer a caller voice sessions with an agent; the website embed asks. */
   voiceSessionAvailability: VoiceSessionAvailabilityPort;
+  /**
+   * A call's recording, kept by the vendor: the page reports the vendor's id for the call, the
+   * Inbox learns whether a conversation has one, and a teammate plays it.
+   */
+  voiceRecordings: VoiceVendorConversationReportPort & VoiceRecordingAvailabilityPort & VoiceRecordingPlaybackPort;
+
   assistantHistoryService: AssistantHistoryService;
   /** Permanent erasure of a conversation, or of a visitor and their conversations. */
   conversationErasure: ConversationErasure;

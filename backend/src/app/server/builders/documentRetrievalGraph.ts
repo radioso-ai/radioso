@@ -38,6 +38,7 @@ import { buildWorkspaceServices } from "./accessAuth.js";
 import type { WorkspaceProviderCredentialsService } from "../../../modules/security/credentials/services/workspaceProviderCredentialsService.js";
 import type { Env } from "../../config/env.js";
 import type { WorkspacePersonalCredentialTerminationPort } from "../../../modules/workspace/services/workspaceService.js";
+import type { VendorHeldConversationDataEraser } from "../../../shared/domain/conversationDataErasure.js";
 import type { PersonalCredentialLifecyclePort } from "../../../modules/machineAccess/public.js";
 
 /** Composes the embedding transition, document, and retrieval graph in dependency order. */
@@ -51,6 +52,8 @@ export const buildDocumentRetrievalGraph = (input: {
   workspaceInvalidationPublisher: WorkspaceInvalidationPublisher;
   personalCredentialTermination?: WorkspacePersonalCredentialTerminationPort;
   personalCredentialLifecycle?: PersonalCredentialLifecyclePort;
+  /** What a workspace deletion asks vendors to erase, such as voice call recordings. */
+  vendorHeldConversationData?: { eraser: VendorHeldConversationDataEraser; logger: Pick<AppLogger, "warn"> };
 }) => {
   const { composition, env, infrastructure, logger, repositories } = input;
   const llmRegistry = buildLlmRegistry(env, logger, { metricsRegistry: infrastructure.metricsRegistry });
@@ -244,8 +247,10 @@ export const buildDocumentRetrievalGraph = (input: {
     documentRepository: repositories.documentRepository,
     env,
     workspaceRepository: repositories.workspaceRepository,
+    workspaceSetupStateRepository: repositories.workspaceSetupStateRepository,
     personalCredentialTermination: input.personalCredentialTermination,
     personalCredentialLifecycle: input.personalCredentialLifecycle,
+    vendorHeldConversationData: input.vendorHeldConversationData,
   });
   return {
     agentRetrievalScope,

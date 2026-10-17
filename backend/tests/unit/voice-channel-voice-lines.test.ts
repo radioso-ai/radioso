@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AgentVoiceSettings } from "../../src/modules/agents/public.js";
-import { chooseVoiceTurnLines, resolveVoiceTurnLocale } from "../../src/modules/voiceChannel/services/voiceLines.js";
+import { chooseRecordingNotice, chooseVoiceTurnLines, resolveVoiceTurnLocale } from "../../src/modules/voiceChannel/services/voiceLines.js";
 
 const settings: AgentVoiceSettings = {
   enabled: true,
@@ -84,5 +84,26 @@ describe("voice turn lines", () => {
     expect(resolveVoiceTurnLocale({ requested: "it-IT", agentDefault: "de" })).toBe("it-IT");
     expect(resolveVoiceTurnLocale({ agentDefault: "de" })).toBe("de");
     expect(resolveVoiceTurnLocale({ agentDefault: null })).toBe("en");
+  });
+});
+
+describe("the recording notice", () => {
+  const notices = { recordingNotice: { "it-IT": "Questa chiamata viene registrata.", de: "Dieser Anruf wird aufgezeichnet.", en: "This call is recorded." } };
+
+  it("follows the call's language, by tag then by language", () => {
+    expect(chooseRecordingNotice(notices, { locale: "it", agentDefault: null })).toBe("Questa chiamata viene registrata.");
+    expect(chooseRecordingNotice(notices, { locale: "de-AT", agentDefault: null })).toBe("Dieser Anruf wird aufgezeichnet.");
+  });
+
+  it("falls back to the agent's default language, then English, then the first notice written", () => {
+    expect(chooseRecordingNotice(notices, { locale: "fr", agentDefault: "de" })).toBe("Dieser Anruf wird aufgezeichnet.");
+    expect(chooseRecordingNotice(notices, { locale: "fr", agentDefault: null })).toBe("This call is recorded.");
+    expect(chooseRecordingNotice({ recordingNotice: { "it-IT": "Questa chiamata viene registrata.", de: "Dieser Anruf wird aufgezeichnet." } }, { locale: "fr", agentDefault: "es" }))
+      .toBe("Questa chiamata viene registrata.");
+  });
+
+  it("is none when the agent wrote none, or only blank ones", () => {
+    expect(chooseRecordingNotice({}, { locale: "en", agentDefault: null })).toBeNull();
+    expect(chooseRecordingNotice({ recordingNotice: { en: "  " } }, { locale: "en", agentDefault: null })).toBeNull();
   });
 });

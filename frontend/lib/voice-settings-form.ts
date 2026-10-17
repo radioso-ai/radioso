@@ -53,6 +53,8 @@ export interface VoiceLanguageLines {
   locale: string
   bridgeLines: Record<VoiceBridgeStyle, string[]>
   fallbackLine: string
+  /** Shown to a caller from the website embed as the call starts; blank shows none. */
+  recordingNotice: string
   mechanicsReplies: Record<MechanicsReplyKind, string[]>
 }
 
@@ -69,12 +71,19 @@ export const emptyVoiceLanguageLines = (locale: string): VoiceLanguageLines => (
   locale,
   bridgeLines: linesOf(VOICE_BRIDGE_STYLES),
   fallbackLine: '',
+  recordingNotice: '',
   mechanicsReplies: linesOf(MECHANICS_REPLY_KINDS),
 })
 
 /** Both blocks as one entry per language tag, in the order each tag first appears. */
 export const voiceSettingsFormFromAgent = (voice: AgentVoiceSettings, mechanicsReplies: AgentMechanicsReplies): VoiceSettingsForm => {
-  const locales = [...new Set([...Object.keys(voice.bridgeLines), ...Object.keys(voice.fallbackLine), ...Object.keys(mechanicsReplies)])]
+  const recordingNotices = voice.recordingNotice ?? {}
+  const locales = [...new Set([
+    ...Object.keys(voice.bridgeLines),
+    ...Object.keys(voice.fallbackLine),
+    ...Object.keys(recordingNotices),
+    ...Object.keys(mechanicsReplies),
+  ])]
   return {
     enabled: voice.enabled,
     runtime: voice.runtime ? { ...voice.runtime } : { vendor: voiceVendorNames[0], agentId: '', region: VOICE_RUNTIME_REGIONS[0] },
@@ -82,6 +91,7 @@ export const voiceSettingsFormFromAgent = (voice: AgentVoiceSettings, mechanicsR
       locale,
       bridgeLines: linesOf(VOICE_BRIDGE_STYLES, voice.bridgeLines[locale]),
       fallbackLine: voice.fallbackLine[locale] ?? '',
+      recordingNotice: recordingNotices[locale] ?? '',
       mechanicsReplies: linesOf(MECHANICS_REPLY_KINDS, mechanicsReplies[locale]),
     })),
   }
@@ -102,15 +112,20 @@ export const voiceSettingsUpdateFromForm = (form: VoiceSettingsForm): { voice: A
   const agentId = form.runtime.agentId.trim()
   const runtime = agentId ? { vendor: form.runtime.vendor, agentId, region: form.runtime.region } : null
   const voice: AgentVoiceSettings = { enabled: form.enabled, bridgeLines: {}, fallbackLine: {}, runtime }
+  const recordingNotice: Record<string, string> = {}
   const mechanicsReplies: AgentMechanicsReplies = {}
   for (const language of form.languages) {
     const bridgeLines = authoredLinesOf(VOICE_BRIDGE_STYLES, language.bridgeLines)
     if (bridgeLines) voice.bridgeLines[language.locale] = bridgeLines
     const fallbackLine = language.fallbackLine.trim()
     if (fallbackLine) voice.fallbackLine[language.locale] = fallbackLine
+    const notice = language.recordingNotice.trim()
+    if (notice) recordingNotice[language.locale] = notice
     const replies = authoredLinesOf(MECHANICS_REPLY_KINDS, language.mechanicsReplies)
     if (replies) mechanicsReplies[language.locale] = replies
   }
+  // The block is replaced whole, so leaving the notices out removes every one.
+  if (Object.keys(recordingNotice).length > 0) voice.recordingNotice = recordingNotice
   return { voice, mechanicsReplies }
 }
 

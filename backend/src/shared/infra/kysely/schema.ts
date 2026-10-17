@@ -1523,6 +1523,17 @@ export interface PendingDecisions {
   workspace_id: string;
 }
 
+export interface PendingRegistrationTickets {
+  account_id: string;
+  activated_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  expires_at: Timestamp;
+  id: string;
+  token_hash: string;
+  used_at: Timestamp | null;
+  user_id: string;
+}
+
 export interface RetrievalSettings {
   chat_model: string | null;
   chat_provider: string | null;
@@ -1937,7 +1948,7 @@ export interface Visitors {
 }
 
 export interface VoiceSessions {
-  agent_id: string;
+  agent_id: string | null;
   conversation_id: string | null;
   created_at: Generated<Timestamp>;
   id: Generated<string>;
@@ -1946,6 +1957,9 @@ export interface VoiceSessions {
   started_public_session_id: string | null;
   started_visitor_key: string | null;
   vendor: string;
+  vendor_agent_id: string | null;
+  vendor_conversation_id: string | null;
+  vendor_region: string | null;
   workspace_id: string;
 }
 
@@ -2046,6 +2060,15 @@ export interface WorkspaceServiceAccounts {
   revision: Generated<number>;
   role: string;
   status: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
+export interface WorkspaceSetupState {
+  created_at: Generated<Timestamp>;
+  dismissed_at: Timestamp | null;
+  purpose: string | null;
+  skipped_steps: Generated<string[]>;
   updated_at: Generated<Timestamp>;
   workspace_id: string;
 }
@@ -2162,6 +2185,7 @@ export interface DB {
   operator_mcp_refresh_lineages: OperatorMcpRefreshLineages;
   password_reset_tokens: PasswordResetTokens;
   pending_decisions: PendingDecisions;
+  pending_registration_tickets: PendingRegistrationTickets;
   retrieval_settings: RetrievalSettings;
   revision_eval_run_attempts: RevisionEvalRunAttempts;
   revision_eval_run_cases: RevisionEvalRunCases;
@@ -2199,6 +2223,7 @@ export interface DB {
   workspace_grants: WorkspaceGrants;
   workspace_provider_credentials: WorkspaceProviderCredentials;
   workspace_service_accounts: WorkspaceServiceAccounts;
+  workspace_setup_state: WorkspaceSetupState;
   workspace_webhook_destinations: WorkspaceWebhookDestinations;
   workspaces: Workspaces;
 }

@@ -50,6 +50,12 @@ The browser tab title shows how many items are open, and a soft sound plays when
 
 Either lens has an **Open in debug view** link, which opens the conversation drawer: transcript with the same activity lines, Debug, Flow, a button to continue it in test chat, and a button to send it to Eval. Owners and admins also get **Delete conversation**, which erases it permanently — see [Deleting conversation data](/operators/deleting-conversation-data). The drawer is for inspecting and testing — replying, taking over, handing back, and approving or rejecting a pending decision all happen from the reading pane instead.
 
+A voice call started from the website widget shows **Listen** in the header, next to **Open in debug view**, once the widget has told Radioso which ElevenLabs conversation the call was. Listen plays the call in the pane, streamed from your ElevenLabs account through Radioso with the workspace's key. Nothing is fetched until you press it, a conversation you come back to starts silent, and every play is recorded in the audit log under your name. ElevenLabs finishes a recording shortly after the call ends, so until then the player reads "The recording can't be played right now."
+
+You can answer a caller from the reading pane too. A call speaks only when its caller does, so your reply waits for the caller's next utterance and is then spoken in place of the agent's waiting line; the line beside **Send** says so: "The caller hears this on their next turn." The reply shows **Pending** until the call speaks it, then **Spoken**; a reply with nothing a call can say, such as only formatting marks, shows **Not spoken: no words to say**. Several replies written between two utterances are spoken in order on the same turn, and a reply still pending when you hand the call back is spoken before the agent answers. A reply written after the caller hangs up stays Pending. History reads carry the same state as the reply's `speech` field — see [Chat and history](/api/chat-and-history).
+
+The recording stays in your ElevenLabs account, in its data residency region, until it is deleted there or Radioso deletes it. Deleting the conversation, its visitor, the workspace or the organization asks ElevenLabs to delete the call's recording ([Deleting conversation data](/operators/deleting-conversation-data)). Deleting an agent doesn't: its conversations stay, and their recordings still play. Radioso deletes recordings with the workspace's ElevenLabs key. If you remove that key, or replace it with a key for another ElevenLabs account, the old account's recordings can no longer be played or deleted from Radioso; delete them in ElevenLabs. A deletion never waits on ElevenLabs: a recording it won't delete stays there, and the backend log names it as `Voice recording was left at the vendor` with its ElevenLabs conversation id, so you can delete it in ElevenLabs.
+
 The drawer opens with a **Visitor** panel above the transcript whenever the conversation carries a visitor or a request context: country, region, and city; browser and OS, with the raw user agent in a tooltip; language; entry page; referrer; IP address; and when the visitor first showed up. An "unverified" hint means an edge marker arrived with the request but did not check out, so no facts are shown for it. Below those fields, **Previous conversations** lists the visitor's five most recent other conversations with a link to each and a "see all N" count when there are more — this is what groups conversations under the same durable visitor key from the embed, or the same verified customer id, across sessions. A field with nothing to show renders as unknown rather than being hidden, so a thin profile still confirms the panel worked.
 
 Conversation rows across the Inbox and Quality lists show the country code next to the visitor label when a geo header resolved one, ahead of the page or channel it names.
@@ -107,6 +113,8 @@ The ownership check, the saved reply, and its delivery to a customer channel suc
 The visitor, the dashboard, and the customer channel hear of a reply only once it has committed, and from then on the reply stands: the endpoint answers `201` even when pushing it to the visitor's open chat or recording its audit event fails. Those failures are logged and reported with the conversation and message ids.
 
 The `201` response carries `message`, the saved reply, and `ownership`, the ownership after the reply. Its `version` moves on when the reply claimed the conversation, so use the returned record for your next call.
+
+On a voice conversation the reply is spoken on the caller's next turn. Until then it carries `speech: { "state": "pending" }` in history, and `{ "state": "spoken", "spokenAt": "…" }` once a turn has spoken it, where `spokenAt` is when that turn completed, recorded as a `voice.operator_reply_spoken` audit event with the message's id. A reply with no words to say is `{ "state": "skipped" }`.
 
 ### List teammates
 
@@ -262,6 +270,7 @@ Each tail call returns messages created after the cursor plus an advanced cursor
 - **Recently closed** shows "Closed" with no name: a caller that is no teammate closed the item — usually an API token resolving feedback — or the teammate's user was deleted.
 - A teammate sees no resolved or dismissed feedback in **Recently closed** or the activity lines: they are a member, without Quality access. Owners and admins see it.
 - The visitor never sees a "joining" line: the line is model-generated, and a conversation where an operator has already replied gets no waiting line at all — later messages just wait.
+- A reply to a caller stays **Pending**: the caller hasn't spoken since you sent it, or the call has ended. A call speaks only when its caller does, so the reply goes out with their next utterance.
 
 ## Read next
 

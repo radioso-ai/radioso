@@ -496,6 +496,50 @@ export const registerAssistantPublicChatPaths = (
   });
 
   registry.registerPath({
+    method: "post",
+    path: "/api/v1/public/chat/{token}/voice/sessions/{sessionKey}/vendor-conversation",
+    tags: ["Assistant"],
+    summary: "Report the vendor's id for a voice session the page opened",
+    description: [
+      "Once the vendor's client has connected a session from `createPublicVoiceSession`, the page reports the vendor's id for the call, which names the call's recording at the vendor.",
+      "Radioso takes it once, from the same website embed public session the session was started for, while the session's start is unexpired.",
+      "Before storing it, Radioso asks the vendor, with the workspace's own key, which vendor agent the conversation was held on, and stores it only when that is the vendor agent the session was started on; it only ever uses the id to look the recording up with that key.",
+      "A browser on another origin calls `/api/public/chat/{token}/voice/sessions/{sessionKey}/vendor-conversation` on the Radioso app host, which answers the CORS preflight and relays here.",
+    ].join(" "),
+    operationId: "reportPublicVoiceVendorConversation",
+    security: [{ [security.anonymousSessionCookieScheme.name]: [] }],
+    request: {
+      params: schemas.tokenPathParamsSchema.extend({ sessionKey: z.string().uuid() }),
+      body: {
+        content: {
+          "application/json": {
+            schema: schemas.PublicVoiceVendorConversationRequestSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      204: { description: "The vendor's id is stored with the session" },
+      400: {
+        description: "Request validation failed: the session key is not a UUID, or the id is not 1 to 128 letters, digits, underscores and hyphens",
+        content: { "application/json": { schema: schemas.ErrorResponseSchema } },
+      },
+      404: {
+        description: "Public session not found or not a website embed session; no session this public session started waits for an id (it already has one, its start expired, or Radioso never started it); or the vendor says the conversation was held on another vendor agent",
+        content: { "application/json": { schema: schemas.ErrorResponseSchema } },
+      },
+      429: {
+        description: "The visitor session's request budget is spent",
+        content: { "application/json": { schema: schemas.RateLimitExceededSchema } },
+      },
+      503: {
+        description: "`voice_unavailable`: the id could not be checked with the vendor now (the vendor does not show the conversation yet, as can happen right after a call connects; the workspace's vendor key is missing or unreadable; or the vendor did not answer); report it again",
+        content: { "application/json": { schema: schemas.ErrorResponseSchema } },
+      },
+    },
+  });
+
+  registry.registerPath({
     method: "get",
     path: "/api/v1/public/chat/{token}",
     tags: ["Assistant"],

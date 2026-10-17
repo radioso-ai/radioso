@@ -52,6 +52,7 @@ const startedSession = {
   sessionKey: SESSION_KEY,
   locale: "en",
   expiresAt: new Date(Date.now() + 900_000).toISOString(),
+  recordingNotice: "This call is recorded so the team can review it.",
 };
 
 /** The vendor's end of the call: what the client sent, and a way to answer as the vendor would. */
@@ -111,6 +112,7 @@ const openEmbed = async (
   options: AgentVoice & { voiceStart?: { status: number; body: unknown }; hostPermissionsPolicy?: string },
 ) => {
   const voiceStarts: Array<{ headers: Record<string, string>; body: unknown }> = [];
+  const vendorReports: Array<{ url: string; headers: Record<string, string>; body: unknown }> = [];
   await page.route("**/backend/api/v1/**", (route) => route.fulfill({ status: 204, body: "" }));
   await page.route("**/api/embed/config/**", (route) =>
     fulfillJson(route, { voice: { available: options.voiceReady && options.voiceCallsOffered } }));
@@ -119,6 +121,10 @@ const openEmbed = async (
     voiceStarts.push({ headers: route.request().headers(), body: route.request().postDataJSON() });
     const answer = options.voiceStart ?? { status: 200, body: startedSession };
     await fulfillJson(route, answer.body, answer.status);
+  });
+  await page.route("**/api/public/chat/*/voice/sessions/*/vendor-conversation", async (route) => {
+    vendorReports.push({ url: route.request().url(), headers: route.request().headers(), body: route.request().postDataJSON() });
+    await route.fulfill({ status: 204, body: "" });
   });
 
   // The host page stands in for a customer's site, which is not served with the app's own security
@@ -147,7 +153,7 @@ const openEmbed = async (
     if (!found) throw new Error("The chat frame is not on the page");
     return found;
   };
-  return { frame, voiceStarts, chatFrame };
+  return { frame, voiceStarts, vendorReports, chatFrame };
 };
 
 const callStatus = (frame: ReturnType<Page["frameLocator"]>, text: string) => frame.getByRole("status").filter({ hasText: text });
@@ -189,7 +195,7 @@ test("a page that cannot ask for a microphone shows no Talk button", async ({ pa
 test("a visitor talks to the agent: connecting, listening, speaking, talking over a reply, then End call", async ({ page, context }) => {
   await context.grantPermissions(["microphone"]);
   const vendor = await vendorStandIn(page);
-  const { frame, voiceStarts } = await openEmbed(page, callsOffered);
+  const { frame, voiceStarts, vendorReports } = await openEmbed(page, callsOffered);
   const chatFrame = page.locator('iframe[src*="/embed-frame"]');
   await expect(chatFrame).toHaveAttribute("allow", /microphone/);
   // The frame is on the app host, another origin than the page that embeds it.
@@ -205,6 +211,13 @@ test("a visitor talks to the agent: connecting, listening, speaking, talking ove
 
   vendor.accept();
   await expect(callStatus(frame, "Listening")).toBeVisible();
+  // The agent's recording notice shows for the whole call.
+  await expect(frame.getByText("This call is recorded so the team can review it.")).toBeVisible();
+  // Once the session is open, the page tells Radioso the vendor's id for the call, which names its recording.
+  await expect.poll(() => vendorReports.length).toBe(1);
+  expect(vendorReports[0].url).toContain(`/voice/sessions/${SESSION_KEY}/vendor-conversation`);
+  expect(vendorReports[0].headers["x-radioso-public-session"]).toBe("public-session-token");
+  expect(vendorReports[0].body).toEqual({ vendorConversationId: "conv_1" });
   // The call bar stands in for the composer, and typing goes nowhere.
   await expect(frame.getByRole("textbox")).toHaveCount(0);
 

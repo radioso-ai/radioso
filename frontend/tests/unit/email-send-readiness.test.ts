@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { ConversationEmailFacts } from '@/lib/api-email-channel'
-import { conversationSendUnavailableReason, emailSendUnavailableReason } from '@/lib/email-send-readiness'
+import { conversationReplyNote, conversationSendUnavailableReason, emailSendUnavailableReason } from '@/lib/email-send-readiness'
 
 const facts = (sending: ConversationEmailFacts['sending']['state']): ConversationEmailFacts => ({
   mailbox: { id: 'mailbox-1', address: 'support@customer.test', displayName: 'Support', engagementMode: 'draft' },
@@ -57,9 +57,11 @@ describe('conversationSendUnavailableReason', () => {
     expect(conversationSendUnavailableReason({ state: 'known', provider: 'email' }, { facts: facts('ok'), error: null })).toBeNull()
   })
 
-  it('offers no Send on a voice conversation, since a written reply never reaches the caller', () => {
-    expect(conversationSendUnavailableReason({ state: 'known', provider: 'voice' }, unread))
-      .toBe('Written replies don’t reach a voice caller.')
+  it('sends on a voice conversation, and says the caller hears the reply on their next turn', () => {
+    expect(conversationSendUnavailableReason({ state: 'known', provider: 'voice' }, unread)).toBeNull()
+    expect(conversationReplyNote({ state: 'known', provider: 'voice' })).toBe('The caller hears this on their next turn.')
+    expect(conversationReplyNote({ state: 'known', provider: 'email' })).toBeNull()
+    expect(conversationReplyNote({ state: 'pending' })).toBeNull()
   })
 
   it('sends on any other known channel', () => {

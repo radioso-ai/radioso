@@ -2,7 +2,13 @@ import { z } from "zod";
 
 import type { CallerKind } from "../../../shared/domain/conversationSource.js";
 import type { SameType } from "../../../shared/types/sameType.js";
-import { replyInterruptionSchema, type ReplyInterruption } from "../../chat/contracts/index.js";
+import {
+  operatorReplySpeechSchema,
+  replyInterruptionSchema,
+  type OperatorReplySpeech,
+  type ReplyInterruption,
+} from "../../chat/contracts/index.js";
+import type { VoiceRecordingAvailabilityPort } from "../../voiceChannel/public.js";
 import {
   CONVERSATION_ACTIVITY_KINDS,
   resolveActivityReadScope,
@@ -54,6 +60,8 @@ const transcriptMessageSchema = z.object({
   turnFailure: turnFailureSchema,
   /** A reply the caller cut short by speaking over it: how much of it they heard, in spoken characters. */
   interruption: replyInterruptionSchema.nullable(),
+  /** A teammate's reply on a call: pending until the caller's next turn speaks it, then spoken; skipped with no words to say. */
+  speech: operatorReplySpeechSchema.shape.state.nullable(),
 });
 const activityPersonSchema = z.object({ userId: z.string().uuid(), label: z.string().nullable() }).nullable();
 const transcriptActivitySchema = z.object({
@@ -83,6 +91,8 @@ const conversationTranscriptOutputSchema = z.object({
     updatedAt: z.string(),
     messageCount: z.number().int().nonnegative(),
     ownership: ownershipSchema,
+    /** On a voice conversation: whether a teammate can play the call's recording in the Inbox. Null elsewhere, or when it cannot be read. */
+    recordingAvailable: z.boolean().nullable(),
     messages: z.array(transcriptMessageSchema),
     activity: z.array(transcriptActivitySchema),
   }).and(z.object({ truncation: truncationRecordSchema })),
@@ -222,6 +232,7 @@ interface CopilotConversationMessage {
   turnFailure?: CopilotTurnFailure;
   debug?: CopilotDebug;
   interruption?: ReplyInterruption;
+  speech?: OperatorReplySpeech;
 }
 
 interface CopilotConversationDetail {
@@ -270,7 +281,7 @@ const projectSkill = (debug: CopilotDebug | undefined) =>
     ? { name: debug.skillName, outcome: debug.skillOutcome, status: debug.skillStatus }
     : null;
 
-const projectTranscript = (conversation: CopilotConversationDetail): Record<string, unknown> => ({
+const projectTranscript = (conversation: CopilotConversationDetail, recordingAvailable: boolean | null): Record<string, unknown> => ({
   conversationId: conversation.conversationId,
   agentId: conversation.agentId,
   agentName: conversation.agentName,
@@ -280,6 +291,7 @@ const projectTranscript = (conversation: CopilotConversationDetail): Record<stri
   updatedAt: conversation.updatedAt,
   messageCount: conversation.messageCount,
   ownership: projectOwnership(conversation.ownership),
+  recordingAvailable,
   messages: conversation.messages.map((message) => ({
     id: message.id,
     role: message.role,
@@ -296,6 +308,7 @@ const projectTranscript = (conversation: CopilotConversationDetail): Record<stri
     operatorLabel: message.operatorLabel ?? null,
     turnFailure: projectTurnFailure(message.turnFailure),
     interruption: message.interruption ?? null,
+    speech: message.speech?.state ?? null,
   })),
   activity: (conversation.activity ?? []).map((entry) => ({
     kind: entry.kind,
@@ -380,12 +393,17 @@ const projectTurnTrace = (detail: CopilotConversationTurnDetail): Record<string,
 // Test Chat sessions are private test executions rather than conversations, so these two readers
 // never see them; naming the Test Chat readers keeps a "why didn't it fire in Test Chat" question
 // from searching customer history.
-const CONVERSATION_TRANSCRIPT_DESCRIPTION = "Read a bounded transcript of a customer or dashboard chat conversation with shallow per-turn outcomes, routing, feedback, and ownership, plus its latest activity: who handed it off, took it, reassigned it, and handed it back, which approval option a teammate chose, and — for an operator with Quality access — who resolved or dismissed its feedback. A voice reply the caller spoke over carries interruption: how many spoken characters they heard, of how many. Use turn_trace for one turn's full diagnostic spine. Test Chat sessions are read with test_chat_transcript.";
+const CONVERSATION_TRANSCRIPT_DESCRIPTION = "Read a bounded transcript of a customer or dashboard chat conversation with shallow per-turn outcomes, routing, feedback, and ownership, plus its latest activity: who handed it off, took it, reassigned it, and handed it back, which approval option a teammate chose, and — for an operator with Quality access — who resolved or dismissed its feedback. A voice reply the caller spoke over carries interruption: how many spoken characters they heard, of how many. A teammate's reply on a voice call carries speech: pending until the caller speaks again and hears it, then spoken; skipped when it has no words to say. A voice conversation carries recordingAvailable: whether a teammate can play the call's recording in the Inbox; Ray never hears the audio. Use turn_trace for one turn's full diagnostic spine. Test Chat sessions are read with test_chat_transcript.";
 const CONVERSATION_HISTORY_SEARCH_DESCRIPTION = "List recent customer and dashboard chat conversations in this workspace for investigation. Test Chat sessions are listed with test_chat_sessions.";
 const TURN_TRACE_DESCRIPTION = "Inspect one message's full turn diagnostic spine. Accepts user messages, including unanswered turns with their failure or cancellation reason. A routine's sub-trace reports which slots were filled by key only (filledSlotKeys, capturedSlotKeys) — never their values — and, per step the selector judged, its selection: outcome and the slot keys the model returned (returnedSlotKeys). Use test_chat_turn_trace to see values, on a private Test Chat run only.";
 
 export interface ChatCopilotToolDependencies {
   readonly chatHistoryService: CopilotConversationHistoryPort;
+  /**
+   * Whether a voice conversation's call has a recording a teammate can play in the Inbox. Ray reads
+   * the yes or no, never the audio: listening is a person's, and each play is audited against them.
+   */
+  readonly voiceRecordings: VoiceRecordingAvailabilityPort;
 }
 
 export const createChatCopilotTools = (deps: ChatCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
@@ -398,8 +416,8 @@ export const createChatCopilotTools = (deps: ChatCopilotToolDependencies): Reado
       description: CONVERSATION_TRANSCRIPT_DESCRIPTION,
       inputSchema: z.object({ conversationId: idSchema.optional() }),
       outputSchema: conversationTranscriptOutputSchema,
-      invoke: async ({ conversationId }) => ({
-        transcript: boundConversationPayload(projectTranscript(await deps.chatHistoryService.getConversation(
+      invoke: async ({ conversationId }) => {
+        const conversation = await deps.chatHistoryService.getConversation(
           context.workspaceId,
           conversationId ?? requiredPageConversation(context.pageContext.conversationId),
           { limit: 100 },
@@ -412,8 +430,14 @@ export const createChatCopilotTools = (deps: ChatCopilotToolDependencies): Reado
             // Feedback triage outcomes are Quality data: Ray reads them only for an operator who may.
             activity: await resolveActivityReadScope((permission) => hasCurrentCopilotPermissions(context, [permission])),
           },
-        ))),
-      }),
+        );
+        const recordingAvailable = await deps.voiceRecordings.availability({
+          workspaceId: context.workspaceId,
+          conversationId: conversation.conversationId,
+          sourceChannel: conversation.sourceChannel,
+        });
+        return { transcript: boundConversationPayload(projectTranscript(conversation, recordingAvailable)) };
+      },
     }),
     describeEntity: ({ conversationId }, context) => entity("conversation", conversationId ?? context?.pageContext.conversationId),
   },

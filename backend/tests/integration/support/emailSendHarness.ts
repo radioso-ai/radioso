@@ -261,6 +261,8 @@ export const createApiNode = (
     // Document-search history is not read through this node, and nothing here erases a conversation.
     documentSearchHistoryService: {} as AppDependencies["documentSearchHistoryService"],
     conversationErasure: {} as AppDependencies["conversationErasure"],
+    // Email conversations have no call recording.
+    voiceRecordings: { availability: async () => null },
   }));
   app.use(createErrorHandler());
 

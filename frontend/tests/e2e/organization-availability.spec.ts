@@ -42,8 +42,9 @@ test('offers first-user registration when the server reports it available', asyn
 
   await page.goto('/')
 
-  await page.getByRole('button', { name: 'Create an account' }).click()
-  await expect(page.getByRole('heading', { name: 'Step into the light' })).toBeVisible()
+  await page.getByRole('link', { name: 'Create an account' }).click()
+  await expect(page).toHaveURL(/\/signup$/)
+  await expect(page.getByRole('heading', { name: 'Step into the light' })).toBeVisible({ timeout: 10_000 })
   await expect(page.getByRole('img', { name: 'radioso' })).toBeVisible()
 })
 
@@ -114,7 +115,7 @@ test('enters the workspace directly after a development auto-verified registrati
   })
 
   await page.goto('/')
-  await page.getByRole('button', { name: 'Create an account' }).click()
+  await page.getByRole('link', { name: 'Create an account' }).click()
   await page.getByLabel('Your name (optional)').fill('Local Dev')
   await page.getByLabel('Email').fill('local-dev@example.com')
   await page.getByLabel('Password', { exact: true }).fill('verysecurepassword')
@@ -147,11 +148,11 @@ test('shows invitation guidance without flashing registration when registration 
   await page.goto('/')
   await registrationRequested
 
-  await expect(page.getByRole('button', { name: 'Create an account' })).toHaveCount(0)
+  await expect(page.getByRole('link', { name: 'Create an account' })).toHaveCount(0)
   releaseRegistrationResponse()
 
   await expect(page.getByText('Registration is invitation-only. Ask an organization administrator for an invitation.')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Create an account' })).toHaveCount(0)
+  await expect(page.getByRole('link', { name: 'Create an account' })).toHaveCount(0)
 })
 
 test('recovers registration availability after a transient startup failure without flashing signup', async ({ page }) => {
@@ -188,12 +189,12 @@ test('recovers registration availability after a transient startup failure witho
 
   await page.goto('/')
 
-  await expect(page.getByRole('button', { name: 'Create an account' })).toHaveCount(0)
+  await expect(page.getByRole('link', { name: 'Create an account' })).toHaveCount(0)
   await expect(page.getByText('Unable to check registration availability.')).toBeVisible()
   backendReady = true
   await page.getByRole('button', { name: 'Retry registration check' }).click()
 
-  await expect(page.getByRole('button', { name: 'Create an account' })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Create an account' })).toBeVisible()
   expect(attempts).toBeGreaterThanOrEqual(2)
 })
 

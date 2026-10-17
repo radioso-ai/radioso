@@ -117,6 +117,7 @@ describe("AbuseControlService", () => {
       limit: 5,
       remaining: 4,
       resetAtMs: now.getTime() + 60_000,
+      resetAfterSeconds: 60,
     });
   });
 
@@ -133,6 +134,7 @@ describe("AbuseControlService", () => {
         limit: 1,
         remaining: 0,
         resetAtMs: now.getTime() + 30_000,
+        resetAfterSeconds: 30,
         retryAfterSeconds: 30,
       },
     });

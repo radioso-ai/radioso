@@ -1,9 +1,7 @@
 'use client'
 
-import Link from 'next/link'
 import { useEffect, useState } from 'react'
 
-import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { authApi } from '@/lib/api'
 import { getErrorMessage } from './auth-errors'
@@ -11,12 +9,13 @@ import { AuthShell } from './auth-shell'
 
 const VERIFY_COPY = {
   verifying: { title: 'Almost there', subtitle: 'Confirming your email address.' },
-  success: { title: 'You’re all set', subtitle: 'Your email is verified. You can sign in now.' },
+  success: { title: 'You’re all set', subtitle: 'Your email is verified. Opening your workspace.' },
+  verifiedWithoutSession: { title: 'Email verified — sign in', subtitle: 'Your sign-in session was not created.' },
   error: { title: 'This link has faded', subtitle: 'Head back to sign in.' },
 } as const
 
 export function VerifyEmailScreen({ token }: { token?: string }) {
-  const [status, setStatus] = useState<'verifying' | 'success' | 'error'>(() => (token ? 'verifying' : 'error'))
+  const [status, setStatus] = useState<'verifying' | 'success' | 'verifiedWithoutSession' | 'error'>(() => (token ? 'verifying' : 'error'))
   const [error, setError] = useState(() => (token ? '' : 'Verification link is missing or incomplete.'))
 
   useEffect(() => {
@@ -30,7 +29,13 @@ export function VerifyEmailScreen({ token }: { token?: string }) {
       try {
         await authApi.verifyEmail({ token })
         if (!cancelled) {
-          setStatus('success')
+          const session = await authApi.getCurrentSession()
+          if (session) {
+            setStatus('success')
+            window.location.assign('/')
+          } else {
+            setStatus('verifiedWithoutSession')
+          }
         }
       } catch (error) {
         if (!cancelled) {
@@ -57,19 +62,14 @@ export function VerifyEmailScreen({ token }: { token?: string }) {
           </div>
         </div>
       ) : null}
-      {status === 'success' ? (
-        <div className="space-y-4">
-          <Button asChild className="w-full">
-            <Link href="/">Go to Sign In</Link>
-          </Button>
-        </div>
+      {status === 'success' ? <p className="text-sm text-muted-foreground">Opening your workspace…</p> : null}
+      {status === 'verifiedWithoutSession' ? (
+        <a href="/login" className="text-sm font-medium text-primary hover:underline">Sign in</a>
       ) : null}
       {status === 'error' ? (
         <div className="space-y-4">
           <p className="text-sm text-destructive">{error}</p>
-          <Button asChild className="w-full" variant="outline">
-            <Link href="/">Back to Sign In</Link>
-          </Button>
+          <a href="/login" className="text-sm font-medium text-primary hover:underline">Back to Sign In</a>
         </div>
       ) : null}
     </AuthShell>

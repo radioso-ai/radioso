@@ -1,9 +1,13 @@
+import type { VoiceVendorConversationReportOutcome } from './api-public-voice'
 import type { PublicVoiceSessionResponse } from './api-types'
 import { VoiceMicrophoneUnavailableError, type VoiceRuntime, type VoiceRuntimeLine, type VoiceRuntimeSession, type VoiceVendor } from './voice-runtime'
 import type { VoiceSessionEvent } from './voice-session'
 
-/** What the page needs to open the session on the vendor, from the start's answer; `signedUrl` is a bearer credential. */
-export type StartedVoiceSession = Pick<PublicVoiceSessionResponse, 'vendor' | 'signedUrl' | 'sessionKey' | 'locale'>
+/**
+ * What the page needs to open the session on the vendor, from the start's answer; `signedUrl` is a
+ * bearer credential. `recordingNotice` is the agent's line telling the caller the call is recorded.
+ */
+export type StartedVoiceSession = Pick<PublicVoiceSessionResponse, 'vendor' | 'signedUrl' | 'sessionKey' | 'locale' | 'recordingNotice'>
 
 /**
  * How a session start ended, as the visitor can act on it. `refused` covers every answer that is
@@ -23,6 +27,12 @@ export interface VoiceCallDependencies {
    * microphone and its session, so two calls never hold either at once.
    */
   after?: Promise<void>
+  /**
+   * Tells Radioso the vendor's id for the call once the session is open, so the call's recording can
+   * be found, and once more as the session ends when that report did not get through. The call never
+   * waits for it, and a report that fails changes nothing about the call.
+   */
+  reportVendorConversation?: (input: { sessionKey: string; vendorConversationId: string }) => Promise<VoiceVendorConversationReportOutcome>
 }
 
 /**
@@ -61,6 +71,8 @@ export function runVoiceCall(dependencies: VoiceCallDependencies, observer: Voic
   let sessionClosed: Promise<void> = Promise.resolve()
   let closeSession: (() => void) | null = null
   let connectTimer: ReturnType<typeof setTimeout> | null = null
+  // The open session's report, until the session ends.
+  let vendorReport: { input: { sessionKey: string; vendorConversationId: string }; outcome: Promise<VoiceVendorConversationReportOutcome> } | null = null
   const opening = new AbortController()
   const clearConnectTimer = () => {
     if (connectTimer !== null) clearTimeout(connectTimer)
@@ -69,11 +81,22 @@ export function runVoiceCall(dependencies: VoiceCallDependencies, observer: Voic
   const report = (event: VoiceSessionEvent) => {
     if (!stopped) observer.onEvent(event)
   }
+  /** As the session ends: a report that did not get through goes once more; a 204 or a refusal is final. */
+  const settleVendorReport = () => {
+    const pending = vendorReport
+    const report = dependencies.reportVendorConversation
+    vendorReport = null
+    if (!pending || !report) return
+    void pending.outcome
+      .then((outcome) => (outcome === 'failed' ? report(pending.input) : outcome))
+      .catch(() => undefined)
+  }
   const finish = () => {
     if (stopped) return
     stopped = true
     clearConnectTimer()
     opening.abort()
+    settleVendorReport()
     const open = session
     session = null
     if (open) void open.end().catch(() => undefined).finally(() => closeSession?.())
@@ -129,8 +152,14 @@ export function runVoiceCall(dependencies: VoiceCallDependencies, observer: Voic
         },
         opening.signal,
       )
-      // Stopped while the vendor's client opened the session: end the session it opened.
+      // Stopped while the vendor's client opened the session: end the session it opened, once
+      // Radioso has been told which call it was, so its recording is not left without a record.
       if (stopped) {
+        if (opened.vendorConversationId && dependencies.reportVendorConversation) {
+          void dependencies
+            .reportVendorConversation({ sessionKey: start.session.sessionKey, vendorConversationId: opened.vendorConversationId })
+            .catch(() => undefined)
+        }
         await opened.end().catch(() => undefined)
         return
       }
@@ -139,6 +168,10 @@ export function runVoiceCall(dependencies: VoiceCallDependencies, observer: Voic
       sessionClosed = new Promise<void>((resolve) => {
         closeSession = resolve
       })
+      if (opened.vendorConversationId && dependencies.reportVendorConversation) {
+        const input = { sessionKey: start.session.sessionKey, vendorConversationId: opened.vendorConversationId }
+        vendorReport = { input, outcome: dependencies.reportVendorConversation(input).catch((): VoiceVendorConversationReportOutcome => 'failed') }
+      }
     } catch (error) {
       clearConnectTimer()
       report({ type: error instanceof VoiceMicrophoneUnavailableError ? 'microphone_refused' : 'start_refused' })

@@ -7,6 +7,7 @@ import { requireSession, type SessionDependencies } from "../middleware/requireS
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { requireAccountPermission, requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { validateBody } from "../middleware/validate.js";
+import { workspaceSetupSteps } from "../../../db/repositories/workspaceSetupStateRepository.js";
 
 export const createWorkspaceSchema = z.object({
   name: z.string().min(1).max(100),
@@ -23,6 +24,12 @@ export const workspaceParamsSchema = z.object({
 export const workspaceKeyParamsSchema = z.object({
   workspaceKey: z.string().trim().min(3).max(64).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/),
 });
+
+export const updateWorkspaceSetupStateSchema = z.object({
+  purpose: z.string().trim().min(1).max(2_000).nullable().optional(),
+  dismissed: z.boolean().optional(),
+  skippedSteps: z.array(z.enum(workspaceSetupSteps)).max(workspaceSetupSteps.length).optional(),
+}).strict().refine((input) => Object.keys(input).length > 0, { message: "At least one setup state field is required" });
 
 type WorkspaceRouteDependencies = SessionDependencies & WorkspaceSessionDependencies & Pick<
   AppDependencies,
@@ -60,6 +67,25 @@ export const createWorkspaceRoutes = (dependencies: WorkspaceRouteDependencies):
       const { workspaceId } = res.locals as { workspaceId: string };
       const summary = await dependencies.workspaceSummaryService.getSummary(workspaceId);
       res.status(200).json(summary);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.get("/setup-state", workspaceSession, requireWorkspacePermission(dependencies, "workspace.summary.read"), async (_req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      res.status(200).json((await dependencies.workspaceSummaryService.getSummary(workspaceId)).setup);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // This existing owner/admin-only permission is the narrowest settings-adjacent authority available.
+  router.patch("/setup-state", workspaceSession, requireWorkspacePermission(dependencies, "workspace.credentials.manage"), validateBody(updateWorkspaceSetupStateSchema), async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      res.status(200).json((await dependencies.workspaceSummaryService.updateSetupState(workspaceId, req.body as z.infer<typeof updateWorkspaceSetupStateSchema>)).setup);
     } catch (error) {
       next(error);
     }

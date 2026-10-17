@@ -2,6 +2,7 @@ import { AccountMembershipRepository } from "../../../db/repositories/accountMem
 import { ConversationRepository } from "../../../db/repositories/conversationRepository.js";
 import { DocumentRepository } from "../../../db/repositories/documentRepository.js";
 import { WorkspaceRepository } from "../../../db/repositories/workspaceRepository.js";
+import { WorkspaceSetupStateRepository } from "../../../db/repositories/workspaceSetupStateRepository.js";
 import { AccountAccessService, AccountInvitationService } from "../../../modules/account/public.js";
 import { AccessGrantService, DefaultOriginMatcher } from "../../../modules/accessGrants/public.js";
 import { AuditService } from "../../../modules/audit/composition.js";
@@ -10,6 +11,7 @@ import type { ProductAnalyticsPort } from "../../../shared/analytics/productAnal
 import { AuthService } from "../../../modules/auth/services/authService.js";
 import { PostgresOrganizationProvisioner } from "../../../modules/auth/infra/postgresOrganizationProvisioner.js";
 import { EmailVerificationService } from "../../../modules/auth/services/emailVerificationService.js";
+import { AuthFunnelService } from "../../../modules/auth/services/authFunnelService.js";
 import { PasswordResetService } from "../../../modules/auth/services/passwordResetService.js";
 import { WorkspaceSessionService } from "../../../modules/auth/services/workspaceSessionService.js";
 import {
@@ -198,7 +200,12 @@ export const buildWorkspaceServices = (input: {
   env: Env;
   personalCredentialTermination?: import("../../../modules/workspace/services/workspaceService.js").WorkspacePersonalCredentialTerminationPort;
   personalCredentialLifecycle?: import("../../../modules/machineAccess/public.js").PersonalCredentialLifecyclePort;
+  vendorHeldConversationData?: {
+    eraser: import("../../../shared/domain/conversationDataErasure.js").VendorHeldConversationDataEraser;
+    logger: Pick<import("../../../shared/observability/logger.js").AppLogger, "warn">;
+  };
   workspaceRepository: WorkspaceRepository;
+  workspaceSetupStateRepository: WorkspaceSetupStateRepository;
 }) => {
   const workspaceService = new WorkspaceService(
     input.workspaceRepository,
@@ -206,11 +213,12 @@ export const buildWorkspaceServices = (input: {
     input.accountMembershipRepository,
     input.personalCredentialTermination,
     input.personalCredentialLifecycle,
+    input.vendorHeldConversationData,
   );
   return {
     workspaceService,
     workspaceSessionService: new WorkspaceSessionService(workspaceService),
-    workspaceSummaryService: new WorkspaceSummaryService(input.documentRepository, input.conversationRepository, {
+    workspaceSummaryService: new WorkspaceSummaryService(input.documentRepository, input.conversationRepository, input.workspaceSetupStateRepository, {
       websiteCrawlerEnabled: input.env.WEBSITE_CRAWLER_ENABLED,
     }),
   };
@@ -233,6 +241,7 @@ export const buildAuthService = (input: {
     userRepository: input.repositories.userRepository,
     sessionRepository: input.repositories.sessionRepository,
     federatedIdentityRepository: input.repositories.userFederatedIdentityRepository,
+    authFunnelRepository: input.repositories.authFunnelRepository,
     workspaceService: input.workspaceService,
     accountAccessService: input.access.accountAccessService,
     accountInvitationService: input.access.accountInvitationService,
@@ -262,7 +271,7 @@ export const buildPasswordResetService = (input: {
     accountAccessService: input.access.accountAccessService,
     workspaceService: input.workspaceService,
     sessionRepository: input.repositories.sessionRepository,
-    federatedIdentityRepository: input.repositories.userFederatedIdentityRepository,
+    authFunnelRepository: input.repositories.authFunnelRepository,
     passwordResetTokenRepository: input.repositories.passwordResetTokenRepository,
     mailService: input.infrastructure.mailService,
     auditService: input.auditService,
@@ -284,3 +293,13 @@ export const buildEmailVerificationService = (input: {
     auditService: input.auditService,
     logger: input.logger,
   });
+
+export const buildAuthFunnelService = (input: {
+  auditService: AuditService;
+  env: Env;
+  repositories: ReturnType<typeof buildRepositories>;
+}): AuthFunnelService => new AuthFunnelService({
+  env: input.env,
+  repository: input.repositories.authFunnelRepository,
+  auditService: input.auditService,
+});

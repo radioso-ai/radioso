@@ -15,8 +15,8 @@ import { testMigrationsPath } from "../support/databaseMigrations.js";
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 const describeIfDatabase = integrationDatabaseUrl ? describe : describe.skip;
 
-describeIfDatabase("migration 215 workspace setup state", () => {
-  const schema = `test_workspace_setup_215_${randomUUID().replaceAll("-", "")}`;
+describeIfDatabase("migration 231 workspace setup state", () => {
+  const schema = `test_workspace_setup_231_${randomUUID().replaceAll("-", "")}`;
   const workspaceId = randomUUID();
   let pool: pg.Pool;
   let client: PoolClient;
@@ -42,7 +42,7 @@ describeIfDatabase("migration 215 workspace setup state", () => {
       "INSERT INTO documents (id, workspace_id, status, metadata) VALUES ($1, $2, 'ready', '{}'::jsonb)",
       [randomUUID(), workspaceId],
     );
-    await client.query(await readFile(path.join(testMigrationsPath, "215_workspace_setup_state.sql"), "utf8"));
+    await client.query(await readFile(path.join(testMigrationsPath, "231_workspace_setup_state.sql"), "utf8"));
     const schemaUrl = new URL(integrationDatabaseUrl!);
     schemaUrl.searchParams.set("options", `-c search_path=${schema},public`);
     database = new Database(schemaUrl.toString());

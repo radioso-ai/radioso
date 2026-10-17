@@ -39,7 +39,7 @@ import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capability
 import type { ResponseLanguageDetectorInput } from "../../src/shared/services/responseLanguageDetector.js";
 import type { RetrievalPipelineRequest, RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
 import { createAuditService } from "../support/fakes.js";
-import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
 import type { ChatRoutineTurnReporter } from "../../src/modules/chat/contracts/routineTurnState.js";
 import type { AgentRevision } from "../../src/modules/agents/agentRevision.js";
 import type { RoutineRegistration } from "@radioso/conversation-defaults";
@@ -62,6 +62,7 @@ import {
   type SkillOutcome,
 } from "../../src/modules/skills/public.js";
 import { WEBHOOK_SKILLS_ADAPTER } from "../../src/modules/webhookSkills/public.js";
+import { websiteEmbedFixture } from "../support/websiteEmbedFixture.js";
 
 const emptyTrace = () => {
   const now = new Date().toISOString();
@@ -145,6 +146,7 @@ const recordingChatGateway = (answer: string) => {
 
 const agent = (): ConversationAgent => ({
   ...unpublishedAgentPublicIdentity(),
+  voice: defaultAgentVoiceSettings(),
   id: "agent-1",
   workspaceId: "ws-1",
   name: "Support",
@@ -174,6 +176,7 @@ const agent = (): ConversationAgent => ({
   greetingInstruction: "",
   assistantDefaultLocale: null,
   proactiveGreetingEnabled: false,
+  mechanicsReplies: {},
   chatModelOverride: {
     provider: "openai",
     model: "gpt-5-mini",
@@ -181,7 +184,7 @@ const agent = (): ConversationAgent => ({
   surfaceSettings: {
     authenticatedChat: { enabled: true },
     anonymousChat: { enabled: false, token: null },
-    websiteEmbed: {
+    websiteEmbed: websiteEmbedFixture({
       enabled: false,
       token: null,
       allowedOrigins: [],
@@ -195,7 +198,7 @@ const agent = (): ConversationAgent => ({
       },
       copy: {},
       expertOverrides: {},
-    },
+    }),
     extensions: {},
   },
   authoredDirectives: [],
@@ -793,6 +796,40 @@ describe("WorkbenchReplayRunner", () => {
     expect(capturedRequests[0]?.responseLanguage).toBe("English");
     // The trace keeps the unchanged schedule shape.
     expect(result.turnTrace?.spine.stages.map((stage) => stage.kind)).toContain("turn_interpretation");
+  });
+
+  it("bypasses the planner on a replay seeded with a pending clarification, as live chat does", async () => {
+    const plannerComplete = vi.fn(async () => ({ text: "{}" }));
+    const classify = vi.fn(async () => ({ route: "retrieval" as const, framing: { isIdentityQuestion: false } }));
+    const runner = new WorkbenchReplayRunner({
+      retrievalTurn: retrievalTurn([]),
+      auditService: createAuditService(),
+      turnSkills: [answerSkill()],
+      conversationEngine: new DefaultConversationEngine(),
+      turnRouter: { classify },
+      turnPlanCoordinator: new TurnPlanCoordinator(new TurnPlanService({ create: async () => ({ complete: plannerComplete }) })),
+    });
+
+    await runner.run({
+      workspaceId: "ws-1",
+      executionMode: "safe_test" as const,
+      sourceAgentId: "agent-1",
+      baselineAgentConfig: projectInternalAgentConfig(agent()),
+      query: "ok",
+      history: [],
+      pendingClarificationStartState: {
+        source: "retrieval_sense",
+        candidates: [
+          { id: "pro", label: "Pro plan", confidence: 0.5, payload: {} },
+          { id: "team", label: "Team plan", confidence: 0.5, payload: {} },
+        ],
+        status: "pending",
+        expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      },
+    });
+
+    expect(plannerComplete).not.toHaveBeenCalled();
+    expect(classify).toHaveBeenCalledTimes(1);
   });
 
   it("restores staged response-language detection when the planner output is malformed", async () => {

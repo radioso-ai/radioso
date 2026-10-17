@@ -1107,6 +1107,38 @@ CREATE TABLE public.audit_events (
 
 
 --
+-- Name: background_jobs; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.background_jobs (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    kind text NOT NULL,
+    payload jsonb,
+    idempotency_key text,
+    status text DEFAULT 'pending'::text NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    available_at timestamp with time zone DEFAULT now() NOT NULL,
+    lease_expires_at timestamp with time zone,
+    claim_token uuid,
+    rerun_requested boolean DEFAULT false NOT NULL,
+    last_error text,
+    dead_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT background_jobs_attempts_check CHECK ((attempts >= 0)),
+    CONSTRAINT background_jobs_dead_has_dead_at CHECK (((status = 'dead'::text) = (dead_at IS NOT NULL))),
+    CONSTRAINT background_jobs_dead_has_no_payload CHECK (((status = 'dead'::text) = (payload IS NULL))),
+    CONSTRAINT background_jobs_idempotency_key_check CHECK (((idempotency_key IS NULL) OR ((length(idempotency_key) >= 1) AND (length(idempotency_key) <= 512)))),
+    CONSTRAINT background_jobs_kind_check CHECK (((length(kind) >= 1) AND (length(kind) <= 128))),
+    CONSTRAINT background_jobs_last_error_check CHECK (((last_error IS NULL) OR (length(last_error) <= 160))),
+    CONSTRAINT background_jobs_rerun_only_while_running CHECK (((NOT rerun_requested) OR (status = 'running'::text))),
+    CONSTRAINT background_jobs_running_has_claim_token CHECK (((status = 'running'::text) = (claim_token IS NOT NULL))),
+    CONSTRAINT background_jobs_running_has_lease CHECK (((status = 'running'::text) = (lease_expires_at IS NOT NULL))),
+    CONSTRAINT background_jobs_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'running'::text, 'dead'::text])))
+);
+
+
+--
 -- Name: bootstrap_greeting_cache; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3032,7 +3064,7 @@ CREATE TABLE public.notification_delivery_outcomes (
     request_id uuid NOT NULL,
     recipient_digest text NOT NULL,
     workspace_id uuid NOT NULL,
-    conversation_id uuid NOT NULL,
+    conversation_id uuid,
     usage_date date NOT NULL,
     requested_email_count integer NOT NULL,
     reserved_email_count integer NOT NULL,
@@ -3045,6 +3077,58 @@ CREATE TABLE public.notification_delivery_outcomes (
     CONSTRAINT notification_delivery_outcomes_outcome_check CHECK ((outcome = ANY (ARRAY['allowed'::text, 'workspace_daily_email_cap'::text, 'conversation_dispatch_cap'::text]))),
     CONSTRAINT notification_delivery_outcomes_requested_email_count_check CHECK ((requested_email_count >= 0)),
     CONSTRAINT notification_delivery_outcomes_reserved_email_count_check CHECK ((reserved_email_count >= 0))
+);
+
+
+--
+-- Name: notification_email_suppressions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notification_email_suppressions (
+    normalized_email text NOT NULL,
+    reason text NOT NULL,
+    provider text NOT NULL,
+    provider_event_id text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT notification_email_suppressions_normalized_email_check CHECK (((normalized_email = lower(btrim(normalized_email))) AND (normalized_email <> ''::text))),
+    CONSTRAINT notification_email_suppressions_reason_check CHECK ((reason = ANY (ARRAY['hard_bounce'::text, 'complaint'::text])))
+);
+
+
+--
+-- Name: notification_recipient_confirmation_daily_usage; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notification_recipient_confirmation_daily_usage (
+    workspace_id uuid NOT NULL,
+    usage_date date NOT NULL,
+    send_count integer NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT notification_recipient_confirmation_daily_usag_send_count_check CHECK ((send_count >= 0))
+);
+
+
+--
+-- Name: notification_recipient_confirmations; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.notification_recipient_confirmations (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    normalized_email text NOT NULL,
+    state text NOT NULL,
+    grandfathered_until timestamp with time zone,
+    confirmation_sent_at timestamp with time zone,
+    confirmed_at timestamp with time zone,
+    revoked_at timestamp with time zone,
+    confirmation_generation integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT notification_recipient_confirmati_confirmation_generation_check CHECK ((confirmation_generation >= 0)),
+    CONSTRAINT notification_recipient_confirmations_check CHECK (((state = 'grandfathered'::text) = (grandfathered_until IS NOT NULL))),
+    CONSTRAINT notification_recipient_confirmations_normalized_email_check CHECK (((normalized_email = lower(btrim(normalized_email))) AND (normalized_email <> ''::text))),
+    CONSTRAINT notification_recipient_confirmations_state_check CHECK ((state = ANY (ARRAY['pending'::text, 'confirmed'::text, 'grandfathered'::text, 'revoked'::text])))
 );
 
 
@@ -3973,6 +4057,35 @@ CREATE TABLE public.visitors (
 
 
 --
+-- Name: voice_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.voice_sessions (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    workspace_id uuid NOT NULL,
+    agent_id uuid,
+    vendor text NOT NULL,
+    session_key text NOT NULL,
+    conversation_id uuid,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    started_public_session_id text,
+    started_visitor_key text,
+    start_expires_at timestamp with time zone,
+    vendor_agent_id text,
+    vendor_region text,
+    vendor_conversation_id text,
+    CONSTRAINT voice_sessions_session_key_check CHECK (((length(session_key) >= 1) AND (length(session_key) <= 256))),
+    CONSTRAINT voice_sessions_started_public_session_id_check CHECK (((started_public_session_id IS NULL) OR ((length(started_public_session_id) >= 1) AND (length(started_public_session_id) <= 256)))),
+    CONSTRAINT voice_sessions_started_visitor_key_check CHECK (((started_visitor_key IS NULL) OR ((length(started_visitor_key) >= 1) AND (length(started_visitor_key) <= 256)))),
+    CONSTRAINT voice_sessions_vendor_agent_id_check CHECK (((vendor_agent_id IS NULL) OR ((length(vendor_agent_id) >= 1) AND (length(vendor_agent_id) <= 128)))),
+    CONSTRAINT voice_sessions_vendor_check CHECK (((length(vendor) >= 1) AND (length(vendor) <= 64))),
+    CONSTRAINT voice_sessions_vendor_conversation_has_origin CHECK (((vendor_conversation_id IS NULL) OR ((vendor_region IS NOT NULL) AND (vendor_agent_id IS NOT NULL)))),
+    CONSTRAINT voice_sessions_vendor_conversation_id_check CHECK (((vendor_conversation_id IS NULL) OR ((length(vendor_conversation_id) >= 1) AND (length(vendor_conversation_id) <= 128)))),
+    CONSTRAINT voice_sessions_vendor_region_check CHECK (((vendor_region IS NULL) OR ((length(vendor_region) >= 1) AND (length(vendor_region) <= 16))))
+);
+
+
+--
 -- Name: website_crawl_jobs; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4064,7 +4177,7 @@ CREATE TABLE public.workspace_provider_credentials (
     ciphertext text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT workspace_provider_credentials_provider_check CHECK ((provider = ANY (ARRAY['openai'::text, 'openai-compatible'::text, 'gemini'::text, 'claude'::text])))
+    CONSTRAINT workspace_provider_credentials_provider_check CHECK ((provider = ANY (ARRAY['openai'::text, 'openai-compatible'::text, 'gemini'::text, 'claude'::text, 'elevenlabs'::text])))
 );
 
 
@@ -4749,6 +4862,14 @@ ALTER TABLE ONLY public.audience_pulse_snapshots
 
 ALTER TABLE ONLY public.audit_events
     ADD CONSTRAINT audit_events_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: background_jobs background_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.background_jobs
+    ADD CONSTRAINT background_jobs_pkey PRIMARY KEY (id);
 
 
 --
@@ -5648,6 +5769,38 @@ ALTER TABLE ONLY public.notification_delivery_outcomes
 
 
 --
+-- Name: notification_email_suppressions notification_email_suppressions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_email_suppressions
+    ADD CONSTRAINT notification_email_suppressions_pkey PRIMARY KEY (normalized_email);
+
+
+--
+-- Name: notification_recipient_confirmations notification_recipient_confir_workspace_id_normalized_email_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_recipient_confirmations
+    ADD CONSTRAINT notification_recipient_confir_workspace_id_normalized_email_key UNIQUE (workspace_id, normalized_email);
+
+
+--
+-- Name: notification_recipient_confirmation_daily_usage notification_recipient_confirmation_daily_usage_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_recipient_confirmation_daily_usage
+    ADD CONSTRAINT notification_recipient_confirmation_daily_usage_pkey PRIMARY KEY (workspace_id, usage_date);
+
+
+--
+-- Name: notification_recipient_confirmations notification_recipient_confirmations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_recipient_confirmations
+    ADD CONSTRAINT notification_recipient_confirmations_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: operator_mcp_access_credentials operator_mcp_access_credentials_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6184,6 +6337,22 @@ ALTER TABLE ONLY public.visitors
 
 
 --
+-- Name: voice_sessions voice_sessions_agent_vendor_session_key_uniq; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.voice_sessions
+    ADD CONSTRAINT voice_sessions_agent_vendor_session_key_uniq UNIQUE (agent_id, vendor, session_key);
+
+
+--
+-- Name: voice_sessions voice_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.voice_sessions
+    ADD CONSTRAINT voice_sessions_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: website_crawl_jobs website_crawl_jobs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6374,6 +6543,34 @@ CREATE INDEX audit_events_document_search_search_id_lookup_idx ON public.audit_e
 --
 
 CREATE INDEX audit_events_workspace_type_created_id_idx ON public.audit_events USING btree (workspace_id, event_type, created_at DESC, id DESC);
+
+
+--
+-- Name: background_jobs_dead_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX background_jobs_dead_at_idx ON public.background_jobs USING btree (dead_at) WHERE (status = 'dead'::text);
+
+
+--
+-- Name: background_jobs_live_idempotency_key_uniq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX background_jobs_live_idempotency_key_uniq ON public.background_jobs USING btree (kind, idempotency_key) WHERE ((idempotency_key IS NOT NULL) AND (dead_at IS NULL));
+
+
+--
+-- Name: background_jobs_pending_available_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX background_jobs_pending_available_at_idx ON public.background_jobs USING btree (available_at) WHERE (status = 'pending'::text);
+
+
+--
+-- Name: background_jobs_running_lease_expires_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX background_jobs_running_lease_expires_at_idx ON public.background_jobs USING btree (lease_expires_at) WHERE (status = 'running'::text);
 
 
 --
@@ -7399,6 +7596,13 @@ CREATE INDEX email_domains_workspace_idx ON public.email_domains USING btree (wo
 
 
 --
+-- Name: email_inbound_deliveries_conversation_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX email_inbound_deliveries_conversation_idx ON public.email_inbound_deliveries USING btree (conversation_id) WHERE (conversation_id IS NOT NULL);
+
+
+--
 -- Name: email_inbound_deliveries_event_mailbox_uniq; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -7417,6 +7621,13 @@ CREATE UNIQUE INDEX email_inbound_deliveries_event_unrouted_uniq ON public.email
 --
 
 CREATE INDEX email_inbound_deliveries_mailbox_created_idx ON public.email_inbound_deliveries USING btree (mailbox_id, created_at DESC);
+
+
+--
+-- Name: email_inbound_deliveries_planned_conversation_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX email_inbound_deliveries_planned_conversation_idx ON public.email_inbound_deliveries USING btree (planned_conversation_id) WHERE (planned_conversation_id IS NOT NULL);
 
 
 --
@@ -7536,6 +7747,13 @@ CREATE UNIQUE INDEX email_send_intents_provider_message_uniq ON public.email_sen
 --
 
 CREATE INDEX email_send_intents_reconcile_due_idx ON public.email_send_intents USING btree (next_reconcile_at) WHERE ((state = ANY (ARRAY['queued'::text, 'accepted'::text, 'uncertain'::text])) AND (next_reconcile_at IS NOT NULL));
+
+
+--
+-- Name: email_skill_activity_conversation_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX email_skill_activity_conversation_idx ON public.email_skill_activity USING btree (workspace_id, conversation_id) WHERE (conversation_id IS NOT NULL);
 
 
 --
@@ -8652,10 +8870,24 @@ CREATE INDEX notification_delivery_outcomes_conversation_idx ON public.notificat
 
 
 --
+-- Name: notification_delivery_outcomes_conversation_link_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX notification_delivery_outcomes_conversation_link_idx ON public.notification_delivery_outcomes USING btree (conversation_id) WHERE (conversation_id IS NOT NULL);
+
+
+--
 -- Name: notification_delivery_outcomes_workspace_day_idx; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX notification_delivery_outcomes_workspace_day_idx ON public.notification_delivery_outcomes USING btree (workspace_id, usage_date);
+
+
+--
+-- Name: notification_recipient_confirmations_workspace_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX notification_recipient_confirmations_workspace_idx ON public.notification_recipient_confirmations USING btree (workspace_id, state);
 
 
 --
@@ -8708,6 +8940,13 @@ CREATE INDEX operator_mcp_transactions_expiry_idx ON public.operator_mcp_authori
 
 
 --
+-- Name: pending_decisions_conversation_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX pending_decisions_conversation_idx ON public.pending_decisions USING btree (conversation_id);
+
+
+--
 -- Name: pending_decisions_deadline_pending_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8729,6 +8968,13 @@ CREATE UNIQUE INDEX pending_decisions_one_open_gate_idx ON public.pending_decisi
 
 
 --
+-- Name: pending_decisions_session_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX pending_decisions_session_idx ON public.pending_decisions USING btree (session_id);
+
+
+--
 -- Name: pending_decisions_workspace_pending_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8747,6 +8993,13 @@ CREATE UNIQUE INDEX revision_eval_runs_idempotency_key_key ON public.revision_ev
 --
 
 CREATE INDEX routine_action_requests_claimable_idx ON public.routine_action_requests USING btree (created_at) WHERE (status = ANY (ARRAY['pending'::text, 'in_progress'::text]));
+
+
+--
+-- Name: routine_action_requests_conversation_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX routine_action_requests_conversation_idx ON public.routine_action_requests USING btree (conversation_id) WHERE (conversation_id IS NOT NULL);
 
 
 --
@@ -8792,10 +9045,38 @@ CREATE INDEX slack_inbound_events_received_at_idx ON public.slack_inbound_events
 
 
 --
+-- Name: topic_memberships_message_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX topic_memberships_message_idx ON public.topic_memberships USING btree (message_id);
+
+
+--
 -- Name: uq_slack_channel_bindings_install_channel; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX uq_slack_channel_bindings_install_channel ON public.slack_channel_bindings USING btree (installation_id, channel_id) NULLS NOT DISTINCT;
+
+
+--
+-- Name: usage_events_message_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX usage_events_message_idx ON public.usage_events USING btree (message_id) WHERE (message_id IS NOT NULL);
+
+
+--
+-- Name: voice_sessions_conversation_id_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX voice_sessions_conversation_id_idx ON public.voice_sessions USING btree (conversation_id);
+
+
+--
+-- Name: voice_sessions_vendor_conversation_uniq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX voice_sessions_vendor_conversation_uniq ON public.voice_sessions USING btree (vendor, vendor_region, vendor_conversation_id) WHERE (vendor_conversation_id IS NOT NULL);
 
 
 --
@@ -10637,6 +10918,14 @@ ALTER TABLE public.chunks
 
 
 --
+-- Name: clarification_states clarification_states_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.clarification_states
+    ADD CONSTRAINT clarification_states_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
 -- Name: connector_configs connector_configs_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -10690,6 +10979,14 @@ ALTER TABLE ONLY public.context_identity_nonces
 
 ALTER TABLE ONLY public.context_variable_values
     ADD CONSTRAINT context_variable_values_variable_id_fkey FOREIGN KEY (variable_id) REFERENCES public.context_variables(id) ON DELETE CASCADE;
+
+
+--
+-- Name: context_variables context_variables_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.context_variables
+    ADD CONSTRAINT context_variables_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --
@@ -10922,6 +11219,14 @@ ALTER TABLE ONLY public.copilot_replay_evidence
 
 ALTER TABLE ONLY public.copilot_replay_evidence
     ADD CONSTRAINT copilot_replay_evidence_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: directive_states directive_states_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.directive_states
+    ADD CONSTRAINT directive_states_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
 
 
 --
@@ -11445,6 +11750,30 @@ ALTER TABLE ONLY public.messages
 
 
 --
+-- Name: notification_delivery_outcomes notification_delivery_outcomes_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_delivery_outcomes
+    ADD CONSTRAINT notification_delivery_outcomes_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE SET NULL;
+
+
+--
+-- Name: notification_recipient_confirmation_daily_usage notification_recipient_confirmation_daily_usa_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_recipient_confirmation_daily_usage
+    ADD CONSTRAINT notification_recipient_confirmation_daily_usa_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: notification_recipient_confirmations notification_recipient_confirmations_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.notification_recipient_confirmations
+    ADD CONSTRAINT notification_recipient_confirmations_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
 -- Name: operator_mcp_access_credentials operator_mcp_access_credentia_issued_client_metadata_snaps_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -11661,11 +11990,27 @@ ALTER TABLE ONLY public.password_reset_tokens
 
 
 --
+-- Name: pending_decisions pending_decisions_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pending_decisions
+    ADD CONSTRAINT pending_decisions_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
 -- Name: pending_decisions pending_decisions_decided_by_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.pending_decisions
     ADD CONSTRAINT pending_decisions_decided_by_user_id_fkey FOREIGN KEY (decided_by_user_id) REFERENCES public.users(id) ON DELETE SET NULL;
+
+
+--
+-- Name: pending_decisions pending_decisions_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pending_decisions
+    ADD CONSTRAINT pending_decisions_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
 
 
 --
@@ -11741,6 +12086,14 @@ ALTER TABLE ONLY public.revision_eval_runs
 
 
 --
+-- Name: routine_action_requests routine_action_requests_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routine_action_requests
+    ADD CONSTRAINT routine_action_requests_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+
+
+--
 -- Name: routine_completion_export routine_completion_export_definition_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -11762,6 +12115,14 @@ ALTER TABLE ONLY public.routine_definition
 
 ALTER TABLE ONLY public.routine_slot
     ADD CONSTRAINT routine_slot_definition_id_fkey FOREIGN KEY (definition_id) REFERENCES public.routine_definition(id) ON DELETE CASCADE;
+
+
+--
+-- Name: routine_states routine_states_session_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.routine_states
+    ADD CONSTRAINT routine_states_session_id_fkey FOREIGN KEY (session_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
 
 
 --
@@ -12130,6 +12491,30 @@ ALTER TABLE ONLY public.vector_index_work
 
 ALTER TABLE ONLY public.visitors
     ADD CONSTRAINT visitors_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: voice_sessions voice_sessions_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.voice_sessions
+    ADD CONSTRAINT voice_sessions_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE SET NULL;
+
+
+--
+-- Name: voice_sessions voice_sessions_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.voice_sessions
+    ADD CONSTRAINT voice_sessions_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE SET NULL;
+
+
+--
+-- Name: voice_sessions voice_sessions_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.voice_sessions
+    ADD CONSTRAINT voice_sessions_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

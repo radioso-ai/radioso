@@ -10,10 +10,12 @@ import {
   serializeExternalSkills,
   type InternalAgentExternalSkillsConfig,
 } from "../../../src/modules/agents/externalSkillsConfig.js";
-import { unpublishedAgentPublicIdentity } from "../../../src/modules/agents/public.js";
+import { defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../../src/modules/agents/public.js";
+import { websiteEmbedFixture } from "../../support/websiteEmbedFixture.js";
 
 const minimalAgent = (): ConversationAgent => ({
   ...unpublishedAgentPublicIdentity(),
+  voice: defaultAgentVoiceSettings(),
   id: "agent-1",
   workspaceId: "workspace-1",
   createdAt: new Date(0),
@@ -33,11 +35,12 @@ const minimalAgent = (): ConversationAgent => ({
   greetingInstruction: "",
   assistantDefaultLocale: null,
   proactiveGreetingEnabled: false,
+  mechanicsReplies: {},
   sourceScope: { mode: "all" },
   surfaceSettings: {
     authenticatedChat: { enabled: true },
     anonymousChat: { enabled: false, token: null },
-    websiteEmbed: {
+    websiteEmbed: websiteEmbedFixture({
       enabled: false,
       token: null,
       allowedOrigins: [],
@@ -46,7 +49,7 @@ const minimalAgent = (): ConversationAgent => ({
       theme: { brand: "#000", brandText: "#fff", surface: "#fff", text: "#000" },
       copy: {},
       expertOverrides: {},
-    },
+    }),
     extensions: {},
   },
   skillSettings: {},

@@ -14,19 +14,25 @@ import type {
 } from "@radioso/conversation-contract";
 
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { GENERATION_SURFACE } from "../../../shared/domain/generationSurface.js";
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
+import { addressesSurface } from "../../../shared/domain/steeringRule.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
+import { setTraceAttributes } from "../../../shared/observability/tracing/operations.js";
 import type { PageReadCapability } from "./pageRead/pageReadDecision.js";
 import { traceTurnResponseLanguage } from "./turnResponseLanguage.js";
 import {
   estimateTurnPlanningPromptTokens,
   TurnPlanService,
+  type TurnPlanRequest,
   turnPlanDirectiveClassifications,
   type TurnPlan,
   type TurnPlanDirectiveCandidate,
+  type TurnPlanStandingDirective,
+  type TurnPlanStandingInstructions,
 } from "./turnPlanService.js";
 
 /** Why a turn never ran the fused planner (recorded for observability). */
@@ -132,6 +138,13 @@ export interface TurnPlanInputs {
   directiveCandidates: readonly TurnPlanDirectiveCandidate[];
   /** Bounded, redacted visitor context the directive conditions may reference. */
   visitorContext?: Record<string, unknown>;
+  /**
+   * The custom instruction and always-on answer directives a planner-written quick
+   * reply must follow (see {@link standingInstructions}); absent means there are none.
+   */
+  standingInstructions?: TurnPlanStandingInstructions;
+  /** The answering agent, for diagnostics only. */
+  agentId?: string;
   workspaceContext: LlmCapabilityResolveInput;
   usageContext: ModelCallUsageContext;
   signal?: AbortSignal;
@@ -148,11 +161,17 @@ export interface TurnPlanInputs {
 export class TurnPlanCoordinator {
   private readonly bounds = CHAT_BEHAVIOR.turnPlanning;
 
+  private readonly quickReplyLaneEnabled: boolean;
+
   constructor(
     private readonly service: TurnPlanService,
     private readonly logger?: AppLogger,
     private readonly metrics?: Pick<MetricsRegistry, "incrementCounter" | "observeHistogram"> | null,
-  ) {}
+    /** `quickReplyLaneEnabled: false` (composition's kill switch) plans every turn without the lane. */
+    options: { quickReplyLaneEnabled?: boolean } = {},
+  ) {
+    this.quickReplyLaneEnabled = options.quickReplyLaneEnabled ?? true;
+  }
 
   async plan(input: TurnPlanInputs): Promise<TurnPlanOutcome> {
     const startedAt = Date.now();
@@ -183,7 +202,7 @@ export class TurnPlanCoordinator {
     if (input.directiveCandidates.length > this.bounds.maxDirectiveCandidates) {
       return { status: "bypassed", reason: "directive_candidates_over_bound" };
     }
-    const request = {
+    const withoutQuickReplyLane = {
       query: input.query,
       history: input.history.slice(-this.bounds.historyTailMessages),
       semanticRewriteInstructions: input.semanticRewriteInstructions,
@@ -197,20 +216,56 @@ export class TurnPlanCoordinator {
       usageContext: input.usageContext,
       signal: input.signal,
     };
-    if (estimateTurnPlanningPromptTokens(request) > this.bounds.maxEstimatedPromptTokens) {
-      return { status: "bypassed", reason: "prompt_tokens_over_budget" };
+    if (!this.quickReplyLaneEnabled) {
+      if (estimateTurnPlanningPromptTokens(withoutQuickReplyLane) > this.bounds.maxEstimatedPromptTokens) {
+        return { status: "bypassed", reason: "prompt_tokens_over_budget" };
+      }
+      return this.resolvePlan(withoutQuickReplyLane, input.signal, prepared);
     }
+    const standing = input.standingInstructions ?? { directives: [] };
+    const hasStandingInstructions = Boolean(standing.customInstruction) || standing.directives.length > 0;
+    let request: TurnPlanRequest = {
+      ...withoutQuickReplyLane,
+      quickReplyLane: { standingInstructions: standing },
+    };
+    if (estimateTurnPlanningPromptTokens(request) > this.bounds.maxEstimatedPromptTokens) {
+      // The standing instructions are the one part of the prompt the planner needs only
+      // for its own reply. When they alone push the prompt over the budget, the turn
+      // still plans, without them and without the quick-reply lane.
+      if (
+        !hasStandingInstructions
+        || estimateTurnPlanningPromptTokens(withoutQuickReplyLane) > this.bounds.maxEstimatedPromptTokens
+      ) {
+        return { status: "bypassed", reason: "prompt_tokens_over_budget" };
+      }
+      this.logger?.debug(
+        {
+          agentId: input.agentId,
+          standingDirectiveCount: standing.directives.length,
+          customInstructionPresent: Boolean(standing.customInstruction),
+        },
+        "chat.turn_planning.quick_reply_lane_off",
+      );
+      request = withoutQuickReplyLane;
+    }
+    return this.resolvePlan(request, input.signal, prepared);
+  }
 
-    if (input.signal?.aborted) {
-      throw input.signal.reason ?? new Error("chat_turn_aborted");
+  private async resolvePlan(
+    request: TurnPlanRequest,
+    signal: AbortSignal | undefined,
+    prepared: RankableRoutineCandidates | null,
+  ): Promise<TurnPlanOutcome> {
+    if (signal?.aborted) {
+      throw signal.reason ?? new Error("chat_turn_aborted");
     }
 
     const plan = await this.service.plan(request);
     // An external turn cancellation is not a planner failure. Propagate it so the
     // host stops the turn instead of starting the four staged fallback calls after
     // the planner request was aborted.
-    if (input.signal?.aborted) {
-      throw input.signal.reason ?? new Error("chat_turn_aborted");
+    if (signal?.aborted) {
+      throw signal.reason ?? new Error("chat_turn_aborted");
     }
     if (!plan) {
       return { status: "failed", reason: "invalid_or_error" };
@@ -244,6 +299,15 @@ export class TurnPlanCoordinator {
       input?.routinePreparation && input.routinePreparation.kind === "rank"
         ? input.routinePreparation.candidates.length
         : 0;
+    const quickReply = outcome.status === "planned"
+      ? { quickReplyKind: outcome.plan.quickReply.kind, quickReplyDiscarded: outcome.plan.quickReplyDiscarded === true }
+      : {};
+    if (outcome.status === "planned") {
+      setTraceAttributes({
+        "chat.turn_planning.quick_reply_kind": outcome.plan.quickReply.kind,
+        "chat.turn_planning.quick_reply_discarded": outcome.plan.quickReplyDiscarded === true,
+      });
+    }
     this.logger?.info(
       {
         outcome: metricOutcome,
@@ -251,6 +315,7 @@ export class TurnPlanCoordinator {
         latencyMs,
         routineCandidateCount,
         directiveCandidateCount: input?.directiveCandidates.length ?? 0,
+        ...quickReply,
       },
       "chat.turn_planning.outcome",
     );
@@ -359,6 +424,44 @@ export const contextualDirectiveCandidates = (input: {
     candidates.push(...byIdentity.values());
   }
   return candidates;
+};
+
+const ROUTINE_SCOPE_TAG_PREFIXES = ["routine:", "step:"] as const;
+
+const isRoutineScoped = (directive: Directive): boolean =>
+  (directive.tags ?? []).some((tag) => ROUTINE_SCOPE_TAG_PREFIXES.some((prefix) => tag.startsWith(prefix)));
+
+const standingAnswerDirectives = (directives: readonly Directive[]): TurnPlanStandingDirective[] =>
+  directives
+    .filter((directive) =>
+      directive.condition.kind === "always"
+      && addressesSurface(directive.surfaces, GENERATION_SURFACE.ANSWER)
+      && (directive.lifecycle?.kind ?? "repeatable") === "repeatable"
+      && !isRoutineScoped(directive)
+      && (directive.dependsOn ?? []).length === 0
+      && directive.coverageCriteria == null)
+    .map((directive) => ({ name: directive.name, action: directive.action }));
+
+/**
+ * What a planner-written quick reply must follow, as a composed answer would: the
+ * agent's custom instruction, and the always-on directives from one route's directive
+ * set (the direct route: a quick reply is a direct answer). Only directives that hold
+ * on every such turn qualify, so the set stays the same from turn to turn for one
+ * agent configuration: always-on, addressed to the answer, repeatable, not scoped to
+ * a routine or step (no routine is active on a quick-reply turn), not dependent on
+ * another directive, and not gated on a coverage verdict. A directive left out here
+ * that still steers a turn sends that turn to the composer, because the host uses a
+ * quick reply only when the turn's answer rules are exactly these.
+ */
+export const standingInstructions = (input: {
+  customInstruction: string | null | undefined;
+  directives: readonly Directive[];
+}): TurnPlanStandingInstructions => {
+  const customInstruction = input.customInstruction?.trim();
+  return {
+    ...(customInstruction ? { customInstruction } : {}),
+    directives: standingAnswerDirectives(input.directives),
+  };
 };
 
 const rankedMatchesFromPlan = (plan: TurnPlan): RankedRoutineMatch[] =>

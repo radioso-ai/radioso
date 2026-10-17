@@ -439,7 +439,7 @@ describe("US3 copilot proposals", () => {
       id: randomUUID(), ...input, ...proposalOriginFields(input), messageId: null, status: "pending" as const, appliedRef: null, createdAt: new Date(), updatedAt: new Date(),
     }));
     const payload = { name: "Return intake", steps: [] };
-    const routineDraft = vi.fn(async () => ({ payload, targetLabel: "Return intake", summary: "Draft routine Return intake has 2 open validation diagnostics.", diagnostics: [] }));
+    const routineDraft = vi.fn(async () => ({ payload, targetLabel: "Return intake", summary: "Draft routine Return intake has 2 open validation diagnostics.", diagnostics: [], advisories: [] }));
     const descriptors = createProposalTools({
       proposalRepository: { createProposal },
       proposalEvidence: unmeasured(),
@@ -543,7 +543,7 @@ describe("US3 copilot proposals", () => {
       payload: { kind: "edit", name: "Support intake", changes: {} },
       targetLabel: "Support intake",
       summary: "Edit the intake.",
-      diagnostics: [],
+      diagnostics: [], advisories: [],
     }));
     const descriptors = createRoutineProposalCopilotTools({
       proposalRepository: { createProposal },
@@ -1612,6 +1612,7 @@ describe("routine proposal adapter", () => {
       targetLabel: "Return intake",
       summary,
       diagnostics: [{ code: "missing_transition" }],
+      advisories: [],
     });
     const preview = await adapter.preview("workspace-1", targetRef, storedPayload) as { targetLabel: string; current: unknown; proposed: { steps: Record<string, { instruction: string }> } };
     expect(preview.targetLabel).toBe("Return intake");
@@ -2829,7 +2830,7 @@ describe("routine edit and lifecycle proposal tools", () => {
     const readVersionToken = vi.fn(async () => { order.push("token"); return "routine-version"; });
     const draftEdit = vi.fn(async () => {
       order.push("draft");
-      return { payload: { kind: "edit", name: "support-intake", changes: {} }, targetLabel: "support-intake", summary: "Edit routine support-intake: step confirm.", diagnostics: [] };
+      return { payload: { kind: "edit", name: "support-intake", changes: {} }, targetLabel: "support-intake", summary: "Edit routine support-intake: step confirm.", diagnostics: [], advisories: [] };
     });
     const { createProposal, descriptors } = proposalTools({ readVersionToken, draftEdit, preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() });
 
@@ -2848,7 +2849,7 @@ describe("routine edit and lifecycle proposal tools", () => {
     expect(result).toEqual(expect.objectContaining({
       targetType: "routine",
       targetLabel: "support-intake",
-      validation: { ok: true, diagnostics: [] },
+      validation: { ok: true, diagnostics: [], advisories: [] },
     }));
   });
 
@@ -2858,7 +2859,7 @@ describe("routine edit and lifecycle proposal tools", () => {
       payload: { kind: "edit", name: "Start a return", changes, rationale: rationale ?? "Edit routine Start a return: exposed as tool start_return." },
       targetLabel: "Start a return",
       summary: "Edit routine Start a return: exposed as tool start_return.",
-      diagnostics: [],
+      diagnostics: [], advisories: [],
     }));
     const { createProposal, descriptors } = proposalTools({ readVersionToken, draftEdit, preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() });
 
@@ -2879,7 +2880,7 @@ describe("routine edit and lifecycle proposal tools", () => {
       targetType: "routine",
       targetLabel: "Start a return",
       summary: "Edit routine Start a return: exposed as tool start_return.",
-      validation: { ok: true, diagnostics: [] },
+      validation: { ok: true, diagnostics: [], advisories: [] },
     }));
   });
 
@@ -2889,7 +2890,7 @@ describe("routine edit and lifecycle proposal tools", () => {
       payload: { kind: "edit", name: "Start a return", changes, rationale: rationale ?? "Edit routine Start a return: tool exposure off." },
       targetLabel: "Start a return",
       summary: "Edit routine Start a return: tool exposure off.",
-      diagnostics: [],
+      diagnostics: [], advisories: [],
     }));
     const { descriptors } = proposalTools({ readVersionToken, draftEdit, preview: vi.fn(), applyIfVersionMatches: vi.fn(), draft: vi.fn() });
 
@@ -3006,6 +3007,27 @@ describe("routine proposal adapter edits", () => {
     expect(reworded.summary).toBe("Edit routine support-intake: exposed as tool start_return.");
     expect(await adapter.preview(workspaceId, targetRef, reworded.payload)).toMatchObject({
       proposed: { exposure: { enabled: true, toolName: "start_return", description: "Begin a return." } },
+    });
+  });
+
+  it("surfaces a non-blocking advisory when the edited routine still has a notifying ending with no reply-to", async () => {
+    const ports = routineAdapterPorts(storedRoutine({
+      slots: [{ stableSlotId: "slot_email", key: "guest_email", type: "email", required: true, description: null, ordinal: 0 }],
+      terminals: [{ stableStepId: "done", kind: "handoff", instruction: "Hand off.", ordinal: 0 }],
+    }));
+    const adapter = await routineAdapter(ports);
+
+    const draft = await adapter.draftEdit(workspaceId, targetRef, { name: "support-intake-v2" });
+
+    expect(draft.advisories).toEqual([{
+      code: "operator_notice_reply_to_unset",
+      location: "step:done.operatorNotice.replyToSlot",
+      message: "operator notice has no reply-to: ending \"done\" notifies the team with no reply-to, so a reply to it won't reach the visitor. Set replyToSlot to the email field the team should answer (guest_email), or leave it unset on purpose.",
+    }]);
+    // Never blocking: an edit unrelated to the notice still proposes cleanly.
+    expect(await adapter.applyIfVersionMatches(workspaceId, targetRef, draft.payload, token)).toEqual({
+      outcome: "applied",
+      appliedRef: { agentId, routineId: targetRef.routineId },
     });
   });
 
@@ -3489,9 +3511,9 @@ describe("operator MCP proposal reconciliation", () => {
           targetLabel: "Return intake",
           summary: "Edit routine Return intake: rename to Returns intake.",
           // Known limitation documented on reconcileRoutineProposalPayload: the routine's real
-          // diagnostics are never persisted on the proposal row, so a recovered response cannot
-          // restate them.
-          validation: { ok: true, diagnostics: [] },
+          // diagnostics and advisories are never persisted on the proposal row, so a recovered
+          // response cannot restate them.
+          validation: { ok: true, diagnostics: [], advisories: [] },
         },
       });
   });

@@ -1,12 +1,14 @@
 import { describe, expect, it, vi, type Mock } from "vitest";
 
-import type { ActionRequestRecord } from "../../../src/db/repositories/actionRequestRepository.js";
-import { ActionDispatcher, ActionHandlerRegistry } from "../../../src/modules/chat/services/actions/actionDispatcher.js";
+import { ActionHandlerRegistry } from "../../../src/modules/chat/services/actions/actionDispatcher.js";
+import { ACTION_DISPATCH_JOB, createActionDispatchJobHandler } from "../../../src/modules/chat/services/actions/actionDispatchJob.js";
 import {
   CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE,
   ConversationTransferNoticeActionHandler,
   transferNoticeRequest,
 } from "../../../src/modules/handoff/public.js";
+import { BackgroundJobRuntime } from "../../../src/shared/background-jobs/index.js";
+import { InMemoryBackgroundJobStore } from "../../support/inMemoryBackgroundJobStore.js";
 
 const transfer = {
   accountId: "account-1",
@@ -273,30 +275,9 @@ describe("ConversationTransferNoticeActionHandler", () => {
   });
 });
 
-describe("transfer notice through the action worker", () => {
+describe("transfer notice through the action dispatch job runtime", () => {
   it("marks the notice skipped when its configured mail driver does not dispatch", async () => {
-    const queued: ActionRequestRecord[] = [];
-    const outbox = {
-      enqueue: vi.fn(async (input: NonNullable<ReturnType<typeof transferNoticeRequest>>) => {
-        queued.push({
-          id: `request-${queued.length + 1}`,
-          type: input.type,
-          payload: input.payload,
-          workspaceId: input.workspaceId,
-          accountId: input.accountId,
-          conversationId: input.conversationId,
-          idempotencyKey: input.idempotencyKey,
-          status: "in_progress",
-          attempts: 1,
-          skillName: null,
-        });
-        return { id: `request-${queued.length}`, duplicate: false };
-      }),
-      claimPending: vi.fn(async () => queued.splice(0)),
-      markDispatched: vi.fn(async () => true),
-      markSkipped: vi.fn(async () => true),
-      recordFailure: vi.fn(async () => "failed" as const),
-    };
+    const store = new InMemoryBackgroundJobStore({ now: () => new Date() });
     const mail = { send: vi.fn<SendMail>(async () => ({ dispatched: false, driver: "log" })) };
     const handler = new ConversationTransferNoticeActionHandler({
       users: { findById: async (userId: string) => (userId === "user-fox" ? { email: "fox@example.com" } : { email: "dana@example.com" }) },
@@ -311,17 +292,33 @@ describe("transfer notice through the action worker", () => {
       mail,
       logger: recordingLogger(),
     });
-    const worker = new ActionDispatcher(
-      outbox,
-      new ActionHandlerRegistry([{ type: CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE, handler }]),
-    );
+    const runtime = new BackgroundJobRuntime({
+      store,
+      handlers: [createActionDispatchJobHandler(new ActionHandlerRegistry([{ type: CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE, handler }]))],
+      logger: { debug: () => undefined, warn: () => undefined, error: () => undefined },
+    });
 
-    await outbox.enqueue(transferNoticeRequest(transfer)!);
-    const outcome = await worker.dispatchPending();
+    const request = transferNoticeRequest(transfer)!;
+    await store.insert({
+      kind: ACTION_DISPATCH_JOB.kind,
+      onDuplicateKey: "ignore",
+      idempotencyKey: request.idempotencyKey,
+      payload: {
+        type: request.type,
+        payload: request.payload,
+        workspaceId: request.workspaceId ?? null,
+        accountId: request.accountId ?? null,
+        conversationId: request.conversationId ?? null,
+        idempotencyKey: request.idempotencyKey ?? null,
+        skillName: null,
+      },
+    });
+    const outcome = await runtime.drain({ maxJobs: 1 });
 
-    expect(outcome).toEqual({ dispatched: 0, retried: 0, failed: 0, skipped: 1 });
+    expect(outcome).toMatchObject({ claimed: 1, completed: 0, skipped: 1, retried: 0, deadLettered: 0 });
     expect(mail.send).toHaveBeenCalledWith(expect.objectContaining({ to: "fox@example.com", kind: "conversation_transfer" }));
-    expect(outbox.markSkipped).toHaveBeenCalledWith("request-1", "mail_not_dispatched:driver=log", 1);
-    expect(outbox.markDispatched).not.toHaveBeenCalled();
+    // The generic store has no distinct "skipped" row state: the job completes (is deleted), the
+    // same way `ActionDispatcher`'s old `markSkipped` left nothing dispatched or retried.
+    expect(store.rows.size).toBe(0);
   });
 });

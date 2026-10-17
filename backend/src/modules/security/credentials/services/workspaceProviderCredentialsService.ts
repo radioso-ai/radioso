@@ -4,15 +4,13 @@ import {
 } from "../../../../shared/infra/crypto/fieldEncryption.js";
 import { badRequest, AppError } from "../../../../shared/domain/errors.js";
 import type {
+  WorkspaceCredentialProvider,
   WorkspaceProviderCredentialSummary,
   WorkspaceProviderCredentialsRepositoryPort,
 } from "../../../../db/repositories/workspaceProviderCredentialsRepository.js";
 import type { AuditPort } from "../../../audit/contracts/index.js";
 import type { AppLogger } from "../../../../shared/observability/logger.js";
-import {
-  ProviderConfigurationError,
-  type LlmProviderName,
-} from "../../../../shared/infra/llm/providerTypes.js";
+import { ProviderConfigurationError } from "../../../../shared/infra/llm/providerTypes.js";
 
 const KEY_NAME = "CONNECTOR_ENCRYPTION_KEY";
 
@@ -23,7 +21,7 @@ export interface WorkspaceCredentialsEncryptionConfig {
 
 interface SetApiKeyInput {
   workspaceId: string;
-  provider: LlmProviderName;
+  provider: WorkspaceCredentialProvider;
   apiKey: string;
   actor: { accountId: string };
 }
@@ -43,7 +41,8 @@ class EncryptionNotConfiguredError extends AppError {
 }
 
 export class WorkspaceProviderCredentialsService {
-  private decryptErrorListener: ((error: unknown, provider: LlmProviderName) => void) | undefined;
+  private decryptErrorListener: ((error: unknown, provider: WorkspaceCredentialProvider) => void) | undefined;
+  private changeListener: ((change: { workspaceId: string; provider: WorkspaceCredentialProvider }) => Promise<void>) | undefined;
 
   constructor(
     private readonly repository: WorkspaceProviderCredentialsRepositoryPort,
@@ -56,8 +55,27 @@ export class WorkspaceProviderCredentialsService {
     return typeof this.encryption.key === "string" && this.encryption.key.length > 0;
   }
 
-  onDecryptError(listener: (error: unknown, provider: LlmProviderName) => void): void {
+  onDecryptError(listener: (error: unknown, provider: WorkspaceCredentialProvider) => void): void {
     this.decryptErrorListener = listener;
+  }
+
+  /**
+   * Called after a key is stored or removed, so what reads the key's presence can drop what it
+   * cached from it. Best effort: a listener that fails is logged and never fails the write.
+   */
+  onChange(listener: (change: { workspaceId: string; provider: WorkspaceCredentialProvider }) => Promise<void>): void {
+    this.changeListener = listener;
+  }
+
+  private async notifyChange(workspaceId: string, provider: WorkspaceCredentialProvider): Promise<void> {
+    try {
+      await this.changeListener?.({ workspaceId, provider });
+    } catch (error) {
+      this.logger?.warn(
+        { workspaceId, provider, errorClass: error instanceof Error ? error.name : typeof error },
+        "Workspace credential change listener failed",
+      );
+    }
   }
 
   async setApiKey(input: SetApiKeyInput): Promise<void> {
@@ -104,12 +122,14 @@ export class WorkspaceProviderCredentialsService {
       }
       throw error;
     }
+    await this.notifyChange(input.workspaceId, input.provider);
   }
 
-  async getApiKey(workspaceId: string, provider: LlmProviderName): Promise<string | undefined> {
+  async getApiKey(workspaceId: string, provider: WorkspaceCredentialProvider): Promise<string | undefined> {
     const record = await this.repository.findByWorkspaceAndProvider(workspaceId, provider);
     if (!record) {
-      // No stored workspace credential — callers fall back to the env-default key.
+      // No stored workspace credential. A model provider caller may fall back to its deployment
+      // key; a voice vendor has none, so its caller starts no session.
       return undefined;
     }
     if (!this.isEncryptionConfigured()) {
@@ -143,14 +163,14 @@ export class WorkspaceProviderCredentialsService {
   }
 
   /** Presence only. Reads no plaintext, so it works without the master key. */
-  async hasCredentials(workspaceId: string, provider: LlmProviderName): Promise<boolean> {
+  async hasCredentials(workspaceId: string, provider: WorkspaceCredentialProvider): Promise<boolean> {
     const record = await this.repository.findByWorkspaceAndProvider(workspaceId, provider);
     return record !== null;
   }
 
   async removeApiKey(
     workspaceId: string,
-    provider: LlmProviderName,
+    provider: WorkspaceCredentialProvider,
     actor: CredentialActor,
   ): Promise<boolean> {
     const removed = await this.repository.remove(workspaceId, provider);
@@ -162,6 +182,7 @@ export class WorkspaceProviderCredentialsService {
         eventStatus: "success",
         provider,
       });
+      await this.notifyChange(workspaceId, provider);
     }
     return removed;
   }
@@ -175,7 +196,7 @@ export class WorkspaceProviderCredentialsService {
     workspaceId: string;
     eventType: string;
     eventStatus: "success" | "failure";
-    provider: LlmProviderName;
+    provider: WorkspaceCredentialProvider;
     reason?: string;
   }): Promise<void> {
     try {

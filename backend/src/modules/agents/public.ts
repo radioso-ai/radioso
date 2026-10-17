@@ -37,6 +37,21 @@ export {
   rotatedPublicIdInput,
 } from "./services/agentPublicIdentity.js";
 export {
+  agentVoiceSettingsInputSchema,
+  agentVoiceSettingsSchema,
+  defaultAgentVoiceSettings,
+  readStoredAgentVoiceSettings,
+  type AgentVoiceSettings,
+  type VoiceBridgeStyle,
+} from "./voiceSettings.js";
+export {
+  AGENT_MECHANICS_REPLIES_MAX_LOCALES,
+  agentMechanicsRepliesSchema,
+  defaultAgentMechanicsReplies,
+  readStoredAgentMechanicsReplies,
+  type AgentMechanicsReplies,
+} from "./mechanicsReplies.js";
+export {
   DEFAULT_CONTACT_REQUEST_DELIVERY,
   hasConfiguredContactDestination,
   readNotifyContactDelivery,
@@ -137,3 +152,4 @@ export {
   type NormalizedAuthoredDirectiveInput,
 } from "./authoredDirectives.js";
 export * from "./copilotPrimitiveRegistry.js";
+export { changedAgentProposalFields, storedAgentFieldReaders } from "./proposalFence.js";

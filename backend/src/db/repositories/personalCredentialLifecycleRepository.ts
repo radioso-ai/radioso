@@ -17,13 +17,22 @@ interface InvalidatedCredential {
 }
 
 /**
+ * Runs inside a tenancy deletion's transaction, just before its workspaces go, for the rows a
+ * workspace's cascade leaves behind. Composition supplies it.
+ */
+type WorkspaceDeletionEraser = (trx: Db, workspaceIds: readonly string[]) => Promise<void>;
+
+/**
  * The sole storage adapter allowed to combine tenancy deletion and API
  * credential invalidation. It keeps lifecycle domains independent of one
  * another while ensuring a committed parent deletion can never leave an
  * active personal credential behind.
  */
 export class PersonalCredentialLifecycleRepository implements PersonalCredentialLifecyclePort {
-  constructor(private readonly db: Db) {}
+  constructor(
+    private readonly db: Db,
+    private readonly eraseWorkspaceData: WorkspaceDeletionEraser = async () => undefined,
+  ) {}
 
   async removeMembership(input: {
     accountId: string;
@@ -83,6 +92,7 @@ export class PersonalCredentialLifecycleRepository implements PersonalCredential
         ...(input.auditEvent ? [this.contextualize(input.auditEvent)] : []),
       ]);
       await this.deleteOperatorMcpWorkspaceHistory(trx, input.workspaceId);
+      await this.eraseWorkspaceData(trx, [input.workspaceId]);
       const deleted = await trx.deleteFrom("workspaces")
         .where("id", "=", input.workspaceId)
         .where("account_id", "=", input.accountId)
@@ -113,6 +123,8 @@ export class PersonalCredentialLifecycleRepository implements PersonalCredential
       // NULL before audit_events.account_id does, avoiding Postgres' competing
       // account->workspace and account->audit cascade paths.
       await this.deleteOperatorMcpAccountHistory(trx, input.accountId);
+      const workspaces = await trx.selectFrom("workspaces").select("id").where("account_id", "=", input.accountId).execute();
+      await this.eraseWorkspaceData(trx, workspaces.map((workspace) => workspace.id));
       await trx.deleteFrom("workspaces").where("account_id", "=", input.accountId).execute();
       const deleted = await trx.deleteFrom("accounts").where("id", "=", input.accountId).executeTakeFirst();
       return Number(deleted.numDeletedRows) === 1;

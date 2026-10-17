@@ -6,7 +6,8 @@ import type {
   AudiencePulseSnapshotStore,
 } from "../../modules/audiencePulse/contracts.js";
 import type { AudiencePulseStoredReport } from "../../modules/audiencePulse/domain/report.js";
-import { currentTimestamp, toSanitizedJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { ConversationDataEraser, ConversationErasureScope } from "../../shared/domain/conversationDataErasure.js";
+import { currentTimestamp, toJsonb, toSanitizedJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 interface AudiencePulseSnapshotRow {
@@ -121,5 +122,32 @@ export class AudiencePulseSnapshotRepository implements AudiencePulseSnapshotSto
       .where("revision", "=", input.expectedRevision)
       .executeTakeFirst();
     return Number(result.numDeletedRows) === 1;
+  }
+}
+
+/**
+ * Discards the workspace's Audience Pulse report when it was built on an erased conversation. The
+ * report's recommendations quote visitors' questions, drawn from the raw question text the
+ * narrative call reads. A report whose sources no longer all rehydrate is already invalid, and the
+ * read path discards it on the next read; erasure discards it at once instead of leaving that text
+ * until someone opens Audience Pulse. The operator regenerates it from what remains. A workspace's
+ * report cascades with the workspace.
+ */
+export class AudiencePulseSnapshotEraser implements ConversationDataEraser {
+  readonly owner = "audience-pulse";
+
+  constructor(private readonly db: Db) {}
+
+  async erase(scope: ConversationErasureScope): Promise<number> {
+    if (scope.kind === "workspace" || scope.conversationIds.length === 0) {
+      return 0;
+    }
+    const result = await this.db
+      .deleteFrom("audience_pulse_snapshots")
+      .where("workspace_id", "=", scope.workspaceId)
+      .where((eb) => eb.or(scope.conversationIds.map((conversationId) =>
+        eb("prompt_evidence_refs", "@>", toJsonb([{ conversationId }])))))
+      .executeTakeFirst();
+    return Number(result.numDeletedRows);
   }
 }

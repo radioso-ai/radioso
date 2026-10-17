@@ -136,7 +136,7 @@ describe("routineEndingEffectsForTurn", () => {
       },
     });
 
-    expect(effects.ownershipHandoff).toEqual({ reason: "routine_handoff", routineId: "routine_1", stepId: "human" });
+    expect(effects.ownershipHandoff).toEqual({ reason: "routine_handoff", routineId: "routine_1", stepId: "human", collectedSlotCount: 1 });
     expect(effects.actions).toEqual([{
       type: HANDOFF_NOTIFY_ACTION_TYPE,
       payload: {
@@ -162,7 +162,7 @@ describe("routineEndingEffectsForTurn", () => {
       },
     });
 
-    expect(effects.ownershipHandoff).toEqual({ reason: "routine_handoff", routineId: "routine_1", stepId: "human" });
+    expect(effects.ownershipHandoff).toEqual({ reason: "routine_handoff", routineId: "routine_1", stepId: "human", collectedSlotCount: 1 });
     expect(effects.actions).toEqual([
       existingAction,
       {
@@ -190,7 +190,7 @@ describe("routineEndingEffectsForTurn", () => {
       },
     });
 
-    expect(effects.ownershipHandoff).toEqual({ reason: "routine_stuck", routineId: "routine_1", stepId: "ask_contact" });
+    expect(effects.ownershipHandoff).toEqual({ reason: "routine_stuck", routineId: "routine_1", stepId: "ask_contact", collectedSlotCount: 1 });
     expect(effects.actions).toEqual([{
       type: HANDOFF_NOTIFY_ACTION_TYPE,
       payload: {
@@ -240,6 +240,18 @@ describe("routineEndingEffectsForTurn", () => {
         operatorNotice: { routineId: "routine_1", stepId: "human", terminalKind: "handoff" },
       })).toBe(preNoticePayload());
     });
+  });
+
+  it("counts the declared slots a hand-off ending held a value for, whatever their keys or values", () => {
+    const handoffFrom = (collected?: Record<string, unknown>) => routineEndingEffectsForTurn({
+      session,
+      workspaceId: "ws_1",
+      turn: { handoff: { routineId: "routine_1", stepId: "human", terminalKind: "handoff", ...(collected ? { collected } : {}) } },
+    }).ownershipHandoff;
+
+    expect(handoffFrom({ guest: "Ada", nights: 3, consent: false })).toMatchObject({ collectedSlotCount: 3 });
+    expect(handoffFrom({})).toMatchObject({ collectedSlotCount: 0 });
+    expect(handoffFrom()).toMatchObject({ collectedSlotCount: 0 });
   });
 
   it("changes nothing when the turn ended no routine", () => {
@@ -314,7 +326,7 @@ describe("a stored hand-off without a notice, from definition to effects", () =>
     const effects = routineEndingEffectsForTurn({ session, workspaceId: "ws_1", turn: result });
 
     expect(result.handoff).toMatchObject({ routineId: compiled.id, stepId: "reception" });
-    expect(effects.ownershipHandoff).toEqual({ reason: "routine_handoff", routineId: compiled.id, stepId: "reception" });
+    expect(effects.ownershipHandoff).toEqual({ reason: "routine_handoff", routineId: compiled.id, stepId: "reception", collectedSlotCount: 1 });
     expect(effects.actions?.map((action) => action.type)).toEqual([HANDOFF_NOTIFY_ACTION_TYPE]);
     expect(JSON.stringify(effects.actions?.[0]?.payload)).toBe(JSON.stringify({
       conversationId: "conv_1",

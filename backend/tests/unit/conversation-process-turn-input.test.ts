@@ -28,7 +28,8 @@ import type {
   DirectiveSteerInput,
   DirectiveSteeringResult,
 } from "../../src/modules/directives/public.js";
-import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { websiteEmbedFixture } from "../support/websiteEmbedFixture.js";
 
 const inMemoryDirectiveStateStore = (): DirectiveStateStore => {
   const rows = new Map<string, DirectiveFiringState>();
@@ -74,6 +75,7 @@ const message = (overrides: Partial<MessageRecord> = {}): MessageRecord => ({
 
 const agent = (): AgentRecord => ({
   ...unpublishedAgentPublicIdentity(),
+  voice: defaultAgentVoiceSettings(),
   id: "agent_1",
   workspaceId: "workspace_1",
   name: "Support",
@@ -101,11 +103,12 @@ const agent = (): AgentRecord => ({
   greetingInstruction: "",
   assistantDefaultLocale: "en",
   proactiveGreetingEnabled: false,
+  mechanicsReplies: {},
   chatModelOverride: null,
   surfaceSettings: {
     authenticatedChat: { enabled: true },
     anonymousChat: { enabled: false, token: null },
-    websiteEmbed: {
+    websiteEmbed: websiteEmbedFixture({
       enabled: false,
       token: null,
       allowedOrigins: [],
@@ -119,7 +122,7 @@ const agent = (): AgentRecord => ({
       },
       copy: {},
       expertOverrides: {},
-    },
+    }),
     extensions: {},
   },
   createdAt: new Date("2026-01-01T00:00:00.000Z"),
@@ -936,6 +939,10 @@ describe("directive lifecycle memory (#865)", () => {
           framing: { isIdentityQuestion: false },
           routineRankings: [],
           directiveClassifications: [{ name: "refund-intro", matched: true, confidence: 0.9 }],
+          requestPresent: false,
+          openQuestion: false,
+          rewritePresent: false,
+          quickReply: { kind: "none", text: "" },
         },
         prepared: null,
       }),
@@ -1016,6 +1023,10 @@ describe("directive lifecycle memory (#865)", () => {
             { name: 'route:["direct","shared-name"]', matched: true, confidence: 0.9 },
             { name: 'route:["retrieval","shared-name"]', matched: false, confidence: 0.9 },
           ],
+          requestPresent: false,
+          openQuestion: false,
+          rewritePresent: false,
+          quickReply: { kind: "none", text: "" },
         },
         prepared: null,
       }),

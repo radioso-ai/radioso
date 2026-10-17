@@ -7,7 +7,7 @@ export const BROWSER_FRAME_MAX_BYTES = 4 * 1024;
 export const INVALIDATION_KINDS = [
   "document.status_changed", "crawl.status_changed", "crawl.progress",
   "conversation.created", "conversation.turn_committed", "conversation.contact_delivery_changed",
-  "conversation.ownership_changed", "search.created", "hitl.decision_created", "hitl.decision_resolved",
+  "conversation.ownership_changed", "conversation.deleted", "search.created", "hitl.decision_created", "hitl.decision_resolved",
   "quality.feedback_changed", "quality.triage_changed",
 ] as const;
 

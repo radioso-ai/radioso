@@ -184,6 +184,7 @@ const envSchema = z.object({
   RADIOSO_EDITION: z.enum(["oss", "enterprise"]).default("oss"),
   ...realtimeEnvShape,
   ...emailChannelEnvShape,
+  NOTIFICATION_RECIPIENT_CONFIRMATION_ENABLED: booleanish(true),
   GOOGLE_CLOUD_PROJECT: emptyStringToUndefined(z.string().min(1)),
   RADIOSO_CDN_URL_MAP: emptyStringToUndefined(z.string().min(1)),
   DATABASE_URL: z.string().min(1),
@@ -274,6 +275,16 @@ const envSchema = z.object({
   // more frequent than turn creation in normal use, so it gets its own, more
   // generous budget on the same window rather than sharing the turn-creation cap.
   PUBLIC_CHAT_SESSION_READ_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(120),
+  // A voice session start opens a session on the workspace's own vendor account, which the vendor
+  // bills, so it has its own small budgets: per visitor session (its signed public session id and
+  // request source together) and per workspace.
+  PUBLIC_VOICE_SESSION_START_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(3),
+  PUBLIC_VOICE_SESSION_START_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(600_000),
+  // The same budget per request source, across every public session it holds: minting a fresh
+  // public session for each start refills the session budget, never this one.
+  PUBLIC_VOICE_SESSION_START_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(3),
+  PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS: z.coerce.number().int().positive().default(30),
+  PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
   // Agent-channel turns spend provider and retrieval budget. A single credential
   // cannot exhaust a workspace, and credential rotation cannot evade the shared cap.
   AGENT_CHANNEL_CHAT_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
@@ -318,10 +329,13 @@ const envSchema = z.object({
   // Deliberately independent of the WORKER_DISPATCH_DRIVER=cloud-tasks requiredness
   // check below: unlike document/crawl dispatch, action-outbox push is an optional
   // low-latency accelerant, not the only drain path (the interval-loop poller and the
-  // recovery sweep both drain without it). Leaving this unset degrades to
-  // NoopActionDrainDispatcher rather than failing startup, so the backend can deploy
-  // ahead of the Terraform queue/scheduler that provisions it.
+  // recovery sweep both drain without it). Leaving this unset degrades to a no-op wake
+  // rather than failing startup, so the backend can deploy ahead of the Terraform
+  // queue/scheduler that provisions it.
   ACTION_DISPATCH_TASK_QUEUE_NAME: emptyStringToUndefined(z.string().min(1)),
+  // Same optional shape as the action queue: unset, a background job waits for the worker's poll
+  // loop or the scheduled sweep instead of being pushed, and startup never fails on it.
+  BACKGROUND_JOB_TASK_QUEUE_NAME: emptyStringToUndefined(z.string().min(1)),
   WORKER_TASKS_SERVICE_URL: emptyStringToUndefined(z.string().url()),
   WORKER_TASKS_CRAWL_SERVICE_URL: emptyStringToUndefined(z.string().url()),
   WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: emptyStringToUndefined(z.string().email()),
@@ -346,6 +360,9 @@ const envSchema = z.object({
   // agrees with the answer envelope head. Defaults on for the window; flip off
   // to stop the shadow call entirely once its cost is no longer wanted.
   ANSWER_COVERAGE_SHADOW_ASSESSOR_ENABLED: booleanish(true),
+  // The quick-reply lane's rollback lever. "off" plans every turn without the lane, so
+  // the planner prompt carries no quick-reply wording and every direct turn is composed.
+  CHAT_QUICK_REPLY_LANE: emptyStringToDefault(z.enum(["on", "off"]), "on"),
   APP_BASE_URL: emptyStringToUndefined(z.string().url()),
   GOOGLE_MAIL_OAUTH_CLIENT_ID: emptyStringToUndefined(z.string().min(1)),
   GOOGLE_MAIL_OAUTH_CLIENT_SECRET: emptyStringToUndefined(z.string().min(1)),

@@ -59,9 +59,9 @@ facet rather than mixing generations in the same clustering space; a
 version is excluded from clustering and counted as unclassified instead.
 
 Extraction is dispatched from a durable job queue, `facet_extraction_jobs`,
-one row per message, claimed by a polling worker
-(`FacetExtractionWorker`) rather than a request-triggered call — no chat
-turn, retrieval call, or dashboard load waits on it.
+one row per message, claimed through the shared background-job runtime
+(`FacetExtractionBackgroundJobStore`) rather than a request-triggered call —
+no chat turn, retrieval call, or dashboard load waits on it.
 
 ## Embedding
 

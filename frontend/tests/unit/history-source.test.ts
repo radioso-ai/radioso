@@ -61,6 +61,17 @@ describe('history source formatting', () => {
     ])
   })
 
+  it('labels voice sessions instead of showing the raw source channel', () => {
+    const input = conversation({
+      sourceChannel: 'voice',
+      channelContext: { provider: 'voice', vendor: 'elevenlabs', sessionKey: 'conv_abc', transport: 'web' },
+    })
+
+    expect(getConversationSourceBadge(input)?.label).toBe('Voice')
+    expect(formatConversationSource(input)).toBe('Voice')
+    expect(formatConversationLocation(input).text).toBe('Voice session')
+  })
+
   it('falls back to the existing source-channel behavior when channel context is absent', () => {
     expect(formatConversationSource(conversation())).toBeNull()
     expect(formatConversationSource(conversation({ sourceChannel: 'anonymous' }))).toBe('Anonymous public chat')

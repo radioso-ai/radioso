@@ -49,6 +49,7 @@ import {
 import type { PendingDecisionRecord } from "../../src/db/repositories/pendingDecisionRepository.js";
 import { ModelInferencePipelineService } from "../../src/shared/infra/llm/modelInferencePipeline.js";
 import { LlmResponseLanguageDetector } from "../../src/shared/services/responseLanguageDetector.js";
+import { LlmHandoffWaitingMessageGenerator } from "../../src/shared/services/handoffWaitingMessageGenerator.js";
 import { ChatActionSuggestionRegistry } from "../../src/modules/chat/services/actionSuggestions/chatActionSuggestionRegistry.js";
 import { ChatActionSuggestionService } from "../../src/modules/chat/services/actionSuggestions/chatActionSuggestionService.js";
 import { ChatSessionPreparer } from "../../src/modules/chat/services/chatSessionPreparer.js";
@@ -1034,6 +1035,97 @@ describe("chat service streaming", () => {
     expect(messages.some((message) => message.role === "assistant")).toBe(false);
   });
 
+  it("cancels a non-streamed blank decline's composition when a newer turn supersedes it", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
+    const usageEvents: ModelUsageEvent[] = [];
+    const usageRecorder: UsageEventRecorder = {
+      async recordEmbedding() {},
+      async recordModelCall(event) {
+        usageEvents.push(event);
+      },
+    };
+    const declineSignals: Array<AbortSignal | undefined> = [];
+    let declineStarted!: () => void;
+    const declinePending = new Promise<void>((resolve) => {
+      declineStarted = resolve;
+    });
+    // The provider settles the decline call only when its turn cancels it, and reports
+    // no usage for it. A call without a signal fails at once rather than hanging.
+    const declineClient: TextGenerationClient = {
+      metadata: { capability: "chat", provider: "openai", model: "gpt-decline" },
+      complete(request) {
+        declineSignals.push(request.signal);
+        declineStarted();
+        const { signal } = request;
+        if (!signal) {
+          return Promise.reject(new Error("decline call carries no cancel signal"));
+        }
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener("abort", () => reject(signal.reason as Error), { once: true });
+        });
+      },
+      stream: vi.fn(),
+    };
+    const blankDecline = JSON.stringify({
+      coverage: "unanswered_insufficient_evidence",
+      requestFocus: "the known topic",
+      outcome: "no_support",
+      answer: "",
+      v: 2,
+      claims: [],
+      suggestions: [],
+      grounding: "degraded",
+    });
+    let groundedCalls = 0;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        groundedCalls += 1;
+        return groundedCalls === 1
+          ? blankDecline
+          : groundingEnvelope("The guide covers known topic details.[[1]]", "grounded");
+      },
+      async *streamAnswer() {
+        yield "unused";
+      },
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController(asChatActivityPipeline(createGroundedPipeline()) as never),
+      chatGateway,
+      createAuditService(),
+      new ModelFallbackReplyComposer(new ModelInferencePipelineService(declineClient, usageRecorder)),
+    );
+
+    const first = service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: conversation.id,
+      query: "known topic",
+      stream: false,
+    });
+    await declinePending;
+    const latest = service.answer({
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: conversation.id,
+      query: "known topic again",
+      stream: false,
+    });
+
+    await expect(first).rejects.toBeInstanceOf(ChatTurnSupersededError);
+    await expect(latest).resolves.toMatchObject({ answer: expect.stringContaining("known topic details") });
+    expect(declineSignals).toHaveLength(1);
+    expect(declineSignals[0]?.aborted).toBe(true);
+    // The abandoned call is not retried, and carries no usage beyond what the provider reported.
+    expect(usageEvents).toEqual([
+      expect.objectContaining({ status: "failed", outputTokens: 0, usageQuality: "estimated" }),
+    ]);
+    expect(usageEvents[0]?.idempotencyKey).toContain("blank_decline:attempt:1");
+  });
+
   it("records both the aborted gate-bound candidate and focused decline in usage and the turn rollup", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();
@@ -1629,6 +1721,71 @@ describe("chat service streaming", () => {
     expect(handoffWaitingMessageGenerator.generate).not.toHaveBeenCalled();
     expect(chatGateway.answer).not.toHaveBeenCalled();
     expect(reservation.commit).not.toHaveBeenCalled();
+  });
+
+  it("lets a newer turn cancel a waiting message whose generation stalls, instead of queueing behind it", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const existingConversation = await conversationRepository.create({ workspaceId: "workspace-1" });
+    const { usageLimitPolicy } = createUsageLimitPolicy();
+    // The provider: the first call answers only once its signal aborts; any later call answers at once.
+    const inference = {
+      complete: vi.fn(async (request: { signal?: AbortSignal }) => {
+        if (inference.complete.mock.calls.length > 1) {
+          return { text: "A teammate is joining, please wait." };
+        }
+        return new Promise<{ text: string }>((resolve) => {
+          request.signal?.addEventListener("abort", () => resolve({ text: "Too late." }), { once: true });
+        });
+      }),
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController({ interpret: vi.fn(), runInterpreted: vi.fn(), runWithoutRetrieval: vi.fn() } as never),
+      { answer: vi.fn(async () => "Normal answer."), streamAnswer: vi.fn(async function* () { yield "Normal answer."; }) },
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined,
+      undefined,
+      usageLimitPolicy,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      createConversationEngine(),
+      undefined,
+      undefined,
+      { load: vi.fn(async () => humanOwnedRecord(existingConversation.id)) },
+      new LlmHandoffWaitingMessageGenerator(inference as never),
+    );
+    const turn = async (query: string): Promise<ChatStreamEvent[]> => {
+      const events: ChatStreamEvent[] = [];
+      for await (const event of service.streamAnswer({
+        workspaceId: "workspace-1",
+        conversationId: existingConversation.id,
+        query,
+        stream: true,
+        supersession: "latest_input_wins",
+      })) {
+        events.push(event);
+      }
+      return events;
+    };
+
+    const first = turn("hello?");
+    await vi.waitFor(() => expect(inference.complete).toHaveBeenCalledTimes(1));
+    const second = turn("hello, is anyone there?");
+    const settled = await Promise.race([
+      second.then(() => "answered" as const),
+      new Promise<"blocked">((resolve) => setTimeout(() => resolve("blocked"), 500)),
+    ]);
+
+    expect(settled).toBe("answered");
+    expect((await first).at(-1)).toMatchObject({ type: "cancelled", reason: "superseded" });
+    expect((await second).at(-1)).toMatchObject({ type: "done", answer: "A teammate is joining, please wait." });
   });
 
   it("emits only a terminal ownership ack for streamed visitor turns while the conversation is human-owned", async () => {
@@ -2393,6 +2550,7 @@ describe("chat service streaming", () => {
         terminal: { kind: "handoff" as const, stepId: "escalate", collected: { order: "A-17" } },
         handoff: { routineId: "refund-flow", stepId: "escalate", terminalKind: "handoff" as const, collected: { order: "A-17" } },
       },
+      // Stored without the reply-only slot count.
       ownershipHandoff: { reason: "routine_handoff", routineId: "refund-flow", stepId: "escalate" },
       notifyType: HANDOFF_NOTIFY_ACTION_TYPE,
       reason: "routine_handoff",
@@ -4118,6 +4276,71 @@ describe("chat service streaming", () => {
     expect(persisted.actions ?? []).not.toContainEqual(expect.objectContaining({ type: HANDOFF_NOTIFY_ACTION_TYPE }));
   });
 
+  const blankDeclineGateway = (outcome: "no_support" | "out_of_scope"): ChatGateway => {
+    const raw = JSON.stringify({
+      coverage: "unanswered_insufficient_evidence",
+      requestFocus: "the known topic",
+      outcome,
+      answer: "",
+      v: 2,
+      claims: [],
+      suggestions: [],
+      grounding: "degraded",
+    });
+    return {
+      async answer() {
+        return raw;
+      },
+      async *streamAnswer() {
+        yield raw;
+      },
+    };
+  };
+
+  const persistBlankDeclineTurn = async (input: {
+    outcome: "no_support" | "out_of_scope";
+    fallbackComposer: FallbackReplyComposer;
+    stream: boolean;
+  }) => {
+    const { service, assistantTurnPersistence } = await createRetrievalHandoffTestService({
+      handoffOnRetrievalMiss: true,
+      retrievalPipeline: createGroundedPipeline(),
+      chatGateway: blankDeclineGateway(input.outcome),
+      fallbackComposer: input.fallbackComposer,
+    });
+    const request = { workspaceId: "workspace-1", query: "known topic", stream: input.stream };
+    if (input.stream) {
+      for await (const _event of service.streamAnswer(request)) {
+        // Drain the public stream to its lifecycle boundary.
+      }
+    } else {
+      await service.answer(request);
+    }
+    return vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
+  };
+
+  it.each([false, true])(
+    "does not hand off an out_of_scope decline committed without text when the decline model calls it a content gap (stream %s)",
+    async (stream) => {
+      const persisted = await persistBlankDeclineTurn({ outcome: "out_of_scope", fallbackComposer: fallbackReplyComposer, stream });
+
+      expect(persisted.assistantMessage.skillOutcome).toBe(SKILL_TURN_OUTCOME.RETRIEVAL_OUT_OF_SCOPE.outcome);
+      expect(persisted.ownershipHandoff).toBeNull();
+      expect(persisted.actions ?? []).not.toContainEqual(expect.objectContaining({ type: HANDOFF_NOTIFY_ACTION_TYPE }));
+    },
+  );
+
+  it.each([false, true])(
+    "hands off a no_support decline committed without text when the decline model calls it out of scope (stream %s)",
+    async (stream) => {
+      const persisted = await persistBlankDeclineTurn({ outcome: "no_support", fallbackComposer: outOfScopeReplyComposer, stream });
+
+      expect(persisted.assistantMessage.skillOutcome).toBe(SKILL_TURN_OUTCOME.RETRIEVAL_NO_CONTEXT.outcome);
+      expect(persisted.ownershipHandoff).toEqual({ reason: "retrieval_miss" });
+      expect(persisted.actions).toContainEqual(expect.objectContaining({ type: HANDOFF_NOTIFY_ACTION_TYPE }));
+    },
+  );
+
   it("does not request ownership or notify operators for non-streaming retrieval misses when the agent is not opted in", async () => {
     const { service, assistantTurnPersistence } = await createRetrievalHandoffTestService({
       handoffOnRetrievalMiss: false,
@@ -5390,6 +5613,94 @@ describe("chat service streaming", () => {
         }),
       }),
     );
+  });
+
+  it.each([
+    ["an empty answer", ""],
+    ["a newline answer", "\n"],
+    ["a whitespace-only answer", " \n\t "],
+  ])("delivers the focused decline when the grounded answer commits no_support with %s", async (_label, blankAnswer) => {
+    // The grounded answer model can commit a decline in the envelope head and leave
+    // `answer` blank. The turn answers with the decline that outcome promised, streamed
+    // and not, rather than failing with a blank answer (HTTP 500 on the voice door) or
+    // streaming the whitespace and leaving the client with nothing else to show.
+    const blankDecline = JSON.stringify({
+      coverage: "unanswered_insufficient_evidence",
+      requestFocus: "what the page does",
+      outcome: "no_support",
+      answer: blankAnswer,
+      v: 2,
+      claims: [],
+      suggestions: [],
+      grounding: "degraded",
+    });
+    const retrievalPipeline = {
+      async run() {
+        return {
+          rewrittenQuery: "what does this page do",
+          contexts: [{ chunkId: "chunk-1", documentId: "doc-1", title: "Intro", content: "unrelated text" }],
+          prompt: "prompt text",
+          citations: [],
+          diagnostics: {
+            rewriteStatus: "skipped",
+            rerankStatus: "skipped",
+            originalCandidateCount: 1,
+            rewrittenCandidateCount: 0,
+            lexicalCandidateCount: 1,
+            normalizedCandidateCount: 1,
+            finalContextCount: 1,
+            candidateFallbackApplied: false,
+            fallbackApplied: false,
+            parsedQuery: { semanticQuery: "page do", lexicalQuery: "page do" },
+          },
+          responseSettings: { citationDisplayEnabled: true },
+        };
+      },
+    } as const;
+    const chatGateway: ChatGateway = {
+      async answer() {
+        return blankDecline;
+      },
+      async *streamAnswer() {
+        for (let offset = 0; offset < blankDecline.length; offset += 11) {
+          yield blankDecline.slice(offset, offset + 11);
+        }
+      },
+    };
+
+    for (const stream of [true, false]) {
+      const conversationRepository = new InMemoryConversationRepository();
+      const messageRepository = new InMemoryMessageRepository();
+      const service = makeChatService(
+        conversationRepository,
+        messageRepository,
+        new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
+        chatGateway,
+        createAuditService(),
+        fallbackReplyComposer,
+      );
+
+      let answer: string;
+      if (stream) {
+        const events: ChatStreamEvent[] = [];
+        for await (const event of service.streamAnswer({ workspaceId: "workspace-1", query: "What does this page do?", stream: true })) {
+          events.push(event);
+        }
+        const done = events.find((event): event is Extract<ChatStreamEvent, { type: "done" }> => event.type === "done");
+        expect(events.flatMap((event) => (event.type === "chunk" ? [event.text] : [])).join("")).toBe(focusedGroundedMiss);
+        answer = done?.answer ?? "";
+      } else {
+        answer = (await service.answer({ workspaceId: "workspace-1", query: "What does this page do?", stream: false })).answer;
+      }
+
+      expect(answer).toBe(focusedGroundedMiss);
+      const [conversationId] = conversationRepository.items.keys();
+      const persisted = await messageRepository.listByConversationId("workspace-1", conversationId);
+      expect(persisted.map((message) => ({ role: message.role, content: message.content }))).toEqual([
+        { role: "user", content: "What does this page do?" },
+        { role: "assistant", content: focusedGroundedMiss },
+      ]);
+    }
   });
 
   it("rejects a well-formed envelope whose answer is blank in the non-streaming path", async () => {
@@ -6971,9 +7282,15 @@ describe("chat service streaming", () => {
         return "unused";
       },
       async *streamAnswer() {
-        yield "The page explains testing and parsing content for users[[1]]. ";
-        yield "It also offers 24/7 phone support[[?]].";
-        yield `\n${SUGGESTIONS_SENTINEL}\n${envelopeTail("The page explains testing and parsing content for users[[1]]. It also offers 24/7 phone support[[?]].")}`;
+        // The third claim's single-bracket unsupported marker (`[?]`, #1502) is split
+        // across this chunk and the next (`claim[` | `?] more.`), mirroring how the model
+        // can write it instead of the prompted `[[?]]`; the `[?]` inside the inline code
+        // span after it is content, also split across chunks. The manifest mirrors the
+        // model's three claims, the single-bracket one as an unsourced group.
+        yield "The page explains testing and parsing content for users[[1]]. It also offers 24/7 phone support[[?]]. This claim[";
+        yield "?] more. Match a literal question mark with `[";
+        yield "?]`.";
+        yield `\n${SUGGESTIONS_SENTINEL}\n${envelopeTail("The page explains testing and parsing content for users[[1]]. It also offers 24/7 phone support[[?]]. This claim[[?]] more. Match a literal question mark with `[?]`.")}`;
       },
     };
     const service = makeChatService(
@@ -7010,16 +7327,18 @@ describe("chat service streaming", () => {
       events.push(event);
     }
 
-    const streamedText = events
-      .filter((event): event is Extract<ChatStreamEvent, { type: "chunk" }> => event.type === "chunk")
-      .map((event) => event.text)
-      .join("");
+    const chunkEvents = events.filter(
+      (event): event is Extract<ChatStreamEvent, { type: "chunk" }> => event.type === "chunk",
+    );
+    const streamedText = chunkEvents.map((event) => event.text).join("");
 
     expect(events.map((event) => event.type)).toEqual([
       "status",
       "conversation",
       "status",
       "status",
+      "chunk",
+      "chunk",
       "chunk",
       "chunk",
       "done",
@@ -7030,18 +7349,25 @@ describe("chat service streaming", () => {
       { type: "status", stage: "searching" },
       { type: "status", stage: "composing" },
     ]);
-    expect(streamedText).toBe("The page explains testing and parsing content for users. It also offers 24/7 phone support.");
+    const visibleAnswer =
+      "The page explains testing and parsing content for users. It also offers 24/7 phone support. This claim more. Match a literal question mark with `[?]`.";
+    expect(streamedText).toBe(visibleAnswer);
     expect(streamedText).toContain("24/7 phone support");
+    expect(streamedText.replace("`[?]`", "")).not.toContain("[");
     expect(events.findIndex((event) => event.type === "chunk")).toBeGreaterThanOrEqual(0);
     expect(events.findIndex((event) => event.type === "chunk")).toBeLessThan(
       events.findIndex((event) => event.type === "done"),
     );
-    expect(events.at(-1)).toEqual(
+    const done = events.at(-1) as Extract<ChatStreamEvent, { type: "done" }>;
+    expect(done).toEqual(
       expect.objectContaining({
         type: "done",
-        answer: "The page explains testing and parsing content for users. It also offers 24/7 phone support.",
+        answer: visibleAnswer,
       }),
     );
+
+    const persisted = await messageRepository.listByConversationId("workspace-1", done.conversationId);
+    expect(persisted.at(-1)?.content).toBe(visibleAnswer);
   });
 
   it("preserves an uncited warn-mode draft as degraded", async () => {

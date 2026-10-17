@@ -142,6 +142,8 @@ const parseResendEvent = (rawBody: Buffer, providerEventId: string): VerifiedInb
           providerObjectId: emailId,
           occurredAt,
           status: { type: deliveryType, bounce: bounceOf(deliveryType, data) },
+          recipients: stringsOf(data.to),
+          emailKind: isRecord(data.tags) ? nonEmptyString(data.tags.kind) : null,
         }
       : null;
   }

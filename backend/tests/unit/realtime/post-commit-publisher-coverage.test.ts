@@ -18,6 +18,7 @@ const coverage = {
   "conversation.turn_committed": "assistant-turn transaction persistence and operator reply",
   "conversation.contact_delivery_changed": "action dispatcher persisted outcome",
   "conversation.ownership_changed": "ownership transition application services",
+  "conversation.deleted": "conversation erasure transaction commit",
   "search.created": "document search audit commit",
   "hitl.decision_created": "assistant-turn transaction pending-decision persisted insert",
   "hitl.decision_resolved": "outer approval transaction commit",

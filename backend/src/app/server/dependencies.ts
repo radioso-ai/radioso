@@ -4,6 +4,13 @@ import { emailChannelConfigGaps, getEnv, parseEmailChannelConfig, type Env } fro
 import { AgentRevisionRuntimeRepository } from "../../db/repositories/agentRevisionRuntimeRepository.js";
 import { createAgentPublicProfileComposition } from "../composition/agentDiscovery.js";
 import { createAgentToolCatalogComposition } from "../composition/agentToolCatalog.js";
+import {
+  createVoiceChannelComposition,
+  createVoiceRecordingComposition,
+  createVoiceSessionStartComposition,
+  refreshEmbedConfigsOnVoiceVendorKeyChange,
+} from "../composition/voiceChannel.js";
+import { VoiceSessionRepository } from "../../modules/voiceChannel/public.js";
 import { createPostgresDeliveryFailures } from "../composition/deliveryFailures.js";
 import {
   createEmailChannelComposition,
@@ -39,7 +46,8 @@ import {
 } from "../../modules/chat/composition.js";
 import { TestExecutionService } from "../../modules/test-execution/testExecution.js";
 import {
-  createFacetExtractionWorker,
+  createFacetExtractionBackgroundJobRuntime,
+  createFacetExtractionWorkspaceDrainWorker,
   FacetExtractionService,
   FacetExtractionWorkspaceDrainService,
 } from "../../modules/facets/composition.js";
@@ -66,7 +74,7 @@ import {
   buildWorkspaceProviderCredentialsService,
 } from "./builders/accessAuth.js";
 import { buildChatServices } from "./builders/chat.js";
-import { buildConnectorRegistry } from "./builders/integrations.js";
+import { buildConnectorRegistry, buildSlackInboundJobComposition } from "./builders/integrations.js";
 import { buildIntegrationServices } from "./builders/integrations.js";
 import { buildDocumentRetrievalGraph } from "./builders/documentRetrievalGraph.js";
 import {
@@ -127,21 +135,25 @@ import { RoutineStateRepository } from "../../db/repositories/routineStateReposi
 import { QUALITY_RESOLUTION_REASONS } from "../../modules/quality/domain/resolution.js";
 import { buildOperatorMcpServices } from "./builders/operatorMcp.js";
 import { createDefaultVisitorGeoResolver } from "../composition/visitorGeoResolver.js";
+import { createBackgroundJobComposition } from "../composition/backgroundJobs.js";
 import { createConversationOperatorDirectory } from "../composition/conversationOperatorDirectory.js";
 import { createTeammateLabelReader } from "../composition/teammateLabelReader.js";
 import { createPostgresOwnershipReplyUnitOfWork } from "../composition/conversationOwnershipReplies.js";
 import { createConversationActivityComposition } from "../composition/conversationActivity.js";
 import { createPostgresOwnershipChangeUnitOfWork } from "../composition/conversationOwnershipChanges.js";
 import { createPostgresHeldReplyUnitOfWork } from "../composition/heldReplyUnitOfWork.js";
+import { createPostgresConversationErasureUnitOfWork } from "../composition/conversationErasure.js";
+import { ConversationErasureService } from "../../modules/privacy/public.js";
 import { createPostgresConversationIngestUnitOfWork } from "../composition/conversationIngest.js";
 import { ConversationOwnershipService, HeldReplyService, OperatorIdentityResolver } from "../../modules/handoff/public.js";
 import { HeldReplyRepository } from "../../db/repositories/heldReplyRepository.js";
 import { DeliveryFailureDecisions } from "../../modules/customerReplyDelivery/public.js";
 import { buildConversationLinkResolver } from "../composition/conversationLinkResolver.js";
-import { buildOperatorNoticeDestinationsReader } from "../composition/contactDelivery.js";
+import { buildNotificationRecipientPolicy, buildOperatorNoticeDestinationsReader } from "../composition/contactDelivery.js";
 import { resolveWorkspaceManagedLlmModels } from "../../shared/infra/llm/workspaceManagedModels.js";
 import type { OperatorMcpClientMetadataSnapshot } from "../../modules/operatorMcpAuthorization/public.js";
 import { PostgresSlackInboundEventRetention } from "../../modules/slack/public.js";
+import { NotificationRecipientStateRepository } from "../../db/repositories/notificationRecipientStateRepository.js";
 import { createAccountAdministratorDirectory } from "../composition/accountAdministratorDirectory.js";
 import { createNoticeMailAdapter } from "../composition/noticeMail.js";
 import { PeriodicTaskRunner, createPeriodicTasksLifecycle } from "../composition/periodicTaskRunner.js";
@@ -195,12 +207,22 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     repositories,
   });
+  const notificationRecipientSuppressions = new NotificationRecipientStateRepository(infrastructure.database.kysely);
+  const notificationRecipientPolicy = buildNotificationRecipientPolicy({
+    database: infrastructure.database,
+    env,
+    mailer: infrastructure.mailService,
+    logger,
+    metrics: infrastructure.metricsRegistry,
+    states: notificationRecipientSuppressions,
+  });
   const integrations = buildIntegrationServices({
     assertPublicUrl: assertPublicWebsiteUrl,
     composition,
     env,
     infrastructure,
     logger,
+    recipientConfirmations: notificationRecipientPolicy,
     repositories,
   });
   const {
@@ -221,7 +243,26 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     webhookDestinations,
     webhookSkillDefinitionService,
   } = integrations;
-  const operatorNoticeDestinations = buildOperatorNoticeDestinationsReader(infrastructure.database);
+  const operatorNoticeDestinations = buildOperatorNoticeDestinationsReader(
+    infrastructure.database,
+    notificationRecipientPolicy,
+    infrastructure.usageLimitPolicy,
+  );
+  // One store for voice sessions: the turn's bindings, the starts the turn and the session start
+  // share, and where each call's recording lives.
+  const voiceSessions = new VoiceSessionRepository(infrastructure.database.kysely);
+  // Recordings stay with the vendor; the Inbox plays them through the backend with the workspace's
+  // key, Ray reads whether one exists, and a deletion asks the vendor to delete them.
+  const voiceRecordings = createVoiceRecordingComposition({
+    recordings: voiceSessions,
+    recordingsIn: (db) => new VoiceSessionRepository(db),
+    credentials: workspaceProviderCredentialsService,
+    // Called through its own receiver, never detached from globalThis.
+    fetch: (url, init) => globalThis.fetch(url, init),
+    auditService: infrastructure.auditService,
+    metricsRegistry: infrastructure.metricsRegistry,
+    logger,
+  });
   const documentRetrievalGraph = buildDocumentRetrievalGraph({
     composition,
     env,
@@ -230,6 +271,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     repositories,
     personalCredentialTermination: access.personalCredentialTenureService,
     personalCredentialLifecycle: access.personalCredentialLifecycle,
+    vendorHeldConversationData: { eraser: voiceRecordings.erasure, logger },
     workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
     workspaceProviderCredentialsService,
   });
@@ -268,6 +310,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     access.accessGrantService,
     agentSkillRepository,
     infrastructure.auditService,
+    notificationRecipientPolicy,
   );
   // Shared by routine publishing (write-time trigger embedding) and the chat
   // activation prefilter (lazy self-heal of unembedded/stale rows) so both
@@ -294,6 +337,16 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     teammateLabels,
     messages: repositories.messageRepository,
   });
+  // Durable background work the worker runs. The queue exists before the modules that enqueue;
+  // the runtime is assembled below from the handlers those modules return.
+  const backgroundJobs = createBackgroundJobComposition({
+    db: infrastructure.database.kysely,
+    env,
+    logger,
+    metrics: infrastructure.metricsRegistry,
+    errorReporter: infrastructure.errorReportingService,
+    audit: infrastructure.auditService,
+  });
   const chat = buildChatServices({
     accountAccessService: access.accountAccessService,
     agentRetrievalScope,
@@ -301,6 +354,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     agentSkillRepository,
     auditEventRepository: infrastructure.auditEventRepository,
     auditService: infrastructure.auditService,
+    backgroundJobs: backgroundJobs.queue,
     bootstrapGreetingCacheRepository: repositories.bootstrapGreetingCacheRepository,
     composition,
     conversationActivity,
@@ -437,7 +491,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     metrics: infrastructure.metricsRegistry,
     logger,
   });
-  const connectorRegistry = buildConnectorRegistry({ composition, env, logger, emailPlugin: emailChannel?.plugin });
+  const connectorRegistry = buildConnectorRegistry({
+    composition,
+    env,
+    logger,
+    emailPlugin: emailChannel?.plugin,
+    slackBackgroundJobs: backgroundJobs.queue,
+  });
   const connectorManagementService = new ConnectorManagementService({
     database: infrastructure.database,
     registry: connectorRegistry,
@@ -620,25 +680,38 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     },
     realtimePublisherComposition.publisher,
   );
-  // Per-message facet extraction (topic census). This same durable worker serves
-  // the local poll loop, task recovery, and an operator-requested Pulse refresh.
-  const facetExtractionWorker = createFacetExtractionWorker({
+  // Per-message facet extraction (topic census). The extractor serves two paths over the same
+  // durable table: the generic job-port runtime below drains whatever is due, independent of any
+  // one workspace; `facetExtractionWorkspaceDrainWorker` serves an operator-requested Pulse
+  // refresh, scoped to one workspace's window (see that worker's doc comment for why it stays on
+  // its own path instead of the generic one).
+  const facetExtraction = composition.facetExtraction ?? new FacetExtractionService({
+    messages: repositories.messageRepository,
+    facets: repositories.messageFacetRepository,
+    embeddings: embeddingPorts,
+    inferenceFactory: createRewriteTierStructuredInferenceFactory(
+      { resolver: llmCapabilityResolver },
+      infrastructure.usageEventRecorder,
+    ),
+  });
+  const facetExtractionWorkspaceDrainWorker = createFacetExtractionWorkspaceDrainWorker({
     jobs: repositories.facetExtractionJobRepository,
-    extraction: composition.facetExtraction ?? new FacetExtractionService({
-      messages: repositories.messageRepository,
-      facets: repositories.messageFacetRepository,
-      embeddings: embeddingPorts,
-      inferenceFactory: createRewriteTierStructuredInferenceFactory(
-        { resolver: llmCapabilityResolver },
-        infrastructure.usageEventRecorder,
-      ),
-    }),
+    extraction: facetExtraction,
     logger,
-    pollIntervalMs: env.FACET_EXTRACTION_WORKER_POLL_INTERVAL_MS,
     batchSize: env.FACET_EXTRACTION_WORKER_BATCH_SIZE,
     jobLeaseMs: env.FACET_EXTRACTION_JOB_LEASE_MS,
     telemetryService: infrastructure.telemetryService,
+  });
+  const facetExtractionBackgroundJobRuntime = createFacetExtractionBackgroundJobRuntime({
+    jobs: repositories.facetExtractionJobRepository,
+    extraction: facetExtraction,
+    logger,
+    metrics: infrastructure.metricsRegistry,
     errorReporter: infrastructure.errorReportingService,
+    telemetryService: infrastructure.telemetryService,
+    jobLeaseMs: env.FACET_EXTRACTION_JOB_LEASE_MS,
+    pollIntervalMs: env.FACET_EXTRACTION_WORKER_POLL_INTERVAL_MS,
+    pollBatchSize: env.FACET_EXTRACTION_WORKER_BATCH_SIZE,
   });
   const facetExtractionWorkspaceDrain = new FacetExtractionWorkspaceDrainService(
     repositories.facetExtractionJobRepository,
@@ -941,6 +1014,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       validate: routineDefinitionService.validate.bind(routineDefinitionService),
     },
     chatHistoryService: chat.chatHistoryService,
+    voiceRecordings: voiceRecordings.recordings,
     agentTurnProbe: agentTurnProbeService,
     documentSearchService: retrieval.documentSearchService,
     documentInventory: {
@@ -1162,26 +1236,72 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   });
   // Composition-owned adapters for `registerPeriodicTask` contributions (e.g. EE's usage-alert
   // sweep): a notice-mail sender and an account-administrator directory, neither of which a
-  // contributing module may build itself without reaching into OSS internals.
+  // contributing module may build itself without reaching into OSS internals. Built once here —
+  // the one `buildDependencies` the worker runtime's poll loop and its Cloud Scheduler-driven
+  // task route both call — so neither caller duplicates this wiring.
   const noticeMail = createNoticeMailAdapter(infrastructure.mailService, { appBaseUrl: env.APP_BASE_URL });
   const accountAdministrators = createAccountAdministratorDirectory(repositories.accountMembershipRepository);
-  const periodicTasks = composition.periodicTaskRegistrations.map((registration) => {
-    const handle = registration.create({
+  const periodicTaskEntries = composition.periodicTaskRegistrations.map((registration) => ({
+    id: registration.id,
+    intervalMs: registration.intervalMs,
+    handle: registration.create({
       database: infrastructure.database,
       logger,
       audit: infrastructure.auditService,
       noticeMail,
       accountAdministrators,
       appBaseUrl: env.APP_BASE_URL ?? null,
-    });
-    return new PeriodicTaskRunner({
-      id: registration.id,
-      intervalMs: registration.intervalMs,
-      run: () => handle.run(),
-      logger,
-    });
+    }),
+  }));
+  // The poll worker's interval loop wraps each handle in a `PeriodicTaskRunner`; the push
+  // worker's task route looks the same handle up by id instead (`periodicTaskHandlesById`
+  // below), so a registration is built exactly once regardless of which runtime drives it.
+  const periodicTasksLifecycle = createPeriodicTasksLifecycle(
+    periodicTaskEntries.map(
+      ({ id, intervalMs, handle }) =>
+        new PeriodicTaskRunner({
+          id,
+          intervalMs,
+          run: () => handle.run(),
+          logger,
+        }),
+    ),
+  );
+  const periodicTaskHandlesById = new Map(periodicTaskEntries.map(({ id, handle }) => [id, handle]));
+  const conversationLinks = buildConversationLinkResolver({
+    database: infrastructure.database,
+    appBaseUrl: env.APP_BASE_URL,
   });
-  const periodicTasksLifecycle = createPeriodicTasksLifecycle(periodicTasks);
+  // Built here (not only inside the API-only `SlackPlugin`) so the worker can dispatch
+  // `slack.inbound_event` jobs: the webhook now only verifies, dedupes, and enqueues.
+  const slackInboundJobs = buildSlackInboundJobComposition({
+    db: infrastructure.database.kysely,
+    logger,
+    chatService: chat.chatService,
+    conversationIngestService,
+    slackInstallationService,
+    installations: repositories.slackInstallationRepository,
+    bindings: repositories.slackChannelBindingRepository,
+    workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
+    starterPrompts: chat.agentStarterPromptReader,
+    conversationLinks,
+  });
+  const backgroundJobRuntime = backgroundJobs.createRuntime([
+    ...chat.backgroundJobHandlers,
+    ...slackInboundJobs.backgroundJobHandlers,
+  ]);
+  refreshEmbedConfigsOnVoiceVendorKeyChange({ credentials: workspaceProviderCredentialsService, embedConfigs: agentService });
+  // One service starts sessions and tells the website embed whether to offer them, by the same gate.
+  const voiceSessionStarts = createVoiceSessionStartComposition({
+    agentRepository: repositories.agentRepository,
+    starts: voiceSessions,
+    credentials: workspaceProviderCredentialsService,
+    // Called through its own receiver, never detached from globalThis.
+    fetch: (url, init) => globalThis.fetch(url, init),
+    metricsRegistry: infrastructure.metricsRegistry,
+    logger,
+  });
+
   return {
     env,
     logger,
@@ -1200,10 +1320,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     applicationRouteMounts: composition.routeMounts,
     applicationModules: composition.lifecycle,
     workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
-    conversationLinks: buildConversationLinkResolver({
-      database: infrastructure.database,
-      appBaseUrl: env.APP_BASE_URL,
-    }),
+    conversationLinks,
     realtimePublisherLifecycle: realtimePublisherComposition,
     realtimeRolloutPolicy,
     vectorIndexReconciler,
@@ -1219,6 +1336,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     machineAccessSecurityObserver: access.machineAccessSecurityObserver,
     credentialExpiryWarningLifecycle: access.credentialExpiryWarningLifecycle,
     periodicTasksLifecycle,
+    periodicTaskHandlesById,
     personalCredentialService: access.personalCredentialService,
     serviceAccountService: access.serviceAccountService,
     workspaceSessionService: workspace.workspaceSessionService,
@@ -1263,7 +1381,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     documentSourceReprocessService: documents.documentSourceReprocessService,
     documentProcessingWorker: documents.documentProcessingWorker,
     documentJobConsumer: documents.documentJobConsumer,
-    facetExtractionWorker,
+    facetExtractionBackgroundJobRuntime,
+    facetExtractionWorkspaceDrainWorker,
     facetExtractionWorkspaceDrain,
     websiteCrawlerProvider: documents.websiteCrawlerProvider,
     websiteCrawlJobService: documents.websiteCrawlJobService,
@@ -1294,11 +1413,39 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     }),
     chatHistoryService: chat.chatHistoryService,
     assistantChatService: chat.assistantChatService,
+    voiceTurns: createVoiceChannelComposition({
+      sessions: voiceSessions,
+      assistantChatService: chat.assistantChatService,
+      agentRepository: repositories.agentRepository,
+      routineStates: new RoutineStateRepository(infrastructure.database.kysely),
+      conversationOwnership: repositories.conversationOwnershipRepository,
+      replies: repositories.messageRepository,
+      auditService: infrastructure.auditService,
+      metricsRegistry: infrastructure.metricsRegistry,
+      logger,
+    }),
+    voiceSessionStarts,
+    voiceSessionAvailability: voiceSessionStarts,
+    voiceRecordings: voiceRecordings.recordings,
     assistantHistoryService: chat.assistantHistoryService,
+    conversationErasure: new ConversationErasureService({
+      unitOfWork: createPostgresConversationErasureUnitOfWork({
+        db: infrastructure.database.kysely,
+        logger,
+        // Call recordings the voice vendor keeps: read and locked in the erasure's transaction.
+        vendorHeldData: (trx) => voiceRecordings.erasureIn(trx),
+      }),
+      invalidation: realtimePublisherComposition.publisher,
+      auditLog: infrastructure.auditService,
+    }),
     retrievalSearchService: retrieval.retrievalSearchService,
     retrievalAnswerService: chat.retrievalAnswerService,
     retrievalDefaultsProvider,
-    actionDispatchWorker: chat.actionDispatchWorker,
+    actionDispatchJobRuntime: chat.actionDispatchJobRuntime,
+    actionOutboxQueueDepthReporter: chat.actionOutboxQueueDepthReporter,
+    reportActionOutboxQueueState: chat.reportActionOutboxQueueState,
+    backgroundJobRuntime,
+    backgroundJobRetentionWorker: backgroundJobs.retentionWorker,
     emailChannel: emailChannel ?? undefined,
     emailChannelWorker: emailChannel?.worker,
     emailReviewChecks: emailChannel?.reviewChecks,
@@ -1324,6 +1471,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     skillCapabilityRegistry,
     agentSkillsService,
     operatorNoticeDestinations,
+    notificationRecipientPolicy,
+    notificationRecipientSuppressions,
     accountRepository: repositories.accountRepository,
     userRepository: repositories.userRepository,
     workspaceRepository: repositories.workspaceRepository,

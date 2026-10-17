@@ -14,9 +14,10 @@ interface LocaleOption {
   hint: string
 }
 
+const LANGUAGE_OPTIONS: LocaleOption[] = ASSISTANT_GREETING_LOCALE_OPTIONS.map((option) => ({ label: option.label, hint: option.tag }))
 const BASE_OPTIONS: LocaleOption[] = [
   { label: NO_GREETING_LOCALE_LABEL, hint: 'No automatic first greeting' },
-  ...ASSISTANT_GREETING_LOCALE_OPTIONS.map((option) => ({ label: option.label, hint: option.tag })),
+  ...LANGUAGE_OPTIONS,
 ]
 
 export function AssistantLocaleCombobox({
@@ -24,12 +25,16 @@ export function AssistantLocaleCombobox({
   value,
   onChange,
   placeholder = 'Search for a language or type a locale tag',
+  noFallbackOptionEnabled = true,
 }: {
   id?: string
   value: string
   onChange: (next: string) => void
   placeholder?: string
+  /** Offers the "No fallback" entry, which only a greeting locale has a use for. */
+  noFallbackOptionEnabled?: boolean
 }) {
+  const options = noFallbackOptionEnabled ? BASE_OPTIONS : LANGUAGE_OPTIONS
   const [open, setOpen] = useState(false)
   const wrapperRef = useRef<HTMLDivElement>(null)
 
@@ -46,17 +51,17 @@ export function AssistantLocaleCombobox({
 
   const filtered = useMemo(() => {
     const query = value.trim().toLowerCase()
-    if (!query) return BASE_OPTIONS
-    const isExactSelection = BASE_OPTIONS.some(
+    if (!query) return options
+    const isExactSelection = options.some(
       (option) => option.label.toLowerCase() === query || option.hint.toLowerCase() === query,
     )
-    if (isExactSelection) return BASE_OPTIONS
-    return BASE_OPTIONS.filter(
+    if (isExactSelection) return options
+    return options.filter(
       (option) =>
         option.label.toLowerCase().includes(query) ||
         option.hint.toLowerCase().includes(query),
     )
-  }, [value])
+  }, [options, value])
 
   const handleSelect = (label: string) => {
     onChange(label)

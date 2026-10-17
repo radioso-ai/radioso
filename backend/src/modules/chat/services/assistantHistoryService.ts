@@ -87,6 +87,7 @@ export class AssistantHistoryService {
       includeOwnership: true,
       includeOperatorLabel: true,
       activity,
+      redeliverInterruptedReplies: true,
     });
   }
 

@@ -6,14 +6,13 @@ import type {
 } from "@radioso/connector-api";
 
 import { OauthConnectionRepository } from "../../../../db/repositories/oauthConnectionRepository.js";
-import { ActionRequestRepository } from "../../../../db/repositories/actionRequestRepository.js";
 import { PendingDecisionRepository } from "../../../../db/repositories/pendingDecisionRepository.js";
 import type { ApprovalDecisionService } from "../../../approvals/public.js";
 import type { AuditPort } from "../../../audit/contracts/index.js";
 import type { ConversationOwnershipService } from "../../../handoff/public.js";
 import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
-import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import type { ConversationLinkResolver } from "../../../../shared/domain/conversationLinkResolver.js";
+import type { BackgroundJobQueue } from "../../../../shared/background-jobs/index.js";
 import { IntegrationConnectionRepository } from "../../../integrationConnections/public.js";
 import {
   createSlackInteractivityRouter,
@@ -28,8 +27,6 @@ import {
   SlackWebApiClient,
   type SlackOperatorPermissionPort,
 } from "../../../slack/public.js";
-import type { SlackStarterPromptsPort } from "./slackAgentSession.js";
-import { SlackMessageHandler, type SlackWebApiClientFactory } from "./slackMessageHandler.js";
 import { connectorKyselyDb } from "../../services/connectorKyselyDb.js";
 import { PostgresSlackPersistence } from "./slackPersistence.js";
 import { createSlackWebhookRouter } from "./slackWebhook.js";
@@ -37,7 +34,8 @@ import { createSlackWebhookRouter } from "./slackWebhook.js";
 interface SlackPluginOptions {
   signingSecret: string;
   encryptionKey?: string;
-  clientFactory?: SlackWebApiClientFactory;
+  /** Lets the webhook enqueue the durable job the worker dispatches; never used for the turn itself. */
+  backgroundJobs: Pick<BackgroundJobQueue, "enqueueInTransaction" | "wake">;
 }
 
 type SlackConnectorContext = ConnectorContext & {
@@ -47,8 +45,6 @@ type SlackConnectorContext = ConnectorContext & {
   auditService?: Pick<AuditPort, "record">;
   metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
   assertPublicUrl?: (url: string) => Promise<void>;
-  workspaceInvalidationPublisher?: WorkspaceInvalidationPublisher;
-  agentStarterPrompts?: SlackStarterPromptsPort;
   conversationLinks?: ConversationLinkResolver;
 };
 
@@ -78,17 +74,11 @@ export class SlackPlugin implements ConnectorPlugin {
     const integrationConnections = new IntegrationConnectionRepository(db);
     const installations = new SlackInstallationRepository(db);
     const bindings = new SlackChannelBindingRepository(db);
-    const persistence = new PostgresSlackPersistence(db);
-    const staleFailures = await persistence.markStaleInboundEventsFailed({
-      olderThan: new Date(Date.now() - 10 * 60 * 1000),
-    });
-    if (staleFailures > 0) {
-      context.logger.warn(
-        { event: "slack_inbound", staleFailures },
-        "Marked stale Slack inbound events failed during connector startup",
-      );
-    }
-    const slackPostOutbox = new ActionRequestRepository(db);
+    // No stale-"received" sweep here: a durable job backs every enqueued event (retried and,
+    // on its final attempt, dead-lettered — which marks the event `failed` itself), and a
+    // skip is now one atomic write, so nothing legitimately stays `received` for a sweep to
+    // catch. A time-boxed sweep would only risk marking a still-retrying event failed early.
+    const persistence = new PostgresSlackPersistence(db, this.options.backgroundJobs);
     const extendedContext = context as SlackConnectorContext;
     const installationService = new SlackInstallationService({
       oauthConnections,
@@ -115,19 +105,6 @@ export class SlackPlugin implements ConnectorPlugin {
         },
       },
     });
-    const messageHandler = new SlackMessageHandler({
-      logger: context.logger,
-      chat: context.chat,
-      installations,
-      bindings,
-      installationService,
-      persistence,
-      slackPostOutbox,
-      clientFactory: this.options.clientFactory,
-      workspaceInvalidationPublisher: extendedContext.workspaceInvalidationPublisher,
-      starterPrompts: extendedContext.agentStarterPrompts,
-      conversationLinks: extendedContext.conversationLinks,
-    });
 
     context.http.mount(
       "/",
@@ -136,7 +113,6 @@ export class SlackPlugin implements ConnectorPlugin {
         signingSecret: this.options.signingSecret,
         installations,
         persistence,
-        messageHandler,
       }),
     );
     context.http.mount(

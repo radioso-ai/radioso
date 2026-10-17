@@ -1,5 +1,6 @@
 import { GENERATION_SURFACE, type GenerationSurface } from "../../shared/domain/generationSurface.js";
 import { unpublishedAgentPublicIdentity } from "./domain.js";
+import { readStoredAgentMechanicsReplies, type AgentMechanicsReplies } from "./mechanicsReplies.js";
 import type {
   AgentLogo,
   AgentSourceScope,
@@ -16,6 +17,7 @@ import type {
 import type { ChatTurnRoute } from "../../shared/domain/chatTurnRoute.js";
 import type { AnswerCoverageCriteria } from "../answerCoverage/public.js";
 import type { RetrieveSkillConfig } from "../retrieval/public.js";
+import { defaultAgentVoiceSettings } from "./voiceSettings.js";
 import {
   refPlaceholder,
   secretPlaceholder,
@@ -165,6 +167,12 @@ export interface AgentConfig {
   greetingInstruction: string;
   assistantDefaultLocale: string | null;
   proactiveGreetingEnabled: boolean;
+  /**
+   * Authored lines for conversational mechanics. Portable, so a replayed or imported agent
+   * speaks the same lines the live one does; a config serialized before the field existed
+   * reads as nothing authored.
+   */
+  mechanicsReplies: AgentMechanicsReplies;
   surfaceSettings: AgentSurfaceConfig;
   skillSettings: AgentSkillSettingsConfig;
   chatModelOverride: ConversationAgent["chatModelOverride"];
@@ -592,6 +600,8 @@ const serializeWebsiteEmbed = (websiteEmbed: WebsiteEmbedSurfaceSettings): Websi
   theme: cloneJson(websiteEmbed.theme),
   copy: cloneJson(websiteEmbed.copy),
   expertOverrides: cloneJson(websiteEmbed.expertOverrides),
+  // Offering calls is the destination operator's own choice, like the token it needs: never exported on.
+  voiceCallsOffered: false,
 });
 
 const serializeSurfaceExtensions = (extensions: Record<string, unknown>): Record<string, unknown> => {
@@ -727,6 +737,10 @@ export const AGENT_CONFIG_FIELD_DESCRIPTORS = {
     portability: "portable",
     serialize: (agent) => agent.proactiveGreetingEnabled,
   }),
+  mechanicsReplies: descriptor({
+    portability: "portable",
+    serialize: (agent) => cloneJson(agent.mechanicsReplies),
+  }),
   surfaceSettings: descriptor({
     portability: "portable",
     nestedPortability: [
@@ -807,6 +821,7 @@ export const projectInternalAgentConfig = (
   greetingInstruction: agent.greetingInstruction,
   assistantDefaultLocale: agent.assistantDefaultLocale,
   proactiveGreetingEnabled: agent.proactiveGreetingEnabled,
+  mechanicsReplies: cloneJson(agent.mechanicsReplies),
   surfaceSettings: cloneJson(agent.surfaceSettings),
   skillSettings: projectInternalSkillSettings(agent, cloneJson(agent.sourceScope)),
   chatModelOverride: agent.chatModelOverride ? cloneJson(agent.chatModelOverride) : null,
@@ -892,6 +907,9 @@ export const materializeAgentFromConfig = (
     greetingInstruction: config.greetingInstruction,
     assistantDefaultLocale: config.assistantDefaultLocale,
     proactiveGreetingEnabled: config.proactiveGreetingEnabled,
+    // Voice settings are not part of the portable config, so a materialized agent starts with voice off.
+    voice: defaultAgentVoiceSettings(),
+    mechanicsReplies: readStoredAgentMechanicsReplies(config.mechanicsReplies),
     sourceScope: cloneJson(retrievalAnswer.sourceScope),
     surfaceSettings: cloneJson(config.surfaceSettings),
     skillSettings: retrievalAnswer.skillSettings,

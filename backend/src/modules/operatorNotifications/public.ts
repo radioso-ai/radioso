@@ -18,7 +18,9 @@ export {
 } from "./visitorNotificationInput.js";
 export {
   NotificationDeliveryAdmissionService,
+  type DailyNotificationEmailAllowance,
   type NotificationDeliveryAdmissionPort,
+  type NotificationEmailAllowanceReader,
   type NotificationDeliveryOutcomeRepositoryPort,
 } from "./notificationDeliveryAdmission.js";
 export {
@@ -26,3 +28,15 @@ export {
   routineEndingNotificationFromAction,
   type RoutineEndingNotificationSubject,
 } from "./routineEndingNotificationFromAction.js";
+export {
+  NotificationRecipientPolicyService,
+  type ConfirmationReservation,
+  type NotificationRecipientDescription,
+  type NotificationRecipientPolicyPort,
+  type NotificationRecipientStateStore,
+  type NotificationRecipientStateView,
+} from "./notificationRecipientPolicy.js";
+export { planNotificationEmail } from "./notificationEmailPlan.js";
+export { NotificationRecipientConfirmationMailer } from "./notificationRecipientConfirmationMailer.js";
+export { NotificationRecipientTokenSigner } from "./notificationRecipientToken.js";
+export { recordNotificationSuppression, type NotificationSuppressionStore } from "./providerSuppression.js";

@@ -1,10 +1,12 @@
+import type { BackgroundJobWakePort } from "../../../../shared/background-jobs/index.js";
 import type { AppLogger } from "../../../../shared/observability/logger.js";
-import type { ActionDrainDispatcherPort } from "./actionDrainDispatcher.js";
 
 /** The narrow enqueue port every current outbox producer already depends on
  * (`ChatActionOutboxPort`, `SlackPostOutboxPort`, `NotifyExecutor`'s outbox, ...) —
- * satisfied by `ActionRequestRepository`. */
-export interface EnqueueingActionOutboxPort {
+ * satisfied by `ActionRequestRepository`. Not exported: every caller already holds
+ * a concrete `ActionRequestRepository` or a `DrainTriggeringActionOutbox` wrapping
+ * one, so nothing outside this file needs the port by name. */
+interface EnqueueingActionOutboxPort {
   enqueue(input: {
     type: string;
     payload: Record<string, unknown>;
@@ -33,7 +35,7 @@ export interface EnqueueingActionOutboxPort {
 export class DrainTriggeringActionOutbox implements EnqueueingActionOutboxPort {
   constructor(
     private readonly inner: EnqueueingActionOutboxPort,
-    private readonly drainDispatcher: ActionDrainDispatcherPort,
+    private readonly drainDispatcher: BackgroundJobWakePort,
     private readonly logger?: Pick<AppLogger, "warn">,
   ) {}
 

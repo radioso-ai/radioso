@@ -53,6 +53,25 @@ resource "google_cloud_tasks_queue" "conversation_actions" {
   depends_on = [google_project_service.apis]
 }
 
+# Wakes the worker task server for durable background jobs (background_jobs). Each task
+# asks for one drain; the job table stays authoritative, so a duplicate task finds nothing.
+resource "google_cloud_tasks_queue" "background_jobs" {
+  count    = var.deploy_services ? 1 : 0
+  name     = var.background_job_task_queue_name
+  location = var.region
+
+  rate_limits {
+    max_dispatches_per_second = var.background_job_task_max_dispatches_per_second
+    max_concurrent_dispatches = var.background_job_task_max_concurrent_dispatches
+  }
+
+  retry_config {
+    max_attempts = 10
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
 # Inbound/review/reconcile drains for the email channel. Kept at low concurrency
 # because the receiving provider's rate limits are undocumented (research B7).
 resource "google_cloud_tasks_queue" "email_channel" {

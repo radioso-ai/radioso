@@ -387,6 +387,8 @@ export interface CopilotRoutineProposalDraft {
   readonly summary: string;
   /** Structural problems the proposed routine still carries. Empty when it validates cleanly. */
   readonly diagnostics: ReadonlyArray<{ readonly code: string; readonly location: string; readonly message: string }>;
+  /** Non-blocking findings, such as a notifying ending with no reply-to. Never affect validity. */
+  readonly advisories: ReadonlyArray<{ readonly code: string; readonly location: string; readonly message: string }>;
 }
 
 export interface CopilotRoutineProposalAdapter extends CopilotProposalAdapter {

@@ -262,7 +262,47 @@ describe("copilot routine validation", () => {
       diagnosticCount: 1,
       diagnosticsTruncated: false,
       diagnostics: [{ code: "unreachable_step", location: "steps.confirm", message: "No transition reaches confirm." }],
+      advisories: [],
     });
+  });
+
+  it("flags a notifying ending with no reply-to as a non-blocking advisory, never affecting ok", async () => {
+    const ports = dependencies([routine({
+      slots: [{ stableSlotId: "slot_email", key: "guest_email", type: "email", required: true, description: null, ordinal: 0 }],
+      terminals: [{ stableStepId: "human", kind: "handoff", instruction: null, ordinal: 0 }],
+    })]);
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "validate_routine")!;
+
+    const result = await tool.createTool(context("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+      .invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never);
+
+    expect(result).toEqual({
+      routineId: "11111111-1111-4111-8111-111111111111",
+      name: "support-intake",
+      enabled: true,
+      ok: true,
+      diagnosticCount: 0,
+      diagnosticsTruncated: false,
+      diagnostics: [],
+      advisories: [{
+        code: "operator_notice_reply_to_unset",
+        location: "step:human.operatorNotice.replyToSlot",
+        message: 'operator notice has no reply-to: ending "human" notifies the team with no reply-to, so a reply to it won\'t reach the visitor. Set replyToSlot to the email field the team should answer (guest_email), or leave it unset on purpose.',
+      }],
+    });
+  });
+
+  it("reports no advisory once the ending names a reply-to field", async () => {
+    const ports = dependencies([routine({
+      slots: [{ stableSlotId: "slot_email", key: "guest_email", type: "email", required: true, description: null, ordinal: 0 }],
+      terminals: [{ stableStepId: "human", kind: "handoff", instruction: null, operatorNotice: { subject: null, intro: null, replyToSlot: "guest_email" }, ordinal: 0 }],
+    })]);
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "validate_routine")!;
+
+    const result = await tool.createTool(context("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+      .invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never) as { advisories: unknown[] };
+
+    expect(result.advisories).toEqual([]);
   });
 
   it("bounds a flood of diagnostics instead of pasting the whole validator output into the turn", async () => {

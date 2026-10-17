@@ -9,8 +9,19 @@ import { errorClassOf, recordingErrorFields, type VoiceRecordingDependencies } f
 
 /** At most this many vendor deletes run at once, so a large workspace does not flood the vendor. */
 const DELETE_CONCURRENCY = 4;
+/**
+ * How long an erasure keeps asking the vendor. It runs inside the deletion's request, which must
+ * finish; what is left past it stays at the vendor and is logged with its count.
+ */
+const ERASURE_DEADLINE_MS = 20_000;
 
-type VoiceRecordingDeleteOutcome = "deleted" | "vendor_failed" | "credential_missing" | "credential_unreadable" | "credential_read_failed";
+type VoiceRecordingDeleteOutcome =
+  | "deleted"
+  | "vendor_failed"
+  | "credential_missing"
+  | "credential_unreadable"
+  | "credential_read_failed"
+  | "deadline_passed";
 
 /** The workspace's key for one vendor, read at `prepare`, or why the vendor's recordings stay. */
 type VendorCredential = { kind: "present"; credential: VoiceVendorCredential } | { kind: "absent"; outcome: VoiceRecordingDeleteOutcome };
@@ -25,7 +36,11 @@ type CredentialOfVendor = Map<VoiceVendor, VendorCredential>;
  * recording left at the vendor is logged and counted, with ids only.
  */
 export class VoiceRecordingErasureService implements VoiceRecordingErasurePort {
-  constructor(private readonly dependencies: VoiceRecordingDependencies) {}
+  constructor(
+    private readonly dependencies: VoiceRecordingDependencies,
+    /** Tests only. */
+    private readonly limits: { deadlineMs?: number; concurrency?: number; now?: () => number } = {},
+  ) {}
 
   async prepare(scope: VoiceRecordingScope): Promise<{ recordingCount: number; erase(): Promise<void> }> {
     let recordings: VoiceRecordingRef[];
@@ -59,13 +74,25 @@ export class VoiceRecordingErasureService implements VoiceRecordingErasurePort {
   }
 
   private async erase(scope: VoiceRecordingScope, recordings: readonly VoiceRecordingRef[], credentials: CredentialOfVendor): Promise<void> {
+    const now = this.limits.now ?? Date.now;
+    const deadline = now() + (this.limits.deadlineMs ?? ERASURE_DEADLINE_MS);
     const queue = [...recordings];
     const worker = async (): Promise<void> => {
-      for (let recording = queue.shift(); recording; recording = queue.shift()) {
+      while (now() < deadline) {
+        const recording = queue.shift();
+        if (!recording) return;
         await this.eraseOne(scope, recording, credentials.get(recording.vendor));
       }
     };
-    await Promise.all(Array.from({ length: Math.min(DELETE_CONCURRENCY, queue.length) }, worker));
+    await Promise.all(Array.from({ length: Math.min(this.limits.concurrency ?? DELETE_CONCURRENCY, queue.length) }, worker));
+    if (queue.length === 0) return;
+    this.dependencies.logger.warn(
+      { workspaceId: scope.workspaceId, outcome: "deadline_passed", recordingCount: queue.length },
+      "Voice recordings were left at the vendor",
+    );
+    for (const vendor of new Set(queue.map((recording) => recording.vendor))) {
+      this.record(vendor, "deadline_passed", queue.filter((recording) => recording.vendor === vendor).length);
+    }
   }
 
   private async eraseOne(
@@ -102,10 +129,12 @@ export class VoiceRecordingErasureService implements VoiceRecordingErasurePort {
       });
   }
 
-  private record(vendor: VoiceVendor, outcome: VoiceRecordingDeleteOutcome): void {
+  private record(vendor: VoiceVendor, outcome: VoiceRecordingDeleteOutcome, value = 1): void {
     this.dependencies.metrics?.incrementCounter("voice_recording_delete_total", {
       help: "Voice recordings Radioso asked the vendor to delete, by vendor and how the request ended",
       labels: { vendor, outcome },
+      ...(value === 1 ? {} : { value }),
     });
   }
+
 }

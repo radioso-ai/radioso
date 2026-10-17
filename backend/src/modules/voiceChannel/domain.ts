@@ -1,6 +1,8 @@
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
 
+import type { VendorHeldConversationDataEraser, VendorHeldConversationDataScope } from "../../shared/domain/vendorHeldConversationData.js";
 import type { VoiceVendor, VoiceVendorRegion } from "../../shared/domain/voiceVendor.js";
+
 import type { AgentVoiceSettings } from "../agents/public.js";
 
 export type VoiceTransport = "phone" | "web";
@@ -255,9 +257,8 @@ export interface VoiceRecordingStore {
   listRecordings(scope: VoiceRecordingScope): Promise<VoiceRecordingRef[]>;
 }
 
-export type VoiceRecordingScope =
-  | { kind: "conversations"; workspaceId: string; conversationIds: readonly string[] }
-  | { kind: "workspace"; workspaceId: string };
+/** The conversations an erasure removes, or a whole workspace just before it is deleted. */
+export type VoiceRecordingScope = VendorHeldConversationDataScope;
 
 /**
  * A recording as the vendor serves it. `status` is 206 when the vendor answered a byte range, with
@@ -334,6 +335,6 @@ export interface VoiceRecordingPlaybackPort {
  * the conversations, and the workspace's vendor key, still exist; `erase` runs once they are gone,
  * and never rejects: a recording the vendor would not delete is logged and left there.
  */
-export interface VoiceRecordingErasurePort {
+export interface VoiceRecordingErasurePort extends VendorHeldConversationDataEraser {
   prepare(scope: VoiceRecordingScope): Promise<{ recordingCount: number; erase(): Promise<void> }>;
 }

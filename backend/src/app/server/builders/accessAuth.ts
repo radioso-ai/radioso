@@ -198,6 +198,7 @@ export const buildWorkspaceServices = (input: {
   env: Env;
   personalCredentialTermination?: import("../../../modules/workspace/services/workspaceService.js").WorkspacePersonalCredentialTerminationPort;
   personalCredentialLifecycle?: import("../../../modules/machineAccess/public.js").PersonalCredentialLifecyclePort;
+  vendorHeldConversationData?: import("../../../shared/domain/vendorHeldConversationData.js").VendorHeldConversationDataEraser;
   workspaceRepository: WorkspaceRepository;
 }) => {
   const workspaceService = new WorkspaceService(
@@ -206,6 +207,7 @@ export const buildWorkspaceServices = (input: {
     input.accountMembershipRepository,
     input.personalCredentialTermination,
     input.personalCredentialLifecycle,
+    input.vendorHeldConversationData,
   );
   return {
     workspaceService,

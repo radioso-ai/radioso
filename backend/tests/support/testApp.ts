@@ -1478,11 +1478,9 @@ export const createTestDependencies = (overrides: {
       };
     },
   } satisfies TurnRouter;
-  const workspaceService = new WorkspaceService(workspaceRepository, auditService, accountMembershipRepository);
   const workspaceSummaryService = new WorkspaceSummaryService(documentRepository, conversationRepository, {
     websiteCrawlerEnabled: env.WEBSITE_CRAWLER_ENABLED,
   });
-  const workspaceSessionService = new WorkspaceSessionService(workspaceService);
   const abuseControlService = new AbuseControlService(
     overrides.abuseControlRepository ?? new InMemoryAbuseControlRepository(),
   );
@@ -1493,6 +1491,26 @@ export const createTestDependencies = (overrides: {
     auditService,
     { key: env.CONNECTOR_ENCRYPTION_KEY },
   );
+  const voiceVendorFetch: typeof globalThis.fetch = overrides.voiceVendorFetch ?? (async () => {
+    throw new TypeError("Voice vendor calls are disabled in tests");
+  });
+  const voiceRecordings = createVoiceRecordingComposition({
+    recordings: voiceSessions,
+    credentials: workspaceProviderCredentialsService,
+    fetch: voiceVendorFetch,
+    auditService,
+    metricsRegistry,
+    logger,
+  });
+  const workspaceService = new WorkspaceService(
+    workspaceRepository,
+    auditService,
+    accountMembershipRepository,
+    undefined,
+    undefined,
+    voiceRecordings.erasure,
+  );
+  const workspaceSessionService = new WorkspaceSessionService(workspaceService);
   const oauthConnectionRepository = new InMemoryOauthConnectionRepository();
   const integrationConnectionRepository = new InMemoryIntegrationConnectionRepository();
   const slackInstallationRepository = new InMemorySlackInstallationRepository();
@@ -2452,17 +2470,6 @@ export const createTestDependencies = (overrides: {
     release: async () => { throw notFound("Held reply not found"); },
     discard: async () => { throw notFound("Held reply not found"); },
   };
-  const voiceVendorFetch: typeof globalThis.fetch = overrides.voiceVendorFetch ?? (async () => {
-    throw new TypeError("Voice vendor calls are disabled in tests");
-  });
-  const voiceRecordings = createVoiceRecordingComposition({
-    recordings: voiceSessions,
-    credentials: workspaceProviderCredentialsService,
-    fetch: voiceVendorFetch,
-    auditService,
-    metricsRegistry,
-    logger,
-  });
   const copilotToolCatalog = createCopilotToolCatalog({
     emailChannel: null,
     deliveryFailures: deliveryFailureRecords,

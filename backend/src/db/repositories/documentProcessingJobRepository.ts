@@ -99,7 +99,10 @@ export interface DocumentProcessingJobRepositoryPort {
   }): Promise<DocumentProcessingJobRecord[]>;
   listProcessingJobs(): Promise<DocumentProcessingJobRecord[]>;
   getQueueSnapshot(now?: Date): Promise<DocumentProcessingQueueSnapshot>;
-  markCompleted(jobId: string): Promise<void>;
+  // Returns false when the row was no longer "processing" (already terminal,
+  // from a concurrent writer or an earlier call), so a late-finishing run
+  // never overwrites a terminal state.
+  markCompleted(jobId: string): Promise<boolean>;
   markSkipped(jobId: string, reason: string): Promise<void>;
   markFailed(jobId: string, errorMessage: string): Promise<void>;
   markFailedIfDocumentMatches(input: {
@@ -111,22 +114,32 @@ export interface DocumentProcessingJobRepositoryPort {
   }): Promise<boolean>;
   reschedule(jobId: string, nextAttemptAt: Date, errorMessage: string): Promise<void>;
   // Atomically decides, for one expired claim, between releasing it back to the
-  // queue (attempts remain) and ending it as a terminal failure (attempts are
-  // exhausted) — fenced on the same (status='processing', claimed_at<=cutoff)
-  // condition as the old release-only check, so two concurrent sweepers acting
-  // on the same row can only ever have one of them win it, and a job that
-  // completes concurrently (status no longer 'processing') is left alone.
-  // Returns the updated row — status tells the caller which branch ran — or
-  // null when the row was not eligible (already completed, already acted on by
-  // another sweeper, or claimed more recently than the cutoff).
+  // queue (attempts remain) and marking it exhausted (attempts are used up) —
+  // fenced on the same (status='processing', claimed_at<=cutoff) condition as
+  // the old release-only check, so two concurrent sweepers acting on the same
+  // row can only ever have one of them win it.
+  //
+  // An exhausted row is deliberately NOT written as terminal here: it keeps
+  // status='processing' and only takes a fresh lease (claimed_at=now), so the
+  // caller's own terminal write (document update, embedding-profile failure
+  // recording, job markFailed) is the one and only thing that ever commits a
+  // terminal state. If that write crashes or the process dies before it runs,
+  // the row simply looks like a fresh stale claim again on the next sweep —
+  // nothing is stranded between "job failed" and "document/transition still
+  // reflects the old state" the way an immediate terminal write here would be.
   releaseOrFailExpiredClaim(input: {
     jobId: string;
     claimedAtOrBefore: Date;
     maxAttempts: number;
     releasedReason: string;
     exhaustedReason: string;
-  }): Promise<DocumentProcessingJobRecord | null>;
+  }): Promise<ReleaseOrFailExpiredClaimOutcome>;
 }
+
+export type ReleaseOrFailExpiredClaimOutcome =
+  | { outcome: "released" }
+  | { outcome: "exhausted"; job: DocumentProcessingJobRecord }
+  | { outcome: "not_claimed" };
 
 // The canonical-coverage rule, defined once for every read of it.
 //
@@ -902,8 +915,11 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
     };
   }
 
-  async markCompleted(jobId: string): Promise<void> {
-    await this.db
+  async markCompleted(jobId: string): Promise<boolean> {
+    // Fenced on status='processing' so a late-finishing run can never overwrite
+    // a terminal state another caller already committed (a recovery sweep's
+    // own terminal write, or a second completion attempt after this one).
+    const row = await this.db
       .updateTable("document_processing_jobs")
       .set({
         status: "completed",
@@ -911,7 +927,10 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
         updated_at: currentTimestamp(),
       })
       .where("id", "=", jobId)
-      .execute();
+      .where("status", "=", "processing")
+      .returning("id")
+      .executeTakeFirst();
+    return Boolean(row);
   }
 
   async markSkipped(jobId: string, reason: string): Promise<void> {
@@ -1001,21 +1020,23 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
     maxAttempts: number;
     releasedReason: string;
     exhaustedReason: string;
-  }): Promise<DocumentProcessingJobRecord | null> {
+  }): Promise<ReleaseOrFailExpiredClaimOutcome> {
     const row = await this.db
       .updateTable("document_processing_jobs")
       .set((eb) => {
         const exhausted = eb("attempt_count", ">=", input.maxAttempts);
         return {
-          status: eb.case().when(exhausted).then("failed").else("queued").end(),
+          // Exhausted stays "processing" — see the port doc comment for why
+          // nothing terminal is committed in this statement.
+          status: eb.case().when(exhausted).then(eb.ref("status")).else("queued").end(),
           last_error: eb.case().when(exhausted).then(input.exhaustedReason).else(input.releasedReason).end(),
-          // A released job becomes claimable immediately; an exhausted job's
-          // available_at no longer matters (it never claims again), so leave it.
+          // A released job becomes claimable immediately; an exhausted job
+          // keeps its lease, so available_at does not matter either way.
           available_at: eb.case().when(exhausted).then(eb.ref("available_at")).else(currentTimestamp()).end(),
-          // Mirrors markFailed: a terminally failed job keeps its last claim
-          // timestamp rather than clearing it.
-          claimed_at: eb.case().when(exhausted).then(eb.ref("claimed_at")).else(null).end(),
-          completed_at: eb.case().when(exhausted).then(currentTimestamp()).else(eb.ref("completed_at")).end(),
+          // Exhausted: take a fresh lease so a second sweeper can't also act
+          // on this row until the caller's terminal write finishes (or fails
+          // and lets the lease expire again). Released: clear it.
+          claimed_at: eb.case().when(exhausted).then(currentTimestamp()).else(null).end(),
           updated_at: currentTimestamp(),
         };
       })
@@ -1026,6 +1047,12 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
       .returning(documentProcessingJobColumns)
       .executeTakeFirst();
 
-    return row ? mapJob(row as DocumentProcessingJobRow) : null;
+    if (!row) {
+      return { outcome: "not_claimed" };
+    }
+    const job = mapJob(row as DocumentProcessingJobRow);
+    return job.attemptCount >= input.maxAttempts
+      ? { outcome: "exhausted", job }
+      : { outcome: "released" };
   }
 }

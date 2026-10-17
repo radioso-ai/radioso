@@ -13,6 +13,7 @@ import type {
   DocumentProcessingJobRecord,
   DocumentProcessingQueueSnapshot,
   DocumentProcessingJobRepositoryPort,
+  ReleaseOrFailExpiredClaimOutcome,
 } from "../../../db/repositories/documentProcessingJobRepository.js";
 import { DocumentProcessingService } from "./documentProcessingService.js";
 import { getProviderFailureReason, isPermanentProviderFailure } from "../../../shared/infra/llm/providerErrors.js";
@@ -143,43 +144,7 @@ export class DocumentProcessingWorker {
 
     this.running = true;
     const inFlightJobs = await this.jobRepository.listProcessingJobs();
-    await Promise.all(inFlightJobs.map(async (job) => {
-      const document = await this.documentRepository.findByIdAndWorkspaceId(job.documentId, job.workspaceId);
-      if (!document) {
-        await this.jobRepository.markSkipped(job.id, "document_deleted");
-        return;
-      }
-
-      if (document.revision !== job.documentRevision) {
-        await this.jobRepository.markSkipped(job.id, "stale_revision");
-        return;
-      }
-
-      // Enrich jobs run against an already-ready document, so readiness is not
-      // proof the enrichment ran. Release the job to run again on restart, and
-      // never touch the document status — the vectorize path owns readiness.
-      if (job.kind !== "vectorize") {
-        await this.jobRepository.reschedule(job.id, new Date(), "worker_restarted");
-        return;
-      }
-
-      if (document.status === "ready") {
-        await this.jobRepository.markCompleted(job.id);
-        return;
-      }
-
-      await this.jobRepository.reschedule(job.id, new Date(), "worker_restarted");
-      const resetDocument = await this.documentRepository.setStatusIfRevisionMatches({
-        documentId: job.documentId,
-        workspaceId: job.workspaceId,
-        revision: job.documentRevision,
-        status: "queued",
-        failureReason: null,
-      });
-      if (resetDocument) {
-        this.publishDocumentStatusChanged(job.workspaceId);
-      }
-    }));
+    await Promise.all(inFlightJobs.map((job) => this.reconcileInFlightJobAtStartup(job)));
     await this.repairQueueGaps();
     await this.logQueueState("Document processing worker started", "document.worker.started", "started");
     this.scheduleNextTick(0);
@@ -190,6 +155,77 @@ export class DocumentProcessingWorker {
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
+    }
+  }
+
+  // A job still "processing" at boot was claimed by a worker process that is
+  // now gone — this process included, after a crash or an OOM kill on a huge
+  // document. Reschedule it to run again, with one exception: a job whose
+  // attempt_count already reached MAX_ATTEMPTS before the restart would just
+  // loop forever across restarts the same way an expired lease would, so it
+  // gets the same exhausted handling instead of an unconditional reschedule.
+  private async reconcileInFlightJobAtStartup(job: DocumentProcessingJobRecord): Promise<void> {
+    const document = await this.documentRepository.findByIdAndWorkspaceId(job.documentId, job.workspaceId);
+    if (!document) {
+      await this.jobRepository.markSkipped(job.id, "document_deleted");
+      return;
+    }
+
+    if (document.revision !== job.documentRevision) {
+      await this.jobRepository.markSkipped(job.id, "stale_revision");
+      return;
+    }
+
+    // Enrich jobs run against an already-ready document, so readiness is not
+    // proof the enrichment ran. Release the job to run again on restart, and
+    // never touch the document status — the vectorize path owns readiness.
+    if (job.kind !== "vectorize") {
+      if (job.attemptCount >= MAX_ATTEMPTS) {
+        await this.reconcileExhaustedJobAtStartup(job);
+        return;
+      }
+      await this.jobRepository.reschedule(job.id, new Date(), "worker_restarted");
+      return;
+    }
+
+    if (document.status === "ready") {
+      await this.jobRepository.markCompleted(job.id);
+      return;
+    }
+
+    if (job.attemptCount >= MAX_ATTEMPTS) {
+      await this.reconcileExhaustedJobAtStartup(job);
+      return;
+    }
+
+    await this.jobRepository.reschedule(job.id, new Date(), "worker_restarted");
+    const resetDocument = await this.documentRepository.setStatusIfRevisionMatches({
+      documentId: job.documentId,
+      workspaceId: job.workspaceId,
+      revision: job.documentRevision,
+      status: "queued",
+      failureReason: null,
+    });
+    if (resetDocument) {
+      this.publishDocumentStatusChanged(job.workspaceId);
+    }
+  }
+
+  // Any claim found "processing" at boot is abandoned by definition — this
+  // process cannot have been the one holding it — so any claimed_at counts as
+  // expired. Still goes through the same atomic, fenced decision as the
+  // sweep and the push-worker route: a concurrent instance starting up at the
+  // same time can only have one of them win the row.
+  private async reconcileExhaustedJobAtStartup(job: DocumentProcessingJobRecord): Promise<void> {
+    const outcome = await this.jobRepository.releaseOrFailExpiredClaim({
+      jobId: job.id,
+      claimedAtOrBefore: new Date(),
+      maxAttempts: MAX_ATTEMPTS,
+      releasedReason: CLAIM_EXPIRED_REASON,
+      exhaustedReason: CLAIM_EXPIRED_ATTEMPTS_EXHAUSTED_REASON,
+    });
+    if (outcome.outcome === "exhausted") {
+      await this.handleExpiredClaimExhausted(outcome.job);
     }
   }
 
@@ -225,18 +261,18 @@ export class DocumentProcessingWorker {
 
       if (existing.status === "processing") {
         const claimedBefore = new Date(now.getTime() - this.jobLeaseMs);
-        const resolved = await this.jobRepository.releaseOrFailExpiredClaim({
+        const outcome = await this.jobRepository.releaseOrFailExpiredClaim({
           jobId,
           claimedAtOrBefore: claimedBefore,
           maxAttempts: MAX_ATTEMPTS,
           releasedReason: CLAIM_EXPIRED_REASON,
           exhaustedReason: CLAIM_EXPIRED_ATTEMPTS_EXHAUSTED_REASON,
         });
-        if (!resolved) {
+        if (outcome.outcome === "not_claimed") {
           return "busy";
         }
-        if (resolved.status === "failed") {
-          await this.handleExpiredClaimExhausted(resolved);
+        if (outcome.outcome === "exhausted") {
+          await this.handleExpiredClaimExhausted(outcome.job);
           return "noop";
         }
       }
@@ -284,7 +320,7 @@ export class DocumentProcessingWorker {
       return;
     }
 
-    const resolvedJobs = await Promise.all(
+    const outcomes = await Promise.all(
       staleJobs.map((job) =>
         this.jobRepository.releaseOrFailExpiredClaim({
           jobId: job.id,
@@ -297,12 +333,12 @@ export class DocumentProcessingWorker {
     );
 
     await Promise.all(
-      resolvedJobs
-        .filter((job): job is DocumentProcessingJobRecord => job !== null && job.status === "failed")
-        .map((job) => this.handleExpiredClaimExhausted(job)),
+      outcomes
+        .filter(isExhausted)
+        .map((outcome) => this.handleExpiredClaimExhausted(outcome.job)),
     );
 
-    const releasedCount = resolvedJobs.filter((job) => job !== null && job.status === "queued").length;
+    const releasedCount = outcomes.filter((outcome) => outcome.outcome === "released").length;
     if (releasedCount === 0) {
       return;
     }
@@ -467,6 +503,17 @@ export class DocumentProcessingWorker {
     return traceActiveSpan("document.worker.job_failure", buildDocumentWorkerJobTraceAttributes(job), async () => {
       const { reason: message, isPermanent, terminalProfileFailureKind, durationMs } = input;
 
+      // A vectorize job can finish publishing a document and then be cut off
+      // before its own completion bookkeeping runs — the same window the
+      // push worker's request-timeout cutoff creates. The document already
+      // serves retrieval at this revision, so complete the job instead of
+      // failing a document that is already correct. Mirrors the same check
+      // reconcileInFlightJobAtStartup makes for a job found still "processing"
+      // at boot.
+      if (job.kind === "vectorize" && await this.completeAlreadyPublishedJob(job)) {
+        return;
+      }
+
       if (job.kind === "embedding_profile") {
         if (!terminalProfileFailureKind) {
           throw new Error(
@@ -533,14 +580,41 @@ export class DocumentProcessingWorker {
     });
   }
 
-  // Claim-expiry recovery (the push-worker recovery route and the periodic
-  // stale sweep) lands here once releaseOrFailExpiredClaim reports a row it
-  // moved to "failed" rather than releasing: attempt_count had already
-  // reached MAX_ATTEMPTS when the lease ran out, so reclaiming it again would
-  // just pay for another embedding run that gets cut off the same way. Logs
-  // and counts the event — job id, kind, document id, attempt count, no
-  // document content — so operators can see large documents hitting the
-  // limit, then runs the same terminal path an exhausted-retry failure would.
+  // True when a vectorize job's document already published successfully at
+  // this exact revision — the job's own completion bookkeeping just never
+  // ran. markCompleted is fenced on status='processing', so a concurrent
+  // writer that already resolved the job (completed or failed it first)
+  // leaves this a safe no-op rather than a double terminal write.
+  private async completeAlreadyPublishedJob(job: DocumentProcessingJobRecord): Promise<boolean> {
+    const document = await this.documentRepository.findByIdAndWorkspaceId(job.documentId, job.workspaceId);
+    if (!document || document.revision !== job.documentRevision || document.status !== "ready") {
+      return false;
+    }
+    const completed = await this.jobRepository.markCompleted(job.id);
+    if (completed) {
+      await this.emitJobTelemetry("document.worker.job_completed", job, {
+        // Not a measured run — this is recovery catching up on a job the
+        // platform's request timeout cut off after it had already
+        // published. The lease length is a believable stand-in; the actual
+        // elapsed-since-claim figure would skew document_worker_job_duration_ms
+        // with multi-sweep outliers.
+        durationMs: this.jobLeaseMs,
+        outcome: "completed",
+      });
+    }
+    return completed;
+  }
+
+  // Claim-expiry recovery (the push-worker recovery route, the periodic
+  // stale sweep, and startup reconciliation) lands here once
+  // releaseOrFailExpiredClaim reports a row as "exhausted": attempt_count had
+  // already reached MAX_ATTEMPTS when the lease ran out, so reclaiming it
+  // again would just pay for another embedding run that gets cut off the
+  // same way. The row stays "processing" with a fresh lease until the
+  // terminal write below actually lands — if that write throws, the row is
+  // simply stale again next sweep and this method runs again. Logs and
+  // counts the event — job id, kind, document id, attempt count, no document
+  // content — so operators can see large documents hitting the limit.
   private async handleExpiredClaimExhausted(job: DocumentProcessingJobRecord): Promise<void> {
     this.logger.warn(
       {
@@ -574,7 +648,11 @@ export class DocumentProcessingWorker {
       // Not a contract-invalid or permanent provider failure — the same
       // classification a non-permanent retry-exhausted failure would get.
       terminalProfileFailureKind: job.kind === "embedding_profile" ? "retry_exhausted" : undefined,
-      durationMs: job.claimedAt ? Date.now() - job.claimedAt.getTime() : 0,
+      // The elapsed-since-claim figure would fold in however long the sweep
+      // interval and any retried terminal write took, skewing
+      // document_worker_job_duration_ms with outliers unrelated to actual
+      // processing time. The lease length is a believable proxy instead.
+      durationMs: this.jobLeaseMs,
     });
   }
 
@@ -741,6 +819,10 @@ const requireEmbeddingProfileJobField = (
   }
   return value;
 };
+
+const isExhausted = (
+  outcome: ReleaseOrFailExpiredClaimOutcome,
+): outcome is { outcome: "exhausted"; job: DocumentProcessingJobRecord } => outcome.outcome === "exhausted";
 
 const embeddingProfileTerminalFailureKind = (
   error: unknown,

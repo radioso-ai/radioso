@@ -46,7 +46,7 @@ export interface SpeechPosition {
 const WHOLE_TEXT: SpeechPosition = { startsLine: true, final: true };
 
 /** One removal speech makes: every match of `pattern` goes, except its group `keptGroup` (a link's text). */
-export interface SpeechRemoval {
+interface SpeechRemoval {
   pattern: RegExp;
   keptGroup?: number;
 }

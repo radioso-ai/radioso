@@ -1,4 +1,5 @@
 import type { Env } from "../../../app/config/env.js";
+import type { AuthFunnelRepositoryPort } from "./authFunnelService.js";
 import { AppError, badRequest, conflict, forbidden, unauthorized } from "../../../shared/domain/errors.js";
 import type { AccountAccessService, AccountInvitationService, AuthenticatedPrincipal } from "../../account/public.js";
 import {
@@ -161,6 +162,7 @@ interface AuthServiceDependencies {
   userRepository: UserRepositoryPort;
   sessionRepository: SessionRepositoryPort;
   federatedIdentityRepository: FederatedIdentityRepositoryPort;
+  authFunnelRepository: Pick<AuthFunnelRepositoryPort, "recoverFederatedUser">;
   workspaceService: WorkspaceService;
   accountAccessService: AccountAccessService;
   accountInvitationService: AccountInvitationService;
@@ -612,11 +614,17 @@ export class AuthService {
       // name goes the same way: the registrant chose it, so the provider's
       // name for the mailbox owner replaces it.
       await runFederatedLoginStage({ reason: "account_reverification_failed" }, async () => {
-        await this.dependencies.userRepository.updatePassword(existing.id, await hashPassword(generateSessionToken()));
-        await this.dependencies.sessionRepository.revokeAllForUser(existing.id, new Date());
-        displayName = providerDisplayName(input.displayName);
-        await this.dependencies.userRepository.updateDisplayName(existing.id, displayName);
-        await this.dependencies.userRepository.markEmailVerified(existing.id, new Date());
+        const recovery = await this.dependencies.authFunnelRepository.recoverFederatedUser({
+          userId: existing.id,
+          passwordHash: await hashPassword(generateSessionToken()),
+          displayName: providerDisplayName(input.displayName),
+          now: new Date(),
+        });
+        if (!recovery) throw unauthorized("User not found");
+        // The repository decides from the user row while holding its lock. If
+        // link verification won first, this is an ordinary verified-user login
+        // and must not rotate credentials or revoke the session it just made.
+        displayName = recovery.displayName;
       });
     }
 

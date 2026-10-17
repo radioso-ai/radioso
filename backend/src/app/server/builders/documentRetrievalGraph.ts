@@ -247,6 +247,7 @@ export const buildDocumentRetrievalGraph = (input: {
     documentRepository: repositories.documentRepository,
     env,
     workspaceRepository: repositories.workspaceRepository,
+    workspaceSetupStateRepository: repositories.workspaceSetupStateRepository,
     personalCredentialTermination: input.personalCredentialTermination,
     personalCredentialLifecycle: input.personalCredentialLifecycle,
     vendorHeldConversationData: input.vendorHeldConversationData,

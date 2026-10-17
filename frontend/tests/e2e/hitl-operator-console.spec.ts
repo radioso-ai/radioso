@@ -100,6 +100,7 @@ test("drawer opened from Conversations carries no operator mutation controls", a
     canResolve: true,
     deadline: null,
     createdAt: nowIso,
+    channel: null,
   };
 
   await seedDashboardStorage(page);

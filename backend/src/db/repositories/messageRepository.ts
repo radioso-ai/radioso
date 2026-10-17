@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import { sql } from "kysely";
+import { sql, type RawBuilder } from "kysely";
+import { z } from "zod";
 
 import type { MessageSource } from "@radioso/conversation-contract";
 
@@ -9,13 +10,14 @@ import {
   type ReplyInterruption,
   type ReplyInterruptionMarker,
 } from "../../modules/chat/contracts/interruption.js";
-import {
-  operatorReplySpeechSchema,
-  type OperatorReplySpeech,
-  type OperatorReplySpeechMarker,
-  type PendingOperatorReply,
-  type PendingOperatorReplyReader,
+import type {
+  OperatorReplyClaim,
+  OperatorReplySpeech,
+  OperatorReplySpeechClaims,
+  OperatorReplySpeechMarker,
+  PendingOperatorReply,
 } from "../../modules/chat/contracts/operatorReplySpeech.js";
+import { VOICE_BEHAVIOR } from "../../shared/domain/behaviorConfig.js";
 import { HUMAN_AUTHORED_MESSAGE_SOURCES, isHumanAuthoredMessageSource } from "../../shared/domain/messageAuthorship.js";
 import { clockTimestamp, jsonbConcat, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
@@ -239,28 +241,56 @@ const mapInterruption = (metadata: unknown): ReplyInterruption | undefined => {
   return parsed.success ? parsed.data : undefined;
 };
 
-/** A teammate reply's speech state; a malformed one, or a spoken one with no time, reads as none. */
+/**
+ * How a teammate reply's speech is stored: `pending`; `claimed` by the turn speaking it, with when;
+ * `spoken`, with when that turn completed; `skipped`, with when, for a reply with no words to say.
+ */
+const storedSpeechSchema = z.discriminatedUnion("state", [
+  z.object({ state: z.literal("pending") }),
+  z.object({ state: z.literal("claimed"), claimedAt: z.string(), claimTurnId: z.string() }),
+  z.object({ state: z.literal("spoken"), spokenAt: z.string().datetime() }),
+  z.object({ state: z.literal("skipped"), skippedAt: z.string() }),
+]);
+
+/** A teammate reply's speech as readers see it: a claim is still pending; a malformed state reads as none. */
 const mapSpeech = (metadata: unknown): OperatorReplySpeech | undefined => {
   const marker = metadata && typeof metadata === "object" ? (metadata as { speech?: unknown }).speech : undefined;
-  const parsed = operatorReplySpeechSchema.safeParse(marker);
+  const parsed = storedSpeechSchema.safeParse(marker);
   if (!parsed.success) return undefined;
-  return parsed.data.state === "spoken"
-    ? (parsed.data.spokenAt ? { state: "spoken", spokenAt: parsed.data.spokenAt } : undefined)
-    : { state: "pending" };
+  switch (parsed.data.state) {
+    case "pending":
+    case "claimed":
+      return { state: "pending" };
+    case "spoken":
+      return { state: "spoken", spokenAt: parsed.data.spokenAt };
+    case "skipped":
+      return { state: "skipped" };
+  }
 };
 
 /**
- * When a marker was recorded, as a UTC ISO string with milliseconds: the format `Date.toISOString`
- * writes, so marker times and tail cursor times compare as text, in time order, without a cast.
+ * A database time as a UTC ISO string with milliseconds: the format `Date.toISOString` writes, so
+ * marker times, claim times and tail cursor times compare as text, in time order, without a cast.
  */
-const markerRecordedAt = sql<string>`to_char(${clockTimestamp()} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
+const isoText = (time: RawBuilder<Date>) => sql<string>`to_char((${time}) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
+/** When a marker is recorded: now, on the database clock. */
+const markerRecordedAt = isoText(clockTimestamp());
 /**
- * The newest marker a reply carries: its interruption's or, on a teammate's reply, when the caller
- * heard it. Null for a reply that carries neither; `GREATEST` skips the one that is missing.
+ * The newest marker a reply carries: its interruption's or, on a teammate's reply, when it was
+ * spoken or skipped. Null for a reply that carries none; `GREATEST` skips the ones missing.
  */
-const markerRecordedAtOf = sql<string>`GREATEST(metadata_json -> 'interruption' ->> 'recordedAt', metadata_json -> 'speech' ->> 'spokenAt')`;
+const markerRecordedAtOf = sql<string>`GREATEST(
+  metadata_json -> 'interruption' ->> 'recordedAt',
+  metadata_json -> 'speech' ->> 'spokenAt',
+  metadata_json -> 'speech' ->> 'skippedAt'
+)`;
 const carriesInterruption = sql<boolean>`jsonb_typeof(metadata_json -> 'interruption') = 'object'`;
-const awaitsSpeech = sql<boolean>`metadata_json -> 'speech' ->> 'state' = 'pending'`;
+const speechState = sql<string>`metadata_json -> 'speech' ->> 'state'`;
+/** Pending, or claimed by a turn that never settled it within the expiry. */
+const awaitsSpeech = sql<boolean>`(${speechState} = 'pending' OR (${speechState} = 'claimed'
+  AND metadata_json -> 'speech' ->> 'claimedAt' < ${isoText(sql<Date>`${clockTimestamp()} - make_interval(secs => ${VOICE_BEHAVIOR.operatorReplyClaimExpiryMs / 1_000})`)}))`;
+const claimedBy = (claimTurnId: string) =>
+  sql<boolean>`(${speechState} = 'claimed' AND metadata_json -> 'speech' ->> 'claimTurnId' = ${claimTurnId})`;
 const PENDING_SPEECH = { state: "pending" } as const satisfies OperatorReplySpeech;
 
 const messageColumns = [
@@ -323,7 +353,7 @@ const toPreview = (content: string): string => {
 };
 
 export class MessageRepository
-  implements MessageRepositoryPort, ReplyInterruptionMarker, PendingOperatorReplyReader, OperatorReplySpeechMarker {
+  implements MessageRepositoryPort, ReplyInterruptionMarker, OperatorReplySpeechClaims, OperatorReplySpeechMarker {
   constructor(private readonly db: Db) {}
 
   async findByIdAndWorkspaceId(workspaceId: string, messageId: string): Promise<MessageRecord | null> {
@@ -772,11 +802,11 @@ export class MessageRepository
     return result.numUpdatedRows > 0n;
   }
 
-  /** Teammate replies still marked pending speech, oldest first, on the conversation's own messages. */
+  /** Teammate replies pending speech (or held by a claim past its expiry), oldest first. */
   async pendingOperatorReplies(input: { workspaceId: string; conversationId: string }): Promise<PendingOperatorReply[]> {
     const rows = await this.db
       .selectFrom("messages")
-      .select(["id", "content", "created_at"])
+      .select(["id", "content"])
       .where("workspace_id", "=", input.workspaceId)
       .where("conversation_id", "=", input.conversationId)
       .where("role", "=", "assistant")
@@ -785,25 +815,50 @@ export class MessageRepository
       .orderBy("created_at", "asc")
       .orderBy("id", "asc")
       .execute();
-    return rows.map((row) => ({ messageId: row.id, text: row.content, createdAt: new Date(row.created_at) }));
+    return rows.map((row) => ({ messageId: row.id, text: row.content }));
   }
 
   /**
-   * Replaces a pending reply's `speech` with `{ state: "spoken", spokenAt }`, the time on the
-   * database clock in the tail cursor's format, so the dashboard tail re-delivers the reply once.
-   * Only pending replies match, so a reply spoken already keeps its first `spokenAt`.
+   * One UPDATE from pending to claimed: a row another claim took first fails the condition once
+   * its lock is released, so two turns claiming at once never both hold a reply.
    */
-  async markOperatorRepliesSpoken(input: { workspaceId: string; conversationId: string; messageIds: string[] }): Promise<string[]> {
+  claimOperatorReplies(input: OperatorReplyClaim): Promise<string[]> {
+    return this.replaceSpeech(input, awaitsSpeech, sql`jsonb_build_object(
+      'state', 'claimed', 'claimedAt', ${markerRecordedAt}, 'claimTurnId', ${input.claimTurnId}::text)`);
+  }
+
+  releaseOperatorReplies(input: OperatorReplyClaim): Promise<string[]> {
+    return this.replaceSpeech(input, claimedBy(input.claimTurnId), toJsonb(PENDING_SPEECH));
+  }
+
+  /**
+   * `spokenAt` is the database clock in the tail cursor's format, so the dashboard tail re-delivers
+   * the reply once. Only replies the turn still holds match, so the first `spokenAt` stays.
+   */
+  markOperatorRepliesSpoken(input: OperatorReplyClaim): Promise<string[]> {
+    return this.replaceSpeech(input, claimedBy(input.claimTurnId), sql`jsonb_build_object('state', 'spoken', 'spokenAt', ${markerRecordedAt})`);
+  }
+
+  skipOperatorReplies(input: { workspaceId: string; conversationId: string; messageIds: string[] }): Promise<string[]> {
+    return this.replaceSpeech(input, awaitsSpeech, sql`jsonb_build_object('state', 'skipped', 'skippedAt', ${markerRecordedAt})`);
+  }
+
+  /** Replaces the speech state of those of the conversation's teammate replies whose state matches. */
+  private async replaceSpeech(
+    input: { workspaceId: string; conversationId: string; messageIds: string[] },
+    current: RawBuilder<boolean>,
+    next: RawBuilder<unknown>,
+  ): Promise<string[]> {
     if (input.messageIds.length === 0) return [];
-    const spoken = sql`jsonb_build_object('state', 'spoken', 'spokenAt', ${markerRecordedAt})`;
     const rows = await this.db
       .updateTable("messages")
-      .set((eb) => ({ metadata_json: jsonbConcat(eb.ref("metadata_json"), sql`jsonb_build_object('speech', ${spoken})`) }))
+      .set((eb) => ({ metadata_json: jsonbConcat(eb.ref("metadata_json"), sql`jsonb_build_object('speech', ${next})`) }))
       .where("workspace_id", "=", input.workspaceId)
       .where("conversation_id", "=", input.conversationId)
       .where("id", "in", input.messageIds)
       .where("role", "=", "assistant")
-      .where(awaitsSpeech)
+      .where("source", "in", [...HUMAN_AUTHORED_MESSAGE_SOURCES])
+      .where(current)
       .returning("id")
       .execute();
     return rows.map((row) => row.id);

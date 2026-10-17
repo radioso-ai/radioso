@@ -93,12 +93,12 @@ describe("voice channel composition: turn notes", () => {
   });
 
   describe("a teammate's replies spoken to the caller", () => {
-    const spoken = { workspaceId: "workspace-1", conversationId: "conversation-1", messageIds: ["reply-1", "reply-2"] };
+    const spoken = { workspaceId: "workspace-1", conversationId: "conversation-1", messageIds: ["reply-1", "reply-2"], claimTurnId: "turn-1" };
 
     it("marks the replies spoken before recording one audit event that names them by id only", async () => {
       const { notes, writes, audits } = sinks();
 
-      await notes.operatorRepliesSpoken(spoken);
+      await expect(notes.operatorRepliesSpoken(spoken)).resolves.toEqual(["reply-1", "reply-2"]);
 
       expect(writes).toEqual(["spoken:conversation-1:reply-1,reply-2", "audit:voice.operator_reply_spoken"]);
       expect(audits).toEqual([{
@@ -109,13 +109,13 @@ describe("voice channel composition: turn notes", () => {
       }]);
     });
 
-    it("audits only the replies this note marked, and nothing when another turn marked them all first", async () => {
+    it("audits and resolves only the replies this note marked, and nothing when none was still the turn's", async () => {
       const some = sinks({ alreadySpoken: ["reply-1"] });
-      await some.notes.operatorRepliesSpoken(spoken);
+      await expect(some.notes.operatorRepliesSpoken(spoken)).resolves.toEqual(["reply-2"]);
       expect(some.audits.map((event) => event.metadata)).toEqual([{ conversationId: "conversation-1", messageIds: ["reply-2"] }]);
 
       const none = sinks({ alreadySpoken: ["reply-1", "reply-2"] });
-      await expect(none.notes.operatorRepliesSpoken(spoken)).resolves.toBeUndefined();
+      await expect(none.notes.operatorRepliesSpoken(spoken)).resolves.toEqual([]);
       expect(none.writes).toEqual(["spoken:conversation-1:reply-1,reply-2"]);
     });
 

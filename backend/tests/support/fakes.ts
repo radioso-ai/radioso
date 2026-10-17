@@ -182,7 +182,9 @@ import type {
 } from "../../src/db/repositories/messageRepository.js";
 import type { MessageSource } from "@radioso/conversation-contract";
 import { deriveMessageSourceFromRole } from "../../src/db/repositories/messageRepository.js";
-import type { PendingOperatorReply, ReplyInterruption } from "../../src/modules/chat/contracts/index.js";
+import type { OperatorReplyClaim, PendingOperatorReply, ReplyInterruption } from "../../src/modules/chat/contracts/index.js";
+import { VOICE_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
+import { isHumanAuthoredMessageSource } from "../../src/shared/domain/messageAuthorship.js";
 import type {
   IngestionSettingsRecord,
   ValidatedIngestionSettingsInput,
@@ -4805,21 +4807,72 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     return true;
   }
 
-  async pendingOperatorReplies(input: { workspaceId: string; conversationId: string }): Promise<PendingOperatorReply[]> {
+  /** Claims on teammate replies by message id, as the Postgres repository keeps them in `speech`. */
+  private readonly speechClaims = new Map<string, { claimTurnId: string; claimedAtMs: number }>();
+
+  /** The conversation's teammate replies, as the Postgres repository orders them: oldest first, then by id. */
+  private teammateReplies(input: { workspaceId: string; conversationId: string }): MessageRecord[] {
     return (this.items.get(input.conversationId) ?? [])
-      .filter((message) => message.workspaceId === input.workspaceId && message.speech?.state === "pending")
-      .map((message) => ({ messageId: message.id, text: message.content, createdAt: message.createdAt }));
+      .filter((message) => message.workspaceId === input.workspaceId && message.role === "assistant" && isHumanAuthoredMessageSource(message.source))
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id));
   }
 
-  async markOperatorRepliesSpoken(input: { workspaceId: string; conversationId: string; messageIds: string[] }): Promise<string[]> {
-    const marked: string[] = [];
-    for (const message of this.items.get(input.conversationId) ?? []) {
-      if (message.workspaceId === input.workspaceId && input.messageIds.includes(message.id) && message.speech?.state === "pending") {
-        message.speech = { state: "spoken", spokenAt: new Date().toISOString() };
-        marked.push(message.id);
+  /** Pending, or claimed by a turn that never settled it within the expiry. */
+  private awaitsSpeech(message: MessageRecord): boolean {
+    if (message.speech?.state !== "pending") return false;
+    const claim = this.speechClaims.get(message.id);
+    return !claim || Date.now() - claim.claimedAtMs > VOICE_BEHAVIOR.operatorReplyClaimExpiryMs;
+  }
+
+  private claimedBy(message: MessageRecord, claimTurnId: string): boolean {
+    return message.speech?.state === "pending" && this.speechClaims.get(message.id)?.claimTurnId === claimTurnId;
+  }
+
+  async pendingOperatorReplies(input: { workspaceId: string; conversationId: string }): Promise<PendingOperatorReply[]> {
+    return this.teammateReplies(input)
+      .filter((message) => this.awaitsSpeech(message))
+      .map((message) => ({ messageId: message.id, text: message.content }));
+  }
+
+  async claimOperatorReplies(input: OperatorReplyClaim): Promise<string[]> {
+    return this.replaceSpeech(input, (message) => this.awaitsSpeech(message), (message) => {
+      this.speechClaims.set(message.id, { claimTurnId: input.claimTurnId, claimedAtMs: Date.now() });
+    });
+  }
+
+  async releaseOperatorReplies(input: OperatorReplyClaim): Promise<string[]> {
+    return this.replaceSpeech(input, (message) => this.claimedBy(message, input.claimTurnId), (message) => {
+      this.speechClaims.delete(message.id);
+    });
+  }
+
+  async markOperatorRepliesSpoken(input: OperatorReplyClaim): Promise<string[]> {
+    return this.replaceSpeech(input, (message) => this.claimedBy(message, input.claimTurnId), (message) => {
+      this.speechClaims.delete(message.id);
+      message.speech = { state: "spoken", spokenAt: new Date().toISOString() };
+    });
+  }
+
+  async skipOperatorReplies(input: { workspaceId: string; conversationId: string; messageIds: string[] }): Promise<string[]> {
+    return this.replaceSpeech(input, (message) => this.awaitsSpeech(message), (message) => {
+      this.speechClaims.delete(message.id);
+      message.speech = { state: "skipped" };
+    });
+  }
+
+  private replaceSpeech(
+    input: { workspaceId: string; conversationId: string; messageIds: string[] },
+    matches: (message: MessageRecord) => boolean,
+    replace: (message: MessageRecord) => void,
+  ): string[] {
+    const replaced: string[] = [];
+    for (const message of this.teammateReplies(input)) {
+      if (input.messageIds.includes(message.id) && matches(message)) {
+        replace(message);
+        replaced.push(message.id);
       }
     }
-    return marked;
+    return replaced;
   }
 }
 

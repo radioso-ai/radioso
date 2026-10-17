@@ -658,7 +658,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
   const OperatorReplySpeechSchema = registry.register(
     "OperatorReplySpeech",
     operatorReplySpeechSchema.openapi({
-      description: "Present on a teammate's reply on a voice conversation. A call speaks only when its caller does, so the reply is `pending` until the caller's next turn speaks it, then `spoken`, with `spokenAt` set to when that turn handed it to the call.",
+      description: "Present on a teammate's reply on a voice conversation. A call speaks only when its caller does, so the reply is `pending` until the caller's next turn speaks it, then `spoken`, with `spokenAt` set to when the turn that spoke it completed. `skipped`: the reply has no words a call can speak, so no turn speaks it.",
     }),
   );
 

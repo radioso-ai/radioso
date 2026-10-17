@@ -69,10 +69,11 @@ export {
 export {
   operatorRepliesAreSpoken,
   operatorReplySpeechSchema,
+  type OperatorReplyClaim,
   type OperatorReplySpeech,
+  type OperatorReplySpeechClaims,
   type OperatorReplySpeechMarker,
   type PendingOperatorReply,
-  type PendingOperatorReplyReader,
 } from "./operatorReplySpeech.js";
 export type {
   ActionHandler,

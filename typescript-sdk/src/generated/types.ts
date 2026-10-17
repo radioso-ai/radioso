@@ -3218,7 +3218,7 @@ export interface paths {
         };
         /**
          * Poll new messages for a saved assistant conversation
-         * @description Returns the messages after `cursor`. It also returns an assistant reply the client has already seen once it is marked: the caller cut it short, carrying `interruption`, or a teammate's reply was spoken to the caller, carrying `speech` with `state: "spoken"`. Re-delivered replies come in time order with the new messages. Merge messages by `id`, so a re-delivered message replaces the one you hold.
+         * @description Returns the messages after `cursor`. It also returns an assistant reply the client has already seen once it is marked: the caller cut it short, carrying `interruption`, or a teammate's reply was spoken to the caller or skipped, carrying `speech` with `state: "spoken"` or `"skipped"`. Re-delivered replies come in time order with the new messages. Merge messages by `id`, so a re-delivered message replaces the one you hold.
          */
         get: operations["tailHistoryConversation"];
         put?: never;
@@ -8498,10 +8498,10 @@ export interface components {
             heardCharacterCount: number;
             spokenCharacterCount: number;
         };
-        /** @description Present on a teammate's reply on a voice conversation. A call speaks only when its caller does, so the reply is `pending` until the caller's next turn speaks it, then `spoken`, with `spokenAt` set to when that turn handed it to the call. */
+        /** @description Present on a teammate's reply on a voice conversation. A call speaks only when its caller does, so the reply is `pending` until the caller's next turn speaks it, then `spoken`, with `spokenAt` set to when the turn that spoke it completed. `skipped`: the reply has no words a call can speak, so no turn speaks it. */
         OperatorReplySpeech: {
             /** @enum {string} */
-            state: "pending" | "spoken";
+            state: "pending" | "spoken" | "skipped";
             /** Format: date-time */
             spokenAt?: string;
         };

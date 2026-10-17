@@ -175,7 +175,9 @@ interface VoiceTurnRecord {
    * piece of the turn's own answer, each in order.
    */
   spoken: { operatorReplies: string[]; bridge: string | null; speech: string[] };
-  /** How many teammate replies the turn handed to the call. */
+  /** The teammate replies the turn spoke ahead of its answer, held for it until it settles. */
+  operatorReplyIds: string[];
+  /** How many of them the caller heard: the turn's outcome left before the runtime hung up. */
   spokenOperatorReplies: number;
   /** The outcome the runtime received, once it left. */
   outcome: VoiceTurnOutcome | null;
@@ -193,6 +195,7 @@ const emptyRecord = (): VoiceTurnRecord => ({
   chatReplied: false,
   reply: null,
   spoken: { operatorReplies: [], bridge: null, speech: [] },
+  operatorReplyIds: [],
   spokenOperatorReplies: 0,
   outcome: null,
   handoffReason: null,
@@ -338,7 +341,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       }
       if (sessionClaim.conversationId) {
         yield { type: "conversation", conversationId: sessionClaim.conversationId };
-        yield* this.operatorReplySpeech(input, sessionClaim.conversationId, operatorReplies, record, claim);
+        yield* this.operatorReplySpeech(operatorReplies, record, claim, sessionKey);
       }
       const reply = this.replyEvents(input, sessionClaim, record, signal, sessionKey);
       yield* this.delivered(policy ? applyVoiceTurnPolicy(reply, policy) : withoutPhaseMarkers(reply), record, claim, sessionKey);
@@ -350,6 +353,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       hungUp?.removeEventListener("abort", onHangUp);
       const finish = (): void => {
         this.releaseFirstTurn(input.session, firstTurn);
+        this.settleOperatorReplies(input, record, claim, sessionKey);
         this.memory.settle(sessionKey, claim, this.now(), this.exchangeOf(input, record, claim));
         this.logTurn(input, record, startedAt, failure);
       };
@@ -392,38 +396,54 @@ export class VoiceTurnService implements VoiceTurnPort {
 
   /**
    * The teammate's replies the caller has not heard, spoken ahead of the turn's own answer, in the
-   * order they were written; whoever owns the conversation, chat's answer follows them. They count
-   * as heard once they have left for the call: when the runtime hung up first, they stay pending
-   * for the next turn.
+   * order they were written; whoever owns the conversation, chat's answer follows them. A reply
+   * another request of the session is speaking is left to it.
    */
   private async *operatorReplySpeech(
-    input: VoiceTurnInput,
-    conversationId: string,
     replies: PendingOperatorReply[],
     record: VoiceTurnRecord,
     claim: VoiceTurnClaim,
+    sessionKey: string,
   ): AsyncGenerator<VoiceTurnEvent> {
-    if (replies.length === 0) {
-      return;
-    }
-    for (const reply of replies) {
+    const held = this.memory.holdOperatorReplies(sessionKey, claim, replies, this.now());
+    record.operatorReplyIds = held.map((reply) => reply.messageId);
+    for (const reply of held) {
       for (const text of wholeTextSpeech(reply.text)) {
         record.speechPieceCount += 1;
         record.spoken.operatorReplies.push(text);
         yield { type: "speech", text, last: false };
       }
     }
-    if (claim.hungUpAt !== null) {
+  }
+
+  /**
+   * The teammate's replies the turn spoke count as heard once its outcome left before the runtime
+   * hung up: they are marked spoken off the turn's path, and stay held until the mark is written,
+   * so a newer request does not speak them again. A turn that failed or lost its runtime first
+   * hands them back to the next turn, still pending.
+   */
+  private settleOperatorReplies(input: VoiceTurnInput, record: VoiceTurnRecord, claim: VoiceTurnClaim, sessionKey: string): void {
+    if (record.operatorReplyIds.length === 0) {
       return;
     }
-    record.spokenOperatorReplies = replies.length;
-    recordVoiceOperatorRepliesSpoken(this.dependencies.metrics, replies.length);
-    const notes = this.dependencies.notes;
-    if (notes) {
-      const note = { workspaceId: input.session.workspaceId, conversationId, messageIds: replies.map((reply) => reply.messageId) };
-      // Written off the turn's path, before chat answers: a newer turn reads them as heard.
-      withinNoteTimeout(notes.operatorRepliesSpoken(note)).catch((error: unknown) => this.warnNoteFailed(input, conversationId, error));
+    const release = (): void => this.memory.releaseOperatorReplies(sessionKey, claim, this.now());
+    const delivered = claim.outcomeAt !== null && (claim.hungUpAt === null || claim.hungUpAt > claim.outcomeAt);
+    const { conversationId } = record;
+    if (!delivered || !conversationId) {
+      release();
+      return;
     }
+    record.spokenOperatorReplies = record.operatorReplyIds.length;
+    recordVoiceOperatorRepliesSpoken(this.dependencies.metrics, record.spokenOperatorReplies);
+    const notes = this.dependencies.notes;
+    if (!notes) {
+      release();
+      return;
+    }
+    const note = { workspaceId: input.session.workspaceId, conversationId, messageIds: record.operatorReplyIds };
+    withinNoteTimeout(notes.operatorRepliesSpoken(note))
+      .catch((error: unknown) => this.warnNoteFailed(input, conversationId, error))
+      .finally(release);
   }
 
   /**

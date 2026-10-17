@@ -1555,6 +1555,48 @@ describe("VoiceTurnService", () => {
         expect(notes.operatorRepliesSpoken).toHaveBeenCalledTimes(1);
       });
 
+      it("marks nothing when the turn fails after speaking them, so the next turn speaks them again", async () => {
+        const { notes, operatorReplies } = teammateReplies(fourWorks);
+        const failing = {
+          streamTurn: () => (async function* (): AsyncGenerator<ChatStreamEvent> {
+            yield { type: "status", stage: "interpreting" };
+            throw new Error("model unavailable");
+          })(),
+        };
+        const turns = service(failing, { ownership: conversationOwnership(true), operatorReplies, notes });
+
+        const failed = start(turns, input({ utterance: "Four?" }));
+        const settled = failed.then(() => "completed", () => "failed");
+        await vi.runAllTimersAsync();
+
+        expect(await settled).toBe("failed");
+        expect(notes.operatorRepliesSpoken).not.toHaveBeenCalled();
+        expect(await operatorReplies.pendingOperatorReplies()).toHaveLength(1);
+      });
+
+      it("does not speak them again on a newer request that arrives while the turn that spoke them is still answering", async () => {
+        const { notes, operatorReplies } = teammateReplies(fourWorks);
+        const chat = supersedingChat([
+          [
+            { atMs: 0, event: { type: "conversation", conversationId } },
+            { atMs: 3_000, event: { type: "chunk", text: "We open at nine." } },
+            { atMs: 3_000, event: done() },
+          ],
+          answered("Sundays too."),
+        ]);
+        const turns = service(chat, { operatorReplies, notes });
+
+        const first = start(turns, input({ utterance: "And when do you open?" }));
+        await vi.advanceTimersByTimeAsync(1_000);
+        const second = start(turns, input({ utterance: "And on Sundays?" }));
+        await vi.runAllTimersAsync();
+
+        expect(speechOf(await first)[0]).toEqual({ type: "speech", text: "Yes, four works.\n", last: false });
+        expect(spokenText(await second)).toBe("Sundays too.");
+        expect(notes.operatorRepliesSpoken).toHaveBeenCalledTimes(1);
+        expect(notes.operatorRepliesSpoken).toHaveBeenCalledWith({ workspaceId, conversationId, messageIds: [fourWorks.messageId] });
+      });
+
       it("speaks nothing of them on a request a newer one overtook while it set up; the newer one speaks them", async () => {
         const { notes, operatorReplies } = teammateReplies(fourWorks);
         const read = operatorReplies.pendingOperatorReplies.getMockImplementation()!;

@@ -64,6 +64,8 @@ interface SessionState {
   chatTurns: number;
   lastBridge: { at: number; claim: VoiceTurnClaim } | null;
   lastExchange: { exchange: VoiceExchange; sequence: number; interruptionNote: InterruptionNote } | null;
+  /** Teammate replies a request of the session is speaking, by message id, until it releases them. */
+  heldOperatorReplies: Map<string, VoiceTurnClaim>;
   touchedAt: number;
 }
 
@@ -174,6 +176,34 @@ export class VoiceSessionMemory {
   }
 
   /**
+   * Holds the teammate replies no other request of the session is speaking for `claim`, and
+   * returns them: a newer request that reads them as pending meanwhile leaves them to this one.
+   * They stay held until {@link releaseOperatorReplies}.
+   */
+  holdOperatorReplies<Reply extends { messageId: string }>(
+    sessionKey: string,
+    claim: VoiceTurnClaim,
+    replies: readonly Reply[],
+    now: number,
+  ): Reply[] {
+    const held = this.stateOf(sessionKey, now).heldOperatorReplies;
+    const free = replies.filter((reply) => !held.has(reply.messageId));
+    for (const reply of free) {
+      held.set(reply.messageId, claim);
+    }
+    return free;
+  }
+
+  releaseOperatorReplies(sessionKey: string, claim: VoiceTurnClaim, now: number): void {
+    const held = this.stateOf(sessionKey, now).heldOperatorReplies;
+    for (const [messageId, holder] of held) {
+      if (holder === claim) {
+        held.delete(messageId);
+      }
+    }
+  }
+
+  /**
    * Reserves the newest exchange's reply as far as the caller heard it, while the vendor reports it
    * cut short and no note of it is recorded or being written; null when the report is no strict
    * prefix of what was spoken.
@@ -210,7 +240,7 @@ export class VoiceSessionMemory {
   private stateOf(sessionKey: string, now: number): SessionState {
     let state = this.sessions.get(sessionKey);
     if (!state) {
-      state = { newest: null, open: 0, chatTurns: 0, lastBridge: null, lastExchange: null, touchedAt: now };
+      state = { newest: null, open: 0, chatTurns: 0, lastBridge: null, lastExchange: null, heldOperatorReplies: new Map(), touchedAt: now };
       this.sessions.set(sessionKey, state);
     }
     state.touchedAt = now;
@@ -219,7 +249,7 @@ export class VoiceSessionMemory {
 
   private forgetIdle(now: number): void {
     for (const [sessionKey, state] of this.sessions) {
-      if (state.open === 0 && state.chatTurns === 0 && now - state.touchedAt > this.retainMs) {
+      if (state.open === 0 && state.chatTurns === 0 && state.heldOperatorReplies.size === 0 && now - state.touchedAt > this.retainMs) {
         this.sessions.delete(sessionKey);
       }
     }

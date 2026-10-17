@@ -406,15 +406,22 @@ helpers and the shared chat message limit from `app/http`
   written (its waiting line stops at the first human reply in its history
   window), so the replies take the waiting line's place and the turn ends
   `continue`; after a hand-back the agent's answer follows, with its bridge and
-  limit timed from the turn's start as always. Once the pieces have left, and
-  unless the runtime hung up first, the turn writes the note off its path
-  before chat answers: the mark (the first `spokenAt` stays; it resolves the
-  ids it marked) and then one `voice.operator_reply_spoken` audit event with
-  the conversation id and those message ids, never the text. A note that fails
-  leaves the replies pending and logs `Voice turn note could not be recorded`;
-  the next turn speaks them again. "Spoken" means handed to the call, not
-  heard to the end. A turn overtaken while it set up speaks none; a replay
-  speaks only the stored answer, and the next new utterance speaks the
+  limit timed from the turn's start as always. The turn holds the replies it
+  speaks in `VoiceSessionMemory` (`holdOperatorReplies`), so a newer request of
+  the session that reads them as pending meanwhile leaves them out (in-process,
+  like the rest of the session's memory). They count
+  as heard once the turn's outcome left before the runtime hung up (a turn
+  overtaken by the caller's next utterance counts); the turn then writes the
+  note off its path as it settles: the mark (the first `spokenAt` stays; it
+  resolves the ids it marked) and then one `voice.operator_reply_spoken` audit
+  event with the conversation id and those message ids, never the text, and
+  releases the hold once the note is written. A turn that failed, or whose
+  runtime hung up first, releases them still pending, and the next turn speaks
+  them. A mark that fails leaves them pending and logs `Voice turn note could
+  not be recorded`, so the next turn speaks them again; an audit write that
+  fails after the mark is logged the same way and not retried. A turn
+  overtaken while it set up speaks none; a replay speaks only the stored
+  answer, and the next new utterance speaks the
   replies. The session's interruption bookkeeping counts the replies as spoken
   ahead of the reply (`VoiceSpokenTurn.ahead`, before the bridge line), so a
   reply cut short after them is marked with its own characters only.

@@ -100,7 +100,6 @@ export const elevenLabsVoiceRuntime: VoiceRuntime = {
       })
       const vendorConversationId = typeof conversation.getId === 'function' ? conversation.getId() : ''
       return { end: () => conversation.endSession(), ...(vendorConversationId ? { vendorConversationId } : {}) }
-
     } catch (error) {
       if (isMicrophoneError(error)) throw new VoiceMicrophoneUnavailableError()
       throw error

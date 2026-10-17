@@ -313,7 +313,6 @@ const declarations: readonly PolicyDeclaration[] = [
   sessionOnly("GET", "/api/v1/conversations/recently-closed", "workspace.conversation.takeover"),
   // A call's recording is a teammate's to hear in the Inbox, with each play audited against them.
   sessionOnly("GET", "/api/v1/conversations/:conversationId/recording", "workspace.history.read"),
-
   ...[
     ["GET", "/api/v1/conversations/operators"],
     ["POST", "/api/v1/conversations/:conversationId/takeover"],

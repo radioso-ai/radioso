@@ -47,6 +47,7 @@ Deleting a conversation removes:
 - eval snapshots taken from it, with the eval cases and runs built on them;
 - email threads, sent-email records, and the inbound mail it received, raw message included;
 - Slack and voice links, and WhatsApp contacts;
+- a voice call's recording, which ElevenLabs keeps: Radioso asks ElevenLabs to delete it once the conversation is gone (see below);
 - the WhatsApp message log of the number whose latest conversation it is (see below);
 - routine actions and notices queued for it and not yet sent;
 - email skill activity, including its recipient summary;
@@ -83,9 +84,11 @@ Deletion reaches what Radioso stores. It cannot reach what already left:
 
 Database backups keep deleted data until each backup ages out of its retention window.
 
+A voice call's recording lives in your ElevenLabs account, so Radioso asks ElevenLabs to delete it after the deletion went through, and the deletion never waits on ElevenLabs for more than 20 seconds. A recording ElevenLabs refuses to delete, or does not delete in time, stays in your ElevenLabs account; the backend log names it as `Voice recording was left at the vendor` with its ElevenLabs conversation id, so you can delete it in ElevenLabs. Each recording Radioso deleted is recorded as a `conversation.recording_deleted` audit event. Once the workspace's ElevenLabs key is removed, or replaced with one for another ElevenLabs account, Radioso cannot delete the old account's recordings at all.
+
 ## Deleting everything at once
 
-Deleting a workspace deletes every conversation and visitor in it, with the same cleanup. Deleting the organization (**Settings → Workspace → Delete organization**, owners only) deletes every workspace it has.
+Deleting a workspace deletes every conversation and visitor in it, with the same cleanup, voice call recordings included. Deleting the organization (**Settings → Workspace → Delete organization**, owners only) deletes every workspace it has.
 
 ## Common failure modes
 

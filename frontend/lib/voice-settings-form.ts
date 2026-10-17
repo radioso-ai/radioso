@@ -127,7 +127,6 @@ export const voiceSettingsUpdateFromForm = (form: VoiceSettingsForm): { voice: A
   // The block is replaced whole, so leaving the notices out removes every one.
   if (Object.keys(recordingNotice).length > 0) voice.recordingNotice = recordingNotice
   return { voice, mechanicsReplies }
-
 }
 
 /**

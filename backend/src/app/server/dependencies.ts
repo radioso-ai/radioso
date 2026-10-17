@@ -1425,12 +1425,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     voiceSessionStarts,
     voiceSessionAvailability: voiceSessionStarts,
     voiceRecordings: voiceRecordings.recordings,
-
     assistantHistoryService: chat.assistantHistoryService,
     conversationErasure: new ConversationErasureService({
       unitOfWork: createPostgresConversationErasureUnitOfWork({ db: infrastructure.database.kysely, logger }),
       invalidation: realtimePublisherComposition.publisher,
       auditLog: infrastructure.auditService,
+      // Call recordings the voice vendor keeps: read before the erasure removes where they are.
+      vendorHeldData: voiceRecordings.erasure,
     }),
     retrievalSearchService: retrieval.retrievalSearchService,
     retrievalAnswerService: chat.retrievalAnswerService,

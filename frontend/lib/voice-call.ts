@@ -172,7 +172,6 @@ export function runVoiceCall(dependencies: VoiceCallDependencies, observer: Voic
         const input = { sessionKey: start.session.sessionKey, vendorConversationId: opened.vendorConversationId }
         vendorReport = { input, outcome: dependencies.reportVendorConversation(input).catch((): VoiceVendorConversationReportOutcome => 'failed') }
       }
-
     } catch (error) {
       clearConnectTimer()
       report({ type: error instanceof VoiceMicrophoneUnavailableError ? 'microphone_refused' : 'start_refused' })

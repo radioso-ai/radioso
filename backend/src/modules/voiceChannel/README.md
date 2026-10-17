@@ -63,8 +63,9 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   history detail and Ray's transcript both ask it) and a play
   (`VoiceRecordingPlaybackPort`), audited through `VoiceRecordingAudit`
   before the audio is handed on; `voiceRecordingErasureService.ts` deletes
-  recordings at the vendor when their workspace or organization is deleted
-  (`VoiceRecordingErasurePort`, the shared `VendorHeldConversationDataEraser`:
+  recordings at the vendor when their conversation, visitor, workspace or
+  organization is deleted (`VoiceRecordingErasurePort`, the shared
+  `VendorHeldConversationDataEraser` in `shared/domain/conversationDataErasure.ts`:
   one erasure per deletion, its scopes in order under one concurrency limit
   and one deadline).
 - `persistence/` maps `(agent_id, vendor, session_key)` to a conversation in
@@ -223,9 +224,14 @@ helpers and the shared chat message limit from `app/http`
   recording up with the workspace's own key, and no response carries it. A
   self-minted session key has no recording. Each answer that carries audio is
   audited first; an audit that fails refuses the play, and `partial` follows
-  the bytes sent. A workspace or organization deletion reads the recordings
-  and the key before the cascade takes both, then asks the vendor to delete
-  each, four at a time for at most 20 s in all (deletes still in flight at
+  the bytes sent. Every deletion that reaches a recording reads the
+  recordings and the key before anything removes them, then asks the vendor
+  to delete each once it committed, four at a time for at most 20 s in all:
+  the privacy module's conversation and visitor erasure
+  (`ConversationErasureService`'s `vendorHeldData`, before its erasers run;
+  `persistence/voiceSessionEraser.ts` is the `voice-channel` eraser that then
+  removes the rows), and workspace and organization deletion (the workspace
+  service's hook) (deletes still in flight at
   the deadline are aborted); what is left is logged with its ids and never
   fails the deletion. Deleting an agent deletes no
   recording. The route is a permanent coverage exclusion

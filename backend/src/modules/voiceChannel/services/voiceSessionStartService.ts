@@ -159,7 +159,6 @@ export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSes
         ...(session.expiresAt ? { expiresAt: session.expiresAt } : {}),
         ...(recordingNotice ? { recordingNotice } : {}),
       };
-
     } catch (error) {
       return failed("vendor_failed", vendorErrorFields(error));
     }

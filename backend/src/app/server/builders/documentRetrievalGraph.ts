@@ -38,7 +38,7 @@ import { buildWorkspaceServices } from "./accessAuth.js";
 import type { WorkspaceProviderCredentialsService } from "../../../modules/security/credentials/services/workspaceProviderCredentialsService.js";
 import type { Env } from "../../config/env.js";
 import type { WorkspacePersonalCredentialTerminationPort } from "../../../modules/workspace/services/workspaceService.js";
-import type { VendorHeldConversationDataEraser } from "../../../shared/domain/vendorHeldConversationData.js";
+import type { VendorHeldConversationDataEraser } from "../../../shared/domain/conversationDataErasure.js";
 import type { PersonalCredentialLifecyclePort } from "../../../modules/machineAccess/public.js";
 
 /** Composes the embedding transition, document, and retrieval graph in dependency order. */

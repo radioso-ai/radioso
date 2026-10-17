@@ -12,7 +12,6 @@ import {
   type VoiceRecordingAudit,
   type VoiceRecordingStore,
   type VoiceVendorCredentialReader,
-
   type VoiceSessionAvailabilityPort,
   type VoiceSessionStartLookup,
   type VoiceSessionStartPort,
@@ -223,7 +222,6 @@ export const createVoiceSessionStartComposition = (deps: {
     agents: voiceProfileSource(deps.agentRepository),
     credentials: voiceVendorCredentialReader(deps.credentials),
     starters: { elevenlabs: createElevenLabsSessionStarter({ fetch: deps.fetch }) },
-
     starts: deps.starts,
     newSessionKey: randomUUID,
     metrics: deps.metricsRegistry,

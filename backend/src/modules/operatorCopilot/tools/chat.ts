@@ -429,7 +429,6 @@ export const createChatCopilotTools = (deps: ChatCopilotToolDependencies): Reado
         });
         return { transcript: boundConversationPayload(projectTranscript(conversation, recordingAvailable)) };
       },
-
     }),
     describeEntity: ({ conversationId }, context) => entity("conversation", conversationId ?? context?.pageContext.conversationId),
   },

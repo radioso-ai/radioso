@@ -68,7 +68,6 @@ export const agentVoiceSettingsSchema = z.object({
    * telling a caller the call is recorded. Optional: a block without it shows none.
    */
   recordingNotice: perLocale(voiceLineSchema).optional(),
-
   /** Null until the operator binds a vendor agent; a session start needs one. */
   runtime: voiceRuntimeSchema.nullable(),
 });

@@ -94,7 +94,6 @@ describe('a voice call', () => {
     callWith({ reportVendorConversation, openSession: async () => ({ end: async () => undefined }) })
     await flush()
     expect(reportVendorConversation).not.toHaveBeenCalled()
-
   })
 
   it('reports the call a session opened as it was stopped before ending that session, so its recording is not lost', async () => {

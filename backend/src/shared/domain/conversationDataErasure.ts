@@ -36,3 +36,25 @@ export interface VerifiedCustomerDataEraser {
   readonly owner: string;
   eraseVerifiedCustomer(scope: VerifiedCustomerErasureScope): Promise<number>;
 }
+
+/**
+ * One erasure of conversation data a vendor keeps outside Radioso's database, such as a voice call's
+ * recording, which the vendor deletes only when Radioso asks it to: its scopes, worked through in
+ * order under one budget, and the organization they belong to, which the erasure's record names.
+ * `deleted`: the organization goes with them, so the record keeps its id without pointing at it.
+ */
+export interface VendorHeldConversationDataErasure {
+  readonly account: { readonly id: string; readonly deleted: boolean } | null;
+  readonly scopes: readonly ConversationErasureScope[];
+}
+
+/**
+ * Erases what vendors hold, in two steps around the deletion. `prepare` reads what is held and the
+ * workspace's vendor keys while the conversations and the keys still exist, before any eraser or
+ * cascade removes the rows that say where it is; `erase` asks the vendors to delete it once the
+ * deletion has committed. `erase` never rejects, so a vendor that refuses or cannot be reached never
+ * holds a deletion back; what is left at a vendor is the eraser's to log.
+ */
+export interface VendorHeldConversationDataEraser {
+  prepare(erasure: VendorHeldConversationDataErasure): Promise<{ erase(): Promise<void> }>;
+}

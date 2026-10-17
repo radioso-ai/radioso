@@ -263,7 +263,6 @@ export const createApiNode = (
     conversationErasure: {} as AppDependencies["conversationErasure"],
     // Email conversations have no call recording.
     voiceRecordings: { availability: async () => null },
-
   }));
   app.use(createErrorHandler());
 

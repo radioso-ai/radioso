@@ -878,10 +878,12 @@ not play.
 
 The recording lives in your ElevenLabs account until it is deleted there,
 by you or by the retention you set on the ElevenLabs agent, or until Radioso
-deletes it. Deleting a workspace or the organization asks ElevenLabs to
-delete each call's conversation, audio included, on the account's region
-host, after the deletion has gone through. That includes a call whose first
-turn never came, which has no conversation in Radioso. Radioso reads the
+deletes it. Deleting the conversation (`DELETE /api/v1/history/chat/{conversationId}`),
+its visitor (`DELETE /api/v1/history/visitors/{visitorId}`), the workspace or
+the organization asks ElevenLabs to delete each call's conversation, audio
+included, on the account's region host, after the deletion has gone through.
+A workspace or organization deletion also reaches a call whose first turn
+never came, which has no conversation in Radioso. Radioso reads the
 recordings and the key first, because the deletion takes both with it.
 Deleting an agent deletes no recording: its conversations stay, and so do
 their recordings, which still play from the Inbox and go when their
@@ -891,15 +893,17 @@ conversation was deleted before it.
 
 Each recording Radioso deletes is recorded as a
 `conversation.recording_deleted` audit event with the conversation id, the
-vendor, `outcome` (`deleted`, or `already_absent` when ElevenLabs no longer
-held it) and `deletedWorkspaceId`. When a workspace is deleted, the event
-belongs to the organization, so the organization keeps its proof of erasure.
+vendor and `outcome` (`deleted`, or `already_absent` when ElevenLabs no
+longer held it), beside the conversation's own `conversation.erased` or
+`visitor.erased` event. When a workspace is deleted, the event belongs to the
+organization and names `deletedWorkspaceId`, so the organization keeps its
+proof of erasure.
 When the organization itself is deleted, the event names it as
 `deletedAccountId`.
 
-The deletion never waits on ElevenLabs. An organization's workspaces are
-worked through in order, four calls at a time, for at most 20 seconds in
-all. A recording ElevenLabs refuses to delete or does not answer for, and
+The deletion never waits on ElevenLabs. Every deletion works through its
+recordings (for an organization, its workspaces in order) four calls at a
+time, for at most 20 seconds in all. A recording ElevenLabs refuses to delete or does not answer for, and
 every recording not yet deleted when the time runs out (a delete still
 waiting on ElevenLabs is let go of then), stays in your ElevenLabs account and is logged as `Voice recording was left at the vendor`
 with its `conversationId` and `vendorConversationId`. Radioso does not try

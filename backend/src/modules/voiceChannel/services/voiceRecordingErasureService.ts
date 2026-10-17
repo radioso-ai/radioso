@@ -1,4 +1,4 @@
-import type { VendorHeldConversationDataErasure } from "../../../shared/domain/vendorHeldConversationData.js";
+import type { VendorHeldConversationDataErasure } from "../../../shared/domain/conversationDataErasure.js";
 import type { VoiceVendor } from "../../../shared/domain/voiceVendor.js";
 import type {
   VoiceRecordingErasurePort,

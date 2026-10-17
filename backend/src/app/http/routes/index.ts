@@ -103,7 +103,6 @@ export const createApiRouteMounts = (_dependencies: AppDependencies): readonly A
   { path: "/api/v1/conversations", createRouter: createConversationActivityRoutes },
   { path: "/api/v1/conversations", createRouter: createConversationOwnershipRoutes },
   { path: "/api/v1/conversations", createRouter: createConversationRecordingRoutes },
-
   { path: "/api/v1/delivery-failures", createRouter: createDeliveryFailureRoutes },
   { path: "/api/v1", createRouter: createHeldReplyRoutes },
   { path: "/api/v1/history", createRouter: createHistoryRoutes },

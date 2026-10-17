@@ -118,9 +118,12 @@ helpers and the shared chat message limit from `app/http`
   session store, `AssistantChatService.streamAnswer`, the agent repository (voice
   settings and default locale), the routine state store, the conversation
   ownership reader (`handoff/public.ts`), the message repository as chat's
-  `ReplyInterruptionMarker` and the audit service (the
-  `voice.reply_interrupted` and `voice.reply_replayed` notes, built by
-  `createVoiceTurnNotes`); exposed as `AppDependencies.voiceTurns`.
+  `PendingOperatorReplyReader`, `OperatorReplySpeechMarker` and
+  `ReplyInterruptionMarker`, and the audit service (the
+  `voice.reply_interrupted`, `voice.reply_replayed` and
+  `voice.operator_reply_spoken` notes, built by `createVoiceTurnNotes`);
+  exposed as `AppDependencies.voiceTurns`. The test app builds its port
+  through the same function.
   `createVoiceSessionStartComposition` in the same file builds the session
   start over the agent repository, the ElevenLabs starter with `fetch`, the
   workspace credential store's `getApiKey` as the credential reader, and the
@@ -315,7 +318,8 @@ helpers and the shared chat message limit from `app/http`
   suppressed means this turn handed off: `callback_requested` (with
   `handoffReason`) when `done.handoff.collectedSlotCount > 0`, else
   `continue`. Suppressed means a person owned the conversation at turn start:
-  `continue`, and the speech is chat's waiting message as chat wrote it.
+  `continue`, and the speech is the teammate's pending replies, else chat's
+  waiting message as chat wrote it.
   Anything else is `continue`. "Captured contact details" is structural: chat's
   `handoff` report counts the declared slots the ending routine held a value
   for (the keys of the engine's `handoff.collected`, counted in
@@ -381,11 +385,39 @@ helpers and the shared chat message limit from `app/http`
   exchange stays in an orphaned conversation (logged as a warn). This stays an
   in-process guarantee until a database-level session claim lands with
   Phase 0.
-- **Operator takeover reaches no one.** `customerReplyDelivery.ts` has no
-  `voice` deliverer, so an operator's Inbox reply never reaches the caller; the
-  Inbox offers no Send on a voice conversation
-  (`frontend/lib/email-send-readiness.ts`). Until an operator writes, each caller
-  turn hears the chat service's waiting line; after that, silence.
+- **A teammate's reply is spoken on the caller's next turn.** A call speaks
+  only when the runtime asks, on the caller's next utterance, and there is no
+  push channel, so an Inbox reply waits for that request. The handoff module
+  stores a reply on a voice conversation with `speech: { state: "pending" }`
+  (`operatorRepliesAreSpoken` in `chat/contracts/operatorReplySpeech.ts`);
+  `customerReplyDelivery.ts` has no `voice` deliverer and needs none. The
+  voice domain knows two chat-side ports and nothing else of the reply:
+  `PendingOperatorReplyReader.pendingOperatorReplies({ workspaceId,
+  conversationId })` → `[{ messageId, text, createdAt }]`, oldest first, read
+  on every turn of a bound session beside the profile, routine and owner
+  reads (a read that fails warns and leaves them pending), and
+  `OperatorReplySpeechMarker.markOperatorRepliesSpoken`, which composition's
+  `operatorRepliesSpoken` note calls. Chat owns what a reply means and how it
+  is stored. The turn speaks the pending replies after its `conversation`
+  event, each cut by `wholeTextSpeech` (`speechSegmenter.ts`, through
+  `speechText.ts`, so markdown is removed and every piece ends in whitespace),
+  ahead of chat's answer and outside the turn policy, whoever owns the
+  conversation: on a human-owned turn chat answers nothing once a teammate has
+  written (its waiting line stops at the first human reply in its history
+  window), so the replies take the waiting line's place and the turn ends
+  `continue`; after a hand-back the agent's answer follows, with its bridge and
+  limit timed from the turn's start as always. Once the pieces have left, and
+  unless the runtime hung up first, the turn writes the note off its path
+  before chat answers: the mark (the first `spokenAt` stays; it resolves the
+  ids it marked) and then one `voice.operator_reply_spoken` audit event with
+  the conversation id and those message ids, never the text. A note that fails
+  leaves the replies pending and logs `Voice turn note could not be recorded`;
+  the next turn speaks them again. "Spoken" means handed to the call, not
+  heard to the end. A turn overtaken while it set up speaks none; a replay
+  speaks only the stored answer, and the next new utterance speaks the
+  replies. The session's interruption bookkeeping counts the replies as spoken
+  ahead of the reply (`VoiceSpokenTurn.ahead`, before the bridge line), so a
+  reply cut short after them is marked with its own characters only.
 - **Newest utterance wins.** ElevenLabs does not abort the HTTP stream when
   the caller interrupts: the next utterance arrives as a new request while the
   previous reply may still stream. Every voice chat turn runs with
@@ -482,7 +514,8 @@ helpers and the shared chat message limit from `app/http`
 
 One log per turn with `agentId`, `vendor`, `transport`, `conversationId`,
 `result`, `durationMs` and `speechPieceCount`, `outcome` (the kind the runtime
-received) and `handoffReason` (when the turn handed off), plus `bridged`,
+received), `handoffReason` (when the turn handed off) and
+`spokenOperatorReplies` (when it spoke a teammate's replies), plus `bridged`,
 `turnLimitReached` and `fallbackSpoken` when the voice policy ran: `Voice turn
 reached the turn limit` at warn when the limit fired, else `Voice turn finished` at info
 (`completed`, `replayed`, `superseded` with `supersededAt`: `before_speech` or
@@ -493,7 +526,9 @@ recorded; a note that fails to record, or takes longer than 5 s, logs `Voice
 turn note could not be recorded` at warn, and an interrupted reply the
 conversation no longer holds logs `Voice reply to mark interrupted was not
 found` at warn (workspace, conversation and message ids) and writes no audit
-event. A warn when a concurrent first turn bound the session to another
+event. `Voice turn could not read the teammate's pending replies; they wait for the
+next turn` at warn with `agentId`, `vendor`, `conversationId` and
+`errorClass`. A warn when a concurrent first turn bound the session to another
 conversation, and a warn naming only `dialect` and `agentId` when a request
 carries no usable session key (a 400). Once per agent per process, when a
 turn's bridge line is below the dialect's minimum, `Voice bridge line is
@@ -522,7 +557,9 @@ had no line, so nothing was spoken) and `voice_turn_limit_total`
 (`locale_resolved`: `no` when there was no fallback line and the turn kept
 waiting). The service records `voice_turn_superseded_total` (`stage`:
 `before_speech`, `after_speech`), `voice_turn_replayed_total`,
-`voice_reply_interrupted_total` and `voice_turn_outcome_total` (`kind`:
+`voice_reply_interrupted_total`, `voice_operator_reply_spoken_total` (one
+per teammate reply a turn handed to the call, no labels) and
+`voice_turn_outcome_total` (`kind`:
 `continue`, `callback_requested`; `handoff_reason`: `routine_handoff`,
 `routine_stuck`, `retrieval_miss`, `none`), once per turn that sent an
 outcome. Labels are closed enums; no line text, locale tag or id. The chat registry's `chat_turn_cancellations_total` counts a voice
@@ -563,6 +600,9 @@ the key, the vendor URL or any audio.
 - `cd backend && pnpm exec vitest run tests/contract/public-voice-session.contract.test.ts tests/contract/settings-credentials.contract.test.ts`
   (the session start through the embed's public session, with a fake vendor
   `fetch`; the ElevenLabs key in the credential store)
+- `cd backend && pnpm exec vitest run tests/contract/voice-operator-reply.contract.test.ts`
+  (an Inbox reply on a human-owned call spoken on the next turn, then marked
+  and audited; a reply pending at hand-back spoken before the agent's answer)
 - `cd backend && pnpm exec vitest run tests/contract/voice-recording.contract.test.ts`
   (the report, the detail flag, playback through a fake vendor `fetch`, and
   deletion with the workspace)

@@ -1,6 +1,6 @@
 ---
 title: "Voice Channel"
-description: "Let a voice runtime such as ElevenLabs Agents speak for a Radioso agent through an OpenAI-compatible chat-completions endpoint, with sessions Radioso starts on your vendor key, one conversation per voice session, authored lines that cover the wait, and the call's recording in the Inbox."
+description: "Let a voice runtime such as ElevenLabs Agents speak for a Radioso agent through an OpenAI-compatible chat-completions endpoint, with sessions Radioso starts on your vendor key, one conversation per voice session, authored lines that cover the wait, a teammate's Inbox replies spoken to the caller, and the call's recording in the Inbox."
 last_updated: 2026-10-17
 ---
 
@@ -619,9 +619,39 @@ caller hears from then on:
   that, the agent stays silent. These turns end with `continue`. No bridge
   line comes before the waiting line and no fallback line cuts in on it:
   both cover the agent's own answers.
-- A teammate's reply stays in the conversation and does not reach the call.
-  The Inbox offers no Send on a voice conversation, so the follow-up goes
-  through the details the routine collected.
+- A teammate answers the caller from the Inbox, as they would a web chat. The
+  reply is spoken on the caller's next turn, in place of the waiting line or
+  the silence, and that turn ends with `continue`. Say the booth visitor asks
+  "Can I come by at four?" while your teammate reads the transcript; they
+  write "Yes, four works. Bring your badge." and press Send. The next time the
+  visitor speaks, even just "Hello?", they hear those two sentences, as
+  speech, with the markdown taken out.
+
+That last point has one limit: a call speaks only when its caller does. The
+voice runtime asks Radioso for something to say each time the caller finishes
+an utterance, and there is no other way onto the call, so a reply waits for the
+caller's next utterance. The Inbox says so beside Send ("The caller hears this
+on their next turn.") and marks the reply **Pending** until a turn speaks it,
+then **Spoken**. A reply written after the caller hangs up stays Pending: it
+remains in the conversation for the follow-up, through the details the routine
+collected.
+
+Several replies written between two utterances are spoken in the order they
+were written, all on the same turn. When your teammate hands the call back
+before the caller speaks again, the replies still pending are spoken first and
+the agent answers that utterance right after, with its usual bridge line and
+turn limit. A reply counts as spoken once Radioso has handed it to the call: if
+the runtime drops the request before the reply leaves, it stays Pending and the
+next turn speaks it. An identical re-request that Radioso answers by repeating
+a lost answer (see [When the caller talks over the agent](#when-the-caller-talks-over-the-agent))
+speaks no pending reply; the caller's next new utterance does.
+
+Every reply a turn speaks is recorded as a `voice.operator_reply_spoken` audit
+event with the conversation id and the replies' message ids, never their text.
+In history, the reply carries `speech`, `{ "state": "pending" }` until it is
+spoken and `{ "state": "spoken", "spokenAt": "…" }` after, and the dashboard
+tail returns the reply again when it is spoken, so an open Inbox pane updates
+on its own.
 
 ## Dialects
 
@@ -965,11 +995,11 @@ ElevenLabs agent's first message.
 - A request that replaces an unanswered one carries only its own utterance.
   When the runtime's newer transcript does not repeat the caller's earlier
   words, the agent answers without them.
-- An operator who takes a voice conversation over cannot reach the caller.
-  A written reply has no way onto the call, so the Inbox offers no Send on a
-  voice conversation. Until an operator writes in the conversation, each new
-  utterance hears the agent's short waiting line; after that, the agent stays
-  silent. See [Outcomes](#outcomes).
+- An operator's reply reaches the caller only on the caller's next
+  utterance, and a reply written after the call ends is never spoken. Until a
+  teammate writes in the conversation, each new utterance hears the agent's
+  short waiting line; after that, each one hears the teammate's replies
+  written since the last, or nothing. See [Outcomes](#outcomes).
 - Some proxies drop HTTP trailers, and browsers' `fetch` does not expose
   them. When you need a turn's outcome on the client, send that request with
   `stream: false` and read the header.

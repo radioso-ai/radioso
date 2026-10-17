@@ -8,7 +8,7 @@ vi.mock('@/lib/api-client', () => ({
   }),
 }))
 
-import { startPublicVoiceSession } from '@/lib/api-public-voice'
+import { reportVoiceVendorConversation, startPublicVoiceSession } from '@/lib/api-public-voice'
 
 const respond = (status: number, body: unknown) =>
   new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } })
@@ -72,5 +72,45 @@ describe('public voice session start', () => {
     }))
 
     expect(await startPublicVoiceSession('launch-token', {})).toEqual({ kind: 'refused' })
+  })
+})
+
+describe('public voice session start: recording notice', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it("keeps the agent's recording notice for the page to show", async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => respond(200, { ...session, recordingNotice: 'Questa chiamata viene registrata.' })))
+
+    const result = await startPublicVoiceSession('token', { locale: 'it' })
+
+    expect(result).toMatchObject({ kind: 'started', session: { recordingNotice: 'Questa chiamata viene registrata.' } })
+  })
+})
+
+describe('vendor conversation report', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it("tells the app host's relay the vendor's id for the session's call, with the embed's public session", async () => {
+    const fetchMock = vi.fn(async () => new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await reportVoiceVendorConversation('launch token', { sessionKey: session.sessionKey, vendorConversationId: 'conv_1' })
+
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe(`/api/public/chat/launch%20token/voice/sessions/${session.sessionKey}/vendor-conversation`)
+    expect(init.method).toBe('POST')
+    expect(init.headers).toMatchObject({ 'X-Radioso-Public-Session': 'public-session-token' })
+    expect(JSON.parse(init.body as string)).toEqual({ vendorConversationId: 'conv_1' })
+  })
+
+  it('never rejects, whatever the relay answers', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      throw new TypeError('network down')
+    }))
+    await expect(reportVoiceVendorConversation('token', { sessionKey: session.sessionKey, vendorConversationId: 'conv_1' })).resolves.toBeUndefined()
   })
 })

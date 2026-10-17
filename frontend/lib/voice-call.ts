@@ -2,8 +2,11 @@ import type { PublicVoiceSessionResponse } from './api-types'
 import { VoiceMicrophoneUnavailableError, type VoiceRuntime, type VoiceRuntimeLine, type VoiceRuntimeSession, type VoiceVendor } from './voice-runtime'
 import type { VoiceSessionEvent } from './voice-session'
 
-/** What the page needs to open the session on the vendor, from the start's answer; `signedUrl` is a bearer credential. */
-export type StartedVoiceSession = Pick<PublicVoiceSessionResponse, 'vendor' | 'signedUrl' | 'sessionKey' | 'locale'>
+/**
+ * What the page needs to open the session on the vendor, from the start's answer; `signedUrl` is a
+ * bearer credential. `recordingNotice` is the agent's line telling the caller the call is recorded.
+ */
+export type StartedVoiceSession = Pick<PublicVoiceSessionResponse, 'vendor' | 'signedUrl' | 'sessionKey' | 'locale' | 'recordingNotice'>
 
 /**
  * How a session start ended, as the visitor can act on it. `refused` covers every answer that is
@@ -23,6 +26,11 @@ export interface VoiceCallDependencies {
    * microphone and its session, so two calls never hold either at once.
    */
   after?: Promise<void>
+  /**
+   * Tells Radioso the vendor's id for the call once the session is open, so the call's recording can
+   * be found. The call never waits for it, and a report that fails changes nothing about the call.
+   */
+  reportVendorConversation?: (input: { sessionKey: string; vendorConversationId: string }) => Promise<void>
 }
 
 /**
@@ -139,6 +147,12 @@ export function runVoiceCall(dependencies: VoiceCallDependencies, observer: Voic
       sessionClosed = new Promise<void>((resolve) => {
         closeSession = resolve
       })
+      if (opened.vendorConversationId && dependencies.reportVendorConversation) {
+        void dependencies
+          .reportVendorConversation({ sessionKey: start.session.sessionKey, vendorConversationId: opened.vendorConversationId })
+          .catch(() => undefined)
+      }
+
     } catch (error) {
       clearConnectTimer()
       report({ type: error instanceof VoiceMicrophoneUnavailableError ? 'microphone_refused' : 'start_refused' })

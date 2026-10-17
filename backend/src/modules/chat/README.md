@@ -116,11 +116,28 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   conversation. `MessageRecord.interruption` reads it back on assistant rows,
   and `chatHistoryService.ts` puts it on the reply as `interruption` (the counts
   only) on detail, turn and tail reads, public reads included. The dashboard
-  tail (`redeliverInterruptedReplies`) also returns a reply at or before its
-  cursor once it is marked: the cursor carries the newest delivered marker's
-  time as `markedAt`, so each marker arrives once, and the pane merges by id.
-  The public tail and the calling-agent update reader never re-deliver. The
-  voice channel's composition is the caller.
+  tail (`redeliverMarkedReplies`) also returns a reply at or before its
+  cursor once it is marked, by an interruption or by `speech.spokenAt` below:
+  the cursor carries the newest delivered marker's time as `markedAt`, so each
+  marker arrives once, and the pane merges by id. The public tail and the
+  calling-agent update reader never re-deliver. The voice channel's
+  composition is the caller.
+- `contracts/operatorReplySpeech.ts`: a teammate's reply on a conversation
+  whose caller hears replies (`operatorRepliesAreSpoken`: the voice channel
+  context) waits for the caller's next turn. `OperatorReplyService.write`
+  (handoff) stores it with `speech: { state: "pending" }`
+  (`MessageRepository.create`'s `pendingSpeech`). Two ports serve the voice
+  channel: `PendingOperatorReplyReader.pendingOperatorReplies` lists the
+  conversation's pending teammate replies oldest first, and
+  `OperatorReplySpeechMarker.markOperatorRepliesSpoken` replaces the state with
+  `{ state: "spoken", spokenAt }` (database clock, the tail cursor's format)
+  on pending replies only, so the first `spokenAt` stays, and resolves the ids
+  it marked. `MessageRecord.speech` reads it back on human-authored replies,
+  and history puts it on the reply as `speech` beside `interruption`; Ray's
+  `conversation_transcript` carries the state as one word. Tests:
+  `tests/integration/message-repository.integration.test.ts` (needs the
+  disposable integration database), `tests/unit/message-source.test.ts`,
+  `tests/unit/chat-history-service.test.ts`.
 - `composition.ts`: chat module wiring used by application composition.
 - `services/conversationIngestService.ts` (`ConversationIngestPort` in `contracts/`):
   records a customer message without running a turn, for a channel that decides

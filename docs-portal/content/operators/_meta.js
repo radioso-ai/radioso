@@ -1,5 +1,6 @@
 const meta = {
   deployment: 'Deployment',
+  'data-residency': 'Data residency',
   'clarification-behavior': 'Clarification behavior',
   'context-variables': 'Context variables',
   'visitor-data': 'Visitor data',

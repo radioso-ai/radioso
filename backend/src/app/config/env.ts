@@ -194,6 +194,9 @@ const envSchema = z.object({
   OPENAI_VECTOR_MODEL: emptyStringToUndefined(z.string().min(1)),
   OPENAI_COMPATIBLE_API_KEY: emptyStringToUndefined(z.string().min(1)),
   OPENAI_COMPATIBLE_BASE_URL: emptyStringToUndefined(z.string().url()),
+  // Which OpenAI endpoint the platform-held OPENAI_API_KEY calls: the global default, or an
+  // explicit US or EU data-residency endpoint. Never applies to a workspace's own (BYOK) key.
+  OPENAI_DATA_RESIDENCY: emptyStringToDefault(z.enum(["global", "us", "eu"]), "global"),
   GEMINI_API_KEY: emptyStringToUndefined(z.string().min(1)),
   ANTHROPIC_API_KEY: emptyStringToUndefined(z.string().min(1)),
   LLM_PROVIDER: emptyStringToUndefined(z.enum(["openai", "openai-compatible", "gemini", "claude"])),

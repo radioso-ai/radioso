@@ -226,6 +226,7 @@ module "radioso" {
   openai_chat_model                         = var.openai_chat_model
   openai_rerank_model                       = var.openai_rerank_model
   openai_vector_model                       = var.openai_vector_model
+  openai_data_residency                     = var.openai_data_residency
   session_ttl_hours                         = var.session_ttl_hours
   metrics_enabled                           = var.metrics_enabled
   connector_public_base_url                 = var.connector_public_base_url

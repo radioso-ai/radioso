@@ -17,6 +17,23 @@ const DEFAULT_GEMINI_EMBEDDING_MODEL = "gemini-embedding-001";
 const DEFAULT_GEMINI_TEXT_MODEL = "gemini-2.5-flash";
 const DEFAULT_CLAUDE_TEXT_MODEL = "claude-sonnet-4-5";
 
+const OPENAI_RESIDENCY_BASE_URLS: Record<string, string> = {
+  us: "https://us.api.openai.com/v1",
+  eu: "https://eu.api.openai.com/v1",
+};
+
+/**
+ * Maps the platform's OpenAI data-residency setting to an explicit base URL. `global` (the
+ * default, and any value this map does not recognize) returns `undefined` so the caller passes
+ * no `baseURL` at all and the OpenAI SDK's own default resolution applies — unchanged from
+ * before this setting existed. Applies only to the platform-held `OPENAI_API_KEY`; a workspace's
+ * own (BYOK) OpenAI key keeps the residency its own project already chose.
+ */
+export const openAIBaseUrlForResidency = (
+  residency: string | number | boolean | undefined,
+): string | undefined =>
+  typeof residency === "string" ? OPENAI_RESIDENCY_BASE_URLS[residency] : undefined;
+
 const asProvider = (value: string | number | boolean | undefined, field: string): LlmProviderName | undefined => {
   if (value === undefined) {
     return undefined;
@@ -60,6 +77,10 @@ const resolveApiKey = (provider: LlmProviderName, env: ProviderEnv): string | un
 };
 
 const resolveBaseUrl = (provider: LlmProviderName, env: ProviderEnv): string | undefined => {
+  if (provider === "openai") {
+    return openAIBaseUrlForResidency(env.OPENAI_DATA_RESIDENCY);
+  }
+
   if (provider !== "openai-compatible") {
     return undefined;
   }

@@ -594,6 +594,56 @@ describe("runtime configuration", () => {
     }
   });
 
+  it("defaults OPENAI_DATA_RESIDENCY to global and validates its enum", () => {
+    expect(getEnv({ ...baseEnv }).OPENAI_DATA_RESIDENCY).toBe("global");
+    expect(getEnv({ ...baseEnv, OPENAI_DATA_RESIDENCY: "" }).OPENAI_DATA_RESIDENCY).toBe("global");
+    expect(getEnv({ ...baseEnv, OPENAI_DATA_RESIDENCY: "us" }).OPENAI_DATA_RESIDENCY).toBe("us");
+    expect(getEnv({ ...baseEnv, OPENAI_DATA_RESIDENCY: "eu" }).OPENAI_DATA_RESIDENCY).toBe("eu");
+    expect(() => getEnv({ ...baseEnv, OPENAI_DATA_RESIDENCY: "apac" })).toThrow();
+  });
+
+  it("documents OPENAI_DATA_RESIDENCY in the example environment", async () => {
+    const example = await readFile(new URL("../../../.env.example", import.meta.url), "utf8");
+    expect(example).toContain("OPENAI_DATA_RESIDENCY=global");
+  });
+
+  it("wires the OpenAI data-residency setting into every service that gets OPENAI_API_KEY", async () => {
+    const terraformVariables = await readFile(new URL("../../../infra/terraform/variables.tf", import.meta.url), "utf8");
+    const computeTf = await readFile(new URL("../../../infra/terraform/compute.tf", import.meta.url), "utf8");
+    const terraformWorkflow = await readFile(new URL("../../../.github/workflows/terraform.yml", import.meta.url), "utf8");
+
+    expect(terraformVariables).toMatch(
+      /variable "openai_data_residency" \{[\s\S]*?default\s+= "global"[\s\S]*?\n\}/,
+    );
+    expect(terraformVariables).toContain('contains(["global", "us", "eu"], var.openai_data_residency)');
+
+    // Backend, document worker, and crawler worker — the three services that receive
+    // OPENAI_API_KEY (infra/terraform/compute.tf). MCP does not call OpenAI, so it gets neither.
+    expect((computeTf.match(/name\s+= "OPENAI_API_KEY"/g) ?? [])).toHaveLength(3);
+    expect((computeTf.match(/name {2}= "OPENAI_DATA_RESIDENCY"\s*\n\s*value = var\.openai_data_residency/g) ?? [])).toHaveLength(3);
+
+    expect(terraformWorkflow).toContain("OPENAI_DATA_RESIDENCY: ${{ vars.OPENAI_DATA_RESIDENCY }}");
+    expect(terraformWorkflow).toContain('if [ -n "${OPENAI_DATA_RESIDENCY}" ]; then');
+    expect(terraformWorkflow).toContain("TF_VAR_openai_data_residency=${OPENAI_DATA_RESIDENCY}");
+
+    for (const environment of ["staging", "live", "live-eu"]) {
+      const wrapperVariables = await readFile(
+        new URL(`../../../infra/terraform/environments/${environment}/variables.tf`, import.meta.url),
+        "utf8",
+      );
+      const wrapperMain = await readFile(
+        new URL(`../../../infra/terraform/environments/${environment}/main.tf`, import.meta.url),
+        "utf8",
+      );
+      expect(wrapperVariables, `${environment} does not declare openai_data_residency`).toContain(
+        'variable "openai_data_residency"',
+      );
+      expect(wrapperMain, `${environment} does not pass openai_data_residency to the root module`).toMatch(
+        /openai_data_residency\s+= var\.openai_data_residency/,
+      );
+    }
+  });
+
   it("pins environment-aware observability identity and cloud runtime URLs for the Cloud Run API and worker services", async () => {
     const computeTf = await readFile(new URL("../../../infra/terraform/compute.tf", import.meta.url), "utf8");
     const terraformFoundation = await readFile(new URL("../../../infra/terraform/foundation/main.tf", import.meta.url), "utf8");

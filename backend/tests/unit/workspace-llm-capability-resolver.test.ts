@@ -271,6 +271,90 @@ describe("WorkspaceLlmCapabilityResolver", () => {
     });
   });
 
+  it("applies the platform's openai data-residency base URL when the environment key answers", async () => {
+    const residencyDefaults: ResolvedLlmConfig = {
+      ...envConfig,
+      chat: {
+        capability: "chat",
+        provider: "openai",
+        model: "gpt-5.2",
+        baseUrl: "https://eu.api.openai.com/v1",
+      },
+    };
+    const resolver = new WorkspaceLlmCapabilityResolver({
+      defaults: residencyDefaults,
+      settings: buildSettings([]),
+      credentials: buildCredentials({}),
+      envKeys: envKeyResolver({ openai: "env-openai" }),
+    });
+
+    const config = await resolver.resolve("chat", { workspaceId: "ws-1" });
+
+    expect(config).toMatchObject({
+      provider: "openai",
+      apiKey: "env-openai",
+      baseUrl: "https://eu.api.openai.com/v1",
+    });
+  });
+
+  it("ignores the platform's openai data-residency base URL for a workspace BYOK credential", async () => {
+    const residencyDefaults: ResolvedLlmConfig = {
+      ...envConfig,
+      chat: {
+        capability: "chat",
+        provider: "openai",
+        model: "gpt-5.2",
+        baseUrl: "https://eu.api.openai.com/v1",
+      },
+    };
+    const resolver = new WorkspaceLlmCapabilityResolver({
+      defaults: residencyDefaults,
+      settings: buildSettings([]),
+      credentials: buildCredentials({ "ws-1:openai": "ws-openai-key" }),
+      envKeys: envKeyResolver({ openai: "env-openai" }),
+    });
+
+    const config = await resolver.resolve("chat", { workspaceId: "ws-1" });
+
+    expect(config).toMatchObject({ provider: "openai", apiKey: "ws-openai-key" });
+    expect(config.baseUrl).toBeUndefined();
+  });
+
+  it("produces no base URL for a native openai capability at the default (global) residency", async () => {
+    const resolver = new WorkspaceLlmCapabilityResolver({
+      defaults: envConfig,
+      settings: buildSettings([]),
+      credentials: buildCredentials({}),
+      envKeys: envKeyResolver({ openai: "env-openai" }),
+    });
+
+    const config = await resolver.resolve("chat", { workspaceId: "ws-1" });
+
+    expect(config.baseUrl).toBeUndefined();
+  });
+
+  it("falls back to envBaseUrls.openai when a workspace preference moves a capability onto openai", async () => {
+    // The env default for "rewrite" is gemini here; the platform's OpenAI residency setting
+    // still has to reach an openai call that a workspace preference (not the env default) chose.
+    const mismatchedDefaults: ResolvedLlmConfig = {
+      ...envConfig,
+      rewrite: { capability: "rewrite", provider: "gemini", model: "gemini-2.5-flash" },
+    };
+    const resolver = new WorkspaceLlmCapabilityResolver({
+      defaults: mismatchedDefaults,
+      settings: buildSettings([
+        { workspaceId: "ws-1", capability: "rewrite", provider: "openai", model: "gpt-5.2", updatedAt: new Date() },
+      ]),
+      credentials: buildCredentials({}),
+      envKeys: envKeyResolver({ openai: "env-openai", gemini: "env-gemini" }),
+      envBaseUrls: { openai: "https://eu.api.openai.com/v1" },
+    });
+
+    const config = await resolver.resolve("rewrite", { workspaceId: "ws-1" });
+
+    expect(config).toMatchObject({ provider: "openai", apiKey: "env-openai", baseUrl: "https://eu.api.openai.com/v1" });
+  });
+
   it("rewrite/rerank capabilities ignore capabilityOverride from agent (workspace-level only)", async () => {
     // The resolver does not interpret semantic meaning of an override; callers should not
     // pass agent overrides to rewrite/rerank. This test pins that contract: when the

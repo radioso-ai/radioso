@@ -30,7 +30,7 @@ import {
   StaticCustomerEmailProviderRegistry,
   customerEmailOauthProviderIds,
 } from "../../../modules/customerEmail/public.js";
-import { resolveLlmConfig } from "../../../shared/infra/llm/providerConfig.js";
+import { openAIBaseUrlForResidency, resolveLlmConfig } from "../../../shared/infra/llm/providerConfig.js";
 import { LlmProviderRegistry } from "../../../shared/infra/llm/providerRegistry.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { AgentSkillRepository } from "../../../modules/agentSkills/public.js";
@@ -137,6 +137,7 @@ export const buildLlmCapabilityResolver = (input: {
       resolveEnvApiKey: (provider) => keys[provider],
     },
     envBaseUrls: {
+      openai: openAIBaseUrlForResidency(input.env.OPENAI_DATA_RESIDENCY),
       "openai-compatible": input.env.OPENAI_COMPATIBLE_BASE_URL,
     },
   });
@@ -155,6 +156,11 @@ export const buildLlmRegistry = (
     metrics: options.metricsRegistry,
   });
   logger.info({ llmProviders: llmRegistry.describe() }, "Resolved LLM providers");
+  // Content-free: region codes only, never a key, URL, or any other credential-bearing value.
+  logger.info(
+    { openai: env.OPENAI_DATA_RESIDENCY, emailChannelRegion: env.RESEND_CHANNEL_REGION },
+    "Resolved provider residency",
+  );
   return llmRegistry;
 };
 

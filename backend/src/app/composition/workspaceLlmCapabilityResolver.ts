@@ -53,6 +53,19 @@ const isWorkspaceCapability = (capability: LlmCapabilityName): capability is Wor
 
 type UnmanagedResolvedBy = Exclude<LlmCapabilityResolvedBy, "managed_plan">;
 
+/**
+ * Which credential pool answered an API-key lookup. The platform's OpenAI data-residency
+ * setting is a property of the platform's own OpenAI project, so it may only follow an
+ * "environment" credential: a workspace's own (BYOK) key belongs to a project the workspace
+ * controls, with its own residency choice already baked in.
+ */
+type LlmCredentialSource = "workspace" | "environment";
+
+interface ResolvedApiKey {
+  apiKey: string;
+  source: LlmCredentialSource;
+}
+
 interface CandidateSelection {
   provider: LlmProviderName;
   model: string;
@@ -70,12 +83,13 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
 
     const { provider, model, resolvedBy } = await this.resolveSelection(capability, input);
 
-    const apiKey = await this.resolveApiKey(input.workspaceId, provider, capability);
+    const { apiKey, source } = await this.resolveApiKey(input.workspaceId, provider, capability);
     const baseUrl = this.resolveBaseUrl(
       provider,
       capability,
       envDefault,
       input.capabilityOverride?.baseUrl,
+      source,
     );
 
     return {
@@ -167,14 +181,14 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
     workspaceId: string,
     provider: LlmProviderName,
     capability: LlmCapabilityName,
-  ): Promise<string> {
+  ): Promise<ResolvedApiKey> {
     const workspaceKey = await this.deps.credentials.getApiKey(workspaceId, provider);
     if (workspaceKey) {
-      return workspaceKey;
+      return { apiKey: workspaceKey, source: "workspace" };
     }
     const envKey = this.deps.envKeys.resolveEnvApiKey(provider);
     if (envKey) {
-      return envKey;
+      return { apiKey: envKey, source: "environment" };
     }
     throw new ProviderConfigurationError(
       `No API key configured for provider "${provider}". Add a workspace credential at Settings → Credentials, or set the matching environment variable and restart Radioso.`,
@@ -191,14 +205,24 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
     provider: LlmProviderName,
     capability: LlmCapabilityName,
     envDefault: LlmCapabilityDefault,
-    overrideBaseUrl?: string,
+    overrideBaseUrl: string | undefined,
+    credentialSource: LlmCredentialSource,
   ): string | undefined {
-    if (provider !== "openai-compatible") {
+    if (provider !== "openai" && provider !== "openai-compatible") {
       return undefined;
     }
+
     const inheritedBaseUrl = provider === envDefault.provider ? envDefault.baseUrl : undefined;
     const envBaseUrl = this.deps.envBaseUrls?.[provider];
     const baseUrl = overrideBaseUrl ?? inheritedBaseUrl ?? envBaseUrl;
+
+    if (provider === "openai") {
+      // The platform's data-residency setting belongs to the platform's own OpenAI project.
+      // A workspace's BYOK key belongs to a project it controls, with its own residency
+      // already chosen, so a BYOK call always gets the SDK's own default endpoint.
+      return credentialSource === "environment" ? baseUrl : undefined;
+    }
+
     if (!baseUrl) {
       throw new ProviderConfigurationError(
         "openai-compatible requires OPENAI_COMPATIBLE_BASE_URL to be configured; selecting this provider for a workspace without a base URL would silently call the default OpenAI endpoint.",

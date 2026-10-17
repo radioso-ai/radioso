@@ -197,10 +197,12 @@ On a voice conversation, the reply is spoken to the caller the next time they
 speak: a call speaks only when its caller does, so the reply waits for their
 next utterance and is then spoken in place of the agent's waiting line. The
 reply carries `speech: { "state": "pending" }` in history until then, and
-`{ "state": "spoken", "spokenAt": "…" }` after; the Inbox shows it as
-**Pending** and then **Spoken**, and says beside Send that the caller hears the
-reply on their next turn. A reply still pending when you hand the call back is
-spoken before the agent answers. See
+`{ "state": "spoken", "spokenAt": "…" }` after, where `spokenAt` is when the
+turn that spoke it completed; a reply with no words a call can say is
+`{ "state": "skipped" }` and is never spoken. The Inbox shows it as
+**Pending**, then **Spoken** (or **Not spoken: no words to say**), and says
+beside Send that the caller hears the reply on their next turn. A reply still
+pending when you hand the call back is spoken before the agent answers. See
 [Voice Channel](voice-channel.md#outcomes).
 
 Otherwise, the ownership check, the saved reply, and its delivery to a
@@ -663,8 +665,8 @@ unsigned reply, or one whose only signature is an email address, shows as
 and, once a teammate has been involved in the conversation, its `ownership`
 record — AI-owned after a hand-back — so a reader polling the tail sees a claim,
 transfer, or hand-back made elsewhere. On a voice conversation the operator
-tail also returns a reply it already delivered once the call has spoken it, now
-carrying `speech` with `state: "spoken"`, so merge messages by `id`. The
+tail also returns a reply it already delivered once the call has spoken or
+skipped it, now carrying `speech` with that state, so merge messages by `id`. The
 operator conversation detail carries the same record, so whichever of the two a
 reader loaded last, the higher `version` is the current one. Both also carry the conversation's
 [activity](#conversation-activity). The visitor tail and detail carry none of these.

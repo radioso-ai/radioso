@@ -616,9 +616,11 @@ caller hears from then on:
 
 - Each new utterance hears the agent's short waiting line, written in the
   conversation's language, until a teammate writes in the conversation; after
-  that, the agent stays silent. These turns end with `continue`. No bridge
-  line comes before the waiting line and no fallback line cuts in on it:
-  both cover the agent's own answers.
+  that, the agent stays silent. The agent looks for that reply among the
+  conversation's last ten messages, so after about ten caller turns with no
+  new reply from your team the waiting line comes back. These turns end with
+  `continue`. No bridge line comes before the waiting line and no fallback
+  line cuts in on it: both cover the agent's own answers.
 - A teammate answers the caller from the Inbox, as they would a web chat. The
   reply is spoken on the caller's next turn, in place of the waiting line or
   the silence, and that turn ends with `continue`. Say the booth visitor asks
@@ -634,26 +636,35 @@ caller's next utterance. The Inbox says so beside Send ("The caller hears this
 on their next turn.") and marks the reply **Pending** until a turn speaks it,
 then **Spoken**. A reply written after the caller hangs up stays Pending: it
 remains in the conversation for the follow-up, through the details the routine
-collected.
+collected. A reply with nothing a call can say, such as only formatting marks,
+is never spoken and shows **Not spoken: no words to say**.
 
 Several replies written between two utterances are spoken in the order they
 were written, all on the same turn. When your teammate hands the call back
 before the caller speaks again, the replies still pending are spoken first and
-the agent answers that utterance right after, with its usual bridge line and
-turn limit. A reply counts as spoken once the turn that spoke it has sent the
-runtime its whole response, or the caller spoke over it: if the runtime drops
-the request first, or the turn fails, the reply stays Pending and the next turn
-speaks it. An identical re-request that Radioso answers by repeating
-a lost answer (see [When the caller talks over the agent](#when-the-caller-talks-over-the-agent))
-speaks no pending reply; the caller's next new utterance does.
+the agent answers that utterance right after, with its usual turn limit and no
+bridge line, since the caller has just heard someone speak. When the runtime
+re-sends an utterance whose answer it lost and Radioso repeats that answer
+(see [When the caller talks over the agent](#when-the-caller-talks-over-the-agent)),
+the replies still pending come first.
+
+Each reply is spoken once. The turn that speaks it claims it first, in the
+database, so no other turn on any Radioso instance speaks it at the same time.
+It counts as spoken once that turn has completed: the runtime received the
+whole response, and no newer utterance overtook it first. When the turn does
+not complete that way (the runtime drops the request, the caller speaks over
+it, or the turn fails), the reply goes back to Pending and a later turn speaks
+it, so the caller may hear a reply again when a turn fails after it was already
+sent. A claim that outlives its turn by a minute, because the instance running
+the turn stopped, also counts as Pending again.
 
 A turn that speaks teammate replies records one `voice.operator_reply_spoken`
 audit event with the conversation id and the replies' message ids, never their
-text.
-In history, the reply carries `speech`, `{ "state": "pending" }` until it is
-spoken and `{ "state": "spoken", "spokenAt": "…" }` after, and the dashboard
-tail returns the reply again when it is spoken, so an open Inbox pane updates
-on its own.
+text. In history, the reply carries `speech`: `{ "state": "pending" }` until it
+is spoken, `{ "state": "spoken", "spokenAt": "…" }` after, where `spokenAt` is
+when the turn that spoke it completed, and `{ "state": "skipped" }` for a reply
+with no words to say. The dashboard tail returns the reply again when it is
+spoken or skipped, so an open Inbox pane updates on its own.
 
 ## Dialects
 
@@ -998,10 +1009,15 @@ ElevenLabs agent's first message.
   When the runtime's newer transcript does not repeat the caller's earlier
   words, the agent answers without them.
 - An operator's reply reaches the caller only on the caller's next
-  utterance, and a reply written after the call ends is never spoken. Until a
+  utterance, and a reply written after the call ends is never spoken. Each
+  reply is spoken once, except that a turn cut short after sending it (the
+  caller spoke over it, the runtime dropped the request, or the turn failed)
+  hands it back, and a claim that outlives its turn by a minute counts as
+  pending again; either way a later turn speaks it a second time. Until a
   teammate writes in the conversation, each new utterance hears the agent's
   short waiting line; after that, each one hears the teammate's replies
-  written since the last, or nothing. See [Outcomes](#outcomes).
+  written since the last, or nothing, until about ten caller turns pass with
+  no new reply and the waiting line comes back. See [Outcomes](#outcomes).
 - Some proxies drop HTTP trailers, and browsers' `fetch` does not expose
   them. When you need a turn's outcome on the client, send that request with
   `stream: false` and read the header.

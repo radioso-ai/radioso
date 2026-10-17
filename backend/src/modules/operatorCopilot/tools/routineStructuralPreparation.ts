@@ -87,6 +87,8 @@ const inputSchema = z.object({
       : { kind: "edit" as const, agentId: input.agentId, routineId: input.routineId as string, operations: input.operations as NonNullable<typeof input.operations> }
 ));
 
+const routineFindingSchema = z.object({ code: z.string(), location: z.string(), message: z.string() });
+type RoutineFinding = z.infer<typeof routineFindingSchema>;
 const outputSchema = z.object({
   proposalId: z.string(),
   reviewDigest: z.string(),
@@ -94,11 +96,11 @@ const outputSchema = z.object({
   // representation rather than relying on a Date being stringified later.
   expiresAt: z.string().datetime(),
   confirmation: reviewedConfirmationSchema,
-  diagnostics: z.array(z.object({ code: z.string(), location: z.string(), message: z.string() })).max(40),
+  diagnostics: z.array(routineFindingSchema).max(40),
   // Non-blocking signals worth a second look — e.g. a notifying ending with no reply-to — that
   // never block preparation and never affect whether a diagnostic refuses it. Defaults to `[]`
   // so a snapshot persisted before this field existed still recovers.
-  advisories: z.array(z.object({ code: z.string(), location: z.string(), message: z.string() })).max(40).default([]),
+  advisories: z.array(routineFindingSchema).max(40).default([]),
   review: z.object({
     before: z.record(z.unknown()),
     after: z.record(z.unknown()),
@@ -138,8 +140,8 @@ const boundedRoutineReview = (routine: RoutineReviewInput) => {
   return { summary, full, truncated };
 };
 const storedReviewSnapshot = (input: {
-  readonly diagnostics: ReadonlyArray<{ code: string; location: string; message: string }>;
-  readonly advisories: ReadonlyArray<{ code: string; location: string; message: string }>;
+  readonly diagnostics: ReadonlyArray<RoutineFinding>;
+  readonly advisories: ReadonlyArray<RoutineFinding>;
   readonly review: z.infer<typeof outputSchema.shape.review>;
   readonly fullReview: { readonly before: unknown; readonly after: unknown };
 }) => ({ diagnostics: input.diagnostics, advisories: input.advisories, review: input.review, fullReview: input.fullReview });
@@ -148,14 +150,14 @@ const reviewOutput = (input: {
   readonly reviewDigest: string;
   readonly expiresAt: Date;
   readonly confirmation: z.infer<typeof reviewedConfirmationSchema>;
-  readonly snapshot: { readonly diagnostics: unknown; readonly advisories?: unknown; readonly review: unknown };
+  readonly snapshot: { readonly diagnostics: unknown; readonly advisories: unknown; readonly review: unknown };
 }) => outputSchema.parse({
   proposalId: input.proposalId,
   reviewDigest: input.reviewDigest,
   expiresAt: input.expiresAt.toISOString(),
   confirmation: input.confirmation,
   diagnostics: input.snapshot.diagnostics,
-  advisories: input.snapshot.advisories ?? [],
+  advisories: input.snapshot.advisories,
   review: input.snapshot.review,
 });
 

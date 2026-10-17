@@ -262,6 +262,8 @@ describe("copilot routine validation", () => {
       diagnosticCount: 1,
       diagnosticsTruncated: false,
       diagnostics: [{ code: "unreachable_step", location: "steps.confirm", message: "No transition reaches confirm." }],
+      advisoryCount: 0,
+      advisoriesTruncated: false,
       advisories: [],
     });
   });
@@ -284,6 +286,8 @@ describe("copilot routine validation", () => {
       diagnosticCount: 0,
       diagnosticsTruncated: false,
       diagnostics: [],
+      advisoryCount: 1,
+      advisoriesTruncated: false,
       advisories: [{
         code: "operator_notice_reply_to_unset",
         location: "step:human.operatorNotice.replyToSlot",
@@ -319,6 +323,21 @@ describe("copilot routine validation", () => {
     expect(result.diagnostics).toHaveLength(40);
     expect(result.diagnosticCount).toBe(45);
     expect(result.diagnosticsTruncated).toBe(true);
+  });
+
+  it("bounds advisories the same way and says how many there are", async () => {
+    const ports = dependencies([routine({
+      slots: [{ stableSlotId: "slot_email", key: "guest_email", type: "email", required: true, description: null, ordinal: 0 }],
+      terminals: Array.from({ length: 45 }, (_, index) => ({ stableStepId: `human_${index}`, kind: "handoff" as const, instruction: null, ordinal: index })),
+    })]);
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "validate_routine")!;
+
+    const result = await tool.createTool(context("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+      .invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never) as { advisories: unknown[]; advisoryCount: number; advisoriesTruncated: boolean };
+
+    expect(result.advisories).toHaveLength(40);
+    expect(result.advisoryCount).toBe(45);
+    expect(result.advisoriesTruncated).toBe(true);
   });
 
   it("asks for a routine rather than validating an unnamed one", async () => {

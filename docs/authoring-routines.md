@@ -307,7 +307,7 @@ field, the email goes out with no reply-to. Rename the field and the ending
 follows; the editor will not remove a field an ending replies to.
 
 When the routine has an email field and a notifying ending's **Replies go to**
-is **No reply-to**, the select reads "Replies won't reach the visitor. Choose
+is **No reply-to**, a note under the select reads "Replies won't reach the visitor. Choose
 their email field." The ending still saves and the routine still publishes, so
 a routine with nobody worth replying to stays as it is.
 

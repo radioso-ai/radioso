@@ -65,8 +65,9 @@ const validateRoutineOutputSchema = z.object({
   diagnosticCount: z.number().int().nonnegative(),
   diagnosticsTruncated: z.boolean(),
   diagnostics: z.array(routineDiagnosticSchema).max(copilotRoutineDiagnosticLimit),
-  // Non-blocking signals worth a look — e.g. a notifying ending with no reply-to — that never
-  // affect `ok`: that stays "no blocking diagnostics" regardless of what this array holds.
+  // Non-blocking findings, such as a notifying ending with no reply-to. They never affect `ok`.
+  advisoryCount: z.number().int().nonnegative(),
+  advisoriesTruncated: z.boolean(),
   advisories: z.array(routineDiagnosticSchema).max(copilotRoutineDiagnosticLimit),
 });
 
@@ -166,7 +167,9 @@ export const createRoutineDefinitionCopilotTools = (deps: RoutineDefinitionCopil
           diagnosticCount: validation.diagnostics.length,
           diagnosticsTruncated: validation.diagnostics.length > copilotRoutineDiagnosticLimit,
           diagnostics: validation.diagnostics.slice(0, copilotRoutineDiagnosticLimit).map((diagnostic) => ({ ...diagnostic })),
-          advisories: advisories.slice(0, copilotRoutineDiagnosticLimit).map(({ code, location, message }) => ({ code, location, message })),
+          advisoryCount: advisories.length,
+          advisoriesTruncated: advisories.length > copilotRoutineDiagnosticLimit,
+          advisories: advisories.slice(0, copilotRoutineDiagnosticLimit),
         };
       },
     }),
@@ -380,7 +383,7 @@ const routineEditDescription = `Propose an edit to an existing routine's wording
 const routineValidationOutput = (draft: CopilotRoutineProposalDraft) => ({
   ok: draft.diagnostics.length === 0,
   diagnostics: draft.diagnostics.slice(0, copilotRoutineDiagnosticLimit).map((diagnostic) => ({ ...diagnostic })),
-  advisories: draft.advisories.slice(0, copilotRoutineDiagnosticLimit).map((advisory) => ({ ...advisory })),
+  advisories: draft.advisories.slice(0, copilotRoutineDiagnosticLimit),
 });
 
 export interface RoutineProposalCopilotToolDependencies extends CopilotProposalEvidenceDependencies, CopilotProposalToolDependencies {

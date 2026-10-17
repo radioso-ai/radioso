@@ -2,7 +2,7 @@
 
 import { useContext, useState } from 'react'
 
-import { ROUTINE_DEFINITION_LIMITS, routineAdvisories } from '@radioso/routine-definition'
+import { endingNotifiesOperators, ROUTINE_DEFINITION_LIMITS, routineAdvisories } from '@radioso/routine-definition'
 
 import { RoutineInstructionEditor } from '@/components/dashboard/settings/routine-chip-editor'
 import { RoutineSkillCatalogContext } from '@/components/dashboard/settings/routine-skill-catalog-popover'
@@ -133,7 +133,7 @@ export function RoutineEndingNoticeEditor({ ending, variables, onChange }: {
 }) {
   const handoff = ending.kind === 'handoff'
   const notice = ending.operatorNotice
-  const notifies = handoff || notice !== undefined
+  const notifies = endingNotifiesOperators(ending)
   const id = `ending-${ending.stableStepId}-notice`
   const update = (patch: Partial<EndingNotice>) => onChange({ subject: null, intro: null, ...notice, ...patch })
   // The default destination is the absence of a name, so choosing it removes the key.

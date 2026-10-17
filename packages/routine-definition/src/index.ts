@@ -690,8 +690,8 @@ export const mapRoutineOperatorNoticeText = <
  */
 export const endingNotifiesOperators = (terminal: {
   kind: RoutineTerminalKind;
-  // Only presence matters, so an editing draft's notice shape qualifies as well as the stored one.
-  operatorNotice?: object;
+  // Only presence matters, so an editing draft's partial notice qualifies as well as the stored one.
+  operatorNotice?: Readonly<Partial<RoutineOperatorNotice>>;
 }): boolean => terminal.kind === "handoff" || terminal.operatorNotice !== undefined;
 
 /**

@@ -381,14 +381,17 @@ export interface CopilotDirectiveProposalAdapter extends CopilotProposalAdapter 
   draft(workspaceId: string, targetRef: unknown, input: unknown): Promise<{ payload: unknown; targetLabel: string; summary: string; versionToken: string }>;
 }
 
+/** One routine diagnostic or advisory as a copilot surface reports it. */
+interface CopilotRoutineFinding { readonly code: string; readonly location: string; readonly message: string }
+
 export interface CopilotRoutineProposalDraft {
   readonly payload: unknown;
   readonly targetLabel: string;
   readonly summary: string;
   /** Structural problems the proposed routine still carries. Empty when it validates cleanly. */
-  readonly diagnostics: ReadonlyArray<{ readonly code: string; readonly location: string; readonly message: string }>;
+  readonly diagnostics: ReadonlyArray<CopilotRoutineFinding>;
   /** Non-blocking findings, such as a notifying ending with no reply-to. Never affect validity. */
-  readonly advisories: ReadonlyArray<{ readonly code: string; readonly location: string; readonly message: string }>;
+  readonly advisories: ReadonlyArray<CopilotRoutineFinding>;
 }
 
 export interface CopilotRoutineProposalAdapter extends CopilotProposalAdapter {

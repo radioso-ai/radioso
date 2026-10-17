@@ -38,6 +38,26 @@ export interface VerifiedCustomerDataEraser {
 }
 
 /**
+ * A visitor's durable key, which rows written before any conversation of theirs existed carry: a
+ * call the website embed started for them whose first turn never came, say.
+ */
+export interface VisitorKeyErasureScope {
+  readonly workspaceId: string;
+  readonly visitorKey: string;
+}
+
+/** One module's rows keyed by a visitor's key rather than a conversation, which a visitor's erasure removes. */
+export interface VisitorKeyDataEraser {
+  readonly owner: string;
+  eraseVisitorKey(scope: VisitorKeyErasureScope): Promise<number>;
+}
+
+/** What vendors hold for: some conversations, a whole workspace, or what a visitor left before any conversation. */
+export type VendorHeldConversationDataScope =
+  | ConversationErasureScope
+  | ({ readonly kind: "visitor_key" } & VisitorKeyErasureScope);
+
+/**
  * One erasure of conversation data a vendor keeps outside Radioso's database, such as a voice call's
  * recording, which the vendor deletes only when Radioso asks it to: its scopes, worked through in
  * order under one budget, and the organization they belong to, which the erasure's record names.
@@ -45,7 +65,7 @@ export interface VerifiedCustomerDataEraser {
  */
 export interface VendorHeldConversationDataErasure {
   readonly account: { readonly id: string; readonly deleted: boolean } | null;
-  readonly scopes: readonly ConversationErasureScope[];
+  readonly scopes: readonly VendorHeldConversationDataScope[];
 }
 
 /**
@@ -54,6 +74,12 @@ export interface VendorHeldConversationDataErasure {
  * cascade removes the rows that say where it is; `erase` asks the vendors to delete it once the
  * deletion has committed. `erase` never rejects, so a vendor that refuses or cannot be reached never
  * holds a deletion back; what is left at a vendor is the eraser's to log.
+ *
+ * Bound to an erasure's transaction, `prepare` reads and locks the rows in scope, so a report that
+ * arrives meanwhile waits for the erasure. When it cannot read a `conversations` or `visitor_key`
+ * scope it rejects, and the erasure fails whole, to be run again: an erasure of named subjects never
+ * goes on without knowing what the vendors hold. For a `workspace` scope it logs and goes on, since
+ * a workspace's deletion does not wait on vendors.
  */
 export interface VendorHeldConversationDataEraser {
   prepare(erasure: VendorHeldConversationDataErasure): Promise<{ erase(): Promise<void> }>;

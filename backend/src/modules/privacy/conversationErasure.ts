@@ -5,7 +5,9 @@ import { notFound } from "../../shared/domain/errors.js";
 import type {
   ConversationDataEraser,
   VendorHeldConversationDataEraser,
+  VendorHeldConversationDataScope,
   VerifiedCustomerDataEraser,
+  VisitorKeyDataEraser,
 } from "../../shared/domain/conversationDataErasure.js";
 
 /** Who asked for an erasure. A credential's identity joins the audit event from the request's own audit context. */
@@ -39,9 +41,14 @@ export interface ErasureSubjects {
   lockConversations(workspaceId: string, conversationIds: readonly string[]): Promise<ReadonlySet<string>>;
   /**
    * Locks the visitor's row, so no new conversation can attach to it while it is erased, and returns
-   * its verified customer id and conversations. Null when the workspace has no such visitor.
+   * its verified customer id, its durable key and its conversations. Null when the workspace has no
+   * such visitor.
    */
-  lockVisitor(workspaceId: string, visitorId: string): Promise<{ verifiedCustomerId: string | null; conversationIds: readonly string[] } | null>;
+  lockVisitor(workspaceId: string, visitorId: string): Promise<{
+    verifiedCustomerId: string | null;
+    visitorKey: string | null;
+    conversationIds: readonly string[];
+  } | null>;
   /**
    * Deletes the conversations, with everything a foreign key cascades from them, and the visitor of
    * any that was its visitor's last conversation.
@@ -55,6 +62,15 @@ export interface ConversationErasureWriteScope {
   subjects: ErasureSubjects;
   conversationErasers: readonly ConversationDataEraser[];
   verifiedCustomerErasers: readonly VerifiedCustomerDataEraser[];
+  /** Rows a visitor left by their key before any conversation of theirs, such as a call never answered. */
+  visitorKeyErasers: readonly VisitorKeyDataEraser[];
+  /**
+   * What vendors hold for the erased subjects, such as a voice call's recording: read in this
+   * transaction, with its rows locked, before any eraser or the cascade removes the rows that say
+   * where it is, and erased at the vendor once the transaction committed. Its read rejecting fails
+   * the erasure. Null when nothing is held outside Radioso.
+   */
+  vendorHeldData: VendorHeldConversationDataEraser | null;
   audit: { record(event: AuditEventInput): Promise<void> };
 }
 
@@ -67,12 +83,6 @@ interface ConversationErasureDependencies {
   invalidation: Pick<WorkspaceInvalidationPublisher, "enqueue">;
   /** Logs a committed audit event; the erasure's one log line. */
   auditLog: { logRecorded?(event: AuditEventInput): void };
-  /**
-   * What vendors hold for the erased conversations, such as a voice call's recording: read inside
-   * the erasure, before any eraser or the cascade removes the rows that say where it is, and erased
-   * at the vendor once the erasure committed. It never fails the erasure.
-   */
-  vendorHeldData?: VendorHeldConversationDataEraser;
 }
 
 /** What an erasure leaves for after its commit: the vendors' copies, read while the transaction ran. */
@@ -99,7 +109,9 @@ export class ConversationErasureService implements ConversationErasure {
       if (!locked.has(input.conversationId)) {
         throw notFound("Conversation not found");
       }
-      return this.eraseConversations(scope, input, [input.conversationId], afterCommit);
+      const ids = [input.conversationId];
+      await this.readVendorHeld(scope, input, [{ kind: "conversations", workspaceId: input.workspaceId, conversationIds: ids }], afterCommit);
+      return this.eraseConversations(scope, input.workspaceId, ids);
     });
   }
 
@@ -113,15 +125,24 @@ export class ConversationErasureService implements ConversationErasure {
       if (!visitor) {
         throw notFound("Visitor not found");
       }
-      const receipt = visitor.conversationIds.length > 0
-        ? await this.eraseConversations(
-            scope,
-            input,
-            [...await scope.subjects.lockConversations(input.workspaceId, visitor.conversationIds)],
-            afterCommit,
-          )
+      const conversationIds = visitor.conversationIds.length > 0
+        ? [...await scope.subjects.lockConversations(input.workspaceId, visitor.conversationIds)]
+        : [];
+      // One read for everything vendors hold for the visitor: their conversations, and what they
+      // left by their key before any conversation, such as a call whose first turn never came.
+      await this.readVendorHeld(scope, input, [
+        ...(conversationIds.length > 0 ? [{ kind: "conversations" as const, workspaceId: input.workspaceId, conversationIds }] : []),
+        ...(visitor.visitorKey ? [{ kind: "visitor_key" as const, workspaceId: input.workspaceId, visitorKey: visitor.visitorKey }] : []),
+      ], afterCommit);
+      const receipt = conversationIds.length > 0
+        ? await this.eraseConversations(scope, input.workspaceId, conversationIds)
         : { conversationCount: 0, messageCount: 0, rowsByOwner: {} };
       const rowsByOwner = { ...receipt.rowsByOwner };
+      if (visitor.visitorKey) {
+        for (const eraser of scope.visitorKeyErasers) {
+          addRows(rowsByOwner, eraser.owner, await eraser.eraseVisitorKey({ workspaceId: input.workspaceId, visitorKey: visitor.visitorKey }));
+        }
+      }
       if (visitor.verifiedCustomerId) {
         for (const eraser of scope.verifiedCustomerErasers) {
           addRows(rowsByOwner, eraser.owner, await eraser.eraseVerifiedCustomer({
@@ -136,24 +157,28 @@ export class ConversationErasureService implements ConversationErasure {
   }
 
   /**
-   * What vendors hold first, read before anything removes where it is; then the erasers, while the
-   * conversations they key on still exist; then the conversations and their cascade.
+   * Reads what vendors hold for the erased subjects, in the erasure's transaction and before any
+   * eraser runs, and leaves its deletion at the vendor for after the commit. A read that rejects
+   * fails the erasure.
    */
+  private async readVendorHeld(
+    scope: ConversationErasureWriteScope,
+    input: { actor: ConversationErasureActor },
+    scopes: readonly VendorHeldConversationDataScope[],
+    afterCommit: AfterCommit,
+  ): Promise<void> {
+    if (!scope.vendorHeldData || scopes.length === 0) return;
+    const vendorHeld = await scope.vendorHeldData.prepare({ account: { id: input.actor.accountId, deleted: false }, scopes });
+    afterCommit(() => vendorHeld.erase());
+  }
+
+  /** Erasers first, while the conversations they key on still exist, then the conversations and their cascade. */
   private async eraseConversations(
     scope: ConversationErasureWriteScope,
-    input: { workspaceId: string; actor: ConversationErasureActor },
+    workspaceId: string,
     conversationIds: readonly string[],
-    afterCommit: AfterCommit,
   ): Promise<ConversationErasureReceipt> {
-    const { workspaceId } = input;
     const ids = [...conversationIds].sort();
-    if (this.deps.vendorHeldData) {
-      const vendorHeld = await this.deps.vendorHeldData.prepare({
-        account: { id: input.actor.accountId, deleted: false },
-        scopes: [{ kind: "conversations", workspaceId, conversationIds: ids }],
-      });
-      afterCommit(() => vendorHeld.erase());
-    }
     const rowsByOwner: Record<string, number> = {};
     for (const eraser of scope.conversationErasers) {
       addRows(rowsByOwner, eraser.owner, await eraser.erase({ kind: "conversations", workspaceId, conversationIds: ids }));

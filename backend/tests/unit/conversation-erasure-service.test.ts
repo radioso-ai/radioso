@@ -31,12 +31,16 @@ interface FakeConversation {
  */
 const createFake = (input: {
   conversations: FakeConversation[];
-  visitors?: { id: string; workspaceId: string; verifiedCustomerId: string | null }[];
+  visitors?: { id: string; workspaceId: string; verifiedCustomerId: string | null; visitorKey?: string | null }[];
   eraserRows?: Record<string, number>;
   customerEraserRows?: Record<string, number>;
   /** Fails the transaction once, as a deadlock victim does, before it commits. */
   failFirstRun?: boolean;
   vendorHeld?: boolean;
+  /** The vendor-held read rejects, as one whose rows cannot be read does. */
+  vendorReadFails?: boolean;
+  /** An eraser rejects after the vendor-held read. */
+  eraserFails?: string;
 }) => {
   let committed = {
     conversations: input.conversations.map((conversation) => ({ ...conversation })),
@@ -51,6 +55,7 @@ const createFake = (input: {
     owner,
     async erase(scope) {
       order.push(`erase:${owner}`);
+      if (input.eraserFails === owner) throw new Error(`${owner} failed`);
       eraserScopes.push({ owner, scope });
       return input.eraserRows?.[owner] ?? 0;
     },
@@ -70,6 +75,7 @@ const createFake = (input: {
     ? {
       prepare: async (erasure) => {
         order.push("vendor:prepare");
+        if (input.vendorReadFails) throw new Error("voice sessions could not be read");
         vendorPrepared.push(erasure);
         return { erase: async () => {
           order.push("vendor:erase");
@@ -101,6 +107,7 @@ const createFake = (input: {
           return visitor
             ? {
                 verifiedCustomerId: visitor.verifiedCustomerId,
+                visitorKey: visitor.visitorKey ?? null,
                 conversationIds: draft.conversations.filter((conversation) => conversation.visitorId === visitorId).map((conversation) => conversation.id),
               }
             : null;
@@ -120,6 +127,15 @@ const createFake = (input: {
         subjects,
         conversationErasers: [conversationEraser("context-variables"), conversationEraser("audit")],
         verifiedCustomerErasers: [customerEraser("context-variables")],
+        visitorKeyErasers: [{
+          owner: "voice-channel",
+          async eraseVisitorKey(scope) {
+            order.push("visitorKey:voice-channel");
+            customerScopes.push({ owner: "voice-channel", verifiedCustomerId: scope.visitorKey });
+            return 1;
+          },
+        }],
+        vendorHeldData: vendorHeldData ?? null,
         audit: { async record(event) { order.push("audit"); draft.audit.push(event); } },
       });
       if (input.failFirstRun && runs === 1) {
@@ -133,7 +149,7 @@ const createFake = (input: {
   };
   const invalidation = { enqueue: vi.fn() };
   const auditLog = { logRecorded: vi.fn() };
-  const service = new ConversationErasureService({ unitOfWork, invalidation, auditLog, ...(vendorHeldData ? { vendorHeldData } : {}) });
+  const service = new ConversationErasureService({ unitOfWork, invalidation, auditLog });
   return {
     service,
     vendorPrepared,
@@ -321,7 +337,49 @@ describe("ConversationErasureService and what vendors hold", () => {
 
     await fake.service.eraseVisitor({ workspaceId: WORKSPACE, visitorId: "visitor-1", actor: ACTOR });
 
-    expect(fake.vendorErased.map((erasure) => erasure.scopes)).toEqual([[{ kind: "conversations", workspaceId: WORKSPACE, conversationIds: ["conv-a", "conv-b"] }]]);
+    expect(fake.vendorErased.map((erasure) => erasure.scopes)).toEqual([[{ kind: "conversations", workspaceId: WORKSPACE, conversationIds: ["conv-b", "conv-a"] }]]);
+  });
+
+  it("reads what a visitor left by their key before any conversation, with no conversation at all, and erases it", async () => {
+    const fake = createFake({
+      conversations: [],
+      visitors: [{ id: "visitor-1", workspaceId: WORKSPACE, verifiedCustomerId: null, visitorKey: "visitor-key-1" }],
+      vendorHeld: true,
+    });
+
+    const receipt = await fake.service.eraseVisitor({ workspaceId: WORKSPACE, visitorId: "visitor-1", actor: ACTOR });
+
+    expect(fake.vendorPrepared.map((erasure) => erasure.scopes)).toEqual([[{ kind: "visitor_key", workspaceId: WORKSPACE, visitorKey: "visitor-key-1" }]]);
+    expect(fake.order).toEqual(["lockVisitor", "vendor:prepare", "visitorKey:voice-channel", "deleteVisitor", "audit", "commit", "vendor:erase"]);
+    expect(receipt.rowsByOwner).toEqual({ "voice-channel": 1 });
+  });
+
+  it("fails the erasure, recording and asking the vendor nothing, when what vendors hold cannot be read", async () => {
+    const fake = createFake({
+      conversations: [{ id: "conv-1", workspaceId: WORKSPACE, chatSessionId: null, visitorId: null, messages: 1 }],
+      vendorHeld: true,
+      vendorReadFails: true,
+    });
+
+    await expect(fake.service.eraseConversation({ workspaceId: WORKSPACE, conversationId: "conv-1", actor: ACTOR })).rejects.toThrow("voice sessions could not be read");
+
+    expect(fake.state().conversations).toHaveLength(1);
+    expect(fake.state().audit).toEqual([]);
+    expect(fake.vendorErased).toEqual([]);
+  });
+
+  it("asks the vendor nothing when an eraser fails after the read", async () => {
+    const fake = createFake({
+      conversations: [{ id: "conv-1", workspaceId: WORKSPACE, chatSessionId: null, visitorId: null, messages: 1 }],
+      vendorHeld: true,
+      eraserFails: "audit",
+    });
+
+    await expect(fake.service.eraseConversation({ workspaceId: WORKSPACE, conversationId: "conv-1", actor: ACTOR })).rejects.toThrow("audit failed");
+
+    expect(fake.vendorPrepared).toHaveLength(1);
+    expect(fake.vendorErased).toEqual([]);
+    expect(fake.state().conversations).toHaveLength(1);
   });
 
   it("asks the vendors nothing for an erasure that was refused, and only once for one that ran again", async () => {

@@ -255,6 +255,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   // key, Ray reads whether one exists, and a deletion asks the vendor to delete them.
   const voiceRecordings = createVoiceRecordingComposition({
     recordings: voiceSessions,
+    recordingsIn: (db) => new VoiceSessionRepository(db),
     credentials: workspaceProviderCredentialsService,
     // Called through its own receiver, never detached from globalThis.
     fetch: (url, init) => globalThis.fetch(url, init),
@@ -1427,11 +1428,14 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     voiceRecordings: voiceRecordings.recordings,
     assistantHistoryService: chat.assistantHistoryService,
     conversationErasure: new ConversationErasureService({
-      unitOfWork: createPostgresConversationErasureUnitOfWork({ db: infrastructure.database.kysely, logger }),
+      unitOfWork: createPostgresConversationErasureUnitOfWork({
+        db: infrastructure.database.kysely,
+        logger,
+        // Call recordings the voice vendor keeps: read and locked in the erasure's transaction.
+        vendorHeldData: (trx) => voiceRecordings.erasureIn(trx),
+      }),
       invalidation: realtimePublisherComposition.publisher,
       auditLog: infrastructure.auditService,
-      // Call recordings the voice vendor keeps: read before the erasure removes where they are.
-      vendorHeldData: voiceRecordings.erasure,
     }),
     retrievalSearchService: retrieval.retrievalSearchService,
     retrievalAnswerService: chat.retrievalAnswerService,

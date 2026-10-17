@@ -3,6 +3,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import {
   defaultConversationDataErasers,
   defaultVerifiedCustomerDataErasers,
+  defaultVisitorKeyDataErasers,
 } from "../../src/app/composition/conversationErasure.js";
 import { Database } from "../../src/shared/infra/database.js";
 import type { Db } from "../../src/shared/infra/kysely/types.js";
@@ -58,7 +59,7 @@ const coverage: Record<string, ErasureCoverage> = {
   "voice_sessions.started_public_session_id": {
     kind: "eraser",
     owner: "voice-channel",
-    reason: "The website visitor's public session that started the call; the row goes with the voice eraser, and a start no turn bound is removed at the agent's next start.",
+    reason: "The website visitor's public session that started the call, beside their visitor key (started_visitor_key, which this query does not match). The voice eraser removes the row with its conversation, or, for a call no turn ever bound, with the erased visitor's key; a start whose page reported no recording also goes at the agent's next start.",
   },
   "email_inbound_deliveries.planned_conversation_id": {
     kind: "eraser",
@@ -179,6 +180,7 @@ describeIntegration("conversation erasure schema coverage", () => {
     return new Set([
       ...defaultConversationDataErasers.map((bind) => bind(unbound).owner),
       ...defaultVerifiedCustomerDataErasers.map((bind) => bind(unbound).owner),
+      ...defaultVisitorKeyDataErasers.map((bind) => bind(unbound).owner),
     ]);
   };
 

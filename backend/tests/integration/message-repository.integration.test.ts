@@ -176,13 +176,13 @@ describeIntegration("MessageRepository (Postgres)", () => {
     expect((await repository.findByIdAndWorkspaceId(workspaceId, otherReply.id))?.interruption).toBeUndefined();
   });
 
-  describe("tail re-delivery of interrupted replies", () => {
+  describe("tail re-delivery of marked replies", () => {
     const sinceCursor = (cursor: string | null) => {
       const { keys } = decodeCursorWithKeys(cursor!, ["createdAt", "id"]);
       return { sinceCreatedAt: new Date(keys.createdAt), sinceId: keys.id, sinceMarkedAt: (keys as Record<string, string>).markedAt };
     };
-    const tail = (cursor: string | null, redeliverInterruptedReplies = true) =>
-      repository.listSinceByConversationId(workspaceId, conversationId, { ...sinceCursor(cursor), limit: 10, redeliverInterruptedReplies });
+    const tail = (cursor: string | null, redeliverMarkedReplies = true) =>
+      repository.listSinceByConversationId(workspaceId, conversationId, { ...sinceCursor(cursor), limit: 10, redeliverMarkedReplies });
     const markReply = (messageId: string) =>
       repository.markReplyInterrupted({ workspaceId, conversationId, messageId, heardCharacterCount: 7, spokenCharacterCount: 16 });
     // Whole milliseconds, as the cursor keeps them, so a read after the cursor's own message starts
@@ -222,6 +222,69 @@ describeIntegration("MessageRepository (Postgres)", () => {
       expect(page.messages.map((message) => message.id)).toEqual([reply.id, next.id]);
       expect(decodeCursorWithKeys(page.latestCursor!, ["createdAt", "id"]).keys.id).toBe(next.id);
       expect((await tail(page.latestCursor)).messages).toEqual([]);
+    });
+
+    it("re-delivers a teammate's reply once the caller heard it, after an interruption it already delivered", async () => {
+      const agentReply = await createAt("assistant", "We open at nine.", "2026-06-01T00:00:01.000Z");
+      const teammateReply = await repository.create({
+        conversationId, workspaceId, role: "assistant", source: "human_agent", content: "Four works.", pendingSpeech: true,
+      });
+      await setTime(teammateReply.id, "2026-06-01T00:00:02.000Z");
+      const { latestCursor: seen } = await repository.listSinceByConversationId(workspaceId, conversationId, { limit: 10 });
+
+      await markReply(agentReply.id);
+      const interrupted = await tail(seen);
+      expect(interrupted.messages.map((message) => message.id)).toEqual([agentReply.id]);
+
+      await repository.markOperatorRepliesSpoken({ workspaceId, conversationId, messageIds: [teammateReply.id] });
+
+      const spoken = await tail(interrupted.latestCursor);
+      expect(spoken.messages.map((message) => [message.id, message.speech?.state])).toEqual([[teammateReply.id, "spoken"]]);
+      expect((await tail(spoken.latestCursor)).messages).toEqual([]);
+    });
+  });
+
+  describe("a teammate's replies on a call", () => {
+    const teammateReply = (content: string, iso: string, pendingSpeech = true) =>
+      repository.create({ conversationId, workspaceId, role: "assistant", source: "human_agent", content, operatorUserId: "user-1", pendingSpeech })
+        .then(async (message) => {
+          await setTime(message.id, iso);
+          return message;
+        });
+    const pending = () => repository.pendingOperatorReplies({ workspaceId, conversationId });
+    const markSpoken = (messageIds: string[], workspace = workspaceId) =>
+      repository.markOperatorRepliesSpoken({ workspaceId: workspace, conversationId, messageIds });
+
+    it("stores a reply the caller hears as pending and lists the pending ones oldest first", async () => {
+      const later = await teammateReply("Bring your card.", "2026-06-01T00:00:03.000Z");
+      const first = await teammateReply("We can fit you in at **four**.", "2026-06-01T00:00:01.000Z");
+      await teammateReply("Written, never spoken.", "2026-06-01T00:00:02.000Z", false);
+      await repository.create({ conversationId, workspaceId, role: "assistant", content: "We open at nine." });
+
+      expect((await repository.findByIdAndWorkspaceId(workspaceId, first.id))?.speech).toEqual({ state: "pending" });
+      expect((await repository.findByIdAndWorkspaceId(workspaceId, first.id))?.metadata).toMatchObject({ humanAgent: { userId: "user-1" } });
+      expect(await pending()).toEqual([
+        { messageId: first.id, text: "We can fit you in at **four**.", createdAt: new Date("2026-06-01T00:00:01.000Z") },
+        { messageId: later.id, text: "Bring your card.", createdAt: new Date("2026-06-01T00:00:03.000Z") },
+      ]);
+    });
+
+    it("marks pending replies spoken once, keeps the first time, and leaves every other message alone", async () => {
+      const reply = await teammateReply("Four works.", "2026-06-01T00:00:01.000Z");
+      const agentReply = await repository.create({ conversationId, workspaceId, role: "assistant", content: "We open at nine." });
+      const question = await repository.create({ conversationId, workspaceId, role: "user", content: "When?" });
+
+      await expect(markSpoken([reply.id], randomUUID())).resolves.toEqual([]);
+      await expect(markSpoken([reply.id, agentReply.id, question.id, randomUUID()])).resolves.toEqual([reply.id]);
+      const spoken = (await repository.findByIdAndWorkspaceId(workspaceId, reply.id))?.speech;
+      expect(spoken).toEqual({ state: "spoken", spokenAt: expect.any(String) });
+      expect(new Date(spoken!.spokenAt!).toISOString()).toBe(spoken!.spokenAt);
+      expect(await pending()).toEqual([]);
+
+      await expect(markSpoken([reply.id])).resolves.toEqual([]);
+      expect((await repository.findByIdAndWorkspaceId(workspaceId, reply.id))?.speech).toEqual(spoken);
+      expect((await repository.findByIdAndWorkspaceId(workspaceId, agentReply.id))?.metadata).not.toHaveProperty("speech");
+      expect((await repository.findByIdAndWorkspaceId(workspaceId, question.id))?.metadata).not.toHaveProperty("speech");
     });
   });
 

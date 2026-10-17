@@ -19,7 +19,7 @@ export const setProviderCredentialSchema = z.object({
 });
 
 type CredentialsRouteDependencies = WorkspaceSessionDependencies &
-  Pick<AppDependencies, "workspaceProviderCredentialsService" | "accountAccessService" | "env" | "managedModelPolicy">;
+  Pick<AppDependencies, "workspaceProviderCredentialsService" | "accountAccessService" | "env">;
 
 /** Model providers only: a voice vendor key is always the workspace's own, with no deployment fallback. */
 const computeEnvProviderAvailability = (
@@ -50,20 +50,14 @@ export const createSettingsCredentialsRoutes = (
   router.get("/", workspaceSession, settingsRead, async (_req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const [configured, policy] = await Promise.all([
-        dependencies.workspaceProviderCredentialsService.listConfigured(workspaceId),
-        dependencies.managedModelPolicy.resolveModelPolicy({ workspaceId, capability: "chat" }),
-      ]);
+      const configured = await dependencies.workspaceProviderCredentialsService.listConfigured(workspaceId);
       res.status(200).json({
         encryptionConfigured: dependencies.workspaceProviderCredentialsService.isEncryptionConfigured(),
         credentials: configured.map((entry) => ({
           provider: entry.provider,
           updatedAt: entry.updatedAt.toISOString(),
         })),
-        credentialSource: policy.credentialSource,
-        envProviderAvailability: policy.credentialSource === "byok"
-          ? { openai: false, "openai-compatible": false, gemini: false, claude: false }
-          : computeEnvProviderAvailability(dependencies.env),
+        envProviderAvailability: computeEnvProviderAvailability(dependencies.env),
       });
     } catch (error) {
       next(error);

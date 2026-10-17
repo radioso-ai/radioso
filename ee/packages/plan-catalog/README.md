@@ -30,7 +30,8 @@ it.
 - `ee/packages/backend-module/src/managedModels` turns `managedModels` into the backend's
   `ManagedModelPolicy`: a workspace on a `models: "managed"` plan with no key of its own for the
   provider it would otherwise use runs `managedModels.chat` for chat and `managedModels.default`
-  for rewrite and rerank. A workspace on a `models: "byok"` plan uses only its workspace provider
-  credentials; deployment credentials are reserved for managed plans.
+  for rewrite and rerank. A `models: "byok"` plan picks freely, the same as self-host: a workspace
+  key for the provider it would use takes precedence, and the deployment's own provider key still
+  covers a capability the workspace has not configured.
 - The Radioso website snapshots `GET /api/v1/plans` for its pricing page, so a plan-numbers change
   here reaches the website without a separate edit there.

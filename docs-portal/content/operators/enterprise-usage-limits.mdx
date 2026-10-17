@@ -1,7 +1,7 @@
 ---
 title: "Enterprise usage limits"
 description: "How Enterprise Edition meters and caps indexed storage, monthly indexed content, and monthly answers or conversations per account, and enforces the caps before work begins."
-last_updated: 2026-10-13
+last_updated: 2026-10-17
 ---
 
 # Enterprise usage limits
@@ -69,7 +69,7 @@ The seed only inserts a profile that is missing; it never overwrites one that al
 
 `comet`, `satellite`, and `planet_managed` are managed plans: a workspace on one of them runs the catalog's managed model set (`gpt-5.4-mini` on OpenAI for chat, query rewrite, and rerank) whenever it holds no provider credential of its own for the provider it would otherwise use. A stored key for that selected provider lifts the managed default for that capability; remove the key to return the capability to Radioso's managed model. The lock is served from the deployment's `OPENAI_API_KEY`, so set it on every Enterprise deployment that assigns managed plans; a managed workspace with neither its own OpenAI key nor a deployment key gets a `provider_misconfigured` error on its first model call. The [Settings API](/api/settings#llm-model-selection) reports the lock per capability under `managed`.
 
-`planet` is the bring-your-own-key profile. Its workspaces use only provider credentials saved for that workspace. Without one, chat, Ray, document embeddings, rewrites, reranking, and other model-backed work report `provider_misconfigured`, and the dashboard directs the operator to connect an AI provider. Deployment provider keys never satisfy a BYOK workspace.
+`planet` chooses freely, the same as a self-hosted deployment: a workspace key for the provider it would use takes precedence, and resolution falls back to the deployment's own provider key when the workspace has none. Without either, chat, Ray, document embeddings, rewrites, reranking, and other model-backed work report `provider_misconfigured`, and the dashboard directs the operator to connect an AI provider.
 
 Both Planet profiles include 5,000 conversations, the same document and storage allowances, priority support, and top-ups. Planet costs €499 per month or €4,990 per year with workspace provider credentials. Planet + managed models costs €749 per month or €7,490 per year; its €250 monthly model premium corresponds to €0.05 for each of the 5,000 included conversations.
 

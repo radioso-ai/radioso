@@ -1009,6 +1009,8 @@ export interface RoutineState {
   routineId: string;
   /** Stable identifier for this concrete routine run, when the host persists one. */
   executionId?: string;
+  /** The visitor message that activated this run; host-owned transcript boundary. */
+  startedMessageId?: string;
   path: string[];
   variables: Record<string, unknown>;
   /** Per-step entry counts, used by deterministic counter guards. */
@@ -1093,6 +1095,8 @@ export interface RoutineOperatorNoticeTemplate {
   intro?: string;
   skillName?: string;
   replyToSlot?: string;
+  /** Ask the host to append a background-generated, non-slot conversation summary. */
+  includeAiSummary?: boolean;
 }
 
 /** A fire-and-forget side effect a routine requested: an authored `type` + payload. */

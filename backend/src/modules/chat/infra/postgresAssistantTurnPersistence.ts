@@ -106,11 +106,13 @@ const saveRoutineState = async (
 ): Promise<void> => {
   const expiresAt = state.status === "suspended" ? null : new Date(Date.now() + ttlMs).toISOString();
   await sql`
-    INSERT INTO routine_states (session_id, routine_id, execution_id, path, variables, attempts, reask_count, status, expires_at, updated_at)
+    INSERT INTO routine_states (session_id, routine_id, execution_id, started_message_id, started_execution_id, path, variables, attempts, reask_count, status, expires_at, updated_at)
     VALUES (
       ${state.sessionId},
       ${state.routineId},
       ${state.executionId ?? null},
+      ${state.startedMessageId ?? null},
+      ${state.startedMessageId ? state.executionId ?? null : null},
       ${sql.val(state.path)}::text[],
       ${toJsonb(state.variables)},
       ${toJsonb(state.attempts ?? {})},
@@ -122,6 +124,8 @@ const saveRoutineState = async (
     ON CONFLICT (session_id) DO UPDATE SET
       routine_id = EXCLUDED.routine_id,
       execution_id = EXCLUDED.execution_id,
+      started_message_id = EXCLUDED.started_message_id,
+      started_execution_id = EXCLUDED.started_execution_id,
       path = EXCLUDED.path,
       variables = EXCLUDED.variables,
       attempts = EXCLUDED.attempts,

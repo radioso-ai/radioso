@@ -495,7 +495,12 @@ export class ChatTurnAssembly {
     const activator = input.clarification?.resolution?.kind === "routine_activation"
       ? input.clarification.resolution.activator
       : routineTurnPorts.activator;
-    const deferredStore = new DeferredRoutineStore(this.options.routineStore);
+    // An active state from before anchors were persisted cannot be retroactively anchored
+    // to this turn: that would incorrectly narrow its summary transcript on a rolling deploy.
+    session.routineStartMessageId = input.activeRoutine
+      ? input.activeRoutine.startedMessageId
+      : session.userMessage.id;
+    const deferredStore = new DeferredRoutineStore(this.options.routineStore, session.routineStartMessageId);
     const deferredClarificationStore = input.clarification?.store;
     input.coordination?.checkpoint("routing");
     const claim = await claimRoutineTurnWithConversationEngine({
@@ -710,7 +715,9 @@ export class ChatTurnAssembly {
         effects: reactionEffects,
       };
     }
-    const deferredStore = new DeferredRoutineStore(this.options.routineStore);
+    const routineStartMessageId = getSession().userMessage.id;
+    getSession().routineStartMessageId = routineStartMessageId;
+    const deferredStore = new DeferredRoutineStore(this.options.routineStore, routineStartMessageId);
     const deferredClarificationStore = input.clarification?.store;
     return {
       coverageRoutineActivator: routineTurnPorts.coverageActivator,

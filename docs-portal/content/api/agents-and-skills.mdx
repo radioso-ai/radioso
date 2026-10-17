@@ -404,6 +404,7 @@ Each notice is emailed to the resolved recipients as plain text and, when a webh
     "guest_name": "Alex Rivera",
     "guest_email": "alex@example.com"
   },
+  "aiSummary": "The guest needs step-free access and expects to arrive after 22:00.",
   "subject": "New booking: Alex Rivera, 2026-10-12",
   "intro": "Please confirm the room with Alex Rivera.",
   "replyTo": "alex@example.com",
@@ -415,6 +416,8 @@ Each notice is emailed to the resolved recipients as plain text and, when a webh
 `reason` says what raised the notice: `routine_handoff` when a routine reached its hand-off ending, `routine_stuck` when a routine ended on a step its visitor stayed stuck on, or `retrieval_miss` — all three for a handoff — and `routine_completed` for a routine that finished and kept the conversation with the agent. `routine` names the routine whose ending raised the notice, with `name` set to `null` when the routine has since been deleted; it is `null` for a retrieval-miss handoff. `collected` holds the routine's declared values keyed by slot key, in the order the routine declares them (in storage order once the routine has been deleted), and is empty for a retrieval-miss handoff. Text, number, and boolean values are included; text is capped at 1,000 characters and a slot holding a structured value is left out. The email version of the notice reads as plain prose: it lists the same values under a `Collected:` heading and, when the conversation has one, the page it started on. The JSON body carries `collected` as structured data instead of that heading, and has no field for the entry page.
 
 `subject` and `intro` are the text the routine's author wrote for that ending, with each `{{slot.<key>}}` replaced by the collected value, or `—` when the routine did not collect it. Each is `null` when the author wrote none; the email then uses the default subject (`Book accommodation: completed`, or `Book accommodation: needs a human` for a handoff) and no intro.
+
+`aiSummary` is present when the ending has **Include an AI summary** on and the background summary succeeds. It describes relevant conversation details outside `collected`, in the agent's configured language or the conversation's language. A generation error or timeout leaves the field out and the notice still sends.
 
 `replyTo` is the address a reply to the notice should go to: the value the visitor gave in the email field the ending's author chose under **Replies go to** (`operatorNotice.replyToSlot` on the routine), here `guest_email`. The email sets it as its reply-to header, so reception answers the guest by hitting Reply; a webhook receiver that writes back to the visitor uses the same address. It is `null` when the ending names no field, when the visitor never gave that field, when the collected value is not a valid address of at most 320 characters, and for a retrieval-miss handoff. Radioso never picks an address on its own, even when `collected` holds one.
 

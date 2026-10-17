@@ -250,7 +250,13 @@ const lifecycleSession = (answerCoverage?: ChatAnswerCoverageAssessment): Prepar
 /** Lifecycle collaborators that fail a test if a review turn writes a reply. */
 export const reviewLifecycleHarness = () => {
   const audit = {
-    record: vi.fn(async () => {}),
+    record: vi.fn(async (_event?: unknown) => {}),
+    // The failure path's live-conversation gate; this fixture never simulates an erased
+    // conversation, so it just forwards to `record` and the existing `recordedAudits` helper
+    // (which reads `record.mock.calls`) keeps seeing every recorded failure.
+    recordForLiveConversation: vi.fn(async (event: unknown) => {
+      await audit.record(event);
+    }),
     logRecorded: vi.fn(),
     updateChatAnswerSuggestions: vi.fn(async () => {}),
   };

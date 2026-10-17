@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ConversationTrace } from "@radioso/conversation-contract";
 
 import type { AuditService } from "../../src/modules/audit/contracts/index.js";
+import { createAuditService, InMemoryAuditEventRepository } from "../support/fakes.js";
 import type { ConversationRepositoryPort } from "../../src/db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../src/db/repositories/messageRepository.js";
 import { ChatTurnSupersededError } from "../../src/modules/chat/services/conversationTurnRegistry.js";
@@ -2070,6 +2071,56 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       });
       expect(records[0].metadata.userMessageId).toBeUndefined();
       expect(conversationRepository.touch).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("recordFailure — conversation-erasure race", () => {
+    /**
+     * The real `AuditService`, backed by an in-memory repository whose `conversationExists`
+     * stands in for the Postgres lock a live erasure holds on the conversation row (see
+     * `AuditEventRepository.createIfConversationLive`). Using the real service, not a mock,
+     * exercises the actual skip decision `recordFailure` depends on.
+     */
+    const liveConversationHarness = () => {
+      const auditRepository = new InMemoryAuditEventRepository();
+      const auditService = createAuditService(auditRepository);
+      const conversationRepository = { touch: vi.fn(async () => {}) } as unknown as ConversationRepositoryPort;
+      const messageRepository = {} as unknown as MessageRepositoryPort;
+      const lifecycle = new ChatTurnLifecycle(conversationRepository, messageRepository, auditService);
+      return { lifecycle, auditRepository };
+    };
+
+    const chatAnswerEvents = (auditRepository: InMemoryAuditEventRepository) =>
+      auditRepository.items.filter((event) => event.eventType === "chat.answer");
+
+    it("records the chat.answer failure while its conversation still exists", async () => {
+      const { lifecycle, auditRepository } = liveConversationHarness();
+
+      await lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: false },
+        null,
+        undefined,
+        new Error("boom"),
+      );
+
+      const recorded = chatAnswerEvents(auditRepository);
+      expect(recorded).toHaveLength(1);
+      expect(recorded[0]).toMatchObject({ eventStatus: "failure", workspaceId: "workspace_1" });
+      expect(recorded[0].metadata).toMatchObject({ conversationId: "conv_1" });
+    });
+
+    it("skips the chat.answer failure audit once its conversation has been erased", async () => {
+      const { lifecycle, auditRepository } = liveConversationHarness();
+      auditRepository.conversationExists = () => false;
+
+      await lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: false },
+        null,
+        undefined,
+        new Error("boom"),
+      );
+
+      expect(chatAnswerEvents(auditRepository)).toHaveLength(0);
     });
   });
 });

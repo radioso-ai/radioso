@@ -1138,9 +1138,22 @@ export class ChatTurnLifecycle {
         ...executionModeAuditMetadata(input.executionMode, session?.conversation.sourceChannel),
       },
     };
-    await this.auditService.record(auditsWithoutContent(input.executionMode)
+    const failureAuditEvent = auditsWithoutContent(input.executionMode)
       ? reviewTurnFailureAuditEvent(failureEvent, error)
-      : failureEvent);
+      : failureEvent;
+    const failedConversationId = session?.conversation.id ?? input.conversationId;
+    if (failedConversationId) {
+      // Keyed to the conversation so a turn failing while its conversation is mid-erasure
+      // never leaves a row the erasure's own audit cleanup already ran past.
+      await this.auditService.recordForLiveConversation(failureAuditEvent, {
+        workspaceId: input.workspaceId,
+        conversationId: failedConversationId,
+      });
+    } else {
+      // No conversation to key the liveness check on (the turn failed before one existed), so
+      // there is nothing an erasure could have raced.
+      await this.auditService.record(failureAuditEvent);
+    }
     if (turnExecutionCapabilities(input.executionMode).turnBookkeeping === "skip") {
       return;
     }

@@ -42,26 +42,41 @@ export async function startPublicVoiceSession(token: string, input: { locale?: s
 }
 
 /**
+ * How a vendor conversation report ended: `recorded` (204), `refused` (Radioso will not take it for
+ * this session, which a second try cannot change), or `failed` (it did not get through, or Radioso
+ * could not check it now; the page may send it again).
+ */
+export type VoiceVendorConversationReportOutcome = 'recorded' | 'refused' | 'failed'
+
+const reportOnce = async (url: string, token: string, vendorConversationId: string): Promise<VoiceVendorConversationReportOutcome> => {
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      cache: 'no-store',
+      credentials: 'include',
+      // The report may be sent as the call ends, while the page closes.
+      keepalive: true,
+      headers: attachAnonymousSessionHeader(token, { 'Content-Type': 'application/json' }),
+      body: JSON.stringify({ vendorConversationId }),
+    })
+    if (response.ok) return 'recorded'
+    return response.status === 400 || response.status === 404 ? 'refused' : 'failed'
+  } catch {
+    return 'failed'
+  }
+}
+
+/**
  * Tells Radioso the vendor's id for a call the page opened, so the Inbox can play the call's
  * recording. Through the app host's relay, with the embed's public session the session was started
- * for. Best effort: it never rejects, and the call goes on whatever the answer.
+ * for, tried once more when it does not get through. It never rejects, and the call goes on whatever
+ * the answer.
  */
 export async function reportVoiceVendorConversation(
   token: string,
   input: { sessionKey: string; vendorConversationId: string },
-): Promise<void> {
-  try {
-    await fetch(
-      `${PUBLIC_CHAT_STREAMING_API_PATH}/${encodeURIComponent(token)}/voice/sessions/${encodeURIComponent(input.sessionKey)}/vendor-conversation`,
-      {
-        method: 'POST',
-        cache: 'no-store',
-        credentials: 'include',
-        headers: attachAnonymousSessionHeader(token, { 'Content-Type': 'application/json' }),
-        body: JSON.stringify({ vendorConversationId: input.vendorConversationId }),
-      },
-    )
-  } catch {
-    // The recording stays unnamed; the call is unaffected.
-  }
+): Promise<VoiceVendorConversationReportOutcome> {
+  const url = `${PUBLIC_CHAT_STREAMING_API_PATH}/${encodeURIComponent(token)}/voice/sessions/${encodeURIComponent(input.sessionKey)}/vendor-conversation`
+  const first = await reportOnce(url, token, input.vendorConversationId)
+  return first === 'failed' ? reportOnce(url, token, input.vendorConversationId) : first
 }

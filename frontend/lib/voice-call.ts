@@ -1,3 +1,4 @@
+import type { VoiceVendorConversationReportOutcome } from './api-public-voice'
 import type { PublicVoiceSessionResponse } from './api-types'
 import { VoiceMicrophoneUnavailableError, type VoiceRuntime, type VoiceRuntimeLine, type VoiceRuntimeSession, type VoiceVendor } from './voice-runtime'
 import type { VoiceSessionEvent } from './voice-session'
@@ -28,9 +29,10 @@ export interface VoiceCallDependencies {
   after?: Promise<void>
   /**
    * Tells Radioso the vendor's id for the call once the session is open, so the call's recording can
-   * be found. The call never waits for it, and a report that fails changes nothing about the call.
+   * be found, and once more as the session ends when that report did not get through. The call never
+   * waits for it, and a report that fails changes nothing about the call.
    */
-  reportVendorConversation?: (input: { sessionKey: string; vendorConversationId: string }) => Promise<void>
+  reportVendorConversation?: (input: { sessionKey: string; vendorConversationId: string }) => Promise<VoiceVendorConversationReportOutcome>
 }
 
 /**
@@ -69,6 +71,8 @@ export function runVoiceCall(dependencies: VoiceCallDependencies, observer: Voic
   let sessionClosed: Promise<void> = Promise.resolve()
   let closeSession: (() => void) | null = null
   let connectTimer: ReturnType<typeof setTimeout> | null = null
+  // The open session's report, until the session ends.
+  let vendorReport: { input: { sessionKey: string; vendorConversationId: string }; outcome: Promise<VoiceVendorConversationReportOutcome> } | null = null
   const opening = new AbortController()
   const clearConnectTimer = () => {
     if (connectTimer !== null) clearTimeout(connectTimer)
@@ -77,11 +81,22 @@ export function runVoiceCall(dependencies: VoiceCallDependencies, observer: Voic
   const report = (event: VoiceSessionEvent) => {
     if (!stopped) observer.onEvent(event)
   }
+  /** As the session ends: a report that did not get through goes once more; a 204 or a refusal is final. */
+  const settleVendorReport = () => {
+    const pending = vendorReport
+    const report = dependencies.reportVendorConversation
+    vendorReport = null
+    if (!pending || !report) return
+    void pending.outcome
+      .then((outcome) => (outcome === 'failed' ? report(pending.input) : outcome))
+      .catch(() => undefined)
+  }
   const finish = () => {
     if (stopped) return
     stopped = true
     clearConnectTimer()
     opening.abort()
+    settleVendorReport()
     const open = session
     session = null
     if (open) void open.end().catch(() => undefined).finally(() => closeSession?.())
@@ -148,9 +163,8 @@ export function runVoiceCall(dependencies: VoiceCallDependencies, observer: Voic
         closeSession = resolve
       })
       if (opened.vendorConversationId && dependencies.reportVendorConversation) {
-        void dependencies
-          .reportVendorConversation({ sessionKey: start.session.sessionKey, vendorConversationId: opened.vendorConversationId })
-          .catch(() => undefined)
+        const input = { sessionKey: start.session.sessionKey, vendorConversationId: opened.vendorConversationId }
+        vendorReport = { input, outcome: dependencies.reportVendorConversation(input).catch((): VoiceVendorConversationReportOutcome => 'failed') }
       }
 
     } catch (error) {

@@ -81,7 +81,7 @@ describe('a voice call', () => {
   })
 
   it("reports the vendor's id for the call once the session is open, with the session key", async () => {
-    const reportVendorConversation = vi.fn(async () => undefined)
+    const reportVendorConversation = vi.fn(async () => 'recorded' as const)
     const end = vi.fn(async () => undefined)
     callWith({ reportVendorConversation, openSession: async () => ({ end, vendorConversationId: 'conv_1' }) })
     await flush()
@@ -90,7 +90,7 @@ describe('a voice call', () => {
   })
 
   it('reports nothing for a session the vendor named no id for, or one stopped while it opened', async () => {
-    const reportVendorConversation = vi.fn(async () => undefined)
+    const reportVendorConversation = vi.fn(async () => 'recorded' as const)
     callWith({ reportVendorConversation, openSession: async () => ({ end: async () => undefined }) })
     await flush()
     expect(reportVendorConversation).not.toHaveBeenCalled()
@@ -102,6 +102,20 @@ describe('a voice call', () => {
     opening.resolve({ end: async () => undefined, vendorConversationId: 'conv_2' })
     await flush()
     expect(reportVendorConversation).not.toHaveBeenCalled()
+  })
+
+  it("reports again as the session ends when the first report did not get through, and not after a 204 or a refusal", async () => {
+    for (const [first, expectedCalls] of [['failed', 2], ['recorded', 1], ['refused', 1]] as const) {
+      const reportVendorConversation = vi.fn(async (): Promise<'recorded' | 'refused' | 'failed'> => first)
+      const { call } = callWith({ reportVendorConversation, openSession: async () => ({ end: async () => undefined, vendorConversationId: 'conv_1' }) })
+      await flush()
+
+      call.stop()
+      await flush()
+
+      expect(reportVendorConversation).toHaveBeenCalledTimes(expectedCalls)
+      expect(reportVendorConversation).toHaveBeenLastCalledWith({ sessionKey: 'session-key-1', vendorConversationId: 'conv_1' })
+    }
   })
 
   it('keeps the call going when the report fails', async () => {

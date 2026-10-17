@@ -1,7 +1,7 @@
 ---
 title: "Connect a calling agent"
 description: "Read the reply envelope ask_agent returns, call an exposed routine as a typed tool, and come back for a human's reply after a handoff."
-last_updated: 2026-09-22
+last_updated: 2026-10-13
 ---
 
 # Connect a calling agent
@@ -9,6 +9,12 @@ last_updated: 2026-09-22
 Another AI agent can hold a conversation with one of yours and act on what comes back. It sends a message through `ask_agent`, or calls a routine you have exposed as a named tool, and gets a structured reply envelope beside the prose: what the answer covered, who owns the conversation, and where a routine landed. That envelope is what lets a calling model decide its next move instead of parsing sentences.
 
 Start with [MCP server](/guides/mcp-server) to issue the credential and point a client at the server, or with [Publish and open an agent](/guides/publish-an-agent) if you want callers to reach the agent with no credential at all. This page covers what the client does once it is connected.
+
+## Share an open connection
+
+When **Allow connecting without a credential** is on, **Channels → MCP** includes **Share with agent developers**. Copy the agent endpoint or its discovery card into your own developer guide, or copy one of the Claude, ChatGPT, Cursor, or OpenAI Responses API examples. The examples contain the public id in the URL and no secret; they work only while open access remains enabled.
+
+The discovery card is useful when a caller first needs to learn what the agent does and which routine tools it exposes. The endpoint is useful when the caller already knows which agent it needs. If you turn open access off, issue an MCP credential from the same card and give the developer the credential-specific configuration instead.
 
 ## Agent converse setup
 

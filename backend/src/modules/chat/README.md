@@ -365,8 +365,21 @@ imports from `services/`.
   lease's commit latch (`ConversationTurnLease.beginCommit`). A turn cancelled
   before the latch stores no reply or effects, commits no usage and emits no
   `done`, and one whose reply never reached the client counts as superseded
-  before emission. Once latched, no newer turn cancels it while its COMMIT
-  runs: a newer input waits for it, and it finishes as usual. The
+  before emission. A channel that delivers the reply as it streams can pass a
+  `deliveredReply` reader (`DeliveredReplyReader` in `contracts/interruption.ts`;
+  the voice channel does): when a newer input cuts the turn off after its reply
+  reached the client, `recordSupersession` asks it once, while the lease is
+  still held, so the newer turn waits for what follows, and stores the part
+  that reached the listener as the turn's reply (`cutReplyMessage.ts`:
+  citation markers removed, markdown kept, `interruption: { heardCharacterCount
+  = spokenCharacterCount, partial: true }`) with the cancelled `chat.answer`
+  event (`partialReplyStored: true`) in one transaction
+  (`AssistantTurnPersistencePort.storeCutReply`), then names it on `cancelled`
+  (`assistantMessageId`). The turn's effects, usage, coverage link and
+  directive state stay uncommitted, as for any cancelled turn; a part that
+  cannot be stored logs `The part of a cut-off reply could not be stored` at
+  warn and the event is recorded alone. Once latched, no newer turn cancels it
+  while its COMMIT runs: a newer input waits for it, and it finishes as usual. The
   waiting message of a human-owned turn is generated on the lease's signal, so
   a newer turn cancels a stalled generation instead of waiting behind it.
 - Suggestions and public chat actions: `publicChatActionAdvertiser.ts`,

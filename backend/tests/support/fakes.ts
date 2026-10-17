@@ -3846,6 +3846,10 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
   }
 
   async markSkipped(jobId: string, reason: string): Promise<void> {
+    const existing = this.items.get(jobId);
+    if (!existing || existing.status !== "processing") {
+      return;
+    }
     this.update(jobId, {
       status: "skipped",
       lastError: reason,
@@ -3853,12 +3857,17 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     });
   }
 
-  async markFailed(jobId: string, errorMessage: string): Promise<void> {
+  async markFailed(jobId: string, errorMessage: string): Promise<boolean> {
+    const existing = this.items.get(jobId);
+    if (!existing || existing.status !== "processing") {
+      return false;
+    }
     this.update(jobId, {
       status: "failed",
       lastError: errorMessage,
       completedAt: new Date(),
     });
+    return true;
   }
 
   async markFailedIfDocumentMatches(input: {
@@ -3869,9 +3878,16 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     errorMessage: string;
   }): Promise<boolean> {
     const documentRepository = this.documentRepository;
-    const document = documentRepository?.items.get(input.documentId);
     const existingJob = this.items.get(input.jobId);
-    if (!documentRepository || !existingJob || !document || document.workspaceId !== input.workspaceId || document.revision !== input.revision) {
+    // Mirrors the real repository: confirm the job is still ours to fail
+    // before touching the document at all. A run that was not actually dead
+    // can complete it first.
+    if (!documentRepository || !existingJob || existingJob.status !== "processing") {
+      return false;
+    }
+
+    const document = documentRepository.items.get(input.documentId);
+    if (!document || document.workspaceId !== input.workspaceId || document.revision !== input.revision) {
       return false;
     }
 

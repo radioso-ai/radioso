@@ -355,4 +355,108 @@ describeIntegration("DocumentProcessingWorker claim-expiry attempt exhaustion (P
     expect(finalDocumentRows[0]).toEqual({ status: "failed" });
     expect(markFailedIfDocumentMatches).toHaveBeenCalledTimes(2);
   });
+
+  it("keeps a vectorize job completed when the original run finishes between the sweep's decision and its terminal write", async () => {
+    const documentId = await insertDocument("processing");
+    const job = await jobs.enqueue({ documentId, workspaceId, documentRevision: 1 });
+
+    const lastClaimedAt = await exhaustAttemptsAtRepositoryLayer(job.id);
+
+    const originalReleaseOrFailExpiredClaim = jobs.releaseOrFailExpiredClaim.bind(jobs);
+    const releaseSpy = vi
+      .spyOn(jobs, "releaseOrFailExpiredClaim")
+      .mockImplementationOnce(async (releaseInput) => {
+        const outcome = await originalReleaseOrFailExpiredClaim(releaseInput);
+        if (outcome.outcome === "exhausted") {
+          // The original run was not actually dead: it publishes the
+          // document and completes the job in the window between this
+          // sweep's exhausted decision (which just ran, above) and the
+          // terminal write the sweep is about to make.
+          await database.query("UPDATE documents SET status = 'ready' WHERE id = $1", [documentId]);
+          await expect(jobs.markCompleted(job.id)).resolves.toBe(true);
+        }
+        return outcome;
+      });
+
+    const auditService = { record: vi.fn().mockResolvedValue(undefined) };
+    const worker = buildWorker({ auditService });
+    await expect(worker.runOnce(afterLease(lastClaimedAt))).resolves.toBe(false);
+    releaseSpy.mockRestore();
+
+    const finalJob = await jobs.findById(job.id);
+    expect(finalJob?.status).toBe("completed");
+    const finalDocumentRows = await database.query<{ status: string }>(
+      "SELECT status FROM documents WHERE id = $1",
+      [documentId],
+    );
+    expect(finalDocumentRows[0]).toEqual({ status: "ready" });
+    // The sweep's terminal-failure path must never have run at all.
+    expect(auditService.record).not.toHaveBeenCalled();
+  });
+
+  it("applies the same exhausted decision at startup without letting one bad job block boot", async () => {
+    const documentId = await insertDocument("processing");
+    const job = await jobs.enqueue({ documentId, workspaceId, documentRevision: 1 });
+
+    // Stays close to real time (unlike afterLease's multi-minute jumps):
+    // start()'s own cutoff is always the real "now" at boot, not a
+    // caller-supplied lease window.
+    for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt += 1) {
+      const claimedAt = new Date(Date.now() + 50 * attempt);
+      const claimed = await jobs.claimById(job.id, claimedAt);
+      expect(claimed?.attemptCount).toBe(attempt);
+      if (attempt < MAX_ATTEMPTS) {
+        const outcome = await jobs.releaseOrFailExpiredClaim({
+          jobId: job.id,
+          claimedAtOrBefore: new Date(claimedAt.getTime() + 1),
+          maxAttempts: MAX_ATTEMPTS,
+          releasedReason: "claim_expired",
+          exhaustedReason: "claim_expired_attempts_exhausted",
+        });
+        expect(outcome).toEqual({ outcome: "released" });
+      }
+    }
+    // Comfortably past the few hundred ms of forward inflation above, so
+    // start()'s real "now" cutoff is strictly after the final claim.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    const worker = buildWorker();
+    await worker.start();
+    await worker.stop();
+
+    const finalJob = await jobs.findById(job.id);
+    expect(finalJob).toMatchObject({ status: "failed", lastError: "claim_expired_attempts_exhausted" });
+    const finalDocumentRows = await database.query<{ status: string }>(
+      "SELECT status FROM documents WHERE id = $1",
+      [documentId],
+    );
+    expect(finalDocumentRows[0]).toEqual({ status: "failed" });
+  });
+
+  it("keeps booting when startup reconciliation for one job always throws", async () => {
+    const documentId = await insertDocument("processing");
+    const job = await jobs.enqueue({ documentId, workspaceId, documentRevision: 1 });
+    await jobs.claimById(job.id, new Date());
+
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    vi.spyOn(documents, "findByIdAndWorkspaceId").mockRejectedValueOnce(new Error("db blip"));
+    const worker = new DocumentProcessingWorker(
+      documents,
+      jobs,
+      { process: vi.fn() } as never,
+      { record: vi.fn().mockResolvedValue(undefined) } as never,
+      logger as never,
+      10_000,
+      undefined,
+      JOB_LEASE_MS,
+    );
+
+    await expect(worker.start()).resolves.toBeUndefined();
+    await worker.stop();
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ role: "worker", jobId: job.id, errorClass: "Error" }),
+      expect.stringContaining("Startup reconciliation failed"),
+    );
+  });
 });

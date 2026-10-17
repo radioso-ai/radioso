@@ -144,7 +144,7 @@ export class DocumentProcessingWorker {
 
     this.running = true;
     const inFlightJobs = await this.jobRepository.listProcessingJobs();
-    await Promise.all(inFlightJobs.map((job) => this.reconcileInFlightJobAtStartup(job)));
+    await Promise.all(inFlightJobs.map((job) => this.reconcileInFlightJobAtStartupSafely(job)));
     await this.repairQueueGaps();
     await this.logQueueState("Document processing worker started", "document.worker.started", "started");
     this.scheduleNextTick(0);
@@ -156,6 +156,30 @@ export class DocumentProcessingWorker {
       clearTimeout(this.timer);
       this.timer = null;
     }
+  }
+
+  // One job's reconciliation must never fail the whole boot: start() awaits
+  // every in-flight job's reconciliation before scheduling the first tick,
+  // and a runtime bootstrap can gate other services (the action outbox,
+  // background-job, and email runtimes) on this worker's own start()
+  // resolving. A persistently-failing terminal write for one bad row would
+  // otherwise block every one of them from ever starting. Logs the error's
+  // class only — a thrown error's message can carry document-derived text —
+  // and leaves the row exactly as it was; the next sweep or restart retries it.
+  private async reconcileInFlightJobAtStartupSafely(job: DocumentProcessingJobRecord): Promise<void> {
+    await this.reconcileInFlightJobAtStartup(job).catch(async (error) => {
+      this.logger.error(
+        {
+          role: "worker",
+          jobId: job.id,
+          errorClass: error instanceof Error ? error.constructor.name : typeof error,
+        },
+        "Startup reconciliation failed for an in-flight document processing job; continuing boot",
+      );
+      await this.errorReporter
+        ?.report({ errorType: "document.worker.startup_reconciliation_failed", error, severity: "error" })
+        .catch(() => undefined);
+    });
   }
 
   // A job still "processing" at boot was claimed by a worker process that is
@@ -510,35 +534,42 @@ export class DocumentProcessingWorker {
       // failing a document that is already correct. Mirrors the same check
       // reconcileInFlightJobAtStartup makes for a job found still "processing"
       // at boot.
-      if (job.kind === "vectorize" && await this.completeAlreadyPublishedJob(job)) {
+      if (job.kind === "vectorize" && await this.completeAlreadyPublishedJob(job, durationMs)) {
         return;
       }
 
-      if (job.kind === "embedding_profile") {
-        if (!terminalProfileFailureKind) {
-          throw new Error(
-            "Embedding profile terminal failure classification is unavailable",
-          );
-        }
-        await this.requireEmbeddingProfileTerminalFailures().recordFailure({
-          jobId: job.id,
-          workspaceId: job.workspaceId,
-          embeddingSpaceId: requireEmbeddingProfileJobField(
-            job.embeddingSpaceId,
-            "embedding space",
-          ),
-          workspaceProfileGeneration: requireEmbeddingProfileJobField(
-            job.workspaceProfileGeneration,
-            "workspace profile generation",
-          ),
-          failureKind: terminalProfileFailureKind,
-        });
-      }
-
       if (job.kind !== "vectorize") {
-        // The document is already queryable; a failed enrich job must never flip
-        // it to "failed". Mark only the job failed and leave the document ready.
-        await this.jobRepository.markFailed(job.id, message);
+        // Fenced on status='processing': if the run this was recovering for
+        // was not actually dead and already completed the job (the same
+        // race completeAlreadyPublishedJob covers for vectorize, but enrich
+        // and embedding_profile jobs never touch document status so there is
+        // no document-readiness signal to check first), this is a no-op —
+        // leave the completion alone and skip the embedding-profile side
+        // effect below rather than recording a failure after a success.
+        const stillProcessing = await this.jobRepository.markFailed(job.id, message);
+        if (!stillProcessing) {
+          return;
+        }
+        if (job.kind === "embedding_profile") {
+          if (!terminalProfileFailureKind) {
+            throw new Error(
+              "Embedding profile terminal failure classification is unavailable",
+            );
+          }
+          await this.requireEmbeddingProfileTerminalFailures().recordFailure({
+            jobId: job.id,
+            workspaceId: job.workspaceId,
+            embeddingSpaceId: requireEmbeddingProfileJobField(
+              job.embeddingSpaceId,
+              "embedding space",
+            ),
+            workspaceProfileGeneration: requireEmbeddingProfileJobField(
+              job.workspaceProfileGeneration,
+              "workspace profile generation",
+            ),
+            failureKind: terminalProfileFailureKind,
+          });
+        }
       } else {
         const markedFailed = await this.jobRepository.markFailedIfDocumentMatches({
           jobId: job.id,
@@ -548,6 +579,9 @@ export class DocumentProcessingWorker {
           errorMessage: message,
         });
         if (!markedFailed) {
+          // Fenced the same way: this also no-ops if the job already resolved
+          // some other way, in which case markSkipped's own status='processing'
+          // fence leaves it alone.
           const currentDocument = await this.documentRepository.findByIdAndWorkspaceId(job.documentId, job.workspaceId);
           await this.jobRepository.markSkipped(job.id, currentDocument ? "stale_revision" : "document_deleted");
         } else {
@@ -582,10 +616,14 @@ export class DocumentProcessingWorker {
 
   // True when a vectorize job's document already published successfully at
   // this exact revision — the job's own completion bookkeeping just never
-  // ran. markCompleted is fenced on status='processing', so a concurrent
-  // writer that already resolved the job (completed or failed it first)
-  // leaves this a safe no-op rather than a double terminal write.
-  private async completeAlreadyPublishedJob(job: DocumentProcessingJobRecord): Promise<boolean> {
+  // ran. The document being "ready" at this revision is the fact that
+  // matters, not which caller's markCompleted happened to win the fenced
+  // write: the run this was recovering for may not actually have been dead,
+  // and could complete the job itself between this sweep's exhausted
+  // decision and this check. Either way the job is done, so this always
+  // reports true once the document confirms it — never falling through to
+  // the failure path and overwriting a legitimate completion as "failed".
+  private async completeAlreadyPublishedJob(job: DocumentProcessingJobRecord, durationMs: number): Promise<boolean> {
     const document = await this.documentRepository.findByIdAndWorkspaceId(job.documentId, job.workspaceId);
     if (!document || document.revision !== job.documentRevision || document.status !== "ready") {
       return false;
@@ -593,16 +631,11 @@ export class DocumentProcessingWorker {
     const completed = await this.jobRepository.markCompleted(job.id);
     if (completed) {
       await this.emitJobTelemetry("document.worker.job_completed", job, {
-        // Not a measured run — this is recovery catching up on a job the
-        // platform's request timeout cut off after it had already
-        // published. The lease length is a believable stand-in; the actual
-        // elapsed-since-claim figure would skew document_worker_job_duration_ms
-        // with multi-sweep outliers.
-        durationMs: this.jobLeaseMs,
+        durationMs,
         outcome: "completed",
       });
     }
-    return completed;
+    return true;
   }
 
   // Claim-expiry recovery (the push-worker recovery route, the periodic

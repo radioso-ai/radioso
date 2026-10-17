@@ -273,10 +273,12 @@ describe("ElevenLabs recording source", () => {
     expect(init).toMatchObject({ method: "DELETE", headers: { "xi-api-key": credential.apiKey }, redirect: "error" });
   });
 
-  it("counts a conversation the vendor no longer holds as deleted", async () => {
-    const { source } = sourceWith(async () => new Response("{}", { status: 404 }));
+  it("says whether it deleted the conversation or found it already gone", async () => {
+    const deleted = sourceWith(async () => new Response("{}", { status: 200 }));
+    await expect(deleted.source.deleteRecording({ vendorConversationId, region: "us", credential })).resolves.toBe("deleted");
 
-    await expect(source.deleteRecording({ vendorConversationId, region: "us", credential })).resolves.toBeUndefined();
+    const gone = sourceWith(async () => new Response("{}", { status: 404 }));
+    await expect(gone.source.deleteRecording({ vendorConversationId, region: "us", credential })).resolves.toBe("already_absent");
   });
 
   it("rejects a delete the vendor refuses", async () => {

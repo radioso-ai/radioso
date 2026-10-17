@@ -342,8 +342,8 @@ export interface VoiceRecordingSource {
     range?: string;
     signal?: AbortSignal;
   }): Promise<VoiceRecordingStream>;
-  /** Resolves once the vendor no longer holds the conversation; a recording already gone counts as deleted. */
-  deleteRecording(input: { vendorConversationId: string; region: VoiceVendorRegion; credential: VoiceVendorCredential }): Promise<void>;
+  /** Resolves once the vendor no longer holds the conversation: `already_absent` when it held none to delete. */
+  deleteRecording(input: { vendorConversationId: string; region: VoiceVendorRegion; credential: VoiceVendorCredential }): Promise<"deleted" | "already_absent">;
 }
 
 /**
@@ -384,8 +384,7 @@ export interface VoiceRecordingPlaybackPort {
 /**
  * Deletes recordings at the vendor when Radioso deletes their conversations. `prepare` runs while
  * the conversations, and the workspace's vendor key, still exist; `erase` runs once they are gone,
- * and never rejects: a recording the vendor would not delete is logged and left there.
+ * and never rejects: a recording the vendor would not delete is logged, with where it is, and left
+ * there.
  */
-export interface VoiceRecordingErasurePort extends VendorHeldConversationDataEraser {
-  prepare(scope: VoiceRecordingScope): Promise<{ recordingCount: number; erase(): Promise<void> }>;
-}
+export type VoiceRecordingErasurePort = VendorHeldConversationDataEraser;

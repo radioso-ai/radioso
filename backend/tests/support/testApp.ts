@@ -1520,7 +1520,7 @@ export const createTestDependencies = (overrides: {
     accountMembershipRepository,
     undefined,
     undefined,
-    voiceRecordings.erasure,
+    { eraser: voiceRecordings.erasure, logger },
   );
   const workspaceSessionService = new WorkspaceSessionService(workspaceService);
   const oauthConnectionRepository = new InMemoryOauthConnectionRepository();

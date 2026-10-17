@@ -270,7 +270,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     repositories,
     personalCredentialTermination: access.personalCredentialTenureService,
     personalCredentialLifecycle: access.personalCredentialLifecycle,
-    vendorHeldConversationData: voiceRecordings.erasure,
+    vendorHeldConversationData: { eraser: voiceRecordings.erasure, logger },
     workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
     workspaceProviderCredentialsService,
   });

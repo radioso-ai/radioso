@@ -132,37 +132,42 @@ describe("workspace service", () => {
   describe("data a vendor holds for the workspace's conversations", () => {
     const vendorHeldData = () => {
       const steps: string[] = [];
+      const logger = { warn: vi.fn() };
       const eraser = {
-        prepare: vi.fn(async (scope: { kind: "workspace"; workspaceId: string }) => {
-          steps.push(`prepare:${scope.workspaceId}`);
-          return { erase: async () => { steps.push(`erase:${scope.workspaceId}`); } };
+        prepare: vi.fn(async (erasure: { scopes: ReadonlyArray<{ workspaceId: string }> }) => {
+          const ids = erasure.scopes.map((scope) => scope.workspaceId).join(",");
+          steps.push(`prepare:${ids}`);
+          return { erase: async () => { steps.push(`erase:${ids}`); } };
         }),
       };
-      return { steps, eraser };
+      return { steps, eraser, logger, vendorHeld: { eraser, logger } };
     };
 
     it("is read before the workspace is deleted and erased once it is gone", async () => {
       const repository = new InMemoryWorkspaceRepository();
-      const { steps, eraser } = vendorHeldData();
+      const { steps, eraser, vendorHeld } = vendorHeldData();
       const service = new WorkspaceService(repository, createAuditService(), undefined, {
         endWorkspace: async () => { steps.push("delete"); },
-      }, undefined, eraser);
+      }, undefined, vendorHeld);
       await service.create("account-1", "Keep");
       const target = await service.create("account-1", "Delete");
 
       await service.delete(target.id, "account-1", "owner-1");
 
       expect(steps).toEqual([`prepare:${target.id}`, "delete", `erase:${target.id}`]);
-      expect(eraser.prepare).toHaveBeenCalledWith({ kind: "workspace", workspaceId: target.id });
+      expect(eraser.prepare).toHaveBeenCalledWith({
+        account: { id: "account-1", deleted: false },
+        scopes: [{ kind: "workspace", workspaceId: target.id }],
+      });
     });
 
     it("is erased after a transactional deletion too, and never when the deletion is refused", async () => {
       const repository = new InMemoryWorkspaceRepository();
-      const { steps, eraser } = vendorHeldData();
+      const { steps, vendorHeld } = vendorHeldData();
       let deletes = true;
       const service = new WorkspaceService(repository, createAuditService(), undefined, undefined, {
         deleteWorkspace: async () => deletes,
-      }, eraser);
+      }, vendorHeld);
       await service.create("account-1", "Keep");
       const target = await service.create("account-1", "Delete");
 
@@ -175,10 +180,12 @@ describe("workspace service", () => {
       expect(steps).toEqual([`prepare:${target.id}`]);
     });
 
-    it("never holds a deletion back when it cannot be read", async () => {
+    it("never holds a deletion back when it cannot be read, and says so", async () => {
       const repository = new InMemoryWorkspaceRepository();
+      const logger = { warn: vi.fn() };
       const service = new WorkspaceService(repository, createAuditService(), undefined, undefined, undefined, {
-        prepare: async () => { throw new Error("connection refused"); },
+        eraser: { prepare: async () => { throw new Error("connection refused"); } },
+        logger,
       });
       await service.create("account-1", "Keep");
       const target = await service.create("account-1", "Delete");
@@ -186,22 +193,44 @@ describe("workspace service", () => {
       await service.delete(target.id, "account-1", "owner-1");
 
       await expect(repository.findByIdAndAccountId(target.id, "account-1")).resolves.toBeNull();
+      expect(logger.warn).toHaveBeenCalledWith({ accountId: "account-1", errorClass: "Error" }, "Vendor-held data to erase could not be read");
     });
 
-    it("is read for every workspace of an account that is about to be deleted", async () => {
+    it("is read as one erasure for every workspace of an account that is about to be deleted", async () => {
       const repository = new InMemoryWorkspaceRepository();
-      const { steps, eraser } = vendorHeldData();
-      const service = new WorkspaceService(repository, createAuditService(), undefined, undefined, undefined, eraser);
+      const { steps, eraser, vendorHeld } = vendorHeldData();
+      const service = new WorkspaceService(repository, createAuditService(), undefined, undefined, undefined, vendorHeld);
       const first = await service.create("account-1", "First");
       const second = await service.create("account-1", "Second");
       await service.create("account-2", "Elsewhere");
 
       const prepared = await service.prepareAccountDeletion("account-1");
-      expect(steps.sort()).toEqual([`prepare:${first.id}`, `prepare:${second.id}`].sort());
+      expect(eraser.prepare).toHaveBeenCalledTimes(1);
+      expect(eraser.prepare).toHaveBeenCalledWith({
+        account: { id: "account-1", deleted: true },
+        scopes: expect.arrayContaining([{ kind: "workspace", workspaceId: first.id }, { kind: "workspace", workspaceId: second.id }]),
+      });
 
       steps.length = 0;
       await prepared.afterDeletion();
-      expect(steps.sort()).toEqual([`erase:${first.id}`, `erase:${second.id}`].sort());
+      expect(steps).toHaveLength(1);
+      expect(steps[0]).toMatch(/^erase:/);
+    });
+
+    it("says so when it cannot list the account's workspaces, and erases nothing", async () => {
+      const repository = new InMemoryWorkspaceRepository();
+      vi.spyOn(repository, "listByAccountId").mockRejectedValue(new Error("connection refused"));
+      const { eraser, logger, vendorHeld } = vendorHeldData();
+      const service = new WorkspaceService(repository, createAuditService(), undefined, undefined, undefined, vendorHeld);
+
+      const prepared = await service.prepareAccountDeletion("account-1");
+      await prepared.afterDeletion();
+
+      expect(eraser.prepare).not.toHaveBeenCalled();
+      expect(logger.warn).toHaveBeenCalledWith(
+        { accountId: "account-1", errorClass: "Error" },
+        "Workspaces whose vendor-held data to erase could not be read",
+      );
     });
   });
 });

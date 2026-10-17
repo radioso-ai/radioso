@@ -9,6 +9,16 @@ export type VendorHeldConversationDataScope =
   | { readonly kind: "conversations"; readonly workspaceId: string; readonly conversationIds: readonly string[] }
   | { readonly kind: "workspace"; readonly workspaceId: string };
 
+/**
+ * One deletion's erasure: its scopes, worked through in order under one budget, and the
+ * organization they belong to, which the erasure's record names. `deleted`: the organization goes
+ * with them, so the record keeps its id without pointing at it.
+ */
+export interface VendorHeldConversationDataErasure {
+  readonly account: { readonly id: string; readonly deleted: boolean } | null;
+  readonly scopes: readonly VendorHeldConversationDataScope[];
+}
+
 export interface VendorHeldConversationDataEraser {
-  prepare(scope: VendorHeldConversationDataScope): Promise<{ erase(): Promise<void> }>;
+  prepare(erasure: VendorHeldConversationDataErasure): Promise<{ erase(): Promise<void> }>;
 }

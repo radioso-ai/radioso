@@ -127,7 +127,7 @@ const recordedWorkspace = async (options: {
   };
 
   const recordingEvents = (eventType: string) => (dependencies.auditService as unknown as {
-    events: Array<{ eventType: string; workspaceId?: string | null; metadata?: Record<string, unknown> }>;
+    events: Array<{ eventType: string; accountId?: string | null; workspaceId?: string | null; metadata?: Record<string, unknown> }>;
   }).events.filter((event) => event.eventType === eventType);
 
   return { ...created, vendorFetch, operator, dashboard, agentId, launchToken, anonymousChatToken, visitor, callTurn, recordedCall, recordingEvents };
@@ -419,10 +419,12 @@ describe("voice recording contract", () => {
     const deletes = vendorFetch.mock.calls.filter(([, init]) => init?.method === "DELETE");
     expect(deletes.map(([url]) => urlOf(url))).toEqual([`https://api.eu.residency.elevenlabs.io/v1/convai/conversations/${VENDOR_CONVERSATION_ID}`]);
     expect(deletes[0]?.[1]?.headers).toEqual({ "xi-api-key": VENDOR_KEY, "accept-encoding": "identity" });
+    // The organization keeps its proof of erasure after the workspace is gone.
     expect(recordingEvents("conversation.recording_deleted")).toEqual([
       expect.objectContaining({
+        accountId: operator.accountId,
         workspaceId: null,
-        metadata: { conversationId, vendor: "elevenlabs", deletedWorkspaceId: operator.workspaceId },
+        metadata: { conversationId, vendor: "elevenlabs", outcome: "deleted", deletedWorkspaceId: operator.workspaceId },
       }),
     ]);
   });

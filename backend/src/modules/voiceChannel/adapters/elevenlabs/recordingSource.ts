@@ -257,7 +257,8 @@ export const createElevenLabsRecordingSource = (dependencies: {
       const { response } = exchange;
       await discardBody(response);
       exchange.release();
-      if (response.ok || NOT_FOUND_STATUSES.has(response.status)) return;
+      if (response.ok) return "deleted";
+      if (NOT_FOUND_STATUSES.has(response.status)) return "already_absent";
       throw new VoiceRecordingRequestError("rejected", response.status);
     },
   };

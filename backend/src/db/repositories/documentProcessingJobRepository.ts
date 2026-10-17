@@ -103,8 +103,14 @@ export interface DocumentProcessingJobRepositoryPort {
   // from a concurrent writer or an earlier call), so a late-finishing run
   // never overwrites a terminal state.
   markCompleted(jobId: string): Promise<boolean>;
+  // Fenced on status='processing': a job already resolved some other way
+  // (most commonly a legitimate completion racing a recovery sweep) is left
+  // alone rather than overwritten with "skipped".
   markSkipped(jobId: string, reason: string): Promise<void>;
-  markFailed(jobId: string, errorMessage: string): Promise<void>;
+  // Returns false when the row was no longer "processing" — the run this
+  // was failing was not actually dead and already completed it first. The
+  // caller must treat false as "leave it alone", not retry the write.
+  markFailed(jobId: string, errorMessage: string): Promise<boolean>;
   markFailedIfDocumentMatches(input: {
     jobId: string;
     documentId: string;
@@ -943,11 +949,15 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
         updated_at: currentTimestamp(),
       })
       .where("id", "=", jobId)
+      // A late-finishing run that already resolved this job some other way
+      // (most commonly a legitimate completion racing a recovery sweep's
+      // terminal write) must not be overwritten.
+      .where("status", "=", "processing")
       .execute();
   }
 
-  async markFailed(jobId: string, errorMessage: string): Promise<void> {
-    await this.db
+  async markFailed(jobId: string, errorMessage: string): Promise<boolean> {
+    const row = await this.db
       .updateTable("document_processing_jobs")
       .set({
         status: "failed",
@@ -956,7 +966,11 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
         updated_at: currentTimestamp(),
       })
       .where("id", "=", jobId)
-      .execute();
+      // See markSkipped — the same race applies here.
+      .where("status", "=", "processing")
+      .returning("id")
+      .executeTakeFirst();
+    return Boolean(row);
   }
 
   async markFailedIfDocumentMatches(input: {
@@ -967,6 +981,24 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
     errorMessage: string;
   }): Promise<boolean> {
     return this.db.transaction().execute(async (trx) => {
+      // Lock the job row and confirm it is still ours to fail before writing
+      // anything. A run that was not actually dead can complete the job
+      // between the caller's exhausted decision and this call — if it
+      // already has, this job update matches no row, so we return without
+      // touching the document at all; the document update below only ever
+      // runs once we know the job is still "processing".
+      const jobRow = await trx
+        .selectFrom("document_processing_jobs")
+        .select("id")
+        .where("id", "=", input.jobId)
+        .where("status", "=", "processing")
+        .forUpdate()
+        .executeTakeFirst();
+
+      if (!jobRow) {
+        return false;
+      }
+
       const document = await trx
         .updateTable("documents")
         .set({
@@ -982,6 +1014,9 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
         .executeTakeFirst();
 
       if (!document) {
+        // Stale revision or deleted: the job is still processing, but this
+        // is not the document to fail. Leave the job untouched — the
+        // caller's own fallback (markSkipped) resolves it instead.
         return false;
       }
 

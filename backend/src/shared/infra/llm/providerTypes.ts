@@ -154,15 +154,30 @@ export interface LlmCapabilitySelection {
   resolvedBy: LlmCapabilityResolvedBy;
 }
 
+/**
+ * `global` (OpenAI's default endpoint), or an explicit US or EU data-residency endpoint for a
+ * platform-held key. Never describes a workspace's own (BYOK) key, which always resolves as
+ * `global` regardless of this setting.
+ */
+export type OpenAIDataResidency = "global" | "us" | "eu";
+
 export interface LlmCapabilityConfig extends LlmProviderMetadata {
   apiKey: string;
   baseUrl?: string;
+  /**
+   * Set only for `provider: "openai"`. The trusted signal that this config is a genuine
+   * first-party OpenAI endpoint (prompt-cache routing keys off this, not off `baseUrl`'s
+   * presence, because a resolved residency endpoint still carries a `baseUrl`).
+   */
+  openAIDataResidency?: OpenAIDataResidency;
   resolvedBy?: LlmCapabilityResolvedBy;
 }
 
 /** Boot-safe provider/model defaults. Credentials are attached only when a call starts. */
 export interface LlmCapabilityDefault extends LlmProviderMetadata {
   baseUrl?: string;
+  /** See {@link LlmCapabilityConfig.openAIDataResidency}. */
+  openAIDataResidency?: OpenAIDataResidency;
 }
 
 export interface ResolvedLlmConfig {
@@ -172,6 +187,16 @@ export interface ResolvedLlmConfig {
   embeddings: LlmCapabilityDefault;
   embeddingProviderConfigs: LlmCapabilityDefault[];
   providerApiKeys?: Partial<Record<LlmProviderName, string>>;
+  /**
+   * The platform-held `OPENAI_API_KEY`'s resolved data residency, derived once here from
+   * `OPENAI_DATA_RESIDENCY`. Present only when a platform OpenAI key is configured — a
+   * deployment running entirely on workspace (BYOK) OpenAI keys has no platform residency to
+   * report or route by. Composition and the startup log read this instead of re-deriving it.
+   */
+  openAIPlatformResidency?: {
+    residency: OpenAIDataResidency;
+    baseUrl?: string;
+  };
 }
 
 import { AppError } from "../../domain/errors.js";

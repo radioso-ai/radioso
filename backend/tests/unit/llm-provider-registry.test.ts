@@ -40,11 +40,13 @@ describe("llm provider config", () => {
       capability: "chat",
       provider: "openai",
       model: "gpt-5.4-mini",
+      openAIDataResidency: "global",
     });
     expect(config.embeddings).toEqual({
       capability: "embeddings",
       provider: "openai",
       model: "text-embedding-3-small",
+      openAIDataResidency: "global",
     });
   });
 

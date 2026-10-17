@@ -1677,12 +1677,12 @@
         {
           "id": "openai",
           "heading": "OpenAI",
-          "body": "The native `openai` provider backs chat, embeddings, and rerank. By default, platform-held OpenAI traffic goes to OpenAI's global API. Set `OPENAI_DATA_RESIDENCY=eu` or `OPENAI_DATA_RESIDENCY=us` on the backend, document worker, and crawler worker to send it to OpenAI's EU or US data-residency endpoint instead.\n\nGetting OpenAI itself to process requests in-region takes its own setup, separate from this flag:\n\n1. Apply for OpenAI's abuse-monitoring controls and sign its Modified Retention amendment.\n2. Create a new OpenAI project with its region set to Europe (or United States) and issue an API key from it — an existing project can't change region after the fact.\n3. Confirm every model you use, including the embedding model, is served in that region before you switch.\n4. Set `OPENAI_DATA_RESIDENCY` and replace `OPENAI_API_KEY` with the new project's key together, then redeploy.\n\nA workspace's own OpenAI key (Settings → Providers, bring-your-own-key) ignores `OPENAI_DATA_RESIDENCY` entirely. That key's project already picked its region when it was created, and sending a global-project key to a regional endpoint fails unless the organization is approved for one. `OPENAI_DATA_RESIDENCY` only ever reaches the platform-held key in `OPENAI_API_KEY`."
+          "body": "The native `openai` provider backs chat, embeddings, and rerank. By default, platform-held OpenAI traffic goes to OpenAI's global API. Set `OPENAI_DATA_RESIDENCY=eu` or `OPENAI_DATA_RESIDENCY=us` on the backend, document worker, and crawler worker to send it to OpenAI's EU or US data-residency endpoint instead.\n\nGetting OpenAI itself to process requests in-region takes its own setup, separate from this flag:\n\n1. Apply for OpenAI's abuse-monitoring controls and sign its Modified Retention amendment.\n2. Create a new OpenAI project with its region set to Europe (or United States) and issue an API key from it — an existing project can't change region after the fact.\n3. Confirm every model you use, including the embedding model, is served in that region before you switch.\n4. Set `OPENAI_DATA_RESIDENCY` and replace `OPENAI_API_KEY` with the new project's key together, then redeploy.\n\nA workspace's own OpenAI key (Settings → Providers, bring-your-own-key) always uses OpenAI's global endpoint, regardless of `OPENAI_DATA_RESIDENCY`. A key from a data-residency project — a Europe-region project, for example — isn't supported as a workspace key: that project is only reachable on its own regional host, and a workspace key always calls the global one."
         },
         {
           "id": "anthropic-and-gemini",
           "heading": "Anthropic and Gemini",
-          "body": "Claude and Gemini are reached only through a workspace's own API key — there's no platform-held key for either, and no region setting. The key's own project and provider account decide where its requests run."
+          "body": "Claude and Gemini each take either a platform-held key (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`) or a workspace's own key. Both call their provider's global endpoint either way; there's no region setting for either provider."
         },
         {
           "id": "elevenlabs-voice-channel",
@@ -1695,9 +1695,9 @@
           "body": "Resend sends and receives mail for the email channel. `RESEND_CHANNEL_REGION` picks the region of the sending domain Resend provisions for the channel — `eu-west-1` for an EU deployment, `us-east-1` by default. It doesn't move Resend's own account data, delivery metadata, logs, or received message content, which Resend keeps in the United States regardless. If your deployment needs a safeguard for that transfer — standard contractual clauses, for example — put it in place separately; this setting doesn't provide one."
         },
         {
-          "id": "posthog",
-          "heading": "PostHog",
-          "body": "Product analytics and OTEL log export both go through `POSTHOG_HOST`. Point it at PostHog's EU ingestion host (`https://eu.i.posthog.com`) to keep analytics data in the EU, or its US host to keep it in the US."
+          "id": "posthog-and-otel-log-export",
+          "heading": "PostHog and OTEL log export",
+          "body": "PostHog product analytics and PostHog error reporting (`PRODUCT_ANALYTICS_SINKS` or `ERROR_SINKS` including `posthog`, an Enterprise Edition sink) send to `POSTHOG_HOST`. Point it at PostHog's EU ingestion host (`https://eu.i.posthog.com`) to keep that data in the EU, or its US host to keep it in the US.\n\nOTEL log export is a separate mechanism with its own setting, `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`; it doesn't read `POSTHOG_HOST`. As a Terraform convenience, the Terraform module defaults `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` to `<posthog_host>/i/v1/logs` when OTEL logs are enabled and no explicit endpoint is set, but a deployment that sets `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` directly controls its own region independently of `POSTHOG_HOST`."
         },
         {
           "id": "slack-and-stripe",

@@ -13,6 +13,15 @@ describe("openAIBaseUrlForResidency", () => {
     expect(openAIBaseUrlForResidency("eu")).toBe("https://eu.api.openai.com/v1");
     expect(openAIBaseUrlForResidency(undefined)).toBeUndefined();
   });
+
+  it("never resolves a prototype property name, even when handed one directly", () => {
+    // The map is looked up through a literal-equality guard, not a bracket lookup on an
+    // untrusted string, so no Object.prototype property can ever surface as a "base URL".
+    expect(openAIBaseUrlForResidency("constructor")).toBeUndefined();
+    expect(openAIBaseUrlForResidency("toString")).toBeUndefined();
+    expect(openAIBaseUrlForResidency("hasOwnProperty")).toBeUndefined();
+    expect(openAIBaseUrlForResidency("__proto__")).toBeUndefined();
+  });
 });
 
 describe("resolveLlmConfig OpenAI data residency", () => {
@@ -69,5 +78,34 @@ describe("resolveLlmConfig OpenAI data residency", () => {
       OPENAI_DATA_RESIDENCY: "eu",
     });
     expect(config.chat.baseUrl).toBe("https://compat.example.com/v1");
+  });
+
+  it("stamps openAIDataResidency on every openai capability default, independent of baseUrl", () => {
+    const config = resolveLlmConfig({ ...baseEnv });
+    expect(config.chat.openAIDataResidency).toBe("global");
+    expect(config.embeddings.openAIDataResidency).toBe("global");
+
+    const euConfig = resolveLlmConfig({ ...baseEnv, OPENAI_DATA_RESIDENCY: "eu" });
+    expect(euConfig.chat.openAIDataResidency).toBe("eu");
+  });
+
+  it("derives openAIPlatformResidency once, present only when a platform OpenAI key is configured", () => {
+    const withKey = resolveLlmConfig({ ...baseEnv, OPENAI_DATA_RESIDENCY: "eu" });
+    expect(withKey.openAIPlatformResidency).toEqual({
+      residency: "eu",
+      baseUrl: "https://eu.api.openai.com/v1",
+    });
+
+    const withoutKey = resolveLlmConfig({
+      ANTHROPIC_API_KEY: "claude-test",
+      LLM_PROVIDER: "claude",
+      OPENAI_DATA_RESIDENCY: "eu",
+    });
+    expect(withoutKey.openAIPlatformResidency).toBeUndefined();
+  });
+
+  it("derives openAIPlatformResidency at the default (global) residency with no base URL", () => {
+    const config = resolveLlmConfig({ ...baseEnv });
+    expect(config.openAIPlatformResidency).toEqual({ residency: "global", baseUrl: undefined });
   });
 });

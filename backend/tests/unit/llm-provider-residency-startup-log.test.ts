@@ -64,7 +64,9 @@ describe("buildLlmCapabilityResolver OpenAI data residency wiring", () => {
 });
 
 describe("buildLlmRegistry startup residency log", () => {
-  it("logs a content-free provider-residency line once per startup", () => {
+  it("logs a content-free, OpenAI-only provider-residency line once per startup", () => {
+    // RESEND_CHANNEL_REGION is set here specifically to prove the LLM builder doesn't read
+    // email-channel config at all: the email channel's own composition logs its own region.
     const env = getEnv({ ...baseEnv, OPENAI_DATA_RESIDENCY: "eu", RESEND_CHANNEL_REGION: "eu-west-1" });
     const info = vi.fn();
     const logger = { info, debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -74,10 +76,29 @@ describe("buildLlmRegistry startup residency log", () => {
     const residencyCalls = info.mock.calls.filter(([, message]) => message === "Resolved provider residency");
     expect(residencyCalls).toHaveLength(1);
     const [payload] = residencyCalls[0] as [Record<string, unknown>, string];
-    expect(payload).toEqual({ openai: "eu", emailChannelRegion: "eu-west-1" });
+    expect(payload).toEqual({ openai: "eu" });
 
     const serialized = JSON.stringify(payload);
     expect(serialized).not.toContain("env-openai-key");
+    expect(serialized).not.toContain("eu-west-1");
     expect(serialized).not.toMatch(/https?:\/\//);
+  });
+
+  it("skips the residency log entirely when no platform OpenAI key is configured", () => {
+    const env = getEnv({
+      NODE_ENV: "test",
+      DATABASE_URL: "postgres://test:test@localhost:5432/test",
+      ANTHROPIC_API_KEY: "env-claude-key",
+      LLM_PROVIDER: "claude",
+      SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
+      OPENAI_DATA_RESIDENCY: "eu",
+    });
+    const info = vi.fn();
+    const logger = { info, debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+    buildLlmRegistry(env, logger as never);
+
+    const residencyCalls = info.mock.calls.filter(([, message]) => message === "Resolved provider residency");
+    expect(residencyCalls).toHaveLength(0);
   });
 });

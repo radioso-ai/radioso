@@ -183,6 +183,9 @@ import type {
 } from "../../src/db/repositories/messageRepository.js";
 import type { MessageSource } from "@radioso/conversation-contract";
 import { deriveMessageSourceFromRole } from "../../src/db/repositories/messageRepository.js";
+import type { OperatorReplyClaim, PendingOperatorReply, ReplyInterruption } from "../../src/modules/chat/contracts/index.js";
+import { VOICE_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
+import { isHumanAuthoredMessageSource } from "../../src/shared/domain/messageAuthorship.js";
 import type {
   IngestionSettingsRecord,
   ValidatedIngestionSettingsInput,
@@ -4800,6 +4803,7 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     operatorAccountId?: string;
     operatorUserId?: string;
     operatorDisplayName?: string;
+    pendingSpeech?: boolean;
     inputMetadata?: MessageRecord["inputMetadata"];
     metadata?: Record<string, unknown>;
     skillName?: string;
@@ -4829,12 +4833,76 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
       skillName: input.skillName,
       skillOutcome: input.skillOutcome,
       skillStatus: input.skillStatus,
+      ...(input.pendingSpeech ? { speech: { state: "pending" as const } } : {}),
       createdAt: new Date(this.nextCreatedAtMs++),
     };
     const items = this.items.get(input.conversationId) ?? [];
     items.push(record);
     this.items.set(input.conversationId, items);
     return record;
+  }
+
+  async markReplyInterrupted(input: { workspaceId: string; conversationId: string; messageId: string } & ReplyInterruption): Promise<boolean> {
+    const reply = (this.items.get(input.conversationId) ?? [])
+      .find((message) => message.id === input.messageId && message.workspaceId === input.workspaceId && message.role === "assistant");
+    if (!reply) return false;
+    reply.interruption ??= { heardCharacterCount: input.heardCharacterCount, spokenCharacterCount: input.spokenCharacterCount };
+    return true;
+  }
+
+  /** Claims on teammate replies by message id, as the Postgres repository keeps them in `speech`. */
+  private readonly speechClaims = new Map<string, { claimTurnId: string; claimedAtMs: number }>();
+
+  /** The conversation's teammate replies, as the Postgres repository orders them: oldest first, then by id. */
+  private teammateReplies(input: { workspaceId: string; conversationId: string }): MessageRecord[] {
+    return (this.items.get(input.conversationId) ?? [])
+      .filter((message) => message.workspaceId === input.workspaceId && message.role === "assistant" && isHumanAuthoredMessageSource(message.source))
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id));
+  }
+
+  /** Pending, or claimed by a turn that never settled it within the expiry. */
+  private awaitsSpeech(message: MessageRecord): boolean {
+    if (message.speech?.state !== "pending") return false;
+    const claim = this.speechClaims.get(message.id);
+    return !claim || Date.now() - claim.claimedAtMs > VOICE_BEHAVIOR.operatorReplyClaimExpiryMs;
+  }
+
+  private claimedBy(message: MessageRecord, claimTurnId: string): boolean {
+    return message.speech?.state === "pending" && this.speechClaims.get(message.id)?.claimTurnId === claimTurnId;
+  }
+
+  async claimPendingOperatorReplies(input: { workspaceId: string; conversationId: string; claimTurnId: string }): Promise<PendingOperatorReply[]> {
+    return this.teammateReplies(input)
+      .filter((message) => this.awaitsSpeech(message))
+      .map((message) => {
+        this.speechClaims.set(message.id, { claimTurnId: input.claimTurnId, claimedAtMs: Date.now() });
+        return { messageId: message.id, text: message.content };
+      });
+  }
+
+  async markOperatorRepliesSpoken(input: OperatorReplyClaim): Promise<string[]> {
+    return this.replaceSpeech(input, { state: "spoken", spokenAt: new Date().toISOString() });
+  }
+
+  async skipOperatorReplies(input: OperatorReplyClaim): Promise<string[]> {
+    return this.replaceSpeech(input, { state: "skipped" });
+  }
+
+  async releaseOperatorReplies(input: OperatorReplyClaim): Promise<string[]> {
+    return this.replaceSpeech(input, { state: "pending" });
+  }
+
+  /** Replaces the speech of those of `messageIds` the turn still holds. */
+  private replaceSpeech(input: OperatorReplyClaim, next: NonNullable<MessageRecord["speech"]>): string[] {
+    const replaced: string[] = [];
+    for (const message of this.teammateReplies(input)) {
+      if (input.messageIds.includes(message.id) && this.claimedBy(message, input.claimTurnId)) {
+        this.speechClaims.delete(message.id);
+        message.speech = next;
+        replaced.push(message.id);
+      }
+    }
+    return replaced;
   }
 }
 

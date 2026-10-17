@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createSentenceCutter, splitCompleteSentences } from "../../src/modules/voiceChannel/services/speechSegmenter.js";
+import { createSentenceCutter, splitCompleteSentences, wholeTextSpeech } from "../../src/modules/voiceChannel/services/speechSegmenter.js";
 
 describe("voice speech segmenter", () => {
   it("cuts a sentence once whitespace follows its terminator and keeps the punctuation", () => {
@@ -205,5 +205,20 @@ describe("voice speech segmenter", () => {
       expect(splitCompleteSentences("Fine *davvero*")).toEqual({ sentences: [], remainder: "Fine davvero*" });
       expect(splitCompleteSentences("Fine *davvero*", { startsLine: true, final: true }).remainder).toBe("Fine davvero");
     });
+  });
+});
+
+describe("a whole text as speech", () => {
+  it("cuts it into sentences that each end in whitespace, with its markdown removed", () => {
+    expect(wholeTextSpeech("Yes, **four** works. Bring your [card](https://example.com/card), please")).toEqual([
+      "Yes, four works. ",
+      "Bring your card, please\n",
+    ]);
+    expect(wholeTextSpeech("- Bring your card.")).toEqual(["Bring your card.\n"]);
+  });
+
+  it("speaks nothing for a text with no words to say", () => {
+    expect(wholeTextSpeech("  ")).toEqual([]);
+    expect(wholeTextSpeech("**")).toEqual([]);
   });
 });

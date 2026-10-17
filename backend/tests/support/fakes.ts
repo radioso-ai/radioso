@@ -57,6 +57,7 @@ import type {
   SessionRepositoryPort,
 } from "../../src/modules/auth/services/authService.js";
 import type { CreateUserParams, UserRecord, UserRepositoryPort } from "../../src/db/repositories/userRepository.js";
+import type { AuthFunnelRepositoryPort } from "../../src/modules/auth/services/authFunnelService.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../src/db/repositories/workspaceRepository.js";
 import type {
   AgentGreetingUpdateOptions,
@@ -715,6 +716,16 @@ export class InMemoryEmailVerificationTokenRepository implements EmailVerificati
     return record;
   }
 
+  async createIfUnverified(params: {
+    userId: string;
+    tokenHash: string;
+    expiresAt: Date;
+    requestIp?: string | null;
+    requestUserAgent?: string | null;
+  }): Promise<EmailVerificationTokenRecord | null> {
+    return this.create(params);
+  }
+
   async findByTokenHash(tokenHash: string): Promise<EmailVerificationTokenRecord | null> {
     return [...this.items.values()].find((item) => item.tokenHash === tokenHash) ?? null;
   }
@@ -741,6 +752,171 @@ export class InMemoryEmailVerificationTokenRepository implements EmailVerificati
       }
     }
     return count;
+  }
+}
+
+export class InMemoryAuthFunnelRepository implements AuthFunnelRepositoryPort {
+  private readonly tickets = new Map<string, {
+    id: string;
+    userId: string;
+    accountId: string;
+    tokenHash: string;
+    expiresAt: Date;
+    activatedAt: Date | null;
+    usedAt: Date | null;
+  }>();
+
+  constructor(private readonly dependencies: {
+    emailVerificationTokens: InMemoryEmailVerificationTokenRepository;
+    users: InMemoryUserRepository;
+    sessions: Pick<SessionRepositoryPort, "create" | "revokeAllForUser">;
+    listMemberships: (userId: string) => Promise<AccountMembershipRecord[]>;
+    passwordResetTokens?: InMemoryPasswordResetTokenRepository;
+    federatedIdentities?: Pick<FederatedIdentityRepositoryPort, "deleteForUser">;
+  }) {}
+
+  async createRegistrationChallenge(input: {
+    userId: string;
+    accountId: string;
+    verificationTokenId: string;
+    verificationTokenHash: string;
+    verificationExpiresAt: Date;
+    pendingTicketId: string;
+    pendingTokenHash: string;
+    pendingExpiresAt: Date;
+    requestIp: string | null;
+    requestUserAgent: string | null;
+  }): Promise<boolean> {
+    const user = await this.dependencies.users.findById(input.userId);
+    if (!user || user.emailVerifiedAt || this.dependencies.users.disabledAt(input.userId)) return false;
+    this.dependencies.emailVerificationTokens.items.set(input.verificationTokenId, {
+      id: input.verificationTokenId,
+      userId: input.userId,
+      tokenHash: input.verificationTokenHash,
+      expiresAt: input.verificationExpiresAt,
+      usedAt: null,
+      createdAt: new Date(),
+    });
+    this.tickets.set(input.pendingTicketId, {
+      id: input.pendingTicketId,
+      userId: input.userId,
+      accountId: input.accountId,
+      tokenHash: input.pendingTokenHash,
+      expiresAt: input.pendingExpiresAt,
+      activatedAt: null,
+      usedAt: null,
+    });
+    return true;
+  }
+
+  async verifyEmailAndCreateSession(input: {
+    verificationTokenHash: string;
+    sessionId: string;
+    sessionTokenHash: string;
+    sessionExpiresAt: Date;
+    now: Date;
+  }): Promise<{ userId: string; accountId: string } | null> {
+    const token = await this.dependencies.emailVerificationTokens.findByTokenHash(input.verificationTokenHash);
+    if (!token || token.usedAt || token.expiresAt <= input.now) return null;
+    const latest = await this.dependencies.emailVerificationTokens.findLatestActiveForUser(token.userId, input.now);
+    if (latest?.id !== token.id) return null;
+    const user = await this.dependencies.users.findById(token.userId);
+    const membership = (await this.dependencies.listMemberships(token.userId))[0];
+    if (!user || user.emailVerifiedAt || !membership) return null;
+    await this.dependencies.users.markEmailVerified(user.id, input.now);
+    await this.dependencies.emailVerificationTokens.markAllActiveUsedForUser(user.id, input.now);
+    for (const ticket of this.tickets.values()) {
+      if (ticket.userId === user.id && !ticket.usedAt && ticket.expiresAt > input.now) {
+        ticket.activatedAt = input.now;
+      }
+    }
+    await this.dependencies.sessions.create({
+      userId: user.id,
+      accountId: membership.accountId,
+      sessionTokenHash: input.sessionTokenHash,
+      expiresAt: input.sessionExpiresAt,
+    });
+    return { userId: user.id, accountId: membership.accountId };
+  }
+
+  async exchangePendingTicket(input: {
+    pendingTokenHash: string;
+    sessionId: string;
+    sessionTokenHash: string;
+    sessionExpiresAt: Date;
+    now: Date;
+  }): Promise<{ userId: string; accountId: string } | null> {
+    const ticket = [...this.tickets.values()].find((candidate) => candidate.tokenHash === input.pendingTokenHash);
+    if (!ticket || ticket.usedAt || !ticket.activatedAt || ticket.expiresAt <= input.now) return null;
+    const user = await this.dependencies.users.findById(ticket.userId);
+    const membership = (await this.dependencies.listMemberships(ticket.userId))
+      .find((candidate) => candidate.accountId === ticket.accountId);
+    if (!user?.emailVerifiedAt || !membership) return null;
+    ticket.usedAt = input.now;
+    await this.dependencies.sessions.create({
+      userId: user.id,
+      accountId: membership.accountId,
+      sessionTokenHash: input.sessionTokenHash,
+      expiresAt: input.sessionExpiresAt,
+    });
+    return { userId: user.id, accountId: membership.accountId };
+  }
+
+  async completePasswordReset(input: {
+    resetTokenHash: string;
+    passwordHash: string;
+    now: Date;
+  }): Promise<{
+    userId: string;
+    email: string;
+    displayName: string | null;
+    revokedFederatedIdentities: number;
+  } | null> {
+    const tokens = this.dependencies.passwordResetTokens;
+    if (!tokens) throw new Error("Password reset repository is not configured");
+    const token = await tokens.findByTokenHash(input.resetTokenHash);
+    if (!token || token.usedAt || token.expiresAt <= input.now) return null;
+    const latest = await tokens.findLatestActiveForUser(token.userId, input.now);
+    if (latest?.id !== token.id) {
+      await tokens.markUsed(token.id, input.now);
+      return null;
+    }
+    const user = await this.dependencies.users.findById(token.userId);
+    if (!user || await tokens.markUsed(token.id, input.now) !== 1) return null;
+    const displayName = user.emailVerifiedAt ? user.displayName : null;
+    await this.dependencies.users.updatePassword(user.id, input.passwordHash);
+    await this.dependencies.users.updateDisplayName(user.id, displayName);
+    await this.dependencies.users.markEmailVerified(user.id, input.now);
+    await tokens.markAllActiveUsedForUser(user.id, input.now);
+    await this.invalidateRecoveryCredentials(user.id, input.now);
+    const revokedFederatedIdentities = await this.dependencies.federatedIdentities?.deleteForUser(user.id) ?? 0;
+    return { userId: user.id, email: user.email, displayName, revokedFederatedIdentities };
+  }
+
+  async recoverFederatedUser(input: {
+    userId: string;
+    passwordHash: string;
+    displayName: string | null;
+    now: Date;
+  }): Promise<{ recovered: boolean; displayName: string | null } | null> {
+    const user = await this.dependencies.users.findById(input.userId);
+    if (!user) return null;
+    if (user.emailVerifiedAt) return { recovered: false, displayName: user.displayName };
+    await this.dependencies.users.updatePassword(user.id, input.passwordHash);
+    await this.dependencies.users.updateDisplayName(user.id, input.displayName);
+    await this.dependencies.users.markEmailVerified(user.id, input.now);
+    await this.invalidateRecoveryCredentials(user.id, input.now);
+    return { recovered: true, displayName: input.displayName };
+  }
+
+  private async invalidateRecoveryCredentials(userId: string, now: Date): Promise<void> {
+    await this.dependencies.sessions.revokeAllForUser(userId, now);
+    await this.dependencies.emailVerificationTokens.markAllActiveUsedForUser(userId, now);
+    for (const ticket of this.tickets.values()) {
+      if (ticket.userId === userId && !ticket.usedAt) {
+        ticket.usedAt = now;
+      }
+    }
   }
 }
 

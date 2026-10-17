@@ -284,6 +284,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "confirmPasswordReset",
     "verifyEmail",
     "resendEmailVerification",
+    "exchangePendingRegistrationSession",
     "getAccountInvitation",
     "acceptAccountInvitation",
     "acceptAccountInvitationAsCurrentUser",

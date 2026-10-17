@@ -48,12 +48,14 @@ export interface ErrorResponse {
 export class ApiError extends Error implements ErrorResponse {
   readonly status?: number
   readonly error: ErrorResponse['error']
+  readonly responseRetryAfterSeconds?: number
 
-  constructor(body: ErrorResponse) {
+  constructor(body: ErrorResponse, responseRetryAfterSeconds?: number) {
     super(body.error?.message || `Request failed with status ${body.status ?? 'unknown'}`)
     this.name = 'ApiError'
     this.status = body.status
     this.error = body.error
+    this.responseRetryAfterSeconds = responseRetryAfterSeconds
   }
 }
 
@@ -67,6 +69,11 @@ const throwIfAborted = (signal: AbortSignal | undefined): void => {
 }
 
 export const buildError = async (response: Response): Promise<ApiError> => {
+  const retryAfterHeader = response.headers?.get?.('Retry-After')
+  const parsedRetryAfter = retryAfterHeader === null ? Number.NaN : Number(retryAfterHeader)
+  const responseRetryAfterSeconds = Number.isFinite(parsedRetryAfter) && parsedRetryAfter > 0
+    ? parsedRetryAfter
+    : undefined
   try {
     const payload = await response.json();
     if (
@@ -76,7 +83,7 @@ export const buildError = async (response: Response): Promise<ApiError> => {
       payload.error &&
       typeof payload.error === "object"
     ) {
-      return new ApiError({ ...(payload as ErrorResponse), status: response.status });
+      return new ApiError({ ...(payload as ErrorResponse), status: response.status }, responseRetryAfterSeconds);
     }
 
     if (
@@ -97,7 +104,7 @@ export const buildError = async (response: Response): Promise<ApiError> => {
               ? payload.retryAfterSeconds
               : undefined,
         },
-      });
+      }, responseRetryAfterSeconds);
     }
 
     return new ApiError({
@@ -106,7 +113,7 @@ export const buildError = async (response: Response): Promise<ApiError> => {
         code: "HTTP_ERROR",
         message: `Request failed with status ${response.status}`,
       },
-    });
+    }, responseRetryAfterSeconds);
   } catch (error) {
     if (isAbortError(error)) throw error
     return new ApiError({
@@ -115,7 +122,7 @@ export const buildError = async (response: Response): Promise<ApiError> => {
         code: "HTTP_ERROR",
         message: `Request failed with status ${response.status}`,
       },
-    });
+    }, responseRetryAfterSeconds);
   }
 };
 

@@ -1,10 +1,7 @@
 export type {
   VoiceRecordingAvailabilityPort,
-  VoiceRecordingErasurePort,
-  VoiceRecordingPlayback,
   VoiceRecordingPlaybackPort,
   VoiceRecordingRef,
-  VoiceRecordingScope,
   VoiceRecordingStore,
   VoiceRecordingStream,
   VoiceVendorCredentialReader,

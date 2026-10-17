@@ -141,7 +141,7 @@ const voiceVendorCredentialReader = (credentials: VoiceVendorCredentialStore): V
  * The audit events a recording leaves, ids only. A recording deleted with its workspace is recorded
  * without an owning workspace, which no longer exists, and names it in the metadata instead.
  */
-export const createVoiceRecordingAudit = (auditService: Pick<AuditPort, "record">): VoiceRecordingAudit => ({
+const createVoiceRecordingAudit = (auditService: Pick<AuditPort, "record">): VoiceRecordingAudit => ({
   played: ({ workspaceId, ...metadata }) =>
     auditService.record({ workspaceId, eventType: "conversation.recording_played", eventStatus: "success", metadata }),
   deleted: ({ workspaceId, workspaceDeleted, conversationId, vendor }) =>

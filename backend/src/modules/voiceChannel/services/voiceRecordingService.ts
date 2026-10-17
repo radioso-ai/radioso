@@ -22,8 +22,19 @@ import {
 export interface VoiceRecordingAudit {
   /** `partial`: the audio sent starts past the recording's first byte, as a seek asks for. */
   played(event: { workspaceId: string; conversationId: string; actorUserId: string | null; vendor: VoiceVendor; partial: boolean }): Promise<void>;
-  /** `workspaceDeleted`: the workspace itself is gone, so the event cannot name it as its owner. */
-  deleted(event: { workspaceId: string; workspaceDeleted: boolean; conversationId: string | null; vendor: VoiceVendor }): Promise<void>;
+  /**
+   * `workspaceDeleted` and `account.deleted`: the workspace or the organization is gone with the
+   * recording, so the event keeps its id without pointing at it. `already_absent`: the vendor held
+   * nothing to delete.
+   */
+  deleted(event: {
+    account: { id: string; deleted: boolean } | null;
+    workspaceId: string;
+    workspaceDeleted: boolean;
+    conversationId: string | null;
+    vendor: VoiceVendor;
+    outcome: "deleted" | "already_absent";
+  }): Promise<void>;
 }
 
 export interface VoiceRecordingDependencies {

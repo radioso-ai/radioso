@@ -138,18 +138,27 @@ const voiceVendorCredentialReader = (credentials: VoiceVendorCredentialStore): V
 });
 
 /**
- * The audit events a recording leaves, ids only. A recording deleted with its workspace is recorded
- * without an owning workspace, which no longer exists, and names it in the metadata instead.
+ * The audit events a recording leaves, ids only: who played which conversation's recording, and
+ * each recording deleted at the vendor, with the organization it belonged to.
  */
 const createVoiceRecordingAudit = (auditService: Pick<AuditPort, "record">): VoiceRecordingAudit => ({
   played: ({ workspaceId, ...metadata }) =>
     auditService.record({ workspaceId, eventType: "conversation.recording_played", eventStatus: "success", metadata }),
-  deleted: ({ workspaceId, workspaceDeleted, conversationId, vendor }) =>
+  // A row may only point at a workspace or an organization that still exists; one deleted with the
+  // recording is kept by id in the metadata, where the organization's records can still find it.
+  deleted: ({ account, workspaceId, workspaceDeleted, conversationId, vendor, outcome }) =>
     auditService.record({
+      accountId: account && !account.deleted ? account.id : null,
       workspaceId: workspaceDeleted ? null : workspaceId,
       eventType: "conversation.recording_deleted",
       eventStatus: "success",
-      metadata: { conversationId, vendor, ...(workspaceDeleted ? { deletedWorkspaceId: workspaceId } : {}) },
+      metadata: {
+        conversationId,
+        vendor,
+        outcome,
+        ...(workspaceDeleted ? { deletedWorkspaceId: workspaceId } : {}),
+        ...(account?.deleted ? { deletedAccountId: account.id } : {}),
+      },
     }),
 });
 

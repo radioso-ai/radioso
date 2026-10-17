@@ -53,7 +53,7 @@ export const buildDocumentRetrievalGraph = (input: {
   personalCredentialTermination?: WorkspacePersonalCredentialTerminationPort;
   personalCredentialLifecycle?: PersonalCredentialLifecyclePort;
   /** What a workspace deletion asks vendors to erase, such as voice call recordings. */
-  vendorHeldConversationData?: VendorHeldConversationDataEraser;
+  vendorHeldConversationData?: { eraser: VendorHeldConversationDataEraser; logger: Pick<AppLogger, "warn"> };
 }) => {
   const { composition, env, infrastructure, logger, repositories } = input;
   const llmRegistry = buildLlmRegistry(env, logger, { metricsRegistry: infrastructure.metricsRegistry });

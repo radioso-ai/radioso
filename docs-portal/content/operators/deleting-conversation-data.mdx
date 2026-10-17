@@ -51,13 +51,14 @@ Deleting a conversation removes:
 - routine actions and notices queued for it and not yet sent;
 - email skill activity, including its recipient summary;
 - session-scoped context values for a chat session no other conversation uses;
-- the visitor record, when this was the visitor's last conversation;
+- the visitor record, when this was an anonymous visitor's last conversation;
 - the turn audit events that carry its content: suggestions, rewritten queries, retrieval diagnostics, and traces.
 
 ## What is kept
 
 A few records stay on purpose. None of them holds the conversation's content:
 
+- **A verified visitor's record.** It belongs to the customer, not to one conversation, so deleting their last conversation leaves it in place with a conversation count of zero. It stays the handle for a later [visitor deletion](#delete-a-visitor), which is what removes their customer-scoped context values.
 - **The billing ledger.** Usage events keep their token counts and lose the link to the conversation and its messages.
 - **The notice email cap.** The daily count of notice emails keeps its numbers, so deleting a conversation never hands its emails back to the day's budget.
 - **The Enterprise Edition reply quota.** The per-period counter keeps the conversation id and a count, so deleting conversations cannot reset a plan's quota.

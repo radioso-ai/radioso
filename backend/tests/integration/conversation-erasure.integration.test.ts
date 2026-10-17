@@ -429,6 +429,101 @@ describeIntegration("conversation erasure (Postgres)", () => {
     expect(await count("visitors WHERE id = $1", [visitorId])).toBe(0);
   });
 
+  /**
+   * Polls `pg_stat_activity` until some backend other than `excludePid` is waiting on a lock, with
+   * a bounded timeout instead of a fixed sleep. The auto-delete's `DELETE FROM visitors ...` (or,
+   * fixed, its preceding `SELECT ... FOR UPDATE`) needs the full `FOR UPDATE` tuple-lock strength,
+   * which conflicts with the `FOR KEY SHARE` a concurrent insert's foreign-key check holds on the
+   * same visitor row — so this reliably observes the erasure actually blocked on that hold, not a
+   * guess about how long it takes to get there.
+   */
+  const waitUntilBlockedOnLock = async (excludePid: number): Promise<void> => {
+    const deadline = Date.now() + 5000;
+    while (Date.now() < deadline) {
+      const blocked = await database.query<{ pid: number }>(
+        "SELECT pid FROM pg_stat_activity WHERE wait_event_type = 'Lock' AND pid <> $1",
+        [excludePid],
+      );
+      if (blocked.length > 0) {
+        return;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    throw new Error("Timed out waiting for the erasure to block on the held visitor lock");
+  };
+
+  it("keeps a visitor whose last other conversation is erased while a new conversation for them is committing", async () => {
+    const tenant = await seedTenant();
+    const visitorId = await seedVisitor(tenant, null);
+    const erased = await seedConversation(tenant, { visitorId });
+
+    // Connection A: starts a conversation insert for the same visitor and holds the transaction
+    // open. Inserting a row with a foreign key to `visitors` takes a FOR KEY SHARE lock on the
+    // referenced visitor row for the life of this transaction.
+    const holding = await database.pool.connect();
+    try {
+      await holding.query("BEGIN");
+      const { rows: [{ pid: holdingPid }] } = await holding.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
+      const concurrentConversationId = randomUUID();
+      await holding.query(
+        `INSERT INTO conversations (id, workspace_id, agent_id, anonymous_session_id, visitor_id) VALUES ($1, $2, $3, $4, $5)`,
+        [concurrentConversationId, tenant.workspaceId, tenant.agentId, `session-${randomUUID()}`, visitorId],
+      );
+
+      // Connection B (the pool the erasure runs on): erase the visitor's only other conversation.
+      // Its visitor delete (or lock) needs FOR UPDATE strength, which conflicts with A's hold, so
+      // it blocks until A commits.
+      const erasurePromise = erasure.eraseConversation({
+        workspaceId: tenant.workspaceId,
+        conversationId: erased.conversationId,
+        actor: actor(tenant),
+      });
+
+      await waitUntilBlockedOnLock(holdingPid);
+      await holding.query("COMMIT");
+      await erasurePromise;
+
+      // The visitor survives: its row didn't change while A was held, so a stale snapshot taken
+      // before A committed must not be what decided whether it still has a conversation.
+      expect(await count("visitors WHERE id = $1", [visitorId])).toBe(1);
+      const [concurrentConversation] = await database.query<{ visitor_id: string | null }>(
+        "SELECT visitor_id FROM conversations WHERE id = $1",
+        [concurrentConversationId],
+      );
+      expect(concurrentConversation.visitor_id).toBe(visitorId);
+    } finally {
+      holding.release();
+    }
+  });
+
+  it("keeps a verified visitor whose last conversation is erased, so a later visitor erase can still reach their customer-scoped values", async () => {
+    const tenant = await seedTenant();
+    const visitorId = await seedVisitor(tenant, "customer-99");
+    const only = await seedConversation(tenant, { visitorId, verifiedCustomerId: "customer-99" });
+    await database.query(
+      `INSERT INTO context_variable_values (workspace_id, variable_id, scope_type, scope_id, data)
+       VALUES ($1, $2, 'customer', 'customer-99', '{"tier": "gold"}'::jsonb)`,
+      [tenant.workspaceId, tenant.variableId],
+    );
+
+    await erasure.eraseConversation({ workspaceId: tenant.workspaceId, conversationId: only.conversationId, actor: actor(tenant) });
+
+    // A verified identity belongs to the customer, not to one conversation: the visitor row stays
+    // as the handle a later visitor erase needs to reach customer-scoped context values through.
+    expect(await count("visitors WHERE id = $1", [visitorId])).toBe(1);
+    const [visitor] = await database.query<{ conversation_count: number }>(
+      "SELECT conversation_count FROM visitors WHERE id = $1",
+      [visitorId],
+    );
+    expect(visitor.conversation_count).toBe(0);
+
+    const receipt = await erasure.eraseVisitor({ workspaceId: tenant.workspaceId, visitorId, actor: actor(tenant) });
+
+    expect(await count("visitors WHERE id = $1", [visitorId])).toBe(0);
+    expect(await count("context_variable_values WHERE scope_type = 'customer' AND scope_id = $1", ["customer-99"])).toBe(0);
+    expect(receipt).toMatchObject({ conversationCount: 0, messageCount: 0 });
+  });
+
   it("erases the WhatsApp transport log of the number whose conversation is erased, and only that number's", async () => {
     const tenant = await seedTenant();
     const erased = await seedConversation(tenant);

@@ -4828,47 +4828,34 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     return message.speech?.state === "pending" && this.speechClaims.get(message.id)?.claimTurnId === claimTurnId;
   }
 
-  async pendingOperatorReplies(input: { workspaceId: string; conversationId: string }): Promise<PendingOperatorReply[]> {
+  async claimPendingOperatorReplies(input: { workspaceId: string; conversationId: string; claimTurnId: string }): Promise<PendingOperatorReply[]> {
     return this.teammateReplies(input)
       .filter((message) => this.awaitsSpeech(message))
-      .map((message) => ({ messageId: message.id, text: message.content }));
-  }
-
-  async claimOperatorReplies(input: OperatorReplyClaim): Promise<string[]> {
-    return this.replaceSpeech(input, (message) => this.awaitsSpeech(message), (message) => {
-      this.speechClaims.set(message.id, { claimTurnId: input.claimTurnId, claimedAtMs: Date.now() });
-    });
-  }
-
-  async releaseOperatorReplies(input: OperatorReplyClaim): Promise<string[]> {
-    return this.replaceSpeech(input, (message) => this.claimedBy(message, input.claimTurnId), (message) => {
-      this.speechClaims.delete(message.id);
-    });
+      .map((message) => {
+        this.speechClaims.set(message.id, { claimTurnId: input.claimTurnId, claimedAtMs: Date.now() });
+        return { messageId: message.id, text: message.content };
+      });
   }
 
   async markOperatorRepliesSpoken(input: OperatorReplyClaim): Promise<string[]> {
-    return this.replaceSpeech(input, (message) => this.claimedBy(message, input.claimTurnId), (message) => {
-      this.speechClaims.delete(message.id);
-      message.speech = { state: "spoken", spokenAt: new Date().toISOString() };
-    });
+    return this.replaceSpeech(input, { state: "spoken", spokenAt: new Date().toISOString() });
   }
 
-  async skipOperatorReplies(input: { workspaceId: string; conversationId: string; messageIds: string[] }): Promise<string[]> {
-    return this.replaceSpeech(input, (message) => this.awaitsSpeech(message), (message) => {
-      this.speechClaims.delete(message.id);
-      message.speech = { state: "skipped" };
-    });
+  async skipOperatorReplies(input: OperatorReplyClaim): Promise<string[]> {
+    return this.replaceSpeech(input, { state: "skipped" });
   }
 
-  private replaceSpeech(
-    input: { workspaceId: string; conversationId: string; messageIds: string[] },
-    matches: (message: MessageRecord) => boolean,
-    replace: (message: MessageRecord) => void,
-  ): string[] {
+  async releaseOperatorReplies(input: OperatorReplyClaim): Promise<string[]> {
+    return this.replaceSpeech(input, { state: "pending" });
+  }
+
+  /** Replaces the speech of those of `messageIds` the turn still holds. */
+  private replaceSpeech(input: OperatorReplyClaim, next: NonNullable<MessageRecord["speech"]>): string[] {
     const replaced: string[] = [];
     for (const message of this.teammateReplies(input)) {
-      if (input.messageIds.includes(message.id) && matches(message)) {
-        replace(message);
+      if (input.messageIds.includes(message.id) && this.claimedBy(message, input.claimTurnId)) {
+        this.speechClaims.delete(message.id);
+        message.speech = next;
         replaced.push(message.id);
       }
     }

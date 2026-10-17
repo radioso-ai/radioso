@@ -37,28 +37,20 @@ export interface OperatorReplyClaim extends ConversationRef {
 
 /**
  * The teammate replies a call has yet to speak, and the claims turns hold on them, kept with the
- * replies so that each is spoken once, by one turn, whichever instance runs it. A reply is pending
- * until a turn claims it; the claim ends spoken ({@link OperatorReplySpeechMarker}), or released
- * back to pending when the turn did not reach its caller. A claim older than
- * `VOICE_BEHAVIOR.operatorReplyClaimExpiryMs` belongs to a turn that never settled, and its
- * replies count as pending again.
+ * replies so that each is spoken once, by one turn, whichever instance runs it. A turn claims every
+ * pending reply of the conversation in one write; the claim then ends `spoken`, `skipped` (the
+ * reply had no words to say), or released back to pending when the turn did not reach its caller.
+ * Every call changes only replies the turn still holds and resolves exactly the ids it changed. A
+ * claim older than `VOICE_BEHAVIOR.operatorReplyClaimExpiryMs` belongs to a turn that never
+ * settled, and its replies count as pending again.
  */
 export interface OperatorReplySpeechClaims {
-  /** The conversation's pending teammate replies, oldest first. */
-  pendingOperatorReplies(input: ConversationRef): Promise<PendingOperatorReply[]>;
-  /** Claims those of `messageIds` that are pending, in one write; resolves exactly the ids claimed. */
-  claimOperatorReplies(input: OperatorReplyClaim): Promise<string[]>;
-  /** Hands the turn's still-held claims back as pending; resolves the ids released. */
-  releaseOperatorReplies(input: OperatorReplyClaim): Promise<string[]>;
-  /** Marks pending replies with no words to say as skipped; resolves the ids marked. */
-  skipOperatorReplies(input: ConversationRef & { messageIds: string[] }): Promise<string[]>;
-}
-
-/**
- * Records that the turn holding the claims spoke the replies. Idempotent: only a reply the turn
- * still holds is marked, so a reply spoken already keeps its first `spokenAt`, and a message that
- * is not a reply claimed by the turn is left alone. Resolves the ids this call marked.
- */
-export interface OperatorReplySpeechMarker {
+  /** Claims the conversation's pending replies for the turn; resolves them, oldest first. */
+  claimPendingOperatorReplies(input: ConversationRef & { claimTurnId: string }): Promise<PendingOperatorReply[]>;
+  /** The turn spoke them and completed; a reply spoken already keeps its first `spokenAt`. */
   markOperatorRepliesSpoken(input: OperatorReplyClaim): Promise<string[]>;
+  /** The turn had nothing to say for them. */
+  skipOperatorReplies(input: OperatorReplyClaim): Promise<string[]>;
+  /** The turn did not reach its caller; the replies wait for the next turn. */
+  releaseOperatorReplies(input: OperatorReplyClaim): Promise<string[]>;
 }

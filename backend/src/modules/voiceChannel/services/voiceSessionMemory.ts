@@ -4,6 +4,8 @@ import { heardPrefixLength, spokenLength } from "./speechText.js";
 export interface VoiceTurnClaim {
   /** Arrival order within the process. */
   readonly sequence: number;
+  /** The request of the session still in flight when this one arrived, which this one overtook. */
+  readonly overtook: VoiceTurnClaim | null;
   /** When a newer request of the session arrived while this one was in flight. */
   supersededAt: number | null;
   /** When the runtime closed this request before the turn's outcome reached it. */
@@ -112,7 +114,8 @@ export class VoiceSessionMemory {
     if (previous && !previous.settled) {
       previous.supersededAt ??= now;
     }
-    const claim: VoiceTurnClaim = { sequence: ++this.arrivals, supersededAt: null, hungUpAt: null, outcomeAt: null, settled: false };
+    const overtook = previous && !previous.settled ? previous : null;
+    const claim: VoiceTurnClaim = { sequence: ++this.arrivals, overtook, supersededAt: null, hungUpAt: null, outcomeAt: null, settled: false };
     state.newest = claim;
     state.open += 1;
     return claim;

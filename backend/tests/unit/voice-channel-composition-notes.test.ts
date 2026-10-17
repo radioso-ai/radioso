@@ -11,7 +11,7 @@ const note = {
   spokenCharacterCount: 40,
 };
 
-const sinks = (options: { markFails?: boolean; replyFound?: boolean; alreadySpoken?: string[] } = {}) => {
+const sinks = (options: { markFails?: boolean; replyFound?: boolean } = {}) => {
   const writes: string[] = [];
   const audits: AuditEventInput[] = [];
   const logger = { warn: vi.fn() };
@@ -23,13 +23,6 @@ const sinks = (options: { markFails?: boolean; replyFound?: boolean; alreadySpok
           throw new Error("database unavailable");
         }
         return options.replyFound ?? true;
-      },
-      markOperatorRepliesSpoken: async (input) => {
-        writes.push(`spoken:${input.conversationId}:${input.messageIds.join(",")}`);
-        if (options.markFails) {
-          throw new Error("database unavailable");
-        }
-        return input.messageIds.filter((messageId) => !(options.alreadySpoken ?? []).includes(messageId));
       },
     },
     auditService: {
@@ -92,39 +85,17 @@ describe("voice channel composition: turn notes", () => {
     expect(audits[0]?.metadata).toEqual({ conversationId: "conversation-1", assistantMessageId: "message-1" });
   });
 
-  describe("a teammate's replies spoken to the caller", () => {
-    const spoken = { workspaceId: "workspace-1", conversationId: "conversation-1", messageIds: ["reply-1", "reply-2"], claimTurnId: "turn-1" };
+  it("audits a teammate's replies recorded as spoken by id only", async () => {
+    const { notes, writes, audits } = sinks();
 
-    it("marks the replies spoken before recording one audit event that names them by id only", async () => {
-      const { notes, writes, audits } = sinks();
+    await notes.operatorRepliesSpoken({ workspaceId: "workspace-1", conversationId: "conversation-1", messageIds: ["reply-1", "reply-2"] });
 
-      await expect(notes.operatorRepliesSpoken(spoken)).resolves.toEqual(["reply-1", "reply-2"]);
-
-      expect(writes).toEqual(["spoken:conversation-1:reply-1,reply-2", "audit:voice.operator_reply_spoken"]);
-      expect(audits).toEqual([{
-        workspaceId: "workspace-1",
-        eventType: "voice.operator_reply_spoken",
-        eventStatus: "success",
-        metadata: { conversationId: "conversation-1", messageIds: ["reply-1", "reply-2"] },
-      }]);
-    });
-
-    it("audits and resolves only the replies this note marked, and nothing when none was still the turn's", async () => {
-      const some = sinks({ alreadySpoken: ["reply-1"] });
-      await expect(some.notes.operatorRepliesSpoken(spoken)).resolves.toEqual(["reply-2"]);
-      expect(some.audits.map((event) => event.metadata)).toEqual([{ conversationId: "conversation-1", messageIds: ["reply-2"] }]);
-
-      const none = sinks({ alreadySpoken: ["reply-1", "reply-2"] });
-      await expect(none.notes.operatorRepliesSpoken(spoken)).resolves.toEqual([]);
-      expect(none.writes).toEqual(["spoken:conversation-1:reply-1,reply-2"]);
-    });
-
-    it("rejects the note without an audit event when the replies cannot be marked", async () => {
-      const { notes, writes } = sinks({ markFails: true });
-
-      await expect(notes.operatorRepliesSpoken(spoken)).rejects.toThrow("database unavailable");
-
-      expect(writes).toEqual(["spoken:conversation-1:reply-1,reply-2"]);
-    });
+    expect(writes).toEqual(["audit:voice.operator_reply_spoken"]);
+    expect(audits).toEqual([{
+      workspaceId: "workspace-1",
+      eventType: "voice.operator_reply_spoken",
+      eventStatus: "success",
+      metadata: { conversationId: "conversation-1", messageIds: ["reply-1", "reply-2"] },
+    }]);
   });
 });

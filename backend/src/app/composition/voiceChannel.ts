@@ -3,7 +3,6 @@ import { randomUUID } from "node:crypto";
 import type {
   ChatStreamEvent,
   OperatorReplySpeechClaims,
-  OperatorReplySpeechMarker,
   ReplyInterruptionMarker,
 } from "../../modules/chat/contracts/index.js";
 import {
@@ -50,12 +49,12 @@ const voiceProfileSource = (agentRepository: AgentVoiceProfileRepository) => ({
  * Notes on a turn's stored replies. An interrupted reply is marked on the message first and
  * audited after, so a note that rejects is one the session writes again; the mark is idempotent. A
  * reply the conversation no longer holds is not marked and not audited, and the note resolves: a
- * retry would find it no more. A teammate's replies the turn claimed and spoke are marked spoken
- * first, and only the ones this note marked are audited, so a reply is audited once. Notes
- * name replies by id and count characters; they never carry what was said.
+ * retry would find it no more. A teammate's replies the turn recorded as spoken are audited (the
+ * turn marks them through chat's claims port first). Notes name replies by id and count
+ * characters; they never carry what was said.
  */
 export const createVoiceTurnNotes = (deps: {
-  replies: ReplyInterruptionMarker & OperatorReplySpeechMarker;
+  replies: ReplyInterruptionMarker;
   auditService: Pick<AuditPort, "record">;
   logger: Pick<AppLogger, "warn">;
 }): VoiceTurnNotes => ({
@@ -74,18 +73,8 @@ export const createVoiceTurnNotes = (deps: {
   },
   replyReplayed: ({ workspaceId, ...metadata }) =>
     deps.auditService.record({ workspaceId, eventType: "voice.reply_replayed", eventStatus: "success", metadata }),
-  operatorRepliesSpoken: async (claimed) => {
-    const marked = await deps.replies.markOperatorRepliesSpoken(claimed);
-    if (marked.length > 0) {
-      await deps.auditService.record({
-        workspaceId: claimed.workspaceId,
-        eventType: "voice.operator_reply_spoken",
-        eventStatus: "success",
-        metadata: { conversationId: claimed.conversationId, messageIds: marked },
-      });
-    }
-    return marked;
-  },
+  operatorRepliesSpoken: ({ workspaceId, ...metadata }) =>
+    deps.auditService.record({ workspaceId, eventType: "voice.operator_reply_spoken", eventStatus: "success", metadata }),
 });
 
 /**
@@ -105,7 +94,7 @@ export const createVoiceChannelComposition = (deps: {
   agentRepository: AgentVoiceProfileRepository;
   routineStates: { loadActive(input: { sessionId: string }): Promise<unknown> };
   conversationOwnership: ConversationOwnershipReader;
-  replies: ReplyInterruptionMarker & OperatorReplySpeechMarker & OperatorReplySpeechClaims;
+  replies: ReplyInterruptionMarker & OperatorReplySpeechClaims;
   auditService: Pick<AuditPort, "record">;
   metricsRegistry: MetricsRegistry | null;
   logger: AppLogger;

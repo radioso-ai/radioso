@@ -196,8 +196,44 @@ describe("voice recording playback", () => {
       credential: { apiKey },
       range: "bytes=0-",
     }));
-    expect(audit.played).toHaveBeenCalledWith({ workspaceId, conversationId, actorUserId, vendor: "elevenlabs", partial: true });
+    // The vendor answered with the whole recording, so the play is whole, whatever the player asked.
+    expect(audit.played).toHaveBeenCalledWith({ workspaceId, conversationId, actorUserId, vendor: "elevenlabs", partial: false });
     expect(counted(metrics, "voice_recording_fetch_total")).toEqual([{ vendor: "elevenlabs", outcome: "served" }]);
+  });
+
+  it.each([
+    ["a part from the start", "bytes 0-1023/4096", false],
+    ["a part further in, as a seek asks for", "bytes 2048-4095/4096", true],
+  ])("audits %s as partial: %s", async (_case, contentRange, partial) => {
+    const { service, audit } = harness({ fetchRecording: async () => ({ ...audioStream(), status: 206, contentRange }) });
+
+    await service.play({ ...play, range: "bytes=0-" });
+
+    expect(audit.played).toHaveBeenCalledWith(expect.objectContaining({ partial }));
+  });
+
+  it("answers a range past the recording's end with the vendor's length, auditing nothing", async () => {
+    const { service, audit, metrics, logger } = harness({ fetchRecording: async () => {
+      throw new VoiceRecordingRequestError("range_not_satisfiable", 416, "bytes */4096");
+    } });
+
+    await expect(service.play({ ...play, range: "bytes=9000-" })).resolves.toEqual({ kind: "range_not_satisfiable", contentRange: "bytes */4096" });
+    expect(audit.played).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalled();
+    expect(counted(metrics, "voice_recording_fetch_total")).toEqual([{ vendor: "elevenlabs", outcome: "range_not_satisfiable" }]);
+  });
+
+  it("lets a listener who went away go quietly: no warn, no failure counted, no audit", async () => {
+    const listener = new AbortController();
+    const { service, audit, metrics, logger } = harness({ fetchRecording: async () => {
+      listener.abort();
+      throw new VoiceRecordingRequestError("timeout");
+    } });
+
+    await expect(service.play({ ...play, signal: listener.signal })).resolves.toEqual({ kind: "abandoned" });
+    expect(audit.played).not.toHaveBeenCalled();
+    expect(logger.warn).not.toHaveBeenCalled();
+    expect(counted(metrics, "voice_recording_fetch_total")).toEqual([]);
   });
 
   it("finds nothing for a conversation without a recording, and asks the vendor nothing", async () => {

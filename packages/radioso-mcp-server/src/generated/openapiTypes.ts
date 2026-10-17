@@ -3431,7 +3431,7 @@ export interface paths {
         };
         /**
          * Play a voice conversation's recording
-         * @description Streams the call's audio from the voice vendor, which keeps the recording, with the workspace's own vendor key; the key and the vendor's URL stay on the backend. A conversation has one when its call was started by the website embed and the page reported the vendor's conversation id: `recording.available` on the conversation's detail says so. Dashboard session only; bearer API tokens are rejected. An `<audio>` element cannot send `X-Workspace-Id`, so the optional `workspaceId` query selects the workspace instead. A `Range` header naming one byte range goes on to the vendor, and the response is `206` when the vendor answers it; a vendor that ignores it answers with the whole recording. The response is `Cache-Control: private, no-store`. Every response that carries audio records a `conversation.recording_played` audit event with the teammate's user id.
+         * @description Streams the call's audio from the voice vendor, which keeps the recording, with the workspace's own vendor key; the key and the vendor's URL stay on the backend. A conversation has one when its call was started by the website embed and the page reported the vendor's conversation id: `recording.available` on the conversation's detail says so. Dashboard session only, from the dashboard's own pages: bearer API tokens are rejected, and so is a browser request whose `Sec-Fetch-Site` is anything but `same-origin`. An `<audio>` element cannot send `X-Workspace-Id`, so the optional `workspaceId` query selects the workspace instead. `HEAD` is refused with `405`. A `Range` header naming one byte range (`bytes=first-`, `bytes=first-last` or `bytes=-suffix`) goes on to the vendor, and the response is `206` with the vendor's `Content-Range` when the vendor answers it; a vendor that ignores it answers with the whole recording, and a range past the end is `416`. The response is `Cache-Control: private, no-store`. Every response that carries audio records a `conversation.recording_played` audit event with the teammate's user id; `partial` is true when the audio sent starts past the recording's first byte.
          */
         get: operations["getConversationRecording"];
         put?: never;
@@ -25810,7 +25810,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Workspace history read permission required, or the caller is not a dashboard session */
+            /** @description Workspace history read permission required, the caller is not a dashboard session, or another site started the request */
             403: {
                 headers: {
                     [name: string]: unknown;
@@ -25827,6 +25827,13 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
+            };
+            /** @description The byte range lies past the recording's end; `Content-Range` names its length when the vendor does */
+            416: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description `recording_unavailable`: the recording could not be read (the workspace's vendor key is missing or unreadable, or the vendor did not answer) */
             503: {

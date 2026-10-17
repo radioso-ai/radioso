@@ -309,14 +309,17 @@ export interface VoiceRecordingStream {
 
 /**
  * A vendor call about a recording that did not succeed: the vendor holds no recording under that
- * id (the call has not finished, or the conversation is gone), refused the request (`vendorStatus`
- * is its HTTP status), could not be reached, did not answer in time, or answered with something
- * that is not what was asked for.
+ * id (the call has not finished, or the conversation is gone), cannot serve the byte range asked
+ * for (`contentRange` is the vendor's, naming the recording's length), refused the request
+ * (`vendorStatus` is its HTTP status), could not be reached, did not answer in time or stopped
+ * sending, or answered with something that is not what was asked for. `abandoned`: the listener
+ * went away first, which is nobody's failure.
  */
 export class VoiceRecordingRequestError extends Error {
   constructor(
-    readonly reason: "not_found" | "rejected" | "unreachable" | "timeout" | "malformed_response",
+    readonly reason: "not_found" | "range_not_satisfiable" | "rejected" | "unreachable" | "timeout" | "malformed_response" | "abandoned",
     readonly vendorStatus?: number,
+    readonly contentRange?: string,
   ) {
     super(vendorStatus === undefined ? `Voice recording request failed: ${reason}` : `Voice recording request failed: ${reason} (${vendorStatus})`);
     this.name = new.target.name;
@@ -362,12 +365,16 @@ export interface VoiceRecordingAvailabilityPort {
 
 /**
  * How opening a recording for an operator ended. `not_found`: the conversation has no recording, or
- * the vendor holds none (yet). `unavailable`: there is one, and it could not be read now.
+ * the vendor holds none (yet). `range_not_satisfiable`: the byte range lies past the recording's
+ * end. `unavailable`: there is one, and it could not be read now. `abandoned`: the listener went
+ * away before the vendor answered; nothing is left to answer.
  */
 export type VoiceRecordingPlayback =
   | { kind: "recording"; recording: VoiceRecordingStream }
   | { kind: "not_found" }
-  | { kind: "unavailable" };
+  | { kind: "range_not_satisfiable"; contentRange?: string }
+  | { kind: "unavailable" }
+  | { kind: "abandoned" };
 
 export interface VoiceRecordingPlaybackPort {
   /** Opens a conversation's recording for one operator; a recording that opens is audited as played. */

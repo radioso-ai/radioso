@@ -250,6 +250,21 @@ describeIntegration("VoiceSessionRepository (Postgres)", () => {
       expect(listed).toContainEqual({ workspaceId, conversationId: null, vendor: "elevenlabs", region: "eu", vendorConversationId });
     });
 
+    it("finds no recording for a conversation that belongs to another workspace", async () => {
+      const otherWorkspaceId = randomUUID();
+      await database.query(
+        "INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, $3, $4)",
+        [otherWorkspaceId, accountId, "Other Voice Workspace", `voice-session-${otherWorkspaceId}`],
+      );
+      const foreignConversationId = randomUUID();
+      await database.query("INSERT INTO conversations (id, workspace_id, source_channel) VALUES ($1, $2, 'voice')", [foreignConversationId, otherWorkspaceId]);
+      const { session, report } = await startedSession();
+      await report(`conv_${randomUUID().replaceAll("-", "")}`);
+      await repository.bind(session, foreignConversationId);
+
+      await expect(repository.findRecording({ workspaceId, conversationId: foreignConversationId })).resolves.toBeNull();
+    });
+
     it("has no recording for a session a page started on its own", async () => {
       const session = { workspaceId, agentId, vendor: "elevenlabs", sessionKey: randomUUID() };
       const conversationId = await insertConversation();

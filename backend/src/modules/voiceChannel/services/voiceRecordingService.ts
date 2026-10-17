@@ -9,6 +9,7 @@ import {
   type VoiceRecordingRef,
   type VoiceRecordingSource,
   type VoiceRecordingStore,
+  type VoiceRecordingStream,
   type VoiceVendorConversationReport,
   type VoiceVendorConversationReportPort,
   type VoiceVendorCredentialReader,
@@ -19,7 +20,7 @@ import {
  * was deleted at the vendor. Ids only, never audio. Composition writes them as audit events.
  */
 export interface VoiceRecordingAudit {
-  /** `partial`: the player asked for a byte range, as it does when it starts or seeks. */
+  /** `partial`: the audio sent starts past the recording's first byte, as a seek asks for. */
   played(event: { workspaceId: string; conversationId: string; actorUserId: string | null; vendor: VoiceVendor; partial: boolean }): Promise<void>;
   /** `workspaceDeleted`: the workspace itself is gone, so the event cannot name it as its owner. */
   deleted(event: { workspaceId: string; workspaceDeleted: boolean; conversationId: string | null; vendor: VoiceVendor }): Promise<void>;
@@ -42,6 +43,7 @@ type VoiceRecordingFetchOutcome =
   | "credential_unreadable"
   | "credential_read_failed"
   | "vendor_not_found"
+  | "range_not_satisfiable"
   | "vendor_failed"
   | "audit_failed";
 
@@ -69,6 +71,16 @@ const REPORT_RESULT_OF_OUTCOME: Record<VoiceVendorConversationReportOutcome, "re
   credential_unreadable: "failed",
   credential_read_failed: "failed",
   vendor_failed: "failed",
+};
+
+/** A first byte past 0, as a seek or a resumed play asks for. Header syntax only. */
+const FIRST_BYTE_OF_RANGE = /^bytes (\d+)-/;
+
+/** Whether the audio sent is part of the recording other than its start: what `partial` on a play means. */
+const isPartialPlay = (stream: VoiceRecordingStream): boolean => {
+  if (stream.status !== 206 || !stream.contentRange) return false;
+  const first = FIRST_BYTE_OF_RANGE.exec(stream.contentRange)?.[1];
+  return first !== undefined && Number(first) > 0;
 };
 
 export const errorClassOf = (error: unknown): string => (error instanceof Error ? error.name : typeof error);
@@ -180,16 +192,22 @@ export class VoiceRecordingService implements VoiceVendorConversationReportPort,
         ...(input.signal ? { signal: input.signal } : {}),
       });
     } catch (error) {
+      // A listener who closed the player or seeked away is nobody's failure, and nobody is left to answer.
+      if (input.signal?.aborted || (error instanceof VoiceRecordingRequestError && error.reason === "abandoned")) return { kind: "abandoned" };
       if (error instanceof VoiceRecordingRequestError && error.reason === "not_found") {
         this.warn(input, vendor, "vendor_not_found", recordingErrorFields(error));
         this.record(vendor, "vendor_not_found");
         return { kind: "not_found" };
       }
+      if (error instanceof VoiceRecordingRequestError && error.reason === "range_not_satisfiable") {
+        this.record(vendor, "range_not_satisfiable");
+        return { kind: "range_not_satisfiable", ...(error.contentRange ? { contentRange: error.contentRange } : {}) };
+      }
       return this.unavailable(input, vendor, "vendor_failed", recordingErrorFields(error));
     }
 
     try {
-      await this.dependencies.audit.played({ workspaceId, conversationId, actorUserId: input.actorUserId, vendor, partial: input.range !== undefined });
+      await this.dependencies.audit.played({ workspaceId, conversationId, actorUserId: input.actorUserId, vendor, partial: isPartialPlay(stream) });
     } catch (error) {
       // A play that leaves no record does not happen.
       await stream.body.cancel().catch(() => undefined);

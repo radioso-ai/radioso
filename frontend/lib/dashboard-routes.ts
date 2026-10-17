@@ -19,6 +19,7 @@ export type SettingsTab = 'workspace' | 'api-access' | 'providers'
 export type AccountTab = 'profile' | 'members' | 'usage'
 export type HistoryFilter = 'all' | 'chat' | 'search' | 'contact'
 export type HistoryItemKind = 'chat' | 'search' | 'contact' | 'inbox'
+export type InboxEscalationFilter = 'approval' | 'handoff' | 'negative_feedback' | 'delivery_failed'
 export type QualityStatusFilter =
   | 'active'
   | 'paused'
@@ -103,6 +104,10 @@ export interface DashboardRouteState {
   historyItemKind?: HistoryItemKind
   historyItemId?: string
   historyMessageId?: string
+  /** Needs-you queue filters. Kept distinct from the All-lens history filter. */
+  inboxEscalation?: InboxEscalationFilter
+  inboxAgentId?: string
+  inboxChannel?: string
   qualityView?: QualityView
   qualityPage?: number
   qualityRange?: QualityRangeFilter
@@ -155,6 +160,9 @@ const routeStateKeys: Array<keyof DashboardRouteState> = [
   'historyItemKind',
   'historyItemId',
   'historyMessageId',
+  'inboxEscalation',
+  'inboxAgentId',
+  'inboxChannel',
   'qualityView',
   'qualityPage',
   'qualityRange',
@@ -217,6 +225,13 @@ const parseHistoryItemKind = (value: string | null): HistoryItemKind | undefined
     return value
   }
 
+  return undefined
+}
+
+const parseInboxEscalation = (value: string | null): InboxEscalationFilter | undefined => {
+  if (value === 'approval' || value === 'handoff' || value === 'negative_feedback' || value === 'delivery_failed') {
+    return value
+  }
   return undefined
 }
 
@@ -476,6 +491,15 @@ const normalizeState = (state: DashboardRouteState): DashboardRouteState => {
         normalized.historyMessageId = state.historyMessageId
       }
     }
+    if (state.inboxEscalation) {
+      normalized.inboxEscalation = state.inboxEscalation
+    }
+    if (state.inboxAgentId) {
+      normalized.inboxAgentId = state.inboxAgentId
+    }
+    if (state.inboxChannel) {
+      normalized.inboxChannel = state.inboxChannel
+    }
     return normalized
   }
 
@@ -655,6 +679,15 @@ const buildQueryString = (normalized: DashboardRouteState) => {
       if (normalized.historyMessageId) {
         searchParams.set('itemMessageId', normalized.historyMessageId)
       }
+    }
+    if (normalized.inboxEscalation) {
+      searchParams.set('inboxType', normalized.inboxEscalation)
+    }
+    if (normalized.inboxAgentId) {
+      searchParams.set('inboxAgent', normalized.inboxAgentId)
+    }
+    if (normalized.inboxChannel) {
+      searchParams.set('inboxChannel', normalized.inboxChannel)
     }
   }
 
@@ -921,6 +954,9 @@ export const parseDashboardRoute = (
       historyItemKind: parseHistoryItemKind(searchParams?.get('itemKind') ?? null),
       historyItemId: searchParams?.get('itemId') ?? undefined,
       historyMessageId: searchParams?.get('itemMessageId') ?? undefined,
+      inboxEscalation: parseInboxEscalation(searchParams?.get('inboxType') ?? null),
+      inboxAgentId: searchParams?.get('inboxAgent') ?? undefined,
+      inboxChannel: searchParams?.get('inboxChannel') ?? undefined,
     })
   }
 
@@ -992,6 +1028,9 @@ export const parseDashboardRoute = (
       historyItemKind: parseHistoryItemKind(searchParams?.get('itemKind') ?? null),
       historyItemId: searchParams?.get('itemId') ?? undefined,
       historyMessageId: searchParams?.get('itemMessageId') ?? undefined,
+      inboxEscalation: parseInboxEscalation(searchParams?.get('inboxType') ?? null),
+      inboxAgentId: searchParams?.get('inboxAgent') ?? undefined,
+      inboxChannel: searchParams?.get('inboxChannel') ?? undefined,
     })
   }
 

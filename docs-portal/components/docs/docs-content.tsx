@@ -42,19 +42,19 @@ console.log(response.answer)`,
 export function DocsContent() {
   const quickstartCards = [
     {
-      href: '/quickstarts/run-locally',
-      title: 'Run locally',
-      description: 'Bootstrap the full stack with Docker, create a workspace, and verify grounded answers.',
+      href: '/operators/start-here',
+      title: 'Follow the operator path',
+      description: 'Go from a local stack through a grounded answer, an acting agent, team access, and production preparation.',
     },
     {
-      href: '/quickstarts/website-embed',
-      title: 'Embed on your website',
-      description: 'Use the local embed harness and validate the origin allowlist before production rollout.',
+      href: '/quickstarts/run-locally',
+      title: 'Run locally',
+      description: 'Bootstrap the full stack with Docker, then start the dashboard path with one grounded answer.',
     },
     {
       href: '/quickstarts/api-first-success',
       title: 'Use the API',
-      description: 'Register, issue an API credential, upload a document, and ask the first grounded question.',
+      description: 'Follow the canonical role-bound register, credential, upload, and agent-chat sequence.',
     },
   ]
 
@@ -94,7 +94,7 @@ export function DocsContent() {
           <div className="flex gap-3">
             <ArrowRight className="mt-0.5 h-5 w-5 text-primary" />
             <p className="text-base leading-relaxed text-foreground/85">
-              Start with one of three paths: run Radioso locally, embed it on a website, or upload docs and ask through the API.
+              Start with the operator path, run Radioso locally, or use the canonical API sequence.
             </p>
           </div>
         </div>
@@ -133,14 +133,14 @@ export function DocsContent() {
       </section>
 
       <section id="api-first-success" className="mb-14">
-        <h2 className="mb-4 text-3xl font-semibold text-foreground">API first success</h2>
+        <h2 className="mb-4 text-3xl font-semibold text-foreground">Your first API answer</h2>
         <p className="mb-6 text-lg leading-relaxed text-muted-foreground">
           Reach first success with plain HTTP or the TypeScript SDK: create a session, issue an API credential, upload content, and ask one grounded question.
         </p>
         <LanguageTabs examples={sdkExamples} />
         <div className="mt-4 flex flex-wrap gap-4 text-sm">
           <Link href="/quickstarts/api-first-success" className="font-medium text-primary hover:underline">
-            Open the full API quickstart
+            Open the canonical API quickstart
           </Link>
           <Link href="/sdk/typescript-getting-started" className="font-medium text-primary hover:underline">
             Open the SDK guide

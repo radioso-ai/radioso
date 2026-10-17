@@ -11,8 +11,25 @@ describe("the stored part of a reply cut off mid-stream", () => {
   it("removes a delimiter the cut left open, so the part renders as its words", () => {
     expect(cutReplyContent("[See the hours. ")).toBe("See the hours.");
     expect(cutReplyContent("Done. **Bold start. ")).toBe("Done. Bold start.");
+    expect(cutReplyContent("Done. *Leaning start. ")).toBe("Done. Leaning start.");
+    expect(cutReplyContent("Done. _Leaning start. ")).toBe("Done. Leaning start.");
+    expect(cutReplyContent("Done. ***Both start. ")).toBe("Done. Both start.");
     expect(cutReplyContent("Run `npm i. ")).toBe("Run npm i.");
-    expect(cutReplyContent("See [the hours](https://example.com/h). ")).toBe("See [the hours](https://example.com/h).");
+    expect(cutReplyContent("Run ``npm `i`. ")).toBe("Run npm `i`.");
+  });
+
+  it("keeps every construct the part holds whole, and delimiters that are text", () => {
+    for (const whole of [
+      "See [the hours](https://example.com/h_x).",
+      "It is *really* open.",
+      "It is _really_ open.",
+      "It is ***really*** open.",
+      "It is **open** (*daily*).",
+      "Type ``a `quoted` word`` or `b`.",
+      "Use my_setting, 5*3 and 2 * 3.",
+    ]) {
+      expect(cutReplyContent(whole)).toBe(whole);
+    }
   });
 
   it("is empty when the part held nothing but markers", () => {

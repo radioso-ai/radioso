@@ -7,6 +7,7 @@ import {
   createWorkspaceConversationDataErasure,
 } from "../../src/app/composition/conversationErasure.js";
 import { AccountRepository } from "../../src/db/repositories/accountRepository.js";
+import { AuditEventRepository } from "../../src/db/repositories/auditEventRepository.js";
 import { PersonalCredentialLifecycleRepository } from "../../src/db/repositories/personalCredentialLifecycleRepository.js";
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
 import { ConversationErasureService } from "../../src/modules/privacy/public.js";
@@ -491,6 +492,79 @@ describeIntegration("conversation erasure (Postgres)", () => {
         [concurrentConversationId],
       );
       expect(concurrentConversation.visitor_id).toBe(visitorId);
+    } finally {
+      holding.release();
+    }
+  });
+
+  /** How many `chat.answer` audit events, of any status, still name this conversation. */
+  const chatAnswerAuditCount = (tenant: Tenant, conversationId: string) =>
+    count(
+      "audit_events WHERE workspace_id = $1 AND event_type = 'chat.answer' AND metadata_json->>'conversationId' = $2",
+      [tenant.workspaceId, conversationId],
+    );
+
+  it("skips a failed turn's chat.answer audit once its conversation has already been erased", async () => {
+    const tenant = await seedTenant();
+    const erased = await seedConversation(tenant);
+    const auditEventRepository = new AuditEventRepository(database.kysely);
+
+    await erasure.eraseConversation({ workspaceId: tenant.workspaceId, conversationId: erased.conversationId, actor: actor(tenant) });
+
+    const created = await auditEventRepository.createIfConversationLive({
+      workspaceId: tenant.workspaceId,
+      conversationId: erased.conversationId,
+      eventType: "chat.answer",
+      eventStatus: "failure",
+      metadata: { stage: "chat.answer" },
+    });
+
+    expect(created).toBeNull();
+    expect(await chatAnswerAuditCount(tenant, erased.conversationId)).toBe(0);
+  });
+
+  it("keeps a failed turn's chat.answer audit from surviving a conversation erasure racing it", async () => {
+    const tenant = await seedTenant();
+    // A bare conversation, with nothing derived from it, so the row's removal below (standing
+    // in for the real erasure's cascade) cannot meet a foreign key it isn't this test's job to
+    // reason about; the lock this test races is on the conversation row alone.
+    const conversationId = randomUUID();
+    await database.query(
+      "INSERT INTO conversations (id, workspace_id, agent_id, anonymous_session_id) VALUES ($1, $2, $3, $4)",
+      [conversationId, tenant.workspaceId, tenant.agentId, `session-${randomUUID()}`],
+    );
+    const auditEventRepository = new AuditEventRepository(database.kysely);
+
+    // Connection A: takes the same row lock the first step of a live erasure takes
+    // (`ConversationRepository.lockForUpdate`) and holds the transaction open.
+    const holding = await database.pool.connect();
+    try {
+      await holding.query("BEGIN");
+      const { rows: [{ pid: holdingPid }] } = await holding.query<{ pid: number }>("SELECT pg_backend_pid() AS pid");
+      await holding.query(
+        "SELECT id FROM conversations WHERE id = $1 AND workspace_id = $2 FOR NO KEY UPDATE",
+        [conversationId, tenant.workspaceId],
+      );
+
+      // Connection B (the pool the write under test runs on): the failure path's conditional
+      // audit write. Its existence check takes `FOR SHARE`, which conflicts with A's hold, so
+      // it blocks until A finishes — a `FOR KEY SHARE` check would not have blocked here.
+      const writePromise = auditEventRepository.createIfConversationLive({
+        workspaceId: tenant.workspaceId,
+        conversationId,
+        eventType: "chat.answer",
+        eventStatus: "failure",
+        metadata: { stage: "chat.answer" },
+      });
+
+      await waitUntilBlockedOnLock(holdingPid);
+      // A finishes what this test cares about from the erasure: the conversation's row is gone
+      // by the time its transaction commits, exactly as the real erasure's cascade leaves it.
+      await holding.query("DELETE FROM conversations WHERE id = $1 AND workspace_id = $2", [conversationId, tenant.workspaceId]);
+      await holding.query("COMMIT");
+
+      expect(await writePromise).toBeNull();
+      expect(await chatAnswerAuditCount(tenant, conversationId)).toBe(0);
     } finally {
       holding.release();
     }

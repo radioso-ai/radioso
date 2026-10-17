@@ -4798,6 +4798,12 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
 export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
   readonly items: AuditEventRecord[] = [];
 
+  /**
+   * Stands in for the Postgres lock a real erasure holds on the conversation row. Defaults to
+   * "still there"; a test simulating an erased conversation overrides it to return false.
+   */
+  conversationExists: (workspaceId: string, conversationId: string) => boolean = () => true;
+
   async create(input: {
     accountId?: string | null;
     workspaceId?: string | null;
@@ -4816,6 +4822,20 @@ export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
     };
     this.items.push(record);
     return record;
+  }
+
+  async createIfConversationLive(input: {
+    accountId?: string | null;
+    workspaceId: string;
+    conversationId: string;
+    eventType: string;
+    eventStatus: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<AuditEventRecord | null> {
+    if (!this.conversationExists(input.workspaceId, input.conversationId)) {
+      return null;
+    }
+    return this.create(input);
   }
 
   async listChatAnswerEventsByConversationId(workspaceId: string, conversationId: string): Promise<AuditEventRecord[]> {

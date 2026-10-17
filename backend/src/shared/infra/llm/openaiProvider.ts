@@ -219,11 +219,18 @@ const buildResponseFormat = (
 
 /**
  * First-party OpenAI only. An `openai-compatible` endpoint (Azure, OpenRouter, a local
- * server) or an `openai` configuration pointed at another base URL may reject
- * parameters it does not know, so it keeps the ordinary request.
+ * server) may reject parameters it does not know, so it keeps the ordinary request.
+ *
+ * Classified by provider plus the typed `openAIDataResidency` signal, not by whether
+ * `baseUrl` is set: a resolved EU or US data-residency endpoint still carries a `baseUrl` and
+ * is still genuinely OpenAI's own API, so a bare `!config.baseUrl` check would wrongly treat a
+ * residency endpoint as third-party and silently drop prompt-cache routing under it.
+ * `openAIDataResidency` is only ever set by this module's own trusted resolution path
+ * (`providerConfig` / `WorkspaceLlmCapabilityResolver`), so its presence is itself the signal
+ * that this config was not hand-assembled with an arbitrary base URL.
  */
 const isFirstPartyOpenAI = (config: LlmCapabilityConfig): boolean =>
-  config.provider === "openai" && !config.baseUrl;
+  config.provider === "openai" && config.openAIDataResidency !== undefined;
 
 const openAICacheCapability = (config: LlmCapabilityConfig): ProviderCacheCapability =>
   isFirstPartyOpenAI(config) ? "implicit" : "unsupported";

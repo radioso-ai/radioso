@@ -5,6 +5,7 @@ import type {
   LlmCapabilityResolvedBy,
   LlmCapabilitySelection,
   LlmProviderName,
+  OpenAIDataResidency,
   ResolvedLlmConfig,
 } from "../../shared/infra/llm/providerTypes.js";
 import type {
@@ -84,7 +85,7 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
     const { provider, model, resolvedBy } = await this.resolveSelection(capability, input);
 
     const { apiKey, source } = await this.resolveApiKey(input.workspaceId, provider, capability);
-    const baseUrl = this.resolveBaseUrl(
+    const { baseUrl, openAIDataResidency } = this.resolveProviderEndpoint(
       provider,
       capability,
       envDefault,
@@ -99,6 +100,7 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
       apiKey,
       resolvedBy,
       ...(baseUrl ? { baseUrl } : {}),
+      ...(openAIDataResidency ? { openAIDataResidency } : {}),
     };
   }
 
@@ -201,28 +203,24 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
     );
   }
 
-  private resolveBaseUrl(
+  private resolveProviderEndpoint(
     provider: LlmProviderName,
     capability: LlmCapabilityName,
     envDefault: LlmCapabilityDefault,
     overrideBaseUrl: string | undefined,
     credentialSource: LlmCredentialSource,
-  ): string | undefined {
-    if (provider !== "openai" && provider !== "openai-compatible") {
-      return undefined;
+  ): { baseUrl?: string; openAIDataResidency?: OpenAIDataResidency } {
+    if (provider === "openai") {
+      return this.resolveOpenAIEndpoint(credentialSource);
+    }
+
+    if (provider !== "openai-compatible") {
+      return {};
     }
 
     const inheritedBaseUrl = provider === envDefault.provider ? envDefault.baseUrl : undefined;
     const envBaseUrl = this.deps.envBaseUrls?.[provider];
     const baseUrl = overrideBaseUrl ?? inheritedBaseUrl ?? envBaseUrl;
-
-    if (provider === "openai") {
-      // The platform's data-residency setting belongs to the platform's own OpenAI project.
-      // A workspace's BYOK key belongs to a project it controls, with its own residency
-      // already chosen, so a BYOK call always gets the SDK's own default endpoint.
-      return credentialSource === "environment" ? baseUrl : undefined;
-    }
-
     if (!baseUrl) {
       throw new ProviderConfigurationError(
         "openai-compatible requires OPENAI_COMPATIBLE_BASE_URL to be configured; selecting this provider for a workspace without a base URL would silently call the default OpenAI endpoint.",
@@ -235,6 +233,29 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
         },
       );
     }
-    return baseUrl;
+    return { baseUrl };
+  }
+
+  /**
+   * Native `openai` never takes an override or inherited binding base URL: the only endpoint a
+   * call may ever reach is the platform's own resolved data-residency endpoint (`providerConfig`,
+   * the single source, via `this.deps.defaults.openAIPlatformResidency`), and only when the call
+   * is actually using the platform key. A workspace's BYOK key keeps the residency its own
+   * project already chose — the SDK's default (global) endpoint — regardless of this setting.
+   */
+  private resolveOpenAIEndpoint(
+    credentialSource: LlmCredentialSource,
+  ): { baseUrl?: string; openAIDataResidency: OpenAIDataResidency } {
+    if (credentialSource !== "environment") {
+      return { openAIDataResidency: "global" };
+    }
+    const platform = this.deps.defaults.openAIPlatformResidency;
+    if (!platform) {
+      return { openAIDataResidency: "global" };
+    }
+    return {
+      openAIDataResidency: platform.residency,
+      ...(platform.baseUrl ? { baseUrl: platform.baseUrl } : {}),
+    };
   }
 }

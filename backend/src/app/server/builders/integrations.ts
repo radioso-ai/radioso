@@ -30,7 +30,7 @@ import {
   StaticCustomerEmailProviderRegistry,
   customerEmailOauthProviderIds,
 } from "../../../modules/customerEmail/public.js";
-import { openAIBaseUrlForResidency, resolveLlmConfig } from "../../../shared/infra/llm/providerConfig.js";
+import { resolveLlmConfig } from "../../../shared/infra/llm/providerConfig.js";
 import { LlmProviderRegistry } from "../../../shared/infra/llm/providerRegistry.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { AgentSkillRepository } from "../../../modules/agentSkills/public.js";
@@ -137,7 +137,6 @@ export const buildLlmCapabilityResolver = (input: {
       resolveEnvApiKey: (provider) => keys[provider],
     },
     envBaseUrls: {
-      openai: openAIBaseUrlForResidency(input.env.OPENAI_DATA_RESIDENCY),
       "openai-compatible": input.env.OPENAI_COMPATIBLE_BASE_URL,
     },
   });
@@ -151,16 +150,19 @@ export const buildLlmRegistry = (
     metricsRegistry?: Pick<MetricsRegistry, "incrementCounter" | "observeHistogram"> | null;
   } = {},
 ): LlmProviderRegistry => {
-  const llmRegistry = new LlmProviderRegistry(resolveLlmConfig(env), logger, {
+  const config = resolveLlmConfig(env);
+  const llmRegistry = new LlmProviderRegistry(config, logger, {
     resolver: options.resolver,
     metrics: options.metricsRegistry,
   });
   logger.info({ llmProviders: llmRegistry.describe() }, "Resolved LLM providers");
-  // Content-free: region codes only, never a key, URL, or any other credential-bearing value.
-  logger.info(
-    { openai: env.OPENAI_DATA_RESIDENCY, emailChannelRegion: env.RESEND_CHANNEL_REGION },
-    "Resolved provider residency",
-  );
+  // Content-free: a region code only, never a key or URL. Only when a platform OpenAI key is
+  // configured — a deployment running entirely on workspace (BYOK) OpenAI keys has no platform
+  // residency to report. The LLM builder does not read email-channel config, so this is OpenAI
+  // only; see the email channel's own composition for its region.
+  if (config.openAIPlatformResidency) {
+    logger.info({ openai: config.openAIPlatformResidency.residency }, "Resolved provider residency");
+  }
   return llmRegistry;
 };
 

@@ -486,7 +486,7 @@ describe("DocumentProcessingWorker claim-expiry attempt exhaustion", () => {
       undefined,
       JOB_LEASE_MS,
       undefined,
-      errorReporter as never,
+      errorReporter,
     );
 
     const lastClaimedAt = await exhaustAttemptsAtRepositoryLayer(jobRepository, job.id, new Date());

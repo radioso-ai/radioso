@@ -106,6 +106,8 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     const { workspace, conversation } = await seedConversation();
     const sessionId = conversation.id;
     const assistantMessageId = randomUUID();
+    const executionId = randomUUID();
+    const startedMessageId = randomUUID();
 
     const { message } = await persistence.completeAssistantTurn({
       workspaceId: workspace.id,
@@ -135,6 +137,8 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
         state: {
           sessionId,
           routineId: "routine_1",
+          executionId,
+          startedMessageId,
           path: ["ask_email", "ask_message"],
           variables: { email: "alex@example.com" },
           attempts: { ask_email: 1, ask_message: 2 },
@@ -160,8 +164,11 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
       path: string[];
       variables: unknown;
       expires_at: Date | null;
+      execution_id: string | null;
+      started_message_id: string | null;
+      started_execution_id: string | null;
     }>(
-      "SELECT status, attempts, reask_count, path, variables, expires_at FROM routine_states WHERE session_id = $1",
+      "SELECT status, attempts, reask_count, path, variables, expires_at, execution_id, started_message_id, started_execution_id FROM routine_states WHERE session_id = $1",
       [sessionId],
     );
     expect(savedState).toMatchObject({
@@ -170,9 +177,61 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
       reask_count: 2,
       path: ["ask_email", "ask_message"],
       variables: { email: "alex@example.com" },
+      execution_id: executionId,
+      started_message_id: startedMessageId,
+      started_execution_id: executionId,
     });
     // active (not suspended) state gets a TTL-derived expiry, never null
     expect(savedState.expires_at).toBeInstanceOf(Date);
+  });
+
+  it("keeps an old-revision execution anchor unknown, then stores a new execution's anchor", async () => {
+    const { conversation } = await seedConversation();
+    const store = new RoutineStateRepository(database.kysely, 60_000);
+    const previousExecutionId = randomUUID();
+    const oldRevisionExecutionId = randomUUID();
+    const nextExecutionId = randomUUID();
+    const firstAnchor = randomUUID();
+    const nextAnchor = randomUUID();
+    await store.save({
+      sessionId: conversation.id,
+      routineId: "routine_1",
+      executionId: previousExecutionId,
+      startedMessageId: firstAnchor,
+      path: ["ask_contact"],
+      variables: {},
+      status: "active",
+    });
+    await expect(store.loadActive({ sessionId: conversation.id })).resolves.toMatchObject({
+      executionId: previousExecutionId,
+      startedMessageId: firstAnchor,
+    });
+
+    await database.query(
+      `INSERT INTO routine_states (session_id, routine_id, execution_id, path, variables, attempts, reask_count, status, expires_at, updated_at)
+       VALUES ($1, 'routine_1', $2, ARRAY['ask_again'], '{}'::jsonb, '{}'::jsonb, 0, 'active', now() + interval '1 hour', now())
+       ON CONFLICT (session_id) DO UPDATE SET execution_id = EXCLUDED.execution_id, path = EXCLUDED.path, updated_at = now()`,
+      [conversation.id, oldRevisionExecutionId],
+    );
+
+    const oldRevisionState = await store.loadActive({ sessionId: conversation.id });
+    expect(oldRevisionState?.executionId).toBe(oldRevisionExecutionId);
+    expect(oldRevisionState).not.toHaveProperty("startedMessageId");
+
+    await store.save({
+      sessionId: conversation.id,
+      routineId: "routine_1",
+      executionId: nextExecutionId,
+      startedMessageId: nextAnchor,
+      path: ["ask_contact"],
+      variables: {},
+      status: "active",
+    });
+
+    await expect(store.loadActive({ sessionId: conversation.id })).resolves.toMatchObject({
+      executionId: nextExecutionId,
+      startedMessageId: nextAnchor,
+    });
   });
 
   it("round-trips the re-ask count through the routine state repository", async () => {

@@ -2577,7 +2577,7 @@ describe("chat service streaming", () => {
     const agentRepository = new InMemoryAgentRepository();
     const agent = await agentRepository.create("workspace-1", { name: "Support" });
     const conversation = await conversationRepository.create({ workspaceId: "workspace-1", agentId: agent.id });
-    await messageRepository.create({
+    const activationMessage = await messageRepository.create({
       conversationId: conversation.id,
       workspaceId: "workspace-1",
       role: "user",
@@ -2588,18 +2588,34 @@ describe("chat service streaming", () => {
     const completedState = {
       sessionId: conversation.id,
       routineId: "refund-flow",
+      executionId: "refund-execution",
+      startedMessageId: activationMessage.id,
       path: ["await-approval", decision.terminal.stepId],
       variables: { order: "A-17" },
       status: "completed" as const,
       metadata: { terminalKind: decision.terminal.kind, terminalStepId: decision.terminal.stepId },
     };
-    vi.spyOn(conversationEngine, "resumeAwaitingDecision").mockResolvedValue({
-      resumed: true,
-      response: { answer: "Resumed." },
-      nextState: null,
-      completedState,
-      ...decision,
+    vi.spyOn(conversationEngine, "resumeAwaitingDecision").mockImplementation(async (resumeInput) => {
+      await resumeInput.suspendedReader.loadSuspended({ sessionId: resumeInput.sessionId });
+      return {
+        resumed: true,
+        response: { answer: "Resumed." },
+        nextState: null,
+        completedState,
+        ...decision,
+      };
     });
+    const suspendedRoutineReader: NonNullable<ChatServiceOptions["suspendedRoutineReader"]> = {
+      loadSuspended: vi.fn(async () => ({
+        sessionId: conversation.id,
+        routineId: "refund-flow",
+        executionId: "refund-execution",
+        startedMessageId: activationMessage.id,
+        path: ["await-approval"],
+        variables: { order: "A-17" },
+        status: "suspended" as const,
+      })),
+    };
     const service = makeChatService(
       conversationRepository,
       messageRepository,
@@ -2619,7 +2635,7 @@ describe("chat service streaming", () => {
             runner: {} as never,
           })),
         },
-        suspendedRoutineReader: { loadSuspended: vi.fn(async () => null) },
+        suspendedRoutineReader,
         assistantTurnPersistence,
       },
     );
@@ -2674,6 +2690,7 @@ describe("chat service streaming", () => {
         reason,
         routineId: "refund-flow",
         collected: { order: "A-17" },
+        routineStartMessageId: activationMessage.id,
       }),
     });
   });

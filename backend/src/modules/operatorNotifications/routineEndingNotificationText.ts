@@ -110,7 +110,8 @@ export const formatRoutineEndingNotification = (
   const intro = renderTemplate(notification.notice?.intro, notification.collected, { singleLine: false });
   const headline = [defaults.headline, ...(intro ? [intro] : [])];
   const collected = collectedBlock(notification.collected);
-  const sections: string[][] = [headline, ...(collected ? [collected] : []), footerLines(notification)];
+  const aiSummary = notification.aiSummary?.trim();
+  const sections: string[][] = [headline, ...(collected ? [collected] : []), ...(aiSummary ? [["AI summary:", `  ${aiSummary}`]] : []), footerLines(notification)];
   return {
     subject: subject || (routineName ? defaults.routineSubject(routineName) : defaults.genericSubject),
     lines: sections.flatMap((section, index) => (index === 0 ? section : ["", ...section])),

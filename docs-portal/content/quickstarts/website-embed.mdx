@@ -158,7 +158,7 @@ The embed flow depends on the workspace public-chat capability. If website embed
 
 Add the full origin, including protocol, host, and port. `http://127.0.0.1:4321` and `http://localhost:4321` are different origins.
 
-Use **Allow all origins** only when the widget should launch from any site that has the install code. In settings this is stored as `*` in the allowed-origin list. Leaving the origin list empty is a deny-all state.
+Use **Any website** only when the widget should launch from any site that has the install code. In settings this is stored as `*` in the allowed-origin list. Leaving the origin list empty is a deny-all state.
 
 ### Install the launcher snippet
 
@@ -230,8 +230,8 @@ When you move beyond the local harness:
 
 The production sign-off question is: can our approved site launch the assistant, and can a copy of the snippet on an unapproved site fail closed?
 
-## What to do next
+## Read next
 
-- If the embed launches but answers are weak, go to [Document upload](/guides/document-upload) and [Agents and skills](/api/agents-and-skills).
-- If the widget should be live soon, review [Deployment](/operators/deployment).
-- To see exactly what a visit records and where operators can read it, see [Visitor data](/operators/visitor-data).
+- [Invite your team](/quickstarts/invite-team) — give the people who handle hand-offs access to the workspace.
+- [Deployment](/operators/deployment) — prepare the widget and the rest of the stack for production.
+- [Visitor data](/operators/visitor-data) — see what a visit records and where operators read it.

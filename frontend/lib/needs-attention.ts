@@ -85,6 +85,8 @@ export interface InboxItem {
   agentId?: string | null
   agentName?: string | null
   agentInternalName?: string | null
+  /** The structured source channel, when the source exposes it. */
+  channel?: string | null
   /**
    * The conversation's last-message time, for the queue row's "last message" column.
    * Handoffs and feedback derive this from data already loaded for the inbox;
@@ -198,6 +200,7 @@ export const buildInboxModel = (input: {
     timestamp: decision.createdAt,
     escalatedAt: decision.createdAt,
     agentId: decision.agentId,
+    channel: decision.channel,
     handle: decision.handle,
     // PendingApprovalDecision carries no conversation-level last-message time.
     lastMessageAt: null,
@@ -254,6 +257,7 @@ export const buildInboxModel = (input: {
       agentId: turn.agentId,
       agentName: turn.agentName,
       agentInternalName: turn.agentInternalName,
+      channel: turn.channel,
     }] : []
   })
 
@@ -290,6 +294,7 @@ export interface HandoffCandidateSource {
   agentId?: string | null
   agentName?: string | null
   agentInternalName?: string | null
+  sourceChannel?: string | null
   anonymousSessionId?: string | null
 }
 
@@ -324,6 +329,7 @@ export const toHandoffInboxItem = (conversation: HandoffCandidateSource): InboxI
     agentId: conversation.agentId,
     agentName: conversation.agentName,
     agentInternalName: conversation.agentInternalName,
+    channel: conversation.sourceChannel,
     lastMessageAt: conversation.updatedAt,
     takenBy: handoff ? conversationOwner(handoff) : undefined,
     anonymousSessionId: conversation.anonymousSessionId,
@@ -504,6 +510,7 @@ export interface InboxFilters {
   search: string
   type: EscalationType | 'all'
   agentId: 'all' | (string & {})
+  channel: 'all' | (string & {})
   takenBy: TakenByFilter
 }
 
@@ -511,6 +518,7 @@ export const EMPTY_INBOX_FILTERS: InboxFilters = {
   search: '',
   type: 'all',
   agentId: 'all',
+  channel: 'all',
   takenBy: TAKEN_BY_ANYONE,
 }
 
@@ -546,7 +554,7 @@ const matchesTakenBy = (
   return item.takenBy.userId === (filter === TAKEN_BY_ME ? currentUserId : filter)
 }
 
-/** Applies the queue's search/type/agent/taken-by filters together, preserving item order. */
+/** Applies the queue's search/type/agent/channel/taken-by filters together, preserving item order. */
 export const filterInboxItems = (
   items: readonly InboxItem[],
   filters: InboxFilters,
@@ -554,6 +562,7 @@ export const filterInboxItems = (
 ): InboxItem[] => items.filter((item) =>
   (filters.type === 'all' || item.type === filters.type)
   && (filters.agentId === 'all' || item.agentId === filters.agentId)
+  && (filters.channel === 'all' || item.channel === filters.channel)
   && matchesInboxSearch(item, filters.search)
   && matchesTakenBy(item, filters.takenBy, context.currentUserId))
 
@@ -594,6 +603,19 @@ export const listInboxAgents = (items: readonly InboxItem[]): InboxAgentOption[]
     })
   }
   return [...byId.values()]
+}
+
+export interface InboxChannelOption {
+  channel: string
+}
+
+/** Distinct structured source channels referenced by the open queue, in first-seen order. */
+export const listInboxChannels = (items: readonly InboxItem[]): InboxChannelOption[] => {
+  const channels = new Set<string>()
+  for (const item of items) {
+    if (item.channel) channels.add(item.channel)
+  }
+  return [...channels].map((channel) => ({ channel }))
 }
 
 export interface InboxOperatorOption {

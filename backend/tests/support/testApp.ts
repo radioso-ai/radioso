@@ -30,6 +30,7 @@ import { AccountInvitationService } from "../../src/modules/account/services/acc
 import { ApprovalDecisionService } from "../../src/modules/approvals/public.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { EmailVerificationService } from "../../src/modules/auth/services/emailVerificationService.js";
+import { AuthFunnelService } from "../../src/modules/auth/services/authFunnelService.js";
 import { PasswordResetService } from "../../src/modules/auth/services/passwordResetService.js";
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
 import { ReviewTurnAuditReader } from "../../src/modules/chat/contracts/index.js";
@@ -142,6 +143,7 @@ import type { VectorCandidateSearchPort } from "../../src/modules/retrieval/doma
 import type { ChunkCandidateHydratorPort } from "../../src/modules/retrieval/infra/chunkCandidateHydrator.js";
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
 import { WorkspaceSummaryService } from "../../src/modules/workspace/services/workspaceSummaryService.js";
+import { InMemoryWorkspaceSetupStateRepository } from "./inMemoryWorkspaceSetupState.js";
 import { WorkspaceSessionService } from "../../src/modules/auth/services/workspaceSessionService.js";
 import {
   ApiPrincipalAuthenticator,
@@ -341,6 +343,7 @@ import {
   InMemoryFederatedIdentityRepository,
   InMemorySessionRepository,
   InMemoryEmailVerificationTokenRepository,
+  InMemoryAuthFunnelRepository,
   InMemoryPasswordResetTokenRepository,
   InMemoryWorkspaceRepository,
   InMemoryAgentRepository,
@@ -387,9 +390,6 @@ export const createTestEnv = (): Env => ({
   OPS_EVENT_WEBHOOK_MIN_ERROR_SEVERITY: "error",
   OPS_EVENT_WEBHOOK_QUEUE_LIMIT: 500,
   NOTIFICATION_RECIPIENT_CONFIRMATION_ENABLED: true,
-  SLACK_INBOUND_EVENT_RETENTION_DAYS: 30,
-  EXTERNAL_MCP_TOOL_CALL_TIMEOUT_MS: 30_000,
-  ANSWER_COVERAGE_SHADOW_ASSESSOR_ENABLED: true,
   GOOGLE_CLOUD_PROJECT: "radioso-test",
   DATABASE_URL: "postgres://test:test@localhost:5432/test",
   DB_POOL_MAX: 10,
@@ -409,8 +409,13 @@ export const createTestEnv = (): Env => ({
   PUBLIC_CHAT_SESSION_SECRET: "00112233445566778899aabbccddeeff",
   SESSION_TTL_HOURS: 168,
   AUTH_AUTO_VERIFY_EMAIL: false,
+  AUTH_EXPOSE_EMAIL_VERIFICATION_LINK: false,
+  AUTH_PENDING_REGISTRATION_TTL_MINUTES: 15,
   AUTH_RATE_LIMIT_WINDOW_MS: 60_000,
   AUTH_RATE_LIMIT_MAX_ATTEMPTS: 10,
+  SLACK_INBOUND_EVENT_RETENTION_DAYS: 7,
+  EXTERNAL_MCP_TOOL_CALL_TIMEOUT_MS: 30_000,
+  ANSWER_COVERAGE_SHADOW_ASSESSOR_ENABLED: true,
   PASSWORD_RESET_TOKEN_TTL_MINUTES: 30,
   EMAIL_VERIFICATION_TOKEN_TTL_MINUTES: 30,
   UPLOAD_RATE_LIMIT_MAX_ATTEMPTS: 20,
@@ -1028,7 +1033,17 @@ export const createTestDependencies = (overrides: {
     }),
   );
   const sessionRepository = new InMemorySessionRepository();
+  const emailVerificationTokenRepository = new InMemoryEmailVerificationTokenRepository();
+  const passwordResetTokenRepository = new InMemoryPasswordResetTokenRepository();
   const federatedIdentityRepository = new InMemoryFederatedIdentityRepository();
+  const authFunnelRepository = new InMemoryAuthFunnelRepository({
+    emailVerificationTokens: emailVerificationTokenRepository,
+    users: userRepository,
+    sessions: sessionRepository,
+    listMemberships: (userId) => accountAccessService.listUserMemberships(userId),
+    passwordResetTokens: passwordResetTokenRepository,
+    federatedIdentities: federatedIdentityRepository,
+  });
   const machineAccessRepository = new InMemoryMachineAccessRepository();
   const ingestionSettingsRepository = new InMemoryIngestionSettingsRepository();
   const retrievalSettingsRepository = new InMemoryRetrievalSettingsRepository();
@@ -1500,7 +1515,7 @@ export const createTestDependencies = (overrides: {
       };
     },
   } satisfies TurnRouter;
-  const workspaceSummaryService = new WorkspaceSummaryService(documentRepository, conversationRepository, {
+  const workspaceSummaryService = new WorkspaceSummaryService(documentRepository, conversationRepository, new InMemoryWorkspaceSetupStateRepository(), {
     websiteCrawlerEnabled: env.WEBSITE_CRAWLER_ENABLED,
   });
   const abuseControlService = new AbuseControlService(
@@ -2647,7 +2662,10 @@ export const createTestDependencies = (overrides: {
       },
     },
     proposalDetail: {
-      getProposalDetail: async () => { throw notFound("Proposal not found"); },
+      getProposalDetail: async (input) => {
+        if (!operatorCopilotService) throw new Error("Operator Copilot proposal service is not initialized");
+        return operatorCopilotService.getProposalDetail(input);
+      },
     },
     retrievalAuthoring,
     agentSettings: agentService,
@@ -2712,6 +2730,7 @@ export const createTestDependencies = (overrides: {
     userRepository,
     sessionRepository,
     federatedIdentityRepository,
+    authFunnelRepository,
     workspaceService,
     accountAccessService,
     accountInvitationService,
@@ -2852,18 +2871,23 @@ export const createTestDependencies = (overrides: {
       accountRepository,
       userRepository,
       sessionRepository,
-      federatedIdentityRepository,
+      authFunnelRepository,
       accountAccessService,
       workspaceService,
-      passwordResetTokenRepository: new InMemoryPasswordResetTokenRepository(),
+      passwordResetTokenRepository,
       mailService: createMailService({ MAIL_DRIVER: "noop" }),
     }),
     emailVerificationService: new EmailVerificationService({
       env,
       auditService,
       userRepository,
-      emailVerificationTokenRepository: new InMemoryEmailVerificationTokenRepository(),
+      emailVerificationTokenRepository,
       mailService: createMailService({ MAIL_DRIVER: "noop" }),
+    }),
+    authFunnelService: new AuthFunnelService({
+      env,
+      repository: authFunnelRepository,
+      auditService,
     }),
     workspaceService,
     workspaceSummaryService,

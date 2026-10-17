@@ -27,6 +27,7 @@ type McpChannelSetupMode = 'disabled' | 'enabled' | 'failed' | 'resolving'
 interface McpChannelSetup {
   mcpUrl: string
   mode: McpChannelSetupMode
+  publicApiUrl?: string
   retry?: () => void
 }
 
@@ -68,10 +69,11 @@ const useMcpChannelSetup = (): McpChannelSetup => {
   if (runtimeConfig.status === 'failed') return { mcpUrl: '', mode: 'failed', retry: runtimeConfig.retry }
   if (!runtimeConfig.isResolved) return RESOLVING_SETUP
 
-  return resolveMcpChannelSetup({
+  const setup = resolveMcpChannelSetup({
     dashboardOrigin,
     mcpUrl: runtimeConfig.mcpUrl,
   })
+  return setup.mode === 'enabled' ? { ...setup, publicApiUrl: runtimeConfig.publicApiUrl } : setup
 }
 
 function McpGuideLink({ children }: { children: string }) {
@@ -99,7 +101,17 @@ function ClientConfigContent({ setup, mcpUrl, secret }: { setup: McpClientSetup;
   )
 }
 
-function McpConnectedClients({ agentId, mcpUrl }: { agentId: string; mcpUrl: string }) {
+function McpConnectedClients({
+  agentId,
+  dashboardOrigin,
+  mcpUrl,
+  publicApiUrl,
+}: {
+  agentId: string
+  dashboardOrigin: string
+  mcpUrl: string
+  publicApiUrl: string
+}) {
   const engine = useAgentChannelCredentials(agentId, 'mcp')
   const [isPickerOpen, setIsPickerOpen] = useState(false)
   // Set while connecting a specific client; a rotation has no recorded client, so it falls back
@@ -152,7 +164,7 @@ function McpConnectedClients({ agentId, mcpUrl }: { agentId: string; mcpUrl: str
         onRotate={rotate}
       />
 
-      <WalkInAccessSection agentId={agentId} />
+      <WalkInAccessSection agentId={agentId} dashboardOrigin={dashboardOrigin} mcpUrl={mcpUrl} publicApiUrl={publicApiUrl} />
 
       <div className="flex justify-end">
         <McpGuideLink>MCP setup guide</McpGuideLink>
@@ -189,6 +201,7 @@ function McpConnectedClients({ agentId, mcpUrl }: { agentId: string; mcpUrl: str
 
 export function McpChannelCard({ agentId }: { agentId: string }) {
   const setup = useMcpChannelSetup()
+  const dashboardOrigin = useDashboardOrigin()
 
   if (setup.mode === 'resolving') {
     return (
@@ -254,7 +267,13 @@ export function McpChannelCard({ agentId }: { agentId: string }) {
       description={CARD_DESCRIPTION}
       headerEnd={<Badge variant="outline">Enabled</Badge>}
     >
-      <McpConnectedClients key={`${agentId}:mcp`} agentId={agentId} mcpUrl={setup.mcpUrl} />
+      <McpConnectedClients
+        key={`${agentId}:mcp`}
+        agentId={agentId}
+        dashboardOrigin={dashboardOrigin}
+        mcpUrl={setup.mcpUrl}
+        publicApiUrl={setup.publicApiUrl ?? ''}
+      />
     </SettingsCard>
   )
 }

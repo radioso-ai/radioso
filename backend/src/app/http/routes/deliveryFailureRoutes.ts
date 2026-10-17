@@ -15,6 +15,7 @@ const DEFAULT_PAGE_SIZE = 50;
 export const listDeliveryFailuresQuerySchema = z.object({
   state: z.enum(["open", "all"]).optional(),
   agentId: z.string().uuid().optional(),
+  channel: z.string().trim().min(1).max(100).optional(),
   cursor: z.string().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
 }).strict();
@@ -71,6 +72,7 @@ export const createDeliveryFailureRoutes = (dependencies: DeliveryFailureRouteDe
     const page = await failures.list(actorOf(res).workspaceId, {
       state: query.state ?? "open",
       agentId: query.agentId,
+      channel: query.channel,
       cursor: query.cursor,
       limit: query.limit ?? DEFAULT_PAGE_SIZE,
     });

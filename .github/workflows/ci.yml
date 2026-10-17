@@ -348,8 +348,18 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     env:
       INTEGRATION_DATABASE_URL: postgres://radioso_test_runner:radioso_test_runner@127.0.0.1:5432/radioso_test
+      ABUSE_CONTROL_TEST_REDIS_URL: redis://127.0.0.1:6379
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
 

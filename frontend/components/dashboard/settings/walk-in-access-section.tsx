@@ -21,6 +21,7 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { agentsApi, type AgentSettings, type AgentSettingsUpdate } from '@/lib/api'
+import { AgentDeveloperConnectBlock } from '@/components/dashboard/settings/agent-developer-connect-block'
 
 interface PublicAccessToggles {
   agentCardEnabled: boolean
@@ -51,7 +52,17 @@ export const parseWalkInBudget = (raw: string): number | null | undefined => {
   return parsed >= 1 && parsed <= 100_000 ? parsed : undefined
 }
 
-export function WalkInAccessSection({ agentId }: { agentId: string }) {
+export function WalkInAccessSection({
+  agentId,
+  dashboardOrigin,
+  mcpUrl,
+  publicApiUrl,
+}: {
+  agentId: string
+  dashboardOrigin: string
+  mcpUrl: string
+  publicApiUrl: string
+}) {
   const [agent, setAgent] = useState<AgentSettings | null>(null)
   const [description, setDescription] = useState('')
   const [budget, setBudget] = useState('')
@@ -182,26 +193,36 @@ export function WalkInAccessSection({ agentId }: { agentId: string }) {
       </div>
 
       {agent.publicAgentAccessEnabled ? (
-        <div className="space-y-2">
-          <Label className="text-foreground" htmlFor="agent-walk-in-budget">New conversations per hour</Label>
-          <Input
-            id="agent-walk-in-budget"
-            inputMode="numeric"
-            value={budget}
-            className="max-w-40"
-            placeholder="Deployment default"
-            onChange={(event) => setBudget(event.target.value)}
-            onBlur={() => {
-              const parsed = parseWalkInBudget(budget)
-              if (parsed === undefined) {
-                setError('Enter a whole number of conversations between 1 and 100000, or leave it empty.')
-                return
-              }
-              if (parsed !== agent.walkInConversationsPerHour) void save({ walkInConversationsPerHour: parsed })
-            }}
-          />
-          <p className="text-xs text-muted-foreground">Caps what one looping caller can spend from the workspace&rsquo;s conversation allowance.</p>
-        </div>
+        <>
+          <div className="space-y-2">
+            <Label className="text-foreground" htmlFor="agent-walk-in-budget">New conversations per hour</Label>
+            <Input
+              id="agent-walk-in-budget"
+              inputMode="numeric"
+              value={budget}
+              className="max-w-40"
+              placeholder="Deployment default"
+              onChange={(event) => setBudget(event.target.value)}
+              onBlur={() => {
+                const parsed = parseWalkInBudget(budget)
+                if (parsed === undefined) {
+                  setError('Enter a whole number of conversations between 1 and 100000, or leave it empty.')
+                  return
+                }
+                if (parsed !== agent.walkInConversationsPerHour) void save({ walkInConversationsPerHour: parsed })
+              }}
+            />
+            <p className="text-xs text-muted-foreground">Caps what one looping caller can spend from the workspace&rsquo;s conversation allowance.</p>
+          </div>
+          {agent.publicId ? (
+            <AgentDeveloperConnectBlock
+              dashboardOrigin={dashboardOrigin}
+              mcpUrl={mcpUrl}
+              publicApiUrl={publicApiUrl}
+              publicId={agent.publicId}
+            />
+          ) : null}
+        </>
       ) : null}
 
       {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}

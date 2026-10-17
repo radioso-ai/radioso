@@ -395,7 +395,7 @@ test("operator opens the agent to credential-free callers and rotates its public
   const confirm = page.getByRole("alertdialog", { name: "Rotate the public id?" });
   await expect(confirm.getByText(/disconnected on its next request/i)).toBeVisible();
   await confirm.getByRole("button", { name: "Cancel" }).click();
-  await expect(card.getByText(firstPublicId)).toBeVisible();
+  await expect(card.getByText(firstPublicId, { exact: true }).first()).toBeVisible();
 
   await card.getByRole("button", { name: "Rotate" }).click();
   await page.getByRole("alertdialog", { name: "Rotate the public id?" }).getByRole("button", { name: "Rotate" }).click();
@@ -409,4 +409,35 @@ test("operator opens the agent to credential-free callers and rotates its public
     publicAgentAccessEnabled: false,
   });
   await expect(card.getByLabel("New conversations per hour")).toHaveCount(0);
+});
+
+test("operator copies a credential-free connect block for agent developers", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {});
+  await stubRuntimeConfig(page, {
+    mcpUrl: MCP_SERVER_URL,
+    publicApiUrl: PUBLIC_API_URL,
+  });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=channels&anchor=mcp-channel`);
+
+  const card = page.locator("#mcp-channel");
+  await card.getByRole("switch", { name: "Allow connecting without a credential" }).click();
+
+  const share = card.getByRole("region", { name: "Share with agent developers" });
+  const publicId = await card.getByText(/^ag_/).innerText();
+  const endpoint = `${MCP_SERVER_URL}/a/${publicId}`;
+  const discoveryCard = `${PUBLIC_API_URL}/.well-known/agent-card/${publicId}.json`;
+
+  await expect(share).toBeVisible();
+  await expect(share.getByText(endpoint, { exact: true })).toBeVisible();
+  await expect(share.getByText(discoveryCard, { exact: true })).toBeVisible();
+  await expect(share.getByText('server_url:')).toBeVisible();
+  await expect(share.getByText("mcpServers").first()).toBeVisible();
+  await expect(share.getByText(`Set the MCP server endpoint to ${endpoint}.`)).toBeVisible();
+  await expect(share.getByText(/choose no authentication/i)).toBeVisible();
+  await expect(share.getByText("Authorization")).toHaveCount(0);
+  await expect(share.getByText(/radioso_mcp_/)).toHaveCount(0);
+
+  await share.getByRole("button", { name: "Copy agent endpoint" }).click();
 });

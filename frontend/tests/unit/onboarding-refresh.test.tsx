@@ -7,13 +7,19 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/lib/api-client'
 import { workspaceApi } from '@/lib/api-workspace'
 import { useWorkspaceOnboarding, type WorkspaceOnboardingState } from '@/lib/onboarding'
-import { markOnboardingActive } from '@/lib/onboarding-storage'
 
 ;(globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
 vi.mock('@/lib/api-workspace', async () => {
   const actual = await vi.importActual<typeof import('@/lib/api-workspace')>('@/lib/api-workspace')
-  return { ...actual, workspaceApi: { ...actual.workspaceApi, getSummary: vi.fn() } }
+  return {
+    ...actual,
+    workspaceApi: {
+      ...actual.workspaceApi,
+      getSummary: vi.fn(),
+      updateSetupState: vi.fn(),
+    },
+  }
 })
 
 const flush = async () => {
@@ -22,14 +28,14 @@ const flush = async () => {
   })
 }
 
-const mountOnboarding = (workspaceCount: number) => {
+const mountOnboarding = () => {
   const container = document.createElement('div')
   document.body.append(container)
   const root = createRoot(container)
   const states: WorkspaceOnboardingState[] = []
 
   const Probe = () => {
-    const state = useWorkspaceOnboarding('workspace-1', workspaceCount)
+    const state = useWorkspaceOnboarding('workspace-1')
     useEffect(() => { states.push(state) }, [state])
     return null
   }
@@ -52,6 +58,7 @@ const mountOnboarding = (workspaceCount: number) => {
 describe('useWorkspaceOnboarding refresh', () => {
   afterEach(() => {
     vi.mocked(workspaceApi.getSummary).mockReset()
+    vi.mocked(workspaceApi.updateSetupState).mockReset()
     window.localStorage.clear()
     vi.unstubAllGlobals()
   })
@@ -60,7 +67,7 @@ describe('useWorkspaceOnboarding refresh', () => {
     vi.mocked(workspaceApi.getSummary).mockRejectedValue(
       new ApiError({ status: 404, error: { code: 'not_found', message: 'Workspace not found' } }),
     )
-    const mounted = mountOnboarding(1)
+    const mounted = mountOnboarding()
 
     await mounted.render()
     await flush()
@@ -73,10 +80,116 @@ describe('useWorkspaceOnboarding refresh', () => {
     await mounted.unmount()
   })
 
+  it('treats a summary from an older backend without setup state as no server decision', async () => {
+    vi.mocked(workspaceApi.getSummary).mockResolvedValue({
+      documentCount: 0,
+      readyDocumentCount: 0,
+      pendingDocumentCount: 0,
+      sampleDocumentCount: 0,
+      sampleDocumentSlugs: [],
+      conversationCount: 0,
+      hasDocuments: false,
+      hasPendingDocuments: false,
+      hasReadyDocuments: false,
+      hasCompletedChat: false,
+      sampleDocumentsImported: false,
+      websiteCrawlerEnabled: true,
+    })
+    const mounted = mountOnboarding()
+
+    await mounted.render()
+    await flush()
+    await flush()
+
+    expect(mounted.latest()?.shouldShowFirstRun).toBe(false)
+    expect(mounted.latest()?.isOnboardingActive).toBe(false)
+    expect(mounted.latest()?.isOnboardingCompleted).toBe(false)
+    await mounted.unmount()
+  })
+
+  it('keeps the completed-chat fallback when an older backend omits setup state', async () => {
+    vi.mocked(workspaceApi.getSummary).mockResolvedValue({
+      documentCount: 0,
+      readyDocumentCount: 0,
+      pendingDocumentCount: 0,
+      sampleDocumentCount: 0,
+      sampleDocumentSlugs: [],
+      conversationCount: 1,
+      hasDocuments: false,
+      hasPendingDocuments: false,
+      hasReadyDocuments: false,
+      hasCompletedChat: true,
+      sampleDocumentsImported: false,
+      websiteCrawlerEnabled: true,
+    })
+    const mounted = mountOnboarding()
+
+    await mounted.render()
+    await flush()
+    await flush()
+
+    expect(mounted.latest()?.shouldShowFirstRun).toBe(false)
+    expect(mounted.latest()?.isOnboardingActive).toBe(false)
+    expect(mounted.latest()?.isOnboardingCompleted).toBe(true)
+    await mounted.unmount()
+  })
+
+  it('keeps first run active after a failed dismissal and allows a successful retry', async () => {
+    vi.mocked(workspaceApi.getSummary).mockResolvedValue({
+      documentCount: 0,
+      readyDocumentCount: 0,
+      pendingDocumentCount: 0,
+      sampleDocumentCount: 0,
+      sampleDocumentSlugs: [],
+      conversationCount: 0,
+      hasDocuments: false,
+      hasPendingDocuments: false,
+      hasReadyDocuments: false,
+      hasCompletedChat: false,
+      sampleDocumentsImported: false,
+      websiteCrawlerEnabled: true,
+      setup: {
+        purpose: null,
+        dismissed: false,
+        skippedSteps: [],
+        shouldShowFirstRun: true,
+        hasDirectivesOrRoutines: false,
+        hasNotifyDestination: false,
+        hasNotifyDeliveryConfirmed: false,
+        hasCredential: false,
+      },
+    })
+    vi.mocked(workspaceApi.updateSetupState)
+      .mockRejectedValueOnce(new ApiError({ status: 404, error: { code: 'not_found', message: 'Route not found' } }))
+      .mockResolvedValueOnce({
+        purpose: null,
+        dismissed: true,
+        skippedSteps: [],
+        shouldShowFirstRun: false,
+        hasDirectivesOrRoutines: false,
+        hasNotifyDestination: false,
+        hasNotifyDeliveryConfirmed: false,
+        hasCredential: false,
+      })
+    const mounted = mountOnboarding()
+    await mounted.render()
+    await flush()
+    await flush()
+
+    let persisted = true
+    await act(async () => { persisted = await mounted.latest()!.markCompleted() })
+    expect(persisted).toBe(false)
+    expect(mounted.latest()?.shouldShowFirstRun).toBe(true)
+
+    await act(async () => { persisted = await mounted.latest()!.markCompleted() })
+    expect(persisted).toBe(true)
+    expect(mounted.latest()?.shouldShowFirstRun).toBe(false)
+    await mounted.unmount()
+  })
+
   it('emits each observed first-run step once per workspace, including a completed chat', async () => {
     const fetch = vi.fn().mockResolvedValue({ ok: true })
     vi.stubGlobal('fetch', fetch)
-    markOnboardingActive('workspace-1')
     vi.mocked(workspaceApi.getSummary).mockResolvedValue({
       documentCount: 1,
       readyDocumentCount: 1,
@@ -90,15 +203,25 @@ describe('useWorkspaceOnboarding refresh', () => {
       hasCompletedChat: true,
       sampleDocumentsImported: true,
       websiteCrawlerEnabled: true,
+      setup: {
+        purpose: null,
+        dismissed: false,
+        skippedSteps: [],
+        shouldShowFirstRun: true,
+        hasDirectivesOrRoutines: false,
+        hasNotifyDestination: false,
+        hasNotifyDeliveryConfirmed: false,
+        hasCredential: false,
+      },
     })
 
-    const firstMount = mountOnboarding(1)
+    const firstMount = mountOnboarding()
     await firstMount.render()
     await flush()
     await flush()
     await firstMount.unmount()
 
-    const secondMount = mountOnboarding(1)
+    const secondMount = mountOnboarding()
     await secondMount.render()
     await flush()
     await flush()

@@ -44,6 +44,7 @@ describe("decisions contract", () => {
         contentHash: expect.any(Object),
         deadline: expect.any(Object),
         createdAt: expect.any(Object),
+        channel: expect.any(Object),
       }),
       required: expect.arrayContaining([
         "handle",
@@ -56,6 +57,7 @@ describe("decisions contract", () => {
         "contentHash",
         "deadline",
         "createdAt",
+        "channel",
       ]),
     });
   });

@@ -10,6 +10,7 @@ import { WorkspaceRepository } from "../../src/db/repositories/workspaceReposito
 import { AccountAccessService, AccountInvitationService } from "../../src/modules/account/public.js";
 import { PostgresOrganizationProvisioner } from "../../src/modules/auth/infra/postgresOrganizationProvisioner.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
+import { AuthFunnelRepository } from "../../src/db/repositories/authFunnelRepository.js";
 import { WorkspaceService } from "../../src/modules/workspace/public.js";
 import { Database } from "../../src/shared/infra/database.js";
 import {
@@ -183,6 +184,7 @@ describeIntegration("PostgresOrganizationProvisioner", () => {
       userRepository,
       sessionRepository: new InMemorySessionRepository(),
       federatedIdentityRepository: new UserFederatedIdentityRepository(database.kysely),
+      authFunnelRepository: new AuthFunnelRepository(database.kysely),
       workspaceService,
       accountAccessService,
       accountInvitationService: new AccountInvitationService(

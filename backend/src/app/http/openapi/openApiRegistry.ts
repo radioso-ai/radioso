@@ -279,6 +279,7 @@ export interface OpenApiSchemaCatalog {
   EmailVerificationResendRequestSchema: z.ZodTypeAny;
   EmailVerificationVerifyRequestSchema: z.ZodTypeAny;
   EmailVerificationVerifyResponseSchema: z.ZodTypeAny;
+  PendingRegistrationSessionResponseSchema: z.ZodTypeAny;
   LoginRequestSchema: z.ZodTypeAny;
   LoginResponseSchema: z.ZodTypeAny;
   RegistrationAvailabilityResponseSchema: z.ZodTypeAny;

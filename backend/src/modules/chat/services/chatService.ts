@@ -2123,7 +2123,9 @@ export class ChatService {
           conversationId: preferredError.conversationId,
           reason: "superseded",
           stage: preferredError.stage,
-          ...(cutReplyId ? { assistantMessageId: cutReplyId } : {}),
+          ...(cutReplyId
+            ? { storedReply: { assistantMessageId: cutReplyId, partial: true } }
+            : assistantMessageId ? { storedReply: { assistantMessageId, partial: false } } : {}),
         };
         return;
       }

@@ -953,7 +953,7 @@ describe("VoiceTurnService", () => {
               if (newest !== index) {
                 const heard = emitted ? request.deliveredReply() : null;
                 if (emitted) heardParts.push(heard);
-                yield { type: "cancelled", conversationId, reason: "superseded", stage: "rendering", ...(heard ? { assistantMessageId: `cut-${index}` } : {}) };
+                yield { type: "cancelled", conversationId, reason: "superseded", stage: "rendering", ...(heard ? { storedReply: { assistantMessageId: `cut-${index}`, partial: true } } : {}) };
                 return;
               }
               emitted ||= step.event.type === "chunk";
@@ -1610,6 +1610,105 @@ describe("VoiceTurnService", () => {
         expect(chat.heardParts).toEqual([expect.objectContaining({ heardCharacterCount: 41, spokenCharacterCount: 46 })]);
         expect(notes.replyInterrupted).not.toHaveBeenCalled();
         expect(counted(metrics, "voice_reply_interrupted_total")).toEqual([{ partial: "yes" }]);
+      });
+
+      it("stores a Japanese reply as far as ElevenLabs played it, with its flush delta between sentences", async () => {
+        const chat = supersedingChat([
+          [
+            { atMs: 0, event: { type: "conversation", conversationId } },
+            { atMs: 100, event: { type: "chunk", text: "私たちは平日**九時**に開きます。土曜日は十時に開きます。日" } },
+            { atMs: 2_000, event: { type: "chunk", text: "曜日は休みです。" } },
+          ],
+          answered("はい。"),
+        ]);
+        const turns = service(chat, { notes: fakeNotes() });
+
+        await cutAt500(turns, { heardUntil: "私たちは平日九時に開きます。 \u200B土曜日は" });
+
+        expect(chat.heardParts).toEqual([expect.objectContaining({ text: "私たちは平日**九時**に開きます。", heardCharacterCount: 18, spokenCharacterCount: 26 })]);
+      });
+
+      it("warns once, with counts only, when the report does not match, and hands the teammate's replies back", async () => {
+        const claims = {
+          ...noOperatorReplies().claims,
+          claimPendingOperatorReplies: vi.fn()
+            .mockResolvedValueOnce([{ messageId: "77777777-7777-4777-8777-777777777771", text: "Yes, four works." }])
+            .mockResolvedValue([]),
+        };
+        const replies = { claims, operatorReplies: { claims, newClaimTurnId: () => "turn-1" } };
+        const chat = supersedingChat([fourSentences, answered("Yes, on Sundays too.")]);
+        const logger = fakeLogger();
+        const turns = service(chat, { notes: fakeNotes(), logger, operatorReplies: replies.operatorReplies });
+
+        await cutAt500(turns, { heardUntil: "We close at" });
+
+        const mismatches = logger.warn.mock.calls.filter(([, message]) => String(message).startsWith("Voice reply reported heard does not match"));
+        expect(mismatches).toEqual([[
+          { agentId, vendor: "elevenlabs", conversationId, reachedCharacterCount: 63, reportedCharacterCount: 11 },
+          "Voice reply reported heard does not match what reached the runtime; the stored part follows what reached it",
+        ]]);
+        expect(replies.claims.releaseOperatorReplies).toHaveBeenCalledWith(expect.objectContaining({ claimTurnId: "turn-1" }));
+      });
+
+      it("records a whole reply chat stored before the cut as the turn's reply, and marks it by the newer request's report", async () => {
+        const wholeBeforeCut = {
+          streamTurn: (request: VoiceChatTurnRequest) => (async function* (): AsyncGenerator<ChatStreamEvent> {
+            if (request.message === "When do you open?") {
+              yield { type: "conversation", conversationId };
+              yield { type: "chunk", text: "We open at nine. See you then!" };
+              await new Promise((resolve) => setTimeout(resolve, 1_000));
+              yield { type: "cancelled", conversationId, reason: "superseded", stage: "persisting", storedReply: { assistantMessageId, partial: false } };
+              return;
+            }
+            yield* answered("Yes.").map((step) => step.event);
+          })(),
+        };
+        const notes = fakeNotes();
+        const turns = service(wholeBeforeCut, { notes });
+
+        const cut = start(turns, input({ utterance: "When do you open?" }));
+        await vi.advanceTimersByTimeAsync(500);
+        // Its first sentence had reached the runtime, which played three words of it.
+        const next = start(turns, input({ utterance: "And Sundays?", heardUntil: "We open at" }));
+        await vi.runAllTimersAsync();
+        await Promise.all([cut, next]);
+
+        expect(notes.replyInterrupted).toHaveBeenCalledWith({
+          workspaceId, conversationId, assistantMessageId, heardCharacterCount: 10, spokenCharacterCount: 16,
+        });
+      });
+
+      it("measures a report against the turn it was about even when the request that sent it settled first", async () => {
+        // The first turn's chat finishes its whole reply only after the newer request has settled.
+        const lateWhole = {
+          streamTurn: (request: VoiceChatTurnRequest) => (async function* (): AsyncGenerator<ChatStreamEvent> {
+            if (request.message === "When do you open?") {
+              yield { type: "conversation", conversationId };
+              yield { type: "chunk", text: "We open at nine. See you then!" };
+              await new Promise((resolve) => setTimeout(resolve, 3_000));
+              yield { ...done(), answer: "We open at nine. See you then!" } as ChatStreamEvent;
+              return;
+            }
+            yield { type: "conversation", conversationId };
+            yield { type: "chunk", text: "Yes, on Sundays too." };
+            yield { ...done(), assistantMessageId: "88888888-8888-4888-8888-888888888888", answer: "Yes, on Sundays too." } as ChatStreamEvent;
+          })(),
+        };
+        const notes = fakeNotes();
+        const turns = service(lateWhole, { notes });
+
+        const late = start(turns, input({ utterance: "When do you open?" }));
+        await vi.advanceTimersByTimeAsync(500);
+        const newer = start(turns, input({ utterance: "And Sundays?", heardUntil: "We open at nine. See" }));
+        await vi.advanceTimersByTimeAsync(1_000);
+        await newer;
+        await vi.runAllTimersAsync();
+        await late;
+
+        expect(notes.replyInterrupted).toHaveBeenCalledTimes(1);
+        expect(notes.replyInterrupted).toHaveBeenCalledWith({
+          workspaceId, conversationId, assistantMessageId, heardCharacterCount: 20, spokenCharacterCount: 30,
+        });
       });
 
       it("answers an identical re-request with a new turn, not the stored part again", async () => {

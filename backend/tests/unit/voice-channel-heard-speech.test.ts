@@ -40,6 +40,26 @@ describe("what a caller heard of a turn's speech", () => {
     });
   });
 
+  it("measures sentences written without a space after them, whatever the runtime puts between pieces", () => {
+    const japanese = ["私たちは平日九時に開きます。", "土曜日は十時に開きます。"];
+    // ElevenLabs gets a space and a zero-width space after every piece; another runtime gets nothing.
+    for (const report of ["私たちは平日九時に開きます。 \u200B土曜日は", "私たちは平日九時に開きます。土曜日は"]) {
+      expect(heardSpeechOf({ operatorReplies: [], bridge: null, answer: japanese }, report)).toEqual({
+        operatorReplyPieces: 0,
+        answerPieces: 1,
+        answerHeardCharacterCount: 18,
+        answerSpokenCharacterCount: 26,
+      });
+    }
+  });
+
+  it("measures neither a bridge line without words nor an empty piece", () => {
+    expect(heardSpeechOf({ operatorReplies: [], bridge: "…", answer }, "We open at nine on weekdays. Saturdays")).toMatchObject({
+      answerPieces: 1,
+      answerHeardCharacterCount: 38,
+    });
+  });
+
   it("says nothing of speech the report is no prefix of", () => {
     expect(heardSpeechOf({ operatorReplies: [], bridge: null, answer }, "We close at")).toBeNull();
   });

@@ -161,7 +161,11 @@ rather than discovering in an incident:
   `AppError [provider_unavailable]`. Never the message or stack, which can
   carry provider responses, conversation text, or credentials. The error
   reporter gets the same shape (kind, attempt, job id, that summary) and never
-  the error itself. `onAttemptFailed` and `onDeadLetter` additionally get
+  the error itself. Expected permanent failures (`NonRetryableBackgroundJobError`,
+  distinct from unparseable payloads) log at `warn` level and record metrics,
+  but send no error report. Dead-letters from retries running out, timeouts,
+  crashes, or unparseable payloads (`InvalidBackgroundJobPayloadError`) still
+  send an error report. `onAttemptFailed` and `onDeadLetter` additionally get
   `cause`: the underlying error itself (`undefined` for a synthetic failure
   such as a lease that expired with no run to blame). Unlike `error`, the
   substrate never logs, stores, or reports `cause` or anything derived from

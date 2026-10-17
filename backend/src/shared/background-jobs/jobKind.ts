@@ -49,7 +49,7 @@ export class NonRetryableBackgroundJobError extends Error {
 }
 
 /** A stored payload that no longer matches its kind's schema. Retrying cannot repair it. */
-class InvalidBackgroundJobPayloadError extends NonRetryableBackgroundJobError {
+export class InvalidBackgroundJobPayloadError extends NonRetryableBackgroundJobError {
   constructor(kind: string) {
     super(`Stored payload does not match the ${kind} schema`);
     this.name = "InvalidBackgroundJobPayloadError";

@@ -14,6 +14,7 @@ export type {
 export {
   BACKGROUND_JOB_DRAIN_BUDGET_SECONDS,
   BACKGROUND_JOB_MAX_TIMEOUT_SECONDS,
+  InvalidBackgroundJobPayloadError,
   NonRetryableBackgroundJobError,
   backgroundJobHandler,
   backgroundJobRequest,

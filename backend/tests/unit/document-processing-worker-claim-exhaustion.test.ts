@@ -246,7 +246,7 @@ describe("DocumentProcessingWorker claim-expiry attempt exhaustion", () => {
       undefined,
       undefined,
       undefined,
-      embeddingProfileTerminalFailures as never,
+      embeddingProfileTerminalFailures,
     );
 
     const lastClaimedAt = await exhaustAttemptsAtRepositoryLayer(jobRepository, job.id, new Date());

@@ -885,7 +885,9 @@ turn never came, which has no conversation in Radioso. Radioso reads the
 recordings and the key first, because the deletion takes both with it.
 Deleting an agent deletes no recording: its conversations stay, and so do
 their recordings, which still play from the Inbox and go when their
-workspace does.
+workspace does. Radioso's record of where a recording is also outlives the
+call's conversation, so a workspace deletion still reaches a recording whose
+conversation was deleted before it.
 
 Each recording Radioso deletes is recorded as a
 `conversation.recording_deleted` audit event with the conversation id, the

@@ -115,7 +115,7 @@ describeIntegration("VoiceSessionRepository (Postgres)", () => {
     await expect(repository.findStartedVisitor({ ...session, workspaceId: randomUUID() })).resolves.toBeNull();
   });
 
-  it("forgets the session when its conversation is deleted", async () => {
+  it("unbinds the session when its conversation is deleted, and binds the next conversation its turns start", async () => {
     const session = { workspaceId, agentId, vendor: "generic", sessionKey: `room_${randomUUID()}` };
     const conversationId = await insertConversation();
     await repository.bind(session, conversationId);
@@ -123,6 +123,8 @@ describeIntegration("VoiceSessionRepository (Postgres)", () => {
     await database.query("DELETE FROM conversations WHERE id = $1", [conversationId]);
 
     await expect(repository.findConversationId(session)).resolves.toBeNull();
+    const next = await insertConversation();
+    await expect(repository.bind(session, next)).resolves.toBe(next);
   });
 
   describe("recordings", () => {
@@ -238,6 +240,41 @@ describeIntegration("VoiceSessionRepository (Postgres)", () => {
         [[reported.session.sessionKey, abandoned.session.sessionKey]],
       );
       expect(kept.map((row) => row.session_key)).toEqual([reported.session.sessionKey]);
+    });
+
+    it("keeps a recording's session and its vendor id when the conversation is deleted, for the workspace's erasure", async () => {
+      const { session, report } = await startedSession();
+      const vendorConversationId = `conv_${randomUUID().replaceAll("-", "")}`;
+      await report(vendorConversationId);
+      const conversationId = await insertConversation();
+      await repository.bind(session, conversationId);
+
+      await database.query("DELETE FROM conversations WHERE id = $1", [conversationId]);
+
+      const rows = await database.query<{ conversation_id: string | null; vendor_conversation_id: string | null }>(
+        "SELECT conversation_id, vendor_conversation_id FROM voice_sessions WHERE session_key = $1",
+        [session.sessionKey],
+      );
+      expect(rows).toEqual([{ conversation_id: null, vendor_conversation_id: vendorConversationId }]);
+      await expect(repository.findRecording({ workspaceId, conversationId })).resolves.toBeNull();
+      await expect(repository.listRecordings({ kind: "workspace", workspaceId })).resolves.toContainEqual(
+        { workspaceId, conversationId: null, vendor: "elevenlabs", region: "eu", vendorConversationId },
+      );
+      // The agent's next start keeps it.
+      await startedSession();
+      await expect(repository.listRecordings({ kind: "workspace", workspaceId })).resolves.toContainEqual(expect.objectContaining({ vendorConversationId }));
+    });
+
+    it("clears out a page's own session whose conversation was deleted at the agent's next start", async () => {
+      const session = { workspaceId, agentId, vendor: "elevenlabs", sessionKey: `own_${randomUUID()}` };
+      const conversationId = await insertConversation();
+      await repository.bind(session, conversationId);
+      await database.query("DELETE FROM conversations WHERE id = $1", [conversationId]);
+
+      await startedSession();
+
+      const rows = await database.query("SELECT 1 FROM voice_sessions WHERE session_key = $1", [session.sessionKey]);
+      expect(rows).toEqual([]);
     });
 
     it("lists a workspace's recording whose call never bound a conversation, with no conversation", async () => {

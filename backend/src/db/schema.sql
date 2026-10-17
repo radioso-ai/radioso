@@ -4074,7 +4074,6 @@ CREATE TABLE public.voice_sessions (
     vendor_agent_id text,
     vendor_region text,
     vendor_conversation_id text,
-    CONSTRAINT voice_sessions_bound_or_started CHECK (((conversation_id IS NOT NULL) OR ((started_public_session_id IS NOT NULL) AND (start_expires_at IS NOT NULL)))),
     CONSTRAINT voice_sessions_session_key_check CHECK (((length(session_key) >= 1) AND (length(session_key) <= 256))),
     CONSTRAINT voice_sessions_started_public_session_id_check CHECK (((started_public_session_id IS NULL) OR ((length(started_public_session_id) >= 1) AND (length(started_public_session_id) <= 256)))),
     CONSTRAINT voice_sessions_started_visitor_key_check CHECK (((started_visitor_key IS NULL) OR ((length(started_visitor_key) >= 1) AND (length(started_visitor_key) <= 256)))),
@@ -12507,7 +12506,7 @@ ALTER TABLE ONLY public.voice_sessions
 --
 
 ALTER TABLE ONLY public.voice_sessions
-    ADD CONSTRAINT voice_sessions_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+    ADD CONSTRAINT voice_sessions_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE SET NULL;
 
 
 --

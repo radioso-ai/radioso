@@ -33,8 +33,9 @@ const locationOf = (row: RecordingRow): VoiceRecordingLocation | null =>
  * Radioso started holds the visitor who asked for it until its first turn binds the conversation,
  * the vendor agent it opened on and its account's region, and, once its page reports it and the
  * vendor confirms it, the vendor's id for the call. A row that holds that id is the only record of
- * where the recording is, so nothing here deletes it: it goes with its conversation or workspace,
- * and outlives its agent.
+ * where the recording is, so nothing here deletes it: it goes with its workspace, and outlives its
+ * agent and its conversation (both links are SET NULL; a session whose conversation is gone binds
+ * the next one its turns start).
  */
 export class VoiceSessionRepository implements VoiceSessionStartRegistry, VoiceSessionStartLookup, VoiceRecordingStore {
   constructor(private readonly db: Db) {}
@@ -83,8 +84,9 @@ export class VoiceSessionRepository implements VoiceSessionStartRegistry, VoiceS
 
   /** Records a started session, and clears out the agent's starts whose first turn never came. */
   /**
-   * Records a started session, and clears out the agent's starts whose first turn never came, and
-   * the workspace's from agents since deleted. A start whose page reported a recording stays.
+   * Records a started session, and clears out the agent's unbound rows (starts whose first turn
+   * never came, and sessions whose conversation was deleted), and the workspace's from agents since
+   * deleted. A row whose page reported a recording stays.
    */
   async register(start: { session: VoiceSessionRef; visitor: VoiceSessionVisitor; expiresAt: Date; vendorAgent: VoiceSessionVendorAgent }): Promise<void> {
     const { session, visitor } = start;
@@ -94,7 +96,7 @@ export class VoiceSessionRepository implements VoiceSessionStartRegistry, VoiceS
       .where((eb) => eb.or([eb("agent_id", "=", session.agentId), eb("agent_id", "is", null)]))
       .where("conversation_id", "is", null)
       .where("vendor_conversation_id", "is", null)
-      .where("start_expires_at", "<", currentTimestamp())
+      .where((eb) => eb.or([eb("start_expires_at", "<", currentTimestamp()), eb("start_expires_at", "is", null)]))
       .execute();
     await this.db
       .insertInto("voice_sessions")

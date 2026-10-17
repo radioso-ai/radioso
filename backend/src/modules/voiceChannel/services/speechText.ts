@@ -6,7 +6,7 @@
 const ASSERTION_MARKER_RUN = /\s*(?:\[\[(?:\d+|\?)\]\]|(?<!\[)\[(?:\d+|\?)\](?!\]))+/gu;
 
 /** `[text](url)` and `![alt](url)`, with one level of parentheses inside the url; the text is spoken. */
-const MARKDOWN_LINK = /!?\[([^\]\n]*)\]\((?:[^()\s]|\([^()\s]*\))*\)/gu;
+const MARKDOWN_LINK = /!?\[([^\]\n]*)\]\((?:[^()\s]|\([^()\s]*\))*\)/gdu;
 
 /** A heading (`#`…`######`) or list (`-`, `*`, `+`, `1.`, `1)`) marker. */
 const LINE_MARKER = String.raw`[ \t]*(?:#{1,6}|[-*+]|\d{1,3}[.)])[ \t]+`;
@@ -45,45 +45,68 @@ export interface SpeechPosition {
 
 const WHOLE_TEXT: SpeechPosition = { startsLine: true, final: true };
 
-/**
- * The text a caller hears: assertion markers and markdown syntax (emphasis, inline code, heading
- * and list markers at a line start, links) removed, the words kept. "la **versione open-source**"
- * becomes "la versione open-source"; hyphens, apostrophes, decimals and ellipses stay. Structure
- * only, so it reads any language the same way. For a streamed piece, `position` says whether it
- * starts a line and whether more text follows; applied again to its own output with more text
- * appended it changes nothing already decided, so a delimiter split across chunks is removed
- * once the chunk that completes it arrives.
- */
-export const spokenText = (text: string, position: SpeechPosition = WHOLE_TEXT): string => {
-  const withoutMarkers = text
-    .replace(MARKDOWN_LINK, "$1")
-    .replace(ASSERTION_MARKER_RUN, "")
-    .replace(LINE_START_MARKER, "");
-  const withoutLineMarkers = position.startsLine ? withoutMarkers.replace(TEXT_START_MARKER, "") : withoutMarkers;
-  const withoutEmphasis = withoutLineMarkers
-    .replace(DOUBLE_EMPHASIS, "")
-    .replace(OPENING_EMPHASIS, "")
-    .replace(CLOSING_EMPHASIS, "");
-  return (position.final ? withoutEmphasis.replace(FINAL_CLOSING_EMPHASIS, "") : withoutEmphasis).replace(INLINE_CODE, "");
-};
-
-const STREAMED_REPLY: SpeechPosition = { startsLine: true, final: false };
+/** Text, with where each of its characters came from in the text it was cut out of. */
+export interface SourcedText {
+  text: string;
+  /** `source[i]` is the index, in the original text, of character (UTF-16 unit) `i`. */
+  source: number[];
+}
 
 /**
- * How much of `written`, a reply as it streamed, its caller heard as `spoken`, the speech pieces cut
- * from its start: the length of the shortest start of `written` that speaks as exactly `spoken`. That
- * start ends where the last piece ends, so it holds every delimiter, link and marker of the sentences
- * spoken and none that opens the next one. Null when no start of `written` speaks that way.
+ * `mapped` without `pattern`'s matches, each removed whole except its group `keptGroup` (which
+ * needs the pattern's `d` flag), as `String.prototype.replace` would remove them.
  */
-export const writtenLengthSpokenAs = (written: string, spoken: string): number | null => {
-  // Speech only removes characters, so no shorter start can speak as `spoken`.
-  for (let length = spoken.length; length <= written.length; length += 1) {
-    if (spokenText(written.slice(0, length), STREAMED_REPLY) === spoken) {
-      return length;
+const removeMatches = (mapped: SourcedText, pattern: RegExp, keptGroup?: number): SourcedText => {
+  const parts: string[] = [];
+  const source: number[] = [];
+  const keep = (from: number, to: number): void => {
+    parts.push(mapped.text.slice(from, to));
+    source.push(...mapped.source.slice(from, to));
+  };
+  const matches = pattern.global ? [...mapped.text.matchAll(pattern)] : [mapped.text.match(pattern)].filter((match) => match !== null);
+  let cursor = 0;
+  for (const match of matches) {
+    const start = match.index ?? 0;
+    keep(cursor, start);
+    const group = keptGroup === undefined ? undefined : match.indices?.[keptGroup];
+    if (group) {
+      keep(group[0], group[1]);
     }
+    cursor = start + match[0].length;
   }
-  return null;
+  keep(cursor, mapped.text.length);
+  return { text: parts.join(""), source };
 };
+
+/**
+ * The text a caller hears, with where each of its characters stands in `text`: assertion markers
+ * and markdown syntax (emphasis, inline code, heading and list markers at a line start, links)
+ * removed, the words kept. "la **versione open-source**" becomes "la versione open-source";
+ * hyphens, apostrophes, decimals and ellipses stay. Structure only, so it reads any language the
+ * same way. For a streamed piece, `position` says whether it starts a line and whether more text
+ * follows; applied again to its own output with more text appended it changes nothing already
+ * decided, so a delimiter split across chunks is removed once the chunk that completes it arrives.
+ */
+export const sourcedSpokenText = (text: string, position: SpeechPosition = WHOLE_TEXT): SourcedText => {
+  const steps: Array<[RegExp, number?]> = [
+    [MARKDOWN_LINK, 1],
+    [ASSERTION_MARKER_RUN],
+    [LINE_START_MARKER],
+    ...(position.startsLine ? [[TEXT_START_MARKER] as [RegExp]] : []),
+    [DOUBLE_EMPHASIS],
+    [OPENING_EMPHASIS],
+    [CLOSING_EMPHASIS],
+    ...(position.final ? [[FINAL_CLOSING_EMPHASIS] as [RegExp]] : []),
+    [INLINE_CODE],
+  ];
+  return steps.reduce<SourcedText>(
+    (mapped, [pattern, keptGroup]) => removeMatches(mapped, pattern, keptGroup),
+    { text, source: [...Array(text.length).keys()] },
+  );
+};
+
+/** The text a caller hears; see {@link sourcedSpokenText}. */
+export const spokenText = (text: string, position: SpeechPosition = WHOLE_TEXT): string => sourcedSpokenText(text, position).text;
 
 /** Spoken text as two renderings of it agree on: zero-width spaces dropped, whitespace single, ends trimmed. */
 const comparable = (text: string): string => text.replace(/\u200B/gu, "").replace(/\s+/gu, " ").trim();

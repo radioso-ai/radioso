@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 
 import { createSentenceCutter, splitCompleteSentences, wholeTextSpeech } from "../../src/modules/voiceChannel/services/speechSegmenter.js";
-import { writtenLengthSpokenAs } from "../../src/modules/voiceChannel/services/speechText.js";
+
+/** The spoken text of each piece a cutter released. */
+const texts = (pieces: ReadonlyArray<{ text: string }>): string[] => pieces.map((piece) => piece.text);
 
 describe("voice speech segmenter", () => {
   it("cuts a sentence once whitespace follows its terminator and keeps the punctuation", () => {
@@ -179,29 +181,29 @@ describe("voice speech segmenter", () => {
 
     it("keeps a `*` or `_` that a chunk boundary separates from the text after it", () => {
       const price = createSentenceCutter();
-      expect(price.push("Costa 5*")).toEqual([]);
-      expect(price.push("3 euro. Next")).toEqual(["Costa 5*3 euro. "]);
+      expect(texts(price.push("Costa 5*"))).toEqual([]);
+      expect(texts(price.push("3 euro. Next"))).toEqual(["Costa 5*3 euro. "]);
 
       const setting = createSentenceCutter();
-      expect(setting.push("Vedi my_")).toEqual([]);
-      expect(setting.push("setting. Next")).toEqual(["Vedi my_setting. "]);
+      expect(texts(setting.push("Vedi my_"))).toEqual([]);
+      expect(texts(setting.push("setting. Next"))).toEqual(["Vedi my_setting. "]);
     });
 
     it("removes a list marker only at a real line start, not at the start of a chunk's leftover", () => {
       const prose = createSentenceCutter();
-      expect(prose.push("Ok. 2")).toEqual(["Ok. "]);
-      expect(prose.push(". Poi")).toEqual(["2. "]);
+      expect(texts(prose.push("Ok. 2"))).toEqual(["Ok. "]);
+      expect(texts(prose.push(". Poi"))).toEqual(["2. "]);
       expect(prose.finish()).toEqual({ sentences: [], remainder: "Poi" });
 
       const list = createSentenceCutter();
-      expect(list.push("Fatto.\n2")).toEqual(["Fatto.\n"]);
-      expect(list.push(". Poi")).toEqual([]);
+      expect(texts(list.push("Fatto.\n2"))).toEqual(["Fatto.\n"]);
+      expect(texts(list.push(". Poi"))).toEqual([]);
       expect(list.finish()).toEqual({ sentences: [], remainder: "Poi" });
     });
 
     it("closes emphasis at the end of the reply only once the reply is whole", () => {
       const reply = createSentenceCutter();
-      expect(reply.push("È tutto. Fine *davvero*")).toEqual(["È tutto. "]);
+      expect(texts(reply.push("È tutto. Fine *davvero*"))).toEqual(["È tutto. "]);
       expect(reply.finish()).toEqual({ sentences: [], remainder: "Fine davvero" });
       expect(splitCompleteSentences("Fine *davvero*")).toEqual({ sentences: [], remainder: "Fine davvero*" });
       expect(splitCompleteSentences("Fine *davvero*", { startsLine: true, final: true }).remainder).toBe("Fine davvero");
@@ -224,43 +226,38 @@ describe("a whole text as speech", () => {
   });
 });
 
-describe("the written start of a reply its first sentences were spoken from", () => {
-  /** Streams `chunks` through the cutter and keeps its first `pieceCount` sentences, as a turn cut off after them would. */
-  const cutAfter = (chunks: string[], pieceCount: number): { written: string; spoken: string } => {
+describe("where each sentence a streamed reply releases ends in its written text", () => {
+  /** Streams `chunks` through the cutter and keeps the written start of its first `pieceCount` sentences, as a turn cut off after them would. */
+  const writtenStart = (chunks: string[], pieceCount: number): string => {
     const cutter = createSentenceCutter();
     const pieces = chunks.flatMap((chunk) => cutter.push(chunk));
-    return { written: chunks.join(""), spoken: pieces.slice(0, pieceCount).join("") };
-  };
-  const writtenStart = (chunks: string[], pieceCount: number): string | null => {
-    const { written, spoken } = cutAfter(chunks, pieceCount);
-    const length = writtenLengthSpokenAs(written, spoken);
-    return length === null ? null : written.slice(0, length);
+    return chunks.join("").slice(0, pieces[pieceCount - 1]?.writtenEnd ?? 0);
   };
 
-  it("is the text up to the end of the last sentence spoken, as the composer wrote it", () => {
+  it("is the text up to the end of the last sentence released, as the composer wrote it", () => {
     expect(writtenStart(["We open at nine. Satur", "days at ten. Sundays we"], 2)).toBe("We open at nine. Saturdays at ten. ");
     expect(writtenStart(["We open at nine. Saturdays at ten. Sundays we"], 1)).toBe("We open at nine. ");
   });
 
-  it("keeps the markdown the caller never heard, closing delimiters and links included", () => {
+  it("keeps the markdown of the sentences released, closing delimiters and links included, and none that opens the next", () => {
     expect(writtenStart(["We open at **ni", "ne** on weekdays. See [the hours](https://example.com/h). Then"], 2))
       .toBe("We open at **nine** on weekdays. See [the hours](https://example.com/h). ");
     expect(writtenStart(["Our plans:\n- Basic is free.\n- Pro is ten euros.\n- Te", "am"], 2))
       .toBe("Our plans:\n- Basic is free.\n- Pro is ten euros.\n");
     expect(writtenStart(["Our plans:\n- Basic is free.\n- Pro is ten euros.\n- Team"], 1)).toBe("Our plans:\n- Basic is free.\n");
+    expect(writtenStart(["Done. **Bold** next."], 1)).toBe("Done. ");
   });
 
-  it("keeps the citation markers of the sentences spoken, wherever the composer put them", () => {
+  it("keeps the citation markers of the sentences released, wherever the composer put them", () => {
     expect(writtenStart(["We open at nine [[1]]. Saturdays at ten.[[2]", "] Sundays we"], 2)).toBe("We open at nine [[1]]. Saturdays at ten.[[2]] ");
     expect(writtenStart(["We open at nine.[1] Saturdays"], 1)).toBe("We open at nine.[1] ");
   });
 
-  it("is the whole sentence for a script that writes no space after it", () => {
-    expect(writtenStart(["私たちは九時に開きます。土曜日は"], 1)).toBe("私たちは九時に開きます。");
+  it("ends inside a link whose text holds a sentence end, which the store repairs", () => {
+    expect(writtenStart(["[See the hours. Then](https://example.com/h) we close."], 1)).toBe("[See the hours. ");
   });
 
-  it("is null when no start of the text is spoken that way", () => {
-    expect(writtenLengthSpokenAs("We open at nine. ", "We close at nine. ")).toBeNull();
-    expect(writtenLengthSpokenAs("We open at nine.", "We open at nine. Saturdays at ten. ")).toBeNull();
+  it("is the whole sentence for a script that writes no space after it", () => {
+    expect(writtenStart(["私たちは九時に開きます。土曜日は"], 1)).toBe("私たちは九時に開きます。");
   });
 });

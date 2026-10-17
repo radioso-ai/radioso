@@ -385,46 +385,54 @@ helpers and the shared chat message limit from `app/http`
   exchange stays in an orphaned conversation (logged as a warn). This stays an
   in-process guarantee until a database-level session claim lands with
   Phase 0.
-- **A teammate's reply is spoken on the caller's next turn.** A call speaks
-  only when the runtime asks, on the caller's next utterance, and there is no
-  push channel, so an Inbox reply waits for that request. The handoff module
-  stores a reply on a voice conversation with `speech: { state: "pending" }`
-  (`operatorRepliesAreSpoken` in `chat/contracts/operatorReplySpeech.ts`);
-  `customerReplyDelivery.ts` has no `voice` deliverer and needs none. The
-  voice domain knows two chat-side ports and nothing else of the reply:
-  `PendingOperatorReplyReader.pendingOperatorReplies({ workspaceId,
-  conversationId })` → `[{ messageId, text, createdAt }]`, oldest first, read
-  on every turn of a bound session beside the profile, routine and owner
-  reads (a read that fails warns and leaves them pending), and
-  `OperatorReplySpeechMarker.markOperatorRepliesSpoken`, which composition's
-  `operatorRepliesSpoken` note calls. Chat owns what a reply means and how it
-  is stored. The turn speaks the pending replies after its `conversation`
-  event, each cut by `wholeTextSpeech` (`speechSegmenter.ts`, through
-  `speechText.ts`, so markdown is removed and every piece ends in whitespace),
-  ahead of chat's answer and outside the turn policy, whoever owns the
-  conversation: on a human-owned turn chat answers nothing once a teammate has
-  written (its waiting line stops at the first human reply in its history
+- **A teammate's reply is spoken on the caller's next turn, once.** A call
+  speaks only when the runtime asks, on the caller's next utterance, and there
+  is no push channel, so an Inbox reply waits for that request. The handoff
+  module stores a reply on a voice conversation with `speech: { state:
+  "pending" }` (`operatorRepliesAreSpoken` in
+  `chat/contracts/operatorReplySpeech.ts`); `customerReplyDelivery.ts` has no
+  `voice` deliverer and needs none. The voice domain knows two chat-side ports
+  and nothing else of the reply: `OperatorReplySpeechClaims` (the turn's
+  `operatorReplies.claims`: `pendingOperatorReplies` → `[{ messageId, text }]`
+  oldest first, `claimOperatorReplies`, `releaseOperatorReplies`,
+  `skipOperatorReplies`) and `OperatorReplySpeechMarker`
+  (`markOperatorRepliesSpoken`, which composition's `operatorRepliesSpoken`
+  note calls before auditing). Chat owns what a reply means and how it is
+  stored. Exactly-once is a fact in the stored state, not in process memory:
+  a reply is `pending`, `claimed` (with `claimedAt` and the turn's
+  `claimTurnId`, minted by composition), `spoken` (`spokenAt`) or `skipped`;
+  every change is one conditional UPDATE, so two turns on two instances never
+  both hold a reply, and a claim older than
+  `VOICE_BEHAVIOR.operatorReplyClaimExpiryMs` (60 s) reads as pending again.
+  A turn on a bound session reads the pending replies beside its profile,
+  routine and owner reads (a read that fails warns and leaves them pending),
+  claims those with words to say (`wholeTextSpeech` in `speechSegmenter.ts`,
+  through `speechText.ts`, so markdown is removed and every piece ends in
+  whitespace; a reply with no words is never claimed and is marked
+  `skipped`), and speaks what it claimed after its `conversation` event, ahead
+  of chat's answer and outside the turn policy, whoever owns the conversation.
+  On a human-owned turn chat answers nothing once a teammate has written (its
+  waiting line stops at the first human reply in its ten-message history
   window), so the replies take the waiting line's place and the turn ends
-  `continue`; after a hand-back the agent's answer follows, with its bridge and
-  limit timed from the turn's start as always. The turn holds the replies it
-  speaks in `VoiceSessionMemory` (`holdOperatorReplies`), so a newer request of
-  the session that reads them as pending meanwhile leaves them out (in-process,
-  like the rest of the session's memory). They count
-  as heard once the turn's outcome left before the runtime hung up (a turn
-  overtaken by the caller's next utterance counts); the turn then writes the
-  note off its path as it settles: the mark (the first `spokenAt` stays; it
-  resolves the ids it marked) and then one `voice.operator_reply_spoken` audit
-  event with the conversation id and those message ids, never the text, and
-  releases the hold once the note is written. A turn that failed, or whose
-  runtime hung up first, releases them still pending, and the next turn speaks
-  them. A mark that fails leaves them pending and logs `Voice turn note could
-  not be recorded`, so the next turn speaks them again; an audit write that
-  fails after the mark is logged the same way and not retried. A turn
-  overtaken while it set up speaks none; a replay speaks only the stored
-  answer, and the next new utterance speaks the
-  replies. The session's interruption bookkeeping counts the replies as spoken
-  ahead of the reply (`VoiceSpokenTurn.ahead`, before the bridge line), so a
-  reply cut short after them is marked with its own characters only.
+  `continue`; after a hand-back the agent's answer follows under its turn
+  limit, and `mayBridge` holds the bridge line back once a reply was spoken. A
+  replay of a lost answer reads and claims the pending replies too and speaks
+  them before the answer. A turn overtaken while it claims speaks none. The
+  turn settles its claims as its outcome leaves, before a turn-limit drain:
+  when the outcome left before a newer request overtook it or the runtime hung
+  up (`cutOffAt`), the note marks the replies spoken (only those the turn still
+  holds; the first `spokenAt` stays) and audits `voice.operator_reply_spoken`
+  with the conversation id and the marked ids, never the text, and only then
+  are they counted and logged; otherwise the turn releases them to pending,
+  and a later turn speaks them again. A mark, release or skip that fails warns
+  and leaves the claim to expire; an audit write that fails after the mark is
+  logged and not retried. "Spoken" means the turn that sent the reply
+  completed, not that the caller heard it to the end: the runtime may still be
+  playing it when the caller speaks over it, and the reply stays Spoken
+  although the next request's history shows it cut short (#1530). The session's interruption bookkeeping counts the
+  replies as spoken ahead of the reply (`VoiceSpokenTurn.ahead`, before the
+  bridge line), so a reply cut short after them is marked with its own
+  characters only.
 - **Newest utterance wins.** ElevenLabs does not abort the HTTP stream when
   the caller interrupts: the next utterance arrives as a new request while the
   previous reply may still stream. Every voice chat turn runs with
@@ -535,7 +543,8 @@ conversation no longer holds logs `Voice reply to mark interrupted was not
 found` at warn (workspace, conversation and message ids) and writes no audit
 event. `Voice turn could not read the teammate's pending replies; they wait for the
 next turn` at warn with `agentId`, `vendor`, `conversationId` and
-`errorClass`. A warn when a concurrent first turn bound the session to another
+`errorClass`; `Voice turn could not update the teammate's pending replies` at
+warn with the same fields and `step` (`claim`, `skip`, `release`). A warn when a concurrent first turn bound the session to another
 conversation, and a warn naming only `dialect` and `agentId` when a request
 carries no usable session key (a 400). Once per agent per process, when a
 turn's bridge line is below the dialect's minimum, `Voice bridge line is
@@ -565,7 +574,7 @@ had no line, so nothing was spoken) and `voice_turn_limit_total`
 waiting). The service records `voice_turn_superseded_total` (`stage`:
 `before_speech`, `after_speech`), `voice_turn_replayed_total`,
 `voice_reply_interrupted_total`, `voice_operator_reply_spoken_total` (one
-per teammate reply a turn handed to the call, no labels) and
+per teammate reply a completed turn recorded as spoken, no labels) and
 `voice_turn_outcome_total` (`kind`:
 `continue`, `callback_requested`; `handoff_reason`: `routine_handoff`,
 `routine_stuck`, `retrieval_miss`, `none`), once per turn that sent an

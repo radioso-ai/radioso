@@ -44,7 +44,7 @@ import {
 } from "./voiceTurnPolicy.js";
 import { OperatorReplySpeaker, type ClaimedOperatorReply, type OperatorReplySpeakerDependencies } from "./operatorReplySpeaker.js";
 import { createSentenceCutter, splitCompleteSentences } from "./speechSegmenter.js";
-import { hasSpokenWords, spokenLength, writtenLengthSpokenAs } from "./speechText.js";
+import { hasSpokenWords, spokenLength } from "./speechText.js";
 import { heardSpeechOf, type HeardSpeech, type ReachedSpeech } from "./heardSpeech.js";
 import {
   cutOffAt,
@@ -186,6 +186,8 @@ interface VoiceTurnRecord {
   reply: VoiceStoredReply | null;
   /** The answer as chat streamed it so far, before it was cut into speech. */
   written: string;
+  /** Where each of the answer's streamed speech pieces ends in `written`, in the order they left. */
+  writtenEnds: number[];
   /**
    * What left the turn for the caller: a teammate's replies, the bridge line, and every speech
    * piece of the turn's own answer, each in order. `reached`: how many of the teammate's pieces and
@@ -220,6 +222,7 @@ const emptyRecord = (operatorReplyClaims: OperatorReplySpeaker, streamsSpeech: b
   chatReplied: false,
   reply: null,
   written: "",
+  writtenEnds: [],
   spoken: { operatorReplies: [], bridge: null, speech: [], reached: 0 },
   streamsSpeech,
   deliveredPart: null,
@@ -715,9 +718,10 @@ export class VoiceTurnService implements VoiceTurnPort {
         } else if (event.type === "chunk") {
           record.chatReplied = true;
           record.written += event.text;
-          for (const text of speech.push(event.text)) {
+          for (const piece of speech.push(event.text)) {
             record.speechPieceCount += 1;
-            yield { type: "speech", text, last: false };
+            record.writtenEnds.push(piece.writtenEnd);
+            yield { type: "speech", text: piece.text, last: false };
           }
         } else if (event.type === "done") {
           record.reply = event.assistantMessageId ? { messageId: event.assistantMessageId, text: event.answer } : null;
@@ -756,7 +760,8 @@ export class VoiceTurnService implements VoiceTurnPort {
 
   /**
    * What chat keeps of the turn's answer when a newer utterance cuts it off mid-stream: its whole
-   * sentences the caller heard, as the answer streamed them, by the runtime's own record of what it
+   * sentences the caller heard, as the answer streamed them (up to where the last of them ends in
+   * the written text, as the sentence cutter reports it), by the runtime's own record of what it
    * played (reported by the request that cut in), with the characters heard and those that reached
    * the runtime. Without a report, or with one that does not match what reached the runtime (which
    * warns, with counts only), every sentence that reached it counts as heard. Null when no sentence
@@ -780,10 +785,9 @@ export class VoiceTurnService implements VoiceTurnPort {
     if (!heard || !hasSpokenWords(spoken)) {
       return null;
     }
-    const writtenLength = writtenLengthSpokenAs(record.written, spoken);
     const counts = { heardCharacterCount: heard.answerHeardCharacterCount, spokenCharacterCount: heard.answerSpokenCharacterCount };
     return {
-      text: writtenLength === null ? spoken : record.written.slice(0, writtenLength),
+      text: record.written.slice(0, record.writtenEnds[pieces.length - 1] ?? 0),
       ...counts,
       auditEvent: { eventType: VOICE_REPLY_INTERRUPTED_EVENT, metadata: { ...counts, partial: true } },
     };

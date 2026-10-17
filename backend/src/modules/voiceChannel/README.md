@@ -28,13 +28,15 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   text into what a caller hears: it removes the composer's citation markers
   (`[1]`, `[?]`, `[[1]]`, `[[?]]`) and markdown syntax (emphasis, inline code, line-start heading and
   list markers, link syntax) from everything spoken, by structure only,
-  compares a runtime's record of what was heard with what was spoken, and
-  finds the start of the written reply that the spoken pieces came from
-  (`writtenLengthSpokenAs`: the shortest start whose speech is exactly those
-  pieces, so it keeps their delimiters, links and markers);
+  keeping where each spoken character came from (`sourcedSpokenText`), and
+  compares a runtime's record of what was heard with what was spoken;
   while a reply streams, `speechSegmenter.ts`'s sentence cutter closes an
   emphasis only before a space, line break or punctuation (the end of the
-  reply closes the rest) and removes list markers only at a real line start;
+  reply closes the rest), removes list markers only at a real line start,
+  and reports where each sentence it releases ends in the written reply
+  (`SpeechPiece.writtenEnd`); `heardSpeech.ts` is the pure measure of how
+  much of a turn's speech its caller heard, by the runtime's own record of
+  what it played;
   `voiceTurnPolicy.ts` is the pure timing wrapper (bridge and turn limit) over
   those events; `voiceLines.ts` picks the turn's bridge and fallback lines by
   routine state and locale (tag structure only, never the lines' words);
@@ -496,9 +498,9 @@ helpers and the shared chat message limit from `app/http`
   utterance cancels the turn after its reply started, chat's lifecycle asks
   it once, while the turn still holds its lease, so the newer turn waits for
   the store as it waits for a commit. The turn answers with the answer's
-  pieces that reached the runtime before the turn lost its caller, mapped
-  back to the text chat streamed (`writtenLengthSpokenAs`; the pieces' speech
-  text when no start of it speaks that way), and their spoken length; null
+  pieces that reached the runtime before the turn lost its caller, cut at
+  the written end of the last of them (`SpeechPiece.writtenEnd`), and their
+  spoken length; null
   when no piece with words reached it or the fallback line stood in for the
   answer. Chat stores that part, citation markers removed and markdown kept,
   marked `interruption: { heardCharacterCount = spokenCharacterCount,

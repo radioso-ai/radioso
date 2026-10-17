@@ -3894,20 +3894,34 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     });
   }
 
-  async releaseTimedOutClaim(jobId: string, claimedAtOrBefore: Date, errorMessage: string): Promise<boolean> {
-    const existing = this.items.get(jobId);
-    if (!existing || existing.status !== "processing" || !existing.claimedAt || existing.claimedAt > claimedAtOrBefore) {
-      return false;
+  async releaseOrFailExpiredClaim(input: {
+    jobId: string;
+    claimedAtOrBefore: Date;
+    maxAttempts: number;
+    releasedReason: string;
+    exhaustedReason: string;
+  }): Promise<DocumentProcessingJobRecord | null> {
+    const existing = this.items.get(input.jobId);
+    if (!existing || existing.status !== "processing" || !existing.claimedAt || existing.claimedAt > input.claimedAtOrBefore) {
+      return null;
     }
 
-    this.update(jobId, {
-      status: "queued",
-      lastError: errorMessage,
-      availableAt: new Date(),
-      claimedAt: null,
-    });
+    if (existing.attemptCount >= input.maxAttempts) {
+      this.update(input.jobId, {
+        status: "failed",
+        lastError: input.exhaustedReason,
+        completedAt: new Date(),
+      });
+    } else {
+      this.update(input.jobId, {
+        status: "queued",
+        lastError: input.releasedReason,
+        availableAt: new Date(),
+        claimedAt: null,
+      });
+    }
 
-    return true;
+    return this.items.get(input.jobId) ?? null;
   }
 
   private update(jobId: string, partial: Partial<DocumentProcessingJobRecord>): void {

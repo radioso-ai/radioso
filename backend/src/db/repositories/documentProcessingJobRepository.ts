@@ -110,7 +110,22 @@ export interface DocumentProcessingJobRepositoryPort {
     errorMessage: string;
   }): Promise<boolean>;
   reschedule(jobId: string, nextAttemptAt: Date, errorMessage: string): Promise<void>;
-  releaseTimedOutClaim(jobId: string, claimedAtOrBefore: Date, errorMessage: string): Promise<boolean>;
+  // Atomically decides, for one expired claim, between releasing it back to the
+  // queue (attempts remain) and ending it as a terminal failure (attempts are
+  // exhausted) — fenced on the same (status='processing', claimed_at<=cutoff)
+  // condition as the old release-only check, so two concurrent sweepers acting
+  // on the same row can only ever have one of them win it, and a job that
+  // completes concurrently (status no longer 'processing') is left alone.
+  // Returns the updated row — status tells the caller which branch ran — or
+  // null when the row was not eligible (already completed, already acted on by
+  // another sweeper, or claimed more recently than the cutoff).
+  releaseOrFailExpiredClaim(input: {
+    jobId: string;
+    claimedAtOrBefore: Date;
+    maxAttempts: number;
+    releasedReason: string;
+    exhaustedReason: string;
+  }): Promise<DocumentProcessingJobRecord | null>;
 }
 
 // The canonical-coverage rule, defined once for every read of it.
@@ -980,23 +995,37 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
       .execute();
   }
 
-  async releaseTimedOutClaim(jobId: string, claimedAtOrBefore: Date, errorMessage: string): Promise<boolean> {
+  async releaseOrFailExpiredClaim(input: {
+    jobId: string;
+    claimedAtOrBefore: Date;
+    maxAttempts: number;
+    releasedReason: string;
+    exhaustedReason: string;
+  }): Promise<DocumentProcessingJobRecord | null> {
     const row = await this.db
       .updateTable("document_processing_jobs")
-      .set({
-        status: "queued",
-        last_error: errorMessage,
-        available_at: currentTimestamp(),
-        claimed_at: null,
-        updated_at: currentTimestamp(),
+      .set((eb) => {
+        const exhausted = eb("attempt_count", ">=", input.maxAttempts);
+        return {
+          status: eb.case().when(exhausted).then("failed").else("queued").end(),
+          last_error: eb.case().when(exhausted).then(input.exhaustedReason).else(input.releasedReason).end(),
+          // A released job becomes claimable immediately; an exhausted job's
+          // available_at no longer matters (it never claims again), so leave it.
+          available_at: eb.case().when(exhausted).then(eb.ref("available_at")).else(currentTimestamp()).end(),
+          // Mirrors markFailed: a terminally failed job keeps its last claim
+          // timestamp rather than clearing it.
+          claimed_at: eb.case().when(exhausted).then(eb.ref("claimed_at")).else(null).end(),
+          completed_at: eb.case().when(exhausted).then(currentTimestamp()).else(eb.ref("completed_at")).end(),
+          updated_at: currentTimestamp(),
+        };
       })
-      .where("id", "=", jobId)
+      .where("id", "=", input.jobId)
       .where("status", "=", "processing")
       .where("claimed_at", "is not", null)
-      .where("claimed_at", "<=", claimedAtOrBefore)
-      .returning("id")
+      .where("claimed_at", "<=", input.claimedAtOrBefore)
+      .returning(documentProcessingJobColumns)
       .executeTakeFirst();
 
-    return Boolean(row);
+    return row ? mapJob(row as DocumentProcessingJobRow) : null;
   }
 }

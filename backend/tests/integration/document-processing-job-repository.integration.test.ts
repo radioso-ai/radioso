@@ -80,14 +80,135 @@ describeIntegration("DocumentProcessingJobRepository (Postgres)", () => {
     const claimed = await repository.claimById(job.id, new Date("2026-07-04T00:00:00.000Z"));
     expect(claimed?.options).toEqual({ documentEnrichmentOverride: "off" });
 
-    const released = await repository.releaseTimedOutClaim(
-      job.id,
-      new Date("2026-07-04T00:00:00.000Z"),
-      "timed out",
-    );
+    const released = await repository.releaseOrFailExpiredClaim({
+      jobId: job.id,
+      claimedAtOrBefore: new Date("2026-07-04T00:00:00.000Z"),
+      maxAttempts: 3,
+      releasedReason: "timed out",
+      exhaustedReason: "timed out, attempts exhausted",
+    });
 
-    expect(released).toBe(true);
+    expect(released?.status).toBe("queued");
     expect((await repository.findById(job.id))?.options).toEqual({ documentEnrichmentOverride: "off" });
+  });
+
+  // The lease window itself is irrelevant to releaseOrFailExpiredClaim — it only
+  // compares claimed_at against the cutoff it is given — so these tests simulate
+  // an expired lease with a cutoff set just after the real claim timestamp,
+  // rather than depending on wall-clock time actually elapsing.
+  const justAfter = (date: Date) => new Date(date.getTime() + 1);
+  const secondsFromNow = (seconds: number) => new Date(Date.now() + seconds * 1_000);
+
+  it("releases an expired claim back to the queue when attempts remain", async () => {
+    const documentId = await insertDocument();
+    const job = await repository.enqueue({ documentId, workspaceId, documentRevision: 1 });
+    const claimedAt = new Date();
+    await repository.claimById(job.id, claimedAt);
+
+    const released = await repository.releaseOrFailExpiredClaim({
+      jobId: job.id,
+      claimedAtOrBefore: justAfter(claimedAt),
+      maxAttempts: 3,
+      releasedReason: "claim_expired",
+      exhaustedReason: "claim_expired_attempts_exhausted",
+    });
+
+    expect(released).toMatchObject({
+      status: "queued",
+      lastError: "claim_expired",
+      claimedAt: null,
+      attemptCount: 1,
+    });
+    const reclaimed = await repository.claimById(job.id, secondsFromNow(5));
+    expect(reclaimed).not.toBeNull();
+  });
+
+  it("fails an expired claim instead of releasing it once attempts are exhausted", async () => {
+    const documentId = await insertDocument();
+    const job = await repository.enqueue({ documentId, workspaceId, documentRevision: 1 });
+
+    for (let attempt = 1; attempt <= 2; attempt += 1) {
+      const claimedAt = await repository.claimById(job.id, secondsFromNow(attempt));
+      const released = await repository.releaseOrFailExpiredClaim({
+        jobId: job.id,
+        claimedAtOrBefore: justAfter(claimedAt!.claimedAt!),
+        maxAttempts: 3,
+        releasedReason: "claim_expired",
+        exhaustedReason: "claim_expired_attempts_exhausted",
+      });
+      expect(released?.status).toBe("queued");
+      expect(released?.attemptCount).toBe(attempt);
+    }
+
+    // Third claim reaches attempt_count 3, the configured maxAttempts.
+    const thirdClaim = await repository.claimById(job.id, secondsFromNow(3));
+    expect(thirdClaim?.attemptCount).toBe(3);
+    const exhausted = await repository.releaseOrFailExpiredClaim({
+      jobId: job.id,
+      claimedAtOrBefore: justAfter(thirdClaim!.claimedAt!),
+      maxAttempts: 3,
+      releasedReason: "claim_expired",
+      exhaustedReason: "claim_expired_attempts_exhausted",
+    });
+
+    expect(exhausted).toMatchObject({
+      status: "failed",
+      lastError: "claim_expired_attempts_exhausted",
+      attemptCount: 3,
+    });
+    expect(exhausted?.claimedAt).not.toBeNull();
+
+    // A terminally failed job is never claimed again.
+    const neverReclaimed = await repository.claimById(job.id, secondsFromNow(10));
+    expect(neverReclaimed).toBeNull();
+  });
+
+  it("does not act when the claim is more recent than the cutoff", async () => {
+    const documentId = await insertDocument();
+    const job = await repository.enqueue({ documentId, workspaceId, documentRevision: 1 });
+    const claimedAt = new Date();
+    await repository.claimById(job.id, claimedAt);
+
+    const notYetExpired = await repository.releaseOrFailExpiredClaim({
+      jobId: job.id,
+      claimedAtOrBefore: new Date(claimedAt.getTime() - 1_000),
+      maxAttempts: 3,
+      releasedReason: "claim_expired",
+      exhaustedReason: "claim_expired_attempts_exhausted",
+    });
+
+    expect(notYetExpired).toBeNull();
+    const unchanged = await repository.findById(job.id);
+    expect(unchanged?.status).toBe("processing");
+  });
+
+  it("lets only one of two concurrent sweepers act on the same expired claim", async () => {
+    const documentId = await insertDocument();
+    const job = await repository.enqueue({ documentId, workspaceId, documentRevision: 1 });
+    const claimedAt = new Date();
+    await repository.claimById(job.id, claimedAt);
+    const claimedAtOrBefore = justAfter(claimedAt);
+
+    const [first, second] = await Promise.all([
+      repository.releaseOrFailExpiredClaim({
+        jobId: job.id,
+        claimedAtOrBefore,
+        maxAttempts: 3,
+        releasedReason: "claim_expired",
+        exhaustedReason: "claim_expired_attempts_exhausted",
+      }),
+      repository.releaseOrFailExpiredClaim({
+        jobId: job.id,
+        claimedAtOrBefore,
+        maxAttempts: 3,
+        releasedReason: "claim_expired",
+        exhaustedReason: "claim_expired_attempts_exhausted",
+      }),
+    ]);
+
+    const outcomes = [first, second].filter((outcome) => outcome !== null);
+    expect(outcomes).toHaveLength(1);
+    expect(outcomes[0]?.status).toBe("queued");
   });
 
   it("defaults job kind to vectorize and persists an explicit enrich kind", async () => {

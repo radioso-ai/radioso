@@ -39,7 +39,7 @@ Register the first user on an empty open-source server, log in with an existing 
 
 ### Establish a session
 
-Production registration sends a verification email and does not return a session cookie. The documented development stack verifies new password registrations and returns a session immediately. Login and invitation acceptance also establish sessions.
+Production registration sends a verification email and stores a short-lived pending ticket in the registering client's httpOnly cookie. Opening the verification link establishes a session for that browser. A registering client can also poll with its pending cookie and receive a session after the link is opened elsewhere. The documented development stack verifies new password registrations and returns a session immediately. Login and invitation acceptance also establish sessions.
 
 ### Issue a personal API credential
 
@@ -86,9 +86,16 @@ curl -sS \
   https://api.radioso.ai/api/v1/auth/register
 ```
 
-Registration returns bootstrap data such as `workspaceId` and a `requiresEmailVerification` boolean. A development stack with `AUTH_AUTO_VERIFY_EMAIL=true` returns `false` and saves the registration session in `cookies.txt`.
+Registration returns bootstrap data such as `workspaceId` and a `requiresEmailVerification` boolean. In production it is `true`: Radioso sends a verification email and stores a 15-minute pending ticket only in the httpOnly cookie jar. The ticket is not returned in JSON. Open the emailed link to establish a session directly. If the link is opened in another browser tab, the registering client can exchange its pending ticket after verification:
 
-In production, `requiresEmailVerification` is `true`. Open the verification link from the email, then log in and save the session cookie before creating a credential:
+```bash
+curl -sS -b cookies.txt -c cookies.txt -X POST \
+  https://api.radioso.ai/api/v1/auth/email-verification/pending-session
+```
+
+The response remains `{ "ready": false }` until verification completes, then returns `{ "ready": true }` and sets the session cookie once. A development stack with `AUTH_AUTO_VERIFY_EMAIL=true` returns `false` and saves the registration session in `cookies.txt`.
+
+If the user already exists, log in and save the session cookie:
 
 ```bash
 curl -sS -c cookies.txt \

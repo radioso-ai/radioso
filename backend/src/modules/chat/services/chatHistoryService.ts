@@ -966,6 +966,8 @@ export class ChatHistoryService {
       cursor?: string;
       sourceScope?: ConversationSourceScope;
       ownership?: ConversationOwnershipScope;
+      agentId?: string;
+      channel?: string;
     } = { limit: 50, offset: 0 },
   ): Promise<ChatConversationPage> {
     const { conversations, total, nextCursor, hasMore } = await this.conversationRepository.listPageByWorkspaceId(

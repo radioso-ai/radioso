@@ -91,24 +91,26 @@ export const dashboardQueryKeys = {
         optional(input.to),
         optional(input.resolutionFrom),
         optional(input.resolutionTo),
+        optional(input.agentId),
+        optional(input.channel),
         input.page,
         input.pageSize,
       ),
   },
   attention: {
-    decisions: (workspaceId: string) => workspaceKey(workspaceId, 'attention', 'decisions'),
-    humanOwned: (workspaceId: string, input: { pageSize: number }) =>
-      workspaceKey(workspaceId, 'attention', 'human-owned', input.pageSize),
+    decisions: (workspaceId: string, input: { agentId?: string; channel?: string } = {}) => workspaceKey(workspaceId, 'attention', 'decisions', optional(input.agentId), optional(input.channel)),
+    humanOwned: (workspaceId: string, input: { pageSize: number; agentId?: string; channel?: string }) =>
+      workspaceKey(workspaceId, 'attention', 'human-owned', input.pageSize, optional(input.agentId), optional(input.channel)),
     recentlyClosed: (workspaceId: string, input: { limit: number }) =>
       workspaceKey(workspaceId, 'attention', 'recently-closed', input.limit),
     // No workspace event reports a delivery failure yet, so it polls, and an operator's own
     // acknowledgement re-reads it by invalidating this key.
-    deliveryFailures: (workspaceId: string, input: { limit: number }) =>
-      workspaceKey(workspaceId, 'attention', 'delivery-failures', input.limit),
+    deliveryFailures: (workspaceId: string, input: { limit: number; agentId?: string; channel?: string }) =>
+      workspaceKey(workspaceId, 'attention', 'delivery-failures', input.limit, optional(input.agentId), optional(input.channel)),
     // Held replies poll for the same reason, and an operator's own release, discard or reply
     // re-reads them by invalidating this key.
-    heldReplies: (workspaceId: string, input: { limit: number }) =>
-      workspaceKey(workspaceId, 'attention', 'held-replies', input.limit),
+    heldReplies: (workspaceId: string, input: { limit: number; agentId?: string; channel?: string }) =>
+      workspaceKey(workspaceId, 'attention', 'held-replies', input.limit, optional(input.agentId), optional(input.channel)),
     // A conversation an attention row names but no attention list carries: its agent and title.
     // Not a live-invalidation family; neither changes while the row waits.
     conversationSource: (workspaceId: string, conversationId: string) =>

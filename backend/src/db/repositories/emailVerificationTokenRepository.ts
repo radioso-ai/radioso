@@ -46,6 +46,13 @@ export interface EmailVerificationTokenRepositoryPort {
     requestIp?: string | null;
     requestUserAgent?: string | null;
   }): Promise<EmailVerificationTokenRecord>;
+  createIfUnverified(params: {
+    userId: string;
+    tokenHash: string;
+    expiresAt: Date;
+    requestIp?: string | null;
+    requestUserAgent?: string | null;
+  }): Promise<EmailVerificationTokenRecord | null>;
   findByTokenHash(tokenHash: string): Promise<EmailVerificationTokenRecord | null>;
   findLatestActiveForUser(userId: string, now: Date): Promise<EmailVerificationTokenRecord | null>;
   markUsed(id: string, usedAt: Date): Promise<void>;
@@ -76,6 +83,43 @@ export class EmailVerificationTokenRepository implements EmailVerificationTokenR
       .executeTakeFirstOrThrow();
 
     return mapEmailVerificationToken(row);
+  }
+
+  async createIfUnverified(params: {
+    userId: string;
+    tokenHash: string;
+    expiresAt: Date;
+    requestIp?: string | null;
+    requestUserAgent?: string | null;
+  }): Promise<EmailVerificationTokenRecord | null> {
+    return this.db.transaction().execute(async (transaction) => {
+      // Resend, verify, and recovery take this same lock. A link issued after
+      // verification or recovery has won is not useful, and a resend that wins
+      // makes the prior link observably stale before it can mint a session.
+      const user = await transaction
+        .selectFrom("users")
+        .select("id")
+        .where("id", "=", params.userId)
+        .where("email_verified_at", "is", null)
+        .forUpdate()
+        .executeTakeFirst();
+      if (!user) return null;
+
+      const row = await transaction
+        .insertInto("email_verification_tokens")
+        .values({
+          id: randomUUID(),
+          user_id: params.userId,
+          token_hash: params.tokenHash,
+          expires_at: params.expiresAt,
+          request_ip: params.requestIp ?? null,
+          request_user_agent: params.requestUserAgent ?? null,
+        })
+        .returning(emailVerificationTokenColumns)
+        .executeTakeFirstOrThrow();
+
+      return mapEmailVerificationToken(row);
+    });
   }
 
   async findByTokenHash(tokenHash: string): Promise<EmailVerificationTokenRecord | null> {

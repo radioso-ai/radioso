@@ -3419,6 +3419,22 @@ CREATE TABLE public.pending_decisions (
 
 
 --
+-- Name: pending_registration_tickets; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.pending_registration_tickets (
+    id uuid NOT NULL,
+    user_id uuid NOT NULL,
+    account_id uuid NOT NULL,
+    token_hash text NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    activated_at timestamp with time zone,
+    used_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: retrieval_settings; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4209,6 +4225,21 @@ CREATE TABLE public.workspace_service_accounts (
     CONSTRAINT workspace_service_accounts_revision_check CHECK ((revision > 0)),
     CONSTRAINT workspace_service_accounts_role_check CHECK ((role = ANY (ARRAY['member'::text, 'admin'::text]))),
     CONSTRAINT workspace_service_accounts_status_check CHECK ((status = ANY (ARRAY['enabled'::text, 'disabled'::text, 'archived'::text])))
+);
+
+
+--
+-- Name: workspace_setup_state; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workspace_setup_state (
+    workspace_id uuid NOT NULL,
+    purpose text,
+    dismissed_at timestamp with time zone,
+    skipped_steps text[] DEFAULT ARRAY[]::text[] NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT workspace_setup_state_purpose_check CHECK (((purpose IS NULL) OR (NULLIF(btrim(purpose), ''::text) IS NOT NULL)))
 );
 
 
@@ -5949,6 +5980,22 @@ ALTER TABLE ONLY public.pending_decisions
 
 
 --
+-- Name: pending_registration_tickets pending_registration_tickets_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pending_registration_tickets
+    ADD CONSTRAINT pending_registration_tickets_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: pending_registration_tickets pending_registration_tickets_token_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pending_registration_tickets
+    ADD CONSTRAINT pending_registration_tickets_token_hash_key UNIQUE (token_hash);
+
+
+--
 -- Name: retrieval_settings retrieval_settings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6418,6 +6465,14 @@ ALTER TABLE ONLY public.workspace_provider_credentials
 
 ALTER TABLE ONLY public.workspace_service_accounts
     ADD CONSTRAINT workspace_service_accounts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workspace_setup_state workspace_setup_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_setup_state
+    ADD CONSTRAINT workspace_setup_state_pkey PRIMARY KEY (workspace_id);
 
 
 --
@@ -12018,6 +12073,22 @@ ALTER TABLE ONLY public.pending_decisions
 
 
 --
+-- Name: pending_registration_tickets pending_registration_tickets_account_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pending_registration_tickets
+    ADD CONSTRAINT pending_registration_tickets_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(id) ON DELETE CASCADE;
+
+
+--
+-- Name: pending_registration_tickets pending_registration_tickets_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.pending_registration_tickets
+    ADD CONSTRAINT pending_registration_tickets_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id) ON DELETE CASCADE;
+
+
+--
 -- Name: retrieval_settings retrieval_settings_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -12647,6 +12718,14 @@ ALTER TABLE ONLY public.workspace_service_accounts
 
 ALTER TABLE ONLY public.workspace_service_accounts
     ADD CONSTRAINT workspace_service_accounts_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workspace_setup_state workspace_setup_state_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_setup_state
+    ADD CONSTRAINT workspace_setup_state_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

@@ -5,6 +5,7 @@ import type {
   EmailVerificationResendRequest,
   EmailVerificationVerifyRequest,
   EmailVerificationVerifyResponse,
+  PendingRegistrationSessionResponse,
   InvitationAcceptRequest,
   InvitationDetailsResponse,
   LoginRequest,
@@ -111,7 +112,13 @@ export const authApi = {
     return request<EmailVerificationVerifyResponse>("/auth/email-verification/verify", {
       method: "POST",
       body: JSON.stringify(data),
-    }, { withSession: false })
+    }, { withSession: true })
+  },
+
+  async exchangePendingRegistrationSession(): Promise<PendingRegistrationSessionResponse> {
+    return request<PendingRegistrationSessionResponse>("/auth/email-verification/pending-session", {
+      method: "POST",
+    }, { withSession: true })
   },
 
   async resendEmailVerification(data: EmailVerificationResendRequest): Promise<AcceptedResponse> {

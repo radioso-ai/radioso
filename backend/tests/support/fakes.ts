@@ -143,6 +143,7 @@ import type {
   DocumentProcessingJobRecord,
   DocumentProcessingQueueSnapshot,
   DocumentProcessingJobRepositoryPort,
+  ReleaseOrFailExpiredClaimOutcome,
 } from "../../src/db/repositories/documentProcessingJobRepository.js";
 import type {
   WorkspaceCanonicalEmbeddingCoverage,
@@ -3832,14 +3833,23 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     };
   }
 
-  async markCompleted(jobId: string): Promise<void> {
+  async markCompleted(jobId: string): Promise<boolean> {
+    const existing = this.items.get(jobId);
+    if (!existing || existing.status !== "processing") {
+      return false;
+    }
     this.update(jobId, {
       status: "completed",
       completedAt: new Date(),
     });
+    return true;
   }
 
   async markSkipped(jobId: string, reason: string): Promise<void> {
+    const existing = this.items.get(jobId);
+    if (!existing || existing.status !== "processing") {
+      return;
+    }
     this.update(jobId, {
       status: "skipped",
       lastError: reason,
@@ -3847,12 +3857,17 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     });
   }
 
-  async markFailed(jobId: string, errorMessage: string): Promise<void> {
+  async markFailed(jobId: string, errorMessage: string): Promise<boolean> {
+    const existing = this.items.get(jobId);
+    if (!existing || existing.status !== "processing") {
+      return false;
+    }
     this.update(jobId, {
       status: "failed",
       lastError: errorMessage,
       completedAt: new Date(),
     });
+    return true;
   }
 
   async markFailedIfDocumentMatches(input: {
@@ -3863,9 +3878,16 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     errorMessage: string;
   }): Promise<boolean> {
     const documentRepository = this.documentRepository;
-    const document = documentRepository?.items.get(input.documentId);
     const existingJob = this.items.get(input.jobId);
-    if (!documentRepository || !existingJob || !document || document.workspaceId !== input.workspaceId || document.revision !== input.revision) {
+    // Mirrors the real repository: confirm the job is still ours to fail
+    // before touching the document at all. A run that was not actually dead
+    // can complete it first.
+    if (!documentRepository || !existingJob || existingJob.status !== "processing") {
+      return false;
+    }
+
+    const document = documentRepository.items.get(input.documentId);
+    if (!document || document.workspaceId !== input.workspaceId || document.revision !== input.revision) {
       return false;
     }
 
@@ -3894,20 +3916,35 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     });
   }
 
-  async releaseTimedOutClaim(jobId: string, claimedAtOrBefore: Date, errorMessage: string): Promise<boolean> {
-    const existing = this.items.get(jobId);
-    if (!existing || existing.status !== "processing" || !existing.claimedAt || existing.claimedAt > claimedAtOrBefore) {
-      return false;
+  async releaseOrFailExpiredClaim(input: {
+    jobId: string;
+    claimedAtOrBefore: Date;
+    maxAttempts: number;
+    releasedReason: string;
+    exhaustedReason: string;
+  }): Promise<ReleaseOrFailExpiredClaimOutcome> {
+    const existing = this.items.get(input.jobId);
+    if (!existing || existing.status !== "processing" || !existing.claimedAt || existing.claimedAt > input.claimedAtOrBefore) {
+      return { outcome: "not_claimed" };
     }
 
-    this.update(jobId, {
+    if (existing.attemptCount >= input.maxAttempts) {
+      // Exhausted: stays "processing" and only takes a fresh lease — see the
+      // port's real implementation for why nothing terminal commits here.
+      this.update(input.jobId, {
+        lastError: input.exhaustedReason,
+        claimedAt: new Date(),
+      });
+      return { outcome: "exhausted", job: this.items.get(input.jobId)! };
+    }
+
+    this.update(input.jobId, {
       status: "queued",
-      lastError: errorMessage,
+      lastError: input.releasedReason,
       availableAt: new Date(),
       claimedAt: null,
     });
-
-    return true;
+    return { outcome: "released" };
   }
 
   private update(jobId: string, partial: Partial<DocumentProcessingJobRecord>): void {

@@ -299,6 +299,38 @@ describe("copilot chat readers", () => {
     expect(tool.outputSchema.safeParse(result).success).toBe(true);
   });
 
+  it("says whether a voice conversation's call has a recording, and says nothing of one for any other channel", async () => {
+    const ports = dependencies();
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "conversation_transcript")!;
+    const conversationId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const detail = (sourceChannel: string) => ({
+      conversationId,
+      agentId: null,
+      agentName: null,
+      sourceChannel,
+      callerKind: "human" as const,
+      createdAt: "2026-08-18T10:00:00.000Z",
+      updatedAt: "2026-08-18T10:00:05.000Z",
+      messageCount: 0,
+      messages: [],
+    });
+    const transcriptOf = async () =>
+      ((await tool.createTool(context(null)).invoke({ conversationId }, {} as never)) as { transcript: Record<string, unknown> }).transcript;
+
+    ports.getConversation.mockResolvedValue(detail("voice"));
+    ports.isRecordingAvailable.mockResolvedValue(true);
+    expect((await transcriptOf()).recordingAvailable).toBe(true);
+    expect(ports.isRecordingAvailable).toHaveBeenCalledWith({ workspaceId: "workspace-1", conversationId });
+
+    ports.isRecordingAvailable.mockRejectedValue(new Error("connection refused"));
+    expect((await transcriptOf()).recordingAvailable).toBeNull();
+
+    ports.isRecordingAvailable.mockClear();
+    ports.getConversation.mockResolvedValue(detail("website_embed"));
+    expect((await transcriptOf()).recordingAvailable).toBeNull();
+    expect(ports.isRecordingAvailable).not.toHaveBeenCalled();
+  });
+
   it("reads feedback outcomes only for an operator who holds Quality access now", async () => {
     const ports = dependencies();
     const tool = ports.descriptors.find((descriptor) => descriptor.name === "conversation_transcript")!;

@@ -2,7 +2,11 @@ import { createAgentBundleServices } from "../../src/app/composition/agentBundle
 import { createDefaultApplicationComposition } from "../../src/app/composition/defaultComposition.js";
 import { chatTurnQueuedActionTypes } from "../../src/app/composition/applicationModule.js";
 import { createAgentPublicProfileComposition } from "../../src/app/composition/agentDiscovery.js";
-import { createVoiceSessionStartComposition, refreshEmbedConfigsOnVoiceVendorKeyChange } from "../../src/app/composition/voiceChannel.js";
+import {
+  createVoiceRecordingComposition,
+  createVoiceSessionStartComposition,
+  refreshEmbedConfigsOnVoiceVendorKeyChange,
+} from "../../src/app/composition/voiceChannel.js";
 import { createDefaultVisitorGeoResolver } from "../../src/app/composition/visitorGeoResolver.js";
 import { InMemoryAgentBundleImportRepository } from "./inMemoryAgentBundleImports.js";
 import { setTimeout as delay } from "node:timers/promises";
@@ -51,11 +55,15 @@ import { RetrievalTurnController } from "../../src/modules/chat/services/retriev
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
 import {
   VoiceTurnService,
+  type VoiceRecordingRef,
+  type VoiceRecordingStore,
+  type VoiceSessionRef,
   type VoiceSessionStartLookup,
   type VoiceSessionStartRegistry,
   type VoiceSessionStore,
   type VoiceSessionVisitor,
 } from "../../src/modules/voiceChannel/public.js";
+import type { VoiceVendorRegion } from "../../src/shared/domain/voiceVendor.js";
 import { AssistantHistoryService } from "../../src/modules/chat/services/assistantHistoryService.js";
 import {
   AgentRevisionRuntimeResolver,
@@ -830,14 +838,31 @@ class InMemoryContextVariableRepository implements ContextVariableRepositoryPort
   }
 }
 
-/** `voice_sessions` in memory: session bindings, and started sessions waiting for their first turn. */
-const createInMemoryVoiceSessions = (): VoiceSessionStore & VoiceSessionStartRegistry & VoiceSessionStartLookup & {
-  readonly started: ReadonlyMap<string, { visitor: VoiceSessionVisitor; expiresAt: Date }>;
+interface InMemoryVoiceStart {
+  session: VoiceSessionRef;
+  visitor: VoiceSessionVisitor;
+  expiresAt: Date;
+  region: VoiceVendorRegion;
+  vendorConversationId?: string;
+}
+
+/**
+ * `voice_sessions` in memory: session bindings, started sessions waiting for their first turn, and
+ * the vendor conversation their page reported, which names the call's recording.
+ */
+const createInMemoryVoiceSessions = (): VoiceSessionStore & VoiceSessionStartRegistry & VoiceSessionStartLookup & VoiceRecordingStore & {
+  readonly started: ReadonlyMap<string, InMemoryVoiceStart>;
 } => {
   const bound = new Map<string, string>();
-  const started = new Map<string, { visitor: VoiceSessionVisitor; expiresAt: Date }>();
+  const started = new Map<string, InMemoryVoiceStart>();
   const keyOf = (session: { workspaceId: string; agentId: string; vendor: string; sessionKey: string }) =>
     JSON.stringify([session.workspaceId, session.agentId, session.vendor, session.sessionKey]);
+  const recordingsWhere = (matches: (workspaceId: string, conversationId: string) => boolean): VoiceRecordingRef[] =>
+    [...started.entries()].flatMap(([key, start]) => {
+      const conversationId = bound.get(key);
+      if (!conversationId || !start.vendorConversationId || !matches(start.session.workspaceId, conversationId)) return [];
+      return [{ conversationId, vendor: "elevenlabs" as const, region: start.region, vendorConversationId: start.vendorConversationId }];
+    });
   return {
     started,
     findConversationId: async (session) => bound.get(keyOf(session)) ?? null,
@@ -845,9 +870,27 @@ const createInMemoryVoiceSessions = (): VoiceSessionStore & VoiceSessionStartReg
       if (!bound.has(keyOf(session))) bound.set(keyOf(session), conversationId);
       return bound.get(keyOf(session)) ?? conversationId;
     },
-    register: async ({ session, visitor, expiresAt }) => {
-      if (!started.has(keyOf(session))) started.set(keyOf(session), { visitor, expiresAt });
+    register: async ({ session, visitor, expiresAt, region }) => {
+      if (!started.has(keyOf(session))) started.set(keyOf(session), { session, visitor, expiresAt, region });
     },
+    recordVendorConversation: async (report) => {
+      const start = [...started.values()].find((candidate) =>
+        candidate.session.workspaceId === report.workspaceId
+        && candidate.session.agentId === report.agentId
+        && candidate.session.sessionKey === report.sessionKey
+        && candidate.visitor.publicSessionId === report.publicSessionId
+        && candidate.expiresAt.getTime() > Date.now());
+      const taken = [...started.values()].some((candidate) => candidate.vendorConversationId === report.vendorConversationId);
+      if (!start || start.vendorConversationId || taken) return false;
+      start.vendorConversationId = report.vendorConversationId;
+      return true;
+    },
+    findRecording: async ({ workspaceId, conversationId }) =>
+      recordingsWhere((owner, bindingConversationId) => owner === workspaceId && bindingConversationId === conversationId)[0] ?? null,
+    listRecordings: async (scope) =>
+      recordingsWhere((owner, conversationId) => owner === scope.workspaceId
+        && (scope.kind === "workspace" || scope.conversationIds.includes(conversationId))),
+
     findStartedVisitor: async (session) => {
       const start = started.get(keyOf(session));
       if (!start || bound.has(keyOf(session)) || start.expiresAt.getTime() <= Date.now()) return null;
@@ -2409,6 +2452,17 @@ export const createTestDependencies = (overrides: {
     release: async () => { throw notFound("Held reply not found"); },
     discard: async () => { throw notFound("Held reply not found"); },
   };
+  const voiceVendorFetch: typeof globalThis.fetch = overrides.voiceVendorFetch ?? (async () => {
+    throw new TypeError("Voice vendor calls are disabled in tests");
+  });
+  const voiceRecordings = createVoiceRecordingComposition({
+    recordings: voiceSessions,
+    credentials: workspaceProviderCredentialsService,
+    fetch: voiceVendorFetch,
+    auditService,
+    metricsRegistry,
+    logger,
+  });
   const copilotToolCatalog = createCopilotToolCatalog({
     emailChannel: null,
     deliveryFailures: deliveryFailureRecords,
@@ -2424,6 +2478,7 @@ export const createTestDependencies = (overrides: {
       validate: routineDefinitionService.validate.bind(routineDefinitionService),
     },
     chatHistoryService,
+    voiceRecordings: voiceRecordings.recordings,
     agentTurnProbe: agentTurnProbeService,
     retrievalProbe: retrievalProbeService,
     testChat: testChatService,
@@ -2672,9 +2727,7 @@ export const createTestDependencies = (overrides: {
     agentRepository,
     starts: voiceSessions,
     credentials: workspaceProviderCredentialsService,
-    fetch: overrides.voiceVendorFetch ?? (async () => {
-      throw new TypeError("Voice vendor calls are disabled in tests");
-    }),
+    fetch: voiceVendorFetch,
     metricsRegistry,
     logger,
   });
@@ -2920,6 +2973,8 @@ export const createTestDependencies = (overrides: {
     }),
     voiceSessionStarts,
     voiceSessionAvailability: voiceSessionStarts,
+    voiceRecordings: voiceRecordings.recordings,
+
     assistantHistoryService,
     conversationErasure: overrides.conversationErasure ?? {
       // The in-memory app has no transaction to erase in; the Postgres erasure is covered by

@@ -6,7 +6,10 @@ import {
   resolveActivityReadScope,
   type ConversationActivityReadScope,
 } from "../../../modules/conversationActivity/contracts/index.js";
+import type { VoiceRecordingAvailabilityPort } from "../../../modules/voiceChannel/public.js";
 import { badRequest } from "../../../shared/domain/errors.js";
+
+import { isMachinePrincipal, type MachineAwareRoutePrincipal } from "../shared/machinePublicSurfacePolicy.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { holdsWorkspacePermission, requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { includeDebugQuerySchema, presentDocumentSearchResponse } from "../presenters/documentSearchPresenter.js";
@@ -26,8 +29,35 @@ import {
 
 type HistoryRouteDependencies = WorkspaceSessionDependencies & Pick<
   AppDependencies,
-  "assistantHistoryService" | "documentSearchHistoryService" | "conversationErasure"
->;
+  "assistantHistoryService" | "documentSearchHistoryService" | "conversationErasure" | "logger"
+> & { voiceRecordings: VoiceRecordingAvailabilityPort };
+
+/**
+ * A voice conversation's detail tells a dashboard session whether the call has a recording it can
+ * play, from what Radioso stores alone: no vendor call. Machine credentials cannot play one, so
+ * their detail leaves it out, as it does when the stores cannot be read.
+ */
+const withRecordingAvailability = async <Detail extends { conversationId: string; sourceChannel: string | null }>(
+  dependencies: Pick<HistoryRouteDependencies, "voiceRecordings" | "logger">,
+  res: Response,
+  workspaceId: string,
+  conversation: Detail,
+): Promise<Detail & { recording?: { available: boolean } }> => {
+  const { authPrincipal } = res.locals as { authPrincipal?: MachineAwareRoutePrincipal };
+  if (conversation.sourceChannel !== "voice" || isMachinePrincipal(authPrincipal)) return conversation;
+  const { conversationId } = conversation;
+  try {
+    const available = await dependencies.voiceRecordings.isAvailable({ workspaceId, conversationId });
+    return { ...conversation, recording: { available } };
+  } catch (error) {
+    dependencies.logger.warn(
+      { workspaceId, conversationId, errorClass: error instanceof Error ? error.name : typeof error },
+
+      "Voice recording availability could not be read",
+    );
+    return conversation;
+  }
+};
 
 /**
  * Who asked for an erasure: the signed-in teammate, or a personal credential's owner. A service
@@ -180,7 +210,7 @@ export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Rou
         parsedQuery.data,
         await activityScope(res),
       );
-      res.status(200).json(conversation);
+      res.status(200).json(await withRecordingAvailability(dependencies, res, workspaceId, conversation));
     } catch (error) {
       next(error);
     }
@@ -292,7 +322,7 @@ export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Rou
         parsedQuery.data,
         await activityScope(res),
       );
-      res.status(200).json(conversation);
+      res.status(200).json(await withRecordingAvailability(dependencies, res, workspaceId, conversation));
     } catch (error) {
       next(error);
     }

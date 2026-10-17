@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { Router, type RequestHandler } from "express";
+import { Router } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
@@ -10,7 +10,9 @@ import {
 import { presentRevisionState } from "./agentRevisionPresenters.js";
 import { registerAgentChannelChatRoute } from "./agentChannelChatRoute.js";
 import { registerAgentVoiceRoutes } from "./agentVoiceRoute.js";
-import { requireWorkspaceSession, WORKSPACE_HEADER } from "../middleware/requireWorkspaceSession.js";
+import { acceptWorkspaceIdFromQuery } from "../middleware/acceptWorkspaceIdFromQuery.js";
+import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
+
 import { holdsWorkspacePermission, requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireSurfaceExtension } from "../shared/requireSurfaceExtension.js";
 import { validateBody } from "../middleware/validate.js";
@@ -699,21 +701,9 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
     }
   });
 
-  /**
-   * The dashboard renders the logo in an `<img>`, which cannot carry the workspace
-   * header. Accept the workspace as a query selector for this one read and let the
-   * session middleware check it against the caller's account exactly as it does the
-   * header — the query carries a selection, never an authorisation.
-   */
-  const acceptWorkspaceIdFromQuery: RequestHandler = (req, _res, next) => {
-    const selected = req.query.workspaceId;
-    if (typeof selected === "string" && !req.header(WORKSPACE_HEADER)) {
-      req.headers[WORKSPACE_HEADER.toLowerCase()] = selected;
-    }
-    next();
-  };
-
-  router.get("/:agentId/assistant-logo", acceptWorkspaceIdFromQuery, workspaceSession, agentRead, async (req, res, next) => {
+  // The dashboard renders the logo in an `<img>`, which cannot carry the workspace header.
+  router.get("/:agentId/assistant-logo", acceptWorkspaceIdFromQuery,
+ workspaceSession, agentRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const parsed = agentParamsSchema.parse(req.params);

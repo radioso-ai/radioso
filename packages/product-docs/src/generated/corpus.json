@@ -1,7 +1,7 @@
 {
   "generatedFrom": "docs-portal/content",
   "citationBase": "https://docs.radioso.ai",
-  "pageCount": 59,
+  "pageCount": 60,
   "pages": [
     {
       "slug": "api",
@@ -565,6 +565,32 @@
           "id": "read-next",
           "heading": "Read next",
           "body": "* [Extract document metadata](https://docs.radioso.ai/guides/document-metadata)\n* [Documents and search](https://docs.radioso.ai/api/documents-and-search)\n* [Public chat and embed](https://docs.radioso.ai/api/public-chat-and-embed)\n* [API Reference](https://docs.radioso.ai/api-reference)"
+        }
+      ]
+    },
+    {
+      "slug": "api/workspace-setup",
+      "url": "https://docs.radioso.ai/api/workspace-setup",
+      "title": "Workspace setup state",
+      "description": "Read outcome-based workspace setup progress and save the operator choices that belong to the workspace.",
+      "section": "API reference",
+      "lastUpdated": "2026-10-13",
+      "intro": "Use workspace setup state to show an operator what is actually ready in a workspace. The checklist reports outcomes: a ready document, a completed conversation, an authored directive or routine, a configured notification destination, a confirmed receipt, and an active API credential. Opening a settings page does not complete an item.\n\n`GET /api/v1/workspace/setup-state` returns the state for the workspace selected by `X-Workspace-Id`. Workspace members can read it. The same state is included as `setup` in `GET /api/v1/workspace/summary`, which also carries document and conversation outcomes.\n\n```bash\ncurl -sS -b cookies.txt \\\n  -H 'X-Workspace-Id: <workspace-id>' \\\n  https://api.radioso.ai/api/v1/workspace/setup-state\n```\n\nThe response includes `shouldShowFirstRun`, which the dashboard uses for the first-run experience. It is workspace state, so dismissing setup follows the operator to another browser or device.",
+      "sections": [
+        {
+          "id": "save-operator-choices",
+          "heading": "Save operator choices",
+          "body": "Owners and administrators can update `purpose`, `dismissed`, and `skippedSteps` with `PATCH /api/v1/workspace/setup-state`. Derived outcome fields are read-only.\n\n```bash\ncurl -sS -b cookies.txt -X PATCH \\\n  -H 'Content-Type: application/json' \\\n  -H 'X-Workspace-Id: <workspace-id>' \\\n  -H 'X-Radioso-CSRF: 1' \\\n  -d '{\"purpose\":\"Answer product questions\",\"dismissed\":true}' \\\n  https://api.radioso.ai/api/v1/workspace/setup-state\n```\n\n`skippedSteps` accepts `purpose`, `documents`, `conversation`, `directives_or_routines`, `notify_destination`, and `credential`. A skip records an operator preference; it does not change the matching outcome."
+        },
+        {
+          "id": "common-failure-modes",
+          "heading": "Common failure modes",
+          "body": "* `401` means the interactive session or workspace selection is missing.\n* `403` means the signed-in member may read setup state but cannot change it.\n* `400` means a PATCH body is empty, malformed, or attempts to send a field outside the persisted setup-state shape."
+        },
+        {
+          "id": "read-next",
+          "heading": "Read next",
+          "body": "* [Settings API](https://docs.radioso.ai/api/settings)\n* [Connectors and webhooks API](https://docs.radioso.ai/api/connectors-and-webhooks)"
         }
       ]
     },

@@ -78,6 +78,7 @@ describe("operator MCP descriptor disposition", () => {
       "turn_trace",
       "validate_routine",
       "workspace_settings",
+      "workspace_setup_state",
       "workspace_triage",
     ]);
   });

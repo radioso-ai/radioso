@@ -296,6 +296,69 @@ components:
             $ref: "#/components/schemas/Workspace"
       required:
         - workspaces
+    WorkspaceSetupState:
+      type: object
+      properties:
+        purpose:
+          type:
+            - string
+            - "null"
+        dismissed:
+          type: boolean
+        skippedSteps:
+          type: array
+          items:
+            type: string
+            enum:
+              - purpose
+              - documents
+              - conversation
+              - directives_or_routines
+              - notify_destination
+              - credential
+        shouldShowFirstRun:
+          type: boolean
+        hasDirectivesOrRoutines:
+          type: boolean
+        hasNotifyDestination:
+          type: boolean
+        hasNotifyDeliveryConfirmed:
+          type: boolean
+        hasCredential:
+          type: boolean
+      required:
+        - purpose
+        - dismissed
+        - skippedSteps
+        - shouldShowFirstRun
+        - hasDirectivesOrRoutines
+        - hasNotifyDestination
+        - hasNotifyDeliveryConfirmed
+        - hasCredential
+    UpdateWorkspaceSetupStateRequest:
+      type: object
+      properties:
+        purpose:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 2000
+        dismissed:
+          type: boolean
+        skippedSteps:
+          type: array
+          items:
+            type: string
+            enum:
+              - purpose
+              - documents
+              - conversation
+              - directives_or_routines
+              - notify_destination
+              - credential
+          maxItems: 6
+      additionalProperties: false
     WorkspaceSummaryResponse:
       type: object
       properties:
@@ -330,6 +393,8 @@ components:
           type: boolean
         websiteCrawlerEnabled:
           type: boolean
+        setup:
+          $ref: "#/components/schemas/WorkspaceSetupState"
       required:
         - documentCount
         - readyDocumentCount
@@ -343,6 +408,7 @@ components:
         - hasCompletedChat
         - sampleDocumentsImported
         - websiteCrawlerEnabled
+        - setup
     RegisterRequest:
       type: object
       properties:
@@ -21989,6 +22055,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/workspace/setup-state:
+    get:
+      tags:
+        - Workspace
+      summary: Get workspace setup state and outcome checklist
+      operationId: getWorkspaceSetupState
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Workspace setup state returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceSetupState"
+    patch:
+      tags:
+        - Workspace
+      summary: Update persisted workspace setup state
+      operationId: updateWorkspaceSetupState
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWorkspaceSetupStateRequest"
+      responses:
+        "200":
+          description: Workspace setup state updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceSetupState"
   /api/v1/workspace/summary:
     get:
       tags:

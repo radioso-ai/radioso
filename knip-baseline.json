@@ -425,7 +425,6 @@
   "types|backend/src/modules/websiteCrawler/jobService.ts|WebsiteCrawlJobSummary",
   "types|backend/src/modules/websiteCrawler/routes.ts|WebsiteCrawlerRouteOptions",
   "types|backend/src/modules/websiteCrawler/service.ts|WebsiteCrawlPublicationResult",
-  "types|backend/src/modules/workspace/services/workspaceSummaryService.ts|WorkspaceSummary",
   "types|backend/src/runtime/processErrorHandlers.ts|InstallProcessErrorHandlersOptions",
   "types|backend/src/runtime/realtimeRuntimeEnv.ts|RealtimeRuntimeEnv",
   "types|backend/src/runtime/runRealtimeProcess.ts|RealtimeProcessRuntime",

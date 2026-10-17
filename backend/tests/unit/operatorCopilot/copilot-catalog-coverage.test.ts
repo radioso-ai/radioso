@@ -392,10 +392,8 @@ describe("operator copilot catalog coverage", () => {
       disposition: "deferred",
       reason: expect.stringContaining("cost guard"),
     });
-    expect(catalogCoverage.getWorkspaceSummary).toMatchObject({
-      disposition: "deferred",
-      reason: expect.stringContaining("setup"),
-    });
+    expect(catalogCoverage.getWorkspaceSummary).toBe("workspace_setup_state");
+    expect(catalogCoverage.getWorkspaceSetupState).toBe("workspace_setup_state");
   });
 
   it("does not expand the deferred catalog backlog", () => {

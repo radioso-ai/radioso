@@ -4209,6 +4209,21 @@ CREATE TABLE public.workspace_service_accounts (
 
 
 --
+-- Name: workspace_setup_state; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.workspace_setup_state (
+    workspace_id uuid NOT NULL,
+    purpose text,
+    dismissed_at timestamp with time zone,
+    skipped_steps text[] DEFAULT ARRAY[]::text[] NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT workspace_setup_state_purpose_check CHECK (((purpose IS NULL) OR (NULLIF(btrim(purpose), ''::text) IS NOT NULL)))
+);
+
+
+--
 -- Name: workspace_webhook_destinations; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -6414,6 +6429,14 @@ ALTER TABLE ONLY public.workspace_provider_credentials
 
 ALTER TABLE ONLY public.workspace_service_accounts
     ADD CONSTRAINT workspace_service_accounts_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: workspace_setup_state workspace_setup_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_setup_state
+    ADD CONSTRAINT workspace_setup_state_pkey PRIMARY KEY (workspace_id);
 
 
 --
@@ -12643,6 +12666,14 @@ ALTER TABLE ONLY public.workspace_service_accounts
 
 ALTER TABLE ONLY public.workspace_service_accounts
     ADD CONSTRAINT workspace_service_accounts_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: workspace_setup_state workspace_setup_state_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.workspace_setup_state
+    ADD CONSTRAINT workspace_setup_state_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

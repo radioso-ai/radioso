@@ -1,15 +1,22 @@
 'use client'
 
+import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState } from 'react'
 import { authApi } from '@/lib/api'
+import { normalizeSameOriginReturnPath } from '@/lib/auth-return-url'
 import { AuthShell } from './auth-shell'
 import { LoginForm } from './login-form'
 import { RegisterForm } from './register-form'
 
-export function AuthPage({ returnTo }: { returnTo?: string }) {
+export type AuthMode = 'login' | 'register'
+
+export function AuthPage({ returnTo, mode = 'login' }: { returnTo?: string; mode?: AuthMode }) {
   const searchParams = useSearchParams()
-  const [mode, setMode] = useState<'login' | 'register'>('login')
+  const normalizedReturnTo = normalizeSameOriginReturnPath(returnTo)
+  const authHref = (path: '/login' | '/signup') => normalizedReturnTo
+    ? `${path}?${new URLSearchParams({ returnTo: normalizedReturnTo }).toString()}`
+    : path
   // Registration can end in "check your inbox" instead of a session.
   const [verificationPending, setVerificationPending] = useState(false)
   const [registrationAvailable, setRegistrationAvailable] = useState<boolean | null>(null)
@@ -50,11 +57,6 @@ export function AuthPage({ returnTo }: { returnTo?: string }) {
     }
   }, [registrationRetryKey])
 
-  const switchToLogin = () => {
-    setVerificationPending(false)
-    setMode('login')
-  }
-
   const heading = mode === 'login'
     ? { title: 'Back in the light', subtitle: 'Sign in to pick up where you left off.' }
     : verificationPending
@@ -63,25 +65,27 @@ export function AuthPage({ returnTo }: { returnTo?: string }) {
 
   const footer = verificationPending ? null : mode === 'register' ? (
     <>
-      Already have an account? <FooterAction onClick={switchToLogin}>Sign in</FooterAction>
+      Already have an account? <Link href={authHref('/login')} className="font-medium text-primary hover:underline">Sign in</Link>
     </>
   ) : registrationAvailable === true ? (
     <>
-      New here? <FooterAction onClick={() => setMode('register')}>Create an account</FooterAction>
+      New here? <Link href={authHref('/signup')} className="font-medium text-primary hover:underline">Create an account</Link>
     </>
   ) : registrationAvailable === false ? (
     'Registration is invitation-only. Ask an organization administrator for an invitation.'
   ) : registrationAvailabilityFailed ? (
     <>
-      Unable to check registration availability.{' '}
-      <FooterAction
+      Unable to check registration availability. <Link href={authHref('/signup')} className="font-medium text-primary hover:underline">Try signup</Link> or{' '}
+      <button
+        type="button"
+        className="font-medium text-primary hover:underline"
         onClick={() => {
           setRegistrationAvailabilityFailed(false)
           setRegistrationRetryKey((key) => key + 1)
         }}
       >
         Retry registration check
-      </FooterAction>
+      </button>
     </>
   ) : null
 
@@ -93,18 +97,14 @@ export function AuthPage({ returnTo }: { returnTo?: string }) {
         <p className="text-sm text-destructive">Google sign-in did not complete. Try again.</p>
       ) : null}
       {mode === 'login' ? (
-        <LoginForm returnTo={returnTo} />
+        <LoginForm returnTo={normalizedReturnTo} />
       ) : (
-        <RegisterForm onSwitchToLogin={switchToLogin} onVerificationPending={() => setVerificationPending(true)} />
+        <RegisterForm
+          returnTo={normalizedReturnTo}
+          onSwitchToLogin={() => window.location.assign(authHref('/login'))}
+          onVerificationPending={() => setVerificationPending(true)}
+        />
       )}
     </AuthShell>
-  )
-}
-
-function FooterAction({ onClick, children }: { onClick: () => void; children: ReactNode }) {
-  return (
-    <button type="button" onClick={onClick} className="font-medium text-primary hover:underline">
-      {children}
-    </button>
   )
 }

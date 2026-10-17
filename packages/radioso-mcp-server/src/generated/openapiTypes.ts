@@ -155,6 +155,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/email-verification/pending-session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Exchange a pending registration ticket for a session
+         * @description Uses the short-lived httpOnly pending-registration cookie. Returns the same response shape when the cookie is missing, invalid, expired, used, or waiting for verification.
+         */
+        post: operations["exchangePendingRegistrationSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/session": {
         parameters: {
             query?: never;
@@ -4680,6 +4700,11 @@ export interface components {
             workspaceName: string;
             workspacePublicRouteKey: string;
             requiresEmailVerification: boolean;
+            /**
+             * Format: uri
+             * @description Development-only verification URL. Absent unless explicitly enabled in a development runtime.
+             */
+            developmentVerificationUrl?: string;
         };
         LoginResponse: {
             /** Format: uuid */
@@ -4717,6 +4742,9 @@ export interface components {
         EmailVerificationVerifyResponse: {
             /** @enum {boolean} */
             verified: true;
+        };
+        PendingRegistrationSessionResponse: {
+            ready: boolean;
         };
         Workspace: {
             /** Format: uuid */
@@ -10936,7 +10964,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Account created; email verification may be required before sign-in */
+            /** @description Account created; when email verification is required, a pending-registration cookie is also issued */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -11122,7 +11150,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Email address verified */
+            /** @description Email address verified and a session cookie established */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -11175,6 +11203,35 @@ export interface operations {
             };
             /** @description Request validation failed */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    exchangePendingRegistrationSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pending registration status returned; a ready response also establishes the session cookie */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingRegistrationSessionResponse"];
+                };
+            };
+            /** @description Rate limit exceeded */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };

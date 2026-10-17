@@ -23,6 +23,7 @@ import { EmbeddingProfileRepository } from "../../../db/repositories/embeddingPr
 import { FacetExtractionJobRepository } from "../../../db/repositories/facetExtractionJobRepository.js";
 import { VectorIndexWorkRepository } from "../../../db/repositories/vectorIndexWorkRepository.js";
 import { EmailVerificationTokenRepository } from "../../../db/repositories/emailVerificationTokenRepository.js";
+import { AuthFunnelRepository } from "../../../db/repositories/authFunnelRepository.js";
 import { HistoryItemsRepository } from "../../../db/repositories/historyItemsRepository.js";
 import { IngestionSettingsRepository } from "../../../db/repositories/ingestionSettingsRepository.js";
 import { DocumentTypeCatalogRepository } from "../../../db/repositories/documentTypeCatalogRepository.js";
@@ -201,6 +202,7 @@ export const buildRepositories = (
   embeddingProfileJobRepository: new EmbeddingProfileJobRepository(database.kysely),
   embeddingProfileCleanupRepository: new EmbeddingProfileCleanupRepository(database.kysely),
   emailVerificationTokenRepository: new EmailVerificationTokenRepository(database.kysely),
+  authFunnelRepository: new AuthFunnelRepository(database.kysely),
   historyItemsRepository: new HistoryItemsRepository(database.kysely),
   ingestionSettingsRepository: new IngestionSettingsRepository(database.kysely),
   documentTypeCatalogRepository: new DocumentTypeCatalogRepository(database.kysely),

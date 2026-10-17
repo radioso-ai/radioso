@@ -2,7 +2,8 @@ import { z } from "zod";
 
 import { VOICE_BEHAVIOR } from "../../../../shared/domain/behaviorConfig.js";
 import { VoiceVendorRequestError, type VoiceSessionStarter } from "../../domain.js";
-import { ELEVENLABS_API_HOST_OF_REGION, discardBody, isTimeout } from "./hosts.js";
+import { discardBody, isTimeout, readBoundedText } from "./fetchHelpers.js";
+import { ELEVENLABS_API_HOST_OF_REGION } from "./hosts.js";
 
 // The signed-URL request goes to the account's region host, and the signed URL handed to the
 // browser must be on that same host: the page opens whatever URL it gets, so one from any other
@@ -31,31 +32,6 @@ const isSignedUrlOnHost = (value: string, host: string): boolean => {
   } catch {
     return false;
   }
-};
-
-
-/** The body as text, or null when it is larger than `MAX_RESPONSE_BYTES`. */
-const readBoundedText = async (response: Response): Promise<string | null> => {
-  const declaredLength = Number(response.headers.get("content-length"));
-  if (Number.isFinite(declaredLength) && declaredLength > MAX_RESPONSE_BYTES) {
-    await discardBody(response);
-    return null;
-  }
-  if (!response.body) return "";
-  const reader = response.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let received = 0;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    received += value.byteLength;
-    if (received > MAX_RESPONSE_BYTES) {
-      await reader.cancel().catch(() => undefined);
-      return null;
-    }
-    chunks.push(value);
-  }
-  return Buffer.concat(chunks).toString("utf8");
 };
 
 const parseSignedUrl = (text: string, host: string): string | null => {
@@ -106,7 +82,7 @@ export const createElevenLabsSessionStarter = (dependencies: {
     }
     let text: string | null;
     try {
-      text = await readBoundedText(response);
+      text = await readBoundedText(response, MAX_RESPONSE_BYTES);
     } catch (error) {
       throw bodyReadFailure(error, signal, response.status);
     }

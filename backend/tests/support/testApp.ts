@@ -55,15 +55,15 @@ import { RetrievalTurnController } from "../../src/modules/chat/services/retriev
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
 import {
   VoiceTurnService,
-  type VoiceRecordingRef,
   type VoiceRecordingStore,
+  type VoiceRecordingToErase,
   type VoiceSessionRef,
   type VoiceSessionStartLookup,
   type VoiceSessionStartRegistry,
   type VoiceSessionStore,
+  type VoiceSessionVendorAgent,
   type VoiceSessionVisitor,
 } from "../../src/modules/voiceChannel/public.js";
-import type { VoiceVendorRegion } from "../../src/shared/domain/voiceVendor.js";
 import { AssistantHistoryService } from "../../src/modules/chat/services/assistantHistoryService.js";
 import {
   AgentRevisionRuntimeResolver,
@@ -842,7 +842,7 @@ interface InMemoryVoiceStart {
   session: VoiceSessionRef;
   visitor: VoiceSessionVisitor;
   expiresAt: Date;
-  region: VoiceVendorRegion;
+  vendorAgent: VoiceSessionVendorAgent;
   vendorConversationId?: string;
 }
 
@@ -857,12 +857,24 @@ const createInMemoryVoiceSessions = (): VoiceSessionStore & VoiceSessionStartReg
   const started = new Map<string, InMemoryVoiceStart>();
   const keyOf = (session: { workspaceId: string; agentId: string; vendor: string; sessionKey: string }) =>
     JSON.stringify([session.workspaceId, session.agentId, session.vendor, session.sessionKey]);
-  const recordingsWhere = (matches: (workspaceId: string, conversationId: string) => boolean): VoiceRecordingRef[] =>
-    [...started.entries()].flatMap(([key, start]) => {
-      const conversationId = bound.get(key);
-      if (!conversationId || !start.vendorConversationId || !matches(start.session.workspaceId, conversationId)) return [];
-      return [{ conversationId, vendor: "elevenlabs" as const, region: start.region, vendorConversationId: start.vendorConversationId }];
-    });
+  const recordings = (): VoiceRecordingToErase[] =>
+    [...started.entries()].flatMap(([key, start]) => start.vendorConversationId
+      ? [{
+        workspaceId: start.session.workspaceId,
+        conversationId: bound.get(key) ?? null,
+        vendor: "elevenlabs" as const,
+        region: start.vendorAgent.region,
+        vendorConversationId: start.vendorConversationId,
+      }]
+      : []);
+  const reportable = (report: { workspaceId: string; agentId: string; sessionKey: string; publicSessionId: string }) =>
+    [...started.values()].find((candidate) =>
+      candidate.session.workspaceId === report.workspaceId
+      && candidate.session.agentId === report.agentId
+      && candidate.session.sessionKey === report.sessionKey
+      && candidate.visitor.publicSessionId === report.publicSessionId
+      && candidate.expiresAt.getTime() > Date.now()
+      && !candidate.vendorConversationId);
   return {
     started,
     findConversationId: async (session) => bound.get(keyOf(session)) ?? null,
@@ -870,27 +882,27 @@ const createInMemoryVoiceSessions = (): VoiceSessionStore & VoiceSessionStartReg
       if (!bound.has(keyOf(session))) bound.set(keyOf(session), conversationId);
       return bound.get(keyOf(session)) ?? conversationId;
     },
-    register: async ({ session, visitor, expiresAt, region }) => {
-      if (!started.has(keyOf(session))) started.set(keyOf(session), { session, visitor, expiresAt, region });
+    register: async ({ session, visitor, expiresAt, vendorAgent }) => {
+      if (!started.has(keyOf(session))) started.set(keyOf(session), { session, visitor, expiresAt, vendorAgent });
+    },
+    findReportableSession: async (report) => {
+      const start = reportable(report);
+      return start ? { vendor: "elevenlabs" as const, vendorAgent: start.vendorAgent } : null;
     },
     recordVendorConversation: async (report) => {
-      const start = [...started.values()].find((candidate) =>
-        candidate.session.workspaceId === report.workspaceId
-        && candidate.session.agentId === report.agentId
-        && candidate.session.sessionKey === report.sessionKey
-        && candidate.visitor.publicSessionId === report.publicSessionId
-        && candidate.expiresAt.getTime() > Date.now());
+      const start = reportable(report);
       const taken = [...started.values()].some((candidate) => candidate.vendorConversationId === report.vendorConversationId);
-      if (!start || start.vendorConversationId || taken) return false;
+      if (!start || taken) return false;
       start.vendorConversationId = report.vendorConversationId;
       return true;
     },
-    findRecording: async ({ workspaceId, conversationId }) =>
-      recordingsWhere((owner, bindingConversationId) => owner === workspaceId && bindingConversationId === conversationId)[0] ?? null,
+    findRecording: async ({ workspaceId, conversationId }) => {
+      const recording = recordings().find((candidate) => candidate.workspaceId === workspaceId && candidate.conversationId === conversationId);
+      return recording ? { conversationId, vendor: recording.vendor, region: recording.region, vendorConversationId: recording.vendorConversationId } : null;
+    },
     listRecordings: async (scope) =>
-      recordingsWhere((owner, conversationId) => owner === scope.workspaceId
-        && (scope.kind === "workspace" || scope.conversationIds.includes(conversationId))),
-
+      recordings().filter((recording) => recording.workspaceId === scope.workspaceId
+        && (scope.kind === "workspace" || (recording.conversationId !== null && scope.conversationIds.includes(recording.conversationId)))),
     findStartedVisitor: async (session) => {
       const start = started.get(keyOf(session));
       if (!start || bound.has(keyOf(session)) || start.expiresAt.getTime() <= Date.now()) return null;

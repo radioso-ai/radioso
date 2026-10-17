@@ -26,7 +26,7 @@ const signedUrlOf = (region: "us" | "eu") =>
   `wss://${region === "eu" ? "api.eu.residency.elevenlabs.io" : "api.elevenlabs.io"}/v1/convai/conversation?agent_id=agent_42&conversation_signature=sig`;
 
 /** The vendor as the test needs it: a signed URL for starts, and the recording endpoints as each case sets them. */
-const vendorStandIn = (region: "us" | "eu", answers: { audio?: VendorAnswer; remove?: VendorAnswer } = {}) =>
+const vendorStandIn = (region: "us" | "eu", answers: { audio?: VendorAnswer; remove?: VendorAnswer; conversation?: VendorAnswer } = {}) =>
   vi.fn<VendorFetch>(async (input, init) => {
     const url = urlOf(input);
     if (url.includes("/get-signed-url")) {
@@ -36,6 +36,9 @@ const vendorStandIn = (region: "us" | "eu", answers: { audio?: VendorAnswer; rem
       return (answers.audio ?? (() => new Response(AUDIO, { status: 200, headers: { "content-type": "audio/mpeg", "content-length": String(AUDIO.length) } })))(url, init);
     }
     if (init?.method === "DELETE") return (answers.remove ?? (() => new Response("{}", { status: 200 })))(url, init);
+    if (url.includes("/v1/convai/conversations/")) {
+      return (answers.conversation ?? (() => new Response(JSON.stringify({ agent_id: "agent_42", status: "in-progress" }), { status: 200 })))(url, init);
+    }
     return new Response("unexpected", { status: 500 });
   });
 
@@ -135,6 +138,39 @@ describe("voice vendor conversation report contract", () => {
     await report(sessionKey, { vendorConversationId: "conv_another" }).expect(404);
   });
 
+  it("checks the id with the vendor on the account's region host, and refuses a call on another vendor agent", async () => {
+    let heldBy = "agent_someone_else";
+    const vendorFetch = vendorStandIn("eu", {
+      conversation: () => new Response(JSON.stringify({ agent_id: heldBy, status: "in-progress" }), { status: 200 }),
+    });
+    const { app, dashboard, visitor, callTurn } = await recordedWorkspace({ vendorFetch });
+    const { startCall, report } = await visitor();
+    const sessionKey = await startCall();
+
+    await report(sessionKey).expect(404);
+    const conversationId = await callTurn(sessionKey);
+    expect((await request(app).get(`/api/v1/history/chat/${conversationId}`).set(dashboard).expect(200)).body.recording).toEqual({ available: false });
+
+    const check = vendorFetch.mock.calls.find(([url, init]) => urlOf(url).endsWith(`/conversations/${VENDOR_CONVERSATION_ID}`) && init?.method === "GET")!;
+    expect(urlOf(check[0])).toBe(`https://api.eu.residency.elevenlabs.io/v1/convai/conversations/${VENDOR_CONVERSATION_ID}`);
+    expect(check[1]?.headers).toMatchObject({ "xi-api-key": VENDOR_KEY });
+
+    heldBy = "agent_42";
+    await report(sessionKey).expect(204);
+    expect((await request(app).get(`/api/v1/history/chat/${conversationId}`).set(dashboard).expect(200)).body.recording).toEqual({ available: true });
+  });
+
+  it("answers 503 when the vendor cannot check the id, so the page may report it again", async () => {
+    let answer = () => new Response("{}", { status: 500 });
+    const { visitor } = await recordedWorkspace({ vendorFetch: vendorStandIn("eu", { conversation: () => answer() }) });
+    const { startCall, report } = await visitor();
+    const sessionKey = await startCall();
+
+    await report(sessionKey).expect(503);
+    answer = () => new Response(JSON.stringify({ agent_id: "agent_42" }), { status: 200 });
+    await report(sessionKey).expect(204);
+  });
+
   it("refuses another visitor's session, a key Radioso never minted, and a malformed or oversized id", async () => {
     const { visitor } = await recordedWorkspace();
     const first = await visitor();
@@ -217,7 +253,7 @@ describe("voice recording contract", () => {
     expect(played.headers["cache-control"]).toBe("private, no-store");
     const [url, init] = vendorFetch.mock.calls[0];
     expect(url).toBe(`https://api.eu.residency.elevenlabs.io/v1/convai/conversations/${VENDOR_CONVERSATION_ID}/audio`);
-    expect(init?.headers).toEqual({ "xi-api-key": VENDOR_KEY });
+    expect(init?.headers).toEqual({ "xi-api-key": VENDOR_KEY, "accept-encoding": "identity" });
     expect(JSON.stringify(played.headers)).not.toContain(VENDOR_KEY);
     expect(JSON.stringify(played.headers)).not.toContain("elevenlabs.io");
     expect(recordingEvents("conversation.recording_played")).toEqual([
@@ -240,7 +276,7 @@ describe("voice recording contract", () => {
 
     expect(partial.headers["content-range"]).toBe(`bytes 3-5/${AUDIO.length}`);
     const audioCall = vendorFetch.mock.calls.find(([url]) => urlOf(url).endsWith("/audio"))!;
-    expect(audioCall[1]?.headers).toEqual({ "xi-api-key": VENDOR_KEY, range: "bytes=3-5" });
+    expect(audioCall[1]?.headers).toEqual({ "xi-api-key": VENDOR_KEY, range: "bytes=3-5", "accept-encoding": "identity" });
   });
 
   it("answers 404 when the vendor holds no audio yet, and 503 when it cannot be read, auditing neither", async () => {
@@ -283,7 +319,7 @@ describe("voice recording contract", () => {
 
     const deletes = vendorFetch.mock.calls.filter(([, init]) => init?.method === "DELETE");
     expect(deletes.map(([url]) => urlOf(url))).toEqual([`https://api.eu.residency.elevenlabs.io/v1/convai/conversations/${VENDOR_CONVERSATION_ID}`]);
-    expect(deletes[0]?.[1]?.headers).toEqual({ "xi-api-key": VENDOR_KEY });
+    expect(deletes[0]?.[1]?.headers).toEqual({ "xi-api-key": VENDOR_KEY, "accept-encoding": "identity" });
     expect(recordingEvents("conversation.recording_deleted")).toEqual([
       expect.objectContaining({
         workspaceId: null,

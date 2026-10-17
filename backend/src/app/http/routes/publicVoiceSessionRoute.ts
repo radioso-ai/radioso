@@ -90,6 +90,10 @@ export const registerPublicVoiceSessionRoute = (
           next(notFound("No voice session waits for this report."));
           return;
         }
+        if (outcome === "failed") {
+          next(new AppError(503, "voice_unavailable", "The report could not be checked. Try again later."));
+          return;
+        }
         res.status(204).send();
       } catch (error) {
         next(error);

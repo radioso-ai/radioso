@@ -1,8 +1,8 @@
 import type { VoiceVendor } from "../../../shared/domain/voiceVendor.js";
 import type {
   VoiceRecordingErasurePort,
-  VoiceRecordingRef,
   VoiceRecordingScope,
+  VoiceRecordingToErase,
   VoiceVendorCredential,
 } from "../domain.js";
 import { errorClassOf, recordingErrorFields, type VoiceRecordingDependencies } from "./voiceRecordingService.js";
@@ -43,7 +43,7 @@ export class VoiceRecordingErasureService implements VoiceRecordingErasurePort {
   ) {}
 
   async prepare(scope: VoiceRecordingScope): Promise<{ recordingCount: number; erase(): Promise<void> }> {
-    let recordings: VoiceRecordingRef[];
+    let recordings: VoiceRecordingToErase[];
     try {
       recordings = await this.dependencies.recordings.listRecordings(scope);
     } catch (error) {
@@ -58,7 +58,7 @@ export class VoiceRecordingErasureService implements VoiceRecordingErasurePort {
     };
   }
 
-  private async readCredentials(workspaceId: string, recordings: readonly VoiceRecordingRef[]): Promise<CredentialOfVendor> {
+  private async readCredentials(workspaceId: string, recordings: readonly VoiceRecordingToErase[]): Promise<CredentialOfVendor> {
     const credentials: CredentialOfVendor = new Map();
     for (const vendor of new Set(recordings.map((recording) => recording.vendor))) {
       try {
@@ -73,7 +73,7 @@ export class VoiceRecordingErasureService implements VoiceRecordingErasurePort {
     return credentials;
   }
 
-  private async erase(scope: VoiceRecordingScope, recordings: readonly VoiceRecordingRef[], credentials: CredentialOfVendor): Promise<void> {
+  private async erase(scope: VoiceRecordingScope, recordings: readonly VoiceRecordingToErase[], credentials: CredentialOfVendor): Promise<void> {
     const now = this.limits.now ?? Date.now;
     const deadline = now() + (this.limits.deadlineMs ?? ERASURE_DEADLINE_MS);
     const queue = [...recordings];
@@ -97,7 +97,7 @@ export class VoiceRecordingErasureService implements VoiceRecordingErasurePort {
 
   private async eraseOne(
     scope: VoiceRecordingScope,
-    recording: VoiceRecordingRef,
+    recording: VoiceRecordingToErase,
     credential: VendorCredential | undefined,
 
   ): Promise<void> {

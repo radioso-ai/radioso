@@ -78,7 +78,7 @@ describeIntegration("VoiceSessionRepository (Postgres)", () => {
   it("holds a started session for its first turn, which binds the conversation onto it", async () => {
     const session = { workspaceId, agentId, vendor: "elevenlabs", sessionKey: randomUUID() };
     const visitor = { publicSessionId: randomUUID(), visitorKey: randomUUID() };
-    await repository.register({ session, visitor, expiresAt: new Date(Date.now() + 60_000), region: "us" });
+    await repository.register({ session, visitor, expiresAt: new Date(Date.now() + 60_000), vendorAgent: { agentId: "agent_42", region: "us" } });
 
     await expect(repository.findConversationId(session)).resolves.toBeNull();
     await expect(repository.findStartedVisitor(session)).resolves.toEqual(visitor);
@@ -93,7 +93,7 @@ describeIntegration("VoiceSessionRepository (Postgres)", () => {
 
   it("forgets a start whose first turn never came, and clears it out on the agent's next start", async () => {
     const expired = { workspaceId, agentId, vendor: "elevenlabs", sessionKey: randomUUID() };
-    await repository.register({ session: expired, visitor: { publicSessionId: randomUUID(), visitorKey: null }, expiresAt: new Date(Date.now() - 1_000), region: "us" });
+    await repository.register({ session: expired, visitor: { publicSessionId: randomUUID(), visitorKey: null }, expiresAt: new Date(Date.now() - 1_000), vendorAgent: { agentId: "agent_42", region: "us" } });
 
     await expect(repository.findStartedVisitor(expired)).resolves.toBeNull();
 
@@ -101,7 +101,7 @@ describeIntegration("VoiceSessionRepository (Postgres)", () => {
       session: { ...expired, sessionKey: randomUUID() },
       visitor: { publicSessionId: randomUUID(), visitorKey: null },
       expiresAt: new Date(Date.now() + 60_000),
-      region: "us",
+      vendorAgent: { agentId: "agent_42", region: "us" },
     });
     const rows = await database.query("SELECT 1 FROM voice_sessions WHERE agent_id = $1 AND session_key = $2", [agentId, expired.sessionKey]);
     expect(rows).toEqual([]);
@@ -109,7 +109,7 @@ describeIntegration("VoiceSessionRepository (Postgres)", () => {
 
   it("does not let another agent's turn read a start", async () => {
     const session = { workspaceId, agentId, vendor: "elevenlabs", sessionKey: randomUUID() };
-    await repository.register({ session, visitor: { publicSessionId: randomUUID(), visitorKey: null }, expiresAt: new Date(Date.now() + 60_000), region: "us" });
+    await repository.register({ session, visitor: { publicSessionId: randomUUID(), visitorKey: null }, expiresAt: new Date(Date.now() + 60_000), vendorAgent: { agentId: "agent_42", region: "us" } });
 
     await expect(repository.findStartedVisitor({ ...session, agentId: otherAgentId })).resolves.toBeNull();
     await expect(repository.findStartedVisitor({ ...session, workspaceId: randomUUID() })).resolves.toBeNull();
@@ -133,7 +133,7 @@ describeIntegration("VoiceSessionRepository (Postgres)", () => {
         session,
         visitor,
         expiresAt: options.expiresAt ?? new Date(Date.now() + 60_000),
-        region: options.region ?? "eu",
+        vendorAgent: { agentId: "agent_42", region: options.region ?? "eu" },
       });
       const report = (vendorConversationId: string, overrides: { publicSessionId?: string; agentId?: string; workspaceId?: string } = {}) =>
         repository.recordVendorConversation({
@@ -190,6 +190,64 @@ describeIntegration("VoiceSessionRepository (Postgres)", () => {
 
       await expect(first.report(vendorConversationId)).resolves.toBe(true);
       await expect(second.report(vendorConversationId)).resolves.toBe(false);
+    });
+
+    it("names the vendor agent and region a report is checked against, while the session waits for one", async () => {
+      const { session, visitor, report } = await startedSession({ region: "eu" });
+      const waiting = { workspaceId, agentId, sessionKey: session.sessionKey, publicSessionId: visitor.publicSessionId };
+
+      await expect(repository.findReportableSession(waiting)).resolves.toEqual({
+        vendor: "elevenlabs",
+        vendorAgent: { agentId: "agent_42", region: "eu" },
+      });
+      await expect(repository.findReportableSession({ ...waiting, publicSessionId: randomUUID() })).resolves.toBeNull();
+
+      await report(`conv_${randomUUID().replaceAll("-", "")}`);
+      await expect(repository.findReportableSession(waiting)).resolves.toBeNull();
+    });
+
+    it("keeps a reported recording's session through the agent's deletion, and still finds and lists it", async () => {
+      const doomedAgentId = randomUUID();
+      await database.query("INSERT INTO agents (id, workspace_id, name) VALUES ($1, $2, $3)", [doomedAgentId, workspaceId, "Deleted Voice Agent"]);
+      const session = { workspaceId, agentId: doomedAgentId, vendor: "elevenlabs", sessionKey: randomUUID() };
+      const visitor = { publicSessionId: randomUUID(), visitorKey: null };
+      await repository.register({ session, visitor, expiresAt: new Date(Date.now() + 60_000), vendorAgent: { agentId: "agent_42", region: "eu" } });
+      const vendorConversationId = `conv_${randomUUID().replaceAll("-", "")}`;
+      await repository.recordVendorConversation({ workspaceId, agentId: doomedAgentId, sessionKey: session.sessionKey, publicSessionId: visitor.publicSessionId, vendorConversationId });
+      const conversationId = await insertConversation(doomedAgentId);
+      await repository.bind(session, conversationId);
+
+      await database.query("DELETE FROM agents WHERE id = $1", [doomedAgentId]);
+
+      await expect(repository.findRecording({ workspaceId, conversationId })).resolves.toMatchObject({ vendorConversationId });
+      const listed = await repository.listRecordings({ kind: "workspace", workspaceId });
+      expect(listed.map((recording) => recording.vendorConversationId)).toContain(vendorConversationId);
+    });
+
+    it("keeps an expired start whose page reported a recording when the agent's next start clears the others out", async () => {
+      const reported = await startedSession({ expiresAt: new Date(Date.now() + 60_000) });
+      const vendorConversationId = `conv_${randomUUID().replaceAll("-", "")}`;
+      await reported.report(vendorConversationId);
+      await database.query("UPDATE voice_sessions SET start_expires_at = now() - interval '1 minute' WHERE session_key = $1", [reported.session.sessionKey]);
+      const abandoned = await startedSession({ expiresAt: new Date(Date.now() - 1_000) });
+
+      await startedSession();
+
+      const kept = await database.query<{ session_key: string }>(
+        "SELECT session_key FROM voice_sessions WHERE session_key = ANY($1::text[])",
+        [[reported.session.sessionKey, abandoned.session.sessionKey]],
+      );
+      expect(kept.map((row) => row.session_key)).toEqual([reported.session.sessionKey]);
+    });
+
+    it("lists a workspace's recording whose call never bound a conversation, with no conversation", async () => {
+      const { report } = await startedSession();
+      const vendorConversationId = `conv_${randomUUID().replaceAll("-", "")}`;
+      await report(vendorConversationId);
+
+      const listed = await repository.listRecordings({ kind: "workspace", workspaceId });
+
+      expect(listed).toContainEqual({ workspaceId, conversationId: null, vendor: "elevenlabs", region: "eu", vendorConversationId });
     });
 
     it("has no recording for a session a page started on its own", async () => {

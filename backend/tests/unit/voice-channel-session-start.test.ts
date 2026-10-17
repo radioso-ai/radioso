@@ -90,7 +90,7 @@ describe("voice session start", () => {
       session: { workspaceId, agentId, vendor: "elevenlabs", sessionKey },
       visitor,
       expiresAt: new Date(now + 60 * 60_000),
-      region: "eu",
+      vendorAgent: { agentId: "agent_42", region: "eu" },
     });
     expect(register.mock.invocationCallOrder[0]).toBeLessThan(startSession.mock.invocationCallOrder[0]);
   });

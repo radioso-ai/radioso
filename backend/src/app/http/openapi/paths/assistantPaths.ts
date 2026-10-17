@@ -502,7 +502,8 @@ export const registerAssistantPublicChatPaths = (
     summary: "Report the vendor's id for a voice session the page opened",
     description: [
       "Once the vendor's client has connected a session from `createPublicVoiceSession`, the page reports the vendor's id for the call, which names the call's recording at the vendor.",
-      "Radioso takes it once, from the same website embed public session the session was started for, while the session's start is unexpired, and only ever uses it to look the recording up with the workspace's own vendor key.",
+      "Radioso takes it once, from the same website embed public session the session was started for, while the session's start is unexpired.",
+      "Before storing it, Radioso asks the vendor, with the workspace's own key, which vendor agent the conversation was held on, and stores it only when that is the vendor agent the session was started on; it only ever uses the id to look the recording up with that key.",
       "A browser on another origin calls `/api/public/chat/{token}/voice/sessions/{sessionKey}/vendor-conversation` on the Radioso app host, which answers the CORS preflight and relays here.",
     ].join(" "),
     operationId: "reportPublicVoiceVendorConversation",
@@ -524,12 +525,16 @@ export const registerAssistantPublicChatPaths = (
         content: { "application/json": { schema: schemas.ErrorResponseSchema } },
       },
       404: {
-        description: "Public session not found or not a website embed session, or no session this public session started waits for an id: it already has one, its start expired, or Radioso never started it",
+        description: "Public session not found or not a website embed session; no session this public session started waits for an id (it already has one, its start expired, or Radioso never started it); or the vendor holds no such conversation on the session's vendor agent",
         content: { "application/json": { schema: schemas.ErrorResponseSchema } },
       },
       429: {
         description: "The visitor session's request budget is spent",
         content: { "application/json": { schema: schemas.RateLimitExceededSchema } },
+      },
+      503: {
+        description: "`voice_unavailable`: the id could not be checked with the vendor now (the workspace's vendor key is missing or unreadable, or the vendor did not answer); report it again",
+        content: { "application/json": { schema: schemas.ErrorResponseSchema } },
       },
     },
   });

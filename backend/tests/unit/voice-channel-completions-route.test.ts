@@ -1038,7 +1038,11 @@ describe("voice completions route outcomes", () => {
         ownership: { isHumanOwned: async () => false },
         logger,
         // The audit store never answers the replay's note.
-        notes: { replyInterrupted: vi.fn(async () => {}), replyReplayed: vi.fn(() => new Promise<void>(() => {})) },
+        notes: {
+          replyInterrupted: vi.fn(async () => {}),
+          replyReplayed: vi.fn(() => new Promise<void>(() => {})),
+          operatorRepliesSpoken: vi.fn(async () => {}),
+        },
       });
       // The runtime hung up on the session's first turn before its outcome, so its stored answer is replayable.
       const hungUp = new AbortController();

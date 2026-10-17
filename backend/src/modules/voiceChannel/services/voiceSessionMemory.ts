@@ -15,7 +15,8 @@ export interface VoiceTurnClaim {
 
 /** What the caller could hear of a turn, in order. */
 export interface VoiceSpokenTurn {
-  bridge: string | null;
+  /** What was spoken ahead of the reply, in order: a teammate's replies, then the bridge line. */
+  ahead: string[];
   reply: string;
 }
 
@@ -183,13 +184,13 @@ export class VoiceSessionMemory {
     if (!last || last.interruptionNote !== "none" || !reply || !spoken || !conversationId) {
       return null;
     }
-    const whole = spoken.bridge === null ? spoken.reply : `${spoken.bridge} ${spoken.reply}`;
+    const whole = [...spoken.ahead, spoken.reply].join(" ");
     const heard = heardPrefixLength(whole, heardUntil);
     if (heard === null) {
       return null;
     }
     last.interruptionNote = "pending";
-    const beforeReply = spoken.bridge === null ? 0 : spokenLength(spoken.bridge) + 1;
+    const beforeReply = spoken.ahead.reduce((characters, text) => characters + spokenLength(text) + 1, 0);
     return {
       interruption: {
         conversationId,

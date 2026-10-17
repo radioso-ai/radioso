@@ -1,6 +1,11 @@
 import { randomUUID } from "node:crypto";
 
-import type { ChatStreamEvent, ReplyInterruptionMarker } from "../../modules/chat/contracts/index.js";
+import type {
+  ChatStreamEvent,
+  OperatorReplySpeechMarker,
+  PendingOperatorReplyReader,
+  ReplyInterruptionMarker,
+} from "../../modules/chat/contracts/index.js";
 import {
   VoiceRecordingErasureService,
   VoiceRecordingService,
@@ -42,14 +47,15 @@ const voiceProfileSource = (agentRepository: AgentVoiceProfileRepository) => ({
 });
 
 /**
- * Notes on a previous turn's stored reply. An interrupted reply is marked on the message first and
+ * Notes on a turn's stored replies. An interrupted reply is marked on the message first and
  * audited after, so a note that rejects is one the session writes again; the mark is idempotent. A
  * reply the conversation no longer holds is not marked and not audited, and the note resolves: a
- * retry would find it no more. Notes name the reply by id and count characters; they never carry
- * what was said.
+ * retry would find it no more. A teammate's replies the turn spoke are marked spoken first, and
+ * only the ones this note marked are audited, so a reply two turns spoke is audited once. Notes
+ * name replies by id and count characters; they never carry what was said.
  */
 export const createVoiceTurnNotes = (deps: {
-  replies: ReplyInterruptionMarker;
+  replies: ReplyInterruptionMarker & OperatorReplySpeechMarker;
   auditService: Pick<AuditPort, "record">;
   logger: Pick<AppLogger, "warn">;
 }): VoiceTurnNotes => ({
@@ -68,14 +74,29 @@ export const createVoiceTurnNotes = (deps: {
   },
   replyReplayed: ({ workspaceId, ...metadata }) =>
     deps.auditService.record({ workspaceId, eventType: "voice.reply_replayed", eventStatus: "success", metadata }),
+  operatorRepliesSpoken: async ({ workspaceId, conversationId, messageIds }) => {
+    const marked = await deps.replies.markOperatorRepliesSpoken({ workspaceId, conversationId, messageIds });
+    if (marked.length === 0) {
+      return;
+    }
+    const markedIds = messageIds.filter((messageId) => marked.includes(messageId));
+    await deps.auditService.record({
+      workspaceId,
+      eventType: "voice.operator_reply_spoken",
+      eventStatus: "success",
+      metadata: { conversationId, messageIds: markedIds },
+    });
+  },
 });
 
 /**
  * The voice channel's turn port: sessions and their starts over one store (`VoiceSessionRepository`
  * in production, the same instance the session start records into), the same streaming chat turn the REST
  * agent channel runs, the agent's voice settings and the conversation's routine state and owner for
- * the turn policy, and notes on a previous turn's stored reply. Vendor adapters mount over this
- * port in the HTTP layer.
+ * the turn policy, the teammate replies the caller has not heard, and notes on a turn's stored
+ * replies. The message repository is chat's side of the replies: it reads a teammate's pending
+ * replies, marks them spoken, and marks an interrupted one. Vendor adapters mount over this port
+ * in the HTTP layer.
  */
 export const createVoiceChannelComposition = (deps: {
   sessions: VoiceSessionStore & VoiceSessionStartLookup;
@@ -85,7 +106,7 @@ export const createVoiceChannelComposition = (deps: {
   agentRepository: AgentVoiceProfileRepository;
   routineStates: { loadActive(input: { sessionId: string }): Promise<unknown> };
   conversationOwnership: ConversationOwnershipReader;
-  replies: ReplyInterruptionMarker;
+  replies: ReplyInterruptionMarker & OperatorReplySpeechMarker & PendingOperatorReplyReader;
   auditService: Pick<AuditPort, "record">;
   metricsRegistry: MetricsRegistry | null;
   logger: AppLogger;
@@ -98,6 +119,7 @@ export const createVoiceChannelComposition = (deps: {
     // A conversation's routine state is keyed by the conversation id.
     routines: { isRoutineActive: async (conversationId) => (await deps.routineStates.loadActive({ sessionId: conversationId })) !== null },
     ownership: { isHumanOwned: async (conversationId) => isHumanOwned(await deps.conversationOwnership.load(conversationId)) },
+    operatorReplies: deps.replies,
     notes: createVoiceTurnNotes({ replies: deps.replies, auditService: deps.auditService, logger: deps.logger }),
     metrics: deps.metricsRegistry,
     logger: deps.logger,

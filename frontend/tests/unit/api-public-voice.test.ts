@@ -94,23 +94,39 @@ describe('vendor conversation report', () => {
     vi.unstubAllGlobals()
   })
 
-  it("tells the app host's relay the vendor's id for the session's call, with the embed's public session", async () => {
+  it("tells the app host's relay the vendor's id for the session's call, with the embed's public session, and outlives the page", async () => {
     const fetchMock = vi.fn(async () => new Response(null, { status: 204 }))
     vi.stubGlobal('fetch', fetchMock)
 
-    await reportVoiceVendorConversation('launch token', { sessionKey: session.sessionKey, vendorConversationId: 'conv_1' })
+    await expect(reportVoiceVendorConversation('launch token', { sessionKey: session.sessionKey, vendorConversationId: 'conv_1' })).resolves.toBe('recorded')
 
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
     expect(url).toBe(`/api/public/chat/launch%20token/voice/sessions/${session.sessionKey}/vendor-conversation`)
     expect(init.method).toBe('POST')
+    expect(init.keepalive).toBe(true)
     expect(init.headers).toMatchObject({ 'X-Radioso-Public-Session': 'public-session-token' })
     expect(JSON.parse(init.body as string)).toEqual({ vendorConversationId: 'conv_1' })
   })
 
-  it('never rejects, whatever the relay answers', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => {
-      throw new TypeError('network down')
-    }))
-    await expect(reportVoiceVendorConversation('token', { sessionKey: session.sessionKey, vendorConversationId: 'conv_1' })).resolves.toBeUndefined()
+  it('tries once more when the report does not get through, and never rejects', async () => {
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(new TypeError('network down'))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }))
+    vi.stubGlobal('fetch', fetchMock)
+    await expect(reportVoiceVendorConversation('token', { sessionKey: session.sessionKey, vendorConversationId: 'conv_1' })).resolves.toBe('recorded')
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+
+    const failing = vi.fn(async () => new Response('{}', { status: 503 }))
+    vi.stubGlobal('fetch', failing)
+    await expect(reportVoiceVendorConversation('token', { sessionKey: session.sessionKey, vendorConversationId: 'conv_1' })).resolves.toBe('failed')
+    expect(failing).toHaveBeenCalledTimes(2)
+  })
+
+  it('takes a refusal as final', async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 404 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(reportVoiceVendorConversation('token', { sessionKey: session.sessionKey, vendorConversationId: 'conv_1' })).resolves.toBe('refused')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 })

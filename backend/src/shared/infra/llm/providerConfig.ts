@@ -3,6 +3,7 @@ import {
   type LlmCapabilityDefault,
   type LlmCapabilityName,
   type LlmProviderName,
+  type OpenAIDataResidency,
   ProviderConfigurationError,
   type ResolvedLlmConfig,
 } from "./providerTypes.js";
@@ -16,6 +17,37 @@ const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
 const DEFAULT_GEMINI_EMBEDDING_MODEL = "gemini-embedding-001";
 const DEFAULT_GEMINI_TEXT_MODEL = "gemini-2.5-flash";
 const DEFAULT_CLAUDE_TEXT_MODEL = "claude-sonnet-4-5";
+
+const OPENAI_RESIDENCY_BASE_URLS: Record<Exclude<OpenAIDataResidency, "global">, string> = {
+  us: "https://us.api.openai.com/v1",
+  eu: "https://eu.api.openai.com/v1",
+};
+
+/**
+ * Narrows to exactly the two non-default residency values this module recognizes, via literal
+ * equality rather than an object-key lookup — so no prototype property (`toString`,
+ * `constructor`, ...) can ever resolve to a value.
+ */
+const isRegionalOpenAIDataResidency = (
+  value: unknown,
+): value is Exclude<OpenAIDataResidency, "global"> => value === "us" || value === "eu";
+
+/** Narrows an arbitrary env value to a known residency, defaulting anything else to `global`. */
+const normalizeOpenAIDataResidency = (
+  value: string | number | boolean | undefined,
+): OpenAIDataResidency => (isRegionalOpenAIDataResidency(value) ? value : "global");
+
+/**
+ * Maps the platform's OpenAI data-residency setting to an explicit base URL. `global` (the
+ * default, and any value this module does not recognize) returns `undefined` so the caller
+ * passes no `baseURL` at all and the OpenAI SDK's own default resolution applies — unchanged
+ * from before this setting existed. Applies only to the platform-held `OPENAI_API_KEY`; a
+ * workspace's own (BYOK) OpenAI key keeps the residency its own project already chose.
+ */
+export const openAIBaseUrlForResidency = (
+  residency: string | number | boolean | undefined,
+): string | undefined =>
+  isRegionalOpenAIDataResidency(residency) ? OPENAI_RESIDENCY_BASE_URLS[residency] : undefined;
 
 const asProvider = (value: string | number | boolean | undefined, field: string): LlmProviderName | undefined => {
   if (value === undefined) {
@@ -60,6 +92,10 @@ const resolveApiKey = (provider: LlmProviderName, env: ProviderEnv): string | un
 };
 
 const resolveBaseUrl = (provider: LlmProviderName, env: ProviderEnv): string | undefined => {
+  if (provider === "openai") {
+    return openAIBaseUrlForResidency(env.OPENAI_DATA_RESIDENCY);
+  }
+
   if (provider !== "openai-compatible") {
     return undefined;
   }
@@ -74,11 +110,13 @@ const resolveCapability = (
   env: ProviderEnv,
 ): LlmCapabilityDefault => {
   const baseUrl = resolveBaseUrl(provider, env);
+  const openAIDataResidency = provider === "openai" ? normalizeOpenAIDataResidency(env.OPENAI_DATA_RESIDENCY) : undefined;
   return {
     capability,
     provider,
     model,
     ...(baseUrl ? { baseUrl } : {}),
+    ...(openAIDataResidency ? { openAIDataResidency } : {}),
   };
 };
 
@@ -190,6 +228,15 @@ export const resolveLlmConfig = (env: ProviderEnv): ResolvedLlmConfig => {
   const embeddings = resolveCapability("embeddings", embeddingProvider, embeddingModel, env);
   const embeddingProviderConfigs = resolveSupplementalEmbeddingConfigs(embeddings, env);
 
+  // Derived once, here, from the raw env value. Composition and the startup log read this
+  // field on the resolved config instead of re-reading OPENAI_DATA_RESIDENCY themselves.
+  const openAIPlatformResidency = hasRequiredProviderCredentials("openai", env)
+    ? {
+        residency: normalizeOpenAIDataResidency(env.OPENAI_DATA_RESIDENCY),
+        baseUrl: openAIBaseUrlForResidency(env.OPENAI_DATA_RESIDENCY),
+      }
+    : undefined;
+
   return {
     chat,
     rewrite,
@@ -202,5 +249,6 @@ export const resolveLlmConfig = (env: ProviderEnv): ResolvedLlmConfig => {
         return apiKey ? [[provider, apiKey]] : [];
       }),
     ),
+    ...(openAIPlatformResidency ? { openAIPlatformResidency } : {}),
   };
 };

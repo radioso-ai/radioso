@@ -185,6 +185,13 @@ export const clockTimestamp = (): RawBuilder<Date> => sql`clock_timestamp()`;
 export const nowMinusSeconds = (seconds: number): RawBuilder<Date> =>
   sql`now() - make_interval(secs => ${seconds})`;
 
+/**
+ * `clock_timestamp() - make_interval(secs => <seconds>)` — `seconds` before this moment rather than
+ * before the transaction's start, for a comparison against times written with `clock_timestamp()`.
+ */
+export const clockTimestampMinusSeconds = (seconds: number): RawBuilder<Date> =>
+  sql`clock_timestamp() - make_interval(secs => ${seconds})`;
+
 /** `now() + make_interval(secs => <seconds>)` — a timestamp `seconds` in the future (DB clock). */
 export const nowPlusSeconds = (seconds: number): RawBuilder<Date> =>
   sql`now() + make_interval(secs => ${seconds})`;

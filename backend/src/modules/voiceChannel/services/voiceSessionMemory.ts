@@ -4,6 +4,8 @@ import { heardPrefixLength, spokenLength } from "./speechText.js";
 export interface VoiceTurnClaim {
   /** Arrival order within the process. */
   readonly sequence: number;
+  /** The request of the session still in flight when this one arrived, which this one overtook. */
+  readonly overtook: VoiceTurnClaim | null;
   /** When a newer request of the session arrived while this one was in flight. */
   supersededAt: number | null;
   /** When the runtime closed this request before the turn's outcome reached it. */
@@ -15,7 +17,8 @@ export interface VoiceTurnClaim {
 
 /** What the caller could hear of a turn, in order. */
 export interface VoiceSpokenTurn {
-  bridge: string | null;
+  /** What was spoken ahead of the reply, in order: a teammate's replies, then the bridge line. */
+  ahead: string[];
   reply: string;
 }
 
@@ -111,7 +114,8 @@ export class VoiceSessionMemory {
     if (previous && !previous.settled) {
       previous.supersededAt ??= now;
     }
-    const claim: VoiceTurnClaim = { sequence: ++this.arrivals, supersededAt: null, hungUpAt: null, outcomeAt: null, settled: false };
+    const overtook = previous && !previous.settled ? previous : null;
+    const claim: VoiceTurnClaim = { sequence: ++this.arrivals, overtook, supersededAt: null, hungUpAt: null, outcomeAt: null, settled: false };
     state.newest = claim;
     state.open += 1;
     return claim;
@@ -183,13 +187,13 @@ export class VoiceSessionMemory {
     if (!last || last.interruptionNote !== "none" || !reply || !spoken || !conversationId) {
       return null;
     }
-    const whole = spoken.bridge === null ? spoken.reply : `${spoken.bridge} ${spoken.reply}`;
+    const whole = [...spoken.ahead, spoken.reply].join(" ");
     const heard = heardPrefixLength(whole, heardUntil);
     if (heard === null) {
       return null;
     }
     last.interruptionNote = "pending";
-    const beforeReply = spoken.bridge === null ? 0 : spokenLength(spoken.bridge) + 1;
+    const beforeReply = spoken.ahead.reduce((characters, text) => characters + spokenLength(text) + 1, 0);
     return {
       interruption: {
         conversationId,

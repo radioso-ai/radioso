@@ -6,7 +6,7 @@ import {
   type ConversationActivityEntry,
   type RecentlyClosedInboxItem,
 } from "../../../../modules/conversationActivity/contracts/index.js";
-import { replyInterruptionSchema } from "../../../../modules/chat/contracts/index.js";
+import { operatorReplySpeechSchema, replyInterruptionSchema } from "../../../../modules/chat/contracts/index.js";
 import { assistantChatSchema } from "../../schemas/assistantChatSchemas.js";
 import {
   conversationParamsSchema,
@@ -655,6 +655,13 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
+  const OperatorReplySpeechSchema = registry.register(
+    "OperatorReplySpeech",
+    operatorReplySpeechSchema.openapi({
+      description: "Present on a teammate's reply on a voice conversation. A call speaks only when its caller does, so the reply is `pending` until the caller's next turn speaks it, then `spoken`, with `spokenAt` set to when the turn that spoke it completed. `skipped`: the reply has no words a call can speak, so no turn speaks it.",
+    }),
+  );
+
   // Shared by the operator and public message schemas. `debug`, `turnFailure`, and
   // `operatorLabel` are operator-only and are added on top of this shape for the dashboard
   // schema alone: the first two carry turn diagnostics (and `turnFailure` carries raw error
@@ -673,6 +680,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     answerFeedbackEntries: z.array(AnswerFeedbackEntrySchema).optional(),
     operatorDisplayName: z.string().optional(),
     interruption: ReplyInterruptionSchema.optional(),
+    speech: OperatorReplySpeechSchema.optional(),
   };
 
   const ChatConversationMessageSchema = registry.register(

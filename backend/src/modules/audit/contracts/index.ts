@@ -24,6 +24,16 @@ export interface ChatAnswerAuditMetadata extends AuditEventMetadata {
 
 export interface AuditPort {
   record(event: AuditEventInput): Promise<void>;
+  /**
+   * Records an event naming a conversation only if that conversation still exists, atomically
+   * with the check, so a write racing the conversation's erasure cannot land after the erasure's
+   * own audit cleanup has already run past it. Skips silently (no row, no thrown error) when the
+   * conversation is gone.
+   */
+  recordForLiveConversation(
+    event: AuditEventInput,
+    conversation: { workspaceId: string; conversationId: string },
+  ): Promise<void>;
   logRecorded?(event: AuditEventInput): void;
   getLatestSuccessfulChatAnswerMetadata(input: {
     workspaceId: string;

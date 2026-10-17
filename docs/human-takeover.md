@@ -1,7 +1,7 @@
 ---
 title: "Human Takeover"
 description: "Operator API and contract for taking over conversations, suppressing AI while handling manual responses, and reading who did what to a conversation."
-last_updated: 2026-10-11
+last_updated: 2026-10-17
 ---
 
 # Human Takeover
@@ -737,7 +737,9 @@ when a new handoff or approval arrives while the dashboard is open.
 
 An **Open in debug view** link, available from either lens, opens the
 conversation drawer: transcript, Debug, Flow, a button to continue the
-conversation in test chat, and a button to send it to Eval. The drawer is for
+conversation in test chat, and a button to send it to Eval. Owners and admins
+also get **Delete conversation**, which erases it permanently through
+`DELETE /api/v1/history/chat/{conversationId}`. The drawer is for
 inspecting and testing a conversation — replying, taking over, handing back,
 and approving or rejecting a pending decision all happen from the reading
 pane instead.

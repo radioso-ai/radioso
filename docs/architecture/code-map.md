@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-10-16
+last_updated: 2026-10-17
 ---
 
 # Code Map
@@ -802,6 +802,51 @@ Focused checks:
 Related specs:
 
 - `specs/1277-visitor-profile/`
+
+## Conversation Erasure
+
+Owns the permanent erasure of a conversation, or of a visitor with every
+conversation they had (#1540). `ConversationErasureService` resolves the
+subject, takes the conversation lock protocol's locks (the visitor's row first),
+runs every module's eraser, deletes the conversations (their foreign keys
+cascade the rest) and the visitor row, records one content-free
+`conversation.erased` / `visitor.erased` audit event, and publishes
+`conversation.deleted` after commit. It knows the erasure ports and nothing
+about which tables exist.
+
+Rows a foreign key cannot reach belong to the module that owns them, which
+implements `ConversationDataEraser` (and `VerifiedCustomerDataEraser` for
+customer-keyed rows) from `backend/src/shared/domain/conversationDataErasure.ts`:
+context-variable session and customer values (an eraser reads the session ids
+it keys by from the conversations before they go), `chat.answer` /
+`chat.suspended` audit events, inbound email deliveries and their events, email
+skill activity, eval cases and runs built on a conversation's snapshot, the
+WhatsApp message log of a number whose latest conversation goes, and an Audience
+Pulse report built on an erased question. Composition binds
+them to the erasure's transaction, and runs their workspace scope inside
+workspace and organization deletion. A new column that names a conversation,
+session, visitor or message needs a cascading key, an eraser, or a stated
+reason in the schema contract test.
+
+Public surfaces and key files:
+
+- `backend/src/modules/privacy/conversationErasure.ts` (use case and ports)
+- `backend/src/shared/domain/conversationDataErasure.ts` (eraser ports)
+- `backend/src/app/composition/conversationErasure.ts` (eraser list, unit of work, workspace-deletion hook)
+- `backend/src/db/repositories/conversationErasureRepository.ts` (subject locks and deletes)
+- `backend/src/app/http/routes/historyRoutes.ts` (`DELETE /api/v1/history/chat/{conversationId}`, `DELETE /api/v1/history/visitors/{visitorId}`; `workspace.history.delete`)
+- `frontend/components/dashboard/delete-conversation-action.tsx` (the drawer's **Delete conversation**)
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/conversation-erasure-service.test.ts tests/unit/conversation-data-erasers.test.ts tests/contract/history-erasure.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/conversation-erasure.integration.test.ts tests/integration/conversation-erasure-coverage.integration.test.ts --no-file-parallelism`
+- `cd backend && pnpm exec vitest run tests/unit/conversation-erasure-migrations.test.ts` (the `228_conversation_erasure_*` lock discipline; deploy runbook in `docs-portal/content/operators/deployment.mdx`)
+- `cd frontend && pnpm exec playwright test tests/e2e/conversation-erasure.spec.ts`
+
+Related docs:
+
+- [Deleting conversation data](../../docs-portal/content/operators/deleting-conversation-data.mdx)
 
 ## Agent Revisions
 

@@ -1,3 +1,4 @@
+import type { ConversationErasure } from "../../modules/privacy/public.js";
 import type {
   AgentStarterPromptReader,
   AssistantChatService,
@@ -359,6 +360,8 @@ export interface AppDependencies {
   /** Whether a page should offer a caller voice sessions with an agent; the website embed asks. */
   voiceSessionAvailability: VoiceSessionAvailabilityPort;
   assistantHistoryService: AssistantHistoryService;
+  /** Permanent erasure of a conversation, or of a visitor and their conversations. */
+  conversationErasure: ConversationErasure;
   retrievalSearchService: RetrievalSearchService;
   retrievalAnswerService: RetrievalAnswerService;
   retrievalDefaultsProvider: RetrievalDefaultsProvider;

@@ -3194,7 +3194,11 @@ export interface paths {
         get: operations["getHistoryConversation"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Permanently delete a conversation and everything derived from it
+         * @description Erases the conversation, its messages, and every record derived from it: summaries, routine and decision state, held replies, email threads and inbound mail, session-scoped context values, and the turn audit events that carry its content. The billing ledger keeps its usage rows without the link. Records one `conversation.erased` audit event with counts only. Requires workspace.history.delete. There is no undo.
+         */
+        delete: operations["deleteHistoryConversation"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3235,6 +3239,26 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/history/visitors/{visitorId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Permanently delete a visitor, every conversation they had, and everything derived from them
+         * @description Erases each of the visitor's conversations as `DELETE /api/v1/history/chat/{conversationId}` does, then the customer-scoped context values for the visitor's verified customer id, then the visitor record. Records one `visitor.erased` audit event with counts only. Requires workspace.history.delete. There is no undo.
+         */
+        delete: operations["deleteHistoryVisitor"];
         options?: never;
         head?: never;
         patch?: never;
@@ -9663,7 +9687,7 @@ export interface components {
             pending: boolean;
         };
         /** @enum {string} */
-        WorkspaceInvalidationKind: "document.status_changed" | "crawl.status_changed" | "crawl.progress" | "conversation.created" | "conversation.turn_committed" | "conversation.contact_delivery_changed" | "conversation.ownership_changed" | "search.created" | "hitl.decision_created" | "hitl.decision_resolved" | "quality.feedback_changed" | "quality.triage_changed";
+        WorkspaceInvalidationKind: "document.status_changed" | "crawl.status_changed" | "crawl.progress" | "conversation.created" | "conversation.turn_committed" | "conversation.contact_delivery_changed" | "conversation.ownership_changed" | "conversation.deleted" | "search.created" | "hitl.decision_created" | "hitl.decision_resolved" | "quality.feedback_changed" | "quality.triage_changed";
         WorkspaceEventReadyData: {
             /** @enum {number} */
             protocolVersion: 1;
@@ -9671,7 +9695,7 @@ export interface components {
         WorkspaceEventInvalidateData: {
             /** @enum {number} */
             protocolVersion: 1;
-            /** @description Unique invalidation kind strings. Known protocol version 1 kinds: document.status_changed, crawl.status_changed, crawl.progress, conversation.created, conversation.turn_committed, conversation.contact_delivery_changed, conversation.ownership_changed, search.created, hitl.decision_created, hitl.decision_resolved, quality.feedback_changed, quality.triage_changed. Clients process recognized kinds in mixed frames, ignore unknown future kinds, and retain their polling floor. */
+            /** @description Unique invalidation kind strings. Known protocol version 1 kinds: document.status_changed, crawl.status_changed, crawl.progress, conversation.created, conversation.turn_committed, conversation.contact_delivery_changed, conversation.ownership_changed, conversation.deleted, search.created, hitl.decision_created, hitl.decision_resolved, quality.feedback_changed, quality.triage_changed. Clients process recognized kinds in mixed frames, ignore unknown future kinds, and retain their polling floor. */
             changeKinds: string[];
         };
         WorkspaceEventResyncData: {
@@ -24970,6 +24994,62 @@ export interface operations {
             };
         };
     };
+    deleteHistoryConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Conversation deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.history.delete */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     tailHistoryConversation: {
         parameters: {
             query?: {
@@ -25059,6 +25139,62 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Visitor not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteHistoryVisitor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                visitorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Visitor deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.history.delete */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

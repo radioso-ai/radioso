@@ -1,0 +1,100 @@
+---
+title: "Deleting conversation data"
+description: "How to permanently delete a conversation or a visitor, what goes with it, and what Radioso keeps."
+last_updated: 2026-10-17
+---
+
+# Deleting conversation data
+
+When someone asks you to delete what your agent holds about them, delete their conversation, or delete the visitor and every conversation they had. Either way the deletion is permanent: Radioso removes the messages and everything it derived from them in one step, and there is no undo.
+
+## Delete one conversation
+
+In the dashboard, open the conversation from the Inbox, choose **Open in debug view**, then **Delete conversation**. Radioso asks you to confirm, because the deletion is permanent. The conversation leaves every teammate's Inbox lists, and a drawer someone else had open on it closes.
+
+Over the API, send:
+
+```http
+DELETE /api/v1/history/chat/{conversationId}
+```
+
+A deleted conversation answers `204` with no body. A conversation the workspace does not have answers `404`, and nothing is recorded.
+
+## Delete a visitor
+
+A visitor groups the conversations one browser, or one verified customer, had with your agents. To delete the person rather than a single conversation, take the `visitor.id` from the conversation detail (`GET /api/v1/history/chat/{conversationId}`) and send:
+
+```http
+DELETE /api/v1/history/visitors/{visitorId}
+```
+
+Radioso deletes each of the visitor's conversations as above, then the customer-scoped context values your site pushed for the visitor's verified customer id, then the visitor record itself. Visitor deletion is available over the API; the dashboard deletes one conversation at a time.
+
+## Who can delete
+
+Both routes need `workspace.history.delete`. Owners and admins of the workspace hold it — an organization member granted admin on the workspace counts as an admin there; members can read history but cannot delete it. An admin personal credential or an admin service-account credential can call both routes, so a data-subject request pipeline can delete over the API without a signed-in session.
+
+Each deletion records one `conversation.erased` or `visitor.erased` audit event: who asked, the conversation or visitor id, and how many conversations, messages, and other rows went. It never records any of the content. That event is your record that the request was honoured.
+
+## What is deleted
+
+Deleting a conversation removes:
+
+- its messages, summary and title;
+- routine state, including the values a routine collected, pending approvals, clarifications, and directive memory;
+- held replies, ownership, activity, and delivery failures;
+- answer feedback and triage, coverage assessments, facets and topic memberships;
+- eval snapshots taken from it, with the eval cases and runs built on them;
+- email threads, sent-email records, and the inbound mail it received, raw message included;
+- Slack and voice links, and WhatsApp contacts;
+- the WhatsApp message log of the number whose latest conversation it is (see below);
+- routine actions and notices queued for it and not yet sent;
+- email skill activity, including its recipient summary;
+- session-scoped context values for a chat session no other conversation uses;
+- the visitor record, when this was an anonymous visitor's last conversation;
+- the turn audit events that carry its content: suggestions, rewritten queries, retrieval diagnostics, and traces.
+
+## What is kept
+
+A few records stay on purpose. None of them holds the conversation's content:
+
+- **A verified visitor's record.** It belongs to the customer, not to one conversation, so deleting their last conversation leaves it in place with a conversation count of zero. It stays the handle for a later [visitor deletion](#delete-a-visitor), which is what removes their customer-scoped context values.
+- **The billing ledger.** Usage events keep their token counts and lose the link to the conversation and its messages.
+- **The notice email cap.** The daily count of notice emails keeps its numbers, so deleting a conversation never hands its emails back to the day's budget.
+- **The Enterprise Edition reply quota.** The per-period counter keeps the conversation id and a count, so deleting conversations cannot reset a plan's quota.
+- **Operational audit events.** Events that name the conversation id with an outcome — a takeover, an approval, an email send — keep the id and the outcome codes.
+- **Audience Pulse topics.** Topic names and descriptions are written from many visitors' de-identified question summaries and checked for personal details, and topic sizes are counts. They stay. The Audience Pulse report itself quotes visitors' questions in its recommendations, so a report built on a deleted conversation is discarded; regenerate it from what remains.
+
+WhatsApp keeps one transport log per phone number, not per conversation, and links the number only to its latest conversation; a message after the conversation timeout starts a new conversation. Deleting a number's latest conversation therefore deletes the number's whole log, earlier conversations' entries included. Deleting one of its earlier conversations leaves the log until the latest one is deleted.
+
+Two copies outside the conversation stay until their own lifecycle removes them:
+
+- A private test started with **Continue in test chat** holds its own copy of the thread. It goes when the agent or the workspace is deleted.
+- A Ray conversation that read the transcript keeps what Ray wrote about it until Ray's 90-day retention removes it.
+
+## What deletion cannot recall
+
+Deletion reaches what Radioso stores. It cannot reach what already left:
+
+- operator notices already sent by email or posted to Slack;
+- webhook payloads already delivered to another system;
+- emails your agent already sent to the visitor;
+- anything a model provider received while answering, under that provider's own terms.
+
+Database backups keep deleted data until each backup ages out of its retention window.
+
+## Deleting everything at once
+
+Deleting a workspace deletes every conversation and visitor in it, with the same cleanup. Deleting the organization (**Settings → Workspace → Delete organization**, owners only) deletes every workspace it has.
+
+## Common failure modes
+
+- **`403`** — the caller lacks `workspace.history.delete`: a member session, or a member credential.
+- **`404`** — the conversation or visitor belongs to another workspace, or is already gone.
+- **The Delete conversation button is missing** — your role on this workspace is member: neither your organization role nor a workspace grant makes you an admin here. Ask an owner or admin, or ask for an admin grant on the workspace.
+
+## Read next
+
+- [Visitor data](/operators/visitor-data) — what a conversation records about a visit.
+- [Chat and history](/api/chat-and-history) — the history API these routes belong to.
+- [Context variables](/operators/context-variables) — what session- and customer-scoped values hold.

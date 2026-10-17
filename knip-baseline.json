@@ -413,7 +413,6 @@
   "types|backend/src/modules/slack/oauth/slackProvider.ts|SlackOauthProviderCredentialConfig",
   "types|backend/src/modules/slack/operator/slackInteractivityRouter.ts|SlackInteractivityRouterOptions",
   "types|backend/src/modules/slack/operator/slackResponseUrlClient.ts|SlackResponseUrlFetchLike",
-  "types|backend/src/modules/slackSkills/executor/slackEscalationExecutor.ts|SlackEscalationExecutorOptions",
   "types|backend/src/modules/slackSkills/service.ts|SlackSkillDefinitionServiceOptions",
   "types|backend/src/modules/webhookSkills/executor/webhookSkillExecutor.ts|WebhookSkillExecutorOptions",
   "types|backend/src/modules/webhookSkills/services/webhookSkillDefinitionService.ts|WebhookSkillDefinitionServiceOptions",

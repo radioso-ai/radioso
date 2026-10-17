@@ -1061,7 +1061,7 @@ export const buildChatServices = (input: {
     actionOutboxQueueDepthReporter,
     reportActionOutboxQueueState,
     // The chat-owned kinds the worker's background job runtime runs.
-    backgroundJobHandlers: [conversationSummaryRefreshHandler(conversationSummaryService)],
+    backgroundJobHandlers: [conversationSummaryRefreshHandler(conversationSummaryService, input.conversationRepository)],
     // For producers outside the turn that write the outbox in their own transaction (a
     // conversation transfer and its notice) and push a drain once it commits.
     actionDrainDispatcher,

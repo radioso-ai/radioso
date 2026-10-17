@@ -70,15 +70,15 @@ export class VoiceRecordingErasureService implements VoiceRecordingErasurePort {
       this.dependencies.logger.warn({ workspaceId: scope.workspaceId, errorClass: errorClassOf(error) }, "Voice recordings to delete could not be read");
       return [];
     }
-    const credentials = new Map<VoiceVendor, VendorCredential>();
+    const items: ErasureItem[] = [];
     for (const vendor of new Set(recordings.map((recording) => recording.vendor))) {
-      credentials.set(vendor, await this.readCredential(scope.workspaceId, vendor));
+      // One key read per vendor, while the workspace still holds it.
+      const credential = await this.readCredential(scope.workspaceId, vendor);
+      for (const recording of recordings) {
+        if (recording.vendor === vendor) items.push({ scope, recording, credential });
+      }
     }
-    return recordings.map((recording) => ({
-      scope,
-      recording,
-      credential: credentials.get(recording.vendor) ?? { kind: "absent", outcome: "credential_read_failed" },
-    }));
+    return items;
   }
 
   private async readCredential(workspaceId: string, vendor: VoiceVendor): Promise<VendorCredential> {

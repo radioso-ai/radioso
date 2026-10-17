@@ -19,7 +19,7 @@ import type {
 } from "../../modules/chat/contracts/operatorReplySpeech.js";
 import { VOICE_BEHAVIOR } from "../../shared/domain/behaviorConfig.js";
 import { HUMAN_AUTHORED_MESSAGE_SOURCES, isHumanAuthoredMessageSource } from "../../shared/domain/messageAuthorship.js";
-import { clockTimestamp, jsonbConcat, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import { clockTimestamp, clockTimestampMinusSeconds, jsonbConcat, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 import type { GroundingDiagnosticSnapshot } from "../../shared/domain/groundingDiagnostic.js";
@@ -288,7 +288,7 @@ const carriesInterruption = sql<boolean>`jsonb_typeof(metadata_json -> 'interrup
 const speechState = sql<string>`metadata_json -> 'speech' ->> 'state'`;
 /** Pending, or claimed by a turn that never settled it within the expiry. */
 const awaitsSpeech = sql<boolean>`(${speechState} = 'pending' OR (${speechState} = 'claimed'
-  AND metadata_json -> 'speech' ->> 'claimedAt' < ${isoText(sql<Date>`${clockTimestamp()} - make_interval(secs => ${VOICE_BEHAVIOR.operatorReplyClaimExpiryMs / 1_000})`)}))`;
+  AND metadata_json -> 'speech' ->> 'claimedAt' < ${isoText(clockTimestampMinusSeconds(VOICE_BEHAVIOR.operatorReplyClaimExpiryMs / 1_000))}))`;
 const claimedBy = (claimTurnId: string) =>
   sql<boolean>`(${speechState} = 'claimed' AND metadata_json -> 'speech' ->> 'claimTurnId' = ${claimTurnId})`;
 const PENDING_SPEECH = { state: "pending" } as const satisfies OperatorReplySpeech;

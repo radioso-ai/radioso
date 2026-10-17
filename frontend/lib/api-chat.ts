@@ -56,6 +56,8 @@ export const chatApi = {
     // returns only them (the workbench's recent test sessions); `all` returns both.
     sourceScope?: 'end_user' | 'operator_test' | 'all'
     ownership?: 'human_owned'
+    agentId?: string
+    channel?: string
   }, signal?: AbortSignal): Promise<ChatHistoryListResponse> {
     return request<ChatHistoryListResponse>(withQuery('/history/chat', {
       limit: input?.limit,
@@ -63,6 +65,8 @@ export const chatApi = {
       cursor: input?.cursor,
       sourceScope: input?.sourceScope,
       ownership: input?.ownership,
+      agentId: input?.agentId,
+      channel: input?.channel,
     }), {
       method: 'GET',
       ...(signal ? { signal } : {}),

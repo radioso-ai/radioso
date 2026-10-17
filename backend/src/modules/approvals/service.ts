@@ -126,8 +126,8 @@ export class ApprovalDecisionService {
     private readonly effectJournal?: ApprovalResumeEffectJournal,
   ) {}
 
-  async listPending(workspaceId: string): Promise<PendingDecisionRecord[]> {
-    return this.pendingDecisions.listPending({ workspaceId });
+  async listPending(workspaceId: string, filters: { agentId?: string; channel?: string } = {}): Promise<PendingDecisionRecord[]> {
+    return this.pendingDecisions.listPending({ workspaceId, ...filters });
   }
 
   async canResolve(record: PendingDecisionRecord, caller: DecisionCaller): Promise<boolean> {

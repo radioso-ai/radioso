@@ -19,6 +19,7 @@ composition calls them and assembles the result.
 ## Read First
 
 - `defaultComposition.ts`: baseline OSS application wiring.
+- `abuseControl.ts`: selects the Postgres counter or the Redis counter with Postgres failover.
 - `applicationModule.ts`: module registration shape.
 - `builtIn/`: built-in module registrations for optional surfaces that ship
   with the default app.

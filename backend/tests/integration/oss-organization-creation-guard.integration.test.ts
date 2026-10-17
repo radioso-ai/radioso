@@ -45,7 +45,7 @@ describeIntegration("OSS organization creation guard integration", () => {
     const admin = new pg.Pool({ connectionString: integrationDatabaseUrl });
     try {
       await admin.query(`CREATE SCHEMA "${schema}"`);
-      for (const table of ["accounts", "users", "account_memberships", "workspaces"]) {
+      for (const table of ["accounts", "users", "account_memberships", "workspaces", "workspace_setup_state"]) {
         await admin.query(`CREATE TABLE "${schema}"."${table}" (LIKE public."${table}" INCLUDING ALL)`);
       }
     } finally {
@@ -68,6 +68,7 @@ describeIntegration("OSS organization creation guard integration", () => {
   });
 
   beforeEach(async () => {
+    await database.query("DELETE FROM workspace_setup_state");
     await database.query("DELETE FROM account_memberships");
     await database.query("DELETE FROM workspaces");
     await database.query("DELETE FROM accounts");
@@ -88,6 +89,8 @@ describeIntegration("OSS organization creation guard integration", () => {
     await expect(database.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM account_memberships"))
       .resolves.toEqual([{ count: "1" }]);
     await expect(database.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM workspaces"))
+      .resolves.toEqual([{ count: "1" }]);
+    await expect(database.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM workspace_setup_state"))
       .resolves.toEqual([{ count: "1" }]);
   });
 

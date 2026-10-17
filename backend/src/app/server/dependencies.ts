@@ -248,6 +248,20 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     notificationRecipientPolicy,
     infrastructure.usageLimitPolicy,
   );
+  // One store for voice sessions: the turn's bindings, the starts the turn and the session start
+  // share, and where each call's recording lives.
+  const voiceSessions = new VoiceSessionRepository(infrastructure.database.kysely);
+  // Recordings stay with the vendor; the Inbox plays them through the backend with the workspace's
+  // key, Ray reads whether one exists, and a deletion asks the vendor to delete them.
+  const voiceRecordings = createVoiceRecordingComposition({
+    recordings: voiceSessions,
+    credentials: workspaceProviderCredentialsService,
+    // Called through its own receiver, never detached from globalThis.
+    fetch: (url, init) => globalThis.fetch(url, init),
+    auditService: infrastructure.auditService,
+    metricsRegistry: infrastructure.metricsRegistry,
+    logger,
+  });
   const documentRetrievalGraph = buildDocumentRetrievalGraph({
     composition,
     env,
@@ -256,6 +270,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     repositories,
     personalCredentialTermination: access.personalCredentialTenureService,
     personalCredentialLifecycle: access.personalCredentialLifecycle,
+    vendorHeldConversationData: voiceRecordings.erasure,
     workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
     workspaceProviderCredentialsService,
   });
@@ -981,20 +996,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     typeof registration === "function"
       ? registration({ database: infrastructure.database, logger, auditService: infrastructure.auditService })
       : registration);
-  // One store for voice sessions: the turn's bindings, the starts the turn and the session start
-  // share, and where each call's recording lives.
-  const voiceSessions = new VoiceSessionRepository(infrastructure.database.kysely);
-  // Recordings stay with the vendor; the Inbox plays them through the backend with the workspace's
-  // key, Ray reads whether one exists, and a deletion asks the vendor to delete them.
-  const voiceRecordings = createVoiceRecordingComposition({
-    recordings: voiceSessions,
-    credentials: workspaceProviderCredentialsService,
-    // Called through its own receiver, never detached from globalThis.
-    fetch: (url, init) => globalThis.fetch(url, init),
-    auditService: infrastructure.auditService,
-    metricsRegistry: infrastructure.metricsRegistry,
-    logger,
-  });
   const copilotToolCatalog = createCopilotToolCatalog({
     appBaseUrl: env.APP_BASE_URL,
     toolContributions: copilotToolContributions,

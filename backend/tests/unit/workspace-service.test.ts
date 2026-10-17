@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
 import {
@@ -127,5 +127,81 @@ describe("workspace service", () => {
       auditEvent: expect.objectContaining({ eventType: "workspace.deleted" }),
     })]);
     await expect(repository.findByIdAndAccountId(target.id, "account-1")).resolves.toEqual(target);
+  });
+
+  describe("data a vendor holds for the workspace's conversations", () => {
+    const vendorHeldData = () => {
+      const steps: string[] = [];
+      const eraser = {
+        prepare: vi.fn(async (scope: { kind: "workspace"; workspaceId: string }) => {
+          steps.push(`prepare:${scope.workspaceId}`);
+          return { erase: async () => { steps.push(`erase:${scope.workspaceId}`); } };
+        }),
+      };
+      return { steps, eraser };
+    };
+
+    it("is read before the workspace is deleted and erased once it is gone", async () => {
+      const repository = new InMemoryWorkspaceRepository();
+      const { steps, eraser } = vendorHeldData();
+      const service = new WorkspaceService(repository, createAuditService(), undefined, {
+        endWorkspace: async () => { steps.push("delete"); },
+      }, undefined, eraser);
+      await service.create("account-1", "Keep");
+      const target = await service.create("account-1", "Delete");
+
+      await service.delete(target.id, "account-1", "owner-1");
+
+      expect(steps).toEqual([`prepare:${target.id}`, "delete", `erase:${target.id}`]);
+      expect(eraser.prepare).toHaveBeenCalledWith({ kind: "workspace", workspaceId: target.id });
+    });
+
+    it("is erased after a transactional deletion too, and never when the deletion is refused", async () => {
+      const repository = new InMemoryWorkspaceRepository();
+      const { steps, eraser } = vendorHeldData();
+      let deletes = true;
+      const service = new WorkspaceService(repository, createAuditService(), undefined, undefined, {
+        deleteWorkspace: async () => deletes,
+      }, eraser);
+      await service.create("account-1", "Keep");
+      const target = await service.create("account-1", "Delete");
+
+      await service.delete(target.id, "account-1", "owner-1");
+      expect(steps).toEqual([`prepare:${target.id}`, `erase:${target.id}`]);
+
+      deletes = false;
+      steps.length = 0;
+      await expect(service.delete(target.id, "account-1", "owner-1")).rejects.toMatchObject({ statusCode: 404 });
+      expect(steps).toEqual([`prepare:${target.id}`]);
+    });
+
+    it("never holds a deletion back when it cannot be read", async () => {
+      const repository = new InMemoryWorkspaceRepository();
+      const service = new WorkspaceService(repository, createAuditService(), undefined, undefined, undefined, {
+        prepare: async () => { throw new Error("connection refused"); },
+      });
+      await service.create("account-1", "Keep");
+      const target = await service.create("account-1", "Delete");
+
+      await service.delete(target.id, "account-1", "owner-1");
+
+      await expect(repository.findByIdAndAccountId(target.id, "account-1")).resolves.toBeNull();
+    });
+
+    it("is read for every workspace of an account that is about to be deleted", async () => {
+      const repository = new InMemoryWorkspaceRepository();
+      const { steps, eraser } = vendorHeldData();
+      const service = new WorkspaceService(repository, createAuditService(), undefined, undefined, undefined, eraser);
+      const first = await service.create("account-1", "First");
+      const second = await service.create("account-1", "Second");
+      await service.create("account-2", "Elsewhere");
+
+      const prepared = await service.prepareAccountDeletion("account-1");
+      expect(steps.sort()).toEqual([`prepare:${first.id}`, `prepare:${second.id}`].sort());
+
+      steps.length = 0;
+      await prepared.afterDeletion();
+      expect(steps.sort()).toEqual([`erase:${first.id}`, `erase:${second.id}`].sort());
+    });
   });
 });

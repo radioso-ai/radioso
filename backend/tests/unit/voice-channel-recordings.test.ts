@@ -283,4 +283,26 @@ describe("voice recording erasure", () => {
     await expect(prepared.erase()).resolves.toBeUndefined();
     expect(logger.warn).toHaveBeenCalledWith({ workspaceId, errorClass: "Error" }, "Voice recordings to delete could not be read");
   });
+
+  it("stops asking the vendor once its time is up, and says how many recordings it left there", async () => {
+    let clock = 0;
+    const third: VoiceRecordingRef = { ...recordingRef, conversationId: "99999999-9999-4999-8999-999999999999", vendorConversationId: "conv_third" };
+    const { store, credentials, source, audit, metrics, logger } = harness({ recordings: [recordingRef, second, third] });
+    source.deleteRecording.mockImplementation(async () => {
+      clock += 1_000;
+    });
+    const eraser = new VoiceRecordingErasureService(
+      { recordings: store, credentials, sources: { elevenlabs: source }, audit, metrics, logger },
+      { deadlineMs: 1_500, concurrency: 1, now: () => clock },
+    );
+
+    await (await eraser.prepare({ kind: "workspace", workspaceId })).erase();
+
+    expect(source.deleteRecording).toHaveBeenCalledTimes(2);
+    expect(logger.warn).toHaveBeenCalledWith(
+      { workspaceId, outcome: "deadline_passed", recordingCount: 1 },
+      "Voice recordings were left at the vendor",
+    );
+    expect(counted(metrics, "voice_recording_delete_total")).toContainEqual({ vendor: "elevenlabs", outcome: "deadline_passed" });
+  });
 });

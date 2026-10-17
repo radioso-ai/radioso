@@ -801,12 +801,14 @@ recording in Radioso.
 |---|---|---|
 | `204` | | The id is stored. |
 | `400` | `validation_error` | The session key is not a UUID, or the id is not 1 to 128 letters, digits, underscores and hyphens. |
-| `404` | `not_found` | No session this public session started waits for an id (it has one, its start expired, or Radioso never started it), or ElevenLabs holds no such conversation on the session's agent. Sending it again changes nothing. |
-| `503` | `voice_unavailable` | Radioso could not check the id with ElevenLabs now. Send it again. |
+| `404` | `not_found` | No session this public session started waits for an id (it has one, its start expired, or Radioso never started it), or ElevenLabs says the conversation was held on another agent. Sending it again changes nothing. |
+| `503` | `voice_unavailable` | Radioso could not check the id with ElevenLabs now: ElevenLabs does not show the conversation yet (as can happen right after the call connects), the key cannot be read, or ElevenLabs did not answer. Send it again. |
 
 The website embed sends the report with `keepalive`, so it still goes out
-when the page closes. It tries once more when the report does not get
-through, and again as the call ends if no `204` came back. The log line
+when the page closes, including for a call stopped while ElevenLabs was still
+opening it. It tries once more when the report does not get through, leaves a
+throttled (`429`) report for the call's end, and sends it again as the call
+ends if no `204` came back. The log line
 `Voice vendor conversation report was refused` or `… could not be checked`
 names the `outcome` (`no_session`, `vendor_agent_mismatch`,
 `vendor_not_found`, `already_reported`, `credential_*`, `vendor_failed`,

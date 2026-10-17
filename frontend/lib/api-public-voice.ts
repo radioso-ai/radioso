@@ -47,7 +47,7 @@ export async function startPublicVoiceSession(token: string, input: { locale?: s
  */
 export type VoiceVendorConversationReportOutcome = 'recorded' | 'refused' | 'failed'
 
-const reportOnce = async (url: string, token: string, vendorConversationId: string): Promise<VoiceVendorConversationReportOutcome> => {
+const reportOnce = async (url: string, token: string, vendorConversationId: string): Promise<VoiceVendorConversationReportOutcome | 'throttled'> => {
   try {
     const response = await fetch(url, {
       method: 'POST',
@@ -59,6 +59,7 @@ const reportOnce = async (url: string, token: string, vendorConversationId: stri
       body: JSON.stringify({ vendorConversationId }),
     })
     if (response.ok) return 'recorded'
+    if (response.status === 429) return 'throttled'
     return response.status === 400 || response.status === 404 ? 'refused' : 'failed'
   } catch {
     return 'failed'
@@ -68,8 +69,9 @@ const reportOnce = async (url: string, token: string, vendorConversationId: stri
 /**
  * Tells Radioso the vendor's id for a call the page opened, so the Inbox can play the call's
  * recording. Through the app host's relay, with the embed's public session the session was started
- * for, tried once more when it does not get through. It never rejects, and the call goes on whatever
- * the answer.
+ * for, tried once more when it does not get through. A throttled report is not tried again at once,
+ * which would meet the same budget: it reads as `failed`, for the call's end to send again. It never
+ * rejects, and the call goes on whatever the answer.
  */
 export async function reportVoiceVendorConversation(
   token: string,
@@ -77,5 +79,8 @@ export async function reportVoiceVendorConversation(
 ): Promise<VoiceVendorConversationReportOutcome> {
   const url = `${PUBLIC_CHAT_STREAMING_API_PATH}/${encodeURIComponent(token)}/voice/sessions/${encodeURIComponent(input.sessionKey)}/vendor-conversation`
   const first = await reportOnce(url, token, input.vendorConversationId)
-  return first === 'failed' ? reportOnce(url, token, input.vendorConversationId) : first
+  if (first === 'throttled') return 'failed'
+  if (first !== 'failed') return first
+  const second = await reportOnce(url, token, input.vendorConversationId)
+  return second === 'throttled' ? 'failed' : second
 }

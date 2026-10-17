@@ -76,7 +76,8 @@ type VoiceVendorConversationReportOutcome =
 const REPORT_RESULT_OF_OUTCOME: Record<VoiceVendorConversationReportOutcome, "recorded" | "rejected" | "failed"> = {
   recorded: "recorded",
   no_session: "rejected",
-  vendor_not_found: "rejected",
+  // Right after a call connects the vendor may not show it yet; the page's re-send at the call's end can succeed.
+  vendor_not_found: "failed",
   vendor_agent_mismatch: "rejected",
   already_reported: "rejected",
   store_failed: "failed",

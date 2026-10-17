@@ -125,18 +125,20 @@ describe("voice vendor conversation report", () => {
     expect(JSON.stringify(logger.warn.mock.calls)).not.toContain(vendorConversationId);
   });
 
-  it("refuses a call on another vendor agent, and one the vendor does not know, storing neither", async () => {
+  it("refuses a call on another vendor agent for good, and fails one the vendor cannot show yet so the page reports again", async () => {
     const otherAgent = harness({ describeConversation: async () => ({ vendorAgentId: "agent_someone_else" }) });
     await expect(otherAgent.service.report(report)).resolves.toBe("rejected");
     expect(otherAgent.store.recordVendorConversation).not.toHaveBeenCalled();
     expect(counted(otherAgent.metrics, "voice_vendor_conversation_report_total")).toEqual([{ vendor: "elevenlabs", outcome: "vendor_agent_mismatch" }]);
     expect(JSON.stringify(otherAgent.logger.warn.mock.calls)).not.toContain("agent_someone_else");
 
-    const unknown = harness({ describeConversation: async () => {
+    // Right after the call connects the vendor may not show the conversation yet: not final.
+    const notYet = harness({ describeConversation: async () => {
       throw new VoiceRecordingRequestError("not_found", 404);
     } });
-    await expect(unknown.service.report(report)).resolves.toBe("rejected");
-    expect(unknown.store.recordVendorConversation).not.toHaveBeenCalled();
+    await expect(notYet.service.report(report)).resolves.toBe("failed");
+    expect(notYet.store.recordVendorConversation).not.toHaveBeenCalled();
+    expect(counted(notYet.metrics, "voice_vendor_conversation_report_total")).toEqual([{ vendor: "elevenlabs", outcome: "vendor_not_found" }]);
   });
 
   it("refuses an id another session already holds", async () => {

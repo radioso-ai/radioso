@@ -216,7 +216,9 @@ helpers and the shared chat message limit from `app/http`
   for that public session while its start is unexpired, at most once, only
   after the vendor says the conversation was held on the session's vendor
   agent (one vendor call per report, none for a report no session waits
-  for), and is unique per vendor and region; it is only ever used to look the
+  for; a vendor that does not show the conversation yet is a retryable 503,
+  only another agent's conversation is a final 404), and is unique per
+  vendor and region; it is only ever used to look the
   recording up with the workspace's own key, and no response carries it. A
   self-minted session key has no recording. Each answer that carries audio is
   audited first; an audit that fails refuses the play, and `partial` follows

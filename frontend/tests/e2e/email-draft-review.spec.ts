@@ -19,6 +19,7 @@ type HeldReplyState = "pending" | "queued_auto" | "released" | "edited" | "disca
 type HeldReply = {
   id: string;
   conversationId: string;
+  channel: string | null;
   agentId: string | null;
   state: HeldReplyState;
   holdReason: string;
@@ -76,6 +77,7 @@ const reviewTrace: HeldReply["trace"] = {
 const heldReply = (overrides: Partial<HeldReply> = {}): HeldReply => ({
   id: "held-1",
   conversationId,
+  channel: "email",
   agentId: defaultAgentId,
   state: "pending",
   holdReason: "draft_mode",
@@ -555,7 +557,7 @@ test("past the Inbox's read limit, Load older reads on until the oldest draft an
   const queue = page.getByLabel("Inbox queue");
   const oldestDraft = queue.getByRole("button", { name: /Approval.*The oldest draft waits past the read limit/ });
   const failureRows = queue.getByRole("button", { name: /Delivery failure/ });
-  const notice = page.getByText("Older drafts or delivery failures are waiting beyond what the Inbox shows.");
+  const notice = page.getByText("Older handoffs, drafts, or delivery failures are waiting beyond what the Inbox shows.");
   await expect(page.getByText("Needs you · 40")).toBeVisible();
   await expect(notice).toBeVisible();
   await expect(oldestDraft).toHaveCount(0);

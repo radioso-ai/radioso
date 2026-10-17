@@ -86,6 +86,12 @@ describe("operator copilot catalog coverage", () => {
       reason: expect.stringContaining("read-only Activity view control"),
     });
   });
+  it("keeps Needs-you queue filters outside Ray's operation catalog", () => {
+    expect(internalRuntimeCoverageExclusions.needsYouQueueFilters).toMatchObject({
+      disposition: "permanent",
+      reason: expect.stringContaining("read-only Inbox view controls"),
+    });
+  });
   it("keeps the voice completions adapter outside Ray's operation catalog", () => {
     expect(internalRuntimeCoverageExclusions.voiceCompletionsAdapter).toMatchObject({
       disposition: "deferred",

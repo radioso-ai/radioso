@@ -1,0 +1,44 @@
+---
+title: "Create your first agent"
+description: "Create a dashboard agent, give it a clear identity and purpose, test the draft, and publish its first revision."
+last_updated: 2026-10-13
+---
+
+# Create your first agent
+
+Create a separate agent when one audience needs its own purpose, tone, or action rules. This guide creates **Acme Support**, an agent that answers questions about the refund policy you added in the previous quickstart.
+
+## Create the agent
+
+1. In the dashboard sidebar, select **New agent**.
+2. In **Create agent**, enter `Acme Support` in **Name**.
+3. Choose **Create manually**.
+
+The dashboard opens the agent's **Profile**. **Name** identifies the agent to operators; **Assistant name** is the name visitors see in chat.
+
+## Give it a job
+
+In **Profile**, set **Assistant name** to `Acme Support`. Under **Instructions for the assistant**, enter:
+
+> Help customers understand Acme's refund policy. Answer from the available documents. Keep each answer practical and concise.
+
+Choose **Save draft** after the save indicator stops showing a pending change. The draft is private, so it gives you space to test the wording before visitors use it.
+
+## Test and publish
+
+1. Open **Test Chat** and ask `What is the refund window?`.
+2. Confirm the response uses the refund-policy wording and its citation.
+3. Choose **Review & publish**.
+4. Read the draft review, then choose **Publish revision**.
+
+Instructions, directives, routines, and context selections ship together in a revision. Agent name, channels, and skills each have their own live setting path, so use the review to check the behavior you are putting in front of customers.
+
+## Common failure modes
+
+- The draft has unsaved changes. Choose **Save draft** before opening **Review & publish**.
+- Confirm the refund-policy document reads **Ready** in [Get your first grounded answer](/quickstarts/first-answer) before testing chat.
+- The published answer keeps an earlier behavior in an existing conversation. Start a fresh conversation to test the published revision.
+
+## Read next
+
+- [Make your agent act](/quickstarts/make-it-act) — give the team a destination and hand a conversation to a person.

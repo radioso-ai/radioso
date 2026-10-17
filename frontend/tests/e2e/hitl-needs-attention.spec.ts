@@ -194,6 +194,7 @@ test("operator resolves a pending decision from the response view", async ({ pag
     canResolve: true,
     deadline: null,
     createdAt: nowIso,
+    channel: "authenticated_chat",
   };
   const secondPendingDecision = {
     ...pendingDecision,
@@ -763,6 +764,7 @@ test("an empty Needs-you queue hides the filters, keeps the toggle in the left p
   await expect(queue.getByPlaceholder("Search inbox")).toHaveCount(0);
   await expect(queue.getByLabel("Filter by type")).toHaveCount(0);
   await expect(queue.getByLabel("Filter by agent")).toHaveCount(0);
+  await expect(queue.getByLabel("Filter by channel")).toHaveCount(0);
   await expect(queue.getByLabel("Filter by taken by")).toHaveCount(0);
 
   // "Select an item from the queue to respond" is not actionable advice when
@@ -775,6 +777,150 @@ test("an empty Needs-you queue hides the filters, keeps the toggle in the left p
   await toggle.getByRole("button", { name: "All", exact: true }).click();
   await expect(page).toHaveURL(/tab=all/);
   await expect(page.getByRole("complementary", { name: "Conversations" })).toBeVisible();
+});
+
+test("Needs-you loads human-owned handoffs beyond the original 50-item page", async ({ page }) => {
+  const conversations = Array.from({ length: 60 }, (_, index) => {
+    const id = `conversation-page-${index + 1}`;
+    return handoffSummary(id, `Waiting handoff ${index + 1}`, handoffOwnership(id, null, 1));
+  });
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: { conversations: [], total: 0, nextCursor: null, hasMore: false },
+  });
+  await stubEmptyQualityQueue(page);
+  await page.route("**/backend/api/v1/history/chat?**", async (route) => {
+    const cursor = new URL(route.request().url()).searchParams.get("cursor");
+    const start = cursor === "page-2" ? 50 : 0;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        conversations: conversations.slice(start, start + 50),
+        total: conversations.length,
+        nextCursor: start + 50 < conversations.length ? "page-2" : null,
+        hasMore: start + 50 < conversations.length,
+      }),
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity?tab=needs-attention`);
+
+  await expect(page.getByLabel("Inbox queue").getByRole("button", { name: /Waiting handoff 60/ })).toBeVisible();
+  await expect(page.getByText(/not shown yet|Load older/)).toHaveCount(0);
+});
+
+test("Needs-you asks the server for an agent match beyond an unfiltered page", async ({ page }) => {
+  const targetAgentId = "22222222-2222-4222-8222-222222222222";
+  const conversations = Array.from({ length: 51 }, (_, index) => {
+    const id = `conversation-filtered-page-${index + 1}`;
+    return {
+      ...handoffSummary(id, index === 50 ? "Only target agent handoff" : `Other handoff ${index + 1}`, handoffOwnership(id, null, 1)),
+      agentId: index === 50 ? targetAgentId : defaultAgentId,
+    };
+  });
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { historyList: { conversations: [], total: 0, nextCursor: null, hasMore: false } });
+  await stubEmptyQualityQueue(page);
+  await page.route("**/backend/api/v1/history/chat?**", async (route) => {
+    const url = new URL(route.request().url());
+    const matching = url.searchParams.get("agentId") === targetAgentId;
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        conversations: matching ? [conversations[50]] : url.searchParams.get("cursor") === "page-2" ? [conversations[50]] : conversations.slice(0, 50),
+        total: matching ? 1 : conversations.length,
+        nextCursor: matching || url.searchParams.get("cursor") === "page-2" ? null : "page-2",
+        hasMore: !matching && url.searchParams.get("cursor") !== "page-2",
+      }),
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity?tab=needs-attention&inboxAgent=${targetAgentId}`);
+
+  await expect(page.getByLabel("Inbox queue").getByRole("button", { name: /Only target agent handoff/ })).toBeVisible();
+});
+
+test("Needs-you names quality feedback beyond its 25-item queue cap and links to it", async ({ page }) => {
+  const feedback = Array.from({ length: 25 }, (_, index) => ({
+    assistantMessageId: `quality-cap-${index + 1}`,
+    conversationId: `quality-conversation-${index + 1}`,
+    agentId: defaultAgentId,
+    agentName: "Gioia",
+    agentInternalName: null,
+    channel: "web",
+    question: `Feedback item ${index + 1}`,
+    answerPreview: "Answer preview",
+    skillName: null,
+    skillOutcome: null,
+    skillStatus: null,
+    totalLatencyMs: null,
+    grounding: null,
+    createdAt: nowIso,
+    feedback: {
+      upCount: 0,
+      downCount: 1,
+      latestDownUpdatedAt: nowIso,
+      comments: [{ value: "down", comment: "Needs attention", createdAt: nowIso, updatedAt: nowIso }],
+    },
+    triage: { state: "open", version: 0, resolution: null, legacyReason: null, closedAt: null, updatedAt: null },
+    verification: null,
+  }));
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await page.route("**/backend/api/v1/quality/turns**", async (route) => {
+    const url = new URL(route.request().url());
+    const writtenFeedback = url.searchParams.get("feedback") === "down" && url.searchParams.get("hasComment") === "true";
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        items: writtenFeedback ? feedback : [],
+        total: writtenFeedback ? 26 : 0,
+        page: 1,
+        pageSize: writtenFeedback ? 25 : 1,
+        totalPages: writtenFeedback ? 2 : 0,
+      }),
+    });
+  });
+
+  await page.goto(`/w/${workspaceKey}/activity?tab=needs-attention`);
+
+  await expect(page.getByText("1 feedback item not shown in this queue.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Review all feedback" })).toHaveAttribute(
+    "href",
+    expect.stringContaining("activeNegativeFeedbackOnly=true"),
+  );
+});
+
+test("Needs-you channel filter round-trips through the URL", async ({ page }) => {
+  const emailId = "conversation-email-filter";
+  const webId = "conversation-web-filter";
+  const email = { ...handoffSummary(emailId, "Email handoff", handoffOwnership(emailId, null, 1)), sourceChannel: "email" };
+  const web = { ...handoffSummary(webId, "Web handoff", handoffOwnership(webId, null, 1)), sourceChannel: "web" };
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    historyList: { conversations: [email, web], total: 2, nextCursor: null, hasMore: false },
+  });
+  await stubEmptyQualityQueue(page);
+
+  await page.goto(`/w/${workspaceKey}/activity?tab=needs-attention`);
+  const queue = page.getByLabel("Inbox queue");
+  await queue.getByLabel("Filter by channel").click();
+  await page.getByRole("option", { name: "email", exact: true }).click();
+
+  await expect(page).toHaveURL(/inboxChannel=email/);
+  await expect(queue.getByRole("button", { name: /Email handoff/ })).toBeVisible();
+  await expect(queue.getByRole("button", { name: /Web handoff/ })).toHaveCount(0);
+
+  await page.reload();
+  await expect(queue.getByRole("button", { name: /Email handoff/ })).toBeVisible();
+  await expect(queue.getByRole("button", { name: /Web handoff/ })).toHaveCount(0);
 });
 
 test("the recently-closed strip names what closed, who closed it, and when", async ({ page }) => {

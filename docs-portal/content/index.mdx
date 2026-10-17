@@ -10,20 +10,20 @@ import { Cards, Callout, Steps } from 'nextra/components'
 Radioso is a self-hosted platform for conversational agents. An agent answers from your own data with citations, acts through your tools by following the procedures you author, and hands off to a person when it should — inside the rules you set. You can reach the same agent from the app, API, SDK, MCP, public chat, or the website widget.
 
 <Callout type="info" emoji="↗">
-  Choose one path first: evaluate locally, integrate through the API, or launch the website embed.
+  Follow the operator path from a local stack through a grounded answer, an acting agent, team access, and production preparation. The API guide is the parallel path for scripts and services.
 </Callout>
 
 ## Choose your path
 
 <Cards num={3}>
-  <Cards.Card title="Evaluate locally" href="/quickstarts/run-locally">
-    Bring up the full stack with Docker, create or join a workspace, upload a document, and verify one agent answer in your own environment.
+  <Cards.Card title="Start here" href="/operators/start-here">
+    Follow the full operator chain: run locally, get a grounded answer, create an agent, make it act, embed it, invite the team, and prepare for production.
   </Cards.Card>
-  <Cards.Card title="Launch the website embed" href="/quickstarts/website-embed">
-    Configure the Enterprise widget, allow exact origins, verify session bootstrap, and test both approved and blocked origins before rollout.
+  <Cards.Card title="Evaluate locally" href="/quickstarts/run-locally">
+    Bring up the full stack with Docker, then upload one document and verify a grounded answer in your own environment.
   </Cards.Card>
   <Cards.Card title="Integrate API-first" href="/quickstarts/api-first-success">
-    Create an account, issue an API credential in Workspace settings, upload content, and ask a question with plain HTTP or the TypeScript SDK.
+    Follow the canonical role-bound register, credential, upload, and agent-chat sequence with plain HTTP or the TypeScript SDK.
   </Cards.Card>
 </Cards>
 
@@ -72,6 +72,5 @@ This docs site should help you verify the product, not just read about it. Expec
 
 ## Where to go next
 
-- If you want the fastest product evaluation path, start with [Run locally in 5 minutes](/quickstarts/run-locally).
-- If you already know the product shape and want customer-facing rollout, go to [Embed on your website](/quickstarts/website-embed).
-- If you are integrating from your own application or scripts, use [API first success](/quickstarts/api-first-success).
+- If you are operating the product, start with [Start here](/operators/start-here).
+- If you are integrating from your own application or scripts, use [Your first API answer](/quickstarts/api-first-success).

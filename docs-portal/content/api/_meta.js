@@ -7,6 +7,7 @@ const meta = {
   'agents-and-skills': 'Agents and skills',
   'documents-and-search': 'Documents and search',
   'chat-and-history': 'Chat and history',
+  'agent-converse': 'Agent converse API',
   'public-chat-and-embed': 'Public chat and embed',
   settings: 'Settings',
   'connectors-and-webhooks': 'Connectors and webhooks',

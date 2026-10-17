@@ -19,7 +19,7 @@ const topLevelLinks = [
     match: (p: string) => p === '/why-radioso' || p.startsWith('/why-radioso/'),
   },
   {
-    href: '/quickstarts/run-locally',
+    href: '/operators/start-here',
     label: 'Guides',
     match: (p: string) =>
       p.startsWith('/quickstarts/') ||

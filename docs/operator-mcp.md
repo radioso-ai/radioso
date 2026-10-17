@@ -8,7 +8,7 @@ last_updated: 2026-10-17
 
 Operator MCP lets a signed-in workspace member inspect and author an agent from a compatible remote MCP client. You choose the workspace and scopes in Radioso before the client receives a credential. Each tool call rechecks the user, membership, grant, client, and current workspace permission.
 
-This is separate from an agent's **Channels → MCP** connection. The agent connection exposes `ask_agent` for one configured agent. Operator MCP exposes a small set of Ray tools for the person who completed OAuth consent.
+This is separate from an agent's **Channels → MCP** connection. The agent connection exposes `ask_agent` for one configured agent. Operator MCP exposes a small set of Ray tools for the person who completed OAuth consent. The credential-free developer snippet on the agent card reaches only that agent and never grants these workspace tools.
 
 `workspace_setup_state` is an eligible read tool. It reports outcome-derived workspace setup progress and never changes the operator's setup choices.
 

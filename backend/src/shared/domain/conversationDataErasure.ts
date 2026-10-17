@@ -10,18 +10,11 @@
 
 /**
  * What one erasure removes: some conversations of a workspace, or a whole workspace just before it
- * is deleted.
- *
- * `chatSessionIds` are the chat sessions only these conversations carried, so data the host pushed
- * for such a session goes with them; a session another surviving conversation still carries stays.
+ * is deleted. Erasers run while the conversations still exist, so an eraser can read whatever it
+ * keys its rows by from them.
  */
 export type ConversationErasureScope =
-  | {
-      readonly kind: "conversations";
-      readonly workspaceId: string;
-      readonly conversationIds: readonly string[];
-      readonly chatSessionIds: readonly string[];
-    }
+  | { readonly kind: "conversations"; readonly workspaceId: string; readonly conversationIds: readonly string[] }
   | { readonly kind: "workspace"; readonly workspaceId: string };
 
 /** One module's conversation-derived rows that no foreign key reaches, bound to the erasure's transaction. */

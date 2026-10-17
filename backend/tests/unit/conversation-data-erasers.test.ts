@@ -15,11 +15,10 @@ import { createRecordingKysely, type RecordedAnswer } from "../support/recording
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const conversationId = "22222222-2222-4222-8222-222222222222";
 
-const conversations = (chatSessionIds: string[] = []): ConversationErasureScope => ({
+const conversations = (conversationIds: string[] = [conversationId]): ConversationErasureScope => ({
   kind: "conversations",
   workspaceId,
-  conversationIds: [conversationId],
-  chatSessionIds,
+  conversationIds,
 });
 const workspace: ConversationErasureScope = { kind: "workspace", workspaceId };
 
@@ -28,17 +27,19 @@ const recording = (rules: [RegExp, RecordedAnswer][] = []) =>
   createRecordingKysely(({ sql }) => rules.find(([pattern]) => pattern.test(sql))?.[1] ?? { changed: 1 });
 
 describe("ContextVariableValueEraser", () => {
-  it("erases only the session values of chat sessions the erased conversations alone carried", async () => {
+  it("erases, in one statement, the session values of chat sessions only the erased conversations carry", async () => {
     const { db, statements } = recording();
 
-    expect(await new ContextVariableValueEraser(db).erase(conversations(["session-1"]))).toBe(1);
+    expect(await new ContextVariableValueEraser(db).erase(conversations())).toBe(1);
 
     expect(statements).toHaveLength(1);
-    expect(statements[0].sql).toMatch(/^delete from "context_variable_values" where "workspace_id" = \$1 and "scope_type" = \$2/u);
-    expect(statements[0].parameters).toEqual([workspaceId, "session", ["session-1"]]);
+    expect(statements[0].sql).toMatch(/^delete from "context_variable_values"/u);
+    expect(statements[0].sql).toMatch(/"anonymous_session_id"/u);
+    expect(statements[0].sql).toMatch(/not exists/u);
+    expect(statements[0].parameters).toContain("session");
   });
 
-  it("sends nothing when no chat session goes, or for a workspace, whose values cascade with its variables", async () => {
+  it("sends nothing when no conversation goes, or for a workspace, whose values cascade with its variables", async () => {
     const { db, statements } = recording();
     const eraser = new ContextVariableValueEraser(db);
 
@@ -161,6 +162,8 @@ describe("default erasers", () => {
       "email-channel",
       "customer-email",
       "eval",
+      "whatsapp",
+      "audience-pulse",
     ]);
     expect(defaultVerifiedCustomerDataErasers.map((bind) => bind(db).owner)).toEqual(["context-variables"]);
   });

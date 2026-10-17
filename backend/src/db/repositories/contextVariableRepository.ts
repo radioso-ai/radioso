@@ -790,10 +790,11 @@ export class ContextVariableRepository implements ContextVariableRepositoryPort 
 }
 
 /**
- * Erases the values a host pushed about a person: `session` values keyed by a chat session the
- * erased conversations alone carried, and `customer` values keyed by an erased visitor's verified
- * customer id. Agent and workspace values describe the operator's own configuration and stay. A
- * workspace's values cascade with its variables, so the workspace scope has nothing to add.
+ * Erases the values a host pushed about a person: `session` values keyed by a chat session only the
+ * erased conversations carry, and `customer` values keyed by an erased visitor's verified customer
+ * id. A session another conversation of the workspace still carries keeps its values. Agent and
+ * workspace values describe the operator's own configuration and stay. A workspace's values cascade
+ * with its variables, so the workspace scope has nothing to add.
  */
 export class ContextVariableValueEraser implements ConversationDataEraser, VerifiedCustomerDataEraser {
   readonly owner = "context-variables";
@@ -801,22 +802,37 @@ export class ContextVariableValueEraser implements ConversationDataEraser, Verif
   constructor(private readonly db: Db) {}
 
   async erase(scope: ConversationErasureScope): Promise<number> {
-    if (scope.kind === "workspace" || scope.chatSessionIds.length === 0) {
+    if (scope.kind === "workspace" || scope.conversationIds.length === 0) {
       return 0;
     }
-    return this.deleteScoped(scope.workspaceId, "session", scope.chatSessionIds);
-  }
-
-  async eraseVerifiedCustomer(scope: VerifiedCustomerErasureScope): Promise<number> {
-    return this.deleteScoped(scope.workspaceId, "customer", [scope.verifiedCustomerId]);
-  }
-
-  private async deleteScoped(workspaceId: string, scopeType: "session" | "customer", scopeIds: readonly string[]): Promise<number> {
+    const { workspaceId, conversationIds } = scope;
+    // Runs before the conversations are deleted, while their chat session ids can still be read.
     const result = await this.db
       .deleteFrom("context_variable_values")
       .where("workspace_id", "=", workspaceId)
-      .where("scope_type", "=", scopeType)
-      .where((eb) => anyOf(eb.ref("scope_id"), scopeIds, "text[]"))
+      .where("scope_type", "=", "session")
+      .where("scope_id", "in", (eb) => eb
+        .selectFrom("conversations")
+        .select("anonymous_session_id")
+        .where("workspace_id", "=", workspaceId)
+        .where("anonymous_session_id", "is not", null)
+        .where((inner) => anyOf(inner.ref("id"), conversationIds, "uuid[]"))
+        .$castTo<{ anonymous_session_id: string }>())
+      .where(({ not, exists, selectFrom }) => not(exists(selectFrom("conversations as other")
+        .select("other.id")
+        .where("other.workspace_id", "=", workspaceId)
+        .whereRef("other.anonymous_session_id", "=", "context_variable_values.scope_id")
+        .where((inner) => inner.not(anyOf(inner.ref("other.id"), conversationIds, "uuid[]"))))))
+      .executeTakeFirst();
+    return Number(result.numDeletedRows);
+  }
+
+  async eraseVerifiedCustomer(scope: VerifiedCustomerErasureScope): Promise<number> {
+    const result = await this.db
+      .deleteFrom("context_variable_values")
+      .where("workspace_id", "=", scope.workspaceId)
+      .where("scope_type", "=", "customer")
+      .where((eb) => anyOf(eb.ref("scope_id"), [scope.verifiedCustomerId], "text[]"))
       .executeTakeFirst();
     return Number(result.numDeletedRows);
   }

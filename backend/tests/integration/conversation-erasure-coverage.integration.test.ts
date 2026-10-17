@@ -37,7 +37,11 @@ const coverage: Record<string, ErasureCoverage> = {
   },
   "answer_coverage_assessments.assistant_message_id": { kind: "row_cascades_with", column: "conversation_id" },
   "assistant_answer_feedback.anonymous_session_id": { kind: "row_cascades_with", column: "conversation_id" },
-  "copilot_proposals.message_id": { kind: "row_cascades_with", column: "conversation_id", reason: "Ray's own conversation." },
+  "email_inbound_deliveries.rfc_message_id": { kind: "row_cascades_with", column: "conversation_id", reason: "The mail's own Message-Id." },
+  "email_send_intents.provider_message_id": { kind: "row_cascades_with", column: "conversation_id", reason: "The provider's id for the send." },
+  "email_send_intents.supplied_rfc_message_id": { kind: "row_cascades_with", column: "conversation_id", reason: "The send's Message-Id." },
+  "email_send_intents.delivered_rfc_message_id": { kind: "row_cascades_with", column: "conversation_id", reason: "The send's Message-Id as delivered." },
+  "email_thread_messages.rfc_message_id": { kind: "row_cascades_with", column: "conversation_id", reason: "The mail's own Message-Id." },
   "email_inbound_deliveries.message_id": { kind: "row_cascades_with", column: "conversation_id" },
   "eval_snapshots.source_message_id": { kind: "row_cascades_with", column: "source_conversation_id" },
   "held_replies.released_message_id": { kind: "row_cascades_with", column: "conversation_id" },
@@ -55,6 +59,11 @@ const coverage: Record<string, ErasureCoverage> = {
     kind: "eraser",
     owner: "email-channel",
     reason: "Reserved with planned_conversation_id; the same eraser removes the row.",
+  },
+  "email_skill_activity.provider_message_id": {
+    kind: "eraser",
+    owner: "customer-email",
+    reason: "The provider's id for the sent email; the row goes with its conversation_id.",
   },
   "email_skill_activity.conversation_id": {
     kind: "eraser",
@@ -76,6 +85,26 @@ const coverage: Record<string, ErasureCoverage> = {
     kind: "not_a_conversation",
     reason: "A private test side mints a conversation id that never becomes a conversations row; its transcript belongs to the test execution.",
   },
+  "copilot_messages.conversation_id": {
+    kind: "not_a_conversation",
+    reason: "Ray's own conversation, which cascades from copilot_conversations and goes with Ray's retention.",
+  },
+  "copilot_proposals.conversation_id": {
+    kind: "not_a_conversation",
+    reason: "The Ray conversation that drafted the proposal.",
+  },
+  "copilot_proposals.message_id": {
+    kind: "not_a_conversation",
+    reason: "The Ray message that drafted the proposal.",
+  },
+  "copilot_replay_evidence.conversation_id": {
+    kind: "not_a_conversation",
+    reason: "The Ray conversation that ran the replay.",
+  },
+  "operator_mcp_authorization_transactions.session_id": {
+    kind: "not_a_conversation",
+    reason: "A teammate's dashboard sign-in session.",
+  },
   "agent_converse_session_mappings.public_session_id": {
     kind: "not_a_conversation",
     reason: "Maps an agent grant to the public session it minted; it holds no conversation content.",
@@ -95,20 +124,25 @@ const cascadeHolds: Record<string, string> = {
 interface ColumnRow {
   table_name: string;
   column_name: string;
-  delete_rules: string[] | null;
+  cascading_parents: string[] | null;
 }
+
+/** The tables an erasure deletes. Only a key to one of them cascades erased data away. */
+const SUBJECT_TABLES = ["conversations", "messages", "visitors"] as const;
 
 describeIntegration("conversation erasure schema coverage", () => {
   const database = new Database(integrationDatabaseUrl);
-  let columns: Map<string, { deleteRules: string[] }>;
+  let columns: Map<string, { cascadingParents: string[] }>;
 
   beforeAll(async () => {
     await runAllTestMigrations(database);
-    // Every uuid column named like a conversation, chat session, visitor or message reference, and every
-    // text session id, with the delete rules of the foreign keys that include it.
+    // Every column named like a conversation, chat session, visitor or message reference, whatever its
+    // type, with the subject tables its foreign keys cascade from.
     const rows = await database.query<ColumnRow>(`
       SELECT c.table_name, c.column_name,
-             array_agg(k.confdeltype::text) FILTER (WHERE k.oid IS NOT NULL) AS delete_rules
+             array_agg(k.confrelid::regclass::text) FILTER (
+               WHERE k.oid IS NOT NULL AND k.confdeltype = 'c' AND k.confrelid::regclass::text = ANY ($1::text[])
+             ) AS cascading_parents
         FROM information_schema.columns c
         JOIN information_schema.tables t
           ON t.table_schema = c.table_schema AND t.table_name = c.table_name AND t.table_type = 'BASE TABLE'
@@ -119,16 +153,16 @@ describeIntegration("conversation erasure schema coverage", () => {
           ON k.conrelid = a.attrelid AND k.contype = 'f' AND a.attnum = ANY (k.conkey)
        WHERE c.table_schema = 'public'
          AND c.column_name ~ '(^|_)(conversation|session|visitor|message)_id$'
-         AND (c.data_type = 'uuid' OR c.column_name ~ 'session_id$')
-       GROUP BY c.table_name, c.column_name`);
-    columns = new Map(rows.map((row) => [`${row.table_name}.${row.column_name}`, { deleteRules: row.delete_rules ?? [] }]));
+       GROUP BY c.table_name, c.column_name`, [[...SUBJECT_TABLES]]);
+    columns = new Map(rows.map((row) => [`${row.table_name}.${row.column_name}`, { cascadingParents: row.cascading_parents ?? [] }]));
   });
 
   afterAll(async () => {
     await database.close().catch(() => undefined);
   });
 
-  const cascades = (key: string): boolean => columns.get(key)?.deleteRules.includes("c") ?? false;
+  /** Whether a key on the column cascades from a table an erasure deletes. */
+  const cascades = (key: string): boolean => (columns.get(key)?.cascadingParents.length ?? 0) > 0;
   const registeredOwners = (): Set<string> => {
     // Erasers only hold the transaction they are bound to, so binding one to nothing reads its owner.
     const unbound = {} as Db;
@@ -138,10 +172,18 @@ describeIntegration("conversation erasure schema coverage", () => {
     ]);
   };
 
-  it("finds the conversation references it is meant to police", () => {
+  it("finds the conversation references it is meant to police, text-typed ones included", () => {
     expect(columns.has("messages.conversation_id")).toBe(true);
     expect(columns.has("routine_states.session_id")).toBe(true);
-    expect(columns.size).toBeGreaterThan(40);
+    expect(columns.has("conversations.anonymous_session_id")).toBe(true);
+    expect(columns.has("email_thread_messages.rfc_message_id")).toBe(true);
+    expect(columns.size).toBeGreaterThan(50);
+  });
+
+  it("counts a key as a cascade only when it cascades from a conversation, message or visitor", () => {
+    // Ray's messages cascade from Ray's own conversation table, which no erasure deletes.
+    expect(cascades("copilot_messages.conversation_id")).toBe(false);
+    expect(cascades("messages.conversation_id")).toBe(true);
   });
 
   it("gives every conversation, session, visitor and message reference a cascade, an eraser, or a reason", () => {

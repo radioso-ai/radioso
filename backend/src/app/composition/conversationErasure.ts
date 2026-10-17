@@ -1,9 +1,11 @@
 import type { Kysely } from "kysely";
 
 import { AuditEventRepository, ConversationAuditEraser } from "../../db/repositories/auditEventRepository.js";
+import { AudiencePulseSnapshotEraser } from "../../db/repositories/audiencePulseSnapshotRepository.js";
 import { ContextVariableValueEraser } from "../../db/repositories/contextVariableRepository.js";
 import { ConversationErasureRepository } from "../../db/repositories/conversationErasureRepository.js";
 import { EmailSkillActivityEraser } from "../../db/repositories/emailSkillActivityRepository.js";
+import { WhatsAppMessageLogEraser } from "../../modules/connectors/plugins/index.js";
 import { EmailInboundEraser } from "../../modules/emailChannel/public.js";
 import { EvalConversationEraser } from "../../modules/eval/composition.js";
 import type { ConversationErasureUnitOfWork } from "../../modules/privacy/public.js";
@@ -32,6 +34,8 @@ export const defaultConversationDataErasers: readonly ConversationDataEraserBind
   (trx) => new EmailInboundEraser(trx),
   (trx) => new EmailSkillActivityEraser(trx),
   (trx) => new EvalConversationEraser(trx),
+  (trx) => new WhatsAppMessageLogEraser(trx),
+  (trx) => new AudiencePulseSnapshotEraser(trx),
 ];
 
 /** Every module's eraser for the rows it keys by an erased visitor's verified customer id. */
@@ -62,7 +66,6 @@ export const createPostgresConversationErasureUnitOfWork = (deps: {
         subjects: {
           lockConversations: (workspaceId, conversationIds) => lockConversationsInOrder(trx, workspaceId, conversationIds),
           lockVisitor: (workspaceId, visitorId) => subjects.lockVisitor(workspaceId, visitorId),
-          exclusiveChatSessionIds: (workspaceId, conversationIds) => subjects.exclusiveChatSessionIds(workspaceId, conversationIds),
           deleteConversations: (workspaceId, conversationIds) => subjects.deleteConversations(workspaceId, conversationIds),
           deleteVisitor: (workspaceId, visitorId) => subjects.deleteVisitor(workspaceId, visitorId),
         },

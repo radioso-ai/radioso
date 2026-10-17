@@ -340,7 +340,7 @@ describeIntegration("conversation erasure (Postgres)", () => {
     expect(receipt).toEqual({
       conversationCount: 1,
       messageCount: 2,
-      rowsByOwner: { "context-variables": 1, audit: 2, "email-channel": 4, "customer-email": 1, eval: 3 },
+      rowsByOwner: { "context-variables": 1, audit: 2, "email-channel": 4, "customer-email": 1, eval: 3, whatsapp: 0, "audience-pulse": 0 },
     });
   });
 
@@ -379,7 +379,7 @@ describeIntegration("conversation erasure (Postgres)", () => {
       conversationId: erased.conversationId,
       conversationCount: 1,
       messageCount: 2,
-      rowsByOwner: { "context-variables": 1, audit: 2, "email-channel": 4, "customer-email": 1, eval: 3 },
+      rowsByOwner: { "context-variables": 1, audit: 2, "email-channel": 4, "customer-email": 1, eval: 3, whatsapp: 0, "audience-pulse": 0 },
     });
     expect(invalidation.enqueue).toHaveBeenCalledWith(tenant.workspaceId, ["conversation.deleted"]);
   });
@@ -427,6 +427,60 @@ describeIntegration("conversation erasure (Postgres)", () => {
     await erasure.eraseConversation({ workspaceId: tenant.workspaceId, conversationId: only.conversationId, actor: actor(tenant) });
 
     expect(await count("visitors WHERE id = $1", [visitorId])).toBe(0);
+  });
+
+  it("erases the WhatsApp transport log of the number whose conversation is erased, and only that number's", async () => {
+    const tenant = await seedTenant();
+    const erased = await seedConversation(tenant);
+    const kept = await seedConversation(tenant);
+    const contact = async (waId: string, conversationId: string) => {
+      await database.query(
+        "INSERT INTO connector_whatsapp_contacts (id, wa_id, workspace_id, conversation_id) VALUES ($1, $2, $3, $4)",
+        [randomUUID(), waId, tenant.workspaceId, conversationId],
+      );
+      await database.query(
+        `INSERT INTO connector_whatsapp_message_log (wamid, direction, workspace_id, wa_id, message_type, payload, status)
+         VALUES ($1, 'inbound', $2, $3, 'text', '{"text": {"body": "My order 1182 never arrived"}}'::jsonb, 'replied'),
+                ($4, 'outbound', $2, $3, 'text', '{"text": {"body": "Let me check."}}'::jsonb, 'replied')`,
+        [`wamid-${randomUUID()}`, tenant.workspaceId, waId, `wamid-${randomUUID()}`],
+      );
+    };
+    await contact("4915112345678", erased.conversationId);
+    await contact("4915187654321", kept.conversationId);
+
+    await erasure.eraseConversation({ workspaceId: tenant.workspaceId, conversationId: erased.conversationId, actor: actor(tenant) });
+
+    const remaining = await database.query<{ wa_id: string }>(
+      "SELECT wa_id FROM connector_whatsapp_message_log WHERE workspace_id = $1",
+      [tenant.workspaceId],
+    );
+    expect(remaining.map((row) => row.wa_id)).toEqual(["4915187654321", "4915187654321"]);
+    expect(await count("connector_whatsapp_contacts WHERE conversation_id = $1", [erased.conversationId])).toBe(0);
+  });
+
+  it("discards the Audience Pulse report built on an erased conversation's question, and keeps one that is not", async () => {
+    const seedSnapshot = async (tenant: Tenant, seeded: SeededConversation) => {
+      await database.query(
+        `INSERT INTO audience_pulse_snapshots (workspace_id, revision, period_start, period_end, generated_at, report, prompt_evidence_refs)
+         VALUES ($1, $2, now() - interval '28 days', now(), now(),
+                 jsonb_build_object('recommendations', jsonb_build_array(jsonb_build_object('questions', jsonb_build_array('Where is order 1182?'), 'evidenceIds', jsonb_build_array($3::text)))),
+                 jsonb_build_array(jsonb_build_object('evidenceId', $3::text, 'messageId', $3::text, 'conversationId', $4::text)))`,
+        [tenant.workspaceId, randomUUID(), seeded.userMessageId, seeded.conversationId],
+      );
+    };
+    const tenant = await seedTenant();
+    const erased = await seedConversation(tenant);
+    await seedSnapshot(tenant, erased);
+    const otherTenant = await seedTenant();
+    const otherConversation = await seedConversation(otherTenant);
+    await seedSnapshot(otherTenant, otherConversation);
+    const unrelated = await seedConversation(otherTenant);
+
+    await erasure.eraseConversation({ workspaceId: tenant.workspaceId, conversationId: erased.conversationId, actor: actor(tenant) });
+    await erasure.eraseConversation({ workspaceId: otherTenant.workspaceId, conversationId: unrelated.conversationId, actor: actor(otherTenant) });
+
+    expect(await count("audience_pulse_snapshots WHERE workspace_id = $1", [tenant.workspaceId])).toBe(0);
+    expect(await count("audience_pulse_snapshots WHERE workspace_id = $1", [otherTenant.workspaceId])).toBe(1);
   });
 
   it("erasing a visitor removes every conversation they had, their customer-scoped values, and the visitor row", async () => {

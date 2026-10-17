@@ -83,12 +83,6 @@ const createFake = (input: {
               }
             : null;
         },
-        async exclusiveChatSessionIds(workspaceId, conversationIds) {
-          const erased = draft.conversations.filter((conversation) => conversationIds.includes(conversation.id));
-          const kept = draft.conversations.filter((conversation) => conversation.workspaceId === workspaceId && !conversationIds.includes(conversation.id));
-          return [...new Set(erased.flatMap((conversation) => conversation.chatSessionId ?? []))]
-            .filter((sessionId) => !kept.some((conversation) => conversation.chatSessionId === sessionId));
-        },
         async deleteConversations(workspaceId, conversationIds) {
           order.push("deleteConversations");
           const doomed = draft.conversations.filter((conversation) => conversation.workspaceId === workspaceId && conversationIds.includes(conversation.id));
@@ -143,8 +137,8 @@ describe("ConversationErasureService.eraseConversation", () => {
     });
     expect(fake.order).toEqual(["lock", "erase:context-variables", "erase:audit", "deleteConversations", "audit"]);
     expect(fake.eraserScopes.map(({ scope }) => scope)).toEqual([
-      { kind: "conversations", workspaceId: WORKSPACE, conversationIds: ["conv-1"], chatSessionIds: ["session-1"] },
-      { kind: "conversations", workspaceId: WORKSPACE, conversationIds: ["conv-1"], chatSessionIds: ["session-1"] },
+      { kind: "conversations", workspaceId: WORKSPACE, conversationIds: ["conv-1"] },
+      { kind: "conversations", workspaceId: WORKSPACE, conversationIds: ["conv-1"] },
     ]);
     expect(fake.state().conversations.map((conversation) => conversation.id)).toEqual(["conv-2"]);
     expect(fake.state().audit).toEqual([{
@@ -160,19 +154,6 @@ describe("ConversationErasureService.eraseConversation", () => {
         rowsByOwner: { "context-variables": 1, audit: 3 },
       },
     }]);
-  });
-
-  it("keeps the chat session's data while another conversation still carries the session", async () => {
-    const fake = createFake({
-      conversations: [
-        { id: "conv-1", workspaceId: WORKSPACE, chatSessionId: "shared", visitorId: null, messages: 1 },
-        { id: "conv-2", workspaceId: WORKSPACE, chatSessionId: "shared", visitorId: null, messages: 1 },
-      ],
-    });
-
-    await fake.service.eraseConversation({ workspaceId: WORKSPACE, conversationId: "conv-1", actor: ACTOR });
-
-    expect(fake.eraserScopes[0]?.scope).toMatchObject({ chatSessionIds: [] });
   });
 
   it("publishes the deletion to live dashboards and logs the audit event, both only after commit", async () => {
@@ -239,7 +220,6 @@ describe("ConversationErasureService.eraseVisitor", () => {
       kind: "conversations",
       workspaceId: WORKSPACE,
       conversationIds: ["conv-a", "conv-b"],
-      chatSessionIds: ["session-a", "session-b"],
     });
     expect(fake.customerScopes).toEqual([{ owner: "context-variables", verifiedCustomerId: "customer-42" }]);
     expect(fake.state().conversations.map((conversation) => conversation.id)).toEqual(["conv-other"]);

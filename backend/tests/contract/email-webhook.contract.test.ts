@@ -49,6 +49,17 @@ const receivedBody = (emailId = EMAIL_ID): Buffer =>
     },
   }));
 
+const bouncedBody = (type: "Permanent" | "Transient" = "Permanent"): Buffer => Buffer.from(JSON.stringify({
+  type: "email.bounced",
+  created_at: NOW.toISOString(),
+  data: {
+    email_id: EMAIL_ID,
+    to: ["bounce@example.test"],
+    tags: { kind: "operator_notice" },
+    bounce: { type, subType: "General", message: "recipient rejected" },
+  },
+}));
+
 const withRawBody = (app: express.Express) => {
   app.use((req, _res, next) => {
     const chunks: Buffer[] = [];
@@ -70,6 +81,7 @@ const harness = (options: { insertFails?: boolean } = {}) => {
   const requestDrain = vi.fn(async () => undefined);
   const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const metrics = { incrementCounter: vi.fn(), observeHistogram: vi.fn() };
+  const suppress = vi.fn(async () => undefined);
   const app = express();
   withRawBody(app);
   app.use("/api/connectors/email", createEmailWebhookRouter({
@@ -79,6 +91,7 @@ const harness = (options: { insertFails?: boolean } = {}) => {
     metrics,
     logger,
     clock: () => NOW,
+    recipientSuppressions: { suppress },
   }));
   const post = (body: Buffer, headers: Record<string, string>) =>
     request(app).post("/api/connectors/email/webhook").set(headers).send(body.toString("utf8"));
@@ -86,7 +99,7 @@ const harness = (options: { insertFails?: boolean } = {}) => {
     .filter(([name]) => name === "email_webhook_requests_total")
     .map(([, write]) => (write as { labels: Record<string, string> }).labels.result);
   const logged = () => JSON.stringify([...logger.info.mock.calls, ...logger.warn.mock.calls, ...logger.error.mock.calls]);
-  return { app, events, fetchMessage, requestDrain, logger, post, results, logged };
+  return { app, events, fetchMessage, requestDrain, logger, post, results, logged, suppress };
 };
 
 describe("POST /api/connectors/email/webhook", () => {
@@ -108,6 +121,24 @@ describe("POST /api/connectors/email/webhook", () => {
     })]);
     expect(h.requestDrain).toHaveBeenCalledWith(expect.objectContaining({ stage: "inbound" }));
     expect(h.results()).toEqual(["persisted"]);
+  });
+
+  it("suppresses notification recipients for hard bounces but not transient bounces", async () => {
+    const h = harness();
+    const hard = bouncedBody();
+    const transient = bouncedBody("Transient");
+
+    expect((await h.post(hard, signedHeaders(hard, { id: "evt-hard" }))).status).toBe(200);
+    expect((await h.post(transient, signedHeaders(transient, { id: "evt-transient" }))).status).toBe(200);
+
+    expect(h.suppress).toHaveBeenCalledOnce();
+    expect(h.suppress).toHaveBeenCalledWith({
+      email: "bounce@example.test",
+      reason: "hard_bounce",
+      provider: "local",
+      providerEventId: "evt-hard",
+    });
+    expect(h.logged()).not.toContain("bounce@example.test");
   });
 
   it("acknowledges a redelivered svix-id with 200 and writes no row", async () => {

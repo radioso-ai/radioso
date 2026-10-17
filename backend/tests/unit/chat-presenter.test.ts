@@ -60,6 +60,22 @@ describe("chat presenter", () => {
     expect(response.debug?.interactionTrace).toEqual({ state: "not_evaluated", decisions: [] });
   });
 
+  it("keeps the hand-off report for the delivering channel out of the response", () => {
+    const response = presentChatPayload({
+      conversationId: "conversation-1",
+      assistantMessageId: "assistant-message-1",
+      route: { type: "direct", reason: "social_only" },
+      answer: "A teammate will follow up.",
+      activitySummary: { status: "success", outcome: "routine_completed", retrievalSkipped: true },
+      activityTrace: { traceId: "trace-1", startedAt: new Date().toISOString(), stages: [], links: [] },
+      ownership: { state: "human_owned", suppressed: false },
+      handoff: { reason: "routine_handoff", collectedSlotCount: 2 },
+    }, { includeDebug: true });
+
+    expect(response).not.toHaveProperty("handoff");
+    expect(response.ownership).toEqual({ state: "human_owned", suppressed: false });
+  });
+
   it("writes an exact machine-readable status frame without display copy", async () => {
     const { response, writes } = createMockResponse();
     const status: ChatStreamEvent = { type: "status", stage: "searching" };

@@ -69,6 +69,7 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
       resumed: true;
       assistantMessageId: string;
       postCommitReceipt: PostCommitInvalidationReceipt;
+      postCommitWake?: () => void;
     }>();
   });
 
@@ -183,6 +184,50 @@ describe("ApprovalDecisionService role-scoped decisions", () => {
       pending.workspaceId,
       ["conversation.turn_committed", "hitl.decision_resolved"],
     );
+  });
+
+  it("wakes the worker for the resumed turn's background jobs only after the decision transaction commits", async () => {
+    const pending = decision();
+    const order: string[] = [];
+    const repository = {
+      ...createRepository(pending),
+      resolveInTransaction: vi.fn(async (_input, callback: (record: PendingDecisionRecord, trx: unknown) => Promise<unknown>) => {
+        const resume = await callback(pending, {});
+        order.push("committed");
+        return resume;
+      }),
+    } as unknown as Pick<PendingDecisionRepository, "loadByHandle" | "resolveInTransaction" | "listPending">;
+    const postCommitWake = vi.fn(() => {
+      order.push("woke");
+    });
+    const resumeRunner: ResumeRunner = {
+      resume: vi.fn(async () => ({
+        conversationId: pending.conversationId,
+        resumed: true as const,
+        assistantMessageId: "assistant_message_1",
+        postCommitReceipt: {
+          workspaceId: pending.workspaceId,
+          changeKinds: ["conversation.turn_committed"] as const,
+        },
+        postCommitWake,
+      })),
+    };
+    const service = new ApprovalDecisionService(
+      repository,
+      resumeRunner,
+      noActivity(),
+      { resolveWorkspaceRole: vi.fn(async () => "admin" as const) },
+    );
+
+    await service.resolve({
+      agentId: pending.agentId,
+      handle: pending.handle,
+      optionId: "approve",
+      contentHash: pending.contentHash,
+      caller: { accountId: "account_1", workspaceId: pending.workspaceId },
+    });
+
+    expect(order).toEqual(["committed", "woke"]);
   });
 
   it("flushes the outer decision receipt before a fallible conversation event listener", async () => {

@@ -16,7 +16,7 @@ describe("NotificationDeliveryAdmissionService", () => {
     });
     const record = vi.fn().mockResolvedValue(undefined);
     const service = new NotificationDeliveryAdmissionService(
-      { reserve },
+      { reserve, readDailyUsage: vi.fn() },
       new NoopUsageLimitPolicy(),
       { record },
       undefined,
@@ -48,9 +48,28 @@ describe("NotificationDeliveryAdmissionService", () => {
     expect(JSON.stringify(record.mock.calls)).not.toContain("@");
   });
 
+  it("tells the operator how much of today's notice email allowance is used and whether the cap stopped a send", async () => {
+    const readDailyUsage = vi.fn<NotificationDeliveryOutcomeRepositoryPort["readDailyUsage"]>()
+      .mockResolvedValueOnce({ reservedEmails: 40, cappedRequests: 0 })
+      .mockResolvedValueOnce({ reservedEmails: 99, cappedRequests: 2 });
+    const service = new NotificationDeliveryAdmissionService(
+      { reserve: vi.fn(), readDailyUsage },
+      new NoopUsageLimitPolicy(),
+      undefined,
+      undefined,
+      () => new Date("2026-10-11T12:00:00.000Z"),
+    );
+
+    await expect(service.describeDailyEmailAllowance({ workspaceId: "workspace-1" }))
+      .resolves.toEqual({ limit: 100, sentToday: 40, reachedToday: false });
+    await expect(service.describeDailyEmailAllowance({ workspaceId: "workspace-1" }))
+      .resolves.toEqual({ limit: 100, sentToday: 99, reachedToday: true });
+    expect(readDailyUsage).toHaveBeenCalledWith({ workspaceId: "workspace-1", usageDate: new Date("2026-10-11T00:00:00.000Z") });
+  });
+
   it("fails closed without workspace and conversation context", async () => {
     const reserve = vi.fn<NotificationDeliveryOutcomeRepositoryPort["reserve"]>();
-    const service = new NotificationDeliveryAdmissionService({ reserve }, new NoopUsageLimitPolicy());
+    const service = new NotificationDeliveryAdmissionService({ reserve, readDailyUsage: vi.fn() }, new NoopUsageLimitPolicy());
 
     await expect(service.admit({
       requestId: "request-1",
@@ -72,7 +91,7 @@ describe("NotificationDeliveryAdmissionService", () => {
     });
     const record = vi.fn().mockResolvedValue(undefined);
     const service = new NotificationDeliveryAdmissionService(
-      { reserve },
+      { reserve, readDailyUsage: vi.fn() },
       new NoopUsageLimitPolicy(),
       { record },
     );
@@ -89,6 +108,29 @@ describe("NotificationDeliveryAdmissionService", () => {
     expect(record).not.toHaveBeenCalled();
   });
 
+  it("keeps one admission per notice when a retry can email more of the same configured list", async () => {
+    const reserve = vi.fn<NotificationDeliveryOutcomeRepositoryPort["reserve"]>().mockResolvedValue({
+      dispatchAllowed: true,
+      emailAllowed: true,
+      reason: null,
+      newlyRecorded: true,
+    });
+    const service = new NotificationDeliveryAdmissionService({ reserve, readDailyUsage: vi.fn() }, new NoopUsageLimitPolicy());
+    const admission = {
+      requestId: "request-1",
+      workspaceId: "workspace-1",
+      accountId: "account-1",
+      conversationId: "conversation-1",
+      recipientEmails: ["ready@example.com", "confirms-later@example.com"],
+    };
+
+    await service.admit({ ...admission, requestedEmailCount: 1 });
+    await service.admit({ ...admission, requestedEmailCount: 2 });
+
+    const [first, retry] = reserve.mock.calls.map(([input]) => input);
+    expect(retry.recipientDigest).toBe(first.recipientDigest);
+  });
+
   it("binds a replay admission to the recipient set resolved for that attempt", async () => {
     const reserve = vi.fn<NotificationDeliveryOutcomeRepositoryPort["reserve"]>().mockResolvedValue({
       dispatchAllowed: true,
@@ -96,7 +138,7 @@ describe("NotificationDeliveryAdmissionService", () => {
       reason: null,
       newlyRecorded: true,
     });
-    const service = new NotificationDeliveryAdmissionService({ reserve }, new NoopUsageLimitPolicy());
+    const service = new NotificationDeliveryAdmissionService({ reserve, readDailyUsage: vi.fn() }, new NoopUsageLimitPolicy());
     const admission = {
       requestId: "request-1",
       workspaceId: "workspace-1",

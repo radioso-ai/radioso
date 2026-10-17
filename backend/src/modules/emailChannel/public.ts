@@ -16,6 +16,7 @@ export {
   type InboundDeliveryRecord,
   type InboundEventRecord,
 } from "./persistence/emailInboundRepository.js";
+export { EmailInboundEraser } from "./persistence/emailInboundEraser.js";
 export { EmailMailboxRepository } from "./persistence/emailMailboxRepository.js";
 export { EmailSendIntentRepository } from "./persistence/emailSendIntentRepository.js";
 export { EmailThreadRepository } from "./persistence/emailThreadRepository.js";

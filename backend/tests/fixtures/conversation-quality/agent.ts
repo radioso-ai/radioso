@@ -3,7 +3,8 @@ import type { ConversationAgent } from "../../../src/modules/agents/domain.js";
 import { projectInternalAgentConfig, type InternalAgentConfig } from "../../../src/modules/agents/agentConfig.js";
 import { conversationQualityDirectives } from "./directives.js";
 import { CQ_AGENT_ID } from "./routines.js";
-import { unpublishedAgentPublicIdentity } from "../../../src/modules/agents/public.js";
+import { defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../../src/modules/agents/public.js";
+import { websiteEmbedFixture } from "../../support/websiteEmbedFixture.js";
 
 export const CQ_WORKSPACE_ID = "cq-workspace";
 
@@ -36,11 +37,13 @@ export const conversationQualityAgent: ConversationAgent = {
   greetingInstruction: "",
   assistantDefaultLocale: null,
   proactiveGreetingEnabled: false,
+  voice: defaultAgentVoiceSettings(),
+  mechanicsReplies: {},
   chatModelOverride: null,
   surfaceSettings: {
     authenticatedChat: { enabled: true },
     anonymousChat: { enabled: false, token: null },
-    websiteEmbed: {
+    websiteEmbed: websiteEmbedFixture({
       enabled: false,
       token: null,
       allowedOrigins: [],
@@ -49,7 +52,7 @@ export const conversationQualityAgent: ConversationAgent = {
       theme: { brand: "#000000", brandText: "#ffffff", surface: "#ffffff", text: "#000000" },
       copy: {},
       expertOverrides: {},
-    },
+    }),
     extensions: {},
   },
   authoredDirectives: conversationQualityDirectives,

@@ -97,6 +97,9 @@ const proxy = async (request: Request, context: ProxyContext) => {
     headers: buildUpstreamHeaders(request, upstreamUrl),
     cache: 'no-store',
     redirect: 'manual',
+    // A browser that lets go of a request (a closed tab, an audio element seeking) lets go of the
+    // backend's too, rather than leaving it to stream into nothing.
+    signal: request.signal,
   }
 
   if (body !== undefined) {

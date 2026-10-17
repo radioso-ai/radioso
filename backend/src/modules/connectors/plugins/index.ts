@@ -1,6 +1,7 @@
 import type { ConnectorPlugin } from "@radioso/connector-api";
 
 import type { ConnectorRegistry } from "../services/connectorRegistry.js";
+import type { BackgroundJobQueue } from "../../../shared/background-jobs/index.js";
 import { getSlackReadiness, type RequiredSlackEnvVar } from "../../slack/public.js";
 import { SlackPlugin } from "./slack/slackPlugin.js";
 import { WordpressConnector } from "./wordpress/wordpressConnector.js";
@@ -11,11 +12,18 @@ export type { EmailChannelWorker } from "./email/emailChannelWorker.js";
 export { EMAIL_COALESCE_SECONDS, EMAIL_RAW_MAX_BYTES, type EmailThreadProtocolUnitOfWork } from "./email/emailInboundProcessor.js";
 export { EMAIL_REVIEW_MAX_ATTEMPTS, type EmailReviewChecks } from "./email/emailReviewRunner.js";
 export type { EmailReviewInferenceFactory } from "./email/emailReviewChecks.js";
+// The worker-side Slack composition: builds the message handler `slack.inbound_event` jobs
+// dispatch through. Unlike `SlackPlugin` (API-only, mounts HTTP routes), this runs in every
+// runtime that drains background jobs.
+export { buildSlackInboundJobComposition } from "./slack/slackInboundJobComposition.js";
+export { WhatsAppMessageLogEraser } from "./whatsapp/whatsappPersistence.js";
 
 interface BuiltInConnectorOptions {
   slack?: Partial<Record<RequiredSlackEnvVar, string | undefined>> & {
     signingSecret?: string;
     encryptionKey?: string;
+    /** The webhook's enqueue port. Required wherever the Slack connector actually registers. */
+    backgroundJobs?: Pick<BackgroundJobQueue, "enqueueInTransaction" | "wake">;
   };
   /** The email channel's plugin, built by its composition only when an email provider is configured. */
   email?: ConnectorPlugin | null;
@@ -36,6 +44,7 @@ export const registerBuiltInConnectors = (registry: ConnectorRegistry, options: 
     registry.register(new SlackPlugin({
       signingSecret: options.slack!.SLACK_SIGNING_SECRET ?? options.slack!.signingSecret!,
       encryptionKey: options.slack!.encryptionKey,
+      backgroundJobs: options.slack!.backgroundJobs!,
     }));
   }
   if (options.email) {

@@ -66,6 +66,36 @@ test("workspace operator stores a Claude key and picks Claude as the chat model"
   await expect(page.locator('#model-chat')).toContainText("claude-sonnet-4-6");
 });
 
+test("workspace operator stores the ElevenLabs key voice sessions start with, finds it configured after a reload, and removes it", async ({ page }) => {
+  const providerCredentialUpdates: Array<{ method: "PUT" | "DELETE"; provider: string; body?: unknown }> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { platformSettings: basePlatformSettings(), providerCredentialUpdates });
+
+  await page.goto(`/w/${workspaceKey}/settings?tab=providers`);
+  const card = page.locator("#voice-vendor-credentials");
+  await expect(card.getByRole("heading", { name: "Voice runtime keys" })).toBeVisible();
+  const elevenLabsRow = card.locator("li", { hasText: "ElevenLabs" });
+  // A voice runtime key has no deployment fallback to inherit.
+  await expect(elevenLabsRow.getByText("Not configured", { exact: true })).toBeVisible();
+
+  await elevenLabsRow.getByRole("button", { name: "Set key" }).click();
+  await elevenLabsRow.getByPlaceholder("ElevenLabs API key").fill("  xi-test-key-0123456789  ");
+  await elevenLabsRow.getByRole("button", { name: "Save" }).click();
+  await expect(elevenLabsRow.getByText("Workspace key", { exact: true })).toBeVisible();
+  expect(providerCredentialUpdates).toEqual([{ method: "PUT", provider: "elevenlabs", body: { apiKey: "xi-test-key-0123456789" } }]);
+
+  await page.reload();
+  const reloadedRow = page.locator("#voice-vendor-credentials").locator("li", { hasText: "ElevenLabs" });
+  await expect(reloadedRow.getByText("Workspace key", { exact: true })).toBeVisible();
+  // The model provider list is unchanged: the voice key is not a model provider.
+  await expect(page.locator("#provider-credentials").getByText("ElevenLabs")).toHaveCount(0);
+
+  await reloadedRow.getByRole("button", { name: "Remove" }).click();
+  await expect(reloadedRow.getByText("Not configured", { exact: true })).toBeVisible();
+  expect(providerCredentialUpdates.at(-1)).toEqual({ method: "DELETE", provider: "elevenlabs" });
+});
+
 test("a managed plan shows the plan's model read-only and says how to choose", async ({ page }) => {
   const llmModelUpdates: Array<unknown> = [];
 

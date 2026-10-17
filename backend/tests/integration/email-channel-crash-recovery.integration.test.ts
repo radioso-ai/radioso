@@ -263,7 +263,7 @@ describeIntegration("email channel crash recovery (Postgres, SC-007)", () => {
     const SEND_BOUNDARIES: readonly SendBoundary[] = [
       {
         name: "the outbox claim",
-        crash: { seam: "outbox.claimPending", when: "after" },
+        crash: { seam: "outbox.claimNext", when: "after" },
         rewritesMessageId: false,
         leftAs: null,
         survivorSends: 1,
@@ -319,9 +319,9 @@ describeIntegration("email channel crash recovery (Postgres, SC-007)", () => {
       }
 
       // The survivor reclaims the action only once the dead worker's claim runs out.
-      expect(await survivor.dispatch()).toMatchObject({ dispatched: 0 });
+      expect(await survivor.dispatch()).toMatchObject({ completed: 0 });
       await expireOutboxClaims(database, conversationId);
-      expect(await survivor.dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+      expect(await survivor.dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
 
       const [accepted, ...otherAccepts] = await acceptsUnderKey();
       expect(otherAccepts).toEqual([]);
@@ -436,7 +436,7 @@ describeIntegration("email channel crash recovery (Postgres, SC-007)", () => {
       expect(left).toMatchObject({ lease_live: true });
       expect(left.review_completed_revision).toBeLessThan(left.review_revision);
 
-      expect(await survivor.dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+      expect(await survivor.dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
       await expectSentOnce({ conversationId, heldReplyId: held.id, key });
 
       // Once the dead worker's claim runs out the review completes from its queued reply, without a second turn.
@@ -446,7 +446,7 @@ describeIntegration("email channel crash recovery (Postgres, SC-007)", () => {
       expect(reviewed.filter((id) => id === conversationId)).toHaveLength(1);
       const completed = await reviewLinkOf(conversationId);
       expect(completed).toMatchObject({ review_completed_revision: completed.review_revision, review_due_at: null, lease_live: false });
-      expect(await survivor.dispatch()).toMatchObject({ dispatched: 0 });
+      expect(await survivor.dispatch()).toMatchObject({ completed: 0 });
       await expectSentOnce({ conversationId, heldReplyId: held.id, key });
       expect(survivor.provider.sendKeys).toEqual([key]);
     });
@@ -498,9 +498,9 @@ describeIntegration("email channel crash recovery (Postgres, SC-007)", () => {
       expect(await providerAcceptsUnder(spool.dir, key)).toHaveLength(boundary.leftAs.accepts);
 
       // The survivor reclaims the action only once the dead worker's claim runs out.
-      expect(await survivor.dispatch()).toMatchObject({ dispatched: 0 });
+      expect(await survivor.dispatch()).toMatchObject({ completed: 0 });
       await expireOutboxClaims(database, conversationId);
-      expect(await survivor.dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+      expect(await survivor.dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
 
       const sent = await expectSentOnce(queued);
       if (boundary.leftAs.message) expect(sent.id).toBe(leftMessages[0].id);

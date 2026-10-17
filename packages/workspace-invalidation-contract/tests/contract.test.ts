@@ -18,7 +18,7 @@ const workspaceId = "4d7293c8-d241-4f8f-a4db-3df5b88da44c";
 
 describe("workspace invalidation contract v1", () => {
   it("accepts every and only the version-1 invalidation kinds", () => {
-    expect(INVALIDATION_KINDS).toHaveLength(12);
+    expect(INVALIDATION_KINDS).toHaveLength(13);
     for (const kind of INVALIDATION_KINDS) {
       expect(workspaceInvalidationEnvelopeSchema.parse({ protocolVersion, workspaceId, changeKinds: [kind] })).toEqual({
         protocolVersion,

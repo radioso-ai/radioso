@@ -1,8 +1,4 @@
-import type {
-  ActionFailureOutcome,
-  ActionRequestRecord,
-} from "../../../../db/repositories/actionRequestRepository.js";
-import { ActionDispatchSkippedError } from "../../../../shared/domain/actionDispatchOutcome.js";
+import type { ActionFailureOutcome } from "../../../../db/repositories/actionRequestRepository.js";
 
 export { ActionDispatchSkippedError } from "../../../../shared/domain/actionDispatchOutcome.js";
 
@@ -21,6 +17,12 @@ export interface ActionHandlerContext {
 /**
  * Performs one action `type`. Registered at composition keyed by type. MUST be
  * idempotent — the same request may be redelivered (retries, at-least-once dispatch).
+ *
+ * Drained through the generic background-job runtime (#1509): `createActionDispatchJobHandler`
+ * (`actionDispatchJob.ts`) resolves a handler by `type` and routes a claimed request to it,
+ * calling `recordFailureOutcome` from the runtime's per-attempt hook (`outcome: "retry"`) and its
+ * dead-letter hook (`outcome: "failed"`). Nothing here changed to make that move: an
+ * `ActionHandler` implementation never needs to know what drives it.
  */
 export interface ActionHandler {
   handle(input: { payload: Record<string, unknown>; context: ActionHandlerContext }): Promise<void>;
@@ -31,42 +33,6 @@ export interface ActionHandler {
     error: string;
   }): Promise<void>;
 }
-
-/** The narrow slice of the outbox the dispatcher drains. */
-export interface ActionOutboxConsumerPort {
-  claimPending(limit: number, leaseSeconds: number): Promise<ActionRequestRecord[]>;
-  markDispatched(id: string, attempt: number): Promise<boolean>;
-  markSkipped(id: string, reason: string, attempt: number): Promise<boolean>;
-  recordFailure(
-    id: string,
-    error: string,
-    attempt: number,
-    maxAttempts: number,
-    retryBackoffSeconds: number,
-  ): Promise<ActionFailureOutcome>;
-}
-
-interface ActionDispatchOptions {
-  /** A claimed row is reclaimable after this long without progress (crashed worker). */
-  leaseSeconds: number;
-  /** Total dispatch attempts before a failing request becomes terminal `failed`. */
-  maxAttempts: number;
-  /** Backoff before a failed-but-retryable request is eligible again. */
-  retryBackoffSeconds: number;
-}
-
-interface PersistedActionOutcome {
-  request: ActionRequestRecord;
-  outcome: "claimed" | "dispatched" | "skipped" | "retry" | "failed";
-}
-
-type PersistedActionOutcomeObserver = (outcome: PersistedActionOutcome) => void;
-
-const DEFAULT_DISPATCH_OPTIONS: ActionDispatchOptions = {
-  leaseSeconds: 300,
-  maxAttempts: 5,
-  retryBackoffSeconds: 60,
-};
 
 /** Resolves an {@link ActionHandler} by action `type`. */
 export class ActionHandlerRegistry {
@@ -91,130 +57,5 @@ export class ActionHandlerRegistry {
 
   get isEmpty(): boolean {
     return this.handlers.size === 0;
-  }
-}
-
-/**
- * Drains the action outbox and routes each pending request by `type` to its registered
- * handler, marking the row dispatched on success or failed on error / no handler. A
- * worker calls {@link dispatchPending} on a poll loop; the conversation never waits on
- * this. An unregistered type is recorded `failed` (never silently dropped).
- */
-export class ActionDispatcher {
-  private readonly options: ActionDispatchOptions;
-
-  constructor(
-    private readonly outbox: ActionOutboxConsumerPort,
-    private readonly registry: ActionHandlerRegistry,
-    options: Partial<ActionDispatchOptions> = {},
-    private readonly onPersistedOutcome?: PersistedActionOutcomeObserver,
-  ) {
-    this.options = { ...DEFAULT_DISPATCH_OPTIONS, ...options };
-  }
-
-  private observePersistedOutcome(outcome: PersistedActionOutcome): void {
-    try {
-      this.onPersistedOutcome?.(outcome);
-    } catch {
-      // The persisted outbox transition is authoritative. A downstream observer
-      // (for example, best-effort cache invalidation) cannot undo or reclassify it.
-    }
-  }
-
-  async dispatchPending(limit = 20): Promise<{ dispatched: number; retried: number; failed: number; skipped: number }> {
-    const claimed = await this.outbox.claimPending(limit, this.options.leaseSeconds);
-    let dispatched = 0;
-    let retried = 0;
-    let failed = 0;
-    let skipped = 0;
-
-    for (const request of claimed) {
-      this.observePersistedOutcome({ request, outcome: "claimed" });
-    }
-
-    const onFailure = async (request: ActionRequestRecord, error: string): Promise<void> => {
-      const outcome = await this.outbox.recordFailure(
-        request.id,
-        error,
-        request.attempts,
-        this.options.maxAttempts,
-        this.options.retryBackoffSeconds,
-      );
-      if (outcome === "failed") {
-        failed += 1;
-        this.observePersistedOutcome({ request, outcome });
-      } else if (outcome === "retry") {
-        retried += 1;
-        this.observePersistedOutcome({ request, outcome });
-      }
-      // `superseded` → another worker reclaimed this row; its result is authoritative.
-    };
-
-    for (const request of claimed) {
-      const handler = this.registry.resolve(request.type);
-      if (!handler) {
-        await onFailure(request, `no_handler_for_type:${request.type}`);
-        continue;
-      }
-      const context: ActionHandlerContext = {
-        requestId: request.id,
-        workspaceId: request.workspaceId,
-        accountId: request.accountId,
-        conversationId: request.conversationId,
-        idempotencyKey: request.idempotencyKey,
-        attempt: request.attempts,
-        skillName: request.skillName,
-      };
-      try {
-        await handler.handle({
-          payload: request.payload,
-          context,
-        });
-        const changed = await this.outbox.markDispatched(request.id, request.attempts);
-        if (changed !== false) {
-          dispatched += 1;
-          this.observePersistedOutcome({ request, outcome: "dispatched" });
-        }
-      } catch (error) {
-        if (error instanceof ActionDispatchSkippedError) {
-          const changed = await this.outbox.markSkipped(request.id, error.reason, request.attempts);
-          if (changed) {
-            skipped += 1;
-            this.observePersistedOutcome({ request, outcome: "skipped" });
-          }
-          continue;
-        }
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        const outcome = await this.outbox.recordFailure(
-          request.id,
-          errorMessage,
-          request.attempts,
-          this.options.maxAttempts,
-          this.options.retryBackoffSeconds,
-        );
-        if (outcome === "failed") {
-          failed += 1;
-          this.observePersistedOutcome({ request, outcome });
-        } else if (outcome === "retry") {
-          retried += 1;
-          this.observePersistedOutcome({ request, outcome });
-        }
-        if (outcome !== "superseded") {
-          try {
-            await handler.recordFailureOutcome?.({
-              payload: request.payload,
-              context,
-              outcome,
-              error: errorMessage,
-            });
-          } catch {
-            // Delivery outcome recording is operational metadata; the outbox
-            // failure classification above remains authoritative.
-          }
-        }
-      }
-    }
-
-    return { dispatched, retried, failed, skipped };
   }
 }

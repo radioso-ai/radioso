@@ -12,7 +12,7 @@ import { conversationQualityCases } from "../../fixtures/conversation-quality/ca
 import { conversationQualityRoutines } from "../../fixtures/conversation-quality/routines.js";
 import { CQ_AGENT_ID, CQ_WORKSPACE_ID, conversationQualityAgentConfig } from "../../fixtures/conversation-quality/index.js";
 import { createReviewTurnRunnerPort, createWorkbenchReplayRunnerPort } from "../../../scripts/evalRunnerAdapter.js";
-import { needsPublishedAgent, seededRoutineSkillNames } from "../../../scripts/runEvals.js";
+import { needsPublishedAgent, scopeJudgeAssertions, seededRoutineSkillNames } from "../../../scripts/runEvals.js";
 import { InMemoryConversationRepository, InMemoryMessageRepository } from "../../support/fakes.js";
 
 // The live conversation-quality runner (scripts/runEvals.ts) drives review cases through
@@ -209,5 +209,26 @@ describe("live conversation-quality runner, seeded agent", () => {
 
     expect(dispatched.length).toBeGreaterThan(0);
     expect(dispatched.filter((skillName) => !seededRoutineSkillNames.includes(skillName))).toEqual([]);
+  });
+});
+
+describe("live runner judge scope", () => {
+  const judged = (cases: readonly ConversationQualityCase[]) =>
+    cases.filter((evalCase) => evalCase.assertions.some((assertion) => assertion.type === "llm_judge")).map((evalCase) => evalCase.id);
+
+  it("keeps llm_judge assertions only on cases carrying a judged tag", () => {
+    const scoped = scopeJudgeAssertions(conversationQualityCases, ["quick-reply"]);
+
+    expect(judged(scoped).length).toBeGreaterThan(0);
+    for (const evalCase of scoped.filter((candidate) => judged([candidate]).length > 0)) {
+      expect(evalCase.tags).toContain("quick-reply");
+    }
+    // Every other assertion survives untouched, so a judged run scores the same deterministic layer.
+    expect(scoped.map((evalCase) => evalCase.assertions.filter((assertion) => assertion.type !== "llm_judge")))
+      .toEqual(conversationQualityCases.map((evalCase) => evalCase.assertions.filter((assertion) => assertion.type !== "llm_judge")));
+  });
+
+  it("drops every llm_judge assertion when no tag is judged", () => {
+    expect(judged(scopeJudgeAssertions(conversationQualityCases, []))).toEqual([]);
   });
 });

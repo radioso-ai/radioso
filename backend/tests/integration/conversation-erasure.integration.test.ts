@@ -431,8 +431,8 @@ describeIntegration("conversation erasure (Postgres)", () => {
 
   /**
    * Polls `pg_stat_activity` until some backend other than `excludePid` is waiting on a lock, with
-   * a bounded timeout instead of a fixed sleep. The auto-delete's `DELETE FROM visitors ...` (or,
-   * fixed, its preceding `SELECT ... FOR UPDATE`) needs the full `FOR UPDATE` tuple-lock strength,
+   * a bounded timeout instead of a fixed sleep. The visitor auto-delete (or, fixed, its preceding
+   * `SELECT ... FOR UPDATE`) needs the full `FOR UPDATE` tuple-lock strength,
    * which conflicts with the `FOR KEY SHARE` a concurrent insert's foreign-key check holds on the
    * same visitor row — so this reliably observes the erasure actually blocked on that hold, not a
    * guess about how long it takes to get there.

@@ -11,6 +11,7 @@ type HistoryMessage = {
   role: string;
   content: string;
   interruption?: { heardCharacterCount: number; spokenCharacterCount: number; partial: boolean };
+  debug?: { eventStatus: string };
 };
 
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -109,6 +110,9 @@ describe("a reply the caller speaks over while it is still being said", () => {
     ]);
     const cutReply = detail.messages[1];
     expect(cutReply.interruption).toEqual({ heardCharacterCount: 54, spokenCharacterCount: 54, partial: true });
+    // The turn was cut off, not answered: its debug says so, and the caller's message carries no turn failure.
+    expect(cutReply.debug?.eventStatus).toBe("cancelled");
+    expect(detail.messages[0]).not.toHaveProperty("turnFailure");
     expect(detail.messages[3]).not.toHaveProperty("interruption");
 
     const audits = repositories.auditEventRepository.items;

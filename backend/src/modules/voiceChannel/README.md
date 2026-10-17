@@ -28,15 +28,17 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   text into what a caller hears: it removes the composer's citation markers
   (`[1]`, `[?]`, `[[1]]`, `[[?]]`) and markdown syntax (emphasis, inline code, line-start heading and
   list markers, link syntax) from everything spoken, by structure only,
-  keeping where each spoken character came from (`sourcedSpokenText`), and
-  compares a runtime's record of what was heard with what was spoken;
+  as one list of removals (`speechRemovals`) the sentence cutter shares;
   while a reply streams, `speechSegmenter.ts`'s sentence cutter closes an
   emphasis only before a space, line break or punctuation (the end of the
   reply closes the rest), removes list markers only at a real line start,
   and reports where each sentence it releases ends in the written reply
-  (`SpeechPiece.writtenEnd`); `heardSpeech.ts` is the pure measure of how
-  much of a turn's speech its caller heard, by the runtime's own record of
-  what it played;
+  (`writtenEnd`, by a source map it keeps for its tail only; null where it
+  cannot place one); `heardSpeech.ts` is the pure measure of how much of a
+  turn's speech its caller heard, by the runtime's own record of what it
+  played, compared piece by piece so whatever the runtime puts between
+  pieces (a flush delta, a space, nothing after a full-width terminator)
+  does not matter;
   `voiceTurnPolicy.ts` is the pure timing wrapper (bridge and turn limit) over
   those events; `voiceLines.ts` picks the turn's bridge and fallback lines by
   routine state and locale (tag structure only, never the lines' words);
@@ -436,9 +438,9 @@ helpers and the shared chat message limit from `app/http`
   claim's expiry. A
   settling write that fails warns and leaves the claim to expire; an audit
   that fails after the mark is logged and not retried. The session's
-  interruption bookkeeping counts the replies as spoken ahead of the reply
-  (`VoiceSpokenTurn.ahead`, before the bridge line), so a reply cut short
-  after them is marked with its own characters only.
+  interruption bookkeeping measures the replies' pieces ahead of the answer
+  (`VoiceExchange.spoken`, the same `heardSpeechOf` measure), so a reply cut
+  short after them is marked with its own characters only.
 - **What the caller heard.** Text reaches the runtime far ahead of its
   speech, and the runtime keeps the old stream open while the caller's new
   utterance is spoken and transcribed, so what reached the runtime overstates
@@ -446,12 +448,17 @@ helpers and the shared chat message limit from `app/http`
   is the runtime's own: the request that cuts in carries the reply cut short
   to what was played (`heardUntil`). When it overtook a turn still in flight
   whose speech reached the runtime, `noteInterruptedReply` keeps it on that
-  turn's record (`reportedHeard`) and never applies it to the stored exchange
-  before it; it always arrives before chat asks that turn what to keep. The
-  record also counts, in order, every piece that reached the runtime before
-  the turn lost its caller (`spoken.reached`, against `cutOffAt`; none on a
-  response with `VoiceTurnInput.streamsSpeech` false, which the runtime gets
-  only at its outcome). `heardSpeech.ts` (`heardSpeechOf`) measures that speech
+  turn's record (`reported`, measured once there, a mismatch warning once)
+  and never applies it to the stored exchange before it; it always arrives
+  before chat asks that turn what to keep. A report for a turn whose whole
+  reply settles after the request that sent it is reserved against that
+  turn's own exchange (`reserveInterruptionOf`). The record keeps each piece
+  that left the turn with whether it reached the runtime before the turn lost
+  its caller (`reached`, against `cutOffAt`; never on a response with
+  `VoiceTurnInput.streamsSpeech` false, which the runtime gets only at its
+  outcome), and each answer piece with where it ends in the written answer,
+  carried on its speech event through the policy and stripped before the
+  port's output. `heardSpeech.ts` (`heardSpeechOf`) measures that speech
   against the report: the teammate pieces and the answer pieces played to
   their end, and the answer characters heard; with no report, everything that
   reached the runtime counts as heard. A teammate's reply is marked spoken when
@@ -509,7 +516,8 @@ helpers and the shared chat message limit from `app/http`
   it once, while the turn still holds its lease, so the newer turn waits for
   the store as it waits for a commit. The turn answers with the answer's
   pieces the caller heard to their end (previous decision), cut at the
-  written end of the last of them (`SpeechPiece.writtenEnd`), the answer
+  written end of the last of them (an unplaceable one warns and stores no
+  part), the answer
   characters heard and those that reached the runtime, and its own audit
   event of the cut (`voice.reply_interrupted`, counts and `partial: true`);
   null when no piece with words was heard whole or the fallback line stood in
@@ -520,7 +528,9 @@ helpers and the shared chat message limit from `app/http`
   left open removed and markdown kept, marked `interruption: { heardCharacterCount,
   spokenCharacterCount, partial: true }`, with the cancelled `chat.answer`
   event and that audit event in one transaction, and names it on its
-  `cancelled` event (`assistantMessageId`); the turn counts and logs the
+  `cancelled` event (`storedReply`, `partial: true`; a whole reply chat had
+  stored before the cut comes as `partial: false` and is the turn's reply as
+  it streamed); the turn counts and logs the
   interruption then. The turn remembers the part as the exchange's reply
   (`VoiceStoredReply.partial`): the session counts it measured, so a later
   `heardUntil` for it is a no-op, and it is never replayed. The cut reply is

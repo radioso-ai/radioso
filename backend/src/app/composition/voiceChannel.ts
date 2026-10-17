@@ -71,7 +71,8 @@ export const createVoiceTurnNotes = (deps: {
       );
       return;
     }
-    await deps.auditService.record({ workspaceId, eventType: VOICE_REPLY_INTERRUPTED_EVENT, eventStatus: "success", metadata });
+    // The same shape as the record of a reply cut off mid-stream, which chat writes with `partial: true`.
+    await deps.auditService.record({ workspaceId, eventType: VOICE_REPLY_INTERRUPTED_EVENT, eventStatus: "success", metadata: { ...metadata, partial: false } });
   },
   replyReplayed: ({ workspaceId, ...metadata }) =>
     deps.auditService.record({ workspaceId, eventType: "voice.reply_replayed", eventStatus: "success", metadata }),

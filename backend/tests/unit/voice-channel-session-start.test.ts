@@ -95,13 +95,14 @@ describe("voice session start", () => {
     expect(register.mock.invocationCallOrder[0]).toBeLessThan(startSession.mock.invocationCallOrder[0]);
   });
 
-  it("hands the page the agent's recording notice in the session's language, and none when the agent wrote none for it", async () => {
+  it("hands the page the agent's recording notice in the session's language, and none when the agent wrote none", async () => {
     const voice: AgentVoiceSettings = { ...boundVoice, recordingNotice: { en: "This call is recorded.", it: "Questa chiamata viene registrata." } };
 
     expect(await serviceWith({ voice }).service.start({ workspaceId, agentId, visitor, locale: "it-CH" }))
       .toMatchObject({ kind: "started", recordingNotice: "Questa chiamata viene registrata." });
+    // No German notice: English, the fallback language, rather than none.
     expect(await serviceWith({ voice }).service.start({ workspaceId, agentId, visitor, locale: "de" }))
-      .not.toHaveProperty("recordingNotice");
+      .toMatchObject({ recordingNotice: "This call is recorded." });
     expect(await serviceWith({}).service.start({ workspaceId, agentId, visitor, locale: "en" }))
       .not.toHaveProperty("recordingNotice");
   });

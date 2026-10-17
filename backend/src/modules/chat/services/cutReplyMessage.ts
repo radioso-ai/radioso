@@ -13,14 +13,15 @@ export const cutReplyContent = (text: string): string =>
   stripResidualCitationSyntax(canonicalizeUnsourcedMarkers(text)).trim();
 
 /**
- * The assistant message that keeps the heard part of a reply a newer input cut off mid-stream. It
- * is marked cut short from the start, with heard equal to spoken: the stored text is what was heard.
+ * The assistant message that keeps the heard part of a reply a newer input cut off mid-stream,
+ * marked cut short from the start with the channel's counts.
  */
 export const cutReplyMessage = (input: {
   id: string;
   workspaceId: string;
   conversationId: string;
   content: string;
+  heardCharacterCount: number;
   spokenCharacterCount: number;
 }): MessageCreateInput & { id: string } => ({
   id: input.id,
@@ -29,7 +30,7 @@ export const cutReplyMessage = (input: {
   role: "assistant",
   content: input.content,
   interruption: {
-    heardCharacterCount: input.spokenCharacterCount,
+    heardCharacterCount: input.heardCharacterCount,
     spokenCharacterCount: input.spokenCharacterCount,
     partial: true,
   },

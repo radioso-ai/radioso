@@ -20,6 +20,7 @@ const input = (overrides: Partial<VoiceTurnInput> = {}): VoiceTurnInput => ({
   session: { workspaceId, agentId, vendor: "elevenlabs", sessionKey: "conv_abc" },
   transport: "web",
   utterance: "When do you open?",
+  streamsSpeech: true,
   ...overrides,
 });
 
@@ -1455,33 +1456,35 @@ describe("VoiceTurnService", () => {
         { atMs: 2_000, event: { type: "chunk", text: "days we rest. Holidays vary." } },
         { atMs: 2_000, event: { ...done(), answer: "We open at **nine** on weekdays. Saturdays at ten. Sundays we rest. Holidays vary." } as ChatStreamEvent },
       ];
-      const heardSpeech = "We open at nine on weekdays. Saturdays at ten. ";
-      const heardPart = { text: "We open at **nine** on weekdays. Saturdays at ten [[1]]. ", spokenCharacterCount: 46 };
+      const reachedSpeech = "We open at nine on weekdays. Saturdays at ten. ";
 
-      it("hands chat the sentences that reached the caller, as written, and notes the stored part cut short", async () => {
+      /** The first request streams the four sentences; the second cuts in at 500 ms, reporting what the runtime played. */
+      const cutAt500 = async (turns: VoiceTurnService, newer: Partial<VoiceTurnInput> = {}, first: Partial<VoiceTurnInput> = {}) => {
+        const cut = start(turns, input({ utterance: "When do you open?", ...first }));
+        await vi.advanceTimersByTimeAsync(500);
+        const next = start(turns, input({ utterance: "And on Sundays?", ...newer }));
+        await vi.runAllTimersAsync();
+        return { cut: await cut, next: await next };
+      };
+
+      it("hands chat the sentences the runtime played whole, as written, with the characters heard and those that reached it", async () => {
         const chat = supersedingChat([fourSentences, answered("Yes, on Sundays too.")]);
         const notes = fakeNotes();
         const metrics = fakeMetrics();
         const logger = fakeLogger();
         const turns = service(chat, { notes, metrics, logger });
 
-        const first = start(turns, input({ utterance: "When do you open?" }));
-        await vi.advanceTimersByTimeAsync(500);
-        const second = start(turns, input({ utterance: "And on Sundays?" }));
-        await vi.runAllTimersAsync();
+        // ElevenLabs had played the first sentence and two words of the second when the caller spoke.
+        const { cut, next } = await cutAt500(turns, { heardUntil: "We open at nine on weekdays.  \u200BSaturdays at" });
 
-        expect(spokenText(await first)).toBe(heardSpeech);
-        expect(spokenText(await second)).toBe("Yes, on Sundays too.");
-        expect(chat.heardParts).toEqual([heardPart]);
+        expect(spokenText(cut)).toBe(reachedSpeech);
+        expect(spokenText(next)).toBe("Yes, on Sundays too.");
+        expect(chat.heardParts).toEqual([{ text: "We open at **nine** on weekdays. ", heardCharacterCount: 41, spokenCharacterCount: 46 }]);
         expect(notes.replyInterrupted).toHaveBeenCalledTimes(1);
         expect(notes.replyInterrupted).toHaveBeenCalledWith({
-          workspaceId, conversationId, assistantMessageId: "cut-0", heardCharacterCount: 46, spokenCharacterCount: 46, partial: true,
+          workspaceId, conversationId, assistantMessageId: "cut-0", heardCharacterCount: 41, spokenCharacterCount: 46, partial: true,
         });
         expect(counted(metrics, "voice_reply_interrupted_total")).toEqual([{ partial: "yes" }]);
-        expect(logger.info).toHaveBeenCalledWith(
-          { agentId, vendor: "elevenlabs", conversationId, assistantMessageId: "cut-0", heardCharacterCount: 46, spokenCharacterCount: 46, partial: true },
-          "Voice reply was interrupted",
-        );
         expect(logger.info).toHaveBeenCalledWith(
           expect.objectContaining({ result: "superseded", supersededAt: "after_speech", storedPartialReply: true }),
           "Voice turn finished",
@@ -1489,8 +1492,35 @@ describe("VoiceTurnService", () => {
         expect(JSON.stringify(logger.info.mock.calls)).not.toMatch(/nine|Saturdays/u);
       });
 
-      it("stores nothing for a turn cut off before a sentence of its reply reached the caller, a bridge line spoken or not", async () => {
-        const chat = supersedingChat([
+      it("counts every sentence that reached the runtime as heard when the newer request reports nothing", async () => {
+        const chat = supersedingChat([fourSentences, answered("Yes, on Sundays too.")]);
+        const turns = service(chat, { notes: fakeNotes() });
+
+        await cutAt500(turns);
+
+        expect(chat.heardParts).toEqual([{ text: "We open at **nine** on weekdays. Saturdays at ten [[1]]. ", heardCharacterCount: 46, spokenCharacterCount: 46 }]);
+      });
+
+      it("falls back to what reached the runtime, and warns with counts only, when the report does not match it", async () => {
+        const chat = supersedingChat([fourSentences, answered("Yes, on Sundays too.")]);
+        const logger = fakeLogger();
+        const turns = service(chat, { notes: fakeNotes(), logger });
+
+        await cutAt500(turns, { heardUntil: "We close at" });
+
+        expect(chat.heardParts).toEqual([expect.objectContaining({ heardCharacterCount: 46, spokenCharacterCount: 46 })]);
+        expect(logger.warn).toHaveBeenCalledWith(
+          { agentId, vendor: "elevenlabs", conversationId, reachedCharacterCount: 46, reportedCharacterCount: 11 },
+          "Voice reply reported heard does not match what reached the runtime; the stored part follows what reached it",
+        );
+      });
+
+      it("stores nothing when the caller heard no sentence of the reply whole, or none reached the runtime, a bridge line spoken or not", async () => {
+        const heardHalf = supersedingChat([fourSentences, answered("Yes, on Sundays too.")]);
+        const notes = fakeNotes();
+        await cutAt500(service(heardHalf, { notes }), { heardUntil: "We open at nine" });
+
+        const beforeFirstSentence = supersedingChat([
           [
             { atMs: 0, event: { type: "conversation", conversationId } },
             { atMs: 0, event: { type: "status", stage: "searching" } },
@@ -1499,20 +1529,23 @@ describe("VoiceTurnService", () => {
           ],
           answered("Yes, on Sundays too."),
         ]);
-        const notes = fakeNotes();
         const logger = fakeLogger();
-        const turns = service(chat, { notes, logger });
+        const { cut } = await cutAt500(service(beforeFirstSentence, { notes, logger }));
 
-        const first = start(turns, input({ utterance: "When do you open?" }));
-        await vi.advanceTimersByTimeAsync(500);
-        const second = start(turns, input({ utterance: "And on Sundays?" }));
-        await vi.runAllTimersAsync();
-
-        expect((await first).map((event) => event.type)).toEqual(["conversation", "bridge", "outcome"]);
-        await second;
-        expect(chat.heardParts).toEqual([null]);
+        expect(heardHalf.heardParts).toEqual([null]);
+        expect(cut.map((event) => event.type)).toEqual(["conversation", "bridge", "outcome"]);
+        expect(beforeFirstSentence.heardParts).toEqual([null]);
         expect(notes.replyInterrupted).not.toHaveBeenCalled();
         expect(logger.info.mock.calls[0]?.[0]).not.toHaveProperty("storedPartialReply");
+      });
+
+      it("stores nothing for a response that is not streamed, which the runtime gets only at its outcome", async () => {
+        const chat = supersedingChat([fourSentences, answered("Yes, on Sundays too.")]);
+        const turns = service(chat, { notes: fakeNotes() });
+
+        await cutAt500(turns, { streamsSpeech: false }, { streamsSpeech: false });
+
+        expect(chat.heardParts).toEqual([null]);
       });
 
       it("hands chat only what reached the runtime before it hung up, when a newer request then cuts the reply off", async () => {
@@ -1528,7 +1561,22 @@ describe("VoiceTurnService", () => {
         await vi.runAllTimersAsync();
         await Promise.all([first, second]);
 
-        expect(chat.heardParts).toEqual([{ text: "We open at **nine** on weekdays. ", spokenCharacterCount: 28 }]);
+        expect(chat.heardParts).toEqual([{ text: "We open at **nine** on weekdays. ", heardCharacterCount: 28, spokenCharacterCount: 28 }]);
+      });
+
+      it("applies the report to the reply the overtaken turn was saying, never to the stored reply before it", async () => {
+        // The stored reply starts with the words the caller heard of the next one.
+        const chat = supersedingChat([answered("We open at nine. See you then!"), fourSentences, answered("Yes, on Sundays too.")]);
+        const notes = fakeNotes();
+        const turns = service(chat, { notes });
+
+        const stored = start(turns, input({ utterance: "Hello?" }));
+        await vi.runAllTimersAsync();
+        await stored;
+        await cutAt500(turns, { heardUntil: "We open at nine" });
+
+        expect(notes.replyInterrupted).not.toHaveBeenCalled();
+        expect(chat.heardParts).toEqual([null]);
       });
 
       it("records nothing more when the vendor later reports the stored part cut short", async () => {
@@ -1536,13 +1584,9 @@ describe("VoiceTurnService", () => {
         const notes = fakeNotes();
         const turns = service(chat, { notes });
 
-        const first = start(turns, input({ utterance: "When do you open?" }));
-        await vi.advanceTimersByTimeAsync(500);
-        const second = start(turns, input({ utterance: "And on Sundays?" }));
-        await vi.runAllTimersAsync();
-        await Promise.all([first, second]);
+        await cutAt500(turns, { heardUntil: "We open at nine on weekdays. Saturdays at" });
         // The second reply was heard whole; the third request's history shows the cut part, as it was stored.
-        const third = start(turns, input({ utterance: "Great.", heardUntil: "We open at nine on weekdays..." }));
+        const third = start(turns, input({ utterance: "Great.", heardUntil: "We open at nine on weekdays" }));
         await vi.runAllTimersAsync();
         await third;
 
@@ -1550,20 +1594,20 @@ describe("VoiceTurnService", () => {
         expect(notes.replyInterrupted).toHaveBeenCalledWith(expect.objectContaining({ assistantMessageId: "cut-0", partial: true }));
       });
 
-      it("replays the stored part to an identical re-request once no chat turn runs", async () => {
-        let cancelled = false;
+      it("answers an identical re-request with a new turn, not the stored part again", async () => {
         const chat = supersedingChat([fourSentences]);
         // The request that cut the reply off fails before chat reports anything, so the session's
         // last exchange stays the cut one.
         const failingAfterCut = {
           streamTurn: (request: VoiceChatTurnRequest) => {
-            if (chat.requests.length === 0) return chat.streamTurn(request);
-            chat.streamTurn(request);
-            cancelled = true;
-            return (async function* (): AsyncGenerator<ChatStreamEvent> {
-              await new Promise((resolve) => setTimeout(resolve, 100));
-              throw new Error("model unavailable");
-            })();
+            if (chat.requests.length >= 1 && chat.requests.length < 2) {
+              chat.streamTurn(request);
+              return (async function* (): AsyncGenerator<ChatStreamEvent> {
+                await new Promise((resolve) => setTimeout(resolve, 100));
+                throw new Error("model unavailable");
+              })();
+            }
+            return chat.requests.length === 0 ? chat.streamTurn(request) : fakeChat([...answered("We open at nine on weekdays and ten on Saturdays.").map((step) => step.event)]).streamTurn(request);
           },
         };
         const notes = fakeNotes();
@@ -1576,13 +1620,12 @@ describe("VoiceTurnService", () => {
         await vi.advanceTimersByTimeAsync(2_000);
         await first;
         expect(await failed).toBe("failed");
-        expect(cancelled).toBe(true);
-        const replayed = start(turns, input({ utterance: "When do you open?" }));
+        expect(chat.heardParts).toHaveLength(1);
+        const again = start(turns, input({ utterance: "When do you open?" }));
         await vi.runAllTimersAsync();
 
-        expect(spokenText(await replayed)).toBe("We open at nine on weekdays. Saturdays at ten.");
-        expect(chat.requests).toHaveLength(2);
-        expect(notes.replyReplayed).toHaveBeenCalledWith({ workspaceId, conversationId, assistantMessageId: "cut-0" });
+        expect(spokenText(await again)).toBe("We open at nine on weekdays and ten on Saturdays.");
+        expect(notes.replyReplayed).not.toHaveBeenCalled();
       });
     });
 
@@ -1849,7 +1892,7 @@ describe("VoiceTurnService", () => {
         expect(replies.speech.get(fourWorks.messageId)).toEqual({ state: "spoken" });
       });
 
-      it("keeps a reply the caller heard through as spoken when the agent's answer after it is cut off", async () => {
+      it("keeps a reply the runtime played whole as spoken when the agent's answer after it is cut off", async () => {
         const replies = teammateReplies([fourWorks]);
         const chat = supersedingChat([
           [
@@ -1864,7 +1907,7 @@ describe("VoiceTurnService", () => {
 
         const first = start(turns, input({ utterance: "And when do you open?" }));
         await vi.advanceTimersByTimeAsync(500);
-        const newer = start(turns, input({ utterance: "And on Sundays?" }));
+        const newer = start(turns, input({ utterance: "And on Sundays?", heardUntil: "Yes, four works.\n \u200BWe open at nine." }));
         await vi.runAllTimersAsync();
 
         expect(spokenText(await first)).toBe("Yes, four works.\nWe open at nine. ");
@@ -1872,23 +1915,24 @@ describe("VoiceTurnService", () => {
         expect(replies.claims.markOperatorRepliesSpoken).toHaveBeenCalledTimes(1);
         expect(replies.claims.markOperatorRepliesSpoken).toHaveBeenCalledWith(expect.objectContaining({ messageIds: [fourWorks.messageId], claimTurnId: "turn-1" }));
         expect(replies.claims.releaseOperatorReplies).not.toHaveBeenCalled();
-        expect(chat.heardParts).toEqual([{ text: "We open at nine. ", spokenCharacterCount: 16 }]);
+        expect(chat.heardParts).toEqual([{ text: "We open at nine. ", heardCharacterCount: 16, spokenCharacterCount: 16 }]);
       });
 
-      it("hands back the reply the caller cut into, for the turn that cut it to speak whole, and keeps the one before it spoken", async () => {
+      it("hands back the reply the caller spoke over, for the request that cut in to speak whole, and keeps the one played before it spoken", async () => {
         const replies = teammateReplies([fourWorks, bringCard]);
-        const chat = supersedingChat([silentWhileHumanOwned, silentWhileHumanOwned]);
+        const slowSilence: Step[] = [
+          { atMs: 0, event: { type: "status", stage: "interpreting" } },
+          { atMs: 400, event: waitingDone("") },
+        ];
+        const chat = supersedingChat([slowSilence, silentWhileHumanOwned]);
         const turns = service(chat, { ownership: conversationOwnership(true), operatorReplies: replies.operatorReplies, notes: replies.notes });
-        const call = turns.runTurn(input({ utterance: "Can I come at four?" }), new AbortController().signal)[Symbol.asyncIterator]();
 
-        expect((await call.next()).value).toEqual({ type: "conversation", conversationId });
-        expect((await call.next()).value).toEqual({ type: "speech", text: "Yes, four works.\n", last: false });
-        expect((await call.next()).value).toEqual({ type: "speech", text: "Bring your card, please. ", last: false });
-        // The caller speaks while the second reply is still being said.
-        const bargeIn = start(turns, input({ utterance: "Sorry, four?" }));
-        const rest = collect({ [Symbol.asyncIterator]: () => call });
+        const first = start(turns, input({ utterance: "Can I come at four?" }));
+        await vi.advanceTimersByTimeAsync(100);
+        // ElevenLabs had played the first reply and part of the second when the caller spoke.
+        const bargeIn = start(turns, input({ utterance: "Sorry, four?", heardUntil: "Yes, four works.\n \u200BBring your card" }));
         await vi.runAllTimersAsync();
-        await rest;
+        await first;
 
         expect(spokenText(await bargeIn)).toBe("Bring your card, please. See you then\n");
         expect(replies.claims.markOperatorRepliesSpoken).toHaveBeenCalledWith(expect.objectContaining({ messageIds: [fourWorks.messageId], claimTurnId: "turn-1" }));
@@ -1896,6 +1940,27 @@ describe("VoiceTurnService", () => {
         expect(replies.claims.markOperatorRepliesSpoken).toHaveBeenCalledWith(expect.objectContaining({ messageIds: [bringCard.messageId], claimTurnId: "turn-2" }));
         expect(replies.speech.get(fourWorks.messageId)).toEqual({ state: "spoken" });
         expect(replies.speech.get(bringCard.messageId)).toEqual({ state: "spoken" });
+      });
+
+      it("hands back every reply of a response that is not streamed and was cut off before its outcome", async () => {
+        const replies = teammateReplies([fourWorks]);
+        const slowSilence: Step[] = [
+          { atMs: 0, event: { type: "status", stage: "interpreting" } },
+          { atMs: 400, event: waitingDone("") },
+        ];
+        const chat = supersedingChat([slowSilence, silentWhileHumanOwned]);
+        const turns = service(chat, { ownership: conversationOwnership(true), operatorReplies: replies.operatorReplies, notes: replies.notes });
+
+        const first = start(turns, input({ utterance: "Can I come at four?", streamsSpeech: false }));
+        await vi.advanceTimersByTimeAsync(100);
+        const bargeIn = start(turns, input({ utterance: "Hello?", streamsSpeech: false, heardUntil: "Yes, four works." }));
+        await vi.runAllTimersAsync();
+        await first;
+
+        expect(spokenText(await bargeIn)).toBe("Yes, four works.\n");
+        expect(replies.claims.releaseOperatorReplies).toHaveBeenCalledWith(expect.objectContaining({ messageIds: [fourWorks.messageId], claimTurnId: "turn-1" }));
+        expect(replies.claims.markOperatorRepliesSpoken).toHaveBeenCalledTimes(1);
+        expect(replies.claims.markOperatorRepliesSpoken).toHaveBeenCalledWith(expect.objectContaining({ claimTurnId: "turn-2" }));
       });
 
       it("hands them over on a call a person owns too, so the caller's barge-in is not met with silence", async () => {

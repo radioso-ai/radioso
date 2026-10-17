@@ -98,15 +98,25 @@ const WORDLESS = /^[\p{P}\s]*$/u;
 export const hasSpokenWords = (text: string): boolean => !WORDLESS.test(text);
 
 /**
+ * How many characters of `spoken` the caller heard, by `heard`, the runtime's record of it, once
+ * both are compared as plainly spaced text: all of them when `heard` leaves out nothing but
+ * punctuation, as when a reply ending in "..." was heard whole; null when `heard` is no prefix of it.
+ */
+export const heardLength = (spoken: string, heard: string): number | null => {
+  const whole = comparable(spoken);
+  const prefix = comparable(heard);
+  if (!whole.startsWith(prefix)) {
+    return null;
+  }
+  return Array.from(hasSpokenWords(whole.slice(prefix.length)) ? prefix : whole).length;
+};
+
+/**
  * How many characters of `spoken` the caller heard, when `heard` (the runtime's record of it, cut
  * short) is a strict prefix of it once both are compared as plainly spaced text; null when it is
  * not, or when all it leaves out is punctuation, as when a reply ending in "..." was heard whole.
  */
 export const heardPrefixLength = (spoken: string, heard: string): number | null => {
-  const whole = comparable(spoken);
-  const prefix = comparable(heard);
-  if (!whole.startsWith(prefix) || !hasSpokenWords(whole.slice(prefix.length))) {
-    return null;
-  }
-  return Array.from(prefix).length;
+  const length = heardLength(spoken, heard);
+  return length === null || length === spokenLength(spoken) ? null : length;
 };

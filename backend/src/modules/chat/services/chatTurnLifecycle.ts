@@ -595,13 +595,15 @@ export const buildTurnTraceForPresentation = (
 const deliveredReplyPartOf = (
   input: { executionMode?: TurnExecutionMode; deliveredReply?: DeliveredReplyReader },
   supersededBy: ChatTurnSupersededError,
-): { content: string; spokenCharacterCount: number } | null => {
+): { content: string; heardCharacterCount: number; spokenCharacterCount: number } | null => {
   if (!supersededBy.afterEmission || !input.deliveredReply || turnExecutionCapabilities(input.executionMode).completion !== "persist_reply") {
     return null;
   }
   const part = input.deliveredReply();
   const content = part ? cutReplyContent(part.text) : "";
-  return part && content ? { content, spokenCharacterCount: part.spokenCharacterCount } : null;
+  return part && content
+    ? { content, heardCharacterCount: part.heardCharacterCount, spokenCharacterCount: part.spokenCharacterCount }
+    : null;
 };
 
 /** No assessment ran for this request; the ids still anchor the verdict slot to the turn. */
@@ -1287,7 +1289,7 @@ export class ChatTurnLifecycle {
   private async storeCutReply(
     input: { workspaceId: string },
     session: PreparedSession,
-    heardPart: { content: string; spokenCharacterCount: number },
+    heardPart: { content: string; heardCharacterCount: number; spokenCharacterCount: number },
     auditEventFor: (cutReplyId: string) => AuditEventInput,
   ): Promise<string | undefined> {
     const conversationId = session.conversation.id;

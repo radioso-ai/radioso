@@ -185,6 +185,9 @@ const deliveryDecisionIsAPersons = permanent(
 const heldReplyDiscardIsAPersons = permanent(
   "Permanent exclusion: discarding a held reply is an audited decision that the customer hears nothing from the agent and the conversation waits for a teammate, so it stays with a person in the Inbox. Ray reads held replies through held_replies.",
 );
+const erasureIsAPersons = permanent(
+  "Permanent exclusion: erasing a conversation or a visitor destroys a data subject's records with no undo, and the audit event that answers their request names the person who decided it, so erasure stays with a person in the dashboard or an automated request pipeline over the API.",
+);
 const rawCustomerMail = permanent(
   "Permanent exclusion: raw customer mail and its headers are never model input; Ray reads an email conversation's facts through email_conversation_facts instead.",
 );
@@ -410,6 +413,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ...coverage(["acknowledgeDeliveryFailure", "resolveDeliveryFailure"], deliveryDecisionIsAPersons),
   ...coverage(["releaseHeldReply"], neverListExclusion("unattended_live_customer_reply")),
   ...coverage(["discardHeldReply"], heldReplyDiscardIsAPersons),
+  ...coverage(["deleteHistoryConversation", "deleteHistoryVisitor"], erasureIsAPersons),
   ...coverage(["updateConnectorConfig", "enableConnector", "disableConnector"], connectorConfiguration),
   ...coverage(["syncConnector"], connectorManualSync),
   ...coverage(["deleteAgentRoutine"], routineStructuralEditing),

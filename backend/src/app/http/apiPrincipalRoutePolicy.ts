@@ -118,6 +118,10 @@ const declarations: readonly PolicyDeclaration[] = [
     allow("GET", `/api/v1/history${path}`, "workspace.history.read")),
   ...["/contact/:requestId", "/search/:searchId", "/chat/:conversationId", "/chat/:conversationId/tail", "/visitors/:visitorId/conversations", "/:conversationId"]
     .map((path) => allow("GET", `/api/v1/history${path}`, "workspace.history.read")),
+  // Erasure is a destructive workspace act like document deletion; a data-subject request
+  // pipeline erases over the API with an admin credential.
+  ...["/chat/:conversationId", "/visitors/:visitorId"]
+    .map((path) => allow("DELETE", `/api/v1/history${path}`, "workspace.history.delete")),
 
   ...["", "/sources", "/sources/:sourceId/documents", "/search/history", "/search/history/:searchId", "/:documentId", "/:documentId/chunks", "/:documentId/chunks/:chunkId"]
     .map((path) => allow("GET", `/api/v1/document${path}`, "workspace.documents.read")),

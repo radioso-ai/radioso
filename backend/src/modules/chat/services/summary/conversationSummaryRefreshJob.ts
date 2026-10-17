@@ -7,6 +7,7 @@ import {
   type BackgroundJobHandlerRegistration,
   type BackgroundJobRequest,
 } from "../../../../shared/background-jobs/index.js";
+import type { ConversationRepositoryPort } from "../../../../db/repositories/conversationRepository.js";
 import type { ConversationSummaryUpdater } from "./conversationSummaryService.js";
 
 const refreshPayload = z.object({
@@ -52,8 +53,32 @@ export const conversationSummaryRefreshRequest = (input: {
     { idempotencyKey: input.conversationId },
   );
 
+/** Finds the conversation a refresh names; an erased conversation has nothing left to summarize. */
+type SummaryRefreshConversations = Pick<ConversationRepositoryPort, "findByIdAndWorkspaceId">;
+
+const CONVERSATION_ERASED = { skipped: "conversation_not_found" } as const;
+
+/**
+ * Runs the refresh unless the conversation is gone. An erasure deletes the conversation but not a
+ * refresh already queued for it, so the job checks first, and a refresh whose save fails because
+ * an erasure committed mid-run ends skipped as well instead of spending its retries.
+ */
 export const conversationSummaryRefreshHandler = (
   updater: ConversationSummaryUpdater,
+  conversations: SummaryRefreshConversations,
 ): BackgroundJobHandlerRegistration =>
-  backgroundJobHandler(CONVERSATION_SUMMARY_REFRESH_JOB, (payload, context) =>
-    updater.refresh(payload, { signal: context.signal }));
+  backgroundJobHandler(CONVERSATION_SUMMARY_REFRESH_JOB, async (payload, context) => {
+    const present = async () =>
+      (await conversations.findByIdAndWorkspaceId(payload.conversationId, payload.workspaceId)) !== null;
+    if (!(await present())) {
+      return CONVERSATION_ERASED;
+    }
+    try {
+      await updater.refresh(payload, { signal: context.signal });
+    } catch (error) {
+      if (!(await present())) {
+        return CONVERSATION_ERASED;
+      }
+      throw error;
+    }
+  });

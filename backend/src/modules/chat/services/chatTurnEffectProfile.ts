@@ -243,6 +243,7 @@ export const createEphemeralChatTurnEffectProfile = (
     messageRepository: createEphemeralMessageRepository(),
     auditService: {
       async record() {},
+      async recordForLiveConversation() {},
       async getLatestSuccessfulChatAnswerMetadata() {
         return null;
       },

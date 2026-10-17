@@ -62,6 +62,7 @@ const createAudit = (): AuditPort & { events: Array<{ eventType: string; eventSt
         metadata: input.metadata,
       });
     },
+    async recordForLiveConversation() {},
     async getLatestSuccessfulChatAnswerMetadata() {
       return null;
     },

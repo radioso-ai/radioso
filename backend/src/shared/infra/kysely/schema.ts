@@ -1291,7 +1291,7 @@ export interface Messages {
 
 export interface NotificationDeliveryOutcomes {
   conversation_dispatch_limit: number;
-  conversation_id: string;
+  conversation_id: string | null;
   created_at: Generated<Timestamp>;
   daily_email_limit: number;
   outcome: string;

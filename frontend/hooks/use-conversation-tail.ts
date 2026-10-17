@@ -1,7 +1,8 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
+import { getApiErrorCode } from '@/lib/api-error'
 import { hitlApi } from '@/lib/api-hitl'
 import type { ChatConversationMessage, ConversationActivityEntry, ConversationOwnership } from '@/lib/api-types'
 import { mergeTailMessages } from '@/lib/conversation-tail'
@@ -11,6 +12,11 @@ interface UseConversationTailInput {
   enabled: boolean
   intervalMs?: number
   initialCursor?: string
+  /**
+   * Called once when the conversation is gone — deleted, or aged out — while the poll is open.
+   * Polling stops; the caller clears the view the same way a failed first read does.
+   */
+  onNotFound?: () => void
 }
 
 interface ConversationTailState {
@@ -41,7 +47,12 @@ export const useConversationTail = ({
   enabled,
   intervalMs = 4000,
   initialCursor,
+  onNotFound,
 }: UseConversationTailInput): ConversationTailState => {
+  const onNotFoundRef = useRef(onNotFound)
+  useEffect(() => {
+    onNotFoundRef.current = onNotFound
+  }, [onNotFound])
   const [messages, setMessages] = useState<ChatConversationMessage[]>([])
   const [ownership, setOwnership] = useState<ConversationOwnership | undefined>()
   const [activity, setActivity] = useState<ConversationActivityEntry[] | undefined>()
@@ -106,6 +117,10 @@ export const useConversationTail = ({
         }
 
         setError(caught)
+        if (getApiErrorCode(caught) === 'not_found') {
+          onNotFoundRef.current?.()
+          return
+        }
       }
 
       if (!cancelled) {

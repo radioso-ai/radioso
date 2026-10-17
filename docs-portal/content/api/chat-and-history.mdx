@@ -1,7 +1,7 @@
 ---
 title: "Chat and history"
 description: "Ask one agent questions with a channel credential, then inspect saved history with workspace access."
-last_updated: 2026-10-15
+last_updated: 2026-10-17
 ---
 
 # Chat and history
@@ -105,6 +105,8 @@ A conversation detail response can also include `visitor` (`id`, `firstSeenAt`, 
 
 Use `GET /api/v1/history/visitors/{visitorId}/conversations` to page through a visitor's other conversations — the same summaries `GET /api/v1/history/chat` returns, scoped to one visitor. Pass `exclude` to drop one conversation id from the results, typically the one already open. This route needs `workspace.history.read`, same as the rest of history.
 
+Use `DELETE /api/v1/history/chat/{conversationId}` to permanently delete a conversation and everything derived from it, and `DELETE /api/v1/history/visitors/{visitorId}` to delete a visitor with every conversation they had. Both answer `204` with no body, need `workspace.history.delete` (owners, admins, and admin credentials), and record a content-free `conversation.erased` or `visitor.erased` audit event. [Deleting conversation data](/operators/deleting-conversation-data) lists what goes and what Radioso keeps.
+
 ## Answer feedback
 
 Persisted assistant answers accept thumbs-up or thumbs-down feedback in the dashboard, public chat, and website embed. A thumbs-down request may include an optional `comment` of up to 2000 characters. Authenticated callers set and clear feedback on a message:
@@ -141,8 +143,10 @@ DELETE /api/v1/answer-feedback/messages/{assistantMessageId}
 GET  /api/v1/history
 GET  /api/v1/history/chat
 GET  /api/v1/history/chat/{conversationId}
+DELETE /api/v1/history/chat/{conversationId}
 GET  /api/v1/history/chat/{conversationId}/tail
 GET  /api/v1/history/visitors/{visitorId}/conversations
+DELETE /api/v1/history/visitors/{visitorId}
 GET  /api/v1/history/search
 GET  /api/v1/history/search/{searchId}
 ```
@@ -151,6 +155,7 @@ GET  /api/v1/history/search/{searchId}
 
 - `400` usually means the request body is invalid.
 - `401` from agent chat means its REST-audience credential is missing, invalid, expired, or bound to a different agent.
+- `403` from a history `DELETE` means the caller lacks `workspace.history.delete`.
 - `404` can mean the conversation id is not available in the current workspace context.
 - `204` is part of the route contract. Use the reference page for the exact no-body case.
 

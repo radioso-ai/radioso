@@ -26,7 +26,7 @@ import { hitlApi } from '@/lib/api-hitl'
 import { useOptionalAuth } from '@/lib/auth-context'
 import type { ChatConversationSummary, PendingApprovalDecision } from '@/lib/api-types'
 import { deriveConversationOutcome } from '@/lib/conversation-outcome'
-import { conversationSendUnavailableReason, type ConversationChannelRead } from '@/lib/email-send-readiness'
+import { conversationReplyNote, conversationSendUnavailableReason, type ConversationChannelRead } from '@/lib/email-send-readiness'
 import {
   doneControlTooltip,
   findFirstVisitorMessage,
@@ -497,6 +497,7 @@ export function InboxResponseView({
           onChanged={handleChanged}
           externalError={handBackRunner.error}
           sendReadiness={sendReadiness}
+          replyNote={conversationReplyNote(channelRead)}
           trailingActions={showDoneControl ? (
             <Tooltip>
               <TooltipTrigger asChild>

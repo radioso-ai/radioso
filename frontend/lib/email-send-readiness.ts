@@ -31,8 +31,8 @@ export type ConversationChannelRead =
 /**
  * Why a reply on a conversation cannot be sent now; null once it can. Until the conversation's
  * channel is known nothing is offered, since only the channel says whether a reply can go out: an
- * email conversation then waits on its mailbox, a voice conversation has nowhere to deliver a
- * written reply, and any other channel sends.
+ * email conversation then waits on its mailbox, and any other channel sends. A reply on a voice
+ * conversation waits for the caller's next turn, which speaks it.
  */
 export const conversationSendUnavailableReason = (
   channel: ConversationChannelRead,
@@ -40,6 +40,9 @@ export const conversationSendUnavailableReason = (
 ): string | null => {
   if (channel.state === 'pending') return 'Checking whether this conversation can send.'
   if (channel.state === 'failed') return 'Can’t confirm this conversation can send right now.'
-  if (channel.provider === 'voice') return 'Written replies don’t reach a voice caller.'
   return channel.provider === 'email' ? emailSendUnavailableReason(email) : null
 }
+
+/** What a sent reply does on the conversation's channel, when the composer should say so; null otherwise. */
+export const conversationReplyNote = (channel: ConversationChannelRead): string | null =>
+  channel.state === 'known' && channel.provider === 'voice' ? 'The caller hears this on their next turn.' : null

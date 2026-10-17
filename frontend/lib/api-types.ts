@@ -480,6 +480,7 @@ export type HandBackConversationRequest =
 export type ConversationOwnershipResponse = ApiSchemas['ConversationOwnershipResponse']
 export type ChatConversationTurnDebug = ApiSchemas['ChatConversationMessageDebug']
 export type ReplyInterruption = ApiSchemas['ReplyInterruption']
+export type OperatorReplySpeech = ApiSchemas['OperatorReplySpeech']
 export type ChatConversationTurn = ApiSchemas['ChatConversationMessage'] & {
   answerFeedbackEntries?: AnswerFeedbackEntry[]
 }

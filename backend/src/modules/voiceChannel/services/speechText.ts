@@ -45,68 +45,43 @@ export interface SpeechPosition {
 
 const WHOLE_TEXT: SpeechPosition = { startsLine: true, final: true };
 
-/** Text, with where each of its characters came from in the text it was cut out of. */
-export interface SourcedText {
-  text: string;
-  /** `source[i]` is the index, in the original text, of character (UTF-16 unit) `i`. */
-  source: number[];
+/** One removal speech makes: every match of `pattern` goes, except its group `keptGroup` (a link's text). */
+export interface SpeechRemoval {
+  pattern: RegExp;
+  keptGroup?: number;
 }
 
 /**
- * `mapped` without `pattern`'s matches, each removed whole except its group `keptGroup` (which
- * needs the pattern's `d` flag), as `String.prototype.replace` would remove them.
+ * The removals that turn text into speech, in order: links to their text, assertion markers,
+ * heading and list markers at a line start (at the text's start only when it starts a line),
+ * bold and underline runs, single emphasis delimiters (one still open at the end only once the
+ * text is final), and inline code backticks. Structure only, so it reads any language the same way.
  */
-const removeMatches = (mapped: SourcedText, pattern: RegExp, keptGroup?: number): SourcedText => {
-  const parts: string[] = [];
-  const source: number[] = [];
-  const keep = (from: number, to: number): void => {
-    parts.push(mapped.text.slice(from, to));
-    source.push(...mapped.source.slice(from, to));
-  };
-  const matches = pattern.global ? [...mapped.text.matchAll(pattern)] : [mapped.text.match(pattern)].filter((match) => match !== null);
-  let cursor = 0;
-  for (const match of matches) {
-    const start = match.index ?? 0;
-    keep(cursor, start);
-    const group = keptGroup === undefined ? undefined : match.indices?.[keptGroup];
-    if (group) {
-      keep(group[0], group[1]);
-    }
-    cursor = start + match[0].length;
-  }
-  keep(cursor, mapped.text.length);
-  return { text: parts.join(""), source };
-};
+export const speechRemovals = (position: SpeechPosition): readonly SpeechRemoval[] => [
+  { pattern: MARKDOWN_LINK, keptGroup: 1 },
+  { pattern: ASSERTION_MARKER_RUN },
+  { pattern: LINE_START_MARKER },
+  ...(position.startsLine ? [{ pattern: TEXT_START_MARKER }] : []),
+  { pattern: DOUBLE_EMPHASIS },
+  { pattern: OPENING_EMPHASIS },
+  { pattern: CLOSING_EMPHASIS },
+  ...(position.final ? [{ pattern: FINAL_CLOSING_EMPHASIS }] : []),
+  { pattern: INLINE_CODE },
+];
 
 /**
- * The text a caller hears, with where each of its characters stands in `text`: assertion markers
- * and markdown syntax (emphasis, inline code, heading and list markers at a line start, links)
- * removed, the words kept. "la **versione open-source**" becomes "la versione open-source";
- * hyphens, apostrophes, decimals and ellipses stay. Structure only, so it reads any language the
- * same way. For a streamed piece, `position` says whether it starts a line and whether more text
- * follows; applied again to its own output with more text appended it changes nothing already
- * decided, so a delimiter split across chunks is removed once the chunk that completes it arrives.
+ * The text a caller hears: assertion markers and markdown syntax (emphasis, inline code, heading
+ * and list markers at a line start, links) removed, the words kept. "la **versione open-source**"
+ * becomes "la versione open-source"; hyphens, apostrophes, decimals and ellipses stay. For a
+ * streamed piece, `position` says whether it starts a line and whether more text follows; applied
+ * again to its own output with more text appended it changes nothing already decided, so a
+ * delimiter split across chunks is removed once the chunk that completes it arrives.
  */
-export const sourcedSpokenText = (text: string, position: SpeechPosition = WHOLE_TEXT): SourcedText => {
-  const steps: Array<[RegExp, number?]> = [
-    [MARKDOWN_LINK, 1],
-    [ASSERTION_MARKER_RUN],
-    [LINE_START_MARKER],
-    ...(position.startsLine ? [[TEXT_START_MARKER] as [RegExp]] : []),
-    [DOUBLE_EMPHASIS],
-    [OPENING_EMPHASIS],
-    [CLOSING_EMPHASIS],
-    ...(position.final ? [[FINAL_CLOSING_EMPHASIS] as [RegExp]] : []),
-    [INLINE_CODE],
-  ];
-  return steps.reduce<SourcedText>(
-    (mapped, [pattern, keptGroup]) => removeMatches(mapped, pattern, keptGroup),
-    { text, source: [...Array(text.length).keys()] },
+export const spokenText = (text: string, position: SpeechPosition = WHOLE_TEXT): string =>
+  speechRemovals(position).reduce(
+    (spoken, { pattern, keptGroup }) => spoken.replace(pattern, keptGroup === undefined ? "" : `$${keptGroup}`),
+    text,
   );
-};
-
-/** The text a caller hears; see {@link sourcedSpokenText}. */
-export const spokenText = (text: string, position: SpeechPosition = WHOLE_TEXT): string => sourcedSpokenText(text, position).text;
 
 /** Spoken text as two renderings of it agree on: zero-width spaces dropped, whitespace single, ends trimmed. */
 export const comparableSpeech = (text: string): string => text.replace(/\u200B/gu, "").replace(/\s+/gu, " ").trim();

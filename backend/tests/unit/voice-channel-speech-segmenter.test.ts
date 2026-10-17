@@ -193,18 +193,18 @@ describe("voice speech segmenter", () => {
       const prose = createSentenceCutter();
       expect(texts(prose.push("Ok. 2"))).toEqual(["Ok. "]);
       expect(texts(prose.push(". Poi"))).toEqual(["2. "]);
-      expect(prose.finish()).toEqual({ sentences: [], remainder: "Poi" });
+      expect(prose.finish()).toEqual({ sentences: [], remainder: { text: "Poi", writtenEnd: 10 } });
 
       const list = createSentenceCutter();
       expect(texts(list.push("Fatto.\n2"))).toEqual(["Fatto.\n"]);
       expect(texts(list.push(". Poi"))).toEqual([]);
-      expect(list.finish()).toEqual({ sentences: [], remainder: "Poi" });
+      expect(list.finish()).toEqual({ sentences: [], remainder: { text: "Poi", writtenEnd: 13 } });
     });
 
     it("closes emphasis at the end of the reply only once the reply is whole", () => {
       const reply = createSentenceCutter();
       expect(texts(reply.push("È tutto. Fine *davvero*"))).toEqual(["È tutto. "]);
-      expect(reply.finish()).toEqual({ sentences: [], remainder: "Fine davvero" });
+      expect(reply.finish()).toEqual({ sentences: [], remainder: { text: "Fine davvero", writtenEnd: 23 } });
       expect(splitCompleteSentences("Fine *davvero*")).toEqual({ sentences: [], remainder: "Fine davvero*" });
       expect(splitCompleteSentences("Fine *davvero*", { startsLine: true, final: true }).remainder).toBe("Fine davvero");
     });

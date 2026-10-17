@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Env } from "../../src/app/config/env.js";
 import type { AppDependencies } from "../../src/app/server/types.js";
+import type { ApplicationModule } from "../../src/app/composition/index.js";
 import { buildDependencies } from "../../src/app/server/dependencies.js";
 import { PostgresAssistantTurnPersistence } from "../../src/modules/chat/infra/postgresAssistantTurnPersistence.js";
 import { ChatTurnLifecycle } from "../../src/modules/chat/services/chatTurnLifecycle.js";
@@ -16,6 +17,7 @@ import { startCrawlerWorkerRuntime } from "../../src/runtime/startCrawlerWorkerR
 import { startCrawlerWorkerTaskRuntime } from "../../src/runtime/startCrawlerWorkerTaskRuntime.js";
 import type { ConnectorPlugin } from "@radioso/connector-api";
 import { EmailChannelWorker } from "../../src/modules/connectors/plugins/email/emailChannelWorker.js";
+import { SLACK_INBOUND_EVENT_JOB } from "../../src/modules/connectors/plugins/slack/slackInboundEventJob.js";
 
 const createEnv = (): Env => ({
   NODE_ENV: "test",
@@ -89,6 +91,7 @@ const createEnv = (): Env => ({
   WORKER_TASKS_QUEUE_NAME: undefined,
   WORKER_TASKS_CRAWL_QUEUE_NAME: undefined,
   ACTION_DISPATCH_TASK_QUEUE_NAME: undefined,
+  BACKGROUND_JOB_TASK_QUEUE_NAME: undefined,
   WORKER_TASKS_SERVICE_URL: undefined,
   WORKER_TASKS_CRAWL_SERVICE_URL: undefined,
   WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: undefined,
@@ -188,9 +191,21 @@ const createDependencies = () =>
       start: vi.fn(),
       stop: vi.fn(async () => {}),
     },
-    actionDispatchWorker: {
+    actionDispatchJobRuntime: {
       start: vi.fn(),
       stop: vi.fn().mockResolvedValue(undefined),
+    },
+    actionOutboxQueueDepthReporter: {
+      start: vi.fn().mockResolvedValue(undefined),
+      stop: vi.fn().mockResolvedValue(undefined),
+    },
+    backgroundJobRuntime: {
+      start: vi.fn(),
+      stop: vi.fn().mockResolvedValue(undefined),
+    },
+    backgroundJobRetentionWorker: {
+      start: vi.fn(),
+      stop: vi.fn(async () => {}),
     },
     websiteCrawlWorker: {
       start: vi.fn().mockResolvedValue(undefined),
@@ -247,20 +262,21 @@ describe("runtime startup", () => {
       }),
     );
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
-    expect(dependencies.credentialExpiryWarningLifecycle?.start).toHaveBeenCalledOnce();
-    expect(dependencies.periodicTasksLifecycle?.start).toHaveBeenCalledOnce();
+    // Background work with no request in flight to pay for it belongs to the worker runtime,
+    // not the API: the API Cloud Run service has no CPU allocation once a request ends and may
+    // run at zero instances, so a timer started here would stall or never fire.
+    expect(dependencies.credentialExpiryWarningLifecycle?.start).not.toHaveBeenCalled();
+    expect(dependencies.periodicTasksLifecycle?.start).not.toHaveBeenCalled();
     expect(dependencies.documentProcessingWorker.start).not.toHaveBeenCalled();
     expect(dependencies.vectorIndexReconciler?.start).not.toHaveBeenCalled();
 
     await runtime.shutdown("test");
-    expect(dependencies.credentialExpiryWarningLifecycle?.stop).toHaveBeenCalledOnce();
-    expect(dependencies.periodicTasksLifecycle?.stop).toHaveBeenCalledOnce();
+    expect(dependencies.credentialExpiryWarningLifecycle?.stop).not.toHaveBeenCalled();
+    expect(dependencies.periodicTasksLifecycle?.stop).not.toHaveBeenCalled();
     expect(dependencies.realtimePublisherLifecycle.shutdown).toHaveBeenCalledOnce();
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
     expect(dependencies.connectorRegistry.shutdownAll).toHaveBeenCalledOnce();
     expectCalledBefore(close, dependencies.realtimePublisherLifecycle.shutdown);
-    expectCalledBefore(dependencies.credentialExpiryWarningLifecycle?.stop, dependencies.periodicTasksLifecycle?.stop);
-    expectCalledBefore(dependencies.periodicTasksLifecycle?.stop, dependencies.realtimePublisherLifecycle.shutdown);
     expectCalledBefore(dependencies.realtimePublisherLifecycle.shutdown, dependencies.applicationModules.shutdownAll);
     expectCalledBefore(dependencies.applicationModules.shutdownAll, dependencies.connectorRegistry.shutdownAll);
   });
@@ -303,29 +319,43 @@ describe("runtime startup", () => {
     expect(dependencies.applicationModules.initializeAll).toHaveBeenCalledOnce();
     expect(dependencies.documentProcessingWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.vectorIndexReconciler?.start).toHaveBeenCalledOnce();
-    expect(dependencies.actionDispatchWorker.start).toHaveBeenCalledOnce();
+    expect(dependencies.actionDispatchJobRuntime.start).toHaveBeenCalledOnce();
+    expect(dependencies.actionOutboxQueueDepthReporter.start).toHaveBeenCalledOnce();
+    expect(dependencies.backgroundJobRuntime.start).toHaveBeenCalledOnce();
+    expect(dependencies.backgroundJobRetentionWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.copilotRetentionWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.testExecutionRetentionWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.approvalResumeEffectJournalRetentionWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.revisionEvalRunRetentionWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.slackInboundEventRetentionWorker.start).toHaveBeenCalledOnce();
     expect(dependencies.websiteCrawlWorker.start).not.toHaveBeenCalled();
+    // Background work that previously ran as a timer in the API runtime now runs here instead,
+    // where a self-host deployment always has a live poll-loop process to drive it.
+    expect(dependencies.credentialExpiryWarningLifecycle?.start).toHaveBeenCalledOnce();
+    expect(dependencies.periodicTasksLifecycle?.start).toHaveBeenCalledOnce();
     expect(dependencies.connectorRegistry.runMigrations).not.toHaveBeenCalled();
     expect(dependencies.connectorRegistry.initializeAll).not.toHaveBeenCalled();
 
     await runtime.shutdown("test");
     expect(dependencies.documentProcessingWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.vectorIndexReconciler?.stop).toHaveBeenCalledOnce();
-    expect(dependencies.actionDispatchWorker.stop).toHaveBeenCalledOnce();
+    expect(dependencies.actionDispatchJobRuntime.stop).toHaveBeenCalledOnce();
+    expect(dependencies.actionOutboxQueueDepthReporter.stop).toHaveBeenCalledOnce();
+    expect(dependencies.backgroundJobRuntime.stop).toHaveBeenCalledOnce();
+    expect(dependencies.backgroundJobRetentionWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.copilotRetentionWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.testExecutionRetentionWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.approvalResumeEffectJournalRetentionWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.revisionEvalRunRetentionWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.slackInboundEventRetentionWorker.stop).toHaveBeenCalledOnce();
     expect(dependencies.websiteCrawlWorker.stop).not.toHaveBeenCalled();
+    expect(dependencies.credentialExpiryWarningLifecycle?.stop).toHaveBeenCalledOnce();
+    expect(dependencies.periodicTasksLifecycle?.stop).toHaveBeenCalledOnce();
     expect(dependencies.realtimePublisherLifecycle.shutdown).toHaveBeenCalledOnce();
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
     expectCalledBefore(dependencies.documentProcessingWorker.stop, dependencies.realtimePublisherLifecycle.shutdown);
+    expectCalledBefore(dependencies.credentialExpiryWarningLifecycle?.stop, dependencies.realtimePublisherLifecycle.shutdown);
+    expectCalledBefore(dependencies.periodicTasksLifecycle?.stop, dependencies.realtimePublisherLifecycle.shutdown);
     expectCalledBefore(dependencies.realtimePublisherLifecycle.shutdown, dependencies.applicationModules.shutdownAll);
   });
 
@@ -362,6 +392,50 @@ describe("runtime startup", () => {
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
     expectCalledBefore(close, dependencies.realtimePublisherLifecycle.shutdown);
     expectCalledBefore(dependencies.realtimePublisherLifecycle.shutdown, dependencies.applicationModules.shutdownAll);
+  });
+
+  // documentWorkerServer.ts (the production push-worker entrypoint) is the only caller that
+  // builds dependencies for this runtime outside tests; it must load configured application
+  // modules (RADIOSO_APPLICATION_MODULES / RADIOSO_EDITION=enterprise) exactly like
+  // documentWorker.ts does for the poll worker, or a module's `registerPeriodicTask`
+  // contributions — EE's usage-limit and auto-top-up sweeps included — are silently absent
+  // from the push-worker's dependency graph even though Terraform configures the env var for
+  // it. No `buildDependencies` override here: the real one must actually receive the modules,
+  // so this calls it for real (as the "builds default dependencies" test above also does) and
+  // inspects what it built through `createApp` instead of mocking the builder itself.
+  it("passes configured application modules through to the real buildDependencies, mirroring the poll-loop worker", async () => {
+    const env = createEnv();
+    let capturedDependencies: AppDependencies | undefined;
+    const applicationModules: ApplicationModule[] = [
+      {
+        id: "test-periodic-task-module",
+        register(context) {
+          context.registerPeriodicTask?.({
+            id: "test-periodic-task",
+            intervalMs: 60_000,
+            create: () => ({ run: async () => undefined }),
+          });
+        },
+      },
+    ];
+
+    const runtime = await startWorkerTaskRuntime({
+      env,
+      logger: createLogger().logger as any,
+      ensureNoPendingMigrations: vi.fn().mockResolvedValue(undefined),
+      applicationModules,
+      createApp: (dependencies) => {
+        capturedDependencies = dependencies;
+        return ({}) as any;
+      },
+      listen: vi.fn((_app: unknown, _port: number, onListening: () => void) => {
+        onListening();
+        return { close: vi.fn((callback?: () => void) => callback?.()) };
+      }),
+    });
+
+    expect(capturedDependencies?.periodicTaskHandlesById.has("test-periodic-task")).toBe(true);
+    await runtime.shutdown("test");
   });
 
   it("starts the crawler worker runtime independently after migration verification", async () => {
@@ -423,6 +497,47 @@ describe("runtime startup", () => {
     expect(dependencies.applicationModules.shutdownAll).toHaveBeenCalledOnce();
     expectCalledBefore(close, dependencies.realtimePublisherLifecycle.shutdown);
     expectCalledBefore(dependencies.realtimePublisherLifecycle.shutdown, dependencies.applicationModules.shutdownAll);
+  });
+
+  // crawlerWorkerServer.ts has the same gap documentWorkerServer.ts had: a module's
+  // registerPeriodicTask contributions aside, the website-crawl ingestion path itself reserves
+  // document/usage-limit capacity through whatever UsageLimitPolicy this process's own
+  // buildDependencies call registered (src/modules/documents/services/documentIngestionService.ts),
+  // so an Enterprise deployment's crawl-sourced documents bypass usage limits entirely if this
+  // push-worker entrypoint never loads the Enterprise module Terraform configures it for.
+  it("passes configured application modules through to the real buildDependencies, mirroring the poll-loop crawler worker", async () => {
+    const env = createEnv();
+    let capturedDependencies: AppDependencies | undefined;
+    const applicationModules: ApplicationModule[] = [
+      {
+        id: "test-periodic-task-module",
+        register(context) {
+          context.registerPeriodicTask?.({
+            id: "test-periodic-task",
+            intervalMs: 60_000,
+            create: () => ({ run: async () => undefined }),
+          });
+        },
+      },
+    ];
+
+    const runtime = await startCrawlerWorkerTaskRuntime({
+      env,
+      logger: createLogger().logger as any,
+      ensureNoPendingMigrations: vi.fn().mockResolvedValue(undefined),
+      applicationModules,
+      createApp: (dependencies) => {
+        capturedDependencies = dependencies;
+        return ({}) as any;
+      },
+      listen: vi.fn((_app: unknown, _port: number, onListening: () => void) => {
+        onListening();
+        return { close: vi.fn((callback?: () => void) => callback?.()) };
+      }),
+    });
+
+    expect(capturedDependencies?.periodicTaskHandlesById.has("test-periodic-task")).toBe(true);
+    await runtime.shutdown("test");
   });
 
   it("passes the metrics registry through API startup composition when metrics are enabled", async () => {
@@ -658,7 +773,14 @@ describe("runtime startup", () => {
       { route: string } | { noPushCounterpart: string }
     > = {
       documentProcessingWorker: { route: "POST /internal/tasks/document-processing (and /recover)" },
-      actionDispatchWorker: { route: "POST /internal/tasks/actions/drain (and /recover)" },
+      actionDispatchJobRuntime: { route: "POST /internal/tasks/actions/drain (and /recover)" },
+      actionOutboxQueueDepthReporter: {
+        noPushCounterpart:
+          "reports the outbox's pending/in-progress depth on its own interval; not triggered by a " +
+          "discrete turn/job event, so there is nothing to push per-item",
+      },
+      backgroundJobRuntime: { route: "POST /internal/tasks/background-jobs/drain (push and scheduled sweep)" },
+      backgroundJobRetentionWorker: { route: "POST /internal/tasks/background-job-retention/sweep" },
       emailChannelWorker: { route: "POST /internal/tasks/email-channel/drain (and /sweep)" },
       vectorIndexReconciler: {
         noPushCounterpart:
@@ -670,7 +792,7 @@ describe("runtime startup", () => {
           "the AMQP alternative to Cloud Tasks push (WORKER_DISPATCH_DRIVER=amqp) — a message-queue " +
           "puller, not something an HTTP push targets; mutually exclusive with the task-runtime push model",
       },
-      facetExtractionWorker: {
+      facetExtractionBackgroundJobRuntime: {
         route: "POST /internal/tasks/document-processing/recover",
       },
       copilotRetentionWorker: {
@@ -690,6 +812,12 @@ describe("runtime startup", () => {
       },
       agentBundleImportCleanupWorker: {
         route: "POST /internal/tasks/agent-bundle-imports/sweep",
+      },
+      credentialExpiryWarningLifecycle: {
+        route: "POST /internal/tasks/credential-expiry-warning/sweep",
+      },
+      periodicTasksLifecycle: {
+        route: "POST /internal/tasks/periodic-tasks/:taskId/run (one per registerPeriodicTask id)",
       },
     };
 
@@ -734,6 +862,21 @@ describe("runtime startup", () => {
         // `undefined` under this test's env, so this checks key presence, not shape.
         const staleCoverageKeys = [...startedKeys].filter((key) => !(key in dependencies));
         expect(staleCoverageKeys).toEqual([]);
+      } finally {
+        await dependencies.connectorDb.close();
+      }
+    });
+  });
+
+  describe("background job kind registration", () => {
+    it("registers slack.inbound_event on the runtime a real buildDependencies() build assembles", async () => {
+      // Guards the `[...chat.backgroundJobHandlers, ...slackInboundJobs.backgroundJobHandlers]`
+      // spread in dependencies.ts directly: dropping that spread leaves the runtime with no
+      // handler for this kind, and this assertion — against the production-built runtime, not a
+      // hand-wired test double — fails.
+      const dependencies = buildDependencies(createEnv());
+      try {
+        expect(dependencies.backgroundJobRuntime.registeredKinds).toContain(SLACK_INBOUND_EVENT_JOB.kind);
       } finally {
         await dependencies.connectorDb.close();
       }

@@ -164,22 +164,35 @@ export class FacetExtractionJobRepository implements FacetExtractionJobStore {
    */
   async claimBatch(
     limit: number,
-    now: Date = new Date(),
+    now?: Date,
     workspaceId?: string,
     messageWindow?: { start: Date; end: Date },
+    excludeIds?: readonly string[],
   ): Promise<FacetExtractionJob[]> {
+    // The due *decision*, when `now` is omitted, is the database's own `now()`, never a
+    // caller-computed instant: a caller's clock can skew from the database's and hide a job
+    // that is genuinely due. The `claimed_at` *stamp* below stays a plain JS Date rather than
+    // `now()`: it round-trips through callers' claims (as a JS `Date`, millisecond precision)
+    // for later exact-match fencing, and `now()`'s microsecond precision would not survive
+    // that round trip, silently breaking every fenced `markCompleted` / `markFailed` write.
+    const dueAt = now ?? currentTimestamp();
+    const claimedAt = now ?? new Date();
     const rows = await this.db
       .with("due", (qb) =>
         qb
           .selectFrom("facet_extraction_jobs")
           .select("facet_extraction_jobs.id")
           .where("facet_extraction_jobs.status", "=", "queued")
-          .where("facet_extraction_jobs.scheduled_at", "<=", now)
+          .where("facet_extraction_jobs.scheduled_at", "<=", dueAt)
           .$if(workspaceId !== undefined, (query) => query.where("facet_extraction_jobs.workspace_id", "=", workspaceId!))
           .$if(messageWindow !== undefined, (query) => query
             .innerJoin("messages as facet_source_message", "facet_source_message.id", "facet_extraction_jobs.message_id")
             .where("facet_source_message.created_at", ">=", messageWindow!.start)
             .where("facet_source_message.created_at", "<", messageWindow!.end))
+          // Ids a single caller-side claim loop has already claimed: a short-delay retry that
+          // loop itself just scheduled is not reclaimable again within the same loop.
+          .$if(excludeIds !== undefined && excludeIds.length > 0, (query) =>
+            query.where("facet_extraction_jobs.id", "not in", [...excludeIds!]))
           .orderBy("facet_extraction_jobs.scheduled_at", "asc")
           .orderBy("facet_extraction_jobs.created_at", "asc")
           .limit(limit)
@@ -191,8 +204,8 @@ export class FacetExtractionJobRepository implements FacetExtractionJobStore {
       .set((eb) => ({
         status: "processing",
         attempt_count: eb("facet_extraction_jobs.attempt_count", "+", 1),
-        claimed_at: now,
-        updated_at: now,
+        claimed_at: claimedAt,
+        updated_at: claimedAt,
       }))
       .whereRef("facet_extraction_jobs.id", "=", "due.id")
       .returning(facetExtractionJobColumns.map((column) => `facet_extraction_jobs.${column}` as const))

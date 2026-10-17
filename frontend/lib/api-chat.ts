@@ -109,6 +109,13 @@ export const chatApi = {
     }, { withSession: true })
   },
 
+  /** Permanently erases the conversation and everything derived from it. */
+  async deleteHistoryConversation(conversationId: string): Promise<void> {
+    await request<void>(`/history/chat/${encodeURIComponent(conversationId)}`, {
+      method: 'DELETE',
+    }, { withSession: true })
+  },
+
   async listVisitorConversations(
     visitorId: string,
     input?: { limit?: number; offset?: number; cursor?: string; exclude?: string },

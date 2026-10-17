@@ -11,6 +11,7 @@ import {
   legacyWebsiteCrawlTaskHandler,
 } from "./documentWorkerTaskRoutes.js";
 import { createActionDispatchWorkerTaskRoutes } from "./actionDispatchWorkerTaskRoutes.js";
+import { createBackgroundJobWorkerTaskRoutes } from "./backgroundJobWorkerTaskRoutes.js";
 import { createEmailChannelWorkerTaskRoutes } from "./emailChannelWorkerTaskRoutes.js";
 import { createWorkerTaskAuthMiddleware } from "./workerTaskAuthMiddleware.js";
 
@@ -37,6 +38,7 @@ export const createWorkerTaskApp = (dependencies: AppDependencies) => {
   });
   app.use(createDocumentWorkerTaskRoutes(dependencies));
   app.use(createActionDispatchWorkerTaskRoutes(dependencies));
+  app.use(createBackgroundJobWorkerTaskRoutes(dependencies));
   if (dependencies.emailChannelWorker) {
     app.use(createEmailChannelWorkerTaskRoutes({ emailChannelWorker: dependencies.emailChannelWorker }));
   }

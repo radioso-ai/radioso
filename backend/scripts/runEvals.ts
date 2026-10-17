@@ -4,6 +4,8 @@
  *   pnpm run evals                     # deterministic layer, diff against baseline
  *   pnpm run evals -- --update-baseline # re-record baseline.json
  *   pnpm run evals -- --tag routine     # only cases carrying a tag (repeatable)
+ *   pnpm run evals -- --tag quick-reply --judge-tag quick-reply
+ *                                       # also grade llm_judge assertions on cases with that tag
  *
  * It assembles the real application stack (buildDependencies), seeds the fixture corpus,
  * directives, and routines onto a target agent, drives each live case through the composed
@@ -24,20 +26,25 @@
  *     the seeded routines dispatch, which the runner adds as webhook skills on a loopback
  *     destination for the length of the publication only.
  *
- * The `--judge` (llm_judge) layer is a deliberate fast-follow: it needs a judge seam on
- * AppDependencies and per-case sampling to be stable enough to gate on. Until then this
- * runner scores the deterministic layer only and skips llm_judge assertions.
+ * The runner scores the deterministic layer and drops `llm_judge` assertions, except on cases
+ * carrying a tag named with `--judge-tag` (repeatable): those are graded by the eval layer's
+ * LLM judge on the cheapest text model the configuration resolves, the rerank tier, unless
+ * `--judge-model` names another. Judging is opt-in per tag because each graded assertion is
+ * one more model call per sample, and an ungated judge would make every nightly case pay it.
  */
 import { randomUUID } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { getEnv } from "../src/app/config/env.js";
+import { getEnv, type Env } from "../src/app/config/env.js";
+import { buildLlmRegistry } from "../src/app/server/builders/integrations.js";
 import { buildDependencies } from "../src/app/server/dependencies.js";
 import { runMigrations } from "../src/db/runMigrations.js";
 import { createLogger } from "../src/shared/observability/logger.js";
 import { projectInternalAgentConfig } from "../src/modules/agents/public.js";
+import { ChatGatewayLlmJudge } from "../src/modules/eval/composition.js";
+import { resolveLlmConfig } from "../src/shared/infra/llm/providerConfig.js";
 import {
   buildBaselineFile,
   diffAgainstBaseline,
@@ -64,6 +71,8 @@ const BASELINE_PATH = fileURLToPath(
 interface Flags {
   updateBaseline: boolean;
   judge: boolean;
+  judgeTags: string[];
+  judgeModel?: string;
   tags: string[];
   workspaceId: string;
   agentId: string;
@@ -76,6 +85,7 @@ const parseFlags = (argv: string[]): Flags => {
   const flags: Flags = {
     updateBaseline: false,
     judge: false,
+    judgeTags: [],
     tags: [],
     workspaceId: process.env.RADIOSO_EVAL_WORKSPACE_ID ?? "",
     agentId: process.env.RADIOSO_EVAL_AGENT_ID ?? "",
@@ -89,6 +99,8 @@ const parseFlags = (argv: string[]): Flags => {
     else if (arg === "--judge") flags.judge = true;
     else if (arg === "--migrate") flags.migrate = true;
     else if (arg === "--tag") flags.tags.push(argv[++index] ?? "");
+    else if (arg === "--judge-tag") flags.judgeTags.push(argv[++index] ?? "");
+    else if (arg === "--judge-model") flags.judgeModel = argv[++index] || undefined;
     else if (arg === "--workspace") flags.workspaceId = argv[++index] ?? "";
     else if (arg === "--agent") flags.agentId = argv[++index] ?? "";
     else if (arg === "--samples") flags.samples = Math.max(1, Number.parseInt(argv[++index] ?? "1", 10) || 1);
@@ -126,12 +138,34 @@ const loadBaseline = (): BaselineFile => {
   }
 };
 
-/** Drop llm_judge assertions when no judge is configured so they don't error the run. */
-const stripJudgeAssertions = (cases: ConversationQualityCase[]): ConversationQualityCase[] =>
-  cases.map((evalCase) => ({
-    ...evalCase,
-    assertions: evalCase.assertions.filter((assertion) => assertion.type !== "llm_judge"),
-  }));
+/**
+ * Keeps `llm_judge` assertions only on cases carrying one of `judgeTags`, so a run grades
+ * exactly the cases it opted in and the rest score their deterministic layer.
+ */
+export const scopeJudgeAssertions = (
+  cases: readonly ConversationQualityCase[],
+  judgeTags: readonly string[],
+): ConversationQualityCase[] =>
+  cases.map((evalCase) => (evalCase.tags ?? []).some((tag) => judgeTags.includes(tag))
+    ? evalCase
+    : {
+        ...evalCase,
+        assertions: evalCase.assertions.filter((assertion) => assertion.type !== "llm_judge"),
+      });
+
+/**
+ * The eval layer's LLM judge on the cheapest text model the configuration resolves: the
+ * rerank tier's provider and model, unless `judgeModel` names another on that provider.
+ */
+const createSuiteJudge = (env: Env, judgeModel: string | undefined): { judge: ChatGatewayLlmJudge; model: string } => {
+  const { rerank } = resolveLlmConfig(env);
+  const model = judgeModel ?? rerank.model;
+  const registry = buildLlmRegistry(
+    { ...env, LLM_CHAT_PROVIDER: rerank.provider, LLM_CHAT_MODEL: model },
+    createLogger("silent"),
+  );
+  return { judge: new ChatGatewayLlmJudge(registry.createChatGateway()), model };
+};
 
 const filterByTags = (cases: ConversationQualityCase[], tags: string[]): ConversationQualityCase[] =>
   tags.length === 0 ? cases : cases.filter((evalCase) => (evalCase.tags ?? []).some((tag) => tags.includes(tag)));
@@ -369,10 +403,9 @@ const waitForDocumentsReady = async (
 const main = async (): Promise<void> => {
   const flags = parseFlags(process.argv.slice(2));
   if (flags.judge) {
-    // llm_judge grading is a deliberate fast-follow (needs a judge seam on
-    // AppDependencies + per-case sampling to be stable enough to gate on). Reject the
-    // flag rather than silently erroring every judge assertion.
-    console.error("--judge is not wired yet; llm_judge assertions are skipped. Run without --judge.");
+    // Grading is opt-in per tag (see the header): an all-case judge would add a model
+    // call to every judged assertion of every nightly sample.
+    console.error("--judge grades every case; pass --judge-tag <tag> to grade the cases carrying that tag.");
     process.exit(2);
   }
 
@@ -401,9 +434,12 @@ const main = async (): Promise<void> => {
 
     let cases = filterByTags(dataset, flags.tags);
     cases = remapIds(cases, documentIds, routineIds);
-    // Judge grading is not wired yet (see the --judge guard above), so always score the
-    // deterministic layer and skip llm_judge assertions rather than erroring them.
-    cases = stripJudgeAssertions(cases);
+    // llm_judge assertions are graded only on the cases a --judge-tag opted in.
+    cases = scopeJudgeAssertions(cases, flags.judgeTags);
+    const suiteJudge = flags.judgeTags.length > 0 ? createSuiteJudge(env, flags.judgeModel) : null;
+    if (suiteJudge) {
+      console.log(`Grading llm_judge assertions on cases tagged ${flags.judgeTags.join(", ")} with ${suiteJudge.model}.`);
+    }
 
     const replayPort = createWorkbenchReplayRunnerPort(deps.workbenchReplayRunner, {
       workspaceId: flags.workspaceId,
@@ -429,6 +465,7 @@ const main = async (): Promise<void> => {
       workspaceId: flags.workspaceId,
       samples: flags.samples,
       passThreshold: flags.passThreshold,
+      ...(suiteJudge ? { judge: suiteJudge.judge } : {}),
     });
 
     const summary = summarizeRun(outcomes);
@@ -470,7 +507,7 @@ const main = async (): Promise<void> => {
 
     if (hasBaselineGateFailures(diff)) {
       console.error(
-        `${diff.regressions.length + diff.rateRegressions.length + diff.underSampled.length + diff.newCases.length + (diff.thresholdMismatch ? 1 : 0)} baseline gate failure(s).`,
+        `${diff.regressions.length + diff.rateRegressions.length + diff.judgeRegressions.length + diff.underSampled.length + diff.newCases.length + (diff.thresholdMismatch ? 1 : 0)} baseline gate failure(s).`,
       );
       process.exitCode = 1;
     }

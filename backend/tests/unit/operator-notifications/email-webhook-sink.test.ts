@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { EmailWebhookOperatorNotificationSink } from "../../../src/modules/chat/services/actions/emailWebhookSink.js";
+import { EmailWebhookOperatorNotificationSink as EmailWebhookOperatorNotificationSinkBase } from "../../../src/modules/chat/services/actions/emailWebhookSink.js";
 import { buildHandoffNotifyAction } from "../../../src/modules/chat/services/handoffOwnership.js";
 import type {
   ContactNotificationMailer,
@@ -17,6 +17,29 @@ const routedTo = (
   via: RoutedContactDeliveryTarget["via"] = "agent_setting",
 ): RoutedContactDeliveryTarget => ({ emails, webhook, via, recipientsFromWorkspaceOwner: false });
 type WebhookRequest = Parameters<ContactWebhookHttpClient["post"]>[0];
+
+const allowedRecipientPolicy = {
+  prepareDelivery: async (input: { emails: readonly string[] }) => ({
+    eligibleEmails: [...input.emails],
+    eligibleRecipients: input.emails.map((email) => ({ email, listUnsubscribeUrl: "" })),
+    skipped: { unconfirmed: 0, suppressed: 0, revoked: 0 },
+  }),
+};
+
+class EmailWebhookOperatorNotificationSink extends EmailWebhookOperatorNotificationSinkBase {
+  constructor(...args: unknown[]) {
+    const [mailer, recipients, logger, webhookClient, conversationLinks, admission, recipientPolicy] = args as Partial<ConstructorParameters<typeof EmailWebhookOperatorNotificationSinkBase>>;
+    super(
+      mailer!,
+      recipients!,
+      logger,
+      webhookClient,
+      conversationLinks,
+      admission,
+      recipientPolicy ?? allowedRecipientPolicy,
+    );
+  }
+}
 
 const notification = {
   kind: "approval" as const,
@@ -146,6 +169,35 @@ describe("EmailWebhookOperatorNotificationSink", () => {
     expect(sent[0].text).not.toContain("Open:");
   });
 
+  it("sends only eligible recipients with their one-click unsubscribe link", async () => {
+    const { mailer, sent } = recordingMailer();
+    const sink = new EmailWebhookOperatorNotificationSink(
+      mailer,
+      { resolve: async () => routedTo(["waiting@example.com", "ready@example.com"]) },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      {
+        prepareDelivery: async () => ({
+          eligibleEmails: ["ready@example.com"],
+          eligibleRecipients: [{
+            email: "ready@example.com",
+            listUnsubscribeUrl: "https://api.example.com/revoke?token=signed",
+          }],
+          skipped: { unconfirmed: 1, suppressed: 0, revoked: 0 },
+        }),
+      },
+    );
+
+    await expect(sink.deliver(notification, context)).resolves.toEqual({ disposition: "delivered" });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toMatchObject({
+      to: "ready@example.com",
+      listUnsubscribeUrl: "https://api.example.com/revoke?token=signed",
+    });
+  });
+
   it("preserves approval webhook delivery", async () => {
     const { mailer, sent } = recordingMailer();
     const { httpClient, requests } = recordingWebhookClient();
@@ -175,6 +227,24 @@ describe("EmailWebhookOperatorNotificationSink", () => {
       dashboardPath: null,
       requestId: "request_1",
     });
+  });
+
+  it("posts the webhook but fails closed for email when recipient preparation rejects", async () => {
+    const { mailer, sent } = recordingMailer();
+    const { httpClient, requests } = recordingWebhookClient();
+    const sink = new EmailWebhookOperatorNotificationSink(
+      mailer,
+      { resolve: async () => routedTo(["waiting@example.com"], { url: "https://hooks.example.com/approval" }) },
+      undefined,
+      httpClient,
+      undefined,
+      undefined,
+      { prepareDelivery: async () => { throw new Error("recipient reservation unavailable"); } },
+    );
+
+    await expect(sink.deliver(notification, context)).resolves.toEqual({ disposition: "delivered" });
+    expect(sent).toEqual([]);
+    expect(requests).toHaveLength(1);
   });
 
   it("sends the webhook the resolved permalink, absolute and as a routable path", async () => {
@@ -231,6 +301,42 @@ describe("EmailWebhookOperatorNotificationSink", () => {
 
     expect(sent).toHaveLength(0);
     expect(requests).toHaveLength(1);
+  });
+
+  it("posts no webhook once the conversation has used its dispatch allowance", async () => {
+    const { mailer, sent } = recordingMailer();
+    const { httpClient, requests } = recordingWebhookClient();
+    const sink = new EmailWebhookOperatorNotificationSink(
+      mailer,
+      { resolve: async () => routedTo(["owner@business.example"], { url: "https://hooks.example.com/approval" }) },
+      undefined,
+      httpClient,
+      undefined,
+      { admit: async () => ({ dispatchAllowed: false, emailAllowed: false, reason: "conversation_dispatch_cap" }) },
+    );
+
+    await expect(sink.deliver(notification, context)).resolves.toEqual({
+      disposition: "skipped",
+      reason: "conversation_dispatch_cap",
+    });
+    expect(sent).toHaveLength(0);
+    expect(requests).toHaveLength(0);
+  });
+
+  it("leaves an email-only notice to retry when recipient preparation fails", async () => {
+    const { mailer, sent } = recordingMailer();
+    const sink = new EmailWebhookOperatorNotificationSink(
+      mailer,
+      { resolve: async () => routedTo(["waiting@example.com"]) },
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      { prepareDelivery: async () => { throw new Error("recipient reservation unavailable"); } },
+    );
+
+    await expect(sink.deliver(notification, context)).rejects.toThrow("recipient reservation unavailable");
+    expect(sent).toEqual([]);
   });
 
   it("reports the bounded email-cap reason when email is the only delivery route", async () => {

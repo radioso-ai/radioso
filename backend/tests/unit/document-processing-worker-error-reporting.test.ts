@@ -79,7 +79,6 @@ describe("DocumentProcessingWorker tick error reporting", () => {
       markSkipped: vi.fn().mockResolvedValue(undefined),
       markFailedIfDocumentMatches: vi.fn().mockResolvedValue(true),
       reschedule: vi.fn().mockResolvedValue(undefined),
-      releaseTimedOutClaim: vi.fn().mockResolvedValue(false),
     };
     const processingService = {
       process: vi.fn().mockResolvedValue("completed"),

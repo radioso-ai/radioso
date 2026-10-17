@@ -96,6 +96,31 @@ describe("routine structural preparation", () => {
     expect(scopedReferences.assertNoScopedReferences).toHaveBeenCalledWith(expect.objectContaining({ routineId: routine.id, removedNodeIds: ["step_collect", "terminal_done"] }));
   });
 
+  it("surfaces a non-blocking advisory for a created draft with a notifying ending and no reply-to", async () => {
+    const createProposal = vi.fn(async () => ({ id: "proposal-1" }));
+    const validate = vi.fn(async () => ({ ok: true, diagnostics: [] }));
+    const descriptor = createRoutineStructuralPreparationTool({
+      routines: { get: vi.fn(), validateForDraftMutation: validate, findCreateConflict: vi.fn(async () => null) },
+      proposalRepository: { createProposal }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() },
+      auditService: { record: vi.fn() }, scopedReferences: { assertNoScopedReferences: vi.fn() },
+    });
+    const draft = {
+      name: "Created", enabled: true, activation: { triggerDescription: "Handle returns", gateRef: null, priority: 0, reentryMode: "once_per_conversation" },
+      slots: [{ stableSlotId: "slot_email", key: "guest_email", type: "email", required: true, description: null, ordinal: 0 }],
+      steps: [{ stableStepId: "start", kind: "chat", instruction: "Start", toolRef: null, ordinal: 0, metadata: {} }],
+      transitions: [{ fromStep: "start", toRef: "done", guardKind: "default", ordinal: 0 }],
+      terminals: [{ stableStepId: "done", kind: "handoff", instruction: "Hand off.", ordinal: 0 }],
+    };
+
+    const output = await descriptor.createTool(context).invoke({ kind: "create", agentId: "11111111-1111-4111-8111-111111111111", draft }, {} as never) as { advisories: Array<{ code: string; location: string; message: string }> };
+
+    expect(output.advisories).toEqual([{
+      code: "operator_notice_reply_to_unset",
+      location: "step:done.operatorNotice.replyToSlot",
+      message: "operator notice has no reply-to: ending \"done\" notifies the team with no reply-to, so a reply to it won't reach the visitor. Set replyToSlot to the email field the team should answer (guest_email), or leave it unset on purpose.",
+    }]);
+  });
+
   it("carries the owner-declared confirmation fragment: conversation for an edit, signed-in approval with an absolute link for a delete", async () => {
     const get = vi.fn(async () => routine);
     const validate = vi.fn(async () => ({ ok: true, diagnostics: [] }));

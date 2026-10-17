@@ -25,7 +25,8 @@ import type { WorkbenchReplayResult } from "../../src/modules/chat/composition.j
 import type { EvalRetrievalRunnerPort } from "../../src/modules/eval/services/evalRunner.js";
 import type { EvalLlmJudgePort } from "../../src/modules/eval/services/evalJudge.js";
 import type { RetrievalSettingsSnapshot } from "../../src/modules/settings/contracts/retrieval.js";
-import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { websiteEmbedFixture } from "../support/websiteEmbedFixture.js";
 
 const fixedDate = "2026-05-23T12:00:00.000Z";
 
@@ -105,6 +106,7 @@ const retrievalSettingsSnapshot = (
 
 const configuredAgent = (): ConversationAgent => ({
   ...unpublishedAgentPublicIdentity(),
+  voice: defaultAgentVoiceSettings(),
   id: "agent-full",
   workspaceId: "ws-1",
   name: "Full Config Bot",
@@ -135,11 +137,12 @@ const configuredAgent = (): ConversationAgent => ({
   greetingInstruction: "",
   assistantDefaultLocale: null,
   proactiveGreetingEnabled: false,
+  mechanicsReplies: {},
   sourceScope: { mode: "selected", sourceIds: ["source-a", "source-b"] },
   surfaceSettings: {
     authenticatedChat: { enabled: true },
     anonymousChat: { enabled: false, token: null },
-    websiteEmbed: {
+    websiteEmbed: websiteEmbedFixture({
       enabled: false,
       token: null,
       allowedOrigins: [],
@@ -153,7 +156,7 @@ const configuredAgent = (): ConversationAgent => ({
       },
       copy: {},
       expertOverrides: {},
-    },
+    }),
     extensions: {},
   },
   skillSettings: {

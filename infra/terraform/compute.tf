@@ -293,6 +293,10 @@ resource "google_cloud_run_v2_service" "backend" {
         value = google_cloud_tasks_queue.conversation_actions[0].name
       }
       env {
+        name  = "BACKGROUND_JOB_TASK_QUEUE_NAME"
+        value = google_cloud_tasks_queue.background_jobs[0].name
+      }
+      env {
         name  = "WORKER_TASKS_SERVICE_URL"
         value = local.worker_tasks_service_url
       }
@@ -946,6 +950,10 @@ resource "google_cloud_run_v2_service" "document_worker" {
 
   template {
     service_account = data.google_service_account.worker.email
+    # Stated rather than left to Cloud Run's default (the same 300 s): the background job drain
+    # budget (240 s) and the Cloud Tasks dispatch and Cloud Scheduler attempt deadlines (300 s) are
+    # sized against it. See backend/src/shared/background-jobs/README.md.
+    timeout = "300s"
 
     scaling {
       min_instance_count = var.worker_min_instances
@@ -1154,6 +1162,37 @@ resource "google_cloud_run_v2_service" "document_worker" {
           }
         }
       }
+      # EE's auto-top-up sweep (registerPeriodicTask id ee-billing-auto-top-up) now runs here,
+      # not on the backend service (see periodic-task move, issue #1507). Both secrets are
+      # bound, matching the backend service exactly: resolveBillingConfig in
+      # ee/packages/backend-module/src/billing/applicationModule.ts only builds the shared
+      # Stripe gateway when both are present, even though the sweep itself never calls
+      # constructEvent (webhook signature verification, a backend-only HTTP concern) -- without
+      # STRIPE_WEBHOOK_SECRET here too, the gateway stays undefined and the sweep silently no-ops.
+      dynamic "env" {
+        for_each = local.stripe_secret_key_configured ? [google_secret_manager_secret.secrets["stripe-secret-key"].secret_id] : []
+        content {
+          name = "STRIPE_SECRET_KEY"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = local.stripe_webhook_secret_configured ? [google_secret_manager_secret.secrets["stripe-webhook-secret"].secret_id] : []
+        content {
+          name = "STRIPE_WEBHOOK_SECRET"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
       env {
         name  = "DOCUMENT_STORAGE_DRIVER"
         value = "gcs"
@@ -1185,6 +1224,10 @@ resource "google_cloud_run_v2_service" "document_worker" {
       env {
         name  = "ACTION_DISPATCH_TASK_QUEUE_NAME"
         value = google_cloud_tasks_queue.conversation_actions[0].name
+      }
+      env {
+        name  = "BACKGROUND_JOB_TASK_QUEUE_NAME"
+        value = google_cloud_tasks_queue.background_jobs[0].name
       }
       env {
         name  = "WORKER_TASKS_SERVICE_URL"

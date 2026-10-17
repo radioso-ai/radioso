@@ -24,6 +24,7 @@ const voice: AgentVoiceSettings = {
     en: 'Sorry, this is taking much longer than it should, could you ask me again?',
     it: 'Scusa, ci sto mettendo troppo, puoi ripetere la domanda per favore?',
   },
+  recordingNotice: { it: 'Questa chiamata viene registrata.' },
   runtime: { vendor: 'elevenlabs', agentId: 'agent_01jxk2v9qbe8n7r6t5w4', region: 'eu' },
 }
 const unbound = { vendor: 'elevenlabs', agentId: '', region: 'us' } as const
@@ -42,10 +43,15 @@ describe('voice settings form', () => {
       locale: 'en',
       bridgeLines: voice.bridgeLines.en,
       fallbackLine: voice.fallbackLine.en,
+      recordingNotice: '',
       mechanicsReplies: mechanicsReplies.en,
     })
     // A language one block lacks reads as empty there, not as missing.
-    expect(form.languages[1]).toEqual({ ...emptyVoiceLanguageLines('it'), fallbackLine: voice.fallbackLine.it })
+    expect(form.languages[1]).toEqual({
+      ...emptyVoiceLanguageLines('it'),
+      fallbackLine: voice.fallbackLine.it,
+      recordingNotice: 'Questa chiamata viene registrata.',
+    })
   })
 
   it('writes the same blocks back when nothing was edited', () => {
@@ -61,7 +67,9 @@ describe('voice settings form', () => {
           locale: 'en',
           bridgeLines: { check: ['  Let me check that for you, it only takes a moment.  ', '   '], acknowledge: [''] },
           fallbackLine: '  ',
+          recordingNotice: '',
           mechanicsReplies: { greeting: [' Hi! '], thanks: [], farewell: [''], acknowledgement: [] },
+
         },
         { ...emptyVoiceLanguageLines('it'), fallbackLine: 'Scusa, ci sto mettendo troppo.' },
         emptyVoiceLanguageLines('de'),
@@ -77,6 +85,21 @@ describe('voice settings form', () => {
       },
       mechanicsReplies: { en: { greeting: ['Hi!'], thanks: [], farewell: [], acknowledgement: [] } },
     })
+  })
+
+  it('writes each language\'s trimmed recording notice, and no notices at all when every one is blank', () => {
+    const noticed = voiceSettingsUpdateFromForm({
+      enabled: true,
+      runtime: unbound,
+      languages: [
+        { ...emptyVoiceLanguageLines('en'), recordingNotice: '  This call is recorded.  ' },
+        { ...emptyVoiceLanguageLines('it'), recordingNotice: '   ' },
+      ],
+    })
+    expect(noticed.voice.recordingNotice).toEqual({ en: 'This call is recorded.' })
+
+    const silent = voiceSettingsUpdateFromForm({ enabled: true, runtime: unbound, languages: [emptyVoiceLanguageLines('en')] })
+    expect(silent.voice).not.toHaveProperty('recordingNotice')
   })
 
   it('reads an agent with nothing authored as voice off and no languages', () => {

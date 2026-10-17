@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useMemo, type ReactNode } from 'react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { ExternalLink } from 'lucide-react'
 
 import { ChatMessageThread } from '@/components/dashboard/chat-message-thread'
@@ -49,6 +49,7 @@ import { useSkillCatalog } from '@/lib/skill-catalog'
 import { cn } from '@/lib/utils'
 import { DeliveryFailurePanel } from './delivery-failure-panel'
 import { EmailConversationHeader, useConversationEmailFacts } from './email-conversation-header'
+import { ConversationRecordingPlayer, ListenToRecordingButton } from './conversation-recording'
 import { HeldReplyPanel } from './held-reply-panel'
 import { InboxReadOnlyFooter } from './inbox-readonly-footer'
 import { InboxSituationCard } from './inbox-situation-card'
@@ -236,6 +237,10 @@ export function InboxResponseView({
     : detailError ? { state: 'failed' } : { state: 'pending' }
   const isEmailConversation = channelRead.state === 'known' && channelRead.provider === 'email'
   const emailFacts = useConversationEmailFacts(workspaceId, conversationId, isEmailConversation)
+  // A call's recording plays only when the teammate presses Listen, for the conversation it belongs to.
+  const recordingAvailable = conversationDetail?.conversationId === conversationId && conversationDetail?.recording?.available === true
+  const [listeningTo, setListeningTo] = useState<string | null>(null)
+
   const refreshEmailFacts = emailFacts.refresh
 
   // Every operator action can change what the email header shows: a reply starts a delivery, an
@@ -377,15 +382,27 @@ export function InboxResponseView({
             </>
           ) : null}
         </div>
-        <button
-          type="button"
-          onClick={() => conversationId && onOpenDebugView(conversationId)}
-          className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground hover:text-foreground hover:underline"
-        >
-          Open in debug view
-          <ExternalLink className="h-3 w-3" aria-hidden />
-        </button>
+        <div className="flex shrink-0 items-center gap-3">
+          {recordingAvailable ? (
+            <ListenToRecordingButton
+              listening={listeningTo === conversationId}
+              onToggle={() => setListeningTo((current) => (current === conversationId ? null : conversationId))}
+            />
+          ) : null}
+          <button
+            type="button"
+            onClick={() => conversationId && onOpenDebugView(conversationId)}
+            className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground hover:text-foreground hover:underline"
+          >
+            Open in debug view
+            <ExternalLink className="h-3 w-3" aria-hidden />
+          </button>
+        </div>
       </header>
+      {recordingAvailable && conversationId && listeningTo === conversationId ? (
+        <ConversationRecordingPlayer key={conversationId} workspaceId={workspaceId} conversationId={conversationId} />
+      ) : null}
+
 
       {/* Outside the detail branch: an action re-reads the detail, and the panel must keep its
           outcome and focus through that reload. */}

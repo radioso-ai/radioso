@@ -14,8 +14,9 @@ const isStartedSession = (body: unknown): body is PublicVoiceSessionResponse => 
 }
 
 /** What the page keeps of the answer: the expiry is the vendor's to enforce. */
-const startedSessionOf = ({ vendor, signedUrl, sessionKey, locale }: PublicVoiceSessionResponse): StartedVoiceSession =>
-  ({ vendor, signedUrl, sessionKey, locale })
+const startedSessionOf = ({ vendor, signedUrl, sessionKey, locale, recordingNotice }: PublicVoiceSessionResponse): StartedVoiceSession =>
+  ({ vendor, signedUrl, sessionKey, locale, ...(typeof recordingNotice === 'string' && recordingNotice.trim() ? { recordingNotice } : {}) })
+
 
 /**
  * Asks Radioso to start a voice session for the website embed's visitor, with the public session
@@ -38,4 +39,29 @@ export async function startPublicVoiceSession(token: string, input: { locale?: s
   if (!response.ok) return { kind: 'refused' }
   const body: unknown = await response.json().catch(() => null)
   return isStartedSession(body) ? { kind: 'started', session: startedSessionOf(body) } : { kind: 'refused' }
+}
+
+/**
+ * Tells Radioso the vendor's id for a call the page opened, so the Inbox can play the call's
+ * recording. Through the app host's relay, with the embed's public session the session was started
+ * for. Best effort: it never rejects, and the call goes on whatever the answer.
+ */
+export async function reportVoiceVendorConversation(
+  token: string,
+  input: { sessionKey: string; vendorConversationId: string },
+): Promise<void> {
+  try {
+    await fetch(
+      `${PUBLIC_CHAT_STREAMING_API_PATH}/${encodeURIComponent(token)}/voice/sessions/${encodeURIComponent(input.sessionKey)}/vendor-conversation`,
+      {
+        method: 'POST',
+        cache: 'no-store',
+        credentials: 'include',
+        headers: attachAnonymousSessionHeader(token, { 'Content-Type': 'application/json' }),
+        body: JSON.stringify({ vendorConversationId: input.vendorConversationId }),
+      },
+    )
+  } catch {
+    // The recording stays unnamed; the call is unaffected.
+  }
 }

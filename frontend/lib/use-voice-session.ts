@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { startPublicVoiceSession } from './api-public-voice'
+import { reportVoiceVendorConversation, startPublicVoiceSession } from './api-public-voice'
 import { canAskForMicrophone, readMicrophoneSignals, runVoiceCall, type VoiceCall } from './voice-call'
 import { loadVoiceRuntimes, prepareVoiceRuntimes } from './voice-runtime'
 import {
@@ -43,6 +43,8 @@ export function useVoiceSession({
     return next
   }, [])
   const [lines, setLines] = useState<readonly VoiceTranscriptLine[]>([])
+  // The agent's line telling the caller the call is recorded, from the current call's start.
+  const [recordingNotice, setRecordingNotice] = useState<string | null>(null)
   const callRef = useRef<VoiceCall | null>(null)
   // The last call's `settled`: a new call waits for it, so a call stopped while its vendor still
   // connects has let go of the microphone and its session before the next one asks for either.
@@ -60,17 +62,24 @@ export function useVoiceSession({
     callRef.current?.stop()
     callRef.current = null
     setLines([])
+    setRecordingNotice(null)
     apply({ type: 'reset' })
   }, [apply])
 
   const talk = useCallback(() => {
     if (callRef.current) return
     apply({ type: 'talk_pressed' })
+    setRecordingNotice(null)
     const call = runVoiceCall(
       {
-        startSession: () => startPublicVoiceSession(token, { locale }),
+        startSession: async () => {
+          const start = await startPublicVoiceSession(token, { locale })
+          if (start.kind === 'started' && callRef.current === call) setRecordingNotice(start.session.recordingNotice ?? null)
+          return start
+        },
         loadRuntimes: loadVoiceRuntimes,
         after: lastSettledRef.current,
+        reportVendorConversation: (report) => reportVoiceVendorConversation(token, report),
       },
       {
         onEvent: (event) => {
@@ -103,7 +112,8 @@ export function useVoiceSession({
     callRef.current = null
   }, [])
 
-  return { state, lines, isActive: isVoiceCallActive(state), talk, stop, reset }
+  return { state, lines, recordingNotice, isActive: isVoiceCallActive(state), talk, stop, reset }
+
 }
 
 /**

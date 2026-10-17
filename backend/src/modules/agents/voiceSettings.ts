@@ -63,6 +63,12 @@ export const agentVoiceSettingsSchema = z.object({
   bridgeLines: perLocale(bridgeLinesSchema),
   /** Spoken in place of the reply when the turn limit passes with nothing said. */
   fallbackLine: perLocale(voiceLineSchema),
+  /**
+   * Shown to the caller as a call from the website embed starts, for jurisdictions that require
+   * telling a caller the call is recorded. Optional: a block without it shows none.
+   */
+  recordingNotice: perLocale(voiceLineSchema).optional(),
+
   /** Null until the operator binds a vendor agent; a session start needs one. */
   runtime: voiceRuntimeSchema.nullable(),
 });

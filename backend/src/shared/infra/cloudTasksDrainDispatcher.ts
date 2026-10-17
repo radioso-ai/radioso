@@ -16,6 +16,8 @@ export interface CloudTasksDrainTarget {
 interface CloudTasksDrainDispatcherOptions extends CloudTasksDrainTarget {
   /** Worker route the task POSTs to, e.g. `/internal/tasks/actions/drain`. */
   taskPath: string;
+  /** How long Cloud Tasks waits for the worker before it counts the attempt failed and retries. Its default when unset. */
+  dispatchDeadlineSeconds?: number;
 }
 
 interface CloudTasksDrainRequest<Body> {
@@ -66,6 +68,9 @@ export class CloudTasksDrainDispatcher<Body> {
       parent: this.parent,
       task: {
         ...(scheduleTime ? { scheduleTime } : {}),
+        ...(this.options.dispatchDeadlineSeconds === undefined
+          ? {}
+          : { dispatchDeadline: { seconds: this.options.dispatchDeadlineSeconds } }),
         httpRequest: {
           httpMethod: "POST",
           url: this.targetUrl,

@@ -2669,6 +2669,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/agents/{agentId}/notification-recipient-confirmations/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Resend recipient confirmation
+         * @description Resends confirmation to a configured notification recipient. Only workspace owners and admins can use this action, and every send counts against the workspace daily confirmation cap. An address is asked at most once a day, and never after it stops notifications.
+         */
+        post: operations["resendNotificationRecipientConfirmation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/agents/{agentId}/skills": {
         parameters: {
             query?: never;
@@ -2681,6 +2701,26 @@ export interface paths {
         put?: never;
         /** Create an agent skill */
         post: operations["createAgentSkill"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/skills/{skillId}/notification-recipients": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Show a notify skill's recipient states
+         * @description Each recipient address configured on one notify skill, whatever its invocation mode, with its confirmation or suppression state. A skill of another capability returns no recipients. Recipient emails are personal data, so this route accepts workspace sessions only.
+         */
+        get: operations["listNotifySkillRecipients"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -3154,7 +3194,11 @@ export interface paths {
         get: operations["getHistoryConversation"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Permanently delete a conversation and everything derived from it
+         * @description Erases the conversation, its messages, and every record derived from it: summaries, routine and decision state, held replies, email threads and inbound mail, session-scoped context values, and the turn audit events that carry its content. The billing ledger keeps its usage rows without the link. Records one `conversation.erased` audit event with counts only. Requires workspace.history.delete. There is no undo.
+         */
+        delete: operations["deleteHistoryConversation"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3167,7 +3211,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Poll new messages for a saved assistant conversation */
+        /**
+         * Poll new messages for a saved assistant conversation
+         * @description Returns the messages after `cursor`. It also returns an assistant reply the client has already seen once the caller has marked it interrupted, carrying `interruption`, in time order with the new messages. Merge messages by `id`, so a re-delivered message replaces the one you hold.
+         */
         get: operations["tailHistoryConversation"];
         put?: never;
         post?: never;
@@ -3192,6 +3239,26 @@ export interface paths {
         put?: never;
         post?: never;
         delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/history/visitors/{visitorId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Permanently delete a visitor, every conversation they had, and everything derived from them
+         * @description Erases each of the visitor's conversations as `DELETE /api/v1/history/chat/{conversationId}` does, then the customer-scoped context values for the visitor's verified customer id, then the visitor record. Records one `visitor.erased` audit event with counts only. Requires workspace.history.delete. There is no undo.
+         */
+        delete: operations["deleteHistoryVisitor"];
         options?: never;
         head?: never;
         patch?: never;
@@ -3349,6 +3416,26 @@ export interface paths {
          * @description Only the teammate who owns the conversation hands it back; anyone may while it waits unclaimed. A conversation another teammate holds, or an `expectedVersion` that is no longer current, returns 409 with the current ownership.
          */
         post: operations["handBackConversation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/conversations/{conversationId}/recording": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Play a voice conversation's recording
+         * @description Streams the call's audio from the voice vendor, which keeps the recording, with the workspace's own vendor key; the key and the vendor's URL stay on the backend. A conversation has one when its call was started by the website embed and the page reported the vendor's conversation id: `recording.available` on the conversation's detail says so. Dashboard session only, from the dashboard's own pages: bearer API tokens are rejected, and so is a browser request whose `Sec-Fetch-Site` is anything but `same-origin`. An `<audio>` element cannot send `X-Workspace-Id`, so the optional `workspaceId` query selects the workspace instead. `HEAD` is refused with `405`. A `Range` header naming one byte range (`bytes=first-`, `bytes=first-last` or `bytes=-suffix`) goes on to the vendor, and the response is `206` with the vendor's `Content-Range` when the vendor answers it; a vendor that ignores it answers with the whole recording, and a range past the end is `416`. The response is `Cache-Control: private, no-store`. Every response that carries audio records a `conversation.recording_played` audit event with the teammate's user id; `partial` is true when the audio sent starts past the recording's first byte.
+         */
+        get: operations["getConversationRecording"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -4407,6 +4494,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/public/chat/{token}/voice/sessions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Start a voice session for the current public chat session
+         * @description Opens a session on the vendor agent the agent's `voice.runtime` names, with the workspace's own API key for that vendor, and returns the vendor's signed URL with a fresh Radioso session key. The vendor key never leaves the backend. Only a website embed public session may start one: send it as `x-radioso-public-session`, from an origin the website embed admits, as for a chat message. A browser on another origin calls `/api/public/chat/{token}/voice/sessions` on the Radioso app host, which answers the CORS preflight and relays here. The signed URL is valid for 15 minutes and opens sessions for whoever holds it in that window, so it is a bearer credential: the response is `Cache-Control: no-store`. Starts spend their own budgets, per visitor session and per workspace, before the vendor is called.
+         */
+        post: operations["createPublicVoiceSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/chat/{token}/voice/sessions/{sessionKey}/vendor-conversation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Report the vendor's id for a voice session the page opened
+         * @description Once the vendor's client has connected a session from `createPublicVoiceSession`, the page reports the vendor's id for the call, which names the call's recording at the vendor. Radioso takes it once, from the same website embed public session the session was started for, while the session's start is unexpired. Before storing it, Radioso asks the vendor, with the workspace's own key, which vendor agent the conversation was held on, and stores it only when that is the vendor agent the session was started on; it only ever uses the id to look the recording up with that key. A browser on another origin calls `/api/public/chat/{token}/voice/sessions/{sessionKey}/vendor-conversation` on the Radioso app host, which answers the CORS preflight and relays here.
+         */
+        post: operations["reportPublicVoiceVendorConversation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/public/chat/{token}/history/{conversationId}": {
         parameters: {
             query?: never;
@@ -5120,7 +5247,7 @@ export interface components {
         };
         WorkspaceProviderCredentialSummary: {
             /** @enum {string} */
-            provider: "openai" | "openai-compatible" | "gemini" | "claude";
+            provider: "openai" | "openai-compatible" | "gemini" | "claude" | "elevenlabs";
             /** Format: date-time */
             updatedAt: string;
         };
@@ -5315,6 +5442,8 @@ export interface components {
                 expertOverrides: {
                     [key: string]: string;
                 };
+                /** @description The operator offers voice calls from the website embed: its composer shows Talk while the agent's voice is also on, bound to a runtime and the workspace holds the vendor key. Defaults to false. */
+                voiceCallsOffered: boolean;
             };
         };
         AgentSourceScope: {
@@ -5336,6 +5465,67 @@ export interface components {
             webhook?: null | {
                 url: string;
             };
+        };
+        /** @description How the agent sounds on the voice channel. `bridgeLines`, `fallbackLine` and the optional `recordingNotice` are keyed by language tag (at most 10 each); each style holds at most 5 lines of 1 to 200 characters, and each notice is one line of 1 to 200 characters. The website embed shows the `recordingNotice` for the session's language as a call starts. `runtime` binds the agent to one vendor agent (the vendor's own agent id, 1 to 128 letters, digits, underscores and hyphens), which a voice session start opens, in the data residency region of the vendor account (`region`, which picks the vendor host); null binds none. An update replaces the block whole. */
+        AgentVoiceSettings: {
+            enabled: boolean;
+            bridgeLines: {
+                [key: string]: {
+                    acknowledge: string[];
+                    check: string[];
+                };
+            };
+            fallbackLine: {
+                [key: string]: string;
+            };
+            recordingNotice?: {
+                [key: string]: string;
+            };
+            runtime: {
+                /** @enum {string} */
+                vendor: "elevenlabs";
+                agentId: string;
+                /** @enum {string} */
+                region: "us" | "eu" | "in" | "sg";
+            } | null;
+        };
+        /** @description The `voice` block as an update sends it: `AgentVoiceSettings`, except that `runtime` may be left out, which binds the agent to no vendor agent, and `runtime.region` may be left out for the vendor's default region, `us`. A key either object does not name is refused. The update replaces the block whole. */
+        AgentVoiceSettingsUpdate: {
+            enabled: boolean;
+            bridgeLines: {
+                [key: string]: {
+                    acknowledge: string[];
+                    check: string[];
+                };
+            };
+            fallbackLine: {
+                [key: string]: string;
+            };
+            recordingNotice?: {
+                [key: string]: string;
+            };
+            runtime?: {
+                /** @enum {string} */
+                vendor: "elevenlabs";
+                agentId: string;
+                /** @enum {string} */
+                region?: "us" | "eu" | "in" | "sg";
+            } | null;
+        };
+        /** @description What the agent says, word for word, to a greeting, thanks, farewell, or acknowledgement, keyed by language tag (at most 10). Each locale entry holds every mechanic, each with at most 5 lines of 1 to 200 characters. When a turn is one of these mechanics and the agent has a line for it in the turn's language, the reply is an authored line, rotated per conversation. An update replaces the block whole. */
+        AgentMechanicsReplies: {
+            [key: string]: {
+                greeting: string[];
+                thanks: string[];
+                farewell: string[];
+                acknowledgement: string[];
+            };
+        };
+        /** @description Whether the agent's voice is ready for calls, and when it is not, the first piece missing: the voice channel, the runtime binding, the workspace's vendor key, or the backend's master key to read it. */
+        VoiceCallReadiness: {
+            ready: boolean;
+            /** @enum {string|null} */
+            missing: "voice_channel" | "runtime" | "vendor_key" | "encryption" | null;
         };
         ConversationAgent: components["schemas"]["Agent"] & {
             isDefault: boolean;
@@ -5370,6 +5560,8 @@ export interface components {
             greetingInstruction: string;
             assistantDefaultLocale: string | null;
             proactiveGreetingEnabled: boolean;
+            voice: components["schemas"]["AgentVoiceSettings"];
+            mechanicsReplies: components["schemas"]["AgentMechanicsReplies"];
             assistantBootstrapActive: boolean;
             /** @description Identifier other agents address this agent by. Null until the agent card is published; rotate it to drop every connected caller. */
             publicId: string | null;
@@ -5389,6 +5581,9 @@ export interface components {
                 [key: string]: unknown;
             };
             surfaceSettings: components["schemas"]["ConversationAgentSurfaceSettings"];
+        };
+        AgentDetail: components["schemas"]["ConversationAgent"] & {
+            voiceCallReadiness?: components["schemas"]["VoiceCallReadiness"] & unknown;
         };
         AgentListResponse: {
             agents: components["schemas"]["ConversationAgent"][];
@@ -5426,6 +5621,8 @@ export interface components {
             greetingInstruction?: string;
             assistantDefaultLocale?: string | null;
             proactiveGreetingEnabled?: boolean;
+            voice?: components["schemas"]["AgentVoiceSettingsUpdate"];
+            mechanicsReplies?: components["schemas"]["AgentMechanicsReplies"];
             publicDescription?: string;
             agentCardEnabled?: boolean;
             publicAgentAccessEnabled?: boolean;
@@ -5465,6 +5662,7 @@ export interface components {
                     expertOverrides?: {
                         [key: string]: string;
                     };
+                    voiceCallsOffered?: boolean;
                 };
             };
         };
@@ -6396,6 +6594,40 @@ export interface components {
                 };
             };
         };
+        /** @description `locale` is the caller's language tag; without it the agent's default language applies, then `en`. */
+        PublicVoiceSessionRequest: {
+            locale?: string;
+        };
+        PublicVoiceSessionResponse: {
+            /**
+             * @description The voice runtime the session opens on: the agent's `voice.runtime.vendor`.
+             * @enum {string}
+             */
+            vendor: "elevenlabs";
+            /**
+             * Format: uri
+             * @description The vendor's URL for opening a session on the agent's vendor agent. On `elevenlabs` it is valid for 15 minutes and is not limited to one session: for that window anyone holding it can open sessions billed to the workspace's vendor account, so treat it as a bearer credential. Hand it to the vendor's client once and never store, log or share it.
+             */
+            signedUrl: string;
+            /**
+             * Format: uuid
+             * @description Radioso's key for this session: a correlation handle, not a credential. The page hands it to the vendor, which sends it back on every turn so the whole call is one conversation that joins the website visitor who started it; on `elevenlabs` it travels as the custom LLM extra body's `session_key`.
+             */
+            sessionKey: string;
+            /** @description The caller's language tag: the request's, else the agent's default language, else `en`. The page hands it to the vendor beside `sessionKey`. */
+            locale: string;
+            /**
+             * Format: date-time
+             * @description When `signedUrl` stops opening sessions: Radioso computes it from the validity the vendor documents (15 minutes on `elevenlabs`) and the time it asked for the URL.
+             */
+            expiresAt?: string;
+            /** @description The agent's `voice.recordingNotice` in the session's language, when the agent wrote one for it: the page shows it to the caller as the call starts. */
+            recordingNotice?: string;
+        };
+        /** @description The vendor's id for the call the page opened: on `elevenlabs`, what the client's `getId()` returns once the session is connected. */
+        PublicVoiceVendorConversationRequest: {
+            vendorConversationId: string;
+        };
         WorkspaceIngestionReprocessResponse: {
             /** Format: uuid */
             workspaceId: string;
@@ -6510,6 +6742,7 @@ export interface components {
             greetingInstruction: string;
             assistantDefaultLocale: string | null;
             proactiveGreetingEnabled: boolean;
+            mechanicsReplies?: components["schemas"]["AgentMechanicsReplies"] & unknown;
             surfaceSettings: {
                 authenticatedChat: {
                     enabled: boolean;
@@ -6539,6 +6772,7 @@ export interface components {
                     expertOverrides: {
                         [key: string]: string;
                     };
+                    voiceCallsOffered?: boolean;
                 };
                 /** @description Surface extensions keyed by extension id; shape is owned by the contributing extension. */
                 extensions: {
@@ -6776,6 +7010,7 @@ export interface components {
             greetingInstruction: string;
             assistantDefaultLocale: string | null;
             proactiveGreetingEnabled: boolean;
+            mechanicsReplies?: components["schemas"]["AgentMechanicsReplies"] & unknown;
             surfaceSettings: {
                 authenticatedChat: {
                     enabled: boolean;
@@ -6805,6 +7040,7 @@ export interface components {
                     expertOverrides: {
                         [key: string]: string;
                     };
+                    voiceCallsOffered?: boolean;
                 };
                 /** @description Surface extensions keyed by extension id; shape is owned by the contributing extension. */
                 extensions: {
@@ -8008,6 +8244,14 @@ export interface components {
             participant: {
                 address: string;
             };
+        } | {
+            /** @enum {string} */
+            provider: "voice";
+            vendor: string;
+            sessionKey: string;
+            /** @enum {string} */
+            transport: "phone" | "web";
+            callerId?: string;
         };
         ConversationRequestContext: {
             clientIp: string | null;
@@ -8249,6 +8493,11 @@ export interface components {
                 };
             };
         };
+        /** @description Present on an assistant reply the caller cut short by speaking over it on the voice channel: how much of the reply they heard. Both counts are in the characters the channel spoke, so they do not index into `content`, which keeps the full reply. */
+        ReplyInterruption: {
+            heardCharacterCount: number;
+            spokenCharacterCount: number;
+        };
         ChatConversationMessage: {
             /** Format: uuid */
             id: string;
@@ -8265,6 +8514,7 @@ export interface components {
             suggestions?: components["schemas"]["ChatSuggestion"][];
             answerFeedbackEntries?: components["schemas"]["AnswerFeedbackEntry"][];
             operatorDisplayName?: string;
+            interruption?: components["schemas"]["ReplyInterruption"];
             debug?: components["schemas"]["ChatConversationMessageDebug"];
             turnFailure?: components["schemas"]["ChatConversationTurnFailure"];
             /** @description Operator-only. On a human-agent reply, the teammate who wrote it: their display name, else their email, read from their profile now. A reply that names no teammate, or whose teammate is gone, carries its signature instead. Never returned by the public chat API. */
@@ -8286,6 +8536,7 @@ export interface components {
             suggestions?: components["schemas"]["ChatSuggestion"][];
             answerFeedbackEntries?: components["schemas"]["AnswerFeedbackEntry"][];
             operatorDisplayName?: string;
+            interruption?: components["schemas"]["ReplyInterruption"];
         };
         ConversationOwnershipResponse: {
             ownership: components["schemas"]["ConversationOwnership"];
@@ -8451,6 +8702,10 @@ export interface components {
             ownership?: components["schemas"]["ConversationOwnership"] & unknown;
             /** @description What teammates and the agent did to the conversation, oldest first: handoffs, claims, reassignments, hand-backs, approvals decided, and — for a caller with Quality access — feedback resolved or dismissed. */
             activity?: components["schemas"]["ConversationActivityEntry"][];
+            /** @description On a voice conversation read by a dashboard session: whether the call has a recording `getConversationRecording` can play. `available` is true when the website embed reported the vendor's id for the call and the workspace holds a vendor key the backend can read; it is read from Radioso alone, so the vendor may still hold no audio for a call that has not ended. Machine credentials, which cannot play it, get no `recording`. */
+            recording?: {
+                available: boolean;
+            };
         };
         ChatConversationTail: {
             messages: components["schemas"]["ChatConversationMessage"][];
@@ -9493,7 +9748,7 @@ export interface components {
             pending: boolean;
         };
         /** @enum {string} */
-        WorkspaceInvalidationKind: "document.status_changed" | "crawl.status_changed" | "crawl.progress" | "conversation.created" | "conversation.turn_committed" | "conversation.contact_delivery_changed" | "conversation.ownership_changed" | "search.created" | "hitl.decision_created" | "hitl.decision_resolved" | "quality.feedback_changed" | "quality.triage_changed";
+        WorkspaceInvalidationKind: "document.status_changed" | "crawl.status_changed" | "crawl.progress" | "conversation.created" | "conversation.turn_committed" | "conversation.contact_delivery_changed" | "conversation.ownership_changed" | "conversation.deleted" | "search.created" | "hitl.decision_created" | "hitl.decision_resolved" | "quality.feedback_changed" | "quality.triage_changed";
         WorkspaceEventReadyData: {
             /** @enum {number} */
             protocolVersion: 1;
@@ -9501,7 +9756,7 @@ export interface components {
         WorkspaceEventInvalidateData: {
             /** @enum {number} */
             protocolVersion: 1;
-            /** @description Unique invalidation kind strings. Known protocol version 1 kinds: document.status_changed, crawl.status_changed, crawl.progress, conversation.created, conversation.turn_committed, conversation.contact_delivery_changed, conversation.ownership_changed, search.created, hitl.decision_created, hitl.decision_resolved, quality.feedback_changed, quality.triage_changed. Clients process recognized kinds in mixed frames, ignore unknown future kinds, and retain their polling floor. */
+            /** @description Unique invalidation kind strings. Known protocol version 1 kinds: document.status_changed, crawl.status_changed, crawl.progress, conversation.created, conversation.turn_committed, conversation.contact_delivery_changed, conversation.ownership_changed, conversation.deleted, search.created, hitl.decision_created, hitl.decision_resolved, quality.feedback_changed, quality.triage_changed. Clients process recognized kinds in mixed frames, ignore unknown future kinds, and retain their polling floor. */
             changeKinds: string[];
         };
         WorkspaceEventResyncData: {
@@ -15199,7 +15454,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                provider: "openai" | "openai-compatible" | "gemini" | "claude" | "elevenlabs";
             };
             cookie?: never;
         };
@@ -15250,7 +15505,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                provider: "openai" | "openai-compatible" | "gemini" | "claude";
+                provider: "openai" | "openai-compatible" | "gemini" | "claude" | "elevenlabs";
             };
             cookie?: never;
         };
@@ -15736,7 +15991,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ConversationAgent"];
+                    "application/json": components["schemas"]["AgentDetail"];
                 };
             };
             /** @description Authentication required */
@@ -22673,6 +22928,73 @@ export interface operations {
             };
         };
     };
+    resendNotificationRecipientConfirmation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    /** Format: email */
+                    email: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Confirmation send admitted or skipped */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        sent: boolean;
+                    };
+                };
+            };
+            /** @description Recipient is not configured for the agent */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Owner or admin permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     listAgentSkills: {
         parameters: {
             query?: never;
@@ -22872,6 +23194,63 @@ export interface operations {
             };
         };
     };
+    listNotifySkillRecipients: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+                skillId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Notify skill recipients */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        recipients: {
+                            /** Format: email */
+                            email: string;
+                            /** @enum {string} */
+                            state: "confirmed" | "grandfathered" | "waiting_for_confirmation" | "revoked" | "suppressed" | "confirmation_not_required";
+                        }[];
+                    };
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent read permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent or skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     listOperatorNoticeDestinations: {
         parameters: {
             query?: never;
@@ -22899,6 +23278,13 @@ export interface operations {
                              */
                             via: "named_skill" | "contact_human" | "contact_human_off" | "agent_setting" | "workspace_owner" | "none";
                             recipientEmails: string[];
+                            /** @description Recipient addresses with their effective confirmation or suppression state. */
+                            recipients: {
+                                /** Format: email */
+                                email: string;
+                                /** @enum {string} */
+                                state: "confirmed" | "grandfathered" | "waiting_for_confirmation" | "revoked" | "suppressed" | "confirmation_not_required";
+                            }[];
                             /** @description The emails are the workspace owner's because the route lists no recipients of its own. */
                             recipientsFromWorkspaceOwner: boolean;
                             /** @description A webhook also receives the notice. Its URL is never returned. */
@@ -22913,11 +23299,26 @@ export interface operations {
                              */
                             via: "named_skill" | "contact_human" | "contact_human_off" | "agent_setting" | "workspace_owner" | "none";
                             recipientEmails: string[];
+                            /** @description Recipient addresses with their effective confirmation or suppression state. */
+                            recipients: {
+                                /** Format: email */
+                                email: string;
+                                /** @enum {string} */
+                                state: "confirmed" | "grandfathered" | "waiting_for_confirmation" | "revoked" | "suppressed" | "confirmation_not_required";
+                            }[];
                             /** @description The emails are the workspace owner's because the route lists no recipients of its own. */
                             recipientsFromWorkspaceOwner: boolean;
                             /** @description A webhook also receives the notice. Its URL is never returned. */
                             webhookConfigured: boolean;
                         }[];
+                        dailyEmailAllowance: {
+                            /** @description Recipient emails the workspace may send per UTC day across contact and notice delivery. */
+                            limit: number;
+                            /** @description Recipient emails sent so far today. */
+                            sentToday: number;
+                            /** @description The allowance is used up or has already stopped a send today; further emails wait until tomorrow (UTC), while webhooks still post. */
+                            reachedToday: boolean;
+                        } | null;
                     };
                 };
             };
@@ -24654,6 +25055,62 @@ export interface operations {
             };
         };
     };
+    deleteHistoryConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Conversation deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.history.delete */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     tailHistoryConversation: {
         parameters: {
             query?: {
@@ -24743,6 +25200,62 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Visitor not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteHistoryVisitor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                visitorId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Visitor deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.history.delete */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -25242,6 +25755,93 @@ export interface operations {
             };
             /** @description Conversation ownership changed */
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getConversationRecording: {
+        parameters: {
+            query?: {
+                workspaceId?: string;
+            };
+            header?: {
+                range?: string;
+            };
+            path: {
+                conversationId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The whole recording */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "audio/mpeg": string;
+                };
+            };
+            /** @description The byte range the request named */
+            206: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "audio/mpeg": string;
+                };
+            };
+            /** @description Invalid conversation id */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Workspace history read permission required, the caller is not a dashboard session, or another site started the request */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The conversation has no recording, or the vendor holds no audio for the call yet */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The byte range lies past the recording's end; `Content-Range` names its length when the vendor does */
+            416: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description `recording_unavailable`: the recording could not be read (the workspace's vendor key is missing or unreadable, or the vendor did not answer) */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -29043,6 +29643,129 @@ export interface operations {
                 };
             };
             /** @description Public chat response is unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createPublicVoiceSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PublicVoiceSessionRequest"];
+            };
+        };
+        responses: {
+            /** @description Voice session started */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PublicVoiceSessionResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Public session not found or not a website embed session, or the agent takes no voice sessions: voice is off or no vendor agent is bound */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The visitor session's or the workspace's voice session start budget is spent */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitExceededResponse"];
+                };
+            };
+            /** @description `voice_unavailable`: the session could not be started (the workspace's vendor key is missing or unreadable, or the vendor did not start it) */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    reportPublicVoiceVendorConversation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+                sessionKey: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PublicVoiceVendorConversationRequest"];
+            };
+        };
+        responses: {
+            /** @description The vendor's id is stored with the session */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Request validation failed: the session key is not a UUID, or the id is not 1 to 128 letters, digits, underscores and hyphens */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Public session not found or not a website embed session; no session this public session started waits for an id (it already has one, its start expired, or Radioso never started it); or the vendor says the conversation was held on another vendor agent */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The visitor session's request budget is spent */
+            429: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RateLimitExceededResponse"];
+                };
+            };
+            /** @description `voice_unavailable`: the id could not be checked with the vendor now (the vendor does not show the conversation yet, as can happen right after a call connects; the workspace's vendor key is missing or unreadable; or the vendor did not answer); report it again */
             503: {
                 headers: {
                     [name: string]: unknown;

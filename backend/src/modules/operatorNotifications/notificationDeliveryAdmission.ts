@@ -28,6 +28,18 @@ export interface NotificationDeliveryOutcomeRepositoryPort {
     dailyEmailLimit: number;
     conversationDispatchLimit: number;
   }): Promise<NotificationDeliveryAdmission & { newlyRecorded: boolean }>;
+  readDailyUsage(input: { workspaceId: string; usageDate: Date }): Promise<{ reservedEmails: number; cappedRequests: number }>;
+}
+
+/** Today's (UTC) notice email allowance, so an operator can see that the cap stopped a send. */
+export interface DailyNotificationEmailAllowance {
+  limit: number;
+  sentToday: number;
+  reachedToday: boolean;
+}
+
+export interface NotificationEmailAllowanceReader {
+  describeDailyEmailAllowance(input: { workspaceId: string }): Promise<DailyNotificationEmailAllowance>;
 }
 
 export interface NotificationDeliveryAdmissionPort {
@@ -47,7 +59,7 @@ interface AdmissionLogger {
 
 const utcDate = (date: Date): Date => new Date(`${date.toISOString().slice(0, 10)}T00:00:00.000Z`);
 
-export class NotificationDeliveryAdmissionService implements NotificationDeliveryAdmissionPort {
+export class NotificationDeliveryAdmissionService implements NotificationDeliveryAdmissionPort, NotificationEmailAllowanceReader {
   constructor(
     private readonly outcomes: NotificationDeliveryOutcomeRepositoryPort,
     private readonly usageLimits: UsageLimitPolicy,
@@ -55,6 +67,18 @@ export class NotificationDeliveryAdmissionService implements NotificationDeliver
     private readonly logger?: AdmissionLogger,
     private readonly now: () => Date = () => new Date(),
   ) {}
+
+  async describeDailyEmailAllowance(input: { workspaceId: string }): Promise<DailyNotificationEmailAllowance> {
+    const [limit, usage] = await Promise.all([
+      resolveNotificationEmailDailyLimit(this.usageLimits, { workspaceId: input.workspaceId }),
+      this.outcomes.readDailyUsage({ workspaceId: input.workspaceId, usageDate: utcDate(this.now()) }),
+    ]);
+    return {
+      limit,
+      sentToday: usage.reservedEmails,
+      reachedToday: usage.cappedRequests > 0 || usage.reservedEmails >= limit,
+    };
+  }
 
   async admit(input: {
     requestId: string;
@@ -78,7 +102,7 @@ export class NotificationDeliveryAdmissionService implements NotificationDeliver
     });
     const outcome = await this.outcomes.reserve({
       requestId: input.requestId,
-      recipientDigest: recipientEmailDeliveryDigest(input.recipientEmails, input.requestedEmailCount),
+      recipientDigest: recipientEmailDeliveryDigest(input.recipientEmails),
       workspaceId: input.workspaceId,
       conversationId: input.conversationId,
       usageDate: utcDate(this.now()),

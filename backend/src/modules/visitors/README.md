@@ -47,10 +47,17 @@ channel shares, and carries no visitor key and no `verified_customer_id`. A
 mailbox and the sender's address on the `email` channel context are the
 whole of its identity (spec `specs/1403-email-channel/`, FR-012).
 
-**Future constraint (FR-006):** there is no conversation-delete path in the
-product today. If one is ever added, it must decrement the owning visitor's
-`conversation_count` and delete a visitor that reaches zero — that bookkeeping
-does not exist yet and is not exercised by anything in this module.
+**Erasure (FR-006):** erasing a conversation (`modules/privacy/`, #1540)
+lowers its visitor's `conversation_count` and, when that was an *anonymous*
+visitor's last conversation (`verified_customer_id IS NULL`), deletes the
+visitor row too. A verified visitor's row survives losing its last
+conversation: the identity belongs to the customer, not to one conversation,
+and it stays as the handle a later visitor erase needs to reach that
+customer's context values through. Erasing a visitor (anonymous or verified)
+deletes all their conversations, their customer-scoped context values, and
+the visitor row. The bookkeeping lives in
+`backend/src/db/repositories/conversationErasureRepository.ts`, beside the
+erasure that runs it, not in this module.
 
 Focused checks:
 

@@ -268,6 +268,7 @@ export class ApprovalResumeTurn {
       resumed: true,
       assistantMessageId: completed.assistantMessageId,
       postCommitReceipt: completed.postCommitReceipt,
+      ...(completed.postCommitWake ? { postCommitWake: completed.postCommitWake } : {}),
     };
   }
 

@@ -163,6 +163,24 @@ describe("AccountAccessService", () => {
     })).resolves.toBeNull();
   });
 
+  it("lets owners, admins and admin credentials erase conversation history, and no member", async () => {
+    expect(workspaceRoleAllows("owner", "workspace.history.delete")).toBe(true);
+    expect(workspaceRoleAllows("admin", "workspace.history.delete")).toBe(true);
+    expect(workspaceRoleAllows("member", "workspace.history.delete")).toBe(false);
+    const service = new AccountAccessService(new InMemoryAccountMembershipRepository(), createAuditService());
+    const credential = (role: "admin" | "member") => ({
+      type: "service_account_credential" as const,
+      serviceAccountId: "service-1",
+      credentialId: "credential-1",
+      role,
+      workspaceId: "workspace-1",
+    });
+    await expect(service.hasPermission({ principal: credential("admin"), workspaceId: "workspace-1", permission: "workspace.history.delete" }))
+      .resolves.toBe(true);
+    await expect(service.hasPermission({ principal: credential("member"), workspaceId: "workspace-1", permission: "workspace.history.delete" }))
+      .resolves.toBe(false);
+  });
+
   it("evaluates a role's permissions by the same rule it authorizes with", () => {
     const service = new AccountAccessService(new InMemoryAccountMembershipRepository(), createAuditService());
     const permissions: AccountPermission[] = [

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
 import {
@@ -127,5 +127,110 @@ describe("workspace service", () => {
       auditEvent: expect.objectContaining({ eventType: "workspace.deleted" }),
     })]);
     await expect(repository.findByIdAndAccountId(target.id, "account-1")).resolves.toEqual(target);
+  });
+
+  describe("data a vendor holds for the workspace's conversations", () => {
+    const vendorHeldData = () => {
+      const steps: string[] = [];
+      const logger = { warn: vi.fn() };
+      const eraser = {
+        prepare: vi.fn(async (erasure: { scopes: ReadonlyArray<{ workspaceId: string }> }) => {
+          const ids = erasure.scopes.map((scope) => scope.workspaceId).join(",");
+          steps.push(`prepare:${ids}`);
+          return { erase: async () => { steps.push(`erase:${ids}`); } };
+        }),
+      };
+      return { steps, eraser, logger, vendorHeld: { eraser, logger } };
+    };
+
+    it("is read before the workspace is deleted and erased once it is gone", async () => {
+      const repository = new InMemoryWorkspaceRepository();
+      const { steps, eraser, vendorHeld } = vendorHeldData();
+      const service = new WorkspaceService(repository, createAuditService(), undefined, {
+        endWorkspace: async () => { steps.push("delete"); },
+      }, undefined, vendorHeld);
+      await service.create("account-1", "Keep");
+      const target = await service.create("account-1", "Delete");
+
+      await service.delete(target.id, "account-1", "owner-1");
+
+      expect(steps).toEqual([`prepare:${target.id}`, "delete", `erase:${target.id}`]);
+      expect(eraser.prepare).toHaveBeenCalledWith({
+        account: { id: "account-1", deleted: false },
+        scopes: [{ kind: "workspace", workspaceId: target.id }],
+      });
+    });
+
+    it("is erased after a transactional deletion too, and never when the deletion is refused", async () => {
+      const repository = new InMemoryWorkspaceRepository();
+      const { steps, vendorHeld } = vendorHeldData();
+      let deletes = true;
+      const service = new WorkspaceService(repository, createAuditService(), undefined, undefined, {
+        deleteWorkspace: async () => deletes,
+      }, vendorHeld);
+      await service.create("account-1", "Keep");
+      const target = await service.create("account-1", "Delete");
+
+      await service.delete(target.id, "account-1", "owner-1");
+      expect(steps).toEqual([`prepare:${target.id}`, `erase:${target.id}`]);
+
+      deletes = false;
+      steps.length = 0;
+      await expect(service.delete(target.id, "account-1", "owner-1")).rejects.toMatchObject({ statusCode: 404 });
+      expect(steps).toEqual([`prepare:${target.id}`]);
+    });
+
+    it("never holds a deletion back when it cannot be read, and says so", async () => {
+      const repository = new InMemoryWorkspaceRepository();
+      const logger = { warn: vi.fn() };
+      const service = new WorkspaceService(repository, createAuditService(), undefined, undefined, undefined, {
+        eraser: { prepare: async () => { throw new Error("connection refused"); } },
+        logger,
+      });
+      await service.create("account-1", "Keep");
+      const target = await service.create("account-1", "Delete");
+
+      await service.delete(target.id, "account-1", "owner-1");
+
+      await expect(repository.findByIdAndAccountId(target.id, "account-1")).resolves.toBeNull();
+      expect(logger.warn).toHaveBeenCalledWith({ accountId: "account-1", errorClass: "Error" }, "Vendor-held data to erase could not be read");
+    });
+
+    it("is read as one erasure for every workspace of an account that is about to be deleted", async () => {
+      const repository = new InMemoryWorkspaceRepository();
+      const { steps, eraser, vendorHeld } = vendorHeldData();
+      const service = new WorkspaceService(repository, createAuditService(), undefined, undefined, undefined, vendorHeld);
+      const first = await service.create("account-1", "First");
+      const second = await service.create("account-1", "Second");
+      await service.create("account-2", "Elsewhere");
+
+      const prepared = await service.prepareAccountDeletion("account-1");
+      expect(eraser.prepare).toHaveBeenCalledTimes(1);
+      expect(eraser.prepare).toHaveBeenCalledWith({
+        account: { id: "account-1", deleted: true },
+        scopes: expect.arrayContaining([{ kind: "workspace", workspaceId: first.id }, { kind: "workspace", workspaceId: second.id }]),
+      });
+
+      steps.length = 0;
+      await prepared.afterDeletion();
+      expect(steps).toHaveLength(1);
+      expect(steps[0]).toMatch(/^erase:/);
+    });
+
+    it("says so when it cannot list the account's workspaces, and erases nothing", async () => {
+      const repository = new InMemoryWorkspaceRepository();
+      vi.spyOn(repository, "listByAccountId").mockRejectedValue(new Error("connection refused"));
+      const { eraser, logger, vendorHeld } = vendorHeldData();
+      const service = new WorkspaceService(repository, createAuditService(), undefined, undefined, undefined, vendorHeld);
+
+      const prepared = await service.prepareAccountDeletion("account-1");
+      await prepared.afterDeletion();
+
+      expect(eraser.prepare).not.toHaveBeenCalled();
+      expect(logger.warn).toHaveBeenCalledWith(
+        { accountId: "account-1", errorClass: "Error" },
+        "Workspaces whose vendor-held data to erase could not be read",
+      );
+    });
   });
 });

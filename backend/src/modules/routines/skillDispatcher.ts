@@ -239,6 +239,9 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
             // under the name the action outbox + contact-delivery resolver expect so a
             // notify skill can scope its enqueue (recipients + dedup) to the conversation.
             conversationId: turn.sessionId,
+            // Whether that id is a stored conversation. A private test's is minted for the test and
+            // never stored, so an executor writing a row keyed to the conversation leaves it unset.
+            conversationDurability: this.conversationDurability,
             routineId: state.routineId,
             ...(stepId ? { stepId } : {}),
             ...(this.workspaceId ? { workspaceId: this.workspaceId } : {}),

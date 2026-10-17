@@ -2,6 +2,12 @@ import type { AccountMembershipRepositoryPort } from "../../../db/repositories/a
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../../db/repositories/workspaceRepository.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
+import type {
+  VendorHeldConversationDataEraser,
+  VendorHeldConversationDataErasure,
+} from "../../../shared/domain/conversationDataErasure.js";
+import { errorClassOf } from "../../../shared/observability/errorClass.js";
+import type { AppLogger } from "../../../shared/observability/logger.js";
 import { createWorkspacePublicRouteKey } from "../domain/publicRouteKey.js";
 import {
   transactionalLifecycleAuditEvent,
@@ -20,6 +26,8 @@ export class WorkspaceService {
     private readonly accountMembershipRepository?: AccountMembershipRepositoryPort,
     private readonly personalCredentialTermination?: WorkspacePersonalCredentialTerminationPort,
     private readonly personalCredentialLifecycle?: Pick<PersonalCredentialLifecyclePort, "deleteWorkspace">,
+    /** What vendors hold for the workspace's conversations, erased after a deletion went through. */
+    private readonly vendorHeld?: { eraser: VendorHeldConversationDataEraser; logger: Pick<AppLogger, "warn"> },
   ) {}
 
   private async createWorkspaceWithPublicRouteKey(accountId: string, name: string): Promise<WorkspaceRecord> {
@@ -139,6 +147,11 @@ export class WorkspaceService {
       eventStatus: "success",
       metadata: { deletedWorkspaceId: workspaceId, deletedWorkspaceName: workspace.name },
     });
+    // Read while the workspace's conversations and vendor keys still exist; the cascade takes both.
+    const vendorHeld = await this.prepareVendorHeldErasure({
+      account: { id: accountId, deleted: false },
+      scopes: [{ kind: "workspace", workspaceId }],
+    });
     if (this.personalCredentialLifecycle) {
       const deleted = await this.personalCredentialLifecycle.deleteWorkspace({
         accountId,
@@ -148,6 +161,7 @@ export class WorkspaceService {
       });
       if (!deleted) throw notFound("Workspace not found");
       this.auditService.logRecorded?.(auditEvent);
+      await vendorHeld.erase();
       return;
     }
 
@@ -156,5 +170,46 @@ export class WorkspaceService {
     await this.auditService.record(auditEvent);
 
     await this.workspaceRepository.deleteByIdAndAccountId(workspaceId, accountId);
+    await vendorHeld.erase();
+  }
+
+  /**
+   * Prepares erasing what vendors hold for every workspace of an account about to be deleted, while
+   * the workspaces still exist: one erasure, its workspaces in order under one budget.
+   * `afterDeletion` runs once the account is gone, and never rejects.
+   */
+  async prepareAccountDeletion(accountId: string): Promise<{ afterDeletion(): Promise<void> }> {
+    if (!this.vendorHeld) return { afterDeletion: async () => undefined };
+    let workspaces: WorkspaceRecord[];
+    try {
+      workspaces = await this.workspaceRepository.listByAccountId(accountId);
+    } catch (error) {
+      this.vendorHeld.logger.warn(
+        { accountId, errorClass: errorClassOf(error) },
+        "Workspaces whose vendor-held data to erase could not be read",
+      );
+      return { afterDeletion: async () => undefined };
+    }
+    const prepared = await this.prepareVendorHeldErasure({
+      account: { id: accountId, deleted: true },
+      scopes: workspaces.map((workspace) => ({ kind: "workspace", workspaceId: workspace.id })),
+    });
+    return { afterDeletion: () => prepared.erase() };
+  }
+
+  /** Never rejects: data a vendor holds that cannot be read is left there, and its eraser says so. */
+  private async prepareVendorHeldErasure(erasure: VendorHeldConversationDataErasure): Promise<{ erase(): Promise<void> }> {
+    const nothing = { erase: async () => undefined };
+    if (!this.vendorHeld) return nothing;
+    try {
+      const prepared = await this.vendorHeld.eraser.prepare(erasure);
+      return { erase: () => prepared.erase().catch(() => undefined) };
+    } catch (error) {
+      this.vendorHeld.logger.warn(
+        { accountId: erasure.account?.id ?? null, errorClass: errorClassOf(error) },
+        "Vendor-held data to erase could not be read",
+      );
+      return nothing;
+    }
   }
 }

@@ -159,6 +159,17 @@ export type ConversationChannelContext =
       mailbox: { id: string; address: string };
       threadKey: string;
       participant: { address: string };
+    }
+  | {
+      /**
+       * A spoken session. `vendor` names the namespace `sessionKey` belongs to (the voice runtime
+       * that issued it); the key itself is opaque. `callerId` is E.164 and present only on `phone`.
+       */
+      provider: "voice";
+      vendor: string;
+      sessionKey: string;
+      transport: "phone" | "web";
+      callerId?: string;
     };
 
 /**

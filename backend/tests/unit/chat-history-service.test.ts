@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
 
 import { createConversationActivityComposition } from "../../src/app/composition/conversationActivity.js";
@@ -14,6 +14,7 @@ import type {
   ContactHistorySummary,
 } from "../../src/modules/chat/services/contactHistoryProvider.js";
 import type { VisitorRecord } from "../../src/db/repositories/visitorRepository.js";
+import { encodeCursor } from "../../src/shared/domain/cursorPagination.js";
 import {
   InMemoryAuditEventRepository,
   InMemoryConversationActivityStore,
@@ -851,6 +852,53 @@ describe("chat history service reply attribution for operators", () => {
     await service.getConversation("workspace-1", conversation.id, { limit: 50, offset: 0 }, { includeOperatorLabel: true });
 
     expect(teammateLabels.reads).toEqual([]);
+  });
+});
+
+describe("chat history service interrupted replies", () => {
+  const seedInterruptedReply = async () => {
+    const { service, conversationRepository, messageRepository } = createService();
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
+    const question = await messageRepository.create({ conversationId: conversation.id, workspaceId: "workspace-1", role: "user", content: "When do you open?" });
+    const cutReply = await messageRepository.create({ conversationId: conversation.id, workspaceId: "workspace-1", role: "assistant", content: "We open at nine on weekdays." });
+    cutReply.interruption = { heardCharacterCount: 12, spokenCharacterCount: 40 };
+    const fullReply = await messageRepository.create({ conversationId: conversation.id, workspaceId: "workspace-1", role: "assistant", content: "And at ten on Saturdays." });
+    return { service, messageRepository, conversation, question, cutReply, fullReply };
+  };
+
+  it("carries the interruption on the reply the caller cut short, and on no other message, on every read", async () => {
+    const { service, messageRepository, conversation, question, cutReply } = await seedInterruptedReply();
+
+    const reads = [
+      (await service.getConversation("workspace-1", conversation.id, { limit: 50, offset: 0 })).messages,
+      (await service.tailConversation("workspace-1", conversation.id, { cursor: messageRepository.cursorFor(question), limit: 10 })).messages,
+      [(await service.getConversationTurn("workspace-1", cutReply.id)).message],
+    ];
+
+    for (const messages of reads) {
+      for (const message of messages) {
+        if (message.id === cutReply.id) {
+          expect(message.interruption).toEqual({ heardCharacterCount: 12, spokenCharacterCount: 40 });
+        } else {
+          expect(message).not.toHaveProperty("interruption");
+        }
+      }
+    }
+    expect(reads.map((messages) => messages.some((message) => message.id === cutReply.id))).toEqual([true, true, true]);
+  });
+
+  it("asks for replies marked since the cursor only on a tail that re-delivers them, with the cursor's mark watermark", async () => {
+    const { service, messageRepository, conversation, fullReply } = await seedInterruptedReply();
+    const listSince = vi.spyOn(messageRepository, "listSinceByConversationId");
+    const cursor = encodeCursor({ createdAt: fullReply.createdAt.toISOString(), id: fullReply.id, markedAt: "2026-10-15T10:00:00.000Z" });
+
+    await service.tailConversation("workspace-1", conversation.id, { cursor, limit: 10 }, { redeliverInterruptedReplies: true });
+    await service.tailConversation("workspace-1", conversation.id, { cursor, limit: 10 }, { includeOwnership: true });
+
+    expect(listSince.mock.calls.map(([, , input]) => input)).toEqual([
+      { sinceCreatedAt: fullReply.createdAt, sinceId: fullReply.id, sinceMarkedAt: "2026-10-15T10:00:00.000Z", limit: 10, redeliverInterruptedReplies: true },
+      { sinceCreatedAt: fullReply.createdAt, sinceId: fullReply.id, sinceMarkedAt: "2026-10-15T10:00:00.000Z", limit: 10, redeliverInterruptedReplies: false },
+    ]);
   });
 });
 

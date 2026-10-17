@@ -132,6 +132,7 @@ describe("Test Chat copilot descriptors", () => {
   it("points the customer conversation readers at the Test Chat readers", () => {
     const chat = new Map(createChatCopilotTools({
       chatHistoryService: { getConversation: vi.fn(), getConversationTurn: vi.fn(), listConversations: vi.fn() },
+      voiceRecordings: { availability: vi.fn(async () => null) },
     }).map((descriptor) => [descriptor.name, descriptor]));
 
     expect(chat.get("conversation_transcript")?.description).toContain("test_chat_transcript");

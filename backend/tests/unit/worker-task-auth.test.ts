@@ -77,7 +77,7 @@ describe("worker task authentication", () => {
     const { dependencies } = createTestDependencies();
     withTaskToken(dependencies, taskToken);
     const documentRunOnce = vi.spyOn(dependencies.documentProcessingWorker, "runOnce");
-    const actionDrain = vi.spyOn(dependencies.actionDispatchWorker, "drain");
+    const actionDrain = vi.spyOn(dependencies.actionDispatchJobRuntime, "drain");
     const app = createWorkerTaskApp(dependencies);
 
     for (const path of [

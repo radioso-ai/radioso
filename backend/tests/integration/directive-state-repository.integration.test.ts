@@ -8,6 +8,7 @@ import {
 } from "../../src/db/repositories/directiveStateRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
+import { seedConversations } from "./support/conversationSeed.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
 
@@ -49,6 +50,7 @@ describeIfDatabase("directive state persistence (#865)", () => {
 
   it("upserts and advances the per-conversation firing state across turns", async () => {
     const sessionId = randomUUID();
+    await seedConversations(database, [sessionId]);
 
     await repository.save({
       sessionId,
@@ -77,6 +79,7 @@ describeIfDatabase("directive state persistence (#865)", () => {
 
   it("does not return an expired conversation's firing memory", async () => {
     const sessionId = randomUUID();
+    await seedConversations(database, [sessionId]);
     const shortTtl = new DirectiveStateRepository(database.kysely, -1);
     await shortTtl.save({ sessionId, state: { turnSeq: 5, firings: {} } });
     expect(await repository.load({ sessionId })).toBeNull();

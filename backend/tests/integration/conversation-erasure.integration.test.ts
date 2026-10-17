@@ -341,7 +341,7 @@ describeIntegration("conversation erasure (Postgres)", () => {
     expect(receipt).toEqual({
       conversationCount: 1,
       messageCount: 2,
-      rowsByOwner: { "context-variables": 1, audit: 2, "email-channel": 4, "customer-email": 1, eval: 3, whatsapp: 0, "audience-pulse": 0 },
+      rowsByOwner: { "context-variables": 1, audit: 2, "email-channel": 4, "customer-email": 1, eval: 3, whatsapp: 0, "audience-pulse": 0, "voice-channel": 0 },
     });
   });
 
@@ -380,7 +380,7 @@ describeIntegration("conversation erasure (Postgres)", () => {
       conversationId: erased.conversationId,
       conversationCount: 1,
       messageCount: 2,
-      rowsByOwner: { "context-variables": 1, audit: 2, "email-channel": 4, "customer-email": 1, eval: 3, whatsapp: 0, "audience-pulse": 0 },
+      rowsByOwner: { "context-variables": 1, audit: 2, "email-channel": 4, "customer-email": 1, eval: 3, whatsapp: 0, "audience-pulse": 0, "voice-channel": 0 },
     });
     expect(invalidation.enqueue).toHaveBeenCalledWith(tenant.workspaceId, ["conversation.deleted"]);
   });

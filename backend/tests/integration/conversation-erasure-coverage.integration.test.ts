@@ -3,6 +3,7 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 import {
   defaultConversationDataErasers,
   defaultVerifiedCustomerDataErasers,
+  defaultVisitorKeyDataErasers,
 } from "../../src/app/composition/conversationErasure.js";
 import { Database } from "../../src/shared/infra/database.js";
 import type { Db } from "../../src/shared/infra/kysely/types.js";
@@ -45,10 +46,20 @@ const coverage: Record<string, ErasureCoverage> = {
   "email_inbound_deliveries.message_id": { kind: "row_cascades_with", column: "conversation_id" },
   "eval_snapshots.source_message_id": { kind: "row_cascades_with", column: "source_conversation_id" },
   "held_replies.released_message_id": { kind: "row_cascades_with", column: "conversation_id" },
+  "voice_sessions.conversation_id": {
+    kind: "eraser",
+    owner: "voice-channel",
+    reason: "The link is SET NULL so a conversation deleted any other way leaves where its call's recording is; an erasure reads the recording first and the voice eraser removes the row.",
+  },
+  "voice_sessions.vendor_conversation_id": {
+    kind: "eraser",
+    owner: "voice-channel",
+    reason: "The voice vendor's id for the call, which names its recording there; the erasure asks the vendor to delete the recording, and the voice eraser removes the row.",
+  },
   "voice_sessions.started_public_session_id": {
-    kind: "row_cascades_with",
-    column: "conversation_id",
-    reason: "A start no turn has bound yet names no conversation, and the agent's next start removes it.",
+    kind: "eraser",
+    owner: "voice-channel",
+    reason: "The website visitor's public session that started the call, beside their visitor key (started_visitor_key, which this query does not match). The voice eraser removes the row with its conversation, or, for a call no turn ever bound, with the erased visitor's key; a start whose page reported no recording also goes at the agent's next start.",
   },
   "email_inbound_deliveries.planned_conversation_id": {
     kind: "eraser",
@@ -169,6 +180,7 @@ describeIntegration("conversation erasure schema coverage", () => {
     return new Set([
       ...defaultConversationDataErasers.map((bind) => bind(unbound).owner),
       ...defaultVerifiedCustomerDataErasers.map((bind) => bind(unbound).owner),
+      ...defaultVisitorKeyDataErasers.map((bind) => bind(unbound).owner),
     ]);
   };
 

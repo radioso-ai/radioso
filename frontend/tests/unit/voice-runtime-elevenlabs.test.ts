@@ -58,6 +58,16 @@ describe('ElevenLabs voice runtime', () => {
     expect(options.customLlmExtraBody).toEqual({ session_key: 'session-key-1', locale: 'it' })
   })
 
+  it("names the vendor's id for the call once the session is open, and none when the client has none", async () => {
+    startSession.mockResolvedValueOnce({ endSession, getId: () => 'conv_01jx8k2m' })
+    const named = await elevenLabsVoiceRuntime.open({ signedUrl: 'wss://vendor.test', sessionKey: 'k', locale: 'en' }, callbacks(), openSignal())
+    expect(named.vendorConversationId).toBe('conv_01jx8k2m')
+
+    startSession.mockResolvedValueOnce({ endSession, getId: () => '' })
+    const unnamed = await elevenLabsVoiceRuntime.open({ signedUrl: 'wss://vendor.test', sessionKey: 'k', locale: 'en' }, callbacks(), openSignal())
+    expect(unnamed.vendorConversationId).toBeUndefined()
+  })
+
   it('loads its worklets from paths the app host serves', async () => {
     await elevenLabsVoiceRuntime.open({ signedUrl: 'wss://vendor.test', sessionKey: 'k', locale: 'en' }, callbacks(), openSignal())
 

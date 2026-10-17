@@ -120,7 +120,13 @@ describe("operator copilot catalog coverage", () => {
       // The runtime binding is Ray's to propose; the vendor key it needs is a secret Ray never writes.
       expect(description).toContain("voice.runtime binds the agent to one vendor agent");
       expect(description).toContain("the operator enters the vendor's API key in Settings");
+      // The recording notice rides the same whole block, so leaving it out of a write removes it.
+      expect(description).toContain("voice.recordingNotice");
+      expect(description).toContain("leaving it out removes every notice");
     }
+    expect(agentReviewedSettingsPatchSchema.safeParse({
+      voice: { enabled: true, bridgeLines: {}, fallbackLine: {}, recordingNotice: { en: "This call is recorded." }, runtime: null },
+    }).success).toBe(true);
     // agent_configuration returns the live voice block beside the portable configuration.
     expect(catalog.find((descriptor) => descriptor.name === "agent_configuration")?.description).toContain("live voice settings");
   });

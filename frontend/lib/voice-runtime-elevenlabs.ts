@@ -98,7 +98,8 @@ export const elevenLabsVoiceRuntime: VoiceRuntime = {
         onError: () => callbacks.onFailed(),
         onDisconnect: () => callbacks.onDisconnected(),
       })
-      return { end: () => conversation.endSession() }
+      const vendorConversationId = typeof conversation.getId === 'function' ? conversation.getId() : ''
+      return { end: () => conversation.endSession(), ...(vendorConversationId ? { vendorConversationId } : {}) }
     } catch (error) {
       if (isMicrophoneError(error)) throw new VoiceMicrophoneUnavailableError()
       throw error

@@ -178,6 +178,24 @@ describe('backend proxy route', () => {
     })
   })
 
+  it("stops the backend request when the browser lets go of it, as an audio element does on every seek", async () => {
+    vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
+    let upstreamSignal: AbortSignal | undefined
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+      upstreamSignal = init.signal ?? undefined
+      return new Response(new ReadableStream(), { status: 200, headers: { 'Content-Type': 'audio/mpeg' } })
+    }))
+    const { GET } = await import('@/app/backend/[...path]/route')
+    const browser = new AbortController()
+
+    await GET(new Request('https://frontend.example.com/backend/api/v1/conversations/c-1/recording', { signal: browser.signal }), {
+      params: Promise.resolve({ path: ['api', 'v1', 'conversations', 'c-1', 'recording'] }),
+    })
+    browser.abort()
+
+    expect(upstreamSignal?.aborted).toBe(true)
+  })
+
   it('buffers proxied request bodies so backend auth failures propagate', async () => {
     vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
 
@@ -553,6 +571,38 @@ describe('backend proxy route', () => {
     expect(allowed.headers.get('x-upstream-private')).toBeNull()
     expect(denied.status).toBe(404)
     expect(denied.headers.get('access-control-allow-origin')).toBeNull()
+  })
+
+  it("relays a voice session's vendor conversation report with the page origin and public session, and only the id", async () => {
+    vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, {
+      status: 204,
+      headers: { 'Access-Control-Allow-Origin': 'https://radioso.ai' },
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const { OPTIONS, POST } = await import('@/app/api/public/chat/[token]/voice/sessions/[sessionKey]/vendor-conversation/route')
+    const preflight = await OPTIONS(new Request('https://frontend.example.com/api/public/chat/token-1/voice/sessions/key-1/vendor-conversation', {
+      method: 'OPTIONS',
+      headers: { Origin: 'https://radioso.ai', 'Access-Control-Request-Method': 'POST' },
+    }))
+    const response = await POST(new Request('https://frontend.example.com/api/public/chat/token-1/voice/sessions/key-1/vendor-conversation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: 'https://radioso.ai', 'X-Radioso-Public-Session': 'session-token' },
+      body: JSON.stringify({ vendorConversationId: 'conv_1', apiKey: 'not-forwarded' }),
+    }), { params: Promise.resolve({ token: 'token-1', sessionKey: 'key-1' }) })
+
+    expect(preflight.status).toBe(204)
+    expect(fetchMock).toHaveBeenCalledWith(
+      `${BACKEND_URL}/api/v1/public/chat/token-1/voice/sessions/key-1/vendor-conversation`,
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ vendorConversationId: 'conv_1' }),
+        headers: expect.objectContaining({ Origin: 'https://radioso.ai', 'X-Radioso-Public-Session': 'session-token' }),
+      }),
+    )
+    expect(response.status).toBe(204)
+    expect(response.headers.get('access-control-allow-origin')).toBe('https://radioso.ai')
   })
 
   it('relays the visitor session cookie both ways on a voice session start, as the chat relay does', async () => {

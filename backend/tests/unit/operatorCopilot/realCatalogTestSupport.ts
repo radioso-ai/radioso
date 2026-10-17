@@ -21,6 +21,7 @@ export const realCatalogDependencies = () => {
     agentService,
     routineDefinitionService: { list: stub(), get: stub(), validate: stub() },
     chatHistoryService: { getConversation: stub(), getConversationTurn: stub(), listConversations: stub() },
+    voiceRecordings: { availability: stub() },
     documentSearchService: { search: stub() },
     documentChunks: { listPageForDocument: stub() },
     documentMaintenance: { reprocessDocument: stub(), reprocessSource: stub(), recrawlSource: stub() },

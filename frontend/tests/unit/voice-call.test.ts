@@ -37,6 +37,7 @@ const callWith = (overrides: Partial<VoiceCallDependencies> & { openSession?: Vo
     loadRuntimes: overrides.loadRuntimes ?? vi.fn(async () => ({ elevenlabs: { open } })),
     ...(overrides.connectTimeoutMs === undefined ? {} : { connectTimeoutMs: overrides.connectTimeoutMs }),
     ...(overrides.after === undefined ? {} : { after: overrides.after }),
+    ...(overrides.reportVendorConversation === undefined ? {} : { reportVendorConversation: overrides.reportVendorConversation }),
   }
   const call = runVoiceCall(dependencies, { onEvent: (event) => events.push(event), onLine: (line) => lines.push(line) })
   return { call, dependencies, events, lines, open, end, vendor: () => callbacks!, signal: () => signal! }
@@ -77,6 +78,67 @@ describe('a voice call', () => {
       { type: 'disconnected' },
     ])
     expect(lines).toEqual([{ speaker: 'agent', text: 'Ciao!' }])
+  })
+
+  it("reports the vendor's id for the call once the session is open, with the session key", async () => {
+    const reportVendorConversation = vi.fn(async () => 'recorded' as const)
+    const end = vi.fn(async () => undefined)
+    callWith({ reportVendorConversation, openSession: async () => ({ end, vendorConversationId: 'conv_1' }) })
+    await flush()
+
+    expect(reportVendorConversation).toHaveBeenCalledWith({ sessionKey: 'session-key-1', vendorConversationId: 'conv_1' })
+  })
+
+  it('reports nothing for a session the vendor named no id for', async () => {
+    const reportVendorConversation = vi.fn(async () => 'recorded' as const)
+    callWith({ reportVendorConversation, openSession: async () => ({ end: async () => undefined }) })
+    await flush()
+    expect(reportVendorConversation).not.toHaveBeenCalled()
+  })
+
+  it('reports the call a session opened as it was stopped before ending that session, so its recording is not lost', async () => {
+    const reportVendorConversation = vi.fn(async () => 'recorded' as const)
+    const end = vi.fn(async () => undefined)
+    const opening = deferred<{ end: () => Promise<void>; vendorConversationId: string }>()
+    const { call } = callWith({ reportVendorConversation, openSession: () => opening.promise })
+    await flush()
+
+    call.stop()
+    opening.resolve({ end, vendorConversationId: 'conv_2' })
+    await flush()
+
+    expect(reportVendorConversation).toHaveBeenCalledWith({ sessionKey: 'session-key-1', vendorConversationId: 'conv_2' })
+    expect(reportVendorConversation.mock.invocationCallOrder[0]).toBeLessThan(end.mock.invocationCallOrder[0])
+  })
+
+  it("reports again as the session ends when the first report did not get through, and not after a 204 or a refusal", async () => {
+    for (const [first, expectedCalls] of [['failed', 2], ['recorded', 1], ['refused', 1]] as const) {
+      const reportVendorConversation = vi.fn(async (): Promise<'recorded' | 'refused' | 'failed'> => first)
+      const { call } = callWith({ reportVendorConversation, openSession: async () => ({ end: async () => undefined, vendorConversationId: 'conv_1' }) })
+      await flush()
+
+      call.stop()
+      await flush()
+
+      expect(reportVendorConversation).toHaveBeenCalledTimes(expectedCalls)
+      expect(reportVendorConversation).toHaveBeenLastCalledWith({ sessionKey: 'session-key-1', vendorConversationId: 'conv_1' })
+    }
+  })
+
+  it('keeps the call going when the report fails', async () => {
+    const { events, vendor } = callWith({
+      reportVendorConversation: async () => {
+        throw new Error('network down')
+      },
+      openSession: async (_input, given) => {
+        given.onConnected()
+        return { end: async () => undefined, vendorConversationId: 'conv_1' }
+      },
+    })
+    await flush()
+
+    expect(events).toEqual([{ type: 'connected' }])
+    expect(vendor).toBeDefined()
   })
 
   it("spends no session start when the vendor's client cannot load", async () => {

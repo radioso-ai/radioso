@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
 import { normalizeEmail } from "../../../modules/auth/domain/authPrimitives.js";
+import { PENDING_REGISTRATION_COOKIE_NAME } from "../../../modules/auth/services/authFunnelService.js";
 import { createRateLimitMiddleware } from "../middleware/rateLimit.js";
 import { readRequestSource } from "../middleware/requestSource.js";
 import { requireSession, type SessionDependencies } from "../middleware/requireSession.js";
@@ -66,6 +67,7 @@ type AuthRouteDependencies = SessionDependencies & Pick<
   | "authService"
   | "passwordResetService"
   | "emailVerificationService"
+  | "authFunnelService"
   | "abuseControlService"
   | "auditService"
 >;
@@ -146,6 +148,28 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
     windowMs: authWindowMs,
     resolveSubjectKey: (req, res) => readRequestSource(req, res).digest,
   });
+  // A waiting tab polls one browser-bound, opaque credential. Keep its own
+  // budget separate from the broader source guard so normal polling does not
+  // make people behind one NAT throttle each other.
+  const pendingSessionSourceRateLimit = createRateLimitMiddleware({
+    service: dependencies.abuseControlService,
+    auditService: dependencies.auditService,
+    scope: "auth.email_verification.pending_session.source",
+    limit: authLimit * 12,
+    windowMs: authWindowMs,
+    resolveSubjectKey: (req, res) => readRequestSource(req, res).digest,
+  });
+  const pendingSessionTicketRateLimit = createRateLimitMiddleware({
+    service: dependencies.abuseControlService,
+    auditService: dependencies.auditService,
+    scope: "auth.email_verification.pending_session.ticket",
+    limit: authLimit * 2,
+    windowMs: authWindowMs,
+    resolveSubjectKey: (req) => {
+      const ticket = req.cookies?.[PENDING_REGISTRATION_COOKIE_NAME];
+      return typeof ticket === "string" ? createHash("sha256").update(ticket).digest("hex") : null;
+    },
+  });
   router.get("/registration", async (_req, res, next) => {
     try {
       const available = await dependencies.authService.isRegistrationAvailable();
@@ -163,16 +187,25 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
         requestIp: readRequestSource(req, res).address,
         requestUserAgent: req.get("user-agent"),
       });
+      let developmentVerificationUrl: string | undefined;
       if (result.requiresEmailVerification) {
-        await dependencies.emailVerificationService.resend({
-          email: req.body.email,
+        const challenge = await dependencies.authFunnelService.issueRegistrationChallenge({
+          userId: result.userId,
+          accountId: result.accountId,
           requestIp: readRequestSource(req, res).address,
           requestUserAgent: req.get("user-agent"),
         });
+        const verification = await dependencies.emailVerificationService.sendIssued({
+          email: req.body.email,
+          ...challenge.verification,
+        });
+        developmentVerificationUrl = verification.developmentVerificationUrl;
+        res.append("Set-Cookie", challenge.pendingCookie);
       }
       if (result.sessionCookie) {
-        res.setHeader("Set-Cookie", result.sessionCookie);
+        res.append("Set-Cookie", result.sessionCookie);
       }
+      res.setHeader("Cache-Control", "no-store");
       res.status(201).json({
         userId: result.userId,
         displayName: result.displayName,
@@ -182,6 +215,7 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
         workspaceName: result.workspaceName,
         workspacePublicRouteKey: result.workspacePublicRouteKey,
         requiresEmailVerification: result.requiresEmailVerification,
+        ...(developmentVerificationUrl ? { developmentVerificationUrl } : {}),
       });
     } catch (error) {
       next(error);
@@ -375,8 +409,9 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
     emailVerificationVerifyRateLimit,
     async (req, res, next) => {
       try {
-        const result = await dependencies.emailVerificationService.verify(req.body);
-        res.status(200).json(result);
+        const result = await dependencies.authFunnelService.verify(req.body);
+        res.setHeader("Set-Cookie", result.sessionCookie);
+        res.status(200).json({ verified: result.verified });
       } catch (error) {
         next(error);
       }
@@ -394,7 +429,28 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
           requestIp: readRequestSource(req, res).address,
           requestUserAgent: req.get("user-agent"),
         });
-        res.status(202).json(result);
+        res.status(202).json({ accepted: result.accepted });
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
+
+  router.post(
+    "/email-verification/pending-session",
+    pendingSessionSourceRateLimit,
+    pendingSessionTicketRateLimit,
+    async (req, res, next) => {
+      try {
+        const result = await dependencies.authFunnelService.exchangePendingTicket(
+          req.cookies?.[PENDING_REGISTRATION_COOKIE_NAME] as string | undefined,
+        );
+        if (result.ready) {
+          res.append("Set-Cookie", result.sessionCookie);
+          res.append("Set-Cookie", result.pendingCookieClear);
+        }
+        res.setHeader("Cache-Control", "no-store");
+        res.status(200).json({ ready: result.ready });
       } catch (error) {
         next(error);
       }

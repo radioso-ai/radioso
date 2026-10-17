@@ -61,6 +61,7 @@ export const registerDecisionPaths = (
       canResolve: z.boolean(),
       deadline: z.string().datetime().nullable(),
       createdAt: z.string().datetime(),
+      channel: z.string().nullable(),
     }),
   );
   const PendingApprovalDecisionListResponseSchema = registry.register(
@@ -77,6 +78,12 @@ export const registerDecisionPaths = (
     summary: "List pending human approval decisions",
     operationId: "listPendingDecisions",
     security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      query: z.object({
+        agentId: z.string().uuid().optional(),
+        channel: z.string().min(1).max(100).optional(),
+      }),
+    },
     responses: {
       200: {
         description: "Pending approval decisions for the workspace",

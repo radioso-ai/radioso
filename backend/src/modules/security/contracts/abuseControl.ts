@@ -30,6 +30,8 @@ export interface AbuseControlConsumptionInput {
 
 export interface AbuseControlConsumption {
   entry: AbuseControlEntry;
+  /** Clock used by the repository when it made this admission decision. */
+  evaluatedAt: Date;
   blocked: boolean;
   /** Sliding-window usage at `now`: the expiring window's count decays as the current one advances. */
   weightedAttemptCount: number;
@@ -64,6 +66,8 @@ export interface AbuseControlDecision {
   limit: number;
   remaining: number;
   resetAtMs: number;
+  /** Seconds to the reset from the repository clock that made the admission decision. */
+  resetAfterSeconds: number;
   retryAfterSeconds?: number;
 }
 

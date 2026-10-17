@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import { AccountAccessService } from "../../src/modules/account/services/accountAccessService.js";
 import { EmailVerificationService } from "../../src/modules/auth/services/emailVerificationService.js";
+import { AuthFunnelService } from "../../src/modules/auth/services/authFunnelService.js";
 import { PasswordResetService } from "../../src/modules/auth/services/passwordResetService.js";
 import { sha256, verifyPassword } from "../../src/modules/auth/domain/authPrimitives.js";
 import {
@@ -18,6 +19,7 @@ import {
   InMemoryAccountMembershipRepository,
   InMemoryAccountRepository,
   InMemoryEmailVerificationTokenRepository,
+  InMemoryAuthFunnelRepository,
   InMemoryPasswordResetTokenRepository,
   InMemoryFederatedIdentityRepository,
   InMemorySessionRepository,
@@ -71,6 +73,14 @@ const createHarness = async (options: { verified?: boolean; displayName?: string
   const federatedIdentityRepository = new InMemoryFederatedIdentityRepository();
   const passwordResetTokenRepository = new InMemoryPasswordResetTokenRepository();
   const emailVerificationTokenRepository = new InMemoryEmailVerificationTokenRepository();
+  const authFunnelRepository = new InMemoryAuthFunnelRepository({
+    emailVerificationTokens: emailVerificationTokenRepository,
+    users: userRepository,
+    sessions: sessionRepository,
+    listMemberships: (userId) => accountAccessService.listUserMemberships(userId),
+    passwordResetTokens: passwordResetTokenRepository,
+    federatedIdentities: federatedIdentityRepository,
+  });
   const mailDriver = new RecordingEmailDriver();
   const mailService = new EmailService(mailDriver, { fromEmail: "noreply@example.com", fromName: "Radioso" });
   const account = await accountRepository.create({
@@ -95,7 +105,7 @@ const createHarness = async (options: { verified?: boolean; displayName?: string
       accountRepository,
       userRepository,
       sessionRepository,
-      federatedIdentityRepository,
+      authFunnelRepository,
       accountAccessService,
       workspaceService,
       passwordResetTokenRepository,
@@ -110,6 +120,8 @@ const createHarness = async (options: { verified?: boolean; displayName?: string
       mailService,
       responsePaddingMs: 0,
     }),
+    authFunnelService: new AuthFunnelService({ env, repository: authFunnelRepository, auditService }),
+    authFunnelRepository,
     auditService,
     emailVerificationTokenRepository,
     mailDriver,
@@ -121,6 +133,25 @@ const createHarness = async (options: { verified?: boolean; displayName?: string
 };
 
 describe("PasswordResetService", () => {
+  it("consumes outstanding verification links and pending tickets when a reset reclaims an account", async () => {
+    const harness = await createHarness({ verified: false });
+    const challenge = await harness.authFunnelService.issueRegistrationChallenge({
+      userId: harness.user.id,
+      accountId: harness.user.id,
+    });
+    await harness.emailVerificationService.sendIssued({ email: harness.user.email, ...challenge.verification });
+    const verificationToken = challenge.verification.token;
+    const pendingToken = challenge.pendingCookie.split(";")[0]?.split("=")[1] ?? "";
+    await harness.passwordResetService.requestReset({ email: "ada@example.com" });
+    const resetToken = readTokenFromUrl(harness.mailDriver.messages[1]?.metadata?.resetUrl ?? "");
+
+    await harness.passwordResetService.confirmReset({ token: resetToken, password: "new-secure-password" });
+
+    await expect(harness.authFunnelService.verify({ token: verificationToken }))
+      .rejects.toMatchObject({ statusCode: 401 });
+    await expect(harness.authFunnelService.exchangePendingTicket(pendingToken)).resolves.toEqual({ ready: false });
+  });
+
   it("accepts unknown emails without sending reset mail", async () => {
     const { passwordResetService, mailDriver, passwordResetTokenRepository } = await createHarness();
 
@@ -271,7 +302,7 @@ describe("PasswordResetService", () => {
       accountRepository: new InMemoryAccountRepository(),
       userRepository: harness.userRepository,
       sessionRepository: harness.sessionRepository,
-      federatedIdentityRepository: new InMemoryFederatedIdentityRepository(),
+      authFunnelRepository: harness.authFunnelRepository,
       accountAccessService: new AccountAccessService(new InMemoryAccountMembershipRepository(), harness.auditService),
       workspaceService: new WorkspaceService(new InMemoryWorkspaceRepository(), harness.auditService),
       passwordResetTokenRepository: harness.passwordResetTokenRepository,
@@ -315,13 +346,13 @@ describe("EmailVerificationService", () => {
   });
 
   it("sends verification mail for unverified users and verifies the latest token", async () => {
-    const { emailVerificationService, mailDriver, user, userRepository } = await createHarness({
+    const { emailVerificationService, authFunnelService, mailDriver, user, userRepository } = await createHarness({
       verified: false,
     });
     await emailVerificationService.resend({ email: "ada@example.com" });
     const token = readTokenFromUrl(mailDriver.messages[0]?.metadata?.verificationUrl ?? "");
 
-    await expect(emailVerificationService.verify({ token })).resolves.toEqual({ verified: true });
+    await expect(authFunnelService.verify({ token })).resolves.toMatchObject({ verified: true });
 
     const updated = await userRepository.findById(user.id);
     expect(updated?.emailVerifiedAt).toBeInstanceOf(Date);

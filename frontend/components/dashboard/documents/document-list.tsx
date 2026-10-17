@@ -216,6 +216,7 @@ export function DocumentList({
   onOpenCreate,
   onDelete,
   onRetry,
+  onResumeSetup,
 }: {
   isLoading: boolean
   totalDocuments: number
@@ -238,6 +239,7 @@ export function DocumentList({
   onOpenCreate: () => void
   onDelete: (document: DocumentSummary) => void
   onRetry: (documentId: string) => void
+  onResumeSetup: () => void
 }) {
   const totalPages = Math.max(1, Math.ceil(totalDocuments / pageSize))
   const safeCurrentPage = Math.min(currentPage, totalPages)
@@ -280,7 +282,10 @@ export function DocumentList({
           <Button size="sm" variant="ghost" asChild>
             <Link
               href={buildDashboardHref(accountId, { ...routeState, section: 'agents', agentTab: 'chat' })}
-              onClick={onboarding.markActive}
+              onClick={(event) => {
+                event.preventDefault()
+                onResumeSetup()
+              }}
             >
               Resume setup
             </Link>

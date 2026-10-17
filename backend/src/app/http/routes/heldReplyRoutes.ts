@@ -19,6 +19,7 @@ const DEFAULT_PAGE_SIZE = 50;
 export const listHeldRepliesQuerySchema = z.object({
   attention: z.enum(["open", "all"]).optional(),
   agentId: z.string().uuid().optional(),
+  channel: z.string().trim().min(1).max(100).optional(),
   cursor: z.string().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(100).optional(),
 }).strict();
@@ -68,6 +69,7 @@ const traceOf = (heldReply: HeldReplyView, review: ReviewTurnAuditRecord | null)
 const presentHeldReply = (heldReply: HeldReplyView, review: ReviewTurnAuditRecord | null) => ({
   id: heldReply.id,
   conversationId: heldReply.conversationId,
+  channel: heldReply.sourceChannel,
   agentId: heldReply.agentId,
   state: heldReply.state,
   holdReason: heldReply.holdReason,
@@ -139,6 +141,7 @@ export const createHeldReplyRoutes = (dependencies: HeldReplyRouteDependencies):
     const page = await heldReplies.list(actor, {
       attention: query.attention ?? "open",
       agentId: query.agentId,
+      channel: query.channel,
       cursor: query.cursor,
       limit: query.limit ?? DEFAULT_PAGE_SIZE,
     });

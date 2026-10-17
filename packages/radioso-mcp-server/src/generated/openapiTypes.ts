@@ -155,6 +155,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/email-verification/pending-session": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Exchange a pending registration ticket for a session
+         * @description Uses the short-lived httpOnly pending-registration cookie. Returns the same response shape when the cookie is missing, invalid, expired, used, or waiting for verification.
+         */
+        post: operations["exchangePendingRegistrationSession"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/auth/session": {
         parameters: {
             query?: never;
@@ -795,6 +815,24 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/workspace/setup-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get workspace setup state and outcome checklist */
+        get: operations["getWorkspaceSetupState"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update persisted workspace setup state */
+        patch: operations["updateWorkspaceSetupState"];
         trace?: never;
     };
     "/api/v1/workspace/summary": {
@@ -4662,6 +4700,11 @@ export interface components {
             workspaceName: string;
             workspacePublicRouteKey: string;
             requiresEmailVerification: boolean;
+            /**
+             * Format: uri
+             * @description Development-only verification URL. Absent unless explicitly enabled in a development runtime.
+             */
+            developmentVerificationUrl?: string;
         };
         LoginResponse: {
             /** Format: uuid */
@@ -4700,6 +4743,9 @@ export interface components {
             /** @enum {boolean} */
             verified: true;
         };
+        PendingRegistrationSessionResponse: {
+            ready: boolean;
+        };
         Workspace: {
             /** Format: uuid */
             id: string;
@@ -4725,6 +4771,21 @@ export interface components {
         WorkspaceListResponse: {
             workspaces: components["schemas"]["Workspace"][];
         };
+        WorkspaceSetupState: {
+            purpose: string | null;
+            dismissed: boolean;
+            skippedSteps: ("purpose" | "documents" | "conversation" | "directives_or_routines" | "notify_destination" | "credential")[];
+            shouldShowFirstRun: boolean;
+            hasDirectivesOrRoutines: boolean;
+            hasNotifyDestination: boolean;
+            hasNotifyDeliveryConfirmed: boolean;
+            hasCredential: boolean;
+        };
+        UpdateWorkspaceSetupStateRequest: {
+            purpose?: string | null;
+            dismissed?: boolean;
+            skippedSteps?: ("purpose" | "documents" | "conversation" | "directives_or_routines" | "notify_destination" | "credential")[];
+        };
         WorkspaceSummaryResponse: {
             documentCount: number;
             readyDocumentCount: number;
@@ -4738,6 +4799,7 @@ export interface components {
             hasCompletedChat: boolean;
             sampleDocumentsImported: boolean;
             websiteCrawlerEnabled: boolean;
+            setup: components["schemas"]["WorkspaceSetupState"];
         };
         RegisterRequest: {
             /** Format: email */
@@ -10069,6 +10131,8 @@ export interface components {
             id: string;
             /** Format: uuid */
             conversationId: string;
+            /** @description The conversation's source channel; null when its conversation record is unavailable. */
+            channel: string | null;
             /**
              * Format: uuid
              * @description The agent whose review wrote the draft.
@@ -10164,6 +10228,7 @@ export interface components {
             deadline: string | null;
             /** Format: date-time */
             createdAt: string;
+            channel: string | null;
         };
         PendingApprovalDecisionListResponse: {
             decisions: components["schemas"]["PendingApprovalDecision"][];
@@ -10899,7 +10964,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Account created; email verification may be required before sign-in */
+            /** @description Account created; when email verification is required, a pending-registration cookie is also issued */
             201: {
                 headers: {
                     [name: string]: unknown;
@@ -11085,7 +11150,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Email address verified */
+            /** @description Email address verified and a session cookie established */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -11138,6 +11203,35 @@ export interface operations {
             };
             /** @description Request validation failed */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    exchangePendingRegistrationSession: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pending registration status returned; a ready response also establishes the session cookie */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingRegistrationSessionResponse"];
+                };
+            };
+            /** @description Rate limit exceeded */
+            429: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -14395,6 +14489,50 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getWorkspaceSetupState: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Workspace setup state returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSetupState"];
+                };
+            };
+        };
+    };
+    updateWorkspaceSetupState: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateWorkspaceSetupStateRequest"];
+            };
+        };
+        responses: {
+            /** @description Workspace setup state updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSetupState"];
                 };
             };
         };
@@ -24937,6 +25075,8 @@ export interface operations {
                 cursor?: string;
                 sourceScope?: "end_user" | "operator_test" | "all";
                 ownership?: "human_owned";
+                agentId?: string;
+                channel?: string;
             };
             header?: never;
             path?: never;
@@ -25851,6 +25991,7 @@ export interface operations {
             query?: {
                 state?: "open" | "all";
                 agentId?: string;
+                channel?: string;
                 cursor?: string;
                 limit?: number;
             };
@@ -26041,6 +26182,7 @@ export interface operations {
             query?: {
                 attention?: "open" | "all";
                 agentId?: string;
+                channel?: string;
                 cursor?: string;
                 limit?: number;
             };
@@ -26288,7 +26430,10 @@ export interface operations {
     };
     listPendingDecisions: {
         parameters: {
-            query?: never;
+            query?: {
+                agentId?: string;
+                channel?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;

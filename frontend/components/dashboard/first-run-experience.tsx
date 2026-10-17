@@ -396,12 +396,15 @@ function FirstRunExperienceContent({ accountId, onboarding }: FirstRunExperience
                       size="sm"
                       onClick={() => {
                         trackOnboardingAnalytics('onboarding.chat_opened')
-                        onboarding.markCompleted()
-                        router.push(buildDashboardHref(accountId, {
-                          section: 'agents',
-                          workspaceId: activeWorkspaceId ?? undefined,
-                          workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
-                        }))
+                        void onboarding.markCompleted().then((persisted) => {
+                          if (persisted) {
+                            router.push(buildDashboardHref(accountId, {
+                              section: 'agents',
+                              workspaceId: activeWorkspaceId ?? undefined,
+                              workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
+                            }))
+                          }
+                        })
                       }}
                     >
                       <MessageSquareText className="mr-2 h-4 w-4" />
@@ -431,7 +434,7 @@ function FirstRunExperienceContent({ accountId, onboarding }: FirstRunExperience
           <div className="mt-4 flex justify-end">
             <Button size="sm" variant="ghost" onClick={() => {
               trackOnboardingAnalytics('onboarding.skipped')
-              onboarding.markCompleted()
+              void onboarding.markCompleted()
             }}>
               Skip
             </Button>

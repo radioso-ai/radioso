@@ -99,8 +99,15 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
           await dependencies.realtimePublisherLifecycle.shutdown();
         } finally {
           try {
-            await dependencies.applicationModules.shutdownAll();
-            await dependencies.closeApprovalResumeEffectJournal();
+            try {
+              await dependencies.applicationModules.shutdownAll();
+            } finally {
+              try {
+                await dependencies.closeApprovalResumeEffectJournal();
+              } finally {
+                await dependencies.closeAbuseControlRepository?.();
+              }
+            }
           } finally {
             await stopRuntimeTracing();
           }

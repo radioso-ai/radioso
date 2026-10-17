@@ -86,6 +86,7 @@ describeIntegration("Personal credential lifecycle deletion", () => {
       userRepository: {} as never,
       sessionRepository: {} as never,
       federatedIdentityRepository: {} as never,
+      authFunnelRepository: { recoverFederatedUser: async () => null },
       workspaceService: workspace,
       accountAccessService: access,
       accountInvitationService: {} as never,

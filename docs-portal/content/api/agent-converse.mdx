@@ -1,0 +1,41 @@
+---
+title: "Agent converse API"
+description: "Exchange a credential or public id for a converse session, invoke an agent or an exposed routine, and read a handoff reply."
+last_updated: 2026-10-13
+---
+
+# Agent converse API
+
+Use this API when your service calls one Radioso agent directly instead of going through a standalone MCP client. It gives the caller a short-lived session bound to that agent, then exposes one request-response route for messages and exposed routines plus a cursor-based update read for human handoffs.
+
+## Start a session
+
+Send one of two identifiers to `POST /api/v1/mcp/converse/session`:
+
+- `launchToken` is an MCP credential issued from **Channels → MCP**. It is appropriate when the operator chooses each caller.
+- `publicId` is the address copied from **Share with agent developers**. It opens a credential-free session only when the agent allows open access.
+
+The response returns `sessionToken`, `expiresAt`, the agent identity, and the conversation id. Send the session token as a bearer on later calls. A public-id session stops working when the operator closes open access or rotates the public id.
+
+## Converse and invoke routines
+
+`POST /api/v1/mcp/converse/ask` accepts either `{ "message": "..." }` or `{ "routine": { "toolName": "...", "input": {} } }`. Both return the agent reply envelope: answer coverage, ownership, routine status, invocation outcome when applicable, and trace id.
+
+Read `GET /api/v1/mcp/converse/tools` before invoking a routine. It returns the current published tool descriptor for every routine the operator exposes. Input must match that descriptor's JSON Schema.
+
+## Continue after a handoff
+
+`GET /api/v1/mcp/converse/messages?cursor=<opaque>&waitMs=<0..25000>` returns new messages and current ownership. Keep the opaque cursor from the prior response. A long poll can return an empty `messages` array at its deadline; ask again with the same cursor.
+
+Use [Connect a calling agent](/guides/agent-converse) for the MCP tool equivalents and reply-envelope examples. The [API Reference](/api-reference) holds every request and response schema.
+
+## Common failure modes
+
+- A `401` means the credential or session belongs to another agent, has expired, or has been revoked.
+- A `404 routine_tool_unknown` means the routine is not exposed in the published release that owns this conversation.
+- A `400 routine_invocation_invalid` identifies the input fields that do not match the exposed routine schema.
+
+## Read next
+
+- [Connect a calling agent](/guides/agent-converse) — use the same contract through MCP.
+- [Publish and open an agent](/guides/publish-an-agent) — publish the public id and discovery documents used for open access.

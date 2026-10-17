@@ -1,7 +1,7 @@
 {
   "generatedFrom": "docs-portal/content",
   "citationBase": "https://docs.radioso.ai",
-  "pageCount": 53,
+  "pageCount": 60,
   "pages": [
     {
       "slug": "api",
@@ -117,6 +117,42 @@
           "id": "read-next",
           "heading": "Read next",
           "body": "* [Auth and sessions](https://docs.radioso.ai/api/auth-and-sessions)\n* [Personal tokens and service accounts](https://docs.radioso.ai/api/workspaces-and-tokens)\n* [API Reference](https://docs.radioso.ai/api-reference)"
+        }
+      ]
+    },
+    {
+      "slug": "api/agent-converse",
+      "url": "https://docs.radioso.ai/api/agent-converse",
+      "title": "Agent converse API",
+      "description": "Exchange a credential or public id for a converse session, invoke an agent or an exposed routine, and read a handoff reply.",
+      "section": "API reference",
+      "lastUpdated": "2026-10-13",
+      "intro": "Use this API when your service calls one Radioso agent directly instead of going through a standalone MCP client. It gives the caller a short-lived session bound to that agent, then exposes one request-response route for messages and exposed routines plus a cursor-based update read for human handoffs.",
+      "sections": [
+        {
+          "id": "start-a-session",
+          "heading": "Start a session",
+          "body": "Send one of two identifiers to `POST /api/v1/mcp/converse/session`:\n\n* `launchToken` is an MCP credential issued from **Channels → MCP**. It is appropriate when the operator chooses each caller.\n* `publicId` is the address copied from **Share with agent developers**. It opens a credential-free session only when the agent allows open access.\n\nThe response returns `sessionToken`, `expiresAt`, the agent identity, and the conversation id. Send the session token as a bearer on later calls. A public-id session stops working when the operator closes open access or rotates the public id."
+        },
+        {
+          "id": "converse-and-invoke-routines",
+          "heading": "Converse and invoke routines",
+          "body": "`POST /api/v1/mcp/converse/ask` accepts either `{ \"message\": \"...\" }` or `{ \"routine\": { \"toolName\": \"...\", \"input\": {} } }`. Both return the agent reply envelope: answer coverage, ownership, routine status, invocation outcome when applicable, and trace id.\n\nRead `GET /api/v1/mcp/converse/tools` before invoking a routine. It returns the current published tool descriptor for every routine the operator exposes. Input must match that descriptor's JSON Schema."
+        },
+        {
+          "id": "continue-after-a-handoff",
+          "heading": "Continue after a handoff",
+          "body": "`GET /api/v1/mcp/converse/messages?cursor=<opaque>&waitMs=<0..25000>` returns new messages and current ownership. Keep the opaque cursor from the prior response. A long poll can return an empty `messages` array at its deadline; ask again with the same cursor.\n\nUse [Connect a calling agent](https://docs.radioso.ai/guides/agent-converse) for the MCP tool equivalents and reply-envelope examples. The [API Reference](https://docs.radioso.ai/api-reference) holds every request and response schema."
+        },
+        {
+          "id": "common-failure-modes",
+          "heading": "Common failure modes",
+          "body": "* A `401` means the credential or session belongs to another agent, has expired, or has been revoked.\n* A `404 routine_tool_unknown` means the routine is not exposed in the published release that owns this conversation.\n* A `400 routine_invocation_invalid` identifies the input fields that do not match the exposed routine schema."
+        },
+        {
+          "id": "read-next",
+          "heading": "Read next",
+          "body": "* [Connect a calling agent](https://docs.radioso.ai/guides/agent-converse) — use the same contract through MCP.\n* [Publish and open an agent](https://docs.radioso.ai/guides/publish-an-agent) — publish the public id and discovery documents used for open access."
         }
       ]
     },
@@ -861,9 +897,14 @@
       "title": "Connect a calling agent",
       "description": "Read the reply envelope ask_agent returns, call an exposed routine as a typed tool, and come back for a human's reply after a handoff.",
       "section": "Guides",
-      "lastUpdated": "2026-09-22",
+      "lastUpdated": "2026-10-13",
       "intro": "Another AI agent can hold a conversation with one of yours and act on what comes back. It sends a message through `ask_agent`, or calls a routine you have exposed as a named tool, and gets a structured reply envelope beside the prose: what the answer covered, who owns the conversation, and where a routine landed. That envelope is what lets a calling model decide its next move instead of parsing sentences.\n\nStart with [MCP server](https://docs.radioso.ai/guides/mcp-server) to issue the credential and point a client at the server, or with [Publish and open an agent](https://docs.radioso.ai/guides/publish-an-agent) if you want callers to reach the agent with no credential at all. This page covers what the client does once it is connected.",
       "sections": [
+        {
+          "id": "share-an-open-connection",
+          "heading": "Share an open connection",
+          "body": "When **Allow connecting without a credential** is on, **Channels → MCP** includes **Share with agent developers**. Copy the agent endpoint or its discovery card into your own developer guide, or copy one of the Claude, ChatGPT, Cursor, or OpenAI Responses API examples. The examples contain the public id in the URL and no secret; they work only while open access remains enabled.\n\nThe discovery card is useful when a caller first needs to learn what the agent does and which routine tools it exposes. The endpoint is useful when the caller already knows which agent it needs. If you turn open access off, issue an MCP credential from the same card and give the developer the credential-specific configuration instead."
+        },
         {
           "id": "agent-converse-setup",
           "heading": "Agent converse setup",
@@ -938,7 +979,7 @@
         {
           "id": "start-points",
           "heading": "Start points",
-          "body": "* [API first success](https://docs.radioso.ai/quickstarts/api-first-success)\n* [API Reference](https://docs.radioso.ai/api-reference)\n* [Public chat and embed API](https://docs.radioso.ai/api/public-chat-and-embed)"
+          "body": "* [Your first API answer](https://docs.radioso.ai/quickstarts/api-first-success)\n* [API Reference](https://docs.radioso.ai/api-reference)\n* [Public chat and embed API](https://docs.radioso.ai/api/public-chat-and-embed)"
         }
       ]
     },
@@ -1383,12 +1424,12 @@
       "description": "Self-hosted conversational agents that answer from your own data, act through your tools, and hand off to a person — inside the rules you author.",
       "section": "Overview",
       "lastUpdated": null,
-      "intro": "Radioso is a self-hosted platform for conversational agents. An agent answers from your own data with citations, acts through your tools by following the procedures you author, and hands off to a person when it should — inside the rules you set. You can reach the same agent from the app, API, SDK, MCP, public chat, or the website widget.\n\nChoose one path first: evaluate locally, integrate through the API, or launch the website embed.",
+      "intro": "Radioso is a self-hosted platform for conversational agents. An agent answers from your own data with citations, acts through your tools by following the procedures you author, and hands off to a person when it should — inside the rules you set. You can reach the same agent from the app, API, SDK, MCP, public chat, or the website widget.\n\nFollow the operator path from a local stack through a grounded answer, an acting agent, team access, and production preparation. The API guide is the parallel path for scripts and services.",
       "sections": [
         {
           "id": "choose-your-path",
           "heading": "Choose your path",
-          "body": "[Evaluate locally](https://docs.radioso.ai/quickstarts/run-locally)\n\nBring up the full stack with Docker, create or join a workspace, upload a document, and verify one agent answer in your own environment.\n\n[Launch the website embed](https://docs.radioso.ai/quickstarts/website-embed)\n\nConfigure the Enterprise widget, allow exact origins, verify session bootstrap, and test both approved and blocked origins before rollout.\n\n[Integrate API-first](https://docs.radioso.ai/quickstarts/api-first-success)\n\nCreate an account, issue an API credential in Workspace settings, upload content, and ask a question with plain HTTP or the TypeScript SDK."
+          "body": "[Start here](https://docs.radioso.ai/operators/start-here)\n\nFollow the full operator chain: run locally, get a grounded answer, create an agent, make it act, embed it, invite the team, and prepare for production.\n\n[Evaluate locally](https://docs.radioso.ai/quickstarts/run-locally)\n\nBring up the full stack with Docker, then upload one document and verify a grounded answer in your own environment.\n\n[Integrate API-first](https://docs.radioso.ai/quickstarts/api-first-success)\n\nFollow the canonical role-bound register, credential, upload, and agent-chat sequence with plain HTTP or the TypeScript SDK."
         },
         {
           "id": "what-success-looks-like",
@@ -1408,7 +1449,7 @@
         {
           "id": "where-to-go-next",
           "heading": "Where to go next",
-          "body": "* If you want the fastest product evaluation path, start with [Run locally in 5 minutes](https://docs.radioso.ai/quickstarts/run-locally).\n* If you already know the product shape and want customer-facing rollout, go to [Embed on your website](https://docs.radioso.ai/quickstarts/website-embed).\n* If you are integrating from your own application or scripts, use [API first success](https://docs.radioso.ai/quickstarts/api-first-success)."
+          "body": "* If you are operating the product, start with [Start here](https://docs.radioso.ai/operators/start-here).\n* If you are integrating from your own application or scripts, use [Your first API answer](https://docs.radioso.ai/quickstarts/api-first-success)."
         }
       ]
     },
@@ -2153,6 +2194,42 @@
       ]
     },
     {
+      "slug": "operators/mail-setup",
+      "url": "https://docs.radioso.ai/operators/mail-setup",
+      "title": "Set up transactional mail",
+      "description": "Configure Resend delivery for verification, password reset, invitations, and operator notifications in a self-hosted Radioso deployment.",
+      "section": "Operator guides",
+      "lastUpdated": "2026-10-13",
+      "intro": "Transactional mail carries email verification, password resets, teammate invitations, contact requests, and routine notices. A self-hosted deployment sends those messages through Resend when the mail driver and sender are configured together.",
+      "sections": [
+        {
+          "id": "configure-resend",
+          "heading": "Configure Resend",
+          "body": "1. In Resend, create an API key that can send from the domain you will use.\n2. Verify the sender domain in Resend.\n3. Set these values in the backend environment or the `.env` file used by your deployment:\n\n```dotenv\nMAIL_DRIVER=resend\nRESEND_MAIL_API_KEY=re_your_resend_api_key\nMAIL_FROM_EMAIL=notifications@example.com\nMAIL_FROM_NAME=\"Acme Support\"\n```\n\n4. Restart the backend and worker with the same values.\n5. Invite a test teammate from **Members**, or request a password reset, and confirm the message reaches the mailbox.\n\n`MAIL_FROM_EMAIL` is the verified sender address. `MAIL_FROM_NAME` defaults to `Radioso` when omitted. The worker also needs this mail configuration because it delivers contact and operator notices."
+        },
+        {
+          "id": "choose-the-driver-deliberately",
+          "heading": "Choose the driver deliberately",
+          "body": "The transactional-mail driver accepts three values:\n\n| `MAIL_DRIVER` | Use it for                                              | Delivery result                            |\n| ------------- | ------------------------------------------------------- | ------------------------------------------ |\n| `resend`      | A deployment that sends mail through Resend's API       | Resend accepts the message for delivery    |\n| `log`         | Local inspection of outbound messages                   | The backend writes the message to its log  |\n| `noop`        | Tests or an environment that discards outbound messages | The backend records an undispatched result |\n\nThe repository's `.env.example` sets `MAIL_DRIVER=log`. That value writes verification, reset, and invitation messages to the backend log for local inspection. Set `MAIL_DRIVER=resend` before testing a real invite or notice.\n\nThe driver reads `RESEND_MAIL_API_KEY`, `MAIL_FROM_EMAIL`, and `MAIL_FROM_NAME`. Resend delivery uses its HTTPS API; SMTP host, port, username, and password settings are outside this mail configuration surface."
+        },
+        {
+          "id": "verify-the-sender-and-diagnose-delivery",
+          "heading": "Verify the sender and diagnose delivery",
+          "body": "Send a teammate invitation from **Members**. The invitation dialog reports **Emailed to** when the provider accepts it and keeps a backup acceptance URL either way. The API reports the same fact as `emailDelivered`.\n\nWhen Resend rejects a message, inspect the sender domain and API-key permissions first. When the driver is `log` or `noop`, the delivery result stays undispatched by design. Contact and routine notices also appear in the conversation and operator activity, so the Inbox still shows the work that needs a person."
+        },
+        {
+          "id": "common-failure-modes",
+          "heading": "Common failure modes",
+          "body": "* The backend fails at startup with `RESEND_MAIL_API_KEY is required when MAIL_DRIVER is resend`. Add the key to the backend and worker environment.\n* Invitation delivery reports a failure. Check the verified sender address and Resend key, then share the dialog's acceptance URL with the teammate.\n* Confirm the worker has `MAIL_DRIVER=resend`, the key, and the same sender settings as the backend before testing a routine hand-off.\n* Use the Resend API settings above for transactional mail; this driver reads no SMTP configuration values."
+        },
+        {
+          "id": "read-next",
+          "heading": "Read next",
+          "body": "* [Invite your team](https://docs.radioso.ai/quickstarts/invite-team) — send and recover a teammate invitation.\n* [Make your agent act](https://docs.radioso.ai/quickstarts/make-it-act) — deliver routine hand-offs to your team.\n* [Deployment](https://docs.radioso.ai/operators/deployment) — place mail settings with the rest of the production configuration."
+        }
+      ]
+    },
+    {
       "slug": "operators/self-hosting-operations",
       "url": "https://docs.radioso.ai/operators/self-hosting-operations",
       "title": "Self-hosting operations",
@@ -2280,6 +2357,27 @@
       ]
     },
     {
+      "slug": "operators/start-here",
+      "url": "https://docs.radioso.ai/operators/start-here",
+      "title": "Start here",
+      "description": "Follow the operator path from a local Radioso stack through a grounded answer, an acting agent, team access, and production preparation.",
+      "section": "Operator guides",
+      "lastUpdated": "2026-10-13",
+      "intro": "This is the operator path for getting a useful agent in front of real people. Each step leaves you with something you can verify before you take the next one.\n\n1. [Run locally](https://docs.radioso.ai/quickstarts/run-locally) — start the dashboard, API, worker, and database.\n2. [Get your first grounded answer](https://docs.radioso.ai/quickstarts/first-answer) — upload a document and check its citation.\n3. [Create your first agent](https://docs.radioso.ai/quickstarts/first-agent) — give one agent a clear name and job.\n4. [Make your agent act](https://docs.radioso.ai/quickstarts/make-it-act) — deliver a notice and hand a conversation to a person.\n5. [Embed on your website](https://docs.radioso.ai/quickstarts/website-embed) — approve an origin and test the visitor experience.\n6. [Invite your team](https://docs.radioso.ai/quickstarts/invite-team) — bring in the people who handle the work.\n7. [Prepare for production](https://docs.radioso.ai/operators/deployment) — configure the services, secrets, storage, and operational controls for your environment.",
+      "sections": [
+        {
+          "id": "choose-a-side-path-when-it-fits",
+          "heading": "Choose a side path when it fits",
+          "body": "* [Your first API answer](https://docs.radioso.ai/quickstarts/api-first-success) is the canonical register, role-bound credential, upload, and agent-chat path for a script or service.\n* [Set up transactional mail](https://docs.radioso.ai/operators/mail-setup) prepares verification, password reset, and invitation delivery.\n* [Human takeover](https://docs.radioso.ai/operators/human-takeover) explains Inbox ownership after a hand-off.\n* [Self-hosting operations](https://docs.radioso.ai/operators/self-hosting-operations) covers backup, restore, upgrades, and worker diagnosis."
+        },
+        {
+          "id": "common-failure-modes",
+          "heading": "Common failure modes",
+          "body": "* Wait for a document to reach **Ready** before judging the answer.\n* An external notice appears in logs. Configure a Resend mail driver and verified sender before testing the hand-off.\n* An embedded chat fails on a local site. Compare the exact allowed origin, including its host and port, with the browser URL."
+        }
+      ]
+    },
+    {
       "slug": "operators/visitor-data",
       "url": "https://docs.radioso.ai/operators/visitor-data",
       "title": "Visitor data",
@@ -2379,11 +2477,11 @@
     {
       "slug": "quickstarts/api-first-success",
       "url": "https://docs.radioso.ai/quickstarts/api-first-success",
-      "title": "API first success",
+      "title": "Your first API answer",
       "description": "Reach first success with plain HTTP by registering, issuing scoped credentials, uploading content, and asking an agent a grounded question.",
       "section": "Quickstarts",
-      "lastUpdated": "2026-09-02",
-      "intro": "You can reach a grounded answer without using the dashboard after setup. This path is for teams that want agent behavior behind their own scripts, jobs, or UI. A personal token uploads the workspace document; a role-free REST agent credential talks to one agent.",
+      "lastUpdated": "2026-10-13",
+      "intro": "You can reach a grounded answer from a script, job, or product UI. This is the canonical register, credential, upload, and ask sequence: a personal token uploads the workspace document, while a role-free REST agent credential talks to one agent.",
       "sections": [
         {
           "id": "before-you-start",
@@ -2403,7 +2501,7 @@
         {
           "id": "register",
           "heading": "Register",
-          "body": "```bash\ncurl -sS https://api.radioso.ai/api/v1/auth/registration\n```\n\nThe response is `{ \"available\": true }` or `{ \"available\": false }`. Open-source registration is available only until the first organization has been created. Later users join that organization by invitation. Enterprise Edition keeps registration available.\n\nWhen registration is available:\n\n```bash\ncurl -sS \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"email\":\"you@example.com\",\"password\":\"verysecurepassword\"}' \\\n  https://api.radioso.ai/api/v1/auth/register\n```\n\nRegistration returns bootstrap data such as `workspaceId` and a `requiresEmailVerification` boolean. Production returns `true`, sends a verification email, and waits for verification before login. The development stack returns `false` and establishes the session in the registration response.\n\nIf the user already exists, log in and save the session cookie:\n\n```bash\ncurl -sS -c cookies.txt \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"email\":\"you@example.com\",\"password\":\"verysecurepassword\"}' \\\n  https://api.radioso.ai/api/v1/auth/login\n```"
+          "body": "```bash\ncurl -sS https://api.radioso.ai/api/v1/auth/registration\n```\n\nThe response is `{ \"available\": true }` or `{ \"available\": false }`. Open-source registration is available only until the first organization has been created. Later users join that organization by invitation. Enterprise Edition keeps registration available.\n\nWhen registration is available:\n\n```bash\ncurl -sS \\\n  -c cookies.txt \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"email\":\"you@example.com\",\"password\":\"verysecurepassword\"}' \\\n  https://api.radioso.ai/api/v1/auth/register\n```\n\nRegistration returns bootstrap data such as `workspaceId` and a `requiresEmailVerification` boolean. A development stack with `AUTH_AUTO_VERIFY_EMAIL=true` returns `false` and saves the registration session in `cookies.txt`.\n\nIn production, `requiresEmailVerification` is `true`. Open the verification link from the email, then log in and save the session cookie before creating a credential:\n\n```bash\ncurl -sS -c cookies.txt \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"email\":\"you@example.com\",\"password\":\"verysecurepassword\"}' \\\n  https://api.radioso.ai/api/v1/auth/login\n```\n\nAn existing user follows the same login step."
         },
         {
           "id": "issue-a-personal-api-credential",
@@ -2438,7 +2536,141 @@
         {
           "id": "what-to-do-next",
           "heading": "What to do next",
-          "body": "* If the API behavior looks right, continue with [TypeScript SDK getting started](https://docs.radioso.ai/sdk/typescript-getting-started).\n* If the answer quality is weak, review [Document upload](https://docs.radioso.ai/guides/document-upload) and [Agents and skills](https://docs.radioso.ai/api/agents-and-skills)."
+          "body": "* If the API behavior looks right, continue with [TypeScript SDK getting started](https://docs.radioso.ai/sdk/typescript-getting-started).\n* For the dashboard operator path, continue with [Create your first agent](https://docs.radioso.ai/quickstarts/first-agent).\n* If the answer quality is weak, review [Document upload](https://docs.radioso.ai/guides/document-upload) and [Agents and skills](https://docs.radioso.ai/api/agents-and-skills)."
+        }
+      ]
+    },
+    {
+      "slug": "quickstarts/first-agent",
+      "url": "https://docs.radioso.ai/quickstarts/first-agent",
+      "title": "Create your first agent",
+      "description": "Create a dashboard agent, give it a clear identity and purpose, test the draft, and publish its first revision.",
+      "section": "Quickstarts",
+      "lastUpdated": "2026-10-13",
+      "intro": "Create a separate agent when one audience needs its own purpose, tone, or action rules. This guide creates **Acme Support**, an agent that answers questions about the refund policy you added in the previous quickstart.",
+      "sections": [
+        {
+          "id": "create-the-agent",
+          "heading": "Create the agent",
+          "body": "1. In the dashboard sidebar, select **New agent**.\n2. In **Create agent**, enter `Acme Support` in **Name**.\n3. Choose **Create manually**.\n\nThe dashboard opens the agent's **Profile**. **Name** identifies the agent to operators; **Assistant name** is the name visitors see in chat."
+        },
+        {
+          "id": "give-it-a-job",
+          "heading": "Give it a job",
+          "body": "In **Profile**, set **Assistant name** to `Acme Support`. Under **Instructions for the assistant**, enter:\n\n> Help customers understand Acme's refund policy. Answer from the available documents. Keep each answer practical and concise.\n\nChoose **Save draft** after the save indicator stops showing a pending change. The draft is private, so it gives you space to test the wording before visitors use it."
+        },
+        {
+          "id": "test-and-publish",
+          "heading": "Test and publish",
+          "body": "1. Open **Test Chat** and ask `What is the refund window?`.\n2. Confirm the response uses the refund-policy wording and its citation.\n3. Choose **Review & publish**.\n4. Read the draft review, then choose **Publish revision**.\n\nInstructions, directives, routines, and context selections ship together in a revision. Agent name, channels, and skills each have their own live setting path, so use the review to check the behavior you are putting in front of customers."
+        },
+        {
+          "id": "common-failure-modes",
+          "heading": "Common failure modes",
+          "body": "* The draft has unsaved changes. Choose **Save draft** before opening **Review & publish**.\n* Confirm the refund-policy document reads **Ready** in [Get your first grounded answer](https://docs.radioso.ai/quickstarts/first-answer) before testing chat.\n* The published answer keeps an earlier behavior in an existing conversation. Start a fresh conversation to test the published revision."
+        },
+        {
+          "id": "read-next",
+          "heading": "Read next",
+          "body": "* [Make your agent act](https://docs.radioso.ai/quickstarts/make-it-act) — give the team a destination and hand a conversation to a person."
+        }
+      ]
+    },
+    {
+      "slug": "quickstarts/first-answer",
+      "url": "https://docs.radioso.ai/quickstarts/first-answer",
+      "title": "Get your first grounded answer",
+      "description": "Upload one policy document in the dashboard and confirm that an agent answers from it with a citation.",
+      "section": "Quickstarts",
+      "lastUpdated": "2026-10-13",
+      "intro": "Put one fact in front of your agent, then ask for that fact back. This gives you a useful baseline: you can see document processing finish, read an answer, and follow its citation to the source that supported it.\n\nUse a short document with an answer you can recognize. This example uses a refund policy:\n\n> Refunds are available within 14 days of purchase with proof of payment.",
+      "sections": [
+        {
+          "id": "add-the-document",
+          "heading": "Add the document",
+          "body": "1. In the dashboard sidebar, open **Knowledge Base → Documents**.\n2. Choose **Add**, then select **Import file** for a file or **Write document** to paste the refund policy as text.\n3. Give it the title `Refund policy`, then save or import it.\n4. Wait for its status to read **Ready**.\n\nThe worker extracts, chunks, and embeds the document before chat can use it. A **Ready** status means the answer test has evidence to work with.\n\n![The Documents list with uploaded files in Ready status, which confirms that they are available for a grounded answer.](/screenshots/dashboard-knowledge-documents.png)"
+        },
+        {
+          "id": "ask-the-question",
+          "heading": "Ask the question",
+          "body": "1. Select an agent in the sidebar.\n2. Open **Test Chat**.\n3. Ask: `What is the refund window?`\n4. Open the source control on the response and confirm it names **Refund policy**.\n\n![The Test Chat workbench answering a question with a grounded reply and source controls.](/screenshots/dashboard-agents-workbench.png)\n\nThe answer should name the 14-day window and cite the document you added. That gives you a concrete way to recognize future regressions: change the policy document, let it reach **Ready**, and ask the same question again."
+        },
+        {
+          "id": "common-failure-modes",
+          "heading": "Common failure modes",
+          "body": "* Wait for the document to reach **Ready**, then start a fresh Test Chat turn.\n* Add a valid provider key under **Settings → Providers** before embedding or answer generation.\n* Ask a question whose answer appears plainly in the document, then inspect the cited source."
+        },
+        {
+          "id": "read-next",
+          "heading": "Read next",
+          "body": "* [Create your first agent](https://docs.radioso.ai/quickstarts/first-agent) — give a separate agent its own identity and instructions.\n* [Your first API answer](https://docs.radioso.ai/quickstarts/api-first-success) — use the role-bound credential model from a script or service."
+        }
+      ]
+    },
+    {
+      "slug": "quickstarts/invite-team",
+      "url": "https://docs.radioso.ai/quickstarts/invite-team",
+      "title": "Invite your team",
+      "description": "Invite a teammate from the dashboard, choose their organization role, and keep a shareable acceptance link for delivery recovery.",
+      "section": "Quickstarts",
+      "lastUpdated": "2026-10-13",
+      "intro": "Invite the people who will review hand-offs, test changes, and maintain the workspace. An owner or admin sends the invitation from the account menu. Each account member inherits their organization role on every workspace. A workspace grant can keep or raise that role for one workspace; it cannot restrict the organization role.\n\nTransactional mail carries the invite. Configure it before sending invitations with [Set up transactional mail](https://docs.radioso.ai/operators/mail-setup).",
+      "sections": [
+        {
+          "id": "send-an-invitation",
+          "heading": "Send an invitation",
+          "body": "1. Open the account menu at the bottom of the dashboard sidebar.\n2. Choose **Members**.\n3. Choose **Invite member**.\n4. Enter `teammate@example.com` in **Email address**.\n5. Choose **Member** for someone who needs assigned workspace access, or **Admin** for someone who manages members and workspaces.\n6. Choose **Send invite**.\n\nThe result includes a backup invite link and its seven-day expiry. Keep that link until the teammate joins. When delivery needs attention, the dialog labels it **Share invite link**, so you can deliver the same acceptance path through your team's normal channel."
+        },
+        {
+          "id": "review-the-teammate-s-workspace-role",
+          "heading": "Review the teammate's workspace role",
+          "body": "On **Members**, open the **Workspaces** tab. Owners have access to every workspace. A member receives their organization role in every workspace. Add a member or admin grant when that workspace needs a higher role for that teammate."
+        },
+        {
+          "id": "common-failure-modes",
+          "heading": "Common failure modes",
+          "body": "* The invitation reports an email delivery failure. Copy **Share invite link**, then review the Resend key and sender address in [Set up transactional mail](https://docs.radioso.ai/operators/mail-setup).\n* Add or adjust the teammate's role in the **Workspaces** tab after they join.\n* The invitation expires. Send another invitation from **Members**."
+        },
+        {
+          "id": "read-next",
+          "heading": "Read next",
+          "body": "* [Prepare for production](https://docs.radioso.ai/operators/deployment) — configure the deployment surfaces that carry your live traffic."
+        }
+      ]
+    },
+    {
+      "slug": "quickstarts/make-it-act",
+      "url": "https://docs.radioso.ai/quickstarts/make-it-act",
+      "title": "Make your agent act",
+      "description": "Configure a team notification destination and a routine hand-off so an agent can bring the right conversation to a person.",
+      "section": "Quickstarts",
+      "lastUpdated": "2026-10-13",
+      "intro": "An agent earns trust by knowing when a person should take over. Here, **Acme Support** notifies `support@example.com` when a routine hands off a refund question that needs a human.\n\nSet up transactional mail first so the destination receives the notice. [Set up transactional mail](https://docs.radioso.ai/operators/mail-setup) covers the delivery settings and a quick verification.",
+      "sections": [
+        {
+          "id": "add-a-notify-destination",
+          "heading": "Add a notify destination",
+          "body": "1. Open the agent's **Skills** tab.\n2. Choose **Add new skill**, then select **Notify Human**.\n3. Keep the generated name `contact_human`.\n4. Under **Delivery**, add `support@example.com` to **Recipient emails**.\n5. Choose **Create skill**.\n\n`contact_human` is the agent's default destination for contact requests and ending notices that use **Default**. An empty recipient list routes through the workspace owner's email. Owners and admins manage recipient lists; the form accepts up to 25 addresses. A webhook URL can accompany the email destination when your team also receives notifications in another system."
+        },
+        {
+          "id": "add-a-hand-off",
+          "heading": "Add a hand-off",
+          "body": "1. Open the agent's **Routines** tab and choose **New routine**.\n2. Name it `Refund review` and set **Activation trigger** to `A customer needs a person to review a refund request.`\n3. Add a chat step that asks the customer for their order number and the issue to review.\n4. Under **Endings**, choose **Add hand-off** and write a confirmation such as `I’m handing this to our support team.`\n5. Open the hand-off ending. **Notify the team** stays on for a hand-off. In **Send with**, choose `contact_human`.\n6. Choose **Save draft**, test the flow in **Test Chat**, then choose **Review & publish**.\n\n![The routine editor shows a multi-step intake flow with typed information and a hand-off ending.](/screenshots/dashboard-routine-editor.png)\n\n**Send with** stores the routine ending's `operatorNotice` destination. It can use **Default** or any enabled notify skill on that agent. The selected skill's recipients and webhook receive the notice, while **Replies go to** can connect an email field collected by the routine to the recipient's Reply action."
+        },
+        {
+          "id": "check-the-result",
+          "heading": "Check the result",
+          "body": "Start a fresh conversation and ask for a person. Complete the routine's questions. The agent confirms the hand-off, the team receives the notice, and the conversation appears in **Inbox** for a teammate to take over.\n\nEvery conversation can dispatch five contact requests or team notices. Each email attempt also counts against the workspace's UTC-day allowance. When that allowance is full, a configured webhook still receives the notice; when the conversation allowance is full, Radioso records the outcome for an operator to review."
+        },
+        {
+          "id": "common-failure-modes",
+          "heading": "Common failure modes",
+          "body": "* Set `MAIL_DRIVER=resend` and a valid sender as described in [Set up transactional mail](https://docs.radioso.ai/operators/mail-setup) before testing inbox delivery.\n* Ask an owner or admin to make a recipient-list change.\n* Check the activation trigger, ensure the routine is live, then test it in a fresh Test Chat conversation.\n* Use a real channel conversation when you are ready to verify delivery; private tests preview the hand-off."
+        },
+        {
+          "id": "read-next",
+          "heading": "Read next",
+          "body": "* [Embed on your website](https://docs.radioso.ai/quickstarts/website-embed) — put the published agent in front of visitors.\n* [Author a routine](https://docs.radioso.ai/guides/authoring-routines) — build richer intake and action flows."
         }
       ]
     },
@@ -2446,10 +2678,10 @@
       "slug": "quickstarts/run-locally",
       "url": "https://docs.radioso.ai/quickstarts/run-locally",
       "title": "Run locally in 5 minutes",
-      "description": "Start the full Radioso stack locally, initialize its organization, upload a document, and ask the first question.",
+      "description": "Start the full Radioso stack locally and open the dashboard, API, and worker on one machine.",
       "section": "Quickstarts",
-      "lastUpdated": "2026-09-03",
-      "intro": "This is the fastest way to see Radioso doing its job: one command, a local stack, and a grounded answer from your own document a few minutes later. You get the dashboard, the API, and the background worker on one machine, so you can upload real content and check the answers before you think about deployment.",
+      "lastUpdated": "2026-10-13",
+      "intro": "This is the fastest way to open Radioso on your machine. One command starts the dashboard, API, document worker, and database, ready for the first grounded answer.",
       "sections": [
         {
           "id": "prerequisites",
@@ -2459,37 +2691,27 @@
         {
           "id": "start-the-stack",
           "heading": "Start the stack",
-          "body": "On macOS or Linux:\n\n```bash\n./run-dev.sh\n```\n\nOn Windows, open PowerShell or Command Prompt in the repository root:\n\n```powershell\n.\\run-dev.cmd\n```\n\nThis is the bootstrap path, and it does the fiddly parts for you. It:\n\n* checks local prerequisites\n* creates or reuses `.env`\n* offers to store AI provider credentials; Claude setup also asks which supported provider should create document embeddings, and every key can be added later under Settings → Credentials\n* generates missing secrets such as `SESSION_COOKIE_SECRET`, `WORKSPACE_TOKEN_SECRET`, `PUBLIC_CHAT_SESSION_SECRET`, and `WORKER_TASK_AUTH_TOKEN`\n* configures uploaded document storage to use the local filesystem by default\n* builds and starts Postgres, the backend API, the background worker, and the frontend with Docker Compose\n* waits until the frontend and backend are reachable\n\nWhen it finishes, open:\n\n* App: `http://localhost:3000`\n* API: `http://localhost:8080`\n* Enterprise embed test harness: `http://127.0.0.1:4321` after running `node scripts/serve-embed-test-site.mjs`\n\nFor Enterprise Edition embed development on macOS or Linux, use `./run-ee-dev.sh` instead. It builds the commercial packages from `ee/packages`, generates the local EE frontend routes, configures the local backend, starts the same app and API URLs, and starts the embed test harness automatically. Enterprise host-service development requires a Unix-like shell. Both open-source launchers remove generated Enterprise routes before starting the OSS stack."
+          "body": "On macOS or Linux:\n\n```bash\n./run-dev.sh\n```\n\nOn Windows, open PowerShell or Command Prompt in the repository root:\n\n```powershell\n.\\run-dev.cmd\n```\n\nThis is the bootstrap path, and it does the fiddly parts for you. It:\n\n* checks local prerequisites\n* creates or reuses `.env`\n* offers to store AI provider credentials; Claude setup also asks which supported provider should create document embeddings, and every key can be added later under Settings → Credentials\n* generates missing secrets such as `SESSION_COOKIE_SECRET`, `WORKSPACE_TOKEN_SECRET`, `PUBLIC_CHAT_SESSION_SECRET`, and `WORKER_TASK_AUTH_TOKEN`\n* configures uploaded document storage to use the local filesystem by default\n* builds and starts Postgres, the backend API, the background worker, and the frontend with Docker Compose\n* waits until the frontend and backend are reachable\n\nWhen it finishes, open:\n\n* App: `http://localhost:3000`\n* API: `http://localhost:8080`\n* Embed test harness: `http://127.0.0.1:4321` after running `node scripts/serve-embed-test-site.mjs`\n\nThe open-source local stack serves the dashboard and API. Start the harness separately when you reach [Embed on your website](https://docs.radioso.ai/quickstarts/website-embed). Enterprise host-service development uses `./run-ee-dev.sh` on macOS or Linux and starts its embed harness as part of that flow."
         },
         {
           "id": "pick-a-local-goal",
           "heading": "Pick a local goal",
-          "body": "You don't have to do everything at once. Pick the goal that matches why you're here.\n\n### Goal 1: evaluate the product UI\n\nOpen the app, register the first user on a new server or sign in, upload a document, and ask a question.\n\n### Goal 2: test the API contract\n\nUse the local backend to check registration availability, register the first user if needed, and log in. Issue a personal token for workspace document calls and a REST-audience agent credential for chat.\n\n### Goal 3: test the Enterprise website widget\n\nStart the local embed harness and verify both an approved origin and a blocked origin. The hosted widget routes are available when Enterprise Edition routes have been generated."
-        },
-        {
-          "id": "verify-first-success-in-the-app",
-          "heading": "Verify first success in the app",
-          "body": "1. Open `http://localhost:3000`\n2. On a new server, register the first user. Development verifies the account and signs it in automatically. Otherwise, sign in or accept an invitation\n3. Upload a document or let the starter documents finish processing\n4. Ask one suggested question\n\nThe worker takes a moment to chew through your upload. Give it until the status reads Ready, and the document is fair game for a retrieval test.\n\n![The Documents list with four uploaded files, each showing a green Ready status, so you can tell processing has finished before you test chat](/screenshots/dashboard-knowledge-documents.png)\n\nNow ask something you know the document answers. The Chat workbench is where you talk to your agent, and a good answer cites the source it came from rather than guessing.\n\n![The agent Chat workbench answering a shipping question with a grounded reply, a Sources control, and suggested follow-up questions](/screenshots/dashboard-agents-workbench.png)\n\nSuccess looks like this:\n\n* the frontend loads\n* you can initialize a new server or sign in to an existing one\n* you can upload a document\n* Radioso returns an answer grounded in that document"
-        },
-        {
-          "id": "verify-first-success-through-the-api",
-          "heading": "Verify first success through the API",
-          "body": "You don't need to open the web app at all. Use role-aware credentials for workspace operations and a role-free credential bound to one agent for chat.\n\nCheck whether this deployment allows open registration:\n\n```bash\ncurl -sS http://localhost:8080/api/v1/auth/registration\n```\n\nOn a new open-source server, this returns `{ \"available\": true }`. Register the first user:\n\n```bash\ncurl -sS \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"email\":\"you@example.com\",\"password\":\"verysecurepassword\"}' \\\n  http://localhost:8080/api/v1/auth/register\n```\n\nRegistration creates the open-source server's sole organization and default workspace. The development stack returns `requiresEmailVerification: false` and sets the session cookie immediately. Production returns `requiresEmailVerification: true`, sends a verification email, and waits for verification before login.\n\nAfter the first organization exists, open-source registration availability is `false`. Later users join the existing organization by invitation. Enterprise Edition keeps open registration available and supports additional organizations. In either edition, authorized users can create more workspaces inside an organization.\n\nLog in and save the session cookie:\n\n```bash\ncurl -sS -c cookies.txt \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"email\":\"you@example.com\",\"password\":\"verysecurepassword\"}' \\\n  http://localhost:8080/api/v1/auth/login\n```\n\nIssue a personal token with the session cookie. An expiry is required and can be no more than 90 days away:\n\n```bash\npersonal_expiry=\"$(node -p 'new Date(Date.now() + 30 * 86400000).toISOString()')\"\ncurl -sS -b cookies.txt -X POST \\\n  -H 'Content-Type: application/json' \\\n  -H 'X-Radioso-CSRF: 1' \\\n  -H 'X-Workspace-Id: <workspace-id>' \\\n  -d \"{\\\"label\\\":\\\"Local development\\\",\\\"roleCeiling\\\":\\\"member\\\",\\\"expiresAt\\\":\\\"${personal_expiry}\\\"}\" \\\n  http://localhost:8080/api/v1/account/workspaces/<workspace-id>/api-access/personal-tokens\n```\n\nStore the response's `secret` value outside the browser. That personal token authorizes eligible workspace APIs. For chat, create a separate REST credential from the agent's **Channels → API** card and call `POST /api/v1/agents/{agentId}/chat`; [API first success](https://docs.radioso.ai/quickstarts/api-first-success) shows the complete sequence."
+          "body": "You don't have to do everything at once. Pick the goal that matches why you're here.\n\n### Goal 1: evaluate the product UI\n\nOpen the app, register the first user on a new server or sign in, then follow the dashboard onboarding path.\n\n### Goal 2: test the API contract\n\nUse the local backend to check registration availability, register the first user if needed, and log in. Issue a personal token for workspace document calls and a REST-audience agent credential for chat.\n\n### Goal 3: test the Enterprise website widget\n\nStart the local embed harness and verify both an approved origin and a blocked origin."
         },
         {
           "id": "what-local-development-changes",
           "heading": "What local development changes",
-          "body": "Local bootstrap tunes the stack for a fast look, not for mirroring every production constraint:\n\n* uploaded source files are stored on the local filesystem\n* Docker Compose runs the app, API, worker, and Postgres together\n* newly registered password users are verified automatically and signed in\n\nLocal setup is built for quick evaluation. When you move to production, storage, dispatch, and secrets are the surfaces that change."
+          "body": "Local bootstrap tunes the stack for a fast look, not for mirroring every production constraint:\n\n* uploaded source files are stored on the local filesystem\n* Docker Compose runs the app, API, worker, and Postgres together\n* newly registered password users are verified automatically and signed in"
         },
         {
           "id": "common-failure-modes",
           "heading": "Common failure modes",
-          "body": "* If the stack starts but answers fail, the usual cause is missing or invalid provider credentials in `.env`.\n* If upload works but chat ignores the new document, processing is probably still running. Check the document's status before you blame retrieval.\n* Production auth mail needs a delivery driver such as Resend. Development registration does not send a verification message because it verifies the new account automatically."
+          "body": "* If the stack starts but answers fail, the usual cause is missing or invalid provider credentials in `.env`.\n* If upload works but chat ignores the new document, processing is probably still running. Check the document's status before you blame retrieval.\n* Production auth mail needs a delivery driver such as Resend. Development registration verifies the new account automatically."
         },
         {
-          "id": "what-to-do-next",
-          "heading": "What to do next",
-          "body": "* If the local app looks right, continue with [API first success](https://docs.radioso.ai/quickstarts/api-first-success) or [Embed on your website](https://docs.radioso.ai/quickstarts/website-embed).\n* If you're trying to understand why answers look wrong, review [Document upload](https://docs.radioso.ai/guides/document-upload) and [Agents and skills](https://docs.radioso.ai/api/agents-and-skills)."
+          "id": "read-next",
+          "heading": "Read next",
+          "body": "* [Get your first grounded answer](https://docs.radioso.ai/quickstarts/first-answer) — upload one document and verify its citation.\n* [Your first API answer](https://docs.radioso.ai/quickstarts/api-first-success) — use the one canonical register, credential, upload, and ask sequence for scripts and services."
         }
       ]
     },
@@ -2545,7 +2767,7 @@
         {
           "id": "recommended-launch-sequence",
           "heading": "Recommended launch sequence",
-          "body": "### Enable anonymous chat and website embed\n\nThe embed flow depends on the workspace public-chat capability. If website embed is enabled but the workspace has no public chat token, launch still fails. Both live on the **Web chat** page under the agent's Channels section, in **Where it runs**: **Public link** carries the shareable URL, and **Website widget** carries the install snippet and allowed origins. The other channels — API, MCP, Slack, and WhatsApp — sit beside Web chat in the same sidebar group.\n\n![The agent Channels sidebar listing Web chat, API, MCP, Slack, and WhatsApp, with the Web chat page's Where it runs section showing the Public link toggle and its last-used status](/screenshots/dashboard-agent-channels.png)\n\n### Set the exact allowed origins\n\nAdd the full origin, including protocol, host, and port. `http://127.0.0.1:4321` and `http://localhost:4321` are different origins.\n\nUse **Allow all origins** only when the widget should launch from any site that has the install code. In settings this is stored as `*` in the allowed-origin list. Leaving the origin list empty is a deny-all state.\n\n### Install the launcher snippet\n\nUse the workspace embed snippet or script URL exposed by settings. The frontend serves the launcher script at `/radioso-embed.js`; it boots the widget with the public launch token and then loads server-side widget settings. Public launch-token rotation is managed from the signed-in dashboard and is separate from personal and service API credentials.\n\n### Test bootstrap and session reuse\n\nOpen the approved origin, confirm the launcher appears, open the widget, and confirm the chat can establish a session.\n\nThe browser sends its `Origin` header to the frontend session route. The frontend forwards that origin to the backend, which decides whether the launch is allowed.\n\nAfter a successful launch, the Website widget placement on the Web chat page shows when the website embed credential was last used. If an install code is exposed, rotate the credential — the old install code stops launching new sessions the moment the token changes, and the settings screen shows the new code to deploy.\n\n### Test the blocked path\n\nOpen the blocked origin and confirm the launcher cannot establish a valid embedded session there."
+          "body": "### Enable anonymous chat and website embed\n\nThe embed flow depends on the workspace public-chat capability. If website embed is enabled but the workspace has no public chat token, launch still fails. Both live on the **Web chat** page under the agent's Channels section, in **Where it runs**: **Public link** carries the shareable URL, and **Website widget** carries the install snippet and allowed origins. The other channels — API, MCP, Slack, and WhatsApp — sit beside Web chat in the same sidebar group.\n\n![The agent Channels sidebar listing Web chat, API, MCP, Slack, and WhatsApp, with the Web chat page's Where it runs section showing the Public link toggle and its last-used status](/screenshots/dashboard-agent-channels.png)\n\n### Set the exact allowed origins\n\nAdd the full origin, including protocol, host, and port. `http://127.0.0.1:4321` and `http://localhost:4321` are different origins.\n\nUse **Any website** only when the widget should launch from any site that has the install code. In settings this is stored as `*` in the allowed-origin list. Leaving the origin list empty is a deny-all state.\n\n### Install the launcher snippet\n\nUse the workspace embed snippet or script URL exposed by settings. The frontend serves the launcher script at `/radioso-embed.js`; it boots the widget with the public launch token and then loads server-side widget settings. Public launch-token rotation is managed from the signed-in dashboard and is separate from personal and service API credentials.\n\n### Test bootstrap and session reuse\n\nOpen the approved origin, confirm the launcher appears, open the widget, and confirm the chat can establish a session.\n\nThe browser sends its `Origin` header to the frontend session route. The frontend forwards that origin to the backend, which decides whether the launch is allowed.\n\nAfter a successful launch, the Website widget placement on the Web chat page shows when the website embed credential was last used. If an install code is exposed, rotate the credential — the old install code stops launching new sessions the moment the token changes, and the settings screen shows the new code to deploy.\n\n### Test the blocked path\n\nOpen the blocked origin and confirm the launcher cannot establish a valid embedded session there."
         },
         {
           "id": "one-concrete-test-flow",
@@ -2578,9 +2800,9 @@
           "body": "When you move beyond the local harness:\n\n* point the script at your deployed frontend origin\n* keep the allowed-origin list narrow and explicit\n* verify the customer-facing site sends the expected browser `Origin` header\n* test both a working production origin and one intentionally unapproved origin before rollout\n\nThe production sign-off question is: can our approved site launch the assistant, and can a copy of the snippet on an unapproved site fail closed?"
         },
         {
-          "id": "what-to-do-next",
-          "heading": "What to do next",
-          "body": "* If the embed launches but answers are weak, go to [Document upload](https://docs.radioso.ai/guides/document-upload) and [Agents and skills](https://docs.radioso.ai/api/agents-and-skills).\n* If the widget should be live soon, review [Deployment](https://docs.radioso.ai/operators/deployment).\n* To see exactly what a visit records and where operators can read it, see [Visitor data](https://docs.radioso.ai/operators/visitor-data)."
+          "id": "read-next",
+          "heading": "Read next",
+          "body": "* [Invite your team](https://docs.radioso.ai/quickstarts/invite-team) — give the people who handle hand-offs access to the workspace.\n* [Deployment](https://docs.radioso.ai/operators/deployment) — prepare the widget and the rest of the stack for production.\n* [Visitor data](https://docs.radioso.ai/operators/visitor-data) — see what a visit records and where operators read it."
         }
       ]
     },
@@ -2687,7 +2909,7 @@
         {
           "id": "next-step",
           "heading": "Next step",
-          "body": "Move to [Basic usage](https://docs.radioso.ai/sdk/basic-usage) or [API first success](https://docs.radioso.ai/quickstarts/api-first-success)."
+          "body": "Move to [Basic usage](https://docs.radioso.ai/sdk/basic-usage) or [Your first API answer](https://docs.radioso.ai/quickstarts/api-first-success)."
         }
       ]
     },
@@ -2805,7 +3027,7 @@
         {
           "id": "read-next",
           "heading": "Read next",
-          "body": "* [API first success](https://docs.radioso.ai/quickstarts/api-first-success)\n* [Embed on your website](https://docs.radioso.ai/quickstarts/website-embed)\n* [Agents and skills](https://docs.radioso.ai/api/agents-and-skills)\n* [Architecture overview](https://docs.radioso.ai/architecture)"
+          "body": "* [Your first API answer](https://docs.radioso.ai/quickstarts/api-first-success)\n* [Embed on your website](https://docs.radioso.ai/quickstarts/website-embed)\n* [Agents and skills](https://docs.radioso.ai/api/agents-and-skills)\n* [Architecture overview](https://docs.radioso.ai/architecture)"
         }
       ]
     },

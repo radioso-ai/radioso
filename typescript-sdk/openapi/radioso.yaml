@@ -15395,6 +15395,11 @@ components:
         conversationId:
           type: string
           format: uuid
+        channel:
+          type:
+            - string
+            - "null"
+          description: The conversation's source channel; null when its conversation record is unavailable.
         agentId:
           type:
             - string
@@ -15509,6 +15514,7 @@ components:
       required:
         - id
         - conversationId
+        - channel
         - agentId
         - state
         - holdReason
@@ -15619,6 +15625,10 @@ components:
         createdAt:
           type: string
           format: date-time
+        channel:
+          type:
+            - string
+            - "null"
       required:
         - handle
         - conversationId
@@ -15631,6 +15641,7 @@ components:
         - canResolve
         - deadline
         - createdAt
+        - channel
     PendingApprovalDecisionListResponse:
       type: object
       properties:
@@ -32885,6 +32896,19 @@ paths:
           required: false
           name: ownership
           in: query
+        - schema:
+            type: string
+            format: uuid
+          required: false
+          name: agentId
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+          required: false
+          name: channel
+          in: query
       responses:
         "200":
           description: Chat history summaries
@@ -33757,6 +33781,13 @@ paths:
         - schema:
             type: string
             minLength: 1
+            maxLength: 100
+          required: false
+          name: channel
+          in: query
+        - schema:
+            type: string
+            minLength: 1
           required: false
           name: cursor
           in: query
@@ -33923,6 +33954,13 @@ paths:
             format: uuid
           required: false
           name: agentId
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+          required: false
+          name: channel
           in: query
         - schema:
             type: string
@@ -34135,6 +34173,20 @@ paths:
       operationId: listPendingDecisions
       security:
         - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: false
+          name: agentId
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+          required: false
+          name: channel
+          in: query
       responses:
         "200":
           description: Pending approval decisions for the workspace

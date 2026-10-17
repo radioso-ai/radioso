@@ -65,7 +65,7 @@ export class DeliveryFailureDecisions {
 
   list(
     workspaceId: string,
-    query: { state: "open" | "all"; agentId?: string; cursor?: string; limit: number },
+    query: { state: "open" | "all"; agentId?: string; channel?: string; cursor?: string; limit: number },
   ): Promise<DeliveryFailurePage> {
     return this.deps.failures.list(workspaceId, query);
   }

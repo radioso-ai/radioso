@@ -10108,6 +10108,8 @@ export interface components {
             id: string;
             /** Format: uuid */
             conversationId: string;
+            /** @description The conversation's source channel; null when its conversation record is unavailable. */
+            channel: string | null;
             /**
              * Format: uuid
              * @description The agent whose review wrote the draft.
@@ -10203,6 +10205,7 @@ export interface components {
             deadline: string | null;
             /** Format: date-time */
             createdAt: string;
+            channel: string | null;
         };
         PendingApprovalDecisionListResponse: {
             decisions: components["schemas"]["PendingApprovalDecision"][];
@@ -25020,6 +25023,8 @@ export interface operations {
                 cursor?: string;
                 sourceScope?: "end_user" | "operator_test" | "all";
                 ownership?: "human_owned";
+                agentId?: string;
+                channel?: string;
             };
             header?: never;
             path?: never;
@@ -25934,6 +25939,7 @@ export interface operations {
             query?: {
                 state?: "open" | "all";
                 agentId?: string;
+                channel?: string;
                 cursor?: string;
                 limit?: number;
             };
@@ -26124,6 +26130,7 @@ export interface operations {
             query?: {
                 attention?: "open" | "all";
                 agentId?: string;
+                channel?: string;
                 cursor?: string;
                 limit?: number;
             };
@@ -26371,7 +26378,10 @@ export interface operations {
     };
     listPendingDecisions: {
         parameters: {
-            query?: never;
+            query?: {
+                agentId?: string;
+                channel?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;

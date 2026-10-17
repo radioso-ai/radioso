@@ -1,0 +1,30 @@
+---
+title: "Start here"
+description: "Follow the operator path from a local Radioso stack through a grounded answer, an acting agent, team access, and production preparation."
+last_updated: 2026-10-13
+---
+
+# Start here
+
+This is the operator path for getting a useful agent in front of real people. Each step leaves you with something you can verify before you take the next one.
+
+1. [Run locally](/quickstarts/run-locally) — start the dashboard, API, worker, and database.
+2. [Get your first grounded answer](/quickstarts/first-answer) — upload a document and check its citation.
+3. [Create your first agent](/quickstarts/first-agent) — give one agent a clear name and job.
+4. [Make your agent act](/quickstarts/make-it-act) — deliver a notice and hand a conversation to a person.
+5. [Embed on your website](/quickstarts/website-embed) — approve an origin and test the visitor experience.
+6. [Invite your team](/quickstarts/invite-team) — bring in the people who handle the work.
+7. [Prepare for production](/operators/deployment) — configure the services, secrets, storage, and operational controls for your environment.
+
+## Choose a side path when it fits
+
+- [Your first API answer](/quickstarts/api-first-success) is the canonical register, role-bound credential, upload, and agent-chat path for a script or service.
+- [Set up transactional mail](/operators/mail-setup) prepares verification, password reset, and invitation delivery.
+- [Human takeover](/operators/human-takeover) explains Inbox ownership after a hand-off.
+- [Self-hosting operations](/operators/self-hosting-operations) covers backup, restore, upgrades, and worker diagnosis.
+
+## Common failure modes
+
+- Wait for a document to reach **Ready** before judging the answer.
+- An external notice appears in logs. Configure a Resend mail driver and verified sender before testing the hand-off.
+- An embedded chat fails on a local site. Compare the exact allowed origin, including its host and port, with the browser URL.

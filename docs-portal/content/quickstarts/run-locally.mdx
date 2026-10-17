@@ -1,14 +1,14 @@
 ---
 title: "Run locally in 5 minutes"
-description: "Start the full Radioso stack locally, initialize its organization, upload a document, and ask the first question."
-last_updated: 2026-09-03
+description: "Start the full Radioso stack locally and open the dashboard, API, and worker on one machine."
+last_updated: 2026-10-13
 ---
 
-import { Callout, Steps } from 'nextra/components'
+import { Steps } from 'nextra/components'
 
 # Run locally in 5 minutes
 
-This is the fastest way to see Radioso doing its job: one command, a local stack, and a grounded answer from your own document a few minutes later. You get the dashboard, the API, and the background worker on one machine, so you can upload real content and check the answers before you think about deployment.
+This is the fastest way to open Radioso on your machine. One command starts the dashboard, API, document worker, and database, ready for the first grounded answer.
 
 ## Prerequisites
 
@@ -46,9 +46,9 @@ When it finishes, open:
 
 - App: `http://localhost:3000`
 - API: `http://localhost:8080`
-- Enterprise embed test harness: `http://127.0.0.1:4321` after running `node scripts/serve-embed-test-site.mjs`
+- Embed test harness: `http://127.0.0.1:4321` after running `node scripts/serve-embed-test-site.mjs`
 
-For Enterprise Edition embed development on macOS or Linux, use `./run-ee-dev.sh` instead. It builds the commercial packages from `ee/packages`, generates the local EE frontend routes, configures the local backend, starts the same app and API URLs, and starts the embed test harness automatically. Enterprise host-service development requires a Unix-like shell. Both open-source launchers remove generated Enterprise routes before starting the OSS stack.
+The open-source local stack serves the dashboard and API. Start the harness separately when you reach [Embed on your website](/quickstarts/website-embed). Enterprise host-service development uses `./run-ee-dev.sh` on macOS or Linux and starts its embed harness as part of that flow.
 
 ## Pick a local goal
 
@@ -57,7 +57,7 @@ You don't have to do everything at once. Pick the goal that matches why you're h
 <Steps>
 ### Goal 1: evaluate the product UI
 
-Open the app, register the first user on a new server or sign in, upload a document, and ask a question.
+Open the app, register the first user on a new server or sign in, then follow the dashboard onboarding path.
 
 ### Goal 2: test the API contract
 
@@ -65,76 +65,8 @@ Use the local backend to check registration availability, register the first use
 
 ### Goal 3: test the Enterprise website widget
 
-Start the local embed harness and verify both an approved origin and a blocked origin. The hosted widget routes are available when Enterprise Edition routes have been generated.
+Start the local embed harness and verify both an approved origin and a blocked origin.
 </Steps>
-
-## Verify first success in the app
-
-1. Open `http://localhost:3000`
-2. On a new server, register the first user. Development verifies the account and signs it in automatically. Otherwise, sign in or accept an invitation
-3. Upload a document or let the starter documents finish processing
-4. Ask one suggested question
-
-The worker takes a moment to chew through your upload. Give it until the status reads Ready, and the document is fair game for a retrieval test.
-
-![The Documents list with four uploaded files, each showing a green Ready status, so you can tell processing has finished before you test chat](/screenshots/dashboard-knowledge-documents.png)
-
-Now ask something you know the document answers. The Chat workbench is where you talk to your agent, and a good answer cites the source it came from rather than guessing.
-
-![The agent Chat workbench answering a shipping question with a grounded reply, a Sources control, and suggested follow-up questions](/screenshots/dashboard-agents-workbench.png)
-
-Success looks like this:
-
-- the frontend loads
-- you can initialize a new server or sign in to an existing one
-- you can upload a document
-- Radioso returns an answer grounded in that document
-
-## Verify first success through the API
-
-You don't need to open the web app at all. Use role-aware credentials for workspace operations and a role-free credential bound to one agent for chat.
-
-Check whether this deployment allows open registration:
-
-```bash
-curl -sS http://localhost:8080/api/v1/auth/registration
-```
-
-On a new open-source server, this returns `{ "available": true }`. Register the first user:
-
-```bash
-curl -sS \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"you@example.com","password":"verysecurepassword"}' \
-  http://localhost:8080/api/v1/auth/register
-```
-
-Registration creates the open-source server's sole organization and default workspace. The development stack returns `requiresEmailVerification: false` and sets the session cookie immediately. Production returns `requiresEmailVerification: true`, sends a verification email, and waits for verification before login.
-
-After the first organization exists, open-source registration availability is `false`. Later users join the existing organization by invitation. Enterprise Edition keeps open registration available and supports additional organizations. In either edition, authorized users can create more workspaces inside an organization.
-
-Log in and save the session cookie:
-
-```bash
-curl -sS -c cookies.txt \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"you@example.com","password":"verysecurepassword"}' \
-  http://localhost:8080/api/v1/auth/login
-```
-
-Issue a personal token with the session cookie. An expiry is required and can be no more than 90 days away:
-
-```bash
-personal_expiry="$(node -p 'new Date(Date.now() + 30 * 86400000).toISOString()')"
-curl -sS -b cookies.txt -X POST \
-  -H 'Content-Type: application/json' \
-  -H 'X-Radioso-CSRF: 1' \
-  -H 'X-Workspace-Id: <workspace-id>' \
-  -d "{\"label\":\"Local development\",\"roleCeiling\":\"member\",\"expiresAt\":\"${personal_expiry}\"}" \
-  http://localhost:8080/api/v1/account/workspaces/<workspace-id>/api-access/personal-tokens
-```
-
-Store the response's `secret` value outside the browser. That personal token authorizes eligible workspace APIs. For chat, create a separate REST credential from the agent's **Channels → API** card and call `POST /api/v1/agents/{agentId}/chat`; [API first success](/quickstarts/api-first-success) shows the complete sequence.
 
 ## What local development changes
 
@@ -144,17 +76,13 @@ Local bootstrap tunes the stack for a fast look, not for mirroring every product
 - Docker Compose runs the app, API, worker, and Postgres together
 - newly registered password users are verified automatically and signed in
 
-<Callout type="info" emoji="i">
-  Local setup is built for quick evaluation. When you move to production, storage, dispatch, and secrets are the surfaces that change.
-</Callout>
-
 ## Common failure modes
 
 - If the stack starts but answers fail, the usual cause is missing or invalid provider credentials in `.env`.
 - If upload works but chat ignores the new document, processing is probably still running. Check the document's status before you blame retrieval.
-- Production auth mail needs a delivery driver such as Resend. Development registration does not send a verification message because it verifies the new account automatically.
+- Production auth mail needs a delivery driver such as Resend. Development registration verifies the new account automatically.
 
-## What to do next
+## Read next
 
-- If the local app looks right, continue with [API first success](/quickstarts/api-first-success) or [Embed on your website](/quickstarts/website-embed).
-- If you're trying to understand why answers look wrong, review [Document upload](/guides/document-upload) and [Agents and skills](/api/agents-and-skills).
+- [Get your first grounded answer](/quickstarts/first-answer) — upload one document and verify its citation.
+- [Your first API answer](/quickstarts/api-first-success) — use the one canonical register, credential, upload, and ask sequence for scripts and services.

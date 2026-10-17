@@ -85,6 +85,7 @@ const HELD_REPLY_ID = "66666666-6666-4666-8666-666666666666";
 const heldReplyView = (overrides: Record<string, unknown> = {}) => ({
   id: HELD_REPLY_ID,
   conversationId: CONVERSATION_ID,
+  sourceChannel: "email",
   agentId: "77777777-7777-4777-8777-777777777777",
   state: "pending" as const,
   holdReason: "draft_mode",

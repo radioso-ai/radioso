@@ -142,6 +142,7 @@ import type { VectorCandidateSearchPort } from "../../src/modules/retrieval/doma
 import type { ChunkCandidateHydratorPort } from "../../src/modules/retrieval/infra/chunkCandidateHydrator.js";
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
 import { WorkspaceSummaryService } from "../../src/modules/workspace/services/workspaceSummaryService.js";
+import { InMemoryWorkspaceSetupStateRepository } from "./inMemoryWorkspaceSetupState.js";
 import { WorkspaceSessionService } from "../../src/modules/auth/services/workspaceSessionService.js";
 import {
   ApiPrincipalAuthenticator,
@@ -1499,7 +1500,7 @@ export const createTestDependencies = (overrides: {
       };
     },
   } satisfies TurnRouter;
-  const workspaceSummaryService = new WorkspaceSummaryService(documentRepository, conversationRepository, {
+  const workspaceSummaryService = new WorkspaceSummaryService(documentRepository, conversationRepository, new InMemoryWorkspaceSetupStateRepository(), {
     websiteCrawlerEnabled: env.WEBSITE_CRAWLER_ENABLED,
   });
   const abuseControlService = new AbuseControlService(

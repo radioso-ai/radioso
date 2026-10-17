@@ -797,6 +797,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/workspace/setup-state": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get workspace setup state and outcome checklist */
+        get: operations["getWorkspaceSetupState"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** Update persisted workspace setup state */
+        patch: operations["updateWorkspaceSetupState"];
+        trace?: never;
+    };
     "/api/v1/workspace/summary": {
         parameters: {
             query?: never;
@@ -4725,6 +4743,21 @@ export interface components {
         WorkspaceListResponse: {
             workspaces: components["schemas"]["Workspace"][];
         };
+        WorkspaceSetupState: {
+            purpose: string | null;
+            dismissed: boolean;
+            skippedSteps: ("purpose" | "documents" | "conversation" | "directives_or_routines" | "notify_destination" | "credential")[];
+            shouldShowFirstRun: boolean;
+            hasDirectivesOrRoutines: boolean;
+            hasNotifyDestination: boolean;
+            hasNotifyDeliveryConfirmed: boolean;
+            hasCredential: boolean;
+        };
+        UpdateWorkspaceSetupStateRequest: {
+            purpose?: string | null;
+            dismissed?: boolean;
+            skippedSteps?: ("purpose" | "documents" | "conversation" | "directives_or_routines" | "notify_destination" | "credential")[];
+        };
         WorkspaceSummaryResponse: {
             documentCount: number;
             readyDocumentCount: number;
@@ -4738,6 +4771,7 @@ export interface components {
             hasCompletedChat: boolean;
             sampleDocumentsImported: boolean;
             websiteCrawlerEnabled: boolean;
+            setup: components["schemas"]["WorkspaceSetupState"];
         };
         RegisterRequest: {
             /** Format: email */
@@ -14398,6 +14432,50 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getWorkspaceSetupState: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Workspace setup state returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSetupState"];
+                };
+            };
+        };
+    };
+    updateWorkspaceSetupState: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateWorkspaceSetupStateRequest"];
+            };
+        };
+        responses: {
+            /** @description Workspace setup state updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkspaceSetupState"];
                 };
             };
         };

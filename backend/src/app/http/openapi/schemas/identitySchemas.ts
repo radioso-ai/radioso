@@ -23,6 +23,7 @@ import {
 import {
   createWorkspaceSchema,
   renameWorkspaceSchema,
+  updateWorkspaceSetupStateSchema,
   workspaceKeyParamsSchema,
   workspaceParamsSchema,
 } from "../../routes/workspaceRoutes.js";
@@ -133,6 +134,21 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
     }),
   );
 
+  const WorkspaceSetupStateSchema = registry.register(
+    "WorkspaceSetupState",
+    z.object({
+      purpose: z.string().nullable(),
+      dismissed: z.boolean(),
+      skippedSteps: z.array(z.enum(["purpose", "documents", "conversation", "directives_or_routines", "notify_destination", "credential"])),
+      shouldShowFirstRun: z.boolean(),
+      hasDirectivesOrRoutines: z.boolean(),
+      hasNotifyDestination: z.boolean(),
+      hasNotifyDeliveryConfirmed: z.boolean(),
+      hasCredential: z.boolean(),
+    }),
+  );
+  const UpdateWorkspaceSetupStateRequestSchema = registry.register("UpdateWorkspaceSetupStateRequest", updateWorkspaceSetupStateSchema);
+
   const WorkspaceSummaryResponseSchema = registry.register(
     "WorkspaceSummaryResponse",
     z.object({
@@ -148,6 +164,7 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
       hasCompletedChat: z.boolean(),
       sampleDocumentsImported: z.boolean(),
       websiteCrawlerEnabled: z.boolean(),
+      setup: WorkspaceSetupStateSchema,
     }),
   );
 
@@ -277,6 +294,8 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
     WorkspaceRouteResolutionResponseSchema,
     WorkspaceListResponseSchema,
     WorkspaceSummaryResponseSchema,
+    WorkspaceSetupStateSchema,
+    UpdateWorkspaceSetupStateRequestSchema,
     RegisterRequestSchema,
     CreateAccountRequestSchema,
     LoginRequestSchema,

@@ -15,12 +15,12 @@ import { useWorkspaceOnboarding } from '@/lib/onboarding'
 export default function Home() {
   const router = useRouter()
   const { user, isAuthenticated, isBootstrapping } = useAuth()
-  const { activeWorkspace, workspaces, isLoading: isWorkspaceLoading } = useWorkspace()
+  const { activeWorkspace, isLoading: isWorkspaceLoading } = useWorkspace()
   // The only signal that decides whether this login lands on the Agents chat
   // tab (first-run onboarding renders only there, see dashboard-shell.tsx's
   // `isAgentChatView` / `showFirstRun`) or the Inbox (the normal landing
   // section for every returning workspace).
-  const onboarding = useWorkspaceOnboarding(activeWorkspace?.id ?? null, workspaces.length)
+  const onboarding = useWorkspaceOnboarding(activeWorkspace?.id ?? null)
   const [landingAgentState, setLandingAgentState] = useState<{
     workspaceId: string | null
     agentId: string | null

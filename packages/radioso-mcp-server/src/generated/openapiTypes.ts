@@ -29742,7 +29742,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description Public session not found or not a website embed session; no session this public session started waits for an id (it already has one, its start expired, or Radioso never started it); or the vendor holds no such conversation on the session's vendor agent */
+            /** @description Public session not found or not a website embed session; no session this public session started waits for an id (it already has one, its start expired, or Radioso never started it); or the vendor says the conversation was held on another vendor agent */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -29760,7 +29760,7 @@ export interface operations {
                     "application/json": components["schemas"]["RateLimitExceededResponse"];
                 };
             };
-            /** @description `voice_unavailable`: the id could not be checked with the vendor now (the workspace's vendor key is missing or unreadable, or the vendor did not answer); report it again */
+            /** @description `voice_unavailable`: the id could not be checked with the vendor now (the vendor does not show the conversation yet, as can happen right after a call connects; the workspace's vendor key is missing or unreadable; or the vendor did not answer); report it again */
             503: {
                 headers: {
                     [name: string]: unknown;

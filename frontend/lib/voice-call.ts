@@ -152,8 +152,14 @@ export function runVoiceCall(dependencies: VoiceCallDependencies, observer: Voic
         },
         opening.signal,
       )
-      // Stopped while the vendor's client opened the session: end the session it opened.
+      // Stopped while the vendor's client opened the session: end the session it opened, once
+      // Radioso has been told which call it was, so its recording is not left without a record.
       if (stopped) {
+        if (opened.vendorConversationId && dependencies.reportVendorConversation) {
+          void dependencies
+            .reportVendorConversation({ sessionKey: start.session.sessionKey, vendorConversationId: opened.vendorConversationId })
+            .catch(() => undefined)
+        }
         await opened.end().catch(() => undefined)
         return
       }

@@ -315,14 +315,19 @@ describe("ElevenLabs recording source", () => {
         .toMatchObject({ reason: "rejected", vendorStatus: 401 });
     });
 
-    it("refuses an answer without the agent, and one far larger than a conversation document", async () => {
+    it("refuses an answer without the agent", async () => {
       const unnamed = sourceWith(async () => new Response(JSON.stringify({ status: "done" }), { status: 200 }));
       expect((await rejectionOf(unnamed.source.describeConversation({ vendorConversationId, region: "us", credential }))).reason)
         .toBe("malformed_response");
+    });
 
-      const huge = sourceWith(async () => new Response(JSON.stringify({ agent_id: "agent_42", transcript: "x".repeat(70 * 1024) }), { status: 200 }));
+    it("reads the document of a long call, and reads one past any call's size as too large rather than malformed", async () => {
+      const long = sourceWith(async () => new Response(JSON.stringify({ agent_id: "agent_42", transcript: "x".repeat(512 * 1024) }), { status: 200 }));
+      await expect(long.source.describeConversation({ vendorConversationId, region: "us", credential })).resolves.toEqual({ vendorAgentId: "agent_42" });
+
+      const huge = sourceWith(async () => new Response(JSON.stringify({ agent_id: "agent_42", transcript: "x".repeat(3 * 1024 * 1024) }), { status: 200 }));
       expect((await rejectionOf(huge.source.describeConversation({ vendorConversationId, region: "us", credential }))).reason)
-        .toBe("malformed_response");
+        .toBe("oversized_response");
     });
   });
 });

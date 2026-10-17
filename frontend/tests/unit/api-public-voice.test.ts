@@ -122,6 +122,14 @@ describe('vendor conversation report', () => {
     expect(failing).toHaveBeenCalledTimes(2)
   })
 
+  it("leaves a report the relay throttles to the call's end rather than trying again at once", async () => {
+    const fetchMock = vi.fn(async () => new Response('{}', { status: 429 }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(reportVoiceVendorConversation('token', { sessionKey: session.sessionKey, vendorConversationId: 'conv_1' })).resolves.toBe('failed')
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it('takes a refusal as final', async () => {
     const fetchMock = vi.fn(async () => new Response('{}', { status: 404 }))
     vi.stubGlobal('fetch', fetchMock)

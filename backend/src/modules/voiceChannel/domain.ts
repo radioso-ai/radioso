@@ -312,12 +312,21 @@ export interface VoiceRecordingStream {
  * id (the call has not finished, or the conversation is gone), cannot serve the byte range asked
  * for (`contentRange` is the vendor's, naming the recording's length), refused the request
  * (`vendorStatus` is its HTTP status), could not be reached, did not answer in time or stopped
- * sending, or answered with something that is not what was asked for. `abandoned`: the listener
+ * sending, answered with something that is not what was asked for, or with far more than it could
+ * be (`oversized_response`, which a later try may not meet). `abandoned`: the listener
  * went away first, which is nobody's failure.
  */
 export class VoiceRecordingRequestError extends Error {
   constructor(
-    readonly reason: "not_found" | "range_not_satisfiable" | "rejected" | "unreachable" | "timeout" | "malformed_response" | "abandoned",
+    readonly reason:
+      | "not_found"
+      | "range_not_satisfiable"
+      | "rejected"
+      | "unreachable"
+      | "timeout"
+      | "malformed_response"
+      | "oversized_response"
+      | "abandoned",
     readonly vendorStatus?: number,
     readonly contentRange?: string,
   ) {
@@ -348,9 +357,9 @@ export interface VoiceRecordingSource {
 
 /**
  * The page reports the vendor's conversation id for a session it opened. `rejected`: no session
- * Radioso started for this public session waits for an id, or the vendor says the id is not a call
- * on that session's vendor agent. `failed`: the id could not be checked now; the page may report it
- * again.
+ * Radioso started for this public session waits for an id, or the vendor says the id is a call on
+ * another vendor agent. `failed`: the id could not be checked now, the vendor not showing the
+ * conversation yet included; the page may report it again.
  */
 export interface VoiceVendorConversationReportPort {
   report(input: VoiceVendorConversationReport): Promise<"recorded" | "rejected" | "failed">;

@@ -18,11 +18,12 @@ const DEFAULT_AUDIO_TYPE = "audio/mpeg";
 /** What the vendor answers with when it holds no audio under the id: the call is unknown, or has not finished. */
 const NOT_FOUND_STATUSES = new Set([404, 410]);
 /**
- * A conversation document carries the transcript so far. Read right after the call opens it is a
- * few kilobytes; the cap leaves room for a report re-sent as the call ends, and refuses anything
- * far larger than a conversation.
+ * A conversation document carries the transcript so far, and the vendor offers no way to ask for
+ * the agent alone. Read right after the call opens it is a few kilobytes; a report re-sent as a long
+ * call ends reads it whole, so the cap is well past any call's transcript and only bounds what one
+ * report may hold in memory.
  */
-const MAX_CONVERSATION_DOCUMENT_BYTES = 64 * 1024;
+const MAX_CONVERSATION_DOCUMENT_BYTES = 2 * 1024 * 1024;
 
 const conversationDocumentSchema = z.object({ agent_id: z.string().min(1) });
 
@@ -196,8 +197,9 @@ export const createElevenLabsRecordingSource = (dependencies: {
         } catch (error) {
           throw new VoiceRecordingRequestError(isTimeout(error, exchange.signal) ? "timeout" : "unreachable", response.status);
         }
-        const parsed = text === null ? null : conversationDocumentSchema.safeParse(parseJson(text));
-        if (!parsed?.success) throw new VoiceRecordingRequestError("malformed_response", response.status);
+        if (text === null) throw new VoiceRecordingRequestError("oversized_response", response.status);
+        const parsed = conversationDocumentSchema.safeParse(parseJson(text));
+        if (!parsed.success) throw new VoiceRecordingRequestError("malformed_response", response.status);
         return { vendorAgentId: parsed.data.agent_id };
       } finally {
         exchange.release();

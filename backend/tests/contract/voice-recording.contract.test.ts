@@ -167,6 +167,22 @@ describe("voice vendor conversation report contract", () => {
     expect((await request(app).get(`/api/v1/history/chat/${conversationId}`).set(dashboard).expect(200)).body.recording).toEqual({ available: true });
   });
 
+  it("answers 503 while the vendor does not show the conversation yet, and stores it once it does", async () => {
+    let shown = false;
+    const vendorFetch = vendorStandIn("eu", {
+      conversation: () => (shown
+        ? new Response(JSON.stringify({ agent_id: "agent_42", status: "done" }), { status: 200 })
+        : new Response(JSON.stringify({ detail: "Conversation not found" }), { status: 404 })),
+    });
+    const { visitor } = await recordedWorkspace({ vendorFetch });
+    const { startCall, report } = await visitor();
+    const sessionKey = await startCall();
+
+    await report(sessionKey).expect(503);
+    shown = true;
+    await report(sessionKey).expect(204);
+  });
+
   it("answers 503 when the vendor cannot check the id, so the page may report it again", async () => {
     let answer = () => new Response("{}", { status: 500 });
     const { visitor } = await recordedWorkspace({ vendorFetch: vendorStandIn("eu", { conversation: () => answer() }) });

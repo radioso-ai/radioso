@@ -1,10 +1,12 @@
-import { describe, expect, expectTypeOf, it } from "vitest";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
 import { createTestEnv } from "../support/testApp.js";
 import {
   createAuditService,
   InMemoryAccountInvitationRepository,
   InMemoryAccountMembershipRepository,
+  InMemoryAuthFunnelRepository,
+  InMemoryEmailVerificationTokenRepository,
   InMemoryUserRepository,
   InMemoryFederatedIdentityRepository,
   InMemoryWorkspaceRepository,
@@ -20,6 +22,7 @@ import {
 } from "../../src/modules/auth/services/authService.js";
 import { sha256 } from "../../src/modules/auth/domain/authPrimitives.js";
 import { registrationClosed } from "../../src/modules/auth/services/ossOrganizationCreationGuard.js";
+import { AuthFunnelService } from "../../src/modules/auth/services/authFunnelService.js";
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
 import type {
   OrganizationCoreProvisioner,
@@ -221,6 +224,14 @@ const createAuthService = (options: {
   );
   const workspaceService = options.workspaceService ?? new WorkspaceService(new InMemoryWorkspaceRepository(), auditService);
   const federatedIdentityRepository = options.federatedIdentityRepository ?? new InMemoryFederatedIdentityRepository();
+  const sessionRepository = options.sessionRepository ?? new FailingSessionRepository();
+  const emailVerificationTokenRepository = new InMemoryEmailVerificationTokenRepository();
+  const authFunnelRepository = new InMemoryAuthFunnelRepository({
+    emailVerificationTokens: emailVerificationTokenRepository,
+    users: userRepository,
+    sessions: sessionRepository,
+    listMemberships: (userId) => accountAccessService.listUserMemberships(userId),
+  });
 
   return {
     authService: new AuthService({
@@ -228,8 +239,9 @@ const createAuthService = (options: {
       auditService,
       accountRepository,
       userRepository,
-      sessionRepository: options.sessionRepository ?? new FailingSessionRepository(),
+      sessionRepository,
       federatedIdentityRepository,
+      authFunnelRepository,
       workspaceService,
       accountAccessService,
       accountInvitationService,
@@ -248,6 +260,9 @@ const createAuthService = (options: {
     accountRepository,
     userRepository,
     federatedIdentityRepository,
+    authFunnelRepository,
+    emailVerificationTokenRepository,
+    sessionRepository,
     accountMembershipRepository,
     accountInvitationRepository,
     auditService,
@@ -928,6 +943,29 @@ describe("AuthService rollback", () => {
     expect(ended).toEqual([accountId]);
   });
 
+  it("reads what vendors hold for the organization's conversations before deleting it, and erases it after", async () => {
+    const userRepository = new InMemoryUserRepository();
+    await userRepository.create({ id: "user-1", email: "vendor-held-delete-org@example.com", passwordHash: "hash" });
+    const steps: string[] = [];
+    const workspaceService = new WorkspaceService(new InMemoryWorkspaceRepository(), createAuditService());
+    vi.spyOn(workspaceService, "prepareAccountDeletion").mockImplementation(async () => {
+      steps.push("prepare");
+      return { afterDeletion: async () => { steps.push("erase"); } };
+    });
+    const { authService: orgAuthService } = createAuthService({
+      userRepository,
+      sessionRepository: new WorkingSessionRepository(),
+      workspaceService,
+      personalCredentialTermination: { endAccount: async () => { steps.push("delete"); } },
+    });
+    const { accountId } = await orgAuthService.createOrganization({ userId: "user-1", organizationName: "Deleted Org" });
+
+    await orgAuthService.deleteOrganization({ accountId, userId: "user-1" });
+
+    expect(steps).toEqual(["prepare", "delete", "erase"]);
+    expect(workspaceService.prepareAccountDeletion).toHaveBeenCalledWith(accountId);
+  });
+
   it("delegates organization deletion to the transactional personal credential lifecycle", async () => {
     const userRepository = new InMemoryUserRepository();
     await userRepository.create({ id: "user-1", email: "transactional-delete-org@example.com", passwordHash: "hash" });
@@ -1077,6 +1115,69 @@ describe("AuthService rollback", () => {
     expect(result.userId).toBe(registered.userId);
     expect((await userRepository.findById(registered.userId))?.emailVerifiedAt).not.toBeNull();
     expect(result.sessionCookie).toContain("radioso_session=");
+  });
+
+  it("does not rotate credentials when link verification wins after Google's lookup", async () => {
+    const sessionRepository = new WorkingSessionRepository();
+    const revokedUsers: string[] = [];
+    sessionRepository.revokeAllForUser = async (userId) => {
+      revokedUsers.push(userId);
+      return 0;
+    };
+    const { authService, authFunnelRepository, userRepository } = createAuthService({ sessionRepository });
+    const registered = await authService.register({
+      email: "google-link-wins@example.com",
+      password: "verysecurepassword",
+    });
+    const originalHash = (await userRepository.findById(registered.userId))?.passwordHash;
+    const recover = authFunnelRepository.recoverFederatedUser.bind(authFunnelRepository);
+    authFunnelRepository.recoverFederatedUser = async (input) => {
+      await userRepository.markEmailVerified(input.userId, new Date());
+      return recover(input);
+    };
+
+    await authService.federatedLogin({
+      provider: "google",
+      subject: "google-link-wins-subject",
+      email: "google-link-wins@example.com",
+      emailVerified: true,
+    });
+
+    expect((await userRepository.findById(registered.userId))?.passwordHash).toBe(originalHash);
+    expect(revokedUsers).toEqual([]);
+  });
+
+  it("consumes outstanding verification links and pending tickets when Google reclaims an account", async () => {
+    const {
+      authService,
+      authFunnelRepository,
+      auditService,
+    } = createAuthService({
+      sessionRepository: new WorkingSessionRepository(),
+    });
+    const registered = await authService.register({
+      email: "google-recovery@example.com",
+      password: "attacker-known-password",
+    });
+    const recoveryFunnel = new AuthFunnelService({
+      env: createTestEnv(), repository: authFunnelRepository, auditService,
+    });
+    const challenge = await recoveryFunnel.issueRegistrationChallenge({
+      userId: registered.userId,
+      accountId: registered.accountId,
+    });
+
+    await authService.federatedLogin({
+      provider: "google",
+      subject: "google-recovery-subject",
+      email: "google-recovery@example.com",
+      emailVerified: true,
+    });
+
+    await expect(recoveryFunnel.verify({ token: challenge.verification.token }))
+      .rejects.toMatchObject({ statusCode: 401 });
+    await expect(recoveryFunnel.exchangePendingTicket(challenge.pendingCookie.split(";")[0]?.split("=")[1]))
+      .resolves.toEqual({ ready: false });
   });
 
   it("rotates the password and revokes sessions when verifying a squatted account (anti pre-hijack)", async () => {

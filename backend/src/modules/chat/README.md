@@ -116,11 +116,35 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   conversation. `MessageRecord.interruption` reads it back on assistant rows,
   and `chatHistoryService.ts` puts it on the reply as `interruption` (the counts
   only) on detail, turn and tail reads, public reads included. The dashboard
-  tail (`redeliverInterruptedReplies`) also returns a reply at or before its
-  cursor once it is marked: the cursor carries the newest delivered marker's
-  time as `markedAt`, so each marker arrives once, and the pane merges by id.
-  The public tail and the calling-agent update reader never re-deliver. The
-  voice channel's composition is the caller.
+  tail (`redeliverMarkedReplies`) also returns a reply at or before its
+  cursor once it is marked, by an interruption or by `speech.spokenAt` or
+  `speech.skippedAt` below:
+  the cursor carries the newest delivered marker's time as `markedAt`, so each
+  marker arrives once, and the pane merges by id. The public tail and the
+  calling-agent update reader never re-deliver. The voice channel's
+  composition is the caller.
+- `contracts/operatorReplySpeech.ts`: a teammate's reply on a conversation
+  whose caller hears replies (`operatorRepliesAreSpoken`: the voice channel
+  context) waits for the caller's next turn. `OperatorReplyService.write`
+  (handoff) stores it with `speech: { state: "pending" }`
+  (`MessageRepository.create`'s `pendingSpeech`). One port serves the voice
+  channel, on `MessageRepository`: `OperatorReplySpeechClaims`.
+  `claimPendingOperatorReplies` claims and reads the conversation's pending
+  teammate replies, oldest first, in one UPDATE ... RETURNING (`claimed`,
+  with `claimedAt` and `claimTurnId`); `markOperatorRepliesSpoken`,
+  `skipOperatorReplies` and `releaseOperatorReplies` turn the replies the
+  turn still holds into `{ state: "spoken", spokenAt }`, `skipped` or back to
+  `pending`. Each is one conditional UPDATE that resolves the ids it changed,
+  so two turns never hold one reply; a claim older than
+  `VOICE_BEHAVIOR.operatorReplyClaimExpiryMs` counts as pending. Times are the database clock in the tail cursor's
+  format. `MessageRecord.speech` reads it back on human-authored replies as
+  readers see it (a claim is still `pending`), and history puts it on the
+  reply as `speech` beside `interruption`; the dashboard tail re-delivers a
+  reply once it is spoken or skipped. Ray's `conversation_transcript` carries
+  the state as one word. Tests:
+  `tests/integration/message-repository.integration.test.ts` (needs the
+  disposable integration database), `tests/unit/message-source.test.ts`,
+  `tests/unit/chat-history-service.test.ts`.
 - `composition.ts`: chat module wiring used by application composition.
 - `services/conversationIngestService.ts` (`ConversationIngestPort` in `contracts/`):
   records a customer message without running a turn, for a channel that decides

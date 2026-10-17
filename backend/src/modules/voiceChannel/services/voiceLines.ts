@@ -52,6 +52,25 @@ export const resolveVoiceTurnLocale = (sources: { requested?: string; agentDefau
   sources.requested ?? sources.agentDefault ?? FALLBACK_LOCALE;
 
 /**
+ * The agent's recording notice for a call, as written: in the call's language, else the agent's
+ * default language, else English, else the first notice the agent wrote. A caller who must be told
+ * the call is recorded is better told in another language than not at all. Null when the agent wrote
+ * none.
+ */
+export const chooseRecordingNotice = (
+  settings: Pick<AgentVoiceSettings, "recordingNotice">,
+  call: { locale: string; agentDefault: string | null },
+): string | null => {
+  const written = Object.entries(settings.recordingNotice ?? {})
+    .map(([tag, line]) => [tag, line.trim()] as const)
+    .filter(([, line]) => line.length > 0);
+  const tags = written.map(([tag]) => tag);
+  const preferred = [call.locale, call.agentDefault, FALLBACK_LOCALE].filter((tag): tag is string => Boolean(tag));
+  const tag = preferred.map((wanted) => matchLocale(tags, wanted)).find((match) => match !== null) ?? tags[0];
+  return written.find(([candidate]) => candidate === tag)?.[1] ?? null;
+};
+
+/**
  * The turn's bridge and fallback lines. With a runtime minimum, the bridge rotates over the
  * style's lines that reach it; when none does, it rotates over all of them and reports the shortfall.
  */

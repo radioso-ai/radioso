@@ -1239,6 +1239,13 @@ export function DocumentsView({
                 onOpenCreate={openCreateDialog}
                 onDelete={setDeleteCandidate}
                 onRetry={(documentId) => void handleRetry(documentId)}
+                onResumeSetup={() => {
+                  void onboarding.markActive().then((persisted) => {
+                    if (persisted) {
+                      router.push(buildDashboardHref(accountId, { ...routeState, section: 'agents', agentTab: 'chat' }))
+                    }
+                  })
+                }}
                 />
               </div>
             )}

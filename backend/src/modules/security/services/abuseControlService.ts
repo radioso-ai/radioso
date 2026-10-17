@@ -74,22 +74,29 @@ export class AbuseControlService implements AbuseControlPort, AbuseControlBatchP
    */
   private decide(consumption: AbuseControlConsumption, input: AbuseControlConsumptionInput): AbuseControlDecision {
     const { blockedUntil, windowStartedAt } = consumption.entry;
+    const evaluatedAt = consumption.evaluatedAt;
     if (consumption.blocked && blockedUntil) {
       throw tooManyRequests("Rate limit exceeded. Please wait before trying again.", {
         limit: input.limit,
         remaining: 0,
         resetAtMs: blockedUntil.getTime(),
-        retryAfterSeconds: this.retryAfterSeconds(blockedUntil, input.now),
+        resetAfterSeconds: this.resetAfterSeconds(blockedUntil, evaluatedAt),
+        retryAfterSeconds: this.retryAfterSeconds(blockedUntil, evaluatedAt),
       } satisfies AbuseControlDecision);
     }
     return {
       limit: input.limit,
       remaining: Math.max(0, Math.floor(input.limit - consumption.weightedAttemptCount)),
       resetAtMs: windowStartedAt.getTime() + input.windowMs,
+      resetAfterSeconds: this.resetAfterSeconds(new Date(windowStartedAt.getTime() + input.windowMs), evaluatedAt),
     };
   }
 
   private retryAfterSeconds(blockedUntil: Date, now: Date): number {
     return Math.max(1, Math.ceil((blockedUntil.getTime() - now.getTime()) / 1000));
+  }
+
+  private resetAfterSeconds(resetAt: Date, evaluatedAt: Date): number {
+    return Math.max(0, Math.ceil((resetAt.getTime() - evaluatedAt.getTime()) / 1000));
   }
 }

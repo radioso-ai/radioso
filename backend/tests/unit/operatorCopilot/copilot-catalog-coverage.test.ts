@@ -86,6 +86,12 @@ describe("operator copilot catalog coverage", () => {
       reason: expect.stringContaining("read-only Activity view control"),
     });
   });
+  it("keeps Needs-you queue filters outside Ray's operation catalog", () => {
+    expect(internalRuntimeCoverageExclusions.needsYouQueueFilters).toMatchObject({
+      disposition: "permanent",
+      reason: expect.stringContaining("read-only Inbox view controls"),
+    });
+  });
   it("keeps the voice completions adapter outside Ray's operation catalog", () => {
     expect(internalRuntimeCoverageExclusions.voiceCompletionsAdapter).toMatchObject({
       disposition: "deferred",
@@ -120,7 +126,13 @@ describe("operator copilot catalog coverage", () => {
       // The runtime binding is Ray's to propose; the vendor key it needs is a secret Ray never writes.
       expect(description).toContain("voice.runtime binds the agent to one vendor agent");
       expect(description).toContain("the operator enters the vendor's API key in Settings");
+      // The recording notice rides the same whole block, so leaving it out of a write removes it.
+      expect(description).toContain("voice.recordingNotice");
+      expect(description).toContain("leaving it out removes every notice");
     }
+    expect(agentReviewedSettingsPatchSchema.safeParse({
+      voice: { enabled: true, bridgeLines: {}, fallbackLine: {}, recordingNotice: { en: "This call is recorded." }, runtime: null },
+    }).success).toBe(true);
     // agent_configuration returns the live voice block beside the portable configuration.
     expect(catalog.find((descriptor) => descriptor.name === "agent_configuration")?.description).toContain("live voice settings");
   });
@@ -380,10 +392,8 @@ describe("operator copilot catalog coverage", () => {
       disposition: "deferred",
       reason: expect.stringContaining("cost guard"),
     });
-    expect(catalogCoverage.getWorkspaceSummary).toMatchObject({
-      disposition: "deferred",
-      reason: expect.stringContaining("setup"),
-    });
+    expect(catalogCoverage.getWorkspaceSummary).toBe("workspace_setup_state");
+    expect(catalogCoverage.getWorkspaceSetupState).toBe("workspace_setup_state");
   });
 
   it("does not expand the deferred catalog backlog", () => {

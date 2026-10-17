@@ -91,6 +91,7 @@ describe('paginated list loading states', () => {
         onOpenCreate={vi.fn()}
         onDelete={vi.fn()}
         onRetry={vi.fn()}
+        onResumeSetup={vi.fn()}
       />,
     )
 

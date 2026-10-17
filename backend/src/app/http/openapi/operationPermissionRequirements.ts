@@ -2,6 +2,8 @@ import type { AccountPermission } from "../../../modules/account/public.js";
 
 /** HTTP-owned authorization requirements for one-to-one Ray parity checks. */
 export const operationPermissionRequirements: Readonly<Record<string, readonly AccountPermission[]>> = {
+  getWorkspaceSetupState: ["workspace.summary.read"],
+  updateWorkspaceSetupState: ["workspace.credentials.manage"],
   listEvalCases: ["workspace.retrieval.query"],
   getOrCreateEvalCaseBySourceMessage: ["workspace.retrieval.query"],
   runEvalCases: ["workspace.retrieval.query"],

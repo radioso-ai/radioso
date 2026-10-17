@@ -7,11 +7,12 @@
   },
   "scripts": {
     "dev": "pnpm run sync && next dev --webpack --port 3001",
-    "build": "pnpm run sync && next build --webpack",
+    "build": "pnpm run sync && next build --webpack && pnpm run test:llms",
     "preview": "serve out --listen 3000",
     "sync": "pnpm run sync:openapi && pnpm run sync:stoplight",
     "sync:openapi": "node ./scripts/sync-openapi.mjs",
-    "sync:stoplight": "node ./scripts/sync-stoplight.mjs"
+    "sync:stoplight": "node ./scripts/sync-stoplight.mjs",
+    "test:llms": "node --test ./scripts/llms-txt.test.mjs"
   },
   "dependencies": {
     "@radioso/ui": "workspace:*",

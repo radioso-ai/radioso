@@ -71,8 +71,8 @@ export const transferFailureCause = (error: unknown): TransferFailureCause | nul
 }
 
 export const hitlApi = {
-  async listPendingDecisions(signal?: AbortSignal): Promise<PendingApprovalDecisionListResponse> {
-    return request<PendingApprovalDecisionListResponse>('/decisions', { method: 'GET', ...(signal ? { signal } : {}) }, { withSession: true })
+  async listPendingDecisions(signal?: AbortSignal, filters: { agentId?: string; channel?: string } = {}): Promise<PendingApprovalDecisionListResponse> {
+    return request<PendingApprovalDecisionListResponse>(withQuery('/decisions', filters), { method: 'GET', ...(signal ? { signal } : {}) }, { withSession: true })
   },
 
   async resolveDecision(

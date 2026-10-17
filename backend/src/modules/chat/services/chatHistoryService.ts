@@ -3,6 +3,7 @@ import { decodeCursorWithKeys } from "../../../shared/domain/cursorPagination.js
 import type { CallerKind, ConversationSourceScope } from "../../../shared/domain/conversationSource.js";
 import type { ConversationOutcomeFilter } from "../../../shared/domain/conversationOutcome.js";
 import type { ConversationTurnStage, ReplyInterruption } from "../contracts/interruption.js";
+import type { OperatorReplySpeech } from "../contracts/operatorReplySpeech.js";
 import {
   formatActivityCursor,
   type ConversationActivityEntry,
@@ -280,6 +281,8 @@ export interface ChatConversationTurn {
   operatorLabel?: string;
   /** On an assistant reply the caller spoke over: how much of it they heard, in spoken characters. */
   interruption?: ReplyInterruption;
+  /** On a teammate's reply to a caller: pending until a turn of the call speaks it, then spoken. */
+  speech?: OperatorReplySpeech;
 }
 
 /** A tail cursor's marker watermark, read only in the form the repository writes it. */
@@ -288,9 +291,11 @@ const cursorMarkedAt = (cursor: { keys: Readonly<Record<string, string>> } | nul
   return value !== undefined && !Number.isNaN(Date.parse(value)) && new Date(value).toISOString() === value ? value : undefined;
 };
 
-/** The interruption marker, on a reply that carries one and on no other message. */
-const interruptionField = (message: MessageRecord): { interruption?: ReplyInterruption } =>
-  message.interruption ? { interruption: message.interruption } : {};
+/** The voice markers a message carries: a reply's interruption, a teammate reply's speech state. */
+const voiceMarkerFields = (message: MessageRecord): { interruption?: ReplyInterruption; speech?: OperatorReplySpeech } => ({
+  ...(message.interruption ? { interruption: message.interruption } : {}),
+  ...(message.speech ? { speech: message.speech } : {}),
+});
 
 /**
  * Reads the signature from a human-agent reply's stored metadata, the same on every surface. A
@@ -966,6 +971,8 @@ export class ChatHistoryService {
       cursor?: string;
       sourceScope?: ConversationSourceScope;
       ownership?: ConversationOwnershipScope;
+      agentId?: string;
+      channel?: string;
     } = { limit: 50, offset: 0 },
   ): Promise<ChatConversationPage> {
     const { conversations, total, nextCursor, hasMore } = await this.conversationRepository.listPageByWorkspaceId(
@@ -1315,7 +1322,7 @@ export class ChatHistoryService {
         turnFailure: message.role === "user" ? turnFailureByUserMessageId.get(message.id) : undefined,
         operatorDisplayName: operatorDisplayNameFrom(message),
         ...(options.includeOperatorLabel ? operatorLabelField(message, operatorLabels) : {}),
-        ...interruptionField(message),
+        ...voiceMarkerFields(message),
       })),
       ...operatorOwnershipField(ownershipRecord),
       ...(activity ? { activity: activity.present(operatorLabels) } : {}),
@@ -1393,7 +1400,7 @@ export class ChatHistoryService {
         turnFailure,
         operatorDisplayName: operatorDisplayNameFrom(message),
         ...(options.includeOperatorLabel ? operatorLabelField(message, operatorLabels) : {}),
-        ...interruptionField(message),
+        ...voiceMarkerFields(message),
       },
       ...operatorOwnershipField(ownershipRecord),
     };
@@ -1415,9 +1422,9 @@ export class ChatHistoryService {
       activity?: ConversationActivityReadScope;
       /**
        * Operator reads that merge messages by id: the tail also returns an already-seen reply once
-       * the caller has marked it interrupted, so an open transcript shows the marker.
+       * it is marked (interrupted by its caller, or spoken to them), so an open transcript shows it.
        */
-      redeliverInterruptedReplies?: boolean;
+      redeliverMarkedReplies?: boolean;
     } = {},
   ): Promise<ChatConversationTail> {
     const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
@@ -1433,7 +1440,7 @@ export class ChatHistoryService {
         sinceId: cursor?.keys.id,
         sinceMarkedAt: cursorMarkedAt(cursor),
         limit: input.limit,
-        redeliverInterruptedReplies: options.redeliverInterruptedReplies === true,
+        redeliverMarkedReplies: options.redeliverMarkedReplies === true,
       }),
       options.includeOwnership ? this.conversationOwnership.load(conversation.id) : Promise.resolve(null),
       this.loadActivity(
@@ -1490,7 +1497,7 @@ export class ChatHistoryService {
       ...(options.includeLatency ? { latencyMs: message.totalLatencyMs } : {}),
       operatorDisplayName: operatorDisplayNameFrom(message),
       ...(options.includeOperatorLabel ? operatorLabelField(message, operatorLabels) : {}),
-      ...interruptionField(message),
+      ...voiceMarkerFields(message),
     };
   }
 

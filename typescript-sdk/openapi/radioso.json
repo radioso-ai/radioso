@@ -229,6 +229,11 @@
           },
           "requiresEmailVerification": {
             "type": "boolean"
+          },
+          "developmentVerificationUrl": {
+            "type": "string",
+            "format": "uri",
+            "description": "Development-only verification URL. Absent unless explicitly enabled in a development runtime."
           }
         },
         "required": [
@@ -375,6 +380,17 @@
           "verified"
         ]
       },
+      "PendingRegistrationSessionResponse": {
+        "type": "object",
+        "properties": {
+          "ready": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ready"
+        ]
+      },
       "Workspace": {
         "type": "object",
         "properties": {
@@ -457,6 +473,91 @@
           "workspaces"
         ]
       },
+      "WorkspaceSetupState": {
+        "type": "object",
+        "properties": {
+          "purpose": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dismissed": {
+            "type": "boolean"
+          },
+          "skippedSteps": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "purpose",
+                "documents",
+                "conversation",
+                "directives_or_routines",
+                "notify_destination",
+                "credential"
+              ]
+            }
+          },
+          "shouldShowFirstRun": {
+            "type": "boolean"
+          },
+          "hasDirectivesOrRoutines": {
+            "type": "boolean"
+          },
+          "hasNotifyDestination": {
+            "type": "boolean"
+          },
+          "hasNotifyDeliveryConfirmed": {
+            "type": "boolean"
+          },
+          "hasCredential": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "purpose",
+          "dismissed",
+          "skippedSteps",
+          "shouldShowFirstRun",
+          "hasDirectivesOrRoutines",
+          "hasNotifyDestination",
+          "hasNotifyDeliveryConfirmed",
+          "hasCredential"
+        ]
+      },
+      "UpdateWorkspaceSetupStateRequest": {
+        "type": "object",
+        "properties": {
+          "purpose": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "maxLength": 2000
+          },
+          "dismissed": {
+            "type": "boolean"
+          },
+          "skippedSteps": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "purpose",
+                "documents",
+                "conversation",
+                "directives_or_routines",
+                "notify_destination",
+                "credential"
+              ]
+            },
+            "maxItems": 6
+          }
+        },
+        "additionalProperties": false
+      },
       "WorkspaceSummaryResponse": {
         "type": "object",
         "properties": {
@@ -503,6 +604,9 @@
           },
           "websiteCrawlerEnabled": {
             "type": "boolean"
+          },
+          "setup": {
+            "$ref": "#/components/schemas/WorkspaceSetupState"
           }
         },
         "required": [
@@ -517,7 +621,8 @@
           "hasReadyDocuments",
           "hasCompletedChat",
           "sampleDocumentsImported",
-          "websiteCrawlerEnabled"
+          "websiteCrawlerEnabled",
+          "setup"
         ]
       },
       "RegisterRequest": {
@@ -3383,6 +3488,14 @@
               "maxLength": 200
             }
           },
+          "recordingNotice": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
           "runtime": {
             "type": [
               "object",
@@ -3424,7 +3537,7 @@
           "fallbackLine",
           "runtime"
         ],
-        "description": "How the agent sounds on the voice channel. `bridgeLines` and `fallbackLine` are keyed by language tag (at most 10 each); each style holds at most 5 lines of 1 to 200 characters. `runtime` binds the agent to one vendor agent (the vendor's own agent id, 1 to 128 letters, digits, underscores and hyphens), which a voice session start opens, in the data residency region of the vendor account (`region`, which picks the vendor host); null binds none. An update replaces the block whole."
+        "description": "How the agent sounds on the voice channel. `bridgeLines`, `fallbackLine` and the optional `recordingNotice` are keyed by language tag (at most 10 each); each style holds at most 5 lines of 1 to 200 characters, and each notice is one line of 1 to 200 characters. The website embed shows the `recordingNotice` for the session's language as a call starts. `runtime` binds the agent to one vendor agent (the vendor's own agent id, 1 to 128 letters, digits, underscores and hyphens), which a voice session start opens, in the data residency region of the vendor account (`region`, which picks the vendor host); null binds none. An update replaces the block whole."
       },
       "AgentVoiceSettingsUpdate": {
         "type": "object",
@@ -3463,6 +3576,14 @@
             }
           },
           "fallbackLine": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 200
+            }
+          },
+          "recordingNotice": {
             "type": "object",
             "additionalProperties": {
               "type": "string",
@@ -8738,6 +8859,10 @@
             "type": "string",
             "format": "date-time",
             "description": "When `signedUrl` stops opening sessions: Radioso computes it from the validity the vendor documents (15 minutes on `elevenlabs`) and the time it asked for the URL."
+          },
+          "recordingNotice": {
+            "type": "string",
+            "description": "The agent's `voice.recordingNotice` in the session's language, when the agent wrote one for it: the page shows it to the caller as the call starts."
           }
         },
         "required": [
@@ -8746,6 +8871,22 @@
           "sessionKey",
           "locale"
         ]
+      },
+      "PublicVoiceVendorConversationRequest": {
+        "type": "object",
+        "properties": {
+          "vendorConversationId": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128,
+            "pattern": "^[A-Za-z0-9_-]+$"
+          }
+        },
+        "required": [
+          "vendorConversationId"
+        ],
+        "additionalProperties": false,
+        "description": "The vendor's id for the call the page opened: on `elevenlabs`, what the client's `getId()` returns once the session is connected."
       },
       "WorkspaceIngestionReprocessResponse": {
         "type": "object",
@@ -16042,6 +16183,27 @@
         ],
         "description": "Present on an assistant reply the caller cut short by speaking over it on the voice channel: how much of the reply they heard. Both counts are in the characters the channel spoke, so they do not index into `content`, which keeps the full reply."
       },
+      "OperatorReplySpeech": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "spoken",
+              "skipped"
+            ]
+          },
+          "spokenAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "state"
+        ],
+        "description": "Present on a teammate's reply on a voice conversation. A call speaks only when its caller does, so the reply is `pending` until the caller's next turn speaks it, then `spoken`, with `spokenAt` set to when the turn that spoke it completed. `skipped`: the reply has no words a call can speak, so no turn speaks it."
+      },
       "ChatConversationMessage": {
         "type": "object",
         "properties": {
@@ -16106,6 +16268,9 @@
           },
           "interruption": {
             "$ref": "#/components/schemas/ReplyInterruption"
+          },
+          "speech": {
+            "$ref": "#/components/schemas/OperatorReplySpeech"
           },
           "debug": {
             "$ref": "#/components/schemas/ChatConversationMessageDebug"
@@ -16190,6 +16355,9 @@
           },
           "interruption": {
             "$ref": "#/components/schemas/ReplyInterruption"
+          },
+          "speech": {
+            "$ref": "#/components/schemas/OperatorReplySpeech"
           }
         },
         "required": [
@@ -16800,6 +16968,18 @@
               "$ref": "#/components/schemas/ConversationActivityEntry"
             },
             "description": "What teammates and the agent did to the conversation, oldest first: handoffs, claims, reassignments, hand-backs, approvals decided, and — for a caller with Quality access — feedback resolved or dismissed."
+          },
+          "recording": {
+            "type": "object",
+            "properties": {
+              "available": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "available"
+            ],
+            "description": "On a voice conversation read by a dashboard session: whether the call has a recording `getConversationRecording` can play. `available` is true when the website embed reported the vendor's id for the call and the workspace holds a vendor key the backend can read; it is read from Radioso alone, so the vendor may still hold no audio for a call that has not ended. Machine credentials, which cannot play it, get no `recording`."
           }
         },
         "required": [
@@ -22386,6 +22566,13 @@
             "type": "string",
             "format": "uuid"
           },
+          "channel": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "The conversation's source channel; null when its conversation record is unavailable."
+          },
           "agentId": {
             "type": [
               "string",
@@ -22546,6 +22733,7 @@
         "required": [
           "id",
           "conversationId",
+          "channel",
           "agentId",
           "state",
           "holdReason",
@@ -22705,6 +22893,12 @@
           "createdAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "channel": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -22718,7 +22912,8 @@
           "contentHash",
           "canResolve",
           "deadline",
-          "createdAt"
+          "createdAt",
+          "channel"
         ]
       },
       "PendingApprovalDecisionListResponse": {
@@ -25155,7 +25350,7 @@
         },
         "responses": {
           "201": {
-            "description": "Account created; email verification may be required before sign-in",
+            "description": "Account created; when email verification is required, a pending-registration cookie is also issued",
             "content": {
               "application/json": {
                 "schema": {
@@ -25379,7 +25574,7 @@
         },
         "responses": {
           "200": {
-            "description": "Email address verified",
+            "description": "Email address verified and a session cookie established",
             "content": {
               "application/json": {
                 "schema": {
@@ -25441,6 +25636,38 @@
           },
           "400": {
             "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/email-verification/pending-session": {
+      "post": {
+        "tags": [
+          "Auth"
+        ],
+        "summary": "Exchange a pending registration ticket for a session",
+        "description": "Uses the short-lived httpOnly pending-registration cookie. Returns the same response shape when the cookie is missing, invalid, expired, used, or waiting for verification.",
+        "operationId": "exchangePendingRegistrationSession",
+        "responses": {
+          "200": {
+            "description": "Pending registration status returned; a ready response also establishes the session cookie",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PendingRegistrationSessionResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
             "content": {
               "application/json": {
                 "schema": {
@@ -32562,6 +32789,66 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/workspace/setup-state": {
+      "get": {
+        "tags": [
+          "Workspace"
+        ],
+        "summary": "Get workspace setup state and outcome checklist",
+        "operationId": "getWorkspaceSetupState",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Workspace setup state returned",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceSetupState"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Workspace"
+        ],
+        "summary": "Update persisted workspace setup state",
+        "operationId": "updateWorkspaceSetupState",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateWorkspaceSetupStateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Workspace setup state updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WorkspaceSetupState"
                 }
               }
             }
@@ -50371,6 +50658,25 @@
             "required": false,
             "name": "ownership",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": false,
+            "name": "channel",
+            "in": "query"
           }
         ],
         "responses": {
@@ -50633,7 +50939,7 @@
           "History"
         ],
         "summary": "Poll new messages for a saved assistant conversation",
-        "description": "Returns the messages after `cursor`. It also returns an assistant reply the client has already seen once the caller has marked it interrupted, carrying `interruption`, in time order with the new messages. Merge messages by `id`, so a re-delivered message replaces the one you hold.",
+        "description": "Returns the messages after `cursor`. It also returns an assistant reply the client has already seen once it is marked: the caller cut it short, carrying `interruption`, or a teammate's reply was spoken to the caller or skipped, carrying `speech` with `state: \"spoken\"` or `\"skipped\"`. Re-delivered replies come in time order with the new messages. Merge messages by `id`, so a re-delivered message replaces the one you hold.",
         "operationId": "tailHistoryConversation",
         "security": [
           {
@@ -51635,6 +51941,127 @@
         }
       }
     },
+    "/api/v1/conversations/{conversationId}/recording": {
+      "get": {
+        "tags": [
+          "Conversation History"
+        ],
+        "summary": "Play a voice conversation's recording",
+        "description": "Streams the call's audio from the voice vendor, which keeps the recording, with the workspace's own vendor key; the key and the vendor's URL stay on the backend. A conversation has one when its call was started by the website embed and the page reported the vendor's conversation id: `recording.available` on the conversation's detail says so. Dashboard session only, from the dashboard's own pages: bearer API tokens are rejected, and so is a browser request whose `Sec-Fetch-Site` is anything but `same-origin`. An `<audio>` element cannot send `X-Workspace-Id`, so the optional `workspaceId` query selects the workspace instead. `HEAD` is refused with `405`. A `Range` header naming one byte range (`bytes=first-`, `bytes=first-last` or `bytes=-suffix`) goes on to the vendor, and the response is `206` with the vendor's `Content-Range` when the vendor answers it; a vendor that ignores it answers with the whole recording, and a range past the end is `416`. The response is `Cache-Control: private, no-store`. Every response that carries audio records a `conversation.recording_played` audit event with the teammate's user id; `partial` is true when the audio sent starts past the recording's first byte.",
+        "operationId": "getConversationRecording",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "conversationId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "workspaceId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string"
+            },
+            "required": false,
+            "name": "range",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The whole recording",
+            "content": {
+              "audio/mpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "206": {
+            "description": "The byte range the request named",
+            "content": {
+              "audio/mpeg": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid conversation id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Workspace history read permission required, the caller is not a dashboard session, or another site started the request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "The conversation has no recording, or the vendor holds no audio for the call yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "416": {
+            "description": "The byte range lies past the recording's end; `Content-Range` names its length when the vendor does"
+          },
+          "503": {
+            "description": "`recording_unavailable`: the recording could not be read (the workspace's vendor key is missing or unreadable, or the vendor did not answer)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/delivery-failures": {
       "get": {
         "tags": [
@@ -51668,6 +52095,16 @@
             },
             "required": false,
             "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": false,
+            "name": "channel",
             "in": "query"
           },
           {
@@ -51953,6 +52390,16 @@
             },
             "required": false,
             "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": false,
+            "name": "channel",
             "in": "query"
           },
           {
@@ -52311,6 +52758,27 @@
         "security": [
           {
             "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": false,
+            "name": "agentId",
+            "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 100
+            },
+            "required": false,
+            "name": "channel",
+            "in": "query"
           }
         ],
         "responses": {
@@ -58671,6 +59139,95 @@
           },
           "503": {
             "description": "`voice_unavailable`: the session could not be started (the workspace's vendor key is missing or unreadable, or the vendor did not start it)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/public/chat/{token}/voice/sessions/{sessionKey}/vendor-conversation": {
+      "post": {
+        "tags": [
+          "Assistant"
+        ],
+        "summary": "Report the vendor's id for a voice session the page opened",
+        "description": "Once the vendor's client has connected a session from `createPublicVoiceSession`, the page reports the vendor's id for the call, which names the call's recording at the vendor. Radioso takes it once, from the same website embed public session the session was started for, while the session's start is unexpired. Before storing it, Radioso asks the vendor, with the workspace's own key, which vendor agent the conversation was held on, and stores it only when that is the vendor agent the session was started on; it only ever uses the id to look the recording up with that key. A browser on another origin calls `/api/public/chat/{token}/voice/sessions/{sessionKey}/vendor-conversation` on the Radioso app host, which answers the CORS preflight and relays here.",
+        "operationId": "reportPublicVoiceVendorConversation",
+        "security": [
+          {
+            "anonymousSessionCookie": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "required": true,
+            "name": "token",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "sessionKey",
+            "in": "path"
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicVoiceVendorConversationRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "The vendor's id is stored with the session"
+          },
+          "400": {
+            "description": "Request validation failed: the session key is not a UUID, or the id is not 1 to 128 letters, digits, underscores and hyphens",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Public session not found or not a website embed session; no session this public session started waits for an id (it already has one, its start expired, or Radioso never started it); or the vendor says the conversation was held on another vendor agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "The visitor session's request budget is spent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RateLimitExceededResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`voice_unavailable`: the id could not be checked with the vendor now (the vendor does not show the conversation yet, as can happen right after a call connects; the workspace's vendor key is missing or unreadable; or the vendor did not answer); report it again",
             "content": {
               "application/json": {
                 "schema": {

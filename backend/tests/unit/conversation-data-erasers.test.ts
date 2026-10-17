@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   defaultConversationDataErasers,
   defaultVerifiedCustomerDataErasers,
+  defaultVisitorKeyDataErasers,
 } from "../../src/app/composition/conversationErasure.js";
 import { ConversationAuditEraser } from "../../src/db/repositories/auditEventRepository.js";
 import { ContextVariableValueEraser } from "../../src/db/repositories/contextVariableRepository.js";
@@ -164,7 +165,9 @@ describe("default erasers", () => {
       "eval",
       "whatsapp",
       "audience-pulse",
+      "voice-channel",
     ]);
     expect(defaultVerifiedCustomerDataErasers.map((bind) => bind(db).owner)).toEqual(["context-variables"]);
+    expect(defaultVisitorKeyDataErasers.map((bind) => bind(db).owner)).toEqual(["voice-channel"]);
   });
 });

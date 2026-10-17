@@ -25,6 +25,7 @@ import {
   type CopilotWorkspaceSettingsPort,
   type CopilotProductDocsPort,
   type CopilotEmailChannelPort,
+  type CopilotWorkspaceSetupStatePort,
 } from "../../modules/operatorCopilot/tools/index.js";
 import type { DocumentInventoryPort } from "../../modules/documents/contracts/index.js";
 import type { CopilotWebsiteAnalysisProbePort } from "../../modules/operatorCopilot/contracts/agentAuthoring.js";
@@ -75,6 +76,7 @@ import { productDocsCopilotPrimitives } from "../../modules/productDocs/public.j
 import { settingsCopilotPrimitives } from "../../modules/settings/public.js";
 import { contextVariableCopilotPrimitives } from "../../modules/context-variables/public.js";
 import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRepository.js";
+import type { VoiceRecordingAvailabilityPort } from "../../modules/voiceChannel/public.js";
 
 /** Composition assembles module-owned reader contributions; it owns no tool behavior. */
 /**
@@ -152,6 +154,7 @@ export const createCopilotToolCatalog = (deps: {
   readonly agentService: CopilotAgentPort;
   readonly routineDefinitionService: CopilotRoutineDefinitionPort;
   readonly chatHistoryService: CopilotConversationHistoryPort;
+  readonly voiceRecordings: VoiceRecordingAvailabilityPort;
   readonly replyDraft: CopilotReplyDraftPort;
   readonly agentTurnProbe: CopilotAgentTurnProbePort;
   readonly documentSearchService: CopilotDocumentSearchPort;
@@ -177,6 +180,7 @@ export const createCopilotToolCatalog = (deps: {
   readonly operatorNoticeDestinations: CopilotOperatorNoticeDestinationsPort;
   readonly contextVariables: CopilotContextVariablesPort;
   readonly workspaceSettings: CopilotWorkspaceSettingsPort;
+  readonly workspaceSetupState: CopilotWorkspaceSetupStatePort;
   /** Null when the deployment has no email provider. */
   readonly emailChannel: CopilotEmailChannelPort | null;
   /** Open delivery failures, for `needs_attention` and `workspace_triage`. */

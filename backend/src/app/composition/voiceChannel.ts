@@ -1,11 +1,21 @@
 import { randomUUID } from "node:crypto";
 
-import type { ChatStreamEvent, ReplyInterruptionMarker } from "../../modules/chat/contracts/index.js";
+import type {
+  ChatStreamEvent,
+  OperatorReplySpeechClaims,
+  ReplyInterruptionMarker,
+} from "../../modules/chat/contracts/index.js";
 import {
+  VoiceRecordingErasureService,
+  VoiceRecordingService,
   VoiceSessionStartService,
   VoiceTurnService,
+  createElevenLabsRecordingSource,
   createElevenLabsSessionStarter,
   type VoiceChatTurnRequest,
+  type VoiceRecordingAudit,
+  type VoiceRecordingStore,
+  type VoiceVendorCredentialReader,
   type VoiceSessionAvailabilityPort,
   type VoiceSessionStartLookup,
   type VoiceSessionStartPort,
@@ -18,8 +28,9 @@ import type { AgentRecord } from "../../modules/agents/public.js";
 import type { AuditPort } from "../../modules/audit/contracts/index.js";
 import { isHumanOwned, type ConversationOwnershipReader } from "../../modules/handoff/public.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
+import type { Db } from "../../shared/infra/kysely/types.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
-import { VOICE_VENDORS, type VoiceVendor } from "../../shared/domain/voiceVendor.js";
+import { isVoiceVendor, type VoiceVendor } from "../../shared/domain/voiceVendor.js";
 import { ProviderConfigurationError } from "../../shared/infra/llm/providerTypes.js";
 
 type AgentVoiceProfileRepository = {
@@ -35,11 +46,12 @@ const voiceProfileSource = (agentRepository: AgentVoiceProfileRepository) => ({
 });
 
 /**
- * Notes on a previous turn's stored reply. An interrupted reply is marked on the message first and
+ * Notes on a turn's stored replies. An interrupted reply is marked on the message first and
  * audited after, so a note that rejects is one the session writes again; the mark is idempotent. A
  * reply the conversation no longer holds is not marked and not audited, and the note resolves: a
- * retry would find it no more. Notes name the reply by id and count characters; they never carry
- * what was said.
+ * retry would find it no more. A teammate's replies the turn recorded as spoken are audited (the
+ * turn marks them through chat's claims port first). Notes name replies by id and count
+ * characters; they never carry what was said.
  */
 export const createVoiceTurnNotes = (deps: {
   replies: ReplyInterruptionMarker;
@@ -61,14 +73,18 @@ export const createVoiceTurnNotes = (deps: {
   },
   replyReplayed: ({ workspaceId, ...metadata }) =>
     deps.auditService.record({ workspaceId, eventType: "voice.reply_replayed", eventStatus: "success", metadata }),
+  operatorRepliesSpoken: ({ workspaceId, ...metadata }) =>
+    deps.auditService.record({ workspaceId, eventType: "voice.operator_reply_spoken", eventStatus: "success", metadata }),
 });
 
 /**
  * The voice channel's turn port: sessions and their starts over one store (`VoiceSessionRepository`
  * in production, the same instance the session start records into), the same streaming chat turn the REST
  * agent channel runs, the agent's voice settings and the conversation's routine state and owner for
- * the turn policy, and notes on a previous turn's stored reply. Vendor adapters mount over this
- * port in the HTTP layer.
+ * the turn policy, the teammate replies the caller has not heard, and notes on a turn's stored
+ * replies. The message repository is chat's side of the replies: it reads a teammate's pending
+ * replies, marks them spoken, and marks an interrupted one. Vendor adapters mount over this port
+ * in the HTTP layer.
  */
 export const createVoiceChannelComposition = (deps: {
   sessions: VoiceSessionStore & VoiceSessionStartLookup;
@@ -78,7 +94,7 @@ export const createVoiceChannelComposition = (deps: {
   agentRepository: AgentVoiceProfileRepository;
   routineStates: { loadActive(input: { sessionId: string }): Promise<unknown> };
   conversationOwnership: ConversationOwnershipReader;
-  replies: ReplyInterruptionMarker;
+  replies: ReplyInterruptionMarker & OperatorReplySpeechClaims;
   auditService: Pick<AuditPort, "record">;
   metricsRegistry: MetricsRegistry | null;
   logger: AppLogger;
@@ -91,6 +107,7 @@ export const createVoiceChannelComposition = (deps: {
     // A conversation's routine state is keyed by the conversation id.
     routines: { isRoutineActive: async (conversationId) => (await deps.routineStates.loadActive({ sessionId: conversationId })) !== null },
     ownership: { isHumanOwned: async (conversationId) => isHumanOwned(await deps.conversationOwnership.load(conversationId)) },
+    operatorReplies: { claims: deps.replies, newClaimTurnId: randomUUID },
     notes: createVoiceTurnNotes({ replies: deps.replies, auditService: deps.auditService, logger: deps.logger }),
     metrics: deps.metricsRegistry,
     logger: deps.logger,
@@ -101,6 +118,96 @@ const isUnreadableCredential = (error: unknown): boolean =>
   error instanceof ProviderConfigurationError
   && typeof error.details === "object" && error.details !== null
   && (error.details as { kind?: unknown }).kind === "credential_unreadable";
+
+/** The workspace credential store's reads of a voice vendor's key. */
+type VoiceVendorCredentialStore = {
+  getApiKey(workspaceId: string, provider: VoiceVendor): Promise<string | undefined>;
+  hasCredentials(workspaceId: string, provider: VoiceVendor): Promise<boolean>;
+  isEncryptionConfigured(): boolean;
+};
+
+/**
+ * A vendor's key as the voice channel reads it from the workspace credential store: decrypted only
+ * by `read`, inside the request that needs it, and `presence` from the stored row and the
+ * backend's master key alone.
+ */
+const voiceVendorCredentialReader = (credentials: VoiceVendorCredentialStore): VoiceVendorCredentialReader => ({
+  read: async ({ workspaceId, vendor }) => {
+    try {
+      const apiKey = await credentials.getApiKey(workspaceId, vendor);
+      return apiKey ? { kind: "present", credential: { apiKey } } : { kind: "missing" };
+    } catch (error) {
+      if (isUnreadableCredential(error)) return { kind: "unreadable" };
+      throw error;
+    }
+  },
+  presence: async ({ workspaceId, vendor }) => {
+    if (!await credentials.hasCredentials(workspaceId, vendor)) return "missing";
+    return credentials.isEncryptionConfigured() ? "stored" : "unreadable";
+  },
+});
+
+/**
+ * The audit events a recording leaves, ids only: who played which conversation's recording, and
+ * each recording deleted at the vendor, with the organization it belonged to.
+ */
+const createVoiceRecordingAudit = (auditService: Pick<AuditPort, "record">): VoiceRecordingAudit => ({
+  played: ({ workspaceId, ...metadata }) =>
+    auditService.record({ workspaceId, eventType: "conversation.recording_played", eventStatus: "success", metadata }),
+  // A row may only point at a workspace or an organization that still exists; one deleted with the
+  // recording is kept by id in the metadata, where the organization's records can still find it.
+  deleted: ({ account, workspaceId, workspaceDeleted, conversationId, vendor, outcome }) =>
+    auditService.record({
+      accountId: account && !account.deleted ? account.id : null,
+      workspaceId: workspaceDeleted ? null : workspaceId,
+      eventType: "conversation.recording_deleted",
+      eventStatus: "success",
+      metadata: {
+        conversationId,
+        vendor,
+        outcome,
+        ...(workspaceDeleted ? { deletedWorkspaceId: workspaceId } : {}),
+        ...(account?.deleted ? { deletedAccountId: account.id } : {}),
+      },
+    }),
+});
+
+/**
+ * Voice recordings, kept by the vendor: the ElevenLabs recording source over `fetch`, the
+ * workspace's vendor key from the workspace credential store, `voice_sessions` for where each
+ * recording lives (`VoiceSessionRepository` in production, the same store the session start
+ * records into), and the audit service for each play and each deletion. The same dependencies
+ * serve the playback and the erasure that follows a deletion.
+ */
+export const createVoiceRecordingComposition = (deps: {
+  recordings: VoiceRecordingStore;
+  /** The same store over another handle: a conversation erasure's transaction. */
+  recordingsIn: (db: Db) => VoiceRecordingStore;
+  credentials: VoiceVendorCredentialStore;
+  fetch: typeof globalThis.fetch;
+  auditService: Pick<AuditPort, "record">;
+  metricsRegistry: MetricsRegistry | null;
+  logger: AppLogger;
+}): {
+  recordings: VoiceRecordingService;
+  erasure: VoiceRecordingErasureService;
+  /** The erasure reading and locking the recordings in a conversation erasure's transaction. */
+  erasureIn: (db: Db) => VoiceRecordingErasureService;
+} => {
+  const dependencies = {
+    recordings: deps.recordings,
+    credentials: voiceVendorCredentialReader(deps.credentials),
+    sources: { elevenlabs: createElevenLabsRecordingSource({ fetch: deps.fetch }) },
+    audit: createVoiceRecordingAudit(deps.auditService),
+    metrics: deps.metricsRegistry,
+    logger: deps.logger,
+  };
+  return {
+    recordings: new VoiceRecordingService(dependencies),
+    erasure: new VoiceRecordingErasureService(dependencies),
+    erasureIn: (db) => new VoiceRecordingErasureService({ ...dependencies, recordings: deps.recordingsIn(db) }),
+  };
+};
 
 /**
  * The embed config says whether the embed offers calls, which follows the voice vendor key's
@@ -113,7 +220,7 @@ export const refreshEmbedConfigsOnVoiceVendorKeyChange = (deps: {
   embedConfigs: { invalidateEmbedConfigs(workspaceId: string): Promise<void> };
 }): void => {
   deps.credentials.onChange(async ({ workspaceId, provider }) => {
-    if ((VOICE_VENDORS as readonly string[]).includes(provider)) await deps.embedConfigs.invalidateEmbedConfigs(workspaceId);
+    if (isVoiceVendor(provider)) await deps.embedConfigs.invalidateEmbedConfigs(workspaceId);
   });
 };
 
@@ -128,32 +235,14 @@ export const refreshEmbedConfigsOnVoiceVendorKeyChange = (deps: {
 export const createVoiceSessionStartComposition = (deps: {
   agentRepository: AgentVoiceProfileRepository;
   starts: VoiceSessionStartRegistry;
-  credentials: {
-    getApiKey(workspaceId: string, provider: VoiceVendor): Promise<string | undefined>;
-    hasCredentials(workspaceId: string, provider: VoiceVendor): Promise<boolean>;
-    isEncryptionConfigured(): boolean;
-  };
+  credentials: VoiceVendorCredentialStore;
   fetch: typeof globalThis.fetch;
   metricsRegistry: MetricsRegistry | null;
   logger: AppLogger;
 }): VoiceSessionStartPort & VoiceSessionAvailabilityPort =>
   new VoiceSessionStartService({
     agents: voiceProfileSource(deps.agentRepository),
-    credentials: {
-      read: async ({ workspaceId, vendor }) => {
-        try {
-          const apiKey = await deps.credentials.getApiKey(workspaceId, vendor);
-          return apiKey ? { kind: "present", credential: { apiKey } } : { kind: "missing" };
-        } catch (error) {
-          if (isUnreadableCredential(error)) return { kind: "unreadable" };
-          throw error;
-        }
-      },
-      presence: async ({ workspaceId, vendor }) => {
-        if (!await deps.credentials.hasCredentials(workspaceId, vendor)) return "missing";
-        return deps.credentials.isEncryptionConfigured() ? "stored" : "unreadable";
-      },
-    },
+    credentials: voiceVendorCredentialReader(deps.credentials),
     starters: { elevenlabs: createElevenLabsSessionStarter({ fetch: deps.fetch }) },
     starts: deps.starts,
     newSessionKey: randomUUID,

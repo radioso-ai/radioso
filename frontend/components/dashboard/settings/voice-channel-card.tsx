@@ -69,6 +69,8 @@ function VoiceLanguageEditor({
   onRemove: () => void
 }) {
   const fallbackId = `voiceFallbackLine-${language.locale}`
+  const noticeId = `voiceRecordingNotice-${language.locale}`
+
   return (
     <LanguageGroup locale={language.locale} label="Voice lines" onRemove={onRemove}>
       <div className="space-y-3">
@@ -98,6 +100,17 @@ function VoiceLanguageEditor({
             onChange={(event) => onChange({ ...language, fallbackLine: event.target.value })}
           />
           <LineWarning text={spokenFloorWarning(language.fallbackLine)} />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor={noticeId} className="text-foreground">Recording notice</Label>
+          <p className="text-xs text-muted-foreground">Shown to the caller as a website call starts. Leave it blank to show none.</p>
+          <Input
+            id={noticeId}
+            value={language.recordingNotice}
+            maxLength={VOICE_MAX_LINE_LENGTH}
+            placeholder="This call is recorded."
+            onChange={(event) => onChange({ ...language, recordingNotice: event.target.value })}
+          />
         </div>
       </div>
       <div className="space-y-3">

@@ -148,6 +148,7 @@ export const operatorMcpDispositions: Readonly<Record<string, CopilotMcpDisposit
     scope: "operator:read",
     retry: { effect: "none", idempotent: true, operationIdentity: "client" },
   },
+  workspace_setup_state: eligibleRead,
   // Scopes from the request's own `agentId` alone; it never falls back to dashboard page context
   // (triage.ts explicitly avoids that so a broad "what needs my attention" query is not silently
   // narrowed by whatever the operator happened to have open). No stateless-transport gap exists.

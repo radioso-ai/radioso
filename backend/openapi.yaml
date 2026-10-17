@@ -141,6 +141,10 @@ components:
           type: string
         requiresEmailVerification:
           type: boolean
+        developmentVerificationUrl:
+          type: string
+          format: uri
+          description: Development-only verification URL. Absent unless explicitly enabled in a development runtime.
       required:
         - userId
         - displayName
@@ -237,6 +241,13 @@ components:
             - true
       required:
         - verified
+    PendingRegistrationSessionResponse:
+      type: object
+      properties:
+        ready:
+          type: boolean
+      required:
+        - ready
     Workspace:
       type: object
       properties:
@@ -296,6 +307,69 @@ components:
             $ref: "#/components/schemas/Workspace"
       required:
         - workspaces
+    WorkspaceSetupState:
+      type: object
+      properties:
+        purpose:
+          type:
+            - string
+            - "null"
+        dismissed:
+          type: boolean
+        skippedSteps:
+          type: array
+          items:
+            type: string
+            enum:
+              - purpose
+              - documents
+              - conversation
+              - directives_or_routines
+              - notify_destination
+              - credential
+        shouldShowFirstRun:
+          type: boolean
+        hasDirectivesOrRoutines:
+          type: boolean
+        hasNotifyDestination:
+          type: boolean
+        hasNotifyDeliveryConfirmed:
+          type: boolean
+        hasCredential:
+          type: boolean
+      required:
+        - purpose
+        - dismissed
+        - skippedSteps
+        - shouldShowFirstRun
+        - hasDirectivesOrRoutines
+        - hasNotifyDestination
+        - hasNotifyDeliveryConfirmed
+        - hasCredential
+    UpdateWorkspaceSetupStateRequest:
+      type: object
+      properties:
+        purpose:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 2000
+        dismissed:
+          type: boolean
+        skippedSteps:
+          type: array
+          items:
+            type: string
+            enum:
+              - purpose
+              - documents
+              - conversation
+              - directives_or_routines
+              - notify_destination
+              - credential
+          maxItems: 6
+      additionalProperties: false
     WorkspaceSummaryResponse:
       type: object
       properties:
@@ -330,6 +404,8 @@ components:
           type: boolean
         websiteCrawlerEnabled:
           type: boolean
+        setup:
+          $ref: "#/components/schemas/WorkspaceSetupState"
       required:
         - documentCount
         - readyDocumentCount
@@ -343,6 +419,7 @@ components:
         - hasCompletedChat
         - sampleDocumentsImported
         - websiteCrawlerEnabled
+        - setup
     RegisterRequest:
       type: object
       properties:
@@ -2265,6 +2342,12 @@ components:
             type: string
             minLength: 1
             maxLength: 200
+        recordingNotice:
+          type: object
+          additionalProperties:
+            type: string
+            minLength: 1
+            maxLength: 200
         runtime:
           type:
             - object
@@ -2295,7 +2378,7 @@ components:
         - bridgeLines
         - fallbackLine
         - runtime
-      description: How the agent sounds on the voice channel. `bridgeLines` and `fallbackLine` are keyed by language tag (at most 10 each); each style holds at most 5 lines of 1 to 200 characters. `runtime` binds the agent to one vendor agent (the vendor's own agent id, 1 to 128 letters, digits, underscores and hyphens), which a voice session start opens, in the data residency region of the vendor account (`region`, which picks the vendor host); null binds none. An update replaces the block whole.
+      description: How the agent sounds on the voice channel. `bridgeLines`, `fallbackLine` and the optional `recordingNotice` are keyed by language tag (at most 10 each); each style holds at most 5 lines of 1 to 200 characters, and each notice is one line of 1 to 200 characters. The website embed shows the `recordingNotice` for the session's language as a call starts. `runtime` binds the agent to one vendor agent (the vendor's own agent id, 1 to 128 letters, digits, underscores and hyphens), which a voice session start opens, in the data residency region of the vendor account (`region`, which picks the vendor host); null binds none. An update replaces the block whole.
     AgentVoiceSettingsUpdate:
       type: object
       properties:
@@ -2324,6 +2407,12 @@ components:
               - acknowledge
               - check
         fallbackLine:
+          type: object
+          additionalProperties:
+            type: string
+            minLength: 1
+            maxLength: 200
+        recordingNotice:
           type: object
           additionalProperties:
             type: string
@@ -5894,11 +5983,26 @@ components:
           type: string
           format: date-time
           description: "When `signedUrl` stops opening sessions: Radioso computes it from the validity the vendor documents (15 minutes on `elevenlabs`) and the time it asked for the URL."
+        recordingNotice:
+          type: string
+          description: "The agent's `voice.recordingNotice` in the session's language, when the agent wrote one for it: the page shows it to the caller as the call starts."
       required:
         - vendor
         - signedUrl
         - sessionKey
         - locale
+    PublicVoiceVendorConversationRequest:
+      type: object
+      properties:
+        vendorConversationId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9_-]+$
+      required:
+        - vendorConversationId
+      additionalProperties: false
+      description: "The vendor's id for the call the page opened: on `elevenlabs`, what the client's `getId()` returns once the session is connected."
     WorkspaceIngestionReprocessResponse:
       type: object
       properties:
@@ -10873,6 +10977,21 @@ components:
         - heardCharacterCount
         - spokenCharacterCount
       description: "Present on an assistant reply the caller cut short by speaking over it on the voice channel: how much of the reply they heard. Both counts are in the characters the channel spoke, so they do not index into `content`, which keeps the full reply."
+    OperatorReplySpeech:
+      type: object
+      properties:
+        state:
+          type: string
+          enum:
+            - pending
+            - spoken
+            - skipped
+        spokenAt:
+          type: string
+          format: date-time
+      required:
+        - state
+      description: "Present on a teammate's reply on a voice conversation. A call speaks only when its caller does, so the reply is `pending` until the caller's next turn speaks it, then `spoken`, with `spokenAt` set to when the turn that spoke it completed. `skipped`: the reply has no words a call can speak, so no turn speaks it."
     ChatConversationMessage:
       type: object
       properties:
@@ -10920,6 +11039,8 @@ components:
           type: string
         interruption:
           $ref: "#/components/schemas/ReplyInterruption"
+        speech:
+          $ref: "#/components/schemas/OperatorReplySpeech"
         debug:
           $ref: "#/components/schemas/ChatConversationMessageDebug"
         turnFailure:
@@ -10972,6 +11093,8 @@ components:
           type: string
         interruption:
           $ref: "#/components/schemas/ReplyInterruption"
+        speech:
+          $ref: "#/components/schemas/OperatorReplySpeech"
       required:
         - id
         - role
@@ -11396,6 +11519,14 @@ components:
           items:
             $ref: "#/components/schemas/ConversationActivityEntry"
           description: "What teammates and the agent did to the conversation, oldest first: handoffs, claims, reassignments, hand-backs, approvals decided, and — for a caller with Quality access — feedback resolved or dismissed."
+        recording:
+          type: object
+          properties:
+            available:
+              type: boolean
+          required:
+            - available
+          description: "On a voice conversation read by a dashboard session: whether the call has a recording `getConversationRecording` can play. `available` is true when the website embed reported the vendor's id for the call and the workspace holds a vendor key the backend can read; it is read from Radioso alone, so the vendor may still hold no audio for a call that has not ended. Machine credentials, which cannot play it, get no `recording`."
       required:
         - conversationId
         - workspaceId
@@ -15294,6 +15425,11 @@ components:
         conversationId:
           type: string
           format: uuid
+        channel:
+          type:
+            - string
+            - "null"
+          description: The conversation's source channel; null when its conversation record is unavailable.
         agentId:
           type:
             - string
@@ -15408,6 +15544,7 @@ components:
       required:
         - id
         - conversationId
+        - channel
         - agentId
         - state
         - holdReason
@@ -15518,6 +15655,10 @@ components:
         createdAt:
           type: string
           format: date-time
+        channel:
+          type:
+            - string
+            - "null"
       required:
         - handle
         - conversationId
@@ -15530,6 +15671,7 @@ components:
         - canResolve
         - deadline
         - createdAt
+        - channel
     PendingApprovalDecisionListResponse:
       type: object
       properties:
@@ -17214,7 +17356,7 @@ paths:
               $ref: "#/components/schemas/RegisterRequest"
       responses:
         "201":
-          description: Account created; email verification may be required before sign-in
+          description: Account created; when email verification is required, a pending-registration cookie is also issued
           content:
             application/json:
               schema:
@@ -17350,7 +17492,7 @@ paths:
               $ref: "#/components/schemas/EmailVerificationVerifyRequest"
       responses:
         "200":
-          description: Email address verified
+          description: Email address verified and a session cookie established
           content:
             application/json:
               schema:
@@ -17388,6 +17530,26 @@ paths:
                 $ref: "#/components/schemas/AcceptedResponse"
         "400":
           description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/auth/email-verification/pending-session:
+    post:
+      tags:
+        - Auth
+      summary: Exchange a pending registration ticket for a session
+      description: Uses the short-lived httpOnly pending-registration cookie. Returns the same response shape when the cookie is missing, invalid, expired, used, or waiting for verification.
+      operationId: exchangePendingRegistrationSession
+      responses:
+        "200":
+          description: Pending registration status returned; a ready response also establishes the session cookie
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PendingRegistrationSessionResponse"
+        "429":
+          description: Rate limit exceeded
           content:
             application/json:
               schema:
@@ -21943,6 +22105,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/workspace/setup-state:
+    get:
+      tags:
+        - Workspace
+      summary: Get workspace setup state and outcome checklist
+      operationId: getWorkspaceSetupState
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Workspace setup state returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceSetupState"
+    patch:
+      tags:
+        - Workspace
+      summary: Update persisted workspace setup state
+      operationId: updateWorkspaceSetupState
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWorkspaceSetupStateRequest"
+      responses:
+        "200":
+          description: Workspace setup state updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceSetupState"
   /api/v1/workspace/summary:
     get:
       tags:
@@ -32749,6 +32946,19 @@ paths:
           required: false
           name: ownership
           in: query
+        - schema:
+            type: string
+            format: uuid
+          required: false
+          name: agentId
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+          required: false
+          name: channel
+          in: query
       responses:
         "200":
           description: Chat history summaries
@@ -32909,7 +33119,7 @@ paths:
       tags:
         - History
       summary: Poll new messages for a saved assistant conversation
-      description: Returns the messages after `cursor`. It also returns an assistant reply the client has already seen once the caller has marked it interrupted, carrying `interruption`, in time order with the new messages. Merge messages by `id`, so a re-delivered message replaces the one you hold.
+      description: "Returns the messages after `cursor`. It also returns an assistant reply the client has already seen once it is marked: the caller cut it short, carrying `interruption`, or a teammate's reply was spoken to the caller or skipped, carrying `speech` with `state: \"spoken\"` or `\"skipped\"`. Re-delivered replies come in time order with the new messages. Merge messages by `id`, so a re-delivered message replaces the one you hold."
       operationId: tailHistoryConversation
       security:
         - bearerAuth: []
@@ -33524,14 +33734,84 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/conversations/{conversationId}/recording:
+    get:
+      tags:
+        - Conversation History
+      summary: Play a voice conversation's recording
+      description: "Streams the call's audio from the voice vendor, which keeps the recording, with the workspace's own vendor key; the key and the vendor's URL stay on the backend. A conversation has one when its call was started by the website embed and the page reported the vendor's conversation id: `recording.available` on the conversation's detail says so. Dashboard session only, from the dashboard's own pages: bearer API tokens are rejected, and so is a browser request whose `Sec-Fetch-Site` is anything but `same-origin`. An `<audio>` element cannot send `X-Workspace-Id`, so the optional `workspaceId` query selects the workspace instead. `HEAD` is refused with `405`. A `Range` header naming one byte range (`bytes=first-`, `bytes=first-last` or `bytes=-suffix`) goes on to the vendor, and the response is `206` with the vendor's `Content-Range` when the vendor answers it; a vendor that ignores it answers with the whole recording, and a range past the end is `416`. The response is `Cache-Control: private, no-store`. Every response that carries audio records a `conversation.recording_played` audit event with the teammate's user id; `partial` is true when the audio sent starts past the recording's first byte."
+      operationId: getConversationRecording
+      security: *a73
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: conversationId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: false
+          name: workspaceId
+          in: query
+        - schema:
+            type: string
+          required: false
+          name: range
+          in: header
+      responses:
+        "200":
+          description: The whole recording
+          content:
+            audio/mpeg: &a119
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: The byte range the request named
+          content:
+            audio/mpeg: *a119
+        "400":
+          description: Invalid conversation id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace history read permission required, the caller is not a dashboard session, or another site started the request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: The conversation has no recording, or the vendor holds no audio for the call yet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "416":
+          description: The byte range lies past the recording's end; `Content-Range` names its length when the vendor does
+        "503":
+          description: "`recording_unavailable`: the recording could not be read (the workspace's vendor key is missing or unreadable, or the vendor did not answer)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/delivery-failures:
     get:
-      tags: &a119
+      tags: &a120
         - Conversation Ownership
       summary: List delivery failures
       description: "Replies that may not have reached the customer, newest first: the open ones, or with `state=all` the cleared ones too."
       operationId: listDeliveryFailures
-      security: &a120
+      security: &a121
         - bearerAuth: []
       parameters:
         - schema:
@@ -33547,6 +33827,13 @@ paths:
             format: uuid
           required: false
           name: agentId
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+          required: false
+          name: channel
           in: query
         - schema:
             type: string
@@ -33588,11 +33875,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/delivery-failures/{failureId}/acknowledge:
     post:
-      tags: *a119
+      tags: *a120
       summary: Acknowledge a delivery failure
       description: Clears the failure as seen by the signed-in teammate. Sends nothing.
       operationId: acknowledgeDeliveryFailure
-      security: *a120
+      security: *a121
       parameters:
         - schema:
             type: string
@@ -33639,11 +33926,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/delivery-failures/{failureId}/resolve:
     post:
-      tags: *a119
+      tags: *a120
       summary: Resolve a delivery failure
       description: An audited decision on a reply whose delivery failed. `marked_sent` settles an `uncertain` send as sent. `resend` sends an `uncertain` or `halted` reply once more, once its channel can send; it is the only way a reply goes out twice.
       operationId: resolveDeliveryFailure
-      security: *a120
+      security: *a121
       parameters:
         - schema:
             type: string
@@ -33696,12 +33983,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/held-replies:
     get:
-      tags: &a121
+      tags: &a122
         - Conversation Ownership
       summary: List held replies
       description: Replies an agent wrote in review that wait for a teammate, newest first. With `attention=all`, the decided, replaced and automatically queued ones too.
       operationId: listHeldReplies
-      security: &a122
+      security: &a123
         - bearerAuth: []
       parameters:
         - schema:
@@ -33717,6 +34004,13 @@ paths:
             format: uuid
           required: false
           name: agentId
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+          required: false
+          name: channel
           in: query
         - schema:
             type: string
@@ -33758,11 +34052,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/conversations/{conversationId}/held-reply:
     get:
-      tags: *a121
+      tags: *a122
       summary: Get a conversation's current held reply
       description: The conversation's newest held reply, whatever its state, under a `heldReply` root; null when it has none.
       operationId: getCurrentHeldReply
-      security: *a122
+      security: *a123
       parameters:
         - schema:
             type: string
@@ -33803,11 +34097,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/conversations/{conversationId}/held-replies/{heldReplyId}/release:
     post:
-      tags: *a121
+      tags: *a122
       summary: Release a held reply
       description: Sends a pending draft to the customer. Without `editedText` it goes out as the agent wrote it, as the agent's message; with `editedText` the teammate's edit goes out as their own message and the draft is kept. Who owns the conversation does not change. Each refusal carries the held reply as it is now in `details.heldReply`.
       operationId: releaseHeldReply
-      security: *a122
+      security: *a123
       parameters:
         - schema:
             type: string
@@ -33866,11 +34160,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/conversations/{conversationId}/held-replies/{heldReplyId}/discard:
     post:
-      tags: *a121
+      tags: *a122
       summary: Discard a held reply
       description: Sets a pending draft aside. The customer hears nothing, and the conversation keeps waiting for a teammate until one replies or takes it over.
       operationId: discardHeldReply
-      security: *a122
+      security: *a123
       parameters:
         - schema:
             type: string
@@ -33929,6 +34223,20 @@ paths:
       operationId: listPendingDecisions
       security:
         - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: false
+          name: agentId
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+          required: false
+          name: channel
+          in: query
       responses:
         "200":
           description: Pending approval decisions for the workspace
@@ -34808,7 +35116,7 @@ paths:
                     type: array
                     items:
                       type: string
-                      enum: &a123
+                      enum: &a124
                         - directive
                         - agent
                         - agent_setting
@@ -34983,7 +35291,7 @@ paths:
                                     format: uuid
                                   targetType:
                                     type: string
-                                    enum: *a123
+                                    enum: *a124
                                   targetLabel:
                                     type: string
                                   summary:
@@ -35200,14 +35508,14 @@ paths:
                     format: uuid
                   targetType:
                     type: string
-                    enum: *a123
+                    enum: *a124
                   targetRef: {}
                   target:
                     type: object
                     properties:
                       type:
                         type: string
-                        enum: *a123
+                        enum: *a124
                       ref: {}
                     required:
                       - type
@@ -35521,7 +35829,7 @@ paths:
         - Evals
       summary: Run frozen Eval cases against immutable agent candidates
       operationId: createRevisionEvalRun
-      security: &a124
+      security: &a125
         - bearerAuth: []
       requestBody:
         required: true
@@ -35554,7 +35862,7 @@ paths:
         - Evals
       summary: Get frozen revision Eval evidence
       operationId: getRevisionEvalRun
-      security: *a124
+      security: *a125
       parameters:
         - schema:
             type: string
@@ -35587,7 +35895,7 @@ paths:
         - Evals
       summary: Retry one failed frozen revision Eval case
       operationId: retryRevisionEvalCase
-      security: *a124
+      security: *a125
       parameters:
         - schema:
             type: string
@@ -35632,7 +35940,7 @@ paths:
         - Evals
       summary: Capture an Eval snapshot
       operationId: createEvalSnapshot
-      security: &a125
+      security: &a126
         - sessionCookie: []
           workspaceSelection: []
         - bearerAuth: []
@@ -35688,7 +35996,7 @@ paths:
         - Evals
       summary: Get an Eval snapshot
       operationId: getEvalSnapshot
-      security: *a125
+      security: *a126
       parameters:
         - schema:
             type: string
@@ -35733,7 +36041,7 @@ paths:
         - Evals
       summary: Create an Eval case
       operationId: createEvalCase
-      security: *a125
+      security: *a126
       requestBody:
         required: true
         content:
@@ -35938,7 +36246,7 @@ paths:
         - Evals
       summary: List Eval cases and latest results
       operationId: listEvalCases
-      security: *a125
+      security: *a126
       responses:
         "200":
           description: Eval cases with each case's latest result
@@ -36104,7 +36412,7 @@ paths:
         - Evals
       summary: Get an Eval case and its run history
       operationId: getEvalCase
-      security: *a125
+      security: *a126
       parameters:
         - schema:
             type: string
@@ -36148,7 +36456,7 @@ paths:
         - Evals
       summary: Rename an Eval case
       operationId: renameEvalCase
-      security: *a125
+      security: *a126
       parameters:
         - schema:
             type: string
@@ -36206,7 +36514,7 @@ paths:
         - Evals
       summary: Replace an Eval case's assertions
       operationId: replaceEvalCaseAssertions
-      security: *a125
+      security: *a126
       parameters:
         - schema:
             type: string
@@ -36474,7 +36782,7 @@ paths:
       summary: Run an Eval case
       description: Replays are safe by default. A live-effect case requires a fresh allowLiveEffects confirmation from an interactive workspace session; API credentials and Ray-triggered replays remain safe.
       operationId: createEvalCaseRun
-      security: *a125
+      security: *a126
       parameters:
         - schema:
             type: string
@@ -36503,7 +36811,7 @@ paths:
                       properties:
                         provider:
                           type: string
-                          enum: &a126
+                          enum: &a127
                             - openai
                             - openai-compatible
                             - gemini
@@ -36561,7 +36869,7 @@ paths:
                           properties:
                             provider:
                               type: string
-                              enum: &a127
+                              enum: &a128
                                 - openai
                                 - openai-compatible
                                 - gemini
@@ -36596,7 +36904,7 @@ paths:
                             type: integer
                         status:
                           type: string
-                          enum: &a128
+                          enum: &a129
                             - active
                             - suspended
                             - completed
@@ -36814,7 +37122,7 @@ paths:
                       properties:
                         provider:
                           type: string
-                          enum: *a126
+                          enum: *a127
                         model:
                           type: string
                       required:
@@ -36868,7 +37176,7 @@ paths:
                           properties:
                             provider:
                               type: string
-                              enum: *a127
+                              enum: *a128
                             model:
                               type: string
                           required:
@@ -36899,7 +37207,7 @@ paths:
                             type: integer
                         status:
                           type: string
-                          enum: *a128
+                          enum: *a129
                         metadata:
                           type: object
                           additionalProperties: {}
@@ -36950,7 +37258,7 @@ paths:
                       properties:
                         provider:
                           type: string
-                          enum: *a127
+                          enum: *a128
                         model:
                           type: string
                       required:
@@ -37062,7 +37370,7 @@ paths:
         - Agents
       summary: List private immutable revision tests
       operationId: listAgentTestExecutions
-      security: &a129
+      security: &a130
         - bearerAuth: []
       parameters:
         - schema:
@@ -37098,7 +37406,7 @@ paths:
       summary: Start an operator-private immutable revision test
       description: "A `single` execution may set `seedConversationId` to continue an existing conversation of the same workspace and agent: the side starts with that thread as its history and resumes its active routine, pending clarification, and directive state, skipping the greeting. The source conversation is unchanged."
       operationId: startAgentTestExecution
-      security: *a129
+      security: *a130
       parameters:
         - schema:
             type: string
@@ -37125,7 +37433,7 @@ paths:
         - Agents
       summary: Get private immutable revision test evidence
       operationId: getAgentTestExecution
-      security: *a129
+      security: *a130
       parameters:
         - schema:
             type: string
@@ -37152,7 +37460,7 @@ paths:
         - Agents
       summary: Run a fenced private test turn
       operationId: sendAgentTestExecutionMessage
-      security: *a129
+      security: *a130
       parameters:
         - schema:
             type: string
@@ -37185,7 +37493,7 @@ paths:
         - Agents
       summary: Continue one settled comparison version as a private test
       operationId: retainAgentTestExecutionSide
-      security: *a129
+      security: *a130
       parameters:
         - schema:
             type: string
@@ -37218,7 +37526,7 @@ paths:
         - Agents
       summary: Capture a private test response as immutable Eval evidence
       operationId: captureAgentTestExecutionEvalSnapshot
-      security: *a129
+      security: *a130
       parameters:
         - schema:
             type: string
@@ -37257,7 +37565,7 @@ paths:
         - Agents
       summary: Retry one failed private test side
       operationId: retryAgentTestExecutionSide
-      security: *a129
+      security: *a130
       parameters:
         - schema:
             type: string
@@ -37891,6 +38199,60 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/public/chat/{token}/voice/sessions/{sessionKey}/vendor-conversation:
+    post:
+      tags:
+        - Assistant
+      summary: Report the vendor's id for a voice session the page opened
+      description: Once the vendor's client has connected a session from `createPublicVoiceSession`, the page reports the vendor's id for the call, which names the call's recording at the vendor. Radioso takes it once, from the same website embed public session the session was started for, while the session's start is unexpired. Before storing it, Radioso asks the vendor, with the workspace's own key, which vendor agent the conversation was held on, and stores it only when that is the vendor agent the session was started on; it only ever uses the id to look the recording up with that key. A browser on another origin calls `/api/public/chat/{token}/voice/sessions/{sessionKey}/vendor-conversation` on the Radioso app host, which answers the CORS preflight and relays here.
+      operationId: reportPublicVoiceVendorConversation
+      security:
+        - anonymousSessionCookie: []
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: token
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: sessionKey
+          in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublicVoiceVendorConversationRequest"
+      responses:
+        "204":
+          description: The vendor's id is stored with the session
+        "400":
+          description: "Request validation failed: the session key is not a UUID, or the id is not 1 to 128 letters, digits, underscores and hyphens"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Public session not found or not a website embed session; no session this public session started waits for an id (it already has one, its start expired, or Radioso never started it); or the vendor says the conversation was held on another vendor agent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: The visitor session's request budget is spent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateLimitExceededResponse"
+        "503":
+          description: "`voice_unavailable`: the id could not be checked with the vendor now (the vendor does not show the conversation yet, as can happen right after a call connects; the workspace's vendor key is missing or unreadable; or the vendor did not answer); report it again"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/public/chat/{token}/history/{conversationId}:
     get:
       tags:
@@ -38135,7 +38497,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "429":
           description: Reconnect or distributed workspace/account/principal admission limit exceeded
-          headers: &a130
+          headers: &a131
             Retry-After:
               description: Minimum reconnect delay in whole seconds. The browser also applies its local jittered exponential backoff.
               schema:
@@ -38147,7 +38509,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "503":
           description: Realtime admission, broker subscription, or runtime capacity is temporarily unavailable
-          headers: *a130
+          headers: *a131
           content:
             application/json:
               schema:

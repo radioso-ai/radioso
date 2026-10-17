@@ -70,3 +70,31 @@ describe("message interruption marker", () => {
       .toBeUndefined();
   });
 });
+
+describe("teammate reply speech marker", () => {
+  const teammateRow = (speech: unknown, source: MessageRow["source"] = "human_agent") => row({ role: "assistant", source, metadata_json: { speech } });
+
+  it("reads a pending or claimed reply as pending, a spoken one with when its turn completed, and a skipped one", () => {
+    expect(mapMessageRow(teammateRow({ state: "pending" })).speech).toEqual({ state: "pending" });
+    expect(mapMessageRow(teammateRow({ state: "claimed", claimedAt: "2026-10-17T10:00:00.000Z", claimTurnId: "turn-1" })).speech)
+      .toEqual({ state: "pending" });
+    expect(mapMessageRow(teammateRow({ state: "spoken", spokenAt: "2026-10-17T10:00:00.000Z" })).speech)
+      .toEqual({ state: "spoken", spokenAt: "2026-10-17T10:00:00.000Z" });
+    expect(mapMessageRow(teammateRow({ state: "skipped", skippedAt: "2026-10-17T10:00:00.000Z" })).speech).toEqual({ state: "skipped" });
+  });
+
+  it.each([
+    ["a spoken reply with no time", { state: "spoken" }],
+    ["a claim with no turn", { state: "claimed", claimedAt: "2026-10-17T10:00:00.000Z" }],
+    ["an unknown state", { state: "heard" }],
+    ["a string", "pending"],
+    ["a null", null],
+  ])("reads %s as no state", (_label, speech) => {
+    expect(mapMessageRow(teammateRow(speech)).speech).toBeUndefined();
+  });
+
+  it("reads no state from the agent's own reply or from a caller's message", () => {
+    expect(mapMessageRow(teammateRow({ state: "pending" }, "ai_agent")).speech).toBeUndefined();
+    expect(mapMessageRow(row({ role: "user", metadata_json: { speech: { state: "pending" } } })).speech).toBeUndefined();
+  });
+});

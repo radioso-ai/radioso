@@ -6,6 +6,7 @@ import { createAgentPublicProfileComposition } from "../composition/agentDiscove
 import { createAgentToolCatalogComposition } from "../composition/agentToolCatalog.js";
 import {
   createVoiceChannelComposition,
+  createVoiceRecordingComposition,
   createVoiceSessionStartComposition,
   refreshEmbedConfigsOnVoiceVendorKeyChange,
 } from "../composition/voiceChannel.js";
@@ -67,6 +68,7 @@ import {
 } from "./builders/infra.js";
 import {
   buildAccessServices,
+  buildAuthFunnelService,
   buildAuthService,
   buildEmailVerificationService,
   buildPasswordResetService,
@@ -156,6 +158,7 @@ import { NotificationRecipientStateRepository } from "../../db/repositories/noti
 import { createAccountAdministratorDirectory } from "../composition/accountAdministratorDirectory.js";
 import { createNoticeMailAdapter } from "../composition/noticeMail.js";
 import { PeriodicTaskRunner, createPeriodicTasksLifecycle } from "../composition/periodicTaskRunner.js";
+import { createAbuseControlComposition } from "../composition/abuseControl.js";
 
 interface BuildDependenciesOptions {
   modules?: ApplicationModule[];
@@ -191,6 +194,12 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   }
   const agentSkillSettings = createDefaultAgentSkillSettingsRegistry();
   const repositories = buildRepositories(infrastructure.database, { agentSurfaceExtensions, agentSkillSettings });
+  const abuseControlComposition = createAbuseControlComposition({
+    env,
+    logger,
+    metricsRegistry: infrastructure.metricsRegistry,
+    postgresRepository: repositories.abuseControlRepository,
+  });
   const access = buildAccessServices({
     auditService: infrastructure.auditService,
     env,
@@ -247,6 +256,21 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     notificationRecipientPolicy,
     infrastructure.usageLimitPolicy,
   );
+  // One store for voice sessions: the turn's bindings, the starts the turn and the session start
+  // share, and where each call's recording lives.
+  const voiceSessions = new VoiceSessionRepository(infrastructure.database.kysely);
+  // Recordings stay with the vendor; the Inbox plays them through the backend with the workspace's
+  // key, Ray reads whether one exists, and a deletion asks the vendor to delete them.
+  const voiceRecordings = createVoiceRecordingComposition({
+    recordings: voiceSessions,
+    recordingsIn: (db) => new VoiceSessionRepository(db),
+    credentials: workspaceProviderCredentialsService,
+    // Called through its own receiver, never detached from globalThis.
+    fetch: (url, init) => globalThis.fetch(url, init),
+    auditService: infrastructure.auditService,
+    metricsRegistry: infrastructure.metricsRegistry,
+    logger,
+  });
   const documentRetrievalGraph = buildDocumentRetrievalGraph({
     composition,
     env,
@@ -255,6 +279,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     repositories,
     personalCredentialTermination: access.personalCredentialTenureService,
     personalCredentialLifecycle: access.personalCredentialLifecycle,
+    vendorHeldConversationData: { eraser: voiceRecordings.erasure, logger },
     workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
     workspaceProviderCredentialsService,
   });
@@ -331,6 +356,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     audit: infrastructure.auditService,
   });
   const chat = buildChatServices({
+    abuseControlService: abuseControlComposition.service,
     accountAccessService: access.accountAccessService,
     agentRetrievalScope,
     agentService,
@@ -437,6 +463,11 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     env,
     infrastructure,
     logger,
+    repositories,
+  });
+  const authFunnelService = buildAuthFunnelService({
+    auditService: infrastructure.auditService,
+    env,
     repositories,
   });
   const emailChannelConfig = parseEmailChannelConfig(env);
@@ -997,6 +1028,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       validate: routineDefinitionService.validate.bind(routineDefinitionService),
     },
     chatHistoryService: chat.chatHistoryService,
+    voiceRecordings: voiceRecordings.recordings,
     agentTurnProbe: agentTurnProbeService,
     documentSearchService: retrieval.documentSearchService,
     documentInventory: {
@@ -1038,6 +1070,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     contextVariables: contextVariableService,
     productDocs: new ProductDocsService(),
     workspaceRouteKeyResolver: copilotWorkspaceRouteKeyResolver,
+    workspaceSetupState: workspace.workspaceSummaryService,
     workspaceSettings: {
       async getRetrievalDefaults(workspaceId) {
         return retrievalDefaultsProvider.getDefaults(workspaceId);
@@ -1271,8 +1304,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     ...chat.backgroundJobHandlers,
     ...slackInboundJobs.backgroundJobHandlers,
   ]);
-  // One store for voice sessions: the turn's bindings, and the starts the turn and the session start share.
-  const voiceSessions = new VoiceSessionRepository(infrastructure.database.kysely);
   refreshEmbedConfigsOnVoiceVendorKeyChange({ credentials: workspaceProviderCredentialsService, embedConfigs: agentService });
   // One service starts sessions and tells the website embed whether to offer them, by the same gate.
   const voiceSessionStarts = createVoiceSessionStartComposition({
@@ -1311,6 +1342,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     accessGrantService: access.accessGrantService,
     passwordResetService,
     emailVerificationService,
+    authFunnelService,
     accountAccessService: access.accountAccessService,
     accountInvitationService: access.accountInvitationService,
     apiPrincipalAuthenticator: access.apiPrincipalAuthenticator,
@@ -1376,6 +1408,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     chatService: chat.chatService,
     approvalDecisionService: chat.approvalDecisionService,
     closeApprovalResumeEffectJournal: chat.closeApprovalResumeEffectJournal,
+    closeAbuseControlRepository: () => abuseControlComposition.shutdown(),
     conversationOwnershipService,
     conversationIngestService,
     conversationOperatorDirectory,
@@ -1409,9 +1442,15 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     }),
     voiceSessionStarts,
     voiceSessionAvailability: voiceSessionStarts,
+    voiceRecordings: voiceRecordings.recordings,
     assistantHistoryService: chat.assistantHistoryService,
     conversationErasure: new ConversationErasureService({
-      unitOfWork: createPostgresConversationErasureUnitOfWork({ db: infrastructure.database.kysely, logger }),
+      unitOfWork: createPostgresConversationErasureUnitOfWork({
+        db: infrastructure.database.kysely,
+        logger,
+        // Call recordings the voice vendor keeps: read and locked in the erasure's transaction.
+        vendorHeldData: (trx) => voiceRecordings.erasureIn(trx),
+      }),
       invalidation: realtimePublisherComposition.publisher,
       auditLog: infrastructure.auditService,
     }),

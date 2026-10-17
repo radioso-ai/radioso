@@ -73,6 +73,21 @@ export const jsonbConcat = (
  */
 export const currentTimestamp = (): RawBuilder<Date> => sql`now()`;
 
+/** The SQLSTATE and constraint name a Postgres error carries, when it carries them. */
+export const pgErrorMeta = (error: unknown): { code?: string; constraint?: string } => {
+  if (!error || typeof error !== "object") {
+    return {};
+  }
+  const candidate = error as { code?: unknown; constraint?: unknown };
+  return {
+    code: typeof candidate.code === "string" ? candidate.code : undefined,
+    constraint: typeof candidate.constraint === "string" ? candidate.constraint : undefined,
+  };
+};
+
+/** Postgres' unique violation (`23505`): the row would duplicate a unique key. */
+export const isUniqueViolation = (error: unknown): boolean => pgErrorMeta(error).code === "23505";
+
 /**
  * Atomically consumes one abuse-control entry against a sliding window. The `ON CONFLICT`
  * update takes the row lock before it decides whether the window can accept another attempt,
@@ -169,6 +184,13 @@ export const clockTimestamp = (): RawBuilder<Date> => sql`clock_timestamp()`;
 /** `now() - make_interval(secs => <seconds>)` — a timestamp `seconds` in the past (DB clock). */
 export const nowMinusSeconds = (seconds: number): RawBuilder<Date> =>
   sql`now() - make_interval(secs => ${seconds})`;
+
+/**
+ * `clock_timestamp() - make_interval(secs => <seconds>)` — `seconds` before this moment rather than
+ * before the transaction's start, for a comparison against times written with `clock_timestamp()`.
+ */
+export const clockTimestampMinusSeconds = (seconds: number): RawBuilder<Date> =>
+  sql`clock_timestamp() - make_interval(secs => ${seconds})`;
 
 /** `now() + make_interval(secs => <seconds>)` — a timestamp `seconds` in the future (DB clock). */
 export const nowPlusSeconds = (seconds: number): RawBuilder<Date> =>

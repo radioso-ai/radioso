@@ -394,7 +394,11 @@ Voice enters the chat path as `sourceChannel: "voice"` with a `voice` channel
 context and the `latest_input_wins` supersession mode, which the chat turn
 registry and lifecycle implement (`chat/contracts/interruption.ts`), and reads
 the `handoff` report (`ChatTurnHandoff`) chat puts on a hand-off turn's `done`
-event; the chat turn is otherwise unchanged.
+event; the chat turn is otherwise unchanged. A teammate's Inbox reply on a call
+is stored as pending speech and spoken once, on the caller's next turn, through
+chat's `OperatorReplySpeechClaims` port (`chat/contracts/operatorReplySpeech.ts`);
+`voiceChannel/services/operatorReplySpeaker.ts` claims, speaks and settles a
+turn's replies.
 
 Should not own planning, retrieval, routines, or any vendor's field names
 outside `adapters/`. The domain names no vendor.
@@ -409,7 +413,8 @@ Public surfaces and key files:
 - `backend/src/modules/agents/voiceSettings.ts` — the agent's `voice` block on `GET`/`PUT /api/v1/agents/:agentId`, read by the voice services as types from `agents/public.ts`
 - `frontend/components/dashboard/settings/voice-channel-card.tsx` (with `locale-lines-editor.tsx` and `frontend/lib/voice-settings-form.ts`) — the Voice card on the agent's Channels → API page, which saves the `voice` and `mechanicsReplies` blocks together, `runtime` included; the ElevenLabs key is the **Voice runtime keys** card in `providers-panel.tsx`
 - `frontend/lib/use-voice-session.ts` with the pure `voice-session.ts` (call states, transcript lines), `voice-call.ts` (the vendor client, then the start, then the vendor's session and its microphone prompt, with `VOICE_CALL_BEHAVIOR.connectTimeoutMs`), `api-public-voice.ts` (the session start through the relay) and `voice-runtime.ts` (the vendor port; `voice-runtime-elevenlabs.ts` loads `@elevenlabs/client` when a call starts, or when Talk is offered on iOS) — the website embed's Talk button, shown when the embed config's `voice.available` (`VoiceSessionAvailabilityPort`) is true; `frontend/components/chat/voice-call-controls.tsx` draws it, and `frontend/app/voice-worklets/[name]/route.ts` serves the client's audio worklets from the app host. The operator's switch is `surfaceSettings.websiteEmbed.voiceCallsOffered`, edited by `frontend/components/dashboard/settings/website-voice-calls-setting.tsx` (readiness from `voiceCallReadiness` on `GET /api/v1/agents/:agentId`, hint text from `frontend/lib/voice-call-readiness.ts`)
-- `backend/src/modules/voiceChannel/persistence/voiceSessionRepository.ts` (`voice_sessions`, migration `214_voice_sessions.sql`)
+- `backend/src/modules/voiceChannel/persistence/voiceSessionRepository.ts` (`voice_sessions`, migration `214_voice_sessions.sql`; the recording's region and vendor conversation id, migration `230_voice_session_recordings.sql`)
+- `backend/src/modules/voiceChannel/services/voiceRecordingService.ts`, `voiceRecordingErasureService.ts` and `adapters/elevenlabs/recordingSource.ts` — a call's recording, kept by the vendor: the embed's report (`POST /api/v1/public/chat/:token/voice/sessions/:sessionKey/vendor-conversation`, relayed by `frontend/app/api/public/chat/[token]/voice/sessions/[sessionKey]/vendor-conversation/route.ts`), `recording.available` on the history detail (`historyRoutes.ts`), playback at `GET /api/v1/conversations/:conversationId/recording` (`conversationRecordingRoutes.ts`), and deletion with the conversation, visitor, workspace or organization through `VendorHeldConversationDataEraser` in `shared/domain/conversationDataErasure.ts` (`persistence/voiceSessionEraser.ts` is the `voice-channel` eraser); the Inbox's Listen is `frontend/components/dashboard/inbox/conversation-recording.tsx`
 - `backend/src/modules/voiceChannel/adapters/openaiCompletions/` — dialects as data, request schema, SSE presenter, route
 - `backend/src/app/composition/voiceChannel.ts` and `backend/src/app/http/routes/agentVoiceRoute.ts` (mounted beside the REST agent channel)
 - `backend/src/modules/voiceChannel/README.md`
@@ -422,8 +427,8 @@ Useful searches:
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/voice-channel-*.test.ts`
-- `cd backend && pnpm exec vitest run tests/contract/agent-voice-settings.contract.test.ts tests/contract/public-voice-session.contract.test.ts`
-- `cd frontend && pnpm exec playwright test tests/e2e/voice-settings.spec.ts tests/e2e/provider-settings.spec.ts tests/e2e/embed-voice-talk.spec.ts`
+- `cd backend && pnpm exec vitest run tests/contract/agent-voice-settings.contract.test.ts tests/contract/public-voice-session.contract.test.ts tests/contract/voice-recording.contract.test.ts tests/contract/voice-operator-reply.contract.test.ts`
+- `cd frontend && pnpm exec playwright test tests/e2e/voice-settings.spec.ts tests/e2e/provider-settings.spec.ts tests/e2e/embed-voice-talk.spec.ts tests/e2e/inbox-call-recording.spec.ts tests/e2e/inbox-voice-operator-reply.spec.ts`
 - `cd frontend && pnpm exec vitest run tests/unit/voice-session.test.ts tests/unit/voice-call.test.ts tests/unit/api-public-voice.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/voice-session-repository.integration.test.ts`
 

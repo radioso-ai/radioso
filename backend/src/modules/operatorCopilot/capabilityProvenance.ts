@@ -14,7 +14,7 @@ type ProductionDescriptorName =
   | "replay_eval_case"
   | "recrawl_source" | "reprocess_document" | "retrieval_probe"
   | "routine_definition" | "run_eval_suite" | "set_triage_state" | "test_agent_turn" | "turn_trace" | "validate_routine"
-  | "workspace_settings" | "workspace_triage" | "prepare_routine_structure" | "execute_reviewed_proposal" | "reviewed_proposal_outcome" | "cancel_reviewed_proposal"
+  | "workspace_settings" | "workspace_setup_state" | "workspace_triage" | "prepare_routine_structure" | "execute_reviewed_proposal" | "reviewed_proposal_outcome" | "cancel_reviewed_proposal"
   | "agent_publication_state" | "prepare_agent_publication" | "agent_publication_candidate" | "agent_publication_candidate_change"
   | "retrieval_settings" | "prepare_retrieval_settings"
   | "proposal_detail"
@@ -113,6 +113,7 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   turn_trace: { applicationPrimitiveIds: ["chat.conversation.trace.read"] },
   validate_routine: { backingOperationIds: ["validateAgentRoutine"], applicationPrimitiveIds: ["routines.validation"] },
   workspace_settings: { backingOperationIds: ["getPlatformSettings", "getSettingsRetrievalDefaults", "getIngestionSettings", "getEmbeddingCoverage", "getGeneralSettings", "getWorkspaceLlmModels"], applicationPrimitiveIds: ["settings.workspace.read", "embedding.coverage.read"] },
+  workspace_setup_state: { backingOperationIds: ["getWorkspaceSetupState"], applicationPrimitiveIds: ["settings.workspace.read"] },
   workspace_triage: { applicationPrimitiveIds: ["operatorCopilot.workspace-triage"], ...rayOnly("Ray composes authorized source summaries into a ranked operator triage projection.") },
 };
 

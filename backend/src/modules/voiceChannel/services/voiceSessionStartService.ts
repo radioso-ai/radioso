@@ -1,5 +1,6 @@
 import { VOICE_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { VoiceVendor } from "../../../shared/domain/voiceVendor.js";
+import { errorClassOf } from "../../../shared/observability/errorClass.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type { AgentVoiceSettings } from "../../agents/public.js";
@@ -16,13 +17,13 @@ import {
   type VoiceVendorCredentialReader,
   type VoiceVendorCredentialReading,
 } from "../domain.js";
-import { resolveVoiceTurnLocale } from "./voiceLines.js";
+import { chooseRecordingNotice, resolveVoiceTurnLocale } from "./voiceLines.js";
 
 /** What a session start needs from the agent's settings. */
 interface VoiceRuntimeProfileSource {
   /** Null when the agent no longer exists. */
   findVoiceProfile(agent: { workspaceId: string; agentId: string }): Promise<{
-    voice: Pick<AgentVoiceSettings, "enabled" | "runtime">;
+    voice: Pick<AgentVoiceSettings, "enabled" | "runtime" | "recordingNotice">;
     defaultLocale: string | null;
   } | null>;
 }
@@ -49,8 +50,6 @@ interface VoiceSessionStartServiceDependencies {
   metrics?: Pick<MetricsRegistry, "incrementCounter"> | null;
   logger: Pick<AppLogger, "warn">;
 }
-
-const errorClassOf = (error: unknown): string => (error instanceof Error ? error.name : typeof error);
 
 const vendorErrorFields = (error: unknown) => ({
   errorClass: errorClassOf(error),
@@ -136,6 +135,7 @@ export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSes
         session: { workspaceId, agentId, vendor, sessionKey },
         visitor: input.visitor,
         expiresAt: new Date(now + VOICE_BEHAVIOR.sessionStartTtlMs),
+        vendorAgent: { agentId: runtime.agentId, region: runtime.region },
       });
     } catch (error) {
       return failed("registration_failed", { errorClass: errorClassOf(error) });
@@ -148,13 +148,16 @@ export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSes
         credential: reading.credential,
       });
       this.record(vendor, "started");
+      const locale = resolveVoiceTurnLocale({ requested: input.locale, agentDefault: profile.defaultLocale });
+      const recordingNotice = chooseRecordingNotice(profile.voice, { locale, agentDefault: profile.defaultLocale });
       return {
         kind: "started",
         vendor,
         signedUrl: session.signedUrl,
         sessionKey,
-        locale: resolveVoiceTurnLocale({ requested: input.locale, agentDefault: profile.defaultLocale }),
+        locale,
         ...(session.expiresAt ? { expiresAt: session.expiresAt } : {}),
+        ...(recordingNotice ? { recordingNotice } : {}),
       };
     } catch (error) {
       return failed("vendor_failed", vendorErrorFields(error));

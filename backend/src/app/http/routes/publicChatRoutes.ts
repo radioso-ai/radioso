@@ -69,6 +69,8 @@ type PublicChatRouteDependencies = AnonymousRateLimiterDependencies & PublicVoic
   | "accountAccessService"
   | "accessGrantService"
   | "voiceSessionStarts"
+  | "voiceRecordings"
+
   | "voiceSessionAvailability"
 >;
 
@@ -623,7 +625,11 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
   });
 
   // POST /api/v1/public/chat/:token/voice/sessions — start a voice session for the visitor's session
-  registerPublicVoiceSessionRoute(router, { ...dependencies, publicSession: sessionMiddleware });
+  registerPublicVoiceSessionRoute(router, {
+    ...dependencies,
+    publicSession: sessionMiddleware,
+    sessionRequestRateLimit: rateLimitPublicChatSessionRead,
+  });
 
   // POST /api/v1/public/chat/:token — send a message
   router.post(

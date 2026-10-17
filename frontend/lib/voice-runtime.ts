@@ -40,6 +40,8 @@ export class VoiceMicrophoneUnavailableError extends Error {
 
 export interface VoiceRuntimeSession {
   end: () => Promise<void>
+  /** The vendor's own id for the call, once the session is open: it names the call's recording at the vendor. */
+  vendorConversationId?: string
 }
 
 /**

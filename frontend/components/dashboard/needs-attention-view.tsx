@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { useQueryClient } from '@tanstack/react-query'
 
 import { ConversationDrawer } from './conversation-drawer'
@@ -47,6 +48,7 @@ import {
   countInboxItemsByType,
   EMPTY_INBOX_FILTERS,
   filterInboxItems,
+  listInboxChannels,
   findRefreshedInboxItem,
   listInboxAgents,
   listTakenByOperators,
@@ -93,7 +95,11 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   const workspaceId = routeState.workspaceId ?? ''
   // "Taken by: me" is the signed-in teammate, not their organisation.
   const currentUserId = useOptionalAuth()?.user?.userId ?? null
-  const attentionQueries = useNeedsAttentionQueries(workspaceId)
+  const attentionQueries = useNeedsAttentionQueries(workspaceId, {
+    type: routeState.inboxEscalation ?? 'all',
+    agentId: routeState.inboxAgentId,
+    channel: routeState.inboxChannel,
+  })
   const queryClient = useQueryClient()
   const router = useRouter()
   const hasAppliedDefaultLensRef = useRef(false)
@@ -123,7 +129,17 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     useState<typeof qualitySnapshotInputs | null>(null)
   const [terminalQualityMessageIds, setTerminalQualityMessageIds] = useState<ReadonlySet<string>>(new Set())
   const [now, setNow] = useState(() => new Date())
-  const [filters, setFilters] = useState<InboxFilters>(EMPTY_INBOX_FILTERS)
+  const [localFilters, setLocalFilters] = useState<Pick<InboxFilters, 'search' | 'takenBy'>>({
+    search: '',
+    takenBy: EMPTY_INBOX_FILTERS.takenBy,
+  })
+  const filters = useMemo<InboxFilters>(() => ({
+    ...EMPTY_INBOX_FILTERS,
+    ...localFilters,
+    type: routeState.inboxEscalation ?? 'all',
+    agentId: routeState.inboxAgentId ?? 'all',
+    channel: routeState.inboxChannel ?? 'all',
+  }), [localFilters, routeState.inboxAgentId, routeState.inboxChannel, routeState.inboxEscalation])
   const [selectedInboxItem, setSelectedInboxItem] = useState<InboxItem | null>(null)
   const [selectedRecentlyClosedItem, setSelectedRecentlyClosedItem] = useState<RecentlyClosedInboxItem | null>(null)
   const [debugConversationId, setDebugConversationId] = useState<string | null>(null)
@@ -303,6 +319,7 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   const workspaceAgentOptions = useInboxAgentOptions(Boolean(workspaceId))
   const queueAgentOptions = useMemo(() => listInboxAgents(items), [items])
   const agentOptions = workspaceAgentOptions.length > 0 ? workspaceAgentOptions : queueAgentOptions
+  const channelOptions = useMemo(() => listInboxChannels(items), [items])
   const operatorOptions = useMemo(() => listTakenByOperators(items, currentUserId), [items, currentUserId])
   const filteredItems = useMemo(
     () => filterInboxItems(items, filters, { currentUserId }),
@@ -317,6 +334,25 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       ? recentlyClosed
       : recentlyClosed.filter((item) => item.title.toLowerCase().includes(query))
   }, [recentlyClosed, filters.search])
+  const handleFiltersChange = useCallback((next: InboxFilters) => {
+    setLocalFilters({ search: next.search, takenBy: next.takenBy })
+    const inboxEscalation = next.type === 'all' ? undefined : next.type
+    const inboxAgentId = next.agentId === 'all' ? undefined : next.agentId
+    const inboxChannel = next.channel === 'all' ? undefined : next.channel
+    if (
+      routeState.inboxEscalation === inboxEscalation
+      && routeState.inboxAgentId === inboxAgentId
+      && routeState.inboxChannel === inboxChannel
+    ) return
+    router.replace(buildDashboardHref(accountId, {
+      ...routeState,
+      section: 'activity',
+      activityTab: 'needs-attention',
+      inboxEscalation,
+      inboxAgentId,
+      inboxChannel,
+    }))
+  }, [accountId, routeState, router])
   const isSelectionDataReady = attentionQueries.policy.queriesEnabled
     && !isLoading
     && !recentlyClosedQuery.isLoading
@@ -462,8 +498,16 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
       section: 'quality',
       workspaceId: routeState.workspaceId,
       workspacePublicRouteKey: routeState.workspacePublicRouteKey,
+      qualityFeedback: ['down'],
+      qualityActiveNegativeFeedbackOnly: true,
+      qualityHasComment: true,
+      qualitySort: 'negative_feedback_updated_at',
     }),
     [accountId, routeState],
+  )
+  const qualityItemsNotShown = Math.max(
+    0,
+    (qualityPresentation.commentedFeedbackCount ?? 0) - qualityPresentation.turns.length,
   )
   const buildRoutineHref = useCallback(
     (agentId: string, routineId: string) =>
@@ -611,8 +655,8 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
     } else if (result.kind === 'delivery_failure_cleared') {
       // No workspace event reports a cleared failure, so this view drops the row itself and
       // re-reads the failures and the recently-closed strip.
-      const deliveryFailuresKey = dashboardQueryKeys.attention.deliveryFailures(workspaceId, { limit: NEEDS_ATTENTION_PAGE_SIZE })
-      queryClient.setQueryData<AttentionChunks<DeliveryFailure>>(deliveryFailuresKey, (chunks) =>
+      const deliveryFailuresKey = ['workspace', workspaceId, 'attention', 'delivery-failures'] as const
+      queryClient.setQueriesData<AttentionChunks<DeliveryFailure>>({ queryKey: deliveryFailuresKey }, (chunks) =>
         withoutAttentionItem(chunks, result.failureId))
       void queryClient.invalidateQueries({ queryKey: deliveryFailuresKey })
       void queryClient.invalidateQueries({
@@ -694,8 +738,10 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
   // lens toggle lives in the left pane) — only the row list swaps for the
   // confidence message, so the operator can always reach the All lens even
   // when nothing needs them (spec 1116 unification, fix for issue #6).
+  const hasActiveFilters = filters.type !== 'all' || filters.agentId !== 'all' || filters.channel !== 'all'
+    || filters.search.trim().length > 0 || filters.takenBy !== EMPTY_INBOX_FILTERS.takenBy
   const isQueueEmpty = !isLoading && !approvalError && !conversationError && !deliveryFailureError && !heldReplyError
-    && items.length === 0
+    && items.length === 0 && !hasActiveFilters
   const showNoFilterMatches = !isQueueEmpty
     && filteredItems.length === 0
     && !selectedInboxItem
@@ -786,9 +832,19 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
         ) : null}
         {olderAttention.available ? (
           <div className="m-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
-            <span>Older drafts or delivery failures are waiting beyond what the Inbox shows.</span>
+            <span>{olderAttention.humanOwnedRemaining > 0
+              ? `${olderAttention.humanOwnedRemaining} waiting handoff${olderAttention.humanOwnedRemaining === 1 ? '' : 's'} not shown yet.`
+              : 'Older handoffs, drafts, or delivery failures are waiting beyond what the Inbox shows.'}</span>
             <Button type="button" size="sm" variant="outline" disabled={olderAttention.loading} onClick={olderAttention.load}>
               {olderAttention.loading ? 'Loading…' : 'Load older'}
+            </Button>
+          </div>
+        ) : null}
+        {qualityItemsNotShown > 0 ? (
+          <div className="m-3 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border bg-muted/40 p-3 text-sm text-muted-foreground">
+            <span>{qualityItemsNotShown} feedback item{qualityItemsNotShown === 1 ? '' : 's'} not shown in this queue.</span>
+            <Button asChild type="button" size="sm" variant="outline">
+              <Link href={qualityReviewHref}>Review all feedback</Link>
             </Button>
           </div>
         ) : null}
@@ -813,8 +869,9 @@ export function NeedsAttentionView({ accountId, routeState }: NeedsAttentionView
               recentlyClosed={filteredRecentlyClosed}
               typeCounts={typeCounts}
               filters={filters}
-              onFiltersChange={setFilters}
+              onFiltersChange={handleFiltersChange}
               agentOptions={agentOptions}
+              channelOptions={channelOptions}
               operatorOptions={operatorOptions}
               now={now}
               selectedKey={selectedInboxItem?.key ?? null}

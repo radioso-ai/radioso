@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
+import { isUniqueViolation, pgErrorMeta } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import {
   skillCapabilityIdSchema,
@@ -110,19 +111,6 @@ interface AgentSkillsServiceOptions {
   audit?: Pick<AuditService, "record">;
   recipientConfirmations?: RecipientConfirmationRequester;
 }
-
-const pgErrorMeta = (error: unknown): { code?: string; constraint?: string } => {
-  if (!error || typeof error !== "object") {
-    return {};
-  }
-  const candidate = error as { code?: unknown; constraint?: unknown };
-  return {
-    code: typeof candidate.code === "string" ? candidate.code : undefined,
-    constraint: typeof candidate.constraint === "string" ? candidate.constraint : undefined,
-  };
-};
-
-const isUniqueViolation = (error: unknown): boolean => pgErrorMeta(error).code === "23505";
 
 // The agent_skills target-reference trigger raises 23503 with an `*_target_fk`
 // constraint when target_id is missing/unknown or points at another workspace's

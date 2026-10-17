@@ -1,4 +1,10 @@
-import type { ChatStreamEvent, ChatTurnHandoffReason, ConversationTurnSupersession } from "../../chat/contracts/index.js";
+import type {
+  ChatStreamEvent,
+  ChatTurnHandoffReason,
+  ConversationTurnSupersession,
+  OperatorReplySpeechClaims,
+} from "../../chat/contracts/index.js";
+import { errorClassOf } from "../../../shared/observability/errorClass.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { VOICE_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { VOICE_SOURCE_CHANNEL } from "../../../shared/domain/conversationSource.js";
@@ -33,7 +39,9 @@ import {
   type VoiceTurnPhase,
   type VoiceTurnPolicy,
 } from "./voiceTurnPolicy.js";
+import { OperatorReplySpeaker, type ClaimedOperatorReply, type OperatorReplySpeakerDependencies } from "./operatorReplySpeaker.js";
 import { createSentenceCutter, splitCompleteSentences } from "./speechSegmenter.js";
+import { hasSpokenWords } from "./speechText.js";
 import {
   cutOffAt,
   VoiceSessionMemory,
@@ -116,6 +124,8 @@ export interface VoiceTurnNotes {
   }): Promise<void>;
   /** An identical re-request heard the stored reply again, without a new turn. */
   replyReplayed(note: { workspaceId: string; conversationId: string; assistantMessageId: string }): Promise<void>;
+  /** A turn spoke a teammate's replies and completed, and they are recorded as spoken: by id only. */
+  operatorRepliesSpoken(note: { workspaceId: string; conversationId: string; messageIds: string[] }): Promise<void>;
 }
 
 type ChatStatusStage = Extract<ChatStreamEvent, { type: "status" }>["stage"];
@@ -136,6 +146,8 @@ interface VoiceTurnServiceDependencies {
   logger: Pick<AppLogger, "info" | "warn">;
   metrics?: VoiceTurnMetricsSink | null;
   notes?: VoiceTurnNotes;
+  /** Chat's teammate replies the caller has not heard yet, the claims turns hold on them, and the id each turn claims under. */
+  operatorReplies: { claims: OperatorReplySpeechClaims; newClaimTurnId: () => string };
   /** The visitor a Radioso-started session was started for; without it, first turns join no visitor. */
   starts?: VoiceSessionStartLookup;
   /** Overrides `VOICE_BEHAVIOR`; tests only. */
@@ -158,8 +170,13 @@ interface VoiceTurnRecord {
   chatReplied: boolean;
   /** The stored answer, once chat reports it. */
   reply: { messageId: string; text: string } | null;
-  /** What left the turn for the caller: the bridge line, and every speech piece in order. */
-  spoken: { bridge: string | null; speech: string[] };
+  /**
+   * What left the turn for the caller: a teammate's replies, the bridge line, and every speech
+   * piece of the turn's own answer, each in order.
+   */
+  spoken: { operatorReplies: string[]; bridge: string | null; speech: string[] };
+  /** The teammate replies the turn claims, speaks ahead of its answer, and settles. */
+  operatorReplyClaims: OperatorReplySpeaker;
   /** The outcome the runtime received, once it left. */
   outcome: VoiceTurnOutcome | null;
   /** Why chat handed the conversation to a person on this turn; null when it did not. */
@@ -168,14 +185,15 @@ interface VoiceTurnRecord {
   drain?: Promise<VoiceTurnDrain>;
 }
 
-const emptyRecord = (): VoiceTurnRecord => ({
+const emptyRecord = (operatorReplyClaims: OperatorReplySpeaker): VoiceTurnRecord => ({
   conversationId: null,
   speechPieceCount: 0,
   result: "abandoned",
   chatPrepared: false,
   chatReplied: false,
   reply: null,
-  spoken: { bridge: null, speech: [] },
+  spoken: { operatorReplies: [], bridge: null, speech: [] },
+  operatorReplyClaims,
   outcome: null,
   handoffReason: null,
 });
@@ -193,7 +211,7 @@ class VoiceTurnNoteTimeoutError extends Error {
 }
 
 /** The note, or a timeout error once it has taken too long; the write itself goes on either way. */
-const withinNoteTimeout = (note: Promise<void>): Promise<void> => {
+const withinNoteTimeout = <T>(note: Promise<T>): Promise<T> => {
   let timer: ReturnType<typeof setTimeout> | undefined;
   const timeout = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(() => reject(new VoiceTurnNoteTimeoutError()), NOTE_TIMEOUT_MS);
@@ -239,9 +257,6 @@ const channelContextFor = (input: VoiceTurnInput): VoiceChannelContext => ({
   transport: input.transport,
 });
 
-const errorClassOf = (error: unknown): string =>
-  error instanceof Error ? error.constructor.name : typeof error;
-
 /**
  * Runs one caller turn as a chat turn on the session's conversation and re-cuts the reply into
  * sentence-sized speech. The turn's governance, routines and persistence are the chat turn's own.
@@ -259,6 +274,10 @@ export class VoiceTurnService implements VoiceTurnPort {
   private readonly firstTurns = new Map<string, FirstTurn>();
   /** The newest request, the last bridge and the last exchange of each session, in this process. */
   private readonly memory: VoiceSessionMemory;
+  /** What each turn's teammate replies are claimed, spoken and settled through. */
+  private readonly operatorReplySpeaker: OperatorReplySpeakerDependencies;
+  /** Each request's speaker, so a newer request of the session can settle the one it overtook. */
+  private readonly replySpeakers = new WeakMap<VoiceTurnClaim, OperatorReplySpeaker>();
   /** Agents already warned about a bridge line shorter than their runtime speaks on its own. */
   private readonly shortBridgeWarned = new Set<string>();
 
@@ -266,6 +285,14 @@ export class VoiceTurnService implements VoiceTurnPort {
     this.now = dependencies.now ?? Date.now;
     this.timing = dependencies.timing ?? VOICE_BEHAVIOR;
     this.memory = new VoiceSessionMemory(this.timing);
+    const { notes } = dependencies;
+    this.operatorReplySpeaker = {
+      replies: dependencies.operatorReplies,
+      ...(notes ? { audit: (spoken: { workspaceId: string; conversationId: string; messageIds: string[] }) => notes.operatorRepliesSpoken(spoken) } : {}),
+      withinTimeout: withinNoteTimeout,
+      logger: dependencies.logger,
+      metrics: dependencies.metrics,
+    };
   }
 
   /**
@@ -286,7 +313,8 @@ export class VoiceTurnService implements VoiceTurnPort {
     } else {
       hungUp?.addEventListener("abort", onHangUp, { once: true });
     }
-    const record = emptyRecord();
+    const record = emptyRecord(new OperatorReplySpeaker(this.operatorReplySpeaker, input.session));
+    this.replySpeakers.set(claim, record.operatorReplyClaims);
     let failure: unknown;
     let firstTurn: FirstTurn | undefined;
 
@@ -294,6 +322,18 @@ export class VoiceTurnService implements VoiceTurnPort {
       this.noteInterruptedReply(input, sessionKey);
       const replay = this.memory.replayFor(sessionKey, input.utterance, startedAt);
       if (replay) {
+        // The teammate's replies the caller has not heard come before the answer heard again.
+        record.conversationId = replay.conversationId;
+        const replies = await this.claimOperatorReplies(claim, record, replay.conversationId);
+        if (claim.supersededAt !== null) {
+          // Overtaken while claiming: the newer request owns the session, and the claim goes back.
+          record.result = "superseded";
+          record.outcome = CONTINUE_OUTCOME;
+          yield CONTINUE;
+          return;
+        }
+        yield { type: "conversation", conversationId: replay.conversationId };
+        yield* this.operatorReplySpeech(replies, record);
         yield* this.delivered(this.replayEvents(input, replay, record), record, claim, sessionKey);
         return;
       }
@@ -304,11 +344,17 @@ export class VoiceTurnService implements VoiceTurnPort {
       } else {
         record.conversationId = sessionClaim.conversationId;
       }
-      const policy = claim.supersededAt === null
-        ? await this.policyFor(input, sessionClaim.conversationId, startedAt, record, () => this.memory.mayBridge(sessionKey, claim, this.now()))
-        : null;
+      // No bridge line follows a teammate's reply: the caller has just heard someone speak.
+      const mayBridge = (): boolean => record.spoken.operatorReplies.length === 0 && this.memory.mayBridge(sessionKey, claim, this.now());
+      const [policy, replies] = claim.supersededAt === null
+        ? await Promise.all([
+            this.policyFor(input, sessionClaim.conversationId, startedAt, record, mayBridge),
+            sessionClaim.conversationId ? this.claimOperatorReplies(claim, record, sessionClaim.conversationId) : [],
+          ])
+        : [null, []];
       if (claim.supersededAt !== null) {
-        // A newer request of the session arrived while this one was setting up; it owns the turn.
+        // A newer request of the session arrived while this one was setting up; it owns the turn,
+        // and the replies this one claimed go back to pending as it settles.
         record.result = "superseded";
         record.outcome = CONTINUE_OUTCOME;
         yield CONTINUE;
@@ -316,6 +362,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       }
       if (sessionClaim.conversationId) {
         yield { type: "conversation", conversationId: sessionClaim.conversationId };
+        yield* this.operatorReplySpeech(replies, record);
       }
       const reply = this.replyEvents(input, sessionClaim, record, signal, sessionKey);
       yield* this.delivered(policy ? applyVoiceTurnPolicy(reply, policy) : withoutPhaseMarkers(reply), record, claim, sessionKey);
@@ -325,10 +372,20 @@ export class VoiceTurnService implements VoiceTurnPort {
       throw error;
     } finally {
       hungUp?.removeEventListener("abort", onHangUp);
+      // Whether the caller heard the teammate's replies is decided once the outcome has left, so
+      // they settle now rather than after a reply the limit cut off has drained.
+      const repliesSettled = record.operatorReplyClaims.settle(claim.outcomeAt !== null && cutOffAt(claim) === null);
       const finish = (): void => {
+        const finishedAt = this.now();
         this.releaseFirstTurn(input.session, firstTurn);
-        this.memory.settle(sessionKey, claim, this.now(), this.exchangeOf(input, record, claim));
-        this.logTurn(input, record, startedAt, failure);
+        this.memory.settle(sessionKey, claim, finishedAt, this.exchangeOf(input, record, claim));
+        // The log names how many replies were recorded spoken, so it waits for the settling writes;
+        // its duration is the turn's own.
+        if (repliesSettled) {
+          void repliesSettled.then(() => this.logTurn(input, record, startedAt, finishedAt, failure));
+        } else {
+          this.logTurn(input, record, startedAt, finishedAt, failure);
+        }
       };
       // The events end with the outcome; a reply the limit cut off drains behind them, and the
       // turn is settled and logged once it has finished.
@@ -367,15 +424,36 @@ export class VoiceTurnService implements VoiceTurnPort {
     }
   }
 
+  /**
+   * Claims the conversation's pending teammate replies for this request. A request the session's
+   * newer one overtook before its outcome left will not reach its caller, so the replies it holds
+   * are handed back first (within the note timeout) and this request claims them; across
+   * instances that turn is not seen here, and its replies wait for it or for the claim's expiry.
+   */
+  private async claimOperatorReplies(claim: VoiceTurnClaim, record: VoiceTurnRecord, conversationId: string): Promise<ClaimedOperatorReply[]> {
+    const overtaken = claim.overtook?.outcomeAt === null ? this.replySpeakers.get(claim.overtook) : undefined;
+    if (overtaken?.holdsClaims) {
+      await withinNoteTimeout(overtaken.settle(false) ?? Promise.resolve()).catch(() => undefined);
+    }
+    return record.operatorReplyClaims.claim(conversationId);
+  }
+
+  /** The teammate's claimed replies, spoken ahead of the turn's own answer, in the order they were written. */
+  private *operatorReplySpeech(replies: readonly ClaimedOperatorReply[], record: VoiceTurnRecord): Generator<VoiceTurnEvent> {
+    for (const piece of record.operatorReplyClaims.speech(replies)) {
+      record.speechPieceCount += 1;
+      record.spoken.operatorReplies.push(piece.text);
+      yield piece;
+    }
+  }
+
   /** The stored answer spoken again, sentence by sentence, with no chat turn behind it. */
   private async *replayEvents(
     input: VoiceTurnInput,
     exchange: ReplayableVoiceExchange,
     record: VoiceTurnRecord,
   ): AsyncGenerator<VoiceTurnEvent> {
-    record.conversationId = exchange.conversationId;
     record.reply = exchange.reply;
-    yield { type: "conversation", conversationId: exchange.conversationId };
     yield* lastSpeech(splitCompleteSentences(exchange.reply.text, { startsLine: true, final: true }), record);
     record.result = "replayed";
     recordVoiceTurnReplayed(this.dependencies.metrics);
@@ -457,14 +535,19 @@ export class VoiceTurnService implements VoiceTurnPort {
       utterance: input.utterance,
       conversationId: record.conversationId,
       reply: record.reply,
-      spoken: record.policy?.fallbackSpoken ? null : { bridge: record.spoken.bridge, reply: record.spoken.speech.join("") },
+      spoken: record.policy?.fallbackSpoken
+        ? null
+        : {
+            ahead: [record.spoken.operatorReplies.join(""), record.spoken.bridge].filter((text): text is string => text !== null && hasSpokenWords(text)),
+            reply: record.spoken.speech.join(""),
+          },
       cutOffAt: cutOffAt(claim),
     };
   }
 
-  private logTurn(input: VoiceTurnInput, record: VoiceTurnRecord, startedAt: number, failure: unknown): void {
+  private logTurn(input: VoiceTurnInput, record: VoiceTurnRecord, startedAt: number, finishedAt: number, failure: unknown): void {
     const { metrics, logger } = this.dependencies;
-    const supersededAt = record.spoken.speech.some((text) => text.length > 0) ? "after_speech" : "before_speech";
+    const supersededAt = [...record.spoken.operatorReplies, ...record.spoken.speech].some((text) => text.length > 0) ? "after_speech" : "before_speech";
     if (record.result === "superseded") {
       recordVoiceTurnSuperseded(metrics, supersededAt);
     }
@@ -478,8 +561,9 @@ export class VoiceTurnService implements VoiceTurnPort {
       conversationId: record.conversationId,
       result: record.result,
       ...(record.result === "superseded" ? { supersededAt } : {}),
-      durationMs: this.now() - startedAt,
+      durationMs: finishedAt - startedAt,
       speechPieceCount: record.speechPieceCount,
+      ...(record.operatorReplyClaims.spokenCount > 0 ? { spokenOperatorReplies: record.operatorReplyClaims.spokenCount } : {}),
       ...(record.outcome ? { outcome: record.outcome.kind } : {}),
       ...(record.handoffReason ? { handoffReason: record.handoffReason } : {}),
       ...record.policy,

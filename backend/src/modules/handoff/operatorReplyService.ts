@@ -2,7 +2,7 @@ import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalida
 import type { ConversationRecord, ConversationRepositoryPort } from "../../db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../db/repositories/messageRepository.js";
 import type { AuditService } from "../audit/contracts/index.js";
-import type { PublicConversationEventBus } from "../chat/contracts/index.js";
+import { operatorRepliesAreSpoken, type PublicConversationEventBus } from "../chat/contracts/index.js";
 import type {
   CustomerChannelReplyDeliverer,
   CustomerReplyOutboxPort,
@@ -65,6 +65,8 @@ export class OperatorReplyService {
    * Writes the reply attributed to the teammate and signed with their reply signature, which is
    * never an email (with no signature the reply goes out unsigned); dates the conversation's
    * activity; and queues the reply's channel delivery, keyed by the message so it goes out once.
+   * A call has nothing to queue on: its reply is stored as pending speech, which the caller's next
+   * turn speaks.
    */
   async write(scope: OperatorReplyWriteScope, reply: PreparedOperatorReply): Promise<MessageRecord> {
     const { conversation, operator } = reply;
@@ -77,6 +79,7 @@ export class OperatorReplyService {
       operatorAccountId: reply.accountId,
       operatorUserId: operator.userId,
       operatorDisplayName: operator.replySignature ?? undefined,
+      ...(operatorRepliesAreSpoken(conversation) ? { pendingSpeech: true } : {}),
     });
     await scope.conversations.touch(conversation.id, conversation.workspaceId);
     await reply.channel?.enqueue(scope.outbox, { id: message.id, content: message.content });

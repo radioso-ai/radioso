@@ -32,6 +32,11 @@ const DEFAULT_JOB_LEASE_MS = 300_000;
 const EMBEDDING_CLEANUP_INTERVAL_MS = 60_000;
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAYS_MS = [1_000, 5_000, 15_000] as const;
+const CLAIM_EXPIRED_REASON = "claim_expired";
+// Structural failure code, not prose — a job whose claim expired after it had
+// already exhausted every attempt. Distinct from "claim_expired" (attempts
+// remain; the job is released back to the queue instead).
+const CLAIM_EXPIRED_ATTEMPTS_EXHAUSTED_REASON = "claim_expired_attempts_exhausted";
 
 type TraceAttributes = Record<string, unknown>;
 
@@ -220,9 +225,19 @@ export class DocumentProcessingWorker {
 
       if (existing.status === "processing") {
         const claimedBefore = new Date(now.getTime() - this.jobLeaseMs);
-        const released = await this.jobRepository.releaseTimedOutClaim(jobId, claimedBefore, "claim_expired");
-        if (!released) {
+        const resolved = await this.jobRepository.releaseOrFailExpiredClaim({
+          jobId,
+          claimedAtOrBefore: claimedBefore,
+          maxAttempts: MAX_ATTEMPTS,
+          releasedReason: CLAIM_EXPIRED_REASON,
+          exhaustedReason: CLAIM_EXPIRED_ATTEMPTS_EXHAUSTED_REASON,
+        });
+        if (!resolved) {
           return "busy";
+        }
+        if (resolved.status === "failed") {
+          await this.handleExpiredClaimExhausted(resolved);
+          return "noop";
         }
       }
 
@@ -269,10 +284,25 @@ export class DocumentProcessingWorker {
       return;
     }
 
-    const releaseResults = await Promise.all(
-      staleJobs.map((job) => this.jobRepository.releaseTimedOutClaim(job.id, claimedAtOrBefore, "claim_expired")),
+    const resolvedJobs = await Promise.all(
+      staleJobs.map((job) =>
+        this.jobRepository.releaseOrFailExpiredClaim({
+          jobId: job.id,
+          claimedAtOrBefore,
+          maxAttempts: MAX_ATTEMPTS,
+          releasedReason: CLAIM_EXPIRED_REASON,
+          exhaustedReason: CLAIM_EXPIRED_ATTEMPTS_EXHAUSTED_REASON,
+        }),
+      ),
     );
-    const releasedCount = releaseResults.filter(Boolean).length;
+
+    await Promise.all(
+      resolvedJobs
+        .filter((job): job is DocumentProcessingJobRecord => job !== null && job.status === "failed")
+        .map((job) => this.handleExpiredClaimExhausted(job)),
+    );
+
+    const releasedCount = resolvedJobs.filter((job) => job !== null && job.status === "queued").length;
     if (releasedCount === 0) {
       return;
     }
@@ -350,19 +380,16 @@ export class DocumentProcessingWorker {
   }
 
   private async handleFailure(job: DocumentProcessingJobRecord, error: unknown, durationMs: number): Promise<void> {
-    return traceActiveSpan("document.worker.job_failure", buildDocumentWorkerJobTraceAttributes(job), async () => {
-      const message = getProviderFailureReason(error);
-      const isPermanent = isPermanentProviderFailure(error);
-      const isContractInvalid = error instanceof EmbeddingVectorContractError;
-      const hasRetriesRemaining =
-        !isPermanent
-        && !isContractInvalid
-        && job.attemptCount < MAX_ATTEMPTS;
-      const terminalProfileFailureKind = job.kind === "embedding_profile"
-        ? embeddingProfileTerminalFailureKind(error, isPermanent)
-        : undefined;
+    const message = getProviderFailureReason(error);
+    const isPermanent = isPermanentProviderFailure(error);
+    const isContractInvalid = error instanceof EmbeddingVectorContractError;
+    const hasRetriesRemaining =
+      !isPermanent
+      && !isContractInvalid
+      && job.attemptCount < MAX_ATTEMPTS;
 
-      if (hasRetriesRemaining) {
+    if (hasRetriesRemaining) {
+      return traceActiveSpan("document.worker.job_failure", buildDocumentWorkerJobTraceAttributes(job), async () => {
         const delayMs =
           RETRY_DELAYS_MS[Math.min(job.attemptCount - 1, RETRY_DELAYS_MS.length - 1)] ?? this.pollIntervalMs;
         const nextAttemptAt = new Date(Date.now() + delayMs);
@@ -406,8 +433,39 @@ export class DocumentProcessingWorker {
           outcome: "retry_scheduled",
           reason: message,
         });
-        return;
-      }
+      });
+    }
+
+    const terminalProfileFailureKind = job.kind === "embedding_profile"
+      ? embeddingProfileTerminalFailureKind(error, isPermanent)
+      : undefined;
+    await this.failJobTerminally(job, {
+      reason: message,
+      isPermanent,
+      terminalProfileFailureKind,
+      durationMs,
+    });
+  }
+
+  // The terminal path every exhausted failure funnels through: provider
+  // failures that run out of retries or come back permanent/contract-invalid,
+  // and — via handleExpiredClaimExhausted — a claim that expired after its
+  // attempt_count had already reached MAX_ATTEMPTS. One path means a
+  // claim-expiry failure leaves the document and embedding-profile state
+  // exactly where a normal terminal failure would, with the same guards
+  // (revision checks, an already-ready document never hidden from retrieval)
+  // and the same audit/telemetry shape.
+  private async failJobTerminally(
+    job: DocumentProcessingJobRecord,
+    input: {
+      reason: string;
+      isPermanent: boolean;
+      terminalProfileFailureKind: EmbeddingProfileTerminalFailureKind | undefined;
+      durationMs: number;
+    },
+  ): Promise<void> {
+    return traceActiveSpan("document.worker.job_failure", buildDocumentWorkerJobTraceAttributes(job), async () => {
+      const { reason: message, isPermanent, terminalProfileFailureKind, durationMs } = input;
 
       if (job.kind === "embedding_profile") {
         if (!terminalProfileFailureKind) {
@@ -472,6 +530,51 @@ export class DocumentProcessingWorker {
         reason: message,
         embeddingProfileFailureKind: terminalProfileFailureKind,
       });
+    });
+  }
+
+  // Claim-expiry recovery (the push-worker recovery route and the periodic
+  // stale sweep) lands here once releaseOrFailExpiredClaim reports a row it
+  // moved to "failed" rather than releasing: attempt_count had already
+  // reached MAX_ATTEMPTS when the lease ran out, so reclaiming it again would
+  // just pay for another embedding run that gets cut off the same way. Logs
+  // and counts the event — job id, kind, document id, attempt count, no
+  // document content — so operators can see large documents hitting the
+  // limit, then runs the same terminal path an exhausted-retry failure would.
+  private async handleExpiredClaimExhausted(job: DocumentProcessingJobRecord): Promise<void> {
+    this.logger.warn(
+      {
+        role: "worker",
+        jobId: job.id,
+        jobKind: job.kind,
+        documentId: job.documentId,
+        attemptCount: job.attemptCount,
+      },
+      "Document processing job claim expired after exhausting all attempts; failing instead of reclaiming",
+    );
+    await this.telemetryService?.emit({
+      eventType: "document.worker.claim_expired_attempts_exhausted",
+      severity: "warn",
+      correlation: {
+        workspaceId: job.workspaceId,
+        jobId: job.id,
+        documentId: job.documentId,
+      },
+      metrics: {
+        attemptCount: job.attemptCount,
+      },
+      tags: {
+        jobKind: job.kind,
+      },
+    });
+
+    await this.failJobTerminally(job, {
+      reason: CLAIM_EXPIRED_ATTEMPTS_EXHAUSTED_REASON,
+      isPermanent: false,
+      // Not a contract-invalid or permanent provider failure — the same
+      // classification a non-permanent retry-exhausted failure would get.
+      terminalProfileFailureKind: job.kind === "embedding_profile" ? "retry_exhausted" : undefined,
+      durationMs: job.claimedAt ? Date.now() - job.claimedAt.getTime() : 0,
     });
   }
 

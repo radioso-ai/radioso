@@ -504,9 +504,7 @@ export interface Chunks {
   date_from: Timestamp | null;
   date_to: Timestamp | null;
   document_id: string;
-  embedding: string | null;
   embedding_model: Generated<string>;
-  embedding_unbounded: string | null;
   end_offset: number | null;
   id: string;
   metadata: Generated<Json>;
@@ -1672,6 +1670,8 @@ export interface RoutineStates {
   reask_count: Generated<number>;
   routine_id: string;
   session_id: string;
+  started_execution_id: string | null;
+  started_message_id: string | null;
   status: Generated<string>;
   updated_at: Generated<Timestamp>;
   variables: Generated<Json>;
@@ -1696,6 +1696,7 @@ export interface RoutineTerminal {
   instruction: string | null;
   kind: string;
   operator_notice_enabled: Generated<boolean>;
+  operator_notice_include_ai_summary: Generated<boolean>;
   operator_notice_intro: string | null;
   operator_notice_reply_to_slot: string | null;
   operator_notice_skill_name: string | null;

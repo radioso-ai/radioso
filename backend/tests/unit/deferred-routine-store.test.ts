@@ -23,6 +23,23 @@ const innerStore = (): ConversationRoutineStore & {
 });
 
 describe("DeferredRoutineStore", () => {
+  it("seeds a fresh execution with its activation message and preserves an existing execution's anchor", async () => {
+    const inner = innerStore();
+    const fresh = new DeferredRoutineStore(inner, "activation-message");
+    await fresh.save(state({ executionId: "execution-new" }));
+    expect(fresh.getTransition()).toMatchObject({
+      kind: "save",
+      state: { executionId: "execution-new", startedMessageId: "activation-message" },
+    });
+
+    const resumed = new DeferredRoutineStore(inner, "current-message");
+    await resumed.save(state({ executionId: "execution-existing", startedMessageId: "original-message" }));
+    expect(resumed.getTransition()).toMatchObject({
+      kind: "save",
+      state: { executionId: "execution-existing", startedMessageId: "original-message" },
+    });
+  });
+
   it("reads through loadActive but defers save until commit", async () => {
     const inner = innerStore();
     const deferred = new DeferredRoutineStore(inner);

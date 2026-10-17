@@ -1,6 +1,6 @@
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
 
-import type { VendorHeldConversationDataEraser, VendorHeldConversationDataScope } from "../../shared/domain/vendorHeldConversationData.js";
+import type { ConversationErasureScope, VendorHeldConversationDataEraser } from "../../shared/domain/conversationDataErasure.js";
 import type { VoiceVendor, VoiceVendorRegion } from "../../shared/domain/voiceVendor.js";
 
 import type { AgentVoiceSettings } from "../agents/public.js";
@@ -292,7 +292,7 @@ export interface VoiceRecordingStore {
 }
 
 /** The conversations an erasure removes, or a whole workspace just before it is deleted. */
-export type VoiceRecordingScope = VendorHeldConversationDataScope;
+export type VoiceRecordingScope = ConversationErasureScope;
 
 /**
  * A recording as the vendor serves it. `status` is 206 when the vendor answered a byte range, with

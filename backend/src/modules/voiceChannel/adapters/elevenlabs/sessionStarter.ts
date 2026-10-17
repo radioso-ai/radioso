@@ -74,7 +74,6 @@ export const createElevenLabsSessionStarter = (dependencies: {
       });
     } catch (error) {
       throw new VoiceVendorRequestError(isTimeout(error, signal) ? "timeout" : "unreachable");
-
     }
     if (!response.ok) {
       await discardBody(response);

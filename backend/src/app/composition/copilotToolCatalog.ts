@@ -4,7 +4,6 @@ import {
   type CopilotAgentSkillsPort,
   type CopilotOperatorNoticeDestinationsPort,
   type CopilotConversationHistoryPort,
-
   type CopilotAgentTurnProbePort,
   type CopilotDocumentSearchPort,
   type CopilotDocumentChunksPort,

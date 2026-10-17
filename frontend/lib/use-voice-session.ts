@@ -113,7 +113,6 @@ export function useVoiceSession({
   }, [])
 
   return { state, lines, recordingNotice, isActive: isVoiceCallActive(state), talk, stop, reset }
-
 }
 
 /**

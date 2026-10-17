@@ -199,7 +199,7 @@ export const buildWorkspaceServices = (input: {
   personalCredentialTermination?: import("../../../modules/workspace/services/workspaceService.js").WorkspacePersonalCredentialTerminationPort;
   personalCredentialLifecycle?: import("../../../modules/machineAccess/public.js").PersonalCredentialLifecyclePort;
   vendorHeldConversationData?: {
-    eraser: import("../../../shared/domain/vendorHeldConversationData.js").VendorHeldConversationDataEraser;
+    eraser: import("../../../shared/domain/conversationDataErasure.js").VendorHeldConversationDataEraser;
     logger: Pick<import("../../../shared/observability/logger.js").AppLogger, "warn">;
   };
   workspaceRepository: WorkspaceRepository;

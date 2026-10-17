@@ -1144,7 +1144,6 @@ function PublicChatContent({
               {voiceOffered ? <VoiceCallNotice theme={theme} copy={copy} state={voice.state} /> : null}
               {!composerShown ? (
                 <VoiceCallBar theme={theme} copy={copy} state={voice.state} onStop={stopVoiceCall} recordingNotice={voice.recordingNotice} />
-
               ) : (
                 <PublicChatBubbleComposerForm
                   theme={theme}

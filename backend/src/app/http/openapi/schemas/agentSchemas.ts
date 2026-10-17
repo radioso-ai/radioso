@@ -1255,7 +1255,6 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     PublicVoiceSessionRequestSchema,
     PublicVoiceSessionResponseSchema,
     PublicVoiceVendorConversationRequestSchema,
-
     WorkspaceIngestionReprocessResponseSchema,
     AgentConfigRefPlaceholderSchema,
     AgentBundleAgentConfigSchema,

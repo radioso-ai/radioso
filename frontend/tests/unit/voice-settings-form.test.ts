@@ -69,7 +69,6 @@ describe('voice settings form', () => {
           fallbackLine: '  ',
           recordingNotice: '',
           mechanicsReplies: { greeting: [' Hi! '], thanks: [], farewell: [''], acknowledgement: [] },
-
         },
         { ...emptyVoiceLanguageLines('it'), fallbackLine: 'Scusa, ci sto mettendo troppo.' },
         emptyVoiceLanguageLines('de'),

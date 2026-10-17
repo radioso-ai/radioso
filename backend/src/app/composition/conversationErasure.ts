@@ -8,6 +8,7 @@ import { EmailSkillActivityEraser } from "../../db/repositories/emailSkillActivi
 import { WhatsAppMessageLogEraser } from "../../modules/connectors/plugins/index.js";
 import { EmailInboundEraser } from "../../modules/emailChannel/public.js";
 import { EvalConversationEraser } from "../../modules/eval/composition.js";
+import { VoiceSessionEraser } from "../../modules/voiceChannel/public.js";
 import type { ConversationErasureUnitOfWork } from "../../modules/privacy/public.js";
 import type {
   ConversationDataEraser,
@@ -36,6 +37,7 @@ export const defaultConversationDataErasers: readonly ConversationDataEraserBind
   (trx) => new EvalConversationEraser(trx),
   (trx) => new WhatsAppMessageLogEraser(trx),
   (trx) => new AudiencePulseSnapshotEraser(trx),
+  (trx) => new VoiceSessionEraser(trx),
 ];
 
 /** Every module's eraser for the rows it keys by an erased visitor's verified customer id. */

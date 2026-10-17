@@ -5,7 +5,7 @@ import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import type {
   VendorHeldConversationDataEraser,
   VendorHeldConversationDataErasure,
-} from "../../../shared/domain/vendorHeldConversationData.js";
+} from "../../../shared/domain/conversationDataErasure.js";
 import { errorClassOf } from "../../../shared/observability/errorClass.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { createWorkspacePublicRouteKey } from "../domain/publicRouteKey.js";
@@ -28,7 +28,6 @@ export class WorkspaceService {
     private readonly personalCredentialLifecycle?: Pick<PersonalCredentialLifecyclePort, "deleteWorkspace">,
     /** What vendors hold for the workspace's conversations, erased after a deletion went through. */
     private readonly vendorHeld?: { eraser: VendorHeldConversationDataEraser; logger: Pick<AppLogger, "warn"> },
-
   ) {}
 
   private async createWorkspaceWithPublicRouteKey(accountId: string, name: string): Promise<WorkspaceRecord> {

@@ -912,7 +912,6 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       messages: true,
       recording: true,
     }).extend({
-
       messages: z.array(PublicChatConversationMessageSchema),
     }),
   );

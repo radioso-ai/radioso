@@ -427,12 +427,12 @@ export class EmailMailboxHarness {
     for (;;) {
       report.rounds += 1;
       const drained = await worker.drain({ maxJobs: DRAIN_BATCH, stage: "all" });
-      const actions = await this.deps.actionDispatchWorker.drain();
+      const actions = await this.deps.actionDispatchJobRuntime.drain({ maxJobs: DRAIN_BATCH });
       report.inboundClaimed += drained.claimed;
       report.reviewsRun += drained.reviewed;
       report.turnsRun = this.turns.count - turnsBefore;
-      report.actionsDispatched += actions?.dispatched ?? 0;
-      const worked = drained.claimed + drained.reviewed + drained.reconciled + (actions?.dispatched ?? 0) + (actions?.retried ?? 0) > 0;
+      report.actionsDispatched += actions?.completed ?? 0;
+      const worked = drained.claimed + drained.reviewed + drained.reconciled + (actions?.completed ?? 0) + (actions?.retried ?? 0) > 0;
       const outstanding = await this.outstanding();
       if (!worked && outstanding.count === 0) return report;
       if (Date.now() > deadline) {

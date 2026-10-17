@@ -28,10 +28,10 @@ describe("recipientEmailChangeMetadata", () => {
     )).toBeNull();
   });
 
-  it("binds a delivery digest to the normalized set and recipient count", () => {
-    expect(recipientEmailDeliveryDigest([" One@example.com", "two@example.com"], 2))
-      .toBe(recipientEmailDeliveryDigest(["two@example.com", "one@example.com"], 2));
-    expect(recipientEmailDeliveryDigest(["one@example.com", "two@example.com"], 2))
-      .not.toBe(recipientEmailDeliveryDigest(["one@example.com", "two@example.com"], 3));
+  it("binds a delivery digest to the normalized configured list", () => {
+    expect(recipientEmailDeliveryDigest([" One@example.com", "two@example.com"]))
+      .toBe(recipientEmailDeliveryDigest(["two@example.com", "one@example.com"]));
+    expect(recipientEmailDeliveryDigest(["one@example.com", "two@example.com"]))
+      .not.toBe(recipientEmailDeliveryDigest(["one@example.com"]));
   });
 });

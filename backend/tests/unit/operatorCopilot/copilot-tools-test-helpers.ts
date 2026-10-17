@@ -133,6 +133,7 @@ export const dependencies = (routineDefinitions: RoutineDefinition[] = [
   const getConversation = vi.fn();
   const getConversationTurn = vi.fn();
   const listConversations = vi.fn();
+  const recordingAvailability = vi.fn(async (): Promise<boolean | null> => null);
   return {
     listAgents,
     resolveAgent,
@@ -142,10 +143,14 @@ export const dependencies = (routineDefinitions: RoutineDefinition[] = [
     getConversation,
     getConversationTurn,
     listConversations,
+    recordingAvailability,
     descriptors: [
       ...createAgentConfigurationCopilotTools({ agentService: { listExisting: listAgents, resolve: resolveAgent } }),
       ...createRoutineDefinitionCopilotTools({ agentLookup: { listExisting: listAgents }, routineDefinitionService: { list: listRoutines, get: getRoutine, validate: validateRoutine } }),
-      ...createChatCopilotTools({ chatHistoryService: { getConversation, getConversationTurn, listConversations } }),
+      ...createChatCopilotTools({
+        chatHistoryService: { getConversation, getConversationTurn, listConversations },
+        voiceRecordings: { availability: recordingAvailability },
+      }),
       ...createDocumentSearchCopilotTools({ documentSearchService: { search: vi.fn() } }),
     ],
   };

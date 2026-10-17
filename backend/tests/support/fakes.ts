@@ -73,6 +73,7 @@ import {
   mergeAgentSurfaceSettings,
   validateAgentInput,
   authoredDirectiveInputSchema,
+  changedAgentProposalFields,
   type AgentGreetingSnapshot,
   type AgentInput,
   type AgentRecord,
@@ -97,6 +98,7 @@ import type {
   AbuseControlRepositoryPort,
 } from "../../src/modules/security/contracts/abuseControl.js";
 import type {
+  WorkspaceCredentialProvider,
   WorkspaceProviderCredentialRecord,
   WorkspaceProviderCredentialSummary,
   WorkspaceProviderCredentialsRepositoryPort,
@@ -117,7 +119,6 @@ import {
   type RoutineDefinitionRepositoryPort,
   type RoutineDefinitionWriteGuard,
 } from "../../src/modules/routines/public.js";
-import type { LlmProviderName } from "../../src/shared/infra/llm/providerTypes.js";
 import type {
   EmailVerificationTokenRecord,
   EmailVerificationTokenRepositoryPort,
@@ -142,6 +143,7 @@ import type {
   DocumentProcessingJobRecord,
   DocumentProcessingQueueSnapshot,
   DocumentProcessingJobRepositoryPort,
+  ReleaseOrFailExpiredClaimOutcome,
 } from "../../src/db/repositories/documentProcessingJobRepository.js";
 import type {
   WorkspaceCanonicalEmbeddingCoverage,
@@ -1385,17 +1387,8 @@ export class InMemoryAgentRepository implements AgentRepositoryPort {
     }
     const previous = await this.findByIdAndWorkspaceId(agentId, workspaceId);
     if (!previous) return { outcome: "targetDeleted" };
-    const value = (key: string): unknown => {
-      if (key === "assistantName") return previous.name;
-      if (key === "anonymousChatEnabled") return previous.surfaceSettings.anonymousChat.enabled;
-      if (key === "websiteEmbedEnabled") return previous.surfaceSettings.websiteEmbed.enabled;
-      if (key === "websiteEmbedAllowedOrigins") return previous.surfaceSettings.websiteEmbed.allowedOrigins;
-      if (key === "websiteEmbedLauncherLabel") return previous.surfaceSettings.websiteEmbed.launcherLabel;
-      if (key === "websiteEmbedLauncherPosition") return previous.surfaceSettings.websiteEmbed.launcherPosition;
-      return (previous as unknown as Record<string, unknown>)[key];
-    };
     const changed = "expectedFields" in guard
-      ? guard.expectedFields.filter((field) => JSON.stringify(value(field.key)) !== JSON.stringify(field.value)).map((field) => field.key)
+      ? changedAgentProposalFields(previous, guard.expectedFields)
       : previous.updatedAt.getTime() === guard.expectedUpdatedAt.getTime() ? [] : ["target"];
     if (changed.length) return { outcome: "changed", fields: changed };
     const lockedInput = guard.normalizeLocked?.(previous) ?? input;
@@ -1774,7 +1767,7 @@ export class InMemoryWorkspaceProviderCredentialsRepository
 
   async findByWorkspaceAndProvider(
     workspaceId: string,
-    provider: LlmProviderName,
+    provider: WorkspaceCredentialProvider,
   ): Promise<WorkspaceProviderCredentialRecord | null> {
     return this.items.get(`${workspaceId}:${provider}`) ?? null;
   }
@@ -1792,7 +1785,7 @@ export class InMemoryWorkspaceProviderCredentialsRepository
 
   async upsert(input: {
     workspaceId: string;
-    provider: LlmProviderName;
+    provider: WorkspaceCredentialProvider;
     ciphertext: string;
   }): Promise<WorkspaceProviderCredentialRecord> {
     const key = `${input.workspaceId}:${input.provider}`;
@@ -1808,7 +1801,7 @@ export class InMemoryWorkspaceProviderCredentialsRepository
     return record;
   }
 
-  async remove(workspaceId: string, provider: LlmProviderName): Promise<boolean> {
+  async remove(workspaceId: string, provider: WorkspaceCredentialProvider): Promise<boolean> {
     return this.items.delete(`${workspaceId}:${provider}`);
   }
 }
@@ -3840,14 +3833,23 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     };
   }
 
-  async markCompleted(jobId: string): Promise<void> {
+  async markCompleted(jobId: string): Promise<boolean> {
+    const existing = this.items.get(jobId);
+    if (!existing || existing.status !== "processing") {
+      return false;
+    }
     this.update(jobId, {
       status: "completed",
       completedAt: new Date(),
     });
+    return true;
   }
 
   async markSkipped(jobId: string, reason: string): Promise<void> {
+    const existing = this.items.get(jobId);
+    if (!existing || existing.status !== "processing") {
+      return;
+    }
     this.update(jobId, {
       status: "skipped",
       lastError: reason,
@@ -3855,12 +3857,17 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     });
   }
 
-  async markFailed(jobId: string, errorMessage: string): Promise<void> {
+  async markFailed(jobId: string, errorMessage: string): Promise<boolean> {
+    const existing = this.items.get(jobId);
+    if (!existing || existing.status !== "processing") {
+      return false;
+    }
     this.update(jobId, {
       status: "failed",
       lastError: errorMessage,
       completedAt: new Date(),
     });
+    return true;
   }
 
   async markFailedIfDocumentMatches(input: {
@@ -3871,9 +3878,16 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     errorMessage: string;
   }): Promise<boolean> {
     const documentRepository = this.documentRepository;
-    const document = documentRepository?.items.get(input.documentId);
     const existingJob = this.items.get(input.jobId);
-    if (!documentRepository || !existingJob || !document || document.workspaceId !== input.workspaceId || document.revision !== input.revision) {
+    // Mirrors the real repository: confirm the job is still ours to fail
+    // before touching the document at all. A run that was not actually dead
+    // can complete it first.
+    if (!documentRepository || !existingJob || existingJob.status !== "processing") {
+      return false;
+    }
+
+    const document = documentRepository.items.get(input.documentId);
+    if (!document || document.workspaceId !== input.workspaceId || document.revision !== input.revision) {
       return false;
     }
 
@@ -3902,20 +3916,35 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     });
   }
 
-  async releaseTimedOutClaim(jobId: string, claimedAtOrBefore: Date, errorMessage: string): Promise<boolean> {
-    const existing = this.items.get(jobId);
-    if (!existing || existing.status !== "processing" || !existing.claimedAt || existing.claimedAt > claimedAtOrBefore) {
-      return false;
+  async releaseOrFailExpiredClaim(input: {
+    jobId: string;
+    claimedAtOrBefore: Date;
+    maxAttempts: number;
+    releasedReason: string;
+    exhaustedReason: string;
+  }): Promise<ReleaseOrFailExpiredClaimOutcome> {
+    const existing = this.items.get(input.jobId);
+    if (!existing || existing.status !== "processing" || !existing.claimedAt || existing.claimedAt > input.claimedAtOrBefore) {
+      return { outcome: "not_claimed" };
     }
 
-    this.update(jobId, {
+    if (existing.attemptCount >= input.maxAttempts) {
+      // Exhausted: stays "processing" and only takes a fresh lease — see the
+      // port's real implementation for why nothing terminal commits here.
+      this.update(input.jobId, {
+        lastError: input.exhaustedReason,
+        claimedAt: new Date(),
+      });
+      return { outcome: "exhausted", job: this.items.get(input.jobId)! };
+    }
+
+    this.update(input.jobId, {
       status: "queued",
-      lastError: errorMessage,
+      lastError: input.releasedReason,
       availableAt: new Date(),
       claimedAt: null,
     });
-
-    return true;
+    return { outcome: "released" };
   }
 
   private update(jobId: string, partial: Partial<DocumentProcessingJobRecord>): void {
@@ -4612,6 +4641,14 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     return null;
   }
 
+  async deleteUserMessage(input: { workspaceId: string; conversationId: string; messageId: string }): Promise<boolean> {
+    const messages = this.items.get(input.conversationId) ?? [];
+    const kept = messages.filter((message) =>
+      !(message.workspaceId === input.workspaceId && message.id === input.messageId && message.role === "user"));
+    this.items.set(input.conversationId, kept);
+    return kept.length < messages.length;
+  }
+
   async listByConversationId(workspaceId: string, conversationId: string): Promise<MessageRecord[]> {
     return [...(this.items.get(conversationId) ?? [])].filter((message) => message.workspaceId === workspaceId);
   }
@@ -4798,6 +4835,12 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
 export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
   readonly items: AuditEventRecord[] = [];
 
+  /**
+   * Stands in for the Postgres lock a real erasure holds on the conversation row. Defaults to
+   * "still there"; a test simulating an erased conversation overrides it to return false.
+   */
+  conversationExists: (workspaceId: string, conversationId: string) => boolean = () => true;
+
   async create(input: {
     accountId?: string | null;
     workspaceId?: string | null;
@@ -4816,6 +4859,20 @@ export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
     };
     this.items.push(record);
     return record;
+  }
+
+  async createIfConversationLive(input: {
+    accountId?: string | null;
+    workspaceId: string;
+    conversationId: string;
+    eventType: string;
+    eventStatus: string;
+    metadata?: Record<string, unknown>;
+  }): Promise<AuditEventRecord | null> {
+    if (!this.conversationExists(input.workspaceId, input.conversationId)) {
+      return null;
+    }
+    return this.create(input);
   }
 
   async listChatAnswerEventsByConversationId(workspaceId: string, conversationId: string): Promise<AuditEventRecord[]> {

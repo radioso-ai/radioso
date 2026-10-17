@@ -231,7 +231,9 @@ Workspaces can supply their own provider API keys instead of relying on the depl
 
 `credentialSource` controls which credentials are effective. `managed` uses Radioso's managed model by default; a stored workspace key for a capability's selected provider moves that capability to the workspace account. `byok` uses workspace credentials only, and `envProviderAvailability` is false for every provider even when the deployment holds a key. `self_hosted` uses a workspace key first, then the matching environment key. The dashboard filters provider choices and explains missing encryption according to this policy; it does not present deployment keys as usable on managed or BYOK plans.
 
-`PUT /api/v1/settings/credentials/:provider` stores or replaces a key from the signed-in dashboard session. The body is `{ "apiKey": "..." }`. Valid `provider` values are `openai`, `openai-compatible`, `gemini`, and `claude`. The response is `204 No Content`.
+`PUT /api/v1/settings/credentials/:provider` stores or replaces a key from the signed-in dashboard session. The body is `{ "apiKey": "..." }`. Valid `provider` values are the model providers `openai`, `openai-compatible`, `gemini`, and `claude`, and the voice runtime `elevenlabs`. The response is `204 No Content`.
+
+The `elevenlabs` key is the one Radioso starts ElevenLabs voice sessions with, so a web page can open a call without holding it. It is always the workspace's own: there is no deployment-level ElevenLabs key, so `envProviderAvailability` lists only the model providers. The dashboard shows it under **Settings → Providers → Voice runtime keys**.
 
 `DELETE /api/v1/settings/credentials/:provider` removes a stored key. The response is `204 No Content`, or `404` if no credential was stored for that provider.
 

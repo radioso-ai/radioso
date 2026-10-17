@@ -109,7 +109,8 @@ describeIfDatabase("pending decision assistant-turn commit fence", () => {
 
   it("atomically commits a suspended routine state, pending decision, and assistant message", async () => {
     const { workspace, conversation } = await seedConversation();
-    const sessionId = randomUUID();
+    // A chat turn keys its routine state by the conversation it runs in.
+    const sessionId = conversation.id;
     const decision = pendingDecisionInput(workspace.id, conversation.id, sessionId);
     const assistantMessageId = randomUUID();
 
@@ -196,7 +197,8 @@ describeIfDatabase("pending decision assistant-turn commit fence", () => {
 
   it("rolls back routine state and pending decision when the assistant message insert fails", async () => {
     const { workspace, conversation } = await seedConversation();
-    const sessionId = randomUUID();
+    // A chat turn keys its routine state by the conversation it runs in.
+    const sessionId = conversation.id;
     const decision = pendingDecisionInput(workspace.id, conversation.id, sessionId);
     const duplicateMessageId = randomUUID();
 

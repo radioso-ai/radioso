@@ -76,6 +76,18 @@ export const contactFormOnlyDirective = baseDirective({
   action: "Never collect personal contact details such as email addresses in chat. When a customer needs someone to follow up, send them to the contact form at https://acme.example/contact instead.",
 });
 
+/**
+ * Not seeded on the agent. The quick-reply case for an unlisted language adds it through
+ * `agentConfigOverride`: an always-on rule that names the only languages the agent
+ * answers in. A standing directive is operator-authored truth, so a planner-written
+ * quick reply may repeat what it says, and nothing beyond it.
+ */
+export const listedLanguagesDirective = baseDirective({
+  name: "listed-languages",
+  condition: { kind: "always" },
+  action: "Answer only in English or Italian. When the customer writes in any other language, reply in English and say that you can help in English or Italian.",
+});
+
 export const conversationQualityDirectives: AuthoredDirective[] = [
   pricingPrecisionDirective,
   refundEmpathyDirective,

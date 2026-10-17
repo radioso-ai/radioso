@@ -1633,11 +1633,12 @@ components:
       properties:
         provider:
           type: string
-          enum: &a72
+          enum: &a74
             - openai
             - openai-compatible
             - gemini
             - claude
+            - elevenlabs
         updatedAt:
           type: string
           format: date-time
@@ -2127,7 +2128,7 @@ components:
               type: string
             launcherPosition:
               type: string
-              enum: &a14
+              enum: &a16
                 - bottom-right
                 - bottom-left
             theme:
@@ -2156,6 +2157,9 @@ components:
               type: object
               additionalProperties:
                 type: string
+            voiceCallsOffered:
+              type: boolean
+              description: "The operator offers voice calls from the website embed: its composer shows Talk while the agent's voice is also on, bound to a runtime and the workspace holds the vendor key. Defaults to false."
           required:
             - enabled
             - token
@@ -2165,6 +2169,7 @@ components:
             - theme
             - copy
             - expertOverrides
+            - voiceCallsOffered
       required:
         - authenticatedChat
         - anonymousChat
@@ -2234,6 +2239,202 @@ components:
               required:
                 - url
             - type: "null"
+    AgentVoiceSettings:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        bridgeLines:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              acknowledge:
+                type: array
+                items:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                maxItems: 5
+              check:
+                type: array
+                items:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                maxItems: 5
+            required:
+              - acknowledge
+              - check
+        fallbackLine:
+          type: object
+          additionalProperties:
+            type: string
+            minLength: 1
+            maxLength: 200
+        recordingNotice:
+          type: object
+          additionalProperties:
+            type: string
+            minLength: 1
+            maxLength: 200
+        runtime:
+          type:
+            - object
+            - "null"
+          properties:
+            vendor:
+              type: string
+              enum: &a14
+                - elevenlabs
+            agentId:
+              type: string
+              minLength: 1
+              maxLength: 128
+              pattern: ^[A-Za-z0-9_-]+$
+            region:
+              type: string
+              enum: &a15
+                - us
+                - eu
+                - in
+                - sg
+          required:
+            - vendor
+            - agentId
+            - region
+      required:
+        - enabled
+        - bridgeLines
+        - fallbackLine
+        - runtime
+      description: How the agent sounds on the voice channel. `bridgeLines`, `fallbackLine` and the optional `recordingNotice` are keyed by language tag (at most 10 each); each style holds at most 5 lines of 1 to 200 characters, and each notice is one line of 1 to 200 characters. The website embed shows the `recordingNotice` for the session's language as a call starts. `runtime` binds the agent to one vendor agent (the vendor's own agent id, 1 to 128 letters, digits, underscores and hyphens), which a voice session start opens, in the data residency region of the vendor account (`region`, which picks the vendor host); null binds none. An update replaces the block whole.
+    AgentVoiceSettingsUpdate:
+      type: object
+      properties:
+        enabled:
+          type: boolean
+        bridgeLines:
+          type: object
+          additionalProperties:
+            type: object
+            properties:
+              acknowledge:
+                type: array
+                items:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                maxItems: 5
+              check:
+                type: array
+                items:
+                  type: string
+                  minLength: 1
+                  maxLength: 200
+                maxItems: 5
+            required:
+              - acknowledge
+              - check
+        fallbackLine:
+          type: object
+          additionalProperties:
+            type: string
+            minLength: 1
+            maxLength: 200
+        recordingNotice:
+          type: object
+          additionalProperties:
+            type: string
+            minLength: 1
+            maxLength: 200
+        runtime:
+          type:
+            - object
+            - "null"
+          properties:
+            vendor:
+              type: string
+              enum: *a14
+            agentId:
+              type: string
+              minLength: 1
+              maxLength: 128
+              pattern: ^[A-Za-z0-9_-]+$
+            region:
+              type: string
+              enum: *a15
+          required:
+            - vendor
+            - agentId
+          additionalProperties: false
+      required:
+        - enabled
+        - bridgeLines
+        - fallbackLine
+      additionalProperties: false
+      description: "The `voice` block as an update sends it: `AgentVoiceSettings`, except that `runtime` may be left out, which binds the agent to no vendor agent, and `runtime.region` may be left out for the vendor's default region, `us`. A key either object does not name is refused. The update replaces the block whole."
+    AgentMechanicsReplies:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          greeting:
+            type: array
+            items:
+              type: string
+              minLength: 1
+              maxLength: 200
+            maxItems: 5
+          thanks:
+            type: array
+            items:
+              type: string
+              minLength: 1
+              maxLength: 200
+            maxItems: 5
+          farewell:
+            type: array
+            items:
+              type: string
+              minLength: 1
+              maxLength: 200
+            maxItems: 5
+          acknowledgement:
+            type: array
+            items:
+              type: string
+              minLength: 1
+              maxLength: 200
+            maxItems: 5
+        required:
+          - greeting
+          - thanks
+          - farewell
+          - acknowledgement
+      description: What the agent says, word for word, to a greeting, thanks, farewell, or acknowledgement, keyed by language tag (at most 10). Each locale entry holds every mechanic, each with at most 5 lines of 1 to 200 characters. When a turn is one of these mechanics and the agent has a line for it in the turn's language, the reply is an authored line, rotated per conversation. An update replaces the block whole.
+      propertyNames:
+        type: string
+        pattern: ^[A-Za-z]{2,3}(?:-[A-Za-z]{4})?(?:-(?:[A-Za-z]{2}|[0-9]{3}))?$
+      maxProperties: 10
+    VoiceCallReadiness:
+      type: object
+      properties:
+        ready:
+          type: boolean
+        missing:
+          type:
+            - string
+            - "null"
+          enum:
+            - voice_channel
+            - runtime
+            - vendor_key
+            - encryption
+      required:
+        - ready
+        - missing
+      description: "Whether the agent's voice is ready for calls, and when it is not, the first piece missing: the voice channel, the runtime binding, the workspace's vendor key, or the backend's master key to read it."
     ConversationAgent:
       allOf:
         - $ref: "#/components/schemas/Agent"
@@ -2322,6 +2523,10 @@ components:
                 - "null"
             proactiveGreetingEnabled:
               type: boolean
+            voice:
+              $ref: "#/components/schemas/AgentVoiceSettings"
+            mechanicsReplies:
+              $ref: "#/components/schemas/AgentMechanicsReplies"
             assistantBootstrapActive:
               type: boolean
             publicId:
@@ -2382,6 +2587,8 @@ components:
             - greetingInstruction
             - assistantDefaultLocale
             - proactiveGreetingEnabled
+            - voice
+            - mechanicsReplies
             - assistantBootstrapActive
             - publicId
             - publicDescription
@@ -2391,6 +2598,15 @@ components:
             - chatModelOverride
             - skillSettings
             - surfaceSettings
+    AgentDetail:
+      allOf:
+        - $ref: "#/components/schemas/ConversationAgent"
+        - type: object
+          properties:
+            voiceCallReadiness:
+              allOf:
+                - $ref: "#/components/schemas/VoiceCallReadiness"
+                - description: "Present for dashboard sessions: whether the agent's voice is ready for the website embed's calls switch."
     AgentListResponse:
       type: object
       properties:
@@ -2484,6 +2700,10 @@ components:
           maxLength: 35
         proactiveGreetingEnabled:
           type: boolean
+        voice:
+          $ref: "#/components/schemas/AgentVoiceSettingsUpdate"
+        mechanicsReplies:
+          $ref: "#/components/schemas/AgentMechanicsReplies"
         publicDescription:
           type: string
           maxLength: 500
@@ -2549,7 +2769,7 @@ components:
                   maxLength: 80
                 launcherPosition:
                   type: string
-                  enum: *a14
+                  enum: *a16
                 theme:
                   type: object
                   properties:
@@ -2571,6 +2791,8 @@ components:
                   type: object
                   additionalProperties:
                     type: string
+                voiceCallsOffered:
+                  type: boolean
     AgentRevisionSummary:
       type: object
       properties:
@@ -3634,7 +3856,7 @@ components:
               type: integer
             reentryMode:
               type: string
-              enum: &a16
+              enum: &a18
                 - once_per_conversation
                 - always
                 - semantic
@@ -3646,7 +3868,7 @@ components:
                   type: array
                   items:
                     type: string
-                    enum: &a17
+                    enum: &a19
                       - answered
                       - partial
                       - unanswered
@@ -3656,7 +3878,7 @@ components:
                   type: array
                   items:
                     type: string
-                    enum: &a18
+                    enum: &a20
                       - sufficient_evidence
                       - insufficient_evidence
                       - conflicting_evidence
@@ -3687,7 +3909,7 @@ components:
                 pattern: ^[A-Za-z_][A-Za-z0-9_]*$
               type:
                 type: string
-                enum: &a19
+                enum: &a21
                   - text
                   - number
                   - boolean
@@ -3713,7 +3935,7 @@ components:
               - required
               - ordinal
             additionalProperties: false
-          default: &a20 []
+          default: &a22 []
         steps:
           type: array
           items:
@@ -3726,7 +3948,7 @@ components:
                 pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
               kind:
                 type: string
-                enum: &a21
+                enum: &a23
                   - chat
                   - tool
                   - action
@@ -3814,10 +4036,10 @@ components:
                       pattern: ^[A-Za-z_][A-Za-z0-9_]*$
                   mode:
                     type: string
-                    enum: &a22
+                    enum: &a24
                       - typed
                       - untyped
-                default: &a23 {}
+                default: &a25 {}
               instruction:
                 type: string
                 minLength: 1
@@ -3871,7 +4093,7 @@ components:
                 pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
               guardKind:
                 type: string
-                enum: &a24
+                enum: &a26
                   - llm
                   - default
                   - slot_filled
@@ -3905,7 +4127,7 @@ components:
                 type:
                   - string
                   - "null"
-                enum: &a25
+                enum: &a27
                   - is_true
                   - is_false
                   - equals
@@ -3943,7 +4165,7 @@ components:
                 type:
                   - string
                   - "null"
-                enum: &a26
+                enum: &a28
                   - days
                   - weeks
                   - months
@@ -3957,7 +4179,7 @@ components:
               - guardKind
               - ordinal
             additionalProperties: false
-          default: &a27 []
+          default: &a29 []
         terminals:
           type: array
           items:
@@ -3970,7 +4192,7 @@ components:
                 pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
               kind:
                 type: string
-                enum: &a15
+                enum: &a17
                   - complete
                   - handoff
               instruction:
@@ -4024,8 +4246,8 @@ components:
               type: array
               items:
                 type: string
-                enum: *a15
-              default: &a28 []
+                enum: *a17
+              default: &a30 []
             destinationRef:
               type: string
               maxLength: 300
@@ -4087,7 +4309,7 @@ components:
                   type: integer
                 reentryMode:
                   type: string
-                  enum: *a16
+                  enum: *a18
                 coverageCriteria:
                   type: object
                   properties:
@@ -4095,13 +4317,13 @@ components:
                       type: array
                       items:
                         type: string
-                        enum: *a17
+                        enum: *a19
                       minItems: 1
                     reasons:
                       type: array
                       items:
                         type: string
-                        enum: *a18
+                        enum: *a20
                       minItems: 1
                   required:
                     - coverage
@@ -4127,7 +4349,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_]*$
                   type:
                     type: string
-                    enum: *a19
+                    enum: *a21
                   required:
                     type: boolean
                   description:
@@ -4148,7 +4370,7 @@ components:
                   - required
                   - ordinal
                 additionalProperties: false
-              default: *a20
+              default: *a22
             steps:
               type: array
               items:
@@ -4161,7 +4383,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
                   kind:
                     type: string
-                    enum: *a21
+                    enum: *a23
                   toolRef:
                     type:
                       - string
@@ -4245,8 +4467,8 @@ components:
                           pattern: ^[A-Za-z_][A-Za-z0-9_]*$
                       mode:
                         type: string
-                        enum: *a22
-                    default: *a23
+                        enum: *a24
+                    default: *a25
                   instruction:
                     type: string
                     minLength: 1
@@ -4300,7 +4522,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
                   guardKind:
                     type: string
-                    enum: *a24
+                    enum: *a26
                   guardText:
                     type:
                       - string
@@ -4328,7 +4550,7 @@ components:
                     type:
                       - string
                       - "null"
-                    enum: *a25
+                    enum: *a27
                   fieldValue:
                     anyOf:
                       - type: string
@@ -4353,7 +4575,7 @@ components:
                     type:
                       - string
                       - "null"
-                    enum: *a26
+                    enum: *a28
                   ordinal:
                     type: integer
                     minimum: 0
@@ -4363,7 +4585,7 @@ components:
                   - guardKind
                   - ordinal
                 additionalProperties: false
-              default: *a27
+              default: *a29
             terminals:
               type: array
               items:
@@ -4376,7 +4598,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
                   kind:
                     type: string
-                    enum: *a15
+                    enum: *a17
                   instruction:
                     type:
                       - string
@@ -4427,7 +4649,7 @@ components:
                   type: array
                   items:
                     type: string
-                    enum: *a15
+                    enum: *a17
                 destinationRef:
                   type: string
                   maxLength: 300
@@ -4552,7 +4774,7 @@ components:
               type: integer
             reentryMode:
               type: string
-              enum: *a16
+              enum: *a18
               default: once_per_conversation
             coverageCriteria:
               type: object
@@ -4561,13 +4783,13 @@ components:
                   type: array
                   items:
                     type: string
-                    enum: *a17
+                    enum: *a19
                   minItems: 1
                 reasons:
                   type: array
                   items:
                     type: string
-                    enum: *a18
+                    enum: *a20
                   minItems: 1
               required:
                 - coverage
@@ -4593,7 +4815,7 @@ components:
                 pattern: ^[A-Za-z_][A-Za-z0-9_]*$
               type:
                 type: string
-                enum: *a19
+                enum: *a21
               required:
                 type: boolean
               description:
@@ -4614,7 +4836,7 @@ components:
               - required
               - ordinal
             additionalProperties: false
-          default: *a20
+          default: *a22
         steps:
           type: array
           items:
@@ -4627,7 +4849,7 @@ components:
                 pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
               kind:
                 type: string
-                enum: *a21
+                enum: *a23
               toolRef:
                 type:
                   - string
@@ -4711,8 +4933,8 @@ components:
                       pattern: ^[A-Za-z_][A-Za-z0-9_]*$
                   mode:
                     type: string
-                    enum: *a22
-                default: *a23
+                    enum: *a24
+                default: *a25
               instruction:
                 type: string
                 minLength: 1
@@ -4766,7 +4988,7 @@ components:
                 pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
               guardKind:
                 type: string
-                enum: *a24
+                enum: *a26
               guardText:
                 type:
                   - string
@@ -4794,7 +5016,7 @@ components:
                 type:
                   - string
                   - "null"
-                enum: *a25
+                enum: *a27
               fieldValue:
                 anyOf:
                   - type: string
@@ -4819,7 +5041,7 @@ components:
                 type:
                   - string
                   - "null"
-                enum: *a26
+                enum: *a28
               ordinal:
                 type: integer
                 minimum: 0
@@ -4829,7 +5051,7 @@ components:
               - guardKind
               - ordinal
             additionalProperties: false
-          default: *a27
+          default: *a29
         terminals:
           type: array
           items:
@@ -4842,7 +5064,7 @@ components:
                 pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
               kind:
                 type: string
-                enum: *a15
+                enum: *a17
               instruction:
                 type:
                   - string
@@ -4894,8 +5116,8 @@ components:
               type: array
               items:
                 type: string
-                enum: *a15
-              default: *a28
+                enum: *a17
+              default: *a30
             destinationRef:
               type: string
               maxLength: 300
@@ -5010,7 +5232,7 @@ components:
                   type: integer
                 reentryMode:
                   type: string
-                  enum: *a16
+                  enum: *a18
                   default: once_per_conversation
                 coverageCriteria:
                   type: object
@@ -5019,13 +5241,13 @@ components:
                       type: array
                       items:
                         type: string
-                        enum: *a17
+                        enum: *a19
                       minItems: 1
                     reasons:
                       type: array
                       items:
                         type: string
-                        enum: *a18
+                        enum: *a20
                       minItems: 1
                   required:
                     - coverage
@@ -5051,7 +5273,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_]*$
                   type:
                     type: string
-                    enum: *a19
+                    enum: *a21
                   required:
                     type: boolean
                   description:
@@ -5072,7 +5294,7 @@ components:
                   - required
                   - ordinal
                 additionalProperties: false
-              default: *a20
+              default: *a22
             steps:
               type: array
               items:
@@ -5085,7 +5307,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
                   kind:
                     type: string
-                    enum: *a21
+                    enum: *a23
                   toolRef:
                     type:
                       - string
@@ -5169,8 +5391,8 @@ components:
                           pattern: ^[A-Za-z_][A-Za-z0-9_]*$
                       mode:
                         type: string
-                        enum: *a22
-                    default: *a23
+                        enum: *a24
+                    default: *a25
                   instruction:
                     type: string
                     minLength: 1
@@ -5224,7 +5446,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
                   guardKind:
                     type: string
-                    enum: *a24
+                    enum: *a26
                   guardText:
                     type:
                       - string
@@ -5252,7 +5474,7 @@ components:
                     type:
                       - string
                       - "null"
-                    enum: *a25
+                    enum: *a27
                   fieldValue:
                     anyOf:
                       - type: string
@@ -5277,7 +5499,7 @@ components:
                     type:
                       - string
                       - "null"
-                    enum: *a26
+                    enum: *a28
                   ordinal:
                     type: integer
                     minimum: 0
@@ -5287,7 +5509,7 @@ components:
                   - guardKind
                   - ordinal
                 additionalProperties: false
-              default: *a27
+              default: *a29
             terminals:
               type: array
               items:
@@ -5300,7 +5522,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
                   kind:
                     type: string
-                    enum: *a15
+                    enum: *a17
                   instruction:
                     type:
                       - string
@@ -5352,8 +5574,8 @@ components:
                   type: array
                   items:
                     type: string
-                    enum: *a15
-                  default: *a28
+                    enum: *a17
+                  default: *a30
                 destinationRef:
                   type: string
                   maxLength: 300
@@ -5424,7 +5646,7 @@ components:
           type: string
         status:
           type: string
-          enum: &a34
+          enum: &a36
             - active
             - paused
             - awaiting_confirmation
@@ -5644,14 +5866,14 @@ components:
                   type:
                     - string
                     - "null"
-                  enum: &a41
+                  enum: &a43
                     - metadata
                     - content
                 supportedOperations:
                   type: array
                   items:
                     type: string
-                    enum: &a42
+                    enum: &a44
                       - metadata
                       - lookup
                       - summarize
@@ -5662,6 +5884,55 @@ components:
                 - supportedOperations
       required:
         - channel
+    PublicVoiceSessionRequest:
+      type: object
+      properties:
+        locale:
+          type: string
+      additionalProperties: false
+      description: "`locale` is the caller's language tag; without it the agent's default language applies, then `en`."
+    PublicVoiceSessionResponse:
+      type: object
+      properties:
+        vendor:
+          type: string
+          enum: *a14
+          description: "The voice runtime the session opens on: the agent's `voice.runtime.vendor`."
+        signedUrl:
+          type: string
+          format: uri
+          description: "The vendor's URL for opening a session on the agent's vendor agent. On `elevenlabs` it is valid for 15 minutes and is not limited to one session: for that window anyone holding it can open sessions billed to the workspace's vendor account, so treat it as a bearer credential. Hand it to the vendor's client once and never store, log or share it."
+        sessionKey:
+          type: string
+          format: uuid
+          description: "Radioso's key for this session: a correlation handle, not a credential. The page hands it to the vendor, which sends it back on every turn so the whole call is one conversation that joins the website visitor who started it; on `elevenlabs` it travels as the custom LLM extra body's `session_key`."
+        locale:
+          type: string
+          description: "The caller's language tag: the request's, else the agent's default language, else `en`. The page hands it to the vendor beside `sessionKey`."
+        expiresAt:
+          type: string
+          format: date-time
+          description: "When `signedUrl` stops opening sessions: Radioso computes it from the validity the vendor documents (15 minutes on `elevenlabs`) and the time it asked for the URL."
+        recordingNotice:
+          type: string
+          description: "The agent's `voice.recordingNotice` in the session's language, when the agent wrote one for it: the page shows it to the caller as the call starts."
+      required:
+        - vendor
+        - signedUrl
+        - sessionKey
+        - locale
+    PublicVoiceVendorConversationRequest:
+      type: object
+      properties:
+        vendorConversationId:
+          type: string
+          minLength: 1
+          maxLength: 128
+          pattern: ^[A-Za-z0-9_-]+$
+      required:
+        - vendorConversationId
+      additionalProperties: false
+      description: "The vendor's id for the call the page opened: on `elevenlabs`, what the client's `getId()` returns once the session is connected."
     WorkspaceIngestionReprocessResponse:
       type: object
       properties:
@@ -5906,7 +6177,7 @@ components:
           type: object
           additionalProperties:
             type: string
-            enum: &a29
+            enum: &a31
               - portable
               - ref
               - secret
@@ -5991,6 +6262,10 @@ components:
             - "null"
         proactiveGreetingEnabled:
           type: boolean
+        mechanicsReplies:
+          allOf:
+            - $ref: "#/components/schemas/AgentMechanicsReplies"
+            - description: Absent from bundles exported before the field existed; an import reads that as nothing authored.
         surfaceSettings:
           type: object
           properties:
@@ -6032,7 +6307,7 @@ components:
                   type: string
                 launcherPosition:
                   type: string
-                  enum: *a14
+                  enum: *a16
                 theme:
                   type: object
                   properties:
@@ -6059,6 +6334,8 @@ components:
                   type: object
                   additionalProperties:
                     type: string
+                voiceCallsOffered:
+                  type: boolean
               required:
                 - enabled
                 - token
@@ -6156,7 +6433,7 @@ components:
                   type: integer
                 reentryMode:
                   type: string
-                  enum: *a16
+                  enum: *a18
                   default: once_per_conversation
                 coverageCriteria:
                   type: object
@@ -6165,13 +6442,13 @@ components:
                       type: array
                       items:
                         type: string
-                        enum: *a17
+                        enum: *a19
                       minItems: 1
                     reasons:
                       type: array
                       items:
                         type: string
-                        enum: *a18
+                        enum: *a20
                       minItems: 1
                   required:
                     - coverage
@@ -6197,7 +6474,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_]*$
                   type:
                     type: string
-                    enum: *a19
+                    enum: *a21
                   required:
                     type: boolean
                   description:
@@ -6218,7 +6495,7 @@ components:
                   - required
                   - ordinal
                 additionalProperties: false
-              default: *a20
+              default: *a22
             steps:
               type: array
               items:
@@ -6231,7 +6508,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
                   kind:
                     type: string
-                    enum: *a21
+                    enum: *a23
                   toolRef:
                     type:
                       - string
@@ -6315,8 +6592,8 @@ components:
                           pattern: ^[A-Za-z_][A-Za-z0-9_]*$
                       mode:
                         type: string
-                        enum: *a22
-                    default: *a23
+                        enum: *a24
+                    default: *a25
                   instruction:
                     type: string
                     minLength: 1
@@ -6370,7 +6647,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
                   guardKind:
                     type: string
-                    enum: *a24
+                    enum: *a26
                   guardText:
                     type:
                       - string
@@ -6398,7 +6675,7 @@ components:
                     type:
                       - string
                       - "null"
-                    enum: *a25
+                    enum: *a27
                   fieldValue:
                     anyOf:
                       - type: string
@@ -6423,7 +6700,7 @@ components:
                     type:
                       - string
                       - "null"
-                    enum: *a26
+                    enum: *a28
                   ordinal:
                     type: integer
                     minimum: 0
@@ -6433,7 +6710,7 @@ components:
                   - guardKind
                   - ordinal
                 additionalProperties: false
-              default: *a27
+              default: *a29
             terminals:
               type: array
               items:
@@ -6446,7 +6723,7 @@ components:
                     pattern: ^[A-Za-z_][A-Za-z0-9_.-]*$
                   kind:
                     type: string
-                    enum: *a15
+                    enum: *a17
                   instruction:
                     type:
                       - string
@@ -6498,8 +6775,8 @@ components:
                   type: array
                   items:
                     type: string
-                    enum: *a15
-                  default: *a28
+                    enum: *a17
+                  default: *a30
                 destinationRef:
                   type: string
                   maxLength: 300
@@ -6580,7 +6857,7 @@ components:
           type: string
         invocationMode:
           type: string
-          enum: &a30
+          enum: &a32
             - default_answer
             - routine_named
             - agent_selectable
@@ -6675,7 +6952,7 @@ components:
           type: object
           additionalProperties:
             type: string
-            enum: &a31
+            enum: &a33
               - portable
               - ref
               - secret
@@ -6710,7 +6987,7 @@ components:
           type: object
           additionalProperties:
             type: string
-            enum: *a29
+            enum: *a31
           description: Per-field classification, keyed by field path. `ref` and `secret` fields carry placeholders.
         name:
           type: string
@@ -6792,6 +7069,10 @@ components:
             - "null"
         proactiveGreetingEnabled:
           type: boolean
+        mechanicsReplies:
+          allOf:
+            - $ref: "#/components/schemas/AgentMechanicsReplies"
+            - description: Absent from bundles exported before the field existed; an import reads that as nothing authored.
         surfaceSettings:
           type: object
           properties:
@@ -6833,7 +7114,7 @@ components:
                   type: string
                 launcherPosition:
                   type: string
-                  enum: *a14
+                  enum: *a16
                 theme:
                   type: object
                   properties:
@@ -6860,6 +7141,8 @@ components:
                   type: object
                   additionalProperties:
                     type: string
+                voiceCallsOffered:
+                  type: boolean
               required:
                 - enabled
                 - token
@@ -6929,7 +7212,7 @@ components:
           type: string
         invocationMode:
           type: string
-          enum: *a30
+          enum: *a32
         enabled:
           type: boolean
         config:
@@ -6973,7 +7256,7 @@ components:
           type: object
           additionalProperties:
             type: string
-            enum: *a31
+            enum: *a33
         agent:
           $ref: "#/components/schemas/AgentBundleImportAgentConfig"
         routines:
@@ -7128,7 +7411,7 @@ components:
               additionalProperties: false
         documentEnrichmentOverride:
           type: string
-          enum: &a32
+          enum: &a34
             - on
             - off
       required:
@@ -7296,7 +7579,7 @@ components:
       properties:
         documentEnrichmentOverride:
           type: string
-          enum: *a32
+          enum: *a34
       additionalProperties: false
     SourceReprocessResponse:
       type: object
@@ -8209,7 +8492,7 @@ components:
               type: string
             selectionMode:
               type: string
-              enum: &a37
+              enum: &a39
                 - deterministic
                 - probabilistic
             selectionReason:
@@ -8220,7 +8503,7 @@ components:
               maximum: 1
             callerSurface:
               type: string
-              enum: &a38
+              enum: &a40
                 - assistant
                 - retrieval_api
                 - sdk
@@ -8257,7 +8540,7 @@ components:
                 - used
             outcome:
               type: string
-              enum: &a39
+              enum: &a41
                 - success
                 - unsupported
                 - forbidden
@@ -8294,14 +8577,14 @@ components:
                     additionalProperties: {}
                 evidenceStatus:
                   type: string
-                  enum: &a35
+                  enum: &a37
                     - found
                     - missing
                     - partial
                     - not_applicable
                 supportStatus:
                   type: string
-                  enum: &a36
+                  enum: &a38
                     - supported
                     - unsupported
                     - not_checked
@@ -8612,7 +8895,7 @@ components:
           properties:
             status:
               type: string
-              enum: &a33
+              enum: &a35
                 - supported
                 - unsupported
                 - not_checked
@@ -8658,7 +8941,7 @@ components:
           properties:
             status:
               type: string
-              enum: *a33
+              enum: *a35
           required:
             - status
         debug:
@@ -8763,7 +9046,7 @@ components:
           type: string
         status:
           type: string
-          enum: *a34
+          enum: *a36
         groundedAnswer:
           type: boolean
         tone:
@@ -8800,10 +9083,10 @@ components:
             additionalProperties: {}
         evidenceStatus:
           type: string
-          enum: *a35
+          enum: *a37
         supportStatus:
           type: string
-          enum: *a36
+          enum: *a38
         groundingOutcome:
           type: string
     SkillDiagnosticDefinition:
@@ -8817,7 +9100,7 @@ components:
           type: string
         selectionMode:
           type: string
-          enum: *a37
+          enum: *a39
         selectionReason:
           type: string
         selectionConfidence:
@@ -8826,7 +9109,7 @@ components:
           maximum: 1
         callerSurface:
           type: string
-          enum: *a38
+          enum: *a40
         capabilityChecks:
           type: array
           items:
@@ -8857,7 +9140,7 @@ components:
             - used
         outcome:
           type: string
-          enum: *a39
+          enum: *a41
         error:
           type: object
           properties:
@@ -8889,10 +9172,10 @@ components:
                 additionalProperties: {}
             evidenceStatus:
               type: string
-              enum: *a35
+              enum: *a37
             supportStatus:
               type: string
-              enum: *a36
+              enum: *a38
             groundingOutcome:
               type: string
       required:
@@ -8941,7 +9224,7 @@ components:
           type: array
           items:
             type: string
-            enum: *a38
+            enum: *a40
         requiredCapabilities:
           type: array
           items:
@@ -8968,7 +9251,7 @@ components:
               type: array
               items:
                 type: string
-                enum: *a38
+                enum: *a40
             intent:
               type: object
               properties:
@@ -9533,7 +9816,7 @@ components:
           properties:
             state:
               type: string
-              enum: &a40
+              enum: &a42
                 - ai_owned
                 - human_owned
             suppressed:
@@ -9580,7 +9863,7 @@ components:
           properties:
             state:
               type: string
-              enum: *a40
+              enum: *a42
             suppressed:
               type: boolean
           required:
@@ -9739,12 +10022,12 @@ components:
                   type:
                     - string
                     - "null"
-                  enum: *a41
+                  enum: *a43
                 supportedOperations:
                   type: array
                   items:
                     type: string
-                    enum: *a42
+                    enum: *a44
                   maxItems: 3
               required:
                 - available
@@ -9931,6 +10214,28 @@ components:
             - mailbox
             - threadKey
             - participant
+        - type: object
+          properties:
+            provider:
+              type: string
+              enum:
+                - voice
+            vendor:
+              type: string
+            sessionKey:
+              type: string
+            transport:
+              type: string
+              enum:
+                - phone
+                - web
+            callerId:
+              type: string
+          required:
+            - provider
+            - vendor
+            - sessionKey
+            - transport
     ConversationRequestContext:
       type: object
       properties:
@@ -10437,7 +10742,7 @@ components:
           format: uuid
         value:
           type: string
-          enum: &a43
+          enum: &a45
             - up
             - down
         comment:
@@ -10446,7 +10751,7 @@ components:
             - "null"
         actorType:
           type: string
-          enum: &a44
+          enum: &a46
             - authenticated_user
             - api_token
             - anonymous_user
@@ -10506,14 +10811,14 @@ components:
           format: uuid
         value:
           type: string
-          enum: *a43
+          enum: *a45
         comment:
           type:
             - string
             - "null"
         actorType:
           type: string
-          enum: *a44
+          enum: *a46
         actorId:
           type: string
         accountId:
@@ -10589,6 +10894,19 @@ components:
             - input
       required:
         - method
+    ReplyInterruption:
+      type: object
+      properties:
+        heardCharacterCount:
+          type: integer
+          minimum: 0
+        spokenCharacterCount:
+          type: integer
+          minimum: 0
+      required:
+        - heardCharacterCount
+        - spokenCharacterCount
+      description: "Present on an assistant reply the caller cut short by speaking over it on the voice channel: how much of the reply they heard. Both counts are in the characters the channel spoke, so they do not index into `content`, which keeps the full reply."
     ChatConversationMessage:
       type: object
       properties:
@@ -10597,13 +10915,13 @@ components:
           format: uuid
         role:
           type: string
-          enum: &a45
+          enum: &a47
             - user
             - assistant
             - system
         source:
           type: string
-          enum: &a46
+          enum: &a48
             - customer
             - ai_agent
             - human_agent
@@ -10634,6 +10952,8 @@ components:
             $ref: "#/components/schemas/AnswerFeedbackEntry"
         operatorDisplayName:
           type: string
+        interruption:
+          $ref: "#/components/schemas/ReplyInterruption"
         debug:
           $ref: "#/components/schemas/ChatConversationMessageDebug"
         turnFailure:
@@ -10655,10 +10975,10 @@ components:
           format: uuid
         role:
           type: string
-          enum: *a45
+          enum: *a47
         source:
           type: string
-          enum: *a46
+          enum: *a48
         content:
           type: string
         createdAt:
@@ -10684,6 +11004,8 @@ components:
             $ref: "#/components/schemas/AnswerFeedbackEntry"
         operatorDisplayName:
           type: string
+        interruption:
+          $ref: "#/components/schemas/ReplyInterruption"
       required:
         - id
         - role
@@ -11108,6 +11430,14 @@ components:
           items:
             $ref: "#/components/schemas/ConversationActivityEntry"
           description: "What teammates and the agent did to the conversation, oldest first: handoffs, claims, reassignments, hand-backs, approvals decided, and — for a caller with Quality access — feedback resolved or dismissed."
+        recording:
+          type: object
+          properties:
+            available:
+              type: boolean
+          required:
+            - available
+          description: "On a voice conversation read by a dashboard session: whether the call has a recording `getConversationRecording` can play. `available` is true when the website embed reported the vendor's id for the call and the workspace holds a vendor key the backend can read; it is read from Radioso alone, so the vendor may still hold no audio for a call that has not ended. Machine credentials, which cannot play it, get no `recording`."
       required:
         - conversationId
         - workspaceId
@@ -11382,7 +11712,7 @@ components:
           type: string
         type:
           type: string
-          enum: *a19
+          enum: *a21
         required:
           type: boolean
         description:
@@ -13008,22 +13338,22 @@ components:
             - "null"
         valueType:
           type: string
-          enum: &a47
+          enum: &a49
             - string
             - json
         trustTier:
           type: string
-          enum: &a48
+          enum: &a50
             - unverified
             - signed
         sensitivity:
           type: string
-          enum: &a49
+          enum: &a51
             - normal
             - sensitive
         defaultSurfacing:
           type: string
-          enum: &a50
+          enum: &a52
             - always
             - on_reference
             - operator_only
@@ -13058,16 +13388,16 @@ components:
           maxLength: 2000
         valueType:
           type: string
-          enum: *a47
+          enum: *a49
         trustTier:
           type: string
-          enum: *a48
+          enum: *a50
         sensitivity:
           type: string
-          enum: *a49
+          enum: *a51
         defaultSurfacing:
           type: string
-          enum: *a50
+          enum: *a52
       required:
         - name
         - valueType
@@ -13088,16 +13418,16 @@ components:
           maxLength: 2000
         valueType:
           type: string
-          enum: *a47
+          enum: *a49
         trustTier:
           type: string
-          enum: *a48
+          enum: *a50
         sensitivity:
           type: string
-          enum: *a49
+          enum: *a51
         defaultSurfacing:
           type: string
-          enum: *a50
+          enum: *a52
     ContextVariableResponse:
       type: object
       properties:
@@ -13148,7 +13478,7 @@ components:
             - "null"
         surfacing:
           type: string
-          enum: *a50
+          enum: *a52
         enabled:
           type: boolean
         createdAt:
@@ -13197,7 +13527,7 @@ components:
           exclusiveMinimum: 0
         surfacing:
           type: string
-          enum: *a50
+          enum: *a52
         enabled:
           type: boolean
       required:
@@ -13224,7 +13554,7 @@ components:
       properties:
         type:
           type: string
-          enum: &a74
+          enum: &a76
             - session
             - customer
             - agent
@@ -14117,6 +14447,7 @@ components:
         - conversation.turn_committed
         - conversation.contact_delivery_changed
         - conversation.ownership_changed
+        - conversation.deleted
         - search.created
         - hitl.decision_created
         - hitl.decision_resolved
@@ -14145,7 +14476,7 @@ components:
             type: string
             minLength: 1
           minItems: 1
-          description: "Unique invalidation kind strings. Known protocol version 1 kinds: document.status_changed, crawl.status_changed, crawl.progress, conversation.created, conversation.turn_committed, conversation.contact_delivery_changed, conversation.ownership_changed, search.created, hitl.decision_created, hitl.decision_resolved, quality.feedback_changed, quality.triage_changed. Clients process recognized kinds in mixed frames, ignore unknown future kinds, and retain their polling floor."
+          description: "Unique invalidation kind strings. Known protocol version 1 kinds: document.status_changed, crawl.status_changed, crawl.progress, conversation.created, conversation.turn_committed, conversation.contact_delivery_changed, conversation.ownership_changed, conversation.deleted, search.created, hitl.decision_created, hitl.decision_resolved, quality.feedback_changed, quality.triage_changed. Clients process recognized kinds in mixed frames, ignore unknown future kinds, and retain their polling floor."
           uniqueItems: true
       required:
         - protocolVersion
@@ -14333,7 +14664,7 @@ components:
           description: "`<relay token>@<inbound domain>`, where the operator forwards the mailbox's mail. Returned only to settings readers of the owning workspace."
         engagementMode:
           type: string
-          enum: &a51
+          enum: &a53
             - operator_only
             - draft
             - auto
@@ -14370,7 +14701,7 @@ components:
           properties:
             state:
               type: string
-              enum: &a52
+              enum: &a54
                 - ok
                 - not_verified
                 - domain_removed
@@ -14414,13 +14745,13 @@ components:
           type: array
           items:
             type: string
-            enum: *a51
+            enum: *a53
           description: The engagement modes this deployment runs; empty when the channel is not configured.
         defaultMode:
           type:
             - string
             - "null"
-          enum: *a51
+          enum: *a53
           description: The mode a new mailbox gets when none is named; null when the channel is not configured.
         domains:
           type: array
@@ -14618,7 +14949,7 @@ components:
               type: string
             engagementMode:
               type: string
-              enum: *a51
+              enum: *a53
           required:
             - id
             - address
@@ -14661,7 +14992,7 @@ components:
           properties:
             state:
               type: string
-              enum: *a52
+              enum: *a54
           required:
             - state
         sendBudget:
@@ -14778,7 +15109,7 @@ components:
           format: uuid
         engagementMode:
           type: string
-          enum: &a53
+          enum: &a55
             - operator_only
             - draft
             - auto
@@ -14813,7 +15144,7 @@ components:
           format: uuid
         engagementMode:
           type: string
-          enum: *a53
+          enum: *a55
         threadSendBudget:
           type: integer
           minimum: 1
@@ -15495,7 +15826,7 @@ components:
               maxLength: 4000
             matchMode:
               type: string
-              enum: &a54
+              enum: &a56
                 - substring
                 - regex
             caseSensitive:
@@ -15516,7 +15847,7 @@ components:
               maxLength: 4000
             matchMode:
               type: string
-              enum: *a54
+              enum: *a56
             caseSensitive:
               type: boolean
           required:
@@ -15666,7 +15997,7 @@ components:
                         maxLength: 4000
                       matchMode:
                         type: string
-                        enum: *a54
+                        enum: *a56
                       caseSensitive:
                         type: boolean
                     required:
@@ -15685,7 +16016,7 @@ components:
                         maxLength: 4000
                       matchMode:
                         type: string
-                        enum: *a54
+                        enum: *a56
                       caseSensitive:
                         type: boolean
                     required:
@@ -15711,12 +16042,12 @@ components:
               maxItems: 20
             executionMode:
               type: string
-              enum: &a55
+              enum: &a57
                 - safe_test
                 - live
             status:
               type: string
-              enum: &a56
+              enum: &a58
                 - pending
                 - passing
                 - failing
@@ -15803,7 +16134,7 @@ components:
                 - assistantMessageId
             fidelity:
               type: string
-              enum: &a57
+              enum: &a59
                 - full
                 - messages_only
             messages:
@@ -15816,7 +16147,7 @@ components:
                     format: uuid
                   role:
                     type: string
-                    enum: &a58
+                    enum: &a60
                       - user
                       - assistant
                       - system
@@ -15932,10 +16263,10 @@ components:
           maxItems: 20
         executionMode:
           type: string
-          enum: *a55
+          enum: *a57
         status:
           type: string
-          enum: *a56
+          enum: *a58
         lastRunId:
           type:
             - string
@@ -16018,7 +16349,7 @@ components:
             - assistantMessageId
         fidelity:
           type: string
-          enum: *a57
+          enum: *a59
         messages:
           type: array
           items:
@@ -16029,7 +16360,7 @@ components:
                 format: uuid
               role:
                 type: string
-                enum: *a58
+                enum: *a60
               content:
                 type: string
               createdAt:
@@ -16336,7 +16667,7 @@ components:
               type: string
             kind:
               type: string
-              enum: &a60
+              enum: &a62
                 - candidate
                 - published
             versionNumber:
@@ -16378,7 +16709,7 @@ components:
                 format: uuid
               role:
                 type: string
-                enum: &a62
+                enum: &a64
                   - user
                   - assistant
               content:
@@ -16471,7 +16802,7 @@ components:
             - compare
         skillEffects:
           type: string
-          enum: &a59
+          enum: &a61
             - suppressed
             - allowed
         sides:
@@ -16549,7 +16880,7 @@ components:
           format: date-time
         skillEffects:
           type: string
-          enum: *a59
+          enum: *a61
         sides:
           type: array
           items:
@@ -16568,7 +16899,7 @@ components:
                     type: string
                   kind:
                     type: string
-                    enum: *a60
+                    enum: *a62
                   versionNumber:
                     type:
                       - integer
@@ -16591,7 +16922,7 @@ components:
                 format: uuid
               state:
                 type: string
-                enum: &a61
+                enum: &a63
                   - ready
                   - running
                   - failed
@@ -16683,7 +17014,7 @@ components:
                         type: string
                       kind:
                         type: string
-                        enum: *a60
+                        enum: *a62
                       versionNumber:
                         type:
                           - integer
@@ -16706,7 +17037,7 @@ components:
                     format: uuid
                   state:
                     type: string
-                    enum: *a61
+                    enum: *a63
                   retryable:
                     type: boolean
                   history:
@@ -16719,7 +17050,7 @@ components:
                           format: uuid
                         role:
                           type: string
-                          enum: *a62
+                          enum: *a64
                         content:
                           type: string
                         messageId:
@@ -17810,7 +18141,7 @@ paths:
         - API Access
       summary: Read API-access capabilities and limits
       operationId: getApiAccessSummary
-      security: &a63
+      security: &a65
         - sessionCookie: []
       parameters:
         - schema:
@@ -17942,7 +18273,7 @@ paths:
         - API Access
       summary: List live personal-token metadata
       operationId: listPersonalApiTokens
-      security: *a63
+      security: *a65
       parameters:
         - schema:
             type: string
@@ -17989,7 +18320,7 @@ paths:
                           format: uuid
                         kind:
                           type: string
-                          enum: &a65
+                          enum: &a67
                             - personal
                             - service
                         label:
@@ -18002,7 +18333,7 @@ paths:
                           type:
                             - string
                             - "null"
-                          enum: &a64
+                          enum: &a66
                             - member
                             - admin
                         ownerUserId:
@@ -18026,7 +18357,7 @@ paths:
                           format: date-time
                         status:
                           type: string
-                          enum: &a66
+                          enum: &a68
                             - active
                             - expired
                             - revoked
@@ -18140,7 +18471,7 @@ paths:
         - API Access
       summary: Issue a personal API token
       operationId: issuePersonalApiToken
-      security: *a63
+      security: *a65
       parameters:
         - schema:
             type: string
@@ -18169,7 +18500,7 @@ paths:
                   maxLength: 80
                 roleCeiling:
                   type: string
-                  enum: *a64
+                  enum: *a66
                 expiresAt:
                   type: string
                   format: date-time
@@ -18193,7 +18524,7 @@ paths:
                         format: uuid
                       kind:
                         type: string
-                        enum: *a65
+                        enum: *a67
                       label:
                         type: string
                         minLength: 1
@@ -18204,7 +18535,7 @@ paths:
                         type:
                           - string
                           - "null"
-                        enum: *a64
+                        enum: *a66
                       ownerUserId:
                         type:
                           - string
@@ -18226,7 +18557,7 @@ paths:
                         format: date-time
                       status:
                         type: string
-                        enum: *a66
+                        enum: *a68
                       expiryWarningDays:
                         anyOf:
                           - type: number
@@ -18326,7 +18657,7 @@ paths:
         - API Access
       summary: Relabel an owned personal token
       operationId: relabelPersonalApiToken
-      security: *a63
+      security: *a65
       parameters:
         - schema:
             type: string
@@ -18378,7 +18709,7 @@ paths:
                     format: uuid
                   kind:
                     type: string
-                    enum: *a65
+                    enum: *a67
                   label:
                     type: string
                     minLength: 1
@@ -18389,7 +18720,7 @@ paths:
                     type:
                       - string
                       - "null"
-                    enum: *a64
+                    enum: *a66
                   ownerUserId:
                     type:
                       - string
@@ -18411,7 +18742,7 @@ paths:
                     format: date-time
                   status:
                     type: string
-                    enum: *a66
+                    enum: *a68
                   expiryWarningDays:
                     anyOf:
                       - type: number
@@ -18506,7 +18837,7 @@ paths:
         - API Access
       summary: Immediately rotate an owned personal token
       operationId: rotatePersonalApiToken
-      security: *a63
+      security: *a65
       parameters:
         - schema:
             type: string
@@ -18556,7 +18887,7 @@ paths:
                         format: uuid
                       kind:
                         type: string
-                        enum: *a65
+                        enum: *a67
                       label:
                         type: string
                         minLength: 1
@@ -18567,7 +18898,7 @@ paths:
                         type:
                           - string
                           - "null"
-                        enum: *a64
+                        enum: *a66
                       ownerUserId:
                         type:
                           - string
@@ -18589,7 +18920,7 @@ paths:
                         format: date-time
                       status:
                         type: string
-                        enum: *a66
+                        enum: *a68
                       expiryWarningDays:
                         anyOf:
                           - type: number
@@ -18689,7 +19020,7 @@ paths:
         - API Access
       summary: Revoke a personal token
       operationId: revokePersonalApiToken
-      security: *a63
+      security: *a65
       parameters:
         - schema:
             type: string
@@ -18724,7 +19055,7 @@ paths:
                     format: uuid
                   kind:
                     type: string
-                    enum: *a65
+                    enum: *a67
                   label:
                     type: string
                     minLength: 1
@@ -18735,7 +19066,7 @@ paths:
                     type:
                       - string
                       - "null"
-                    enum: *a64
+                    enum: *a66
                   ownerUserId:
                     type:
                       - string
@@ -18757,7 +19088,7 @@ paths:
                     format: date-time
                   status:
                     type: string
-                    enum: *a66
+                    enum: *a68
                   expiryWarningDays:
                     anyOf:
                       - type: number
@@ -18852,7 +19183,7 @@ paths:
         - API Access
       summary: List workspace service accounts that are not archived
       operationId: listServiceAccounts
-      security: *a63
+      security: *a65
       parameters:
         - schema:
             type: string
@@ -18895,10 +19226,10 @@ paths:
                           maxLength: 80
                         role:
                           type: string
-                          enum: *a64
+                          enum: *a66
                         status:
                           type: string
-                          enum: &a67
+                          enum: &a69
                             - enabled
                             - disabled
                             - archived
@@ -18995,7 +19326,7 @@ paths:
         - API Access
       summary: Create a service account and first credential
       operationId: createServiceAccount
-      security: *a63
+      security: *a65
       parameters:
         - schema:
             type: string
@@ -19024,7 +19355,7 @@ paths:
                   maxLength: 80
                 role:
                   type: string
-                  enum: *a64
+                  enum: *a66
                 credentialExpiresAt:
                   type: string
                   format: date-time
@@ -19052,10 +19383,10 @@ paths:
                         maxLength: 80
                       role:
                         type: string
-                        enum: *a64
+                        enum: *a66
                       status:
                         type: string
-                        enum: *a67
+                        enum: *a69
                       createdByUserId:
                         type: string
                         format: uuid
@@ -19107,7 +19438,7 @@ paths:
                         format: uuid
                       kind:
                         type: string
-                        enum: *a65
+                        enum: *a67
                       label:
                         type: string
                         minLength: 1
@@ -19118,7 +19449,7 @@ paths:
                         type:
                           - string
                           - "null"
-                        enum: *a64
+                        enum: *a66
                       ownerUserId:
                         type:
                           - string
@@ -19140,7 +19471,7 @@ paths:
                         format: date-time
                       status:
                         type: string
-                        enum: *a66
+                        enum: *a68
                       expiryWarningDays:
                         anyOf:
                           - type: number
@@ -19241,7 +19572,7 @@ paths:
         - API Access
       summary: Read a service account
       operationId: getServiceAccount
-      security: *a63
+      security: *a65
       parameters:
         - schema:
             type: string
@@ -19272,10 +19603,10 @@ paths:
                     maxLength: 80
                   role:
                     type: string
-                    enum: *a64
+                    enum: *a66
                   status:
                     type: string
-                    enum: *a67
+                    enum: *a69
                   createdByUserId:
                     type: string
                     format: uuid
@@ -19354,7 +19685,7 @@ paths:
         - API Access
       summary: Rename or change a service-account role
       operationId: updateServiceAccount
-      security: *a63
+      security: *a65
       parameters:
         - schema:
             type: string
@@ -19389,7 +19720,7 @@ paths:
                   maxLength: 80
                 role:
                   type: string
-                  enum: *a64
+                  enum: *a66
                 revision:
                   type: integer
                   exclusiveMinimum: 0
@@ -19412,10 +19743,10 @@ paths:
                     maxLength: 80
                   role:
                     type: string
-                    enum: *a64
+                    enum: *a66
                   status:
                     type: string
-                    enum: *a67
+                    enum: *a69
                   createdByUserId:
                     type: string
                     format: uuid
@@ -19495,7 +19826,7 @@ paths:
         - API Access
       summary: Disable a service account
       operationId: disableServiceAccount
-      security: *a63
+      security: *a65
       parameters:
         - schema:
             type: string
@@ -19546,10 +19877,10 @@ paths:
                     maxLength: 80
                   role:
                     type: string
-                    enum: *a64
+                    enum: *a66
                   status:
                     type: string
-                    enum: *a67
+                    enum: *a69
                   createdByUserId:
                     type: string
                     format: uuid
@@ -19629,7 +19960,7 @@ paths:
         - API Access
       summary: Enable a service account
       operationId: enableServiceAccount
-      security: *a63
+      security: *a65
       parameters:
         - schema:
             type: string
@@ -19680,10 +20011,10 @@ paths:
                     maxLength: 80
                   role:
                     type: string
-                    enum: *a64
+                    enum: *a66
                   status:
                     type: string
-                    enum: *a67
+                    enum: *a69
                   createdByUserId:
                     type: string
                     format: uuid
@@ -19763,7 +20094,7 @@ paths:
         - API Access
       summary: Archive a service account
       operationId: archiveServiceAccount
-      security: *a63
+      security: *a65
       parameters:
         - schema:
             type: string
@@ -19814,10 +20145,10 @@ paths:
                     maxLength: 80
                   role:
                     type: string
-                    enum: *a64
+                    enum: *a66
                   status:
                     type: string
-                    enum: *a67
+                    enum: *a69
                   createdByUserId:
                     type: string
                     format: uuid
@@ -19897,7 +20228,7 @@ paths:
         - API Access
       summary: List live service-account credentials
       operationId: listServiceAccountCredentials
-      security: *a63
+      security: *a65
       parameters:
         - schema:
             type: string
@@ -19942,7 +20273,7 @@ paths:
                           format: uuid
                         kind:
                           type: string
-                          enum: *a65
+                          enum: *a67
                         label:
                           type: string
                           minLength: 1
@@ -19953,7 +20284,7 @@ paths:
                           type:
                             - string
                             - "null"
-                          enum: *a64
+                          enum: *a66
                         ownerUserId:
                           type:
                             - string
@@ -19975,7 +20306,7 @@ paths:
                           format: date-time
                         status:
                           type: string
-                          enum: *a66
+                          enum: *a68
                         expiryWarningDays:
                           anyOf:
                             - type: number
@@ -20084,7 +20415,7 @@ paths:
         - API Access
       summary: Issue another service-account credential
       operationId: issueServiceAccountCredential
-      security: *a63
+      security: *a65
       parameters:
         - schema:
             type: string
@@ -20139,7 +20470,7 @@ paths:
                         format: uuid
                       kind:
                         type: string
-                        enum: *a65
+                        enum: *a67
                       label:
                         type: string
                         minLength: 1
@@ -20150,7 +20481,7 @@ paths:
                         type:
                           - string
                           - "null"
-                        enum: *a64
+                        enum: *a66
                       ownerUserId:
                         type:
                           - string
@@ -20172,7 +20503,7 @@ paths:
                         format: date-time
                       status:
                         type: string
-                        enum: *a66
+                        enum: *a68
                       expiryWarningDays:
                         anyOf:
                           - type: number
@@ -20272,7 +20603,7 @@ paths:
         - API Access
       summary: Relabel a service-account credential
       operationId: relabelServiceAccountCredential
-      security: *a63
+      security: *a65
       parameters:
         - schema:
             type: string
@@ -20330,7 +20661,7 @@ paths:
                     format: uuid
                   kind:
                     type: string
-                    enum: *a65
+                    enum: *a67
                   label:
                     type: string
                     minLength: 1
@@ -20341,7 +20672,7 @@ paths:
                     type:
                       - string
                       - "null"
-                    enum: *a64
+                    enum: *a66
                   ownerUserId:
                     type:
                       - string
@@ -20363,7 +20694,7 @@ paths:
                     format: date-time
                   status:
                     type: string
-                    enum: *a66
+                    enum: *a68
                   expiryWarningDays:
                     anyOf:
                       - type: number
@@ -20458,7 +20789,7 @@ paths:
         - API Access
       summary: Immediately rotate a service-account credential
       operationId: rotateServiceAccountCredential
-      security: *a63
+      security: *a65
       parameters:
         - schema:
             type: string
@@ -20514,7 +20845,7 @@ paths:
                         format: uuid
                       kind:
                         type: string
-                        enum: *a65
+                        enum: *a67
                       label:
                         type: string
                         minLength: 1
@@ -20525,7 +20856,7 @@ paths:
                         type:
                           - string
                           - "null"
-                        enum: *a64
+                        enum: *a66
                       ownerUserId:
                         type:
                           - string
@@ -20547,7 +20878,7 @@ paths:
                         format: date-time
                       status:
                         type: string
-                        enum: *a66
+                        enum: *a68
                       expiryWarningDays:
                         anyOf:
                           - type: number
@@ -20647,7 +20978,7 @@ paths:
         - API Access
       summary: Revoke a service-account credential
       operationId: revokeServiceAccountCredential
-      security: *a63
+      security: *a65
       parameters:
         - schema:
             type: string
@@ -20688,7 +21019,7 @@ paths:
                     format: uuid
                   kind:
                     type: string
-                    enum: *a65
+                    enum: *a67
                   label:
                     type: string
                     minLength: 1
@@ -20699,7 +21030,7 @@ paths:
                     type:
                       - string
                       - "null"
-                    enum: *a64
+                    enum: *a66
                   ownerUserId:
                     type:
                       - string
@@ -20721,7 +21052,7 @@ paths:
                     format: date-time
                   status:
                     type: string
-                    enum: *a66
+                    enum: *a68
                   expiryWarningDays:
                     anyOf:
                       - type: number
@@ -20816,7 +21147,7 @@ paths:
         - Operator MCP
       summary: Read Operator MCP setup options
       operationId: getOperatorMcpSetup
-      security: &a68
+      security: &a70
         - sessionCookie: []
       parameters:
         - schema:
@@ -20950,7 +21281,7 @@ paths:
         - Operator MCP
       summary: List active Operator MCP grants
       operationId: listOperatorMcpGrants
-      security: *a68
+      security: *a70
       parameters:
         - schema:
             type: string
@@ -21000,7 +21331,7 @@ paths:
                           type: array
                           items:
                             type: string
-                            enum: &a69
+                            enum: &a71
                               - operator:read
                               - operator:probe
                               - operator:act
@@ -21010,7 +21341,7 @@ paths:
                           type: boolean
                         status:
                           type: string
-                          enum: &a70
+                          enum: &a72
                             - active
                             - revoked
                             - superseded
@@ -21090,7 +21421,7 @@ paths:
         - Operator MCP
       summary: Read an Operator MCP grant
       operationId: getOperatorMcpGrant
-      security: *a68
+      security: *a70
       parameters:
         - schema:
             type: string
@@ -21141,12 +21472,12 @@ paths:
                     type: array
                     items:
                       type: string
-                      enum: *a69
+                      enum: *a71
                   offlineAccess:
                     type: boolean
                   status:
                     type: string
-                    enum: *a70
+                    enum: *a72
                   createdAt:
                     type: string
                     format: date-time
@@ -21232,7 +21563,7 @@ paths:
         - Operator MCP
       summary: Revoke an Operator MCP grant
       operationId: revokeOperatorMcpGrant
-      security: *a68
+      security: *a70
       parameters:
         - schema:
             type: string
@@ -21291,12 +21622,12 @@ paths:
                     type: array
                     items:
                       type: string
-                      enum: *a69
+                      enum: *a71
                   offlineAccess:
                     type: boolean
                   status:
                     type: string
-                    enum: *a70
+                    enum: *a72
                   createdAt:
                     type: string
                     format: date-time
@@ -21367,7 +21698,7 @@ paths:
         - Operator MCP
       summary: Read a pending Operator MCP consent transaction
       operationId: getOperatorMcpConsentTransaction
-      security: *a68
+      security: *a70
       parameters:
         - schema:
             type: string
@@ -21420,7 +21751,7 @@ paths:
                     type: array
                     items:
                       type: string
-                      enum: *a69
+                      enum: *a71
                   requestedOfflineAccess:
                     type: boolean
                   redirectHost:
@@ -21521,7 +21852,7 @@ paths:
         - Operator MCP
       summary: Approve or deny an Operator MCP consent transaction
       operationId: decideOperatorMcpConsentTransaction
-      security: *a68
+      security: *a70
       parameters:
         - schema:
             type: string
@@ -21556,7 +21887,7 @@ paths:
                   type: array
                   items:
                     type: string
-                    enum: *a69
+                    enum: *a71
                   minItems: 1
                   maxItems: 4
                 offlineAccess:
@@ -21798,8 +22129,8 @@ paths:
         - Settings
       summary: List workspace webhook destinations
       operationId: listWebhookDestinations
-      security: &a71
-        - &a75
+      security: &a73
+        - &a77
           sessionCookie: []
           workspaceSelection: []
       responses:
@@ -21820,7 +22151,7 @@ paths:
         - Settings
       summary: Create a workspace webhook destination
       operationId: createWebhookDestination
-      security: *a71
+      security: *a73
       requestBody:
         required: true
         content:
@@ -21858,7 +22189,7 @@ paths:
         - Settings
       summary: Get a workspace webhook destination
       operationId: getWebhookDestination
-      security: *a71
+      security: *a73
       parameters:
         - schema:
             type: string
@@ -21890,7 +22221,7 @@ paths:
         - Settings
       summary: Update a workspace webhook destination
       operationId: updateWebhookDestination
-      security: *a71
+      security: *a73
       parameters:
         - schema:
             type: string
@@ -21940,7 +22271,7 @@ paths:
         - Settings
       summary: Delete a workspace webhook destination
       operationId: deleteWebhookDestination
-      security: *a71
+      security: *a73
       parameters:
         - schema:
             type: string
@@ -21975,7 +22306,7 @@ paths:
         - Settings
       summary: Rotate a workspace webhook destination secret
       operationId: rotateWebhookDestinationSecret
-      security: *a71
+      security: *a73
       parameters:
         - schema:
             type: string
@@ -22462,7 +22793,7 @@ paths:
       parameters:
         - schema:
             type: string
-            enum: *a72
+            enum: *a74
           required: true
           name: provider
           in: path
@@ -22503,7 +22834,7 @@ paths:
       parameters:
         - schema:
             type: string
-            enum: *a72
+            enum: *a74
           required: true
           name: provider
           in: path
@@ -22581,7 +22912,7 @@ paths:
         - Agents
       summary: Get agent draft publication state
       operationId: getAgentRevisionState
-      security: &a73
+      security: &a75
         - bearerAuth: []
       parameters:
         - schema:
@@ -22603,7 +22934,7 @@ paths:
         - Agents
       summary: Save exact greeting content on the agent draft
       operationId: updateAgentGreetingDraft
-      security: *a73
+      security: *a75
       parameters:
         - schema:
             type: string
@@ -22636,7 +22967,7 @@ paths:
         - Agents
       summary: Create immutable draft candidate
       operationId: createAgentRevisionCandidate
-      security: *a73
+      security: *a75
       parameters:
         - schema:
             type: string
@@ -22669,7 +23000,7 @@ paths:
         - Agents
       summary: List agent revisions
       operationId: listAgentRevisions
-      security: *a73
+      security: *a75
       parameters:
         - schema:
             type: string
@@ -22697,7 +23028,7 @@ paths:
         - Agents
       summary: Get agent revision detail
       operationId: getAgentRevision
-      security: *a73
+      security: *a75
       parameters:
         - schema:
             type: string
@@ -22724,7 +23055,7 @@ paths:
         - Agents
       summary: Publish an immutable candidate
       operationId: publishAgentRevision
-      security: *a73
+      security: *a75
       parameters:
         - schema:
             type: string
@@ -22930,7 +23261,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/ConversationAgent"
+                $ref: "#/components/schemas/AgentDetail"
         "401":
           description: Authentication required
           content:
@@ -23028,7 +23359,7 @@ paths:
         - Agent Channels
       summary: Issue an MCP or REST chat credential for an agent
       operationId: issueAgentChannelCredential
-      security: *a71
+      security: *a73
       parameters:
         - schema:
             type: string
@@ -23086,7 +23417,7 @@ paths:
         - Agent Channels
       summary: List live MCP and REST chat credentials for an agent with cursor pagination
       operationId: listAgentChannelCredentials
-      security: *a71
+      security: *a73
       parameters:
         - schema:
             type: string
@@ -23148,7 +23479,7 @@ paths:
         - Agent Channels
       summary: Rotate an agent channel credential
       operationId: rotateAgentChannelCredential
-      security: *a71
+      security: *a73
       parameters:
         - schema:
             type: string
@@ -23201,7 +23532,7 @@ paths:
         - Agent Channels
       summary: Revoke an agent channel credential
       operationId: revokeAgentChannelCredential
-      security: *a71
+      security: *a73
       parameters:
         - schema:
             type: string
@@ -23859,7 +24190,7 @@ paths:
       summary: Read the assistant logo image
       description: Dashboard session only; bearer API tokens are rejected. The optional workspaceId query selects the workspace for browser image requests.
       operationId: getAgentAssistantLogo
-      security: *a71
+      security: *a73
       parameters:
         - schema:
             type: string
@@ -24110,7 +24441,7 @@ paths:
       summary: Analyze a website and suggest an agent configuration
       description: Fetches and reads a public website, then returns a suggested agent name, instruction, greeting, locale, and chunking strategy. Persists nothing. Fetching an external site and running a model against it costs real time and budget, so the route carries its own durable rate limit.
       operationId: analyzeWebsiteForAgentWizard
-      security: *a71
+      security: *a73
       requestBody:
         required: true
         content:
@@ -24173,7 +24504,7 @@ paths:
       summary: Stream website analysis progress
       description: The same analysis as the non-streaming route, delivered as server-sent events so a caller can show crawl progress. Emits progress events, then one complete event carrying the suggested configuration, or one error event when the analysis fails after the headers are sent.
       operationId: streamAgentWizardWebsiteAnalysis
-      security: *a71
+      security: *a73
       requestBody:
         required: true
         content:
@@ -24235,7 +24566,7 @@ paths:
       summary: Create an agent from a website configuration
       description: Creates one agent from a reviewed wizard configuration and queues the website for ingestion. Returns the new agent and the crawl job when the deployment runs website crawling.
       operationId: createAgentFromWizard
-      security: *a71
+      security: *a73
       requestBody:
         required: true
         content:
@@ -24663,7 +24994,7 @@ paths:
           in: path
         - schema:
             type: string
-            enum: *a74
+            enum: *a76
           required: true
           name: scopeType
           in: query
@@ -24797,7 +25128,7 @@ paths:
       operationId: listSkills
       security:
         - bearerAuth: []
-        - *a75
+        - *a77
       responses:
         "200":
           description: Skills catalog returned
@@ -24819,7 +25150,7 @@ paths:
       operationId: getSkill
       security:
         - bearerAuth: []
-        - *a75
+        - *a77
       parameters:
         - schema:
             type: string
@@ -24848,11 +25179,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/mcp-connections:
     get:
-      tags: &a76
+      tags: &a78
         - External Skills
       summary: List an agent's MCP connections
       operationId: listMcpConnections
-      security: &a77
+      security: &a79
         - bearerAuth: []
       parameters:
         - schema:
@@ -24914,10 +25245,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     post:
-      tags: *a76
+      tags: *a78
       summary: Create an MCP connection
       operationId: createMcpConnection
-      security: *a77
+      security: *a79
       parameters:
         - schema:
             type: string
@@ -25026,10 +25357,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/mcp-connections/{connectionId}/discover:
     post:
-      tags: *a76
+      tags: *a78
       summary: Discover a connection's tools
       operationId: discoverMcpConnectionTools
-      security: *a77
+      security: *a79
       parameters:
         - schema:
             type: string
@@ -25079,10 +25410,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/mcp-connections/{connectionId}:
     delete:
-      tags: *a76
+      tags: *a78
       summary: Delete an MCP connection
       operationId: deleteMcpConnection
-      security: *a77
+      security: *a79
       parameters:
         - schema:
             type: string
@@ -25118,10 +25449,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     get:
-      tags: *a76
+      tags: *a78
       summary: Get an MCP connection
       operationId: getMcpConnection
-      security: *a77
+      security: *a79
       parameters:
         - schema:
             type: string
@@ -25181,10 +25512,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     patch:
-      tags: *a76
+      tags: *a78
       summary: Update an MCP connection (rename / rotate token)
       operationId: updateMcpConnection
-      security: *a77
+      security: *a79
       parameters:
         - schema:
             type: string
@@ -25263,10 +25594,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/external-skills:
     get:
-      tags: *a76
+      tags: *a78
       summary: List an agent's external skill definitions
       operationId: listExternalSkills
-      security: *a77
+      security: *a79
       parameters:
         - schema:
             type: string
@@ -25346,10 +25677,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     post:
-      tags: *a76
+      tags: *a78
       summary: Define an external skill (bind a discovered tool)
       operationId: createExternalSkill
-      security: *a77
+      security: *a79
       parameters:
         - schema:
             type: string
@@ -25477,10 +25808,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/external-skills/{skillId}:
     delete:
-      tags: *a76
+      tags: *a78
       summary: Delete an external skill definition
       operationId: deleteExternalSkill
-      security: *a77
+      security: *a79
       parameters:
         - schema:
             type: string
@@ -25510,10 +25841,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     get:
-      tags: *a76
+      tags: *a78
       summary: Get an external skill definition
       operationId: getExternalSkill
-      security: *a77
+      security: *a79
       parameters:
         - schema:
             type: string
@@ -25592,10 +25923,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     patch:
-      tags: *a76
+      tags: *a78
       summary: Update an external skill definition (enable / update bindings)
       operationId: updateExternalSkill
-      security: *a77
+      security: *a79
       parameters:
         - schema:
             type: string
@@ -25712,10 +26043,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/mcp-connections/{connectionId}/oauth/authorize:
     post:
-      tags: *a76
+      tags: *a78
       summary: Start the OAuth authorization flow for a connection
       operationId: startMcpConnectionOauth
-      security: *a77
+      security: *a79
       parameters:
         - schema:
             type: string
@@ -25768,10 +26099,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/mcp-connections/{connectionId}/oauth/complete:
     post:
-      tags: *a76
+      tags: *a78
       summary: Complete the OAuth authorization flow
       operationId: completeMcpConnectionOauth
-      security: *a77
+      security: *a79
       parameters:
         - schema:
             type: string
@@ -25854,11 +26185,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/oauth-connections:
     post:
-      tags: &a78
+      tags: &a80
         - OAuth Connections
       summary: Create and start a workspace OAuth connection
       operationId: createWorkspaceOauthConnection
-      security: &a79
+      security: &a81
         - bearerAuth: []
       parameters:
         - schema:
@@ -25931,10 +26262,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     get:
-      tags: *a78
+      tags: *a80
       summary: List non-secret workspace OAuth connection statuses
       operationId: listWorkspaceOauthConnections
-      security: *a79
+      security: *a81
       parameters:
         - schema:
             type: string
@@ -25964,7 +26295,7 @@ paths:
                           type: string
                         status:
                           type: string
-                          enum: &a80
+                          enum: &a82
                             - pending
                             - authorized
                             - needs_reauth
@@ -26004,10 +26335,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/oauth-connections/{connectionId}:
     get:
-      tags: *a78
+      tags: *a80
       summary: Get a non-secret workspace OAuth connection status
       operationId: getWorkspaceOauthConnection
-      security: *a79
+      security: *a81
       parameters:
         - schema:
             type: string
@@ -26041,7 +26372,7 @@ paths:
                         type: string
                       status:
                         type: string
-                        enum: *a80
+                        enum: *a82
                       grantedScopes:
                         type: array
                         items:
@@ -26082,10 +26413,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/oauth-connections/{connectionId}/reauthorize:
     post:
-      tags: *a78
+      tags: *a80
       summary: Restart authorization for a workspace OAuth connection
       operationId: reauthorizeWorkspaceOauthConnection
-      security: *a79
+      security: *a81
       parameters:
         - schema:
             type: string
@@ -26146,7 +26477,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/oauth/callback/{provider}:
     get:
-      tags: *a78
+      tags: *a80
       summary: Complete a provider OAuth callback
       operationId: completeWorkspaceOauthCallback
       parameters:
@@ -26192,7 +26523,7 @@ paths:
         - Customer Email Activity
       summary: List sanitized workspace customer email skill activity
       operationId: listWorkspaceEmailSkillActivity
-      security: &a81
+      security: &a83
         - bearerAuth: []
       parameters:
         - schema:
@@ -26294,12 +26625,12 @@ paths:
                           type: string
                         mode:
                           type: string
-                          enum: &a85
+                          enum: &a87
                             - draft
                             - send
                         outcome:
                           type: string
-                          enum: &a86
+                          enum: &a88
                             - drafted
                             - sent
                             - missing_input
@@ -26376,11 +26707,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-connections:
     get:
-      tags: &a82
+      tags: &a84
         - Customer Email Connections
       summary: List workspace customer email connections
       operationId: listWorkspaceEmailConnections
-      security: *a81
+      security: *a83
       parameters:
         - schema:
             type: string
@@ -26425,7 +26756,7 @@ paths:
                             - "null"
                         status:
                           type: string
-                          enum: &a83
+                          enum: &a85
                             - authorized
                             - disabled
                             - needs_reauth
@@ -26434,7 +26765,7 @@ paths:
                           type:
                             - string
                             - "null"
-                          enum: &a84
+                          enum: &a86
                             - ok
                             - failed
                             - unknown
@@ -26477,10 +26808,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     post:
-      tags: *a82
+      tags: *a84
       summary: Create a workspace customer email connection
       operationId: createWorkspaceEmailConnection
-      security: *a81
+      security: *a83
       parameters:
         - schema:
             type: string
@@ -26551,12 +26882,12 @@ paths:
                           - "null"
                       status:
                         type: string
-                        enum: *a83
+                        enum: *a85
                       lastHealthStatus:
                         type:
                           - string
                           - "null"
-                        enum: *a84
+                        enum: *a86
                       lastHealthCheckedAt:
                         type:
                           - string
@@ -26609,10 +26940,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-oauth-connections:
     get:
-      tags: *a82
+      tags: *a84
       summary: List OAuth connections eligible to back a customer email connection
       operationId: listWorkspaceEmailOauthConnections
-      security: *a81
+      security: *a83
       parameters:
         - schema:
             type: string
@@ -26682,10 +27013,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-connections/{connectionId}:
     patch:
-      tags: *a82
+      tags: *a84
       summary: Update or enable/disable a workspace customer email connection
       operationId: updateWorkspaceEmailConnection
-      security: *a81
+      security: *a83
       parameters:
         - schema:
             type: string
@@ -26757,12 +27088,12 @@ paths:
                           - "null"
                       status:
                         type: string
-                        enum: *a83
+                        enum: *a85
                       lastHealthStatus:
                         type:
                           - string
                           - "null"
-                        enum: *a84
+                        enum: *a86
                       lastHealthCheckedAt:
                         type:
                           - string
@@ -26814,10 +27145,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     delete:
-      tags: *a82
+      tags: *a84
       summary: Delete a workspace customer email connection
       operationId: deleteWorkspaceEmailConnection
-      security: *a81
+      security: *a83
       parameters:
         - schema:
             type: string
@@ -26860,10 +27191,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-connections/{connectionId}/health-check:
     post:
-      tags: *a82
+      tags: *a84
       summary: Check customer email connection health
       operationId: checkWorkspaceEmailConnectionHealth
-      security: *a81
+      security: *a83
       parameters:
         - schema:
             type: string
@@ -26912,12 +27243,12 @@ paths:
                           - "null"
                       status:
                         type: string
-                        enum: *a83
+                        enum: *a85
                       lastHealthStatus:
                         type:
                           - string
                           - "null"
-                        enum: *a84
+                        enum: *a86
                       lastHealthCheckedAt:
                         type:
                           - string
@@ -26964,11 +27295,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/email-skills:
     get:
-      tags: &a87
+      tags: &a89
         - Customer Email Skills
       summary: List agent customer email skills
       operationId: listAgentEmailSkills
-      security: *a81
+      security: *a83
       parameters:
         - schema:
             type: string
@@ -27005,7 +27336,7 @@ paths:
                           type: string
                         mode:
                           type: string
-                          enum: *a85
+                          enum: *a87
                         boundInputs:
                           type: object
                           additionalProperties: {}
@@ -27026,7 +27357,7 @@ paths:
                           type: array
                           items:
                             type: string
-                            enum: *a86
+                            enum: *a88
                         createdAt:
                           type: string
                         updatedAt:
@@ -27065,10 +27396,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     post:
-      tags: *a87
+      tags: *a89
       summary: Create an agent customer email skill
       operationId: createAgentEmailSkill
-      security: *a81
+      security: *a83
       parameters:
         - schema:
             type: string
@@ -27090,7 +27421,7 @@ paths:
                   format: uuid
                 mode:
                   type: string
-                  enum: *a85
+                  enum: *a87
                   default: draft
                 boundInputs:
                   type: object
@@ -27141,7 +27472,7 @@ paths:
                         type: string
                       mode:
                         type: string
-                        enum: *a85
+                        enum: *a87
                       boundInputs:
                         type: object
                         additionalProperties: {}
@@ -27162,7 +27493,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a86
+                          enum: *a88
                       createdAt:
                         type: string
                       updatedAt:
@@ -27214,10 +27545,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/email-skills/{skillId}:
     get:
-      tags: *a87
+      tags: *a89
       summary: Get an agent customer email skill
       operationId: getAgentEmailSkill
-      security: *a81
+      security: *a83
       parameters:
         - schema:
             type: string
@@ -27258,7 +27589,7 @@ paths:
                         type: string
                       mode:
                         type: string
-                        enum: *a85
+                        enum: *a87
                       boundInputs:
                         type: object
                         additionalProperties: {}
@@ -27279,7 +27610,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a86
+                          enum: *a88
                       createdAt:
                         type: string
                       updatedAt:
@@ -27318,10 +27649,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     patch:
-      tags: *a87
+      tags: *a89
       summary: Update an agent customer email skill
       operationId: updateAgentEmailSkill
-      security: *a81
+      security: *a83
       parameters:
         - schema:
             type: string
@@ -27344,7 +27675,7 @@ paths:
               properties:
                 mode:
                   type: string
-                  enum: *a85
+                  enum: *a87
                 boundInputs:
                   type: object
                   additionalProperties: {}
@@ -27388,7 +27719,7 @@ paths:
                         type: string
                       mode:
                         type: string
-                        enum: *a85
+                        enum: *a87
                       boundInputs:
                         type: object
                         additionalProperties: {}
@@ -27409,7 +27740,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a86
+                          enum: *a88
                       createdAt:
                         type: string
                       updatedAt:
@@ -27454,10 +27785,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     delete:
-      tags: *a87
+      tags: *a89
       summary: Delete an agent customer email skill
       operationId: deleteAgentEmailSkill
-      security: *a81
+      security: *a83
       parameters:
         - schema:
             type: string
@@ -27494,11 +27825,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/slack/install/start:
     post:
-      tags: &a88
+      tags: &a90
         - Slack
       summary: Start Slack OAuth installation
       operationId: startWorkspaceSlackInstall
-      security: &a89
+      security: &a91
         - bearerAuth: []
       parameters:
         - schema:
@@ -27555,10 +27886,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/slack/install/status:
     get:
-      tags: *a88
+      tags: *a90
       summary: Get Slack installation status
       operationId: getWorkspaceSlackInstallStatus
-      security: *a89
+      security: *a91
       parameters:
         - schema:
             type: string
@@ -27622,10 +27953,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/slack/manifest:
     get:
-      tags: *a88
+      tags: *a90
       summary: Get self-host Slack app manifest
       operationId: getWorkspaceSlackManifest
-      security: *a89
+      security: *a91
       parameters:
         - schema:
             type: string
@@ -27751,10 +28082,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/slack/binding:
     get:
-      tags: *a88
+      tags: *a90
       summary: Get Slack answering binding
       operationId: getWorkspaceSlackBinding
-      security: *a89
+      security: *a91
       parameters:
         - schema:
             type: string
@@ -27787,7 +28118,7 @@ paths:
                     type: boolean
                   respondMode:
                     type: string
-                    enum: &a90
+                    enum: &a92
                       - mention
                       - every_message
                 required:
@@ -27809,10 +28140,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     put:
-      tags: *a88
+      tags: *a90
       summary: Set Slack answering binding
       operationId: setWorkspaceSlackBinding
-      security: *a89
+      security: *a91
       parameters:
         - schema:
             type: string
@@ -27842,7 +28173,7 @@ paths:
                   type: boolean
                 respondMode:
                   type: string
-                  enum: *a90
+                  enum: *a92
               required:
                 - answeringAgentId
       responses:
@@ -27870,7 +28201,7 @@ paths:
                     type: boolean
                   respondMode:
                     type: string
-                    enum: *a90
+                    enum: *a92
                 required:
                   - channelId
                   - answeringAgentId
@@ -27902,10 +28233,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     delete:
-      tags: *a88
+      tags: *a90
       summary: Remove a Slack channel answering binding
       operationId: deleteWorkspaceSlackChannelBinding
-      security: *a89
+      security: *a91
       parameters:
         - schema:
             type: string
@@ -27942,10 +28273,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/slack/bindings:
     get:
-      tags: *a88
+      tags: *a90
       summary: List Slack answering bindings
       operationId: listWorkspaceSlackBindings
-      security: *a89
+      security: *a91
       parameters:
         - schema:
             type: string
@@ -27983,7 +28314,7 @@ paths:
                           type: boolean
                         respondMode:
                           type: string
-                          enum: *a90
+                          enum: *a92
                       required:
                         - channelId
                         - answeringAgentId
@@ -28006,10 +28337,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/slack/installation:
     delete:
-      tags: *a88
+      tags: *a90
       summary: Disconnect Slack installation
       operationId: disconnectWorkspaceSlackInstallation
-      security: *a89
+      security: *a91
       parameters:
         - schema:
             type: string
@@ -28034,12 +28365,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-channel:
     get:
-      tags: &a91
+      tags: &a93
         - Email Channel
       summary: Read the email channel's settings
       description: "The deployment's engagement modes and inbound domain, with the workspace's sending domains and mailboxes. A deployment with no email provider answers `configured: false`."
       operationId: getEmailChannel
-      security: &a92
+      security: &a94
         - bearerAuth: []
       parameters:
         - schema:
@@ -28075,11 +28406,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-channel/mailboxes:
     post:
-      tags: *a91
+      tags: *a93
       summary: Add a mailbox
       description: Registers the address's domain as a sending domain when it is new to the workspace and issues the mailbox's relay address.
       operationId: createEmailMailbox
-      security: *a92
+      security: *a94
       parameters:
         - schema:
             type: string
@@ -28138,10 +28469,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-channel/mailboxes/{mailboxId}:
     get:
-      tags: *a91
+      tags: *a93
       summary: Read a mailbox
       operationId: getEmailMailbox
-      security: *a92
+      security: *a94
       parameters:
         - schema:
             type: string
@@ -28187,11 +28518,11 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     patch:
-      tags: *a91
+      tags: *a93
       summary: Update a mailbox's settings and engagement policy
       description: "A change of engagement mode, enabled flag or agent writes the next `policyVersion`. With `expectedPolicyVersion`, the change applies only to that version. Switching to `auto` needs `autoOptIn: true`."
       operationId: updateEmailMailbox
-      security: *a92
+      security: *a94
       parameters:
         - schema:
             type: string
@@ -28255,10 +28586,10 @@ paths:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
     delete:
-      tags: *a91
+      tags: *a93
       summary: Remove a mailbox
       operationId: removeEmailMailbox
-      security: *a92
+      security: *a94
       parameters:
         - schema:
             type: string
@@ -28301,11 +28632,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-channel/mailboxes/{mailboxId}/relay-token/rotate:
     post:
-      tags: *a91
+      tags: *a93
       summary: Issue a new relay address for a mailbox
       description: The previous relay address keeps working for a seven-day grace period.
       operationId: rotateEmailMailboxRelayToken
-      security: *a92
+      security: *a94
       parameters:
         - schema:
             type: string
@@ -28352,11 +28683,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-channel/mailboxes/{mailboxId}/setup-check:
     post:
-      tags: *a91
+      tags: *a93
       summary: Start a forwarding setup check
       description: "`base` passes on the next message the mailbox receives; `plus_address` passes when a message written to the check's plus address arrives with its tag intact."
       operationId: startEmailMailboxSetupCheck
-      security: *a92
+      security: *a94
       parameters:
         - schema:
             type: string
@@ -28415,11 +28746,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-channel/mailboxes/{mailboxId}/events:
     get:
-      tags: *a91
+      tags: *a93
       summary: List a mailbox's event log
       description: Every accepted delivery to the mailbox, newest first, with its disposition, sender, subject and time.
       operationId: listEmailMailboxEvents
-      security: *a92
+      security: *a94
       parameters:
         - schema:
             type: string
@@ -28448,7 +28779,7 @@ paths:
           in: query
         - schema:
             type: string
-            enum: &a93
+            enum: &a95
               - ingest_only
               - run_review_turn
               - drop
@@ -28457,7 +28788,7 @@ paths:
           in: query
         - schema:
             type: string
-            enum: &a94
+            enum: &a96
               - pending
               - fetched
               - ingested
@@ -28505,11 +28836,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-channel/events:
     get:
-      tags: *a91
+      tags: *a93
       summary: List the workspace's email event log
       description: "Every delivery attributed to the workspace, newest first: its mailboxes' events, a removed mailbox's retained events, and mail a verified receiving domain accepted for an address no mailbox has (`mailboxId: null`, reason `no_mailbox`). `mailboxId` narrows the log to one mailbox, removed or not."
       operationId: listEmailChannelEvents
-      security: *a92
+      security: *a94
       parameters:
         - schema:
             type: string
@@ -28532,13 +28863,13 @@ paths:
           in: query
         - schema:
             type: string
-            enum: *a93
+            enum: *a95
           required: false
           name: disposition
           in: query
         - schema:
             type: string
-            enum: *a94
+            enum: *a96
           required: false
           name: state
           in: query
@@ -28581,11 +28912,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-channel/events/{deliveryId}/retry:
     post:
-      tags: *a91
+      tags: *a93
       summary: Retry a failed inbound event
       description: Returns the failed delivery to the inbound pipeline, resuming at the step where it stopped.
       operationId: retryEmailInboundEvent
-      security: *a92
+      security: *a94
       parameters:
         - schema:
             type: string
@@ -28638,11 +28969,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-channel/events/{deliveryId}/raw:
     get:
-      tags: *a91
+      tags: *a93
       summary: Read an inbound event's raw message
       description: Display-safe headers, the plain text and server-sanitized HTML. Requires `workspace.conversation.takeover` as well as settings read permission, and every view is audited.
       operationId: getEmailInboundRawMessage
-      security: *a92
+      security: *a94
       parameters:
         - schema:
             type: string
@@ -28695,11 +29026,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-channel/domains:
     post:
-      tags: *a91
+      tags: *a93
       summary: Add a sending domain
       description: "Claims the domain for the workspace and registers it with the email provider. When the provider already holds the domain, it is added with `registration.status: needs_reconciliation` and adopted only by `reconcileEmailDomain`."
       operationId: addEmailSendingDomain
-      security: *a92
+      security: *a94
       parameters:
         - schema:
             type: string
@@ -28758,10 +29089,10 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-channel/domains/{domainId}/verify:
     post:
-      tags: *a91
+      tags: *a93
       summary: Check a domain's DNS records now
       operationId: verifyEmailDomain
-      security: *a92
+      security: *a94
       parameters:
         - schema:
             type: string
@@ -28820,11 +29151,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-channel/domains/{domainId}/reconcile:
     post:
-      tags: *a91
+      tags: *a93
       summary: Adopt the provider's existing registration of a domain
       description: "For a domain in `registration.status: needs_reconciliation`: finds the email provider's registration of the domain by name and records it for this workspace, or registers the domain afresh when the provider no longer holds it. Audited. A registered domain is returned unchanged."
       operationId: reconcileEmailDomain
-      security: *a92
+      security: *a94
       parameters:
         - schema:
             type: string
@@ -28883,11 +29214,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-channel/domains/{domainId}/receiving:
     post:
-      tags: *a91
+      tags: *a93
       summary: Enable direct receiving on a domain
       description: Routes all of the domain's mail to Radioso. `confirmation` must equal the domain name.
       operationId: enableEmailDirectReceiving
-      security: *a92
+      security: *a94
       parameters:
         - schema:
             type: string
@@ -28958,11 +29289,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/workspaces/{workspaceId}/email-channel/domains/{domainId}:
     delete:
-      tags: *a91
+      tags: *a93
       summary: Remove a sending domain
       description: Revokes the domain's authority at once; the provider is cleaned up afterwards.
       operationId: removeEmailDomain
-      security: *a92
+      security: *a94
       parameters:
         - schema:
             type: string
@@ -29011,11 +29342,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/conversations/{conversationId}/email:
     get:
-      tags: *a91
+      tags: *a93
       summary: Read an email conversation's facts
       description: The mailbox, the participant, the latest subject and CC, sending readiness, the send budget and per-message facts.
       operationId: getConversationEmailFacts
-      security: *a92
+      security: *a94
       parameters:
         - schema:
             type: string
@@ -29060,7 +29391,7 @@ paths:
         - Webhook Skills
       summary: List agent webhook skills
       operationId: listAgentWebhookSkills
-      security: &a95
+      security: &a97
         - bearerAuth: []
       parameters:
         - schema:
@@ -29117,7 +29448,7 @@ paths:
                           type: array
                           items:
                             type: string
-                            enum: &a96
+                            enum: &a98
                               - delivered
                               - missing_input
                               - destination_not_found
@@ -29163,7 +29494,7 @@ paths:
         - Webhook Skills
       summary: Create an agent webhook skill
       operationId: createAgentWebhookSkill
-      security: *a95
+      security: *a97
       parameters:
         - schema:
             type: string
@@ -29252,7 +29583,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a96
+                          enum: *a98
                       createdAt:
                         type: string
                       updatedAt:
@@ -29307,7 +29638,7 @@ paths:
         - Webhook Skills
       summary: Get an agent webhook skill
       operationId: getAgentWebhookSkill
-      security: *a95
+      security: *a97
       parameters:
         - schema:
             type: string
@@ -29367,7 +29698,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a96
+                          enum: *a98
                       createdAt:
                         type: string
                       updatedAt:
@@ -29409,7 +29740,7 @@ paths:
         - Webhook Skills
       summary: Update an agent webhook skill
       operationId: updateAgentWebhookSkill
-      security: *a95
+      security: *a97
       parameters:
         - schema:
             type: string
@@ -29493,7 +29824,7 @@ paths:
                         type: array
                         items:
                           type: string
-                          enum: *a96
+                          enum: *a98
                       createdAt:
                         type: string
                       updatedAt:
@@ -29541,7 +29872,7 @@ paths:
         - Webhook Skills
       summary: Delete an agent webhook skill
       operationId: deleteAgentWebhookSkill
-      security: *a95
+      security: *a97
       parameters:
         - schema:
             type: string
@@ -29582,7 +29913,7 @@ paths:
         - Slack Skills
       summary: List agent Slack skills
       operationId: listAgentSlackSkills
-      security: &a99
+      security: &a101
         - bearerAuth: []
       parameters:
         - schema:
@@ -29621,13 +29952,13 @@ paths:
                         boundInputs:
                           type: object
                           properties:
-                            channelId: &a97 {}
-                            text: *a97
-                            threadTs: *a97
+                            channelId: &a99 {}
+                            text: *a99
+                            threadTs: *a99
                         exposedInputs:
                           type: object
                           properties:
-                            channelId: &a98
+                            channelId: &a100
                               type: object
                               properties:
                                 description:
@@ -29637,15 +29968,15 @@ paths:
                                 required:
                                   type: boolean
                                   default: true
-                            text: *a98
-                            threadTs: *a98
+                            text: *a100
+                            threadTs: *a100
                         enabled:
                           type: boolean
                         outcomes:
                           type: array
                           items:
                             type: string
-                            enum: &a104
+                            enum: &a106
                               - enqueued
                               - missing_input
                               - failed
@@ -29690,7 +30021,7 @@ paths:
         - Slack Skills
       summary: Create an agent Slack skill
       operationId: createAgentSlackSkill
-      security: *a99
+      security: *a101
       parameters:
         - schema:
             type: string
@@ -29713,14 +30044,14 @@ paths:
                 boundInputs:
                   type: object
                   properties:
-                    channelId: &a100 {}
-                    text: *a100
-                    threadTs: *a100
+                    channelId: &a102 {}
+                    text: *a102
+                    threadTs: *a102
                   default: {}
                 exposedInputs:
                   type: object
                   properties:
-                    channelId: &a101
+                    channelId: &a103
                       type: object
                       properties:
                         description:
@@ -29730,8 +30061,8 @@ paths:
                         required:
                           type: boolean
                           default: true
-                    text: *a101
-                    threadTs: *a101
+                    text: *a103
+                    threadTs: *a103
                   default: {}
                 enabled:
                   type: boolean
@@ -29767,13 +30098,13 @@ paths:
                       boundInputs:
                         type: object
                         properties:
-                          channelId: &a102 {}
-                          text: *a102
-                          threadTs: *a102
+                          channelId: &a104 {}
+                          text: *a104
+                          threadTs: *a104
                       exposedInputs:
                         type: object
                         properties:
-                          channelId: &a103
+                          channelId: &a105
                             type: object
                             properties:
                               description:
@@ -29783,15 +30114,15 @@ paths:
                               required:
                                 type: boolean
                                 default: true
-                          text: *a103
-                          threadTs: *a103
+                          text: *a105
+                          threadTs: *a105
                       enabled:
                         type: boolean
                       outcomes:
                         type: array
                         items:
                           type: string
-                          enum: *a104
+                          enum: *a106
                       createdAt:
                         type: string
                       updatedAt:
@@ -29846,7 +30177,7 @@ paths:
         - Slack Skills
       summary: Get an agent Slack skill
       operationId: getAgentSlackSkill
-      security: *a99
+      security: *a101
       parameters:
         - schema:
             type: string
@@ -29888,13 +30219,13 @@ paths:
                       boundInputs:
                         type: object
                         properties:
-                          channelId: &a105 {}
-                          text: *a105
-                          threadTs: *a105
+                          channelId: &a107 {}
+                          text: *a107
+                          threadTs: *a107
                       exposedInputs:
                         type: object
                         properties:
-                          channelId: &a106
+                          channelId: &a108
                             type: object
                             properties:
                               description:
@@ -29904,15 +30235,15 @@ paths:
                               required:
                                 type: boolean
                                 default: true
-                          text: *a106
-                          threadTs: *a106
+                          text: *a108
+                          threadTs: *a108
                       enabled:
                         type: boolean
                       outcomes:
                         type: array
                         items:
                           type: string
-                          enum: *a104
+                          enum: *a106
                       createdAt:
                         type: string
                       updatedAt:
@@ -29954,7 +30285,7 @@ paths:
         - Slack Skills
       summary: Update an agent Slack skill
       operationId: updateAgentSlackSkill
-      security: *a99
+      security: *a101
       parameters:
         - schema:
             type: string
@@ -29978,13 +30309,13 @@ paths:
                 boundInputs:
                   type: object
                   properties:
-                    channelId: &a107 {}
-                    text: *a107
-                    threadTs: *a107
+                    channelId: &a109 {}
+                    text: *a109
+                    threadTs: *a109
                 exposedInputs:
                   type: object
                   properties:
-                    channelId: &a108
+                    channelId: &a110
                       type: object
                       properties:
                         description:
@@ -29994,8 +30325,8 @@ paths:
                         required:
                           type: boolean
                           default: true
-                    text: *a108
-                    threadTs: *a108
+                    text: *a110
+                    threadTs: *a110
                 enabled:
                   type: boolean
       responses:
@@ -30026,13 +30357,13 @@ paths:
                       boundInputs:
                         type: object
                         properties:
-                          channelId: &a109 {}
-                          text: *a109
-                          threadTs: *a109
+                          channelId: &a111 {}
+                          text: *a111
+                          threadTs: *a111
                       exposedInputs:
                         type: object
                         properties:
-                          channelId: &a110
+                          channelId: &a112
                             type: object
                             properties:
                               description:
@@ -30042,15 +30373,15 @@ paths:
                               required:
                                 type: boolean
                                 default: true
-                          text: *a110
-                          threadTs: *a110
+                          text: *a112
+                          threadTs: *a112
                       enabled:
                         type: boolean
                       outcomes:
                         type: array
                         items:
                           type: string
-                          enum: *a104
+                          enum: *a106
                       createdAt:
                         type: string
                       updatedAt:
@@ -30098,7 +30429,7 @@ paths:
         - Slack Skills
       summary: Delete an agent Slack skill
       operationId: deleteAgentSlackSkill
-      security: *a99
+      security: *a101
       parameters:
         - schema:
             type: string
@@ -30139,7 +30470,7 @@ paths:
         - Agent Skills
       summary: List agent skill capabilities
       operationId: listAgentSkillCapabilities
-      security: &a112
+      security: &a114
         - bearerAuth: []
       parameters:
         - schema:
@@ -30163,7 +30494,7 @@ paths:
                       properties:
                         id:
                           type: string
-                          enum: &a113
+                          enum: &a115
                             - retrieve
                             - mcp_tool
                             - email
@@ -30275,13 +30606,13 @@ paths:
                           type: array
                           items:
                             type: string
-                            enum: &a111
+                            enum: &a113
                               - default_answer
                               - routine_named
                               - agent_selectable
                         defaultInvocationMode:
                           type: string
-                          enum: *a111
+                          enum: *a113
                         executorAdapter:
                           type: string
                         targets:
@@ -30339,13 +30670,77 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/agents/{agentId}/notification-recipient-confirmations/resend:
+    post:
+      tags:
+        - Agent Skills
+      summary: Resend recipient confirmation
+      description: Resends confirmation to a configured notification recipient. Only workspace owners and admins can use this action, and every send counts against the workspace daily confirmation cap. An address is asked at most once a day, and never after it stops notifications.
+      operationId: resendNotificationRecipientConfirmation
+      security: *a114
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email:
+                  type: string
+                  maxLength: 320
+                  format: email
+              required:
+                - email
+      responses:
+        "202":
+          description: Confirmation send admitted or skipped
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sent:
+                    type: boolean
+                required:
+                  - sent
+        "400":
+          description: Recipient is not configured for the agent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Owner or admin permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/skills:
     get:
       tags:
         - Agent Skills
       summary: List agent skills
       operationId: listAgentSkills
-      security: *a112
+      security: *a114
       parameters:
         - schema:
             type: string
@@ -30379,7 +30774,7 @@ paths:
                           type: string
                         capability:
                           type: string
-                          enum: *a113
+                          enum: *a115
                         storedKind:
                           type: string
                         target:
@@ -30400,7 +30795,7 @@ paths:
                           additionalProperties: {}
                         invocationMode:
                           type: string
-                          enum: *a111
+                          enum: *a113
                         enabled:
                           type: boolean
                         createdAt:
@@ -30466,7 +30861,7 @@ paths:
         - Agent Skills
       summary: Create an agent skill
       operationId: createAgentSkill
-      security: *a112
+      security: *a114
       parameters:
         - schema:
             type: string
@@ -30485,7 +30880,7 @@ paths:
                   type: string
                 capability:
                   type: string
-                  enum: *a113
+                  enum: *a115
                 target:
                   type: object
                   properties:
@@ -30505,7 +30900,7 @@ paths:
                   default: {}
                 invocationMode:
                   type: string
-                  enum: *a111
+                  enum: *a113
                   default: routine_named
                 enabled:
                   type: boolean
@@ -30538,7 +30933,7 @@ paths:
                         type: string
                       capability:
                         type: string
-                        enum: *a113
+                        enum: *a115
                       storedKind:
                         type: string
                       target:
@@ -30559,7 +30954,7 @@ paths:
                         additionalProperties: {}
                       invocationMode:
                         type: string
-                        enum: *a111
+                        enum: *a113
                       enabled:
                         type: boolean
                       createdAt:
@@ -30611,6 +31006,75 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/agents/{agentId}/skills/{skillId}/notification-recipients:
+    get:
+      tags:
+        - Agent Skills
+      summary: Show a notify skill's recipient states
+      description: Each recipient address configured on one notify skill, whatever its invocation mode, with its confirmation or suppression state. A skill of another capability returns no recipients. Recipient emails are personal data, so this route accepts workspace sessions only.
+      operationId: listNotifySkillRecipients
+      security: *a114
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: skillId
+          in: path
+      responses:
+        "200":
+          description: Notify skill recipients
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  recipients:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        email:
+                          type: string
+                          format: email
+                        state:
+                          type: string
+                          enum: &a116
+                            - confirmed
+                            - grandfathered
+                            - waiting_for_confirmation
+                            - revoked
+                            - suppressed
+                            - confirmation_not_required
+                      required:
+                        - email
+                        - state
+                required:
+                  - recipients
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Agent read permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent or skill not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/operator-notice-destinations:
     get:
       tags:
@@ -30618,7 +31082,7 @@ paths:
       summary: Show where routine ending notices are sent
       description: "Where a routine ending's Notify-the-team notice is sent: the default destination and each enabled, routine-named notify skill an ending can name. Recipient emails are personal data, so this route accepts workspace sessions only."
       operationId: listOperatorNoticeDestinations
-      security: *a112
+      security: *a114
       parameters:
         - schema:
             type: string
@@ -30644,7 +31108,7 @@ paths:
                         description: The notify skill that sends the notice; null for the default destination.
                       via:
                         type: string
-                        enum: &a114
+                        enum: &a117
                           - named_skill
                           - contact_human
                           - contact_human_off
@@ -30656,6 +31120,21 @@ paths:
                         type: array
                         items:
                           type: string
+                      recipients:
+                        type: array
+                        items:
+                          type: object
+                          properties:
+                            email:
+                              type: string
+                              format: email
+                            state:
+                              type: string
+                              enum: *a116
+                          required:
+                            - email
+                            - state
+                        description: Recipient addresses with their effective confirmation or suppression state.
                       recipientsFromWorkspaceOwner:
                         type: boolean
                         description: The emails are the workspace owner's because the route lists no recipients of its own.
@@ -30666,6 +31145,7 @@ paths:
                       - skillName
                       - via
                       - recipientEmails
+                      - recipients
                       - recipientsFromWorkspaceOwner
                       - webhookConfigured
                   skills:
@@ -30680,12 +31160,27 @@ paths:
                           description: The notify skill that sends the notice; null for the default destination.
                         via:
                           type: string
-                          enum: *a114
+                          enum: *a117
                           description: Which rule picked the recipients.
                         recipientEmails:
                           type: array
                           items:
                             type: string
+                        recipients:
+                          type: array
+                          items:
+                            type: object
+                            properties:
+                              email:
+                                type: string
+                                format: email
+                              state:
+                                type: string
+                                enum: *a116
+                            required:
+                              - email
+                              - state
+                          description: Recipient addresses with their effective confirmation or suppression state.
                         recipientsFromWorkspaceOwner:
                           type: boolean
                           description: The emails are the workspace owner's because the route lists no recipients of its own.
@@ -30696,11 +31191,31 @@ paths:
                         - skillName
                         - via
                         - recipientEmails
+                        - recipients
                         - recipientsFromWorkspaceOwner
                         - webhookConfigured
+                  dailyEmailAllowance:
+                    type:
+                      - object
+                      - "null"
+                    properties:
+                      limit:
+                        type: integer
+                        description: Recipient emails the workspace may send per UTC day across contact and notice delivery.
+                      sentToday:
+                        type: integer
+                        description: Recipient emails sent so far today.
+                      reachedToday:
+                        type: boolean
+                        description: The allowance is used up or has already stopped a send today; further emails wait until tomorrow (UTC), while webhooks still post.
+                    required:
+                      - limit
+                      - sentToday
+                      - reachedToday
                 required:
                   - default
                   - skills
+                  - dailyEmailAllowance
         "401":
           description: Authentication required
           content:
@@ -30725,7 +31240,7 @@ paths:
         - Agent Skills
       summary: Update an agent skill
       operationId: updateAgentSkill
-      security: *a112
+      security: *a114
       parameters:
         - schema:
             type: string
@@ -30767,7 +31282,7 @@ paths:
                   additionalProperties: {}
                 invocationMode:
                   type: string
-                  enum: *a111
+                  enum: *a113
                 enabled:
                   type: boolean
       responses:
@@ -30794,7 +31309,7 @@ paths:
                         type: string
                       capability:
                         type: string
-                        enum: *a113
+                        enum: *a115
                       storedKind:
                         type: string
                       target:
@@ -30815,7 +31330,7 @@ paths:
                         additionalProperties: {}
                       invocationMode:
                         type: string
-                        enum: *a111
+                        enum: *a113
                       enabled:
                         type: boolean
                       createdAt:
@@ -30872,7 +31387,7 @@ paths:
         - Agent Skills
       summary: Delete an agent skill
       operationId: deleteAgentSkill
-      security: *a112
+      security: *a114
       parameters:
         - schema:
             type: string
@@ -31745,7 +32260,7 @@ paths:
                       additionalProperties: false
                 documentEnrichmentOverride:
                   type: string
-                  enum: *a32
+                  enum: *a34
               required:
                 - title
                 - content
@@ -32389,11 +32904,54 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      tags:
+        - History
+      summary: Permanently delete a conversation and everything derived from it
+      description: "Erases the conversation, its messages, and every record derived from it: summaries, routine and decision state, held replies, email threads and inbound mail, session-scoped context values, and the turn audit events that carry its content. The billing ledger keeps its usage rows without the link. Records one `conversation.erased` audit event with counts only. Requires workspace.history.delete. There is no undo."
+      operationId: deleteHistoryConversation
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: conversationId
+          in: path
+      responses:
+        "204":
+          description: Conversation deleted
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller lacks workspace.history.delete
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Conversation not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/history/chat/{conversationId}/tail:
     get:
       tags:
         - History
       summary: Poll new messages for a saved assistant conversation
+      description: Returns the messages after `cursor`. It also returns an assistant reply the client has already seen once the caller has marked it interrupted, carrying `interruption`, in time order with the new messages. Merge messages by `id`, so a re-delivered message replaces the one you hold.
       operationId: tailHistoryConversation
       security:
         - bearerAuth: []
@@ -32414,6 +32972,7 @@ paths:
         - schema:
             type: string
             minLength: 1
+            description: The previous tail's `cursor`, or the detail's `tailCursor`, passed back as returned. Without it, the newest page.
           required: false
           name: cursor
           in: query
@@ -32506,6 +33065,49 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Visitor not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/history/visitors/{visitorId}:
+    delete:
+      tags:
+        - History
+      summary: Permanently delete a visitor, every conversation they had, and everything derived from them
+      description: Erases each of the visitor's conversations as `DELETE /api/v1/history/chat/{conversationId}` does, then the customer-scoped context values for the visitor's verified customer id, then the visitor record. Records one `visitor.erased` audit event with counts only. Requires workspace.history.delete. There is no undo.
+      operationId: deleteHistoryVisitor
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: visitorId
+          in: path
+      responses:
+        "204":
+          description: Visitor deleted
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Caller lacks workspace.history.delete
           content:
             application/json:
               schema:
@@ -32674,7 +33276,7 @@ paths:
       summary: List the teammates who can own a conversation
       description: Returns the active teammates who hold conversation takeover permission on the workspace, labelled by display name, else email. These are the valid transfer targets.
       operationId: listConversationOperators
-      security: &a115
+      security: &a118
         - bearerAuth: []
       responses:
         "200":
@@ -32702,7 +33304,7 @@ paths:
       summary: Take human ownership of a conversation
       description: Claims a conversation the AI owns or that waits for a teammate. A conversation another teammate holds returns 409; take it from them by transferring it to yourself.
       operationId: takeOverConversation
-      security: *a115
+      security: *a118
       parameters:
         - schema:
             type: string
@@ -32766,7 +33368,7 @@ paths:
       summary: Reply to a conversation as a human operator
       description: Only the teammate who owns the conversation replies. A reply to a conversation the AI owns, or one waiting for a teammate, claims it for you first. A conversation another teammate holds, or an `expectedVersion` that is no longer current, returns 409 with the current ownership.
       operationId: replyToConversation
-      security: *a115
+      security: *a118
       parameters:
         - schema:
             type: string
@@ -32836,7 +33438,7 @@ paths:
       summary: Transfer human ownership of a conversation
       description: Hands a human-owned conversation to another teammate, or to yourself to take it from the teammate holding it. The receiving teammate gets an email with a link to the conversation unless they made the transfer. A target who is not a teammate able to own conversations on the workspace returns 404 with code `transfer_target_unavailable`; a conversation that is not in the workspace returns 404 with code `not_found`.
       operationId: transferConversationOwnership
-      security: *a115
+      security: *a118
       parameters:
         - schema:
             type: string
@@ -32906,7 +33508,7 @@ paths:
       summary: Return a human-owned conversation to AI ownership
       description: Only the teammate who owns the conversation hands it back; anyone may while it waits unclaimed. A conversation another teammate holds, or an `expectedVersion` that is no longer current, returns 409 with the current ownership.
       operationId: handBackConversation
-      security: *a115
+      security: *a118
       parameters:
         - schema:
             type: string
@@ -32964,14 +33566,84 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/conversations/{conversationId}/recording:
+    get:
+      tags:
+        - Conversation History
+      summary: Play a voice conversation's recording
+      description: "Streams the call's audio from the voice vendor, which keeps the recording, with the workspace's own vendor key; the key and the vendor's URL stay on the backend. A conversation has one when its call was started by the website embed and the page reported the vendor's conversation id: `recording.available` on the conversation's detail says so. Dashboard session only, from the dashboard's own pages: bearer API tokens are rejected, and so is a browser request whose `Sec-Fetch-Site` is anything but `same-origin`. An `<audio>` element cannot send `X-Workspace-Id`, so the optional `workspaceId` query selects the workspace instead. `HEAD` is refused with `405`. A `Range` header naming one byte range (`bytes=first-`, `bytes=first-last` or `bytes=-suffix`) goes on to the vendor, and the response is `206` with the vendor's `Content-Range` when the vendor answers it; a vendor that ignores it answers with the whole recording, and a range past the end is `416`. The response is `Cache-Control: private, no-store`. Every response that carries audio records a `conversation.recording_played` audit event with the teammate's user id; `partial` is true when the audio sent starts past the recording's first byte."
+      operationId: getConversationRecording
+      security: *a73
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: conversationId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: false
+          name: workspaceId
+          in: query
+        - schema:
+            type: string
+          required: false
+          name: range
+          in: header
+      responses:
+        "200":
+          description: The whole recording
+          content:
+            audio/mpeg: &a119
+              schema:
+                type: string
+                format: binary
+        "206":
+          description: The byte range the request named
+          content:
+            audio/mpeg: *a119
+        "400":
+          description: Invalid conversation id
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Workspace history read permission required, the caller is not a dashboard session, or another site started the request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: The conversation has no recording, or the vendor holds no audio for the call yet
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "416":
+          description: The byte range lies past the recording's end; `Content-Range` names its length when the vendor does
+        "503":
+          description: "`recording_unavailable`: the recording could not be read (the workspace's vendor key is missing or unreadable, or the vendor did not answer)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/delivery-failures:
     get:
-      tags: &a116
+      tags: &a120
         - Conversation Ownership
       summary: List delivery failures
       description: "Replies that may not have reached the customer, newest first: the open ones, or with `state=all` the cleared ones too."
       operationId: listDeliveryFailures
-      security: &a117
+      security: &a121
         - bearerAuth: []
       parameters:
         - schema:
@@ -33028,11 +33700,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/delivery-failures/{failureId}/acknowledge:
     post:
-      tags: *a116
+      tags: *a120
       summary: Acknowledge a delivery failure
       description: Clears the failure as seen by the signed-in teammate. Sends nothing.
       operationId: acknowledgeDeliveryFailure
-      security: *a117
+      security: *a121
       parameters:
         - schema:
             type: string
@@ -33079,11 +33751,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/delivery-failures/{failureId}/resolve:
     post:
-      tags: *a116
+      tags: *a120
       summary: Resolve a delivery failure
       description: An audited decision on a reply whose delivery failed. `marked_sent` settles an `uncertain` send as sent. `resend` sends an `uncertain` or `halted` reply once more, once its channel can send; it is the only way a reply goes out twice.
       operationId: resolveDeliveryFailure
-      security: *a117
+      security: *a121
       parameters:
         - schema:
             type: string
@@ -33136,12 +33808,12 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/held-replies:
     get:
-      tags: &a118
+      tags: &a122
         - Conversation Ownership
       summary: List held replies
       description: Replies an agent wrote in review that wait for a teammate, newest first. With `attention=all`, the decided, replaced and automatically queued ones too.
       operationId: listHeldReplies
-      security: &a119
+      security: &a123
         - bearerAuth: []
       parameters:
         - schema:
@@ -33198,11 +33870,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/conversations/{conversationId}/held-reply:
     get:
-      tags: *a118
+      tags: *a122
       summary: Get a conversation's current held reply
       description: The conversation's newest held reply, whatever its state, under a `heldReply` root; null when it has none.
       operationId: getCurrentHeldReply
-      security: *a119
+      security: *a123
       parameters:
         - schema:
             type: string
@@ -33243,11 +33915,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/conversations/{conversationId}/held-replies/{heldReplyId}/release:
     post:
-      tags: *a118
+      tags: *a122
       summary: Release a held reply
       description: Sends a pending draft to the customer. Without `editedText` it goes out as the agent wrote it, as the agent's message; with `editedText` the teammate's edit goes out as their own message and the draft is kept. Who owns the conversation does not change. Each refusal carries the held reply as it is now in `details.heldReply`.
       operationId: releaseHeldReply
-      security: *a119
+      security: *a123
       parameters:
         - schema:
             type: string
@@ -33306,11 +33978,11 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
   /api/v1/conversations/{conversationId}/held-replies/{heldReplyId}/discard:
     post:
-      tags: *a118
+      tags: *a122
       summary: Discard a held reply
       description: Sets a pending draft aside. The customer hears nothing, and the conversation keeps waiting for a teammate until one replies or takes it over.
       operationId: discardHeldReply
-      security: *a119
+      security: *a123
       parameters:
         - schema:
             type: string
@@ -34083,7 +34755,7 @@ paths:
       summary: Read the saved Audience Pulse report
       description: Returns the one saved workspace report without invoking an AI provider. Requires a browser dashboard session; bearer/API authentication is intentionally not accepted.
       operationId: getAudiencePulse
-      security: *a71
+      security: *a73
       responses:
         "200":
           description: Saved report or no saved report
@@ -34109,7 +34781,7 @@ paths:
       summary: Analyze the last 30 days of visitor questions
       description: Explicitly refreshes one bounded saved workspace report. This route has a dedicated durable rate limit and accepts only a browser dashboard session, never bearer/API authentication.
       operationId: refreshAudiencePulse
-      security: *a71
+      security: *a73
       responses:
         "200":
           description: Completed, no-traffic, or retryable inference result
@@ -34154,7 +34826,7 @@ paths:
       summary: Read pending Audience Pulse preparation work
       description: Reports whether the durable facet queue still has work for this workspace. Requires a browser dashboard session; bearer/API authentication is intentionally not accepted.
       operationId: getAudiencePulseRefreshStatus
-      security: *a71
+      security: *a73
       responses:
         "200":
           description: Facet preparation status
@@ -34181,7 +34853,7 @@ paths:
       summary: Read a bounded authorized source window
       description: Reads one workspace-authorized source message and, when it occurs before the next visitor turn, its next assistant reply. Source identifiers are supplied only in the JSON request body. Requires a browser dashboard session and workspace.history.read; bearer/API authentication is intentionally not accepted.
       operationId: getAudiencePulseEvidenceAnchor
-      security: *a71
+      security: *a73
       requestBody:
         required: true
         content:
@@ -34226,7 +34898,7 @@ paths:
       summary: Check operator copilot availability
       description: Dashboard session only; bearer API tokens are rejected.
       operationId: getCopilotAvailability
-      security: *a71
+      security: *a73
       responses:
         "200":
           description: Availability
@@ -34248,7 +34920,7 @@ paths:
                     type: array
                     items:
                       type: string
-                      enum: &a120
+                      enum: &a124
                         - directive
                         - agent
                         - agent_setting
@@ -34275,7 +34947,7 @@ paths:
         - Copilot
       summary: List an operator's copilot conversations
       operationId: listCopilotConversations
-      security: *a71
+      security: *a73
       responses:
         "200":
           description: Conversations
@@ -34319,7 +34991,7 @@ paths:
         - Copilot
       summary: Read a copilot conversation
       operationId: getCopilotConversation
-      security: *a71
+      security: *a73
       parameters:
         - schema:
             type: string
@@ -34423,7 +35095,7 @@ paths:
                                     format: uuid
                                   targetType:
                                     type: string
-                                    enum: *a120
+                                    enum: *a124
                                   targetLabel:
                                     type: string
                                   summary:
@@ -34489,7 +35161,7 @@ paths:
         - Copilot
       summary: Delete a copilot conversation
       operationId: deleteCopilotConversation
-      security: *a71
+      security: *a73
       parameters:
         - schema:
             type: string
@@ -34509,7 +35181,7 @@ paths:
       summary: Start a streaming operator copilot turn
       description: Returns the fixed copilot SSE event stream. A turn may persist Ray-owned evaluation records and pending proposals; applying a proposal remains a separately authorized operation. Dashboard session only; bearer API tokens are rejected.
       operationId: createCopilotTurn
-      security: *a71
+      security: *a73
       requestBody:
         required: true
         content:
@@ -34616,7 +35288,7 @@ paths:
       summary: Read a copilot proposal preview
       description: Dashboard session only. The proposal resolves its owning workspace before workspace authorization, so an external handoff does not depend on stored dashboard workspace state.
       operationId: getCopilotProposal
-      security: *a71
+      security: *a73
       parameters:
         - schema:
             type: string
@@ -34640,14 +35312,14 @@ paths:
                     format: uuid
                   targetType:
                     type: string
-                    enum: *a120
+                    enum: *a124
                   targetRef: {}
                   target:
                     type: object
                     properties:
                       type:
                         type: string
-                        enum: *a120
+                        enum: *a124
                       ref: {}
                     required:
                       - type
@@ -34844,7 +35516,7 @@ paths:
         - Copilot
       summary: Apply a pending copilot proposal
       operationId: applyCopilotProposal
-      security: *a71
+      security: *a73
       parameters:
         - schema:
             type: string
@@ -34883,7 +35555,7 @@ paths:
         - Copilot
       summary: Approve a reviewed MCP operation
       operationId: approveCopilotProposal
-      security: *a71
+      security: *a73
       parameters:
         - schema:
             type: string
@@ -34929,7 +35601,7 @@ paths:
         - Copilot
       summary: Dismiss a pending copilot proposal
       operationId: dismissCopilotProposal
-      security: *a71
+      security: *a73
       parameters:
         - schema:
             type: string
@@ -34961,7 +35633,7 @@ paths:
         - Evals
       summary: Run frozen Eval cases against immutable agent candidates
       operationId: createRevisionEvalRun
-      security: &a121
+      security: &a125
         - bearerAuth: []
       requestBody:
         required: true
@@ -34994,7 +35666,7 @@ paths:
         - Evals
       summary: Get frozen revision Eval evidence
       operationId: getRevisionEvalRun
-      security: *a121
+      security: *a125
       parameters:
         - schema:
             type: string
@@ -35027,7 +35699,7 @@ paths:
         - Evals
       summary: Retry one failed frozen revision Eval case
       operationId: retryRevisionEvalCase
-      security: *a121
+      security: *a125
       parameters:
         - schema:
             type: string
@@ -35072,7 +35744,7 @@ paths:
         - Evals
       summary: Capture an Eval snapshot
       operationId: createEvalSnapshot
-      security: &a122
+      security: &a126
         - sessionCookie: []
           workspaceSelection: []
         - bearerAuth: []
@@ -35128,7 +35800,7 @@ paths:
         - Evals
       summary: Get an Eval snapshot
       operationId: getEvalSnapshot
-      security: *a122
+      security: *a126
       parameters:
         - schema:
             type: string
@@ -35173,7 +35845,7 @@ paths:
         - Evals
       summary: Create an Eval case
       operationId: createEvalCase
-      security: *a122
+      security: *a126
       requestBody:
         required: true
         content:
@@ -35295,7 +35967,7 @@ paths:
                             maxLength: 4000
                           matchMode:
                             type: string
-                            enum: *a54
+                            enum: *a56
                           caseSensitive:
                             type: boolean
                         required:
@@ -35314,7 +35986,7 @@ paths:
                             maxLength: 4000
                           matchMode:
                             type: string
-                            enum: *a54
+                            enum: *a56
                           caseSensitive:
                             type: boolean
                         required:
@@ -35378,7 +36050,7 @@ paths:
         - Evals
       summary: List Eval cases and latest results
       operationId: listEvalCases
-      security: *a122
+      security: *a126
       responses:
         "200":
           description: Eval cases with each case's latest result
@@ -35544,7 +36216,7 @@ paths:
         - Evals
       summary: Get an Eval case and its run history
       operationId: getEvalCase
-      security: *a122
+      security: *a126
       parameters:
         - schema:
             type: string
@@ -35588,7 +36260,7 @@ paths:
         - Evals
       summary: Rename an Eval case
       operationId: renameEvalCase
-      security: *a122
+      security: *a126
       parameters:
         - schema:
             type: string
@@ -35646,7 +36318,7 @@ paths:
         - Evals
       summary: Replace an Eval case's assertions
       operationId: replaceEvalCaseAssertions
-      security: *a122
+      security: *a126
       parameters:
         - schema:
             type: string
@@ -35768,7 +36440,7 @@ paths:
                             maxLength: 4000
                           matchMode:
                             type: string
-                            enum: *a54
+                            enum: *a56
                           caseSensitive:
                             type: boolean
                         required:
@@ -35787,7 +36459,7 @@ paths:
                             maxLength: 4000
                           matchMode:
                             type: string
-                            enum: *a54
+                            enum: *a56
                           caseSensitive:
                             type: boolean
                         required:
@@ -35914,7 +36586,7 @@ paths:
       summary: Run an Eval case
       description: Replays are safe by default. A live-effect case requires a fresh allowLiveEffects confirmation from an interactive workspace session; API credentials and Ray-triggered replays remain safe.
       operationId: createEvalCaseRun
-      security: *a122
+      security: *a126
       parameters:
         - schema:
             type: string
@@ -35943,7 +36615,7 @@ paths:
                       properties:
                         provider:
                           type: string
-                          enum: &a123
+                          enum: &a127
                             - openai
                             - openai-compatible
                             - gemini
@@ -36001,7 +36673,7 @@ paths:
                           properties:
                             provider:
                               type: string
-                              enum: &a124
+                              enum: &a128
                                 - openai
                                 - openai-compatible
                                 - gemini
@@ -36036,7 +36708,7 @@ paths:
                             type: integer
                         status:
                           type: string
-                          enum: &a125
+                          enum: &a129
                             - active
                             - suspended
                             - completed
@@ -36254,7 +36926,7 @@ paths:
                       properties:
                         provider:
                           type: string
-                          enum: *a123
+                          enum: *a127
                         model:
                           type: string
                       required:
@@ -36308,7 +36980,7 @@ paths:
                           properties:
                             provider:
                               type: string
-                              enum: *a124
+                              enum: *a128
                             model:
                               type: string
                           required:
@@ -36339,7 +37011,7 @@ paths:
                             type: integer
                         status:
                           type: string
-                          enum: *a125
+                          enum: *a129
                         metadata:
                           type: object
                           additionalProperties: {}
@@ -36390,7 +37062,7 @@ paths:
                       properties:
                         provider:
                           type: string
-                          enum: *a124
+                          enum: *a128
                         model:
                           type: string
                       required:
@@ -36502,7 +37174,7 @@ paths:
         - Agents
       summary: List private immutable revision tests
       operationId: listAgentTestExecutions
-      security: &a126
+      security: &a130
         - bearerAuth: []
       parameters:
         - schema:
@@ -36538,7 +37210,7 @@ paths:
       summary: Start an operator-private immutable revision test
       description: "A `single` execution may set `seedConversationId` to continue an existing conversation of the same workspace and agent: the side starts with that thread as its history and resumes its active routine, pending clarification, and directive state, skipping the greeting. The source conversation is unchanged."
       operationId: startAgentTestExecution
-      security: *a126
+      security: *a130
       parameters:
         - schema:
             type: string
@@ -36565,7 +37237,7 @@ paths:
         - Agents
       summary: Get private immutable revision test evidence
       operationId: getAgentTestExecution
-      security: *a126
+      security: *a130
       parameters:
         - schema:
             type: string
@@ -36592,7 +37264,7 @@ paths:
         - Agents
       summary: Run a fenced private test turn
       operationId: sendAgentTestExecutionMessage
-      security: *a126
+      security: *a130
       parameters:
         - schema:
             type: string
@@ -36625,7 +37297,7 @@ paths:
         - Agents
       summary: Continue one settled comparison version as a private test
       operationId: retainAgentTestExecutionSide
-      security: *a126
+      security: *a130
       parameters:
         - schema:
             type: string
@@ -36658,7 +37330,7 @@ paths:
         - Agents
       summary: Capture a private test response as immutable Eval evidence
       operationId: captureAgentTestExecutionEvalSnapshot
-      security: *a126
+      security: *a130
       parameters:
         - schema:
             type: string
@@ -36697,7 +37369,7 @@ paths:
         - Agents
       summary: Retry one failed private test side
       operationId: retryAgentTestExecutionSide
-      security: *a126
+      security: *a130
       parameters:
         - schema:
             type: string
@@ -37279,6 +37951,112 @@ paths:
         Anonymous session continuity is maintained by an HttpOnly cookie set by the server.
 
         The cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential.
+  /api/v1/public/chat/{token}/voice/sessions:
+    post:
+      tags:
+        - Assistant
+      summary: Start a voice session for the current public chat session
+      description: "Opens a session on the vendor agent the agent's `voice.runtime` names, with the workspace's own API key for that vendor, and returns the vendor's signed URL with a fresh Radioso session key. The vendor key never leaves the backend. Only a website embed public session may start one: send it as `x-radioso-public-session`, from an origin the website embed admits, as for a chat message. A browser on another origin calls `/api/public/chat/{token}/voice/sessions` on the Radioso app host, which answers the CORS preflight and relays here. The signed URL is valid for 15 minutes and opens sessions for whoever holds it in that window, so it is a bearer credential: the response is `Cache-Control: no-store`. Starts spend their own budgets, per visitor session and per workspace, before the vendor is called."
+      operationId: createPublicVoiceSession
+      security:
+        - anonymousSessionCookie: []
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: token
+          in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublicVoiceSessionRequest"
+      responses:
+        "200":
+          description: Voice session started
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PublicVoiceSessionResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: "Public session not found or not a website embed session, or the agent takes no voice sessions: voice is off or no vendor agent is bound"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: The visitor session's or the workspace's voice session start budget is spent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateLimitExceededResponse"
+        "503":
+          description: "`voice_unavailable`: the session could not be started (the workspace's vendor key is missing or unreadable, or the vendor did not start it)"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/public/chat/{token}/voice/sessions/{sessionKey}/vendor-conversation:
+    post:
+      tags:
+        - Assistant
+      summary: Report the vendor's id for a voice session the page opened
+      description: Once the vendor's client has connected a session from `createPublicVoiceSession`, the page reports the vendor's id for the call, which names the call's recording at the vendor. Radioso takes it once, from the same website embed public session the session was started for, while the session's start is unexpired. Before storing it, Radioso asks the vendor, with the workspace's own key, which vendor agent the conversation was held on, and stores it only when that is the vendor agent the session was started on; it only ever uses the id to look the recording up with that key. A browser on another origin calls `/api/public/chat/{token}/voice/sessions/{sessionKey}/vendor-conversation` on the Radioso app host, which answers the CORS preflight and relays here.
+      operationId: reportPublicVoiceVendorConversation
+      security:
+        - anonymousSessionCookie: []
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: token
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: sessionKey
+          in: path
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublicVoiceVendorConversationRequest"
+      responses:
+        "204":
+          description: The vendor's id is stored with the session
+        "400":
+          description: "Request validation failed: the session key is not a UUID, or the id is not 1 to 128 letters, digits, underscores and hyphens"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Public session not found or not a website embed session; no session this public session started waits for an id (it already has one, its start expired, or Radioso never started it); or the vendor says the conversation was held on another vendor agent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "429":
+          description: The visitor session's request budget is spent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RateLimitExceededResponse"
+        "503":
+          description: "`voice_unavailable`: the id could not be checked with the vendor now (the vendor does not show the conversation yet, as can happen right after a call connects; the workspace's vendor key is missing or unreadable; or the vendor did not answer); report it again"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/public/chat/{token}/history/{conversationId}:
     get:
       tags:
@@ -37523,7 +38301,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "429":
           description: Reconnect or distributed workspace/account/principal admission limit exceeded
-          headers: &a127
+          headers: &a131
             Retry-After:
               description: Minimum reconnect delay in whole seconds. The browser also applies its local jittered exponential backoff.
               schema:
@@ -37535,7 +38313,7 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "503":
           description: Realtime admission, broker subscription, or runtime capacity is temporarily unavailable
-          headers: *a127
+          headers: *a131
           content:
             application/json:
               schema:

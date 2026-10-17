@@ -14,6 +14,7 @@ import type { MessageRecord } from "../../src/db/repositories/messageRepository.
 import {
   contextualDirectiveCandidates,
   createTurnPlanHandle,
+  standingInstructions,
   lazyPromise,
   planAwareDirectiveClassifications,
   planAwareResponseLanguage,
@@ -27,7 +28,8 @@ import {
   type TurnPlanInputs,
   type TurnPlanOutcome,
 } from "../../src/modules/chat/services/turnPlanCoordinator.js";
-import type { TurnPlan, TurnPlanService } from "../../src/modules/chat/services/turnPlanService.js";
+import { TurnPlanService as RealTurnPlanService, type TurnPlan, type TurnPlanService } from "../../src/modules/chat/services/turnPlanService.js";
+import type { AppLogger } from "../../src/shared/observability/logger.js";
 import { setTraceAttributes } from "../../src/shared/observability/tracing/operations.js";
 
 vi.mock("../../src/shared/observability/tracing/operations.js", async (importOriginal) => {
@@ -46,6 +48,10 @@ const plan = (overrides: Partial<TurnPlan> = {}): TurnPlan => ({
     { name: "d1", matched: true, confidence: 0.7 },
     { name: "d2", matched: false, confidence: 0.1 },
   ],
+  requestPresent: false,
+  openQuestion: false,
+  rewritePresent: false,
+  quickReply: { kind: "none", text: "" },
   ...overrides,
 });
 
@@ -593,5 +599,146 @@ describe("planAwareDirectiveClassifications", () => {
   it("returns null when not planned so the matcher runs its gateway", async () => {
     expect(await planAwareDirectiveClassifications(handleFor({ status: "failed", reason: "invalid_or_error" }))).toBeNull();
     expect(await planAwareDirectiveClassifications(handleFor(undefined))).toBeNull();
+  });
+});
+
+describe("quick-reply lane", () => {
+  const debugLogger = () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() });
+
+  it("sends the standing instructions with the lane when the prompt fits the budget", async () => {
+    const service = serviceReturning(plan());
+    const standingInstructions = {
+      customInstruction: "You are Acme's assistant.",
+      directives: [{ name: "sign-off", action: "Sign as the Acme team." }],
+    };
+
+    await new TurnPlanCoordinator(service).plan(inputs({ standingInstructions }));
+
+    expect(service.plan).toHaveBeenCalledWith(expect.objectContaining({
+      quickReplyLane: { standingInstructions },
+    }));
+  });
+
+  it("never opens the lane when composition turns it off, whatever the standing instructions", async () => {
+    const service = serviceReturning(plan());
+    const logger = debugLogger();
+
+    const outcome = await new TurnPlanCoordinator(service, logger as unknown as AppLogger, null, { quickReplyLaneEnabled: false }).plan(inputs({
+      standingInstructions: {
+        customInstruction: "You are Acme's assistant.",
+        directives: [{ name: "sign-off", action: "Sign as the Acme team." }],
+      },
+    }));
+
+    expect(outcome.status).toBe("planned");
+    expect((service.plan.mock.calls[0]?.[0] as { quickReplyLane?: unknown }).quickReplyLane).toBeUndefined();
+    expect(logger.debug).not.toHaveBeenCalledWith(expect.anything(), "chat.turn_planning.quick_reply_lane_off");
+  });
+
+  it("turns the lane off when the custom instruction alone overflows the budget", async () => {
+    const service = serviceReturning(plan());
+
+    const outcome = await new TurnPlanCoordinator(service, debugLogger() as unknown as AppLogger).plan(inputs({
+      standingInstructions: { customInstruction: "p".repeat(40_000), directives: [] },
+    }));
+
+    expect(outcome.status).toBe("planned");
+    expect((service.plan.mock.calls[0]?.[0] as { quickReplyLane?: unknown }).quickReplyLane).toBeUndefined();
+  });
+
+  it("turns the lane off instead of bypassing when only the standing directives exceed the budget", async () => {
+    const logger = debugLogger();
+    const service = serviceReturning(plan());
+
+    const outcome = await new TurnPlanCoordinator(service, logger as unknown as AppLogger).plan(inputs({
+      agentId: "agent-9",
+      standingInstructions: { directives: [{ name: "manual", action: "a".repeat(40_000) }] },
+    }));
+
+    expect(outcome.status).toBe("planned");
+    const sent = service.plan.mock.calls[0]?.[0] as { quickReplyLane?: unknown };
+    expect(sent.quickReplyLane).toBeUndefined();
+    expect(logger.debug).toHaveBeenCalledTimes(1);
+    expect(logger.debug).toHaveBeenCalledWith(
+      { agentId: "agent-9", standingDirectiveCount: 1, customInstructionPresent: false },
+      "chat.turn_planning.quick_reply_lane_off",
+    );
+  });
+
+  it("still bypasses when the prompt is over budget without the standing directives", async () => {
+    const service = serviceReturning(plan());
+
+    const outcome = await new TurnPlanCoordinator(service).plan(inputs({
+      query: "x".repeat(25_000),
+      standingInstructions: { directives: [{ name: "manual", action: "a".repeat(40_000) }] },
+    }));
+
+    expect(outcome).toEqual({ status: "bypassed", reason: "prompt_tokens_over_budget" });
+    expect(service.plan).not.toHaveBeenCalled();
+  });
+
+  it("omits the standing block from the request and drops the planner's reply when the lane is off", async () => {
+    const complete = vi.fn(async (_request: { systemPrompt?: string; prompt: string }) => ({
+      text: JSON.stringify({
+        route: "direct",
+        isIdentityQuestion: false,
+        intentTopic: null,
+        rewrite: null,
+        responseLanguage: "English",
+        directiveClassifications: [{ name: "d1", matched: false, confidence: 0.1 }],
+        requestPresent: false,
+        openQuestion: false,
+        quickReply: { kind: "greeting", text: "Hello!" },
+      }),
+    }));
+    const service = new RealTurnPlanService({ create: async () => ({ complete }) });
+
+    const outcome = await new TurnPlanCoordinator(service, debugLogger() as unknown as AppLogger).plan(inputs({
+      routinePreparation: { kind: "none" },
+      standingInstructions: { directives: [{ name: "manual", action: "a".repeat(40_000) }] },
+    }));
+
+    expect(complete.mock.calls[0]?.[0].systemPrompt).not.toContain("Standing Instructions For Any Reply You Write");
+    expect(outcome).toMatchObject({ status: "planned", plan: { route: "direct", quickReply: { kind: "none", text: "" } } });
+  });
+});
+
+describe("standingInstructions", () => {
+  const directive = (overrides: Partial<Directive> & Pick<Directive, "name">): Directive => ({
+    condition: { kind: "always" },
+    action: `${overrides.name} action`,
+    ...overrides,
+  });
+
+  it("keeps only global, repeatable, always-on directives addressed to the answer", () => {
+    const { directives: standing } = standingInstructions({ customInstruction: null, directives: [
+      directive({ name: "always-answer" }),
+      directive({ name: "always-explicit-answer", surfaces: ["answer"], lifecycle: { kind: "repeatable" } }),
+      directive({ name: "always-both", surfaces: ["answer", "suggested_questions"] }),
+      directive({ name: "contextual", condition: { kind: "contextual", description: "the visitor asks about refunds" } }),
+      directive({ name: "suggestions-only", surfaces: ["suggested_questions"] }),
+      directive({ name: "once", lifecycle: { kind: "once_per_conversation" } }),
+      directive({ name: "cooldown", lifecycle: { kind: "cooldown", turns: 3 } }),
+      directive({ name: "routine-scoped", tags: ["routine:book-demo"] }),
+      directive({ name: "step-scoped", tags: ["step:book-demo:ask_email"] }),
+      directive({ name: "dependent", dependsOn: ["contextual"] }),
+      directive({ name: "coverage-gated", coverageCriteria: { coverage: ["unanswered"] } as never }),
+      directive({ name: "labelled", tags: ["tone"] }),
+    ] });
+
+    expect(standing).toEqual([
+      { name: "always-answer", action: "always-answer action" },
+      { name: "always-explicit-answer", action: "always-explicit-answer action" },
+      { name: "always-both", action: "always-both action" },
+      { name: "labelled", action: "labelled action" },
+    ]);
+  });
+
+  it("carries a trimmed custom instruction and drops a blank one", () => {
+    expect(standingInstructions({ customInstruction: "  Be brief.  ", directives: [] })).toEqual({
+      customInstruction: "Be brief.",
+      directives: [],
+    });
+    expect(standingInstructions({ customInstruction: "   ", directives: [] })).toEqual({ directives: [] });
   });
 });

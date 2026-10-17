@@ -1,12 +1,14 @@
 import type { AgentContactWebhook } from "../../../agents/public.js";
 import {
   formatRoutineEndingNotification,
+  planNotificationEmail,
   type OperatorNotification,
   type OperatorNotificationContext,
   type NotificationDeliveryAdmissionPort,
   type OperatorNotificationSink,
   type OperatorNotificationSinkOutcome,
   type RoutineEndingOperatorNotification,
+  type NotificationRecipientPolicyPort,
 } from "../../../operatorNotifications/public.js";
 import {
   resolveConversationLink,
@@ -64,10 +66,11 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
   constructor(
     private readonly mailer: ContactNotificationMailer,
     private readonly recipients: RoutedContactRecipientResolver,
-    private readonly logger?: OperatorNotificationSinkLogger,
-    private readonly webhookClient?: ContactWebhookHttpClient,
-    private readonly conversationLinks?: ConversationLinkResolver,
-    private readonly admission?: NotificationDeliveryAdmissionPort,
+    private readonly logger: OperatorNotificationSinkLogger | undefined,
+    private readonly webhookClient: ContactWebhookHttpClient | undefined,
+    private readonly conversationLinks: ConversationLinkResolver | undefined,
+    private readonly admission: NotificationDeliveryAdmissionPort | undefined,
+    private readonly recipientPolicy: Pick<NotificationRecipientPolicyPort, "prepareDelivery">,
   ) {}
 
   async deliver(notification: OperatorNotification, context: OperatorNotificationContext): Promise<OperatorNotificationSinkOutcome> {
@@ -104,22 +107,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
       );
       return { disposition: "skipped", reason: "contact_destination_not_configured" };
     }
-    const admission = await this.admission?.admit({
-      requestId: context.requestId,
-      workspaceId: recipientContext.workspaceId,
-      accountId: recipientContext.accountId,
-      conversationId: recipientContext.conversationId,
-      recipientEmails: target.emails,
-      requestedEmailCount: target.emails.length,
-    });
-    if (admission && !admission.dispatchAllowed) {
-      return { disposition: "skipped", reason: admission.reason ?? "conversation_dispatch_cap" };
-    }
-    this.logger?.info(
-      { kind: notification.kind, via: target.via, emailCount: target.emails.length, webhook: target.webhook !== null },
-      "operator_notice_routed",
-    );
-
+    const baseIdempotencyKey = context.idempotencyKey ?? context.requestId;
     const conversationUrl = await resolveConversationLink(
       this.conversationLinks,
       { workspaceId: notification.workspaceId, conversationId: notification.conversationId },
@@ -128,7 +116,6 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
     const openLine = conversationUrl ? [`Open: ${conversationUrl}`] : [];
     const links = { dashboardUrl: conversationUrl, dashboardPath: deprecatedDashboardPath(conversationUrl) };
 
-    const baseIdempotencyKey = context.idempotencyKey ?? context.requestId;
     const delivery = notification.kind === "approval"
       ? {
           subject: "Conversation needs an approval",
@@ -152,16 +139,42 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
           },
         }
       : this.routineEndingDelivery(notification, context, openLine, links);
+    const plan = await planNotificationEmail({
+      recipientPolicy: this.recipientPolicy,
+      admission: this.admission,
+      webhookConfigured: target.webhook !== null,
+      onPreparationFailure: (error) => this.logger?.warn(
+        { kind: notification.kind, workspaceId: recipientContext.workspaceId, errorName: error instanceof Error ? error.name : "unknown" },
+        "operator_notice_recipient_state_unavailable",
+      ),
+      request: {
+        requestId: context.requestId,
+        workspaceId: recipientContext.workspaceId,
+        accountId: recipientContext.accountId,
+        conversationId: recipientContext.conversationId,
+        agentId: notification.agentId,
+        emails: target.emails,
+        idempotencyKey: baseIdempotencyKey,
+      },
+    });
+    if (!plan.dispatchAllowed) {
+      return { disposition: "skipped", reason: plan.reason };
+    }
+    this.logger?.info(
+      { kind: notification.kind, via: target.via, emailCount: target.emails.length, webhook: target.webhook !== null },
+      "operator_notice_routed",
+    );
 
     const [emailResults] = await Promise.all([
-      Promise.all((admission?.emailAllowed === false ? [] : target.emails).map((to) =>
+      Promise.all(plan.recipients.map((recipient) =>
         this.mailer.send({
-          to,
+          to: recipient.email,
           kind: "operator_notice",
           ...(delivery.replyTo ? { replyTo: delivery.replyTo } : {}),
           subject: delivery.subject,
           text: delivery.text,
-          idempotencyKey: `${baseIdempotencyKey}:email:${encodeURIComponent(to)}`,
+          ...(recipient.listUnsubscribeUrl ? { listUnsubscribeUrl: recipient.listUnsubscribeUrl } : {}),
+          idempotencyKey: `${baseIdempotencyKey}:email:${encodeURIComponent(recipient.email)}`,
         })),
       ),
       target.webhook ? this.postWebhook({
@@ -172,9 +185,7 @@ export class EmailWebhookOperatorNotificationSink implements OperatorNotificatio
       }) : Promise.resolve(),
     ]);
     if (!target.webhook) {
-      const skipReason = admission?.emailAllowed === false
-        ? admission.reason
-        : mailDeliverySkipReason(emailResults);
+      const skipReason = plan.emailSkipReason ?? mailDeliverySkipReason(emailResults);
       if (skipReason) {
         return { disposition: "skipped", reason: skipReason };
       }

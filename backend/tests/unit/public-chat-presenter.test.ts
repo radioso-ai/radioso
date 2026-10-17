@@ -109,6 +109,25 @@ describe("public chat presenter", () => {
     expect(operatorPayload.answerCoverage).toEqual(expect.objectContaining({ unresolvedRequest: "Private request" }));
   });
 
+  it("never forwards the hand-off report a turn gives its delivering channel to the visitor", async () => {
+    const operatorPayload = { ...payload(), handoff: { reason: "routine_handoff", collectedSlotCount: 2 } };
+    const json = stripPublicChatCitationArtifacts(operatorPayload, true) as Record<string, unknown>;
+    const events = await collect(stripPublicStreamCitationArtifacts((async function* () {
+      yield {
+        type: "done" as const,
+        conversationId: "c1",
+        assistantMessageId: "m1",
+        route: { type: "direct", reason: "social_only" },
+        activitySummary: {},
+        activityTrace: {},
+        ...operatorPayload,
+      } as unknown as ChatStreamEvent;
+    })(), true));
+
+    expect(json).not.toHaveProperty("handoff");
+    expect(events[0]).not.toHaveProperty("handoff");
+  });
+
   it("exposes labels and links but never internal identifiers when citation display is enabled", () => {
     const result = stripPublicChatCitationArtifacts(payload(), true) as Record<string, unknown>;
 
@@ -142,6 +161,29 @@ describe("public chat presenter", () => {
     for (const message of [...tail.messages, ...detail.messages]) {
       expect(message).not.toHaveProperty("operatorLabel");
       expect(message).toMatchObject({ operatorDisplayName: "Acme Support" });
+    }
+  });
+
+  it("hands the visitor the interruption marker on a reply they cut short, and on no other message", () => {
+    const reply = (id: string, content: string): ChatConversationTurn => ({
+      id,
+      role: "assistant",
+      source: "ai_agent",
+      content,
+      createdAt: "2026-09-30T10:00:00.000Z",
+    });
+    const cutReply = { ...reply("m1", "We open at nine on weekdays."), interruption: { heardCharacterCount: 12, spokenCharacterCount: 40 } };
+    const fullReply = reply("m2", "And at ten on Saturdays.");
+    const tail = stripPublicConversationTailCitationArtifacts({ messages: [cutReply, fullReply], cursor: null }, true);
+    const detail = stripPublicConversationCitationArtifacts(
+      { messages: [cutReply, fullReply] } as unknown as ChatConversationDetail,
+      "anonymous-session-1",
+      true,
+    );
+
+    for (const messages of [tail.messages, detail.messages]) {
+      expect(messages[0]).toMatchObject({ id: "m1", interruption: { heardCharacterCount: 12, spokenCharacterCount: 40 } });
+      expect(messages[1]).not.toHaveProperty("interruption");
     }
   });
 

@@ -96,6 +96,15 @@ export const formatReport = (
     }
     lines.push("");
   }
+  if (diff.judgeRegressions.length > 0) {
+    lines.push(`ZERO-TOLERANCE JUDGE REGRESSIONS (${diff.judgeRegressions.length}) — these fail the run:`);
+    for (const regression of diff.judgeRegressions) {
+      lines.push(
+        `  ✗ ${regression.caseId} "${regression.name}": ${(regression.from * 100).toFixed(0)}% → ${(regression.to * 100).toFixed(0)}% judge pass rate`,
+      );
+    }
+    lines.push("");
+  }
   if (diff.underSampled.length > 0) {
     lines.push(`UNDER-SAMPLED REGRESSIONS (${diff.underSampled.length}) — these fail the run:`);
     for (const regression of diff.underSampled) {

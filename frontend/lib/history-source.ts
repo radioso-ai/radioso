@@ -1,11 +1,11 @@
 import type { ChatConversationSummary, ConversationChannelContext } from '@/lib/api'
 
-export interface ConversationSourceBadge {
+interface ConversationSourceBadge {
   className: string
   label: string
 }
 
-export const SOURCE_BADGES: Record<string, ConversationSourceBadge> = {
+const SOURCE_BADGES: Record<string, ConversationSourceBadge> = {
   slack: {
     className: 'rounded-full bg-violet-500/15 px-2.5 py-1 text-violet-700 dark:text-violet-300',
     label: 'Slack',
@@ -22,6 +22,10 @@ export const SOURCE_BADGES: Record<string, ConversationSourceBadge> = {
     className: 'rounded-full bg-emerald-500/15 px-2.5 py-1 text-emerald-700 dark:text-emerald-300',
     label: 'MCP',
   },
+  voice: {
+    className: 'rounded-full bg-rose-500/15 px-2.5 py-1 text-rose-700 dark:text-rose-300',
+    label: 'Voice',
+  },
 }
 
 type ConversationSourceInput = Pick<ChatConversationSummary, 'sourceChannel' | 'sourceOrigin'> & {
@@ -32,7 +36,7 @@ type ConversationLocationInput = ConversationSourceInput & {
   entryPageUrl?: string | null
 }
 
-export interface ConversationLocation {
+interface ConversationLocation {
   /** Text for the Source cell. */
   text: string
   /** Absolute URL when the location is a real page the operator can open, else null. */
@@ -140,6 +144,8 @@ export const formatConversationLocation = (
       return { text: 'No page recorded', href: null, title: null }
     case 'mcp':
       return { text: 'No page recorded', href: null, title: null }
+    case 'voice':
+      return { text: 'Voice session', href: null, title: null }
     case 'authenticated_chat':
     case null:
       return { text: 'Dashboard chat', href: null, title: null }
@@ -169,6 +175,10 @@ export function formatConversationSource(
 
   if (sourceChannel === 'mcp') {
     return 'MCP'
+  }
+
+  if (sourceChannel === 'voice') {
+    return 'Voice'
   }
 
   if (sourceChannel === 'authenticated_chat') {

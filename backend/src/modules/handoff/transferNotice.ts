@@ -202,8 +202,9 @@ export class ConversationTransferNoticeActionHandler implements ActionHandler {
 
   /**
    * A notice that exhausted its retries never reaches its recipient, so it is alertable; a retry
-   * is expected and is not. The dispatcher's error text can carry a provider response or an
-   * address, so only ids reach the reporter; the outbox row keeps the text for debugging.
+   * is expected and is not. The underlying error can carry a provider response or an address, so
+   * only ids reach the reporter; the outbox row's `last_error` holds only the error's class, never
+   * that text, matching every other kind on the generic background-job runtime.
    */
   async recordFailureOutcome(input: {
     payload: Record<string, unknown>;

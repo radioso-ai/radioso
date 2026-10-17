@@ -24,6 +24,10 @@ composition calls them and assembles the result.
   with the default app.
 - `workspaceLlmCapabilityResolver.ts`: workspace-scoped LLM capability wiring. Precedence is agent override → workspace preference → env default, then a registered `ManagedModelPolicy` (`shared/domain/managedModelPolicy.ts`, `registerManagedModelPolicy`) may replace the candidate for a workspace that holds no key of its own for the candidate provider. A workspace key for that provider keeps the candidate on every managed plan, including `planet_managed`; removing the key restores the managed selection. The same policy explicitly authorizes or denies deployment-credential fallback for every text and embedding capability, so a BYOK plan cannot inherit the host's key. `resolvedBy` on the result names the winning model-selection step.
 - `backend/src/modules/*/composition.ts`: module-owned construction helpers.
+- `backgroundJobs.ts`: the durable background job queue, the runtime the worker
+  drains, and the dead-letter retention sweep. Modules enqueue through the
+  `BackgroundJobQueue` port and return handlers that `dependencies.ts` passes to
+  `createRuntime`; see `backend/src/shared/background-jobs/README.md`.
 - `conversationLockOrder.ts`: the conversation lock protocol every unit of work
   touching a conversation's ownership, held replies or mailbox policy follows,
   and the bounded deadlock retry for the units that can still meet one. Read it

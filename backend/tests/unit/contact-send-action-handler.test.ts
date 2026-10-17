@@ -2,12 +2,36 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   ConfiguredContactDeliveryResolver,
-  ContactSendActionHandler,
+  ContactSendActionHandler as ContactSendActionHandlerBase,
   FetchContactWebhookHttpClient,
   WorkspaceOwnerContactRecipientResolver,
   type ContactNotificationMailer,
   type ContactWebhookHttpClient,
 } from "../../src/modules/chat/services/actions/contactSendActionHandler.js";
+import { NotificationRecipientPolicyService } from "../../src/modules/operatorNotifications/notificationRecipientPolicy.js";
+
+const allowedRecipientPolicy = {
+  prepareDelivery: async (input: { emails: readonly string[] }) => ({
+    eligibleEmails: [...input.emails],
+    eligibleRecipients: input.emails.map((email) => ({ email, listUnsubscribeUrl: "" })),
+    skipped: { unconfirmed: 0, suppressed: 0, revoked: 0 },
+  }),
+};
+
+class ContactSendActionHandler extends ContactSendActionHandlerBase {
+  constructor(...args: unknown[]) {
+    const [mailer, recipients, logger, webhookClient, errorReporter, admission, recipientPolicy] = args as Partial<ConstructorParameters<typeof ContactSendActionHandlerBase>>;
+    super(
+      mailer!,
+      recipients!,
+      logger,
+      webhookClient,
+      errorReporter,
+      admission,
+      recipientPolicy ?? allowedRecipientPolicy,
+    );
+  }
+}
 
 const context = {
   requestId: "request_1",
@@ -77,6 +101,87 @@ describe("ContactSendActionHandler", () => {
       "routine-action:conv_1:contact.send:hash:email:owner%40business.example",
       "routine-action:conv_1:contact.send:hash:email:sales%40business.example",
     ]);
+  });
+
+  it("skips an unconfirmed recipient before admission or mail delivery", async () => {
+    const { mailer, sent } = recordingMailer();
+    const admit = vi.fn();
+    const handler = new ContactSendActionHandler(
+      mailer,
+      { resolve: async () => ({ emails: ["waiting@example.com"], webhook: null }) },
+      undefined,
+      undefined,
+      undefined,
+      { admit },
+      {
+        prepareDelivery: async () => ({
+          eligibleEmails: [],
+          eligibleRecipients: [],
+          skipped: { unconfirmed: 1, suppressed: 0, revoked: 0 },
+        }),
+      },
+    );
+
+    await expect(handler.handle({ payload: { message: "hi" }, context }))
+      .rejects.toMatchObject({ name: "ActionDispatchSkippedError", reason: "notification_recipient_unconfirmed" });
+    expect(admit).toHaveBeenCalledWith(expect.objectContaining({ requestedEmailCount: 0 }));
+    expect(sent).toHaveLength(0);
+  });
+
+  it("keeps a confirmed email and webhook healthy when confirmation delivery fails", async () => {
+    const { mailer, sent } = recordingMailer();
+    const { httpClient, requests } = recordingWebhookClient();
+    const states = {
+      read: async ({ emails }: { emails: readonly string[] }) => emails.map((email) => ({
+        email,
+        state: email === "ready@example.com" ? "confirmed" as const : "waiting_for_confirmation" as const,
+        grandfatheredUntil: null,
+        confirmationSentAt: null,
+      })),
+      ensure: async (_workspaceId: string, email: string) => ({ recipientId: `recipient:${email}`, generation: 0 }),
+      reserveConfirmationSend: async () => ({ recipientId: "recipient:waiting@example.com", generation: 1, reservedAt: new Date(), previousSentAt: null }),
+      releaseConfirmationSend: vi.fn(async () => undefined),
+      confirm: async () => false,
+      revoke: async () => false,
+      resume: async () => false,
+    };
+    const policy = new NotificationRecipientPolicyService({
+      enabled: true,
+      states,
+      sendConfirmation: async () => { throw new Error("provider unavailable"); },
+    });
+    const handler = new ContactSendActionHandler(
+      mailer,
+      { resolve: async () => ({ emails: ["ready@example.com", "waiting@example.com"], webhook: { url: "https://hooks.example.com/contact" } }) },
+      undefined,
+      httpClient,
+      undefined,
+      undefined,
+      policy,
+    );
+
+    await expect(handler.handle({ payload: { message: "Please call me" }, context })).resolves.toBeUndefined();
+    expect(sent.map((message) => message.to)).toEqual(["ready@example.com"]);
+    expect(requests).toHaveLength(1);
+    expect(states.releaseConfirmationSend).toHaveBeenCalledTimes(1);
+  });
+
+  it("posts the webhook but fails closed for email when recipient preparation rejects", async () => {
+    const { mailer, sent } = recordingMailer();
+    const { httpClient, requests } = recordingWebhookClient();
+    const handler = new ContactSendActionHandler(
+      mailer,
+      { resolve: async () => ({ emails: ["waiting@example.com"], webhook: { url: "https://hooks.example.com/contact" } }) },
+      undefined,
+      httpClient,
+      undefined,
+      undefined,
+      { prepareDelivery: async () => { throw new Error("identity lookup unavailable"); } },
+    );
+
+    await expect(handler.handle({ payload: { message: "Please call me" }, context })).resolves.toBeUndefined();
+    expect(sent).toEqual([]);
+    expect(requests).toHaveLength(1);
   });
 
   it("posts configured webhooks with conversation metadata and an idempotency key", async () => {
@@ -201,7 +306,7 @@ describe("ContactSendActionHandler", () => {
     expect(requests).toHaveLength(1);
   });
 
-  it("skips email and webhook when the conversation dispatch cap is reached", async () => {
+  it("posts no webhook once the conversation has used its dispatch allowance", async () => {
     const { mailer, sent } = recordingMailer();
     const { httpClient, requests } = recordingWebhookClient();
     const handler = new ContactSendActionHandler(
@@ -274,11 +379,10 @@ describe("ContactSendActionHandler.recordFailureOutcome", () => {
       { report },
     );
 
-    // A provider or webhook error is caught-and-stringified upstream (see
-    // ActionDispatcher) before it reaches recordFailureOutcome, so the handler
-    // cannot tell a bounded internal message from one that echoes a response
-    // body, a signed webhook URL, or a reply-to address — it must never forward
-    // that text verbatim to an external sink.
+    // A provider or webhook error is caught-and-stringified upstream (the background-job
+    // runtime's errorMessage) before it reaches recordFailureOutcome, so the handler cannot
+    // tell a bounded internal message from one that echoes a response body, a signed webhook
+    // URL, or a reply-to address — it must never forward that text verbatim to an external sink.
     const rawProviderError = "Webhook POST failed: https://hooks.example.com/contact?token=SUPER_SECRET_TOKEN (reply-to visitor@example.com)";
 
     await handler.recordFailureOutcome({

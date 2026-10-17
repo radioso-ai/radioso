@@ -8,7 +8,7 @@ import {
   findJsonStringEnd,
   findTopLevelStringFieldStart,
 } from "./structuredAnswerFieldReader.js";
-import type { GroundingEnvelopeOutcome } from "./groundedAnswerEnvelope.js";
+import type { GroundedAnswerEnvelope, GroundingEnvelopeOutcome } from "./groundedAnswerEnvelope.js";
 
 const OUTCOME_VALUES: readonly GroundingEnvelopeOutcome[] = ["answer", "no_support", "out_of_scope"];
 
@@ -24,6 +24,19 @@ export interface GroundedAnswerHead {
   requestFocus: string;
   outcome: GroundingEnvelopeOutcome;
 }
+
+/**
+ * The head a completed envelope carries, judged on the head fields alone: a v2 envelope
+ * whose `coverage`, `requestFocus`, and `outcome` all parsed committed that verdict
+ * before `answer`, whatever became of `claims` or `suggestions` after it. `null` for a
+ * legacy or non-v2 parse, or for a head field that is missing or invalid.
+ */
+export const headOfCompletedEnvelope = (
+  envelope: Pick<GroundedAnswerEnvelope, "protocolVersion" | "coverage" | "requestFocus" | "outcome">,
+): GroundedAnswerHead | null =>
+  envelope.protocolVersion === 2 && envelope.coverage && envelope.requestFocus && envelope.outcome
+    ? { coverage: envelope.coverage, requestFocus: envelope.requestFocus, outcome: envelope.outcome }
+    : null;
 
 type GroundedAnswerHeadStatus =
   | { kind: "pending" }

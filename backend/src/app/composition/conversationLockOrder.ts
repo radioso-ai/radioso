@@ -58,6 +58,13 @@ import type { DB, Db } from "../../shared/infra/kysely/types.js";
  *   the thread's link, under which the review's claim is checked before the ownership row is
  *   created or changed.
  *
+ * - Erasure (`conversationErasure.ts`): for a visitor's erasure, the visitor's row `FOR UPDATE`
+ *   first, so no conversation attaches to it meanwhile; then each conversation and its ownership
+ *   row in id order, the erasers' rows, and the delete, whose cascade takes everything keyed to the
+ *   conversations. Erasing one conversation updates or deletes its visitor's row after the delete.
+ *   A unit that writes a visitor's row while holding one of its conversations meets a visitor's
+ *   erasure in the other order; Postgres aborts one, and an erasure it aborts runs again.
+ *
  * The domain row has no step of its own before the mailbox: every write to it — a readiness refresh,
  * a removal, a claim or an adoption — is a statement on `email_domains` alone, so a unit holding it
  * never waits on a later step.

@@ -10,6 +10,7 @@ const isolatedIntegrationSuites = new Set([
   "approvals/pending-decision-repository.test.ts",
   "approvals/pending-decision-transaction.test.ts",
   "approvals/routine-state-suspend.test.ts",
+  "background-job-repository.integration.test.ts",
   "context-variable-enablement-references-migration.integration.test.ts",
   "customerEmail/customer-email-connection-repository.test.ts",
   "customerEmail/email-skill-activity-repository.test.ts",

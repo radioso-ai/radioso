@@ -33,7 +33,7 @@ describe("ElevenLabs recording source", () => {
     const [url, init] = fetch.mock.calls[0];
     expect(url).toBe(`https://api.eu.residency.elevenlabs.io/v1/convai/conversations/${vendorConversationId}/audio`);
     expect(init.method).toBe("GET");
-    expect(init.headers).toEqual({ "xi-api-key": credential.apiKey });
+    expect(init.headers).toEqual({ "xi-api-key": credential.apiKey, "accept-encoding": "identity" });
     expect(init.redirect).toBe("error");
     expect(init.signal).toBeInstanceOf(AbortSignal);
   });
@@ -64,7 +64,7 @@ describe("ElevenLabs recording source", () => {
 
     const recording = await source.fetchRecording({ vendorConversationId, region: "us", credential, range: "bytes=3-5" });
 
-    expect(fetch.mock.calls[0][1].headers).toEqual({ "xi-api-key": credential.apiKey, range: "bytes=3-5" });
+    expect(fetch.mock.calls[0][1].headers).toEqual({ "xi-api-key": credential.apiKey, range: "bytes=3-5", "accept-encoding": "identity" });
     expect(recording).toMatchObject({ status: 206, contentRange: "bytes 3-5/8", contentLength: 3 });
   });
 
@@ -82,7 +82,7 @@ describe("ElevenLabs recording source", () => {
 
     await source.fetchRecording({ vendorConversationId, region: "us", credential, range: "bytes=0-1,5-6" });
 
-    expect(fetch.mock.calls[0][1].headers).toEqual({ "xi-api-key": credential.apiKey });
+    expect(fetch.mock.calls[0][1].headers).toEqual({ "xi-api-key": credential.apiKey, "accept-encoding": "identity" });
   });
 
   it("reads an unknown conversation, or one without audio yet, as not found", async () => {
@@ -180,5 +180,42 @@ describe("ElevenLabs recording source", () => {
     const error = await rejectionOf(source.deleteRecording({ vendorConversationId, region: "us", credential }));
 
     expect(error).toMatchObject({ reason: "rejected", vendorStatus: 500 });
+  });
+
+  describe("checking a reported conversation", () => {
+    const conversationDocument = (agentId: string) =>
+      new Response(JSON.stringify({ agent_id: agentId, conversation_id: vendorConversationId, status: "in-progress", transcript: [] }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+
+    it("reads the conversation on the account's region host with the workspace key, following no redirect", async () => {
+      const { fetch, source } = sourceWith(async () => conversationDocument("agent_42"));
+
+      await expect(source.describeConversation({ vendorConversationId, region: "eu", credential })).resolves.toEqual({ vendorAgentId: "agent_42" });
+
+      const [url, init] = fetch.mock.calls[0];
+      expect(url).toBe(`https://api.eu.residency.elevenlabs.io/v1/convai/conversations/${vendorConversationId}`);
+      expect(init).toMatchObject({ method: "GET", headers: { "xi-api-key": credential.apiKey, "accept-encoding": "identity" }, redirect: "error" });
+    });
+
+    it("reads an unknown conversation as not found, and any other refusal as rejected", async () => {
+      const missing = sourceWith(async () => new Response("{}", { status: 404 }));
+      expect((await rejectionOf(missing.source.describeConversation({ vendorConversationId, region: "us", credential }))).reason).toBe("not_found");
+
+      const refused = sourceWith(async () => new Response("{}", { status: 401 }));
+      expect(await rejectionOf(refused.source.describeConversation({ vendorConversationId, region: "us", credential })))
+        .toMatchObject({ reason: "rejected", vendorStatus: 401 });
+    });
+
+    it("refuses an answer without the agent, and one far larger than a conversation document", async () => {
+      const unnamed = sourceWith(async () => new Response(JSON.stringify({ status: "done" }), { status: 200 }));
+      expect((await rejectionOf(unnamed.source.describeConversation({ vendorConversationId, region: "us", credential }))).reason)
+        .toBe("malformed_response");
+
+      const huge = sourceWith(async () => new Response(JSON.stringify({ agent_id: "agent_42", transcript: "x".repeat(70 * 1024) }), { status: 200 }));
+      expect((await rejectionOf(huge.source.describeConversation({ vendorConversationId, region: "us", credential }))).reason)
+        .toBe("malformed_response");
+    });
   });
 });

@@ -136,7 +136,7 @@ export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSes
         session: { workspaceId, agentId, vendor, sessionKey },
         visitor: input.visitor,
         expiresAt: new Date(now + VOICE_BEHAVIOR.sessionStartTtlMs),
-        region: runtime.region,
+        vendorAgent: { agentId: runtime.agentId, region: runtime.region },
       });
     } catch (error) {
       return failed("registration_failed", { errorClass: errorClassOf(error) });

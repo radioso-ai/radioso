@@ -3,9 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import {
   VoiceRecordingRequestError,
   type VoiceRecordingRef,
+  type VoiceReportableSession,
   type VoiceRecordingSource,
   type VoiceRecordingStore,
   type VoiceRecordingStream,
+  type VoiceRecordingToErase,
   type VoiceVendorCredentialPresence,
   type VoiceVendorCredentialReading,
 } from "../../src/modules/voiceChannel/domain.js";
@@ -19,6 +21,8 @@ const apiKey = "xi-secret-0123456789";
 const vendorConversationId = "conv_01jx8k2m3n4p5q6r7s8t9v0w1x";
 const recordingRef: VoiceRecordingRef = { conversationId, vendor: "elevenlabs", region: "eu", vendorConversationId };
 
+const erasable = (recording: VoiceRecordingRef): VoiceRecordingToErase => ({ ...recording, workspaceId });
+
 const audioStream = (): VoiceRecordingStream => ({
   status: 200,
   body: new ReadableStream({ start: (controller) => controller.close() }),
@@ -28,8 +32,10 @@ const audioStream = (): VoiceRecordingStream => ({
 
 const harness = (overrides: {
   recording?: VoiceRecordingRef | null | Error;
-  recordings?: VoiceRecordingRef[] | Error;
+  recordings?: VoiceRecordingToErase[] | Error;
   recorded?: boolean;
+  reportable?: VoiceReportableSession | null;
+  describeConversation?: VoiceRecordingSource["describeConversation"];
   credential?: VoiceVendorCredentialReading | Error;
   stored?: VoiceVendorCredentialPresence | Error;
   fetchRecording?: VoiceRecordingSource["fetchRecording"];
@@ -39,6 +45,8 @@ const harness = (overrides: {
   const logger = { warn: vi.fn(), info: vi.fn() };
   const metrics = { incrementCounter: vi.fn() };
   const store = {
+    findReportableSession: vi.fn<VoiceRecordingStore["findReportableSession"]>(async () =>
+      overrides.reportable === undefined ? { vendor: "elevenlabs", vendorAgent: { agentId: "agent_42", region: "eu" } } : overrides.reportable),
     recordVendorConversation: vi.fn<VoiceRecordingStore["recordVendorConversation"]>(async () => overrides.recorded ?? true),
     findRecording: vi.fn<VoiceRecordingStore["findRecording"]>(async () => {
       const recording = overrides.recording === undefined ? recordingRef : overrides.recording;
@@ -46,7 +54,7 @@ const harness = (overrides: {
       return recording;
     }),
     listRecordings: vi.fn<VoiceRecordingStore["listRecordings"]>(async () => {
-      const recordings = overrides.recordings ?? [recordingRef];
+      const recordings = overrides.recordings ?? [erasable(recordingRef)];
       if (recordings instanceof Error) throw recordings;
       return recordings;
     }),
@@ -64,6 +72,7 @@ const harness = (overrides: {
     }),
   };
   const source = {
+    describeConversation: vi.fn<VoiceRecordingSource["describeConversation"]>(overrides.describeConversation ?? (async () => ({ vendorAgentId: "agent_42" }))),
     fetchRecording: vi.fn<VoiceRecordingSource["fetchRecording"]>(overrides.fetchRecording ?? (async () => audioStream())),
     deleteRecording: vi.fn<VoiceRecordingSource["deleteRecording"]>(overrides.deleteRecording ?? (async () => undefined)),
   };
@@ -92,19 +101,64 @@ const counted = (metrics: { incrementCounter: ReturnType<typeof vi.fn> }, name: 
 describe("voice vendor conversation report", () => {
   const report = { workspaceId, agentId, sessionKey: "33333333-3333-4333-8333-333333333333", publicSessionId: "pub-1", vendorConversationId };
 
-  it("stores the vendor's conversation id for the session the public session started", async () => {
-    const { service, store } = harness();
+  const { vendorConversationId: _reported, ...sessionOfReport } = report;
+  void _reported;
+
+  it("stores the vendor's conversation id once the vendor confirms it is a call on the session's vendor agent", async () => {
+    const { service, store, source, metrics } = harness();
 
     await expect(service.report(report)).resolves.toBe("recorded");
+
+    expect(store.findReportableSession).toHaveBeenCalledWith(sessionOfReport);
+    expect(source.describeConversation).toHaveBeenCalledWith({ vendorConversationId, region: "eu", credential: { apiKey } });
     expect(store.recordVendorConversation).toHaveBeenCalledWith(report);
+    expect(counted(metrics, "voice_vendor_conversation_report_total")).toEqual([{ vendor: "elevenlabs", outcome: "recorded" }]);
   });
 
-  it("refuses a report no started session waits for, and logs ids only", async () => {
-    const { service, logger } = harness({ recorded: false });
+  it("refuses a report no started session waits for, without asking the vendor, and logs ids only", async () => {
+    const { service, source, store, logger } = harness({ reportable: null });
 
     await expect(service.report(report)).resolves.toBe("rejected");
-    expect(logger.warn).toHaveBeenCalledWith({ workspaceId, agentId }, "Voice vendor conversation report was refused");
+    expect(source.describeConversation).not.toHaveBeenCalled();
+    expect(store.recordVendorConversation).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith({ workspaceId, agentId, vendor: "none", outcome: "no_session" }, "Voice vendor conversation report was refused");
     expect(JSON.stringify(logger.warn.mock.calls)).not.toContain(vendorConversationId);
+  });
+
+  it("refuses a call on another vendor agent, and one the vendor does not know, storing neither", async () => {
+    const otherAgent = harness({ describeConversation: async () => ({ vendorAgentId: "agent_someone_else" }) });
+    await expect(otherAgent.service.report(report)).resolves.toBe("rejected");
+    expect(otherAgent.store.recordVendorConversation).not.toHaveBeenCalled();
+    expect(counted(otherAgent.metrics, "voice_vendor_conversation_report_total")).toEqual([{ vendor: "elevenlabs", outcome: "vendor_agent_mismatch" }]);
+    expect(JSON.stringify(otherAgent.logger.warn.mock.calls)).not.toContain("agent_someone_else");
+
+    const unknown = harness({ describeConversation: async () => {
+      throw new VoiceRecordingRequestError("not_found", 404);
+    } });
+    await expect(unknown.service.report(report)).resolves.toBe("rejected");
+    expect(unknown.store.recordVendorConversation).not.toHaveBeenCalled();
+  });
+
+  it("refuses an id another session already holds", async () => {
+    const { service, metrics } = harness({ recorded: false });
+
+    await expect(service.report(report)).resolves.toBe("rejected");
+    expect(counted(metrics, "voice_vendor_conversation_report_total")).toEqual([{ vendor: "elevenlabs", outcome: "already_reported" }]);
+  });
+
+  it.each([
+    ["the vendor refuses the check", { describeConversation: async () => {
+      throw new VoiceRecordingRequestError("rejected", 401);
+    } }, "vendor_failed"],
+    ["the workspace holds no key", { credential: { kind: "missing" } as const }, "credential_missing"],
+    ["the credential store cannot be read", { credential: new Error("connection refused") }, "credential_read_failed"],
+  ])("fails a report that cannot be checked when %s, storing nothing", async (_case, overrides, outcome) => {
+    const { service, store, metrics, logger } = harness(overrides);
+
+    await expect(service.report(report)).resolves.toBe("failed");
+    expect(store.recordVendorConversation).not.toHaveBeenCalled();
+    expect(counted(metrics, "voice_vendor_conversation_report_total")).toEqual([{ vendor: "elevenlabs", outcome }]);
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain(apiKey);
   });
 });
 
@@ -210,7 +264,7 @@ describe("voice recording erasure", () => {
   const second: VoiceRecordingRef = { ...recordingRef, conversationId: "88888888-8888-4888-8888-888888888888", vendorConversationId: "conv_second" };
 
   it("reads the recordings and the key while they exist, and deletes each at the vendor once erase runs, auditing each", async () => {
-    const { eraser, store, credentials, source, audit, metrics } = harness({ recordings: [recordingRef, second] });
+    const { eraser, store, credentials, source, audit, metrics } = harness({ recordings: [erasable(recordingRef), erasable(second)] });
     const scope = { kind: "workspace" as const, workspaceId };
 
     const prepared = await eraser.prepare(scope);
@@ -238,7 +292,7 @@ describe("voice recording erasure", () => {
 
   it("keeps going past a recording the vendor would not delete, logs it with ids only, and never rejects", async () => {
     const { eraser, audit, logger, metrics } = harness({
-      recordings: [recordingRef, second],
+      recordings: [erasable(recordingRef), erasable(second)],
       deleteRecording: async ({ vendorConversationId: id }) => {
         if (id === vendorConversationId) throw new VoiceRecordingRequestError("rejected", 500);
       },
@@ -287,7 +341,7 @@ describe("voice recording erasure", () => {
   it("stops asking the vendor once its time is up, and says how many recordings it left there", async () => {
     let clock = 0;
     const third: VoiceRecordingRef = { ...recordingRef, conversationId: "99999999-9999-4999-8999-999999999999", vendorConversationId: "conv_third" };
-    const { store, credentials, source, audit, metrics, logger } = harness({ recordings: [recordingRef, second, third] });
+    const { store, credentials, source, audit, metrics, logger } = harness({ recordings: [erasable(recordingRef), erasable(second), erasable(third)] });
     source.deleteRecording.mockImplementation(async () => {
       clock += 1_000;
     });

@@ -1,7 +1,7 @@
 export type {
   VoiceRecordingAvailabilityPort,
   VoiceRecordingPlaybackPort,
-  VoiceRecordingRef,
+  VoiceRecordingToErase,
   VoiceRecordingStore,
   VoiceRecordingStream,
   VoiceVendorCredentialReader,
@@ -13,6 +13,7 @@ export type {
   VoiceSessionStartRegistry,
   VoiceSessionStartResult,
   VoiceSessionRef,
+  VoiceSessionVendorAgent,
   VoiceSessionVisitor,
 
   VoiceTurnPort,

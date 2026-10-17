@@ -22,7 +22,7 @@ export interface VoiceRecordingAudit {
   /** `partial`: the player asked for a byte range, as it does when it starts or seeks. */
   played(event: { workspaceId: string; conversationId: string; actorUserId: string | null; vendor: VoiceVendor; partial: boolean }): Promise<void>;
   /** `workspaceDeleted`: the workspace itself is gone, so the event cannot name it as its owner. */
-  deleted(event: { workspaceId: string; workspaceDeleted: boolean; conversationId: string; vendor: VoiceVendor }): Promise<void>;
+  deleted(event: { workspaceId: string; workspaceDeleted: boolean; conversationId: string | null; vendor: VoiceVendor }): Promise<void>;
 }
 
 export interface VoiceRecordingDependencies {
@@ -45,6 +45,32 @@ type VoiceRecordingFetchOutcome =
   | "vendor_failed"
   | "audit_failed";
 
+type VoiceVendorConversationReportOutcome =
+  | "recorded"
+  | "no_session"
+  | "vendor_not_found"
+  | "vendor_agent_mismatch"
+  | "already_reported"
+  | "store_failed"
+  | "credential_missing"
+  | "credential_unreadable"
+  | "credential_read_failed"
+  | "vendor_failed";
+
+/** What the page learns: refusals are final, and a report that could not be checked may be sent again. */
+const REPORT_RESULT_OF_OUTCOME: Record<VoiceVendorConversationReportOutcome, "recorded" | "rejected" | "failed"> = {
+  recorded: "recorded",
+  no_session: "rejected",
+  vendor_not_found: "rejected",
+  vendor_agent_mismatch: "rejected",
+  already_reported: "rejected",
+  store_failed: "failed",
+  credential_missing: "failed",
+  credential_unreadable: "failed",
+  credential_read_failed: "failed",
+  vendor_failed: "failed",
+};
+
 export const errorClassOf = (error: unknown): string => (error instanceof Error ? error.name : typeof error);
 
 /** Why a vendor call failed, by reason and status only: the vendor's body never reaches a log. */
@@ -64,10 +90,48 @@ export const recordingErrorFields = (error: unknown) => ({
 export class VoiceRecordingService implements VoiceVendorConversationReportPort, VoiceRecordingAvailabilityPort, VoiceRecordingPlaybackPort {
   constructor(private readonly dependencies: VoiceRecordingDependencies) {}
 
-  async report(input: VoiceVendorConversationReport): Promise<"recorded" | "rejected"> {
-    if (await this.dependencies.recordings.recordVendorConversation(input)) return "recorded";
-    this.dependencies.logger.warn({ workspaceId: input.workspaceId, agentId: input.agentId }, "Voice vendor conversation report was refused");
-    return "rejected";
+  /**
+   * Stores the id only once the vendor says the conversation is a call on the vendor agent the
+   * session was started on, so a visitor cannot attach another call of the same vendor account. One
+   * vendor call per report, and none for a report no started session waits for.
+   */
+  async report(input: VoiceVendorConversationReport): Promise<"recorded" | "rejected" | "failed"> {
+    const { vendorConversationId, ...sessionOfReport } = input;
+    let session;
+    try {
+      session = await this.dependencies.recordings.findReportableSession(sessionOfReport);
+    } catch (error) {
+      return this.reportEnded(input, "none", "store_failed", { errorClass: errorClassOf(error) });
+    }
+    if (!session) return this.reportEnded(input, "none", "no_session");
+    const { vendor, vendorAgent } = session;
+
+    let reading;
+    try {
+      reading = await this.dependencies.credentials.read({ workspaceId: input.workspaceId, vendor });
+    } catch (error) {
+      return this.reportEnded(input, vendor, "credential_read_failed", { errorClass: errorClassOf(error) });
+    }
+    if (reading.kind !== "present") {
+      return this.reportEnded(input, vendor, reading.kind === "missing" ? "credential_missing" : "credential_unreadable");
+    }
+
+    let held;
+    try {
+      held = await this.dependencies.sources[vendor].describeConversation({ vendorConversationId, region: vendorAgent.region, credential: reading.credential });
+    } catch (error) {
+      const notFound = error instanceof VoiceRecordingRequestError && error.reason === "not_found";
+      return this.reportEnded(input, vendor, notFound ? "vendor_not_found" : "vendor_failed", recordingErrorFields(error));
+    }
+    if (held.vendorAgentId !== vendorAgent.agentId) return this.reportEnded(input, vendor, "vendor_agent_mismatch");
+
+    let recorded: boolean;
+    try {
+      recorded = await this.dependencies.recordings.recordVendorConversation(input);
+    } catch (error) {
+      return this.reportEnded(input, vendor, "store_failed", { errorClass: errorClassOf(error) });
+    }
+    return this.reportEnded(input, vendor, recorded ? "recorded" : "already_reported");
   }
 
   async isAvailable(input: { workspaceId: string; conversationId: string }): Promise<boolean> {
@@ -133,6 +197,27 @@ export class VoiceRecordingService implements VoiceVendorConversationReportPort,
     }
     this.record(vendor, "served");
     return { kind: "recording", recording: stream };
+  }
+
+  /** Logs and counts how a report ended, with ids only: never the reported id or the vendor's agent. */
+  private reportEnded(
+    input: VoiceVendorConversationReport,
+    vendor: VoiceVendor | "none",
+    outcome: VoiceVendorConversationReportOutcome,
+    fields: Record<string, unknown> = {},
+  ): "recorded" | "rejected" | "failed" {
+    this.dependencies.metrics?.incrementCounter("voice_vendor_conversation_report_total", {
+      help: "Vendor conversation ids pages reported for voice sessions, by vendor and how the report ended",
+      labels: { vendor, outcome },
+    });
+    const result = REPORT_RESULT_OF_OUTCOME[outcome];
+    if (result !== "recorded") {
+      this.dependencies.logger.warn(
+        { workspaceId: input.workspaceId, agentId: input.agentId, vendor, outcome, ...fields },
+        result === "rejected" ? "Voice vendor conversation report was refused" : "Voice vendor conversation report could not be checked",
+      );
+    }
+    return result;
   }
 
   private unavailable(

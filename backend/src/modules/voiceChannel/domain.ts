@@ -155,11 +155,17 @@ export interface VoiceSessionVisitor {
 }
 
 /**
- * Where a started session waits for its first turn. `region` is the data residency region of the
- * vendor account the session opens on, where the vendor keeps the call's recording.
+ * The vendor agent a Radioso-started session opens on, and the data residency region of its vendor
+ * account, where the vendor keeps the call's recording.
  */
+export interface VoiceSessionVendorAgent {
+  agentId: string;
+  region: VoiceVendorRegion;
+}
+
+/** Where a started session waits for its first turn. */
 export interface VoiceSessionStartRegistry {
-  register(start: { session: VoiceSessionRef; visitor: VoiceSessionVisitor; expiresAt: Date; region: VoiceVendorRegion }): Promise<void>;
+  register(start: { session: VoiceSessionRef; visitor: VoiceSessionVisitor; expiresAt: Date; vendorAgent: VoiceSessionVendorAgent }): Promise<void>;
 }
 
 /** What a session's first turn reads of its start. */
@@ -223,15 +229,35 @@ export interface VoiceSessionStartPort {
 }
 
 /**
- * Where a voice session's recording lives: the vendor that holds it, the data residency region of
- * the vendor account (which picks the vendor host), and the vendor's own id for the call. The id
- * comes from the visitor's page, so it is only ever looked up with the workspace's own vendor key.
+ * Where a call's recording lives: the vendor that holds it, the data residency region of the vendor
+ * account (which picks the vendor host), and the vendor's own id for the call. The id comes from the
+ * visitor's page and is stored only once the vendor confirmed it is a call on the session's vendor
+ * agent; it is only ever looked up with the workspace's own vendor key.
  */
-export interface VoiceRecordingRef {
-  conversationId: string;
+export interface VoiceRecordingLocation {
   vendor: VoiceVendor;
   region: VoiceVendorRegion;
   vendorConversationId: string;
+}
+
+/** A conversation's recording, as the Inbox plays it. */
+export interface VoiceRecordingRef extends VoiceRecordingLocation {
+  conversationId: string;
+}
+
+/**
+ * A recording an erasure asks the vendor to delete. `conversationId` is null for a call whose page
+ * reported it but whose first turn never came: the vendor still holds it, and Radioso still has to.
+ */
+export interface VoiceRecordingToErase extends VoiceRecordingLocation {
+  workspaceId: string;
+  conversationId: string | null;
+}
+
+/** What a report is checked against: the vendor agent and region the reporting session was started on. */
+export interface VoiceReportableSession {
+  vendor: VoiceVendor;
+  vendorAgent: VoiceSessionVendorAgent;
 }
 
 /** A Radioso-started session the page reports the vendor's conversation id for. */
@@ -247,14 +273,22 @@ export interface VoiceVendorConversationReport {
 /** `voice_sessions` as the recording reads it. */
 export interface VoiceRecordingStore {
   /**
-   * Stores the vendor's conversation id on a session Radioso started for this public session, while
-   * its start is unexpired, once. False when no such session waits for one.
+   * The session a report names, while it waits for one: Radioso started it for this public session,
+   * its start is unexpired, and it has no vendor conversation id yet. Null otherwise.
+   */
+  findReportableSession(report: Omit<VoiceVendorConversationReport, "vendorConversationId">): Promise<VoiceReportableSession | null>;
+  /**
+   * Stores the vendor's conversation id on that session, once. False when it no longer waits for
+   * one, or another session already holds the id.
    */
   recordVendorConversation(report: VoiceVendorConversationReport): Promise<boolean>;
-  /** The recording of a conversation's voice session, when its page reported one. */
+  /** The recording of a conversation of the workspace, when its page reported one. */
   findRecording(input: { workspaceId: string; conversationId: string }): Promise<VoiceRecordingRef | null>;
-  /** Every recording in an erasure's scope: the conversations named, or the whole workspace. */
-  listRecordings(scope: VoiceRecordingScope): Promise<VoiceRecordingRef[]>;
+  /**
+   * Every recording in an erasure's scope: the conversations named, or everything the workspace
+   * holds, a call whose first turn never came and a call whose agent was deleted included.
+   */
+  listRecordings(scope: VoiceRecordingScope): Promise<VoiceRecordingToErase[]>;
 }
 
 /** The conversations an erasure removes, or a whole workspace just before it is deleted. */
@@ -277,8 +311,7 @@ export interface VoiceRecordingStream {
  * A vendor call about a recording that did not succeed: the vendor holds no recording under that
  * id (the call has not finished, or the conversation is gone), refused the request (`vendorStatus`
  * is its HTTP status), could not be reached, did not answer in time, or answered with something
- * that is not audio.
-
+ * that is not what was asked for.
  */
 export class VoiceRecordingRequestError extends Error {
   constructor(
@@ -292,6 +325,12 @@ export class VoiceRecordingRequestError extends Error {
 
 /** One vendor's recordings, read and deleted with the workspace's key. One adapter per vendor. */
 export interface VoiceRecordingSource {
+  /** The vendor agent a conversation was held on: the check a reported id must pass before it is stored. */
+  describeConversation(input: {
+    vendorConversationId: string;
+    region: VoiceVendorRegion;
+    credential: VoiceVendorCredential;
+  }): Promise<{ vendorAgentId: string }>;
   /** `range` is the listener's `Range` header, passed on when it names one byte range. */
   fetchRecording(input: {
     vendorConversationId: string;
@@ -304,11 +343,16 @@ export interface VoiceRecordingSource {
   deleteRecording(input: { vendorConversationId: string; region: VoiceVendorRegion; credential: VoiceVendorCredential }): Promise<void>;
 }
 
-/** The page reports the vendor's conversation id for a session it opened. */
+/**
+ * The page reports the vendor's conversation id for a session it opened. `rejected`: no session
+ * Radioso started for this public session waits for an id, or the vendor says the id is not a call
+ * on that session's vendor agent. `failed`: the id could not be checked now; the page may report it
+ * again.
+ */
 export interface VoiceVendorConversationReportPort {
-  /** `rejected`: no session Radioso started for this public session waits for an id. */
-  report(input: VoiceVendorConversationReport): Promise<"recorded" | "rejected">;
+  report(input: VoiceVendorConversationReport): Promise<"recorded" | "rejected" | "failed">;
 }
+
 
 /** Whether a conversation has a recording an operator can play, without asking the vendor. */
 export interface VoiceRecordingAvailabilityPort {

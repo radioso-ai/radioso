@@ -40,9 +40,11 @@ export class ConversationErasureRepository {
   }
 
   /**
-   * Deletes the conversations, lowers each of their visitors' conversation count by the ones it lost,
-   * and deletes a visitor left with no conversation at all. Returns how many conversations and
-   * messages went.
+   * Deletes the conversations, lowers each of their visitors' conversation count by the ones it
+   * lost, and deletes an *anonymous* visitor left with no conversation at all — a verified
+   * visitor is the customer's identity, not one conversation's, so it stays as the handle a later
+   * visitor erase needs to reach that customer's context values through. Returns how many
+   * conversations and messages went.
    */
   async deleteConversations(
     workspaceId: string,
@@ -76,10 +78,28 @@ export class ConversationErasureRepository {
         .execute();
     }
     if (lostByVisitor.size > 0) {
+      const candidateIds = [...lostByVisitor.keys()];
+      // Lock the candidates in their own statement first, before deciding whether each still has a
+      // conversation. A concurrent insert for one of them holds a FOR KEY SHARE lock on its visitor
+      // row for the life of that transaction (the new conversation's foreign key); FOR UPDATE here
+      // waits for it. Running the delete below as a separate, later statement then gives it a fresh
+      // READ COMMITTED snapshot — taken only once that wait is over — that sees the new conversation,
+      // instead of reusing the snapshot the delete would otherwise have taken before the wait, which
+      // would still show no conversation and remove a visitor whose new one just committed.
+      await this.db
+        .selectFrom("visitors")
+        .select("id")
+        .where("workspace_id", "=", workspaceId)
+        .where((eb) => anyOf(eb.ref("id"), candidateIds, "uuid[]"))
+        .where("verified_customer_id", "is", null)
+        .orderBy("id")
+        .forUpdate()
+        .execute();
       await this.db
         .deleteFrom("visitors")
         .where("workspace_id", "=", workspaceId)
-        .where((eb) => anyOf(eb.ref("id"), [...lostByVisitor.keys()], "uuid[]"))
+        .where((eb) => anyOf(eb.ref("id"), candidateIds, "uuid[]"))
+        .where("verified_customer_id", "is", null)
         .where(({ not, exists, selectFrom }) => not(exists(
           selectFrom("conversations").select("conversations.id").whereRef("conversations.visitor_id", "=", "visitors.id"),
         )))

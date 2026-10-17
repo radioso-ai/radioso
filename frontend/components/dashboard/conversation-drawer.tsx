@@ -1,11 +1,17 @@
 'use client'
 
-import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Bug, Search, Workflow, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { AgentCallerChip } from '@/components/dashboard/caller-kind-chip'
 import { CopyValueField } from '@/components/ui/copy-value-field'
+import {
+  admitClose,
+  admitSelection,
+  initialCloseOnceGuard,
+  type CloseOnceGuard,
+} from '@/lib/close-once-per-selection'
 import {
   Drawer,
   DrawerClose,
@@ -235,14 +241,34 @@ export function ConversationDrawer({
 }: ConversationDrawerProps) {
   const selectedChatConversationId = selectedItem?.kind === 'chat' ? selectedItem.id : null
   const skillCatalog = useSkillCatalog(selectedItem?.id ?? null)
+
+  // Guards `closeDrawer` to run at most once per conversation open, so a tail 404 racing an
+  // in-drawer delete's own close — both can resolve before React re-renders with the cleared
+  // selection — fires `onAfterClose` once, not twice. See `close-once-per-selection.ts`.
+  const selectedItemKey = selectedItem ? `${selectedItem.kind}:${selectedItem.id}` : null
+  const closeGuardRef = useRef<CloseOnceGuard>(initialCloseOnceGuard)
+  // Refs update outside render (the lint rule `react-hooks/refs` forbids it inline); nothing reads
+  // this ref during render, only `closeDrawer`, which event handlers and the tail/detail-fetch
+  // not-found callbacks invoke well after this effect has flushed.
+  useEffect(() => {
+    closeGuardRef.current = admitSelection(closeGuardRef.current, selectedItemKey)
+  }, [selectedItemKey])
+  // `closeDrawer` is defined below `useHistoryDetailState` (it needs `setShowGraph`), but
+  // `useConversationTail` — constructed before that hook, since `useHistoryDetailState` reads its
+  // `messages` — needs a stable callback now. `handleTailNotFound` reads this ref at call time,
+  // always invoking whichever `closeDrawer` closure the latest render produced.
+  const closeDrawerRef = useRef<() => void>(() => {})
+
   const handleItemNotFound = useCallback(() => {
     onAfterClose?.()
   }, [onAfterClose])
-  // Deleted, or aged out, while the drawer is open: it closes as for a link to a missing conversation.
+  // Deleted, or aged out, while the drawer is open: close through the same path a user close
+  // takes, so stale overlay state (the debug graph, the flow overlay) doesn't carry into the next
+  // conversation opened, and so this doesn't fire `onAfterClose` a second time when it races an
+  // in-drawer delete's own close for the same conversation.
   const handleTailNotFound = useCallback(() => {
-    onSelectedItemChange(null)
-    onAfterClose?.()
-  }, [onAfterClose, onSelectedItemChange])
+    closeDrawerRef.current()
+  }, [])
   const conversationTail = useConversationTail({
     conversationId: selectedChatConversationId ?? '',
     // A no-cursor tail poll returns the newest history window. Audience Pulse
@@ -351,11 +377,19 @@ export function ConversationDrawer({
   )
 
   const closeDrawer = () => {
+    const { guard, shouldClose } = admitClose(closeGuardRef.current)
+    closeGuardRef.current = guard
+    if (!shouldClose) {
+      return
+    }
     onSelectedItemChange(null)
     setShowGraph(false)
     setFlowOpen(false)
     onAfterClose?.()
   }
+  useEffect(() => {
+    closeDrawerRef.current = closeDrawer
+  })
 
   return (
     <>

@@ -357,6 +357,64 @@ describe("answer presentation service", () => {
     expect(result.citations).toBeUndefined();
   });
 
+  it("preserves a markdown link whose label is a bare number", () => {
+    const service = new AnswerPresentationService();
+    const result = service.present({
+      answer: "See [1](https://example.com) for details.",
+      citations: [],
+    });
+
+    expect(result.answer).toBe("See [1](https://example.com) for details.");
+  });
+
+  // #1502: the model sometimes writes the unsupported-claim marker with single brackets.
+  // Presentation reads `[?]` as `[[?]]`, so the marker ends its claim's segment exactly as
+  // the double-bracket one does.
+  describe("single-bracket unsupported-claim marker", () => {
+    const guide = { documentId: "doc-1", chunkId: "chunk-1", title: "Guide", content: "Registration is open." };
+    const present = (answer: string, citations = [guide]) =>
+      new AnswerPresentationService().present({ answer, citations });
+
+    it("removes a marker mid-sentence", () => {
+      const { answer } = present("Kriya is not [?] documented here.");
+
+      expect(answer).not.toContain("[?]");
+      expect(answer).not.toContain("[[?]]");
+      expect(answer).toMatch(/^Kriya is not\s+documented here\.$/);
+    });
+
+    it("keeps an unsupported claim out of the next claim's citation", () => {
+      const result = present("The workshop runs in June[?]. Registration is open[[1]].");
+
+      expect(result).toEqual(present("The workshop runs in June[[?]]. Registration is open[[1]]."));
+      expect(result.answerSegments).toEqual([
+        { text: "The workshop runs in June" },
+        { text: ". Registration is open", citationIndices: [0] },
+        { text: "." },
+      ]);
+    });
+
+    it("leaves no stranded bracket when a bracket pair follows the marker", () => {
+      expect(present("Claim[?]]] next").answer).toBe("Claim next");
+    });
+
+    it("treats a bracket after the marker as it treats one after [[?]]", () => {
+      expect(present("Claim[?]] next").answer).toBe(present("Claim[[?]]] next").answer);
+    });
+
+    it("treats a parenthetical after the marker as it treats one after [[?]]", () => {
+      expect(present("Claim[?](estimated).").answer).toBe("Claim(estimated).");
+      expect(present("See [?](https://example.com) for details.").answer)
+        .toBe(present("See [[?]](https://example.com) for details.").answer);
+    });
+
+    it("leaves [?] inside inline code alone", () => {
+      for (const text of ["Use `[?]` to match a literal question mark.", "The pattern `/a[?]b/` matches ab."]) {
+        expect(present(text).answer).toBe(text);
+      }
+    });
+  });
+
   it("collapses consecutive claims that cite the same document into one visible citation", () => {
     const service = new AnswerPresentationService();
 

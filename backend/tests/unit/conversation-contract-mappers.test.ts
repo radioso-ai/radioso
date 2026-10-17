@@ -10,7 +10,8 @@ import {
   toPreparedStagedContext,
 } from "../../src/modules/chat/services/conversationContractMappers.js";
 import type { ActivityTrace, RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
-import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { websiteEmbedFixture } from "../support/websiteEmbedFixture.js";
 
 const message = (overrides: Partial<MessageRecord> = {}): MessageRecord => ({
   id: "msg_1",
@@ -25,6 +26,7 @@ const message = (overrides: Partial<MessageRecord> = {}): MessageRecord => ({
 
 const agent = (overrides: Partial<AgentRecord> = {}): AgentRecord => ({
   ...unpublishedAgentPublicIdentity(),
+  voice: defaultAgentVoiceSettings(),
   id: "agent_1",
   workspaceId: "workspace_1",
   name: "Support",
@@ -52,11 +54,12 @@ const agent = (overrides: Partial<AgentRecord> = {}): AgentRecord => ({
   greetingInstruction: "",
   assistantDefaultLocale: "en",
   proactiveGreetingEnabled: false,
+  mechanicsReplies: {},
   chatModelOverride: { provider: "openai", model: "gpt-test" },
   surfaceSettings: {
     authenticatedChat: { enabled: true },
     anonymousChat: { enabled: false, token: null },
-    websiteEmbed: {
+    websiteEmbed: websiteEmbedFixture({
       enabled: false,
       token: null,
       allowedOrigins: [],
@@ -70,7 +73,7 @@ const agent = (overrides: Partial<AgentRecord> = {}): AgentRecord => ({
       },
       copy: {},
       expertOverrides: {},
-    },
+    }),
     extensions: {},
   },
   createdAt: new Date("2026-01-01T00:00:00.000Z"),

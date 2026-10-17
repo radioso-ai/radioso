@@ -26,7 +26,8 @@ class FakeElement {
 
   constructor(tagName: string) {
     this.tagName = tagName.toUpperCase()
-    this.contentWindow = {}
+    // A real frame's window always takes messages; the launcher tells it when the panel opens or closes.
+    this.contentWindow = { postMessage: () => undefined }
     this.style = {
       setProperty: (name: string, value: string) => {
         this.style[name] = value
@@ -1049,6 +1050,96 @@ describe('radioso embed launcher', () => {
     } else {
       expect(sessionMessage.pageContext).not.toHaveProperty('content')
     }
+  })
+
+  it.each([
+    { voice: { available: true }, allow: 'clipboard-read; clipboard-write; microphone', available: true },
+    { voice: { available: false }, allow: 'clipboard-read; clipboard-write', available: false },
+    { voice: undefined, allow: 'clipboard-read; clipboard-write', available: false },
+  ])('delegates the microphone and offers Talk only when the embed config says voice is $voice', async ({ voice, allow, available }) => {
+    const launcherSource = await readFile(join(process.cwd(), 'lib/radioso-embed-launcher.js'), 'utf8')
+    const script = new FakeElement('script')
+    script.src = 'https://app.example.com/radioso-embed.js'
+    script.dataset.radiosoToken = 'embed-token'
+    const body = new FakeElement('body')
+    const document = {
+      readyState: 'complete',
+      currentScript: script,
+      scripts: [script],
+      head: new FakeElement('head'),
+      body,
+      documentElement: { clientWidth: 1024, clientHeight: 768, lang: 'en' },
+      title: 'Host page',
+      createElement: (tagName: string) => new FakeElement(tagName),
+      getElementById: () => null,
+      addEventListener: vi.fn(),
+    }
+    const sessionUrl = (url: unknown) => String(url).includes('/api/embed/session/')
+    const fetch = vi.fn(async (url: unknown) => ({
+      ok: true,
+      json: async () => (sessionUrl(url)
+        ? {
+            publicChatToken: 'public-chat-token',
+            publicSessionToken: 'public-session-token',
+            publicSessionId: 'public-session-id',
+            resumeToken: 'resume-token',
+            resumeExpiresAt: new Date(Date.now() + 60_000).toISOString(),
+            workspaceName: 'Acme',
+          }
+        : { launcherLabel: 'Chat with us', copy: {}, expertOverrides: {}, proactiveGreetingEnabled: false, ...(voice ? { voice } : {}) }),
+    }))
+    const window = {
+      location: { href: 'https://host.example.com/page', origin: 'https://host.example.com' },
+      navigator: { languages: ['en-US'], language: 'en-US' },
+      sessionStorage: { getItem: vi.fn(() => null), setItem: vi.fn(), removeItem: vi.fn() },
+      matchMedia: vi.fn(() => ({ matches: false })),
+      innerWidth: 1024,
+      innerHeight: 768,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      requestAnimationFrame: (callback: FrameRequestCallback) => {
+        callback(0)
+        return 1
+      },
+      setTimeout: vi.fn(),
+      clearTimeout: vi.fn(),
+      visualViewport: null,
+    }
+    vm.runInNewContext(launcherSource, {
+      document,
+      window,
+      fetch,
+      URL,
+      setTimeout: vi.fn(),
+      clearTimeout: vi.fn(),
+      requestAnimationFrame: window.requestAnimationFrame,
+    })
+    for (let index = 0; index < 10; index += 1) {
+      await Promise.resolve()
+    }
+
+    const iframe = collectElements(body, (element) => element.tagName === 'IFRAME')[0]
+    expect(iframe.allow).toBe(allow)
+    const postMessage = vi.fn()
+    iframe.contentWindow = { postMessage }
+    for (const [eventName, handler] of window.addEventListener.mock.calls) {
+      if (eventName === 'message') {
+        ;(handler as (event: unknown) => void)({ source: iframe.contentWindow, origin: 'https://app.example.com', data: { type: 'radioso:embed:ready' } })
+      }
+    }
+
+    const button = collectElements(body, (element) => element.tagName === 'BUTTON')[0]
+    button.dispatchEvent('click')
+    for (let index = 0; index < 10; index += 1) {
+      await Promise.resolve()
+    }
+    const sessionMessage = postMessage.mock.calls.find(([message]) => message.type === 'radioso:embed:session')?.[0]
+    expect(sessionMessage.voice).toEqual({ available })
+    expect(postMessage).toHaveBeenCalledWith({ type: 'radioso:embed:panel-visibility', open: true }, 'https://app.example.com')
+
+    // Closing the panel tells the frame, which ends a call that is running.
+    button.dispatchEvent('click')
+    expect(postMessage).toHaveBeenLastCalledWith({ type: 'radioso:embed:panel-visibility', open: false }, 'https://app.example.com')
   })
 
   describe('identity provider mode', () => {

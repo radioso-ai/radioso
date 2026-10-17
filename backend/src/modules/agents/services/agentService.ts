@@ -1,3 +1,5 @@
+import type { ZodError } from "zod";
+
 import type {
   AgentGreetingUpdateOptions,
   AgentProposalCasGuard,
@@ -13,6 +15,7 @@ import { generateApiToken } from "../../auth/contracts/index.js";
 import type { EmbedConfigCacheInvalidator } from "./embedConfigCacheInvalidator.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../documents/contracts/index.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
+import { canonicalContentHash } from "../../../shared/domain/canonicalContentHash.js";
 import { fieldProposalVersion } from "../../../shared/domain/fieldProposalVersion.js";
 import { validateExactContentItem, type ExactContentValidationResult } from "../../../shared/domain/exactContent.js";
 import {
@@ -36,6 +39,10 @@ import { ensurePublicIdMintedForInput } from "./agentPublicIdentity.js";
 import type { OwnerCommitHook } from "../../../shared/infra/kysely/types.js";
 import type { AuditService } from "../../audit/contracts/index.js";
 import { recipientEmailChangeMetadata } from "../../../shared/domain/recipientEmailAudit.js";
+import {
+  requestAddedRecipientConfirmations,
+  type RecipientConfirmationRequester,
+} from "../../../shared/domain/recipientConfirmationRequests.js";
 
 export type AgentSettingsResource = Omit<AgentRecord, "authoredDirectives"> & {
   isDefault: boolean;
@@ -90,6 +97,38 @@ export interface AgentSettingsProposalPort {
   applyFieldProposal(workspaceId: string, prepared: AgentFieldProposalApplyInput, options?: { readonly onCommitted?: OwnerCommitHook<{ readonly agentId: string }> }): Promise<AgentFieldProposalApplyOutcome>;
 }
 
+const MAX_SETTING_ISSUE_PART_CHARS = 200;
+/**
+ * At most 200 UTF-16 units, ellipsis included. Cut by code point: half an emoji is a lone
+ * surrogate, which the jsonb audit payload rejects (the same rule as Ray's `boundedSummary`).
+ */
+const boundedIssuePart = (text: string): string => {
+  if (text.length <= MAX_SETTING_ISSUE_PART_CHARS) return text;
+  const kept = Array.from(text).slice(0, MAX_SETTING_ISSUE_PART_CHARS - 1);
+  while (kept.length > 0 && kept.join("").length > MAX_SETTING_ISSUE_PART_CHARS - 1) kept.pop();
+  return `${kept.join("")}\u2026`;
+};
+
+/**
+ * Where a proposed value first fails its schema, as a dot-path into the value. A nested block such
+ * as `voice` is replaced whole, so the author needs the failing line, not only the setting's name.
+ * The path holds caller-chosen keys and the message can echo a received value, so both are bounded
+ * before they reach the 400, the audit record, or an MCP response.
+ */
+const settingValueIssue = (error: ZodError): string => {
+  const issue = error.issues[0];
+  if (!issue) return "";
+  const path = boundedIssuePart(issue.path.join("."));
+  const message = boundedIssuePart(issue.message);
+  return path ? ` at ${path}: ${message}` : `: ${message}`;
+};
+
+/** Equal as stored JSON: Postgres `jsonb` returns object keys in its own order, so key order means nothing. */
+const sameSettingValue = (left: unknown, right: unknown): boolean => {
+  if (left === undefined || right === undefined) return left === right;
+  return canonicalContentHash(JSON.parse(JSON.stringify(left))) === canonicalContentHash(JSON.parse(JSON.stringify(right)));
+};
+
 const proposalSettingPatch = (settingKey: string, value: unknown): AgentInput => {
   if (settingKey === "surfaceSettings") {
     throw badRequest("Public channel and embed settings are proposed with propose_workspace_setting, which names each field and states on the card when a change alters who can reach the agent");
@@ -97,7 +136,7 @@ const proposalSettingPatch = (settingKey: string, value: unknown): AgentInput =>
   const schema = agentInputFieldSchemas[settingKey as keyof typeof agentInputFieldSchemas];
   if (!schema) throw badRequest(`Unknown agent setting: ${settingKey}`);
   const parsed = schema.safeParse(value);
-  if (!parsed.success) throw badRequest(`Invalid ${settingKey} setting value`);
+  if (!parsed.success) throw badRequest(`Invalid ${settingKey} setting value${settingValueIssue(parsed.error)}`);
   return { [settingKey]: parsed.data };
 };
 const proposalSettingValue = (settings: object, settingKey: string): unknown =>
@@ -115,6 +154,7 @@ export class AgentService {
     private readonly accessGrantService?: AccessGrantService,
     private readonly agentSkills?: Pick<AgentSkillRepositoryPort, "findByName">,
     private readonly audit?: Pick<AuditService, "record">,
+    private readonly recipientConfirmations?: RecipientConfirmationRequester,
   ) {}
 
   async list(workspaceId: string): Promise<AgentSettingsResource[]> {
@@ -180,7 +220,7 @@ export class AgentService {
       : await this.agentRepository.findDefaultByWorkspaceId(workspaceId);
     const agent = await this.agentRepository.create(workspaceId, input, options);
     await this.syncPublicLaunchGrants(null, agent);
-    await this.auditRecipientChange(workspace, null, agent);
+    await this.recordRecipientChange(workspace, null, agent);
     if (!existingDefault) {
       await this.agentRepository.setDefault(workspaceId, agent.id);
     }
@@ -278,7 +318,7 @@ export class AgentService {
     const changes = keys.flatMap((key) => {
       const currentValue = proposalSettingValue(current, key);
       const proposed = proposalSettingValue(normalized, key);
-      return JSON.stringify(currentValue) === JSON.stringify(proposed)
+      return sameSettingValue(currentValue, proposed)
         ? []
         : [{ key, current: currentValue, proposed, ...agentSettingProposalEffect(key) }];
     });
@@ -540,7 +580,7 @@ export class AgentService {
     updated: AgentRecord,
   ): Promise<void> {
     await this.syncPublicLaunchGrants(previous, updated);
-    await this.auditRecipientChange(workspace, previous, updated);
+    await this.recordRecipientChange(workspace, previous, updated);
     if (workspace.defaultAgentId === updated.id) {
       await this.syncLegacyWorkspaceDefaults(workspace, updated);
     }
@@ -553,15 +593,27 @@ export class AgentService {
     }
   }
 
-  private async auditRecipientChange(
+  /**
+   * Drops the CDN-cached embed config of every agent in the workspace, for a change outside the
+   * agents that the config still reflects: the voice vendor key whose presence decides whether the
+   * embed offers calls. Best effort, like every invalidation here.
+   */
+  async invalidateEmbedConfigs(workspaceId: string): Promise<void> {
+    if (!this.embedConfigCacheInvalidator) return;
+    const agents = await this.agentRepository.listByWorkspaceId(workspaceId);
+    for (const agent of agents) {
+      const embedToken = getWebsiteEmbedSurfaceSettings(agent).token;
+      if (embedToken) await this.embedConfigCacheInvalidator.invalidateForToken(embedToken);
+    }
+  }
+
+  private async recordRecipientChange(
     workspace: WorkspaceRecord,
     previous: AgentRecord | null,
     updated: AgentRecord,
   ): Promise<void> {
-    const metadata = recipientEmailChangeMetadata(
-      previous?.contactRequestDelivery.recipientEmails ?? [],
-      updated.contactRequestDelivery.recipientEmails,
-    );
+    const previousRecipients = previous?.contactRequestDelivery.recipientEmails ?? [];
+    const metadata = recipientEmailChangeMetadata(previousRecipients, updated.contactRequestDelivery.recipientEmails);
     if (!metadata) return;
     await this.audit?.record({
       accountId: workspace.accountId,
@@ -569,6 +621,12 @@ export class AgentService {
       eventType: "agent.contact_recipients.changed",
       eventStatus: "success",
       metadata: { agentId: updated.id, ...metadata },
+    });
+    await requestAddedRecipientConfirmations(this.recipientConfirmations, {
+      workspaceId: workspace.id,
+      agentId: updated.id,
+      previous: previousRecipients,
+      next: updated.contactRequestDelivery.recipientEmails,
     });
   }
 

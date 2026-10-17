@@ -360,6 +360,7 @@ const turnSkillForAgentSkill = (
           agentId: session.agent.id,
           sessionId: session.conversation.id,
           conversationId: session.conversation.id,
+          conversationDurability: conversationDurability ?? "durable",
           messageId: session.userMessage.id,
           turn: {
             agent: toConversationAgentConfig(session.agent),
@@ -450,6 +451,7 @@ const stagedToolFactoryForAgentSkill = (
           agentId: session.agent.id,
           sessionId: session.conversation.id,
           conversationId: session.conversation.id,
+          conversationDurability: conversationDurability ?? "durable",
           messageId: session.userMessage.id,
           turn: {
             agent: toConversationAgentConfig(session.agent),

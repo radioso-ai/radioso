@@ -787,6 +787,7 @@ export class ChatTurnAssembly {
       query: input.query,
       userExpectedLocale: input.userExpectedLocale,
       accountId: input.accountId,
+      signal: input.coordination?.signal,
       ...coverageTurnRuntime,
     });
     this.logCoverageRoutineFailure(result.trace, session);
@@ -873,6 +874,7 @@ export class ChatTurnAssembly {
       query: input.request.query,
       userExpectedLocale: input.request.userExpectedLocale,
       accountId: input.request.accountId,
+      signal: input.coordination?.signal,
       ...coverageTurnRuntime,
     });
     const stage = clarificationTraceStage(clarificationState.current);

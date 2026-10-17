@@ -35,6 +35,7 @@ interface EmailChannelConnectorDependencies
   /** `EMAIL_CHANNEL_WORKERS_ENABLED`. */
   workersEnabled: boolean;
   sweep: Pick<EmailChannelSweep, "run" | "reconcileSends">;
+  recipientSuppressions?: EmailWebhookRouterOptions["recipientSuppressions"];
 }
 
 /**
@@ -45,7 +46,14 @@ interface EmailChannelConnectorDependencies
 export const createEmailChannelConnector = (
   deps: EmailChannelConnectorDependencies,
 ): { plugin: EmailPlugin; worker: EmailChannelWorker } => ({
-  plugin: new EmailPlugin({ receiver: deps.receiver, events: deps.inbound, drains: deps.drains, metrics: deps.metrics, clock: deps.clock }),
+  plugin: new EmailPlugin({
+    receiver: deps.receiver,
+    events: deps.inbound,
+    drains: deps.drains,
+    metrics: deps.metrics,
+    clock: deps.clock,
+    recipientSuppressions: deps.recipientSuppressions,
+  }),
   worker: new EmailChannelWorker({
     enabled: deps.workersEnabled,
     events: deps.inbound,

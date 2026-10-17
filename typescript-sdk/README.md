@@ -64,6 +64,7 @@ pnpm run build
 - `client.chat.listHistory(...)`
 - `client.chat.getHistoryConversation(...)`
 - `client.history.listVisitorConversations(visitorId, ...)` — a visitor's other conversations
+- `client.history.deleteChat(conversationId)` and `client.history.deleteVisitor(visitorId)` — permanent erasure; needs `workspace.history.delete`
 
 ### Agent authoring
 

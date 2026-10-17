@@ -75,12 +75,19 @@ export interface FacetExtractionJobStore {
    * Atomically claim up to `limit` due (`queued`, `scheduled_at <= now`) jobs, moving
    * them to `processing` and counting the attempt. Implementations must use
    * `FOR UPDATE SKIP LOCKED` so concurrent workers claim disjoint rows.
+   *
+   * `now`, when omitted, is the store's own clock (the database's `now()`), never a
+   * caller-supplied instant — a caller's clock can skew from the store's and hide a job
+   * that is genuinely due. `excludeIds` keeps ids a single caller-side loop has already
+   * claimed out of this claim, so a short-delay retry that call itself just scheduled is
+   * not reclaimable again within the same loop.
    */
   claimBatch(
     limit: number,
     now?: Date,
     workspaceId?: string,
     messageWindow?: { start: Date; end: Date },
+    excludeIds?: readonly string[],
   ): Promise<FacetExtractionJob[]>;
   /**
    * Terminal/progress updates are fenced to the claim returned by `claimBatch`.

@@ -198,6 +198,10 @@ function SpokenMarker({ label, theme }: { label: string; theme?: WebsiteEmbedThe
 
 function InterruptedReplyBadge({ interruption }: { interruption: ReplyInterruption }) {
   const percent = heardPercent(interruption.heardCharacterCount, interruption.spokenCharacterCount)
+  // A reply cut off mid-stream is stored as far as it was heard, so there is no share to state.
+  const tooltip = interruption.partial
+    ? 'Cut off while speaking. Only what was heard is stored.'
+    : `The caller spoke over this reply.${percent === undefined ? '' : ` About ${percent}% was heard.`}`
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -206,9 +210,7 @@ function InterruptedReplyBadge({ interruption }: { interruption: ReplyInterrupti
           Interrupted
         </Badge>
       </TooltipTrigger>
-      <TooltipContent side="bottom">
-        The caller spoke over this reply.{percent === undefined ? '' : ` About ${percent}% was heard.`}
-      </TooltipContent>
+      <TooltipContent side="bottom">{tooltip}</TooltipContent>
     </Tooltip>
   )
 }

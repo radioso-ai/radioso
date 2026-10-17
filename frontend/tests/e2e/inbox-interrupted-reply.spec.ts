@@ -13,8 +13,12 @@ import {
 // Inbox marks it: the transcript must not read as if the caller heard all of it.
 const conversationId = "conversation-voice-interrupted";
 const cutReplyContent = "We open at nine on weekdays and at ten on Saturdays, until six.";
-const interruption = { heardCharacterCount: 23, spokenCharacterCount: 62 };
+const interruption = { heardCharacterCount: 23, spokenCharacterCount: 62, partial: false };
 const tooltip = "The caller spoke over this reply. About 37% was heard.";
+// A reply the caller cut off while it was still being said is stored as far as it was heard.
+const heardPartContent = "We open at nine on weekdays.";
+const partialInterruption = { heardCharacterCount: 28, spokenCharacterCount: 28, partial: true };
+const partialTooltip = "Cut off while speaking. Only what was heard is stored.";
 
 const conversation = {
   id: conversationId,
@@ -43,7 +47,16 @@ const cutReply = (marked: boolean) => ({
   ...(marked ? { interruption } : {}),
 });
 
-const conversationDetail = (marked: boolean) => ({
+const heardPart = {
+  id: "assistant-message-heard-part",
+  role: "assistant" as const,
+  source: "ai_agent" as const,
+  content: heardPartContent,
+  createdAt: nowIso,
+  interruption: partialInterruption,
+};
+
+const conversationDetail = (marked: boolean, reply: ReturnType<typeof cutReply> | typeof heardPart = cutReply(marked)) => ({
   conversationId,
   workspaceId,
   agentId: defaultAgentId,
@@ -63,13 +76,13 @@ const conversationDetail = (marked: boolean) => ({
   nextCursor: null,
   messages: [
     { id: "user-message-saturday", role: "user" as const, source: "customer" as const, content: "When do you open on Saturday?", createdAt: nowIso },
-    cutReply(marked),
+    reply,
     { id: "user-message-sunday", role: "user" as const, source: "customer" as const, content: "And Sunday?", createdAt: nowIso },
     { id: "assistant-message-heard", role: "assistant" as const, source: "ai_agent" as const, content: "We are closed on Sundays.", createdAt: nowIso },
   ],
 });
 
-const openConversation = async (page: Page, options: { marked: boolean }) => {
+const openConversation = async (page: Page, options: { marked: boolean; heardPartOnly?: boolean }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     historyItems: {
@@ -78,7 +91,7 @@ const openConversation = async (page: Page, options: { marked: boolean }) => {
       nextCursor: null,
       hasMore: false,
     },
-    conversationDetail: conversationDetail(options.marked),
+    conversationDetail: conversationDetail(options.marked, options.heardPartOnly ? heardPart : undefined),
   });
 };
 
@@ -95,6 +108,18 @@ test("the Inbox marks a reply the caller spoke over and says about how much of i
 
   await interrupted.hover();
   await expect(page.getByRole("tooltip")).toHaveText(tooltip);
+});
+
+test("the Inbox marks a reply cut off while it was being said, and says only the heard part is stored", async ({ page }) => {
+  await openConversation(page, { marked: true, heardPartOnly: true });
+  await page.goto(readingPane);
+
+  await expect(response(page).getByText(heardPartContent)).toBeVisible();
+  const interrupted = response(page).getByText("Interrupted", { exact: true });
+  await expect(interrupted).toHaveCount(1);
+
+  await interrupted.hover();
+  await expect(page.getByRole("tooltip")).toHaveText(partialTooltip);
 });
 
 test("an open conversation shows the mark once a later tail poll returns the marked reply again", async ({ page }) => {

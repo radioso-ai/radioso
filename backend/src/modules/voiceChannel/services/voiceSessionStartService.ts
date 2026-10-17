@@ -1,5 +1,6 @@
 import { VOICE_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import type { VoiceVendor } from "../../../shared/domain/voiceVendor.js";
+import { errorClassOf } from "../../../shared/observability/errorClass.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type { AgentVoiceSettings } from "../../agents/public.js";
@@ -49,8 +50,6 @@ interface VoiceSessionStartServiceDependencies {
   metrics?: Pick<MetricsRegistry, "incrementCounter"> | null;
   logger: Pick<AppLogger, "warn">;
 }
-
-const errorClassOf = (error: unknown): string => (error instanceof Error ? error.name : typeof error);
 
 const vendorErrorFields = (error: unknown) => ({
   errorClass: errorClassOf(error),

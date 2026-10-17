@@ -29,34 +29,29 @@ import {
 
 type HistoryRouteDependencies = WorkspaceSessionDependencies & Pick<
   AppDependencies,
-  "assistantHistoryService" | "documentSearchHistoryService" | "conversationErasure" | "logger"
+  "assistantHistoryService" | "documentSearchHistoryService" | "conversationErasure"
 > & { voiceRecordings: VoiceRecordingAvailabilityPort };
 
 /**
  * A voice conversation's detail tells a dashboard session whether the call has a recording it can
  * play, from what Radioso stores alone: no vendor call. Machine credentials cannot play one, so
- * their detail leaves it out, as it does when the stores cannot be read.
+ * their detail leaves it out, as does a conversation that is not a call or whose records cannot be
+ * read now.
  */
 const withRecordingAvailability = async <Detail extends { conversationId: string; sourceChannel: string | null }>(
-  dependencies: Pick<HistoryRouteDependencies, "voiceRecordings" | "logger">,
+  dependencies: Pick<HistoryRouteDependencies, "voiceRecordings">,
   res: Response,
   workspaceId: string,
   conversation: Detail,
 ): Promise<Detail & { recording?: { available: boolean } }> => {
   const { authPrincipal } = res.locals as { authPrincipal?: MachineAwareRoutePrincipal };
-  if (conversation.sourceChannel !== "voice" || isMachinePrincipal(authPrincipal)) return conversation;
-  const { conversationId } = conversation;
-  try {
-    const available = await dependencies.voiceRecordings.isAvailable({ workspaceId, conversationId });
-    return { ...conversation, recording: { available } };
-  } catch (error) {
-    dependencies.logger.warn(
-      { workspaceId, conversationId, errorClass: error instanceof Error ? error.name : typeof error },
-
-      "Voice recording availability could not be read",
-    );
-    return conversation;
-  }
+  if (isMachinePrincipal(authPrincipal)) return conversation;
+  const available = await dependencies.voiceRecordings.availability({
+    workspaceId,
+    conversationId: conversation.conversationId,
+    sourceChannel: conversation.sourceChannel,
+  });
+  return available === null ? conversation : { ...conversation, recording: { available } };
 };
 
 /**

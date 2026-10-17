@@ -107,7 +107,6 @@ describe("voice session start", () => {
       .not.toHaveProperty("recordingNotice");
   });
 
-
   it("speaks the agent's default language when the page names none, and English when the agent names none either", async () => {
     expect(await serviceWith({ defaultLocale: "it" }).service.start({ workspaceId, agentId, visitor }))
       .toMatchObject({ kind: "started", locale: "it" });

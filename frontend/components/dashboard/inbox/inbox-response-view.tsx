@@ -410,7 +410,6 @@ export function InboxResponseView({
         <ConversationRecordingPlayer key={conversationId} workspaceId={workspaceId} conversationId={conversationId} />
       ) : null}
 
-
       {/* Outside the detail branch: an action re-reads the detail, and the panel must keep its
           outcome and focus through that reload. */}
       {effectiveItem?.type === 'delivery_failed' && effectiveItem.deliveryFailure ? (

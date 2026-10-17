@@ -44,7 +44,6 @@ export interface VoiceRuntimeSession {
   vendorConversationId?: string
 }
 
-
 /**
  * Opens a voice session in the browser on one vendor's agent, with the URL and session key the
  * session start returned. The vendor's client asks for the microphone; `open` rejects with

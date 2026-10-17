@@ -1,4 +1,6 @@
+import { VOICE_SOURCE_CHANNEL } from "../../../shared/domain/conversationSource.js";
 import type { VoiceVendor } from "../../../shared/domain/voiceVendor.js";
+import { errorClassOf } from "../../../shared/observability/errorClass.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import {
@@ -94,8 +96,6 @@ const isPartialPlay = (stream: VoiceRecordingStream): boolean => {
   return first !== undefined && Number(first) > 0;
 };
 
-export const errorClassOf = (error: unknown): string => (error instanceof Error ? error.name : typeof error);
-
 /** Why a vendor call failed, by reason and status only: the vendor's body never reaches a log. */
 export const recordingErrorFields = (error: unknown) => ({
   ...(error instanceof VoiceRecordingRequestError
@@ -157,10 +157,17 @@ export class VoiceRecordingService implements VoiceVendorConversationReportPort,
     return this.reportEnded(input, vendor, recorded ? "recorded" : "already_reported");
   }
 
-  async isAvailable(input: { workspaceId: string; conversationId: string }): Promise<boolean> {
-    const recording = await this.dependencies.recordings.findRecording(input);
-    if (!recording) return false;
-    return (await this.dependencies.credentials.presence({ workspaceId: input.workspaceId, vendor: recording.vendor })) === "stored";
+  async availability(input: { workspaceId: string; conversationId: string; sourceChannel: string | null }): Promise<boolean | null> {
+    if (input.sourceChannel !== VOICE_SOURCE_CHANNEL) return null;
+    const { workspaceId, conversationId } = input;
+    try {
+      const recording = await this.dependencies.recordings.findRecording({ workspaceId, conversationId });
+      if (!recording) return false;
+      return (await this.dependencies.credentials.presence({ workspaceId, vendor: recording.vendor })) === "stored";
+    } catch (error) {
+      this.dependencies.logger.warn({ workspaceId, conversationId, errorClass: errorClassOf(error) }, "Voice recording availability could not be read");
+      return null;
+    }
   }
 
   async play(input: {

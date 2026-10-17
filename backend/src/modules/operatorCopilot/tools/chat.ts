@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { CallerKind } from "../../../shared/domain/conversationSource.js";
 import type { SameType } from "../../../shared/types/sameType.js";
 import { replyInterruptionSchema, type ReplyInterruption } from "../../chat/contracts/index.js";
+import type { VoiceRecordingAvailabilityPort } from "../../voiceChannel/public.js";
 import {
   CONVERSATION_ACTIVITY_KINDS,
   resolveActivityReadScope,
@@ -387,28 +388,14 @@ const CONVERSATION_TRANSCRIPT_DESCRIPTION = "Read a bounded transcript of a cust
 const CONVERSATION_HISTORY_SEARCH_DESCRIPTION = "List recent customer and dashboard chat conversations in this workspace for investigation. Test Chat sessions are listed with test_chat_sessions.";
 const TURN_TRACE_DESCRIPTION = "Inspect one message's full turn diagnostic spine. Accepts user messages, including unanswered turns with their failure or cancellation reason. A routine's sub-trace reports which slots were filled by key only (filledSlotKeys, capturedSlotKeys) — never their values — and, per step the selector judged, its selection: outcome and the slot keys the model returned (returnedSlotKeys). Use test_chat_turn_trace to see values, on a private Test Chat run only.";
 
-/**
- * Whether a voice conversation's call has a recording a teammate can play in the Inbox. Ray reads
- * the yes or no, never the audio: listening is a person's, and each play is audited against them.
- */
-export interface CopilotVoiceRecordingPort {
-  isAvailable(input: { workspaceId: string; conversationId: string }): Promise<boolean>;
-}
-
 export interface ChatCopilotToolDependencies {
   readonly chatHistoryService: CopilotConversationHistoryPort;
-  readonly voiceRecordings: CopilotVoiceRecordingPort;
+  /**
+   * Whether a voice conversation's call has a recording a teammate can play in the Inbox. Ray reads
+   * the yes or no, never the audio: listening is a person's, and each play is audited against them.
+   */
+  readonly voiceRecordings: VoiceRecordingAvailabilityPort;
 }
-
-/** The yes or no for a voice conversation; null for any other channel, and when it cannot be read. */
-const recordingAvailabilityOf = async (
-  voiceRecordings: CopilotVoiceRecordingPort,
-  workspaceId: string,
-  conversation: CopilotConversationDetail,
-): Promise<boolean | null> =>
-  conversation.sourceChannel === "voice"
-    ? voiceRecordings.isAvailable({ workspaceId, conversationId: conversation.conversationId }).catch(() => null)
-    : null;
 
 export const createChatCopilotTools = (deps: ChatCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {
@@ -435,7 +422,11 @@ export const createChatCopilotTools = (deps: ChatCopilotToolDependencies): Reado
             activity: await resolveActivityReadScope((permission) => hasCurrentCopilotPermissions(context, [permission])),
           },
         );
-        const recordingAvailable = await recordingAvailabilityOf(deps.voiceRecordings, context.workspaceId, conversation);
+        const recordingAvailable = await deps.voiceRecordings.availability({
+          workspaceId: context.workspaceId,
+          conversationId: conversation.conversationId,
+          sourceChannel: conversation.sourceChannel,
+        });
         return { transcript: boundConversationPayload(projectTranscript(conversation, recordingAvailable)) };
       },
 

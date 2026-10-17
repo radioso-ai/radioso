@@ -333,7 +333,7 @@ describe("copilot catalog shape", () => {
       ...createRoutineDefinitionCopilotTools({ agentLookup: agentService, routineDefinitionService: { list: vi.fn(), get: vi.fn(), validate: vi.fn() } }),
       ...createChatCopilotTools({
         chatHistoryService: { getConversation: vi.fn(), getConversationTurn: vi.fn(), listConversations: vi.fn() },
-        voiceRecordings: { isAvailable: vi.fn(async () => false) },
+        voiceRecordings: { availability: vi.fn(async () => null) },
       }),
       ...createDocumentSearchCopilotTools({ documentSearchService: { search: vi.fn() } }),
     ];

@@ -8,6 +8,7 @@ import type { AppDependencies } from "../../server/types.js";
 import type { VoiceRecordingPlaybackPort, VoiceRecordingStream } from "../../../modules/voiceChannel/public.js";
 
 import { AppError, badRequest, forbidden, notFound } from "../../../shared/domain/errors.js";
+import { errorClassOf } from "../../../shared/observability/errorClass.js";
 import { acceptWorkspaceIdFromQuery } from "../middleware/acceptWorkspaceIdFromQuery.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
@@ -38,7 +39,7 @@ const sendRecording = async (
     // A listener who closes the player or seeks ends the response early; that is not a failure.
     if (context.listenerGone.aborted) return;
     context.logger.warn(
-      { workspaceId: context.workspaceId, conversationId: context.conversationId, errorClass: error instanceof Error ? error.name : typeof error },
+      { workspaceId: context.workspaceId, conversationId: context.conversationId, errorClass: errorClassOf(error) },
       "Voice recording stream ended early",
     );
     res.destroy();

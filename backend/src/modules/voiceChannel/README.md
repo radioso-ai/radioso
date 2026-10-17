@@ -55,17 +55,24 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   that yes or no follows the key at once.
   `voiceRecordingService.ts` is a call's recording as the operator meets it:
   the page's report of the vendor's conversation id
-  (`VoiceVendorConversationReportPort`), whether a conversation has a
-  recording (`VoiceRecordingAvailabilityPort`, from `voice_sessions` and the
-  key's presence, no vendor call) and a play (`VoiceRecordingPlaybackPort`),
-  audited through `VoiceRecordingAudit` before the audio is handed on;
-  `voiceRecordingErasureService.ts` deletes recordings at the vendor when
-  their workspace or organization is deleted (`VoiceRecordingErasurePort`,
-  the shared `VendorHeldConversationDataEraser`).
+  (`VoiceVendorConversationReportPort`, stored only once the vendor's
+  `describeConversation` names the vendor agent the session was started on),
+  whether a conversation has a recording (`VoiceRecordingAvailabilityPort`'s
+  `availability`: from `voice_sessions` and the key's presence, no vendor
+  call, null for a conversation that is not a call or cannot be read; the
+  history detail and Ray's transcript both ask it) and a play
+  (`VoiceRecordingPlaybackPort`), audited through `VoiceRecordingAudit`
+  before the audio is handed on; `voiceRecordingErasureService.ts` deletes
+  recordings at the vendor when their workspace or organization is deleted
+  (`VoiceRecordingErasurePort`, the shared `VendorHeldConversationDataEraser`:
+  one erasure per deletion, its scopes in order under one concurrency limit
+  and one deadline).
 - `persistence/` maps `(agent_id, vendor, session_key)` to a conversation in
   `voice_sessions`. The first binding wins. A Radioso-started row also holds
-  the vendor account's region and, once reported, the vendor's conversation
-  id (`VoiceRecordingStore`).
+  the vendor agent it opened on, that account's region and, once reported and
+  confirmed, the vendor's conversation id (`VoiceRecordingStore`). A row that
+  holds that id outlives its agent (`agent_id` is SET NULL) and the next
+  start's cleanup; it goes with its conversation or workspace.
 - `adapters/*` translate one wire to the domain port and back, and nothing
   else. `adapters/openaiCompletions/` is the OpenAI chat-completions wire;
   vendors that share it differ only by a dialect in `dialects.ts`, which is
@@ -79,7 +86,10 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   (`recordingSource.ts`): the conversation's audio and its deletion, with the
   key in `xi-api-key`, one byte range passed on, a non-audio answer refused,
   and a 5-second limit on the answer that leaves the audio itself unbounded.
-  Both use the region host table in `hosts.ts`.
+  `describeConversation` reads the conversation document (64 KB cap) for its
+  `agent_id`. The audio stops when it stalls for 15 s while the listener
+  waits; a listener who pauses never trips it. Both adapters use the region
+  host table in `hosts.ts` and the body helpers in `fetchHelpers.ts`.
 
 Dependency direction is adapter → `VoiceTurnPort` → chat. The service reaches
 chat through the narrow `VoiceChatPort` (`streamTurn`) and imports chat only
@@ -127,7 +137,11 @@ helpers and the shared chat message limit from `app/http`
   `GET /api/v1/conversations/:conversationId/recording` (dashboard sessions,
   `workspace.history.read`, `sessionOnly` in `apiPrincipalRoutePolicy.ts`),
   streaming the audio with `Cache-Control: private, no-store`; `404` for no
-  recording or no audio yet, `503 recording_unavailable` otherwise.
+  recording or no audio yet, `416` for a range past the end,
+  `503 recording_unavailable` otherwise. `HEAD` is `405`, and a browser
+  request whose `Sec-Fetch-Site` is not `same-origin` is `403`. A listener who
+  goes away before the vendor answers gets no answer and leaves no warn,
+  count or audit.
   `historyRoutes.ts` adds `recording: { available }` to a voice
   conversation's detail for dashboard sessions.
 - The agent's `voice` settings block belongs to the agents module
@@ -194,23 +208,28 @@ helpers and the shared chat message limit from `app/http`
   body that stalls past the 5 s request limit is a `timeout`, not a malformed
   answer.
 - **Recordings stay with the vendor.** Radioso stores where the recording
-  is, never the audio: the region at the start and the vendor's id for the
-  call, which the page reports once through
+  is, never the audio: the vendor agent and region at the start and the
+  vendor's id for the call, which the page reports once through
   `POST /api/v1/public/chat/:token/voice/sessions/:sessionKey/vendor-conversation`
   (website embed sessions, the same public session as the start, the
   session-read budget). The id is taken only for a session Radioso started
-  for that public session while its start is unexpired, at most once, and is
-  unique per vendor and region; it is only ever used to look the recording
-  up with the workspace's own key, and no response carries it. A self-minted
-  session key has no recording. Each answer that carries audio is audited
-  first; an audit that fails refuses the play. A workspace or organization
-  deletion reads the recordings and the key before the cascade takes both,
-  then asks the vendor to delete each, four at a time for at most 20 s; a
-  refusal is logged and never fails the deletion. The route is a permanent
-  coverage exclusion (`getConversationRecording`: binary audio a teammate
-  hears); Ray's `conversation_transcript` carries `recordingAvailable`. The
-  agent's optional `voice.recordingNotice` is shown by the embed, not spoken:
-  the session start hands it to the page in the session's language.
+  for that public session while its start is unexpired, at most once, only
+  after the vendor says the conversation was held on the session's vendor
+  agent (one vendor call per report, none for a report no session waits
+  for), and is unique per vendor and region; it is only ever used to look the
+  recording up with the workspace's own key, and no response carries it. A
+  self-minted session key has no recording. Each answer that carries audio is
+  audited first; an audit that fails refuses the play, and `partial` follows
+  the bytes sent. A workspace or organization deletion reads the recordings
+  and the key before the cascade takes both, then asks the vendor to delete
+  each, four at a time for at most 20 s in all; what is left is logged with
+  its ids and never fails the deletion. Deleting an agent deletes no
+  recording. The route is a permanent coverage exclusion
+  (`getConversationRecording`: binary audio a teammate hears); Ray's
+  `conversation_transcript` carries `recordingAvailable`. The agent's
+  optional `voice.recordingNotice` is shown by the embed, not spoken: the
+  session start hands it to the page in the call's language, else the
+  agent's default, else English, else the first one written.
 - **The session key is a correlation handle.** The start mints it (a UUID) and
   records it in `voice_sessions` with the visitor's public session and visitor
   key until `VOICE_BEHAVIOR.sessionStartTtlMs` (60 minutes: the signed URL's
@@ -498,15 +517,20 @@ turn cancelled mid-reply with `stage: "persisting"`.
 A recording play records `voice_recording_fetch_total` (`vendor`, or `none`
 before one is known; `outcome`: `served`, `no_recording`, `store_failed`,
 `credential_missing`, `credential_unreadable`, `credential_read_failed`,
-`vendor_not_found`, `vendor_failed`, `audit_failed`) and, unless served,
-`Voice recording could not be read` at warn with `workspaceId`,
-`conversationId`, `vendor`, `outcome` and the vendor's `reason` and
-`vendorStatus`. A deletion records `voice_recording_delete_total` (`outcome`:
-`deleted`, `vendor_failed`, `credential_*`, `deadline_passed`) and logs
-`Voice recording was left at the vendor` at warn per recording, or once with
-`recordingCount` when the 20 s ran out. A refused report logs `Voice vendor
-conversation report was refused` with `workspaceId` and `agentId`. Never the
-key, the vendor URL, the vendor's conversation id or any audio.
+`vendor_not_found`, `range_not_satisfiable`, `vendor_failed`, `audit_failed`)
+and, for a failure, `Voice recording could not be read` at warn with
+`workspaceId`, `conversationId`, `vendor`, `outcome` and the vendor's `reason`
+and `vendorStatus`. A report records `voice_vendor_conversation_report_total`
+(`recorded`, `no_session`, `vendor_not_found`, `vendor_agent_mismatch`,
+`already_reported`, `store_failed`, `credential_*`, `vendor_failed`) and logs
+`Voice vendor conversation report was refused` or `… could not be checked`
+with `workspaceId`, `agentId`, `vendor` and `outcome`. A deletion records
+`voice_recording_delete_total` (`deleted`, `already_absent`, `vendor_failed`,
+`credential_*`, `deadline_passed`) and logs `Voice recording was left at the
+vendor` at warn for every recording it leaves, past the deadline included,
+with `conversationId` and `vendorConversationId` so an operator can delete
+it at the vendor. Otherwise never the vendor's conversation id, and never
+the key, the vendor URL or any audio.
 
 ## Tests
 

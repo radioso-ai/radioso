@@ -71,6 +71,10 @@ export const jsonbConcat = (
  * consistent across rows written in one statement. Prefer this over `new Date()` for
  * server-set timestamps.
  */
+/** Postgres' unique violation (`23505`): the row would duplicate a unique key. */
+export const isUniqueViolation = (error: unknown): boolean =>
+  typeof error === "object" && error !== null && (error as { code?: unknown }).code === "23505";
+
 export const currentTimestamp = (): RawBuilder<Date> => sql`now()`;
 
 /**

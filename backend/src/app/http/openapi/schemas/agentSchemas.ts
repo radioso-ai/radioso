@@ -792,7 +792,6 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     }),
   );
 
-
   const WorkspaceIngestionReprocessResponseSchema = registry.register(
     "WorkspaceIngestionReprocessResponse",
     z.object({

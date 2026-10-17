@@ -356,11 +356,16 @@ export interface VoiceVendorConversationReportPort {
   report(input: VoiceVendorConversationReport): Promise<"recorded" | "rejected" | "failed">;
 }
 
-
-/** Whether a conversation has a recording an operator can play, without asking the vendor. */
+/**
+ * Whether a conversation's call has a recording a teammate can play, from Radioso's records alone,
+ * without asking the vendor. One answer for every reader: the Inbox's detail and Ray's transcript.
+ */
 export interface VoiceRecordingAvailabilityPort {
-  /** Rejects when the session store or the credential store cannot be read. */
-  isAvailable(input: { workspaceId: string; conversationId: string }): Promise<boolean>;
+  /**
+   * Null for a conversation that is not a call, and for one whose records cannot be read now (which
+   * is logged). Never rejects.
+   */
+  availability(input: { workspaceId: string; conversationId: string; sourceChannel: string | null }): Promise<boolean | null>;
 }
 
 /**

@@ -17,7 +17,6 @@ const isStartedSession = (body: unknown): body is PublicVoiceSessionResponse => 
 const startedSessionOf = ({ vendor, signedUrl, sessionKey, locale, recordingNotice }: PublicVoiceSessionResponse): StartedVoiceSession =>
   ({ vendor, signedUrl, sessionKey, locale, ...(typeof recordingNotice === 'string' && recordingNotice.trim() ? { recordingNotice } : {}) })
 
-
 /**
  * Asks Radioso to start a voice session for the website embed's visitor, with the public session
  * the embed already holds. It goes through the app host's relay, the way a chat message does, so

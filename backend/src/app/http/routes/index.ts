@@ -7,6 +7,7 @@ import { createAccountUserRoutes } from "./accountUserRoutes.js";
 import { createAuthRoutes } from "./authRoutes.js";
 import { createConversationActivityRoutes } from "./conversationActivityRoutes.js";
 import { createConversationOwnershipRoutes } from "./conversationOwnershipRoutes.js";
+import { createConversationRecordingRoutes } from "./conversationRecordingRoutes.js";
 import { createDeliveryFailureRoutes } from "./deliveryFailureRoutes.js";
 import { createHeldReplyRoutes } from "./heldReplyRoutes.js";
 import { createContextVariableRoutes } from "./contextVariableRoutes.js";
@@ -48,6 +49,8 @@ import { createAgentDiscoveryRoutes } from "../../../modules/agentDiscovery/publ
 import { createOperatorMcpDiscoveryRoutes, createOperatorMcpOauthRoutes } from "../../../modules/operatorMcpAuthorization/routes.js";
 import { createOperatorMcpInternalRoutes } from "../../../modules/operatorCopilot/mcpRoutes.js";
 import { createTestExecutionRoutes } from "./testExecutionRoutes.js";
+import { createNotificationRecipientConfirmationRoutes } from "./notificationRecipientConfirmationRoutes.js";
+import { createNotificationDeliveryWebhookRoutes } from "./notificationDeliveryWebhookRoutes.js";
 
 type ApiRouteMount = {
   path: string;
@@ -62,6 +65,8 @@ export const createApiRouteMounts = (_dependencies: AppDependencies): readonly A
   { path: "/.well-known", createRouter: createOperatorMcpDiscoveryRoutes },
   { path: "/.well-known", createRouter: createAgentDiscoveryRoutes },
   { path: "/api/v1/auth", createRouter: createAuthRoutes },
+  { path: "/api/v1", createRouter: createNotificationRecipientConfirmationRoutes },
+  { path: "/api/connectors/email", createRouter: createNotificationDeliveryWebhookRoutes },
   { path: "/api/v1/account", createRouter: createAccountRoutes },
   { path: "/api/v1/account", createRouter: createAccountUserRoutes },
   { path: "/api/v1/account", createRouter: createApiAccessRoutes },
@@ -97,6 +102,7 @@ export const createApiRouteMounts = (_dependencies: AppDependencies): readonly A
   { path: "/api/v1/copilot", createRouter: createCopilotRoutes },
   { path: "/api/v1/conversations", createRouter: createConversationActivityRoutes },
   { path: "/api/v1/conversations", createRouter: createConversationOwnershipRoutes },
+  { path: "/api/v1/conversations", createRouter: createConversationRecordingRoutes },
   { path: "/api/v1/delivery-failures", createRouter: createDeliveryFailureRoutes },
   { path: "/api/v1", createRouter: createHeldReplyRoutes },
   { path: "/api/v1/history", createRouter: createHistoryRoutes },

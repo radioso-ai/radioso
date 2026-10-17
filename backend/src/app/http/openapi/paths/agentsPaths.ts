@@ -115,7 +115,7 @@ export const registerAgentsPaths = (
     security: [{ [security.bearerAuthScheme.name]: [] }],
     request: { params: schemas.AgentParamsSchema },
     responses: {
-      200: { description: "Agent returned", content: { "application/json": { schema: schemas.ConversationAgentSchema } } },
+      200: { description: "Agent returned", content: { "application/json": { schema: schemas.AgentDetailSchema } } },
       401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
       404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
     },

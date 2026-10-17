@@ -31,6 +31,7 @@ export type AccountPermission =
   | "workspace.conversation.takeover"
   | "workspace.retrieval.query"
   | "workspace.history.read"
+  | "workspace.history.delete"
   | "workspace.quality.read"
   | "workspace.quality.manage"
   | "workspace.skills.read"

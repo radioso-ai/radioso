@@ -1,10 +1,25 @@
+import {
+  backgroundJobHandler,
+  BackgroundJobRuntime,
+  NonRetryableBackgroundJobError,
+  type BackgroundJobSkipped,
+} from "../../shared/background-jobs/index.js";
 import type { ErrorReporter } from "../../shared/errors/errorReporter.js";
+import { isPermanentProviderFailure } from "../../shared/infra/llm/providerErrors.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
+import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import type { TelemetryService } from "../../shared/observability/telemetry/telemetryService.js";
-import type { FacetExtractionJobStore, FacetExtractionPort } from "./contracts.js";
-import { FacetExtractionWorker } from "./services/facetExtractionWorker.js";
+import type { FacetExtractionJob, FacetExtractionJobStore, FacetExtractionPort } from "./contracts.js";
+import {
+  createFacetExtractionJobKind,
+  FacetExtractionBackgroundJobStore,
+} from "./infra/facetExtractionBackgroundJobStore.js";
+import { FacetExtractionWorkspaceDrainWorker } from "./services/facetExtractionWorkspaceDrainWorker.js";
 
-export { FacetExtractionWorker } from "./services/facetExtractionWorker.js";
+/** Both factories below only need the levels the underlying classes actually log at. */
+type FacetCompositionLogger = Pick<AppLogger, "info" | "warn" | "error" | "debug">;
+
+export { FacetExtractionWorkspaceDrainWorker } from "./services/facetExtractionWorkspaceDrainWorker.js";
 export { FacetExtractionWorkspaceDrainService } from "./services/facetExtractionWorkspaceDrainService.js";
 export {
   NoopFacetExtractionDrainDispatcher,
@@ -19,34 +34,96 @@ export {
 } from "./services/prompt.js";
 
 /**
- * Builds the facet extraction worker, or `undefined` when no extraction implementation
- * is registered.
+ * Builds the worker behind Audience Pulse's workspace-scoped, operator-requested drain, or
+ * `undefined` when no extraction implementation is registered.
  *
  * Returning `undefined` is the deliberate default: with no extractor, draining the queue
  * could only discard work. Leaving jobs queued keeps them durable until an extractor is
  * registered, at which point the backlog is processed.
  */
-export const createFacetExtractionWorker = (input: {
+export const createFacetExtractionWorkspaceDrainWorker = (input: {
   jobs: FacetExtractionJobStore;
   extraction?: FacetExtractionPort;
-  logger: AppLogger;
-  pollIntervalMs: number;
+  logger: FacetCompositionLogger;
   batchSize: number;
   jobLeaseMs: number;
-  telemetryService?: TelemetryService;
-  errorReporter?: ErrorReporter;
-}): FacetExtractionWorker | undefined => {
+  telemetryService?: Pick<TelemetryService, "emit">;
+}): FacetExtractionWorkspaceDrainWorker | undefined => {
   if (!input.extraction) {
     return undefined;
   }
-  return new FacetExtractionWorker({
+  return new FacetExtractionWorkspaceDrainWorker({
     jobs: input.jobs,
     extraction: input.extraction,
     logger: input.logger,
-    pollIntervalMs: input.pollIntervalMs,
     batchSize: input.batchSize,
     jobLeaseMs: input.jobLeaseMs,
     telemetryService: input.telemetryService,
+  });
+};
+
+/**
+ * Builds the generic-job-port runtime for the per-message path, or `undefined` when no
+ * extraction implementation is registered (same reasoning as the workspace drain worker above).
+ *
+ * The handler only runs `extraction.extract` and classifies the failure; every write — complete,
+ * retry, dead-letter — and its telemetry are the store adapter's job
+ * (`FacetExtractionBackgroundJobStore`), emitted only once its fenced write actually lands.
+ *
+ * `FacetExtractionPort.extract` takes no `AbortSignal`: it has no provider or database call this
+ * adapter could cancel mid-flight, so `context.signal` has nothing to pass through to today.
+ */
+export const createFacetExtractionBackgroundJobRuntime = (input: {
+  jobs: FacetExtractionJobStore;
+  extraction?: FacetExtractionPort;
+  logger: FacetCompositionLogger;
+  metrics?: MetricsRegistry | null;
+  errorReporter?: ErrorReporter;
+  telemetryService?: Pick<TelemetryService, "emit">;
+  jobLeaseMs: number;
+  pollIntervalMs?: number;
+  pollBatchSize?: number;
+}): BackgroundJobRuntime | undefined => {
+  if (!input.extraction) {
+    return undefined;
+  }
+  const extraction = input.extraction;
+  const job = createFacetExtractionJobKind({ leaseSeconds: input.jobLeaseMs / 1_000 });
+  const store = new FacetExtractionBackgroundJobStore(input.jobs, job.policy.maxAttempts, input.telemetryService);
+  const handler = backgroundJobHandler(job, async (payload, context): Promise<BackgroundJobSkipped | void> => {
+    // The extractor only reads `id`, `messageId`, `workspaceId`, and `attemptCount` (see
+    // `FacetExtractionService.extract`); the remaining `FacetExtractionJob` fields are claim and
+    // status bookkeeping this adapter keeps to itself (see `claimNext`'s `token`), so they are
+    // placeholders here, never read.
+    const extractionJob: FacetExtractionJob = {
+      id: context.jobId,
+      messageId: payload.messageId,
+      workspaceId: payload.workspaceId,
+      status: "processing",
+      attemptCount: context.attempt,
+      claimedAt: null,
+      scheduledAt: new Date(),
+      lastError: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    };
+    try {
+      const outcome = await extraction.extract(extractionJob);
+      return outcome.status === "skipped" ? { skipped: outcome.reason } : undefined;
+    } catch (error) {
+      if (isPermanentProviderFailure(error)) {
+        throw new NonRetryableBackgroundJobError("Permanent facet extraction provider failure");
+      }
+      throw error;
+    }
+  });
+  return new BackgroundJobRuntime({
+    store,
+    handlers: [handler],
+    logger: input.logger,
+    metrics: input.metrics,
     errorReporter: input.errorReporter,
+    pollIntervalMs: input.pollIntervalMs,
+    pollBatchSize: input.pollBatchSize,
   });
 };

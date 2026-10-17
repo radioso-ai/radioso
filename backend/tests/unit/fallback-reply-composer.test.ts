@@ -142,6 +142,46 @@ describe("grounded miss response composer", () => {
     expect(properties.declineReason?.enum).toEqual(["content_gap", "out_of_scope"]);
   });
 
+  // #1502: the model sometimes writes the unsupported-claim marker with single brackets.
+  // The decline composer reads `[?]` as `[[?]]` before its own citation cleanup.
+  describe("single-bracket unsupported-claim marker", () => {
+    const composeReply = async (reply: string): Promise<string> => {
+      const composer = new ModelFallbackReplyComposer(pipeline({
+        metadata: { capability: "chat", provider: "openai", model: "test-model" },
+        async complete() {
+          return textResult(JSON.stringify({ reply, declineReason: "content_gap" }));
+        },
+        stream() {
+          return streamResult([""]);
+        },
+      }));
+      return (await composer.composeNoContext({ query: "Anything", usageContext })).text;
+    };
+
+    it("removes a marker from the decline text", async () => {
+      await expect(composeReply("That's outside what I can help with[?], but I can help with our courses."))
+        .resolves.toBe("That's outside what I can help with, but I can help with our courses.");
+    });
+
+    it("treats a bracket or parenthetical after the marker as it treats one after [[?]]", async () => {
+      for (const [single, double] of [
+        ["Claim[?]] next.", "Claim[[?]]] next."],
+        ["See [?](https://example.com) for details.", "See [[?]](https://example.com) for details."],
+      ]) {
+        const reply = await composeReply(single);
+
+        expect(reply).toBe(await composeReply(double));
+        expect(reply).not.toContain("[?");
+      }
+    });
+
+    it("leaves [?] inside inline code alone", async () => {
+      for (const text of ["Use `[?]` to match a literal question mark.", "The pattern `/a[?]b/` matches ab."]) {
+        await expect(composeReply(text)).resolves.toBe(text);
+      }
+    });
+  });
+
   it("classifies an in-remit decline as a content gap", async () => {
     const composer = new ModelFallbackReplyComposer(pipeline({
       metadata: { capability: "chat", provider: "openai", model: "test-model" },

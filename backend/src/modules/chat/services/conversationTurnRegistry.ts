@@ -15,11 +15,24 @@ interface ConversationTurnInterruptionObserver {
   turnCancelled(input: ConversationTurnCancellation): void;
 }
 
+interface ChatTurnSupersession {
+  /** The turn had started emitting its reply; only a turn that supersedes after emission cancels one then. */
+  afterEmission?: boolean;
+  /**
+   * Both turns supersede after emission, so the newer one carries the input that replaces this
+   * turn's (a revised transcript). Any other newer turn, such as an approval resuming a routine,
+   * only cancels it.
+   */
+  replacedByNewerInput?: boolean;
+}
+
 export class ChatTurnSupersededError extends AppError {
   readonly conversationId: string;
   readonly stage: ConversationTurnStage;
+  readonly afterEmission: boolean;
+  readonly replacedByNewerInput: boolean;
 
-  constructor(conversationId: string, stage: ConversationTurnStage) {
+  constructor(conversationId: string, stage: ConversationTurnStage, supersession: ChatTurnSupersession = {}) {
     super(409, "chat_turn_superseded", "Chat turn was superseded by a newer message.", {
       conversationId,
       reason: "superseded",
@@ -28,6 +41,8 @@ export class ChatTurnSupersededError extends AppError {
     this.name = "ChatTurnSupersededError";
     this.conversationId = conversationId;
     this.stage = stage;
+    this.afterEmission = supersession.afterEmission === true;
+    this.replacedByNewerInput = supersession.replacedByNewerInput === true;
   }
 }
 
@@ -61,6 +76,13 @@ export interface ConversationTurnLease {
   setStage(stage: ConversationTurnStage): void;
   throwIfCancelled(): void;
   beginEmission(): void;
+  /**
+   * Latches the turn for the commit of its stored reply, as the commit's last step: throws when
+   * a newer turn already cancelled it, and from then on no newer turn cancels it, even one that
+   * supersedes after emission; a newer turn waits for it instead. The latch a `latest_input_wins`
+   * turn needs, since emission alone does not protect it.
+   */
+  beginCommit(): void;
   complete(): void;
   /**
    * Externally cancel this turn because the client disconnected and the
@@ -73,8 +95,18 @@ export interface ConversationTurnLease {
   cancelAfterDisconnect(): void;
 }
 
+export interface ConversationTurnLeaseOptions {
+  /**
+   * For a channel whose newest input overtakes the reply still being delivered (a caller who
+   * speaks over the agent): a turn started with this cancels a predecessor started with it even
+   * after the predecessor began emitting. Without it on both turns, a turn that began emitting runs
+   * to completion and the newer turn waits for it.
+   */
+  supersedeAfterEmission?: boolean;
+}
+
 export interface ConversationTurnRegistry {
-  start(conversationId: string): ConversationTurnLease;
+  start(conversationId: string, options?: ConversationTurnLeaseOptions): ConversationTurnLease;
 }
 
 export class LoggingConversationTurnInterruptionObserver implements ConversationTurnInterruptionObserver {
@@ -107,12 +139,14 @@ interface ActiveTurn {
   controller: AbortController;
   conversationId: string;
   emissionStarted: boolean;
+  commitStarted: boolean;
+  supersedeAfterEmission: boolean;
   finished: Promise<void>;
   finish: () => void;
   stage: ConversationTurnStage;
 }
 
-const createActiveTurn = (conversationId: string): ActiveTurn => {
+const createActiveTurn = (conversationId: string, options: ConversationTurnLeaseOptions): ActiveTurn => {
   let finish!: () => void;
   const finished = new Promise<void>((resolve) => {
     finish = resolve;
@@ -121,11 +155,22 @@ const createActiveTurn = (conversationId: string): ActiveTurn => {
     controller: new AbortController(),
     conversationId,
     emissionStarted: false,
+    commitStarted: false,
+    supersedeAfterEmission: options.supersedeAfterEmission === true,
     finished,
     finish,
     stage: "waiting",
   };
 };
+
+/**
+ * A newer turn cancels its predecessor until it starts emitting, or, when both agree, until it
+ * begins committing its reply.
+ */
+const supersedes = (predecessor: ActiveTurn, successor: ActiveTurn): boolean =>
+  !predecessor.controller.signal.aborted
+  && !predecessor.commitStarted
+  && (!predecessor.emissionStarted || (predecessor.supersedeAfterEmission && successor.supersedeAfterEmission));
 
 const throwSignalReason = (turn: ActiveTurn): void => {
   if (!turn.controller.signal.aborted) {
@@ -143,10 +188,14 @@ export class InMemoryConversationTurnRegistry implements ConversationTurnRegistr
 
   constructor(private readonly observer?: ConversationTurnInterruptionObserver) {}
 
-  start(conversationId: string): ConversationTurnLease {
+  start(conversationId: string, options: ConversationTurnLeaseOptions = {}): ConversationTurnLease {
     const predecessor = this.active.get(conversationId);
-    if (predecessor && !predecessor.emissionStarted && !predecessor.controller.signal.aborted) {
-      const cancellation = new ChatTurnSupersededError(conversationId, predecessor.stage);
+    const turn = createActiveTurn(conversationId, options);
+    if (predecessor && supersedes(predecessor, turn)) {
+      const cancellation = new ChatTurnSupersededError(conversationId, predecessor.stage, {
+        afterEmission: predecessor.emissionStarted,
+        replacedByNewerInput: predecessor.supersedeAfterEmission && turn.supersedeAfterEmission,
+      });
       predecessor.controller.abort(cancellation);
       this.observer?.turnCancelled({
         conversationId,
@@ -155,7 +204,6 @@ export class InMemoryConversationTurnRegistry implements ConversationTurnRegistr
       });
     }
 
-    const turn = createActiveTurn(conversationId);
     this.active.set(conversationId, turn);
     let completed = false;
     const complete = () => {
@@ -183,6 +231,10 @@ export class InMemoryConversationTurnRegistry implements ConversationTurnRegistr
         throwSignalReason(turn);
         turn.emissionStarted = true;
         turn.stage = "persisting";
+      },
+      beginCommit() {
+        throwSignalReason(turn);
+        turn.commitStarted = true;
       },
       complete,
       cancelAfterDisconnect: () => {

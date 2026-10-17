@@ -2,7 +2,7 @@ import { notFound } from "../../../shared/domain/errors.js";
 import { decodeCursorWithKeys } from "../../../shared/domain/cursorPagination.js";
 import type { CallerKind, ConversationSourceScope } from "../../../shared/domain/conversationSource.js";
 import type { ConversationOutcomeFilter } from "../../../shared/domain/conversationOutcome.js";
-import type { ConversationTurnStage } from "../contracts/interruption.js";
+import type { ConversationTurnStage, ReplyInterruption } from "../contracts/interruption.js";
 import {
   formatActivityCursor,
   type ConversationActivityEntry,
@@ -278,7 +278,19 @@ export interface ChatConversationTurn {
    * shares these reads and whose presenter forwards unrecognised fields.
    */
   operatorLabel?: string;
+  /** On an assistant reply the caller spoke over: how much of it they heard, in spoken characters. */
+  interruption?: ReplyInterruption;
 }
+
+/** A tail cursor's marker watermark, read only in the form the repository writes it. */
+const cursorMarkedAt = (cursor: { keys: Readonly<Record<string, string>> } | null): string | undefined => {
+  const value = cursor?.keys.markedAt;
+  return value !== undefined && !Number.isNaN(Date.parse(value)) && new Date(value).toISOString() === value ? value : undefined;
+};
+
+/** The interruption marker, on a reply that carries one and on no other message. */
+const interruptionField = (message: MessageRecord): { interruption?: ReplyInterruption } =>
+  message.interruption ? { interruption: message.interruption } : {};
 
 /**
  * Reads the signature from a human-agent reply's stored metadata, the same on every surface. A
@@ -1305,6 +1317,7 @@ export class ChatHistoryService {
         turnFailure: message.role === "user" ? turnFailureByUserMessageId.get(message.id) : undefined,
         operatorDisplayName: operatorDisplayNameFrom(message),
         ...(options.includeOperatorLabel ? operatorLabelField(message, operatorLabels) : {}),
+        ...interruptionField(message),
       })),
       ...operatorOwnershipField(ownershipRecord),
       ...(activity ? { activity: activity.present(operatorLabels) } : {}),
@@ -1382,6 +1395,7 @@ export class ChatHistoryService {
         turnFailure,
         operatorDisplayName: operatorDisplayNameFrom(message),
         ...(options.includeOperatorLabel ? operatorLabelField(message, operatorLabels) : {}),
+        ...interruptionField(message),
       },
       ...operatorOwnershipField(ownershipRecord),
     };
@@ -1401,6 +1415,11 @@ export class ChatHistoryService {
       includeLatency?: boolean;
       includeOperatorLabel?: boolean;
       activity?: ConversationActivityReadScope;
+      /**
+       * Operator reads that merge messages by id: the tail also returns an already-seen reply once
+       * the caller has marked it interrupted, so an open transcript shows the marker.
+       */
+      redeliverInterruptedReplies?: boolean;
     } = {},
   ): Promise<ChatConversationTail> {
     const conversation = await this.conversationRepository.findByIdAndWorkspaceId(conversationId, workspaceId);
@@ -1414,7 +1433,9 @@ export class ChatHistoryService {
       this.messageRepository.listSinceByConversationId(workspaceId, conversation.id, {
         sinceCreatedAt: cursor ? new Date(cursor.keys.createdAt) : undefined,
         sinceId: cursor?.keys.id,
+        sinceMarkedAt: cursorMarkedAt(cursor),
         limit: input.limit,
+        redeliverInterruptedReplies: options.redeliverInterruptedReplies === true,
       }),
       options.includeOwnership ? this.conversationOwnership.load(conversation.id) : Promise.resolve(null),
       this.loadActivity(
@@ -1471,6 +1492,7 @@ export class ChatHistoryService {
       ...(options.includeLatency ? { latencyMs: message.totalLatencyMs } : {}),
       operatorDisplayName: operatorDisplayNameFrom(message),
       ...(options.includeOperatorLabel ? operatorLabelField(message, operatorLabels) : {}),
+      ...interruptionField(message),
     };
   }
 

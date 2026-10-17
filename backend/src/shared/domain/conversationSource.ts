@@ -26,9 +26,13 @@ export type ConversationSourceScope = "end_user" | "operator_test" | "all";
 export const isOperatorTestSourceChannel = (sourceChannel: string | null | undefined): boolean =>
   sourceChannel != null && (OPERATOR_TEST_SOURCE_CHANNELS as readonly string[]).includes(sourceChannel);
 
+// A spoken session through a voice vendor. The vendor's runtime makes the HTTP call, but the caller
+// is the person on the call or in the browser, so voice is a human channel.
+export const VOICE_SOURCE_CHANNEL = "voice" as const;
+
 // Channels on which the caller is another piece of software rather than a person: the MCP converse
-// door and the REST agent channel. Slack, the embed, the anonymous link, and the dashboard all carry
-// a person, and operator-test traffic is a person driving a test.
+// door and the REST agent channel. Slack, the embed, the anonymous link, voice, and the dashboard all
+// carry a person, and operator-test traffic is a person driving a test.
 export const AGENT_SOURCE_CHANNELS = ["mcp", "agent_api"] as const;
 
 // Whether the other side of a conversation is a person or a calling agent. Derived from the source

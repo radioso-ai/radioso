@@ -62,6 +62,7 @@ type BootstrapState =
       workspaceName?: string | null
       pageContext?: WebsiteEmbedPageContext | null
       clientContextCapabilities?: ClientContextCapabilities
+      voiceAvailable: boolean
     }
 
 // The host page's identity, mirrored from the launcher: either a static token
@@ -92,6 +93,8 @@ const PREPARE_MESSAGE = 'radioso:embed:preparing'
 const HANDSHAKE_TIMEOUT_MS = 30_000
 const FULLSCREEN_MESSAGE = 'radioso:embed:fullscreen'
 const RESET_SESSION_MESSAGE = 'radioso:embed:reset-session'
+// Sent by the launcher each time it opens or closes the panel; a closed panel ends a voice call.
+const PANEL_VISIBILITY_MESSAGE = 'radioso:embed:panel-visibility'
 
 const sanitizePageContext = (value: unknown): WebsiteEmbedPageContext | null => {
   if (!value || typeof value !== 'object') {
@@ -176,6 +179,8 @@ export function EmbeddedChatFrame({
   // mount-time effect below hydrates workspaceName from the stored session.
   // Reading here causes a server/client text mismatch on the bootstrapping screen.
   const [state, setState] = useState<BootstrapState>({ status: 'bootstrapping', workspaceName: null })
+  // The launcher sends the session only once the visitor opened the panel.
+  const [panelOpen, setPanelOpen] = useState(true)
   const isBootstrappedRef = useRef(false)
   const isReadyRef = useRef(false)
   const identityRef = useRef<EmbedIdentity>({ mode: 'static', token: null })
@@ -312,6 +317,11 @@ export function EmbeddedChatFrame({
         return
       }
 
+      if (event.data.type === PANEL_VISIBILITY_MESSAGE && !isDisposed) {
+        setPanelOpen(event.data.open === true)
+        return
+      }
+
       if (event.data.type === IDENTITY_MESSAGE && !isDisposed) {
         const requestId = typeof event.data.requestId === 'string' ? event.data.requestId : null
         if (requestId) {
@@ -372,6 +382,8 @@ export function EmbeddedChatFrame({
           workspaceName: session.workspaceName,
           pageContext,
           clientContextCapabilities,
+          // The launcher read it from the embed config; the session start decides each call.
+          voiceAvailable: event.data.voice?.available === true,
         })
         postWebsiteEmbedAnalyticsEvent({
           event: 'website_embed.loaded',
@@ -521,6 +533,8 @@ export function EmbeddedChatFrame({
       clientContextCapabilities={state.clientContextCapabilities}
       resolveSignedIdentity={resolveSignedIdentity}
       onAnalyticsEvent={handleAnalyticsEvent}
+      voiceAvailable={state.voiceAvailable}
+      panelOpen={panelOpen}
     />
   )
 }

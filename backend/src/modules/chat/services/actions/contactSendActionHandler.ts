@@ -10,8 +10,10 @@ import {
   CONTACT_MESSAGE_MAX_LENGTH,
   CONTACT_NAME_MAX_LENGTH,
   REPLY_TO_MAX_LENGTH,
+  planNotificationEmail,
   validVisitorReplyTo,
   type NotificationDeliveryAdmissionPort,
+  type NotificationRecipientPolicyPort,
 } from "../../../operatorNotifications/public.js";
 import type { ActionHandler, ActionHandlerContext } from "./actionDispatcher.js";
 import {
@@ -32,6 +34,7 @@ export interface ContactNotificationMailer {
     subject: string;
     text: string;
     idempotencyKey?: string | null;
+    listUnsubscribeUrl?: string | null;
     // The result is deliberately unconstrained: this handler needs the send to happen and
     // does not read what the transport reports back.
   }): Promise<unknown>;
@@ -219,10 +222,10 @@ export class ConfiguredContactDeliveryResolver implements RoutedContactRecipient
 export class FetchContactWebhookHttpClient extends FetchWebhookHttpClient {}
 
 /**
- * A caught delivery failure's HTTP status, if the (already-stringified, see
- * {@link ActionDispatcher}) error text ends in one — `ResendEmailDeliveryError`
- * and the webhook client's own errors both format theirs this way. Structural,
- * not content-based: it never echoes the surrounding text, only a 3-digit code.
+ * A caught delivery failure's HTTP status, if the error's own message (see
+ * `BackgroundJobFailureContext.cause`, extracted by `actionDispatchJob.ts`'s `causeMessage`) ends
+ * in one — `ResendEmailDeliveryError` and the webhook client's own errors both format theirs this
+ * way. Structural, not content-based: it never echoes the surrounding text, only a 3-digit code.
  */
 const trailingStatusCode = (message: string): number | undefined => {
   const match = /\b([1-5]\d{2})\D*$/u.exec(message);
@@ -253,11 +256,12 @@ export class ContactSendActionHandler implements ActionHandler {
   constructor(
     private readonly mailer: ContactNotificationMailer,
     private readonly recipients: ContactRecipientResolver,
-    private readonly logger?: { warn(payload: Record<string, unknown>, message: string): void },
-    private readonly webhookClient?: ContactWebhookHttpClient,
+    private readonly logger: { warn(payload: Record<string, unknown>, message: string): void } | undefined,
+    private readonly webhookClient: ContactWebhookHttpClient | undefined,
     // Terminal (retry-budget-exhausted) failures are alertable — see recordFailureOutcome.
-    private readonly errorReporter?: ErrorReporter,
-    private readonly admission?: NotificationDeliveryAdmissionPort,
+    private readonly errorReporter: ErrorReporter | undefined,
+    private readonly admission: NotificationDeliveryAdmissionPort | undefined,
+    private readonly recipientPolicy: Pick<NotificationRecipientPolicyPort, "prepareDelivery">,
   ) {}
 
   async handle(input: { payload: Record<string, unknown>; context: ActionHandlerContext }): Promise<void> {
@@ -269,19 +273,11 @@ export class ContactSendActionHandler implements ActionHandler {
       );
       return;
     }
-
-    const admission = await this.admission?.admit({
-      requestId: input.context.requestId,
-      workspaceId: input.context.workspaceId,
-      accountId: input.context.accountId,
-      conversationId: input.context.conversationId,
-      recipientEmails: target.emails,
-      requestedEmailCount: target.emails.length,
-    });
-    if (admission && !admission.dispatchAllowed) {
-      throw new ActionDispatchSkippedError(admission.reason ?? "conversation_dispatch_cap");
+    if (!input.context.workspaceId) {
+      throw new ActionDispatchSkippedError("contact_destination_not_configured");
     }
 
+    const baseIdempotencyKey = input.context.idempotencyKey ?? input.context.requestId;
     const email = boundedVisitorText(input.payload.email, REPLY_TO_MAX_LENGTH);
     const replyTo = validVisitorReplyTo(input.payload.email);
     const message = boundedVisitorText(input.payload.message, CONTACT_MESSAGE_MAX_LENGTH) ?? "";
@@ -293,17 +289,37 @@ export class ContactSendActionHandler implements ActionHandler {
       "",
       message,
     ].filter((line): line is string => line !== null);
+    const plan = await planNotificationEmail({
+      recipientPolicy: this.recipientPolicy,
+      admission: this.admission,
+      webhookConfigured: target.webhook !== null,
+      onPreparationFailure: (error) => this.logger?.warn(
+        { workspaceId: input.context.workspaceId, errorName: error instanceof Error ? error.name : "unknown" },
+        "contact.send: recipient state unavailable; email skipped, webhook still posted",
+      ),
+      request: {
+        requestId: input.context.requestId,
+        workspaceId: input.context.workspaceId,
+        accountId: input.context.accountId,
+        conversationId: input.context.conversationId,
+        emails: target.emails,
+        idempotencyKey: baseIdempotencyKey,
+      },
+    });
+    if (!plan.dispatchAllowed) {
+      throw new ActionDispatchSkippedError(plan.reason);
+    }
 
-    const baseIdempotencyKey = input.context.idempotencyKey ?? input.context.requestId;
     const [emailResults] = await Promise.all([
-      Promise.all((admission?.emailAllowed === false ? [] : target.emails).map((to) =>
+      Promise.all(plan.recipients.map((recipient) =>
         this.mailer.send({
-          to,
+          to: recipient.email,
           kind: "contact_notification",
           replyTo,
           subject: "New contact request",
           text: lines.join("\n"),
-          idempotencyKey: `${baseIdempotencyKey}:email:${encodeURIComponent(to)}`,
+          ...(recipient.listUnsubscribeUrl ? { listUnsubscribeUrl: recipient.listUnsubscribeUrl } : {}),
+          idempotencyKey: `${baseIdempotencyKey}:email:${encodeURIComponent(recipient.email)}`,
         })),
       ),
       target.webhook ? this.postWebhook({
@@ -320,9 +336,7 @@ export class ContactSendActionHandler implements ActionHandler {
       }) : Promise.resolve(),
     ]);
     if (!target.webhook) {
-      const skipReason = admission?.emailAllowed === false
-        ? admission.reason
-        : mailDeliverySkipReason(emailResults);
+      const skipReason = plan.emailSkipReason ?? mailDeliverySkipReason(emailResults);
       if (skipReason) {
         throw new ActionDispatchSkippedError(skipReason);
       }
@@ -352,16 +366,14 @@ export class ContactSendActionHandler implements ActionHandler {
    * gap that let the outbox drain outage go unnoticed for two months); this closes
    * it without logging the visitor's email, name, or message.
    *
-   * `input.error` is the dispatcher's caught-and-stringified error text — this
-   * handler's own bounded messages today, but it flows from an injected
-   * {@link ContactNotificationMailer} / {@link ContactWebhookHttpClient}, so a
-   * host-supplied transport could echo a provider response body, a reply-to
-   * address, or a webhook URL with a token in its query string. The error
-   * reporter is an external sink, so that raw text must never reach it — only a
-   * bounded classification (a status code, when the text ends in one) does. The
-   * full text remains available for operator debugging in the outbox's
-   * `last_error` column (see {@link ActionDispatcher.onFailure}), untouched by
-   * this call.
+   * `input.error` is `actionDispatchJob.ts`'s extraction of the background-job runtime's `cause`
+   * (see `BackgroundJobFailureContext`) — this handler's own bounded messages today, but it
+   * flows from an injected {@link ContactNotificationMailer} / {@link ContactWebhookHttpClient},
+   * so a host-supplied transport could echo a provider response body, a reply-to address, or a
+   * webhook URL with a token in its query string. The error reporter is an external sink, so that
+   * raw text must never reach it — only a bounded classification (a status code, when the text
+   * ends in one) does. The outbox's own `last_error` column never holds this text either: the
+   * runtime writes only the error's class there.
    */
   async recordFailureOutcome(input: {
     payload: Record<string, unknown>;

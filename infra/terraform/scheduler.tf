@@ -7,6 +7,10 @@ locals {
   # separate service.
   action_dispatch_recovery_url  = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/actions/recover" : null
   action_dispatch_recovery_body = base64encode(jsonencode({ maxJobs = var.action_dispatch_recovery_max_jobs }))
+  # Background job recovery drains on the same worker task service as the pushed wakes.
+  background_job_recovery_url  = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/background-jobs/drain" : null
+  background_job_recovery_body = base64encode(jsonencode({ maxJobs = var.background_job_recovery_max_jobs }))
+  background_job_retention_url = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/background-job-retention/sweep" : null
   # Retention has no per-item queue behind it, so this schedule is the whole trigger.
   copilot_retention_url             = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/copilot-retention/sweep" : null
   agent_bundle_import_cleanup_url   = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/agent-bundle-imports/sweep" : null
@@ -15,6 +19,13 @@ locals {
   # drain and sweep routes are additional routes on that service.
   email_channel_sweep_url  = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/email-channel/sweep" : null
   email_channel_sweep_body = base64encode(jsonencode({ maxJobs = var.email_channel_sweep_max_jobs }))
+  # Credential expiry warnings have no per-item queue behind them either, so this schedule is
+  # the whole trigger for a deployment with no continuously running worker process.
+  credential_expiry_warning_url = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/credential-expiry-warning/sweep" : null
+  # Generic `registerPeriodicTask` route, one job per registration id. A future OSS or EE module
+  # that registers another periodic task needs its own job here, pointed at its own id.
+  usage_limit_alert_sweep_url   = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/periodic-tasks/ee-usage-limit-alerts/run" : null
+  billing_auto_top_up_sweep_url = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/periodic-tasks/ee-billing-auto-top-up/run" : null
 }
 
 resource "google_cloud_scheduler_job" "document_worker_recovery" {
@@ -68,6 +79,8 @@ resource "google_cloud_scheduler_job" "action_dispatch_recovery" {
   name     = "${local.resource_name_prefix}-action-dispatch-recovery"
   region   = var.region
   schedule = local.action_dispatch_recovery_schedule
+  # One drain runs inside a 270 s budget; the worker's request timeout is 300 s.
+  attempt_deadline = "300s"
 
   http_target {
     http_method = "POST"
@@ -80,6 +93,55 @@ resource "google_cloud_scheduler_job" "action_dispatch_recovery" {
     oidc_token {
       service_account_email = data.google_service_account.worker_task_invoker.email
       audience              = local.action_dispatch_recovery_url
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_cloud_scheduler_job" "background_job_recovery" {
+  count    = var.deploy_services ? 1 : 0
+  name     = "${local.resource_name_prefix}-background-job-recovery"
+  region   = var.region
+  schedule = local.background_job_recovery_schedule
+  # One drain runs inside a 240 s budget; the worker's request timeout is 300 s.
+  attempt_deadline = "300s"
+
+  http_target {
+    http_method = "POST"
+    uri         = local.background_job_recovery_url
+    body        = local.background_job_recovery_body
+    headers = {
+      "Content-Type"           = "application/json"
+      "X-Radioso-Worker-Token" = random_password.worker_task_auth_token.result
+    }
+    oidc_token {
+      service_account_email = data.google_service_account.worker_task_invoker.email
+      audience              = local.background_job_recovery_url
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_cloud_scheduler_job" "background_job_retention" {
+  count            = var.deploy_services ? 1 : 0
+  name             = "${local.resource_name_prefix}-background-job-retention"
+  region           = var.region
+  schedule         = local.background_job_retention_schedule
+  attempt_deadline = "300s"
+
+  http_target {
+    http_method = "POST"
+    uri         = local.background_job_retention_url
+    body        = base64encode(jsonencode({}))
+    headers = {
+      "Content-Type"           = "application/json"
+      "X-Radioso-Worker-Token" = random_password.worker_task_auth_token.result
+    }
+    oidc_token {
+      service_account_email = data.google_service_account.worker_task_invoker.email
+      audience              = local.background_job_retention_url
     }
   }
 
@@ -174,6 +236,79 @@ resource "google_cloud_scheduler_job" "email_channel_sweep" {
     oidc_token {
       service_account_email = data.google_service_account.worker_task_invoker.email
       audience              = local.email_channel_sweep_url
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_cloud_scheduler_job" "credential_expiry_warning" {
+  count    = var.deploy_services ? 1 : 0
+  name     = "${local.resource_name_prefix}-credential-expiry-warning"
+  region   = var.region
+  schedule = local.credential_expiry_warning_schedule
+
+  http_target {
+    http_method = "POST"
+    uri         = local.credential_expiry_warning_url
+    body        = base64encode(jsonencode({}))
+    headers = {
+      "Content-Type"           = "application/json"
+      "X-Radioso-Worker-Token" = random_password.worker_task_auth_token.result
+    }
+    oidc_token {
+      service_account_email = data.google_service_account.worker_task_invoker.email
+      audience              = local.credential_expiry_warning_url
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# EE-only: the registration (`registerPeriodicTask({ id: "ee-usage-limit-alerts", ... })`) only
+# exists when the enterprise application module is loaded.
+resource "google_cloud_scheduler_job" "usage_limit_alert_sweep" {
+  count    = var.deploy_services && var.radioso_edition == "enterprise" ? 1 : 0
+  name     = "${local.resource_name_prefix}-usage-limit-alert-sweep"
+  region   = var.region
+  schedule = local.usage_limit_alert_sweep_schedule
+
+  http_target {
+    http_method = "POST"
+    uri         = local.usage_limit_alert_sweep_url
+    body        = base64encode(jsonencode({}))
+    headers = {
+      "Content-Type"           = "application/json"
+      "X-Radioso-Worker-Token" = random_password.worker_task_auth_token.result
+    }
+    oidc_token {
+      service_account_email = data.google_service_account.worker_task_invoker.email
+      audience              = local.usage_limit_alert_sweep_url
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# EE-only: the registration (`registerPeriodicTask({ id: "ee-billing-auto-top-up", ... })`) only
+# exists when the enterprise application module is loaded.
+resource "google_cloud_scheduler_job" "billing_auto_top_up_sweep" {
+  count    = var.deploy_services && var.radioso_edition == "enterprise" ? 1 : 0
+  name     = "${local.resource_name_prefix}-billing-auto-top-up-sweep"
+  region   = var.region
+  schedule = local.billing_auto_top_up_sweep_schedule
+
+  http_target {
+    http_method = "POST"
+    uri         = local.billing_auto_top_up_sweep_url
+    body        = base64encode(jsonencode({}))
+    headers = {
+      "Content-Type"           = "application/json"
+      "X-Radioso-Worker-Token" = random_password.worker_task_auth_token.result
+    }
+    oidc_token {
+      service_account_email = data.google_service_account.worker_task_invoker.email
+      audience              = local.billing_auto_top_up_sweep_url
     }
   }
 

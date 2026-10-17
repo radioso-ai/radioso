@@ -61,6 +61,8 @@ export interface ApprovalResumeResult {
   resumed: true;
   assistantMessageId: string;
   postCommitReceipt: PostCommitInvalidationReceipt;
+  /** Wakes the worker for background jobs the resumed turn wrote; called once the decision's transaction commits. */
+  postCommitWake?: () => void;
 }
 
 interface ApprovalDecisionConversationEventPublisher {
@@ -226,6 +228,7 @@ export class ApprovalDecisionService {
       createPostCommitInvalidationReceipt(record.workspaceId, ["hitl.decision_resolved"]),
     )!;
     flushPostCommitInvalidationReceipt(this.workspaceInvalidationPublisher, postCommitReceipt);
+    resume.postCommitWake?.();
 
     this.conversationEvents?.publishMessageCreated({
       workspaceId: record.workspaceId,

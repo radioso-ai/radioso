@@ -1,0 +1,226 @@
+import { heardPrefixLength, spokenLength } from "./speechText.js";
+
+/** One request's place in its session, from its arrival until its turn ends. */
+export interface VoiceTurnClaim {
+  /** Arrival order within the process. */
+  readonly sequence: number;
+  /** When a newer request of the session arrived while this one was in flight. */
+  supersededAt: number | null;
+  /** When the runtime closed this request before the turn's outcome reached it. */
+  hungUpAt: number | null;
+  /** When the turn's outcome left the turn. */
+  outcomeAt: number | null;
+  settled: boolean;
+}
+
+/** What the caller could hear of a turn, in order. */
+export interface VoiceSpokenTurn {
+  bridge: string | null;
+  reply: string;
+}
+
+/** The newest exchange whose user message the session's conversation keeps. */
+export interface VoiceExchange {
+  utterance: string;
+  conversationId: string;
+  /** The stored answer; null when the conversation keeps the user message without one. */
+  reply: { messageId: string; text: string } | null;
+  /** What was spoken; null when the caller heard the fallback line in place of the reply. */
+  spoken: VoiceSpokenTurn | null;
+  /** When the runtime hung up on the turn, or a newer request overtook it, before its outcome. */
+  cutOffAt: number | null;
+}
+
+/** An exchange with a stored answer, which a re-request may hear again. */
+export type ReplayableVoiceExchange = VoiceExchange & { reply: NonNullable<VoiceExchange["reply"]> };
+
+/** How much of a stored reply the caller heard before speaking over it. */
+interface VoiceReplyInterruption {
+  conversationId: string;
+  assistantMessageId: string;
+  heardCharacterCount: number;
+  spokenCharacterCount: number;
+}
+
+/**
+ * An interruption held for one request while its note is written: `recorded` once the note is
+ * durable, so no later report repeats it; `failed` hands it back, so the next report records it.
+ */
+interface VoiceReplyInterruptionReservation {
+  interruption: VoiceReplyInterruption;
+  recorded(): void;
+  failed(): void;
+}
+
+/** Where an exchange's interruption note stands: none yet, being written, or durable. */
+type InterruptionNote = "none" | "pending" | "recorded";
+
+interface SessionState {
+  newest: VoiceTurnClaim | null;
+  /** Requests not yet settled. */
+  open: number;
+  /** Chat turns still running for the session's requests. */
+  chatTurns: number;
+  lastBridge: { at: number; claim: VoiceTurnClaim } | null;
+  lastExchange: { exchange: VoiceExchange; sequence: number; interruptionNote: InterruptionNote } | null;
+  touchedAt: number;
+}
+
+interface VoiceSessionMemoryWindows {
+  /** How long a cut-off exchange stays replayable. */
+  replayWindowMs: number;
+  /** How long a superseded turn's bridge line keeps the next turn from speaking another. */
+  bridgeAfterMs: number;
+}
+
+const sameUtterance = (left: string, right: string): boolean =>
+  left.replace(/\s+/gu, " ").trim() === right.replace(/\s+/gu, " ").trim();
+
+/**
+ * When the turn lost its caller before its outcome left: overtaken or hung up on; null when delivered.
+ * A loss on the outcome's own millisecond still counts: the route reports a hang-up only before the
+ * outcome left, so equal clock readings mean the loss came first.
+ */
+export const cutOffAt = (claim: VoiceTurnClaim): number | null => {
+  const lost = [claim.supersededAt, claim.hungUpAt]
+    .filter((at): at is number => at !== null && (claim.outcomeAt === null || at <= claim.outcomeAt));
+  return lost.length > 0 ? Math.min(...lost) : null;
+};
+
+/**
+ * What this process remembers of each voice session between its requests: which request is the
+ * newest (it supersedes the ones before it), when a superseded turn last spoke a bridge line, and
+ * the last exchange a re-request may replay or report as interrupted. In-process only: requests of
+ * one session that land on different instances do not see each other here. A session is forgotten
+ * once it has been idle for longer than both windows.
+ */
+export class VoiceSessionMemory {
+  private readonly sessions = new Map<string, SessionState>();
+  private readonly retainMs: number;
+  private arrivals = 0;
+
+  constructor(private readonly windows: VoiceSessionMemoryWindows) {
+    this.retainMs = Math.max(windows.replayWindowMs, windows.bridgeAfterMs);
+  }
+
+  /** Registers a request of the session; the request in flight before it is superseded from now. */
+  arrive(sessionKey: string, now: number): VoiceTurnClaim {
+    this.forgetIdle(now);
+    const state = this.stateOf(sessionKey, now);
+    const previous = state.newest;
+    if (previous && !previous.settled) {
+      previous.supersededAt ??= now;
+    }
+    const claim: VoiceTurnClaim = { sequence: ++this.arrivals, supersededAt: null, hungUpAt: null, outcomeAt: null, settled: false };
+    state.newest = claim;
+    state.open += 1;
+    return claim;
+  }
+
+  /**
+   * Ends the request's hold on the session. `exchange` is what the conversation now keeps of the
+   * turn; undefined when it keeps nothing, so the exchange before it stays the newest.
+   */
+  settle(sessionKey: string, claim: VoiceTurnClaim, now: number, exchange: VoiceExchange | undefined): void {
+    const state = this.stateOf(sessionKey, now);
+    claim.settled = true;
+    state.open = Math.max(0, state.open - 1);
+    if (state.newest === claim) {
+      state.newest = null;
+    }
+    if (exchange && (state.lastExchange === null || state.lastExchange.sequence < claim.sequence)) {
+      state.lastExchange = { exchange, sequence: claim.sequence, interruptionNote: "none" };
+    }
+  }
+
+  chatTurnStarted(sessionKey: string, now: number): void {
+    this.stateOf(sessionKey, now).chatTurns += 1;
+  }
+
+  chatTurnEnded(sessionKey: string, now: number): void {
+    const state = this.stateOf(sessionKey, now);
+    state.chatTurns = Math.max(0, state.chatTurns - 1);
+  }
+
+  bridgeSpoken(sessionKey: string, claim: VoiceTurnClaim, now: number): void {
+    this.stateOf(sessionKey, now).lastBridge = { at: now, claim };
+  }
+
+  /**
+   * Whether the request may speak its bridge line now: not once a newer request owns the session,
+   * and not while a bridge from a turn that lost its caller is fresher than the bridge delay.
+   */
+  mayBridge(sessionKey: string, claim: VoiceTurnClaim, now: number): boolean {
+    if (claim.supersededAt !== null) {
+      return false;
+    }
+    const last = this.stateOf(sessionKey, now).lastBridge;
+    return !(last && last.claim !== claim && cutOffAt(last.claim) !== null && now - last.at < this.windows.bridgeAfterMs);
+  }
+
+  /**
+   * The stored answer to speak again for `utterance`: the session's newest exchange asked the
+   * same, has an answer, lost its caller within the replay window, and no chat turn is running.
+   */
+  replayFor(sessionKey: string, utterance: string, now: number): ReplayableVoiceExchange | null {
+    const state = this.sessions.get(sessionKey);
+    const exchange = state?.lastExchange?.exchange;
+    if (!state || !exchange?.reply || exchange.cutOffAt === null || state.chatTurns > 0) {
+      return null;
+    }
+    const withinWindow = now - exchange.cutOffAt <= this.windows.replayWindowMs;
+    return withinWindow && sameUtterance(exchange.utterance, utterance) ? { ...exchange, reply: exchange.reply } : null;
+  }
+
+  /**
+   * Reserves the newest exchange's reply as far as the caller heard it, while the vendor reports it
+   * cut short and no note of it is recorded or being written; null when the report is no strict
+   * prefix of what was spoken.
+   */
+  reserveInterruption(sessionKey: string, heardUntil: string): VoiceReplyInterruptionReservation | null {
+    const last = this.sessions.get(sessionKey)?.lastExchange;
+    const { reply, spoken, conversationId } = last?.exchange ?? {};
+    if (!last || last.interruptionNote !== "none" || !reply || !spoken || !conversationId) {
+      return null;
+    }
+    const whole = spoken.bridge === null ? spoken.reply : `${spoken.bridge} ${spoken.reply}`;
+    const heard = heardPrefixLength(whole, heardUntil);
+    if (heard === null) {
+      return null;
+    }
+    last.interruptionNote = "pending";
+    const beforeReply = spoken.bridge === null ? 0 : spokenLength(spoken.bridge) + 1;
+    return {
+      interruption: {
+        conversationId,
+        assistantMessageId: reply.messageId,
+        heardCharacterCount: Math.max(0, heard - beforeReply),
+        spokenCharacterCount: spokenLength(spoken.reply),
+      },
+      recorded: () => {
+        last.interruptionNote = "recorded";
+      },
+      failed: () => {
+        last.interruptionNote = "none";
+      },
+    };
+  }
+
+  private stateOf(sessionKey: string, now: number): SessionState {
+    let state = this.sessions.get(sessionKey);
+    if (!state) {
+      state = { newest: null, open: 0, chatTurns: 0, lastBridge: null, lastExchange: null, touchedAt: now };
+      this.sessions.set(sessionKey, state);
+    }
+    state.touchedAt = now;
+    return state;
+  }
+
+  private forgetIdle(now: number): void {
+    for (const [sessionKey, state] of this.sessions) {
+      if (state.open === 0 && state.chatTurns === 0 && now - state.touchedAt > this.retainMs) {
+        this.sessions.delete(sessionKey);
+      }
+    }
+  }
+}

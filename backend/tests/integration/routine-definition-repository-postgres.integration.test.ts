@@ -192,6 +192,7 @@ const createRoutineSchema = async (client: PoolClient, schema: string): Promise<
       kind TEXT NOT NULL,
       instruction TEXT NULL,
       operator_notice_enabled BOOLEAN NOT NULL DEFAULT false,
+      operator_notice_include_ai_summary BOOLEAN NOT NULL DEFAULT false,
       operator_notice_subject TEXT NULL,
       operator_notice_intro TEXT NULL,
       operator_notice_skill_name TEXT NULL,

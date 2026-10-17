@@ -2062,6 +2062,7 @@ describe("WorkbenchReplayRunner built-in routine across revision-pinned Test Cha
     routineRegistrations: builtInRegistrations(),
     routineTriggerEmbeddingService: { persistPublished: vi.fn() },
     skillExecutorRegistry: {} as never,
+    approvalResumeEffectJournal: {} as never,
     turnPlanAdapters: {
       activator: ({ fallback }) => fallback,
       reentryGate: ({ fallback }) => fallback,
@@ -2202,7 +2203,7 @@ describe("WorkbenchReplayRunner built-in routine across revision-pinned Test Cha
         actions: result.actions,
         handoff: result.handoff,
         routineState: result.continuation?.routineState
-          ? { ...result.continuation.routineState, executionId: "<execution>" }
+          ? { ...result.continuation.routineState, executionId: "<execution>", startedMessageId: "<start-message>" }
           : result.continuation?.routineState,
         routineStage: routineStage(result),
       });
@@ -2263,6 +2264,7 @@ describe("WorkbenchReplayRunner built-in routine across revision-pinned Test Cha
             "executionId": "<execution>",
             "path": [],
             "routineId": "builtin_contact_request_v1",
+            "startedMessageId": "<start-message>",
             "status": "active",
             "variables": {},
           },
@@ -2320,6 +2322,7 @@ describe("WorkbenchReplayRunner built-in routine across revision-pinned Test Cha
             "path": [],
             "reaskCount": 1,
             "routineId": "builtin_contact_request_v1",
+            "startedMessageId": "<start-message>",
             "status": "active",
             "variables": {},
           },
@@ -2390,6 +2393,7 @@ describe("WorkbenchReplayRunner built-in routine across revision-pinned Test Cha
               "ask_message",
             ],
             "routineId": "builtin_contact_request_v1",
+            "startedMessageId": "<start-message>",
             "status": "active",
             "variables": {
               "email": "guest@example.com",
@@ -2481,6 +2485,7 @@ describe("WorkbenchReplayRunner built-in routine across revision-pinned Test Cha
               "done",
             ],
             "routineId": "builtin_contact_request_v1",
+            "startedMessageId": "<start-message>",
             "status": "completed",
             "variables": {
               "email": "guest@example.com",
@@ -2719,11 +2724,15 @@ describe("WorkbenchReplayRunner streams routine replies by the live-chat deliver
     expect(deltas).toEqual(["can someone reach you at?"]);
     expect(forStream.render).not.toHaveBeenCalled();
     expect(streamed.answer).toBe(ran.answer);
-    // Each call activates the routine afresh, so its executionId is its own random id;
-    // everything else about the settled turn matches what `run()` produced.
+    // Each call activates the routine afresh, so its execution and activation-message ids
+    // are independently generated; everything else matches what `run()` produced.
     expect(streamed.continuation).toEqual({
       ...ran.continuation,
-      routineState: { ...ran.continuation?.routineState, executionId: streamed.continuation?.routineState?.executionId },
+      routineState: {
+        ...ran.continuation?.routineState,
+        executionId: streamed.continuation?.routineState?.executionId,
+        startedMessageId: streamed.continuation?.routineState?.startedMessageId,
+      },
     });
     expect(streamed.turnTrace?.spine.stages.map((stage) => stage.kind))
       .toEqual(ran.turnTrace?.spine.stages.map((stage) => stage.kind));

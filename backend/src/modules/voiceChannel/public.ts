@@ -1,4 +1,11 @@
 export type {
+  VoiceRecordingAvailabilityPort,
+  VoiceRecordingErasurePort,
+  VoiceRecordingPlayback,
+  VoiceRecordingPlaybackPort,
+  VoiceRecordingScope,
+  VoiceRecordingStream,
+  VoiceVendorConversationReportPort,
   VoiceSessionAvailabilityPort,
   VoiceSessionStartLookup,
   VoiceSessionStartPort,
@@ -9,6 +16,10 @@ export type {
 } from "./domain.js";
 export { VoiceTurnService, type VoiceChatTurnRequest, type VoiceSessionStore, type VoiceTurnNotes } from "./services/voiceTurnService.js";
 export { VoiceSessionStartService } from "./services/voiceSessionStartService.js";
+export { VoiceRecordingService, type VoiceRecordingAudit } from "./services/voiceRecordingService.js";
+export { VoiceRecordingErasureService } from "./services/voiceRecordingErasureService.js";
+export { createElevenLabsRecordingSource } from "./adapters/elevenlabs/recordingSource.js";
+
 export { VOICE_CALL_READINESS_GAPS } from "./domain.js";
 export { createElevenLabsSessionStarter } from "./adapters/elevenlabs/sessionStarter.js";
 export { VoiceSessionRepository } from "./persistence/voiceSessionRepository.js";

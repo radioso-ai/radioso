@@ -1,21 +1,12 @@
 import { z } from "zod";
 
 import { VOICE_BEHAVIOR } from "../../../../shared/domain/behaviorConfig.js";
-import type { VoiceVendorRegion } from "../../../../shared/domain/voiceVendor.js";
 import { VoiceVendorRequestError, type VoiceSessionStarter } from "../../domain.js";
+import { ELEVENLABS_API_HOST_OF_REGION, discardBody, isTimeout } from "./hosts.js";
 
-/**
- * The ElevenLabs host that serves an account in each data residency region, as ElevenLabs
- * documents them. The signed-URL request goes to the account's host, and the signed URL handed to
- * the browser must be on that same host: the page opens whatever URL it gets, so one from any
- * other host is refused rather than passed on.
- */
-const API_HOST_OF_REGION: Readonly<Record<VoiceVendorRegion, string>> = {
-  us: "api.elevenlabs.io",
-  eu: "api.eu.residency.elevenlabs.io",
-  in: "api.in.residency.elevenlabs.io",
-  sg: "api.sg.residency.elevenlabs.io",
-};
+// The signed-URL request goes to the account's region host, and the signed URL handed to the
+// browser must be on that same host: the page opens whatever URL it gets, so one from any other
+// host is refused rather than passed on.
 const SIGNED_URL_PATH = "/v1/convai/conversation/get-signed-url";
 const REQUEST_TIMEOUT_MS = 5_000;
 /** A signed-URL answer is a few hundred bytes; anything far larger is not one. */
@@ -42,10 +33,6 @@ const isSignedUrlOnHost = (value: string, host: string): boolean => {
   }
 };
 
-/** Releases a body the starter will not read, so the connection can be reused. */
-const discardBody = async (response: Response): Promise<void> => {
-  await response.body?.cancel().catch(() => undefined);
-};
 
 /** The body as text, or null when it is larger than `MAX_RESPONSE_BYTES`. */
 const readBoundedText = async (response: Response): Promise<string | null> => {
@@ -84,7 +71,7 @@ const parseSignedUrl = (text: string, host: string): string | null => {
 
 /** A body read that failed: the request's time ran out mid-body, or the connection broke. */
 const bodyReadFailure = (error: unknown, signal: AbortSignal, status: number): VoiceVendorRequestError =>
-  new VoiceVendorRequestError(signal.aborted || (error instanceof Error && error.name === "TimeoutError") ? "timeout" : "unreachable", status);
+  new VoiceVendorRequestError(isTimeout(error, signal) ? "timeout" : "unreachable", status);
 
 /**
  * Opens ElevenLabs Agents sessions: one signed URL per session, requested with the workspace's
@@ -98,7 +85,7 @@ export const createElevenLabsSessionStarter = (dependencies: {
 }): VoiceSessionStarter => ({
   startSession: async ({ vendorAgentId, region, credential }) => {
     const requestedAt = (dependencies.now ?? Date.now)();
-    const host = API_HOST_OF_REGION[region];
+    const host = ELEVENLABS_API_HOST_OF_REGION[region];
     const url = `https://${host}${SIGNED_URL_PATH}?${new URLSearchParams({ agent_id: vendorAgentId }).toString()}`;
     const signal = AbortSignal.timeout(dependencies.requestTimeoutMs ?? REQUEST_TIMEOUT_MS);
     let response: Response;
@@ -110,9 +97,8 @@ export const createElevenLabsSessionStarter = (dependencies: {
         signal,
       });
     } catch (error) {
-      throw signal.aborted || (error instanceof Error && error.name === "TimeoutError")
-        ? new VoiceVendorRequestError("timeout")
-        : new VoiceVendorRequestError("unreachable");
+      throw new VoiceVendorRequestError(isTimeout(error, signal) ? "timeout" : "unreachable");
+
     }
     if (!response.ok) {
       await discardBody(response);

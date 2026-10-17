@@ -1946,6 +1946,8 @@ export interface VoiceSessions {
   started_public_session_id: string | null;
   started_visitor_key: string | null;
   vendor: string;
+  vendor_conversation_id: string | null;
+  vendor_region: string | null;
   workspace_id: string;
 }
 

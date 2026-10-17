@@ -90,9 +90,22 @@ describe("voice session start", () => {
       session: { workspaceId, agentId, vendor: "elevenlabs", sessionKey },
       visitor,
       expiresAt: new Date(now + 60 * 60_000),
+      region: "eu",
     });
     expect(register.mock.invocationCallOrder[0]).toBeLessThan(startSession.mock.invocationCallOrder[0]);
   });
+
+  it("hands the page the agent's recording notice in the session's language, and none when the agent wrote none for it", async () => {
+    const voice: AgentVoiceSettings = { ...boundVoice, recordingNotice: { en: "This call is recorded.", it: "Questa chiamata viene registrata." } };
+
+    expect(await serviceWith({ voice }).service.start({ workspaceId, agentId, visitor, locale: "it-CH" }))
+      .toMatchObject({ kind: "started", recordingNotice: "Questa chiamata viene registrata." });
+    expect(await serviceWith({ voice }).service.start({ workspaceId, agentId, visitor, locale: "de" }))
+      .not.toHaveProperty("recordingNotice");
+    expect(await serviceWith({}).service.start({ workspaceId, agentId, visitor, locale: "en" }))
+      .not.toHaveProperty("recordingNotice");
+  });
+
 
   it("speaks the agent's default language when the page names none, and English when the agent names none either", async () => {
     expect(await serviceWith({ defaultLocale: "it" }).service.start({ workspaceId, agentId, visitor }))

@@ -22,8 +22,9 @@ export type ConversationTurnSupersession = "until_emission" | "latest_input_wins
 /**
  * How much of a stored assistant reply the caller heard before speaking over it, counted in the
  * characters the channel spoke (the reply as speech text), not in the stored content. `partial`:
- * the caller cut the reply off while it was still being spoken, so only the part they heard is
- * stored, and the two counts are equal; otherwise the reply finished and is stored whole.
+ * the caller cut the reply off while it was still being spoken, so only the sentences they heard
+ * whole are stored, and `spokenCharacterCount` counts what reached the channel's runtime;
+ * otherwise the reply finished and is stored whole.
  */
 export const replyInterruptionSchema = z.object({
   heardCharacterCount: z.number().int().nonnegative(),
@@ -48,12 +49,16 @@ export interface ReplyInterruptionMarker {
 }
 
 /**
- * The part of a reply that reached its listener before a newer input cut the turn off while the
- * reply was still streaming: the reply's own text up to the end of the last piece the listener got,
- * as the turn streamed it (`text`), and that part in the characters the channel spoke.
+ * The part of a reply its listener heard before a newer input cut the turn off while the reply was
+ * still streaming: the reply's own text, as the turn streamed it, up to the end of the last
+ * sentence heard whole (`text`); how many of the reply's characters, as the channel spoke them,
+ * were heard, which can reach into the sentence the cut landed in; and how many reached the
+ * channel's runtime to be spoken. The two counts are equal when the channel has no record of what
+ * was heard and counts everything that reached its runtime as heard.
  */
 export interface DeliveredReplyPart {
   text: string;
+  heardCharacterCount: number;
   spokenCharacterCount: number;
 }
 

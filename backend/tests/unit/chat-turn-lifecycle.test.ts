@@ -2056,13 +2056,14 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
 
     describe("a reply a newer input cut off while it streamed", () => {
       const cutMidReply = () => new ChatTurnSupersededError("conv_1", "persisting", { afterEmission: true, replacedByNewerInput: true });
-      const heardPart = { text: "We open at **nine** on weekdays [[1]]. Saturdays at ten.[[2]] ", spokenCharacterCount: 50 };
+      // The caller heard both sentences and part of a third that reached the runtime.
+      const heardPart = { text: "We open at **nine** on weekdays [[1]]. Saturdays at ten.[[2]] ", heardCharacterCount: 58, spokenCharacterCount: 70 };
       const storedPart = {
         conversationId: "conv_1",
         workspaceId: "workspace_1",
         role: "assistant",
         content: "We open at **nine** on weekdays. Saturdays at ten.",
-        interruption: { heardCharacterCount: 50, spokenCharacterCount: 50, partial: true },
+        interruption: { heardCharacterCount: 58, spokenCharacterCount: 70, partial: true },
       };
 
       it("stores the part that reached the listener as the turn's reply, marked cut short, and names it in the cancelled event", async () => {
@@ -2093,7 +2094,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       it("stores nothing when none of the reply reached the listener, or what did holds no text", async () => {
         const { lifecycle, records, messageRepository } = harness();
 
-        for (const part of [null, { text: " [[1]] ", spokenCharacterCount: 0 }]) {
+        for (const part of [null, { text: " [[1]] ", heardCharacterCount: 0, spokenCharacterCount: 0 }]) {
           await expect(lifecycle.recordSupersession(
             { workspaceId: "workspace_1", stream: true, deliveredReply: () => part },
             session(),

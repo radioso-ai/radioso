@@ -34,6 +34,11 @@ export interface VoiceTurnInput {
    * ones back; the turn prefers bridge lines at least this long.
    */
   minReleasableSentenceChars?: number;
+  /**
+   * The runtime receives each piece of speech as the turn hands it on (a streamed response).
+   * False: it receives the whole turn at its outcome, so nothing reaches it before then.
+   */
+  streamsSpeech: boolean;
 }
 
 /**

@@ -173,12 +173,13 @@ export class VoiceSessionMemory {
 
   /**
    * The stored answer to speak again for `utterance`: the session's newest exchange asked the
-   * same, has an answer, lost its caller within the replay window, and no chat turn is running.
+   * same, has a whole answer, lost its caller within the replay window, and no chat turn is running.
    */
   replayFor(sessionKey: string, utterance: string, now: number): ReplayableVoiceExchange | null {
     const state = this.sessions.get(sessionKey);
     const exchange = state?.lastExchange?.exchange;
-    if (!state || !exchange?.reply || exchange.cutOffAt === null || state.chatTurns > 0) {
+    // A reply stored as its heard part is not heard again: a new turn finishes the answer instead.
+    if (!state || !exchange?.reply || exchange.reply.partial || exchange.cutOffAt === null || state.chatTurns > 0) {
       return null;
     }
     const withinWindow = now - exchange.cutOffAt <= this.windows.replayWindowMs;

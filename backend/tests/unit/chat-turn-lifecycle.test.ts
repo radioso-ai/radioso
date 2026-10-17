@@ -2054,6 +2054,157 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       });
     });
 
+    describe("a reply a newer input cut off while it streamed", () => {
+      const cutMidReply = () => new ChatTurnSupersededError("conv_1", "persisting", { afterEmission: true, replacedByNewerInput: true });
+      const heardPart = { text: "We open at **nine** on weekdays [[1]]. Saturdays at ten.[[2]] ", spokenCharacterCount: 50 };
+      const storedPart = {
+        conversationId: "conv_1",
+        workspaceId: "workspace_1",
+        role: "assistant",
+        content: "We open at **nine** on weekdays. Saturdays at ten.",
+        interruption: { heardCharacterCount: 50, spokenCharacterCount: 50, partial: true },
+      };
+
+      it("stores the part that reached the listener as the turn's reply, marked cut short, and names it in the cancelled event", async () => {
+        const { lifecycle, records, messageRepository, conversationRepository } = harness();
+        const deliveredReply = vi.fn(() => heardPart);
+
+        const stored = await lifecycle.recordSupersession(
+          { workspaceId: "workspace_1", accountId: "account_1", stream: true, deliveredReply },
+          session(),
+          undefined,
+          cutMidReply(),
+        );
+
+        expect(deliveredReply).toHaveBeenCalledTimes(1);
+        // The composer's citation markers go, as they go from every stored answer; the markdown stays.
+        expect(messageRepository.create).toHaveBeenCalledWith({ ...storedPart, id: expect.any(String) });
+        expect(stored).toBe("assistant_msg_1");
+        expect(conversationRepository.touch).toHaveBeenCalledWith("conv_1", "workspace_1");
+        expect(records).toHaveLength(1);
+        expect(records[0]).toMatchObject({
+          eventType: "chat.answer",
+          eventStatus: "cancelled",
+          metadata: { userMessageId: "msg_1", assistantMessageId: "assistant_msg_1", partialReplyStored: true, supersededStage: "persisting" },
+        });
+        expect(records[0]?.metadata).not.toHaveProperty("userMessageDiscarded");
+      });
+
+      it("stores nothing when none of the reply reached the listener, or what did holds no text", async () => {
+        const { lifecycle, records, messageRepository } = harness();
+
+        for (const part of [null, { text: " [[1]] ", spokenCharacterCount: 0 }]) {
+          await expect(lifecycle.recordSupersession(
+            { workspaceId: "workspace_1", stream: true, deliveredReply: () => part },
+            session(),
+            undefined,
+            cutMidReply(),
+          )).resolves.toBeUndefined();
+        }
+
+        expect(messageRepository.create).not.toHaveBeenCalled();
+        expect(records.map((record) => record.metadata.assistantMessageId)).toEqual([undefined, undefined]);
+        expect(records.map((record) => record.metadata.partialReplyStored)).toEqual([undefined, undefined]);
+      });
+
+      it("asks the channel nothing for a turn cut off before it emitted, one already answered, or one that returns a draft", async () => {
+        const { lifecycle, messageRepository } = harness();
+        const deliveredReply = vi.fn(() => heardPart);
+
+        await lifecycle.recordSupersession(
+          { workspaceId: "workspace_1", stream: true, deliveredReply },
+          session(),
+          undefined,
+          new ChatTurnSupersededError("conv_1", "rendering", { replacedByNewerInput: true }),
+        );
+        await lifecycle.recordSupersession({ workspaceId: "workspace_1", stream: true, deliveredReply }, session(), "assistant_msg_0", cutMidReply());
+        await lifecycle.recordSupersession(
+          { workspaceId: "workspace_1", stream: true, executionMode: "review", deliveredReply },
+          session(),
+          undefined,
+          cutMidReply(),
+        );
+
+        expect(deliveredReply).not.toHaveBeenCalled();
+        expect(messageRepository.create).not.toHaveBeenCalled();
+      });
+
+      describe("through the transactional persistence port", () => {
+        const withPort = (store: NonNullable<AssistantTurnPersistencePort["storeCutReply"]>) => {
+          const base = harness();
+          const logger = { warn: vi.fn() };
+          const published: Array<{ workspaceId: string; changeKinds: readonly string[] }> = [];
+          const port: AssistantTurnPersistencePort = { completeAssistantTurn: vi.fn(), storeCutReply: vi.fn(store) };
+          const lifecycle = new ChatTurnLifecycle(
+            base.conversationRepository,
+            base.messageRepository,
+            base.auditService,
+            undefined,
+            undefined,
+            port,
+            undefined,
+            undefined,
+            logger,
+            undefined,
+            undefined,
+            undefined,
+            undefined,
+            { enqueue: (workspaceId, changeKinds) => { published.push({ workspaceId, changeKinds }); return { accepted: true, coalesced: false }; } },
+          );
+          return { ...base, lifecycle, port, logger, published };
+        };
+
+        it("stores the part and its cancelled event in one call, then tells the workspace's live views", async () => {
+          const { lifecycle, port, auditService, messageRepository, published } = withPort(async () => {});
+
+          const stored = await lifecycle.recordSupersession(
+            { workspaceId: "workspace_1", stream: true, deliveredReply: () => heardPart },
+            session(),
+            undefined,
+            cutMidReply(),
+          );
+
+          expect(port.storeCutReply).toHaveBeenCalledWith({
+            workspaceId: "workspace_1",
+            conversationId: "conv_1",
+            assistantMessage: { ...storedPart, id: stored },
+            auditEvent: expect.objectContaining({
+              eventType: "chat.answer",
+              eventStatus: "cancelled",
+              metadata: expect.objectContaining({ userMessageId: "msg_1", assistantMessageId: stored, partialReplyStored: true }),
+            }),
+          });
+          expect(messageRepository.create).not.toHaveBeenCalled();
+          expect(auditService.record).not.toHaveBeenCalled();
+          expect(auditService.logRecorded).toHaveBeenCalledWith(expect.objectContaining({ eventStatus: "cancelled" }));
+          expect(published).toEqual([{ workspaceId: "workspace_1", changeKinds: ["conversation.turn_committed"] }]);
+        });
+
+        it("records the cancelled event alone, and warns, when the part cannot be stored", async () => {
+          const { lifecycle, records, logger } = withPort(async () => {
+            throw new Error("insert failed");
+          });
+
+          const stored = await lifecycle.recordSupersession(
+            { workspaceId: "workspace_1", stream: true, deliveredReply: () => heardPart },
+            session(),
+            undefined,
+            cutMidReply(),
+          );
+
+          expect(stored).toBeUndefined();
+          expect(logger.warn).toHaveBeenCalledWith(
+            { workspaceId: "workspace_1", conversationId: "conv_1", errorType: "Error" },
+            "The part of a cut-off reply could not be stored",
+          );
+          expect(records).toHaveLength(1);
+          expect(records[0]?.metadata).toMatchObject({ userMessageId: "msg_1" });
+          expect(records[0]?.metadata.assistantMessageId).toBeUndefined();
+          expect(records[0]?.metadata).not.toHaveProperty("partialReplyStored");
+        });
+      });
+    });
+
     it("falls back to the input conversationId when no turn was prepared yet", async () => {
       const { lifecycle, records, conversationRepository } = harness();
       const supersededBy = new ChatTurnSupersededError("conv_pending", "waiting");

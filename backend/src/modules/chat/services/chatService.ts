@@ -171,7 +171,7 @@ import {
   type ConversationTurnRegistry,
   type ConversationTurnStage,
 } from "./conversationTurnRegistry.js";
-import type { ConversationTurnSupersession } from "../contracts/interruption.js";
+import type { ConversationTurnSupersession, DeliveredReplyReader } from "../contracts/interruption.js";
 import { AnswerCoverageHeadRecorder } from "./answerCoverageHeadRecorder.js";
 import type { AnswerCoverageShadowAssessor } from "./answerCoverageShadowAssessor.js";
 import { buildAgentChatWorkspaceContext } from "./agentChatWorkspaceContext.js";
@@ -1434,6 +1434,12 @@ export class ChatService {
     /** How a newer turn on the conversation cuts this one off; `until_emission` when absent. */
     supersession?: ConversationTurnSupersession;
     /**
+     * For a `latest_input_wins` turn whose channel delivers the reply as it streams: what reached
+     * the listener of a reply a newer input cut off mid-stream, which the turn then keeps as its
+     * reply. Absent: a turn cut off mid-reply keeps its user message and stores no reply.
+     */
+    deliveredReply?: DeliveredReplyReader;
+    /**
      * Caller-owned abort signal (#885), independent of the registry's own
      * supersession signal. The HTTP presenter fires this once the client has
      * disconnected and the turn has not settled within its post-disconnect
@@ -1507,6 +1513,7 @@ export class ChatService {
     verifiedIdentity?: Record<string, unknown> | null;
     previewRoutineIds?: string[];
     routineInvocation?: RoutineInvocation;
+    deliveredReply?: DeliveredReplyReader;
     signal?: AbortSignal;
   }, coordination: TurnCoordinationState, modelCallTrace: ModelCallTraceCollector, requestReceivedAt: number): AsyncIterable<ChatStreamEvent> {
     let firstAnswerChunkObserved = false;
@@ -2096,12 +2103,14 @@ export class ChatService {
       }
       await releaseUsageReservation();
       if (preferredError instanceof ChatTurnSupersededError) {
-        await this.chatTurnLifecycle.recordSupersession(input, session, assistantMessageId, preferredError, workflowPolicy);
+        // Still holding the lease: a newer turn waits for the part of the reply this one keeps.
+        const cutReplyId = await this.chatTurnLifecycle.recordSupersession(input, session, assistantMessageId, preferredError, workflowPolicy);
         yield {
           type: "cancelled",
           conversationId: preferredError.conversationId,
           reason: "superseded",
           stage: preferredError.stage,
+          ...(cutReplyId ? { assistantMessageId: cutReplyId } : {}),
         };
         return;
       }

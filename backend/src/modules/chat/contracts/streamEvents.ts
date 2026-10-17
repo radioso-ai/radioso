@@ -39,6 +39,8 @@ export type ChatStreamEvent =
       conversationId: string;
       reason: "superseded";
       stage: ConversationTurnStage;
+      /** The part of the reply that reached the listener, stored as the turn's reply, cut short. */
+      assistantMessageId?: string;
     }
   | {
       type: "suggestions";

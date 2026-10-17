@@ -2,6 +2,8 @@ import type {
   ChatStreamEvent,
   ChatTurnHandoffReason,
   ConversationTurnSupersession,
+  DeliveredReplyPart,
+  DeliveredReplyReader,
   OperatorReplySpeechClaims,
 } from "../../chat/contracts/index.js";
 import { errorClassOf } from "../../../shared/observability/errorClass.js";
@@ -41,12 +43,13 @@ import {
 } from "./voiceTurnPolicy.js";
 import { OperatorReplySpeaker, type ClaimedOperatorReply, type OperatorReplySpeakerDependencies } from "./operatorReplySpeaker.js";
 import { createSentenceCutter, splitCompleteSentences } from "./speechSegmenter.js";
-import { hasSpokenWords } from "./speechText.js";
+import { hasSpokenWords, spokenLength, writtenLengthSpokenAs } from "./speechText.js";
 import {
   cutOffAt,
   VoiceSessionMemory,
   type ReplayableVoiceExchange,
   type VoiceExchange,
+  type VoiceStoredReply,
   type VoiceTurnClaim,
 } from "./voiceSessionMemory.js";
 
@@ -70,6 +73,12 @@ export interface VoiceChatTurnRequest {
    * before its reply starts replaces it, so the conversation keeps no user message for it.
    */
   supersession: Extract<ConversationTurnSupersession, "latest_input_wins">;
+  /**
+   * Asked by chat when a newer utterance cuts the turn off after its reply started: the answer's
+   * sentences that reached the runtime before the turn lost its caller, which chat keeps as the
+   * turn's reply, marked cut short.
+   */
+  deliveredReply: DeliveredReplyReader;
   /**
    * On a session's first turn, when Radioso started the session for a website visitor: that
    * visitor's grouping key, so the new conversation joins the visitor the embed's own chat does.
@@ -112,15 +121,20 @@ interface VoiceTurnTiming {
   replayWindowMs: number;
 }
 
-/** Durable notes on a session's previous turn, keyed to its stored reply. Never the reply's text. */
+/** Durable notes on a session's turns, keyed to their stored replies. Never the reply's text. */
 export interface VoiceTurnNotes {
-  /** The vendor replayed the stored reply cut short: how much of it the caller heard. */
+  /**
+   * The caller spoke over a stored reply: how much of it they heard. `partial: false`, the vendor
+   * replayed the whole stored reply cut short, so it is marked now; `partial: true`, chat stored
+   * only the heard part of a reply cut off mid-stream, already marked.
+   */
   replyInterrupted(note: {
     workspaceId: string;
     conversationId: string;
     assistantMessageId: string;
     heardCharacterCount: number;
     spokenCharacterCount: number;
+    partial: boolean;
   }): Promise<void>;
   /** An identical re-request heard the stored reply again, without a new turn. */
   replyReplayed(note: { workspaceId: string; conversationId: string; assistantMessageId: string }): Promise<void>;
@@ -168,13 +182,18 @@ interface VoiceTurnRecord {
   chatPrepared: boolean;
   /** Chat began the reply, so a newer utterance no longer replaces the user message. */
   chatReplied: boolean;
-  /** The stored answer, once chat reports it. */
-  reply: { messageId: string; text: string } | null;
+  /** The stored answer, once chat reports it: the whole reply, or the heard part of one cut off mid-stream. */
+  reply: VoiceStoredReply | null;
+  /** The answer as chat streamed it so far, before it was cut into speech. */
+  written: string;
   /**
    * What left the turn for the caller: a teammate's replies, the bridge line, and every speech
-   * piece of the turn's own answer, each in order.
+   * piece of the turn's own answer, each in order. `reached`: how many of the teammate's pieces and
+   * then the answer's, in that order, left before the turn lost its caller (cut off or hung up on).
    */
-  spoken: { operatorReplies: string[]; bridge: string | null; speech: string[] };
+  spoken: { operatorReplies: string[]; bridge: string | null; speech: string[]; reached: number };
+  /** What chat was told reached the caller of a reply cut off mid-stream, once it asked. */
+  deliveredPart: DeliveredReplyPart | null;
   /** The teammate replies the turn claims, speaks ahead of its answer, and settles. */
   operatorReplyClaims: OperatorReplySpeaker;
   /** The outcome the runtime received, once it left. */
@@ -192,7 +211,9 @@ const emptyRecord = (operatorReplyClaims: OperatorReplySpeaker): VoiceTurnRecord
   chatPrepared: false,
   chatReplied: false,
   reply: null,
-  spoken: { operatorReplies: [], bridge: null, speech: [] },
+  written: "",
+  spoken: { operatorReplies: [], bridge: null, speech: [], reached: 0 },
+  deliveredPart: null,
   operatorReplyClaims,
   outcome: null,
   handoffReason: null,
@@ -229,6 +250,31 @@ function* lastSpeech(rest: { sentences: string[]; remainder: string }, record: V
   record.speechPieceCount += 1;
   yield { type: "speech", text: rest.remainder, last: true };
 }
+
+/**
+ * How many of the turn's speech pieces, a teammate's replies first and then its answer, the caller
+ * heard through: each that reached the runtime before the turn lost its caller, but the last of
+ * them only once the outcome followed it there, since the caller may have spoken over it.
+ */
+const heardThrough = (record: VoiceTurnRecord, claim: VoiceTurnClaim): number =>
+  claim.outcomeAt !== null && cutOffAt(claim) === null ? record.spoken.reached : Math.max(0, record.spoken.reached - 1);
+
+/**
+ * The part of the turn's answer that reached the runtime before the turn lost its caller, for chat
+ * to keep when a newer utterance cuts the reply off mid-stream: the answer's own text up to the end
+ * of the last piece that reached it (their speech text, should no start of the answer speak as
+ * they do), with its length as spoken. Null when no piece with words reached it, or the caller
+ * heard the fallback line in the answer's place.
+ */
+const deliveredReplyPart = (record: VoiceTurnRecord): DeliveredReplyPart | null => {
+  const answerPiecesReached = Math.max(0, record.spoken.reached - record.spoken.operatorReplies.length);
+  const heard = record.policy?.fallbackSpoken ? "" : record.spoken.speech.slice(0, answerPiecesReached).join("");
+  if (!hasSpokenWords(heard)) {
+    return null;
+  }
+  const writtenLength = writtenLengthSpokenAs(record.written, heard);
+  return { text: writtenLength === null ? heard : record.written.slice(0, writtenLength), spokenCharacterCount: spokenLength(heard) };
+};
 
 /** A session's first turn in this process, until it binds the session or ends without binding it. */
 interface FirstTurn {
@@ -276,8 +322,8 @@ export class VoiceTurnService implements VoiceTurnPort {
   private readonly memory: VoiceSessionMemory;
   /** What each turn's teammate replies are claimed, spoken and settled through. */
   private readonly operatorReplySpeaker: OperatorReplySpeakerDependencies;
-  /** Each request's speaker, so a newer request of the session can settle the one it overtook. */
-  private readonly replySpeakers = new WeakMap<VoiceTurnClaim, OperatorReplySpeaker>();
+  /** Each request's turn record, so a newer request of the session can settle the teammate replies of the one it overtook. */
+  private readonly turnRecords = new WeakMap<VoiceTurnClaim, VoiceTurnRecord>();
   /** Agents already warned about a bridge line shorter than their runtime speaks on its own. */
   private readonly shortBridgeWarned = new Set<string>();
 
@@ -314,7 +360,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       hungUp?.addEventListener("abort", onHangUp, { once: true });
     }
     const record = emptyRecord(new OperatorReplySpeaker(this.operatorReplySpeaker, input.session));
-    this.replySpeakers.set(claim, record.operatorReplyClaims);
+    this.turnRecords.set(claim, record);
     let failure: unknown;
     let firstTurn: FirstTurn | undefined;
 
@@ -333,7 +379,7 @@ export class VoiceTurnService implements VoiceTurnPort {
           return;
         }
         yield { type: "conversation", conversationId: replay.conversationId };
-        yield* this.operatorReplySpeech(replies, record);
+        yield* this.operatorReplySpeech(replies, record, claim);
         yield* this.delivered(this.replayEvents(input, replay, record), record, claim, sessionKey);
         return;
       }
@@ -362,7 +408,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       }
       if (sessionClaim.conversationId) {
         yield { type: "conversation", conversationId: sessionClaim.conversationId };
-        yield* this.operatorReplySpeech(replies, record);
+        yield* this.operatorReplySpeech(replies, record, claim);
       }
       const reply = this.replyEvents(input, sessionClaim, record, signal, sessionKey);
       yield* this.delivered(policy ? applyVoiceTurnPolicy(reply, policy) : withoutPhaseMarkers(reply), record, claim, sessionKey);
@@ -374,7 +420,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       hungUp?.removeEventListener("abort", onHangUp);
       // Whether the caller heard the teammate's replies is decided once the outcome has left, so
       // they settle now rather than after a reply the limit cut off has drained.
-      const repliesSettled = record.operatorReplyClaims.settle(claim.outcomeAt !== null && cutOffAt(claim) === null);
+      const repliesSettled = record.operatorReplyClaims.settle(failure === undefined ? heardThrough(record, claim) : null);
       const finish = (): void => {
         const finishedAt = this.now();
         this.releaseFirstTurn(input.session, firstTurn);
@@ -415,6 +461,7 @@ export class VoiceTurnService implements VoiceTurnPort {
         this.memory.bridgeSpoken(sessionKey, claim, this.now());
         record.spoken.bridge = event.text;
       } else if (event.type === "speech") {
+        this.handOver(record, claim);
         record.spoken.speech.push(event.text);
       } else if (event.type === "outcome") {
         claim.outcomeAt ??= this.now();
@@ -424,24 +471,34 @@ export class VoiceTurnService implements VoiceTurnPort {
     }
   }
 
+  /** Counts the speech piece leaving now as one that reached the runtime, while the turn still has its caller. */
+  private handOver(record: VoiceTurnRecord, claim: VoiceTurnClaim): void {
+    if (cutOffAt(claim) === null) {
+      record.spoken.reached += 1;
+    }
+  }
+
   /**
    * Claims the conversation's pending teammate replies for this request. A request the session's
-   * newer one overtook before its outcome left will not reach its caller, so the replies it holds
-   * are handed back first (within the note timeout) and this request claims them; across
-   * instances that turn is not seen here, and its replies wait for it or for the claim's expiry.
+   * newer one overtook before its outcome left will not reach its caller with the rest of its
+   * speech, so it settles the replies it holds first (within the note timeout): the ones its caller
+   * heard through stay spoken, and this request claims the rest. Across instances that turn is not
+   * seen here, and its replies wait for it or for the claim's expiry.
    */
   private async claimOperatorReplies(claim: VoiceTurnClaim, record: VoiceTurnRecord, conversationId: string): Promise<ClaimedOperatorReply[]> {
-    const overtaken = claim.overtook?.outcomeAt === null ? this.replySpeakers.get(claim.overtook) : undefined;
-    if (overtaken?.holdsClaims) {
-      await withinNoteTimeout(overtaken.settle(false) ?? Promise.resolve()).catch(() => undefined);
+    const overtaken = claim.overtook?.outcomeAt === null ? this.turnRecords.get(claim.overtook) : undefined;
+    if (claim.overtook && overtaken?.operatorReplyClaims.holdsClaims) {
+      const settled = overtaken.operatorReplyClaims.settle(heardThrough(overtaken, claim.overtook));
+      await withinNoteTimeout(settled ?? Promise.resolve()).catch(() => undefined);
     }
     return record.operatorReplyClaims.claim(conversationId);
   }
 
   /** The teammate's claimed replies, spoken ahead of the turn's own answer, in the order they were written. */
-  private *operatorReplySpeech(replies: readonly ClaimedOperatorReply[], record: VoiceTurnRecord): Generator<VoiceTurnEvent> {
+  private *operatorReplySpeech(replies: readonly ClaimedOperatorReply[], record: VoiceTurnRecord, claim: VoiceTurnClaim): Generator<VoiceTurnEvent> {
     for (const piece of record.operatorReplyClaims.speech(replies)) {
       record.speechPieceCount += 1;
+      this.handOver(record, claim);
       record.spoken.operatorReplies.push(piece.text);
       yield piece;
     }
@@ -489,13 +546,23 @@ export class VoiceTurnService implements VoiceTurnPort {
       return;
     }
     const reservation = this.memory.reserveInterruption(sessionKey, input.heardUntil);
-    if (!reservation) {
-      return;
+    if (reservation) {
+      this.writeInterruptionNote(input, { ...reservation.interruption, partial: false }, reservation);
     }
-    const { interruption } = reservation;
+  }
+
+  /**
+   * Writes an interrupted reply's note off the turn's path, and counts and logs it once it is
+   * recorded. `settles`, when the session waits on the note: told whether it was recorded.
+   */
+  private writeInterruptionNote(
+    input: VoiceTurnInput,
+    interruption: Omit<Parameters<VoiceTurnNotes["replyInterrupted"]>[0], "workspaceId">,
+    settles?: { recorded(): void; failed(): void },
+  ): void {
     const recorded = (): void => {
-      reservation.recorded();
-      recordVoiceReplyInterrupted(this.dependencies.metrics);
+      settles?.recorded();
+      recordVoiceReplyInterrupted(this.dependencies.metrics, interruption.partial);
       this.dependencies.logger.info({
         agentId: input.session.agentId,
         vendor: input.session.vendor,
@@ -508,7 +575,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       return;
     }
     withinNoteTimeout(notes.replyInterrupted({ workspaceId: input.session.workspaceId, ...interruption })).then(recorded, (error: unknown) => {
-      reservation.failed();
+      settles?.failed();
       this.warnNoteFailed(input, interruption.conversationId, error);
     });
   }
@@ -566,6 +633,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       ...(record.operatorReplyClaims.spokenCount > 0 ? { spokenOperatorReplies: record.operatorReplyClaims.spokenCount } : {}),
       ...(record.outcome ? { outcome: record.outcome.kind } : {}),
       ...(record.handoffReason ? { handoffReason: record.handoffReason } : {}),
+      ...(record.reply?.partial ? { storedPartialReply: true } : {}),
       ...record.policy,
     };
     if (record.result === "failed") {
@@ -601,6 +669,10 @@ export class VoiceTurnService implements VoiceTurnPort {
         sourceChannel: VOICE_SOURCE_CHANNEL,
         channelContext: channelContextFor(input),
         supersession: "latest_input_wins",
+        deliveredReply: () => {
+          record.deliveredPart = deliveredReplyPart(record);
+          return record.deliveredPart;
+        },
         signal,
       })) {
         record.chatPrepared = true;
@@ -616,6 +688,7 @@ export class VoiceTurnService implements VoiceTurnPort {
           yield { type: "phase", phase: PHASE_OF_STAGE[event.stage] };
         } else if (event.type === "chunk") {
           record.chatReplied = true;
+          record.written += event.text;
           for (const text of speech.push(event.text)) {
             record.speechPieceCount += 1;
             yield { type: "speech", text, last: false };
@@ -630,7 +703,19 @@ export class VoiceTurnService implements VoiceTurnPort {
           // What follows `done` is suggestion enrichment, which nobody hears.
           return;
         } else if (event.type === "cancelled") {
-          // A newer turn on the conversation superseded this one and owns the reply now.
+          // A newer turn on the conversation superseded this one and owns the reply now. Chat kept
+          // the part the caller heard, when some did, as this turn's reply, marked cut short.
+          if (event.assistantMessageId && record.deliveredPart && record.conversationId) {
+            record.reply = { messageId: event.assistantMessageId, text: record.deliveredPart.text.trimEnd(), partial: true };
+            const { spokenCharacterCount } = record.deliveredPart;
+            this.writeInterruptionNote(input, {
+              conversationId: record.conversationId,
+              assistantMessageId: event.assistantMessageId,
+              heardCharacterCount: spokenCharacterCount,
+              spokenCharacterCount,
+              partial: true,
+            });
+          }
           yield CONTINUE;
           record.result = "superseded";
           return;

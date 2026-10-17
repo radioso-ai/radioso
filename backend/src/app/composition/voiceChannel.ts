@@ -49,9 +49,10 @@ const voiceProfileSource = (agentRepository: AgentVoiceProfileRepository) => ({
  * Notes on a turn's stored replies. An interrupted reply is marked on the message first and
  * audited after, so a note that rejects is one the session writes again; the mark is idempotent. A
  * reply the conversation no longer holds is not marked and not audited, and the note resolves: a
- * retry would find it no more. A teammate's replies the turn recorded as spoken are audited (the
- * turn marks them through chat's claims port first). Notes name replies by id and count
- * characters; they never carry what was said.
+ * retry would find it no more. The heard part of a reply cut off mid-stream is only audited: chat
+ * stored it marked. A teammate's replies the turn recorded as spoken are audited (the turn marks
+ * them through chat's claims port first). Notes name replies by id and count characters; they
+ * never carry what was said.
  */
 export const createVoiceTurnNotes = (deps: {
   replies: ReplyInterruptionMarker;
@@ -60,8 +61,8 @@ export const createVoiceTurnNotes = (deps: {
 }): VoiceTurnNotes => ({
   replyInterrupted: async (note) => {
     const { workspaceId, ...metadata } = note;
-    const { assistantMessageId, ...reply } = note;
-    const marked = await deps.replies.markReplyInterrupted({ ...reply, messageId: assistantMessageId });
+    const { assistantMessageId, partial, ...reply } = note;
+    const marked = partial || await deps.replies.markReplyInterrupted({ ...reply, messageId: assistantMessageId });
     if (!marked) {
       deps.logger.warn(
         { workspaceId, conversationId: note.conversationId, messageId: assistantMessageId },

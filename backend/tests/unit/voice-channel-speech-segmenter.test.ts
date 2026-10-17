@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createSentenceCutter, splitCompleteSentences, wholeTextSpeech } from "../../src/modules/voiceChannel/services/speechSegmenter.js";
+import { writtenLengthSpokenAs } from "../../src/modules/voiceChannel/services/speechText.js";
 
 describe("voice speech segmenter", () => {
   it("cuts a sentence once whitespace follows its terminator and keeps the punctuation", () => {
@@ -220,5 +221,46 @@ describe("a whole text as speech", () => {
   it("speaks nothing for a text with no words to say", () => {
     expect(wholeTextSpeech("  ")).toEqual([]);
     expect(wholeTextSpeech("**")).toEqual([]);
+  });
+});
+
+describe("the written start of a reply its first sentences were spoken from", () => {
+  /** Streams `chunks` through the cutter and keeps its first `pieceCount` sentences, as a turn cut off after them would. */
+  const cutAfter = (chunks: string[], pieceCount: number): { written: string; spoken: string } => {
+    const cutter = createSentenceCutter();
+    const pieces = chunks.flatMap((chunk) => cutter.push(chunk));
+    return { written: chunks.join(""), spoken: pieces.slice(0, pieceCount).join("") };
+  };
+  const writtenStart = (chunks: string[], pieceCount: number): string | null => {
+    const { written, spoken } = cutAfter(chunks, pieceCount);
+    const length = writtenLengthSpokenAs(written, spoken);
+    return length === null ? null : written.slice(0, length);
+  };
+
+  it("is the text up to the end of the last sentence spoken, as the composer wrote it", () => {
+    expect(writtenStart(["We open at nine. Satur", "days at ten. Sundays we"], 2)).toBe("We open at nine. Saturdays at ten. ");
+    expect(writtenStart(["We open at nine. Saturdays at ten. Sundays we"], 1)).toBe("We open at nine. ");
+  });
+
+  it("keeps the markdown the caller never heard, closing delimiters and links included", () => {
+    expect(writtenStart(["We open at **ni", "ne** on weekdays. See [the hours](https://example.com/h). Then"], 2))
+      .toBe("We open at **nine** on weekdays. See [the hours](https://example.com/h). ");
+    expect(writtenStart(["Our plans:\n- Basic is free.\n- Pro is ten euros.\n- Te", "am"], 2))
+      .toBe("Our plans:\n- Basic is free.\n- Pro is ten euros.\n");
+    expect(writtenStart(["Our plans:\n- Basic is free.\n- Pro is ten euros.\n- Team"], 1)).toBe("Our plans:\n- Basic is free.\n");
+  });
+
+  it("keeps the citation markers of the sentences spoken, wherever the composer put them", () => {
+    expect(writtenStart(["We open at nine [[1]]. Saturdays at ten.[[2]", "] Sundays we"], 2)).toBe("We open at nine [[1]]. Saturdays at ten.[[2]] ");
+    expect(writtenStart(["We open at nine.[1] Saturdays"], 1)).toBe("We open at nine.[1] ");
+  });
+
+  it("is the whole sentence for a script that writes no space after it", () => {
+    expect(writtenStart(["私たちは九時に開きます。土曜日は"], 1)).toBe("私たちは九時に開きます。");
+  });
+
+  it("is null when no start of the text is spoken that way", () => {
+    expect(writtenLengthSpokenAs("We open at nine. ", "We close at nine. ")).toBeNull();
+    expect(writtenLengthSpokenAs("We open at nine.", "We open at nine. Saturdays at ten. ")).toBeNull();
   });
 });

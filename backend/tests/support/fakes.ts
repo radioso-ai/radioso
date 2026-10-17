@@ -4980,6 +4980,7 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     operatorUserId?: string;
     operatorDisplayName?: string;
     pendingSpeech?: boolean;
+    interruption?: ReplyInterruption;
     inputMetadata?: MessageRecord["inputMetadata"];
     metadata?: Record<string, unknown>;
     skillName?: string;
@@ -5010,6 +5011,7 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
       skillOutcome: input.skillOutcome,
       skillStatus: input.skillStatus,
       ...(input.pendingSpeech ? { speech: { state: "pending" as const } } : {}),
+      ...(input.interruption ? { interruption: { ...input.interruption } } : {}),
       createdAt: new Date(this.nextCreatedAtMs++),
     };
     const items = this.items.get(input.conversationId) ?? [];
@@ -5018,11 +5020,11 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     return record;
   }
 
-  async markReplyInterrupted(input: { workspaceId: string; conversationId: string; messageId: string } & ReplyInterruption): Promise<boolean> {
+  async markReplyInterrupted(input: { workspaceId: string; conversationId: string; messageId: string } & Omit<ReplyInterruption, "partial">): Promise<boolean> {
     const reply = (this.items.get(input.conversationId) ?? [])
       .find((message) => message.id === input.messageId && message.workspaceId === input.workspaceId && message.role === "assistant");
     if (!reply) return false;
-    reply.interruption ??= { heardCharacterCount: input.heardCharacterCount, spokenCharacterCount: input.spokenCharacterCount };
+    reply.interruption ??= { heardCharacterCount: input.heardCharacterCount, spokenCharacterCount: input.spokenCharacterCount, partial: false };
     return true;
   }
 

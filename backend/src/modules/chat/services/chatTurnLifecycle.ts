@@ -19,6 +19,8 @@ import type { PendingDecisionCreateInput } from "../../../db/repositories/pendin
 import type { Db } from "../../../shared/infra/kysely/types.js";
 import { groundingDiagnosticFromSummary } from "./groundingDiagnostic.js";
 import type { ChatTurnSupersededError } from "./conversationTurnRegistry.js";
+import type { DeliveredReplyReader } from "../contracts/interruption.js";
+import { cutReplyContent, cutReplyMessage } from "./cutReplyMessage.js";
 import type {
   ConversationOwnershipReason,
   ConversationOwnershipRequestHandoffInput,
@@ -295,6 +297,17 @@ export interface AssistantTurnPersistencePort {
     messageId: string;
     auditEvent: AuditEventInput;
   }): Promise<boolean>;
+  /**
+   * Stores the heard part of a reply a newer input cut off mid-stream, `assistantMessage`, already
+   * marked cut short, touches the conversation, and records `auditEvent`, the turn's cancelled
+   * `chat.answer` event naming that message, in one transaction.
+   */
+  storeCutReply?(input: {
+    workspaceId: string;
+    conversationId: string;
+    assistantMessage: MessageCreateInput & { id: string };
+    auditEvent: AuditEventInput;
+  }): Promise<void>;
 }
 
 interface PendingDecisionWriterPort {
@@ -572,6 +585,23 @@ export const buildTurnTraceForPresentation = (
     assistantMessage,
     successInput,
   };
+};
+
+/**
+ * The heard part of a reply a newer input cut off after it started reaching the listener, as the
+ * stored content and its spoken length; null when the turn is not that, keeps no reply (a draft),
+ * or the channel reports nothing heard. The channel is asked at most once.
+ */
+const deliveredReplyPartOf = (
+  input: { executionMode?: TurnExecutionMode; deliveredReply?: DeliveredReplyReader },
+  supersededBy: ChatTurnSupersededError,
+): { content: string; spokenCharacterCount: number } | null => {
+  if (!supersededBy.afterEmission || !input.deliveredReply || turnExecutionCapabilities(input.executionMode).completion !== "persist_reply") {
+    return null;
+  }
+  const part = input.deliveredReply();
+  const content = part ? cutReplyContent(part.text) : "";
+  return part && content ? { content, spokenCharacterCount: part.spokenCharacterCount } : null;
 };
 
 /** No assessment ran for this request; the ids still anchor the verdict slot to the turn. */
@@ -1189,6 +1219,9 @@ export class ChatTurnLifecycle {
    *
    * A turn a newer input replaced before it emitted (both `latest_input_wins`) has its
    * user message deleted; this event still names it and adds `userMessageDiscarded`.
+   * A turn a newer input cut off after its reply started reaching the listener keeps,
+   * as its reply, the part the channel's `deliveredReply` says the listener got: this
+   * event then names that message and adds `partialReplyStored`, and resolves its id.
    */
   async recordSupersession(
     input: {
@@ -1197,16 +1230,18 @@ export class ChatTurnLifecycle {
       conversationId?: string;
       stream: boolean;
       executionMode?: TurnExecutionMode;
+      /** What reached the listener of a reply cut off mid-stream; absent: such a turn stores no reply. */
+      deliveredReply?: DeliveredReplyReader;
     },
     session: PreparedSession | null,
     existingAssistantMessageId: string | undefined,
     supersededBy: ChatTurnSupersededError,
     workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn"),
-  ) {
+  ): Promise<string | undefined> {
     if (session && existingAssistantMessageId) {
       await this.conversationRepository.touch(session.conversation.id, input.workspaceId);
     }
-    const cancelledEvent = (userMessageDiscarded: boolean): AuditEventInput => ({
+    const cancelledEvent = (outcome: { userMessageDiscarded?: boolean; cutReplyId?: string } = {}): AuditEventInput => ({
       accountId: input.accountId,
       workspaceId: input.workspaceId,
       eventType: "chat.answer",
@@ -1217,20 +1252,74 @@ export class ChatTurnLifecycle {
         executionClass: workflowPolicy.executionClass,
         conversationId: session?.conversation.id ?? input.conversationId,
         userMessageId: session?.userMessage.id,
-        ...(userMessageDiscarded ? { userMessageDiscarded } : {}),
-        assistantMessageId: existingAssistantMessageId,
+        ...(outcome.userMessageDiscarded ? { userMessageDiscarded: true } : {}),
+        assistantMessageId: outcome.cutReplyId ?? existingAssistantMessageId,
+        ...(outcome.cutReplyId ? { partialReplyStored: true } : {}),
         stream: input.stream,
         supersededStage: supersededBy.stage,
         ...executionModeAuditMetadata(input.executionMode, session?.conversation.sourceChannel),
       },
     });
+    const heardPart = session && !existingAssistantMessageId ? deliveredReplyPartOf(input, supersededBy) : null;
+    if (session && heardPart) {
+      const cutReplyId = await this.storeCutReply(input, session, heardPart, (id) => cancelledEvent({ cutReplyId: id }));
+      if (!cutReplyId) {
+        await this.auditService.record(cancelledEvent());
+      }
+      return cutReplyId;
+    }
     const replaced = supersededBy.replacedByNewerInput && !supersededBy.afterEmission && !existingAssistantMessageId;
     const discard = replaced && session
-      ? await this.discardReplacedUserMessage(input, session, cancelledEvent(true))
+      ? await this.discardReplacedUserMessage(input, session, cancelledEvent({ userMessageDiscarded: true }))
       : { userMessageDiscarded: false, recorded: false };
     if (!discard.recorded) {
-      await this.auditService.record(cancelledEvent(discard.userMessageDiscarded));
+      await this.auditService.record(cancelledEvent({ userMessageDiscarded: discard.userMessageDiscarded }));
     }
+    return undefined;
+  }
+
+  /**
+   * Stores the heard part of a cut-off reply with its cancelled event: in one transaction through
+   * the persistence port, else (tests, non-DB hosts) the message first and the event after. A part
+   * that cannot be stored is logged and resolves undefined, leaving the event to the caller, so the
+   * turn is still recorded. Once stored, the workspace's live views learn of the new reply.
+   */
+  private async storeCutReply(
+    input: { workspaceId: string },
+    session: PreparedSession,
+    heardPart: { content: string; spokenCharacterCount: number },
+    auditEventFor: (cutReplyId: string) => AuditEventInput,
+  ): Promise<string | undefined> {
+    const conversationId = session.conversation.id;
+    const assistantMessage = cutReplyMessage({ id: randomUUID(), workspaceId: input.workspaceId, conversationId, ...heardPart });
+    const port = this.assistantTurnPersistence;
+    let cutReplyId: string;
+    try {
+      if (port?.storeCutReply) {
+        const auditEvent = auditEventFor(assistantMessage.id);
+        await port.storeCutReply({ workspaceId: input.workspaceId, conversationId, assistantMessage, auditEvent });
+        this.auditService.logRecorded?.(auditEvent);
+        cutReplyId = assistantMessage.id;
+      } else {
+        cutReplyId = (await this.messageRepository.create(assistantMessage)).id;
+      }
+    } catch (error) {
+      this.logger?.warn({
+        workspaceId: input.workspaceId,
+        conversationId,
+        errorType: error instanceof Error ? error.name : typeof error,
+      }, "The part of a cut-off reply could not be stored");
+      return undefined;
+    }
+    if (!port?.storeCutReply) {
+      await this.conversationRepository.touch(conversationId, input.workspaceId);
+      await this.auditService.record(auditEventFor(cutReplyId));
+    }
+    flushPostCommitInvalidationReceipt(
+      this.workspaceInvalidationPublisher,
+      createPostCommitInvalidationReceipt(input.workspaceId, ["conversation.turn_committed"]),
+    );
+    return cutReplyId;
   }
 
   /**

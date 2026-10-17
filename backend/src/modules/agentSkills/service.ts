@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
+import { isUniqueViolation, pgErrorMeta } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import {
   skillCapabilityIdSchema,
@@ -12,6 +13,10 @@ import { mergeSkillConfig } from "./configMerge.js";
 import { agentSkillInvocationModes, type AgentSkillInvocationMode, type AgentSkillSpine } from "./domain.js";
 import type { AgentSkillRepositoryPort } from "./repository.js";
 import type { AuditService } from "../audit/contracts/index.js";
+import {
+  requestAddedRecipientConfirmations,
+  type RecipientConfirmationRequester,
+} from "../../shared/domain/recipientConfirmationRequests.js";
 import {
   recipientEmailChangeMetadata,
   recipientEmailsFromDeliveryConfig,
@@ -104,20 +109,8 @@ interface AgentSkillsServiceOptions {
   capabilities: SkillCapabilityRegistry;
   logger?: AppLogger;
   audit?: Pick<AuditService, "record">;
+  recipientConfirmations?: RecipientConfirmationRequester;
 }
-
-const pgErrorMeta = (error: unknown): { code?: string; constraint?: string } => {
-  if (!error || typeof error !== "object") {
-    return {};
-  }
-  const candidate = error as { code?: unknown; constraint?: unknown };
-  return {
-    code: typeof candidate.code === "string" ? candidate.code : undefined,
-    constraint: typeof candidate.constraint === "string" ? candidate.constraint : undefined,
-  };
-};
-
-const isUniqueViolation = (error: unknown): boolean => pgErrorMeta(error).code === "23505";
 
 // The agent_skills target-reference trigger raises 23503 with an `*_target_fk`
 // constraint when target_id is missing/unknown or points at another workspace's
@@ -197,7 +190,7 @@ export class AgentSkillsService {
         capability: descriptor.id,
         invocationMode: input.invocationMode,
       });
-      await this.auditRecipientChange(workspaceId, agentId, record.id, descriptor.id, {}, record.config ?? {});
+      await this.recordRecipientChange(workspaceId, agentId, record.id, descriptor.id, {}, record.config ?? {});
       return this.toView(record);
     } catch (error) {
       throw this.translatePersistenceError(error, input.name, input.target);
@@ -273,14 +266,14 @@ export class AgentSkillsService {
         capability: descriptor.id,
         invocationMode: updated.invocationMode,
       });
-      await this.auditRecipientChange(workspaceId, agentId, updated.id, descriptor.id, existing.config ?? {}, updated.config ?? {});
+      await this.recordRecipientChange(workspaceId, agentId, updated.id, descriptor.id, existing.config ?? {}, updated.config ?? {});
       return this.toView(updated);
     } catch (error) {
       throw this.translatePersistenceError(error, existing.skillName, target);
     }
   }
 
-  private async auditRecipientChange(
+  private async recordRecipientChange(
     workspaceId: string,
     agentId: string,
     skillId: string,
@@ -289,16 +282,21 @@ export class AgentSkillsService {
     config: Record<string, unknown>,
   ): Promise<void> {
     if (capability !== "notify") return;
-    const metadata = recipientEmailChangeMetadata(
-      recipientEmailsFromDeliveryConfig(previousConfig),
-      recipientEmailsFromDeliveryConfig(config),
-    );
+    const previousRecipients = recipientEmailsFromDeliveryConfig(previousConfig);
+    const recipients = recipientEmailsFromDeliveryConfig(config);
+    const metadata = recipientEmailChangeMetadata(previousRecipients, recipients);
     if (!metadata) return;
     await this.options.audit?.record({
       workspaceId,
       eventType: "agent_skill.notification_recipients.changed",
       eventStatus: "success",
       metadata: { agentId, skillId, ...metadata },
+    });
+    await requestAddedRecipientConfirmations(this.options.recipientConfirmations, {
+      workspaceId,
+      agentId,
+      previous: previousRecipients,
+      next: recipients,
     });
   }
 
@@ -345,7 +343,7 @@ export class AgentSkillsService {
     });
     const capability = this.options.capabilities.getByStoredKind(existing.kind)?.id;
     if (capability) {
-      await this.auditRecipientChange(workspaceId, agentId, id, capability, existing.config ?? {}, {});
+      await this.recordRecipientChange(workspaceId, agentId, id, capability, existing.config ?? {}, {});
     }
   }
 

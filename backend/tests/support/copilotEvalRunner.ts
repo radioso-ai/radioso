@@ -352,6 +352,7 @@ export const copilotEvalCatalogDependencies = (): Parameters<typeof createCopilo
       get: async () => fixtureRoutine(),
       validate: async () => ({ ok: true, diagnostics: [] }),
     },
+    voiceRecordings: { availability: async () => null },
     chatHistoryService: {
       getConversation: async () => ({
         conversationId: COPILOT_EVAL_CONVERSATION_ID,
@@ -547,14 +548,14 @@ callerKind: "human" as const,
         targetLabel: "Support",
         summary: `Draft ${targetType}: ${intent.slice(0, 60)}`,
         versionToken: "v1",
-        diagnostics: [],
+        diagnostics: [], advisories: [],
         };
       },
       draftEdit: async (_workspaceId: string, _targetRef: unknown, changes: unknown) => ({
         payload: { kind: "edit", name: "Order status", changes },
         targetLabel: "Order status",
         summary: "Edit routine Order status.",
-        diagnostics: [],
+        diagnostics: [], advisories: [],
       }),
       preview: async () => ({ targetLabel: "Support", current: null, proposed: {} }),
       // Stands in for each adapter's own settling of a change into a stored payload. The tools that

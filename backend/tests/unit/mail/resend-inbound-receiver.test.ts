@@ -269,6 +269,8 @@ describe("Resend inbound receiver: event kinds", () => {
       providerObjectId: "56761188-7520-42d8-8898-ff6fc54ce618",
       occurredAt: new Date("2026-11-22T23:41:12.126Z"),
       status: { type: "bounced", bounce: { type: "Permanent", subType: "Suppressed", statusCode: null } },
+      recipients: ["delivered@resend.dev"],
+      emailKind: null,
     });
     expect(JSON.stringify(event)).not.toContain("suppression list");
   });

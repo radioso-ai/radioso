@@ -2,6 +2,11 @@ import { createAgentBundleServices } from "../../src/app/composition/agentBundle
 import { createDefaultApplicationComposition } from "../../src/app/composition/defaultComposition.js";
 import { chatTurnQueuedActionTypes } from "../../src/app/composition/applicationModule.js";
 import { createAgentPublicProfileComposition } from "../../src/app/composition/agentDiscovery.js";
+import {
+  createVoiceRecordingComposition,
+  createVoiceSessionStartComposition,
+  refreshEmbedConfigsOnVoiceVendorKeyChange,
+} from "../../src/app/composition/voiceChannel.js";
 import { createDefaultVisitorGeoResolver } from "../../src/app/composition/visitorGeoResolver.js";
 import { InMemoryAgentBundleImportRepository } from "./inMemoryAgentBundleImports.js";
 import { setTimeout as delay } from "node:timers/promises";
@@ -41,13 +46,25 @@ import {
 } from "../../src/modules/chat/composition.js";
 import { ChatService, type ChatGateway, type ChatRoutineProvider } from "../../src/modules/chat/services/chatService.js";
 import type { TurnRouter } from "../../src/modules/chat/services/turnRouter.js";
-import { ActionDispatchWorker } from "../../src/modules/chat/services/actions/actionDispatchWorker.js";
+import { BackgroundJobRuntime } from "../../src/shared/background-jobs/index.js";
+import { PeriodicTaskRunner } from "../../src/app/composition/periodicTaskRunner.js";
 import { createConversationEngine, DefaultRoutineRunner } from "@radioso/conversation-engine";
 import { scopeTag } from "@radioso/conversation-defaults";
 import { buildChatTurnRuntime } from "../../src/modules/chat/services/chatTurnRuntime.js";
 import { createSkillOutcomeCapabilityProvider } from "../../src/modules/chat/services/chatAnswerPresenter.js";
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
+import {
+  VoiceTurnService,
+  type VoiceRecordingStore,
+  type VoiceRecordingToErase,
+  type VoiceSessionRef,
+  type VoiceSessionStartLookup,
+  type VoiceSessionStartRegistry,
+  type VoiceSessionStore,
+  type VoiceSessionVendorAgent,
+  type VoiceSessionVisitor,
+} from "../../src/modules/voiceChannel/public.js";
 import { AssistantHistoryService } from "../../src/modules/chat/services/assistantHistoryService.js";
 import {
   AgentRevisionRuntimeResolver,
@@ -176,6 +193,7 @@ import { SlackSkillDefinitionService } from "../../src/modules/slackSkills/publi
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import {
   ConversationOwnershipService,
+  isHumanOwned,
   OperatorIdentityResolver,
   OperatorReplyService,
 } from "../../src/modules/handoff/public.js";
@@ -371,6 +389,10 @@ export const createTestEnv = (): Env => ({
   OPS_EVENT_WEBHOOK_EVENTS: undefined,
   OPS_EVENT_WEBHOOK_MIN_ERROR_SEVERITY: "error",
   OPS_EVENT_WEBHOOK_QUEUE_LIMIT: 500,
+  NOTIFICATION_RECIPIENT_CONFIRMATION_ENABLED: true,
+  SLACK_INBOUND_EVENT_RETENTION_DAYS: 30,
+  EXTERNAL_MCP_TOOL_CALL_TIMEOUT_MS: 30_000,
+  ANSWER_COVERAGE_SHADOW_ASSESSOR_ENABLED: true,
   GOOGLE_CLOUD_PROJECT: "radioso-test",
   DATABASE_URL: "postgres://test:test@localhost:5432/test",
   DB_POOL_MAX: 10,
@@ -412,6 +434,11 @@ export const createTestEnv = (): Env => ({
   PUBLIC_CHAT_SESSION_RATE_LIMIT_MAX_ATTEMPTS: 10,
   PUBLIC_CHAT_SESSION_READ_RATE_LIMIT_MAX_ATTEMPTS: 120,
   PUBLIC_CHAT_GLOBAL_RATE_LIMIT_MAX_ATTEMPTS: 600,
+  PUBLIC_VOICE_SESSION_START_RATE_LIMIT_MAX_ATTEMPTS: 3,
+  PUBLIC_VOICE_SESSION_START_RATE_LIMIT_WINDOW_MS: 600_000,
+  PUBLIC_VOICE_SESSION_START_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 3,
+  PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS: 30,
+  PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_WINDOW_MS: 60_000,
   AGENT_CHANNEL_CHAT_RATE_LIMIT_WINDOW_MS: 60_000,
   AGENT_CHANNEL_CHAT_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 300,
   AGENT_CHANNEL_CHAT_GRANT_RATE_LIMIT_MAX_ATTEMPTS: 30,
@@ -431,6 +458,7 @@ export const createTestEnv = (): Env => ({
   WORKER_TASKS_QUEUE_NAME: undefined,
   WORKER_TASKS_CRAWL_QUEUE_NAME: undefined,
   ACTION_DISPATCH_TASK_QUEUE_NAME: undefined,
+  BACKGROUND_JOB_TASK_QUEUE_NAME: undefined,
   WORKER_TASKS_SERVICE_URL: undefined,
   WORKER_TASKS_CRAWL_SERVICE_URL: undefined,
   WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: undefined,
@@ -454,6 +482,7 @@ export const createTestEnv = (): Env => ({
   PUBLIC_MCP_CONVERSE_URL: "https://mcp.radioso.test/mcp",
   RADIOSO_EDITION: "oss",
   RADIOSO_APPLICATION_MODULES: undefined,
+  CHAT_QUICK_REPLY_LANE: "on",
 });
 
 interface TestRepositories {
@@ -468,6 +497,7 @@ interface TestRepositories {
   documentProcessingJobRepository: InMemoryDocumentProcessingJobRepository;
   conversationRepository: InMemoryConversationRepository;
   visitorRepository: InMemoryVisitorProfileRepository;
+  workspaceProviderCredentialsRepository: InMemoryWorkspaceProviderCredentialsRepository;
   conversationOwnershipRepository: InMemoryConversationOwnershipRepository;
   conversationActivity: InMemoryConversationActivityStore;
   actionOutbox: InMemoryActionOutbox;
@@ -815,6 +845,88 @@ class InMemoryContextVariableRepository implements ContextVariableRepositoryPort
   }
 }
 
+interface InMemoryVoiceStart {
+  session: VoiceSessionRef;
+  visitor: VoiceSessionVisitor;
+  expiresAt: Date;
+  vendorAgent: VoiceSessionVendorAgent;
+  vendorConversationId?: string;
+}
+
+/**
+ * `voice_sessions` in memory: session bindings, started sessions waiting for their first turn, and
+ * the vendor conversation their page reported, which names the call's recording.
+ */
+const createInMemoryVoiceSessions = (): VoiceSessionStore & VoiceSessionStartRegistry & VoiceSessionStartLookup & VoiceRecordingStore & {
+  readonly started: ReadonlyMap<string, InMemoryVoiceStart>;
+} => {
+  const bound = new Map<string, string>();
+  const started = new Map<string, InMemoryVoiceStart>();
+  const keyOf = (session: { workspaceId: string; agentId: string; vendor: string; sessionKey: string }) =>
+    JSON.stringify([session.workspaceId, session.agentId, session.vendor, session.sessionKey]);
+  const recordings = (): Array<{ recording: VoiceRecordingToErase; visitorKey: string | null }> =>
+    [...started.entries()].flatMap(([key, start]) => start.vendorConversationId
+      ? [{
+        recording: {
+          workspaceId: start.session.workspaceId,
+          conversationId: bound.get(key) ?? null,
+          vendor: "elevenlabs" as const,
+          region: start.vendorAgent.region,
+          vendorConversationId: start.vendorConversationId,
+        },
+        visitorKey: start.visitor.visitorKey,
+      }]
+      : []);
+  const reportable = (report: { workspaceId: string; agentId: string; sessionKey: string; publicSessionId: string }) =>
+    [...started.values()].find((candidate) =>
+      candidate.session.workspaceId === report.workspaceId
+      && candidate.session.agentId === report.agentId
+      && candidate.session.sessionKey === report.sessionKey
+      && candidate.visitor.publicSessionId === report.publicSessionId
+      && candidate.expiresAt.getTime() > Date.now()
+      && !candidate.vendorConversationId);
+  return {
+    started,
+    findConversationId: async (session) => bound.get(keyOf(session)) ?? null,
+    bind: async (session, conversationId) => {
+      if (!bound.has(keyOf(session))) bound.set(keyOf(session), conversationId);
+      return bound.get(keyOf(session)) ?? conversationId;
+    },
+    register: async ({ session, visitor, expiresAt, vendorAgent }) => {
+      if (!started.has(keyOf(session))) started.set(keyOf(session), { session, visitor, expiresAt, vendorAgent });
+    },
+    findReportableSession: async (report) => {
+      const start = reportable(report);
+      return start ? { vendor: "elevenlabs" as const, vendorAgent: start.vendorAgent } : null;
+    },
+    recordVendorConversation: async (report) => {
+      const start = reportable(report);
+      const taken = [...started.values()].some((candidate) => candidate.vendorConversationId === report.vendorConversationId);
+      if (!start || taken) return false;
+      start.vendorConversationId = report.vendorConversationId;
+      return true;
+    },
+    findRecording: async ({ workspaceId, conversationId }) => {
+      const recording = recordings()
+        .map((candidate) => candidate.recording)
+        .find((candidate) => candidate.workspaceId === workspaceId && candidate.conversationId === conversationId);
+      return recording ? { conversationId, vendor: recording.vendor, region: recording.region, vendorConversationId: recording.vendorConversationId } : null;
+    },
+    listRecordings: async (scope) =>
+      recordings()
+        .filter(({ recording, visitorKey }) => recording.workspaceId === scope.workspaceId
+          && (scope.kind === "workspace"
+            || (scope.kind === "conversations" && recording.conversationId !== null && scope.conversationIds.includes(recording.conversationId))
+            || (scope.kind === "visitor_key" && visitorKey === scope.visitorKey)))
+        .map(({ recording }) => recording),
+    findStartedVisitor: async (session) => {
+      const start = started.get(keyOf(session));
+      if (!start || bound.has(keyOf(session)) || start.expiresAt.getTime() <= Date.now()) return null;
+      return start.visitor;
+    },
+  };
+};
+
 export const createTestDependencies = (overrides: {
   chatGateway?: ChatGateway;
   lexicalSearch?: LexicalSearchPort;
@@ -843,8 +955,14 @@ export const createTestDependencies = (overrides: {
   emailChannel?: AppDependencies["emailChannel"];
   /** Delivery failures and the decisions on them; omitted means an empty in-memory store no channel resolves. */
   deliveryFailures?: AppDependencies["deliveryFailures"];
+  /** Conversation and visitor erasure; omitted means every erasure is refused as not found. */
+  conversationErasure?: AppDependencies["conversationErasure"];
   /** Held replies and the decisions on them; omitted means a workspace with none. */
   heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;
+  /** The `fetch` voice vendor session starters call; omitted means every vendor call fails as unreachable. */
+  voiceVendorFetch?: typeof globalThis.fetch;
+  /** Observes the embed-config CDN invalidations; omitted means the deployment has no CDN to invalidate. */
+  embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
   /** Composes the agent tool catalog over the test app's agent row and published-revision readers. */
   agentToolCatalog?: (readers: {
     agentRepository: Pick<AgentRepositoryPort, "findByIdAndWorkspaceId">;
@@ -1398,19 +1516,41 @@ export const createTestDependencies = (overrides: {
       };
     },
   } satisfies TurnRouter;
-  const workspaceService = new WorkspaceService(workspaceRepository, auditService, accountMembershipRepository);
   const workspaceSummaryService = new WorkspaceSummaryService(documentRepository, conversationRepository, {
     websiteCrawlerEnabled: env.WEBSITE_CRAWLER_ENABLED,
   });
-  const workspaceSessionService = new WorkspaceSessionService(workspaceService);
   const abuseControlService = new AbuseControlService(
     overrides.abuseControlRepository ?? new InMemoryAbuseControlRepository(),
   );
+  const voiceSessions = createInMemoryVoiceSessions();
+  const workspaceProviderCredentialsRepository = new InMemoryWorkspaceProviderCredentialsRepository();
   const workspaceProviderCredentialsService = new WorkspaceProviderCredentialsService(
-    new InMemoryWorkspaceProviderCredentialsRepository(),
+    workspaceProviderCredentialsRepository,
     auditService,
     { key: env.CONNECTOR_ENCRYPTION_KEY },
   );
+  const voiceVendorFetch: typeof globalThis.fetch = overrides.voiceVendorFetch ?? (async () => {
+    throw new TypeError("Voice vendor calls are disabled in tests");
+  });
+  const voiceRecordings = createVoiceRecordingComposition({
+    recordings: voiceSessions,
+    // The in-memory app has no transactions: every handle reads the same store.
+    recordingsIn: () => voiceSessions,
+    credentials: workspaceProviderCredentialsService,
+    fetch: voiceVendorFetch,
+    auditService,
+    metricsRegistry,
+    logger,
+  });
+  const workspaceService = new WorkspaceService(
+    workspaceRepository,
+    auditService,
+    accountMembershipRepository,
+    undefined,
+    undefined,
+    { eraser: voiceRecordings.erasure, logger },
+  );
+  const workspaceSessionService = new WorkspaceSessionService(workspaceService);
   const oauthConnectionRepository = new InMemoryOauthConnectionRepository();
   const integrationConnectionRepository = new InMemoryIntegrationConnectionRepository();
   const slackInstallationRepository = new InMemorySlackInstallationRepository();
@@ -1699,6 +1839,30 @@ export const createTestDependencies = (overrides: {
     capabilities: skillCapabilityRegistry,
     logger,
   });
+  const notificationRecipientPolicy = {
+    describe: async (_workspaceId: string, emails: readonly string[]) => emails.map((email) => ({
+      email: email.trim().toLowerCase(),
+      state: "confirmation_not_required" as const,
+    })),
+    prepareDelivery: async (input: { emails: readonly string[] }) => ({
+      eligibleEmails: [...input.emails],
+      eligibleRecipients: input.emails.map((email) => ({ email, listUnsubscribeUrl: "" })),
+      skipped: { unconfirmed: 0, suppressed: 0, revoked: 0 },
+    }),
+    resendConfirmation: async () => false,
+    requestConfirmations: async () => undefined,
+    confirm: async () => true,
+    revoke: async () => true,
+    resume: async () => true,
+  };
+  const notificationRecipientSuppressions = {
+    suppress: async (_input: {
+      email: string;
+      reason: "hard_bounce" | "complaint";
+      provider: string;
+      providerEventId: string;
+    }) => undefined,
+  };
   const operatorNoticeDestinations = new OperatorNoticeDestinationsReader({
     skills: agentSkillRepository,
     resolver: new ConfiguredContactDeliveryResolver(
@@ -1707,6 +1871,7 @@ export const createTestDependencies = (overrides: {
       new WorkspaceOwnerContactRecipientResolver(workspaceRepository, accountMembershipRepository),
       agentSkillRepository,
     ),
+    recipientPolicy: notificationRecipientPolicy,
   });
   const accessGrantService = new AccessGrantService({
     repository: accessGrantRepository,
@@ -1719,9 +1884,10 @@ export const createTestDependencies = (overrides: {
     agentRepository,
     workspaceRepository,
     documentSourceRepository,
-    undefined,
+    overrides.embedConfigCacheInvalidator,
     accessGrantService,
   );
+  refreshEmbedConfigsOnVoiceVendorKeyChange({ credentials: workspaceProviderCredentialsService, embedConfigs: agentService });
   const publishedAgentRevisions = new PublishedTestAgentRevisionReader(contextVariableRepository);
   const testExecutionService = overrides.testExecutionService ?? {
     async start() { throw new Error("Test execution is not configured in this test app"); },
@@ -2067,11 +2233,24 @@ export const createTestDependencies = (overrides: {
       },
     },
   });
-  // The action outbox drain never runs in tests; a no-op dispatcher satisfies the shape.
-  const actionDispatchWorker = new ActionDispatchWorker(
-    { dispatchPending: async () => ({ dispatched: 0, retried: 0, failed: 0 }) },
-    { logger },
-  );
+  // The action outbox drain never runs in tests; a runtime with no handlers claims nothing.
+  const actionDispatchJobRuntime = new BackgroundJobRuntime({
+    store: {
+      claimNext: async () => null,
+      renewLease: async () => false,
+      complete: async () => "superseded",
+      retry: async () => null,
+      deadLetter: async () => false,
+    },
+    handlers: [],
+    logger,
+  });
+  const actionOutboxQueueDepthReporter = new PeriodicTaskRunner({
+    id: "action-outbox-queue-depth-stub",
+    intervalMs: 999_999_999,
+    run: async () => undefined,
+    logger,
+  });
   const assistantHistoryService = new AssistantHistoryService(chatHistoryService);
   const publicConversationEventBus = new InMemoryPublicConversationEventBus();
   const operatorReplyService = new OperatorReplyService({
@@ -2346,6 +2525,7 @@ export const createTestDependencies = (overrides: {
       validate: routineDefinitionService.validate.bind(routineDefinitionService),
     },
     chatHistoryService,
+    voiceRecordings: voiceRecordings.recordings,
     agentTurnProbe: agentTurnProbeService,
     retrievalProbe: retrievalProbeService,
     testChat: testChatService,
@@ -2594,6 +2774,14 @@ export const createTestDependencies = (overrides: {
         listPublished: ({ agentId }) => routineDefinitionRepository.listActiveByAgent(agentId),
       },
     });
+  const voiceSessionStarts = createVoiceSessionStartComposition({
+    agentRepository,
+    starts: voiceSessions,
+    credentials: workspaceProviderCredentialsService,
+    fetch: voiceVendorFetch,
+    metricsRegistry,
+    logger,
+  });
   const dependencies: AppDependencies = {
     env,
     agentBundleExportService: agentBundleServices.exportService,
@@ -2604,6 +2792,7 @@ export const createTestDependencies = (overrides: {
     realtimePublisherLifecycle: { shutdown: async () => undefined },
     credentialExpiryWarningLifecycle,
     periodicTasksLifecycle: { start: async () => undefined, stop: async () => undefined },
+    periodicTaskHandlesById: new Map(),
     realtimeRolloutPolicy: overrides.realtimeRolloutPolicy ?? { allows: () => false },
     logger,
     operatorCopilotService,
@@ -2653,6 +2842,8 @@ export const createTestDependencies = (overrides: {
     skillCapabilityRegistry,
     agentSkillsService,
     operatorNoticeDestinations,
+    notificationRecipientPolicy,
+    notificationRecipientSuppressions,
     emailSkillActivityRepository,
     mcpConnectionService,
     externalSkillDefinitionService,
@@ -2754,7 +2945,28 @@ export const createTestDependencies = (overrides: {
     workbenchReplayRunner: workbenchReplayRunner as any,
     testExecutionService,
     revisionEvalRunService,
-    actionDispatchWorker,
+    actionDispatchJobRuntime,
+    actionOutboxQueueDepthReporter,
+    reportActionOutboxQueueState: async () => undefined,
+    // Background jobs never run in tests; a runtime with no handlers claims nothing.
+    backgroundJobRuntime: new BackgroundJobRuntime({
+      store: {
+        claimNext: async () => null,
+        renewLease: async () => false,
+        complete: async () => "superseded",
+        retry: async () => null,
+        deadLetter: async () => false,
+      },
+      handlers: [],
+      logger,
+    }),
+    backgroundJobRetentionWorker: new TtlRetentionWorker({
+      subject: "background_job_dead_letter",
+      sweep: { deleteBefore: async () => 0 },
+      audit: auditService,
+      logger,
+      retentionDays: 14,
+    }),
     copilotRetentionWorker: new CopilotRetentionWorker({
       retention: copilotRepository,
       audit: auditService,
@@ -2800,7 +3012,31 @@ export const createTestDependencies = (overrides: {
     }),
     chatHistoryService,
     assistantChatService,
+    voiceTurns: new VoiceTurnService({
+      sessions: voiceSessions,
+      starts: voiceSessions,
+      chat: { streamTurn: (request) => assistantChatService.streamAnswer({ ...request, stream: true }) },
+      agents: {
+        findVoiceProfile: async ({ workspaceId, agentId }) => {
+          const agent = await agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
+          return agent ? { voice: agent.voice, defaultLocale: agent.assistantDefaultLocale } : null;
+        },
+      },
+      routines: { isRoutineActive: async (conversationId) => (await routineStateStore.loadActive({ sessionId: conversationId })) !== null },
+      ownership: { isHumanOwned: async (conversationId) => isHumanOwned(await conversationOwnershipRepository.load(conversationId)) },
+      metrics: metricsRegistry,
+      logger,
+    }),
+    voiceSessionStarts,
+    voiceSessionAvailability: voiceSessionStarts,
+    voiceRecordings: voiceRecordings.recordings,
     assistantHistoryService,
+    conversationErasure: overrides.conversationErasure ?? {
+      // The in-memory app has no transaction to erase in; the Postgres erasure is covered by
+      // tests/integration/conversation-erasure.integration.test.ts.
+      eraseConversation: async () => { throw notFound("Conversation not found"); },
+      eraseVisitor: async () => { throw notFound("Visitor not found"); },
+    },
     retrievalSearchService,
     retrievalAnswerService,
     retrievalDefaultsProvider,
@@ -2885,6 +3121,7 @@ export const createTestDependencies = (overrides: {
       routineDefinitionRepository,
       machineAccessRepository,
       workspaceRepository,
+      workspaceProviderCredentialsRepository,
     },
   };
 };
@@ -2916,7 +3153,10 @@ export const createTestApp = (overrides: {
   agentToolCatalog?: NonNullable<Parameters<typeof createTestDependencies>[0]>["agentToolCatalog"];
   emailChannel?: AppDependencies["emailChannel"];
   deliveryFailures?: AppDependencies["deliveryFailures"];
+  conversationErasure?: AppDependencies["conversationErasure"];
   heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;
+  voiceVendorFetch?: typeof globalThis.fetch;
+  embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
 } = {}) => {
   const {
     dependencies,

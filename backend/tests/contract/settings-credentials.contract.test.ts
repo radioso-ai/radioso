@@ -48,6 +48,34 @@ describe("settings credentials contract", () => {
     expect(list.body.credentials[0]).not.toHaveProperty("ciphertext");
   });
 
+  it("holds a voice vendor key beside the model keys, audits each write without the key, and never returns it", async () => {
+    const { app, repositories } = createTestApp();
+    const session = await issueTestSession(app, "creds-voice-vendor@example.com");
+    const secret = "xi-test-secret-0123456789";
+
+    await request(app)
+      .put("/api/v1/settings/credentials/elevenlabs")
+      .set(adminSessionHeaders(session))
+      .send({ apiKey: secret })
+      .expect(204);
+    const configured = await request(app).get("/api/v1/settings/credentials").set(adminSessionHeaders(session)).expect(200);
+    await request(app).delete("/api/v1/settings/credentials/elevenlabs").set(adminSessionHeaders(session)).expect(204);
+    const cleared = await request(app).get("/api/v1/settings/credentials").set(adminSessionHeaders(session)).expect(200);
+
+    expect(configured.body.credentials).toEqual([{ provider: "elevenlabs", updatedAt: expect.any(String) }]);
+    // A voice vendor key has no deployment fallback, so the model providers' availability map leaves it out.
+    expect(Object.keys(configured.body.envProviderAvailability)).toEqual(["openai", "openai-compatible", "gemini", "claude"]);
+    expect(cleared.body.credentials).toEqual([]);
+    const credentialEvents = repositories.auditEventRepository.items
+      .filter((event) => event.eventType.startsWith("workspace_provider_credentials."))
+      .map((event) => ({ eventType: event.eventType, eventStatus: event.eventStatus, metadata: event.metadata }));
+    expect(credentialEvents).toEqual([
+      { eventType: "workspace_provider_credentials.set", eventStatus: "success", metadata: { provider: "elevenlabs" } },
+      { eventType: "workspace_provider_credentials.remove", eventStatus: "success", metadata: { provider: "elevenlabs" } },
+    ]);
+    expect(JSON.stringify([configured.body, cleared.body, repositories.auditEventRepository.items])).not.toContain(secret);
+  });
+
   it("removes a provider credential", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "creds-remove@example.com");

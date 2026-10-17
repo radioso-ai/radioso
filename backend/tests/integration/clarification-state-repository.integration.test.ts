@@ -6,6 +6,7 @@ import {
   ClarificationStateRepository,
 } from "../../src/db/repositories/clarificationStateRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
+import { seedConversations } from "./support/conversationSeed.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 // Real-Postgres characterization of ClarificationStateRepository. The risky behaviour is
@@ -33,7 +34,8 @@ describeIntegration("ClarificationStateRepository (Postgres)", () => {
   };
 
   beforeAll(async () => {
-    // no FK on clarification_states.session_id; nothing to seed.
+    // A clarification belongs to the conversation its session id names.
+    await seedConversations(database, [sessionId, expiredSessionId, recentSessionId, truncatedSessionId]);
   });
 
   afterAll(async () => {

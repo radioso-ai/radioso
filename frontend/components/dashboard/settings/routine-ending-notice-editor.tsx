@@ -2,14 +2,14 @@
 
 import { useContext, useState } from 'react'
 
-import { ROUTINE_DEFINITION_LIMITS } from '@radioso/routine-definition'
+import { endingNotifiesOperators, ROUTINE_DEFINITION_LIMITS, routineAdvisories } from '@radioso/routine-definition'
 
 import { RoutineInstructionEditor } from '@/components/dashboard/settings/routine-chip-editor'
 import { RoutineSkillCatalogContext } from '@/components/dashboard/settings/routine-skill-catalog-popover'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
-import { defaultNoticeDestinationLabel, describeNoticeDestination } from '@/lib/operator-notice-destinations'
+import { defaultNoticeDestinationLabel, describeDailyEmailAllowance, describeNoticeDestination } from '@/lib/operator-notice-destinations'
 import { instructionToProseParagraphs, proseParagraphsToInstruction } from '@/lib/routine-document'
 import { newEndingNotice, type EndingNotice } from '@/lib/routine-document-edits'
 import { blockSegmentsToInstruction, instructionToBlockSegments, type ChipDocVariable, type ProseParagraph, type RoutineBlockEnding } from '@/lib/routine-prose'
@@ -67,6 +67,7 @@ function NoticeSenderField({ id, skillName, onChange }: {
   // Only a loaded catalog can say a skill is gone; while it loads, or if it failed, the name just shows.
   const catalogLoaded = !catalog.isLoading && !catalog.error
   const destination = describeNoticeDestination(catalog.noticeDestinations, skillName)
+  const emailAllowance = describeDailyEmailAllowance(catalog.noticeDestinations)
   return (
     <div className="space-y-1">
       <Label htmlFor={`${id}-sender`} className="text-xs font-medium">Send with</Label>
@@ -81,6 +82,7 @@ function NoticeSenderField({ id, skillName, onChange }: {
         </SelectContent>
       </Select>
       {destination ? <p className="text-xs text-muted-foreground">{destination}</p> : null}
+      {emailAllowance ? <p className="text-xs text-destructive">{emailAllowance}</p> : null}
     </div>
   )
 }
@@ -91,14 +93,19 @@ const NO_REPLY_TO = ':none'
 // Which collected address replies to the notice go to. Only the routine's email fields are
 // offered, and only the author picks one. A stored key that is no longer an email field stays
 // visible so the author sees what the routine says; validation reports it.
-function NoticeReplyToField({ id, replyToSlot, variables, onChange }: {
+function NoticeReplyToField({ id, ending, variables, onChange }: {
   id: string
-  replyToSlot: string | undefined
+  ending: RoutineBlockEnding
   variables: ChipDocVariable[]
   onChange: (replyToSlot: string | null) => void
 }) {
+  const replyToSlot = ending.operatorNotice?.replyToSlot
   const emailFields = variables.filter((variable) => variable.type === 'email')
   const unlisted = replyToSlot && !emailFields.some((field) => field.name === replyToSlot) ? replyToSlot : null
+  const advisories = routineAdvisories({
+    slots: variables.map((variable) => ({ key: variable.name, type: variable.type })),
+    terminals: [ending],
+  })
   return (
     <div className="space-y-1">
       <Label htmlFor={`${id}-reply-to`} className="text-xs font-medium">Replies go to</Label>
@@ -112,6 +119,7 @@ function NoticeReplyToField({ id, replyToSlot, variables, onChange }: {
           {unlisted ? <SelectItem value={unlisted}>{`${unlisted} (not an email field)`}</SelectItem> : null}
         </SelectContent>
       </Select>
+      {advisories.length > 0 ? <p className="text-xs text-muted-foreground">Replies won&apos;t reach the visitor. Choose their email field.</p> : null}
     </div>
   )
 }
@@ -125,7 +133,7 @@ export function RoutineEndingNoticeEditor({ ending, variables, onChange }: {
 }) {
   const handoff = ending.kind === 'handoff'
   const notice = ending.operatorNotice
-  const notifies = handoff || notice !== undefined
+  const notifies = endingNotifiesOperators(ending)
   const id = `ending-${ending.stableStepId}-notice`
   const update = (patch: Partial<EndingNotice>) => onChange({ subject: null, intro: null, ...notice, ...patch })
   // The default destination is the absence of a name, so choosing it removes the key.
@@ -158,7 +166,7 @@ export function RoutineEndingNoticeEditor({ ending, variables, onChange }: {
       {notifies ? (
         <div className="space-y-2">
           <NoticeSenderField id={id} skillName={notice?.skillName} onChange={sendWith} />
-          <NoticeReplyToField id={id} replyToSlot={notice?.replyToSlot} variables={variables} onChange={replyTo} />
+          <NoticeReplyToField id={id} ending={ending} variables={variables} onChange={replyTo} />
           <NoticeTextField
             label="Subject"
             placeholder="Default subject. Type @ to insert a value."

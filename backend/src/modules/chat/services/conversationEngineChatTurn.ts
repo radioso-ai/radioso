@@ -45,6 +45,7 @@ import {
 import type { ChatTurnSkillSelector } from "./turnSkillSelector.js";
 import type { ChatStatusStage } from "../contracts/streamEvents.js";
 import { presentRoutineRenderableAnswer } from "./routines/routineGroundedAnswerRenderer.js";
+import { withPlannerReplySource } from "./turnPlanQuickReply.js";
 
 interface RunPreparedChatTurnWithConversationEngineInput {
   engine: ConversationEngine;
@@ -228,6 +229,7 @@ export const runPreparedChatTurnWithConversationEngine = async (
           query: input.query,
           userExpectedLocale: input.userExpectedLocale,
           accountId: input.accountId,
+          signal: input.signal,
           coverageVerdict: input.coverageVerdictWrapper && coverageVerdict
             ? input.coverageVerdictWrapper(coverageVerdict)
             : coverageVerdict,
@@ -254,7 +256,7 @@ export const runPreparedChatTurnWithConversationEngine = async (
   if (!rendered) {
     throw new Error("conversation_engine_rendered_no_chat_presentation");
   }
-  return { presentation: rendered, result };
+  return { presentation: rendered, result: withPlannerReplySource(result, rendered.metadata) };
 };
 
 export const runPreparedChatTurnStreamWithConversationEngine = async function* (
@@ -433,13 +435,14 @@ export const runPreparedChatTurnStreamWithConversationEngine = async function* (
           throw new Error("conversation_engine_stream_missing_chat_result");
         }
         releaseRoutineYield(input.session, readSession());
+        const tracedResult = withPlannerReplySource(result, presentation.metadata);
         enqueue({
           type: "final",
           presentation,
           suggestions: (streamResult && !streamResult.yielded ? streamResult.suggestions : undefined)
             ?? { mode: "presentation" },
-          result,
-          engineTrace: result.trace,
+          result: tracedResult,
+          engineTrace: tracedResult.trace,
         });
       }
     } catch (error) {

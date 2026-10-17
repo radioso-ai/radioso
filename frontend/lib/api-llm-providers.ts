@@ -1,7 +1,18 @@
 import { request } from './api-client'
+import type { AgentVoiceSettings } from './api-types'
 
 export const llmProviderNames = ['openai', 'openai-compatible', 'gemini', 'claude'] as const
 export type LlmProviderName = (typeof llmProviderNames)[number]
+
+/** The voice runtimes the API names, from the generated contract. */
+export type VoiceVendorName = NonNullable<AgentVoiceSettings['runtime']>['vendor']
+/** Every vendor the contract names, and only those: a vendor added to the API fails this list's type until it is here. */
+const listEveryVoiceVendor = <const Names extends readonly VoiceVendorName[]>(
+  names: Names & (Exclude<VoiceVendorName, Names[number]> extends never ? unknown : never),
+) => names
+/** Voice runtimes whose key the workspace holds beside its model provider keys; none has a deployment fallback. */
+export const voiceVendorNames = listEveryVoiceVendor(['elevenlabs'])
+export type CredentialProviderName = LlmProviderName | VoiceVendorName
 
 export const llmCapabilityNames = ['chat', 'rewrite', 'rerank'] as const
 export type LlmCapabilityName = (typeof llmCapabilityNames)[number]
@@ -24,7 +35,7 @@ export interface WorkspaceLlmModels extends WorkspaceLlmPreferences {
 }
 
 export interface ProviderCredentialSummary {
-  provider: LlmProviderName
+  provider: CredentialProviderName
   updatedAt: string
 }
 
@@ -50,7 +61,7 @@ export const llmProvidersApi = {
     return request<ProviderCredentialsList>('/settings/credentials', { method: 'GET' }, sessionOnly)
   },
 
-  async setCredential(provider: LlmProviderName, apiKey: string): Promise<void> {
+  async setCredential(provider: CredentialProviderName, apiKey: string): Promise<void> {
     await request<void>(
       `/settings/credentials/${encodeURIComponent(provider)}`,
       { method: 'PUT', body: JSON.stringify({ apiKey }) },
@@ -58,7 +69,7 @@ export const llmProvidersApi = {
     )
   },
 
-  async removeCredential(provider: LlmProviderName): Promise<void> {
+  async removeCredential(provider: CredentialProviderName): Promise<void> {
     await request<void>(
       `/settings/credentials/${encodeURIComponent(provider)}`,
       { method: 'DELETE' },
@@ -79,11 +90,12 @@ export const llmProvidersApi = {
   },
 }
 
-export const providerDisplayName: Record<LlmProviderName, string> = {
+export const providerDisplayName: Record<CredentialProviderName, string> = {
   openai: 'OpenAI',
   'openai-compatible': 'OpenAI-compatible',
   gemini: 'Google Gemini',
   claude: 'Anthropic Claude',
+  elevenlabs: 'ElevenLabs',
 }
 
 export const capabilityDisplayName: Record<LlmCapabilityName, string> = {

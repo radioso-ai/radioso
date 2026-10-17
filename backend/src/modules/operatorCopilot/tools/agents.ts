@@ -29,6 +29,7 @@ import {
   type CopilotProposalEvidenceDependencies,
   proposalAdapterFor,
   agentSettingReachNote,
+  agentSettingWholeBlockNote,
   scopedAgentDraftPublicationNote,
   type CopilotProposalToolDependencies,
 } from "./shared.js";
@@ -90,11 +91,11 @@ export interface AgentConfigurationCopilotToolDependencies {
 export const createAgentConfigurationCopilotTools = (deps: AgentConfigurationCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {
     name: "agent_configuration", shape: "read", verificationCost: () => 0, uiLabel: "Reading agent configuration", contributingModule: "agents", dashboardSubject: { type: "agent" }, requiredPermissions: ["workspace.agents.read"],
-    description: "List workspace agents or read one agent's redacted portable configuration. Use mode list to override page context. A directive id returns that directive in full.",
+    description: "List workspace agents or read one agent's redacted portable configuration plus its live voice settings. Use mode list to override page context. A directive id returns that directive in full.",
     inputSchema: agentConfigurationInputSchema, outputSchema: agentConfigurationOutputSchema,
     createTool: (context) => ({
       name: "agent_configuration",
-      description: "List workspace agents or read one agent's redacted portable configuration. Use mode list to override page context. A directive id returns that directive in full.",
+      description: "List workspace agents or read one agent's redacted portable configuration plus its live voice settings. Use mode list to override page context. A directive id returns that directive in full.",
       inputSchema: agentConfigurationInputSchema,
       outputSchema: agentConfigurationOutputSchema,
       invoke: async ({ mode = "auto", agentId, directiveId }) => {
@@ -178,6 +179,9 @@ const projectAgentConfiguration = (
   return {
     id: agent.id,
     ...boundPayload(portableAgent as unknown as Record<string, unknown>, AGENT_CONFIGURATION_FULL_STRING_PATHS),
+    // Not part of the portable config, but propose_agent_setting replaces it whole, so Ray reads
+    // the stored block before it drafts one.
+    voice: boundPayload(agent.voice),
     authoredDirectives: visibleIndexes.map((index) => ({
       id: directives[index].id,
       name: directives[index].name,
@@ -305,7 +309,7 @@ export const createAgentSettingProposalCopilotTools = (
   return [
     {
       name: "propose_agent_setting", shape: "propose", verificationCost: () => 0, uiLabel: "Drafting a setting change", contributingModule: "agents", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
-      description: `Draft an agent setting change for the operator to review and apply. This does not change configuration. ${agentSettingReachNote} ${scopedAgentDraftPublicationNote}`,
+      description: `Draft an agent setting change for the operator to review and apply. This does not change configuration. ${agentSettingReachNote} ${agentSettingWholeBlockNote} ${scopedAgentDraftPublicationNote}`,
       inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), settingKey: z.string().trim().min(1).max(200), value: z.unknown(), rationale: z.string().trim().min(1).max(1_000).optional(), evidenceIds: citedEvidenceSchema }).strict(),
       outputSchema: proposalOutputSchema,
       reconcileMcpInvocation: async ({ invocation, context, staleBefore, now }) => {
@@ -339,7 +343,7 @@ export const createAgentSettingProposalCopilotTools = (
       },
       createTool: (context) => ({
         name: "propose_agent_setting",
-      description: `Draft an agent setting change for the operator to review and apply. This does not change configuration. ${agentSettingReachNote} ${scopedAgentDraftPublicationNote}`,
+      description: `Draft an agent setting change for the operator to review and apply. This does not change configuration. ${agentSettingReachNote} ${agentSettingWholeBlockNote} ${scopedAgentDraftPublicationNote}`,
         inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), settingKey: z.string().trim().min(1).max(200), value: z.unknown(), rationale: z.string().trim().min(1).max(1_000).optional(), evidenceIds: citedEvidenceSchema }).strict(),
         outputSchema: proposalOutputSchema,
         invoke: async ({ agentId, settingKey, value, rationale, evidenceIds }) => {

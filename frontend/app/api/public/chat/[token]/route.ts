@@ -1,17 +1,19 @@
 import type { components } from '../../../../../../typescript-sdk/src/generated/types'
 import { buildEdgeFactsHeaders } from '../../../../../lib/server/edge-facts'
+import {
+  PUBLIC_CHAT_RELAY_UNAVAILABLE_CODE,
+  forwardingHeaders,
+  publicChatPreflight,
+  relayVisitorSessionHeaders,
+  resolveRequestOrigin,
+  visitorSessionHeaders,
+  withPublicChatCorsHeaders,
+} from '../../../../../lib/server/public-chat-relay'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 
 const BACKEND_BASE = process.env.BACKEND_INTERNAL_URL ?? 'http://localhost:8080'
-const ANONYMOUS_SESSION_HEADER = 'x-radioso-anonymous-session'
-const PUBLIC_SESSION_HEADER = 'x-radioso-public-session'
-const CORS_HEADERS = {
-  'Access-Control-Allow-Methods': 'OPTIONS, POST',
-  'Access-Control-Allow-Headers': 'Content-Type, X-Radioso-Public-Session',
-  Vary: 'Origin',
-}
 
 type PublicChatRequest = components['schemas']['PublicChatRequest']
 
@@ -21,52 +23,8 @@ type PublicChatProxyRequestBody = Partial<PublicChatRequest> & {
   clientContextCapabilities?: unknown
 }
 
-const resolveOrigin = (value: string | null) => {
-  if (!value) {
-    return null
-  }
-
-  try {
-    return new URL(value).origin
-  } catch {
-    return null
-  }
-}
-
-const firstHeaderValue = (value: string | null) => value?.split(',')[0]?.trim() || null
-
-const resolveRequestForwardingHeaders = (request: Request) => {
-  const url = new URL(request.url)
-  const host = firstHeaderValue(request.headers.get('x-forwarded-host'))
-    ?? firstHeaderValue(request.headers.get('host'))
-    ?? url.host
-  return {
-    host,
-    proto: firstHeaderValue(request.headers.get('x-forwarded-proto')) ?? url.protocol.replace(/:$/, ''),
-  }
-}
-
-const withCorsHeaders = (
-  origin: string | null,
-  headers?: HeadersInit,
-  options: { allowOrigin?: boolean; responseOrigin?: string | null } = {},
-) => {
-  const nextHeaders = new Headers(headers)
-  Object.entries(CORS_HEADERS).forEach(([key, value]) => nextHeaders.set(key, value))
-  const allowOrigin = options.allowOrigin ?? true
-  const responseOrigin = options.responseOrigin ?? origin
-  if (responseOrigin && allowOrigin) {
-    nextHeaders.set('Access-Control-Allow-Origin', responseOrigin)
-  }
-  return nextHeaders
-}
-
 export async function OPTIONS(request: Request) {
-  const origin = resolveOrigin(request.headers.get('origin'))
-  return new Response(null, {
-    status: 204,
-    headers: withCorsHeaders(origin),
-  })
+  return publicChatPreflight(request)
 }
 
 export async function POST(
@@ -74,11 +32,7 @@ export async function POST(
   context: { params: Promise<{ token: string }> },
 ) {
   const { token } = await context.params
-  const requestOrigin = resolveOrigin(request.headers.get('origin'))
-  const cookie = request.headers.get('cookie')
-  const anonymousSession = request.headers.get(ANONYMOUS_SESSION_HEADER)
-  const publicSession = request.headers.get(PUBLIC_SESSION_HEADER)
-  const forwarding = resolveRequestForwardingHeaders(request)
+  const requestOrigin = resolveRequestOrigin(request.headers.get('origin'))
   const rawBody = await request.text()
   const parsedBody = rawBody ? JSON.parse(rawBody) as PublicChatProxyRequestBody : {}
   const body = JSON.stringify({
@@ -101,37 +55,20 @@ export async function POST(
       method: upstreamMethod,
       headers: {
         'Content-Type': 'application/json',
-        'X-Forwarded-Prefix': '/backend',
-        'X-Forwarded-Host': forwarding.host,
-        'X-Forwarded-Proto': forwarding.proto,
-        ...(requestOrigin ? { Origin: requestOrigin } : {}),
-        ...(cookie ? { Cookie: cookie } : {}),
-        ...(anonymousSession ? { 'X-Radioso-Anonymous-Session': anonymousSession } : {}),
-        ...(publicSession ? { 'X-Radioso-Public-Session': publicSession } : {}),
+        ...forwardingHeaders(request),
+        ...visitorSessionHeaders(request),
         ...buildEdgeFactsHeaders(request, { method: upstreamMethod, path: upstreamPath }),
       },
       body,
       cache: 'no-store',
     })
 
-    const headers = withCorsHeaders(requestOrigin, {
+    const headers = withPublicChatCorsHeaders({
       'Content-Type': upstream.headers.get('content-type') ?? 'application/json',
       'Cache-Control': upstream.headers.get('cache-control') ?? 'no-cache',
       'X-Accel-Buffering': upstream.headers.get('x-accel-buffering') ?? 'no',
-    }, {
-      allowOrigin: Boolean(upstream.headers.get('access-control-allow-origin')),
-      responseOrigin: upstream.headers.get('access-control-allow-origin'),
-    })
-
-    const anonymousSessionResponse = upstream.headers.get('x-radioso-anonymous-session')
-    if (anonymousSessionResponse) {
-      headers.set('X-Radioso-Anonymous-Session', anonymousSessionResponse)
-    }
-
-    const setCookie = upstream.headers.get('set-cookie')
-    if (setCookie) {
-      headers.set('Set-Cookie', setCookie)
-    }
+    }, upstream.headers.get('access-control-allow-origin'))
+    relayVisitorSessionHeaders(upstream.headers, headers)
 
     return new Response(upstream.body, {
       status: upstream.status,
@@ -146,11 +83,11 @@ export async function POST(
     return Response.json(
       {
         error: {
-          code: 'UPSTREAM_UNAVAILABLE',
+          code: PUBLIC_CHAT_RELAY_UNAVAILABLE_CODE,
           message,
         },
       },
-      { status: 503, headers: withCorsHeaders(requestOrigin) },
+      { status: 503, headers: withPublicChatCorsHeaders(undefined, requestOrigin) },
     )
   }
 }

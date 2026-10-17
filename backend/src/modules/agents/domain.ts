@@ -12,6 +12,16 @@ import type { AgentSurfaceExtensionRegistry } from "./surfaceExtensions.js";
 import type { AgentSkillSettingsRegistry } from "./skillSettings.js";
 import type { AuthoredDirective } from "./authoredDirectives.js";
 import type { AgentSkillSpine } from "../agentSkills/public.js";
+import {
+  defaultAgentVoiceSettings,
+  parseWrittenAgentVoiceSettings,
+  type AgentVoiceSettings,
+} from "./voiceSettings.js";
+import {
+  agentMechanicsRepliesSchema,
+  defaultAgentMechanicsReplies,
+  type AgentMechanicsReplies,
+} from "./mechanicsReplies.js";
 
 const AGENT_PROVIDER_NAMES: readonly LlmProviderName[] = [
   "openai",
@@ -212,6 +222,14 @@ export interface WebsiteEmbedSurfaceSettings extends PublicAgentSurfaceSettings 
   theme: AgentEmbedTheme;
   copy: AgentEmbedCopyPacks;
   expertOverrides: AgentEmbedExpertOverrides;
+  /**
+   * The operator offers voice calls from this embed: its composer shows Talk when the agent's voice
+   * is also ready (on, bound to a runtime, the vendor key stored). Off until the operator turns it on.
+   * It controls only the widget's button. Session starts are gated by voice readiness alone: any
+   * page holding the embed token can start one whatever this says, which is how a page with its own
+   * call controls works.
+   */
+  voiceCallsOffered: boolean;
 }
 
 /**
@@ -276,6 +294,13 @@ export const unpublishedAgentPublicIdentity = (): AgentPublicIdentity => ({
 });
 
 export interface ConversationAgent extends Agent, AgentBehaviorSettings, AgentGreetingSettings, AgentPublicIdentity {
+  /** How the agent sounds on the voice channel. Live, like the greeting settings: not part of a revision. */
+  voice: AgentVoiceSettings;
+  /**
+   * What the agent says, word for word, to a greeting, thanks, farewell, or acknowledgement.
+   * Live, like the greeting settings: not part of a revision.
+   */
+  mechanicsReplies: AgentMechanicsReplies;
   sourceScope: AgentSourceScope;
   surfaceSettings: ConversationAgentSurfaceSettings;
   skillSettings: Record<string, unknown>;
@@ -308,6 +333,8 @@ export type AgentInput = Partial<
     | keyof AgentBehaviorSettings
     | keyof AgentGreetingSettings
     | keyof AgentPublicIdentity
+    | "voice"
+    | "mechanicsReplies"
     | "sourceScope"
     | "skillSettings"
     | "chatModelOverride"
@@ -401,6 +428,30 @@ const normalizeContactWebhook = (value: unknown): AgentContactWebhook | null => 
     throw badRequest("contactRequestDelivery.webhook.url must use http or https");
   }
   return { url };
+};
+
+/** The block is replaced whole; an absent one reads as voice off. */
+const normalizeVoiceSettings = (value: unknown): AgentVoiceSettings => {
+  if (value === undefined || value === null) {
+    return defaultAgentVoiceSettings();
+  }
+  const parsed = parseWrittenAgentVoiceSettings(value);
+  if (!parsed.success) {
+    throw badRequest("voice settings are invalid", parsed.error.flatten());
+  }
+  return parsed.data;
+};
+
+/** The block is replaced whole; an absent one reads as nothing authored. */
+const normalizeMechanicsReplies = (value: unknown): AgentMechanicsReplies => {
+  if (value === undefined || value === null) {
+    return defaultAgentMechanicsReplies();
+  }
+  const parsed = agentMechanicsRepliesSchema.safeParse(value);
+  if (!parsed.success) {
+    throw badRequest("mechanics replies are invalid", parsed.error.flatten());
+  }
+  return parsed.data;
 };
 
 const normalizeContactRequestDelivery = (value: unknown): AgentContactRequestDelivery => {
@@ -768,6 +819,7 @@ export const defaultWebsiteEmbedSurfaceSettings = (): WebsiteEmbedSurfaceSetting
   theme: defaultAgentEmbedTheme(),
   copy: {},
   expertOverrides: {},
+  voiceCallsOffered: false,
 });
 
 export const normalizeWebsiteEmbedSurfaceSettings = (
@@ -796,6 +848,7 @@ export const normalizeWebsiteEmbedSurfaceSettings = (
     theme: normalizeEmbedTheme(record.theme ?? options.themeFallback),
     copy: normalizeEmbedCopy(record.copy),
     expertOverrides: normalizeEmbedExpertOverrides(record.expertOverrides),
+    voiceCallsOffered: record.voiceCallsOffered === true,
   };
 };
 
@@ -869,6 +922,8 @@ export const validateAgentInput = (
     greetingInstruction: normalizeText(input.greetingInstruction, "greetingInstruction", 200),
     assistantDefaultLocale: normalizeLocaleTag(input.assistantDefaultLocale),
     proactiveGreetingEnabled: Boolean(input.proactiveGreetingEnabled),
+    voice: normalizeVoiceSettings(input.voice),
+    mechanicsReplies: normalizeMechanicsReplies(input.mechanicsReplies),
     chatModelOverride: normalizeChatModelOverride(input.chatModelOverride),
     surfaceSettings: {
       authenticatedChat: {

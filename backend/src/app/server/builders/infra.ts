@@ -41,6 +41,7 @@ import { MachineAccessRepository } from "../../../db/repositories/machineAccessR
 import { PersonalCredentialLifecycleRepository } from "../../../db/repositories/personalCredentialLifecycleRepository.js";
 import { AuditService } from "../../../modules/audit/composition.js";
 import { type ApplicationComposition } from "../../composition/index.js";
+import { createWorkspaceConversationDataErasure } from "../../composition/conversationErasure.js";
 import { ChunkRepository } from "../../../modules/documents/composition.js";
 import { AbuseControlRepository } from "../../../db/repositories/abuseControlRepository.js";
 import {
@@ -216,7 +217,10 @@ export const buildRepositories = (
   workspaceGrantRepository: new WorkspaceGrantRepository(database.kysely),
   workspaceRepository: new WorkspaceRepository(database.kysely),
   machineAccessRepository: new MachineAccessRepository(database.kysely),
-  personalCredentialLifecycleRepository: new PersonalCredentialLifecycleRepository(database.kysely),
+  personalCredentialLifecycleRepository: new PersonalCredentialLifecycleRepository(
+    database.kysely,
+    createWorkspaceConversationDataErasure(),
+  ),
   abuseControlRepository: new AbuseControlRepository(database.kysely),
   accountInvitationRepository: new AccountInvitationRepository(database.kysely),
   workspaceProviderCredentialsRepository: new WorkspaceProviderCredentialsRepository(database.kysely),

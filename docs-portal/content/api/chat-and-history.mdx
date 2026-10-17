@@ -1,7 +1,7 @@
 ---
 title: "Chat and history"
 description: "Ask one agent questions with a channel credential, then inspect saved history with workspace access."
-last_updated: 2026-09-18
+last_updated: 2026-10-17
 ---
 
 # Chat and history
@@ -95,11 +95,19 @@ target message IDs, plus a routine execution ID only after a routine starts.
 
 A turn without a reply still shows up here. If the visitor sent another message before the assistant answered, or the answer attempt failed outright, the interrupted user message carries a `turnFailure` object: `eventStatus` of `cancelled` for the first case (with the pipeline `stage` it was interrupted at) or `failure` for the second (with `errorMessage`). `turnFailure` is dashboard-only — it never appears on the public or embed conversation reads.
 
+A reply a voice caller spoke over carries `interruption`: `heardCharacterCount`, how much of the reply the caller heard, and `spokenCharacterCount`, how long the spoken reply was. Both count the characters the voice channel spoke, so they do not index into `content`, which keeps the full reply. Unlike `turnFailure`, the field reaches dashboard and public conversation reads alike, on detail, turn, and tail, and only on a reply that was cut short.
+
 Use `GET /api/v1/history/chat/{conversationId}/tail` to read messages created after a cursor. The cursor is the newest message the client has already seen. Conversation detail responses include `tailCursor`; use it for follow-up tail calls after loading the transcript. If `cursor` is omitted, Radioso returns the newest bounded page and a cursor for the newest returned message. Dashboard tail responses can include `ownership` when the conversation is currently human-owned.
+
+The voice channel marks a reply as interrupted on the caller's next request, so the mark usually lands on a reply you already hold. The dashboard tail returns that reply again, once, with its `interruption`, in time order with the new messages. Merge tail messages into the transcript by `id`, so the returned message replaces the one you hold.
+
+A voice conversation's detail, read by a dashboard session, carries `recording: { "available": true }` when the call has a recording you can play: the website embed told Radioso which voice vendor conversation the call was, and the workspace holds a vendor key Radioso can read. Radioso answers it from its own records, so a call that has just ended can read as available shortly before the vendor has its audio. Play it with `GET /api/v1/conversations/{conversationId}/recording`, which streams the vendor's audio (`audio/mpeg`) with `Cache-Control: private, no-store`, passes one `Range` byte range on (`206`, or `416` past the end), and records a `conversation.recording_played` audit event for every answer that carries audio, with `partial: true` when the audio starts past the first byte. It takes dashboard sessions only, from the dashboard's own pages: a browser request whose `Sec-Fetch-Site` is not `same-origin` gets `403`, and `HEAD` gets `405`. An `<audio>` element can pass the workspace as `?workspaceId=` instead of the `X-Workspace-Id` header. `404` means there is no recording, or the vendor holds no audio for the call yet; `503 recording_unavailable` means it could not be read now. Machine credentials get no `recording` on the detail.
 
 A conversation detail response can also include `visitor` (`id`, `firstSeenAt`, `conversationCount`, `verified`), `requestContext` (the request facts Radioso observed when the conversation opened, including `clientIp`), and `entryReferrer` — the same fields the dashboard's Visitor panel shows, gated behind the same operator session or credential as the rest of detail. A conversation summary carries `visitorCountry` alongside them, so a list view can show a country without fetching each conversation's detail.
 
 Use `GET /api/v1/history/visitors/{visitorId}/conversations` to page through a visitor's other conversations — the same summaries `GET /api/v1/history/chat` returns, scoped to one visitor. Pass `exclude` to drop one conversation id from the results, typically the one already open. This route needs `workspace.history.read`, same as the rest of history.
+
+Use `DELETE /api/v1/history/chat/{conversationId}` to permanently delete a conversation and everything derived from it, and `DELETE /api/v1/history/visitors/{visitorId}` to delete a visitor with every conversation they had. Both answer `204` with no body, need `workspace.history.delete` (owners, admins, and admin credentials), and record a content-free `conversation.erased` or `visitor.erased` audit event. [Deleting conversation data](/operators/deleting-conversation-data) lists what goes and what Radioso keeps.
 
 ## Answer feedback
 
@@ -137,8 +145,11 @@ DELETE /api/v1/answer-feedback/messages/{assistantMessageId}
 GET  /api/v1/history
 GET  /api/v1/history/chat
 GET  /api/v1/history/chat/{conversationId}
+DELETE /api/v1/history/chat/{conversationId}
 GET  /api/v1/history/chat/{conversationId}/tail
 GET  /api/v1/history/visitors/{visitorId}/conversations
+DELETE /api/v1/history/visitors/{visitorId}
+GET  /api/v1/conversations/{conversationId}/recording
 GET  /api/v1/history/search
 GET  /api/v1/history/search/{searchId}
 ```
@@ -147,6 +158,7 @@ GET  /api/v1/history/search/{searchId}
 
 - `400` usually means the request body is invalid.
 - `401` from agent chat means its REST-audience credential is missing, invalid, expired, or bound to a different agent.
+- `403` from a history `DELETE` means the caller lacks `workspace.history.delete`.
 - `404` can mean the conversation id is not available in the current workspace context.
 - `204` is part of the route contract. Use the reference page for the exact no-body case.
 

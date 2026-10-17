@@ -28,7 +28,12 @@ import { ConversationOwnershipRepository } from "../../../src/db/repositories/co
 import { ConversationRepository } from "../../../src/db/repositories/conversationRepository.js";
 import { HeldReplyRepository } from "../../../src/db/repositories/heldReplyRepository.js";
 import { MessageRepository } from "../../../src/db/repositories/messageRepository.js";
-import { ActionDispatcher, ActionHandlerRegistry, ConversationIngestService } from "../../../src/modules/chat/composition.js";
+import {
+  ActionHandlerRegistry,
+  ConversationIngestService,
+  createActionDispatchJobHandler,
+} from "../../../src/modules/chat/composition.js";
+import { BackgroundJobRuntime } from "../../../src/shared/background-jobs/index.js";
 import type { EmailReviewChecks } from "../../../src/modules/connectors/plugins/email/emailReviewRunner.js";
 import { createEmailChannelConnector } from "../../../src/modules/connectors/plugins/index.js";
 import {
@@ -467,7 +472,12 @@ type EmailChannelConnectorDependencies = Parameters<typeof createEmailChannelCon
 
 /** Lines the processor and worker log, by message; fields are kept for assertions. */
 class RecordingLogger {
-  readonly lines: { level: "info" | "warn" | "error"; message: string; fields: Record<string, unknown> }[] = [];
+  readonly lines: { level: "debug" | "info" | "warn" | "error"; message: string; fields: Record<string, unknown> }[] = [];
+
+  /** Quiet below `info`; recorded anyway so a suite can assert on a background-job runtime line. */
+  debug(fields: Record<string, unknown>, message: string): void {
+    this.lines.push({ level: "debug", message, fields });
+  }
 
   /** Milestone and ignored-event lines, kept so a suite can see one. */
   info(fields: Record<string, unknown>, message: string): void {
@@ -672,11 +682,14 @@ const createSendPath = (
     logger,
     createId: randomUUID,
   });
+  const outbox = guard("outbox", new ActionRequestRepository(db));
   return {
-    dispatcher: new ActionDispatcher(
-      guard("outbox", new ActionRequestRepository(db)),
-      new ActionHandlerRegistry([{ type: EMAIL_SEND_ACTION_TYPE, handler }]),
-    ),
+    dispatcher: new BackgroundJobRuntime({
+      store: outbox,
+      handlers: [createActionDispatchJobHandler(new ActionHandlerRegistry([{ type: EMAIL_SEND_ACTION_TYPE, handler }]))],
+      logger,
+      metrics,
+    }),
     reconciler: new SendReconciler({ intents, mailboxes, domains, ownership, driver, attempt, writer, metrics, logger }),
     deliveryEvents: new ProviderDeliveryEvents({ intents, writer, audit: { record: async () => undefined }, metrics, logger }),
   };
@@ -696,7 +709,7 @@ const SEAMS = [
   "inbound.recordIngested",
   "threads.completeReview",
   "inbound.settleEvent",
-  "outbox.claimPending",
+  "outbox.claimNext",
   "heldReplies.findByReviewRef",
   "heldReplies.queueAuto",
   "heldReplies.materializeAuto",
@@ -883,8 +896,8 @@ export const createWorkerNode = (
     worker: connector.worker,
     /** The worker's held-reply service: its review's producer and its sends' dispatch port. */
     heldReplies: heldReplies.service,
-    /** One outbox drain, as the action dispatch worker runs it. */
-    dispatch: () => sends.dispatcher.dispatchPending(),
+    /** One outbox drain, as the action dispatch job runtime runs it. */
+    dispatch: () => sends.dispatcher.drain({ maxJobs: 20 }),
     webhook: () => (webhook ??= mountWebhook(connector.plugin)),
     close: () => database.close(),
   };

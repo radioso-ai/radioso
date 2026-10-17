@@ -580,7 +580,7 @@ by `...`. The conversation keeps the full reply and marks it with how many
 characters the caller heard (`heardCharacterCount`) and how long the spoken
 reply was (`spokenCharacterCount`). A bridge line spoken before the reply does
 not count toward either. The audit trail records the same counts as
-`voice.reply_interrupted`.
+`voice.reply_interrupted`, with `partial: false`.
 
 A reply cut off while it was still streaming carries the same mark from the
 moment it is stored, with `partial: true`: `heardCharacterCount` is how much

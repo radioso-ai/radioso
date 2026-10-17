@@ -3213,7 +3213,7 @@ export interface paths {
         };
         /**
          * Poll new messages for a saved assistant conversation
-         * @description Returns the messages after `cursor`. It also returns an assistant reply the client has already seen once the caller has marked it interrupted, carrying `interruption`, in time order with the new messages. Merge messages by `id`, so a re-delivered message replaces the one you hold.
+         * @description Returns the messages after `cursor`. It also returns an assistant reply the client has already seen once it is marked: the caller cut it short, carrying `interruption`, or a teammate's reply was spoken to the caller, carrying `speech` with `state: "spoken"`. Re-delivered replies come in time order with the new messages. Merge messages by `id`, so a re-delivered message replaces the one you hold.
          */
         get: operations["tailHistoryConversation"];
         put?: never;
@@ -8493,6 +8493,13 @@ export interface components {
             heardCharacterCount: number;
             spokenCharacterCount: number;
         };
+        /** @description Present on a teammate's reply on a voice conversation. A call speaks only when its caller does, so the reply is `pending` until the caller's next turn speaks it, then `spoken`, with `spokenAt` set to when that turn handed it to the call. */
+        OperatorReplySpeech: {
+            /** @enum {string} */
+            state: "pending" | "spoken";
+            /** Format: date-time */
+            spokenAt?: string;
+        };
         ChatConversationMessage: {
             /** Format: uuid */
             id: string;
@@ -8510,6 +8517,7 @@ export interface components {
             answerFeedbackEntries?: components["schemas"]["AnswerFeedbackEntry"][];
             operatorDisplayName?: string;
             interruption?: components["schemas"]["ReplyInterruption"];
+            speech?: components["schemas"]["OperatorReplySpeech"];
             debug?: components["schemas"]["ChatConversationMessageDebug"];
             turnFailure?: components["schemas"]["ChatConversationTurnFailure"];
             /** @description Operator-only. On a human-agent reply, the teammate who wrote it: their display name, else their email, read from their profile now. A reply that names no teammate, or whose teammate is gone, carries its signature instead. Never returned by the public chat API. */
@@ -8532,6 +8540,7 @@ export interface components {
             answerFeedbackEntries?: components["schemas"]["AnswerFeedbackEntry"][];
             operatorDisplayName?: string;
             interruption?: components["schemas"]["ReplyInterruption"];
+            speech?: components["schemas"]["OperatorReplySpeech"];
         };
         ConversationOwnershipResponse: {
             ownership: components["schemas"]["ConversationOwnership"];

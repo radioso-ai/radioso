@@ -70,3 +70,27 @@ describe("message interruption marker", () => {
       .toBeUndefined();
   });
 });
+
+describe("teammate reply speech marker", () => {
+  const teammateRow = (speech: unknown, source: MessageRow["source"] = "human_agent") => row({ role: "assistant", source, metadata_json: { speech } });
+
+  it("reads a pending reply, and a spoken one with the time the caller heard it", () => {
+    expect(mapMessageRow(teammateRow({ state: "pending" })).speech).toEqual({ state: "pending" });
+    expect(mapMessageRow(teammateRow({ state: "spoken", spokenAt: "2026-10-17T10:00:00.000Z" })).speech)
+      .toEqual({ state: "spoken", spokenAt: "2026-10-17T10:00:00.000Z" });
+  });
+
+  it.each([
+    ["a spoken reply with no time", { state: "spoken" }],
+    ["an unknown state", { state: "heard" }],
+    ["a string", "pending"],
+    ["a null", null],
+  ])("reads %s as no state", (_label, speech) => {
+    expect(mapMessageRow(teammateRow(speech)).speech).toBeUndefined();
+  });
+
+  it("reads no state from the agent's own reply or from a caller's message", () => {
+    expect(mapMessageRow(teammateRow({ state: "pending" }, "ai_agent")).speech).toBeUndefined();
+    expect(mapMessageRow(row({ role: "user", metadata_json: { speech: { state: "pending" } } })).speech).toBeUndefined();
+  });
+});

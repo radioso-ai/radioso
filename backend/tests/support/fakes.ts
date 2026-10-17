@@ -182,6 +182,7 @@ import type {
 } from "../../src/db/repositories/messageRepository.js";
 import type { MessageSource } from "@radioso/conversation-contract";
 import { deriveMessageSourceFromRole } from "../../src/db/repositories/messageRepository.js";
+import type { PendingOperatorReply, ReplyInterruption } from "../../src/modules/chat/contracts/index.js";
 import type {
   IngestionSettingsRecord,
   ValidatedIngestionSettingsInput,
@@ -4757,6 +4758,7 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     operatorAccountId?: string;
     operatorUserId?: string;
     operatorDisplayName?: string;
+    pendingSpeech?: boolean;
     inputMetadata?: MessageRecord["inputMetadata"];
     metadata?: Record<string, unknown>;
     skillName?: string;
@@ -4786,12 +4788,38 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
       skillName: input.skillName,
       skillOutcome: input.skillOutcome,
       skillStatus: input.skillStatus,
+      ...(input.pendingSpeech ? { speech: { state: "pending" as const } } : {}),
       createdAt: new Date(this.nextCreatedAtMs++),
     };
     const items = this.items.get(input.conversationId) ?? [];
     items.push(record);
     this.items.set(input.conversationId, items);
     return record;
+  }
+
+  async markReplyInterrupted(input: { workspaceId: string; conversationId: string; messageId: string } & ReplyInterruption): Promise<boolean> {
+    const reply = (this.items.get(input.conversationId) ?? [])
+      .find((message) => message.id === input.messageId && message.workspaceId === input.workspaceId && message.role === "assistant");
+    if (!reply) return false;
+    reply.interruption ??= { heardCharacterCount: input.heardCharacterCount, spokenCharacterCount: input.spokenCharacterCount };
+    return true;
+  }
+
+  async pendingOperatorReplies(input: { workspaceId: string; conversationId: string }): Promise<PendingOperatorReply[]> {
+    return (this.items.get(input.conversationId) ?? [])
+      .filter((message) => message.workspaceId === input.workspaceId && message.speech?.state === "pending")
+      .map((message) => ({ messageId: message.id, text: message.content, createdAt: message.createdAt }));
+  }
+
+  async markOperatorRepliesSpoken(input: { workspaceId: string; conversationId: string; messageIds: string[] }): Promise<string[]> {
+    const marked: string[] = [];
+    for (const message of this.items.get(input.conversationId) ?? []) {
+      if (message.workspaceId === input.workspaceId && input.messageIds.includes(message.id) && message.speech?.state === "pending") {
+        message.speech = { state: "spoken", spokenAt: new Date().toISOString() };
+        marked.push(message.id);
+      }
+    }
+    return marked;
   }
 }
 

@@ -65,6 +65,15 @@ export {
   type ReplyInterruption,
   type ReplyInterruptionMarker,
 } from "./interruption.js";
+// A teammate's reply on a call waits for the caller's next turn; the voice channel reads and marks it.
+export {
+  operatorRepliesAreSpoken,
+  operatorReplySpeechSchema,
+  type OperatorReplySpeech,
+  type OperatorReplySpeechMarker,
+  type PendingOperatorReply,
+  type PendingOperatorReplyReader,
+} from "./operatorReplySpeech.js";
 export type {
   ActionHandler,
   ActionHandlerContext,

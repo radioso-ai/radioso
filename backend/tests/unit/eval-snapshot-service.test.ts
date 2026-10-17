@@ -27,12 +27,14 @@ import type {
   EvalRun,
   EvalSnapshot,
 } from "../../src/modules/eval/domain/types.js";
-import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { websiteEmbedFixture } from "../support/websiteEmbedFixture.js";
 
 const fixedDate = new Date("2026-05-23T12:00:00.000Z");
 
 const agent = (): ConversationAgent => ({
   ...unpublishedAgentPublicIdentity(),
+  voice: defaultAgentVoiceSettings(),
   id: "agent-1",
   workspaceId: "ws-1",
   name: "Snapshot Bot",
@@ -63,11 +65,12 @@ const agent = (): ConversationAgent => ({
   greetingInstruction: "Greet briefly.",
   assistantDefaultLocale: "en-US",
   proactiveGreetingEnabled: true,
+  mechanicsReplies: {},
   sourceScope: { mode: "selected", sourceIds: ["source-1", "source-2"] },
   surfaceSettings: {
     authenticatedChat: { enabled: true },
     anonymousChat: { enabled: true, token: "anonymous-token" },
-    websiteEmbed: {
+    websiteEmbed: websiteEmbedFixture({
       enabled: true,
       token: "embed-token",
       allowedOrigins: ["https://example.com"],
@@ -81,7 +84,7 @@ const agent = (): ConversationAgent => ({
       },
       copy: {},
       expertOverrides: {},
-    },
+    }),
     extensions: {},
   },
   skillSettings: {
@@ -155,6 +158,10 @@ class StubMessageRepository implements MessageRepositoryPort {
   async listByConversationId(workspaceId: string, conversationId: string): Promise<MessageRecord[]> {
     return this.messages.filter((message) =>
       message.workspaceId === workspaceId && message.conversationId === conversationId);
+  }
+
+  async deleteUserMessage(): Promise<boolean> {
+    return false;
   }
 
   async listRecentByConversationId(): Promise<MessageRecord[]> {

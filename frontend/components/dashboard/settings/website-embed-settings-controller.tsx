@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Spinner } from '@/components/ui/spinner'
 import { Switch } from '@/components/ui/switch'
+import { WebsiteVoiceCallsSetting } from '@/components/dashboard/settings/website-voice-calls-setting'
 import { Textarea } from '@/components/ui/textarea'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { generalSettingsApi, type GeneralSettings } from '@/lib/api'
@@ -46,6 +47,8 @@ export type WebsiteEmbedSettingsControllerProps = {
   setSaveError: (message: string | null) => void
   /** Link to the Behavior setting that governs the proactive greeting. */
   profileHref?: string
+  /** The agent whose widget this is; the voice call switch needs it. */
+  agentId?: string
 }
 
 const ATTENTION_OPTIONS: { value: string; label: string }[] = [
@@ -139,6 +142,7 @@ function WebsiteEmbedSettingsPanel({
   setSaveState,
   setSaveError,
   profileHref,
+  agentId,
 }: WebsiteEmbedSettingsControllerProps) {
   const savedWebsiteEmbedOrigins = formatWebsiteEmbedOrigins((anonSettings?.websiteEmbedAllowedOrigins ?? []).filter((origin) => origin !== '*'))
   const [websiteEmbedOriginsDraft, setWebsiteEmbedOriginsDraft] = useState(() => ({
@@ -515,6 +519,8 @@ function WebsiteEmbedSettingsPanel({
           </div>
         ) : null}
       </div>
+
+      {agentId ? <WebsiteVoiceCallsSetting key={agentId} agentId={agentId} /> : null}
 
       <div className="mt-5 space-y-4 rounded-xl border border-border bg-background/60 p-4">
         <div className="flex flex-wrap items-start justify-between gap-4">

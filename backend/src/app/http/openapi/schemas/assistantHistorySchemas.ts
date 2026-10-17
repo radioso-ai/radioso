@@ -6,6 +6,7 @@ import {
   type ConversationActivityEntry,
   type RecentlyClosedInboxItem,
 } from "../../../../modules/conversationActivity/contracts/index.js";
+import { replyInterruptionSchema } from "../../../../modules/chat/contracts/index.js";
 import { assistantChatSchema } from "../../schemas/assistantChatSchemas.js";
 import {
   conversationParamsSchema,
@@ -351,6 +352,14 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
           address: z.string(),
         }),
       }),
+      // `vendor` names the voice runtime that issued the opaque `sessionKey`.
+      z.object({
+        provider: z.literal("voice"),
+        vendor: z.string(),
+        sessionKey: z.string(),
+        transport: z.enum(["phone", "web"]),
+        callerId: z.string().optional(),
+      }),
     ]),
   );
 
@@ -639,6 +648,13 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     }),
   );
 
+  const ReplyInterruptionSchema = registry.register(
+    "ReplyInterruption",
+    replyInterruptionSchema.openapi({
+      description: "Present on an assistant reply the caller cut short by speaking over it on the voice channel: how much of the reply they heard. Both counts are in the characters the channel spoke, so they do not index into `content`, which keeps the full reply.",
+    }),
+  );
+
   // Shared by the operator and public message schemas. `debug`, `turnFailure`, and
   // `operatorLabel` are operator-only and are added on top of this shape for the dashboard
   // schema alone: the first two carry turn diagnostics (and `turnFailure` carries raw error
@@ -656,6 +672,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
     suggestions: z.array(ChatSuggestionSchema).optional(),
     answerFeedbackEntries: z.array(AnswerFeedbackEntrySchema).optional(),
     operatorDisplayName: z.string().optional(),
+    interruption: ReplyInterruptionSchema.optional(),
   };
 
   const ChatConversationMessageSchema = registry.register(
@@ -844,6 +861,11 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       activity: z.array(ConversationActivityEntrySchema).optional().openapi({
         description: "What teammates and the agent did to the conversation, oldest first: handoffs, claims, reassignments, hand-backs, approvals decided, and — for a caller with Quality access — feedback resolved or dismissed.",
       }),
+      recording: z.object({ available: z.boolean() }).optional().openapi({
+        description: "On a voice conversation read by a dashboard session: whether the call has a recording `getConversationRecording` can play. "
+          + "`available` is true when the website embed reported the vendor's id for the call and the workspace holds a vendor key the backend can read; "
+          + "it is read from Radioso alone, so the vendor may still hold no audio for a call that has not ended. Machine credentials, which cannot play it, get no `recording`.",
+      }),
     }),
   );
 
@@ -888,6 +910,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       visitor: true,
       requestContext: true,
       messages: true,
+      recording: true,
     }).extend({
       messages: z.array(PublicChatConversationMessageSchema),
     }),

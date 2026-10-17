@@ -5,8 +5,9 @@ import type {
   CustomerEmailSkillOutcome,
   EmailSkillRecipientSummary,
 } from "../../modules/customerEmail/domain.js";
-import { toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import { anyOf, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
+import type { ConversationDataEraser, ConversationErasureScope } from "../../shared/domain/conversationDataErasure.js";
 
 export interface EmailSkillActivityRecord {
   id: string;
@@ -161,5 +162,29 @@ export class EmailSkillActivityRepository implements EmailSkillActivityRepositor
       .limit(input.limit ?? 50)
       .execute();
     return rows.map((row) => mapRecord(row as unknown as EmailSkillActivityRow));
+  }
+}
+
+/**
+ * Erases the email skill activity a conversation's routines left: the recipient summary is about
+ * the people the skill wrote to. The column carries no foreign key because a private test can send
+ * a real email from a conversation that never becomes a `conversations` row. A workspace's activity
+ * cascades with it.
+ */
+export class EmailSkillActivityEraser implements ConversationDataEraser {
+  readonly owner = "customer-email";
+
+  constructor(private readonly db: Db) {}
+
+  async erase(scope: ConversationErasureScope): Promise<number> {
+    if (scope.kind === "workspace" || scope.conversationIds.length === 0) {
+      return 0;
+    }
+    const result = await this.db
+      .deleteFrom("email_skill_activity")
+      .where("workspace_id", "=", scope.workspaceId)
+      .where((eb) => anyOf(eb.ref("conversation_id"), scope.conversationIds, "uuid[]"))
+      .executeTakeFirst();
+    return Number(result.numDeletedRows);
   }
 }

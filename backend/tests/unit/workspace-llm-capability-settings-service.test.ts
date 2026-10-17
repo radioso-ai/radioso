@@ -61,6 +61,7 @@ const createAudit = (): AuditPort & { events: AuditEvent[] } => {
         metadata: input.metadata,
       });
     },
+    async recordForLiveConversation() {},
     async getLatestSuccessfulChatAnswerMetadata() {
       return null;
     },
@@ -72,6 +73,7 @@ const createThrowingAudit = (): AuditPort => ({
   async record() {
     throw new Error("audit pipeline down");
   },
+  async recordForLiveConversation() {},
   async getLatestSuccessfulChatAnswerMetadata() {
     return null;
   },

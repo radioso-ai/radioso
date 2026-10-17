@@ -8,6 +8,7 @@ import { InMemoryWorkspaceProviderCredentialsRepository } from "../support/fakes
 const TEST_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
 const buildAudit = (): AuditPort => ({
   async record() {},
+  async recordForLiveConversation() {},
   async getLatestSuccessfulChatAnswerMetadata() {
     return null;
   },

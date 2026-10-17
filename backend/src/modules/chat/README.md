@@ -66,7 +66,12 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   turn-time outcomes (`started`, `reentered`, `declined`, `not_started`,
   `unknown_tool`) are counted. `presentChatPayload` strips `routine` and `invocation`
   from the human-facing routes; only `sendChatSse(..., { agentEnvelope: true })` and
-  the agent channel route publish them.
+  the agent channel route publish them. A handoff turn's response and `done` event
+  also carry `handoff` (`ChatTurnHandoff`: the reason, and `collectedSlotCount`, how
+  many declared slots the ending routine held a value for, 0 on a retrieval miss)
+  for a channel that delivers the reply in-process; the voice channel derives its
+  outcome from it. It is not part of the envelope core, and `presentChatPayload`
+  and `stripPublicChatCitationArtifacts` drop it from every HTTP response.
 - `services/agentTurnInput.ts` (exported through `contracts/`): `resolveAgentTurnInput`
   turns an agent-facing body into `{ kind: "message" }` or `{ kind: "routine_invocation" }`
   once, before any turn state exists. The REST agent chat route calls it with the
@@ -100,6 +105,22 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   retrieval misses to a person, `retrievalTurnSkill.ts` gives a composed decline no
   lead-back, and the grounded prompt adds `chat/routine-lead-back-decline-handoff.md`
   so a `no_support` answer leaves it out.
+- `contracts/interruption.ts`: `ReplyInterruptionMarker`, the port a channel calls
+  when its caller spoke over a stored assistant reply, with the reply's id and
+  `heardCharacterCount` / `spokenCharacterCount` in spoken characters.
+  `MessageRepository.markReplyInterrupted` implements it: it merges
+  `interruption: { heardCharacterCount, spokenCharacterCount, recordedAt }` into
+  the message's `metadata_json`, keeps the first marker on a reply whole (a
+  later mark changes neither the counts nor `recordedAt`), and resolves false,
+  leaving the message alone, when it is not an assistant reply of that
+  conversation. `MessageRecord.interruption` reads it back on assistant rows,
+  and `chatHistoryService.ts` puts it on the reply as `interruption` (the counts
+  only) on detail, turn and tail reads, public reads included. The dashboard
+  tail (`redeliverInterruptedReplies`) also returns a reply at or before its
+  cursor once it is marked: the cursor carries the newest delivered marker's
+  time as `markedAt`, so each marker arrives once, and the pane merges by id.
+  The public tail and the calling-agent update reader never re-deliver. The
+  voice channel's composition is the caller.
 - `composition.ts`: chat module wiring used by application composition.
 - `services/conversationIngestService.ts` (`ConversationIngestPort` in `contracts/`):
   records a customer message without running a turn, for a channel that decides
@@ -199,7 +220,24 @@ imports from `services/`.
   identity instead of borrowing a retrieval outcome. Every `no_support`
   presentation must supply a typed decline reason, either directly on the verdict
   or through its grounding summary; `ChatAnswerPresenter` rejects the call when
-  neither is present. `chatService`'s
+  neither is present. A grounded envelope whose valid v2 head commits `no_support`
+  or `out_of_scope` but leaves `answer` empty or whitespace-only is answered with the
+  focused decline that commitment promised (usage attempt `blank_decline` /
+  `stream_blank_decline`, counted as
+  `chat_grounding_assertion_outcomes_total{reason="blank_decline"}`); on the
+  page-context paths the no-page decline words it (usage attempt `grounded_miss` /
+  `stream_grounded_miss`, counted the same way). Either decline keeps the reason the
+  head committed (`out_of_scope` stays out of scope; `no_support` is a content gap):
+  the grounded-miss composer only words it, unless it cannot generate at all
+  (`generation_unavailable`). The streamed paths hold leading
+  whitespace until text follows it, so a blank decline streams nothing ahead of the
+  composed one. The head is valid when its three fields are
+  (`headOfCompletedEnvelope`), whatever became of `claims` or `suggestions` after
+  it, and the non-streamed coverage report reads it the same way. A blank
+  commitment relies on those fields preceding `answer`, as the prompt instructs:
+  the streamed coverage report reads the head only from fields that come before
+  it. An empty `answer` commitment, or a decline outcome on a head that did not
+  parse, still fails the turn with `BlankChatAnswerError`. `chatService`'s
   retrieval-miss handoff and the Slack gap escalation both key off the outcome and
   therefore escalate only content gaps, leaving out-of-scope and unavailable
   declines alone. A valid in-range `[[n]]`
@@ -255,7 +293,15 @@ imports from `services/`.
   `specs/1260-coverage-verdict-in-answer-head/`.
 - Citations: `citationAnchorParser.ts`, `citationAnchorSanitizer.ts`,
   `answerPresentationService.ts`, and `chatAnswerPresenter.ts`. Citations come
-  only from explicit valid `[[n]]` assertions. `implicitCitationDiagnostics.ts`
+  only from explicit valid `[[n]]` assertions. The model sometimes writes the
+  unsupported-claim marker with single brackets; `[?]` is read as `[[?]]` where
+  model answer text enters each consumer, through
+  `canonicalizeUnsourcedMarkers` (`unsourcedMarkerCanonicalization.ts`):
+  `parseInlineAssertionGroups` for grounding, `AnswerPresentationService.normalize`
+  before anchor grouping, the streaming `CitationAnchorSanitizer`, and the decline
+  composer in `fallbackReplyComposer.ts`. From there the `[[?]]` handling applies
+  unchanged. `[?]` inside an inline code span on the same line stays, and a
+  single-bracket number (`[n]`) is never touched. `implicitCitationDiagnostics.ts`
   records aggregate rollout diagnostics and never attaches citation artifacts or
   changes verdicts and suggestions.
   `citationTextNormalization.ts` owns the punctuation classes for the anchor
@@ -279,12 +325,26 @@ imports from `services/`.
 - Turn interruption: `services/conversationTurnRegistry.ts` coordinates one
   in-flight turn per conversation. `ChatService` cancels a pre-emission turn,
   waits for its cleanup, and latches immediately before assistant persistence or
-  the first assistant chunk. The default registry is process-local; strict
+  the first assistant chunk. The turn's signal reaches the skill renderer on the
+  whole (non-streamed) path as on the streamed one, so a superseded turn's pending
+  model calls, a composed decline included, are cancelled rather than waited out.
+  The default registry is process-local; strict
   multi-instance behavior requires conversation-affine routing. A superseded turn
   is still accountable: `chatTurnLifecycle.recordSupersession` records a
   `chat.answer` audit event with `eventStatus: "cancelled"` (never `"failure"` —
   a user typing a follow-up is not an assistant error) keyed to the turn's
-  `userMessageId`, since no assistant message exists yet for it.
+  `userMessageId`, since no assistant message exists yet for it. A
+  `latest_input_wins` turn (the voice channel's) can be cancelled even after it
+  began emitting, so it carries a commit fence (`latestInputCommitFence`): a
+  lease check right before the turn is stored, and, as the storing
+  transaction's last step (`AssistantTurnPersistencePort.commitFence`), the
+  lease's commit latch (`ConversationTurnLease.beginCommit`). A turn cancelled
+  before the latch stores no reply or effects, commits no usage and emits no
+  `done`, and one whose reply never reached the client counts as superseded
+  before emission. Once latched, no newer turn cancels it while its COMMIT
+  runs: a newer input waits for it, and it finishes as usual. The
+  waiting message of a human-owned turn is generated on the lease's signal, so
+  a newer turn cancels a stalled generation instead of waiting behind it.
 - Suggestions and public chat actions: `publicChatActionAdvertiser.ts`,
   `chat-action` tests.
 - History: `assistantHistoryService.ts`, `chatHistoryService.ts`,
@@ -443,9 +503,17 @@ imports from `services/`.
   `contracts/conversationSummary.ts` `ConversationSummaryStore` port.
   `chatSessionPreparer.ts` loads it at prepare into `PreparedSession.conversationSummary`
   (the approval-resume path shares the same `loadConversationSummaryText` helper, so the
-  "no summary" policy cannot drift); `chatTurnLifecycle.ts` regenerates it fire-and-forget
-  after the turn is persisted (never awaited, self-heals on the next turn), debounced by
-  `refreshEveryMessages` so it does not pay an LLM call every turn. The first summary for
+  "no summary" policy cannot drift). `chatTurnLifecycle.ts` hands each turn that records
+  bookkeeping a `conversation.summary_refresh` background job
+  (`services/summary/conversationSummaryRefreshJob.ts`), which `PostgresAssistantTurnPersistence`
+  writes in the turn's own transaction; the worker is woken after commit (by the lifecycle, or by
+  the approval decision service once a resumed turn's outer transaction commits), and the reply
+  never waits on it. The job is keyed by conversation and level-triggered: a turn that commits
+  while a refresh waits is folded into it, and one that commits while a refresh runs makes it run
+  once more. The worker's background job runtime runs `ConversationSummaryService.refresh` under
+  a 120 s deadline with the job's abort signal passed to the model calls; it is debounced by
+  `refreshEveryMessages` so it does not pay an LLM call every turn, and a failed model call or
+  save rejects so the job retries (a deliberate skip or a failed title write resolves). The first summary for
   a legacy long conversation uses a capped recent backfill window (`maxInitialBackfillMessages`)
   so one post-deploy turn cannot trigger unbounded sequential model calls. Rows FK-cascade
   with their conversation (content, unlike the structural `routine_states`/`directive_states`).
@@ -570,8 +638,10 @@ imports from `services/`.
   the turn, retrieval rewrite guidance/rolling summary resolve through the same
   interpretation-context seam as the staged path, and the directive matcher resolves precomputed
   classifications through `matchAndResolveWithClassifications`.
-  Pre-retrieval planning never receives response identity or answer instructions,
-  and any model-proposed scope fields are ignored. Retrieved evidence decides
+  Pre-retrieval planning never receives response identity, and its one answer
+  instruction is the agent's custom instruction, rendered only inside the quick-reply
+  standing instructions, which govern the planner's own reply and no decision. Any
+  model-proposed scope fields are ignored. Retrieved evidence decides
   whether the grounded answer has support.
   The request has three parts so providers can reuse its stable prefix
   (`docs/input-token-caching.md`): `prompts/chat/turn-planning.md` renders the
@@ -590,10 +660,34 @@ imports from `services/`.
   coverage, and envelope blocks form its reusable prefix, and turn steering,
   offers, follow-up rules, and the lead-back follow.
   `chat_turn_planning_outcomes_total` records fast-path, fallback, and every typed
-  gate/state/candidate/prompt bypass without forcing lazy prompt construction. Tests:
+  gate/state/candidate/prompt bypass without forcing lazy prompt construction.
+  The plan's last fields are `requestPresent`, `openQuestion`, and the quick reply
+  (`quickReply: { kind, language, text }`): on a turn of pure conversational mechanics
+  the planner writes the reply, and the direct skill (`directTurnSkill.ts`) sends it
+  instead of calling its composer. They are the one part of the plan outside
+  all-or-nothing parsing (an unusable lane, including a reply without a BCP 47
+  `language` tag, reads as `none`, flagged `quickReplyDiscarded`). The planner follows the agent's custom instruction and the
+  direct route's always-on answer directives itself (`standingInstructions` in
+  `turnPlanCoordinator.ts`, rendered by `prompts/chat/turn-planning-standing-instructions.md`
+  in the stable prefix; when they alone overflow the prompt budget the lane is off for
+  the turn), and `turnPlanQuickReply.ts` owns the host's eligibility rule: a resolved
+  direct plan, no request and no open question, no identity question, no routine yield,
+  no retrieval rewrite written, and answer steering equal to those always-on
+  directives (so any applying conditional directive goes to the composer).
+  The words (`quickReplyWording.ts`): the agent's authored `mechanicsReplies` line for
+  the kind in the planner's language tag (full tag, then primary subtag; rotated by the
+  conversation's reply count) when it has one, which is the guarantee; otherwise the
+  planner's own text, sent only when it carries no digit, currency symbol, URL, or email
+  address (a format gate, not a guarantee). Dispatch settles the outcome with those
+  words; rendering presents them as committed text; `conversationEngineChatTurn.ts`
+  marks the compose stage `source: "turn_planning"` with `quickReplyWording`.
+  `CHAT_QUICK_REPLY_LANE=off` is the rollback lever: composition passes
+  `quickReplyLaneEnabled: false` to the coordinator (no lane, so no quick-reply prompt
+  wording or schema fields) and the direct skill (always composes). Tests:
   `tests/unit/turn-plan-service.test.ts`,
   `tests/unit/turn-plan-coordinator.test.ts`,
-  `tests/unit/chat-service-turn-planning.test.ts`.
+  `tests/unit/chat-service-turn-planning.test.ts`, and the `quick-reply` cases in
+  `tests/unit/eval-suite/suite-runner.test.ts`.
 - Reusable turn engine: `conversationContractMappers.ts`,
   `conversationProcessTurnInput.ts`, `conversationEngineChatTurn.ts`,
   `chatTurnAssembly.ts`, and

@@ -3,7 +3,10 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { PostgresSlackPersistence } from "../../src/modules/connectors/plugins/slack/slackPersistence.js";
+import { slackInboundEventJobRequest } from "../../src/modules/connectors/plugins/slack/slackInboundEventJob.js";
 import { PostgresSlackInboundEventRetention } from "../../src/modules/slack/retention/slackInboundEventRetention.js";
+import { BackgroundJobRepository } from "../../src/db/repositories/backgroundJobRepository.js";
+import { DefaultBackgroundJobQueue, NoopBackgroundJobWake } from "../../src/shared/background-jobs/index.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
@@ -16,7 +19,13 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 
 describeIntegration("PostgresSlackPersistence (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
-  const persistence = new PostgresSlackPersistence(database.kysely);
+  const backgroundJobStore = new BackgroundJobRepository(database.kysely);
+  const backgroundJobs = new DefaultBackgroundJobQueue({
+    writer: backgroundJobStore,
+    wake: new NoopBackgroundJobWake(),
+    logger: { warn: () => undefined },
+  });
+  const persistence = new PostgresSlackPersistence(database.kysely, backgroundJobs);
   const retention = new PostgresSlackInboundEventRetention(database.kysely);
 
   const accountId = randomUUID();
@@ -67,7 +76,36 @@ describeIntegration("PostgresSlackPersistence (Postgres)", () => {
   afterAll(async () => {
     await database.query(`DELETE FROM accounts WHERE id = $1`, [accountId]).catch(() => undefined);
     await database.query(`DELETE FROM slack_inbound_events WHERE team_id = $1`, [teamId]).catch(() => undefined);
+    await database.query(`DELETE FROM background_jobs WHERE kind = 'slack.inbound_event'`).catch(() => undefined);
     await database.close().catch(() => undefined);
+  });
+
+  it("enqueues the inbound event's job once, atomically with the dedupe row, and skips a duplicate without a second job", async () => {
+    const eventId = `E-${randomUUID()}`;
+    const job = slackInboundEventJobRequest({
+      eventId,
+      teamId,
+      inbound: {
+        kind: "im",
+        event: { type: "message", channel_type: "im", channel: "DUSER", user: "UUSER", text: "Question", ts: "1.1" },
+      },
+    });
+
+    const first = await persistence.enqueueInboundEvent({ eventId, teamId, job });
+    const second = await persistence.enqueueInboundEvent({ eventId, teamId, job });
+
+    expect(first).toBe("enqueued");
+    expect(second).toBe("duplicate");
+    const [inboundRow] = await database.query<{ status: string }>(
+      `SELECT status FROM slack_inbound_events WHERE event_id = $1`,
+      [eventId],
+    );
+    expect(inboundRow?.status).toBe("received");
+    const jobRows = await database.query<{ idempotency_key: string }>(
+      `SELECT idempotency_key FROM background_jobs WHERE kind = 'slack.inbound_event' AND idempotency_key = $1`,
+      [eventId],
+    );
+    expect(jobRows).toHaveLength(1);
   });
 
   it("creates an inbound event once and dedups on the event_id conflict", async () => {
@@ -86,39 +124,31 @@ describeIntegration("PostgresSlackPersistence (Postgres)", () => {
 
     await persistence.markInboundEventStatus(eventId, "processed");
 
-    const [row] = await database.query<{ status: string }>(
-      `SELECT status FROM slack_inbound_events WHERE event_id = $1`,
-      [eventId],
-    );
-    expect(row?.status).toBe("processed");
+    expect(await persistence.getInboundEventStatus(eventId)).toBe("processed");
   });
 
-  it("fails only stale received events and returns the count", async () => {
-    const staleId = `E-${randomUUID()}`;
-    const freshId = `E-${randomUUID()}`;
-    await persistence.createInboundEvent({ eventId: staleId, teamId });
-    await persistence.createInboundEvent({ eventId: freshId, teamId });
-    // Backdate one event's received_at so it falls before the olderThan threshold.
-    await database.query(
-      `UPDATE slack_inbound_events SET received_at = NOW() - interval '1 hour' WHERE event_id = $1`,
-      [staleId],
-    );
+  it("records a skipped inbound event in one atomic write, with no window where it sits unmarked", async () => {
+    const eventId = `E-${randomUUID()}`;
 
-    const failed = await persistence.markStaleInboundEventsFailed({
-      olderThan: new Date(Date.now() - 60_000),
-    });
+    const inserted = await persistence.createInboundEvent({ eventId, teamId }, "skipped");
 
-    expect(failed).toBeGreaterThanOrEqual(1);
-    const [stale] = await database.query<{ status: string }>(
-      `SELECT status FROM slack_inbound_events WHERE event_id = $1`,
-      [staleId],
-    );
-    const [fresh] = await database.query<{ status: string }>(
-      `SELECT status FROM slack_inbound_events WHERE event_id = $1`,
-      [freshId],
-    );
-    expect(stale?.status).toBe("failed");
-    expect(fresh?.status).toBe("received");
+    expect(inserted).toBe(true);
+    expect(await persistence.getInboundEventStatus(eventId)).toBe("skipped");
+  });
+
+  it("never overwrites a status once it has left received, so an abandoned attempt's late write is a no-op", async () => {
+    const eventId = `E-${randomUUID()}`;
+    await persistence.createInboundEvent({ eventId, teamId });
+    await persistence.markInboundEventStatus(eventId, "failed");
+
+    // A retry's own success write arrives after the port already dead-lettered the job.
+    await persistence.markInboundEventStatus(eventId, "processed");
+
+    expect(await persistence.getInboundEventStatus(eventId)).toBe("failed");
+  });
+
+  it("returns null for an inbound event that was never recorded", async () => {
+    expect(await persistence.getInboundEventStatus(`E-${randomUUID()}`)).toBeNull();
   });
 
   it("deletes inbound event rows received before the cutoff, oldest first and bounded by the limit", async () => {

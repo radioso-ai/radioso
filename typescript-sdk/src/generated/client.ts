@@ -327,6 +327,14 @@ export class GeneratedRadiosoClient {
     });
   }
 
+  /** Permanently erases the conversation and everything derived from it. Needs `workspace.history.delete`. */
+  deleteHistoryConversation(conversationId: string): Promise<void> {
+    return requestJson(this.config, {
+      method: "DELETE",
+      path: `/api/v1/history/chat/${conversationId}`,
+    });
+  }
+
   getChatHistoryConversation(conversationId: string, query?: PaginationQuery): Promise<ChatConversationDetail> {
     return this.getHistoryConversation(conversationId, query);
   }
@@ -347,6 +355,14 @@ export class GeneratedRadiosoClient {
       method: "GET",
       path: `/api/v1/history/visitors/${visitorId}/conversations`,
       query: query as Record<string, string | number | boolean | null | undefined> | undefined,
+    });
+  }
+
+  /** Permanently erases a visitor, every conversation they had, and their customer-scoped context values. */
+  deleteHistoryVisitor(visitorId: string): Promise<void> {
+    return requestJson(this.config, {
+      method: "DELETE",
+      path: `/api/v1/history/visitors/${visitorId}`,
     });
   }
 

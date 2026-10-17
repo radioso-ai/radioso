@@ -9,6 +9,7 @@ import {
 import type { InboundEmailReceiver, InboundVerification, VerifiedInboundEvent } from "../../../mail/public.js";
 import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
 import { traceOperation } from "../../../../shared/observability/tracing/operations.js";
+import { recordNotificationSuppression, type NotificationSuppressionStore } from "../../../operatorNotifications/public.js";
 
 /**
  * The inbound provider webhook (FR-007). Inline it only verifies the signature over the raw
@@ -24,9 +25,10 @@ export interface EmailWebhookRouterOptions {
   metrics?: Pick<MetricsRegistry, "incrementCounter" | "observeHistogram"> | null;
   logger: ConnectorLogger;
   clock?: () => Date;
+  recipientSuppressions?: NotificationSuppressionStore;
 }
 
-type WebhookResult = "persisted" | "duplicate" | "bad_signature" | "stale_timestamp" | "malformed" | "db_unavailable";
+type WebhookResult = "persisted" | "duplicate" | "bad_signature" | "stale_timestamp" | "malformed" | "db_unavailable" | "suppression_unavailable";
 
 interface WebhookRequest extends Request {
   rawBody?: Buffer;
@@ -118,6 +120,21 @@ export const createEmailWebhookRouter = (options: EmailWebhookRouterOptions): Ro
       );
       respond(res, startedAt, { status: 503, result: "db_unavailable", kind: event.kind });
       return;
+    }
+
+    if (event.kind === "delivery_status" && options.recipientSuppressions) {
+      try {
+        await recordNotificationSuppression({
+          event,
+          provider,
+          store: options.recipientSuppressions,
+          logger: options.logger,
+          metrics: options.metrics,
+        });
+      } catch {
+        respond(res, startedAt, { status: 503, result: "suppression_unavailable", kind: event.kind });
+        return;
+      }
     }
 
     if (!persisted.duplicate) {

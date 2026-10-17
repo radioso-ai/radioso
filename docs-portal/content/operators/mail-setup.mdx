@@ -1,0 +1,60 @@
+---
+title: "Set up transactional mail"
+description: "Configure Resend delivery for verification, password reset, invitations, and operator notifications in a self-hosted Radioso deployment."
+last_updated: 2026-10-13
+---
+
+# Set up transactional mail
+
+Transactional mail carries email verification, password resets, teammate invitations, contact requests, and routine notices. A self-hosted deployment sends those messages through Resend when the mail driver and sender are configured together.
+
+## Configure Resend
+
+1. In Resend, create an API key that can send from the domain you will use.
+2. Verify the sender domain in Resend.
+3. Set these values in the backend environment or the `.env` file used by your deployment:
+
+```dotenv
+MAIL_DRIVER=resend
+RESEND_MAIL_API_KEY=re_your_resend_api_key
+MAIL_FROM_EMAIL=notifications@example.com
+MAIL_FROM_NAME="Acme Support"
+```
+
+4. Restart the backend and worker with the same values.
+5. Invite a test teammate from **Members**, or request a password reset, and confirm the message reaches the mailbox.
+
+`MAIL_FROM_EMAIL` is the verified sender address. `MAIL_FROM_NAME` defaults to `Radioso` when omitted. The worker also needs this mail configuration because it delivers contact and operator notices.
+
+## Choose the driver deliberately
+
+The transactional-mail driver accepts three values:
+
+| `MAIL_DRIVER` | Use it for | Delivery result |
+| --- | --- | --- |
+| `resend` | A deployment that sends mail through Resend's API | Resend accepts the message for delivery |
+| `log` | Local inspection of outbound messages | The backend writes the message to its log |
+| `noop` | Tests or an environment that discards outbound messages | The backend records an undispatched result |
+
+The repository's `.env.example` sets `MAIL_DRIVER=log`. That value writes verification, reset, and invitation messages to the backend log for local inspection. Set `MAIL_DRIVER=resend` before testing a real invite or notice.
+
+The driver reads `RESEND_MAIL_API_KEY`, `MAIL_FROM_EMAIL`, and `MAIL_FROM_NAME`. Resend delivery uses its HTTPS API; SMTP host, port, username, and password settings are outside this mail configuration surface.
+
+## Verify the sender and diagnose delivery
+
+Send a teammate invitation from **Members**. The invitation dialog reports **Emailed to** when the provider accepts it and keeps a backup acceptance URL either way. The API reports the same fact as `emailDelivered`.
+
+When Resend rejects a message, inspect the sender domain and API-key permissions first. When the driver is `log` or `noop`, the delivery result stays undispatched by design. Contact and routine notices also appear in the conversation and operator activity, so the Inbox still shows the work that needs a person.
+
+## Common failure modes
+
+- The backend fails at startup with `RESEND_MAIL_API_KEY is required when MAIL_DRIVER is resend`. Add the key to the backend and worker environment.
+- Invitation delivery reports a failure. Check the verified sender address and Resend key, then share the dialog's acceptance URL with the teammate.
+- Confirm the worker has `MAIL_DRIVER=resend`, the key, and the same sender settings as the backend before testing a routine hand-off.
+- Use the Resend API settings above for transactional mail; this driver reads no SMTP configuration values.
+
+## Read next
+
+- [Invite your team](/quickstarts/invite-team) — send and recover a teammate invitation.
+- [Make your agent act](/quickstarts/make-it-act) — deliver routine hand-offs to your team.
+- [Deployment](/operators/deployment) — place mail settings with the rest of the production configuration.

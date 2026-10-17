@@ -370,15 +370,23 @@ imports from `services/`.
   the voice channel does): when a newer input cuts the turn off after its reply
   reached the client, `recordSupersession` asks it once, while the lease is
   still held, so the newer turn waits for what follows, and stores the part
-  that reached the listener as the turn's reply (`cutReplyMessage.ts`:
-  citation markers removed, markdown kept, `interruption: { heardCharacterCount
-  = spokenCharacterCount, partial: true }`) with the cancelled `chat.answer`
-  event (`partialReplyStored: true`) in one transaction
-  (`AssistantTurnPersistencePort.storeCutReply`), then names it on `cancelled`
+  the listener heard as the turn's reply (`cutReplyMessage.ts`: citation
+  markers and delimiters the cut left open removed, markdown kept,
+  `interruption: { heardCharacterCount, spokenCharacterCount, partial: true }`
+  with the channel's counts) through the narrow `CutReplyStore` port: the
+  message, the conversation's touch, the cancelled `chat.answer` event
+  (`partialReplyStored: true`) and the channel's own audit event of the cut
+  (`DeliveredReplyPart.auditEvent`, given the conversation's and message's
+  ids) in one transaction. `PostgresAssistantTurnPersistence` implements it;
+  a host without a store keeps no part. It then names the part on `cancelled`
   (`assistantMessageId`). The turn's effects, usage, coverage link and
   directive state stay uncommitted, as for any cancelled turn; a part that
   cannot be stored logs `The part of a cut-off reply could not be stored` at
-  warn and the event is recorded alone. Once latched, no newer turn cancels it
+  warn and the event is recorded alone. `completeAssistantTurn` reports the
+  stored reply's id to its caller the moment it is stored (`onReplyStored`),
+  before any step after the store that could throw, so a turn handled as
+  cancelled after its reply was stored never keeps a second, partial one.
+  Once latched, no newer turn cancels it
   while its COMMIT runs: a newer input waits for it, and it finishes as usual. The
   waiting message of a human-owned turn is generated on the lease's signal, so
   a newer turn cancels a stalled generation instead of waiting behind it.

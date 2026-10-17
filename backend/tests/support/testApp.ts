@@ -961,6 +961,8 @@ export const createTestDependencies = (overrides: {
   voiceVendorFetch?: typeof globalThis.fetch;
   /** Writes chat's line for a turn a person owns before a teammate has replied; omitted means no line. */
   handoffWaitingMessageGenerator?: ChatServiceOptions["handoffWaitingMessageGenerator"];
+  /** Keeps the heard part of a reply cut off mid-stream; omitted means the in-memory store over the test repositories. */
+  cutReplyStore?: ChatServiceOptions["cutReplyStore"];
   /** Observes the embed-config CDN invalidations; omitted means the deployment has no CDN to invalidate. */
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
   /** Composes the agent tool catalog over the test app's agent row and published-revision readers. */
@@ -2184,7 +2186,7 @@ export const createTestDependencies = (overrides: {
     // Mirror production wiring: a human-owned conversation suppresses the agent's turn.
     conversationOwnershipReader: conversationOwnershipRepository,
     // Mirror production wiring: a reply cut off mid-stream keeps the part its listener heard.
-    cutReplyStore: new InMemoryCutReplyStore(messageRepository, conversationRepository, auditEventRepository),
+    cutReplyStore: overrides.cutReplyStore ?? new InMemoryCutReplyStore(messageRepository, conversationRepository, auditEventRepository),
     logger,
   });
   const chatBootstrapService = new ChatBootstrapService(
@@ -3156,6 +3158,7 @@ export const createTestApp = (overrides: {
   heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;
   voiceVendorFetch?: typeof globalThis.fetch;
   handoffWaitingMessageGenerator?: ChatServiceOptions["handoffWaitingMessageGenerator"];
+  cutReplyStore?: ChatServiceOptions["cutReplyStore"];
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
 } = {}) => {
   const {

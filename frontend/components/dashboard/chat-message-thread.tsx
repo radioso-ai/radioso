@@ -990,7 +990,8 @@ export function ChatMessageThread({
                           {message.content ? (
                             <MessageCopyButton content={message.content} theme={theme} />
                           ) : null}
-                          {evalCaptureEnabled && conversationId && assistantMessageId
+                          {/* The heard part of a voice reply cut off mid-stream is no whole answer to evaluate. */}
+                          {evalCaptureEnabled && conversationId && assistantMessageId && !message.interruption?.partial
                             && (shouldShowEvalCapture?.(assistantMessageId) ?? true) ? (
                             <SendToEvalAction
                               conversationId={conversationId}

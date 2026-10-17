@@ -538,13 +538,24 @@ What the conversation keeps depends on how far the cancelled turn got:
   turn and keeps it. A reply that was still being saved when the newer request
   arrived, with none of it sent yet, counts as not started.
 - **Cancelled after its reply started:** the caller's message stays, and so
-  does the reply, as far as it was spoken: the sentences that reached
-  ElevenLabs before the newer request arrived, as the agent wrote them, with
-  its formatting and without citation markers. The reply is marked interrupted
-  (see below), and the next turn answers the newer utterance with both in its
-  history, so a routine collecting details knows what the agent had started
-  to say. When not one sentence of the reply had reached ElevenLabs, only the
-  caller's message stays; a bridge line never counts as the reply.
+  does the reply, as far as the caller heard it: the sentences ElevenLabs had
+  played to their end, as the agent wrote them, with its formatting and
+  without citation markers. The reply is marked interrupted (see below), and
+  the next turn answers the newer utterance with both in its history, so a
+  routine collecting details knows what the agent had said. When the caller
+  heard no sentence of the reply to its end, only the caller's message stays;
+  a bridge line never counts as the reply.
+
+  What the caller heard comes from ElevenLabs itself: the newer request
+  replays the reply cut short to what was played, followed by `...`, and
+  Radioso keeps the whole sentences inside that. Text reaches ElevenLabs well
+  ahead of its speech, and the old stream stays open while the caller says
+  their new sentence and it is transcribed, so what reached ElevenLabs can be
+  most of the answer when the caller heard one sentence. When the newer request
+  carries no such record, every sentence that reached ElevenLabs counts as
+  heard. A request sent with `stream: false` gets its whole answer only at
+  the end, so a cancelled one stores nothing, and its teammate replies wait
+  for the next turn.
 
 An unclear word can make the transcriber flap, and ElevenLabs then sends
 several requests within a second or two with alternating transcripts. Each
@@ -557,7 +568,8 @@ reply finished or a newer request overtook it, it can send the same utterance
 again a few seconds later. If that happens within 30 seconds and the reply
 was stored, the caller hears the stored reply again: no new message in the
 conversation, no bridge line, no model call. A reply stored as far as it was
-spoken is heard again as stored. The audit trail records
+heard is not repeated: the same utterance runs a new turn, which sees that
+part in its history and finishes the answer. The audit trail records
 `voice.reply_replayed` against the reply. If the reply is still being written
 when the same utterance arrives, the new request runs as a new turn and
 replaces the running one.
@@ -571,10 +583,13 @@ not count toward either. The audit trail records the same counts as
 `voice.reply_interrupted`.
 
 A reply cut off while it was still streaming carries the same mark from the
-moment it is stored, with `partial: true` and both counts equal: the stored
-text is what was spoken. A later report from ElevenLabs that the caller heard
-less of it leaves the mark as it is. The audit trail records
-`voice.reply_interrupted` with `partial: true` against that reply.
+moment it is stored, with `partial: true`: `heardCharacterCount` is how much
+ElevenLabs played, which can reach into the sentence the caller cut, and
+`spokenCharacterCount` is how much reached it. The two are equal when
+ElevenLabs sent no record of what it played. A later report that the caller
+heard less leaves the mark as it is. The audit trail records
+`voice.reply_interrupted` with `partial: true` against that reply, in the same
+transaction that stores it.
 
 In the Inbox, either reply carries an **Interrupted** badge. On a reply that
 finished, hover it to read "The caller spoke over this reply. About 37% was
@@ -664,15 +679,16 @@ the replies still pending come first.
 
 Each reply is spoken once. The turn that speaks it claims it first, in the
 database, so no other turn on any Radioso instance speaks it at the same time.
-It counts as spoken once the call has moved past it: the runtime received the
-reply and something after it, the next reply, the agent's answer or the end
-of the response, before the caller spoke again or the runtime dropped the
-request. A reply the caller speaks over before then goes back to Pending, and
-the newer turn, the one that cut into it, says it whole. Every reply of a
-turn that fails goes back to Pending too, so the caller may hear a reply again
-when a turn fails after it was already sent. A claim that outlives its turn by
-a minute, because the instance running the turn stopped, also counts as
-Pending again.
+It counts as spoken once that turn has completed: the runtime received the
+whole response, and no newer utterance overtook it first. When the caller
+speaks over the turn before then, the newer request's record of what
+ElevenLabs played decides: a reply played to its end counts as spoken, and
+the one the caller cut into, with any after it, goes back to Pending for the
+newer turn to say whole. With no such record, every reply of that turn goes
+back to Pending. So do the replies of a turn the runtime dropped, or that
+failed, so the caller may hear a reply again when a turn fails after it was
+already sent. A claim that outlives its turn by a minute, because the instance
+running the turn stopped, also counts as Pending again.
 
 A turn that speaks teammate replies records one `voice.operator_reply_spoken`
 audit event with the conversation id and the replies' message ids, never their
@@ -1015,26 +1031,30 @@ ElevenLabs agent's first message.
   instances do not see each other there: a burst of revised transcripts split
   across two instances can store two caller messages, and a re-request that
   lands on another instance runs as a new turn.
-- A reply cut off while it streamed is stored as far as it reached
-  ElevenLabs before the newer utterance arrived. ElevenLabs stops playing a
-  moment earlier, when the caller starts to speak, so the last stored sentence
-  can be one the caller did not hear to the end. The cut reply is not billed
-  as an answer; its model tokens stay in the usage ledger.
+- A reply cut off while it streamed is stored as far as ElevenLabs reports
+  playing it, in whole sentences. When the newer request carries no record of
+  what was played, it is stored as far as it reached ElevenLabs, which runs
+  ahead of the speech by its synthesis backlog and by everything the caller
+  said and the transcriber took while the old stream stayed open, so the
+  stored part can hold sentences the caller never heard. The cut reply is not
+  billed as an answer; its model tokens stay in the usage ledger. It is no
+  turn Quality counts, and it cannot be sent to eval.
 - A request that replaces an unanswered one carries only its own utterance.
   When the runtime's newer transcript does not repeat the caller's earlier
   words, the agent answers without them.
 - An operator's reply reaches the caller only on the caller's next
   utterance, and a reply written after the call ends is never spoken. Each
-  reply is spoken once, except that a reply the caller cut into before the
-  call moved past it, a reply whose request the runtime dropped first, and the
-  replies of a turn that fails go back to pending, and a claim that outlives
-  its turn by a minute counts as pending again; either way a later turn speaks
-  the reply a second time. The newer turn that cut into a reply on the same
-  Radioso instance takes it over and says it; on another instance it cannot
-  see that turn, so the reply waits for that turn to finish or, if its
-  instance stopped, for the claim to expire. A reply the call moved past stays
-  Spoken even when the caller then talks over it while ElevenLabs is still
-  playing it; the Inbox marks only the agent's replies as interrupted. Until a
+  reply is spoken once, except that a reply the caller cut into before its
+  turn completed (by ElevenLabs's record of what it played; every reply of the
+  turn when there is none), the replies of a request the runtime dropped
+  first, and those of a turn that fails go back to pending, and a claim that
+  outlives its turn by a minute counts as pending again; either way a later
+  turn speaks the reply a second time. The newer turn that cut in on the same
+  Radioso instance takes those replies over and says them; on another instance
+  it cannot see that turn, so the reply waits for that turn to finish or, if
+  its instance stopped, for the claim to expire. A reply whose turn completed
+  stays Spoken even when the caller then talks over it while ElevenLabs is
+  still playing it; the Inbox marks only the agent's replies as interrupted. Until a
   teammate writes in the conversation, each new utterance hears the agent's
   short waiting line; after that, each one hears the teammate's replies
   written since the last, or nothing, until about ten caller turns pass with

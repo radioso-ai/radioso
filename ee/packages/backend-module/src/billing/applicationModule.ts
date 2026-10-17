@@ -57,8 +57,9 @@ export const createBillingApplicationModule = (): ApplicationModule => {
         createRouter: (dependencies) => createBillingRoutes(dependencies, config, { gateway }),
       });
 
-      // Opt-in auto top-up's sweep: API runtime only, 60s tick (see `registerPeriodicTask`'s own
-      // contract). No-ops immediately when `gateway` is undefined.
+      // Opt-in auto top-up's sweep, 60s tick: runs only where `registerPeriodicTask` is wired --
+      // the worker runtime's poll loop locally, and the Cloud Scheduler-driven worker task route
+      // in production -- never the API or migrator. No-ops immediately when `gateway` is undefined.
       context.registerPeriodicTask?.({
         id: "ee-billing-auto-top-up",
         intervalMs: AUTO_TOP_UP_SWEEP_INTERVAL_MS,

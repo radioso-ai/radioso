@@ -10,6 +10,7 @@ import {
   type ChatRoutineTurnState,
   type ChatStreamEvent,
   type ChatSuggestion,
+  type ChatTurnHandoff,
   type ChatAnswerCoverageAssessment,
   type ChatAnswerCoverageInteractionTrace,
 } from "../../../modules/chat/contracts/index.js";
@@ -49,10 +50,12 @@ type ChatPayload = {
   /** Agent-facing routine state and invocation outcome; only the agent reply envelope publishes them. */
   routine?: ChatRoutineTurnState;
   invocation?: ChatRoutineInvocationReport;
+  /** For the channel that delivers the reply in-process; no HTTP response carries it. */
+  handoff?: ChatTurnHandoff;
 };
 
 type PresentedChatPayload =
-  Omit<ChatPayload, "route" | "activitySummary" | "activityTrace" | "turnTrace" | "routine" | "invocation"> & {
+  Omit<ChatPayload, "route" | "activitySummary" | "activityTrace" | "turnTrace" | "routine" | "invocation" | "handoff"> & {
     debug?: ChatDiagnosticPayload;
   };
 
@@ -87,6 +90,7 @@ export const presentChatPayload = (payload: ChatPayload, options: { includeDebug
     // Agent-facing only: the envelope re-adds them on the agent routes.
     routine: _routine,
     invocation: _invocation,
+    handoff: _handoff,
     ...publicPayload
   } = payload;
 

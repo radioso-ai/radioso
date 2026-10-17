@@ -1,7 +1,7 @@
 ---
 title: "Deployment"
 description: "Production deployment expectations for Radioso and the standalone docs portal."
-last_updated: 2026-09-30
+last_updated: 2026-10-17
 ---
 
 import { Callout } from 'nextra/components'
@@ -102,6 +102,10 @@ The Terraform workflow expects these GitHub environment secrets for each deploye
 
 Set `MAIL_FROM_EMAIL` to a verified sender address. `MAIL_FROM_NAME` is optional and defaults to `Radioso`. Without `RESEND_MAIL_API_KEY`, the backend writes outbound mail to the log instead of sending it, so password resets, email verification, and [user invitations](/api/accounts-and-users#invite-a-user) reach nobody.
 
+`NOTIFICATION_RECIPIENT_CONFIRMATION_ENABLED` defaults to `true`. Keep it on for shared or multi-tenant deployments: an external contact or operator-notice address confirms before it receives notification content. A single-tenant self-hosted deployment can set it to `false`; recipient status then reads `confirmation_not_required`, while hard-bounce and complaint suppression still applies. Confirmation and unsubscribe links use `CONNECTOR_PUBLIC_BASE_URL` when it is set, then `APP_BASE_URL`; configure one of those as the public HTTPS origin that reaches the backend.
+
+When transactional mail uses Resend, subscribe the existing `/api/connectors/email/webhook` endpoint to `email.bounced` and `email.complained`. Radioso verifies those requests with `EMAIL_CHANNEL_WEBHOOK_SECRET` and records permanent bounces and complaints for notification-tagged messages. SMTP and log drivers have no provider webhook, so their notification delivery continues without automatic bounce or complaint suppression.
+
 The included staging and live Terraform environments enable PostHog error reporting with `ERROR_SINKS=audit,posthog`. Staging also sends product analytics to PostHog with `PRODUCT_ANALYTICS_SINKS=audit,posthog`. Set `POSTHOG_API_KEY` for each environment. `POSTHOG_HOST` defaults to the US ingestion host and can be overridden for another PostHog region or a self-hosted instance.
 
 "Sign in with Google" on the Enterprise login page is optional and off until the environment carries `GOOGLE_LOGIN_CLIENT_ID` and `GOOGLE_LOGIN_CLIENT_SECRET`. The workflow stores both in Secret Manager and injects them into the backend. Register `<APP_BASE_URL>/api/v1/ee/auth/google/callback` as the redirect URI on the Google OAuth client; one client can list the callback for every region you deploy. A first Google sign-in joins the account that already holds the same email address and marks that address verified, so someone who registered with a password keeps the one account. A first sign-in that creates a new login takes the name on the Google account as that person's display name, or leaves them unnamed when that name breaks the [naming rules](/api/auth-and-sessions#your-profile); later sign-ins leave whatever name they have set.
@@ -145,6 +149,18 @@ Public chat and website embed rate limits are operator tuning knobs, not workspa
 - `PUBLIC_CHAT_SESSION_READ_RATE_LIMIT_MAX_ATTEMPTS`
 
 The session limit applies to a visitor session, and covers starting one and sending a message. The global limit applies across public chat traffic for the process. The read limit covers the same visitor session polling for history, tail, and live updates, which happens far more often than sending a message, so it carries a higher default. All three are process-wide: Radioso does not read a per-workspace override, so set them to values every workspace on this deployment can share.
+
+## Voice session start rate limits
+
+A voice session start opens a session on the workspace's own voice vendor account, which the vendor bills, so it spends two small budgets of its own before the vendor is called. Both are process-wide, like the public chat limits.
+
+- `PUBLIC_VOICE_SESSION_START_RATE_LIMIT_MAX_ATTEMPTS` defaults to 3 starts per visitor session and window. The budget follows the signed public session together with the request source, not a cookie.
+- `PUBLIC_VOICE_SESSION_START_SOURCE_RATE_LIMIT_MAX_ATTEMPTS` defaults to 3 starts per request source and window, across every public session that source holds, so minting a fresh session for each start does not refill it.
+- `PUBLIC_VOICE_SESSION_START_RATE_LIMIT_WINDOW_MS` defaults to 10 minutes and applies to both visitor budgets.
+- `PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS` defaults to 30 starts per workspace and window.
+- `PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_WINDOW_MS` defaults to 60 seconds.
+
+Workspaces should also set their vendor agent's own concurrency and daily limits, which bound what a started session can cost at the vendor.
 
 ## Agent channel chat rate limits
 
@@ -216,6 +232,8 @@ Document processing and website crawling use separate queues in both push driver
 
 A routine's fire-and-forget actions — a contact request, a handoff notification, an approval request — go through their own durable outbox, `routine_action_requests`, with the same durable-first, dispatch-second shape: a worker drains it on a five-second poll by default. On Google Cloud, set `ACTION_DISPATCH_TASK_QUEUE_NAME` alongside the worker dispatch settings so a turn that enqueues an action pushes a Cloud Task immediately and reaches the worker in seconds rather than on the next poll. A scheduled recovery sweep drains anything a push loses or never sends.
 
+Background jobs — the follow-up work an answered turn hands to the worker, such as refreshing the conversation's rolling summary and title — are rows in `background_jobs`, written in the same transaction as the reply. A polling worker (`start:worker`) checks for them every two seconds. On Google Cloud, where the worker runs as a task server (`start:worker-server`), set `BACKGROUND_JOB_TASK_QUEUE_NAME` alongside the worker dispatch settings so the backend and the worker push a Cloud Task to `POST /internal/tasks/background-jobs/drain` when they write a job, and at a failed job's retry time. The bundled Terraform creates that queue and schedules the same route every five minutes, which runs jobs whose push was lost and takes back jobs whose worker stopped mid-run (`background_job_recovery_schedule`). A second daily schedule removes dead-lettered jobs after 14 days (`background_job_retention_schedule`). Without the queue name, jobs still run, on the sweep's schedule. One drain request runs jobs for at most 270 seconds, so the worker's request timeout and any proxy in front of a self-hosted task server need to allow at least that; the bundled Terraform sets the worker timeout and the task and schedule deadlines to 300 seconds.
+
 ## Startup migrations
 
 The backend runs SQL migrations before it binds the HTTP port. This is intentional: the API should not report healthy or serve traffic until the schema matches the running code.
@@ -262,6 +280,23 @@ ORDER BY created_at, conversation_id;
 Each row names the original routine pin and why Radioso could not bind that conversation. Keep
 those conversations out of service until the pin has been investigated and the operator has a
 safe recovery path for that exact routine state.
+
+## Conversation erasure keys
+
+The `228_conversation_erasure_*` migrations give each table that names a conversation a cascading key, one table per migration, and add the indexes the cascade and the erasers look rows up by. Each one waits at most three seconds for its table's lock; a deploy that hits that rolls back whole, and running it again is safe. `229_conversation_erasure_links_validate` then removes rows whose conversation is already gone and validates the keys without blocking reads or writes.
+
+A plain index build stops writes to its table until the migration commits. Before deploying, check the row counts of `usage_events`, `topic_memberships` and `routine_action_requests`. For each one over 100k rows, build its index first, under the same name and predicate, so the migration finds it already there:
+
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS usage_events_message_idx
+  ON usage_events (message_id) WHERE message_id IS NOT NULL;
+CREATE INDEX CONCURRENTLY IF NOT EXISTS topic_memberships_message_idx
+  ON topic_memberships (message_id);
+CREATE INDEX CONCURRENTLY IF NOT EXISTS routine_action_requests_conversation_idx
+  ON routine_action_requests (conversation_id) WHERE conversation_id IS NOT NULL;
+```
+
+Run each statement on its own, outside a transaction. A concurrent build that fails leaves an invalid index of that name behind; drop it (`DROP INDEX CONCURRENTLY <name>`) before trying again or before deploying. The other erasure indexes are on small tables and build inside their migrations.
 
 ## Docs portal deployment
 

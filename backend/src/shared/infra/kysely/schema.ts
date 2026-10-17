@@ -455,6 +455,23 @@ export interface AuditEvents {
   workspace_id: string | null;
 }
 
+export interface BackgroundJobs {
+  attempts: Generated<number>;
+  available_at: Generated<Timestamp>;
+  claim_token: string | null;
+  created_at: Generated<Timestamp>;
+  dead_at: Timestamp | null;
+  id: Generated<string>;
+  idempotency_key: string | null;
+  kind: string;
+  last_error: string | null;
+  lease_expires_at: Timestamp | null;
+  payload: Json | null;
+  rerun_requested: Generated<boolean>;
+  status: Generated<string>;
+  updated_at: Generated<Timestamp>;
+}
+
 export interface BootstrapGreetingCache {
   agent_id: string;
   created_at: Generated<Timestamp>;
@@ -1272,7 +1289,7 @@ export interface Messages {
 
 export interface NotificationDeliveryOutcomes {
   conversation_dispatch_limit: number;
-  conversation_id: string;
+  conversation_id: string | null;
   created_at: Generated<Timestamp>;
   daily_email_limit: number;
   outcome: string;
@@ -1281,6 +1298,36 @@ export interface NotificationDeliveryOutcomes {
   requested_email_count: number;
   reserved_email_count: number;
   usage_date: Timestamp;
+  workspace_id: string;
+}
+
+export interface NotificationEmailSuppressions {
+  created_at: Generated<Timestamp>;
+  normalized_email: string;
+  provider: string;
+  provider_event_id: string;
+  reason: string;
+  updated_at: Generated<Timestamp>;
+}
+
+export interface NotificationRecipientConfirmationDailyUsage {
+  send_count: number;
+  updated_at: Generated<Timestamp>;
+  usage_date: Timestamp;
+  workspace_id: string;
+}
+
+export interface NotificationRecipientConfirmations {
+  confirmation_generation: Generated<number>;
+  confirmation_sent_at: Timestamp | null;
+  confirmed_at: Timestamp | null;
+  created_at: Generated<Timestamp>;
+  grandfathered_until: Timestamp | null;
+  id: Generated<string>;
+  normalized_email: string;
+  revoked_at: Timestamp | null;
+  state: string;
+  updated_at: Generated<Timestamp>;
   workspace_id: string;
 }
 
@@ -1887,6 +1934,22 @@ export interface Visitors {
   workspace_id: string;
 }
 
+export interface VoiceSessions {
+  agent_id: string | null;
+  conversation_id: string | null;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  session_key: string;
+  start_expires_at: Timestamp | null;
+  started_public_session_id: string | null;
+  started_visitor_key: string | null;
+  vendor: string;
+  vendor_agent_id: string | null;
+  vendor_conversation_id: string | null;
+  vendor_region: string | null;
+  workspace_id: string;
+}
+
 export interface WebsiteCrawlJobs {
   account_id: string | null;
   attempt_count: Generated<number>;
@@ -2033,6 +2096,7 @@ export interface DB {
   assistant_answer_triage_transitions: AssistantAnswerTriageTransitions;
   audience_pulse_snapshots: AudiencePulseSnapshots;
   audit_events: AuditEvents;
+  background_jobs: BackgroundJobs;
   bootstrap_greeting_cache: BootstrapGreetingCache;
   chunk_embeddings: ChunkEmbeddings;
   chunks: Chunks;
@@ -2085,6 +2149,9 @@ export interface DB {
   message_facets: MessageFacets;
   messages: Messages;
   notification_delivery_outcomes: NotificationDeliveryOutcomes;
+  notification_email_suppressions: NotificationEmailSuppressions;
+  notification_recipient_confirmation_daily_usage: NotificationRecipientConfirmationDailyUsage;
+  notification_recipient_confirmations: NotificationRecipientConfirmations;
   operator_mcp_access_credentials: OperatorMcpAccessCredentials;
   operator_mcp_authorization_transactions: OperatorMcpAuthorizationTransactions;
   operator_mcp_client_metadata_snapshots: OperatorMcpClientMetadataSnapshots;
@@ -2126,6 +2193,7 @@ export interface DB {
   vector_index_checkpoints: VectorIndexCheckpoints;
   vector_index_work: VectorIndexWork;
   visitors: Visitors;
+  voice_sessions: VoiceSessions;
   website_crawl_jobs: WebsiteCrawlJobs;
   workspace_embedding_profiles: WorkspaceEmbeddingProfiles;
   workspace_embedding_transitions: WorkspaceEmbeddingTransitions;

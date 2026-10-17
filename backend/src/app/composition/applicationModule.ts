@@ -137,6 +137,7 @@ export interface MailTransportPort {
     html?: string;
     metadata?: Record<string, string>;
     idempotencyKey?: string | null;
+    listUnsubscribeUrl?: string | null;
   }): Promise<{
     /**
      * True only when a mail provider accepted the message. Deployments without a configured
@@ -323,7 +324,7 @@ export interface ApplicationAccountAdministratorDirectoryPort {
   list(accountId: string): Promise<ApplicationAccountAdministratorContact[]>;
 }
 
-interface ApplicationPeriodicTaskHandle {
+export interface ApplicationPeriodicTaskHandle {
   run(): Promise<void>;
 }
 
@@ -332,7 +333,11 @@ interface ApplicationPeriodicTaskHandle {
  * `initialize()` hook on purpose: `applicationModules.initializeAll()` runs in every runtime
  * (API, worker, migration), so a task that must run on a timer exactly once per deployment —
  * not once per process — cannot be wired through `initialize()`. Composition owns the actual
- * timer (`PeriodicTaskRunner` in `periodicTaskRunner.ts`), started only from the API runtime.
+ * timer (`PeriodicTaskRunner` in `periodicTaskRunner.ts`) for the self-host poll worker, and
+ * exposes the same handle by id (`AppDependencies.periodicTaskHandlesById`) for the Cloud
+ * Scheduler-driven worker task route to call on demand. Both live in the worker runtime: the
+ * API Cloud Run service has no CPU allocation once a request ends and may run at zero
+ * instances, so a timer started there would stall or never fire.
  */
 interface ApplicationPeriodicTaskContext {
   database: ApplicationDatabasePort;
@@ -444,7 +449,8 @@ export interface ApplicationModuleRegistrationContext {
    * the dashboard's card presentation, so an extension-owned target type is its own change.
    */
   registerCopilotTools(registration: ApplicationCopilotToolRegistration): void;
-  /** Schedules a recurring background task in the API runtime only (see
+  /** Schedules a recurring background task in the worker runtime only — the self-host poll
+   *  loop's interval and the Cloud Scheduler-driven worker task route, never the API (see
    *  {@link ApplicationPeriodicTaskRegistration}). */
   registerPeriodicTask(registration: ApplicationPeriodicTaskRegistration): void;
 }

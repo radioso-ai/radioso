@@ -1,7 +1,7 @@
 ---
 title: "Assistant Execution Model"
 description: "Design principle that live chat stays in the request path while background work like exports is deferred asynchronously."
-last_updated: 2026-10-07
+last_updated: 2026-10-15
 ---
 
 # Assistant Execution Model
@@ -117,6 +117,8 @@ Use deferred execution for workflows such as:
 - notifications or other post-turn follow-up jobs
 
 These workflows should present themselves as background work from the start. They should expose status, completion, and failure clearly instead of pretending to be a live chat turn.
+
+A turn's own follow-up work runs this way too. Each committed turn writes a durable background job, in the same transaction as its reply, that refreshes the conversation's rolling summary and title in the worker. The reply never waits on it, and a deploy or a scaled-in API instance does not lose it. See `backend/src/shared/background-jobs/README.md` for how a job kind is defined and run.
 
 ## Operator Guidance
 

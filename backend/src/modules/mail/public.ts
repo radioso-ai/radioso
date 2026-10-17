@@ -2,6 +2,7 @@ export {
   EmailService,
   createMailService,
   type EmailDriver,
+  type EmailKind,
   type EmailMessage,
   type EmailSendResult,
   type OutboundThreadingHeaders,
@@ -42,6 +43,7 @@ export { ResendApiClient } from "./adapters/resendApi.js";
 export { ResendEmailDeliveryError, ResendEmailDriver } from "./adapters/resendDriver.js";
 export { ResendEmailDomainProvisioner } from "./adapters/resendDomainProvisioner.js";
 export { ResendInboundEmailReceiver } from "./adapters/resendInboundReceiver.js";
+export { ResendWebhookVerifier } from "./adapters/resendWebhook.js";
 export { LocalEmailDomainProvisioner } from "./adapters/localDomainProvisioner.js";
 export { LocalEmailDriver } from "./adapters/localEmailDriver.js";
 export { LocalInboundEmailReceiver } from "./adapters/localInboundReceiver.js";

@@ -36,6 +36,8 @@ import type {
 } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { externalSkillsApi } from '@/lib/api-external-skills'
+import { routineSkillCatalogApi } from '@/lib/api-routine-skill-catalog'
+import type { NotificationRecipient } from '@/lib/operator-notice-destinations'
 import type { AgentSkill, AgentSkillCapabilityId, AgentSkillCreateInput, SkillCapabilityDescriptor, SkillCapabilitySettingsField } from '@/lib/api-skills'
 import type { DiscoveredMcpTool } from '@/lib/external-skills'
 import { cn } from '@/lib/utils'
@@ -152,6 +154,36 @@ const shouldShowGroupHeading = (
 ): boolean =>
   !(fields.length === 1 && fields[0]?.type === 'boolean' && fields[0].label === group)
 
+type RecipientState = NotificationRecipient['state']
+
+const RECIPIENT_STATE_LABELS: Record<Exclude<RecipientState, 'confirmation_not_required'>, string> = {
+  confirmed: 'Confirmed',
+  grandfathered: 'Confirmation grace period',
+  waiting_for_confirmation: 'Waiting for confirmation',
+  revoked: 'Notifications stopped by the recipient',
+  suppressed: 'Suppressed after a bounce or complaint',
+}
+
+function RecipientConfirmationStatus({ email, state, onResend }: {
+  email: string
+  state: RecipientState
+  onResend?: (email: string) => Promise<string>
+}) {
+  const [resendResult, setResendResult] = useState<string | null>(null)
+  if (state === 'confirmation_not_required') return null
+  const canResend = (state === 'waiting_for_confirmation' || state === 'grandfathered') && onResend
+  return (
+    <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+      <span>{RECIPIENT_STATE_LABELS[state]}</span>
+      {resendResult ? <span>{resendResult}</span> : canResend ? (
+        <Button type="button" variant="link" className="h-auto p-0 text-xs" onClick={() => void onResend(email).then(setResendResult)}>
+          <RefreshCw className="mr-1 h-3 w-3" /> Resend confirmation
+        </Button>
+      ) : null}
+    </div>
+  )
+}
+
 function SkillSettingControl({
   field,
   value,
@@ -160,6 +192,8 @@ function SkillSettingControl({
   sourceList,
   metadataFieldSuggestions,
   onChange,
+  recipientStates,
+  onResendConfirmation,
 }: {
   field: SkillCapabilitySettingsField
   value: SkillSettingDraftValue
@@ -168,6 +202,8 @@ function SkillSettingControl({
   sourceList: DocumentSourceListItem[]
   metadataFieldSuggestions: MetadataFieldSuggestion[]
   onChange: (value: SkillSettingDraftValue) => void
+  recipientStates?: Map<string, RecipientState>
+  onResendConfirmation?: (email: string) => Promise<string>
 }) {
   const fieldId = `skill-setting-${field.key.replace(/[^a-z0-9_-]/giu, '-')}`
   const defaultValue = formatDefaultValue(field)
@@ -333,17 +369,26 @@ function SkillSettingControl({
         <Label>{field.label}</Label>
         <div className="space-y-2">
           {[...items, ''].map((item, index) => (
-            <div key={index} className="flex gap-2">
-              <Input
-                value={item}
-                onChange={(event) => updateItem(index, event.target.value)}
-                placeholder="name@example.com"
-                aria-label={`${field.label} ${index + 1}`}
-              />
-              {index < items.length ? (
-                <Button type="button" variant="outline" onClick={() => removeItem(index)}>
-                  Remove
-                </Button>
+            <div key={index} className="space-y-1">
+              <div className="flex gap-2">
+                <Input
+                  value={item}
+                  onChange={(event) => updateItem(index, event.target.value)}
+                  placeholder="name@example.com"
+                  aria-label={`${field.label} ${index + 1}`}
+                />
+                {index < items.length ? (
+                  <Button type="button" variant="outline" onClick={() => removeItem(index)}>
+                    Remove
+                  </Button>
+                ) : null}
+              </div>
+              {index < items.length && recipientStates?.get(item.trim().toLowerCase()) ? (
+                <RecipientConfirmationStatus
+                  email={item}
+                  state={recipientStates.get(item.trim().toLowerCase())!}
+                  onResend={onResendConfirmation}
+                />
               ) : null}
             </div>
           ))}
@@ -484,6 +529,7 @@ export function SkillForm({
   const [isDiscovering, setIsDiscovering] = useState(false)
   const [discoveryError, setDiscoveryError] = useState<string | null>(null)
   const [discoveryUnavailable, setDiscoveryUnavailable] = useState(false)
+  const [recipientStates, setRecipientStates] = useState<Map<string, RecipientState>>(new Map())
   const discoveryRequestId = useRef(0)
   const capability = useMemo(
     () => scopedCapabilities.find((item) => item.id === draft.capabilityId) ?? null,
@@ -553,6 +599,21 @@ export function SkillForm({
       active = false
     }
   }, [open])
+
+  useEffect(() => {
+    if (!open || capability?.id !== 'notify' || !editingSkill) {
+      queueMicrotask(() => setRecipientStates(new Map()))
+      return
+    }
+    let active = true
+    void routineSkillCatalogApi.listNotifySkillRecipients(agentId, editingSkill.id).then((recipients) => {
+      if (!active) return
+      setRecipientStates(new Map(recipients.map((recipient) => [recipient.email.toLowerCase(), recipient.state])))
+    }).catch(() => {
+      if (active) setRecipientStates(new Map())
+    })
+    return () => { active = false }
+  }, [agentId, capability?.id, editingSkill, open])
 
   const discoverTools = useCallback(async (connectionId: string, preferredToolName: string) => {
     if (!capability || capability.inputSchema.source !== 'discovered') return
@@ -754,6 +815,17 @@ export function SkillForm({
                     sourceList={sourceTargetsToList(capability)}
                     metadataFieldSuggestions={metadataFieldSuggestions}
                     onChange={(value) => updateSetting(field.key, value)}
+                    recipientStates={field.key === 'delivery.recipientEmails' ? recipientStates : undefined}
+                    onResendConfirmation={field.key === 'delivery.recipientEmails'
+                      ? async (email) => {
+                          try {
+                            const result = await routineSkillCatalogApi.resendNotificationRecipientConfirmation(agentId, email)
+                            return result.sent ? 'Confirmation sent' : 'Not sent: asked recently, daily limit reached, or mail delivery unavailable'
+                          } catch (resendError) {
+                            return getApiErrorMessage(resendError, 'Could not resend the confirmation')
+                          }
+                        }
+                      : undefined}
                   />
                 </div>
               ))}

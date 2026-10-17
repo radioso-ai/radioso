@@ -238,7 +238,7 @@ describeIntegration("held reply visibility (Postgres, research B9)", () => {
     const returned = await openAutoThread();
     heldReplyIds.returned = await review(returned.conversationId, "queued_auto");
     await database.execute("UPDATE email_domains SET sending_status = 'failed' WHERE id = $1", [returned.domain.id]);
-    expect(await worker.dispatch()).toMatchObject({ dispatched: 1, failed: 0 });
+    expect(await worker.dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
 
     const queued = await openAutoThread();
     heldReplyIds.queued_auto = await review(queued.conversationId, "queued_auto");
@@ -438,7 +438,7 @@ describeIntegration("held reply visibility (Postgres, research B9)", () => {
   });
 
   it("keeps held drafts out of Ray's conversation transcript and turn traces", async () => {
-    const tools = createChatCopilotTools({ chatHistoryService: api.history });
+    const tools = createChatCopilotTools({ chatHistoryService: api.history, voiceRecordings: { availability: async () => null } });
     for (const { name, conversationId: id } of threads) {
       const context = {
         workspaceId: workspaceId(),

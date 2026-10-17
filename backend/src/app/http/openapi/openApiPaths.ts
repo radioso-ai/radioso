@@ -28,6 +28,7 @@ import { registerDocumentsPaths } from "./paths/documentsPaths.js";
 import { registerHistoryPaths } from "./paths/historyPaths.js";
 import { registerConversationActivityPaths } from "./paths/conversationActivityPaths.js";
 import { registerConversationOwnershipPaths } from "./paths/conversationOwnershipPaths.js";
+import { registerConversationRecordingPaths } from "./paths/conversationRecordingPaths.js";
 import { registerDeliveryFailurePaths } from "./paths/deliveryFailurePaths.js";
 import { registerHeldReplyPaths } from "./paths/heldReplyPaths.js";
 import { registerDecisionPaths } from "./paths/decisionPaths.js";
@@ -78,6 +79,8 @@ export const registerOpenApiPaths = (
   registerHistoryPaths(registry, schemas, security);
   registerConversationActivityPaths(registry, schemas, security);
   registerConversationOwnershipPaths(registry, schemas, security);
+  registerConversationRecordingPaths(registry, schemas, security);
+
   registerDeliveryFailurePaths(registry, schemas, security);
   registerHeldReplyPaths(registry, schemas, security);
   registerDecisionPaths(registry, schemas, security);

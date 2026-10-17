@@ -31,6 +31,7 @@ Before creating or revising documentation in this repo, read the [Docs Style Gui
 - [Website Crawler Provider](./website-crawler.md) - OSS crawler provider port and document crawl API
 - [Website Embed CDN](./website-embed-cdn.md) - how the embed widget assets are served from the CDN
 - [Slack Channel](./slack-channel.md) - Slack setup, self-host manifest, data flow, and curated-knowledge boundary
+- [Voice Channel](./voice-channel.md) - connect a voice runtime to an agent through the OpenAI-compatible completions endpoint, dialects, and the voice conversation record
 - [Webhook Skills](./webhook-skills.md) - configure agents to call your webhooks as skills
 - [Slack Post Skills](./slack-skills.md) - configure agents to post to Slack as a skill
 - [Customer Email Skills](./customer-email-skills.md) - workspace outbound email connections and email skills

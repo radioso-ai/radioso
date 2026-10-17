@@ -12,10 +12,12 @@ import type {
 } from "../../src/modules/agentBundle/ports.js";
 import type { RoutineDefinition } from "../../src/modules/routines/public.js";
 import { notifyCapability } from "../../src/modules/skills/capabilities/notify.js";
-import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { websiteEmbedFixture } from "../support/websiteEmbedFixture.js";
 
 const baseAgent = (): ConversationAgent => ({
   ...unpublishedAgentPublicIdentity(),
+  voice: defaultAgentVoiceSettings(),
   id: "agent-1",
   workspaceId: "workspace-1",
   name: "Support Bot",
@@ -35,13 +37,14 @@ const baseAgent = (): ConversationAgent => ({
   greetingInstruction: "Welcome the visitor.",
   assistantDefaultLocale: "en-US",
   proactiveGreetingEnabled: false,
+  mechanicsReplies: {},
   sourceScope: { mode: "all" },
   skillSettings: {},
   chatModelOverride: null,
   surfaceSettings: {
     authenticatedChat: { enabled: true },
     anonymousChat: { enabled: false, token: null },
-    websiteEmbed: {
+    websiteEmbed: websiteEmbedFixture({
       enabled: false,
       token: null,
       allowedOrigins: [],
@@ -50,7 +53,7 @@ const baseAgent = (): ConversationAgent => ({
       theme: { brand: "#445566", brandText: "#ffffff", surface: "#ffffff", text: "#111111" },
       copy: {},
       expertOverrides: {},
-    },
+    }),
     extensions: {},
   },
   authoredDirectives: [],

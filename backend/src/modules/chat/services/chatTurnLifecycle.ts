@@ -43,7 +43,7 @@ import {
   NoopProductAnalyticsService,
   type ProductAnalyticsPort,
 } from "../../../shared/analytics/productAnalyticsService.js";
-import type { ChatResponse, ChatRoute, ChatSuggestion } from "../types/chatResponses.js";
+import type { ChatResponse, ChatRoute, ChatSuggestion, ChatTurnHandoff, ChatTurnHandoffReason } from "../types/chatResponses.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import type { ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import { appendDirectiveSteeringStage } from "./directiveTracePresenter.js";
@@ -64,7 +64,8 @@ import type { CapturedRoutineTransition } from "./routines/deferredRoutineStore.
 import type { ChatRoutineTurnReporter, ChatRoutineTurnState } from "../contracts/routineTurnState.js";
 import type { ChatAnswerCoverageAssessment } from "../contracts/answerCoverage.js";
 import type { CapturedClarificationTransition } from "./clarification/deferredClarificationStore.js";
-import type { ConversationSummaryUpdater } from "./summary/conversationSummaryService.js";
+import { conversationSummaryRefreshRequest } from "./summary/conversationSummaryRefreshJob.js";
+import type { BackgroundJobQueue, BackgroundJobRequest } from "../../../shared/background-jobs/index.js";
 import type { ModelCallTraceCollector } from "../../../shared/observability/tracing/modelCallTraceContext.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import {
@@ -167,6 +168,12 @@ interface PersistedAssistantTurn {
   response: ChatResponse;
   assistantMessageId: string;
   postCommitReceipt: PostCommitInvalidationReceipt;
+  /**
+   * Present when the turn wrote background jobs inside a caller's transaction: the caller calls it
+   * once that transaction has committed, as it flushes `postCommitReceipt`. A turn that owns its
+   * transaction has already woken the worker.
+   */
+  postCommitWake?: () => void;
 }
 
 /**
@@ -210,6 +217,8 @@ export interface AssistantTurnCommittedFacts {
 export interface AssistantTurnPersistenceReceipt {
   message: MessageRecord;
   committedFacts: AssistantTurnCommittedFacts;
+  /** Wakes a worker for the background jobs the turn wrote; call it once the turn's transaction has committed. */
+  wakeBackgroundJobs?: () => void;
 }
 
 /** The narrow slice of the action outbox the turn lifecycle needs (idempotent enqueue). */
@@ -269,8 +278,23 @@ export interface AssistantTurnPersistencePort {
     ownershipHandoff?: OwnershipHandoffInput | null;
     ownershipAuditEvent?: AuditEventInput | null;
     additionalAuditEvent?: AuditEventInput | null;
+    /** Background jobs the turn hands to the worker, written in the turn's own transaction. */
+    backgroundJobs?: readonly BackgroundJobRequest[];
     transaction?: Db;
+    /** Runs as the transaction's last step; a throw rolls the whole turn back. */
+    commitFence?: () => void;
   }): Promise<AssistantTurnPersistenceReceipt>;
+  /**
+   * Deletes the user message of a turn a newer input replaced and records `auditEvent`, its
+   * cancelled `chat.answer` event, in one transaction. Resolves false, recording nothing, when the
+   * conversation holds no such user message.
+   */
+  discardReplacedUserMessage?(input: {
+    workspaceId: string;
+    conversationId: string;
+    messageId: string;
+    auditEvent: AuditEventInput;
+  }): Promise<boolean>;
 }
 
 interface PendingDecisionWriterPort {
@@ -286,6 +310,23 @@ export interface OwnershipHandoffInput {
   routineId?: string;
   stepId?: string;
 }
+
+/** The hand-off a turn applies, by one of the reasons a turn can raise. */
+export interface TurnHandoffInput extends OwnershipHandoffInput {
+  reason: ChatTurnHandoffReason;
+  /** How many of the ending routine's declared slots held a value; the reply reports it, nothing stores it. */
+  collectedSlotCount?: number;
+}
+
+/** The hand-off as it is stored: the reply-only slot count does not cross the persistence port. */
+const storedHandoff = (handoff: TurnHandoffInput | null | undefined): OwnershipHandoffInput | null | undefined =>
+  handoff ? { reason: handoff.reason, routineId: handoff.routineId, stepId: handoff.stepId } : handoff;
+
+/** What the reply tells its delivering channel about the hand-off the turn applied. */
+const turnHandoffReport = (handoff: TurnHandoffInput): ChatTurnHandoff => ({
+  reason: handoff.reason,
+  collectedSlotCount: handoff.collectedSlotCount ?? 0,
+});
 
 interface AssistantTurnSuccessInput {
   workspaceId: string;
@@ -591,7 +632,7 @@ interface CompleteAssistantTurnInput {
   /** Names and describes the routine state above for the reply envelope; absent when no routine ran. */
   routineReporter?: ChatRoutineTurnReporter;
   pendingDecisionTransition?: PendingDecisionCreateInput | null;
-  ownershipHandoff?: OwnershipHandoffInput | null;
+  ownershipHandoff?: TurnHandoffInput | null;
   suspended?: boolean;
   additionalAuditEvent?: AuditEventInput | null;
   transaction?: Db;
@@ -599,6 +640,12 @@ interface CompleteAssistantTurnInput {
   clarificationTransition?: CapturedClarificationTransition | null;
   /** The skill effects the turn's execution mode suppressed; a draft reports them. */
   suppressedEffects?: readonly SuppressedSkillEffect[];
+  /**
+   * Decides, at the last moment the turn can still store nothing, whether it may commit; throwing
+   * stores none of the reply or its effects. It runs as the persistence transaction's last step,
+   * and on the fallback path before the first write.
+   */
+  commitFence?: () => void;
 }
 
 const ROUTINE_INVOCATIONS_TOTAL = "routine_invocations_total";
@@ -622,14 +669,36 @@ export class ChatTurnLifecycle {
     private readonly logger?: Pick<AppLogger, "warn">,
     private readonly pendingDecisionRepository?: PendingDecisionWriterPort,
     private readonly conversationOwnershipRepository?: ConversationOwnershipWriterPort,
-    // Optional: when wired, the per-conversation rolling summary (#866) is
-    // regenerated fire-and-forget after the turn is durably persisted.
-    private readonly conversationSummaryUpdater?: ConversationSummaryUpdater,
+    // Optional: when wired, a turn that records bookkeeping hands the worker a
+    // conversation summary refresh job (#866), written in the turn's own commit.
+    private readonly backgroundJobs?: Pick<BackgroundJobQueue, "enqueue">,
     private readonly metrics?: Pick<MetricsRegistry, "incrementCounter"> | null,
     private readonly workspaceInvalidationPublisher: WorkspaceInvalidationPublisher =
       createNoopWorkspaceInvalidationPublisher(),
   ) {
     this.capabilityPolicy = capabilityPolicy ?? new DefaultAllowCapabilityPolicy();
+  }
+
+  /**
+   * The fallback path's job write: it has no transaction to join, so each job is written once the
+   * reply exists. Best-effort, because the reply already stands; the next turn writes a new job.
+   */
+  private async enqueueBackgroundJobs(jobs: readonly BackgroundJobRequest[], conversationId: string): Promise<void> {
+    for (const job of jobs) {
+      try {
+        await this.backgroundJobs?.enqueue(job);
+      } catch (error) {
+        this.logger?.warn(
+          {
+            event: "background_job_enqueue_failed",
+            conversationId,
+            kind: job.kind,
+            errorType: error instanceof Error ? error.name : typeof error,
+          },
+          "Failed to enqueue a background job for the turn",
+        );
+      }
+    }
   }
 
   /** Enqueue routine-emitted fire-and-forget actions to the outbox (idempotent). */
@@ -737,6 +806,15 @@ export class ChatTurnLifecycle {
     const ownershipHandoff = capabilities.ownershipHandoff === "apply" ? input.ownershipHandoff : undefined;
     const recordsBookkeeping = capabilities.turnBookkeeping === "record";
     const additionalAuditEvent = recordsBookkeeping ? input.additionalAuditEvent : undefined;
+    // The rolling conversation summary (#866) is regenerated in the worker, never on this turn's
+    // path: the turn only writes the job, and the reply never waits on a model call for it.
+    const backgroundJobs: readonly BackgroundJobRequest[] = this.backgroundJobs && recordsBookkeeping
+      ? [conversationSummaryRefreshRequest({
+          workspaceId: input.workspaceId,
+          conversationId: input.session.conversation.id,
+          accountId: input.accountId,
+        })]
+      : [];
     const routineTurnState = describeRoutineTurn(input);
     const invocationReport = input.session.routineInvocationReport ?? null;
     if (invocationReport) {
@@ -760,6 +838,7 @@ export class ChatTurnLifecycle {
     });
     let assistantMessage: MessageRecord;
     let postCommitReceipt: PostCommitInvalidationReceipt;
+    let postCommitWake: (() => void) | undefined;
     const suspended = input.suspended === true;
     const baseAuditEvent = suspended
       ? this.buildAssistantTurnSuspendedAuditEvent(presentation.successInput)
@@ -809,15 +888,21 @@ export class ChatTurnLifecycle {
         answerCoverageRequestMessageId: input.session.userMessage.id,
         assistantMessage: presentation.assistantMessage,
         auditEvent,
-        ownershipHandoff,
+        ownershipHandoff: storedHandoff(ownershipHandoff),
         ownershipAuditEvent,
         additionalAuditEvent,
+        backgroundJobs,
         transaction: input.transaction,
+        commitFence: input.commitFence,
       });
       assistantMessage = persisted.message;
       postCommitReceipt = this.createPostCommitReceipt(input.workspaceId, persisted.committedFacts);
       if (!input.transaction) {
         flushPostCommitInvalidationReceipt(this.workspaceInvalidationPublisher, postCommitReceipt);
+        persisted.wakeBackgroundJobs?.();
+      } else {
+        // The jobs are invisible until the caller's transaction commits; a wake now would find nothing.
+        postCommitWake = persisted.wakeBackgroundJobs;
       }
       this.auditService.logRecorded?.(auditEvent);
       if (!suspended && recordsBookkeeping) {
@@ -826,6 +911,8 @@ export class ChatTurnLifecycle {
     } else {
       // Fallback for tests and non-DB hosts. Production wires a transaction port so
       // outbox enqueue, routine state, assistant message, touch, and audit commit together.
+      // With no transaction to roll back, the fence runs before the first write.
+      input.commitFence?.();
       const insertedActionTypes = await this.enqueueTurnActions({
         actions,
         workspaceId: input.workspaceId,
@@ -855,6 +942,7 @@ export class ChatTurnLifecycle {
         : null;
       await input.commitClarificationState?.();
       await this.conversationRepository.touch(presentation.successInput.conversationId, input.workspaceId);
+      await this.enqueueBackgroundJobs(backgroundJobs, input.session.conversation.id);
       postCommitReceipt = this.createPostCommitReceipt(input.workspaceId, {
         insertedActionTypes,
         decisionCreated: pendingDecisionCreated,
@@ -895,35 +983,11 @@ export class ChatTurnLifecycle {
       );
     }
 
-    // Regenerate the rolling conversation summary (#866) off the critical path.
-    // Unawaited and error-swallowed: an LLM call is too slow to await, and a lost
-    // update self-heals on the next turn (each regeneration derives from current
-    // state). The updater swallows its own failures; this .catch is a backstop.
-    if (this.conversationSummaryUpdater && recordsBookkeeping) {
-      void this.conversationSummaryUpdater
-        .refresh({
-          workspaceId: input.workspaceId,
-          conversationId: input.session.conversation.id,
-          accountId: input.accountId,
-        })
-        .catch((error) => {
-          // Name/message only: raw error objects can carry provider response bodies.
-          this.logger?.warn(
-            {
-              event: "conversation_summary_generation_failed",
-              conversationId: input.session.conversation.id,
-              errorType: error instanceof Error ? error.name : typeof error,
-              errorMessage: error instanceof Error ? error.message : undefined,
-            },
-            "Failed to regenerate conversation summary",
-          );
-        });
-    }
-
     return {
       kind: "persisted",
       assistantMessageId: assistantMessage.id,
       postCommitReceipt,
+      ...(postCommitWake ? { postCommitWake } : {}),
       response: {
         conversationId: input.session.conversation.id,
         agentId: input.session.agent.id,
@@ -945,7 +1009,9 @@ export class ChatTurnLifecycle {
           : {}),
         // A handoff this turn leaves the conversation human-owned; the reply itself
         // was still generated, so it is not suppressed. Safe-test turns never hand off.
-        ...(ownershipHandoff ? { ownership: { state: "human_owned", suppressed: false } } : {}),
+        ...(ownershipHandoff
+          ? { ownership: { state: "human_owned", suppressed: false }, handoff: turnHandoffReport(ownershipHandoff) }
+          : {}),
         ...(routineTurnState ? { routine: routineTurnState } : {}),
         ...(invocationReport ? { invocation: invocationReport } : {}),
       },
@@ -1072,9 +1138,22 @@ export class ChatTurnLifecycle {
         ...executionModeAuditMetadata(input.executionMode, session?.conversation.sourceChannel),
       },
     };
-    await this.auditService.record(auditsWithoutContent(input.executionMode)
+    const failureAuditEvent = auditsWithoutContent(input.executionMode)
       ? reviewTurnFailureAuditEvent(failureEvent, error)
-      : failureEvent);
+      : failureEvent;
+    const failedConversationId = session?.conversation.id ?? input.conversationId;
+    if (failedConversationId) {
+      // Keyed to the conversation so a turn failing while its conversation is mid-erasure
+      // never leaves a row the erasure's own audit cleanup already ran past.
+      await this.auditService.recordForLiveConversation(failureAuditEvent, {
+        workspaceId: input.workspaceId,
+        conversationId: failedConversationId,
+      });
+    } else {
+      // No conversation to key the liveness check on (the turn failed before one existed), so
+      // there is nothing an erasure could have raced.
+      await this.auditService.record(failureAuditEvent);
+    }
     if (turnExecutionCapabilities(input.executionMode).turnBookkeeping === "skip") {
       return;
     }
@@ -1107,6 +1186,9 @@ export class ChatTurnLifecycle {
    *
    * Kept deliberately lean next to `recordFailure`: a superseded turn never finished
    * enough of the pipeline to have a meaningful retrieval/activity trace to attach.
+   *
+   * A turn a newer input replaced before it emitted (both `latest_input_wins`) has its
+   * user message deleted; this event still names it and adds `userMessageDiscarded`.
    */
   async recordSupersession(
     input: {
@@ -1124,8 +1206,7 @@ export class ChatTurnLifecycle {
     if (session && existingAssistantMessageId) {
       await this.conversationRepository.touch(session.conversation.id, input.workspaceId);
     }
-
-    await this.auditService.record({
+    const cancelledEvent = (userMessageDiscarded: boolean): AuditEventInput => ({
       accountId: input.accountId,
       workspaceId: input.workspaceId,
       eventType: "chat.answer",
@@ -1136,12 +1217,57 @@ export class ChatTurnLifecycle {
         executionClass: workflowPolicy.executionClass,
         conversationId: session?.conversation.id ?? input.conversationId,
         userMessageId: session?.userMessage.id,
+        ...(userMessageDiscarded ? { userMessageDiscarded } : {}),
         assistantMessageId: existingAssistantMessageId,
         stream: input.stream,
         supersededStage: supersededBy.stage,
         ...executionModeAuditMetadata(input.executionMode, session?.conversation.sourceChannel),
       },
     });
+    const replaced = supersededBy.replacedByNewerInput && !supersededBy.afterEmission && !existingAssistantMessageId;
+    const discard = replaced && session
+      ? await this.discardReplacedUserMessage(input, session, cancelledEvent(true))
+      : { userMessageDiscarded: false, recorded: false };
+    if (!discard.recorded) {
+      await this.auditService.record(cancelledEvent(discard.userMessageDiscarded));
+    }
+  }
+
+  /**
+   * Deletes the user message of a turn a newer input replaced before it emitted anything; a
+   * turn any other newer turn cancelled keeps it. Usage events the turn recorded keep its spend
+   * with the message link cleared. Through the transactional persistence port the deletion and
+   * `auditEvent` commit together, so the message never goes without the record that says so; the
+   * fallback path (tests, non-DB hosts) deletes first and leaves the event to the caller. A failed
+   * discard keeps the message.
+   */
+  private async discardReplacedUserMessage(
+    input: { workspaceId: string },
+    session: PreparedSession,
+    auditEvent: AuditEventInput,
+  ): Promise<{ userMessageDiscarded: boolean; recorded: boolean }> {
+    const target = {
+      workspaceId: input.workspaceId,
+      conversationId: session.conversation.id,
+      messageId: session.userMessage.id,
+    };
+    try {
+      if (this.assistantTurnPersistence?.discardReplacedUserMessage) {
+        const discarded = await this.assistantTurnPersistence.discardReplacedUserMessage({ ...target, auditEvent });
+        if (discarded) {
+          this.auditService.logRecorded?.(auditEvent);
+        }
+        return { userMessageDiscarded: discarded, recorded: discarded };
+      }
+      return { userMessageDiscarded: await this.messageRepository.deleteUserMessage(target), recorded: false };
+    } catch (error) {
+      this.logger?.warn({
+        workspaceId: input.workspaceId,
+        conversationId: session.conversation.id,
+        errorType: error instanceof Error ? error.name : typeof error,
+      }, "Superseded user message could not be discarded");
+      return { userMessageDiscarded: false, recorded: false };
+    }
   }
 
   private buildAssistantTurnSuccessAuditEvent(input: AssistantTurnSuccessInput): AuditEventInput {

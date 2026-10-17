@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-10-13
+last_updated: 2026-10-17
 ---
 
 # Code Map
@@ -240,7 +240,7 @@ Public surfaces and key files:
 - `backend/src/app/http/openapi/paths/slackPaths.ts`
 - `backend/src/modules/slack/public.ts`
 - `backend/src/modules/slack/manifest/slackManifest.ts`
-- `backend/src/modules/connectors/plugins/slack/` (`slackChannelMessageDisposition.ts` is the pure speak/skip rule for un-mentioned channel messages)
+- `backend/src/modules/connectors/plugins/slack/` (`slackChannelMessageDisposition.ts` is the pure speak/skip rule for un-mentioned channel messages; `slackInboundEventJob.ts` defines the `slack.inbound_event` background job the worker dispatches through — the webhook only verifies, dedupes, and enqueues; `slackInboundJobComposition.ts` builds the worker-side `SlackMessageHandler`, re-exported through `plugins/index.ts` since composition outside `plugins/` may not import plugin internals directly)
 - `frontend/lib/api-slack.ts`
 - `frontend/components/dashboard/settings/slack-channel-card.tsx`
 
@@ -251,7 +251,7 @@ Useful searches:
 
 Focused checks:
 
-- `cd backend && pnpm exec vitest run tests/unit/slack tests/contract/slack-admin.contract.test.ts tests/contract/slack-webhook.contract.test.ts tests/integration/slack`
+- `cd backend && pnpm exec vitest run tests/unit/slack tests/unit/app-composition/slack-inbound-job-composition.test.ts tests/contract/slack-admin.contract.test.ts tests/contract/slack-webhook.contract.test.ts tests/integration/slack`
 - `cd frontend && pnpm exec vitest run tests/unit/api-slack.test.ts`
 - `cd frontend && pnpm exec playwright test tests/e2e/slack-channel.spec.ts`
 
@@ -377,6 +377,61 @@ Related docs:
 - [Human Takeover](../human-takeover.md#held-replies)
 - [Customer Email Connections](../customer-email-skills.md)
 - `specs/1403-email-channel/`
+
+## Voice Channel
+
+Owns voice sessions (a vendor's opaque session key mapped to one
+conversation), the vendor-neutral turn port that runs one caller utterance as
+a streaming chat turn and re-cuts the reply into sentence-sized speech, the
+turn policy that covers the wait with the agent's authored bridge and fallback
+lines read from the agent's `voice` settings block (which the agents module
+owns, stores and serves), the turn's outcome (`continue`, or
+`callback_requested` after a hand-off whose routine collected something),
+the session start that opens a vendor session for a page on the workspace's
+own vendor key and mints its session key, and the vendor adapters that bind
+those ports to a wire or a vendor API.
+Voice enters the chat path as `sourceChannel: "voice"` with a `voice` channel
+context and the `latest_input_wins` supersession mode, which the chat turn
+registry and lifecycle implement (`chat/contracts/interruption.ts`), and reads
+the `handoff` report (`ChatTurnHandoff`) chat puts on a hand-off turn's `done`
+event; the chat turn is otherwise unchanged.
+
+Should not own planning, retrieval, routines, or any vendor's field names
+outside `adapters/`. The domain names no vendor.
+
+Public surfaces and key files:
+
+- `backend/src/modules/voiceChannel/public.ts`
+- `backend/src/modules/voiceChannel/domain.ts` — `VoiceTurnPort`, `VoiceTurnInput`, `VoiceTurnEvent`, `VoiceTurnOutcome`; `VoiceSessionStartPort`, `VoiceSessionStarter`, `VoiceVendorCredentialReader`
+- `backend/src/modules/voiceChannel/services/voiceSessionStartService.ts` and `adapters/elevenlabs/sessionStarter.ts` — the session start and the ElevenLabs signed-URL client; `backend/src/app/http/routes/publicVoiceSessionRoute.ts` mounts it at `POST /api/v1/public/chat/:token/voice/sessions` behind `middleware/publicVoiceSessionRateLimiter.ts`, and `frontend/app/api/public/chat/[token]/voice/sessions/route.ts` relays it cross-origin; started sessions wait for their first turn in `voice_sessions` (migration `227_voice_session_starts.sql`)
+- `backend/src/shared/domain/voiceVendor.ts` — `VOICE_VENDORS`, shared by the `voice.runtime` binding, the workspace credential store (`settingsCredentialsRoutes.ts`, migration `226_workspace_provider_credentials_voice_vendors.sql`) and the starters
+- `backend/src/modules/voiceChannel/services/voiceTurnService.ts` and the pure `speechSegmenter.ts`, `speechText.ts`, `voiceTurnPolicy.ts` (bridge and turn limit, `VOICE_BEHAVIOR`), `voiceTurnOutcome.ts` (outcome from chat's `done` event) and `voiceLines.ts`; `voiceSessionMemory.ts` (in-process per-session memory: newest request, last bridge, replayable exchange)
+- `backend/src/modules/agents/voiceSettings.ts` — the agent's `voice` block on `GET`/`PUT /api/v1/agents/:agentId`, read by the voice services as types from `agents/public.ts`
+- `frontend/components/dashboard/settings/voice-channel-card.tsx` (with `locale-lines-editor.tsx` and `frontend/lib/voice-settings-form.ts`) — the Voice card on the agent's Channels → API page, which saves the `voice` and `mechanicsReplies` blocks together, `runtime` included; the ElevenLabs key is the **Voice runtime keys** card in `providers-panel.tsx`
+- `frontend/lib/use-voice-session.ts` with the pure `voice-session.ts` (call states, transcript lines), `voice-call.ts` (the vendor client, then the start, then the vendor's session and its microphone prompt, with `VOICE_CALL_BEHAVIOR.connectTimeoutMs`), `api-public-voice.ts` (the session start through the relay) and `voice-runtime.ts` (the vendor port; `voice-runtime-elevenlabs.ts` loads `@elevenlabs/client` when a call starts, or when Talk is offered on iOS) — the website embed's Talk button, shown when the embed config's `voice.available` (`VoiceSessionAvailabilityPort`) is true; `frontend/components/chat/voice-call-controls.tsx` draws it, and `frontend/app/voice-worklets/[name]/route.ts` serves the client's audio worklets from the app host. The operator's switch is `surfaceSettings.websiteEmbed.voiceCallsOffered`, edited by `frontend/components/dashboard/settings/website-voice-calls-setting.tsx` (readiness from `voiceCallReadiness` on `GET /api/v1/agents/:agentId`, hint text from `frontend/lib/voice-call-readiness.ts`)
+- `backend/src/modules/voiceChannel/persistence/voiceSessionRepository.ts` (`voice_sessions`, migration `214_voice_sessions.sql`; the recording's region and vendor conversation id, migration `230_voice_session_recordings.sql`)
+- `backend/src/modules/voiceChannel/services/voiceRecordingService.ts`, `voiceRecordingErasureService.ts` and `adapters/elevenlabs/recordingSource.ts` — a call's recording, kept by the vendor: the embed's report (`POST /api/v1/public/chat/:token/voice/sessions/:sessionKey/vendor-conversation`, relayed by `frontend/app/api/public/chat/[token]/voice/sessions/[sessionKey]/vendor-conversation/route.ts`), `recording.available` on the history detail (`historyRoutes.ts`), playback at `GET /api/v1/conversations/:conversationId/recording` (`conversationRecordingRoutes.ts`), and deletion with the conversation, visitor, workspace or organization through `VendorHeldConversationDataEraser` in `shared/domain/conversationDataErasure.ts` (`persistence/voiceSessionEraser.ts` is the `voice-channel` eraser); the Inbox's Listen is `frontend/components/dashboard/inbox/conversation-recording.tsx`
+- `backend/src/modules/voiceChannel/adapters/openaiCompletions/` — dialects as data, request schema, SSE presenter, route
+- `backend/src/app/composition/voiceChannel.ts` and `backend/src/app/http/routes/agentVoiceRoute.ts` (mounted beside the REST agent channel)
+- `backend/src/modules/voiceChannel/README.md`
+
+Useful searches:
+
+- `rg "voiceTurns|VoiceTurn|voice_sessions|VOICE_SOURCE_CHANNEL" backend/src backend/tests`
+- `rg "voiceSessionStarts|VoiceSessionStart|VOICE_VENDORS" backend/src backend/tests`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/voice-channel-*.test.ts`
+- `cd backend && pnpm exec vitest run tests/contract/agent-voice-settings.contract.test.ts tests/contract/public-voice-session.contract.test.ts tests/contract/voice-recording.contract.test.ts`
+- `cd frontend && pnpm exec playwright test tests/e2e/voice-settings.spec.ts tests/e2e/provider-settings.spec.ts tests/e2e/embed-voice-talk.spec.ts tests/e2e/inbox-call-recording.spec.ts`
+- `cd frontend && pnpm exec vitest run tests/unit/voice-session.test.ts tests/unit/voice-call.test.ts tests/unit/api-public-voice.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/voice-session-repository.integration.test.ts`
+
+Related docs:
+
+- [Voice Channel](../voice-channel.md)
+- `specs/voice-channel/`
 
 ## Agent Skill Definitions (shared spine)
 
@@ -748,6 +803,51 @@ Focused checks:
 Related specs:
 
 - `specs/1277-visitor-profile/`
+
+## Conversation Erasure
+
+Owns the permanent erasure of a conversation, or of a visitor with every
+conversation they had (#1540). `ConversationErasureService` resolves the
+subject, takes the conversation lock protocol's locks (the visitor's row first),
+runs every module's eraser, deletes the conversations (their foreign keys
+cascade the rest) and the visitor row, records one content-free
+`conversation.erased` / `visitor.erased` audit event, and publishes
+`conversation.deleted` after commit. It knows the erasure ports and nothing
+about which tables exist.
+
+Rows a foreign key cannot reach belong to the module that owns them, which
+implements `ConversationDataEraser` (and `VerifiedCustomerDataEraser` for
+customer-keyed rows) from `backend/src/shared/domain/conversationDataErasure.ts`:
+context-variable session and customer values (an eraser reads the session ids
+it keys by from the conversations before they go), `chat.answer` /
+`chat.suspended` audit events, inbound email deliveries and their events, email
+skill activity, eval cases and runs built on a conversation's snapshot, the
+WhatsApp message log of a number whose latest conversation goes, and an Audience
+Pulse report built on an erased question. Composition binds
+them to the erasure's transaction, and runs their workspace scope inside
+workspace and organization deletion. A new column that names a conversation,
+session, visitor or message needs a cascading key, an eraser, or a stated
+reason in the schema contract test.
+
+Public surfaces and key files:
+
+- `backend/src/modules/privacy/conversationErasure.ts` (use case and ports)
+- `backend/src/shared/domain/conversationDataErasure.ts` (eraser ports)
+- `backend/src/app/composition/conversationErasure.ts` (eraser list, unit of work, workspace-deletion hook)
+- `backend/src/db/repositories/conversationErasureRepository.ts` (subject locks and deletes)
+- `backend/src/app/http/routes/historyRoutes.ts` (`DELETE /api/v1/history/chat/{conversationId}`, `DELETE /api/v1/history/visitors/{visitorId}`; `workspace.history.delete`)
+- `frontend/components/dashboard/delete-conversation-action.tsx` (the drawer's **Delete conversation**)
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/conversation-erasure-service.test.ts tests/unit/conversation-data-erasers.test.ts tests/contract/history-erasure.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/conversation-erasure.integration.test.ts tests/integration/conversation-erasure-coverage.integration.test.ts --no-file-parallelism`
+- `cd backend && pnpm exec vitest run tests/unit/conversation-erasure-migrations.test.ts` (the `228_conversation_erasure_*` lock discipline; deploy runbook in `docs-portal/content/operators/deployment.mdx`)
+- `cd frontend && pnpm exec playwright test tests/e2e/conversation-erasure.spec.ts`
+
+Related docs:
+
+- [Deleting conversation data](../../docs-portal/content/operators/deleting-conversation-data.mdx)
 
 ## Agent Revisions
 
@@ -1136,6 +1236,9 @@ Primary internals:
 - `backend/src/modules/chat/services/clarification/` (host adapter for pending
   clarification resolution, deferred commit, and metrics)
 - `backend/src/modules/chat/services/directTurnSkill.ts`
+- `backend/src/modules/chat/services/turnPlanService.ts` and
+  `turnPlanCoordinator.ts` (fused turn planning), with `turnPlanQuickReply.ts`
+  (when the direct answer is the planner's own quick reply)
 - `backend/src/modules/chat/services/groundedAnswerPromptComposer.ts`
 - `backend/src/modules/answerCoverage/` (validated assessment producer,
   immutable assessment/reaction storage, and history/Pulse read ports)
@@ -1152,7 +1255,9 @@ Primary internals:
   `llmAnswerCoverageProducer.ts` concurrently with compose for a measurement
   window and records head/shadow agreement; never on the turn's critical path)
 - `backend/src/modules/chat/services/summary/conversationSummaryService.ts` (rolling
-  per-conversation summary #866: regenerated post-turn, injected into interpretation
+  per-conversation summary #866: regenerated in the worker by the
+  `conversation.summary_refresh` background job each committed turn writes
+  (`conversationSummaryRefreshJob.ts`), injected into interpretation
   and answer prompts; state in `conversation_summaries`. The same regeneration call
   also produces a short conversation title #1114, written to `conversations.title`
   — a separate, non-expiring column — via `ConversationRepositoryPort.setTitle`)
@@ -1563,48 +1668,110 @@ Related specs:
 - `specs/939-continuous-content-planning/`
 - `specs/956-audience-topic-census/`
 
+## Background Jobs
+
+Owns durable work the worker runs after a request has answered: a job kind with
+a zod payload schema and a duplicate-key mode (`ignore` or `rerun`), a
+`background_jobs` row claimed under a renewed lease and a deadline shorter than
+it, retries with a doubling backoff, dead letters kept 14 days with their
+payload dropped and only the error's class, an optional per-kind dead-letter
+hook that runs in the parking transaction, and deletion on completion.
+Conversation summary refresh is the first kind; a module adds one by defining
+it, enqueueing through the `BackgroundJobQueue` port, and registering a handler
+in composition. The substrate knows nothing about the work its handlers do.
+
+The local worker runtime polls for due jobs every two seconds. Cloud Run serves
+`POST /internal/tasks/background-jobs/drain`, called by a Cloud Task on the
+background job queue when a job is written (or scheduled for a retry's due time)
+and by a Cloud Scheduler recovery sweep every five minutes, which also picks up
+jobs whose lease expired. `POST /internal/tasks/background-job-retention/sweep`
+removes old dead letters daily.
+
+Public surfaces and contracts:
+
+- `backend/src/shared/background-jobs/README.md` (how to add a job kind)
+- `backend/src/shared/background-jobs/index.ts` (`defineBackgroundJob`,
+  `backgroundJobRequest`, `backgroundJobHandler`, `BackgroundJobQueue`,
+  `BackgroundJobStore`, `BackgroundJobRuntime`)
+- `backend/src/app/composition/backgroundJobs.ts` (queue, runtime, retention
+  sweep) and `createDefaultBackgroundJobWake` in `defaultComposition.ts`
+
+Primary internals:
+
+- `backend/src/shared/background-jobs/backgroundJobRuntime.ts`
+- `backend/src/db/repositories/backgroundJobRepository.ts` (`background_jobs`,
+  migration `225_background_jobs.sql`)
+- `backend/src/shared/infra/cloudTasksBackgroundJobWake.ts`
+- `backend/src/app/worker/backgroundJobWorkerTaskRoutes.ts`
+- `backend/src/runtime/startWorkerRuntime.ts` (poll loop and retention start/stop)
+- `backend/src/modules/facets/infra/facetExtractionBackgroundJobStore.ts`: a
+  second `BackgroundJobStore` implementation, over a module-owned table
+  (`facet_extraction_jobs`) instead of `background_jobs` — see "Facet
+  Extraction Jobs" below for why and what it could not express.
+- `infra/terraform/queue.tf` (`background_jobs`), `infra/terraform/scheduler.tf`
+  (`background_job_recovery`, `background_job_retention`)
+
+Operator configuration:
+
+- `BACKGROUND_JOB_TASK_QUEUE_NAME` (with `WORKER_DISPATCH_DRIVER=cloud-tasks`)
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/background-jobs tests/unit/conversation-summary-lifecycle.test.ts`
+- `tests/integration/background-job-repository.integration.test.ts`
+
 ## Facet Extraction Jobs
 
 Owns the async job spine that turns individual messages into stored facets for
-the topic census: one durable job per message, a polling claim loop in the
-worker process, the retry policy around it, and the `message_facets` store the
-census reads from.
+the topic census: one durable job per message, the retry policy around it, and
+the `message_facets` store the census reads from.
 
-Facet extraction is batch analytics — no chat turn waits on it. An Audience
-Pulse refresh asks the task worker to drain only its 30-day workspace window in bounded,
-automatically chained slices and the dashboard polls task status until it can
-generate the complete report. The spine knows nothing about what a facet is:
-extraction arrives as an injected port, registered through application
-composition. With no extractor registered the worker is not built, so queued
-jobs stay durable rather than being drained into a no-op. Eligibility for a
-job is decided once, at enqueue time, by `isEligibleForFacetExtraction` in the
-Chat module (`chatSessionPreparer.ts`) — the same predicate Audience Pulse
-reads history with, restated as a write-time check rather than duplicated.
+Facet extraction is batch analytics — no chat turn waits on it. The spine
+knows nothing about what a facet is: extraction arrives as an injected port,
+registered through application composition. With no extractor registered
+neither path below is built, so queued jobs stay durable rather than being
+drained into a no-op. Eligibility for a job is decided once, at enqueue time,
+by `isEligibleForFacetExtraction` in the Chat module (`chatSessionPreparer.ts`)
+— the same predicate Audience Pulse reads history with, restated as a
+write-time check rather than duplicated.
 
-The local document-worker runtime starts that poll loop. Cloud Run instead
-serves authenticated task requests: `POST /internal/tasks/facet-extraction/drain`
-drains a bounded workspace slice and schedules the next one while work remains.
-The scheduled `/internal/tasks/document-processing/recover` invocation retains
-its ten-job cap as recovery only. Both paths use the job repository's claim and
-lease rules, so task retries and recovery can race safely without claiming the
-same row.
+Per-message claiming runs on the shared generic background-job runtime
+(`backend/src/shared/background-jobs/`, see that section) instead of a
+bespoke poll loop: `FacetExtractionBackgroundJobStore` implements the
+runtime's `BackgroundJobStore` port over the existing `facet_extraction_jobs`
+table (no schema change, no row migration), and a handler registered for the
+`facets.extraction` kind runs the extractor and records the outcome. Locally
+the runtime's own poll loop drains it; on Cloud Run the scheduled
+`POST /internal/tasks/document-processing/recover` call also drains a bounded
+claim of this kind, since the queue has no push transport of its own.
+
+Audience Pulse's workspace-scoped refresh is a different, bespoke path over
+the same table, kept outside the generic runtime: the generic claim filters
+by kind only, not by workspace or message window, and Audience Pulse needs a
+30-day window drained in bounded, automatically chained, concurrent slices.
+`FacetExtractionWorkspaceDrainWorker` runs that path; `POST
+/internal/tasks/facet-extraction/drain` drains a bounded workspace slice and
+schedules the next one while work remains, through
+`CloudTasksFacetExtractionDrainDispatcher`. Both paths claim from the same
+table with the same fencing, so they never claim the same row.
 
 Public surfaces and contracts:
 
 - `backend/src/modules/facets/contracts.ts` (`FacetExtractionPort`, `FacetExtractionJobStore`, `MessageFacetRepositoryPort`)
-- `backend/src/modules/facets/composition.ts` (`createFacetExtractionWorker`)
+- `backend/src/modules/facets/composition.ts` (`createFacetExtractionBackgroundJobRuntime`, `createFacetExtractionWorkspaceDrainWorker`)
 - `registerFacetExtraction` on the application module registration context
 
 Primary internals:
 
-- `backend/src/modules/facets/services/facetExtractionWorker.ts`
+- `backend/src/modules/facets/infra/facetExtractionBackgroundJobStore.ts` (the `facets.extraction` kind and its `BackgroundJobStore` adapter)
+- `backend/src/modules/facets/services/facetExtractionWorkspaceDrainWorker.ts`
 - `backend/src/modules/facets/services/facetExtractionWorkspaceDrainService.ts`
 - `backend/src/modules/facets/infra/cloudTasksFacetExtractionDrainDispatcher.ts`
 - `backend/src/modules/facets/services/facetExtractionService.ts` (extraction on the `"rewrite"` model tier plus embedding through `ClusteringEmbeddingPort`)
 - `backend/src/db/repositories/facetExtractionJobRepository.ts` (`facet_extraction_jobs`)
 - `backend/src/db/repositories/messageFacetRepository.ts` (`message_facets`)
 - `backend/src/db/migrations/137_topic_census.sql` (`facet_extraction_jobs`, `message_facets`)
-- `backend/src/runtime/startWorkerRuntime.ts` (start/stop registration)
+- `backend/src/runtime/startWorkerRuntime.ts` (`facetExtractionBackgroundJobRuntime` start/stop registration)
 - `backend/scripts/dev/backfillFacetExtractionJobs.ts` (dev tool: enqueue jobs for eligible messages that predate this feature)
 
 Operator configuration:

@@ -5,6 +5,8 @@ export {
   ModelConversationSummaryGenerator,
   ModelConversationEarlyTitleGenerator,
 } from "./services/summary/conversationSummaryService.js";
+// The worker runs the refresh as a background job; composition registers its handler.
+export { conversationSummaryRefreshHandler } from "./services/summary/conversationSummaryRefreshJob.js";
 // App-wiring entrypoints for the MCP converse surface (composed in app/composition).
 export { AgentConverseAudit } from "./services/agentConverseAudit.js";
 export { AgentConverseService } from "./services/agentConverseService.js";
@@ -110,15 +112,16 @@ export {
 export { AnswerPresentationService } from "./services/answerPresentationService.js";
 export { createSkillOutcomeCapabilityProvider } from "./services/chatAnswerPresenter.js";
 export {
-  ActionDispatcher,
   ActionHandlerRegistry,
   type ActionHandler,
 } from "./services/actions/actionDispatcher.js";
-export { ActionDispatchWorker } from "./services/actions/actionDispatchWorker.js";
+export { createActionDispatchJobHandler } from "./services/actions/actionDispatchJob.js";
+// The action outbox's drain push rides the generic job substrate's wake port (#1509) rather than
+// a bespoke lookalike — see `backend/src/shared/background-jobs/types.ts`.
 export {
-  NoopActionDrainDispatcher,
-  type ActionDrainDispatcherPort,
-} from "./services/actions/actionDrainDispatcher.js";
+  NoopBackgroundJobWake as NoopActionDrainDispatcher,
+  type BackgroundJobWakePort as ActionDrainDispatcherPort,
+} from "../../shared/background-jobs/index.js";
 export { DrainTriggeringActionOutbox } from "./services/actions/drainTriggeringActionOutbox.js";
 export { ChatHistoryService } from "./services/chatHistoryService.js";
 export { ProbeConversationReader } from "./services/probeConversationReader.js";

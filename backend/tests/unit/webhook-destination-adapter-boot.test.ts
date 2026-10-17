@@ -10,6 +10,7 @@ const workspaceId = "11111111-1111-4111-8111-111111111111";
 
 const auditService = (): AuditPort => ({
   async record() {},
+  async recordForLiveConversation() {},
   async getLatestSuccessfulChatAnswerMetadata() {
     return null;
   },

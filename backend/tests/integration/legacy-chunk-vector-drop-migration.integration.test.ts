@@ -9,7 +9,7 @@ import { createLogger } from "../../src/shared/observability/logger.js";
 import { runTestMigrationsBefore, testMigrationsPath } from "../support/databaseMigrations.js";
 
 const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
-const migrationFile = "216_drop_legacy_chunk_vectors.sql";
+const migrationFile = "234_drop_legacy_chunk_vectors.sql";
 
 const canReach = async (url?: string): Promise<boolean> => {
   if (!url) return false;
@@ -32,7 +32,7 @@ const isolatedUrl = (base: string, databaseName: string): string => {
 
 const silentLogger = createLogger("silent");
 
-const recordMigrationsBefore216 = async (database: Database): Promise<void> => {
+const recordMigrationsBefore234 = async (database: Database): Promise<void> => {
   const migrationFiles = (await readdir(testMigrationsPath))
     .filter((file) => file.endsWith(".sql") && file < migrationFile)
     .sort();
@@ -51,7 +51,7 @@ const recordMigrationsBefore216 = async (database: Database): Promise<void> => {
 const describeIfDatabase = await canReach(integrationDatabaseUrl) ? describe : describe.skip;
 
 describeIfDatabase("legacy chunk vector column drop migration", () => {
-  const databaseName = `mig216_${randomUUID().replaceAll("-", "")}`;
+  const databaseName = `mig234_${randomUUID().replaceAll("-", "")}`;
   const accountId = randomUUID();
   const workspaceId = randomUUID();
   const documentId = randomUUID();
@@ -64,11 +64,11 @@ describeIfDatabase("legacy chunk vector column drop migration", () => {
     await admin.execute(`CREATE DATABASE "${databaseName}"`);
     database = new Database(isolatedUrl(integrationDatabaseUrl!, databaseName));
     await runTestMigrationsBefore(database, migrationFile);
-    await recordMigrationsBefore216(database);
+    await recordMigrationsBefore234(database);
 
     await database.execute(
       "INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, 'Acct', $2, 'hash')",
-      [accountId, `mig216-${accountId}@example.com`],
+      [accountId, `mig234-${accountId}@example.com`],
     );
     await database.execute(
       "INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, 'WS', $3)",

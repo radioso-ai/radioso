@@ -299,11 +299,13 @@ export const createRadiosoClient = (options: RadiosoClientOptions) => {
         conversationId: string,
         query?: Parameters<GeneratedRadiosoClient["getChatHistoryConversation"]>[1],
       ) => generated.getChatHistoryConversation(conversationId, query),
+      deleteChat: (conversationId: string) => generated.deleteHistoryConversation(conversationId),
       getSearch: (searchId: string) => generated.getHistorySearch(searchId),
       listVisitorConversations: (
         visitorId: string,
         query?: Parameters<GeneratedRadiosoClient["listVisitorConversations"]>[1],
       ) => generated.listVisitorConversations(visitorId, query),
+      deleteVisitor: (visitorId: string) => generated.deleteHistoryVisitor(visitorId),
     },
     chat: {
       create: (body: ChatCreateRequest) => {

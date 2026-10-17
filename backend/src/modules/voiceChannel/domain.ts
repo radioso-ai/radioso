@@ -1,6 +1,7 @@
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
 
 import type { VoiceVendor, VoiceVendorRegion } from "../../shared/domain/voiceVendor.js";
+import type { AgentVoiceSettings } from "../agents/public.js";
 
 export type VoiceTransport = "phone" | "web";
 
@@ -92,9 +93,17 @@ export type VoiceVendorCredentialReading =
   | { kind: "missing" }
   | { kind: "unreadable" };
 
+/**
+ * Whether the workspace stores a key for a vendor, without decrypting it: `unreadable` is a key
+ * stored while the backend has no master key to decrypt it with.
+ */
+export type VoiceVendorCredentialPresence = "stored" | "missing" | "unreadable";
+
 export interface VoiceVendorCredentialReader {
   /** Rejects only when the credential store cannot be read at all. */
   read(input: { workspaceId: string; vendor: VoiceVendor }): Promise<VoiceVendorCredentialReading>;
+  /** Presence only: it decrypts nothing. Rejects only when the credential store cannot be read. */
+  presence(input: { workspaceId: string; vendor: VoiceVendor }): Promise<VoiceVendorCredentialPresence>;
 }
 
 /** What a vendor hands back for a page to open a session on its agent. */
@@ -165,6 +174,33 @@ export type VoiceSessionStartResult =
   | { kind: "started"; vendor: VoiceVendor; signedUrl: string; sessionKey: string; locale: string; expiresAt?: Date }
   | { kind: "unavailable" }
   | { kind: "failed" };
+
+/**
+ * What can keep an agent's voice from being ready, in the order an operator sets them up: the voice
+ * channel, the runtime binding, the vendor key, then the backend's master key to read it. The API
+ * contract's `VoiceCallReadiness.missing` is this list.
+ */
+export const VOICE_CALL_READINESS_GAPS = ["voice_channel", "runtime", "vendor_key", "encryption"] as const;
+
+export type VoiceCallReadinessGap = (typeof VOICE_CALL_READINESS_GAPS)[number];
+
+/** Whether an agent's voice is ready for sessions, and when it is not, the first piece missing. */
+export type VoiceCallReadiness =
+  | { ready: true; missing: null }
+  | { ready: false; missing: VoiceCallReadinessGap };
+
+/**
+ * Whether an agent's voice is ready for sessions. It reads the agent's own `voice` block, which its
+ * caller already holds, and only the key's presence. `readiness` says what is missing, for the
+ * operator's dashboard; `isAvailable` is the yes or no a page may learn, and names nothing about
+ * the vendor or the key.
+ */
+export interface VoiceSessionAvailabilityPort {
+  /** Rejects when the credential store cannot be read. */
+  readiness(input: { workspaceId: string; voice: Pick<AgentVoiceSettings, "enabled" | "runtime"> }): Promise<VoiceCallReadiness>;
+  /** Never rejects: a store that cannot be read reads as not ready, and is logged. */
+  isAvailable(input: { workspaceId: string; voice: Pick<AgentVoiceSettings, "enabled" | "runtime"> }): Promise<boolean>;
+}
 
 export interface VoiceSessionStartPort {
   /** Starts a voice session for one agent and visitor. `locale` is the caller's language tag, when the page names one. */

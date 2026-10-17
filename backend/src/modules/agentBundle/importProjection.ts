@@ -181,6 +181,8 @@ const projectSurfaceSettings = (
       ...stripPlaceholders(surfaces.websiteEmbed),
       enabled: surfaces.websiteEmbed.enabled && !embedBlocked,
       allowedOrigins: [],
+      // An import never offers calls on the destination's website; its operator turns them on.
+      voiceCallsOffered: false,
     },
     extensions: stripPlaceholders(surfaces.extensions),
   } as AgentInput["surfaceSettings"];

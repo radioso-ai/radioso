@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { AgentService, defaultAgentVoiceSettings, unpublishedAgentPublicIdentity, type AgentRecord } from "../../src/modules/agents/public.js";
 import { reviewedConfirmationRequirement } from "../../src/modules/operatorCopilot/reviewedOperation.js";
+import { websiteEmbedFixture } from "../support/websiteEmbedFixture.js";
 
 const agent = (): AgentRecord => ({
   ...unpublishedAgentPublicIdentity(), voice: defaultAgentVoiceSettings(), mechanicsReplies: {}, id: "agent-1", workspaceId: "workspace-1", name: "Support", internalName: "support",
@@ -13,7 +14,7 @@ const agent = (): AgentRecord => ({
   theme: { brand: "#0f172a", brandText: "#f8fafc", surface: "#ffffff", text: "#0f172a" },
   branding: { hidePoweredBy: false, privacyPolicyUrl: null }, publicDescription: "", agentCardEnabled: false,
   publicAgentAccessEnabled: false, walkInConversationsPerHour: null,
-  surfaceSettings: { authenticatedChat: { enabled: true }, anonymousChat: { enabled: false, token: null }, websiteEmbed: { enabled: false, token: null, allowedOrigins: [], launcherLabel: "Ask", launcherPosition: "bottom-right", theme: { brand: "#0f172a", brandText: "#f8fafc", surface: "#ffffff", text: "#0f172a" }, copy: {}, expertOverrides: {} }, extensions: {} },
+  surfaceSettings: { authenticatedChat: { enabled: true }, anonymousChat: { enabled: false, token: null }, websiteEmbed: websiteEmbedFixture({ enabled: false, token: null, allowedOrigins: [], launcherLabel: "Ask", launcherPosition: "bottom-right", theme: { brand: "#0f172a", brandText: "#f8fafc", surface: "#ffffff", text: "#0f172a" }, copy: {}, expertOverrides: {} }), extensions: {} },
   authoredDirectives: [], createdAt: new Date("2026-01-01T00:00:00.000Z"), updatedAt: new Date("2026-01-01T00:00:00.000Z"),
 });
 

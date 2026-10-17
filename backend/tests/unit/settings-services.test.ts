@@ -11,6 +11,7 @@ import type {
 import { IngestionSettingsService } from "../../src/modules/settings/services/ingestionSettingsService.js";
 import { PlatformSettingsService } from "../../src/modules/settings/services/platformSettingsService.js";
 import { defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { websiteEmbedFixture } from "../support/websiteEmbedFixture.js";
 
 const transitionState = (
   overrides: Partial<EmbeddingModelTransitionState> = {},
@@ -97,7 +98,7 @@ describe("settings services", () => {
         enabled: workspace.anonymousChatEnabled,
         token: workspace.anonymousChatToken,
       },
-      websiteEmbed: {
+      websiteEmbed: websiteEmbedFixture({
         enabled: workspace.websiteEmbedEnabled,
         token: workspace.websiteEmbedToken,
         allowedOrigins: workspace.websiteEmbedAllowedOrigins,
@@ -111,7 +112,7 @@ describe("settings services", () => {
         },
         copy: {},
         expertOverrides: {},
-      },
+      }),
       extensions: {},
     },
     createdAt: new Date("2026-01-01T00:00:00.000Z"),

@@ -195,7 +195,7 @@ Use `GET /api/v1/public/chat/{token}/events/{conversationId}` to open a server-s
 
 ## Endpoint reference
 
-Session, message, and embed-config payloads are typed in full in the [API Reference](/api-reference).
+Session and message payloads are typed in full in the [API Reference](/api-reference).
 
 ```text
 POST /api/v1/public/chat/{token}/sessions
@@ -209,7 +209,7 @@ GET  /api/v1/public/chat/{token}/assistant-logo
 POST /api/v1/public/chat/{token}/voice/sessions
 ```
 
-`POST /api/v1/public/chat/{token}/voice/sessions` starts a voice call for a website embed public session: it opens a session on the agent's voice runtime with the workspace's vendor key and returns the vendor's signed URL and a session key for the page to hand the vendor's client. A browser on another origin calls it on the Radioso app host as `POST /api/public/chat/{token}/voice/sessions`, which answers the CORS preflight. Starts have their own small budgets, and every failure to start reads as `503 voice_unavailable`.
+`POST /api/v1/public/chat/{token}/voice/sessions` starts a voice call for a website embed public session: it opens a session on the agent's voice runtime with the workspace's vendor key and returns the vendor's signed URL and a session key for the page to hand the vendor's client. A browser on another origin calls it on the Radioso app host as `POST /api/public/chat/{token}/voice/sessions`, which answers the CORS preflight. Starts have their own small budgets, and every failure to start reads as `503 voice_unavailable`. The website widget calls it for you when a visitor presses **Talk**; `embed-config` tells the widget whether to show that button with `voice: { "available": true }`, which is true only when the operator turned on calls for the website (`surfaceSettings.websiteEmbed.voiceCallsOffered`, `false` by default) and the agent's voice is ready: the voice channel on, a voice runtime bound, and the workspace holding that vendor's key. The session start itself needs only the voice to be ready, so a page of your own can start calls with the switch off.
 
 ## Common failure modes
 

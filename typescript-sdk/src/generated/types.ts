@@ -5383,6 +5383,8 @@ export interface components {
                 expertOverrides: {
                     [key: string]: string;
                 };
+                /** @description The operator offers voice calls from the website embed: its composer shows Talk while the agent's voice is also on, bound to a runtime and the workspace holds the vendor key. Defaults to false. */
+                voiceCallsOffered: boolean;
             };
         };
         AgentSourceScope: {
@@ -5454,6 +5456,12 @@ export interface components {
                 acknowledgement: string[];
             };
         };
+        /** @description Whether the agent's voice is ready for calls, and when it is not, the first piece missing: the voice channel, the runtime binding, the workspace's vendor key, or the backend's master key to read it. */
+        VoiceCallReadiness: {
+            ready: boolean;
+            /** @enum {string|null} */
+            missing: "voice_channel" | "runtime" | "vendor_key" | "encryption" | null;
+        };
         ConversationAgent: components["schemas"]["Agent"] & {
             isDefault: boolean;
             customInstruction: string;
@@ -5508,6 +5516,9 @@ export interface components {
                 [key: string]: unknown;
             };
             surfaceSettings: components["schemas"]["ConversationAgentSurfaceSettings"];
+        };
+        AgentDetail: components["schemas"]["ConversationAgent"] & {
+            voiceCallReadiness?: components["schemas"]["VoiceCallReadiness"] & unknown;
         };
         AgentListResponse: {
             agents: components["schemas"]["ConversationAgent"][];
@@ -5586,6 +5597,7 @@ export interface components {
                     expertOverrides?: {
                         [key: string]: string;
                     };
+                    voiceCallsOffered?: boolean;
                 };
             };
         };
@@ -6685,6 +6697,7 @@ export interface components {
                     expertOverrides: {
                         [key: string]: string;
                     };
+                    voiceCallsOffered?: boolean;
                 };
                 /** @description Surface extensions keyed by extension id; shape is owned by the contributing extension. */
                 extensions: {
@@ -6951,6 +6964,7 @@ export interface components {
                     expertOverrides: {
                         [key: string]: string;
                     };
+                    voiceCallsOffered?: boolean;
                 };
                 /** @description Surface extensions keyed by extension id; shape is owned by the contributing extension. */
                 extensions: {
@@ -15897,7 +15911,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ConversationAgent"];
+                    "application/json": components["schemas"]["AgentDetail"];
                 };
             };
             /** @description Authentication required */

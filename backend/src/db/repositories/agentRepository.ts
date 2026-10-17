@@ -458,6 +458,7 @@ const toOutputModes = (agent: NormalizedAgentInput): Record<string, unknown> => 
     theme: agent.surfaceSettings.websiteEmbed.theme,
     copy: agent.surfaceSettings.websiteEmbed.copy,
     expertOverrides: agent.surfaceSettings.websiteEmbed.expertOverrides,
+    voiceCallsOffered: agent.surfaceSettings.websiteEmbed.voiceCallsOffered,
   },
   extensions: agent.surfaceSettings.extensions,
 });
@@ -576,6 +577,7 @@ const mapAgent = (
         theme: websiteEmbedSource.theme as AgentEmbedTheme | undefined,
         copy: websiteEmbedSource.copy as AgentEmbedCopyPacks | undefined,
         expertOverrides: websiteEmbedSource.expertOverrides as AgentEmbedExpertOverrides | undefined,
+        voiceCallsOffered: readBoolean(websiteEmbedSource, "voiceCallsOffered"),
       },
       extensions,
     },

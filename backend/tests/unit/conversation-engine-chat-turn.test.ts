@@ -62,6 +62,7 @@ import { buildTurnTraceEnvelope } from "../../src/modules/chat/services/turnTrac
 import { defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
 import { ChatTurnAssembly } from "../../src/modules/chat/services/chatTurnAssembly.js";
 import type { ChatGatewayInput } from "../../src/modules/chat/contracts/chatGateway.js";
+import { websiteEmbedFixture } from "../support/websiteEmbedFixture.js";
 
 const conversation = (): ConversationRecord => ({
   id: "conv_1",
@@ -127,7 +128,7 @@ const agent = (): AgentRecord => ({
   surfaceSettings: {
     authenticatedChat: { enabled: true },
     anonymousChat: { enabled: false, token: null },
-    websiteEmbed: {
+    websiteEmbed: websiteEmbedFixture({
       enabled: false,
       token: null,
       allowedOrigins: [],
@@ -141,7 +142,7 @@ const agent = (): AgentRecord => ({
       },
       copy: {},
       expertOverrides: {},
-    },
+    }),
     extensions: {},
   },
   createdAt: new Date("2026-01-01T00:00:00.000Z"),

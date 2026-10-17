@@ -15,6 +15,7 @@ import { agentsApi } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { providerDisplayName, voiceVendorNames } from '@/lib/api-llm-providers'
 import {
+  AGENT_VOICE_SAVED_EVENT,
   ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS,
   VOICE_MAX_LANGUAGES,
   VOICE_MAX_LINE_LENGTH,
@@ -207,6 +208,7 @@ export function VoiceChannelCard({ agentId }: { agentId: string }) {
       if (!isCurrentSave(saveId)) return
       setForm(voiceSettingsFormAfterSave(current, agent.voice, agent.mechanicsReplies))
       markSaved()
+      window.dispatchEvent(new CustomEvent(AGENT_VOICE_SAVED_EVENT, { detail: { agentId } }))
     } catch (error) {
       if (isCurrentSave(saveId)) markError(getApiErrorMessage(error, 'Failed to save voice settings.'))
     }

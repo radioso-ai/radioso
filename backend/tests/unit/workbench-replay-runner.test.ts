@@ -62,6 +62,7 @@ import {
   type SkillOutcome,
 } from "../../src/modules/skills/public.js";
 import { WEBHOOK_SKILLS_ADAPTER } from "../../src/modules/webhookSkills/public.js";
+import { websiteEmbedFixture } from "../support/websiteEmbedFixture.js";
 
 const emptyTrace = () => {
   const now = new Date().toISOString();
@@ -183,7 +184,7 @@ const agent = (): ConversationAgent => ({
   surfaceSettings: {
     authenticatedChat: { enabled: true },
     anonymousChat: { enabled: false, token: null },
-    websiteEmbed: {
+    websiteEmbed: websiteEmbedFixture({
       enabled: false,
       token: null,
       allowedOrigins: [],
@@ -197,7 +198,7 @@ const agent = (): ConversationAgent => ({
       },
       copy: {},
       expertOverrides: {},
-    },
+    }),
     extensions: {},
   },
   authoredDirectives: [],

@@ -11,6 +11,7 @@ import {
   type InternalAgentExternalSkillsConfig,
 } from "../../../src/modules/agents/externalSkillsConfig.js";
 import { defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../../src/modules/agents/public.js";
+import { websiteEmbedFixture } from "../../support/websiteEmbedFixture.js";
 
 const minimalAgent = (): ConversationAgent => ({
   ...unpublishedAgentPublicIdentity(),
@@ -39,7 +40,7 @@ const minimalAgent = (): ConversationAgent => ({
   surfaceSettings: {
     authenticatedChat: { enabled: true },
     anonymousChat: { enabled: false, token: null },
-    websiteEmbed: {
+    websiteEmbed: websiteEmbedFixture({
       enabled: false,
       token: null,
       allowedOrigins: [],
@@ -48,7 +49,7 @@ const minimalAgent = (): ConversationAgent => ({
       theme: { brand: "#000", brandText: "#fff", surface: "#fff", text: "#000" },
       copy: {},
       expertOverrides: {},
-    },
+    }),
     extensions: {},
   },
   skillSettings: {},

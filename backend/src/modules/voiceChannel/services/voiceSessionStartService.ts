@@ -5,6 +5,9 @@ import type { MetricsRegistry } from "../../../shared/observability/metrics/metr
 import type { AgentVoiceSettings } from "../../agents/public.js";
 import {
   VoiceVendorRequestError,
+  type VoiceCallReadiness,
+  type VoiceCallReadinessGap,
+  type VoiceSessionAvailabilityPort,
   type VoiceSessionStarter,
   type VoiceSessionStartPort,
   type VoiceSessionStartRegistry,
@@ -55,9 +58,20 @@ const vendorErrorFields = (error: unknown) => ({
   ...(error instanceof VoiceVendorRequestError && error.vendorStatus !== undefined ? { vendorStatus: error.vendorStatus } : {}),
 });
 
+const READINESS_GAP_OF_OUTCOME = { voice_off: "voice_channel", no_runtime: "runtime" } as const satisfies Record<string, VoiceCallReadinessGap>;
+const READINESS_GAP_OF_PRESENCE = { missing: "vendor_key", unreadable: "encryption" } as const satisfies Record<string, VoiceCallReadinessGap>;
+
 const FAILED_OUTCOME_OF_READING: Record<Exclude<VoiceVendorCredentialReading["kind"], "present">, VoiceSessionFailedOutcome> = {
   missing: "credential_missing",
   unreadable: "credential_unreadable",
+};
+
+/** The runtime an agent takes sessions on, or why it takes none. Start and availability share it. */
+const sessionRuntimeOf = <Runtime>(voice: { enabled: boolean; runtime: Runtime | null }):
+  | { kind: "bound"; runtime: Runtime }
+  | { kind: "unavailable"; outcome: "voice_off" | "no_runtime" } => {
+  if (!voice.enabled) return { kind: "unavailable", outcome: "voice_off" };
+  return voice.runtime ? { kind: "bound", runtime: voice.runtime } : { kind: "unavailable", outcome: "no_runtime" };
 };
 
 /**
@@ -67,17 +81,39 @@ const FAILED_OUTCOME_OF_READING: Record<Exclude<VoiceVendorCredentialReading["ki
  * and a start that cannot be recorded spends nothing at the vendor. Every failure reads the same
  * to the caller; the outcome label and the warn log say which it was, with ids only: never the key
  * or the vendor's URL.
+ *
+ * It also says whether a page should offer sessions at all, by the same gate a start passes plus
+ * the key's presence. A stored key that cannot be decrypted still counts as present: the start
+ * then fails as `credential_unreadable`, which the operator can see and fix.
  */
-export class VoiceSessionStartService implements VoiceSessionStartPort {
+export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSessionAvailabilityPort {
   constructor(private readonly dependencies: VoiceSessionStartServiceDependencies) {}
+
+  async readiness(input: { workspaceId: string; voice: Pick<AgentVoiceSettings, "enabled" | "runtime"> }): Promise<VoiceCallReadiness> {
+    const binding = sessionRuntimeOf(input.voice);
+    if (binding.kind === "unavailable") return { ready: false, missing: READINESS_GAP_OF_OUTCOME[binding.outcome] };
+    const presence = await this.dependencies.credentials.presence({ workspaceId: input.workspaceId, vendor: binding.runtime.vendor });
+    return presence === "stored" ? { ready: true, missing: null } : { ready: false, missing: READINESS_GAP_OF_PRESENCE[presence] };
+  }
+
+  async isAvailable(input: { workspaceId: string; voice: Pick<AgentVoiceSettings, "enabled" | "runtime"> }): Promise<boolean> {
+    try {
+      return (await this.readiness(input)).ready;
+    } catch (error) {
+      // A page that cannot learn whether it may talk offers text alone; the start would fail the same way.
+      const vendor = input.voice.runtime?.vendor ?? "none";
+      this.dependencies.logger.warn({ workspaceId: input.workspaceId, vendor, errorClass: errorClassOf(error) }, "Voice availability check failed");
+      return false;
+    }
+  }
 
   async start(input: { workspaceId: string; agentId: string; visitor: VoiceSessionVisitor; locale?: string }): Promise<VoiceSessionStartResult> {
     const { workspaceId, agentId } = input;
     const profile = await this.dependencies.agents.findVoiceProfile({ workspaceId, agentId });
     if (!profile) return this.unavailable("agent_not_found");
-    if (!profile.voice.enabled) return this.unavailable("voice_off");
-    const runtime = profile.voice.runtime;
-    if (!runtime) return this.unavailable("no_runtime");
+    const binding = sessionRuntimeOf(profile.voice);
+    if (binding.kind === "unavailable") return this.unavailable(binding.outcome);
+    const { runtime } = binding;
     const { vendor } = runtime;
     const failed = (outcome: VoiceSessionFailedOutcome, fields: Record<string, unknown> = {}): VoiceSessionStartResult => {
       this.dependencies.logger.warn({ workspaceId, agentId, vendor, outcome, ...fields }, "Voice session start failed");

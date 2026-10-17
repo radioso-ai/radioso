@@ -113,7 +113,7 @@ export const agentBodySchema = z.object({
   surfaceSettings: agentInputFieldSchemas.surfaceSettings.omit({ extensions: true }).optional(),
 });
 
-type AgentRouteDependencies = AgentRevisionRouteDependencies & Pick<AppDependencies, "accountAccessService" | "accessGrantService" | "agentRepository" | "agentService" | "agentToolCatalog" | "assistantChatService" | "conversationRepository" | "authoredDirectiveService" | "directiveAuthorService" | "skillAuthoringCatalog" | "routineDefinitionService" | "routineDraftAssistService" | "agentSurfaceExtensions" | "documentStorage" | "logger" | "metricsRegistry" | "visitorGeoResolver" | "abuseControlService" | "auditService" | "voiceTurns">;
+type AgentRouteDependencies = AgentRevisionRouteDependencies & Pick<AppDependencies, "accountAccessService" | "accessGrantService" | "agentRepository" | "agentService" | "agentToolCatalog" | "assistantChatService" | "conversationRepository" | "authoredDirectiveService" | "directiveAuthorService" | "skillAuthoringCatalog" | "routineDefinitionService" | "routineDraftAssistService" | "agentSurfaceExtensions" | "documentStorage" | "logger" | "metricsRegistry" | "visitorGeoResolver" | "abuseControlService" | "auditService" | "voiceTurns" | "voiceSessionAvailability">;
 
 const proposedAgentRecipientEmails = (body: unknown): string[] | null => {
   if (!body || typeof body !== "object" || Array.isArray(body)
@@ -303,7 +303,22 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
       const { authPrincipal } = res.locals as { authPrincipal?: AgentRoutePrincipal };
       const parsed = agentParamsSchema.parse(req.params);
       const agent = await dependencies.agentService.get(workspaceId, parsed.agentId);
-      res.status(200).json(presentAgentForPrincipal(agent, authPrincipal));
+      // Dashboard sessions see whether the agent's voice is ready for calls and what is missing;
+      // machine credentials read the configuration alone. A credential store that cannot be read
+      // leaves readiness out rather than failing the agent's page.
+      const voiceCallReadiness = isMachinePrincipal(authPrincipal)
+        ? null
+        : await dependencies.voiceSessionAvailability.readiness({ workspaceId, voice: agent.voice }).catch((error: unknown) => {
+          dependencies.logger.warn(
+            { workspaceId, agentId: parsed.agentId, errorClass: error instanceof Error ? error.name : typeof error },
+            "Voice call readiness could not be read",
+          );
+          return null;
+        });
+      res.status(200).json({
+        ...presentAgentForPrincipal(agent, authPrincipal),
+        ...(voiceCallReadiness ? { voiceCallReadiness } : {}),
+      });
     } catch (error) {
       next(error);
     }
@@ -657,6 +672,16 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
             eventType: "agent.public_access.changed",
             eventStatus: "success",
             metadata: { agentId: parsed.agentId, ...publicAccessChange },
+          });
+        }
+        const voiceCallsOffered = { before: current.surfaceSettings.websiteEmbed.voiceCallsOffered, after: agent.surfaceSettings.websiteEmbed.voiceCallsOffered };
+        if (voiceCallsOffered.before !== voiceCallsOffered.after) {
+          await dependencies.auditService.record({
+            accountId: accountId ?? null,
+            workspaceId,
+            eventType: "website_embed.voice_calls_offered.changed",
+            eventStatus: "success",
+            metadata: { agentId: parsed.agentId, before: voiceCallsOffered.before, after: voiceCallsOffered.after },
           });
         }
       }

@@ -50,7 +50,7 @@ export class VoiceRecordingErasureService implements VoiceRecordingErasurePort {
   constructor(
     private readonly dependencies: VoiceRecordingDependencies,
     /** Tests only. */
-    private readonly limits: { deadlineMs?: number; concurrency?: number; now?: () => number } = {},
+    private readonly limits: { deadlineMs?: number; concurrency?: number } = {},
   ) {}
 
   async prepare(erasure: VendorHeldConversationDataErasure): Promise<{ erase(): Promise<void> }> {
@@ -91,22 +91,30 @@ export class VoiceRecordingErasureService implements VoiceRecordingErasurePort {
     }
   }
 
+  /**
+   * One deadline for the whole erasure: when it passes, the deletes still waiting on the vendor are
+   * let go of and nothing more is asked, and every recording not deleted is left with its ids.
+   */
   private async erase(erasure: VendorHeldConversationDataErasure, items: readonly ErasureItem[]): Promise<void> {
-    const now = this.limits.now ?? Date.now;
-    const deadline = now() + (this.limits.deadlineMs ?? ERASURE_DEADLINE_MS);
+    const deadline = new AbortController();
+    const timer = setTimeout(() => deadline.abort(), this.limits.deadlineMs ?? ERASURE_DEADLINE_MS);
     const queue = [...items];
     const worker = async (): Promise<void> => {
-      while (now() < deadline) {
+      while (!deadline.signal.aborted) {
         const item = queue.shift();
         if (!item) return;
-        await this.eraseOne(erasure, item);
+        await this.eraseOne(erasure, item, deadline.signal);
       }
     };
-    await Promise.all(Array.from({ length: Math.min(this.limits.concurrency ?? DELETE_CONCURRENCY, queue.length) }, worker));
+    try {
+      await Promise.all(Array.from({ length: Math.min(this.limits.concurrency ?? DELETE_CONCURRENCY, queue.length) }, worker));
+    } finally {
+      clearTimeout(timer);
+    }
     for (const item of queue) this.left(item, "deadline_passed");
   }
 
-  private async eraseOne(erasure: VendorHeldConversationDataErasure, item: ErasureItem): Promise<void> {
+  private async eraseOne(erasure: VendorHeldConversationDataErasure, item: ErasureItem, deadline: AbortSignal): Promise<void> {
     const { recording, credential } = item;
     if (credential.kind === "absent") {
       this.left(item, credential.outcome);
@@ -118,9 +126,11 @@ export class VoiceRecordingErasureService implements VoiceRecordingErasurePort {
         vendorConversationId: recording.vendorConversationId,
         region: recording.region,
         credential: credential.credential,
+        signal: deadline,
       });
     } catch (error) {
-      this.left(item, "vendor_failed", recordingErrorFields(error));
+      if (deadline.aborted) this.left(item, "deadline_passed");
+      else this.left(item, "vendor_failed", recordingErrorFields(error));
       return;
     }
     this.record(recording.vendor, outcome);

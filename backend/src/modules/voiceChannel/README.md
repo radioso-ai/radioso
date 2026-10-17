@@ -225,8 +225,9 @@ helpers and the shared chat message limit from `app/http`
   audited first; an audit that fails refuses the play, and `partial` follows
   the bytes sent. A workspace or organization deletion reads the recordings
   and the key before the cascade takes both, then asks the vendor to delete
-  each, four at a time for at most 20 s in all; what is left is logged with
-  its ids and never fails the deletion. Deleting an agent deletes no
+  each, four at a time for at most 20 s in all (deletes still in flight at
+  the deadline are aborted); what is left is logged with its ids and never
+  fails the deletion. Deleting an agent deletes no
   recording. The route is a permanent coverage exclusion
   (`getConversationRecording`: binary audio a teammate hears); Ray's
   `conversation_transcript` carries `recordingAvailable`. The agent's

@@ -900,8 +900,8 @@ When the organization itself is deleted, the event names it as
 The deletion never waits on ElevenLabs. An organization's workspaces are
 worked through in order, four calls at a time, for at most 20 seconds in
 all. A recording ElevenLabs refuses to delete or does not answer for, and
-every recording still queued when the time runs out, stays in your
-ElevenLabs account and is logged as `Voice recording was left at the vendor`
+every recording not yet deleted when the time runs out (a delete still
+waiting on ElevenLabs is let go of then), stays in your ElevenLabs account and is logged as `Voice recording was left at the vendor`
 with its `conversationId` and `vendorConversationId`. Radioso does not try
 again, so delete those from the ElevenLabs dashboard by that id.
 `voice_recording_delete_total` counts each outcome.

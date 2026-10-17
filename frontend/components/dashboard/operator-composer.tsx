@@ -183,6 +183,8 @@ interface OperatorComposerProps {
    * read again, a refusal is said and Send stays enabled.
    */
   sendReadiness?: ChannelSendReadiness
+  /** One line beside Send on what a sent reply does on this conversation's channel, such as a call's. */
+  replyNote?: string | null
 }
 
 /**
@@ -213,6 +215,7 @@ export function OperatorComposer({
   trailingActions,
   externalError,
   sendReadiness,
+  replyNote,
 }: OperatorComposerProps) {
   const [message, setMessage] = useState('')
   const [refusal, setRefusal] = useState<SendRefusal | null>(null)
@@ -393,6 +396,7 @@ export function OperatorComposer({
           <Send className="h-3.5 w-3.5" aria-hidden />
           Send
         </Button>
+        {replyNote ? <span className="text-xs text-muted-foreground">{replyNote}</span> : null}
         {ownershipControl}
         <span className="flex-1" />
         {trailingActions}

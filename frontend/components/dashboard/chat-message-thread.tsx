@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
-import { Check, CircleCheckBig, Copy, Mic, PauseCircle, ThumbsDown, ThumbsUp, VolumeX, Wrench, Workflow } from 'lucide-react'
+import { Check, CircleCheckBig, Clock, Copy, Mic, PauseCircle, ThumbsDown, ThumbsUp, Volume2, VolumeX, Wrench, Workflow } from 'lucide-react'
 import { DEFAULT_WEBSITE_EMBED_COPY, type WebsiteEmbedCopy, type WebsiteEmbedTheme } from '@/lib/embed-widget'
 import { computeSkillGroupInfo } from '@/lib/skill-thread-grouping'
 import type { RoutineThreadMarker } from '@/lib/routine-thread-grouping'
@@ -29,7 +29,7 @@ import type { WebsiteEmbedAnalyticsInput } from '@/lib/embed-analytics'
 import { humanReplyAuthor, type ReplyAttributionAudience } from '@/lib/reply-attribution'
 import { heardPercent } from '@/lib/reply-interruption'
 import { activityLine, placeActivity, threadDayBreaks } from '@/lib/conversation-activity'
-import type { ConversationActivityEntry, ReplyInterruption } from '@/lib/api-types'
+import type { ConversationActivityEntry, OperatorReplySpeech, ReplyInterruption } from '@/lib/api-types'
 import type {
   AnswerFeedbackEntry,
   AnswerFeedbackState,
@@ -178,6 +178,8 @@ export interface ChatThreadMessage {
   operatorLabel?: string
   /** A reply the caller spoke over: how much of it they heard, in spoken characters. */
   interruption?: ReplyInterruption
+  /** A teammate's reply on a call: pending until the caller's next turn speaks it, then spoken. */
+  speech?: OperatorReplySpeech
   /** A line said on a voice call rather than typed; the label marks it, in the visitor's language. */
   spokenLabel?: string
 }
@@ -206,6 +208,24 @@ function InterruptedReplyBadge({ interruption }: { interruption: ReplyInterrupti
       </TooltipTrigger>
       <TooltipContent side="bottom">
         The caller spoke over this reply.{percent === undefined ? '' : ` About ${percent}% was heard.`}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+function OperatorReplySpeechBadge({ speech }: { speech: OperatorReplySpeech }) {
+  const spoken = speech.state === 'spoken'
+  const Icon = spoken ? Volume2 : Clock
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge variant="outline" tabIndex={0} className="w-fit cursor-default gap-1 px-2 py-0 text-[11px] font-medium">
+          <Icon aria-hidden="true" className="size-3" />
+          {spoken ? 'Spoken' : 'Pending'}
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">
+        {spoken ? 'Spoken to the caller on the call.' : 'The caller hears this on their next turn.'}
       </TooltipContent>
     </Tooltip>
   )
@@ -844,6 +864,9 @@ export function ChatMessageThread({
                       ) : null}
                       {audience === 'operator' && message.interruption ? (
                         <InterruptedReplyBadge interruption={message.interruption} />
+                      ) : null}
+                      {audience === 'operator' && message.speech ? (
+                        <OperatorReplySpeechBadge speech={message.speech} />
                       ) : null}
                       {message.spokenLabel ? <SpokenMarker label={message.spokenLabel} theme={theme} /> : null}
                       <div

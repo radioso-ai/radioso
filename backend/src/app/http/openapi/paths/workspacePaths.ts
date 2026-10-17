@@ -36,6 +36,27 @@ export const registerWorkspacePaths = (
 
   registry.registerPath({
     method: "get",
+    path: "/api/v1/workspace/setup-state",
+    tags: ["Workspace"],
+    summary: "Get workspace setup state and outcome checklist",
+    operationId: "getWorkspaceSetupState",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    responses: { 200: { description: "Workspace setup state returned", content: { "application/json": { schema: schemas.WorkspaceSetupStateSchema } } } },
+  });
+
+  registry.registerPath({
+    method: "patch",
+    path: "/api/v1/workspace/setup-state",
+    tags: ["Workspace"],
+    summary: "Update persisted workspace setup state",
+    operationId: "updateWorkspaceSetupState",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { body: { required: true, content: { "application/json": { schema: schemas.UpdateWorkspaceSetupStateRequestSchema } } } },
+    responses: { 200: { description: "Workspace setup state updated", content: { "application/json": { schema: schemas.WorkspaceSetupStateSchema } } } },
+  });
+
+  registry.registerPath({
+    method: "get",
     path: "/api/v1/workspace/summary",
     tags: ["Workspace"],
     summary: "Get lightweight workspace dashboard summary",

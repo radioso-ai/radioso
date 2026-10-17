@@ -19,6 +19,7 @@ export const registerHeldReplySchemas = (registry: OpenAPIRegistry) => {
   const HeldReplySchema = registry.register("HeldReply", z.object({
     id: z.string().uuid(),
     conversationId: z.string().uuid(),
+    channel: z.string().nullable().openapi({ description: "The conversation's source channel; null when its conversation record is unavailable." }),
     agentId: z.string().uuid().nullable().openapi({ description: "The agent whose review wrote the draft." }),
     state: z.enum(HELD_REPLY_STATES).openapi({
       description: "`pending`: waiting for a teammate. `queued_auto`: queued to send automatically. `released`: sent as the agent wrote it. `edited`: sent as a teammate edited it. `discarded`: set aside by a teammate. `superseded`: replaced by a newer message, a takeover, an operator reply or a policy change.",

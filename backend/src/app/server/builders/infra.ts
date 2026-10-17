@@ -37,6 +37,7 @@ import { UserRepository } from "../../../db/repositories/userRepository.js";
 import { WebsiteCrawlJobRepository } from "../../../db/repositories/websiteCrawlJobRepository.js";
 import { WorkspaceGrantRepository } from "../../../db/repositories/workspaceGrantRepository.js";
 import { WorkspaceRepository } from "../../../db/repositories/workspaceRepository.js";
+import { WorkspaceSetupStateRepository } from "../../../db/repositories/workspaceSetupStateRepository.js";
 import { MachineAccessRepository } from "../../../db/repositories/machineAccessRepository.js";
 import { PersonalCredentialLifecycleRepository } from "../../../db/repositories/personalCredentialLifecycleRepository.js";
 import { AuditService } from "../../../modules/audit/composition.js";
@@ -216,6 +217,7 @@ export const buildRepositories = (
   websiteCrawlJobRepository: new WebsiteCrawlJobRepository(database.kysely),
   workspaceGrantRepository: new WorkspaceGrantRepository(database.kysely),
   workspaceRepository: new WorkspaceRepository(database.kysely),
+  workspaceSetupStateRepository: new WorkspaceSetupStateRepository(database.kysely),
   machineAccessRepository: new MachineAccessRepository(database.kysely),
   personalCredentialLifecycleRepository: new PersonalCredentialLifecycleRepository(
     database.kysely,

@@ -2064,6 +2064,15 @@ export interface WorkspaceServiceAccounts {
   workspace_id: string;
 }
 
+export interface WorkspaceSetupState {
+  created_at: Generated<Timestamp>;
+  dismissed_at: Timestamp | null;
+  purpose: string | null;
+  skipped_steps: Generated<string[]>;
+  updated_at: Generated<Timestamp>;
+  workspace_id: string;
+}
+
 export interface WorkspaceWebhookDestinations {
   created_at: Generated<Timestamp>;
   encryption_key_id: string;
@@ -2214,6 +2223,7 @@ export interface DB {
   workspace_grants: WorkspaceGrants;
   workspace_provider_credentials: WorkspaceProviderCredentials;
   workspace_service_accounts: WorkspaceServiceAccounts;
+  workspace_setup_state: WorkspaceSetupState;
   workspace_webhook_destinations: WorkspaceWebhookDestinations;
   workspaces: Workspaces;
 }

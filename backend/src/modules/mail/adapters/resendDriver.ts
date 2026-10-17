@@ -87,7 +87,7 @@ export class ResendEmailDriver implements EmailDriver {
       text: message.text,
       html: message.html,
       tags: message.kind ? [{ name: "kind", value: message.kind }] : undefined,
-      headers: message.threading ? threadingHeaders(message.threading) : undefined,
+      headers: messageHeaders(message),
     };
     let payload: unknown;
     try {
@@ -155,6 +155,27 @@ const threadingHeaders = (threading: OutboundThreadingHeaders): Record<string, s
   ...(threading.references.length > 0 ? { References: threading.references.join(" ") } : {}),
   ...(threading.autoSubmitted ? { "Auto-Submitted": threading.autoSubmitted } : {}),
 });
+
+const messageHeaders = (message: EmailMessage): Record<string, string> | undefined => {
+  const threading = message.threading ? threadingHeaders(message.threading) : {};
+  if (!message.listUnsubscribeUrl) {
+    return Object.keys(threading).length > 0 ? threading : undefined;
+  }
+  let url: URL;
+  try {
+    url = new URL(message.listUnsubscribeUrl);
+  } catch {
+    throw new EmailSendError("rejected", "invalid_header_value");
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    throw new EmailSendError("rejected", "invalid_header_value");
+  }
+  return {
+    ...threading,
+    "List-Unsubscribe": `<${url.toString()}>`,
+    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+  };
+};
 
 /** A 2xx is an acceptance even when its body cannot be read; only the provider id is then unknown. */
 const isUnreadableAcceptance = (error: unknown): boolean =>

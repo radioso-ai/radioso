@@ -6,8 +6,9 @@ import { AssistantIdentityLine, type AssistantIdentity } from '@/components/chat
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
-import { Check, CircleCheckBig, Copy, PauseCircle, ThumbsDown, ThumbsUp, Wrench, Workflow } from 'lucide-react'
+import { Check, CircleCheckBig, Copy, Mic, PauseCircle, ThumbsDown, ThumbsUp, VolumeX, Wrench, Workflow } from 'lucide-react'
 import { DEFAULT_WEBSITE_EMBED_COPY, type WebsiteEmbedCopy, type WebsiteEmbedTheme } from '@/lib/embed-widget'
 import { computeSkillGroupInfo } from '@/lib/skill-thread-grouping'
 import type { RoutineThreadMarker } from '@/lib/routine-thread-grouping'
@@ -26,8 +27,9 @@ import {
 } from '@/lib/product-analytics'
 import type { WebsiteEmbedAnalyticsInput } from '@/lib/embed-analytics'
 import { humanReplyAuthor, type ReplyAttributionAudience } from '@/lib/reply-attribution'
+import { heardPercent } from '@/lib/reply-interruption'
 import { activityLine, placeActivity, threadDayBreaks } from '@/lib/conversation-activity'
-import type { ConversationActivityEntry } from '@/lib/api-types'
+import type { ConversationActivityEntry, ReplyInterruption } from '@/lib/api-types'
 import type {
   AnswerFeedbackEntry,
   AnswerFeedbackState,
@@ -174,6 +176,39 @@ export interface ChatThreadMessage {
   operatorDisplayName?: string
   /** Operator reads only: the teammate who wrote a human reply (display name, else email). */
   operatorLabel?: string
+  /** A reply the caller spoke over: how much of it they heard, in spoken characters. */
+  interruption?: ReplyInterruption
+  /** A line said on a voice call rather than typed; the label marks it, in the visitor's language. */
+  spokenLabel?: string
+}
+
+function SpokenMarker({ label, theme }: { label: string; theme?: WebsiteEmbedTheme | null }) {
+  return (
+    <span
+      className="inline-flex w-fit items-center gap-1 px-1 text-xs text-muted-foreground"
+      style={theme ? { color: theme.mutedForeground } : undefined}
+    >
+      <Mic aria-hidden="true" className="size-3" />
+      {label}
+    </span>
+  )
+}
+
+function InterruptedReplyBadge({ interruption }: { interruption: ReplyInterruption }) {
+  const percent = heardPercent(interruption.heardCharacterCount, interruption.spokenCharacterCount)
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge variant="outline" tabIndex={0} className="w-fit cursor-default gap-1 px-2 py-0 text-[11px] font-medium">
+          <VolumeX aria-hidden="true" className="size-3" />
+          Interrupted
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">
+        The caller spoke over this reply.{percent === undefined ? '' : ` About ${percent}% was heard.`}
+      </TooltipContent>
+    </Tooltip>
+  )
 }
 
 /**
@@ -773,6 +808,7 @@ export function ChatMessageThread({
                         <p className="select-text whitespace-pre-wrap text-sm">{linkifyText(message.content)}</p>
                       )}
                     </div>
+                    {message.spokenLabel ? <SpokenMarker label={message.spokenLabel} theme={theme} /> : null}
                     {message.createdAt ? <p
                       className="px-1 text-xs text-muted-foreground"
                       style={theme ? { color: theme.mutedForeground } : undefined}
@@ -806,6 +842,10 @@ export function ChatMessageThread({
                           {sourceBadgeLabel}
                         </Badge>
                       ) : null}
+                      {audience === 'operator' && message.interruption ? (
+                        <InterruptedReplyBadge interruption={message.interruption} />
+                      ) : null}
+                      {message.spokenLabel ? <SpokenMarker label={message.spokenLabel} theme={theme} /> : null}
                       <div
                         {...getSelectableMessageProps(message.id)}
                         className={`self-start w-fit max-w-full rounded-2xl rounded-tl-md bg-muted/60 px-4 py-3 text-left text-foreground animate-in fade-in-50 slide-in-from-bottom-2 duration-300 ${

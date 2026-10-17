@@ -95,7 +95,8 @@ const makeHandler = (
     markInboundEventStatus: vi.fn(async (eventId, status) => {
       statuses.push({ eventId, status });
     }),
-    markStaleInboundEventsFailed: vi.fn(async () => 0),
+    getInboundEventStatus: vi.fn(async () => "received" as const),
+    enqueueInboundEvent: vi.fn(async () => "enqueued" as const),
     findConversationLink: vi.fn(async (input) => (ownedThreadKeys.has(input.slackKey) ? linkFor(input) : null)),
     findConversationLinkByConversationId: vi.fn(async () => null),
     getOrCreateConversationLink: vi.fn(async (input) => {

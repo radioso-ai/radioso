@@ -48,6 +48,17 @@ export interface WebsiteEmbedCopy {
   publicChatAgentUnavailableMessage: string
   skillReceiptSubmittedLabel: string
   skillReceiptFailedLabel: string
+  /** The voice controls: shown only when the agent takes voice sessions on the website embed. */
+  publicChatTalkLabel: string
+  publicChatEndCallLabel: string
+  publicChatVoiceConnectingStatus: string
+  publicChatVoiceListeningStatus: string
+  publicChatVoiceSpeakingStatus: string
+  publicChatVoiceEndedStatus: string
+  publicChatVoiceMicrophoneError: string
+  publicChatVoiceUnavailableError: string
+  /** Marks a transcript line the caller or the agent said on a voice session. */
+  publicChatSpokenLabel: string
 }
 
 export interface WebsiteEmbedTheme {
@@ -112,6 +123,15 @@ export const DEFAULT_WEBSITE_EMBED_COPY: WebsiteEmbedCopy = {
   publicChatAgentUnavailableMessage: "This assistant isn't available right now. Please try again later.",
   skillReceiptSubmittedLabel: 'Submitted',
   skillReceiptFailedLabel: "Couldn't submit",
+  publicChatTalkLabel: 'Talk',
+  publicChatEndCallLabel: 'End call',
+  publicChatVoiceConnectingStatus: 'Connecting…',
+  publicChatVoiceListeningStatus: 'Listening',
+  publicChatVoiceSpeakingStatus: 'Speaking',
+  publicChatVoiceEndedStatus: 'Call ended',
+  publicChatVoiceMicrophoneError: 'Talking needs your microphone.',
+  publicChatVoiceUnavailableError: "Talking isn't available right now. Try again later.",
+  publicChatSpokenLabel: 'Spoken',
 }
 const DEFAULT_WEBSITE_EMBED_THEME: WebsiteEmbedTheme = {
   launcherBackground: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
@@ -164,6 +184,15 @@ export const COPY_OVERRIDE_KEYS = [
   'publicChatAgentUnavailableMessage',
   'skillReceiptSubmittedLabel',
   'skillReceiptFailedLabel',
+  'publicChatTalkLabel',
+  'publicChatEndCallLabel',
+  'publicChatVoiceConnectingStatus',
+  'publicChatVoiceListeningStatus',
+  'publicChatVoiceSpeakingStatus',
+  'publicChatVoiceEndedStatus',
+  'publicChatVoiceMicrophoneError',
+  'publicChatVoiceUnavailableError',
+  'publicChatSpokenLabel',
 ] as const satisfies readonly (keyof WebsiteEmbedCopy)[]
 
 const THEME_OVERRIDE_KEYS = [

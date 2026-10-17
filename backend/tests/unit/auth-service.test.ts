@@ -1,4 +1,4 @@
-import { describe, expect, expectTypeOf, it } from "vitest";
+import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
 import { createTestEnv } from "../support/testApp.js";
 import {
@@ -941,6 +941,29 @@ describe("AuthService rollback", () => {
     await orgAuthService.deleteOrganization({ accountId, userId: "user-1" });
 
     expect(ended).toEqual([accountId]);
+  });
+
+  it("reads what vendors hold for the organization's conversations before deleting it, and erases it after", async () => {
+    const userRepository = new InMemoryUserRepository();
+    await userRepository.create({ id: "user-1", email: "vendor-held-delete-org@example.com", passwordHash: "hash" });
+    const steps: string[] = [];
+    const workspaceService = new WorkspaceService(new InMemoryWorkspaceRepository(), createAuditService());
+    vi.spyOn(workspaceService, "prepareAccountDeletion").mockImplementation(async () => {
+      steps.push("prepare");
+      return { afterDeletion: async () => { steps.push("erase"); } };
+    });
+    const { authService: orgAuthService } = createAuthService({
+      userRepository,
+      sessionRepository: new WorkingSessionRepository(),
+      workspaceService,
+      personalCredentialTermination: { endAccount: async () => { steps.push("delete"); } },
+    });
+    const { accountId } = await orgAuthService.createOrganization({ userId: "user-1", organizationName: "Deleted Org" });
+
+    await orgAuthService.deleteOrganization({ accountId, userId: "user-1" });
+
+    expect(steps).toEqual(["prepare", "delete", "erase"]);
+    expect(workspaceService.prepareAccountDeletion).toHaveBeenCalledWith(accountId);
   });
 
   it("delegates organization deletion to the transactional personal credential lifecycle", async () => {

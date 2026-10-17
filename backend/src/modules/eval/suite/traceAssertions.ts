@@ -9,7 +9,8 @@ import type { ConversationQualityObservedOutput } from "./observedOutput.js";
  * the deterministic, LLM-free half of the conversation-quality suite: which route was
  * classified, which skill produced the answer, whether a routine claimed the turn and
  * how far it advanced, whether the turn asked a clarifying question, and the grounding
- * verdict. A review turn carries no trace, so its coverage verdict and the replies it
+ * verdict, and whether the answer came from the composer or the turn planner's own
+ * reply. A review turn carries no trace, so its coverage verdict and the replies it
  * persisted are read from its review observation instead. Because they never call a model
  * they are cheap and stable enough to gate on every run.
  *
@@ -31,7 +32,13 @@ export type SuiteTraceAssertion =
   | { type: "turn_grounding_verdict"; verdict: "grounded" | "degraded" | "no_support" }
   | { type: "turn_answer_coverage"; coverage: "answered" | "partial" | "unanswered" | "unclear" }
   /** A review turn wrote no assistant message: its reply stayed a draft. */
-  | { type: "turn_persists_no_reply" };
+  | { type: "turn_persists_no_reply" }
+  /**
+   * Who wrote the turn's answer: `turn_planning` when the planner's quick reply was sent
+   * (the compose stage records that source and ran no model call), `composer` when an
+   * answer composer wrote it.
+   */
+  | { type: "turn_reply_source"; source: "turn_planning" | "composer" };
 
 const TRACE_ASSERTION_TYPES = new Set<string>([
   "turn_route",
@@ -45,6 +52,7 @@ const TRACE_ASSERTION_TYPES = new Set<string>([
   "turn_grounding_verdict",
   "turn_answer_coverage",
   "turn_persists_no_reply",
+  "turn_reply_source",
 ]);
 
 export const isTraceAssertion = (assertion: { type: string }): assertion is SuiteTraceAssertion =>
@@ -131,6 +139,15 @@ const observedCoverage = (
     availability: stage ? readString(stage.outputs, "availability") : undefined,
     coverage: stage ? readString(stage.outputs, "coverage") : undefined,
   };
+};
+
+/** Who wrote the answer, read from the compose stage; `undefined` when nothing was composed. */
+const observedReplySource = (output: EvalRunObservedOutput): "turn_planning" | "composer" | undefined => {
+  const compose = stages(output).find((stage) => stage.kind === "compose");
+  if (!compose) {
+    return undefined;
+  }
+  return readString(compose.outputs, "source") === "turn_planning" ? "turn_planning" : "composer";
 };
 
 const routineTrace = (stage: TraceStage): RoutineRunTrace | undefined => {
@@ -347,6 +364,19 @@ export const evaluateTraceAssertion = (
         return pass(assertion, "The turn persisted no assistant message.");
       }
       return fail(assertion, `The turn persisted ${persisted} assistant message(s); expected none.`);
+    }
+    case "turn_reply_source": {
+      if (!output.turnTrace) {
+        return missingTrace(assertion);
+      }
+      const source = observedReplySource(output);
+      if (!source) {
+        return fail(assertion, `The turn composed no answer (no compose stage); expected "${assertion.source}".`);
+      }
+      if (source === assertion.source) {
+        return pass(assertion, `The answer came from "${source}".`);
+      }
+      return fail(assertion, `The answer came from "${source}"; expected "${assertion.source}".`);
     }
   }
 };

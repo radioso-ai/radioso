@@ -26,6 +26,8 @@
     "test:e2e:dev": "pnpm run build:workspace-deps && echo 'Running end-to-end tests against a development Next.js server.' && PLAYWRIGHT_SERVER_MODE=development playwright test"
   },
   "dependencies": {
+    "@alexanderolsen/libsamplerate-js": "2.1.2",
+    "@elevenlabs/client": "1.28.0",
     "@lexical/react": "^0.45.0",
     "@lexical/rich-text": "^0.45.0",
     "@lexical/utils": "^0.45.0",

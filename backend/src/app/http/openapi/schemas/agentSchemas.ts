@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { publicChatSessionSchema } from "../../routes/publicChatRouteSchemas.js";
+import { publicChatSessionSchema, publicVoiceSessionStartSchema, publicVoiceVendorConversationSchema } from "../../routes/publicChatRouteSchemas.js";
 import { createRevisionCandidateBodySchema, publishRevisionBodySchema } from "../../routes/agentRevisionRequestSchemas.js";
 import {
   agentChannelChatSchema,
@@ -10,10 +10,15 @@ import {
 } from "../../schemas/agentChannelSchemas.js";
 import {
   AGENT_CONFIG_SCHEMA_VERSION,
+  AGENT_MECHANICS_REPLIES_MAX_LOCALES,
+  agentMechanicsRepliesSchema,
   agentSurfacePositions,
+  agentVoiceSettingsInputSchema,
+  agentVoiceSettingsSchema,
   authoredDirectiveRouteValues,
   authoredDirectiveSurfaceValues,
 } from "../../../../modules/agents/public.js";
+import { VOICE_CALL_READINESS_GAPS } from "../../../../modules/voiceChannel/public.js";
 import type { AgentConfig } from "../../../../modules/agents/public.js";
 import {
   routineDefinitionDraftInputSchema,
@@ -23,6 +28,8 @@ import {
 } from "../../../../modules/routines/public.js";
 import { skillDisplayMetadataSchema, skillOutcomeStatusSchema } from "../../../../modules/skills/public.js";
 import { exactContentItemSchema } from "../../../../shared/domain/exactContent.js";
+import { LOCALE_TAG_PATTERN } from "../../../../shared/domain/locale.js";
+import { VOICE_VENDORS } from "../../../../shared/domain/voiceVendor.js";
 import { AGENT_BUNDLE_SCHEMA_VERSION } from "../../../../modules/agentBundle/public.js";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
@@ -72,6 +79,9 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
         }),
         copy: z.record(z.record(z.string())),
         expertOverrides: z.record(z.string()),
+        voiceCallsOffered: z.boolean().openapi({
+          description: "The operator offers voice calls from the website embed: its composer shows Talk while the agent's voice is also on, bound to a runtime and the workspace holds the vendor key. Defaults to false.",
+        }),
       }),
     }),
   );
@@ -112,6 +122,60 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     }),
   );
 
+  const AgentVoiceSettingsSchema = registry.register(
+    "AgentVoiceSettings",
+    agentVoiceSettingsSchema.openapi({
+      description:
+        "How the agent sounds on the voice channel. `bridgeLines`, `fallbackLine` and the optional `recordingNotice` are keyed by language tag "
+        + "(at most 10 each); each style holds at most 5 lines of 1 to 200 characters, and each notice is one line of 1 to 200 characters. "
+        + "The website embed shows the `recordingNotice` for the session's language as a call starts. `runtime` binds the agent to one "
+
+        + "vendor agent (the vendor's own agent id, 1 to 128 letters, digits, underscores and hyphens), which a voice "
+        + "session start opens, in the data residency region of the vendor account (`region`, which picks the vendor host); "
+        + "null binds none. An update replaces the block whole.",
+    }),
+  );
+
+  const AgentVoiceSettingsUpdateSchema = registry.register(
+    "AgentVoiceSettingsUpdate",
+    agentVoiceSettingsInputSchema.openapi({
+      description:
+        "The `voice` block as an update sends it: `AgentVoiceSettings`, except that `runtime` may be left out, "
+        + "which binds the agent to no vendor agent, and `runtime.region` may be left out for the vendor's default region, `us`. "
+        + "A key either object does not name is refused. The update replaces the block whole.",
+    }),
+  );
+
+  // The record's key and locale-count refinements are runtime checks the generator cannot see, so
+  // both are stated for generated clients and MCP callers. OpenAPI 3.1 schemas are JSON Schema
+  // 2020-12, which has `propertyNames`; the generator's metadata type omits that keyword, so the
+  // bounds are spread in rather than written inline.
+  const mechanicsRepliesKeyBounds: { propertyNames: { type: "string"; pattern: string }; maxProperties: number } = {
+    propertyNames: { type: "string", pattern: LOCALE_TAG_PATTERN.source },
+    maxProperties: AGENT_MECHANICS_REPLIES_MAX_LOCALES,
+  };
+  const AgentMechanicsRepliesSchema = registry.register(
+    "AgentMechanicsReplies",
+    agentMechanicsRepliesSchema.openapi({
+      description:
+        "What the agent says, word for word, to a greeting, thanks, farewell, or acknowledgement, keyed by language tag "
+        + "(at most 10). Each locale entry holds every mechanic, each with at most 5 lines of 1 to 200 characters. "
+        + "When a turn is one of these mechanics and the agent has a line for it in the turn's language, the reply is an "
+        + "authored line, rotated per conversation. An update replaces the block whole.",
+      ...mechanicsRepliesKeyBounds,
+    }),
+  );
+
+  const VoiceCallReadinessSchema = registry.register(
+    "VoiceCallReadiness",
+    z.object({
+      ready: z.boolean(),
+      missing: z.enum(VOICE_CALL_READINESS_GAPS).nullable(),
+    }).openapi({
+      description: "Whether the agent's voice is ready for calls, and when it is not, the first piece missing: the voice channel, the runtime binding, the workspace's vendor key, or the backend's master key to read it.",
+    }),
+  );
+
   const ConversationAgentSchema = registry.register(
     "ConversationAgent",
     AgentSchema.extend({
@@ -140,6 +204,8 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       greetingInstruction: z.string(),
       assistantDefaultLocale: z.string().nullable(),
       proactiveGreetingEnabled: z.boolean(),
+      voice: AgentVoiceSettingsSchema,
+      mechanicsReplies: AgentMechanicsRepliesSchema,
       assistantBootstrapActive: z.boolean(),
       publicId: z.string().nullable().openapi({
         description: "Identifier other agents address this agent by. Null until the agent card is published; rotate it to drop every connected caller.",
@@ -160,6 +226,15 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       }).nullable(),
       skillSettings: z.record(z.unknown()),
       surfaceSettings: ConversationAgentSurfaceSettingsSchema,
+    }),
+  );
+
+  const AgentDetailSchema = registry.register(
+    "AgentDetail",
+    ConversationAgentSchema.extend({
+      voiceCallReadiness: VoiceCallReadinessSchema.optional().openapi({
+        description: "Present for dashboard sessions: whether the agent's voice is ready for the website embed's calls switch.",
+      }),
     }),
   );
 
@@ -206,6 +281,8 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       greetingInstruction: z.string().max(200).optional(),
       assistantDefaultLocale: z.string().max(35).nullable().optional(),
       proactiveGreetingEnabled: z.boolean().optional(),
+      voice: AgentVoiceSettingsUpdateSchema.optional(),
+      mechanicsReplies: AgentMechanicsRepliesSchema.optional(),
       publicDescription: z.string().max(500).optional(),
       agentCardEnabled: z.boolean().optional(),
       publicAgentAccessEnabled: z.boolean().optional(),
@@ -238,6 +315,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
           }).optional(),
           copy: z.record(z.record(z.string())).optional(),
           expertOverrides: z.record(z.string()).optional(),
+          voiceCallsOffered: z.boolean().optional(),
         }).optional(),
       }).optional(),
     }),
@@ -677,6 +755,43 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     publicChatSessionSchema,
   );
 
+  const PublicVoiceSessionRequestSchema = registry.register(
+    "PublicVoiceSessionRequest",
+    publicVoiceSessionStartSchema.openapi({
+      description: "`locale` is the caller's language tag; without it the agent's default language applies, then `en`.",
+    }),
+  );
+
+  const PublicVoiceSessionResponseSchema = registry.register(
+    "PublicVoiceSessionResponse",
+    z.object({
+      vendor: z.enum(VOICE_VENDORS).openapi({ description: "The voice runtime the session opens on: the agent's `voice.runtime.vendor`." }),
+      signedUrl: z.string().url().openapi({
+        description: "The vendor's URL for opening a session on the agent's vendor agent. On `elevenlabs` it is valid for 15 minutes and is not limited to one session: "
+          + "for that window anyone holding it can open sessions billed to the workspace's vendor account, so treat it as a bearer credential. "
+          + "Hand it to the vendor's client once and never store, log or share it.",
+      }),
+      sessionKey: z.string().uuid().openapi({
+        description: "Radioso's key for this session: a correlation handle, not a credential. The page hands it to the vendor, which sends it back on every turn "
+          + "so the whole call is one conversation that joins the website visitor who started it; on `elevenlabs` it travels as the custom LLM extra body's `session_key`.",
+      }),
+      locale: z.string().openapi({ description: "The caller's language tag: the request's, else the agent's default language, else `en`. The page hands it to the vendor beside `sessionKey`." }),
+      expiresAt: z.string().datetime().optional().openapi({
+        description: "When `signedUrl` stops opening sessions: Radioso computes it from the validity the vendor documents (15 minutes on `elevenlabs`) and the time it asked for the URL.",
+      }),
+      recordingNotice: z.string().optional().openapi({
+        description: "The agent's `voice.recordingNotice` in the session's language, when the agent wrote one for it: the page shows it to the caller as the call starts.",
+      }),
+    }),
+  );
+
+  const PublicVoiceVendorConversationRequestSchema = registry.register(
+    "PublicVoiceVendorConversationRequest",
+    publicVoiceVendorConversationSchema.openapi({
+      description: "The vendor's id for the call the page opened: on `elevenlabs`, what the client's `getId()` returns once the session is connected.",
+    }),
+  );
+
   const WorkspaceIngestionReprocessResponseSchema = registry.register(
     "WorkspaceIngestionReprocessResponse",
     z.object({
@@ -747,6 +862,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     theme: AgentBundleThemeSchema,
     copy: z.record(z.record(z.string())),
     expertOverrides: z.record(z.string()),
+    voiceCallsOffered: z.boolean().optional(),
   });
 
   const AgentBundleAuthoredDirectiveSchema = registry.register(
@@ -847,6 +963,9 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       greetingInstruction: z.string(),
       assistantDefaultLocale: z.string().nullable(),
       proactiveGreetingEnabled: z.boolean(),
+      mechanicsReplies: AgentMechanicsRepliesSchema.optional().openapi({
+        description: "Absent from bundles exported before the field existed; an import reads that as nothing authored.",
+      }),
       surfaceSettings: z.object({
         authenticatedChat: z.object({ enabled: z.boolean() }),
         anonymousChat: z.object({
@@ -1081,6 +1200,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     ConversationAgentSurfaceSettingsSchema,
     AgentSourceScopeSchema,
     ConversationAgentSchema,
+    AgentDetailSchema,
     AgentListResponseSchema,
     ConversationAgentRequestSchema,
     AgentChannelLifecycleSchema,
@@ -1132,6 +1252,9 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     RoutineValidationResultSchema,
     PublicChatSessionResponseSchema,
     PublicChatSessionRequestSchema,
+    PublicVoiceSessionRequestSchema,
+    PublicVoiceSessionResponseSchema,
+    PublicVoiceVendorConversationRequestSchema,
     WorkspaceIngestionReprocessResponseSchema,
     AgentConfigRefPlaceholderSchema,
     AgentBundleAgentConfigSchema,

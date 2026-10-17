@@ -23,7 +23,8 @@ import { deriveOperatorActions } from '@/lib/operator-actions'
  *
  * A session only means something on a channel that has one. An email sender has
  * no browser session, and the address they wrote from verifies nobody, so an
- * email conversation is never labeled verified (nor anonymous).
+ * email conversation is never labeled verified (nor anonymous). A voice caller has no browser
+ * session either.
  */
 export const visitorIdentityLabel = (conversation: {
   anonymousSessionId: string | null | undefined
@@ -31,6 +32,9 @@ export const visitorIdentityLabel = (conversation: {
 }): string => {
   if (conversation.channel === 'email') {
     return 'Email sender'
+  }
+  if (conversation.channel === 'voice') {
+    return 'Caller'
   }
   if (conversation.anonymousSessionId === undefined) {
     return 'Visitor'
@@ -142,6 +146,7 @@ export const freshestOwnership = (
 const CHANNEL_LABELS: Partial<Record<ConversationChannelContext['provider'], string>> = {
   slack: 'Slack',
   email: 'Email',
+  voice: 'Voice',
 }
 
 /**

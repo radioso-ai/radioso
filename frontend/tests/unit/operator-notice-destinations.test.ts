@@ -2,30 +2,49 @@ import { describe, expect, it } from 'vitest'
 
 import {
   defaultNoticeDestinationLabel,
+  describeDailyEmailAllowance,
   describeNoticeDestination,
+  parseNotificationRecipients,
   parseOperatorNoticeDestinations,
   type OperatorNoticeDestination,
   type OperatorNoticeDestinations,
 } from '@/lib/operator-notice-destinations'
 
-const destination = (overrides: Partial<OperatorNoticeDestination> = {}): OperatorNoticeDestination => ({
-  skillName: null,
-  via: 'workspace_owner',
-  recipientEmails: ['owner@ananda.it'],
-  recipientsFromWorkspaceOwner: true,
-  webhookConfigured: false,
-  ...overrides,
-})
+const destination = (overrides: Partial<OperatorNoticeDestination> = {}): OperatorNoticeDestination => {
+  const recipientEmails = overrides.recipientEmails ?? ['owner@ananda.it']
+  return {
+    skillName: null,
+    via: 'workspace_owner',
+    recipientEmails,
+    recipients: overrides.recipients ?? recipientEmails.map((email) => ({ email, state: 'confirmed' })),
+    recipientsFromWorkspaceOwner: true,
+    webhookConfigured: false,
+    ...overrides,
+  }
+}
 
 const destinations: OperatorNoticeDestinations = {
   default: destination(),
   skills: [destination({ skillName: 'notify_bookings', via: 'named_skill', recipientEmails: ['francesco@ananda.it', 'desk@ananda.it'], recipientsFromWorkspaceOwner: false })],
+  dailyEmailAllowance: { limit: 100, sentToday: 12, reachedToday: false },
 }
 
 describe('describeNoticeDestination', () => {
   it('names the recipients of the default destination and of a named skill', () => {
     expect(describeNoticeDestination(destinations, undefined)).toBe('Sends to owner@ananda.it (workspace owner)')
     expect(describeNoticeDestination(destinations, 'notify_bookings')).toBe('Sends to francesco@ananda.it, desk@ananda.it')
+  })
+
+  it('shows waiting and suppressed recipient states in the Sends to line', () => {
+    const stateful = destination({
+      recipientEmails: ['waiting@example.com', 'bounce@example.com'],
+      recipients: [
+        { email: 'waiting@example.com', state: 'waiting_for_confirmation' },
+        { email: 'bounce@example.com', state: 'suppressed' },
+      ],
+    })
+    expect(describeNoticeDestination({ default: stateful, skills: [], dailyEmailAllowance: null }, undefined))
+      .toBe('Sends to waiting@example.com (waiting for confirmation), bounce@example.com (suppressed) (workspace owner)')
   })
 
   it('mentions a webhook without naming it, and says when nothing is sent', () => {
@@ -61,7 +80,40 @@ describe('defaultNoticeDestinationLabel', () => {
 describe('parseOperatorNoticeDestinations', () => {
   it('reads the endpoint payload and rejects a malformed one', () => {
     expect(parseOperatorNoticeDestinations(destinations)).toEqual(destinations)
+    expect(parseOperatorNoticeDestinations({ ...destinations, dailyEmailAllowance: null }).dailyEmailAllowance).toBeNull()
+    expect(() => parseOperatorNoticeDestinations({ ...destinations, dailyEmailAllowance: { limit: '100' } })).toThrow()
     expect(() => parseOperatorNoticeDestinations({ default: { via: 'carrier_pigeon' }, skills: [] })).toThrow()
     expect(() => parseOperatorNoticeDestinations({ skills: [] })).toThrow()
+  })
+})
+
+describe('describeDailyEmailAllowance', () => {
+  it('says nothing while today\'s notice emails are within the limit', () => {
+    expect(describeDailyEmailAllowance(destinations)).toBeNull()
+    expect(describeDailyEmailAllowance(null)).toBeNull()
+  })
+
+  it('says when the daily limit has stopped notice emails', () => {
+    expect(describeDailyEmailAllowance({ ...destinations, dailyEmailAllowance: { limit: 100, sentToday: 100, reachedToday: true } }))
+      .toBe('The daily email limit stopped a notice email today (100 of 100 sent). It resets at midnight UTC.')
+  })
+})
+
+describe('recipient states in the Sends to line', () => {
+  it('adds nothing when the deployment does not ask recipients to confirm', () => {
+    const unconfirmedDeployment = {
+      ...destinations,
+      default: destination({ recipients: [{ email: 'owner@ananda.it', state: 'confirmation_not_required' }] }),
+    }
+    expect(describeNoticeDestination(unconfirmedDeployment, undefined)).toBe('Sends to owner@ananda.it (workspace owner)')
+  })
+})
+
+describe('parseNotificationRecipients', () => {
+  it('reads a notify skill\'s recipient states and rejects an unknown state', () => {
+    expect(parseNotificationRecipients({ recipients: [{ email: 'sales@example.com', state: 'revoked' }] }))
+      .toEqual([{ email: 'sales@example.com', state: 'revoked' }])
+    expect(() => parseNotificationRecipients({ recipients: [{ email: 'sales@example.com', state: 'snoozed' }] })).toThrow()
+    expect(() => parseNotificationRecipients({})).toThrow()
   })
 })

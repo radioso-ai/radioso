@@ -50,6 +50,11 @@ export interface CaseOutcome {
   /** Set by a sampled run: the fraction of samples that passed, and how many there were. */
   passRate?: number;
   samples?: number;
+  /**
+   * Set by a sampled run on a case tagged `ZERO_TOLERANCE_JUDGE_TAG`: the fraction of samples in
+   * which no `llm_judge` verdict failed. Compared to the recorded pass rate with no tolerance.
+   */
+  zeroToleranceJudgePassRate?: number;
 }
 
 export interface BaselineDiff {
@@ -69,6 +74,12 @@ export interface BaselineDiff {
    * noise, not a regression — reported, never gated.
    */
   withinTolerance: Array<{ caseId: string; name: string; from: number; to: number }>;
+  /**
+   * A zero-tolerance judge failed in more samples than the recorded pass rate allows. Its single
+   * failure is the defect, so no tolerance and no sampling depth waives it; gated whatever the
+   * case's status and rate did.
+   */
+  judgeRegressions: Array<{ caseId: string; name: string; from: number; to: number }>;
   /**
    * Would have been a regression, except this run sampled less deeply than the baseline did, so it
    * is not evidence of one. It still fails the gate: the run is too shallow to make a reliable
@@ -110,6 +121,7 @@ export const hasBaselineGateFailures = (diff: BaselineDiff): boolean =>
   diff.thresholdMismatch !== null ||
   diff.regressions.length > 0 ||
   diff.rateRegressions.length > 0 ||
+  diff.judgeRegressions.length > 0 ||
   diff.underSampled.length > 0 ||
   diff.newCases.length > 0;
 
@@ -129,6 +141,7 @@ export const diffAgainstBaseline = (
     regressions: [],
     rateRegressions: [],
     withinTolerance: [],
+    judgeRegressions: [],
     underSampled: [],
     fixes: [],
     newCases: [],
@@ -146,6 +159,21 @@ export const diffAgainstBaseline = (
     }
     const previous = baselineCaseStatus(entry);
     const previousRate = baselineCaseRate(entry);
+    // The recorded case rate bounds the recorded judge rate from below (a sample passes only when
+    // its judge does), so holding the judge to it asks nothing the baseline did not show.
+    const recordedRate = previousRate ?? (previous === "pass" ? 1 : null);
+    if (
+      outcome.zeroToleranceJudgePassRate !== undefined &&
+      recordedRate !== null &&
+      outcome.zeroToleranceJudgePassRate < recordedRate
+    ) {
+      diff.judgeRegressions.push({
+        caseId: outcome.caseId,
+        name: outcome.name,
+        from: recordedRate,
+        to: outcome.zeroToleranceJudgePassRate,
+      });
+    }
     // With both sides sampled, the rate is the measurement and the status only its reduction at the
     // pass bar, so a flip to `fail` counts only when the rate moved past the tolerance too. A flip to
     // `error` always counts: every sample errored, so the rate measured nothing.

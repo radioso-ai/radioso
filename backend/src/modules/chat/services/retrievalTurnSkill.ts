@@ -30,6 +30,8 @@ import { builtInAnswerSkills } from "./builtInAnswerSkills.js";
 import type { TurnOutcome, TurnRenderContext, TurnSkill, TurnStreamResult } from "./turnOutcome.js";
 import {
   computeGroundingSummary,
+  declineReasonForCommittedOutcome,
+  type CommittedDeclineOutcome,
   type GroundingSummary,
   type GroundingVerdict,
 } from "./groundingAssertions.js";
@@ -37,7 +39,7 @@ import type { MetricsRegistry } from "../../../shared/observability/metrics/metr
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { BoundedGroundingStreamGate } from "./boundedGroundingStreamGate.js";
 import { recordDirectiveSurfaceRendered } from "./directives/directiveSurfaceRendering.js";
-import { GroundedAnswerHeadReader } from "./groundedAnswerHeadReader.js";
+import { GroundedAnswerHeadReader, headOfCompletedEnvelope } from "./groundedAnswerHeadReader.js";
 import {
   answerCoverageHeadParseOutcome,
   steeringForKnownVerdict,
@@ -63,6 +65,31 @@ class CoverageVerdictYieldedError extends Error {
   constructor() {
     super("coverage_verdict_yielded");
     this.name = "CoverageVerdictYieldedError";
+  }
+}
+
+/**
+ * Holds streamed answer text until it carries more than whitespace. A decline committed
+ * with a blank answer is replaced by a composed one once the stream ends, so whitespace
+ * alone must neither reach the client ahead of that decline nor mark the turn as
+ * already answering. Held whitespace is released with the first text that follows it.
+ */
+class LeadingWhitespaceHold {
+  private held = "";
+  private releasing = false;
+
+  push(text: string): string {
+    if (this.releasing) {
+      return text;
+    }
+    this.held += text;
+    if (!this.held.trim()) {
+      return "";
+    }
+    this.releasing = true;
+    const released = this.held;
+    this.held = "";
+    return released;
   }
 }
 
@@ -106,6 +133,47 @@ const declinePendingRoutineStep = (session: PreparedSession): RoutinePendingStep
   session.agent.handoffOnRetrievalMiss === true ? undefined : session.routineYield?.pendingStep;
 
 /**
+ * The decline (`no_support` or `out_of_scope`) the grounded answer committed in a valid
+ * head without writing any text for it, or `null` when it did not. The commitment is
+ * still a valid verdict, so the turn delivers the focused decline that outcome promised
+ * instead of failing as a blank generation; a tail that failed to parse after the head
+ * does not take it back. An empty `answer` commitment, or a decline outcome on a head
+ * that did not parse, stays a generation failure.
+ */
+const blankDeclineCommitment = (
+  envelope: Pick<GroundedAnswerEnvelope, "protocolVersion" | "coverage" | "requestFocus" | "outcome">,
+  answer: string,
+): CommittedDeclineOutcome | null => {
+  if (answer.trim()) {
+    return null;
+  }
+  const outcome = headOfCompletedEnvelope(envelope)?.outcome;
+  return outcome === "no_support" || outcome === "out_of_scope" ? outcome : null;
+};
+
+/**
+ * The reason a blank decline is presented with. The composed decline only words the
+ * reply; why the turn declined is what the head committed, so an `out_of_scope`
+ * commitment never becomes a content gap that hands the visitor off. A decline model
+ * that could not generate at all leaves the turn unavailable instead.
+ */
+const blankDeclineReason = (committed: CommittedDeclineOutcome, composed: ComposedDecline): TurnDeclineReason =>
+  composed.declineReason === "generation_unavailable"
+    ? composed.declineReason
+    : declineReasonForCommittedOutcome(committed);
+
+/**
+ * What a grounded envelope call answered with: text, or a decline its head committed
+ * without writing any, whose wording the caller composes.
+ */
+type EnvelopeAnswer =
+  | { kind: "answer"; envelope: GroundedAnswerEnvelope }
+  | { kind: "blank_decline"; committed: CommittedDeclineOutcome };
+
+/** What the page-context call produced; `no_page` when the turn carries no page to answer from. */
+type PageContextAnswer = EnvelopeAnswer | { kind: "no_page" };
+
+/**
  * Composes a grounded answer for a retrieval turn: the grounded system prompt, the
  * envelope call, the page-context fallback, and computed grounding presentation.
  * Grounding is retrieval's *private* business — this only
@@ -130,17 +198,12 @@ export class RetrievalAnswerComposer {
    * Maps a completed envelope's head to the coverage verdict sink's assessment
    * shape (#1260). `invalid` covers every way a completed envelope can fail to
    * carry a usable head — a legacy/non-v2 parse, or any of the three head
-   * fields missing — never a failed turn (FR-004).
+   * fields missing — never a failed turn (FR-004). A tail that failed after a
+   * valid head does not void it, the same as on the streamed path.
    */
   private assessmentFromEnvelope(envelope: GroundedAnswerEnvelope): AnswerCoverageAssessment {
-    if (envelope.parseStatus !== "valid_v2" || !envelope.coverage || !envelope.requestFocus || !envelope.outcome) {
-      return buildInvalidHeadAssessment();
-    }
-    return buildAnswerCoverageAssessmentFromHead({
-      coverage: envelope.coverage,
-      requestFocus: envelope.requestFocus,
-      outcome: envelope.outcome,
-    });
+    const head = headOfCompletedEnvelope(envelope);
+    return head ? buildAnswerCoverageAssessmentFromHead(head) : buildInvalidHeadAssessment();
   }
 
   /**
@@ -246,6 +309,42 @@ export class RetrievalAnswerComposer {
         decline: declineReason,
       },
     });
+  }
+
+  private recordBlankDecline(
+    outcome: CommittedDeclineOutcome,
+    declineReason: TurnDeclineReason,
+    stream: boolean,
+  ): void {
+    this.metrics?.incrementCounter("chat_grounding_assertion_outcomes_total", {
+      help: "Computed chat grounding assertion outcomes",
+      labels: {
+        protocol: "v2",
+        verdict: "no_support",
+        reason: "blank_decline",
+        stream: String(stream),
+        decline: declineReason,
+        outcome,
+      },
+    });
+  }
+
+  /**
+   * Why a zero-evidence turn declined. With no page to answer from, the composed decline
+   * says; when the page envelope committed a decline without text, that commitment does,
+   * exactly as on the grounded path.
+   */
+  private zeroEvidenceDeclineReason(
+    pageAnswer: PageContextAnswer,
+    decline: ComposedDecline,
+    stream: boolean,
+  ): TurnDeclineReason {
+    if (pageAnswer.kind !== "blank_decline") {
+      return decline.declineReason;
+    }
+    const declineReason = blankDeclineReason(pageAnswer.committed, decline);
+    this.recordBlankDecline(pageAnswer.committed, declineReason, stream);
+    return declineReason;
   }
 
   private recordUnsupportedAnswerDecline(declineReason: TurnDeclineReason, stream: boolean): void {
@@ -392,7 +491,7 @@ export class RetrievalAnswerComposer {
       ...(signal ? { signal } : {}),
     });
     const envelope = parseGroundedAnswerEnvelope(raw);
-    if (!envelope.answer.trim()) {
+    if (!envelope.answer.trim() && !blankDeclineCommitment(envelope, envelope.answer)) {
       throw new BlankChatAnswerError();
     }
     return envelope;
@@ -404,10 +503,10 @@ export class RetrievalAnswerComposer {
     accountId: string | undefined,
     signal?: AbortSignal,
     knownAssessment?: AnswerCoverageAssessment,
-  ): Promise<GroundedAnswerEnvelope | null> {
+  ): Promise<PageContextAnswer> {
     const prompt = this.support.buildPromptWithContext(session.retrieval.prompt, session);
     if (prompt === session.retrieval.prompt) {
-      return null;
+      return { kind: "no_page" };
     }
 
     const envelope = await this.generateGroundedAnswerEnvelope(
@@ -419,7 +518,10 @@ export class RetrievalAnswerComposer {
       signal,
       knownAssessment,
     );
-    return { ...envelope, answer: envelope.answer.trim() };
+    const committed = blankDeclineCommitment(envelope, envelope.answer);
+    return committed
+      ? { kind: "blank_decline", committed }
+      : { kind: "answer", envelope: { ...envelope, answer: envelope.answer.trim() } };
   }
 
   /**
@@ -439,10 +541,11 @@ export class RetrievalAnswerComposer {
     attemptKey: string,
     signal?: AbortSignal,
     knownAssessment?: AnswerCoverageAssessment,
-  ): AsyncGenerator<string, GroundedAnswerEnvelope> {
+  ): AsyncGenerator<string, EnvelopeAnswer> {
     const groundedPrompt = this.promptWithConversationContext(prompt, session, knownAssessment);
     const reader = new GroundedAnswerEnvelopeReader();
     const citationSanitizer = new CitationAnchorSanitizer();
+    const leadingWhitespace = new LeadingWhitespaceHold();
     const candidateStream = this.chatGateway.streamAnswer({
       query,
       history: session.history,
@@ -463,7 +566,7 @@ export class RetrievalAnswerComposer {
       if (!text) {
         continue;
       }
-      const cleanChunk = citationSanitizer.push(reader.push(text));
+      const cleanChunk = leadingWhitespace.push(citationSanitizer.push(reader.push(text)));
       if (cleanChunk) {
         yield cleanChunk;
       }
@@ -474,9 +577,13 @@ export class RetrievalAnswerComposer {
     const finalized = reader.finalize();
     const fullAnswer = finalized.fullAnswer.trim();
     if (!fullAnswer) {
+      const committed = blankDeclineCommitment(finalized, fullAnswer);
+      if (committed) {
+        return { kind: "blank_decline", committed };
+      }
       throw new BlankChatAnswerError();
     }
-    return { ...finalized, answer: fullAnswer };
+    return { kind: "answer", envelope: { ...finalized, answer: fullAnswer } };
   }
 
   /**
@@ -491,10 +598,10 @@ export class RetrievalAnswerComposer {
     accountId: string | undefined,
     signal?: AbortSignal,
     knownAssessment?: AnswerCoverageAssessment,
-  ): AsyncGenerator<string, GroundedAnswerEnvelope | null> {
+  ): AsyncGenerator<string, PageContextAnswer> {
     const prompt = this.support.buildPromptWithContext(session.retrieval.prompt, session);
     if (prompt === session.retrieval.prompt) {
-      return null;
+      return { kind: "no_page" };
     }
 
     return yield* this.streamGroundedAnswerEnvelope(
@@ -514,6 +621,7 @@ export class RetrievalAnswerComposer {
     userExpectedLocale: string | null | undefined,
     accountId: string | undefined,
     coverageVerdict?: RetrievalCoverageVerdictSink,
+    signal?: AbortSignal,
   ): Promise<ChatPresentedAnswer> {
     let answer: string;
     let plannedSuggestions: PlannedEnvelopeSuggestion[] = [];
@@ -536,14 +644,15 @@ export class RetrievalAnswerComposer {
       if (zeroEvidenceVerdict?.decision === "yield_turn") {
         return this.yieldedPresentedAnswer();
       }
-      const fallback = await this.generateAnswerWithPageContext(
+      const pageAnswer = await this.generateAnswerWithPageContext(
         session,
         query,
         accountId,
-        undefined,
+        signal,
         zeroEvidenceAssessment,
       );
-      if (fallback) {
+      if (pageAnswer.kind === "answer") {
+        const fallback = pageAnswer.envelope;
         answer = fallback.answer;
         plannedSuggestions = fallback.suggestions;
         metadataPatch = this.sideChannel(session, zeroEvidenceAssessment)?.resolve(fallback.extras);
@@ -562,9 +671,10 @@ export class RetrievalAnswerComposer {
           pendingRoutineStep: declinePendingRoutineStep(session),
           workspaceContext: this.support.buildChatWorkspaceContext(session),
           usageContext: this.support.buildChatUsageContext(session, accountId, "grounded_miss"),
+          ...(signal ? { signal } : {}),
         });
         answer = decline.text;
-        declineReason = decline.declineReason;
+        declineReason = this.zeroEvidenceDeclineReason(pageAnswer, decline, false);
       }
     } else {
       const envelope = await this.generateGroundedAnswerEnvelope(
@@ -573,6 +683,7 @@ export class RetrievalAnswerComposer {
         this.support.buildPromptWithContext(session.retrieval.prompt, session),
         accountId,
         "grounded",
+        signal,
       );
       const envelopeAssessment = this.assessmentFromEnvelope(envelope);
       const headVerdict = await coverageVerdict?.report({ assessment: envelopeAssessment });
@@ -589,7 +700,22 @@ export class RetrievalAnswerComposer {
         envelope,
         contextCount: session.retrieval.contexts.length,
       });
-      if (shouldSuppressUnsupportedDraft(session, envelope, summary)) {
+      const blankDecline = blankDeclineCommitment(envelope, envelope.answer);
+      if (blankDecline) {
+        const decline = await this.composeFocusedDecline(
+          session,
+          query,
+          userExpectedLocale,
+          accountId,
+          "blank_decline",
+          envelopeAssessment,
+          signal,
+        );
+        declineReason = blankDeclineReason(blankDecline, decline);
+        this.recordBlankDecline(blankDecline, declineReason, false);
+        answer = decline.text;
+        grounding = "no_support";
+      } else if (shouldSuppressUnsupportedDraft(session, envelope, summary)) {
         const decline = await this.composeFocusedDecline(
           session,
           query,
@@ -597,6 +723,7 @@ export class RetrievalAnswerComposer {
           accountId,
           "unsupported_answer",
           envelopeAssessment,
+          signal,
         );
         this.recordUnsupportedAnswerDecline(decline.declineReason, false);
         answer = decline.text;
@@ -714,7 +841,8 @@ export class RetrievalAnswerComposer {
         }
         pageContextStep = await pageContextStream.next();
       }
-      const fallbackEnvelope = pageContextStep.value;
+      const pageAnswer = pageContextStep.value;
+      const fallbackEnvelope = pageAnswer.kind === "answer" ? pageAnswer.envelope : null;
       if (fallbackEnvelope) {
         rawAnswer = fallbackEnvelope.answer;
       } else {
@@ -729,7 +857,7 @@ export class RetrievalAnswerComposer {
           ...(signal ? { signal } : {}),
         });
         rawAnswer = decline.text;
-        declineReason = decline.declineReason;
+        declineReason = this.zeroEvidenceDeclineReason(pageAnswer, decline, true);
       }
       plannedSuggestions = fallbackEnvelope?.suggestions ?? [];
       metadataPatch = this.sideChannel(session, zeroEvidenceAssessment)?.resolve(fallbackEnvelope?.extras);
@@ -740,6 +868,7 @@ export class RetrievalAnswerComposer {
     } else {
       const reader = new GroundedAnswerEnvelopeReader();
       const citationSanitizer = new CitationAnchorSanitizer();
+      const leadingWhitespace = new LeadingWhitespaceHold();
       const gate = new BoundedGroundingStreamGate({
         contextCount: session.retrieval.contexts.length,
         maxRetainedCodePoints: RETRIEVAL_BEHAVIOR.groundingStreamGateMaxRetainedCodePoints,
@@ -848,7 +977,7 @@ export class RetrievalAnswerComposer {
         const releaseText = releasesImmediately
           ? parsedText
           : (decision?.kind === "release" ? decision.text : "");
-        const cleanChunk = citationSanitizer.push(releaseText);
+        const cleanChunk = leadingWhitespace.push(citationSanitizer.push(releaseText));
         if (cleanChunk) {
           streamedAnswer += cleanChunk;
           yield cleanChunk;
@@ -909,7 +1038,8 @@ export class RetrievalAnswerComposer {
       plannedSuggestions = finalized.suggestions;
       metadataPatch = this.sideChannel(session)?.resolve(finalized.extras);
       rawAnswer = finalized.fullAnswer;
-      if (!rawAnswer.trim()) {
+      const blankDecline = blankDeclineCommitment(finalized, rawAnswer);
+      if (!rawAnswer.trim() && !blankDecline) {
         throw new BlankChatAnswerError();
       }
       const summary = computeGroundingSummary({
@@ -917,7 +1047,26 @@ export class RetrievalAnswerComposer {
         envelope: finalized,
         contextCount: session.retrieval.contexts.length,
       });
-      if (!hasStreamedAnswer && shouldSuppressUnsupportedDraft(session, finalized, summary)) {
+      if (blankDecline) {
+        const decline = await this.composeFocusedDecline(
+          session,
+          query,
+          userExpectedLocale,
+          accountId,
+          "stream_blank_decline",
+          headAssessment ?? buildInvalidHeadAssessment(),
+          signal,
+        );
+        if (signal?.aborted) {
+          throw signal.reason ?? new Error("chat_turn_aborted");
+        }
+        declineReason = blankDeclineReason(blankDecline, decline);
+        this.recordBlankDecline(blankDecline, declineReason, true);
+        rawAnswer = decline.text;
+        grounding = "no_support";
+        plannedSuggestions = [];
+        metadataPatch = undefined;
+      } else if (!hasStreamedAnswer && shouldSuppressUnsupportedDraft(session, finalized, summary)) {
         const decline = await this.composeFocusedDecline(
           session,
           query,
@@ -985,7 +1134,14 @@ export const createRetrievalTurnSkill = (composer: RetrievalAnswerComposer): Tur
   renderer: {
     supports: (outcome) => outcome.kind === RETRIEVAL_OUTCOME_KIND,
     render: (_outcome, ctx: TurnRenderContext) =>
-      composer.composeAnswer(ctx.session, ctx.query, ctx.userExpectedLocale, ctx.accountId, ctx.coverageVerdict),
+      composer.composeAnswer(
+        ctx.session,
+        ctx.query,
+        ctx.userExpectedLocale,
+        ctx.accountId,
+        ctx.coverageVerdict,
+        ctx.signal,
+      ),
     stream: (_outcome, ctx: TurnRenderContext) =>
       composer.streamAnswer(ctx.session, ctx.query, ctx.userExpectedLocale, ctx.accountId, ctx.signal, ctx.coverageVerdict),
   },

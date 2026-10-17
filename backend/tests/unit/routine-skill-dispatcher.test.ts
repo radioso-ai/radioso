@@ -479,6 +479,24 @@ describe("RoutineSkillExecutorDispatcher", () => {
     });
   });
 
+  it("tells the executor whether the turn's conversation is stored, so an outbox write never names an ephemeral one", async () => {
+    const captured: SkillInvocation[] = [];
+    const registry = registryWith(
+      settledExecutor({ status: "completed" } as unknown as SkillOutcome, (invocation) => {
+        captured.push(invocation);
+      }),
+    );
+    const resolver = new StaticRoutineSkillResolver([skillNamed("post_to_slack")]);
+
+    for (const conversationDurability of ["durable", "ephemeral"] as const) {
+      await new RoutineSkillExecutorDispatcher(resolver, registry, { skillEffects: "allowed", conversationDurability })
+        .dispatch({ skillName: "post_to_slack", state: routineState({}), turn });
+    }
+    await new RoutineSkillExecutorDispatcher(resolver, registry).dispatch({ skillName: "post_to_slack", state: routineState({}), turn });
+
+    expect(captured.map((invocation) => invocation.context?.conversationDurability)).toEqual(["durable", "ephemeral", "durable"]);
+  });
+
   it("resolves typed input bindings into executor collected params when provided", async () => {
     let captured: SkillInvocation | undefined;
     const dispatcher = new RoutineSkillExecutorDispatcher(

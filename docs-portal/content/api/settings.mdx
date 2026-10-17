@@ -230,7 +230,9 @@ Workspaces can supply their own provider API keys instead of relying on the depl
 
 `envProviderAvailability` reports whether each provider has a deployment-level API key (`OPENAI_API_KEY`, `OPENAI_COMPATIBLE_API_KEY`, `GEMINI_API_KEY`, `ANTHROPIC_API_KEY`) set. A provider is usable for model selection when it has either a workspace credential or a deployment-level key; the dashboard hides unavailable providers in model pickers.
 
-`PUT /api/v1/settings/credentials/:provider` stores or replaces a key from the signed-in dashboard session. The body is `{ "apiKey": "..." }`. Valid `provider` values are `openai`, `openai-compatible`, `gemini`, and `claude`. The response is `204 No Content`.
+`PUT /api/v1/settings/credentials/:provider` stores or replaces a key from the signed-in dashboard session. The body is `{ "apiKey": "..." }`. Valid `provider` values are the model providers `openai`, `openai-compatible`, `gemini`, and `claude`, and the voice runtime `elevenlabs`. The response is `204 No Content`.
+
+The `elevenlabs` key is the one Radioso starts ElevenLabs voice sessions with, so a web page can open a call without holding it. It is always the workspace's own: there is no deployment-level ElevenLabs key, so `envProviderAvailability` lists only the model providers. The dashboard shows it under **Settings → Providers → Voice runtime keys**.
 
 `DELETE /api/v1/settings/credentials/:provider` removes a stored key. The response is `204 No Content`, or `404` if no credential was stored for that provider.
 

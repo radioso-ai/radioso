@@ -126,4 +126,80 @@ describe("citation anchor sanitizer", () => {
       "Read [1](https://example.com), inspect arr[0], and keep the [2024] label.",
     );
   });
+
+  it("preserves a markdown link whose label is a bare number, split across chunks", () => {
+    const sanitizer = new CitationAnchorSanitizer();
+
+    const chunks = [
+      sanitizer.push("See [1]"),
+      sanitizer.push("(https://example.com) for details."),
+      sanitizer.flush(),
+    ];
+
+    expect(chunks.join("")).toBe("See [1](https://example.com) for details.");
+  });
+
+  // #1502: the model sometimes writes the unsupported-claim marker with single brackets.
+  // The sanitizer reads `[?]` as `[[?]]`, so a single-bracket marker streams exactly as the
+  // double-bracket one does.
+  describe("single-bracket unsupported-claim marker", () => {
+    const stream = (...chunks: string[]): string => {
+      const sanitizer = new CitationAnchorSanitizer();
+      return [...chunks.map((chunk) => sanitizer.push(chunk)), sanitizer.flush()].join("");
+    };
+
+    it("removes a marker mid-sentence", () => {
+      const streamed = stream("Kriya is not [?] documented here.");
+
+      expect(streamed).not.toContain("[?]");
+      expect(streamed).not.toContain("[[?]]");
+      expect(streamed).toMatch(/^Kriya is not\s+documented here\.$/);
+    });
+
+    it("removes a marker at the end of a sentence", () => {
+      expect(stream("The fee is waived[?]. Ask us about it.")).toBe("The fee is waived. Ask us about it.");
+    });
+
+    it("removes a marker the stream ends on", () => {
+      expect(stream("Claim[?]")).toBe("Claim");
+    });
+
+    it("never leaks a marker split at any chunk boundary", () => {
+      const marker = "[?]";
+      for (let split = 1; split < marker.length; split += 1) {
+        expect(stream(`Claim${marker.slice(0, split)}`, `${marker.slice(split)}.`), `split at ${split}`).toBe("Claim.");
+      }
+    });
+
+    it("treats a bracket after the marker as it treats one after [[?]], in one chunk or split", () => {
+      const doubleBracket = stream("Claim[[?]]] next");
+
+      expect(stream("Claim[?]] next")).toBe(doubleBracket);
+      expect(stream("Claim[?]", "] next")).toBe(doubleBracket);
+      expect(doubleBracket).not.toContain("[?");
+    });
+
+    it("treats a parenthetical after the marker as it treats one after [[?]], at any chunk boundary", () => {
+      const snippet = "[?](url)";
+      expect(stream("See [[?]](url) for details.")).toBe("See (url) for details.");
+      for (let split = 1; split < snippet.length; split += 1) {
+        expect(stream(`See ${snippet.slice(0, split)}`, `${snippet.slice(split)} for details.`), `split at ${split}`)
+          .toBe("See (url) for details.");
+      }
+    });
+
+    it("leaves [?] inside inline code alone, at any chunk boundary", () => {
+      for (const text of ["Use `[?]` to match a literal question mark.", "The pattern `/a[?]b/` matches ab."]) {
+        expect(stream(text)).toBe(text);
+        for (let split = 1; split < text.length; split += 1) {
+          expect(stream(text.slice(0, split), text.slice(split)), `${text} split at ${split}`).toBe(text);
+        }
+      }
+    });
+
+    it("reads [?] as a marker once an inline code span closes, and at the next line", () => {
+      expect(stream("Run `ls` first[?]. Then `pwd`.")).toBe("Run `ls` first. Then `pwd`.");
+      expect(stream("A lone ` backtick.\n", "Claim[?].")).toBe("A lone ` backtick.\nClaim.");
+    });
+  });
 });

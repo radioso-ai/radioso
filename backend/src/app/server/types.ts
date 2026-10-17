@@ -1,5 +1,5 @@
+import type { ConversationErasure } from "../../modules/privacy/public.js";
 import type {
-  ActionDispatchWorker,
   AgentStarterPromptReader,
   AssistantChatService,
   AssistantHistoryService,
@@ -22,9 +22,13 @@ import type {
   DocumentSourceReprocessService,
   WorkspaceIngestionReprocessService,
 } from "../../modules/documents/composition.js";
-import type { FacetExtractionWorker, FacetExtractionWorkspaceDrainService } from "../../modules/facets/composition.js";
+import type {
+  FacetExtractionWorkspaceDrainService,
+  FacetExtractionWorkspaceDrainWorker,
+} from "../../modules/facets/composition.js";
 import type { RetrievalMetadataFieldSourcePort } from "../../modules/settings/contracts/services.js";
 import type { JobConsumerPort } from "../../shared/domain/jobConsumer.js";
+import type { BackgroundJobRuntime } from "../../shared/background-jobs/index.js";
 import type { IngestionSettingsService } from "../../modules/settings/composition.js";
 import type { DocumentTypeCatalogService } from "../../modules/documentTypes/composition.js";
 import type { PlatformSettingsService } from "../../modules/settings/composition.js";
@@ -66,6 +70,14 @@ import type { Database } from "../../shared/infra/database.js";
 import type { Env } from "../config/env.js";
 import type { VisitorGeoResolver } from "../../shared/domain/visitorGeoResolver.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
+import type {
+  VoiceRecordingAvailabilityPort,
+  VoiceRecordingPlaybackPort,
+  VoiceSessionAvailabilityPort,
+  VoiceSessionStartPort,
+  VoiceTurnPort,
+  VoiceVendorConversationReportPort,
+} from "../../modules/voiceChannel/public.js";
 import type { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
 import type { WorkspaceProviderCredentialsService } from "../../modules/security/credentials/services/workspaceProviderCredentialsService.js";
 import type { WebhookDestinationPublicAdapter } from "../../modules/webhooks/public.js";
@@ -82,6 +94,7 @@ import type {
   ApplicationAccountAdministratorDirectoryPort,
   ApplicationModuleCoordinator,
   ApplicationNoticeMailPort,
+  ApplicationPeriodicTaskHandle,
   ApplicationRouteMount,
 } from "../composition/applicationModule.js";
 import type {
@@ -113,6 +126,7 @@ import type { AgentWizardService } from "../../modules/agentWizard/service.js";
 import type { ModelInferencePipeline } from "../../shared/infra/llm/modelInferencePipeline.js";
 import type { LlmCapabilityResolver } from "../../shared/infra/llm/capabilityResolver.js";
 import type { EmailService } from "../../modules/mail/public.js";
+import type { NotificationRecipientPolicyPort, NotificationSuppressionStore } from "../../modules/operatorNotifications/public.js";
 import type {
   EvalCaseService,
   EvalMessageCaseService,
@@ -138,6 +152,7 @@ import type { OperatorMcpApplicationService } from "../../modules/operatorCopilo
 import type { CopilotRepositoryPort } from "../../modules/operatorCopilot/public.js";
 import type { CopilotRetentionWorker } from "../../modules/operatorCopilot/public.js";
 import type { TtlRetentionWorker } from "../../shared/domain/ttlRetentionWorker.js";
+import type { PeriodicTaskRunner } from "../composition/periodicTaskRunner.js";
 import type { CopilotToolDescriptor, CopilotWorkspaceRouteKeyResolver } from "../../modules/operatorCopilot/public.js";
 import type { AgenticCapabilityRunner } from "../../shared/agent-runtime/index.js";
 import type { QualityTurnsService } from "../../modules/quality/composition.js";
@@ -202,12 +217,23 @@ export interface AppDependencies {
   /** Application route mounts key their source budgets through this rather than reading `req.ip`. */
   requestSource: RequestSourceDigestPort;
   machineAccessSecurityObserver?: MachineAccessSecurityObserver;
-  credentialExpiryWarningLifecycle: Pick<CredentialExpiryWarningService, "start" | "stop">;
+  /** `runOnce` backs the Cloud Scheduler-driven worker task route
+   *  (`/internal/tasks/credential-expiry-warning/sweep`); `start`/`stop` back the self-host
+   *  poll worker's interval (`startWorkerRuntime.ts`). Neither runs from the API, which has no
+   *  CPU allocation once a request ends and may run at zero instances. */
+  credentialExpiryWarningLifecycle: Pick<CredentialExpiryWarningService, "start" | "stop" | "runOnce">;
   /** Every `registerPeriodicTask` registration, aggregated behind one start/stop pair. Started
-   *  and stopped only from the API runtime (see `startApiRuntime.ts`) — the worker and migration
-   *  runners never call this, so a task meant to run once per deployment does not also run once
-   *  per process. */
+   *  and stopped only from the worker runtime's poll loop (see `startWorkerRuntime.ts`) — the
+   *  API and migration runners never call this, so a task meant to run once per deployment does
+   *  not also run once per process. The production push worker instead calls each registered
+   *  task directly, by id, through `periodicTaskHandlesById`. */
   periodicTasksLifecycle: PeriodicTasksLifecycle;
+  /** The same `registerPeriodicTask` handles `periodicTasksLifecycle` wraps in a timer, keyed
+   *  by registration id so the Cloud Scheduler-driven worker task route
+   *  (`/internal/tasks/periodic-tasks/:taskId/run`) can run one on demand without its own
+   *  timer. Built once per handle in `buildDependencies` so both callers share the same
+   *  task-context wiring (notice mail, account administrators) rather than each building it. */
+  periodicTaskHandlesById: ReadonlyMap<string, ApplicationPeriodicTaskHandle>;
   personalCredentialService: PersonalCredentialService;
   serviceAccountService: ServiceAccountService;
   workspaceSessionService: WorkspaceSessionService;
@@ -255,9 +281,11 @@ export interface AppDependencies {
   documentSourceReprocessService: DocumentSourceReprocessService;
   documentProcessingWorker: DocumentProcessingWorker;
   documentJobConsumer?: JobConsumerPort;
-  // Worker-process poll loop for per-message facet extraction. Absent until an
+  // The generic job-port runtime draining per-message facet extraction work. Absent until an
   // extraction implementation is registered through application composition.
-  facetExtractionWorker?: FacetExtractionWorker;
+  facetExtractionBackgroundJobRuntime?: BackgroundJobRuntime;
+  // Audience Pulse's workspace-scoped, operator-requested drain. Absent under the same condition.
+  facetExtractionWorkspaceDrainWorker?: FacetExtractionWorkspaceDrainWorker;
   facetExtractionWorkspaceDrain?: FacetExtractionWorkspaceDrainService;
   websiteCrawlerProvider?: WebsiteCrawlerProvider;
   websiteCrawlJobService: WebsiteCrawlJobService;
@@ -285,9 +313,30 @@ export interface AppDependencies {
   workbenchReplayRunner: WorkbenchReplayRunner;
   /** Operator-only immutable candidate test executions; never mounted on public chat. */
   testExecutionService: TestExecutionService;
-  // Worker-process drain loop for the async conversation-action outbox (spec 070).
-  // Present in every dependency build; only the worker runtime calls start/stop.
-  actionDispatchWorker: ActionDispatchWorker;
+  /**
+   * Runs the async conversation-action outbox (spec 070) through the generic background-job
+   * runtime (#1509): a poll loop in the worker runtime, `/internal/tasks/actions/drain` and
+   * `/recover` in the worker-task runtime. Present in every dependency build; only the worker
+   * runtimes start or drain it.
+   */
+  actionDispatchJobRuntime: BackgroundJobRuntime;
+  /** Reports the outbox's pending/in-progress depth on its own interval, not tied to a drain. */
+  actionOutboxQueueDepthReporter: PeriodicTaskRunner;
+  /**
+   * Emits the same outbox depth/oldest-pending-age signal on demand — best-effort, never throws.
+   * The poll worker's interval (`actionOutboxQueueDepthReporter`) covers the local/dev runtime;
+   * the push worker's task route calls this directly after every pushed drain and sweep, since
+   * Cloud Run only runs that process while a request is in flight and never starts an interval.
+   */
+  reportActionOutboxQueueState: () => Promise<void>;
+  /**
+   * Runs durable background jobs (`background_jobs`): a poll loop in the worker runtime, the
+   * `/internal/tasks/background-jobs/drain` route in the worker-task runtime. Present in every
+   * dependency build; only the worker runtimes start or drain it.
+   */
+  backgroundJobRuntime: BackgroundJobRuntime;
+  /** Removes dead-lettered background jobs once their retention window has passed. */
+  backgroundJobRetentionWorker: TtlRetentionWorker;
   /**
    * The email channel's inbound drain and sweep: an interval loop in the worker runtime, push and
    * schedule routes in the worker-task runtime. Undefined when no email provider is configured.
@@ -314,7 +363,20 @@ export interface AppDependencies {
   agentPublicProfile: AgentPublicProfilePort;
   chatHistoryService: ChatHistoryService;
   assistantChatService: AssistantChatService;
+  /** One spoken caller turn on a voice session; vendor adapters mount over it. */
+  voiceTurns: VoiceTurnPort;
+  voiceSessionStarts: VoiceSessionStartPort;
+  /** Whether a page should offer a caller voice sessions with an agent; the website embed asks. */
+  voiceSessionAvailability: VoiceSessionAvailabilityPort;
+  /**
+   * A call's recording, kept by the vendor: the page reports the vendor's id for the call, the
+   * Inbox learns whether a conversation has one, and a teammate plays it.
+   */
+  voiceRecordings: VoiceVendorConversationReportPort & VoiceRecordingAvailabilityPort & VoiceRecordingPlaybackPort;
+
   assistantHistoryService: AssistantHistoryService;
+  /** Permanent erasure of a conversation, or of a visitor and their conversations. */
+  conversationErasure: ConversationErasure;
   retrievalSearchService: RetrievalSearchService;
   retrievalAnswerService: RetrievalAnswerService;
   retrievalDefaultsProvider: RetrievalDefaultsProvider;
@@ -331,6 +393,8 @@ export interface AppDependencies {
   agentSkillsService: AgentSkillsService;
   /** Where routine ending notices go; names recipient emails, so it serves workspace sessions only. */
   operatorNoticeDestinations: Pick<OperatorNoticeDestinationsReader, "read">;
+  notificationRecipientPolicy: NotificationRecipientPolicyPort;
+  notificationRecipientSuppressions: NotificationSuppressionStore;
   agentService: AgentService;
   agentRevisionService: AgentRevisionService;
   agentBundleExportService: AgentBundleExportService;

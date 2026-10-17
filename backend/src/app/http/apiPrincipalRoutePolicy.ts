@@ -118,6 +118,10 @@ const declarations: readonly PolicyDeclaration[] = [
     allow("GET", `/api/v1/history${path}`, "workspace.history.read")),
   ...["/contact/:requestId", "/search/:searchId", "/chat/:conversationId", "/chat/:conversationId/tail", "/visitors/:visitorId/conversations", "/:conversationId"]
     .map((path) => allow("GET", `/api/v1/history${path}`, "workspace.history.read")),
+  // Erasure is a destructive workspace act like document deletion; a data-subject request
+  // pipeline erases over the API with an admin credential.
+  ...["/chat/:conversationId", "/visitors/:visitorId"]
+    .map((path) => allow("DELETE", `/api/v1/history${path}`, "workspace.history.delete")),
 
   ...["", "/sources", "/sources/:sourceId/documents", "/search/history", "/search/history/:searchId", "/:documentId", "/:documentId/chunks", "/:documentId/chunks/:chunkId"]
     .map((path) => allow("GET", `/api/v1/document${path}`, "workspace.documents.read")),
@@ -299,12 +303,16 @@ const declarations: readonly PolicyDeclaration[] = [
     ["GET", "/api/v1/agents/:agentId/skills", "workspace.agents.read"],
     // Names the team's recipient emails, which are personal data: workspace members only.
     ["GET", "/api/v1/agents/:agentId/operator-notice-destinations", "workspace.agents.read"],
+    ["GET", "/api/v1/agents/:agentId/skills/:skillId/notification-recipients", "workspace.agents.read"],
+    ["POST", "/api/v1/agents/:agentId/notification-recipient-confirmations/resend", "workspace.notification_recipients.manage"],
     ["POST", "/api/v1/agents/:agentId/skills", "workspace.agents.manage"],
     ["PATCH", "/api/v1/agents/:agentId/skills/:skillId", "workspace.agents.manage"],
     ["DELETE", "/api/v1/agents/:agentId/skills/:skillId", "workspace.agents.manage"],
   ].map(([method, path, permission]) => sessionOnly(method, path, permission)),
   // The Inbox's recently closed strip: read from the takeover surface, so it takes the same permission.
   sessionOnly("GET", "/api/v1/conversations/recently-closed", "workspace.conversation.takeover"),
+  // A call's recording is a teammate's to hear in the Inbox, with each play audited against them.
+  sessionOnly("GET", "/api/v1/conversations/:conversationId/recording", "workspace.history.read"),
   ...[
     ["GET", "/api/v1/conversations/operators"],
     ["POST", "/api/v1/conversations/:conversationId/takeover"],

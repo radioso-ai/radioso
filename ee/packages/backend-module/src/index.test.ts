@@ -1,3 +1,6 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
 import { describe, expect, it } from "vitest";
 
 import { createEnterpriseBackendModule } from "./index.js";
@@ -98,6 +101,36 @@ describe("Enterprise backend module aggregation", () => {
     for (const task of capture.periodicTasks) {
       expect(task.intervalMs).toBe(60_000);
       expect(task.create).toBeTypeOf("function");
+    }
+  });
+
+  // The usage-limit alert sweep moved off the API runtime (issue #1507) onto a generic
+  // worker-task route, one per registerPeriodicTask id. The auto-top-up sweep was missed in
+  // that move: it is registered here exactly the same way, but infra/terraform/scheduler.tf
+  // only scheduled ee-usage-limit-alerts, so auto top-up never ran in production (no API
+  // timer, no Cloud Scheduler push either). This reads the real registration — not a
+  // hand-copied id list — so a future EE periodic task that forgets its own scheduler job
+  // fails this test instead of silently never running in production.
+  it("schedules a Cloud Scheduler job for every EE periodic task registration", () => {
+    const capture = createCaptureContext();
+    const module = createEnterpriseBackendModule();
+    module.register?.(capture.context);
+
+    expect(capture.periodicTasks.length).toBeGreaterThan(0);
+
+    const schedulerConfig = readFileSync(
+      fileURLToPath(new URL("../../../../infra/terraform/scheduler.tf", import.meta.url)),
+      "utf8",
+    );
+
+    for (const task of capture.periodicTasks) {
+      const route = `/internal/tasks/periodic-tasks/${task.id}/run`;
+      expect(
+        schedulerConfig.includes(route),
+        `infra/terraform/scheduler.tf has no Cloud Scheduler job targeting ${route}, so the ` +
+          `"${task.id}" periodic task never runs in production (no API timer, and this is ` +
+          "its only push-driven trigger).",
+      ).toBe(true);
     }
   });
 });

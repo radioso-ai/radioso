@@ -143,6 +143,7 @@ import type {
   DocumentProcessingJobRecord,
   DocumentProcessingQueueSnapshot,
   DocumentProcessingJobRepositoryPort,
+  ReleaseOrFailExpiredClaimOutcome,
 } from "../../src/db/repositories/documentProcessingJobRepository.js";
 import type {
   WorkspaceCanonicalEmbeddingCoverage,
@@ -3832,11 +3833,16 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     };
   }
 
-  async markCompleted(jobId: string): Promise<void> {
+  async markCompleted(jobId: string): Promise<boolean> {
+    const existing = this.items.get(jobId);
+    if (!existing || existing.status !== "processing") {
+      return false;
+    }
     this.update(jobId, {
       status: "completed",
       completedAt: new Date(),
     });
+    return true;
   }
 
   async markSkipped(jobId: string, reason: string): Promise<void> {
@@ -3900,28 +3906,29 @@ export class InMemoryDocumentProcessingJobRepository implements DocumentProcessi
     maxAttempts: number;
     releasedReason: string;
     exhaustedReason: string;
-  }): Promise<DocumentProcessingJobRecord | null> {
+  }): Promise<ReleaseOrFailExpiredClaimOutcome> {
     const existing = this.items.get(input.jobId);
     if (!existing || existing.status !== "processing" || !existing.claimedAt || existing.claimedAt > input.claimedAtOrBefore) {
-      return null;
+      return { outcome: "not_claimed" };
     }
 
     if (existing.attemptCount >= input.maxAttempts) {
+      // Exhausted: stays "processing" and only takes a fresh lease — see the
+      // port's real implementation for why nothing terminal commits here.
       this.update(input.jobId, {
-        status: "failed",
         lastError: input.exhaustedReason,
-        completedAt: new Date(),
+        claimedAt: new Date(),
       });
-    } else {
-      this.update(input.jobId, {
-        status: "queued",
-        lastError: input.releasedReason,
-        availableAt: new Date(),
-        claimedAt: null,
-      });
+      return { outcome: "exhausted", job: this.items.get(input.jobId)! };
     }
 
-    return this.items.get(input.jobId) ?? null;
+    this.update(input.jobId, {
+      status: "queued",
+      lastError: input.releasedReason,
+      availableAt: new Date(),
+      claimedAt: null,
+    });
+    return { outcome: "released" };
   }
 
   private update(jobId: string, partial: Partial<DocumentProcessingJobRecord>): void {

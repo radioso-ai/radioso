@@ -7,7 +7,7 @@ type FooterLink = { label: string; href: string; internal?: boolean }
 
 const productLinks: FooterLink[] = [
   { label: 'The platform', href: externalLinks.platform },
-  { label: 'Quick start', href: '/quickstarts/run-locally', internal: true },
+  { label: 'Start here', href: '/operators/start-here', internal: true },
   { label: 'Radioso for Slack', href: externalLinks.slack },
   { label: 'Licensing', href: externalLinks.licensing },
   { label: 'FAQ', href: externalLinks.faq },

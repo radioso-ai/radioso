@@ -15,7 +15,6 @@ describe("settings credentials contract", () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual({
       encryptionConfigured: true,
-      credentialSource: "self_hosted",
       credentials: [],
       envProviderAvailability: {
         openai: expect.any(Boolean),

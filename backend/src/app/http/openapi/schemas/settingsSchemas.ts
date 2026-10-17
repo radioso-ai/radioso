@@ -320,7 +320,6 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
     "WorkspaceProviderCredentialsResponse",
     z.object({
       encryptionConfigured: z.boolean(),
-      credentialSource: z.enum(["managed", "byok", "self_hosted"]),
       credentials: z.array(WorkspaceProviderCredentialSummarySchema),
       envProviderAvailability: z.object({
         openai: z.boolean(),

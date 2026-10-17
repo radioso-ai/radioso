@@ -1650,12 +1650,6 @@ components:
       properties:
         encryptionConfigured:
           type: boolean
-        credentialSource:
-          type: string
-          enum:
-            - managed
-            - byok
-            - self_hosted
         credentials:
           type: array
           items:
@@ -1678,7 +1672,6 @@ components:
             - claude
       required:
         - encryptionConfigured
-        - credentialSource
         - credentials
         - envProviderAvailability
     SetWorkspaceProviderCredentialRequest:

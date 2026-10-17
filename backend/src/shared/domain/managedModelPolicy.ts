@@ -10,24 +10,21 @@ export interface ManagedModelResolveInput {
   capability: LlmCapabilityName;
 }
 
-export interface ManagedModelPolicyDecision {
-  /** `null` keeps the candidate selected by agent/workspace/default precedence. */
-  managedModel: ManagedModelSelection | null;
-  /** The sole credential source for this workspace's policy. */
-  credentialSource: "managed" | "byok" | "self_hosted";
-}
-
 /**
- * Decides model and credential ownership. Which workspaces are managed or
- * BYOK is the policy's knowledge alone — the resolver never sees plans,
- * tiers, or accounts.
+ * Decides whether a workspace runs a plan-managed model for a capability. The
+ * capability resolver consults it before applying the workspace's own
+ * preference or an agent override; a workspace that holds its own key for the
+ * provider it would otherwise use keeps that choice. Which workspaces are
+ * managed, and which models they run, is the policy's knowledge alone —
+ * the resolver never sees plans, tiers, or accounts.
  */
 export interface ManagedModelPolicy {
-  resolveModelPolicy(input: ManagedModelResolveInput): Promise<ManagedModelPolicyDecision>;
+  /** `null` means the workspace is free to pick: self-host, BYOK, or an unassigned account. */
+  resolveManagedModel(input: ManagedModelResolveInput): Promise<ManagedModelSelection | null>;
 }
 
 export class NoopManagedModelPolicy implements ManagedModelPolicy {
-  async resolveModelPolicy(): Promise<ManagedModelPolicyDecision> {
-    return { managedModel: null, credentialSource: "self_hosted" };
+  async resolveManagedModel(): Promise<ManagedModelSelection | null> {
+    return null;
   }
 }

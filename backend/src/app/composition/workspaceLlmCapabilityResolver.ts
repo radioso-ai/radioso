@@ -16,11 +16,7 @@ import type {
   WorkspaceLlmCapabilityPreference,
 } from "../../modules/settings/contracts/llmCapability.js";
 import { ProviderConfigurationError } from "../../shared/infra/llm/providerTypes.js";
-import type {
-  ManagedModelPolicy,
-  ManagedModelPolicyDecision,
-  ManagedModelSelection,
-} from "../../shared/domain/managedModelPolicy.js";
+import type { ManagedModelPolicy } from "../../shared/domain/managedModelPolicy.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 
 interface WorkspaceCapabilityPreferencePort {
@@ -63,16 +59,6 @@ interface CandidateSelection {
   resolvedBy: UnmanagedResolvedBy;
 }
 
-interface PolicyAwareSelection {
-  selection: LlmCapabilitySelection;
-  credentialSource: ManagedModelPolicyDecision["credentialSource"];
-}
-
-const unrestrictedModelPolicy: ManagedModelPolicyDecision = {
-  managedModel: null,
-  credentialSource: "self_hosted",
-};
-
 export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
   constructor(private readonly deps: WorkspaceLlmCapabilityResolverDependencies) {}
 
@@ -82,17 +68,9 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
   ): Promise<LlmCapabilityConfig> {
     const envDefault = this.deps.defaults[capability];
 
-    const {
-      selection: { provider, model, resolvedBy },
-      credentialSource,
-    } = await this.resolvePolicyAwareSelection(capability, input);
+    const { provider, model, resolvedBy } = await this.resolveSelection(capability, input);
 
-    const apiKey = await this.resolveApiKey(
-      input.workspaceId,
-      provider,
-      capability,
-      credentialSource,
-    );
+    const apiKey = await this.resolveApiKey(input.workspaceId, provider, capability);
     const baseUrl = this.resolveBaseUrl(
       provider,
       capability,
@@ -114,21 +92,8 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
     capability: LlmCapabilityName,
     input: LlmCapabilityResolveInput,
   ): Promise<LlmCapabilitySelection> {
-    return (await this.resolvePolicyAwareSelection(capability, input)).selection;
-  }
-
-  private async resolvePolicyAwareSelection(
-    capability: LlmCapabilityName,
-    input: LlmCapabilityResolveInput,
-  ): Promise<PolicyAwareSelection> {
     const candidate = await this.resolveCandidate(capability, input);
-    const policy = this.deps.managedModelPolicy
-      ? await this.deps.managedModelPolicy.resolveModelPolicy({
-          workspaceId: input.workspaceId,
-          capability,
-        })
-      : unrestrictedModelPolicy;
-    const managed = await this.resolveManaged(capability, input.workspaceId, candidate.provider, policy.managedModel);
+    const managed = await this.resolveManaged(capability, input.workspaceId, candidate.provider);
     const selection: LlmCapabilitySelection = managed
       ? { provider: managed.provider, model: managed.model, resolvedBy: "managed_plan" }
       : candidate;
@@ -152,7 +117,7 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
         "Managed plan replaced the requested LLM model",
       );
     }
-    return { selection, credentialSource: policy.credentialSource };
+    return selection;
   }
 
   private async resolveCandidate(
@@ -179,48 +144,45 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
   }
 
   /**
-   * A managed plan supplies the default model. A workspace key for the model
-   * it selected is an intentional per-capability opt-out of that default.
+   * The lock applies to text capabilities only, and only while the workspace
+   * has no key of its own for the provider it would otherwise use.
    */
   private async resolveManaged(
     capability: LlmCapabilityName,
     workspaceId: string,
     candidateProvider: LlmProviderName,
-    managed: ManagedModelSelection | null,
   ) {
-    if (!managed || !isWorkspaceCapability(capability)) {
+    if (!this.deps.managedModelPolicy || !isWorkspaceCapability(capability)) {
       return null;
     }
-    return await this.deps.credentials.hasCredentials(workspaceId, candidateProvider) ? null : managed;
+    const managed = await this.deps.managedModelPolicy.resolveManagedModel({ workspaceId, capability });
+    if (!managed) {
+      return null;
+    }
+    const ownsCandidateKey = await this.deps.credentials.hasCredentials(workspaceId, candidateProvider);
+    return ownsCandidateKey ? null : managed;
   }
 
   private async resolveApiKey(
     workspaceId: string,
     provider: LlmProviderName,
     capability: LlmCapabilityName,
-    credentialSource: ManagedModelPolicyDecision["credentialSource"],
   ): Promise<string> {
     const workspaceKey = await this.deps.credentials.getApiKey(workspaceId, provider);
-    if (workspaceKey) return workspaceKey;
-    if (credentialSource !== "byok") {
-      const envKey = this.deps.envKeys.resolveEnvApiKey(provider);
-      if (envKey) {
-        return envKey;
-      }
+    if (workspaceKey) {
+      return workspaceKey;
     }
-    const workspaceCredentialOnly = credentialSource === "byok";
-    const remediation = workspaceCredentialOnly
-      ? "Add a workspace credential at Settings → Credentials."
-      : credentialSource === "managed"
-        ? "Set the matching deployment environment variable and restart Radioso."
-        : "Add a workspace credential at Settings → Credentials, or set the matching environment variable and restart Radioso.";
+    const envKey = this.deps.envKeys.resolveEnvApiKey(provider);
+    if (envKey) {
+      return envKey;
+    }
     throw new ProviderConfigurationError(
-      `No API key configured for provider "${provider}". ${remediation}`,
+      `No API key configured for provider "${provider}". Add a workspace credential at Settings → Credentials, or set the matching environment variable and restart Radioso.`,
       {
         kind: "missing_api_key",
         provider,
         capability,
-        remediation,
+        remediation: "Add a workspace credential at Settings → Credentials, or set the matching environment variable and restart Radioso.",
       },
     );
   }

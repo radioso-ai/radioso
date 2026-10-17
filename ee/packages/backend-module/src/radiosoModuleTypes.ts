@@ -689,8 +689,8 @@ export type ApplicationDocumentCapacityReaderRegistration =
 
 /**
  * Mirrors OSS's `ManagedModelPolicy` (`backend/src/shared/domain/managedModelPolicy.ts`): the
- * capability resolver asks it, per workspace and capability, whether the plan picks the model
- * and whether a missing workspace key may use a deployment credential.
+ * capability resolver asks it, per workspace and capability, whether the plan picks the model.
+ * `null` leaves the workspace free to choose.
  */
 export type ManagedModelCapability = "chat" | "rewrite" | "rerank" | "embeddings";
 
@@ -699,16 +699,11 @@ export interface ManagedModelSelection {
   model: string;
 }
 
-export interface ManagedModelPolicyDecision {
-  managedModel: ManagedModelSelection | null;
-  credentialSource: "managed" | "byok" | "self_hosted";
-}
-
 export interface ManagedModelPolicy {
-  resolveModelPolicy(input: {
+  resolveManagedModel(input: {
     workspaceId: string;
     capability: ManagedModelCapability;
-  }): Promise<ManagedModelPolicyDecision>;
+  }): Promise<ManagedModelSelection | null>;
 }
 
 export type ApplicationManagedModelPolicyRegistration =

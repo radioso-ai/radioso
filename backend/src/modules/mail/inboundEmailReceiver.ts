@@ -34,6 +34,8 @@ export type VerifiedInboundEvent =
       providerObjectId: string;
       occurredAt: Date;
       status: DeliveryStatusFacts;
+      recipients: readonly string[];
+      emailKind: string | null;
     }
   | { kind: "domain_status"; providerEventId: string; providerObjectId: string; occurredAt: Date }
   | { kind: "unsupported"; providerEventId: string; occurredAt: Date; providerType: string };

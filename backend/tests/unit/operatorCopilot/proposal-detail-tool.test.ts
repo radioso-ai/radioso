@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { ContextVariableService } from "../../../src/modules/context-variables/public.js";
 import { createDocumentCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/documentProposalAdapter.js";
 import { OperatorMcpCatalogService } from "../../../src/modules/operatorCopilot/mcpCatalog.js";
-import { createContextVariableCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/proposalAdapters.js";
+import { createAgentSettingCopilotProposalAdapter, createContextVariableCopilotProposalAdapter } from "../../../src/modules/operatorCopilot/proposalAdapters.js";
 import { CopilotAuthorizationError, OperatorCopilotService, type CopilotProposalDetailReadPort } from "../../../src/modules/operatorCopilot/service.js";
 import { createProposalDetailTool } from "../../../src/modules/operatorCopilot/tools/proposalDetail.js";
 import { InMemoryCopilotRepository } from "../../support/inMemoryCopilotRepository.js";
@@ -105,5 +105,33 @@ describe("proposal_detail", () => {
   it("hides a proposal when its target read permission was revoked", async () => {
     const descriptor = { ...createProposalDetailTool({ getProposalDetail: vi.fn<CopilotProposalDetailReadPort["getProposalDetail"]>(async () => { throw new CopilotAuthorizationError(); }) }), mcpDisposition: readDisposition };
     await expect(new OperatorMcpCatalogService([descriptor]).invoke({ name: "proposal_detail", arguments: { proposalId }, context, scopes: new Set(["operator:read"]), signal: AbortSignal.timeout(1_000) })).rejects.toMatchObject({ message: "Copilot proposal not found" });
+  });
+
+  it("reads back a prepared agent-settings proposal, which names several settings rather than one key", async () => {
+    const repository = new InMemoryCopilotRepository();
+    const agentId = randomUUID();
+    const voice = { enabled: true, bridgeLines: { en: { acknowledge: [], check: ["Let me check that for you, it only takes a moment."] } }, fallbackLine: {}, runtime: null };
+    const service = new OperatorCopilotService({
+      repository,
+      currentAuthorization: context.currentAuthorization,
+      proposalAdapters: [createAgentSettingCopilotProposalAdapter({ agentService: { readFieldProposalVersion: vi.fn(async () => "fields:current") } } as never)],
+    } as never);
+    // The shape prepare_agent_settings persists: a field fence instead of one setting key.
+    const prepared = await repository.createProposal({
+      workspaceId: context.workspaceId, operatorUserId: context.operatorUserId, conversationId: undefined,
+      targetType: "agent_setting",
+      targetRef: { agentId, expectedFields: [{ key: "voice", value: { enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null } }] },
+      payload: { kind: "fields", patch: { voice } }, versionToken: "fields:current", evidence: null,
+    } as never);
+    const descriptor = { ...createProposalDetailTool({ getProposalDetail: service.getProposalDetail.bind(service) }), mcpDisposition: readDisposition };
+    const catalog = new OperatorMcpCatalogService([descriptor]);
+
+    const detail = await catalog.invoke({ name: "proposal_detail", arguments: { proposalId: prepared.id }, context, scopes: new Set(["operator:read"]), signal: AbortSignal.timeout(1_000) });
+
+    expect(detail).toMatchObject({
+      targetType: "agent_setting",
+      target: { agentId, settingKey: null, label: "Agent settings" },
+      draftedChange: { voice },
+    });
   });
 });

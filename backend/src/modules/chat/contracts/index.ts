@@ -58,6 +58,13 @@ export { buildAgentReplyEnvelope, isChatTurnResponse } from "../services/agentRe
 export { chatRequestInputFor, resolveAgentTurnInput, type AgentTurnInput } from "../services/agentTurnInput.js";
 export type { ChatRoutineInvocationReport, ChatRoutineTurnState } from "./routineTurnState.js";
 export type { ChatStreamEvent } from "./streamEvents.js";
+// A channel whose caller spoke over a stored reply marks that reply; history reads the marker back.
+export {
+  replyInterruptionSchema,
+  type ConversationTurnSupersession,
+  type ReplyInterruption,
+  type ReplyInterruptionMarker,
+} from "./interruption.js";
 export type {
   ActionHandler,
   ActionHandlerContext,
@@ -71,6 +78,8 @@ export type {
   ChatResponse,
   ChatRoute,
   ChatSuggestion,
+  ChatTurnHandoff,
+  ChatTurnHandoffReason,
 } from "../types/chatResponses.js";
 export type {
   ChatAnswerCoverageAssessment,

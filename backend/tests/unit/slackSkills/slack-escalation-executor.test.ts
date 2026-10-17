@@ -52,4 +52,49 @@ describe("SlackEscalationExecutor", () => {
       }),
     }));
   });
+
+  it("enqueues a private test's post with no conversation link, keeping the turn's id as the payload's reference", async () => {
+    const outbox = { enqueue: vi.fn(async () => ({ id: "action-1", duplicate: false })) };
+    const executor = new SlackEscalationExecutor({
+      outbox,
+      skills: {
+        findEnabledByName: vi.fn(async () => ({
+          id: "skill-1",
+          workspaceId: "workspace-1",
+          agentId: "agent-1",
+          installationId: "11111111-1111-1111-1111-111111111111",
+          skillName: "post_to_support",
+          boundInputs: { channelId: "CSUPPORT", text: "Qualified lead" },
+          exposedInputs: {},
+          enabled: true,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        })),
+      },
+    });
+    const dispatch = (conversationDurability: "durable" | "ephemeral") => executor.dispatch({
+      skill: slackRoutineSkillDefinition("post_to_support"),
+      collected: {},
+      context: {
+        workspaceId: "workspace-1",
+        accountId: "account-1",
+        agentId: "agent-1",
+        conversationId: "minted-test-conversation",
+        sessionId: "minted-test-conversation",
+        conversationDurability,
+        routineId: "routine-1",
+        stepId: "step-1",
+      },
+      emit: noopSkillEmitPort,
+    });
+
+    await dispatch("ephemeral");
+    await dispatch("durable");
+
+    expect(outbox.enqueue).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      conversationId: null,
+      payload: expect.objectContaining({ conversationRef: "minted-test-conversation" }),
+    }));
+    expect(outbox.enqueue).toHaveBeenNthCalledWith(2, expect.objectContaining({ conversationId: "minted-test-conversation" }));
+  });
 });

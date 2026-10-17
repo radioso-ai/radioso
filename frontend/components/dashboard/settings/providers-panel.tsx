@@ -1,7 +1,8 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
 import {
+  AudioLines,
   Cpu,
   Key,
   MessageSquare,
@@ -52,6 +53,8 @@ import {
   llmProviderNames,
   llmProvidersApi,
   providerDisplayName,
+  voiceVendorNames,
+  type CredentialProviderName,
   type EnvProviderAvailability,
   type KnownModelsByProvider,
   type LlmCapabilityName,
@@ -109,9 +112,13 @@ const modelRowClassName =
   'grid gap-3 sm:grid-cols-[14rem_minmax(12rem,1fr)_minmax(12rem,1fr)_5.5rem] xl:grid-cols-[16rem_minmax(16rem,1fr)_minmax(18rem,1fr)_5.5rem]'
 
 const providerVisual: Record<
-  LlmProviderName,
+  CredentialProviderName,
   { monogram: string; tone: string }
 > = {
+  elevenlabs: {
+    monogram: 'EL',
+    tone: 'bg-violet-500/10 text-violet-600 ring-violet-500/30 dark:text-violet-300',
+  },
   openai: {
     monogram: 'OA',
     tone: 'bg-emerald-500/10 text-emerald-600 ring-emerald-500/30 dark:text-emerald-300',
@@ -159,18 +166,12 @@ export function ProvidersPanel({
 }) {
   const [encryptionConfigured, setEncryptionConfigured] = useState(true)
   const [credentials, setCredentials] = useState<ProviderCredentialSummary[]>([])
-  const [credentialSource, setCredentialSource] = useState<'managed' | 'byok' | 'self_hosted'>('self_hosted')
   const [envProviderAvailability, setEnvProviderAvailability] =
     useState<EnvProviderAvailability>(emptyEnvProviderAvailability)
   const [models, setModels] = useState<WorkspaceLlmModels | null>(null)
   const [ingestionSettings, setIngestionSettings] = useState<IngestionSettings | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  // BYOK is the only policy that forbids deployment credentials. Managed plans
-  // still expose deployment providers for capabilities the plan does not lock.
-  const effectiveEnvProviderAvailability = credentialSource === 'byok'
-    ? emptyEnvProviderAvailability
-    : envProviderAvailability
 
   const emitSaveState = useCallback(
     (state: SaveState) => {
@@ -182,7 +183,6 @@ export function ProvidersPanel({
   const reloadCredentials = useCallback(async () => {
     const next = await llmProvidersApi.listCredentials()
     setCredentials(next.credentials)
-    setCredentialSource(next.credentialSource)
     setEncryptionConfigured(next.encryptionConfigured)
     setEnvProviderAvailability(next.envProviderAvailability)
     return next
@@ -213,7 +213,6 @@ export function ProvidersPanel({
         ])
         if (!active) return
         setCredentials(credentialList.credentials)
-        setCredentialSource(credentialList.credentialSource)
         setEncryptionConfigured(credentialList.encryptionConfigured)
         setEnvProviderAvailability(credentialList.envProviderAvailability)
         setModels(modelList)
@@ -254,10 +253,28 @@ export function ProvidersPanel({
   return (
     <SettingsTabShell>
       <CredentialsCard
+        id="provider-credentials"
+        icon={<Key className="h-5 w-5 text-primary" />}
+        title="Provider API keys"
+        description="Workspace keys are encrypted at rest. They take precedence over deployment-level environment variables when set."
+        providers={llmProviderNames}
+        notConfiguredHint="Add a key to use this provider in workspace models."
         encryptionConfigured={encryptionConfigured}
         credentials={credentials}
-        credentialSource={credentialSource}
-        envProviderAvailability={effectiveEnvProviderAvailability}
+        envProviderAvailability={envProviderAvailability}
+        onChange={reloadCredentials}
+        emitSaveState={emitSaveState}
+      />
+      <CredentialsCard
+        id="voice-vendor-credentials"
+        icon={<AudioLines className="h-5 w-5 text-primary" />}
+        title="Voice runtime keys"
+        description="Radioso starts voice sessions with this key, so pages never hold it. Encrypted at rest and never shown again."
+        providers={voiceVendorNames}
+        notConfiguredHint="Add a key so pages can start voice sessions on your ElevenLabs agents."
+        encryptionConfigured={encryptionConfigured}
+        credentials={credentials}
+        envProviderAvailability={{}}
         onChange={reloadCredentials}
         emitSaveState={emitSaveState}
       />
@@ -265,8 +282,7 @@ export function ProvidersPanel({
         <ModelsCard
           models={models}
           credentials={credentials}
-          credentialSource={credentialSource}
-          envProviderAvailability={effectiveEnvProviderAvailability}
+          envProviderAvailability={envProviderAvailability}
           onChange={reloadModels}
           ingestionSettings={ingestionSettings}
           onIngestionSettingsChange={setIngestionSettings}
@@ -278,72 +294,65 @@ export function ProvidersPanel({
   )
 }
 
+/** One list of workspace API keys: the model providers' or the voice runtimes'. */
 function CredentialsCard({
+  id,
+  icon,
+  title,
+  description,
+  providers,
+  notConfiguredHint,
   encryptionConfigured,
   credentials,
-  credentialSource,
   envProviderAvailability,
   onChange,
   emitSaveState,
 }: {
+  id: string
+  icon: ReactNode
+  title: string
+  description: string
+  providers: readonly CredentialProviderName[]
+  notConfiguredHint: string
   encryptionConfigured: boolean
   credentials: ProviderCredentialSummary[]
-  credentialSource: 'managed' | 'byok' | 'self_hosted'
-  envProviderAvailability: EnvProviderAvailability
+  /** Which providers have a deployment key to inherit; a provider it leaves out has none. */
+  envProviderAvailability: Partial<Record<CredentialProviderName, boolean>>
   onChange: () => Promise<unknown>
   emitSaveState: (state: SaveState) => void
 }) {
-  const [editingProvider, setEditingProvider] = useState<LlmProviderName | null>(null)
-
-  const configuredByProvider = useMemo(() => {
-    const map = new Map<LlmProviderName, ProviderCredentialSummary>()
-    for (const credential of credentials) {
-      map.set(credential.provider, credential)
-    }
-    return map
-  }, [credentials])
-
-  const encryptionUnavailableCopy = credentialSource === 'byok'
-    ? 'before adding a workspace provider key. Deployment provider keys are not available on this plan.'
-    : credentialSource === 'managed'
-      ? "to store provider overrides. Without a readable workspace key, this workspace uses Radioso's managed models."
-      : 'to enable workspace API keys; this workspace uses deployment provider keys when available.'
+  const [editingProvider, setEditingProvider] = useState<CredentialProviderName | null>(null)
+  const configuredByProvider = useMemo(
+    () => new Map(credentials.map((credential) => [credential.provider, credential])),
+    [credentials],
+  )
 
   return (
-    <SettingsCard
-      id="provider-credentials"
-      icon={<Key className="h-5 w-5 text-primary" />}
-      title="Provider API keys"
-      description={credentialSource === 'byok'
-        ? "This Planet workspace uses only its own provider keys. Add a key before using chat or document ingestion."
-        : credentialSource === 'managed'
-          ? "Managed plans use Radioso's model by default. A stored key for a capability's selected provider keeps that capability on your provider; remove that key to use the managed default."
-          : "Workspace keys are encrypted at rest. They take precedence over deployment-level environment variables when set."}
-    >
+    <SettingsCard id={id} icon={icon} title={title} description={description}>
       <div className="space-y-3">
         {!encryptionConfigured ? (
           <div className="flex items-start gap-2 rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-300">
             <Sparkles className="mt-0.5 h-4 w-4 shrink-0" />
             <p>
-              Server-side secret encryption is not configured. Set{' '}
-              <code className="rounded bg-amber-500/20 px-1 py-0.5 font-mono text-[0.8em]">CONNECTOR_ENCRYPTION_KEY</code>{' '}
-              on the backend {encryptionUnavailableCopy}
+              Server-side secret encryption is not configured. Set <code className="rounded bg-amber-500/20 px-1 py-0.5 font-mono text-[0.8em]">CONNECTOR_ENCRYPTION_KEY</code> on the
+              backend to enable workspace API keys; this workspace currently uses the deployment defaults.
             </p>
           </div>
         ) : null}
         <ul className="divide-y divide-border/70 overflow-hidden rounded-xl border border-border bg-background/40">
-          {llmProviderNames.map((provider) => (
+          {providers.map((provider) => (
             <CredentialRow
               key={`${provider}:${editingProvider === provider ? 'editing' : 'idle'}`}
               provider={provider}
               configured={configuredByProvider.get(provider) ?? null}
-              envAvailable={envProviderAvailability[provider]}
+              envAvailable={envProviderAvailability[provider] ?? false}
               disabled={!encryptionConfigured}
               editing={editingProvider === provider}
               onStartEditing={() => setEditingProvider(provider)}
               onStopEditing={() => setEditingProvider(null)}
               onChange={onChange}
               emitSaveState={emitSaveState}
+              notConfiguredHint={notConfiguredHint}
             />
           ))}
         </ul>
@@ -362,8 +371,9 @@ function CredentialRow({
   onStopEditing,
   onChange,
   emitSaveState,
+  notConfiguredHint,
 }: {
-  provider: LlmProviderName
+  provider: CredentialProviderName
   configured: ProviderCredentialSummary | null
   envAvailable: boolean
   disabled: boolean
@@ -372,6 +382,7 @@ function CredentialRow({
   onStopEditing: () => void
   onChange: () => Promise<unknown>
   emitSaveState: (state: SaveState) => void
+  notConfiguredHint: string
 }) {
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
@@ -430,7 +441,7 @@ function CredentialRow({
     ? `Updated ${new Date(configured.updatedAt).toLocaleString()}`
     : envAvailable
       ? 'Inherits the deployment environment variable.'
-      : 'Add a key to use this provider in workspace models.'
+      : notConfiguredHint
 
   return (
     <li className="flex flex-col gap-3 px-4 py-4 transition-colors hover:bg-muted/30 sm:flex-row sm:items-center sm:justify-between">
@@ -523,7 +534,6 @@ function CredentialRow({
 function ModelsCard({
   models,
   credentials,
-  credentialSource,
   envProviderAvailability,
   onChange,
   ingestionSettings,
@@ -533,7 +543,6 @@ function ModelsCard({
 }: {
   models: WorkspaceLlmModels
   credentials: ProviderCredentialSummary[]
-  credentialSource: 'managed' | 'byok' | 'self_hosted'
   envProviderAvailability: EnvProviderAvailability
   onChange: () => Promise<unknown>
   ingestionSettings: IngestionSettings | null
@@ -554,18 +563,13 @@ function ModelsCard({
       ),
     [credentialProviders, envProviderAvailability],
   )
-  const description = credentialSource === 'byok'
-    ? 'Model assigned to each capability. Only providers with a workspace key are available; deployment provider keys never apply. Changing the embedding model re-indexes existing documents.'
-    : credentialSource === 'managed'
-      ? "Each capability uses Radioso's managed default unless its selected provider has a stored workspace key. Remove that key to return to the managed default. Changing the embedding model re-indexes existing documents."
-      : 'Model assigned to each capability. Workspace keys take precedence over deployment provider keys. Changing the embedding model re-indexes existing documents.'
 
   return (
     <SettingsCard
       id="provider-models"
       icon={<Cpu className="h-5 w-5 text-primary" />}
       title="Models"
-      description={description}
+      description="Model assigned to each capability. Chat, rewrite, and rerank fall back to deployment defaults; changing the embedding model re-indexes existing documents."
     >
       <div className="divide-y divide-border/60 rounded-xl border border-border/60 bg-background/40">
         {llmCapabilityNames.map((capability) => {
@@ -581,7 +585,6 @@ function ModelsCard({
               capability={capability}
               value={current}
               managed={managed}
-              credentialSource={credentialSource}
               credentialProviders={credentialProviders}
               availableProviders={availableProviders}
               knownModelsByProvider={models.knownModelsByProvider}
@@ -608,7 +611,6 @@ function ModelRow({
   capability,
   value,
   managed,
-  credentialSource,
   credentialProviders,
   availableProviders,
   knownModelsByProvider,
@@ -618,8 +620,7 @@ function ModelRow({
   capability: LlmCapabilityName
   value: LlmCapabilityPreference | null
   managed: LlmManagedModel | null
-  credentialSource: 'managed' | 'byok' | 'self_hosted'
-  credentialProviders: Set<LlmProviderName>
+  credentialProviders: ReadonlySet<CredentialProviderName>
   availableProviders: Set<LlmProviderName>
   knownModelsByProvider: KnownModelsByProvider
   onChange: () => Promise<unknown>
@@ -728,13 +729,7 @@ function ModelRow({
             </p>
           ) : null}
           <p className="sr-only">
-            {locked
-              ? 'Managed by plan'
-              : hasValue
-                ? 'Workspace override'
-                : credentialSource === 'self_hosted'
-                  ? 'Using deployment default'
-                  : 'Using workspace default'}
+            {locked ? 'Managed by plan' : hasValue ? 'Workspace override' : 'Using deployment default'}
           </p>
         </div>
       </div>

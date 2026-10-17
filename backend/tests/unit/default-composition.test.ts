@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createDefaultActionDrainDispatcher,
   createDefaultApplicationComposition,
+  createDefaultBackgroundJobWake,
   createDefaultConnectorRegistry,
   createDefaultDocumentJobConsumer,
   createDefaultDocumentJobDispatcher,
@@ -15,10 +16,11 @@ import {
   DefaultTurnSelectionStrategy,
   HANDOFF_NOTIFY_ACTION_TYPE,
   COMPLETION_NOTIFY_ACTION_TYPE,
-  NoopActionDrainDispatcher,
   WEBHOOK_SEND_ACTION_TYPE,
 } from "../../src/modules/chat/composition.js";
 import { CloudTasksActionDrainDispatcher } from "../../src/modules/chat/infra/cloudTasksActionDrainDispatcher.js";
+import { NoopBackgroundJobWake } from "../../src/shared/background-jobs/index.js";
+import { CloudTasksBackgroundJobWake } from "../../src/shared/infra/cloudTasksBackgroundJobWake.js";
 import { CONVERSATION_TRANSFER_NOTICE_ACTION_TYPE } from "../../src/modules/handoff/public.js";
 import type { OrganizationCreationGuard } from "../../src/shared/domain/organizationCreationGuard.js";
 import type { ManagedModelPolicy } from "../../src/shared/domain/managedModelPolicy.js";
@@ -776,7 +778,7 @@ describe("default application composition", () => {
       ACTION_DISPATCH_TASK_QUEUE_NAME: undefined,
     }, createLogger() as any);
 
-    expect(dispatcher).toBeInstanceOf(NoopActionDrainDispatcher);
+    expect(dispatcher).toBeInstanceOf(NoopBackgroundJobWake);
   });
 
   it("stays no-op under cloud-tasks dispatch until ACTION_DISPATCH_TASK_QUEUE_NAME is configured (rollout-safe)", () => {
@@ -790,7 +792,7 @@ describe("default application composition", () => {
       ACTION_DISPATCH_TASK_QUEUE_NAME: undefined,
     }, createLogger() as any);
 
-    expect(dispatcher).toBeInstanceOf(NoopActionDrainDispatcher);
+    expect(dispatcher).toBeInstanceOf(NoopBackgroundJobWake);
   });
 
   it("selects the Cloud Tasks action drain dispatcher once the action queue name is configured", () => {
@@ -805,5 +807,34 @@ describe("default application composition", () => {
     }, createLogger() as any);
 
     expect(dispatcher).toBeInstanceOf(CloudTasksActionDrainDispatcher);
+  });
+
+  describe("background job wake", () => {
+    const cloudTasksEnv = {
+      WORKER_DISPATCH_DRIVER: "cloud-tasks" as const,
+      GOOGLE_CLOUD_PROJECT: "radioso-prod",
+      WORKER_TASKS_QUEUE_LOCATION: "us-central1",
+      WORKER_TASKS_SERVICE_URL: "https://worker.example.com",
+      WORKER_TASKS_INVOKER_SERVICE_ACCOUNT: "invoker@example.com",
+      WORKER_TASK_AUTH_TOKEN: "0123456789abcdef0123456789abcdef",
+    };
+
+    it("leaves waking to the worker's poll loop by default", () => {
+      expect(createDefaultBackgroundJobWake({
+        ...cloudTasksEnv,
+        WORKER_DISPATCH_DRIVER: "noop",
+        BACKGROUND_JOB_TASK_QUEUE_NAME: "radioso-background-jobs",
+      })).toBeInstanceOf(NoopBackgroundJobWake);
+    });
+
+    it("stays on the sweep under cloud-tasks dispatch until the queue is provisioned, so a deploy never waits on Terraform", () => {
+      expect(createDefaultBackgroundJobWake({ ...cloudTasksEnv, BACKGROUND_JOB_TASK_QUEUE_NAME: undefined }))
+        .toBeInstanceOf(NoopBackgroundJobWake);
+    });
+
+    it("pushes through Cloud Tasks once the background job queue is configured", () => {
+      expect(createDefaultBackgroundJobWake({ ...cloudTasksEnv, BACKGROUND_JOB_TASK_QUEUE_NAME: "radioso-background-jobs" }))
+        .toBeInstanceOf(CloudTasksBackgroundJobWake);
+    });
   });
 });

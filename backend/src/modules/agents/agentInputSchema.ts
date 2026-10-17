@@ -1,6 +1,8 @@
 import { z, type ZodType } from "zod";
 
 import { agentSurfacePositions, type AgentInput } from "./domain.js";
+import { agentMechanicsRepliesSchema } from "./mechanicsReplies.js";
+import { agentVoiceSettingsInputSchema } from "./voiceSettings.js";
 
 export const agentInputThemeSchema = z.object({
   brand: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
@@ -88,9 +90,14 @@ export const agentInputFieldSchemas = {
       theme: agentInputThemeSchema.optional(),
       copy: z.record(z.record(z.string().max(500))).optional(),
       expertOverrides: z.record(z.string().max(500)).optional(),
+      voiceCallsOffered: z.boolean().optional(),
     }).optional(),
     extensions: z.record(z.unknown()).optional(),
   }),
+  /** Replaced whole: a value names every line the agent keeps; `runtime` alone defaults, to null. */
+  voice: agentVoiceSettingsInputSchema,
+  /** Replaced whole, like `voice`: a value names every locale and mechanic the agent keeps. */
+  mechanicsReplies: agentMechanicsRepliesSchema,
   /**
    * `publicId` is deliberately absent. This map is the allowed-field list for both the PUT body
    * (`agentBodySchema`) and Ray's `propose_agent_setting`, and a public id is minted and rotated
@@ -99,8 +106,9 @@ export const agentInputFieldSchemas = {
    */
 } satisfies Record<Exclude<keyof AgentInput, "publicId">, ZodType>;
 
-/** The reviewed-operation surface deliberately excludes channel, retrieval, model, asset, and
- * skill settings because those owners have dedicated authoring flows. */
+/** The reviewed-operation surface deliberately excludes surface, retrieval, model, asset, and
+ * skill settings because those owners have dedicated authoring flows. `voice` and
+ * `mechanicsReplies` are agent-owned blocks with no such flow, so they ride here, replaced whole. */
 export const agentReviewedSettingsPatchSchema = z.object({
   name: agentInputFieldSchemas.name,
   internalName: agentInputFieldSchemas.internalName,
@@ -120,6 +128,8 @@ export const agentReviewedSettingsPatchSchema = z.object({
   walkInConversationsPerHour: agentInputFieldSchemas.walkInConversationsPerHour,
   agentCardEnabled: agentInputFieldSchemas.agentCardEnabled,
   publicAgentAccessEnabled: agentInputFieldSchemas.publicAgentAccessEnabled,
+  voice: agentInputFieldSchemas.voice,
+  mechanicsReplies: agentInputFieldSchemas.mechanicsReplies,
 }).partial().strict().refine((patch) => Object.keys(patch).length > 0, {
   message: "At least one reviewable agent setting must be provided",
 });

@@ -137,6 +137,21 @@ const threadSlackKey = (teamId: string, channelId: string, threadTs: string): st
 const mentionsUser = (text: string, userId: string): boolean =>
   text.includes(`<@${userId}>`) || text.includes(`<@${userId}|`);
 
+/**
+ * True when an inbound event is the app's own voice: a bot-authored post, or a post from the
+ * installation's own bot user. Pure and stateless so the webhook can filter before ever enqueuing
+ * a job, not only the worker that would otherwise run and answer it.
+ */
+export const isSlackBotLoop = (
+  installation: SlackInstallationRecord | null,
+  event: { user?: unknown; bot_id?: unknown },
+): boolean => {
+  if (typeof event.bot_id === "string" && event.bot_id.length > 0) {
+    return true;
+  }
+  return Boolean(installation?.botUserId && event.user === installation.botUserId);
+};
+
 const channelThreadContext = (
   installation: SlackInstallationRecord,
   event: { channel: string; user: string },
@@ -596,12 +611,5 @@ export class SlackMessageHandler {
       },
       "Slack gap escalation enqueued",
     );
-  }
-
-  isBotLoop(installation: SlackInstallationRecord | null, event: { user?: unknown; bot_id?: unknown }): boolean {
-    if (typeof event.bot_id === "string" && event.bot_id.length > 0) {
-      return true;
-    }
-    return Boolean(installation?.botUserId && event.user === installation.botUserId);
   }
 }

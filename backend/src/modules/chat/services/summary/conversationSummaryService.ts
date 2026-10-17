@@ -37,7 +37,7 @@ export interface ConversationSummaryGeneration {
 
 /** Generates a fresh summary (and topic title) from the assembled prompt. Wraps the shared inference seam. */
 export interface ConversationSummaryGenerator {
-  generate(input: { prompt: string; usageContext: ModelCallUsageContext }): Promise<ConversationSummaryGeneration>;
+  generate(input: { prompt: string; usageContext: ModelCallUsageContext; signal?: AbortSignal }): Promise<ConversationSummaryGeneration>;
 }
 
 /**
@@ -52,22 +52,29 @@ export interface ConversationEarlyTitleGeneration {
 
 /** Generates a title-only completion for a conversation still below the summary threshold. */
 export interface ConversationEarlyTitleGenerator {
-  generate(input: { prompt: string; usageContext: ModelCallUsageContext }): Promise<ConversationEarlyTitleGeneration>;
+  generate(input: { prompt: string; usageContext: ModelCallUsageContext; signal?: AbortSignal }): Promise<ConversationEarlyTitleGeneration>;
 }
 
 /** Model-call knobs for the early-title generator; distinct from the combined call's config. */
-export interface ConversationEarlyTitleGenerationConfig {
+interface ConversationEarlyTitleGenerationConfig {
   reasoningEffort: ReasoningEffort;
   maxOutputTokens: number;
 }
 
-/** Post-turn trigger consumed by the turn lifecycle; fire-and-forget, never awaited. */
+/**
+ * Run by the conversation summary refresh background job after a turn commits. Rejects when the
+ * summary could not be regenerated or saved, so the job retries; a deliberate skip and a failed
+ * title write resolve. `signal` aborts the model calls when the job's deadline passes.
+ */
 export interface ConversationSummaryUpdater {
-  refresh(input: { workspaceId: string; conversationId: string; accountId?: string }): Promise<void>;
+  refresh(
+    input: { workspaceId: string; conversationId: string; accountId?: string },
+    options?: { signal?: AbortSignal },
+  ): Promise<void>;
 }
 
 /** The size bounds the regeneration honors; widened from the composition-owned defaults. */
-export interface ConversationSummaryConfig {
+interface ConversationSummaryConfig {
   minMessages: number;
   refreshEveryMessages: number;
   maxSourceMessages: number;
@@ -80,7 +87,7 @@ export interface ConversationSummaryConfig {
 }
 
 /** Model-call knobs for the generator; distinct from the size bounds the service applies. */
-export interface ConversationSummaryGenerationConfig {
+interface ConversationSummaryGenerationConfig {
   reasoningEffort: ReasoningEffort;
   maxOutputTokens: number;
 }
@@ -124,8 +131,9 @@ const clampTitle = (value: string | undefined, maxLength: number): string | unde
 };
 
 /**
- * Regenerates (never appends) the rolling per-conversation summary (#866) off the
- * critical path after a turn completes. Below the message threshold the raw window
+ * Regenerates (never appends) the rolling per-conversation summary (#866) in the worker,
+ * as the conversation summary refresh background job a committed turn writes (see
+ * `conversationSummaryRefreshJob.ts`). Below the message threshold the raw window
  * already carries the whole conversation, so it skips without an LLM call. Above it,
    * one LLM call rewrites the previous summary plus a bounded tail of recent messages
    * into a fresh, hard-clamped summary and upserts it under the watermark guard. The
@@ -183,7 +191,11 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
     };
   }
 
-  async refresh(input: { workspaceId: string; conversationId: string; accountId?: string }): Promise<void> {
+  async refresh(
+    input: { workspaceId: string; conversationId: string; accountId?: string },
+    options: { signal?: AbortSignal } = {},
+  ): Promise<void> {
+    const signal = options.signal;
     const startedAt = Date.now();
     try {
       const messageCount = await this.messages.countByConversationId(input.workspaceId, input.conversationId);
@@ -197,7 +209,7 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
           },
           "Skipped conversation summary regeneration",
         );
-        await this.attemptEarlyTitle(input, startedAt);
+        await this.attemptEarlyTitle(input, startedAt, signal);
         return;
       }
 
@@ -232,7 +244,7 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
       const conversationMessages = tail.filter((message) => message.role !== "system");
       const tailTruncated = tail.length >= this.config.maxSourceMessages;
       if (!previous && tailTruncated) {
-        await this.refreshFirstSummaryFromInitialBackfill(input, messageCount, startedAt);
+        await this.refreshFirstSummaryFromInitialBackfill(input, messageCount, startedAt, signal);
         return;
       }
       if (conversationMessages.length === 0 || (!tailTruncated && conversationMessages.length < this.config.minMessages)) {
@@ -252,6 +264,7 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
       const generated = await this.generator.generate({
         prompt,
         usageContext: this.usageContext(input, messageCount),
+        signal,
       });
       const summary = clampSummary(generated.summary, this.config.maxSummaryChars);
       if (!summary) {
@@ -288,10 +301,10 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
         "Regenerated conversation summary",
       );
     } catch (error) {
-      // Best-effort: a failure here only means the next turn regenerates from
-      // current state (the summary self-heals), so it must never fail the turn.
-      // Name/message only: provider errors carry raw response bodies (which can
-      // echo credentials), and this logger applies no redaction to custom keys.
+      // Rethrown so the background job that runs this retries and, past its budget,
+      // dead-letters: the turn that asked for it has already answered. Name/message
+      // only: provider errors carry raw response bodies (which can echo credentials),
+      // and this logger applies no redaction to custom keys.
       this.logger?.warn(
         {
           event: "conversation_summary_generation_failed",
@@ -302,6 +315,7 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
         },
         "Failed to regenerate conversation summary",
       );
+      throw error;
     }
   }
 
@@ -309,6 +323,7 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
     input: { workspaceId: string; conversationId: string; accountId?: string },
     messageCount: number,
     startedAt: number,
+    signal: AbortSignal | undefined,
   ): Promise<void> {
     const allMessages = await this.messages.listRecentByConversationId(
       input.workspaceId,
@@ -342,6 +357,7 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
           messageCount,
           `backfill:${Math.floor(index / this.config.maxSourceMessages)}`,
         ),
+        signal,
       });
       const summary = clampSummary(generated.summary, this.config.maxSummaryChars);
       if (!summary) {
@@ -479,6 +495,7 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
   private async attemptEarlyTitle(
     input: { workspaceId: string; conversationId: string; accountId?: string },
     startedAt: number,
+    signal: AbortSignal | undefined,
   ): Promise<void> {
     const existingTitle = await this.titleWriter.getTitle(input.conversationId, input.workspaceId);
     if (existingTitle) {
@@ -533,6 +550,7 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
       generated = await this.titleGenerator.generate({
         prompt: this.buildEarlyTitlePrompt(conversationMessages),
         usageContext: this.usageContext(input, conversationMessages.length, String(attemptNumber), "conversation_early_title"),
+        signal,
       });
     } catch (error) {
       // Name/message only: provider errors carry raw response bodies (which can
@@ -626,10 +644,11 @@ export class ModelConversationSummaryGenerator implements ConversationSummaryGen
     private readonly config: ConversationSummaryGenerationConfig = CHAT_BEHAVIOR.conversationSummary,
   ) {}
 
-  async generate(input: { prompt: string; usageContext: ModelCallUsageContext }): Promise<ConversationSummaryGeneration> {
+  async generate(input: { prompt: string; usageContext: ModelCallUsageContext; signal?: AbortSignal }): Promise<ConversationSummaryGeneration> {
     const { text } = await this.inference.complete({
       operation: input.usageContext,
       prompt: input.prompt,
+      signal: input.signal,
       reasoningEffort: this.config.reasoningEffort,
       maxOutputTokens: this.config.maxOutputTokens,
       responseFormat: CONVERSATION_SUMMARY_RESPONSE_FORMAT,
@@ -681,10 +700,11 @@ export class ModelConversationEarlyTitleGenerator implements ConversationEarlyTi
     },
   ) {}
 
-  async generate(input: { prompt: string; usageContext: ModelCallUsageContext }): Promise<ConversationEarlyTitleGeneration> {
+  async generate(input: { prompt: string; usageContext: ModelCallUsageContext; signal?: AbortSignal }): Promise<ConversationEarlyTitleGeneration> {
     const { text } = await this.inference.complete({
       operation: input.usageContext,
       prompt: input.prompt,
+      signal: input.signal,
       reasoningEffort: this.config.reasoningEffort,
       maxOutputTokens: this.config.maxOutputTokens,
       responseFormat: CONVERSATION_EARLY_TITLE_RESPONSE_FORMAT,

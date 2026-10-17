@@ -3,6 +3,7 @@ const meta = {
   'clarification-behavior': 'Clarification behavior',
   'context-variables': 'Context variables',
   'visitor-data': 'Visitor data',
+  'deleting-conversation-data': 'Deleting conversation data',
   'human-takeover': 'Human takeover',
   copilot: 'Ray',
   'slack-channel': 'Slack channel',

@@ -151,6 +151,41 @@ describe("copilot chat readers", () => {
     expect(traceTool.outputSchema.safeParse(trace).success).toBe(true);
   });
 
+  it("shows Ray which reply the caller cut short and how much of it they heard", async () => {
+    const ports = dependencies();
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "conversation_transcript")!;
+    const conversationId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const reply = (id: string, content: string) => ({ id, role: "assistant" as const, source: "ai_agent", content, createdAt: "2026-08-18T10:00:02.000Z" });
+    ports.getConversation.mockResolvedValue({
+      conversationId,
+      agentId: null,
+      agentName: null,
+      sourceChannel: "voice",
+      callerKind: "human" as const,
+      createdAt: "2026-08-18T10:00:00.000Z",
+      updatedAt: "2026-08-18T10:00:02.000Z",
+      messageCount: 2,
+      messages: [
+        { ...reply("cccccccc-cccc-4ccc-8ccc-cccccccccccc", "We open at nine on weekdays."), interruption: { heardCharacterCount: 12, spokenCharacterCount: 40 } },
+        reply("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", "And at ten on Saturdays."),
+      ],
+    });
+
+    const cutReply = { ...reply("cccccccc-cccc-4ccc-8ccc-cccccccccccc", "We open at nine on weekdays."), interruption: { heardCharacterCount: 12, spokenCharacterCount: 40 } };
+    ports.getConversationTurn.mockResolvedValue({ conversationId, message: cutReply });
+    const traceTool = ports.descriptors.find((descriptor) => descriptor.name === "turn_trace")!;
+
+    const transcript = await tool.createTool(context(null)).invoke({ conversationId }, {} as never);
+    const trace = await traceTool.createTool(context(null)).invoke({ messageId: cutReply.id }, {} as never);
+
+    expect(transcript).toMatchObject({
+      transcript: { messages: [{ interruption: { heardCharacterCount: 12, spokenCharacterCount: 40 } }, { interruption: null }] },
+    });
+    expect(trace).toMatchObject({ trace: { message: { interruption: { heardCharacterCount: 12, spokenCharacterCount: 40 } } } });
+    expect(tool.outputSchema.safeParse(transcript).success).toBe(true);
+    expect(traceTool.outputSchema.safeParse(trace).success).toBe(true);
+  });
+
   /**
    * The spine carries each capability's own trace as a sub-trace, and `activityTrace` is the
    * pre-spine field for the same retrieval run. Measured on real turns, the two were byte-identical
@@ -262,6 +297,36 @@ describe("copilot chat readers", () => {
     ]);
     expect(result.transcript.activity[0]).not.toHaveProperty("id");
     expect(tool.outputSchema.safeParse(result).success).toBe(true);
+  });
+
+  it("says whether a voice conversation's call has a recording, and says nothing of one for any other channel", async () => {
+    const ports = dependencies();
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "conversation_transcript")!;
+    const conversationId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const detail = (sourceChannel: string) => ({
+      conversationId,
+      agentId: null,
+      agentName: null,
+      sourceChannel,
+      callerKind: "human" as const,
+      createdAt: "2026-08-18T10:00:00.000Z",
+      updatedAt: "2026-08-18T10:00:05.000Z",
+      messageCount: 0,
+      messages: [],
+    });
+    const transcriptOf = async () =>
+      ((await tool.createTool(context(null)).invoke({ conversationId }, {} as never)) as { transcript: Record<string, unknown> }).transcript;
+
+    // The voice channel's one answer for every reader: a boolean for a call, null otherwise.
+    ports.getConversation.mockResolvedValue(detail("voice"));
+    ports.recordingAvailability.mockResolvedValue(true);
+    expect((await transcriptOf()).recordingAvailable).toBe(true);
+    expect(ports.recordingAvailability).toHaveBeenCalledWith({ workspaceId: "workspace-1", conversationId, sourceChannel: "voice" });
+
+    ports.getConversation.mockResolvedValue(detail("website_embed"));
+    ports.recordingAvailability.mockResolvedValue(null);
+    expect((await transcriptOf()).recordingAvailable).toBeNull();
+    expect(ports.recordingAvailability).toHaveBeenLastCalledWith({ workspaceId: "workspace-1", conversationId, sourceChannel: "website_embed" });
   });
 
   it("reads feedback outcomes only for an operator who holds Quality access now", async () => {

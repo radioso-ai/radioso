@@ -6,6 +6,7 @@ import {
 } from './api-types'
 import type {
   AgentListResponse,
+  AgentDetail,
   AgentSettings,
   AgentSettingsUpdate,
   AssistantBehaviorSettings,
@@ -248,8 +249,8 @@ export const agentsApi = {
     }, { withSession: true })
   },
 
-  async getAgent(agentId: string): Promise<AgentSettings> {
-    return request<AgentSettings>(`/agents/${agentId}`, {
+  async getAgent(agentId: string): Promise<AgentDetail> {
+    return request<AgentDetail>(`/agents/${agentId}`, {
       method: 'GET',
     }, { withSession: true })
   },

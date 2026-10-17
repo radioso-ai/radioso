@@ -115,6 +115,46 @@ describeIfDatabase("usage ledger OSS migration", () => {
     expect(rows[0].event_kind).toBe("model");
   });
 
+  it("keeps a model call's spend with the link cleared when its message was deleted before the write", async () => {
+    const { accountId, workspaceId } = await seedWorkspace();
+    const recorder = new DurableUsageEventRecorder(database.kysely);
+    const conversationId = randomUUID();
+    const messageId = randomUUID();
+    await database.query("INSERT INTO conversations (id, workspace_id) VALUES ($1, $2)", [conversationId, workspaceId]);
+    await database.query(
+      "INSERT INTO messages (id, conversation_id, workspace_id, role, content) VALUES ($1, $2, $3, 'user', 'When do you op')",
+      [messageId, conversationId, workspaceId],
+    );
+    // A newer voice request replaced the turn, so its user message is gone before the planner's usage lands.
+    await database.query("DELETE FROM messages WHERE id = $1", [messageId]);
+    const idempotencyKey = `turn_planning:${randomUUID()}`;
+
+    await recorder.recordModelCall({
+      idempotencyKey,
+      accountId,
+      workspaceId,
+      conversationId,
+      messageId,
+      surface: "voice",
+      operation: "turn_planning",
+      provider: "openai",
+      model: "gpt-test",
+      inputTokens: 300,
+      outputTokens: 0,
+      totalTokens: 300,
+      status: "failed",
+      usageQuality: "estimated",
+    });
+
+    const rows = await database.query<{ message_id: string | null; conversation_id: string; total_tokens: string }>(
+      "SELECT message_id, conversation_id, total_tokens FROM usage_events WHERE idempotency_key = $1",
+      [idempotencyKey],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ message_id: null, conversation_id: conversationId });
+    expect(Number(rows[0].total_tokens)).toBe(300);
+  });
+
   it("does not double-count a replayed idempotency key", async () => {
     const { accountId, workspaceId } = await seedWorkspace();
     const recorder = new DurableUsageEventRecorder(database.kysely);

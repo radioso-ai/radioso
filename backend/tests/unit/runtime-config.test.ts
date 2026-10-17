@@ -282,6 +282,13 @@ describe("runtime configuration", () => {
     expect(stamped.RADIOSO_COMMIT).toBe("5434e0e");
   });
 
+  it("keeps the quick-reply lane on unless CHAT_QUICK_REPLY_LANE turns it off", () => {
+    expect(getEnv({ ...baseEnv }).CHAT_QUICK_REPLY_LANE).toBe("on");
+    expect(getEnv({ ...baseEnv, CHAT_QUICK_REPLY_LANE: "" }).CHAT_QUICK_REPLY_LANE).toBe("on");
+    expect(getEnv({ ...baseEnv, CHAT_QUICK_REPLY_LANE: "off" }).CHAT_QUICK_REPLY_LANE).toBe("off");
+    expect(() => getEnv({ ...baseEnv, CHAT_QUICK_REPLY_LANE: "disabled" })).toThrow();
+  });
+
   it("provides default observability configuration without extra vendor settings", () => {
     const env = getEnv({
       ...baseEnv,
@@ -313,6 +320,14 @@ describe("runtime configuration", () => {
     });
 
     expect(env.AUTH_AUTO_VERIFY_EMAIL).toBe(false);
+  });
+
+  it("enables notification recipient confirmation by default and accepts an explicit opt-out", () => {
+    expect(getEnv({ ...baseEnv }).NOTIFICATION_RECIPIENT_CONFIRMATION_ENABLED).toBe(true);
+    expect(getEnv({
+      ...baseEnv,
+      NOTIFICATION_RECIPIENT_CONFIRMATION_ENABLED: "false",
+    }).NOTIFICATION_RECIPIENT_CONFIRMATION_ENABLED).toBe(false);
   });
 
   it("allows automatic email verification only in development", () => {
@@ -561,6 +576,7 @@ describe("runtime configuration", () => {
     expect(example).toContain("MAIL_FROM_EMAIL=noreply@example.com");
     expect(example).toContain("MAIL_FROM_NAME=Radioso");
     expect(example).toContain("RESEND_MAIL_API_KEY=");
+    expect(example).toContain("NOTIFICATION_RECIPIENT_CONFIRMATION_ENABLED=true");
     expect(example).toContain("PASSWORD_RESET_TOKEN_TTL_MINUTES=30");
     expect(example).toContain("EMAIL_VERIFICATION_TOKEN_TTL_MINUTES=30");
   });

@@ -6,8 +6,12 @@ import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../m
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { validateBody } from "../middleware/validate.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
+import { VOICE_VENDORS } from "../../../shared/domain/voiceVendor.js";
+import type { LlmProviderName } from "../../../shared/infra/llm/providerTypes.js";
 
-export const providerNames = ["openai", "openai-compatible", "gemini", "claude"] as const;
+const modelProviderNames = ["openai", "openai-compatible", "gemini", "claude"] as const satisfies readonly LlmProviderName[];
+/** Model providers, then voice vendors: one workspace credential store holds both kinds of key. */
+export const providerNames = [...modelProviderNames, ...VOICE_VENDORS] as const;
 type ProviderNameInput = (typeof providerNames)[number];
 
 export const setProviderCredentialSchema = z.object({
@@ -17,9 +21,10 @@ export const setProviderCredentialSchema = z.object({
 type CredentialsRouteDependencies = WorkspaceSessionDependencies &
   Pick<AppDependencies, "workspaceProviderCredentialsService" | "accountAccessService" | "env" | "managedModelPolicy">;
 
+/** Model providers only: a voice vendor key is always the workspace's own, with no deployment fallback. */
 const computeEnvProviderAvailability = (
   env: AppDependencies["env"],
-): Record<ProviderNameInput, boolean> => ({
+): Record<(typeof modelProviderNames)[number], boolean> => ({
   openai: Boolean(env.OPENAI_API_KEY),
   "openai-compatible": Boolean(env.OPENAI_COMPATIBLE_API_KEY ?? env.OPENAI_API_KEY),
   gemini: Boolean(env.GEMINI_API_KEY),

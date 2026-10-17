@@ -76,6 +76,13 @@ describe("ElevenLabs recording source", () => {
     expect(new URL(fetch.mock.calls[0][0]).host).toBe(host);
   });
 
+  it("names no length when the vendor's Content-Length is empty or not a number", async () => {
+    for (const length of ["", "abc", "-1"]) {
+      const { source } = sourceWith(async () => audioResponse(200, "ID3audio", { "content-length": length }));
+      expect((await source.fetchRecording({ vendorConversationId, region: "us", credential })).contentLength).toBeUndefined();
+    }
+  });
+
   it("streams the vendor's audio with its content type and length", async () => {
     const { source } = sourceWith(async () => audioResponse(200, "ID3audio", { "content-length": "8", "accept-ranges": "bytes" }));
 
@@ -279,6 +286,18 @@ describe("ElevenLabs recording source", () => {
 
     const gone = sourceWith(async () => new Response("{}", { status: 404 }));
     await expect(gone.source.deleteRecording({ vendorConversationId, region: "us", credential })).resolves.toBe("already_absent");
+  });
+
+  it("lets go of a delete when its caller gives up on it", async () => {
+    const erasure = new AbortController();
+    const { source } = sourceWith((_url, init) => new Promise((_resolve, reject) => {
+      init.signal.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+      erasure.abort();
+    }));
+
+    const error = await rejectionOf(source.deleteRecording({ vendorConversationId, region: "us", credential, signal: erasure.signal }));
+
+    expect(error.reason).toBe("abandoned");
   });
 
   it("rejects a delete the vendor refuses", async () => {

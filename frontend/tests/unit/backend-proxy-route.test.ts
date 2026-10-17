@@ -178,6 +178,24 @@ describe('backend proxy route', () => {
     })
   })
 
+  it("stops the backend request when the browser lets go of it, as an audio element does on every seek", async () => {
+    vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
+    let upstreamSignal: AbortSignal | undefined
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+      upstreamSignal = init.signal ?? undefined
+      return new Response(new ReadableStream(), { status: 200, headers: { 'Content-Type': 'audio/mpeg' } })
+    }))
+    const { GET } = await import('@/app/backend/[...path]/route')
+    const browser = new AbortController()
+
+    await GET(new Request('https://frontend.example.com/backend/api/v1/conversations/c-1/recording', { signal: browser.signal }), {
+      params: Promise.resolve({ path: ['api', 'v1', 'conversations', 'c-1', 'recording'] }),
+    })
+    browser.abort()
+
+    expect(upstreamSignal?.aborted).toBe(true)
+  })
+
   it('buffers proxied request bodies so backend auth failures propagate', async () => {
     vi.stubEnv('BACKEND_INTERNAL_URL', BACKEND_URL)
 

@@ -52,10 +52,12 @@ const isAudio = (contentType: string): boolean => {
   return type.startsWith("audio/") || type === "application/octet-stream";
 };
 
+/** The vendor's declared length; none for a header that is missing, empty or not a whole number. */
 const declaredLength = (response: Response): number | undefined => {
-  const value = response.headers.get("content-length");
-  const length = value === null ? Number.NaN : Number(value);
-  return Number.isSafeInteger(length) && length >= 0 ? length : undefined;
+  const value = response.headers.get("content-length")?.trim();
+  if (!value || !/^\d+$/.test(value)) return undefined;
+  const length = Number(value);
+  return Number.isSafeInteger(length) ? length : undefined;
 };
 
 /** One request to the vendor: its answer, and the limit that still covers reading the body. */
@@ -249,12 +251,13 @@ export const createElevenLabsRecordingSource = (dependencies: {
       };
       return recording;
     },
-    deleteRecording: async ({ vendorConversationId, region, credential }) => {
+    deleteRecording: async ({ vendorConversationId, region, credential, signal }) => {
       const exchange = await openExchange(
         dependencies.fetch,
         conversationUrl(region, vendorConversationId),
         { method: "DELETE", headers: { "xi-api-key": credential.apiKey } },
         timeoutMs,
+        signal,
       );
       const { response } = exchange;
       await discardBody(response);

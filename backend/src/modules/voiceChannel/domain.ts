@@ -352,7 +352,13 @@ export interface VoiceRecordingSource {
     signal?: AbortSignal;
   }): Promise<VoiceRecordingStream>;
   /** Resolves once the vendor no longer holds the conversation: `already_absent` when it held none to delete. */
-  deleteRecording(input: { vendorConversationId: string; region: VoiceVendorRegion; credential: VoiceVendorCredential }): Promise<"deleted" | "already_absent">;
+  deleteRecording(input: {
+    vendorConversationId: string;
+    region: VoiceVendorRegion;
+    credential: VoiceVendorCredential;
+    /** Aborted when the caller gives up on it; the delete then rejects as `abandoned`. */
+    signal?: AbortSignal;
+  }): Promise<"deleted" | "already_absent">;
 }
 
 /**

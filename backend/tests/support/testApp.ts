@@ -3,6 +3,7 @@ import { createDefaultApplicationComposition } from "../../src/app/composition/d
 import { chatTurnQueuedActionTypes } from "../../src/app/composition/applicationModule.js";
 import { createAgentPublicProfileComposition } from "../../src/app/composition/agentDiscovery.js";
 import {
+  createVoiceChannelComposition,
   createVoiceRecordingComposition,
   createVoiceSessionStartComposition,
   refreshEmbedConfigsOnVoiceVendorKeyChange,
@@ -44,7 +45,7 @@ import {
   type RoutineRegistration,
   type WorkbenchReplayRunner,
 } from "../../src/modules/chat/composition.js";
-import { ChatService, type ChatGateway, type ChatRoutineProvider } from "../../src/modules/chat/services/chatService.js";
+import { ChatService, type ChatGateway, type ChatRoutineProvider, type ChatServiceOptions } from "../../src/modules/chat/services/chatService.js";
 import type { TurnRouter } from "../../src/modules/chat/services/turnRouter.js";
 import { BackgroundJobRuntime } from "../../src/shared/background-jobs/index.js";
 import { PeriodicTaskRunner } from "../../src/app/composition/periodicTaskRunner.js";
@@ -55,7 +56,6 @@ import { createSkillOutcomeCapabilityProvider } from "../../src/modules/chat/ser
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
 import {
-  VoiceTurnService,
   type VoiceRecordingStore,
   type VoiceRecordingToErase,
   type VoiceSessionRef,
@@ -194,7 +194,6 @@ import { SlackSkillDefinitionService } from "../../src/modules/slackSkills/publi
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import {
   ConversationOwnershipService,
-  isHumanOwned,
   OperatorIdentityResolver,
   OperatorReplyService,
 } from "../../src/modules/handoff/public.js";
@@ -959,6 +958,8 @@ export const createTestDependencies = (overrides: {
   heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;
   /** The `fetch` voice vendor session starters call; omitted means every vendor call fails as unreachable. */
   voiceVendorFetch?: typeof globalThis.fetch;
+  /** Writes chat's line for a turn a person owns before a teammate has replied; omitted means no line. */
+  handoffWaitingMessageGenerator?: ChatServiceOptions["handoffWaitingMessageGenerator"];
   /** Observes the embed-config CDN invalidations; omitted means the deployment has no CDN to invalidate. */
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
   /** Composes the agent tool catalog over the test app's agent row and published-revision readers. */
@@ -2170,6 +2171,7 @@ export const createTestDependencies = (overrides: {
     // Per-conversation directive firing memory (#865) so lifecycle suppression is
     // exercised end-to-end; exposed on the returned harness for assertions.
     directiveStateStore,
+    handoffWaitingMessageGenerator: overrides.handoffWaitingMessageGenerator,
     agentSkillTurnSkillProvider: overrides.agentSkillTurnSkillProvider ?? new RepositoryAgentSkillTurnSkillProvider({
       agentSkills: agentSkillRepository,
       executorRegistry: skillExecutorRegistry,
@@ -3010,19 +3012,15 @@ export const createTestDependencies = (overrides: {
     }),
     chatHistoryService,
     assistantChatService,
-    voiceTurns: new VoiceTurnService({
+    voiceTurns: createVoiceChannelComposition({
       sessions: voiceSessions,
-      starts: voiceSessions,
-      chat: { streamTurn: (request) => assistantChatService.streamAnswer({ ...request, stream: true }) },
-      agents: {
-        findVoiceProfile: async ({ workspaceId, agentId }) => {
-          const agent = await agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
-          return agent ? { voice: agent.voice, defaultLocale: agent.assistantDefaultLocale } : null;
-        },
-      },
-      routines: { isRoutineActive: async (conversationId) => (await routineStateStore.loadActive({ sessionId: conversationId })) !== null },
-      ownership: { isHumanOwned: async (conversationId) => isHumanOwned(await conversationOwnershipRepository.load(conversationId)) },
-      metrics: metricsRegistry,
+      assistantChatService,
+      agentRepository,
+      routineStates: routineStateStore,
+      conversationOwnership: conversationOwnershipRepository,
+      replies: messageRepository,
+      auditService,
+      metricsRegistry,
       logger,
     }),
     voiceSessionStarts,
@@ -3154,6 +3152,7 @@ export const createTestApp = (overrides: {
   conversationErasure?: AppDependencies["conversationErasure"];
   heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;
   voiceVendorFetch?: typeof globalThis.fetch;
+  handoffWaitingMessageGenerator?: ChatServiceOptions["handoffWaitingMessageGenerator"];
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
 } = {}) => {
   const {

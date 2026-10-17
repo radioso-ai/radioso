@@ -243,7 +243,7 @@ export const registerHistoryPaths = (
     path: "/api/v1/history/chat/{conversationId}/tail",
     tags: ["History"],
     summary: "Poll new messages for a saved assistant conversation",
-    description: "Returns the messages after `cursor`. It also returns an assistant reply the client has already seen once the caller has marked it interrupted, carrying `interruption`, in time order with the new messages. Merge messages by `id`, so a re-delivered message replaces the one you hold.",
+    description: "Returns the messages after `cursor`. It also returns an assistant reply the client has already seen once it is marked: the caller cut it short, carrying `interruption`, or a teammate's reply was spoken to the caller or skipped, carrying `speech` with `state: \"spoken\"` or `\"skipped\"`. Re-delivered replies come in time order with the new messages. Merge messages by `id`, so a re-delivered message replaces the one you hold.",
     operationId: "tailHistoryConversation",
     security: [{ [security.bearerAuthScheme.name]: [] }],
     request: {

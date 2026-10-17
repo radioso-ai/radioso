@@ -394,7 +394,11 @@ Voice enters the chat path as `sourceChannel: "voice"` with a `voice` channel
 context and the `latest_input_wins` supersession mode, which the chat turn
 registry and lifecycle implement (`chat/contracts/interruption.ts`), and reads
 the `handoff` report (`ChatTurnHandoff`) chat puts on a hand-off turn's `done`
-event; the chat turn is otherwise unchanged.
+event; the chat turn is otherwise unchanged. A teammate's Inbox reply on a call
+is stored as pending speech and spoken once, on the caller's next turn, through
+chat's `OperatorReplySpeechClaims` port (`chat/contracts/operatorReplySpeech.ts`);
+`voiceChannel/services/operatorReplySpeaker.ts` claims, speaks and settles a
+turn's replies.
 
 Should not own planning, retrieval, routines, or any vendor's field names
 outside `adapters/`. The domain names no vendor.
@@ -423,8 +427,8 @@ Useful searches:
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/voice-channel-*.test.ts`
-- `cd backend && pnpm exec vitest run tests/contract/agent-voice-settings.contract.test.ts tests/contract/public-voice-session.contract.test.ts tests/contract/voice-recording.contract.test.ts`
-- `cd frontend && pnpm exec playwright test tests/e2e/voice-settings.spec.ts tests/e2e/provider-settings.spec.ts tests/e2e/embed-voice-talk.spec.ts tests/e2e/inbox-call-recording.spec.ts`
+- `cd backend && pnpm exec vitest run tests/contract/agent-voice-settings.contract.test.ts tests/contract/public-voice-session.contract.test.ts tests/contract/voice-recording.contract.test.ts tests/contract/voice-operator-reply.contract.test.ts`
+- `cd frontend && pnpm exec playwright test tests/e2e/voice-settings.spec.ts tests/e2e/provider-settings.spec.ts tests/e2e/embed-voice-talk.spec.ts tests/e2e/inbox-call-recording.spec.ts tests/e2e/inbox-voice-operator-reply.spec.ts`
 - `cd frontend && pnpm exec vitest run tests/unit/voice-session.test.ts tests/unit/voice-call.test.ts tests/unit/api-public-voice.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/voice-session-repository.integration.test.ts`
 
@@ -1195,7 +1199,6 @@ Focused checks:
 - `cd backend && pnpm test -- tests/unit/retrieval-pipeline-stages.test.ts tests/unit/retrieval-shape-resolver.test.ts tests/unit/hybrid-retrieval-search.test.ts`
 - `cd backend && pnpm test -- tests/unit/sense-grouping-service.test.ts tests/unit/retrieval-sense-clarification.test.ts`
 - `cd backend && pnpm test -- tests/unit/agentic-retrieval-runner.test.ts tests/unit/agentic-retrieval-pipeline-service.test.ts tests/unit/agentic-tools.test.ts tests/unit/agentic-activity-trace-builder.test.ts tests/unit/query-rewrite-port.test.ts tests/unit/retrieval-context-stage-override.test.ts`
-- `cd backend && pnpm run lint:legacy-chunk-vectors` keeps runtime vector reads on canonical storage.
 - `cd backend && pnpm run test:integration`
 
 Related docs and specs:

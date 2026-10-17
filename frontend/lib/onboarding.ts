@@ -6,11 +6,7 @@ import { documentsApi, workspaceApi, type DocumentSummary } from '@/lib/api'
 import { API_BASE } from '@/lib/api-client'
 import {
   hasOnboardingAnalyticsMarker,
-  isOnboardingActive as getOnboardingActiveFlag,
-  isOnboardingCompleted as getOnboardingCompletedFlag,
   markOnboardingAnalyticsMarker,
-  markOnboardingActive,
-  markOnboardingCompleted,
 } from '@/lib/onboarding-storage'
 import {
   BeaconFrontendProductAnalyticsSink,
@@ -111,29 +107,8 @@ export interface WorkspaceOnboardingState {
   shouldShowFirstRun: boolean
   importSampleDocs: () => Promise<void>
   isImportingSampleDocs: boolean
-  markCompleted: () => void
-  markActive: () => void
-}
-
-export const shouldAutoActivateOnboarding = (input: {
-  workspaceId: string
-  workspaceCount: number
-  documentCount: number
-  conversationCount: number
-}): boolean => {
-  if (input.workspaceCount !== 1) {
-    return false
-  }
-
-  if (input.documentCount > 0 || input.conversationCount > 0) {
-    return false
-  }
-
-  if (getOnboardingCompletedFlag(input.workspaceId)) {
-    return false
-  }
-
-  return true
+  markCompleted: () => Promise<boolean>
+  markActive: () => Promise<boolean>
 }
 
 export const getOnboardingProgress = (input: {
@@ -144,7 +119,6 @@ export const getOnboardingProgress = (input: {
 
 export const useWorkspaceOnboarding = (
   workspaceId: string | null,
-  workspaceCount: number,
 ): WorkspaceOnboardingState => {
   const [isLoading, setIsLoading] = useState(true)
   const [sampleDocumentSlugs, setSampleDocumentSlugs] = useState<string[]>([])
@@ -191,23 +165,13 @@ export const useWorkspaceOnboarding = (
     try {
       const summary = await workspaceApi.getSummary()
 
-      const nextCompleted = summary.hasCompletedChat || getOnboardingCompletedFlag(workspaceId)
-      const nextActive =
-        !nextCompleted &&
-        (getOnboardingActiveFlag(workspaceId) ||
-          shouldAutoActivateOnboarding({
-            workspaceId,
-            workspaceCount,
-            documentCount: summary.documentCount,
-            conversationCount: summary.conversationCount,
-          }))
-
-      if (nextActive) {
-        markOnboardingActive(workspaceId)
-      }
+      const nextCompleted = summary.setup?.dismissed === true || summary.hasCompletedChat
+      // During a rolling deploy, an older backend has no server-owned setup state.
+      // Preserve its completed-chat signal, but do not infer that the takeover should open.
+      const nextActive = summary.setup === undefined ? false : summary.setup.shouldShowFirstRun
 
       const previousSummary = onboardingSummaryRef.current
-      const isObservingOnboarding = nextActive || getOnboardingActiveFlag(workspaceId)
+      const isObservingOnboarding = nextActive
       if (isObservingOnboarding && summary.hasDocuments) {
         trackOnboardingAnalyticsOnce(workspaceId, 'documents_added', 'onboarding.step_completed', { step: 'documents_added' })
       }
@@ -248,7 +212,7 @@ export const useWorkspaceOnboarding = (
     } finally {
       setIsLoading(false)
     }
-  }, [workspaceCount, workspaceId])
+  }, [workspaceId])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Initial onboarding refresh synchronizes API state for the active workspace.
@@ -281,10 +245,10 @@ export const useWorkspaceOnboarding = (
     }
 
     setIsImportingSampleDocs(true)
-    markOnboardingActive(workspaceId)
-    setIsOnboardingActive(true)
-
     try {
+      await workspaceApi.updateSetupState({ dismissed: false })
+      setIsOnboardingActive(true)
+
       const existingSlugs = new Set(sampleDocumentSlugs)
 
       const missingDocs = SAMPLE_DOCUMENTS.filter((document) => !existingSlugs.has(document.slug))
@@ -304,29 +268,41 @@ export const useWorkspaceOnboarding = (
       )
 
       await refresh()
+    } catch {
+      // Keep the takeover visible and retryable when the server cannot persist activation.
     } finally {
       setIsImportingSampleDocs(false)
     }
   }, [refresh, sampleDocumentSlugs, workspaceId])
 
-  const markCompleted = useCallback(() => {
+  const markCompleted = useCallback(async () => {
     if (!workspaceId) {
-      return
+      return false
     }
 
-    markOnboardingCompleted(workspaceId)
-    setIsOnboardingCompleted(true)
-    setIsOnboardingActive(false)
+    try {
+      await workspaceApi.updateSetupState({ dismissed: true })
+      setIsOnboardingCompleted(true)
+      setIsOnboardingActive(false)
+      return true
+    } catch {
+      return false
+    }
   }, [workspaceId])
 
-  const markActive = useCallback(() => {
+  const markActive = useCallback(async () => {
     if (!workspaceId) {
-      return
+      return false
     }
 
-    markOnboardingActive(workspaceId)
-    setIsOnboardingCompleted(false)
-    setIsOnboardingActive(true)
+    try {
+      await workspaceApi.updateSetupState({ dismissed: false })
+      setIsOnboardingCompleted(false)
+      setIsOnboardingActive(true)
+      return true
+    } catch {
+      return false
+    }
   }, [workspaceId])
 
   const value = useMemo<WorkspaceOnboardingState>(() => {

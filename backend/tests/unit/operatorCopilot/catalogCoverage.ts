@@ -61,6 +61,7 @@ const catalogToolCoverage = {
   getGeneralSettings: "workspace_settings",
   listWorkspaceProviderCredentials: "workspace_settings",
   getWorkspaceLlmModels: "workspace_settings",
+  getWorkspaceSetupState: "workspace_setup_state",
   createAssistantChatResponse: "test_agent_turn",
   searchRetrievalEvidence: "retrieval_probe",
   updateIngestionSettings: "propose_ingestion_settings",
@@ -120,6 +121,9 @@ const workspaceLifecycle = permanent(
 const dashboardWorkspaceResolution = permanent(
   "Permanent exclusion: this is the dashboard resolving which workspace a URL points at, which Ray is handed already resolved.",
 );
+const workspaceSetupStateWrite = permanent(
+  "Permanent exclusion: purpose, dismissal, receipt acknowledgement, and skips are the operator's own setup choices, not configuration Ray may make on their behalf.",
+);
 const brandAssetIsOperatorSupplied = permanent(
   "Permanent exclusion: the assistant logo is a binary brand asset the operator supplies and approves by looking at it, so Ray can neither produce the bytes nor judge the result.",
 );
@@ -131,9 +135,6 @@ const installationCredentialTeardown = permanent(
 );
 const accountWideUsageAnalytics = deferred(
   "Deferred: these report usage for the whole account, and Ray answers for one workspace. The endpoints take a workspaceId filter, so a workspace-scoped usage reader is the shape that would cover them.",
-);
-const workspaceSetupStateRead = deferred(
-  "Deferred: the workspace summary is a setup-state read — document, conversation, and sample-import counts — so it lands with the setup-state reader rather than with configuration writes.",
 );
 // PUT /settings takes these fields grouped under `assistant`/`channels`; PUT /settings/general
 // takes the same fields flat.
@@ -246,6 +247,9 @@ export const internalRuntimeCoverageExclusions = {
   activityCallerKindFilter: permanent(
     "Permanent exclusion: caller kind is a read-only Activity view control. conversation_history_search already reads the underlying conversation data, including caller kind; Ray cannot operate a dashboard filter.",
   ),
+  needsYouQueueFilters: permanent(
+    "Permanent exclusion: Needs-you escalation, agent, and channel filters are read-only Inbox view controls. Ray's needs-attention reader already composes the same work queue; it cannot operate a dashboard filter.",
+  ),
   // `POST /api/v1/agents/:agentId/voice/:dialect/v1/chat/completions` speaks a vendor-owned OpenAI wire
   // format, not Radioso's API contract, so it has no OpenAPI operation for the catalog map above.
   voiceCompletionsAdapter: deferred(
@@ -280,6 +284,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "confirmPasswordReset",
     "verifyEmail",
     "resendEmailVerification",
+    "exchangePendingRegistrationSession",
     "getAccountInvitation",
     "acceptAccountInvitation",
     "acceptAccountInvitationAsCurrentUser",
@@ -359,7 +364,9 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ...coverage(["listWorkspaces"], accountScope),
   ...coverage(["createWorkspace", "renameWorkspace"], workspaceLifecycle),
   ...coverage(["resolveWorkspaceRouteKey"], dashboardWorkspaceResolution),
-  ...coverage(["getWorkspaceSummary"], workspaceSetupStateRead),
+  getWorkspaceSetupState: "workspace_setup_state",
+  ...coverage(["updateWorkspaceSetupState"], workspaceSetupStateWrite),
+  getWorkspaceSummary: "workspace_setup_state",
   // Answers with WebhookDestinationCreateResponse, the same one-time plaintext secret the
   // never-listed rotateWebhookDestinationSecret returns. The name-and-URL edit beside it carries none.
   ...coverage(["createWebhookDestination"], secretBearingRead),

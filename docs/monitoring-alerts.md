@@ -1,7 +1,7 @@
 ---
 title: "Monitoring And Alerts"
 description: "Alert on a Radioso deployment: which signals exist, how to reach them through Prometheus metrics and the ops event feed, and example alert rules that work on any host."
-last_updated: 2026-10-06
+last_updated: 2026-10-13
 ---
 
 # Monitoring And Alerts
@@ -27,6 +27,7 @@ Radioso emits signals through standard interfaces — a Prometheus-compatible me
 | Is the email bounce rate spiking | `radioso_email_send_intents_total{state="bounced"}` against `{state="accepted"}` | `/metrics` |
 | Did someone sign up, did a conversation finish | `account.registered`, `chat.completed` | [ops event feed](ops-event-feed.md) |
 | Is a caller being throttled | `security.rate_limit_enforced` | `audit_events` |
+| Is Redis rate limiting falling back to Postgres | `radioso_abuse_control_store_fallback_total` | `/metrics` |
 | What exactly broke, with a stack trace | error events | [ops event feed](ops-event-feed.md), `audit_events` |
 
 The split matters: metrics tell you the platform is unwell, and the ops event feed tells you what happened to a customer. Both are useful, and neither substitutes for the other.
@@ -160,7 +161,13 @@ The gauge exists only on an API with metrics enabled and the email channel confi
 
 ## Rate limits
 
-Every throttled surface — sign-in, public chat, the agent channels, MCP, the copilot — shares one counter in Postgres, keyed by a scope and a subject such as an email, a session, or a workspace. A scope carries a limit, a window, and a block period: crossing the limit within the window blocks that subject for the block period and writes a `security.rate_limit_enforced` audit event, which is the signal to alert on if you care about who is being turned away.
+Every throttled surface — sign-in, public chat, the agent channels, MCP, the copilot — shares one counter keyed by a scope and a subject such as an email, a session, or a workspace. A scope carries a limit, a window, and a block period: crossing the limit within the window blocks that subject for the block period and writes a `security.rate_limit_enforced` audit event, which is the signal to alert on if you care about who is being turned away.
+
+Postgres stores the counter by default. Set `ABUSE_CONTROL_REDIS_URL` to a standalone `redis://` or `rediss://` endpoint to move checks to Redis; `ABUSE_CONTROL_REDIS_COMMAND_TIMEOUT_MS` gives each Redis command 1,000 ms by default. The Redis store keeps subjects out of key names by hashing the scope and subject together, and an atomic Lua script applies the same sliding window and block period across API replicas. `rediss://` uses the operating system trust store. A private CA, including a managed Redis in-transit-encryption endpoint that requires one, is not supported yet. Redis Cluster is also unsupported because one atomic multi-key check cannot safely span cluster hash slots.
+
+If a Redis check errors or reaches its command deadline, that check runs against Postgres. The backend tears down the timed-out Redis connection, then a small circuit breaker sends later checks directly to Postgres until one probe can test Redis again. Expired Postgres fallback rows sweep after a fallback write and at most once every five minutes per API process; Redis entries expire through their key TTL. The fallback warning `abuse_control_store_fallback` is rate-limited; `radioso_abuse_control_store_fallback_total{operation="consume"}` or `{operation="consume_batch"}` still increments for every fallback. Alert on any sustained increase; a brief isolated fallback is safe, while a rising counter means Redis is no longer relieving Postgres.
+
+Fallback keeps the limiter available; it does not make Redis and Postgres one authoritative budget. During a rolling cutover or Redis outage, a subject can spend each store's independent counter and be admitted up to roughly twice the limit for one window. A block recorded in one store is not visible in the other. Restore Redis promptly and treat the fallback metric as an operational alert, not as proof of exact cross-store enforcement.
 
 Admission weighs two windows. The window that just expired still counts, in proportion to how much of it the running window overlaps: `previous × overlap + current`, where `overlap` falls from 1 to 0 as the running window advances. A caller that spends a whole budget in the last second of one window is therefore still over the limit in the first second of the next, which a plain per-window counter would wave through at twice the intended rate.
 

@@ -35,8 +35,6 @@ export const QUALITY_RESOLUTION_REASONS = [
   'invalid_feedback',
   'other',
 ] as const
-export type QualityResolvedReason = (typeof QUALITY_RESOLVED_REASONS)[number]
-export type QualityNotActionableReason = (typeof QUALITY_NOT_ACTIONABLE_REASONS)[number]
 export type QualityResolutionReason = (typeof QUALITY_RESOLUTION_REASONS)[number]
 export type QualityResolutionBreakdownReason = QualityResolutionReason | 'unspecified'
 export interface QualityResolution {
@@ -229,6 +227,8 @@ export interface ListLowQualityTurnsOptions {
   to?: string
   resolutionFrom?: string
   resolutionTo?: string
+  agentId?: string
+  channel?: string
   offset?: number
   limit?: number
 }
@@ -284,6 +284,8 @@ export const qualityApi = {
       to: options.to,
       resolutionFrom: options.resolutionFrom,
       resolutionTo: options.resolutionTo,
+      agentId: options.agentId,
+      channel: options.channel,
       offset: options.offset === undefined ? undefined : String(options.offset),
       limit: options.limit === undefined ? undefined : String(options.limit),
     }

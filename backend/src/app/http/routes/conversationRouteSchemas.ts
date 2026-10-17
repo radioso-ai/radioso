@@ -38,6 +38,8 @@ export const collectionPageQuerySchema = z.object({
 
 export const chatHistoryPageQuerySchema = collectionPageQuerySchema.extend({
   ownership: z.enum(["human_owned"]).optional(),
+  agentId: z.string().uuid().optional(),
+  channel: z.string().trim().min(1).max(100).optional(),
 });
 
 export const historyItemsPageQuerySchema = z.object({

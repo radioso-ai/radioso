@@ -41,8 +41,6 @@ export interface ErasureSubjects {
    * its verified customer id and conversations. Null when the workspace has no such visitor.
    */
   lockVisitor(workspaceId: string, visitorId: string): Promise<{ verifiedCustomerId: string | null; conversationIds: readonly string[] } | null>;
-  /** The chat sessions only these conversations carry in the workspace. */
-  exclusiveChatSessionIds(workspaceId: string, conversationIds: readonly string[]): Promise<readonly string[]>;
   /**
    * Deletes the conversations, with everything a foreign key cascades from them, and the visitor of
    * any that was its visitor's last conversation.
@@ -133,15 +131,9 @@ export class ConversationErasureService implements ConversationErasure {
     conversationIds: readonly string[],
   ): Promise<ConversationErasureReceipt> {
     const ids = [...conversationIds].sort();
-    const chatSessionIds = await scope.subjects.exclusiveChatSessionIds(workspaceId, ids);
     const rowsByOwner: Record<string, number> = {};
     for (const eraser of scope.conversationErasers) {
-      addRows(rowsByOwner, eraser.owner, await eraser.erase({
-        kind: "conversations",
-        workspaceId,
-        conversationIds: ids,
-        chatSessionIds,
-      }));
+      addRows(rowsByOwner, eraser.owner, await eraser.erase({ kind: "conversations", workspaceId, conversationIds: ids }));
     }
     const deleted = await scope.subjects.deleteConversations(workspaceId, ids);
     return { conversationCount: deleted.conversations, messageCount: deleted.messages, rowsByOwner };

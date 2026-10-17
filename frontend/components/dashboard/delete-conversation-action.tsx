@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Trash2 } from 'lucide-react'
 
 import {
@@ -17,15 +17,17 @@ import {
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { chatApi } from '@/lib/api'
+import { apiAccessApi } from '@/lib/api-api-access'
 import { getApiErrorMessage } from '@/lib/api-error'
-import { useAuth } from '@/lib/auth-context'
 import { matchesWorkspaceInvalidation } from '@/lib/dashboard-query-invalidation'
 import { useWorkspace } from '@/lib/workspace-context'
 
 /**
- * Permanently erases one conversation after the operator confirms. Shown to owners and admins,
- * who hold `workspace.history.delete`; the server decides either way. Lists refresh here and, for
- * every other open dashboard, from the server's `conversation.deleted` event.
+ * Permanently erases one conversation after the operator confirms. Shown to whoever holds
+ * `workspace.history.delete` on this workspace: an owner or an admin by the effective role the
+ * server resolves for the workspace, a workspace grant included — the same role the API access
+ * panel reads. The server decides either way. Lists refresh here and, for every other open
+ * dashboard, from the server's `conversation.deleted` event.
  */
 export function DeleteConversationAction({
   conversationId,
@@ -35,14 +37,19 @@ export function DeleteConversationAction({
   onDeleted: () => void
 }) {
   const queryClient = useQueryClient()
-  const { user } = useAuth()
-  const { accounts, activeWorkspaceId } = useWorkspace()
+  const { activeWorkspaceId } = useWorkspace()
   const [open, setOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const workspaceAccess = useQuery({
+    queryKey: ['workspace-effective-role', activeWorkspaceId],
+    queryFn: () => apiAccessApi.getSummary(activeWorkspaceId ?? ''),
+    enabled: Boolean(activeWorkspaceId),
+    staleTime: 60_000,
+  })
 
-  const role = accounts.find((account) => account.accountId === user?.accountId)?.role
-  if (role !== 'owner' && role !== 'admin') {
+  const effectiveRole = workspaceAccess.data?.effectiveRole
+  if (effectiveRole !== 'owner' && effectiveRole !== 'admin') {
     return null
   }
 

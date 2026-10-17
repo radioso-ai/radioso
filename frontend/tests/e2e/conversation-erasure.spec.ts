@@ -68,6 +68,21 @@ const conversationDetail = {
   ],
 };
 
+/** The workspace-effective role the server resolves, account role and workspace grant together. */
+const installEffectiveRole = async (page: Page, effectiveRole: "owner" | "admin" | "member") => {
+  await page.route(`**/backend/api/v1/account/workspaces/${workspaceId}/api-access`, async (route) => {
+    await route.fulfill({
+      json: {
+        effectiveRole,
+        capabilities: { manageOwnPersonalTokens: true, auditWorkspacePersonalTokens: false, manageServiceAccounts: effectiveRole !== "member" },
+        defaults: { personalTokenLifetimeDays: 90, serviceCredentialLifetimeDays: 365 },
+        limits: { personalTokensPerUser: 10, serviceAccountsPerWorkspace: 50, credentialsPerServiceAccount: 5, maximumPageSize: 100 },
+        legacyCredentialMigration: { active: false },
+      },
+    });
+  });
+};
+
 const installMocks = async (page: Page) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
@@ -115,6 +130,7 @@ const openDrawer = async (page: Page) => {
 
 test("an admin deletes a conversation from the drawer after confirming it is permanent", async ({ page }) => {
   await installMocks(page);
+  await installEffectiveRole(page, "admin");
   const erasure = await installErasure(page);
   await openDrawer(page);
 
@@ -140,13 +156,22 @@ test("an admin deletes a conversation from the drawer after confirming it is per
 
 test("a member reads the conversation but is not offered the delete", async ({ page }) => {
   await installMocks(page);
+  await installEffectiveRole(page, "member");
+  await openDrawer(page);
+
+  await expect(page.getByText("Please delete everything you have about me").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Delete conversation" })).toHaveCount(0);
+});
+
+test("a member granted admin on this workspace is offered the delete", async ({ page }) => {
+  await installMocks(page);
   await page.route("**/backend/api/v1/account/accounts", async (route) => {
     await route.fulfill({
       json: { accounts: [{ accountId, organizationName: "Radioso Test", role: "member", status: "active" }] },
     });
   });
+  await installEffectiveRole(page, "admin");
   await openDrawer(page);
 
-  await expect(page.getByText("Please delete everything you have about me").first()).toBeVisible();
-  await expect(page.getByRole("button", { name: "Delete conversation" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Delete conversation" })).toBeVisible();
 });

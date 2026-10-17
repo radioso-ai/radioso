@@ -32,7 +32,7 @@ Radioso deletes each of the visitor's conversations as above, then the customer-
 
 ## Who can delete
 
-Both routes need `workspace.history.delete`. Workspace owners and admins hold it; members can read history but cannot delete it. An admin personal credential or an admin service-account credential can call both routes, so a data-subject request pipeline can delete over the API without a signed-in session.
+Both routes need `workspace.history.delete`. Owners and admins of the workspace hold it — an organization member granted admin on the workspace counts as an admin there; members can read history but cannot delete it. An admin personal credential or an admin service-account credential can call both routes, so a data-subject request pipeline can delete over the API without a signed-in session.
 
 Each deletion records one `conversation.erased` or `visitor.erased` audit event: who asked, the conversation or visitor id, and how many conversations, messages, and other rows went. It never records any of the content. That event is your record that the request was honoured.
 
@@ -46,7 +46,8 @@ Deleting a conversation removes:
 - answer feedback and triage, coverage assessments, facets and topic memberships;
 - eval snapshots taken from it, with the eval cases and runs built on them;
 - email threads, sent-email records, and the inbound mail it received, raw message included;
-- Slack, WhatsApp, and voice links;
+- Slack and voice links, and WhatsApp contacts;
+- the WhatsApp message log of the number whose latest conversation it is (see below);
 - routine actions and notices queued for it and not yet sent;
 - email skill activity, including its recipient summary;
 - session-scoped context values for a chat session no other conversation uses;
@@ -61,6 +62,9 @@ A few records stay on purpose. None of them holds the conversation's content:
 - **The notice email cap.** The daily count of notice emails keeps its numbers, so deleting a conversation never hands its emails back to the day's budget.
 - **The Enterprise Edition reply quota.** The per-period counter keeps the conversation id and a count, so deleting conversations cannot reset a plan's quota.
 - **Operational audit events.** Events that name the conversation id with an outcome — a takeover, an approval, an email send — keep the id and the outcome codes.
+- **Audience Pulse topics.** Topic names and descriptions are written from many visitors' de-identified question summaries and checked for personal details, and topic sizes are counts. They stay. The Audience Pulse report itself quotes visitors' questions in its recommendations, so a report built on a deleted conversation is discarded; regenerate it from what remains.
+
+WhatsApp keeps one transport log per phone number, not per conversation, and links the number only to its latest conversation; a message after the conversation timeout starts a new conversation. Deleting a number's latest conversation therefore deletes the number's whole log, earlier conversations' entries included. Deleting one of its earlier conversations leaves the log until the latest one is deleted.
 
 Two copies outside the conversation stay until their own lifecycle removes them:
 
@@ -86,7 +90,7 @@ Deleting a workspace deletes every conversation and visitor in it, with the same
 
 - **`403`** — the caller lacks `workspace.history.delete`: a member session, or a member credential.
 - **`404`** — the conversation or visitor belongs to another workspace, or is already gone.
-- **The Delete conversation button is missing** — your account role is member. Ask an owner or admin.
+- **The Delete conversation button is missing** — your role on this workspace is member: neither your organization role nor a workspace grant makes you an admin here. Ask an owner or admin, or ask for an admin grant on the workspace.
 
 ## Read next
 

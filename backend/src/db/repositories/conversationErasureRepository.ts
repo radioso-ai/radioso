@@ -39,29 +39,6 @@ export class ConversationErasureRepository {
     };
   }
 
-  /** The chat sessions the conversations carry that no other conversation of the workspace does. */
-  async exclusiveChatSessionIds(workspaceId: string, conversationIds: readonly string[]): Promise<string[]> {
-    if (conversationIds.length === 0) {
-      return [];
-    }
-    const rows = await this.db
-      .selectFrom("conversations as c")
-      .select("c.anonymous_session_id")
-      .distinct()
-      .where("c.workspace_id", "=", workspaceId)
-      .where((eb) => anyOf(eb.ref("c.id"), conversationIds, "uuid[]"))
-      .where("c.anonymous_session_id", "is not", null)
-      .where(({ not, exists, selectFrom }) => not(exists(
-        selectFrom("conversations as other")
-          .select("other.id")
-          .where("other.workspace_id", "=", workspaceId)
-          .whereRef("other.anonymous_session_id", "=", "c.anonymous_session_id")
-          .where((inner) => inner.not(anyOf(inner.ref("other.id"), conversationIds, "uuid[]"))),
-      )))
-      .execute();
-    return rows.flatMap((row) => row.anonymous_session_id ?? []);
-  }
-
   /**
    * Deletes the conversations, lowers each of their visitors' conversation count by the ones it lost,
    * and deletes a visitor left with no conversation at all. Returns how many conversations and

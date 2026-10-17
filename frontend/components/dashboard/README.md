@@ -94,7 +94,8 @@ services.
   a tab whose session cache still holds a loaded test, reopens or adopts the same
   test rather than losing it.
 - Delete a conversation: `delete-conversation-action.tsx` in the `ConversationDrawer`
-  header, shown to owners and admins, confirms and calls
+  header, shown when the workspace-effective role the server resolves (the API access
+  summary's `effectiveRole`, workspace grants included) is owner or admin, confirms and calls
   `DELETE /history/chat/{id}`. Lists refresh through
   `matchesWorkspaceInvalidation('conversation.deleted', …)` here and through the
   server's `conversation.deleted` event elsewhere; an open drawer or Inbox reading

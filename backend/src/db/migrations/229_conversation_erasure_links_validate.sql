@@ -1,4 +1,11 @@
--- Validates the keys 228 added. A row orphaned between the two migrations goes first, as 228's did.
+-- Validates the keys the 228 migrations added. First the rows those tables kept for conversations, and
+-- context variables kept for workspaces, that are already gone: exactly what an erasure must not leave
+-- behind. Each key has held new writes since its 228 migration, so no new orphan appears meanwhile.
+--
+-- Locks. The deletes take ROW EXCLUSIVE and touch only orphan rows, which nothing writes. VALIDATE
+-- CONSTRAINT takes SHARE UPDATE EXCLUSIVE for its scan, which no read or write waits for, so like 212
+-- it needs no time bound. A separate migration from 228, so their stronger locks were released when
+-- they committed.
 
 DELETE FROM routine_states s
 WHERE NOT EXISTS (SELECT 1 FROM conversations c WHERE c.id = s.session_id);

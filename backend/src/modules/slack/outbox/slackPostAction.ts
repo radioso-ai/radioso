@@ -64,7 +64,9 @@ export const enqueueSlackPostAction = async (
     payload: input.payload,
     workspaceId: input.workspaceId,
     accountId: input.accountId,
-    conversationId: input.conversationId ?? input.payload.conversationRef ?? null,
+    // Only the stored conversation the caller names: `conversationRef` can name a private test's
+    // conversation, which no row exists for.
+    conversationId: input.conversationId ?? null,
     idempotencyKey: input.idempotencyKey,
   });
 

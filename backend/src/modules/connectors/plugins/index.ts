@@ -16,6 +16,7 @@ export type { EmailReviewInferenceFactory } from "./email/emailReviewChecks.js";
 // dispatch through. Unlike `SlackPlugin` (API-only, mounts HTTP routes), this runs in every
 // runtime that drains background jobs.
 export { buildSlackInboundJobComposition } from "./slack/slackInboundJobComposition.js";
+export { WhatsAppMessageLogEraser } from "./whatsapp/whatsappPersistence.js";
 
 interface BuiltInConnectorOptions {
   slack?: Partial<Record<RequiredSlackEnvVar, string | undefined>> & {

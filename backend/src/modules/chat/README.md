@@ -127,15 +127,16 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   whose caller hears replies (`operatorRepliesAreSpoken`: the voice channel
   context) waits for the caller's next turn. `OperatorReplyService.write`
   (handoff) stores it with `speech: { state: "pending" }`
-  (`MessageRepository.create`'s `pendingSpeech`). Two ports serve the voice
-  channel, both on `MessageRepository`: `OperatorReplySpeechClaims` reads the
-  conversation's pending teammate replies oldest first and moves them through
-  `claimed` (`claimedAt`, `claimTurnId`), back to `pending`, or to `skipped`;
-  `OperatorReplySpeechMarker.markOperatorRepliesSpoken` turns the replies a
-  turn still holds into `{ state: "spoken", spokenAt }`. Each is one
-  conditional UPDATE that resolves the ids it changed, so two turns never
-  hold one reply; a claim older than `VOICE_BEHAVIOR.operatorReplyClaimExpiryMs`
-  counts as pending. Times are the database clock in the tail cursor's
+  (`MessageRepository.create`'s `pendingSpeech`). One port serves the voice
+  channel, on `MessageRepository`: `OperatorReplySpeechClaims`.
+  `claimPendingOperatorReplies` claims and reads the conversation's pending
+  teammate replies, oldest first, in one UPDATE ... RETURNING (`claimed`,
+  with `claimedAt` and `claimTurnId`); `markOperatorRepliesSpoken`,
+  `skipOperatorReplies` and `releaseOperatorReplies` turn the replies the
+  turn still holds into `{ state: "spoken", spokenAt }`, `skipped` or back to
+  `pending`. Each is one conditional UPDATE that resolves the ids it changed,
+  so two turns never hold one reply; a claim older than
+  `VOICE_BEHAVIOR.operatorReplyClaimExpiryMs` counts as pending. Times are the database clock in the tail cursor's
   format. `MessageRecord.speech` reads it back on human-authored replies as
   readers see it (a claim is still `pending`), and history puts it on the
   reply as `speech` beside `interruption`; the dashboard tail re-delivers a

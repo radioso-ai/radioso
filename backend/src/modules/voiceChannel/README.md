@@ -118,8 +118,8 @@ helpers and the shared chat message limit from `app/http`
   session store, `AssistantChatService.streamAnswer`, the agent repository (voice
   settings and default locale), the routine state store, the conversation
   ownership reader (`handoff/public.ts`), the message repository as chat's
-  `PendingOperatorReplyReader`, `OperatorReplySpeechMarker` and
-  `ReplyInterruptionMarker`, and the audit service (the
+  `OperatorReplySpeechClaims` (with `randomUUID` minting each turn's claim id)
+  and `ReplyInterruptionMarker`, and the audit service (the
   `voice.reply_interrupted`, `voice.reply_replayed` and
   `voice.operator_reply_spoken` notes, built by `createVoiceTurnNotes`);
   exposed as `AppDependencies.voiceTurns`. The test app builds its port
@@ -391,45 +391,48 @@ helpers and the shared chat message limit from `app/http`
   module stores a reply on a voice conversation with `speech: { state:
   "pending" }` (`operatorRepliesAreSpoken` in
   `chat/contracts/operatorReplySpeech.ts`); `customerReplyDelivery.ts` has no
-  `voice` deliverer and needs none. The voice domain knows two chat-side ports
-  and nothing else of the reply: `OperatorReplySpeechClaims` (the turn's
-  `operatorReplies.claims`: `pendingOperatorReplies` → `[{ messageId, text }]`
-  oldest first, `claimOperatorReplies`, `releaseOperatorReplies`,
-  `skipOperatorReplies`) and `OperatorReplySpeechMarker`
-  (`markOperatorRepliesSpoken`, which composition's `operatorRepliesSpoken`
-  note calls before auditing). Chat owns what a reply means and how it is
-  stored. Exactly-once is a fact in the stored state, not in process memory:
-  a reply is `pending`, `claimed` (with `claimedAt` and the turn's
-  `claimTurnId`, minted by composition), `spoken` (`spokenAt`) or `skipped`;
-  every change is one conditional UPDATE, so two turns on two instances never
-  both hold a reply, and a claim older than
-  `VOICE_BEHAVIOR.operatorReplyClaimExpiryMs` (60 s) reads as pending again.
-  A turn on a bound session reads the pending replies beside its profile,
-  routine and owner reads (a read that fails warns and leaves them pending),
-  claims those with words to say (`wholeTextSpeech` in `speechSegmenter.ts`,
-  through `speechText.ts`, so markdown is removed and every piece ends in
-  whitespace; a reply with no words is never claimed and is marked
-  `skipped`), and speaks what it claimed after its `conversation` event, ahead
-  of chat's answer and outside the turn policy, whoever owns the conversation.
-  On a human-owned turn chat answers nothing once a teammate has written (its
-  waiting line stops at the first human reply in its ten-message history
-  window), so the replies take the waiting line's place and the turn ends
-  `continue`; after a hand-back the agent's answer follows under its turn
-  limit, and `mayBridge` holds the bridge line back once a reply was spoken. A
-  replay of a lost answer reads and claims the pending replies too and speaks
-  them before the answer. A turn overtaken while it claims speaks none. The
-  turn settles its claims as its outcome leaves, before a turn-limit drain:
-  when the outcome left before a newer request overtook it or the runtime hung
-  up (`cutOffAt`), the note marks the replies spoken (only those the turn still
-  holds; the first `spokenAt` stays) and audits `voice.operator_reply_spoken`
-  with the conversation id and the marked ids, never the text, and only then
-  are they counted and logged; otherwise the turn releases them to pending,
-  and a later turn speaks them again. A mark, release or skip that fails warns
-  and leaves the claim to expire; an audit write that fails after the mark is
-  logged and not retried. "Spoken" means the turn that sent the reply
-  completed, not that the caller heard it to the end: the runtime may still be
-  playing it when the caller speaks over it, and the reply stays Spoken
-  although the next request's history shows it cut short (#1530). The session's interruption bookkeeping counts the
+  `voice` deliverer and needs none. The voice domain knows one chat-side port
+  of the reply, `OperatorReplySpeechClaims` (the turn service's mandatory
+  `operatorReplies.claims`): `claimPendingOperatorReplies` claims and reads
+  the conversation's pending replies in one UPDATE ... RETURNING (`[{ messageId,
+  text }]`, oldest first), and `markOperatorRepliesSpoken`,
+  `skipOperatorReplies` and `releaseOperatorReplies` settle what the turn
+  still holds. Chat owns what a reply means and how it is stored.
+  Exactly-once is a fact in the stored state, not in process memory: a reply
+  is `pending`, `claimed` (with `claimedAt` and the turn's `claimTurnId`),
+  `spoken` (`spokenAt`) or `skipped`; every change is one conditional UPDATE,
+  so two turns on two instances never both hold a reply, and a claim older
+  than `VOICE_BEHAVIOR.operatorReplyClaimExpiryMs` (60 s) reads as pending
+  again. `services/operatorReplySpeaker.ts` is one turn's side of it: it
+  claims beside the turn's profile, routine and owner reads, cuts each reply
+  with `wholeTextSpeech` (`speechSegmenter.ts`, through `speechText.ts`, so
+  markdown is removed and every piece ends in whitespace; a reply with no
+  words is skipped), and settles once. The turn speaks what it claimed after
+  its `conversation` event, ahead of chat's answer and outside the turn
+  policy, whoever owns the conversation. On a human-owned turn chat answers
+  nothing once a teammate has written (its waiting line stops at the first
+  human reply in its ten-message history window), so the replies take the
+  waiting line's place and the turn ends `continue`; after a hand-back the
+  agent's answer follows under its turn limit, and `mayBridge` holds the
+  bridge line back once a reply was spoken. A replay of a lost answer claims
+  the pending replies too and speaks them before the answer; one overtaken
+  while it claims ends `continue` and hands its claim back. The turn settles
+  as its outcome leaves, before a turn-limit drain: when the outcome left
+  before a newer request overtook it or the runtime hung up (`cutOffAt`), the
+  replies are marked spoken (the first `spokenAt` stays), then counted, then
+  audited through the `operatorRepliesSpoken` note (`voice.operator_reply_spoken`,
+  conversation id and marked ids, never the text); otherwise they go back to
+  pending. A request that overtook a turn of the session whose outcome had
+  not left (`VoiceTurnClaim.overtook`, in process) settles that turn's claim
+  as unheard, within the note timeout, before it claims, so a caller who
+  speaks over a reply hears it on that turn; across instances that turn is
+  not visible, and the reply waits for it or for the claim's expiry. A
+  settling write that fails warns and leaves the claim to expire; an audit
+  that fails after the mark is logged and not retried. "Spoken" means the
+  turn that sent the reply completed, not that the caller heard it to the
+  end: the runtime may still be playing it when the caller speaks over it,
+  and the reply stays Spoken although the next request's history shows it
+  cut short (#1530). The session's interruption bookkeeping counts the
   replies as spoken ahead of the reply (`VoiceSpokenTurn.ahead`, before the
   bridge line), so a reply cut short after them is marked with its own
   characters only.
@@ -541,10 +544,9 @@ recorded; a note that fails to record, or takes longer than 5 s, logs `Voice
 turn note could not be recorded` at warn, and an interrupted reply the
 conversation no longer holds logs `Voice reply to mark interrupted was not
 found` at warn (workspace, conversation and message ids) and writes no audit
-event. `Voice turn could not read the teammate's pending replies; they wait for the
-next turn` at warn with `agentId`, `vendor`, `conversationId` and
-`errorClass`; `Voice turn could not update the teammate's pending replies` at
-warn with the same fields and `step` (`claim`, `skip`, `release`). A warn when a concurrent first turn bound the session to another
+event. `Voice turn could not update the teammate's pending replies` at warn
+with `agentId`, `vendor`, `conversationId`, `errorClass` and `step`
+(`claim`, `mark`, `skip`, `release`). A warn when a concurrent first turn bound the session to another
 conversation, and a warn naming only `dialect` and `agentId` when a request
 carries no usable session key (a 400). Once per agent per process, when a
 turn's bridge line is below the dialect's minimum, `Voice bridge line is

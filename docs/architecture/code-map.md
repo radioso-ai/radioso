@@ -395,9 +395,10 @@ context and the `latest_input_wins` supersession mode, which the chat turn
 registry and lifecycle implement (`chat/contracts/interruption.ts`), and reads
 the `handoff` report (`ChatTurnHandoff`) chat puts on a hand-off turn's `done`
 event; the chat turn is otherwise unchanged. A teammate's Inbox reply on a call
-is stored as pending speech and spoken on the caller's next turn through chat's
-`PendingOperatorReplyReader` and `OperatorReplySpeechMarker`
-(`chat/contracts/operatorReplySpeech.ts`).
+is stored as pending speech and spoken once, on the caller's next turn, through
+chat's `OperatorReplySpeechClaims` port (`chat/contracts/operatorReplySpeech.ts`);
+`voiceChannel/services/operatorReplySpeaker.ts` claims, speaks and settles a
+turn's replies.
 
 Should not own planning, retrieval, routines, or any vendor's field names
 outside `adapters/`. The domain names no vendor.

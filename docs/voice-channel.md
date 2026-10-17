@@ -655,7 +655,8 @@ whole response, and no newer utterance overtook it first. When the turn does
 not complete that way (the runtime drops the request, the caller speaks over
 it, or the turn fails), the reply goes back to Pending and a later turn speaks
 it, so the caller may hear a reply again when a turn fails after it was already
-sent. A claim that outlives its turn by a minute, because the instance running
+sent. When the caller speaks over a turn that is still saying a reply, the
+newer turn says it. A claim that outlives its turn by a minute, because the instance running
 the turn stopped, also counts as Pending again.
 
 A turn that speaks teammate replies records one `voice.operator_reply_spoken`
@@ -1013,7 +1014,11 @@ ElevenLabs agent's first message.
   reply is spoken once, except that a turn cut short after sending it (the
   caller spoke over it, the runtime dropped the request, or the turn failed)
   hands it back, and a claim that outlives its turn by a minute counts as
-  pending again; either way a later turn speaks it a second time. Until a
+  pending again; either way a later turn speaks it a second time. When the
+  caller speaks over a turn that is still saying a reply, the newer turn on
+  the same Radioso instance takes the reply over and says it; on another
+  instance it cannot see that turn, so the reply waits for that turn to finish
+  or, if its instance stopped, for the claim to expire. Until a
   teammate writes in the conversation, each new utterance hears the agent's
   short waiting line; after that, each one hears the teammate's replies
   written since the last, or nothing, until about ten caller turns pass with

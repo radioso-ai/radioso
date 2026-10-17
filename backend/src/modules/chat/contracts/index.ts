@@ -72,7 +72,6 @@ export {
   type OperatorReplyClaim,
   type OperatorReplySpeech,
   type OperatorReplySpeechClaims,
-  type OperatorReplySpeechMarker,
   type PendingOperatorReply,
 } from "./operatorReplySpeech.js";
 export type {

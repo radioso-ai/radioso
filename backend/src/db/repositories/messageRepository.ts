@@ -14,7 +14,6 @@ import type {
   OperatorReplyClaim,
   OperatorReplySpeech,
   OperatorReplySpeechClaims,
-  OperatorReplySpeechMarker,
   PendingOperatorReply,
 } from "../../modules/chat/contracts/operatorReplySpeech.js";
 import { VOICE_BEHAVIOR } from "../../shared/domain/behaviorConfig.js";
@@ -353,7 +352,7 @@ const toPreview = (content: string): string => {
 };
 
 export class MessageRepository
-  implements MessageRepositoryPort, ReplyInterruptionMarker, OperatorReplySpeechClaims, OperatorReplySpeechMarker {
+  implements MessageRepositoryPort, ReplyInterruptionMarker, OperatorReplySpeechClaims {
   constructor(private readonly db: Db) {}
 
   async findByIdAndWorkspaceId(workspaceId: string, messageId: string): Promise<MessageRecord | null> {
@@ -802,33 +801,22 @@ export class MessageRepository
     return result.numUpdatedRows > 0n;
   }
 
-  /** Teammate replies pending speech (or held by a claim past its expiry), oldest first. */
-  async pendingOperatorReplies(input: { workspaceId: string; conversationId: string }): Promise<PendingOperatorReply[]> {
-    const rows = await this.db
-      .selectFrom("messages")
-      .select(["id", "content"])
-      .where("workspace_id", "=", input.workspaceId)
-      .where("conversation_id", "=", input.conversationId)
-      .where("role", "=", "assistant")
-      .where("source", "in", [...HUMAN_AUTHORED_MESSAGE_SOURCES])
-      .where(awaitsSpeech)
-      .orderBy("created_at", "asc")
-      .orderBy("id", "asc")
-      .execute();
-    return rows.map((row) => ({ messageId: row.id, text: row.content }));
-  }
-
   /**
-   * One UPDATE from pending to claimed: a row another claim took first fails the condition once
-   * its lock is released, so two turns claiming at once never both hold a reply.
+   * One UPDATE claims and reads the conversation's pending teammate replies (or ones held by a
+   * claim past its expiry): a row another claim took first fails the condition once its lock is
+   * released, so two turns claiming at once never both hold a reply.
    */
-  claimOperatorReplies(input: OperatorReplyClaim): Promise<string[]> {
-    return this.replaceSpeech(input, awaitsSpeech, sql`jsonb_build_object(
-      'state', 'claimed', 'claimedAt', ${markerRecordedAt}, 'claimTurnId', ${input.claimTurnId}::text)`);
-  }
-
-  releaseOperatorReplies(input: OperatorReplyClaim): Promise<string[]> {
-    return this.replaceSpeech(input, claimedBy(input.claimTurnId), toJsonb(PENDING_SPEECH));
+  async claimPendingOperatorReplies(input: { workspaceId: string; conversationId: string; claimTurnId: string }): Promise<PendingOperatorReply[]> {
+    const claimed = sql`jsonb_build_object('state', 'claimed', 'claimedAt', ${markerRecordedAt}, 'claimTurnId', ${input.claimTurnId}::text)`;
+    const rows = await this.teammateReplies(input)
+      .set((eb) => ({ metadata_json: jsonbConcat(eb.ref("metadata_json"), sql`jsonb_build_object('speech', ${claimed})`) }))
+      .where(awaitsSpeech)
+      .returning(["id", "content", "created_at"])
+      .execute();
+    return rows
+      .map((row) => ({ messageId: row.id, text: row.content, createdAt: new Date(row.created_at).getTime() }))
+      .sort((left, right) => left.createdAt - right.createdAt || (left.messageId < right.messageId ? -1 : 1))
+      .map(({ messageId, text }) => ({ messageId, text }));
   }
 
   /**
@@ -836,29 +824,34 @@ export class MessageRepository
    * the reply once. Only replies the turn still holds match, so the first `spokenAt` stays.
    */
   markOperatorRepliesSpoken(input: OperatorReplyClaim): Promise<string[]> {
-    return this.replaceSpeech(input, claimedBy(input.claimTurnId), sql`jsonb_build_object('state', 'spoken', 'spokenAt', ${markerRecordedAt})`);
+    return this.settleClaim(input, sql`jsonb_build_object('state', 'spoken', 'spokenAt', ${markerRecordedAt})`);
   }
 
-  skipOperatorReplies(input: { workspaceId: string; conversationId: string; messageIds: string[] }): Promise<string[]> {
-    return this.replaceSpeech(input, awaitsSpeech, sql`jsonb_build_object('state', 'skipped', 'skippedAt', ${markerRecordedAt})`);
+  skipOperatorReplies(input: OperatorReplyClaim): Promise<string[]> {
+    return this.settleClaim(input, sql`jsonb_build_object('state', 'skipped', 'skippedAt', ${markerRecordedAt})`);
   }
 
-  /** Replaces the speech state of those of the conversation's teammate replies whose state matches. */
-  private async replaceSpeech(
-    input: { workspaceId: string; conversationId: string; messageIds: string[] },
-    current: RawBuilder<boolean>,
-    next: RawBuilder<unknown>,
-  ): Promise<string[]> {
-    if (input.messageIds.length === 0) return [];
-    const rows = await this.db
+  releaseOperatorReplies(input: OperatorReplyClaim): Promise<string[]> {
+    return this.settleClaim(input, toJsonb(PENDING_SPEECH));
+  }
+
+  /** The conversation's teammate replies, as an UPDATE of them. */
+  private teammateReplies(input: { workspaceId: string; conversationId: string }) {
+    return this.db
       .updateTable("messages")
-      .set((eb) => ({ metadata_json: jsonbConcat(eb.ref("metadata_json"), sql`jsonb_build_object('speech', ${next})`) }))
       .where("workspace_id", "=", input.workspaceId)
       .where("conversation_id", "=", input.conversationId)
-      .where("id", "in", input.messageIds)
       .where("role", "=", "assistant")
-      .where("source", "in", [...HUMAN_AUTHORED_MESSAGE_SOURCES])
-      .where(current)
+      .where("source", "in", [...HUMAN_AUTHORED_MESSAGE_SOURCES]);
+  }
+
+  /** Replaces the speech state of those of `messageIds` the turn still holds. */
+  private async settleClaim(input: OperatorReplyClaim, next: RawBuilder<unknown>): Promise<string[]> {
+    if (input.messageIds.length === 0) return [];
+    const rows = await this.teammateReplies(input)
+      .set((eb) => ({ metadata_json: jsonbConcat(eb.ref("metadata_json"), sql`jsonb_build_object('speech', ${next})`) }))
+      .where("id", "in", input.messageIds)
+      .where(claimedBy(input.claimTurnId))
       .returning("id")
       .execute();
     return rows.map((row) => row.id);

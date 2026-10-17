@@ -533,8 +533,6 @@
   "types|frontend/lib/api-external-skills.ts|ExternalSkillDefinition",
   "types|frontend/lib/api-external-skills.ts|McpAuthMethod",
   "types|frontend/lib/api-external-skills.ts|OauthConnectionConfig",
-  "types|frontend/lib/api-quality.ts|QualityNotActionableReason",
-  "types|frontend/lib/api-quality.ts|QualityResolvedReason",
   "types|frontend/lib/api-slack-skills.ts|CreateSlackSkillInput",
   "types|frontend/lib/api-slack-skills.ts|SlackSkillDefinition",
   "types|frontend/lib/api-slack-skills.ts|SlackSkillExposedInput",

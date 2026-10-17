@@ -40,6 +40,8 @@ export interface PendingDecisionRecord {
   deadline: Date | null;
   createdAt: Date;
   updatedAt: Date;
+  /** The conversation channel when its source still exists. */
+  sourceChannel?: string | null;
 }
 
 export interface PendingDecisionCreateInput {
@@ -68,6 +70,8 @@ interface PendingDecisionResolveInput {
 
 interface PendingDecisionListInput {
   workspaceId: string;
+  agentId?: string;
+  channel?: string;
 }
 
 interface PendingDecisionRow {
@@ -91,6 +95,7 @@ interface PendingDecisionRow {
   deadline: Date | null;
   created_at: Date;
   updated_at: Date;
+  source_channel?: string | null;
 }
 
 // The full pending_decisions projection. Kept as a single `sql` fragment spliced into each
@@ -144,6 +149,7 @@ const pendingDecisionListColumns = sql`
   pd.deadline,
   pd.created_at,
   pd.updated_at
+  , c.source_channel
 `;
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -189,6 +195,7 @@ const mapRecord = (row: PendingDecisionRow): PendingDecisionRecord => ({
   deadline: row.deadline,
   createdAt: row.created_at,
   updatedAt: row.updated_at,
+  sourceChannel: row.source_channel ?? null,
 });
 
 export class PendingDecisionRepository {
@@ -304,6 +311,8 @@ export class PendingDecisionRepository {
        WHERE pd.workspace_id = ${input.workspaceId}
          AND pd.status = 'pending'
          AND (c.source_channel IS NULL OR c.source_channel NOT IN (${operatorTestChannels}))
+         ${input.agentId === undefined ? sql`` : sql`AND pd.agent_id = ${input.agentId}`}
+         ${input.channel === undefined ? sql`` : sql`AND c.source_channel = ${input.channel}`}
        ORDER BY pd.created_at DESC
     `.execute(this.db);
 

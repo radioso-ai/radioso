@@ -18,6 +18,7 @@ import {
   TAKEN_BY_UNCLAIMED,
   type EscalationType,
   type InboxAgentOption,
+  type InboxChannelOption,
   type InboxFilters,
   type InboxItem,
   type InboxOperatorOption,
@@ -51,6 +52,7 @@ interface InboxQueueProps {
   filters: InboxFilters
   onFiltersChange: (next: InboxFilters) => void
   agentOptions: InboxAgentOption[]
+  channelOptions: InboxChannelOption[]
   operatorOptions: InboxOperatorOption[]
   now: Date
   selectedKey: string | null
@@ -68,6 +70,7 @@ export function InboxQueue({
   filters,
   onFiltersChange,
   agentOptions,
+  channelOptions,
   operatorOptions,
   now,
   selectedKey,
@@ -75,6 +78,8 @@ export function InboxQueue({
   onSelect,
   onSelectRecentlyClosed,
 }: InboxQueueProps) {
+  const typeCount = (type: EscalationType | 'all') =>
+    filters.type === 'all' || filters.type === type ? typeCounts[type] : '—'
   return (
     <aside className="flex w-full shrink-0 flex-col border-border md:w-[360px] md:border-r" aria-label="Inbox queue">
       <div className="shrink-0 space-y-2 border-b border-border p-3">
@@ -106,11 +111,11 @@ export function InboxQueue({
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">Type: all ({typeCounts.all})</SelectItem>
-                  <SelectItem value="handoff">{TYPE_OPTION_LABEL.handoff} ({typeCounts.handoff})</SelectItem>
-                  <SelectItem value="approval">{TYPE_OPTION_LABEL.approval} ({typeCounts.approval})</SelectItem>
-                  <SelectItem value="negative_feedback">{TYPE_OPTION_LABEL.negative_feedback} ({typeCounts.negative_feedback})</SelectItem>
-                  <SelectItem value="delivery_failed">{TYPE_OPTION_LABEL.delivery_failed} ({typeCounts.delivery_failed})</SelectItem>
+                  <SelectItem value="all">Type: all ({typeCount('all')})</SelectItem>
+                  <SelectItem value="handoff">{TYPE_OPTION_LABEL.handoff} ({typeCount('handoff')})</SelectItem>
+                  <SelectItem value="approval">{TYPE_OPTION_LABEL.approval} ({typeCount('approval')})</SelectItem>
+                  <SelectItem value="negative_feedback">{TYPE_OPTION_LABEL.negative_feedback} ({typeCount('negative_feedback')})</SelectItem>
+                  <SelectItem value="delivery_failed">{TYPE_OPTION_LABEL.delivery_failed} ({typeCount('delivery_failed')})</SelectItem>
                 </SelectContent>
               </Select>
               <Select
@@ -126,6 +131,20 @@ export function InboxQueue({
                     <SelectItem key={agent.agentId} value={agent.agentId}>
                       {agent.agentInternalName?.trim() || agent.agentName?.trim() || 'Unnamed agent'}
                     </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select
+                value={filters.channel}
+                onValueChange={(value) => onFiltersChange({ ...filters, channel: value })}
+              >
+                <SelectTrigger size="sm" className="h-8 min-w-0 flex-1 text-xs" aria-label="Filter by channel">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Channel: all</SelectItem>
+                  {channelOptions.map(({ channel }) => (
+                    <SelectItem key={channel} value={channel}>{channel}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
@@ -153,7 +172,18 @@ export function InboxQueue({
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto p-3">
-        {isQueueEmpty ? null : (
+        {isQueueEmpty ? null : items.length === 0 ? (
+          <div className="space-y-2 px-1 text-sm text-muted-foreground">
+            <p>No items match your filters.</p>
+            <button
+              type="button"
+              className="text-left text-foreground underline-offset-4 hover:underline"
+              onClick={() => onFiltersChange({ ...filters, type: 'all', agentId: 'all', channel: 'all', search: '', takenBy: TAKEN_BY_ANYONE })}
+            >
+              Clear filters
+            </button>
+          </div>
+        ) : (
           <div className="flex flex-col gap-2">
             {items.map((item) => (
               <InboxQueueRow

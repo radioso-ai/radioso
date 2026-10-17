@@ -683,8 +683,13 @@ message until a topic exists — with an outcome chip (In progress, Completed,
 or Handed off) plus search and filters for outcome, agent, and site.
 
 In **Needs you**, the left pane lists open items with search and filters for
-type, agent, and **Taken by**, which groups items by teammate — **Me** matches
-the conversations you hold; critical escalations — an approval
+type, agent, channel, and **Taken by**, which groups items by teammate — **Me** matches
+the conversations you hold. Type, agent, and channel stay in the URL, so you can
+share a narrowed queue or return to it after a refresh. The Inbox reads every
+available page of waiting handoffs; when a cursor-backed source still has older
+items, **Load older** names the remaining handoffs and brings them into the queue.
+Commented feedback keeps the queue focused on its newest 25 items and names any
+additional feedback with a link to the matching Quality review. Critical escalations — an approval
 to decide, a handoff awaiting or held by a human — sort to the top, followed
 by written negative feedback ordered by its latest creation or edit.
 Automatically detected signals and uncommented feedback stay in **Quality**

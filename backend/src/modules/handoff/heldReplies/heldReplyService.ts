@@ -232,7 +232,7 @@ interface HeldReplyPosition {
   id: string;
 }
 
-type HeldReplyListQuery = { agentId: string | undefined; after: HeldReplyPosition | null; limit: number };
+type HeldReplyListQuery = { agentId: string | undefined; channel?: string; after: HeldReplyPosition | null; limit: number };
 
 /** A held reply waiting for a teammate as a queue ranks it: who waits, why and since when; never its draft. */
 export interface HeldReplyWait {
@@ -283,6 +283,7 @@ export interface HeldReplyUnitOfWork {
 export interface HeldReplyView {
   id: string;
   conversationId: string;
+  sourceChannel: string | null;
   agentId: string | null;
   state: HeldReplyState;
   holdReason: string;
@@ -322,7 +323,7 @@ type HeldReplyDiscardResult =
 
 /** How teammates see and decide held replies: the HTTP routes and Ray. */
 interface HeldReplyOperatorPort {
-  list(actor: OwnershipActor, query: { attention: "open" | "all"; agentId?: string; cursor?: string; limit: number }): Promise<HeldReplyPage>;
+  list(actor: OwnershipActor, query: { attention: "open" | "all"; agentId?: string; channel?: string; cursor?: string; limit: number }): Promise<HeldReplyPage>;
   current(actor: OwnershipActor, conversationId: string): Promise<{ heldReply: HeldReplyView | null }>;
   longestWaiting(actor: OwnershipActor, query: { agentId?: string; limit: number }): Promise<{ total: number; items: HeldReplyWait[] }>;
   /** An unchanged release with `editedText` null; an edited release with it set. */
@@ -355,6 +356,7 @@ const authorityView = (record: HeldReplyRecord): HeldReplyAuthorityView => ({
 const presentHeldReply = (record: HeldReplyRecord): HeldReplyView => ({
   id: record.id,
   conversationId: record.conversationId,
+  sourceChannel: record.sourceChannel ?? null,
   agentId: record.agentId,
   state: record.state,
   holdReason: record.holdReason,
@@ -618,11 +620,11 @@ export class HeldReplyService implements HeldReplyProducerPort, HeldReplyDispatc
   /** The workspace's held replies, newest first: those waiting for a teammate, or with `attention: "all"` every one. */
   async list(
     actor: OwnershipActor,
-    query: { attention: "open" | "all"; agentId?: string; cursor?: string; limit: number },
+    query: { attention: "open" | "all"; agentId?: string; channel?: string; cursor?: string; limit: number },
   ): Promise<HeldReplyPage> {
     const after = query.cursor === undefined ? null : decodePosition(query.cursor);
     // One past the page tells whether another follows.
-    const page = { agentId: query.agentId, after, limit: query.limit + 1 };
+    const page = { agentId: query.agentId, channel: query.channel, after, limit: query.limit + 1 };
     const rows = query.attention === "all"
       ? await this.deps.reads.listAll(actor.workspaceId, page)
       : await this.deps.reads.listOpen(actor.workspaceId, page);

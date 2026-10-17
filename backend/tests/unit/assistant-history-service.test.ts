@@ -72,7 +72,7 @@ describe("AssistantHistoryService", () => {
       "workspace-1",
       "conversation-1",
       { limit: 20, activityCursor: "77777777-7777-4777-8777-777777777777" },
-      { includeOwnership: true, includeOperatorLabel: true, activity: { includeFeedback: false }, redeliverInterruptedReplies: true },
+      { includeOwnership: true, includeOperatorLabel: true, activity: { includeFeedback: false }, redeliverMarkedReplies: true },
     );
   });
 });

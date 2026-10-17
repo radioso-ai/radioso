@@ -1,4 +1,4 @@
-import { spokenText, type SpeechPosition } from "./speechText.js";
+import { hasSpokenWords, spokenText, type SpeechPosition } from "./speechText.js";
 
 /**
  * A sentence ends at a Unicode sentence terminator (`.`, `?`, `؟`, `।`, …) or an ellipsis, with any
@@ -33,6 +33,17 @@ export const splitCompleteSentences = (rawBuffer: string, position: SpeechPositi
     start = end;
   }
   return { sentences, remainder: buffer.slice(start) };
+};
+
+/**
+ * A whole text nobody streams, such as a teammate's reply, as speech: its sentences once it is
+ * spoken text, each ending in whitespace, so its last piece stays apart from what is spoken next.
+ * A text with no words to say is no speech at all.
+ */
+export const wholeTextSpeech = (text: string): string[] => {
+  // The line break that ends the text closes its last sentence.
+  const { sentences, remainder } = splitCompleteSentences(`${text}\n`, { startsLine: true, final: true });
+  return [...sentences, remainder].filter(hasSpokenWords);
 };
 
 /** A cut sentence ends its line when the whitespace after its terminator holds a line break. */

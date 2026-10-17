@@ -116,10 +116,12 @@ The completions adapter ends both web outcomes with `stop` and `[DONE]`, with no
 |---|---|---|
 | `ownership.state === "human_owned"` and not suppressed, transfer target configured | `transfer` | `callback_requested` when contact details were captured, else `continue`; the conversation is human-owned and the operator continues it in text from the inbox |
 | same, no target configured | `callback_requested` when contact details were captured, else `continue` | same as above |
-| conversation already human-owned at turn start | `transfer` or `callback_requested` (never the "a teammate is joining" line) | `continue` with the reply text; the page shows the human-owned state |
+| conversation already human-owned at turn start | `transfer` or `callback_requested` (never the "a teammate is joining" line) | `continue`; the speech is the teammate's pending Inbox replies, else chat's waiting line (silence once a teammate has written); the page shows the human-owned state |
 | otherwise | `continue` | `continue` |
 
 `end` is reserved for an explicit routine ending that says the session is complete; not in the demo.
+
+A teammate's Inbox reply reaches a web call on the caller's next completions request; there is no push channel. Chat stores it as pending speech and owns the one port the voice channel uses, `OperatorReplySpeechClaims`: `claimPendingOperatorReplies({ workspaceId, conversationId, claimTurnId })` claims and reads the pending replies in one conditional UPDATE (→ `[{ messageId, text }]`, oldest first; a claim past `VOICE_BEHAVIOR.operatorReplyClaimExpiryMs` counts as pending), and `markOperatorRepliesSpoken`, `skipOperatorReplies` and `releaseOperatorReplies` settle what the turn still holds; composition's `operatorRepliesSpoken` note audits `voice.operator_reply_spoken` with the marked ids. The turn (`services/operatorReplySpeaker.ts`) speaks the replies (as speech text) ahead of chat's answer whoever owns the conversation, so a hand-back needs no special case, and settles them as its outcome leaves: spoken when the outcome left before the turn was cut off, otherwise back to pending; a newer request of the session on the same instance takes over the claim of the turn it overtook before that turn's outcome left. The outcome is derived from chat's `done` as above; a human-owned turn that spoke them ends `continue`.
 
 ## 5a. Transports
 

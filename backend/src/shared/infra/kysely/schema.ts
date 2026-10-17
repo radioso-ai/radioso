@@ -504,9 +504,7 @@ export interface Chunks {
   date_from: Timestamp | null;
   date_to: Timestamp | null;
   document_id: string;
-  embedding: string | null;
   embedding_model: Generated<string>;
-  embedding_unbounded: string | null;
   end_offset: number | null;
   id: string;
   metadata: Generated<Json>;

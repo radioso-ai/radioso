@@ -62,6 +62,13 @@ export const recordVoiceReplyInterrupted = (metrics: VoiceTurnMetricsSink | null
   });
 };
 
+export const recordVoiceOperatorRepliesSpoken = (metrics: VoiceTurnMetricsSink | null | undefined, replyCount: number): void => {
+  metrics?.incrementCounter("voice_operator_reply_spoken_total", {
+    help: "Teammate replies from the Inbox that a voice turn handed to the caller",
+    value: replyCount,
+  });
+};
+
 export const recordVoiceTurnOutcome = (
   metrics: VoiceTurnMetricsSink | null | undefined,
   kind: VoiceTurnOutcome["kind"],

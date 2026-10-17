@@ -14,7 +14,9 @@ describe("rate limit headers", () => {
   it("advertises the budget a caller has left and when it refills", () => {
     const { headers, res } = recordingResponse();
 
-    applyRateLimitHeaders(res as never, { limit: 60, remaining: 41, resetAtMs: Date.now() + 12_400 });
+    applyRateLimitHeaders(res as never, {
+      limit: 60, remaining: 41, resetAtMs: Date.now() + 12_400, resetAfterSeconds: 13,
+    });
 
     expect(headers.get("RateLimit-Limit")).toBe("60");
     expect(headers.get("RateLimit-Remaining")).toBe("41");
@@ -25,7 +27,9 @@ describe("rate limit headers", () => {
   it("rounds a reset that has already passed up to zero rather than negative seconds", () => {
     const { headers, res } = recordingResponse();
 
-    applyRateLimitHeaders(res as never, { limit: 5, remaining: 0, resetAtMs: Date.now() - 5_000 });
+    applyRateLimitHeaders(res as never, {
+      limit: 5, remaining: 0, resetAtMs: Date.now() - 5_000, resetAfterSeconds: 0,
+    });
 
     expect(headers.get("RateLimit-Reset")).toBe("0");
   });
@@ -37,11 +41,27 @@ describe("rate limit headers", () => {
       limit: 5,
       remaining: 0,
       resetAtMs: Date.now() + 30_000,
+      resetAfterSeconds: 30,
       retryAfterSeconds: 30,
     });
 
     expect(headers.get("Retry-After")).toBe("30");
     expect(headers.get("RateLimit-Remaining")).toBe("0");
+  });
+
+  it("uses the store-evaluated reset duration instead of this replica's clock", () => {
+    const { headers, res } = recordingResponse();
+
+    applyRateLimitHeaders(res as never, {
+      limit: 5,
+      remaining: 0,
+      resetAtMs: Date.now() - 60_000,
+      resetAfterSeconds: 30,
+      retryAfterSeconds: 30,
+    });
+
+    expect(headers.get("RateLimit-Reset")).toBe("30");
+    expect(headers.get("Retry-After")).toBe("30");
   });
 
   it("re-emits the whole decision a 429 body carries", () => {
@@ -50,7 +70,7 @@ describe("rate limit headers", () => {
 
     applyRetryAfterFromError(res as never, {
       statusCode: 429,
-      details: { limit: 10, remaining: 0, resetAtMs, retryAfterSeconds: 45 },
+      details: { limit: 10, remaining: 0, resetAtMs, resetAfterSeconds: 45, retryAfterSeconds: 45 },
     });
 
     expect(headers.get("Retry-After")).toBe("45");

@@ -152,7 +152,7 @@ export class ConversationDeliveryFailureRepository implements DeliveryFailureWri
   }
 
   /** The workspace's failures, the open ones unless `includeCleared`; with `agentId`, on that agent's conversations. */
-  private failures(workspaceId: string, agentId: string | undefined, options: { includeCleared: boolean }) {
+  private failures(workspaceId: string, agentId: string | undefined, options: { includeCleared: boolean }, channel?: string) {
     let select = this.db
       .selectFrom("conversation_delivery_failures as f")
       .where("f.workspace_id", "=", workspaceId);
@@ -167,6 +167,15 @@ export class ConversationDeliveryFailureRepository implements DeliveryFailureWri
           .where("c.agent_id", "=", agentId),
       ));
     }
+    if (channel !== undefined) {
+      select = select.where((eb) => eb.exists(
+        eb.selectFrom("conversations as c")
+          .select("c.id")
+          .whereRef("c.id", "=", "f.conversation_id")
+          .where("c.workspace_id", "=", workspaceId)
+          .where("c.source_channel", "=", channel),
+      ));
+    }
     return select;
   }
 
@@ -175,7 +184,7 @@ export class ConversationDeliveryFailureRepository implements DeliveryFailureWri
     query: ListQuery,
     options: { includeCleared: boolean },
   ): Promise<DeliveryFailureRecord[]> {
-    let select = this.failures(workspaceId, query.agentId, options).selectAll("f");
+    let select = this.failures(workspaceId, query.agentId, options, query.channel).selectAll("f");
     const { after } = query;
     if (after) {
       select = select.where((eb) => eb.or([

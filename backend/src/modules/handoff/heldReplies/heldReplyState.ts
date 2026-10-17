@@ -26,6 +26,8 @@ export interface HeldReplyRecord {
   id: string;
   workspaceId: string;
   conversationId: string;
+  /** The source channel joined for operator queue presentation; absent outside list reads. */
+  sourceChannel?: string | null;
   /** The author: the agent whose review produced the draft. */
   agentId: string | null;
   state: HeldReplyState;

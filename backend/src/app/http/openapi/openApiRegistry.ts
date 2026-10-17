@@ -279,6 +279,7 @@ export interface OpenApiSchemaCatalog {
   EmailVerificationResendRequestSchema: z.ZodTypeAny;
   EmailVerificationVerifyRequestSchema: z.ZodTypeAny;
   EmailVerificationVerifyResponseSchema: z.ZodTypeAny;
+  PendingRegistrationSessionResponseSchema: z.ZodTypeAny;
   LoginRequestSchema: z.ZodTypeAny;
   LoginResponseSchema: z.ZodTypeAny;
   RegistrationAvailabilityResponseSchema: z.ZodTypeAny;
@@ -376,6 +377,8 @@ export interface OpenApiSchemaCatalog {
   WorkspaceRouteResolutionResponseSchema: z.ZodTypeAny;
   WorkspaceSchema: z.ZodTypeAny;
   WorkspaceSummaryResponseSchema: z.ZodTypeAny;
+  WorkspaceSetupStateSchema: z.ZodTypeAny;
+  UpdateWorkspaceSetupStateRequestSchema: z.ZodTypeAny;
   WorkspaceEventInvalidateDataSchema: z.ZodTypeAny;
   WorkspaceEventReadyDataSchema: z.ZodTypeAny;
   WorkspaceEventResyncDataSchema: z.ZodTypeAny;

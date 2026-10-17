@@ -20,9 +20,7 @@ type RelaxedAssistantChatResponse<T> = T extends unknown
     }
   : never
 export type RegisterRequest = ApiSchemas['RegisterRequest']
-export type RegisterResponse = ApiSchemas['RegisterResponse'] & {
-  requiresEmailVerification?: boolean
-}
+export type RegisterResponse = ApiSchemas['RegisterResponse']
 export type RegistrationAvailabilityResponse = ApiSchemas['RegistrationAvailabilityResponse']
 export type LoginRequest = ApiSchemas['LoginRequest']
 export type LoginResponse = ApiSchemas['LoginResponse']
@@ -36,6 +34,7 @@ export type UserProfileUpdateRequest = ApiSchemas['UserProfileUpdateRequest']
 export type InvitationAcceptRequest = ApiSchemas['InvitationAcceptRequest']
 export type EmailVerificationVerifyRequest = ApiSchemas['EmailVerificationVerifyRequest']
 export type EmailVerificationVerifyResponse = ApiSchemas['EmailVerificationVerifyResponse']
+export type PendingRegistrationSessionResponse = ApiSchemas['PendingRegistrationSessionResponse']
 export type EmailVerificationResendRequest = ApiSchemas['EmailVerificationResendRequest']
 
 export type RetrievalDefaults = Omit<ApiSchemas['RetrievalDefaultsResponse'], 'metadataRules'> & {

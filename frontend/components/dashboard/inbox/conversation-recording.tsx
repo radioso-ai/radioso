@@ -11,7 +11,7 @@ import { API_BASE } from '@/lib/api-client'
  * vendor. An `<audio>` element cannot send the workspace header, so the workspace travels as a
  * query selector the backend checks against the session.
  */
-export const conversationRecordingUrl = (workspaceId: string, conversationId: string): string =>
+const conversationRecordingUrl = (workspaceId: string, conversationId: string): string =>
   `${API_BASE}/conversations/${encodeURIComponent(conversationId)}/recording?workspaceId=${encodeURIComponent(workspaceId)}`
 
 /** The header's Listen button, shown when the conversation's detail says the call has a recording. */

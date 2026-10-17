@@ -108,6 +108,8 @@ export interface ConversationRepositoryPort {
       cursor?: string;
       sourceScope?: ConversationSourceScope;
       ownership?: ConversationOwnershipScope;
+      agentId?: string;
+      channel?: string;
     },
   ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
   countByWorkspaceId(workspaceId: string): Promise<number>;
@@ -461,6 +463,8 @@ export class ConversationRepository implements ConversationRepositoryPort {
       cursor?: string;
       sourceScope?: ConversationSourceScope;
       ownership?: ConversationOwnershipScope;
+      agentId?: string;
+      channel?: string;
     },
   ): Promise<{ conversations: ConversationRecord[]; total: number; nextCursor: string | null; hasMore: boolean }> {
     const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["updatedAt", "createdAt", "id"]) : null;
@@ -487,6 +491,8 @@ export class ConversationRepository implements ConversationRepositoryPort {
               )
               .where("co.state", "=", "human_owned"),
           )
+          .$if(input.agentId !== undefined, (qb) => qb.where("c.agent_id", "=", input.agentId!))
+          .$if(input.channel !== undefined, (qb) => qb.where("c.source_channel", "=", input.channel!))
           .executeTakeFirst())?.count ?? "0");
     const query = this.db
       .selectFrom("conversations as c")
@@ -502,6 +508,8 @@ export class ConversationRepository implements ConversationRepositoryPort {
           )
           .where("co.state", "=", "human_owned"),
       )
+      .$if(input.agentId !== undefined, (qb) => qb.where("c.agent_id", "=", input.agentId!))
+      .$if(input.channel !== undefined, (qb) => qb.where("c.source_channel", "=", input.channel!))
       .$if(scope === "end_user", (qb) =>
         qb.where((eb) =>
           eb.or([

@@ -640,14 +640,16 @@ Several replies written between two utterances are spoken in the order they
 were written, all on the same turn. When your teammate hands the call back
 before the caller speaks again, the replies still pending are spoken first and
 the agent answers that utterance right after, with its usual bridge line and
-turn limit. A reply counts as spoken once Radioso has handed it to the call: if
-the runtime drops the request before the reply leaves, it stays Pending and the
-next turn speaks it. An identical re-request that Radioso answers by repeating
+turn limit. A reply counts as spoken once the turn that spoke it has sent the
+runtime its whole response, or the caller spoke over it: if the runtime drops
+the request first, or the turn fails, the reply stays Pending and the next turn
+speaks it. An identical re-request that Radioso answers by repeating
 a lost answer (see [When the caller talks over the agent](#when-the-caller-talks-over-the-agent))
 speaks no pending reply; the caller's next new utterance does.
 
-Every reply a turn speaks is recorded as a `voice.operator_reply_spoken` audit
-event with the conversation id and the replies' message ids, never their text.
+A turn that speaks teammate replies records one `voice.operator_reply_spoken`
+audit event with the conversation id and the replies' message ids, never their
+text.
 In history, the reply carries `speech`, `{ "state": "pending" }` until it is
 spoken and `{ "state": "spoken", "spokenAt": "…" }` after, and the dashboard
 tail returns the reply again when it is spoken, so an open Inbox pane updates

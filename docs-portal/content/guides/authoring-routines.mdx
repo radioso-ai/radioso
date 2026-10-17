@@ -1,7 +1,7 @@
 ---
 title: "Author a routine"
 description: "Build a multi-step flow your agent runs across turns in the dashboard routine editor, then test it and ship it with the agent."
-last_updated: 2026-10-13
+last_updated: 2026-10-17
 ---
 
 # Author a routine
@@ -231,6 +231,11 @@ starts on the routine's only email field when there is exactly one, and on
 **No reply-to** when there are several. A guest who never gave that address
 gets a notice with no reply-to.
 
+When the routine has an email field and a notifying ending's **Replies go
+to** is **No reply-to**, a note under the select reads "Replies won't reach the visitor.
+Choose their email field." The ending still saves and the routine still
+publishes, so a routine with nobody worth replying to stays as it is.
+
 The first five contact or team-notice dispatches in a conversation are
 eligible for delivery. After that, Radioso records a
 `conversation_dispatch_cap` outcome and skips the dispatch. Email recipient
@@ -357,7 +362,10 @@ from a test that kept skills off.
   **No reply-to**.
 - Reception's reply goes nowhere useful, or the email has no reply-to: check
   **Replies go to** on that ending, and that the routine asked for that field
-  on the path the visitor took.
+  on the path the visitor took. The editor shows a reminder under the select
+  whenever a notifying ending has an email field available and none chosen —
+  it never blocks saving, so a routine can ship with the reminder still
+  showing.
 - Review & Publish refuses the agent with `exposure_tool_name_changed`: a
   published tool name is fixed. Keep the name, or switch exposure off and create
   a new routine under the new name.

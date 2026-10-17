@@ -26,6 +26,7 @@ import {
   describeRoutineFieldPatch,
   resolveRoutineFieldPatch,
   projectRoutineForReview,
+  routineAdvisoriesWithMessages,
   routineDefinitionDraftInputSchema,
   routineDefinitionDraftUpdateInputSchema,
   routineFieldPatchSchema,
@@ -1083,7 +1084,7 @@ export const createRoutineCopilotProposalAdapter = (deps: {
         : `Draft routine ${result.draft.name} has ${diagnostics.length} open validation diagnostic${diagnostics.length === 1 ? "" : "s"}.`;
       // The card summary is rebuilt from payload.rationale after a reload, so
       // the summary rides the stored payload the same way directive drafts do.
-      return { payload: { ...result.draft, rationale: summary }, targetLabel: result.draft.name, summary, diagnostics };
+      return { payload: { ...result.draft, rationale: summary }, targetLabel: result.draft.name, summary, diagnostics, advisories: routineAdvisoriesWithMessages(result.draft) };
     },
     async draftEdit(workspaceId, rawTargetRef, rawChanges, rationale) {
       const targetRef = routineTargetRefSchema.parse(rawTargetRef);
@@ -1120,6 +1121,7 @@ export const createRoutineCopilotProposalAdapter = (deps: {
         targetLabel: routine.name,
         summary,
         diagnostics: after.diagnostics,
+        advisories: routineAdvisoriesWithMessages(patched),
       };
     },
   };

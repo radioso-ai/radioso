@@ -1657,6 +1657,7 @@ export const admittedAbuseControlDecision = (
   limit: 100,
   remaining: 99,
   resetAtMs: Date.now() + 60_000,
+  resetAfterSeconds: 60,
   ...overrides,
 });
 
@@ -1710,7 +1711,12 @@ export class InMemoryAbuseControlRepository implements AbuseControlRepositoryPor
       windowStartedAt,
       blockedUntil,
     });
-    return { entry, blocked: Boolean(blockedUntil && blockedUntil > input.now), weightedAttemptCount };
+    return {
+      entry,
+      evaluatedAt: input.now,
+      blocked: Boolean(blockedUntil && blockedUntil > input.now),
+      weightedAttemptCount,
+    };
   }
 
   private store(input: {

@@ -31,6 +31,9 @@ const decisionFromDetails = (details: unknown): AbuseControlDecision | null => {
     limit: candidate.limit,
     remaining: candidate.remaining,
     resetAtMs: candidate.resetAtMs,
+    resetAfterSeconds: typeof candidate.resetAfterSeconds === "number"
+      ? Math.max(0, Math.ceil(candidate.resetAfterSeconds))
+      : secondsUntil(candidate.resetAtMs),
     ...(typeof candidate.retryAfterSeconds === "number" ? { retryAfterSeconds: candidate.retryAfterSeconds } : {}),
   };
 };
@@ -38,7 +41,7 @@ const decisionFromDetails = (details: unknown): AbuseControlDecision | null => {
 export const applyRateLimitHeaders = (res: Response, decision: AbuseControlDecision): void => {
   res.setHeader("RateLimit-Limit", String(decision.limit));
   res.setHeader("RateLimit-Remaining", String(Math.max(0, decision.remaining)));
-  res.setHeader("RateLimit-Reset", String(secondsUntil(decision.resetAtMs)));
+  res.setHeader("RateLimit-Reset", String(decision.resetAfterSeconds));
   const retryAfterSeconds = positiveSeconds(decision.retryAfterSeconds);
   if (retryAfterSeconds !== null) {
     res.setHeader("Retry-After", String(retryAfterSeconds));

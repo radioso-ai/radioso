@@ -548,7 +548,12 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     it("stores the part marked cut short and its cancelled event together, after the caller's message", async () => {
       const { accountId, workspace, conversation, messages, assistantMessage, cancelledEvent } = await seedCutTurn();
 
-      await persistence.storeCutReply({ workspaceId: workspace.id, conversationId: conversation.id, assistantMessage, auditEvent: cancelledEvent(accountId) });
+      await persistence.storeCutReply({
+        workspaceId: workspace.id,
+        conversationId: conversation.id,
+        assistantMessage,
+        auditEvents: [cancelledEvent(accountId), { accountId, workspaceId: workspace.id, eventType: "voice.reply_interrupted", eventStatus: "success", metadata: { conversationId: conversation.id, assistantMessageId: assistantMessage.id } }],
+      });
 
       const stored = await messages.listByConversationId(workspace.id, conversation.id);
       expect(stored.map((message) => [message.role, message.content])).toEqual([
@@ -557,6 +562,10 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
       ]);
       expect(stored[1]).toMatchObject({ id: assistantMessage.id, source: "ai_agent", interruption: { heardCharacterCount: 30, spokenCharacterCount: 30, partial: true } });
       await expect(cancelledAudits(conversation.id)).resolves.toBe("1");
+      await expect(database.queryOne<{ audits: string }>(
+        `SELECT COUNT(*)::text AS audits FROM audit_events WHERE metadata_json->>'assistantMessageId' = $1 AND event_type = 'voice.reply_interrupted'`,
+        [assistantMessage.id],
+      )).resolves.toEqual({ audits: "1" });
       // A later report that the caller heard less keeps the marker the part was stored with.
       await messages.markReplyInterrupted({ workspaceId: workspace.id, conversationId: conversation.id, messageId: assistantMessage.id, heardCharacterCount: 4, spokenCharacterCount: 30 });
       expect((await messages.findByIdAndWorkspaceId(workspace.id, assistantMessage.id))?.interruption).toEqual({ heardCharacterCount: 30, spokenCharacterCount: 30, partial: true });
@@ -570,7 +579,7 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
         workspaceId: workspace.id,
         conversationId: conversation.id,
         assistantMessage,
-        auditEvent: cancelledEvent(randomUUID()),
+        auditEvents: [cancelledEvent(randomUUID())],
       })).rejects.toThrow();
 
       await expect(messages.findByIdAndWorkspaceId(workspace.id, assistantMessage.id)).resolves.toBeNull();

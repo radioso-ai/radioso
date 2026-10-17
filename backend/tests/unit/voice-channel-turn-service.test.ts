@@ -1328,7 +1328,7 @@ describe("VoiceTurnService", () => {
 
         expect(notes.replyInterrupted).toHaveBeenCalledTimes(1);
         expect(notes.replyInterrupted).toHaveBeenCalledWith({
-          workspaceId, conversationId, assistantMessageId, heardCharacterCount: 20, spokenCharacterCount: 30, partial: false,
+          workspaceId, conversationId, assistantMessageId, heardCharacterCount: 20, spokenCharacterCount: 30,
         });
         expect(counted(metrics, "voice_reply_interrupted_total")).toEqual([{ partial: "no" }]);
         expect(logger.info).toHaveBeenCalledWith(
@@ -1479,12 +1479,20 @@ describe("VoiceTurnService", () => {
 
         expect(spokenText(cut)).toBe(reachedSpeech);
         expect(spokenText(next)).toBe("Yes, on Sundays too.");
-        expect(chat.heardParts).toEqual([{ text: "We open at **nine** on weekdays. ", heardCharacterCount: 41, spokenCharacterCount: 46 }]);
-        expect(notes.replyInterrupted).toHaveBeenCalledTimes(1);
-        expect(notes.replyInterrupted).toHaveBeenCalledWith({
-          workspaceId, conversationId, assistantMessageId: "cut-0", heardCharacterCount: 41, spokenCharacterCount: 46, partial: true,
-        });
+        expect(chat.heardParts).toEqual([{
+          text: "We open at **nine** on weekdays. ",
+          heardCharacterCount: 41,
+          spokenCharacterCount: 46,
+          // Chat writes it with the stored part, adding the conversation's and the message's ids.
+          auditEvent: { eventType: "voice.reply_interrupted", metadata: { heardCharacterCount: 41, spokenCharacterCount: 46, partial: true } },
+        }]);
+        // Stored with its audit event by chat, so no note is written, and it is counted as chat names it.
+        expect(notes.replyInterrupted).not.toHaveBeenCalled();
         expect(counted(metrics, "voice_reply_interrupted_total")).toEqual([{ partial: "yes" }]);
+        expect(logger.info).toHaveBeenCalledWith(
+          { agentId, vendor: "elevenlabs", conversationId, assistantMessageId: "cut-0", heardCharacterCount: 41, spokenCharacterCount: 46, partial: true },
+          "Voice reply was interrupted",
+        );
         expect(logger.info).toHaveBeenCalledWith(
           expect.objectContaining({ result: "superseded", supersededAt: "after_speech", storedPartialReply: true }),
           "Voice turn finished",
@@ -1498,7 +1506,7 @@ describe("VoiceTurnService", () => {
 
         await cutAt500(turns);
 
-        expect(chat.heardParts).toEqual([{ text: "We open at **nine** on weekdays. Saturdays at ten [[1]]. ", heardCharacterCount: 46, spokenCharacterCount: 46 }]);
+        expect(chat.heardParts).toEqual([expect.objectContaining({ text: "We open at **nine** on weekdays. Saturdays at ten [[1]]. ", heardCharacterCount: 46, spokenCharacterCount: 46 })]);
       });
 
       it("falls back to what reached the runtime, and warns with counts only, when the report does not match it", async () => {
@@ -1561,7 +1569,7 @@ describe("VoiceTurnService", () => {
         await vi.runAllTimersAsync();
         await Promise.all([first, second]);
 
-        expect(chat.heardParts).toEqual([{ text: "We open at **nine** on weekdays. ", heardCharacterCount: 28, spokenCharacterCount: 28 }]);
+        expect(chat.heardParts).toEqual([expect.objectContaining({ text: "We open at **nine** on weekdays. ", heardCharacterCount: 28, spokenCharacterCount: 28 })]);
       });
 
       it("applies the report to the reply the overtaken turn was saying, never to the stored reply before it", async () => {
@@ -1580,18 +1588,28 @@ describe("VoiceTurnService", () => {
       });
 
       it("records nothing more when the vendor later reports the stored part cut short", async () => {
-        const chat = supersedingChat([fourSentences, answered("Yes, on Sundays too."), answered("Sure.")]);
+        // The second request cuts the reply off; a third replaces it before it answers, so the
+        // session's last exchange stays the stored part.
+        const chat = supersedingChat([
+          fourSentences,
+          [{ atMs: 0, event: { type: "conversation", conversationId } }, { atMs: 3_000, event: { type: "chunk", text: "Stale." } }],
+          answered("Sure."),
+        ]);
         const notes = fakeNotes();
-        const turns = service(chat, { notes });
+        const metrics = fakeMetrics();
+        const turns = service(chat, { notes, metrics });
 
-        await cutAt500(turns, { heardUntil: "We open at nine on weekdays. Saturdays at" });
-        // The second reply was heard whole; the third request's history shows the cut part, as it was stored.
-        const third = start(turns, input({ utterance: "Great.", heardUntil: "We open at nine on weekdays" }));
+        const cut = start(turns, input({ utterance: "When do you open?" }));
+        await vi.advanceTimersByTimeAsync(500);
+        const replaced = start(turns, input({ utterance: "And on", heardUntil: "We open at nine on weekdays. Saturdays at" }));
+        await vi.advanceTimersByTimeAsync(2_000);
+        const third = start(turns, input({ utterance: "And on Sundays?", heardUntil: "We open at nine on weekdays." }));
         await vi.runAllTimersAsync();
-        await third;
+        await Promise.all([cut, replaced, third]);
 
-        expect(notes.replyInterrupted).toHaveBeenCalledTimes(1);
-        expect(notes.replyInterrupted).toHaveBeenCalledWith(expect.objectContaining({ assistantMessageId: "cut-0", partial: true }));
+        expect(chat.heardParts).toEqual([expect.objectContaining({ heardCharacterCount: 41, spokenCharacterCount: 46 })]);
+        expect(notes.replyInterrupted).not.toHaveBeenCalled();
+        expect(counted(metrics, "voice_reply_interrupted_total")).toEqual([{ partial: "yes" }]);
       });
 
       it("answers an identical re-request with a new turn, not the stored part again", async () => {
@@ -1823,7 +1841,7 @@ describe("VoiceTurnService", () => {
         await next;
 
         expect(replies.notes.replyInterrupted).toHaveBeenCalledWith({
-          workspaceId, conversationId, assistantMessageId, heardCharacterCount: 20, spokenCharacterCount: 30, partial: false,
+          workspaceId, conversationId, assistantMessageId, heardCharacterCount: 20, spokenCharacterCount: 30,
         });
       });
 
@@ -1915,7 +1933,7 @@ describe("VoiceTurnService", () => {
         expect(replies.claims.markOperatorRepliesSpoken).toHaveBeenCalledTimes(1);
         expect(replies.claims.markOperatorRepliesSpoken).toHaveBeenCalledWith(expect.objectContaining({ messageIds: [fourWorks.messageId], claimTurnId: "turn-1" }));
         expect(replies.claims.releaseOperatorReplies).not.toHaveBeenCalled();
-        expect(chat.heardParts).toEqual([{ text: "We open at nine. ", heardCharacterCount: 16, spokenCharacterCount: 16 }]);
+        expect(chat.heardParts).toEqual([expect.objectContaining({ text: "We open at nine. ", heardCharacterCount: 16, spokenCharacterCount: 16 })]);
       });
 
       it("hands back the reply the caller spoke over, for the request that cut in to speak whole, and keeps the one played before it spoken", async () => {

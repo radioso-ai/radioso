@@ -14,12 +14,12 @@ import { DefaultAllowCapabilityPolicy, type CapabilityPolicy } from "../../../sh
 import type { ActionCapabilityMap } from "../../../shared/domain/actionCapabilities.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
-import type { MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
+import type { MessageCreateInput, MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
 import type { PendingDecisionCreateInput } from "../../../db/repositories/pendingDecisionRepository.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
 import { groundingDiagnosticFromSummary } from "./groundingDiagnostic.js";
 import type { ChatTurnSupersededError } from "./conversationTurnRegistry.js";
-import type { DeliveredReplyReader } from "../contracts/interruption.js";
+import type { DeliveredReplyPart, DeliveredReplyReader } from "../contracts/interruption.js";
 import { cutReplyContent, cutReplyMessage } from "./cutReplyMessage.js";
 import type {
   ConversationOwnershipReason,
@@ -251,7 +251,6 @@ const toPresentationSkillTurnOutcome = (presentation: ChatPresentedAnswer): Skil
   status: presentation.skillStatus,
 });
 
-type MessageCreateInput = Parameters<MessageRepositoryPort["create"]>[0];
 
 class RoutineActionAuthorizationError extends Error {
   constructor(
@@ -297,17 +296,24 @@ export interface AssistantTurnPersistencePort {
     messageId: string;
     auditEvent: AuditEventInput;
   }): Promise<boolean>;
-  /**
-   * Stores the heard part of a reply a newer input cut off mid-stream, `assistantMessage`, already
-   * marked cut short, touches the conversation, and records `auditEvent`, the turn's cancelled
-   * `chat.answer` event naming that message, in one transaction.
-   */
-  storeCutReply?(input: {
-    workspaceId: string;
-    conversationId: string;
-    assistantMessage: MessageCreateInput & { id: string };
-    auditEvent: AuditEventInput;
-  }): Promise<void>;
+}
+
+/** The heard part of a reply a newer input cut off mid-stream, and the records of the cut. */
+export interface CutReplyStoreInput {
+  workspaceId: string;
+  conversationId: string;
+  /** Already marked cut short. */
+  assistantMessage: MessageCreateInput & { id: string };
+  /** The turn's cancelled `chat.answer` event naming the message, then the channel's own record of the cut. */
+  auditEvents: readonly AuditEventInput[];
+}
+
+/**
+ * Where the heard part of a cut-off reply is kept: the message, the conversation's touch and the
+ * audit events in one transaction, so the part is never stored without its records.
+ */
+export interface CutReplyStore {
+  storeCutReply(input: CutReplyStoreInput): Promise<void>;
 }
 
 interface PendingDecisionWriterPort {
@@ -595,15 +601,13 @@ export const buildTurnTraceForPresentation = (
 const deliveredReplyPartOf = (
   input: { executionMode?: TurnExecutionMode; deliveredReply?: DeliveredReplyReader },
   supersededBy: ChatTurnSupersededError,
-): { content: string; heardCharacterCount: number; spokenCharacterCount: number } | null => {
+): (DeliveredReplyPart & { content: string }) | null => {
   if (!supersededBy.afterEmission || !input.deliveredReply || turnExecutionCapabilities(input.executionMode).completion !== "persist_reply") {
     return null;
   }
   const part = input.deliveredReply();
   const content = part ? cutReplyContent(part.text) : "";
-  return part && content
-    ? { content, heardCharacterCount: part.heardCharacterCount, spokenCharacterCount: part.spokenCharacterCount }
-    : null;
+  return part && content ? { ...part, content } : null;
 };
 
 /** No assessment ran for this request; the ids still anchor the verdict slot to the turn. */
@@ -678,6 +682,11 @@ interface CompleteAssistantTurnInput {
    * and on the fallback path before the first write.
    */
   commitFence?: () => void;
+  /**
+   * Told the reply's message id the moment the reply is stored, before any step after the store
+   * that could still throw, so a caller handling that throw knows the turn has its reply.
+   */
+  onReplyStored?: (assistantMessageId: string) => void;
 }
 
 const ROUTINE_INVOCATIONS_TOTAL = "routine_invocations_total";
@@ -707,6 +716,9 @@ export class ChatTurnLifecycle {
     private readonly metrics?: Pick<MetricsRegistry, "incrementCounter"> | null,
     private readonly workspaceInvalidationPublisher: WorkspaceInvalidationPublisher =
       createNoopWorkspaceInvalidationPublisher(),
+    // Optional: when wired, a reply a newer input cut off mid-stream keeps the part its listener
+    // heard. Absent, such a turn stores no reply.
+    private readonly cutReplyStore?: CutReplyStore,
   ) {
     this.capabilityPolicy = capabilityPolicy ?? new DefaultAllowCapabilityPolicy();
   }
@@ -928,6 +940,7 @@ export class ChatTurnLifecycle {
         commitFence: input.commitFence,
       });
       assistantMessage = persisted.message;
+      input.onReplyStored?.(assistantMessage.id);
       postCommitReceipt = this.createPostCommitReceipt(input.workspaceId, persisted.committedFacts);
       if (!input.transaction) {
         flushPostCommitInvalidationReceipt(this.workspaceInvalidationPublisher, postCommitReceipt);
@@ -952,6 +965,7 @@ export class ChatTurnLifecycle {
         conversationId: input.session.conversation.id,
       });
       assistantMessage = await this.messageRepository.create(presentation.assistantMessage);
+      input.onReplyStored?.(assistantMessage.id);
       // The fallback has no cross-store transaction. Advance a routine only after
       // its assistant reply exists; otherwise a message-write failure could skip a
       // recoverable routine step. The durable production path writes this state in
@@ -1262,9 +1276,9 @@ export class ChatTurnLifecycle {
         ...executionModeAuditMetadata(input.executionMode, session?.conversation.sourceChannel),
       },
     });
-    const heardPart = session && !existingAssistantMessageId ? deliveredReplyPartOf(input, supersededBy) : null;
-    if (session && heardPart) {
-      const cutReplyId = await this.storeCutReply(input, session, heardPart, (id) => cancelledEvent({ cutReplyId: id }));
+    const heardPart = session && !existingAssistantMessageId && this.cutReplyStore ? deliveredReplyPartOf(input, supersededBy) : null;
+    if (session && heardPart && this.cutReplyStore) {
+      const cutReplyId = await this.storeCutReply(this.cutReplyStore, input, session, heardPart, (id) => cancelledEvent({ cutReplyId: id }));
       if (!cutReplyId) {
         await this.auditService.record(cancelledEvent());
       }
@@ -1281,30 +1295,34 @@ export class ChatTurnLifecycle {
   }
 
   /**
-   * Stores the heard part of a cut-off reply with its cancelled event: in one transaction through
-   * the persistence port, else (tests, non-DB hosts) the message first and the event after. A part
-   * that cannot be stored is logged and resolves undefined, leaving the event to the caller, so the
-   * turn is still recorded. Once stored, the workspace's live views learn of the new reply.
+   * Stores the heard part of a cut-off reply with its cancelled event and the channel's record of
+   * the cut, in one transaction. A part that cannot be stored is logged and resolves undefined,
+   * leaving the cancelled event to the caller, so the turn is still recorded. Once stored, the
+   * workspace's live views learn of the new reply.
    */
   private async storeCutReply(
-    input: { workspaceId: string },
+    store: CutReplyStore,
+    input: { accountId?: string; workspaceId: string },
     session: PreparedSession,
-    heardPart: { content: string; heardCharacterCount: number; spokenCharacterCount: number },
-    auditEventFor: (cutReplyId: string) => AuditEventInput,
+    heardPart: DeliveredReplyPart & { content: string },
+    cancelledEventFor: (cutReplyId: string) => AuditEventInput,
   ): Promise<string | undefined> {
     const conversationId = session.conversation.id;
     const assistantMessage = cutReplyMessage({ id: randomUUID(), workspaceId: input.workspaceId, conversationId, ...heardPart });
-    const port = this.assistantTurnPersistence;
-    let cutReplyId: string;
+    const auditEvents: AuditEventInput[] = [
+      cancelledEventFor(assistantMessage.id),
+      ...(heardPart.auditEvent
+        ? [{
+            accountId: input.accountId,
+            workspaceId: input.workspaceId,
+            eventType: heardPart.auditEvent.eventType,
+            eventStatus: "success" as const,
+            metadata: { ...heardPart.auditEvent.metadata, conversationId, assistantMessageId: assistantMessage.id },
+          }]
+        : []),
+    ];
     try {
-      if (port?.storeCutReply) {
-        const auditEvent = auditEventFor(assistantMessage.id);
-        await port.storeCutReply({ workspaceId: input.workspaceId, conversationId, assistantMessage, auditEvent });
-        this.auditService.logRecorded?.(auditEvent);
-        cutReplyId = assistantMessage.id;
-      } else {
-        cutReplyId = (await this.messageRepository.create(assistantMessage)).id;
-      }
+      await store.storeCutReply({ workspaceId: input.workspaceId, conversationId, assistantMessage, auditEvents });
     } catch (error) {
       this.logger?.warn({
         workspaceId: input.workspaceId,
@@ -1313,15 +1331,14 @@ export class ChatTurnLifecycle {
       }, "The part of a cut-off reply could not be stored");
       return undefined;
     }
-    if (!port?.storeCutReply) {
-      await this.conversationRepository.touch(conversationId, input.workspaceId);
-      await this.auditService.record(auditEventFor(cutReplyId));
+    for (const auditEvent of auditEvents) {
+      this.auditService.logRecorded?.(auditEvent);
     }
     flushPostCommitInvalidationReceipt(
       this.workspaceInvalidationPublisher,
       createPostCommitInvalidationReceipt(input.workspaceId, ["conversation.turn_committed"]),
     );
-    return cutReplyId;
+    return assistantMessage.id;
   }
 
   /**

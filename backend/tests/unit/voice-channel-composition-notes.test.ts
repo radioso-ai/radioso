@@ -9,7 +9,6 @@ const note = {
   assistantMessageId: "message-1",
   heardCharacterCount: 12,
   spokenCharacterCount: 40,
-  partial: false,
 };
 
 const sinks = (options: { markFails?: boolean; replyFound?: boolean } = {}) => {
@@ -53,24 +52,8 @@ describe("voice channel composition: turn notes", () => {
         assistantMessageId: "message-1",
         heardCharacterCount: 12,
         spokenCharacterCount: 40,
-        partial: false,
       },
     }]);
-  });
-
-  it("audits the heard part of a reply cut off mid-stream without marking it again: chat stored it marked", async () => {
-    const { notes, writes, audits } = sinks();
-
-    await notes.replyInterrupted({ ...note, heardCharacterCount: 40, partial: true });
-
-    expect(writes).toEqual(["audit:voice.reply_interrupted"]);
-    expect(audits[0]?.metadata).toEqual({
-      conversationId: "conversation-1",
-      assistantMessageId: "message-1",
-      heardCharacterCount: 40,
-      spokenCharacterCount: 40,
-      partial: true,
-    });
   });
 
   it("rejects the note without an audit event when the reply cannot be marked, so the session retries it", async () => {

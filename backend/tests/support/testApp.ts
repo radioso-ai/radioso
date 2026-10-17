@@ -328,6 +328,7 @@ import {
   InMemoryWorkspaceGrantRepository,
   InMemoryChunkRepository,
   InMemoryConversationRepository,
+  InMemoryCutReplyStore,
   InMemoryVisitorProfileRepository,
   InMemoryDocumentRepository,
   InMemoryDocumentSourceRepository,
@@ -2182,6 +2183,8 @@ export const createTestDependencies = (overrides: {
     ),
     // Mirror production wiring: a human-owned conversation suppresses the agent's turn.
     conversationOwnershipReader: conversationOwnershipRepository,
+    // Mirror production wiring: a reply cut off mid-stream keeps the part its listener heard.
+    cutReplyStore: new InMemoryCutReplyStore(messageRepository, conversationRepository, auditEventRepository),
     logger,
   });
   const chatBootstrapService = new ChatBootstrapService(

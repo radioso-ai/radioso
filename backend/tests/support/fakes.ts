@@ -209,6 +209,7 @@ import type {
   DocumentStorageUploadInput,
 } from "../../src/modules/documents/contracts/storage.js";
 import { createWorkspacePublicRouteKey } from "../../src/modules/workspace/domain/publicRouteKey.js";
+import type { CutReplyStore, CutReplyStoreInput } from "../../src/modules/chat/services/chatTurnLifecycle.js";
 import { conflict, notFound } from "../../src/shared/domain/errors.js";
 import {
   DEFAULT_DOCUMENT_TYPE_CATALOG_REVISION,
@@ -5081,6 +5082,26 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
       }
     }
     return replaced;
+  }
+}
+
+/**
+ * The Postgres turn persistence's cut-reply store over the in-memory repositories: the heard part
+ * of a reply cut off mid-stream, the conversation's touch, and the turn's audit events.
+ */
+export class InMemoryCutReplyStore implements CutReplyStore {
+  constructor(
+    private readonly messages: Pick<InMemoryMessageRepository, "create">,
+    private readonly conversations: Pick<ConversationRepositoryPort, "touch">,
+    private readonly auditEvents: Pick<InMemoryAuditEventRepository, "create">,
+  ) {}
+
+  async storeCutReply(input: CutReplyStoreInput): Promise<void> {
+    await this.messages.create(input.assistantMessage);
+    await this.conversations.touch(input.conversationId, input.workspaceId);
+    for (const auditEvent of input.auditEvents) {
+      await this.auditEvents.create(auditEvent);
+    }
   }
 }
 

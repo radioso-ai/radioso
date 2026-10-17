@@ -12,7 +12,7 @@
 
 ## Phase 3: Backend Implementation
 
-- [x] T005 [US2] Add migration 217 and atomic auth-funnel repository/service boundaries.
+- [x] T005 [US2] Add migration 232 and atomic auth-funnel repository/service boundaries.
 - [x] T006 [US2] Update verification transport to set the existing secure session cookie.
 - [x] T007 [US3] Issue and exchange pending tickets through httpOnly cookies and the existing abuse-control middleware.
 - [x] T008 [US4] Add development-only verification URL configuration and response behavior.

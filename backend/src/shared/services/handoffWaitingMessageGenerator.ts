@@ -12,6 +12,8 @@ export interface HandoffWaitingMessageInput {
   history: MessageRecord[];
   workspaceContext?: LlmCapabilityResolveInput;
   usageContext?: ModelCallUsageContext;
+  /** Aborts the provider call, such as when a newer turn on the conversation supersedes this one. */
+  signal?: AbortSignal;
 }
 
 export interface HandoffWaitingMessageGenerator {
@@ -47,6 +49,7 @@ export class LlmHandoffWaitingMessageGenerator implements HandoffWaitingMessageG
       }),
       reasoningEffort: CHAT_BEHAVIOR.intentRouting.reasoningEffort,
       maxOutputTokens: 128,
+      signal: input.signal,
     });
 
     return text.trim();

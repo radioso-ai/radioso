@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { isLocaleTag } from "../../../shared/domain/locale.js";
+
 import { chatMessageSchema } from "../schemas/textInputLimits.js";
 
 const localeHintSchema = z.string().trim().max(35);
@@ -118,3 +120,23 @@ export const publicChatSessionSchema = z.object({
   pageContext: pageContextSchema,
   clientContextCapabilities: clientContextCapabilitiesSchema,
 });
+
+/** A voice session start for the visitor's public session. */
+export const publicVoiceSessionStartSchema = z.object({
+  /** The caller's language as a language tag; the agent's default language applies without one. */
+  locale: z.string().trim().refine(isLocaleTag, { message: "Must be a language tag such as en or it-IT" }).optional(),
+}).strict();
+
+/** A Radioso-minted session key in a public voice session path. */
+export const publicVoiceSessionParamsSchema = z.object({ sessionKey: z.string().uuid() });
+
+/**
+ * The vendor's id for the call the page opened. It names a recording at the vendor and travels in
+ * a vendor URL, so it is held to identifier characters.
+ */
+export const publicVoiceVendorConversationSchema = z.object({
+  vendorConversationId: z.string().min(1).max(128).regex(/^[A-Za-z0-9_-]+$/, {
+    message: "Must be the vendor's conversation id: letters, digits, underscores and hyphens",
+  }),
+}).strict();
+

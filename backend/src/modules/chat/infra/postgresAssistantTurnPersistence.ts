@@ -4,7 +4,7 @@ import { sql } from "kysely";
 import type { RoutineState } from "@radioso/conversation-contract";
 
 import { DEFAULT_ROUTINE_STATE_TTL_MS } from "../../../db/repositories/routineStateRepository.js";
-import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
+import { MessageRepository, type MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { PendingDecisionCreateInput } from "../../../db/repositories/pendingDecisionRepository.js";
 import { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
 import type { ConversationActivityRecorder } from "../../conversationActivity/contracts/index.js";
@@ -18,8 +18,8 @@ import {
 import type { CapturedRoutineTransition } from "../services/routines/deferredRoutineStore.js";
 import type { CapturedClarificationTransition } from "../services/clarification/deferredClarificationStore.js";
 import type { GroundingDiagnosticSnapshot } from "../../../shared/domain/groundingDiagnostic.js";
-import type { ActionDrainDispatcherPort } from "../services/actions/actionDrainDispatcher.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
+import type { BackgroundJobQueue, BackgroundJobWakePort } from "../../../shared/background-jobs/index.js";
 
 type CompleteAssistantTurnInput = Parameters<AssistantTurnPersistencePort["completeAssistantTurn"]>[0];
 
@@ -271,13 +271,18 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
     // turn's own transaction has committed (spec 070 push-per-action, see the
     // conversation-action outbox drain fix). Absent leaves turns unchanged — the
     // interval-loop poller and the recovery sweep still drain the row.
-    private readonly actionDrainDispatcher?: ActionDrainDispatcherPort,
+    private readonly actionDrainDispatcher?: BackgroundJobWakePort,
     private readonly logger?: Pick<AppLogger, "warn">,
+    // Writes the background jobs a turn hands to the worker inside the turn's transaction, and
+    // wakes a worker once it commits.
+    private readonly backgroundJobs?: Pick<BackgroundJobQueue, "enqueueInTransaction" | "wake">,
   ) {}
 
   async completeAssistantTurn(input: CompleteAssistantTurnInput): Promise<AssistantTurnPersistenceReceipt> {
+    let insertedBackgroundJobs = 0;
     const run = async (db: Db): Promise<AssistantTurnPersistenceReceipt> => {
       const insertedActionTypes = await enqueueActions(db, input);
+      insertedBackgroundJobs = await this.enqueueBackgroundJobs(db, input);
       await applyRoutineStateTransition(db, input.routineStateTransition, this.routineStateTtlMs);
       if (input.pendingDecisionTransition) {
         await savePendingDecision(db, input.pendingDecisionTransition);
@@ -365,6 +370,9 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
       if (input.additionalAuditEvent) {
         await insertAuditEvent(db, input.additionalAuditEvent);
       }
+      // Last, inside the transaction: a turn the fence refuses rolls back whole, and one it admits
+      // stays latched against a newer turn while COMMIT runs.
+      input.commitFence?.();
 
       return {
         message: mapMessage(message),
@@ -386,7 +394,54 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
       : await this.db.transaction().execute(async (trx) => run(trx));
 
     await this.requestActionDrain(input.actions);
-    return result;
+    const queue = this.backgroundJobs;
+    if (insertedBackgroundJobs === 0 || !queue) {
+      return result;
+    }
+    // Whoever owns the transaction fires this after commit (the lifecycle for its own, the caller
+    // for one it supplied). Never awaited by a turn: the queue swallows and counts a failed wake,
+    // and the worker's sweep runs a job whose wake was lost.
+    return { ...result, wakeBackgroundJobs: () => void queue.wake() };
+  }
+
+  private async enqueueBackgroundJobs(db: Db, input: CompleteAssistantTurnInput): Promise<number> {
+    if (!input.backgroundJobs?.length) {
+      return 0;
+    }
+    if (!this.backgroundJobs) {
+      this.logger?.warn(
+        { conversationId: input.conversationId, kinds: input.backgroundJobs.map((job) => job.kind) },
+        "Turn requested background jobs but no background job queue is wired; skipped",
+      );
+      return 0;
+    }
+    let inserted = 0;
+    for (const job of input.backgroundJobs) {
+      const receipt = await this.backgroundJobs.enqueueInTransaction(db, job);
+      if (receipt.inserted) {
+        inserted += 1;
+      }
+    }
+    return inserted;
+  }
+
+  async discardReplacedUserMessage(input: {
+    workspaceId: string;
+    conversationId: string;
+    messageId: string;
+    auditEvent: CompleteAssistantTurnInput["auditEvent"];
+  }): Promise<boolean> {
+    return this.db.transaction().execute(async (trx) => {
+      const deleted = await new MessageRepository(trx).deleteUserMessage({
+        workspaceId: input.workspaceId,
+        conversationId: input.conversationId,
+        messageId: input.messageId,
+      });
+      if (deleted) {
+        await insertAuditEvent(trx, input.auditEvent);
+      }
+      return deleted;
+    });
   }
 
   /**

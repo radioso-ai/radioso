@@ -182,6 +182,7 @@ export interface OpenApiSchemaCatalog {
   ConnectorValidationIssueSchema: z.ZodTypeAny;
   ConversationAgentRequestSchema: z.ZodTypeAny;
   ConversationAgentSchema: z.ZodTypeAny;
+  AgentDetailSchema: z.ZodTypeAny;
   ConversationAgentSurfaceSettingsSchema: z.ZodTypeAny;
   conversationParamsSchema: RouteParameterSchema;
   visitorConversationsParamsSchema: RouteParameterSchema;
@@ -292,6 +293,10 @@ export interface OpenApiSchemaCatalog {
   PlatformSettingsResponseSchema: z.ZodTypeAny;
   PublicChatRequestSchema: z.ZodTypeAny;
   PublicChatSessionRequestSchema: z.ZodTypeAny;
+  PublicVoiceSessionRequestSchema: z.ZodTypeAny;
+  PublicVoiceSessionResponseSchema: z.ZodTypeAny;
+  PublicVoiceVendorConversationRequestSchema: z.ZodTypeAny;
+
   PublicChatSessionResponseSchema: z.ZodTypeAny;
   PublicChatConversationTailSchema: z.ZodTypeAny;
   PublicChatConversationDetailSchema: z.ZodTypeAny;

@@ -12,10 +12,12 @@ import {
   serializeAgentConfig,
 } from "../../src/modules/agents/agentConfig.js";
 import { retrieveSkillConfigSchema, type RetrieveSkillConfig } from "../../src/modules/retrieval/public.js";
-import { unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { websiteEmbedFixture } from "../support/websiteEmbedFixture.js";
 
 const fullyConfiguredAgent = (): ConversationAgent => ({
   ...unpublishedAgentPublicIdentity(),
+  voice: defaultAgentVoiceSettings(),
   id: "agent-1",
   workspaceId: "workspace-1",
   name: "Support Bot",
@@ -57,6 +59,7 @@ const fullyConfiguredAgent = (): ConversationAgent => ({
   greetingInstruction: "Welcome the visitor by role.",
   assistantDefaultLocale: "en-US",
   proactiveGreetingEnabled: true,
+  mechanicsReplies: {},
   sourceScope: {
     mode: "selected",
     sourceIds: ["raw-source-1", "raw-source-2"],
@@ -77,7 +80,7 @@ const fullyConfiguredAgent = (): ConversationAgent => ({
       enabled: true,
       token: "raw-anonymous-token",
     },
-    websiteEmbed: {
+    websiteEmbed: websiteEmbedFixture({
       enabled: true,
       token: "raw-embed-token",
       allowedOrigins: ["https://raw-origin.example.com"],
@@ -97,7 +100,7 @@ const fullyConfiguredAgent = (): ConversationAgent => ({
       expertOverrides: {
         sales: "Route to sales.",
       },
-    },
+    }),
     extensions: {
       websiteEmbed: {
         enabled: true,
@@ -340,6 +343,13 @@ describe("serializeAgentConfig", () => {
       enabled: false,
       metadata: { owner: "ops" },
     }]);
+  });
+
+  it("never exports the website embed's calls switch on, so an import cannot offer calls on another site", () => {
+    const agent = fullyConfiguredAgent();
+    agent.surfaceSettings.websiteEmbed.voiceCallsOffered = true;
+
+    expect(serializeAgentConfig(agent).surfaceSettings.websiteEmbed.voiceCallsOffered).toBe(false);
   });
 
   it("classifies portability and never emits raw secret or reference values", () => {

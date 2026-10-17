@@ -41,6 +41,38 @@ describe("reviewed settings preparation", () => {
     expect(output).toMatchObject({ confirmation: { requirement: "signed_in_approval", approvalUrl: expect.stringMatching(/^https:\/\/app\.radioso\.ai\/oauth\/operator-mcp\/proposal\//) } });
   });
 
+  it("carries the voice and mechanics replies blocks in the reviewed agent patch", async () => {
+    const deps = proposalDependencies();
+    const voice = { enabled: true, bridgeLines: { en: { acknowledge: [], check: ["Let me check that for you, it only takes a moment."] } }, fallbackLine: {}, runtime: null };
+    const mechanicsReplies = { en: { greeting: ["Hi! How can I help?"], thanks: [], farewell: [], acknowledgement: [] } };
+    const prepareFieldsProposal = vi.fn(async () => ({
+      targetAgentId: agentId, agentName: "Support", normalizedPatch: { voice, mechanicsReplies },
+      expectedFields: [{ key: "voice", value: { enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null } }, { key: "mechanicsReplies", value: {} }],
+      changes: [
+        { key: "voice", current: { enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null }, proposed: voice, lifecycle: "live" as const, reach: false },
+        { key: "mechanicsReplies", current: {}, proposed: mechanicsReplies, lifecycle: "live" as const, reach: false },
+      ],
+      unchanged: [],
+      effect: { exposure: "live" as const, reversibility: "reversible" as const, metered: false },
+    }));
+    const descriptor = createAgentSettingsReviewedPreparationTool({ ...deps, agentSettings: { prepareFieldsProposal, readFieldProposalVersion: vi.fn(async () => "fields:agent") } as never });
+
+    const output = await descriptor.createTool(context).invoke({ agentId, patch: { voice, mechanicsReplies } }, {} as never);
+
+    expect(prepareFieldsProposal).toHaveBeenCalledWith(context.workspaceId, agentId, { voice, mechanicsReplies });
+    expect(output).toMatchObject({ review: { effects: { publicationRequired: false, liveKeys: ["voice", "mechanicsReplies"], draftKeys: [], reach: false } } });
+    expect(deps.proposalRepository.createProposal).toHaveBeenCalledWith(expect.objectContaining({ payload: { kind: "fields", patch: { voice, mechanicsReplies } } }));
+  });
+
+  it("refuses an invalid voice block before the owner sees it", async () => {
+    const deps = proposalDependencies();
+    const prepareFieldsProposal = vi.fn();
+    const descriptor = createAgentSettingsReviewedPreparationTool({ ...deps, agentSettings: { prepareFieldsProposal, readFieldProposalVersion: vi.fn() } });
+
+    await expect(descriptor.createTool(context).invoke({ agentId, patch: { voice: { enabled: true, bridgeLines: {} } } } as never, {} as never)).rejects.toThrow(/fallbackLine/);
+    expect(prepareFieldsProposal).not.toHaveBeenCalled();
+  });
+
   it("persists ingestion review from the owner's normalized surface and changed-field fence", async () => {
     const deps = proposalDependencies();
     const prepareFieldProposal = vi.fn(async () => ({

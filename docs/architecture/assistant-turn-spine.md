@@ -1,7 +1,7 @@
 ---
 title: "Assistant Turn Spine"
 description: "Core structure of the assistant conversation loop covering phases of gathering, selecting, dispatching skills, composing replies, routing, and the live, safe-test, and review execution modes."
-last_updated: 2026-10-04
+last_updated: 2026-10-13
 ---
 
 # Assistant Turn Spine
@@ -171,8 +171,10 @@ interpreter takes route and rewrite framing using the same effective workspace/
 agent rewrite instructions as staged interpretation, chat takes the response
 language, and the directive matcher resolves precomputed classifications through
 the same route-scoped runtime. Policy stays with the owning modules; the planner
-only sees candidate summaries. Neither fused nor staged interpretation receives
-configured answer instructions or decides scope before retrieval.
+only sees candidate summaries. Neither fused nor staged interpretation decides
+scope before retrieval, and the only configured answer instruction the planner
+sees is the agent's custom instruction, inside the quick-reply standing
+instructions (below), which govern the planner's own reply and no decision.
 
 Fallback is the staged path, all-or-nothing per turn. Fused planning is standard
 behavior. A turn bypasses planning entirely
@@ -187,8 +189,8 @@ routine or directive behavior, and planner routing is never mixed with staged
 directive results.
 
 In practice a successful direct turn makes exactly two model calls (plan +
-answer); a retrieval turn makes the plan, retrieval-internal calls, and the
-grounded answer. The planner call appears in the turn's model-call trace as
+answer), or one when the planner's quick reply answers it (below); a retrieval
+turn makes the plan, retrieval-internal calls, and the grounded answer. The planner call appears in the turn's model-call trace as
 `turn_planning` with `pre_engine` attribution and records a usage event under
 the same operation. Classification stages carry `source: "planned"` or
 `source: "staged"` while the trace's stage shape stays unchanged; a rejected
@@ -198,6 +200,109 @@ workbench replay runner receives the same coordinator and gate through
 composition. The shared `ChatTurnAssembly` consumes the plan's route, rewrite,
 routine rankings, and directive classifications for both live chat and replay;
 each host supplies the same plan-aware response-language fallback schedule.
+
+### The quick-reply lane
+
+Some turns are nothing but conversational mechanics: a greeting, thanks, a
+farewell, or an acknowledgement. On those turns the planner writes the reply in
+the same call, and the direct answer sends those words instead of making a second
+model call. The plan's last three fields are `requestPresent`, `openQuestion`, and
+`quickReply: { kind, text }`, where `kind` is `greeting`, `thanks`, `farewell`,
+`acknowledgement`, or `none`. `requestPresent` is true when the message asks for, or
+asks about, anything beyond the greeting, thanks, farewell, or acknowledgement
+itself, so "Good morning! I'd like to cancel my subscription." is a request.
+`openQuestion` is true when the agent's latest message asked the visitor to choose,
+confirm, or provide something, or offered options, so a bare "ok" after "the Pro
+plan or the Team plan?" is an answer to that question rather than the end of the
+exchange. The prompt
+(`backend/prompts/chat/turn-planning-quick-reply.md`) allows a kind other than
+`none` only for a direct turn with no open question whose latest message is purely
+one of those mechanics. Anything that asks about, or could be answered with, a fact
+about the organisation, its products, prices, availability, people, documents, or
+the agent's own capabilities is `none`, and so is anything that could answer,
+accept, or choose something the conversation left open — a question the agent
+asked, an offer, a list of options, a clarification. "Hi, are you open on Sunday?"
+is `none` and routes to retrieval. A quick reply is one or two short sentences in
+the turn's response language. It states no fact, link, or product or people name
+unless a standing instruction supplies it word for word.
+
+A quick reply is an answer, so it follows what every answer follows. The agent's
+custom instruction (its persona and voice) and the direct route's global,
+repeatable, always-on answer directives render, in that order, under "Standing
+Instructions For Any Reply You Write" in the planner's stable system prefix. They
+come from agent configuration, so the cached prefix stays the same turn to turn,
+and the block says they govern only the quickReply text, never the route, rewrite,
+response language, routine rankings, or directive classifications. A standing
+instruction is operator-authored truth: when one names the languages the agent
+answers in, a quick reply may say so, and nothing beyond it. When the standing
+instructions alone would push the planner prompt over `maxEstimatedPromptTokens`,
+the turn plans without them and the lane is off for that turn; the coordinator logs
+`chat.turn_planning.quick_reply_lane_off` at debug with the agent id.
+
+`requestPresent`, `openQuestion`, and `quickReply` are the one part of the plan outside
+all-or-nothing parsing. A missing or non-boolean `requestPresent` or `openQuestion`,
+or a quick reply that is missing, malformed, of an unknown kind, blank, longer
+than `maxQuickReplyCharacters` (320) after trimming, or without a BCP 47
+`language` tag, reads as `none` with the unreadable signal set to the value that
+keeps the lane closed; the rest
+of the plan stays valid, and the plan records `quickReplyDiscarded` (on the
+`chat.turn_planning.quick_reply_discarded` span attribute and the planning outcome
+log).
+
+The host decides whether to send the planner's words
+(`backend/src/modules/chat/services/turnPlanQuickReply.ts`). The direct skill uses
+the quick reply only when the turn ran on a resolved plan (active, parked, and
+claiming routines, a pending clarification, and an over-budget prompt all bypass
+the planner, and a human-owned conversation never reaches answer selection), both
+the plan and the interpreted turn are direct, the kind is not `none`, the planner
+marked no request and no open question, the turn is not an identity question, no
+routine yielded the turn, and the turn's answer
+steering is exactly the always-on directives the planner wrote under. A
+conditional directive that applies to the answer, or an always-on one the runtime
+held back this turn, sends the turn to the composer, which runs as on any other
+direct turn. Because the route and the kind are the same planner's decision, the lane
+also needs the planner's own derivation fields to agree: it stays closed when
+`requestPresent` or `openQuestion` holds, or when the plan wrote a retrieval rewrite
+whichever route it chose.
+
+Then the words. An agent can author its mechanics replies word for word in
+`mechanicsReplies`: lines per mechanic (`greeting`, `thanks`, `farewell`,
+`acknowledgement`), keyed by language tag. The planner names the language of its
+reply as a BCP 47 tag (`quickReply.language`). When the agent has a line for the kind
+under that full tag, or else under its primary subtag (case-insensitive; the
+lookup uses the planner's tag alone, so one configuration speaks the same line on
+every channel whatever its page, browser, or default locale), the reply is an
+authored line, rotated by how many replies the conversation already has, and the
+planner's own words are dropped. That is the lane's guarantee: an authored line says exactly
+what the operator wrote. Without one, the planner's text goes out only if it passes
+a format gate, which sends the turn to the composer when the text holds any digit,
+currency symbol, URL (`scheme://` or `www.`), or email address. The gate catches
+prices, numbers, and links. It does not catch every invented fact, so an agent that
+must never improvise authors its lines.
+
+A quick-reply turn persists its reply through the same lifecycle as a composed
+direct answer: coverage is `not_recorded`, the route is `direct`, and usage is the
+`conversation_reply` reserved before routing. On a streamed turn the reply arrives
+as committed text after the `composing` status. The trace shows one model call
+(`turn_planning`) and a compose stage with no model call whose outputs carry
+`source: "turn_planning"`, `quickReplyKind`, and `quickReplyWording` (`authored` or
+`planner`). Each quick reply increments `chat_turn_quick_reply_total{kind, wording}`
+and logs `chat.turn.quick_reply` at debug with the agent id, conversation id, kind,
+wording, and text length; a quick reply the host declines logs
+`chat.turn.quick_reply_skipped` with its reason (a format-gate rejection reads
+`text_digit`, `text_currency`, `text_link`, or `text_email`). The words
+themselves never reach a log or metric. The conversation-quality suite's
+`quick-reply` cases cover both sides with the `turn_reply_source` assertion, and
+`--judge-tag quick-reply` grades their "no factual claim" judge assertions, which
+the baseline gate holds to zero tolerance (`judge-zero-tolerance`): one failed
+verdict below the recorded rate fails the run.
+
+`CHAT_QUICK_REPLY_LANE` is the lane's rollback lever (`on` by default). Set to
+`off`, composition plans every turn without the lane: the planner prompt and
+response schema carry no quick-reply wording or fields, the direct skill never
+consults a plan's quick reply, and every direct turn is composed in two model
+calls. The plan parser still accepts the quick-reply fields, so a planner that
+sends them during a mixed deploy parses and its reply goes unused.
 
 The engine's turn trace (its gather/directive/selection/clarification/dispatch/
 compose stages) is the root of the versioned `metadata.turnTrace` envelope on

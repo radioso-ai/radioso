@@ -325,6 +325,7 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
         agentId,
         sessionId: conversationId,
         conversationId,
+        conversationDurability: "durable",
       },
     });
     expect((invocation?.skill as { requiredCapabilities?: string[] }).requiredCapabilities).toEqual(["external_skills.invoke"]);

@@ -798,6 +798,8 @@ describe("AgentBundleImportService", () => {
             theme: null,
             copy: {},
             expertOverrides: {},
+            // A bundle edited by hand, or written by another exporter, may carry the switch on.
+            voiceCallsOffered: true,
           },
           extensions: {},
         },
@@ -807,9 +809,11 @@ describe("AgentBundleImportService", () => {
     const input = create.mock.calls[0]?.[1] as {
       surfaceSettings: {
         anonymousChat: { enabled: boolean };
-        websiteEmbed: { enabled: boolean; allowedOrigins: unknown[]; launcherLabel: string };
+        websiteEmbed: { enabled: boolean; allowedOrigins: unknown[]; launcherLabel: string; voiceCallsOffered: boolean };
       };
     };
+    // The destination's operator decides whether its website offers calls.
+    expect(input.surfaceSettings.websiteEmbed.voiceCallsOffered).toBe(false);
     expect(input.surfaceSettings.anonymousChat.enabled).toBe(false);
     expect(input.surfaceSettings.websiteEmbed.enabled).toBe(false);
     expect(input.surfaceSettings.websiteEmbed.allowedOrigins).toEqual([]);

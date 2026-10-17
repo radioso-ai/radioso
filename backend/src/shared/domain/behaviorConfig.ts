@@ -122,9 +122,18 @@ export const CHAT_BEHAVIOR = {
     // supported tier.
     reasoningEffort: "none",
     // Output ceiling for the plan JSON (route + rewrite framing + rankings +
-    // classifications). Generous enough for a multi-branch retrieval rewrite plus
-    // several routine/directive verdicts; still a real bound.
+    // classifications + quick reply). Generous enough for a multi-branch retrieval
+    // rewrite plus several routine/directive verdicts; still a real bound. A direct
+    // plan at every candidate bound with a quick reply at its length limit is about
+    // 4,000 characters, at most ~1,320 tokens even at a pessimistic three characters
+    // a token (tests/unit/turn-plan-service.test.ts); a direct plan with no
+    // candidates and a two-sentence reply is ~70. The quick reply needed no raise.
     maxOutputTokens: 1_536,
+    // Longest quick reply (in characters, after trimming) the planner may write for
+    // a turn of pure conversational mechanics. Two short sentences fit well inside;
+    // anything longer is not mechanics, so the reply is discarded and the turn's
+    // answer is composed as usual.
+    maxQuickReplyCharacters: 320,
     // Max routine candidates the planner may rank in one call. Above this the
     // turn bypasses to staged ranked activation (which has its own prefilter).
     maxRoutineCandidates: 8,
@@ -295,6 +304,49 @@ export const RETRIEVAL_BEHAVIOR = {
     structuredMaxChunkSizeMin: 1,
     structuredMaxChunkSizeMax: 2_000,
   },
+} as const;
+
+export const VOICE_BEHAVIOR = {
+  // A caller hears silence as a dropped line within about a second, but a
+  // bridge line in front of a quick reply is worse than a short pause. So the
+  // bridge follows the turn's phase, as the chat stream reports it: it fires at
+  // once when the turn starts searching (retrieval always has seconds of work
+  // ahead); bridgeAfterComposingIdleMs after the turn starts composing with
+  // nothing spoken (a quick reply's first sentence lands well inside that); and
+  // bridgeAfterMs into a turn that has neither searched nor composed, which
+  // only a stalled planner reaches: a knowledge turn bridges on searching as
+  // soon as the planner returns. A planner quick reply is the whole turn, and
+  // in a headset session (2026-10-14) it took 1.35 to 1.97 s on gpt-5.4-mini
+  // (p90 about 2 s), so at 1.8 s a greeting heard the long bridge line before
+  // "Hello!"; 2.5 s clears it. Latency is a property of the runtime, not of
+  // an agent, so these are composition-owned rather than operator settings.
+  bridgeAfterComposingIdleMs: 400,
+  bridgeAfterMs: 2_500,
+  // When no speech has come this long into a voice turn the agent owns, the
+  // channel speaks the agent's authored fallback line and ends the turn; the
+  // reply still finishes and is stored. Long enough for a slow grounded answer,
+  // short enough that a caller is not left waiting on a line that sounds dead.
+  // Measured in local headset sessions (2026-10-14): at 8 s the limit cut off
+  // about one grounded turn in fifteen on model latency spikes. The bridge has
+  // spoken by then and the ElevenLabs keep-alive holds the stream open through
+  // the silence, so 10 s costs the caller nothing but a longer pause.
+  // Composition-owned for the same reason as bridgeAfterMs.
+  turnLimitMs: 10_000,
+  // A voice runtime that loses a reply (it hung up on the stream, or a newer
+  // request overtook it) can re-send the same utterance seconds later. Within
+  // this window the channel speaks the stored answer again instead of running
+  // and storing a second turn; past it, an identical utterance is a new question.
+  replayWindowMs: 30_000,
+  // ElevenLabs documents that a signed URL opens sessions for 15 minutes after it is issued. The
+  // ElevenLabs session starter reports a start's expiresAt from it.
+  elevenLabsSignedUrlValidityMs: 15 * 60_000,
+  // A session Radioso starts for a page records the visitor who asked for it, so the session's
+  // first turn joins that visitor. The URL's validity bounds when the page may open the session,
+  // not when its first turn arrives: a session opened near the end of the window, whose caller
+  // listens to a greeting and thinks before speaking, has its first turn later still. A record that
+  // expired first would let that call join no visitor, silently, so it outlives the URL by a wide
+  // margin. An expired record only ever costs that correlation.
+  sessionStartTtlMs: 60 * 60_000,
 } as const;
 
 export const DOCUMENT_BEHAVIOR = {

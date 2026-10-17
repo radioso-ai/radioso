@@ -25,6 +25,7 @@ import {
   contextualDirectiveCandidates,
   lazyPromise,
   planAwareResponseLanguage,
+  standingInstructions,
   startTurnPlan,
   type TurnPlanCoordinator,
 } from "./turnPlanCoordinator.js";
@@ -659,10 +660,20 @@ export class WorkbenchReplayRunner {
     const additionalDirectives = steeringDirectivesFromAuthored(session.agent.authoredDirectives);
     const query = session.effectiveQuery ?? session.userMessage.content;
     const directiveRuntime = this.options.directiveSteering ?? noopRouteScopedDirectiveRuntime;
+    const directivesForRoute = (route: string) =>
+      directiveRuntime.directivesFor({
+        workspaceId: session.agent.workspaceId,
+        accountId: input.accountId ?? undefined,
+        additionalDirectives,
+        turnContext: { query, route },
+      });
     const handle = startTurnPlan({
       coordinator: this.options.turnPlanCoordinator,
       bypass: {
         activeRoutine: input.routineStartState?.status === "active",
+        // Live chat resolves a pending clarification before planning and bypasses the
+        // planner whenever one was pending; a replay seeded with one does the same.
+        pendingClarification: input.pendingClarificationStartState != null,
         suspendedRoutine:
           input.routineStartState != null && input.routineStartState.status !== "active",
       },
@@ -677,14 +688,13 @@ export class WorkbenchReplayRunner {
         pageReadCapability: session.pageReadCapability,
         directiveCandidates: contextualDirectiveCandidates({
           routes: [session.turnRoute, CHAT_TURN_ROUTE.DIRECT, CHAT_TURN_ROUTE.RETRIEVAL],
-          directivesForRoute: (route) =>
-            directiveRuntime.directivesFor({
-              workspaceId: session.agent.workspaceId,
-              accountId: input.accountId ?? undefined,
-              additionalDirectives,
-              turnContext: { query, route },
-            }),
+          directivesForRoute,
         }),
+        standingInstructions: standingInstructions({
+          customInstruction: session.agent.customInstruction,
+          directives: directivesForRoute(CHAT_TURN_ROUTE.DIRECT),
+        }),
+        agentId: session.agent.id,
         visitorContext: visitorMatchContext(session).context,
         workspaceContext: buildAgentChatWorkspaceContext(session.agent),
         usageContext: {

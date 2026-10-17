@@ -32,12 +32,16 @@ import type { MetricsRegistry } from "../../shared/observability/metrics/metrics
 import { buildTelemetrySinks, type TelemetrySinkBundle } from "../../shared/observability/telemetry/buildTelemetrySinks.js";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { JobConsumerPort } from "../../shared/domain/jobConsumer.js";
+import {
+  NoopBackgroundJobWake,
+  type BackgroundJobQueue,
+  type BackgroundJobWakePort,
+} from "../../shared/background-jobs/index.js";
+import { CloudTasksBackgroundJobWake } from "../../shared/infra/cloudTasksBackgroundJobWake.js";
 import { DefaultAllowCapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import { StaticActionCapabilityMap, type ActionCapabilityMap } from "../../shared/domain/actionCapabilities.js";
 import {
   DefaultTurnSelectionStrategy,
-  NoopActionDrainDispatcher,
-  type ActionDrainDispatcherPort,
   type TurnSelectionStrategy,
 } from "../../modules/chat/composition.js";
 import { CloudTasksActionDrainDispatcher } from "../../modules/chat/infra/cloudTasksActionDrainDispatcher.js";
@@ -244,7 +248,11 @@ export const createDefaultConnectorRegistry = (
     Env,
     "SLACK_OAUTH_CLIENT_ID" | "SLACK_OAUTH_CLIENT_SECRET" | "SLACK_SIGNING_SECRET" | "CONNECTOR_ENCRYPTION_KEY"
   >>,
-  builtIn: { email?: ConnectorPlugin | null } = {},
+  builtIn: {
+    email?: ConnectorPlugin | null;
+    /** The Slack webhook's enqueue port; absent only in tests that never call `initializeAll`. */
+    slackBackgroundJobs?: Pick<BackgroundJobQueue, "enqueueInTransaction" | "wake">;
+  } = {},
 ): ConnectorRegistry => {
   const registry = new ConnectorRegistry();
   registerBuiltInConnectors(registry, {
@@ -253,6 +261,7 @@ export const createDefaultConnectorRegistry = (
       SLACK_OAUTH_CLIENT_SECRET: env?.SLACK_OAUTH_CLIENT_SECRET,
       SLACK_SIGNING_SECRET: env?.SLACK_SIGNING_SECRET,
       encryptionKey: env?.CONNECTOR_ENCRYPTION_KEY,
+      backgroundJobs: builtIn.slackBackgroundJobs,
     },
     email: builtIn.email,
   });
@@ -323,12 +332,16 @@ export const createDefaultDocumentJobDispatcher = (
 
 /**
  * Selects how a turn that just emitted a conversation action (spec 070's outbox)
- * pushes a drain hint. Mirrors `createDefaultDocumentJobDispatcher`'s cloud-tasks
- * gate, but with no AMQP branch (not needed: the interval-loop poller already
+ * pushes a drain hint, through the generic job substrate's wake port (#1509) rather
+ * than a bespoke lookalike. Mirrors `createDefaultBackgroundJobWake`'s cloud-tasks
+ * gate, but targets the action outbox's own `conversation_actions` queue and
+ * `/internal/tasks/actions/drain` route instead of the shared background-jobs
+ * queue, so that queue's provider-facing rate limits (`queue.tf`) only ever bound
+ * action deliveries. No AMQP branch (not needed: the interval-loop poller already
  * drains locally) and no requiredness coupling to `WORKER_DISPATCH_DRIVER` in
- * `env.ts` — `ACTION_DISPATCH_TASK_QUEUE_NAME` unset degrades to the no-op
- * dispatcher rather than failing startup, so a backend deploy is never blocked on
- * the Terraform queue/scheduler that provisions the push path landing first.
+ * `env.ts` — `ACTION_DISPATCH_TASK_QUEUE_NAME` unset degrades to the no-op wake
+ * rather than failing startup, so a backend deploy is never blocked on the
+ * Terraform queue/scheduler that provisions the push path landing first.
  */
 export const createDefaultActionDrainDispatcher = (
   env: Pick<Env,
@@ -341,7 +354,7 @@ export const createDefaultActionDrainDispatcher = (
     | "ACTION_DISPATCH_TASK_QUEUE_NAME"
   >,
   logger: AppLogger,
-): ActionDrainDispatcherPort =>
+): BackgroundJobWakePort =>
   env.WORKER_DISPATCH_DRIVER === "cloud-tasks" && env.ACTION_DISPATCH_TASK_QUEUE_NAME
     ? new CloudTasksActionDrainDispatcher({
         projectId: env.GOOGLE_CLOUD_PROJECT!,
@@ -352,7 +365,35 @@ export const createDefaultActionDrainDispatcher = (
         workerTaskAuthToken: env.WORKER_TASK_AUTH_TOKEN!,
         logger,
       })
-    : new NoopActionDrainDispatcher();
+    : new NoopBackgroundJobWake();
+
+/**
+ * Selects how a background job wakes the worker task server: a Cloud Task on the background job
+ * queue when the worker is dispatched by Cloud Tasks and `BACKGROUND_JOB_TASK_QUEUE_NAME` is set.
+ * Otherwise nothing is pushed, and the worker's poll loop (local) or the scheduled sweep (Cloud
+ * Run) finds the job; like the action queue, an unprovisioned queue never blocks startup.
+ */
+export const createDefaultBackgroundJobWake = (
+  env: Pick<Env,
+    | "WORKER_DISPATCH_DRIVER"
+    | "GOOGLE_CLOUD_PROJECT"
+    | "WORKER_TASKS_QUEUE_LOCATION"
+    | "WORKER_TASKS_SERVICE_URL"
+    | "WORKER_TASKS_INVOKER_SERVICE_ACCOUNT"
+    | "WORKER_TASK_AUTH_TOKEN"
+    | "BACKGROUND_JOB_TASK_QUEUE_NAME"
+  >,
+): BackgroundJobWakePort =>
+  env.WORKER_DISPATCH_DRIVER === "cloud-tasks" && env.BACKGROUND_JOB_TASK_QUEUE_NAME
+    ? new CloudTasksBackgroundJobWake({
+        projectId: env.GOOGLE_CLOUD_PROJECT!,
+        location: env.WORKER_TASKS_QUEUE_LOCATION!,
+        queueName: env.BACKGROUND_JOB_TASK_QUEUE_NAME,
+        workerServiceUrl: env.WORKER_TASKS_SERVICE_URL!,
+        invokerServiceAccountEmail: env.WORKER_TASKS_INVOKER_SERVICE_ACCOUNT!,
+        workerTaskAuthToken: env.WORKER_TASK_AUTH_TOKEN!,
+      })
+    : new NoopBackgroundJobWake();
 
 /**
  * Selects how the email channel pushes drains (research B7): through its own Cloud Tasks queue,

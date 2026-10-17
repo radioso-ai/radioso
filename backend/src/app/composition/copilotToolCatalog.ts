@@ -4,6 +4,8 @@ import {
   type CopilotAgentSkillsPort,
   type CopilotOperatorNoticeDestinationsPort,
   type CopilotConversationHistoryPort,
+  type CopilotVoiceRecordingPort,
+
   type CopilotAgentTurnProbePort,
   type CopilotDocumentSearchPort,
   type CopilotDocumentChunksPort,
@@ -152,6 +154,7 @@ export const createCopilotToolCatalog = (deps: {
   readonly agentService: CopilotAgentPort;
   readonly routineDefinitionService: CopilotRoutineDefinitionPort;
   readonly chatHistoryService: CopilotConversationHistoryPort;
+  readonly voiceRecordings: CopilotVoiceRecordingPort;
   readonly replyDraft: CopilotReplyDraftPort;
   readonly agentTurnProbe: CopilotAgentTurnProbePort;
   readonly documentSearchService: CopilotDocumentSearchPort;

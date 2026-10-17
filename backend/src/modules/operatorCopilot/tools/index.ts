@@ -167,7 +167,7 @@ export const createCopilotToolDescriptors = (
 export type { CopilotAgentSkillsPort, CopilotOperatorNoticeDestinationsPort, CopilotSkillCapabilityTargetsPort } from "./agentSkills.js";
 export type { CopilotAudiencePulsePort } from "./audiencePulse.js";
 export type { CopilotContextVariablesPort } from "./contextVariables.js";
-export type { CopilotConversationHistoryPort } from "./chat.js";
+export type { CopilotConversationHistoryPort, CopilotVoiceRecordingPort } from "./chat.js";
 export type { CopilotReplyDraftPort } from "./replyDraft.js";
 export type { CopilotAgentTurnProbePort } from "./agentTurnProbe.js";
 export type { CopilotDocumentChunksPort, CopilotDocumentMaintenancePort, CopilotDocumentSearchPort, CopilotDocumentSourceStatusPort, CopilotDocumentStatusPort } from "./documents.js";

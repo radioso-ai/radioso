@@ -331,7 +331,10 @@ describe("copilot catalog shape", () => {
     const descriptors = [
       ...createAgentConfigurationCopilotTools({ agentService }),
       ...createRoutineDefinitionCopilotTools({ agentLookup: agentService, routineDefinitionService: { list: vi.fn(), get: vi.fn(), validate: vi.fn() } }),
-      ...createChatCopilotTools({ chatHistoryService: { getConversation: vi.fn(), getConversationTurn: vi.fn(), listConversations: vi.fn() } }),
+      ...createChatCopilotTools({
+        chatHistoryService: { getConversation: vi.fn(), getConversationTurn: vi.fn(), listConversations: vi.fn() },
+        voiceRecordings: { isAvailable: vi.fn(async () => false) },
+      }),
       ...createDocumentSearchCopilotTools({ documentSearchService: { search: vi.fn() } }),
     ];
     const byName = new Map(descriptors.map((descriptor) => [descriptor.name, descriptor]));

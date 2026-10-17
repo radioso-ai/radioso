@@ -71,8 +71,9 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   `voice_sessions`. The first binding wins. A Radioso-started row also holds
   the vendor agent it opened on, that account's region and, once reported and
   confirmed, the vendor's conversation id (`VoiceRecordingStore`). A row that
-  holds that id outlives its agent (`agent_id` is SET NULL) and the next
-  start's cleanup; it goes with its conversation or workspace.
+  holds that id outlives its agent, its conversation (both links are SET
+  NULL) and the next start's cleanup; it goes with its workspace. A session
+  whose conversation is gone is unbound, and its next turn binds a new one.
 - `adapters/*` translate one wire to the domain port and back, and nothing
   else. `adapters/openaiCompletions/` is the OpenAI chat-completions wire;
   vendors that share it differ only by a dialect in `dialects.ts`, which is

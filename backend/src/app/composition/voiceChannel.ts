@@ -6,6 +6,7 @@ import {
   VoiceTurnService,
   createElevenLabsSessionStarter,
   type VoiceChatTurnRequest,
+  type VoiceSessionAvailabilityPort,
   type VoiceSessionStartLookup,
   type VoiceSessionStartPort,
   type VoiceSessionStartRegistry,
@@ -18,7 +19,7 @@ import type { AuditPort } from "../../modules/audit/contracts/index.js";
 import { isHumanOwned, type ConversationOwnershipReader } from "../../modules/handoff/public.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
-import type { VoiceVendor } from "../../shared/domain/voiceVendor.js";
+import { VOICE_VENDORS, type VoiceVendor } from "../../shared/domain/voiceVendor.js";
 import { ProviderConfigurationError } from "../../shared/infra/llm/providerTypes.js";
 
 type AgentVoiceProfileRepository = {
@@ -102,19 +103,40 @@ const isUnreadableCredential = (error: unknown): boolean =>
   && (error.details as { kind?: unknown }).kind === "credential_unreadable";
 
 /**
+ * The embed config says whether the embed offers calls, which follows the voice vendor key's
+ * presence, and a CDN may hold it for minutes: storing or removing a voice vendor key drops the
+ * workspace's cached embed configs, so the Talk button follows at once. Model provider keys leave
+ * them alone.
+ */
+export const refreshEmbedConfigsOnVoiceVendorKeyChange = (deps: {
+  credentials: { onChange(listener: (change: { workspaceId: string; provider: string }) => Promise<void>): void };
+  embedConfigs: { invalidateEmbedConfigs(workspaceId: string): Promise<void> };
+}): void => {
+  deps.credentials.onChange(async ({ workspaceId, provider }) => {
+    if ((VOICE_VENDORS as readonly string[]).includes(provider)) await deps.embedConfigs.invalidateEmbedConfigs(workspaceId);
+  });
+};
+
+/**
  * Starts voice sessions on the vendor agent each Radioso agent is bound to: the ElevenLabs session
  * starter over `fetch`, the workspace's vendor key from the workspace credential store, and a
  * registry of started sessions (`VoiceSessionRepository` in production). A vendor key is always the workspace's own; there is no
- * deployment fallback, so a workspace without one gets no session.
+ * deployment fallback, so a workspace without one gets no session. The same service tells a page
+ * whether to offer sessions, from the key's presence alone (`hasCredentials` decrypts nothing) and
+ * whether the backend holds the master key to read it.
  */
 export const createVoiceSessionStartComposition = (deps: {
   agentRepository: AgentVoiceProfileRepository;
   starts: VoiceSessionStartRegistry;
-  credentials: { getApiKey(workspaceId: string, provider: VoiceVendor): Promise<string | undefined> };
+  credentials: {
+    getApiKey(workspaceId: string, provider: VoiceVendor): Promise<string | undefined>;
+    hasCredentials(workspaceId: string, provider: VoiceVendor): Promise<boolean>;
+    isEncryptionConfigured(): boolean;
+  };
   fetch: typeof globalThis.fetch;
   metricsRegistry: MetricsRegistry | null;
   logger: AppLogger;
-}): VoiceSessionStartPort =>
+}): VoiceSessionStartPort & VoiceSessionAvailabilityPort =>
   new VoiceSessionStartService({
     agents: voiceProfileSource(deps.agentRepository),
     credentials: {
@@ -126,6 +148,10 @@ export const createVoiceSessionStartComposition = (deps: {
           if (isUnreadableCredential(error)) return { kind: "unreadable" };
           throw error;
         }
+      },
+      presence: async ({ workspaceId, vendor }) => {
+        if (!await deps.credentials.hasCredentials(workspaceId, vendor)) return "missing";
+        return deps.credentials.isEncryptionConfigured() ? "stored" : "unreadable";
       },
     },
     starters: { elevenlabs: createElevenLabsSessionStarter({ fetch: deps.fetch }) },

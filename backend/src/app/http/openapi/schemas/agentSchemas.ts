@@ -18,6 +18,7 @@ import {
   authoredDirectiveRouteValues,
   authoredDirectiveSurfaceValues,
 } from "../../../../modules/agents/public.js";
+import { VOICE_CALL_READINESS_GAPS } from "../../../../modules/voiceChannel/public.js";
 import type { AgentConfig } from "../../../../modules/agents/public.js";
 import {
   routineDefinitionDraftInputSchema,
@@ -78,6 +79,9 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
         }),
         copy: z.record(z.record(z.string())),
         expertOverrides: z.record(z.string()),
+        voiceCallsOffered: z.boolean().openapi({
+          description: "The operator offers voice calls from the website embed: its composer shows Talk while the agent's voice is also on, bound to a runtime and the workspace holds the vendor key. Defaults to false.",
+        }),
       }),
     }),
   );
@@ -160,6 +164,16 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     }),
   );
 
+  const VoiceCallReadinessSchema = registry.register(
+    "VoiceCallReadiness",
+    z.object({
+      ready: z.boolean(),
+      missing: z.enum(VOICE_CALL_READINESS_GAPS).nullable(),
+    }).openapi({
+      description: "Whether the agent's voice is ready for calls, and when it is not, the first piece missing: the voice channel, the runtime binding, the workspace's vendor key, or the backend's master key to read it.",
+    }),
+  );
+
   const ConversationAgentSchema = registry.register(
     "ConversationAgent",
     AgentSchema.extend({
@@ -210,6 +224,15 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       }).nullable(),
       skillSettings: z.record(z.unknown()),
       surfaceSettings: ConversationAgentSurfaceSettingsSchema,
+    }),
+  );
+
+  const AgentDetailSchema = registry.register(
+    "AgentDetail",
+    ConversationAgentSchema.extend({
+      voiceCallReadiness: VoiceCallReadinessSchema.optional().openapi({
+        description: "Present for dashboard sessions: whether the agent's voice is ready for the website embed's calls switch.",
+      }),
     }),
   );
 
@@ -290,6 +313,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
           }).optional(),
           copy: z.record(z.record(z.string())).optional(),
           expertOverrides: z.record(z.string()).optional(),
+          voiceCallsOffered: z.boolean().optional(),
         }).optional(),
       }).optional(),
     }),
@@ -826,6 +850,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     theme: AgentBundleThemeSchema,
     copy: z.record(z.record(z.string())),
     expertOverrides: z.record(z.string()),
+    voiceCallsOffered: z.boolean().optional(),
   });
 
   const AgentBundleAuthoredDirectiveSchema = registry.register(
@@ -1163,6 +1188,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     ConversationAgentSurfaceSettingsSchema,
     AgentSourceScopeSchema,
     ConversationAgentSchema,
+    AgentDetailSchema,
     AgentListResponseSchema,
     ConversationAgentRequestSchema,
     AgentChannelLifecycleSchema,

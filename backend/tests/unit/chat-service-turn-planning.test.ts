@@ -50,6 +50,7 @@ import { createContactRoutineApplicationModule } from "../../src/app/composition
 import { createPublishedRoutineRegistrationSource } from "../../src/app/composition/routineDefinitionSource.js";
 import { contactRoutineDefinition } from "../../src/modules/chat/services/routines/contactRoutine.js";
 import { createRoutineTurnProvider } from "../../src/modules/routines/turnProvider.js";
+import { websiteEmbedFixture } from "../support/websiteEmbedFixture.js";
 
 const fallbackReplyComposer: FallbackReplyComposer = {
   async composeNoContext() {
@@ -347,7 +348,7 @@ const baseAgentRecord = (): AgentRecord => ({
   surfaceSettings: {
     authenticatedChat: { enabled: true },
     anonymousChat: { enabled: false, token: null },
-    websiteEmbed: {
+    websiteEmbed: websiteEmbedFixture({
       enabled: false,
       token: null,
       allowedOrigins: [],
@@ -356,7 +357,7 @@ const baseAgentRecord = (): AgentRecord => ({
       theme: { brand: "#000000", brandText: "#ffffff", surface: "#ffffff", text: "#000000" },
       copy: {},
       expertOverrides: {},
-    },
+    }),
     extensions: {},
   },
   authoredDirectives: [],

@@ -208,6 +208,7 @@ const legacyWorkspaceAgent = (workspace: WorkspaceRecord | null): PublicSessionA
         theme: defaultWebsiteEmbedSettings().websiteEmbedTheme,
         copy: {},
         expertOverrides: {},
+        voiceCallsOffered: false,
       },
       extensions: {},
     },

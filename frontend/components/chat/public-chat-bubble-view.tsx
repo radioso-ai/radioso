@@ -199,7 +199,7 @@ export function PublicChatBubbleDisclaimer({
   )
 }
 
-export interface PublicChatBubbleComposerFormProps {
+interface PublicChatBubbleComposerFormProps {
   theme: WebsiteEmbedTheme
   copy: WebsiteEmbedCopy
   value: string
@@ -211,6 +211,8 @@ export interface PublicChatBubbleComposerFormProps {
   compact?: boolean
   hero?: boolean
   readOnly?: boolean
+  /** A control beside Send, such as the Talk button. */
+  accessory?: ReactNode
 }
 
 export function PublicChatBubbleComposerForm({
@@ -225,6 +227,7 @@ export function PublicChatBubbleComposerForm({
   compact = false,
   hero = false,
   readOnly = false,
+  accessory,
 }: PublicChatBubbleComposerFormProps) {
   const sendDisabled = readOnly || isLoading || !value.trim()
   const containerPadding = hero ? 'px-3 py-3' : 'px-2 py-1.5'
@@ -267,6 +270,7 @@ export function PublicChatBubbleComposerForm({
           style={{ color: theme.inputForeground }}
           aria-hidden={readOnly ? 'true' : undefined}
         />
+        {accessory}
         <Button
           type="submit"
           size="icon"

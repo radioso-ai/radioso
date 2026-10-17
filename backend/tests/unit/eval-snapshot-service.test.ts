@@ -28,6 +28,7 @@ import type {
   EvalSnapshot,
 } from "../../src/modules/eval/domain/types.js";
 import { defaultAgentVoiceSettings, unpublishedAgentPublicIdentity } from "../../src/modules/agents/public.js";
+import { websiteEmbedFixture } from "../support/websiteEmbedFixture.js";
 
 const fixedDate = new Date("2026-05-23T12:00:00.000Z");
 
@@ -69,7 +70,7 @@ const agent = (): ConversationAgent => ({
   surfaceSettings: {
     authenticatedChat: { enabled: true },
     anonymousChat: { enabled: true, token: "anonymous-token" },
-    websiteEmbed: {
+    websiteEmbed: websiteEmbedFixture({
       enabled: true,
       token: "embed-token",
       allowedOrigins: ["https://example.com"],
@@ -83,7 +84,7 @@ const agent = (): ConversationAgent => ({
       },
       copy: {},
       expertOverrides: {},
-    },
+    }),
     extensions: {},
   },
   skillSettings: {

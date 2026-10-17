@@ -64,6 +64,7 @@ const responseAgent = (behavior: AssistantBehaviorSettings): AgentSettings => ({
       theme: behavior.theme,
       copy: {},
       expertOverrides: {},
+      voiceCallsOffered: false,
     },
   },
 } as AgentSettings)

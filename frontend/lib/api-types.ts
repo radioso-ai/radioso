@@ -652,7 +652,18 @@ export type InvitationDetailsResponse = ApiSchemas['InvitationDetailsResponse']
 export type WorkspaceRouteResolutionResponse = ApiSchemas['WorkspaceRouteResolutionResponse']
 export type WorkspaceSummaryResponse = ApiSchemas['WorkspaceSummaryResponse']
 
+/** What `POST /api/public/chat/:token/voice/sessions` answers with when it starts a session. */
+export type PublicVoiceSessionResponse = ApiSchemas['PublicVoiceSessionResponse']
+
+/** Whether the agent's voice is ready for calls, as `GET /agents/:agentId` tells a dashboard session. */
+export type VoiceCallReadiness = ApiSchemas['VoiceCallReadiness']
+
 export type AgentSettings = ApiSchemas['ConversationAgent'] & {
+  assistantLinkUtmEnabled: boolean
+}
+
+/** One agent as `GET /agents/:agentId` returns it, with its voice readiness for a dashboard session. */
+export type AgentDetail = ApiSchemas['AgentDetail'] & {
   assistantLinkUtmEnabled: boolean
 }
 export type AgentListResponse = ApiSchemas['AgentListResponse']

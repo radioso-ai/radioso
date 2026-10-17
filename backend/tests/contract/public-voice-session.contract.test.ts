@@ -4,6 +4,8 @@ import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Env } from "../../src/app/config/env.js";
+import { createOpenApiDocument } from "../../src/app/http/openapi/openApiDocument.js";
+import { VOICE_CALL_READINESS_GAPS } from "../../src/modules/voiceChannel/public.js";
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
 
 const SITE = "https://example.com";
@@ -22,11 +24,18 @@ const vendorAnswering = (status: number, body: unknown) =>
  */
 const embedWorkspace = async (options: {
   voice?: object;
+  /** The operator's switch on the website embed: whether it offers calls. */
+  voiceCallsOffered?: boolean;
   vendorKey?: string | null;
   vendorFetch?: VendorFetch;
   envOverrides?: Partial<Env>;
+  embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
 } = {}) => {
-  const created = createTestApp({ voiceVendorFetch: options.vendorFetch, envOverrides: options.envOverrides });
+  const created = createTestApp({
+    voiceVendorFetch: options.vendorFetch,
+    envOverrides: options.envOverrides,
+    embedConfigCacheInvalidator: options.embedConfigCacheInvalidator,
+  });
   const { app } = created;
   const operator = await issueTestSession(app, `voice-start-${randomUUID()}@example.com`);
   const dashboard = adminSessionHeaders(operator);
@@ -39,7 +48,10 @@ const embedWorkspace = async (options: {
   const anonymousChatToken = new URL(settings.body.anonymousChatUrl as string).pathname.split("/").at(-1)!;
   const agents = await request(app).get("/api/v1/agents").set(dashboard).expect(200);
   const agentId = (agents.body.agents as Array<{ id: string; isDefault: boolean }>).find((agent) => agent.isDefault)!.id;
-  await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({ voice: options.voice ?? boundVoice }).expect(200);
+  await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({
+    voice: options.voice ?? boundVoice,
+    ...(options.voiceCallsOffered === undefined ? {} : { surfaceSettings: { websiteEmbed: { voiceCallsOffered: options.voiceCallsOffered } } }),
+  }).expect(200);
   const vendorKey = options.vendorKey === undefined ? VENDOR_KEY : options.vendorKey;
   if (vendorKey) {
     await request(app).put("/api/v1/settings/credentials/elevenlabs").set(dashboard).send({ apiKey: vendorKey }).expect(204);
@@ -59,7 +71,9 @@ const embedWorkspace = async (options: {
         .send(startBody);
     return { publicSessionToken, startVoiceSession };
   };
-  return { ...created, operator, agentId, launchToken, anonymousChatToken, visitor };
+  /** What the website embed's launcher reads before it shows anything. */
+  const embedConfig = () => request(app).get(`/api/v1/public/chat/${launchToken}/embed-config`).set("Origin", SITE).expect(200);
+  return { ...created, operator, dashboard, agentId, launchToken, anonymousChatToken, visitor, embedConfig };
 };
 
 const startOutcomes = (metrics: string): string[] =>
@@ -271,5 +285,136 @@ describe("public voice session start contract", () => {
     // The chat turn groups a new conversation by this key, exactly as the embed's own chat does.
     expect(chatTurns.mock.calls.map(([turn]) => turn.visitorKey)).toEqual([visitorKey, undefined, undefined]);
     expect(chatTurns.mock.calls[1]?.[0].conversationId).toEqual(expect.any(String));
+  });
+
+  it("tells the website embed it can talk when the operator offers calls there and the agent's voice is ready", async () => {
+    const { embedConfig } = await embedWorkspace({ voiceCallsOffered: true });
+
+    const config = await embedConfig();
+
+    expect(config.body.voice).toEqual({ available: true });
+    expect(JSON.stringify(config.body)).not.toContain("agent_42");
+    expect(JSON.stringify(config.body)).not.toContain("elevenlabs");
+  });
+
+  it.each([
+    ["the operator has not offered calls on the website, though voice is ready", {}],
+    ["the operator turned calls off, though voice is ready", { voiceCallsOffered: false }],
+    ["voice is off for the agent", { voiceCallsOffered: true, voice: { ...boundVoice, enabled: false } }],
+    ["the agent is bound to no vendor agent", { voiceCallsOffered: true, voice: { ...boundVoice, runtime: null } }],
+    ["the workspace holds no vendor key", { voiceCallsOffered: true, vendorKey: null }],
+  ])("tells the website embed it cannot talk when %s", async (_case, options) => {
+    const { embedConfig } = await embedWorkspace(options);
+
+    const config = await embedConfig();
+
+    expect(config.body.voice).toEqual({ available: false });
+  });
+
+  it("keeps the switch on the agent's website embed block, off until the operator turns it on, and untouched by other embed edits", async () => {
+    const { app, dashboard, agentId } = await embedWorkspace();
+    const readSwitch = async () =>
+      (await request(app).get(`/api/v1/agents/${agentId}`).set(dashboard).expect(200)).body.surfaceSettings.websiteEmbed.voiceCallsOffered;
+
+    expect(await readSwitch()).toBe(false);
+
+    await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({ surfaceSettings: { websiteEmbed: { voiceCallsOffered: true } } }).expect(200);
+    expect(await readSwitch()).toBe(true);
+
+    await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({ surfaceSettings: { websiteEmbed: { launcherLabel: "Ask us" } } }).expect(200);
+    await request(app).put("/api/v1/settings/general").set(dashboard).send({ websiteEmbedLauncherLabel: "Talk to us" }).expect(200);
+    expect(await readSwitch()).toBe(true);
+  });
+
+  describe("the dashboard's view of voice readiness", () => {
+    it("serves the readiness gaps the voice domain lists, and no others", () => {
+      const document = createOpenApiDocument() as { components: { schemas: Record<string, { properties: Record<string, { enum?: unknown[] }> }> } };
+
+      expect(document.components.schemas.VoiceCallReadiness.properties.missing.enum).toEqual([...VOICE_CALL_READINESS_GAPS]);
+    });
+
+    const readReadiness = async (app: Parameters<typeof request>[0], dashboard: Record<string, string>, agentId: string) =>
+      (await request(app).get(`/api/v1/agents/${agentId}`).set(dashboard).expect(200)).body.voiceCallReadiness;
+
+    it("reads ready when voice is on, a vendor agent is bound and the key can be read", async () => {
+      const { app, dashboard, agentId } = await embedWorkspace();
+
+      expect(await readReadiness(app, dashboard, agentId)).toEqual({ ready: true, missing: null });
+    });
+
+    it.each([
+      ["the voice channel", { voice: { ...boundVoice, enabled: false } }, "voice_channel"],
+      ["the runtime", { voice: { ...boundVoice, runtime: null } }, "runtime"],
+      ["the vendor key", { vendorKey: null }, "vendor_key"],
+    ])("names %s when it is what is missing", async (_piece, options, missing) => {
+      const { app, dashboard, agentId } = await embedWorkspace(options);
+
+      expect(await readReadiness(app, dashboard, agentId)).toEqual({ ready: false, missing });
+    });
+
+    it("names the encryption, and offers no calls on the website, when a key is stored but the backend cannot read it", async () => {
+      const { app, dashboard, agentId, repositories, operator, embedConfig } = await embedWorkspace({
+        vendorKey: null,
+        voiceCallsOffered: true,
+        envOverrides: { CONNECTOR_ENCRYPTION_KEY: undefined },
+      });
+      await repositories.workspaceProviderCredentialsRepository.upsert({
+        workspaceId: operator.workspaceId,
+        provider: "elevenlabs",
+        ciphertext: "v1:stored-under-a-key-this-backend-no-longer-has",
+      });
+
+      expect(await readReadiness(app, dashboard, agentId)).toEqual({ ready: false, missing: "encryption" });
+      expect((await embedConfig()).body.voice).toEqual({ available: false });
+    });
+  });
+
+  it("records who turned calls on the website on or off, with ids and booleans only", async () => {
+    const { app, dashboard, agentId, dependencies, operator } = await embedWorkspace();
+    const voiceCallEvents = () => (dependencies.auditService as unknown as {
+      events: Array<{ eventType: string; metadata?: Record<string, unknown>; workspaceId?: string; accountId?: string | null }>;
+    }).events.filter((event) => event.eventType === "website_embed.voice_calls_offered.changed");
+
+    await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({ surfaceSettings: { websiteEmbed: { voiceCallsOffered: true } } }).expect(200);
+    await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({ surfaceSettings: { websiteEmbed: { launcherLabel: "Ask us" } } }).expect(200);
+    await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({ surfaceSettings: { websiteEmbed: { voiceCallsOffered: false } } }).expect(200);
+
+    expect(voiceCallEvents()).toEqual([
+      expect.objectContaining({ workspaceId: operator.workspaceId, eventStatus: "success", metadata: { agentId, before: false, after: true } }),
+      expect.objectContaining({ workspaceId: operator.workspaceId, eventStatus: "success", metadata: { agentId, before: true, after: false } }),
+    ]);
+  });
+
+  it("still serves the agent to the dashboard when the credential store cannot be read, without its voice readiness", async () => {
+    const { app, dashboard, agentId, repositories } = await embedWorkspace();
+    vi.spyOn(repositories.workspaceProviderCredentialsRepository, "findByWorkspaceAndProvider").mockRejectedValue(new Error("connection refused"));
+
+    const response = await request(app).get(`/api/v1/agents/${agentId}`).set(dashboard).expect(200);
+
+    expect(response.body.id).toBe(agentId);
+    expect(response.body).not.toHaveProperty("voiceCallReadiness");
+  });
+
+  it("drops the CDN-cached embed config when the workspace stores or removes its vendor key, so the Talk button follows at once", async () => {
+    const invalidateForToken = vi.fn(async () => undefined);
+    const { app, dashboard, launchToken } = await embedWorkspace({ vendorKey: null, embedConfigCacheInvalidator: { invalidateForToken } });
+    invalidateForToken.mockClear();
+
+    await request(app).put("/api/v1/settings/credentials/elevenlabs").set(dashboard).send({ apiKey: VENDOR_KEY }).expect(204);
+    expect(invalidateForToken).toHaveBeenCalledWith(launchToken);
+
+    invalidateForToken.mockClear();
+    await request(app).delete("/api/v1/settings/credentials/elevenlabs").set(dashboard).expect(204);
+    expect(invalidateForToken).toHaveBeenCalledWith(launchToken);
+  });
+
+  it("leaves the embed config cached when a model provider key changes", async () => {
+    const invalidateForToken = vi.fn(async () => undefined);
+    const { app, dashboard } = await embedWorkspace({ embedConfigCacheInvalidator: { invalidateForToken } });
+    invalidateForToken.mockClear();
+
+    await request(app).put("/api/v1/settings/credentials/openai").set(dashboard).send({ apiKey: "sk-test-0123456789" }).expect(204);
+
+    expect(invalidateForToken).not.toHaveBeenCalled();
   });
 });

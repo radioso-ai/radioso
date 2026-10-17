@@ -90,6 +90,7 @@ export const agentInputFieldSchemas = {
       theme: agentInputThemeSchema.optional(),
       copy: z.record(z.record(z.string().max(500))).optional(),
       expertOverrides: z.record(z.string().max(500)).optional(),
+      voiceCallsOffered: z.boolean().optional(),
     }).optional(),
     extensions: z.record(z.unknown()).optional(),
   }),

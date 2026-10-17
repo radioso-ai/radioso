@@ -130,3 +130,9 @@ export const voiceSettingsFormAfterSave = (form: VoiceSettingsForm, voice: Agent
     languages: [...kept, ...saved.languages.filter((language) => !keptLocales.has(language.locale))],
   }
 }
+
+/**
+ * Sent on the window after the Voice card saves an agent's voice settings, with `{ agentId }`, so
+ * what reads that agent's voice readiness, such as the website widget's calls switch, reads it again.
+ */
+export const AGENT_VOICE_SAVED_EVENT = 'radioso:agent-voice-saved'

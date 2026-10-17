@@ -2,7 +2,7 @@ import { createAgentBundleServices } from "../../src/app/composition/agentBundle
 import { createDefaultApplicationComposition } from "../../src/app/composition/defaultComposition.js";
 import { chatTurnQueuedActionTypes } from "../../src/app/composition/applicationModule.js";
 import { createAgentPublicProfileComposition } from "../../src/app/composition/agentDiscovery.js";
-import { createVoiceSessionStartComposition } from "../../src/app/composition/voiceChannel.js";
+import { createVoiceSessionStartComposition, refreshEmbedConfigsOnVoiceVendorKeyChange } from "../../src/app/composition/voiceChannel.js";
 import { createDefaultVisitorGeoResolver } from "../../src/app/composition/visitorGeoResolver.js";
 import { InMemoryAgentBundleImportRepository } from "./inMemoryAgentBundleImports.js";
 import { setTimeout as delay } from "node:timers/promises";
@@ -888,6 +888,8 @@ export const createTestDependencies = (overrides: {
   heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;
   /** The `fetch` voice vendor session starters call; omitted means every vendor call fails as unreachable. */
   voiceVendorFetch?: typeof globalThis.fetch;
+  /** Observes the embed-config CDN invalidations; omitted means the deployment has no CDN to invalidate. */
+  embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
   /** Composes the agent tool catalog over the test app's agent row and published-revision readers. */
   agentToolCatalog?: (readers: {
     agentRepository: Pick<AgentRepositoryPort, "findByIdAndWorkspaceId">;
@@ -1779,9 +1781,10 @@ export const createTestDependencies = (overrides: {
     agentRepository,
     workspaceRepository,
     documentSourceRepository,
-    undefined,
+    overrides.embedConfigCacheInvalidator,
     accessGrantService,
   );
+  refreshEmbedConfigsOnVoiceVendorKeyChange({ credentials: workspaceProviderCredentialsService, embedConfigs: agentService });
   const publishedAgentRevisions = new PublishedTestAgentRevisionReader(contextVariableRepository);
   const testExecutionService = overrides.testExecutionService ?? {
     async start() { throw new Error("Test execution is not configured in this test app"); },
@@ -2663,6 +2666,16 @@ export const createTestDependencies = (overrides: {
         listPublished: ({ agentId }) => routineDefinitionRepository.listActiveByAgent(agentId),
       },
     });
+  const voiceSessionStarts = createVoiceSessionStartComposition({
+    agentRepository,
+    starts: voiceSessions,
+    credentials: workspaceProviderCredentialsService,
+    fetch: overrides.voiceVendorFetch ?? (async () => {
+      throw new TypeError("Voice vendor calls are disabled in tests");
+    }),
+    metricsRegistry,
+    logger,
+  });
   const dependencies: AppDependencies = {
     env,
     agentBundleExportService: agentBundleServices.exportService,
@@ -2903,16 +2916,8 @@ export const createTestDependencies = (overrides: {
       metrics: metricsRegistry,
       logger,
     }),
-    voiceSessionStarts: createVoiceSessionStartComposition({
-      agentRepository,
-      starts: voiceSessions,
-      credentials: workspaceProviderCredentialsService,
-      fetch: overrides.voiceVendorFetch ?? (async () => {
-        throw new TypeError("Voice vendor calls are disabled in tests");
-      }),
-      metricsRegistry,
-      logger,
-    }),
+    voiceSessionStarts,
+    voiceSessionAvailability: voiceSessionStarts,
     assistantHistoryService,
     retrievalSearchService,
     retrievalAnswerService,
@@ -3032,6 +3037,7 @@ export const createTestApp = (overrides: {
   deliveryFailures?: AppDependencies["deliveryFailures"];
   heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;
   voiceVendorFetch?: typeof globalThis.fetch;
+  embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
 } = {}) => {
   const {
     dependencies,

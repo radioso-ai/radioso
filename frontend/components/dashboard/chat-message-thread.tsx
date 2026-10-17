@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
-import { Check, CircleCheckBig, Copy, PauseCircle, ThumbsDown, ThumbsUp, VolumeX, Wrench, Workflow } from 'lucide-react'
+import { Check, CircleCheckBig, Copy, Mic, PauseCircle, ThumbsDown, ThumbsUp, VolumeX, Wrench, Workflow } from 'lucide-react'
 import { DEFAULT_WEBSITE_EMBED_COPY, type WebsiteEmbedCopy, type WebsiteEmbedTheme } from '@/lib/embed-widget'
 import { computeSkillGroupInfo } from '@/lib/skill-thread-grouping'
 import type { RoutineThreadMarker } from '@/lib/routine-thread-grouping'
@@ -178,6 +178,20 @@ export interface ChatThreadMessage {
   operatorLabel?: string
   /** A reply the caller spoke over: how much of it they heard, in spoken characters. */
   interruption?: ReplyInterruption
+  /** A line said on a voice call rather than typed; the label marks it, in the visitor's language. */
+  spokenLabel?: string
+}
+
+function SpokenMarker({ label, theme }: { label: string; theme?: WebsiteEmbedTheme | null }) {
+  return (
+    <span
+      className="inline-flex w-fit items-center gap-1 px-1 text-xs text-muted-foreground"
+      style={theme ? { color: theme.mutedForeground } : undefined}
+    >
+      <Mic aria-hidden="true" className="size-3" />
+      {label}
+    </span>
+  )
 }
 
 function InterruptedReplyBadge({ interruption }: { interruption: ReplyInterruption }) {
@@ -794,6 +808,7 @@ export function ChatMessageThread({
                         <p className="select-text whitespace-pre-wrap text-sm">{linkifyText(message.content)}</p>
                       )}
                     </div>
+                    {message.spokenLabel ? <SpokenMarker label={message.spokenLabel} theme={theme} /> : null}
                     {message.createdAt ? <p
                       className="px-1 text-xs text-muted-foreground"
                       style={theme ? { color: theme.mutedForeground } : undefined}
@@ -830,6 +845,7 @@ export function ChatMessageThread({
                       {audience === 'operator' && message.interruption ? (
                         <InterruptedReplyBadge interruption={message.interruption} />
                       ) : null}
+                      {message.spokenLabel ? <SpokenMarker label={message.spokenLabel} theme={theme} /> : null}
                       <div
                         {...getSelectableMessageProps(message.id)}
                         className={`self-start w-fit max-w-full rounded-2xl rounded-tl-md bg-muted/60 px-4 py-3 text-left text-foreground animate-in fade-in-50 slide-in-from-bottom-2 duration-300 ${

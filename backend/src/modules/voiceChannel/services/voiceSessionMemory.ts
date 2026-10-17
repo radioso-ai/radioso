@@ -22,12 +22,20 @@ export interface VoiceSpokenTurn {
   reply: string;
 }
 
+/** A turn's stored answer. */
+export interface VoiceStoredReply {
+  messageId: string;
+  text: string;
+  /** The answer is the heard part of a reply cut off mid-stream, stored marked: there is nothing more to measure. */
+  partial?: boolean;
+}
+
 /** The newest exchange whose user message the session's conversation keeps. */
 export interface VoiceExchange {
   utterance: string;
   conversationId: string;
   /** The stored answer; null when the conversation keeps the user message without one. */
-  reply: { messageId: string; text: string } | null;
+  reply: VoiceStoredReply | null;
   /** What was spoken; null when the caller heard the fallback line in place of the reply. */
   spoken: VoiceSpokenTurn | null;
   /** When the runtime hung up on the turn, or a newer request overtook it, before its outcome. */
@@ -133,7 +141,8 @@ export class VoiceSessionMemory {
       state.newest = null;
     }
     if (exchange && (state.lastExchange === null || state.lastExchange.sequence < claim.sequence)) {
-      state.lastExchange = { exchange, sequence: claim.sequence, interruptionNote: "none" };
+      // A reply stored as its heard part carries its marker already, so no report of it is noted again.
+      state.lastExchange = { exchange, sequence: claim.sequence, interruptionNote: exchange.reply?.partial ? "recorded" : "none" };
     }
   }
 
@@ -179,7 +188,7 @@ export class VoiceSessionMemory {
   /**
    * Reserves the newest exchange's reply as far as the caller heard it, while the vendor reports it
    * cut short and no note of it is recorded or being written; null when the report is no strict
-   * prefix of what was spoken.
+   * prefix of what was spoken, or the reply is a heard part stored marked.
    */
   reserveInterruption(sessionKey: string, heardUntil: string): VoiceReplyInterruptionReservation | null {
     const last = this.sessions.get(sessionKey)?.lastExchange;

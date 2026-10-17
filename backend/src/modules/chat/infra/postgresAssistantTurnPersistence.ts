@@ -444,6 +444,21 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
     });
   }
 
+  async storeCutReply(input: {
+    workspaceId: string;
+    conversationId: string;
+    assistantMessage: Parameters<NonNullable<AssistantTurnPersistencePort["storeCutReply"]>>[0]["assistantMessage"];
+    auditEvent: CompleteAssistantTurnInput["auditEvent"];
+  }): Promise<void> {
+    await this.db.transaction().execute(async (trx) => {
+      await new MessageRepository(trx).create(input.assistantMessage);
+      await sql`
+        UPDATE conversations SET updated_at = now() WHERE id = ${input.conversationId} AND workspace_id = ${input.workspaceId}
+      `.execute(trx);
+      await insertAuditEvent(trx, input.auditEvent);
+    });
+  }
+
   /**
    * Best-effort push: never fails the turn that already committed. In the normal
    * (self-managed transaction) path this fires strictly after commit. In the rarer

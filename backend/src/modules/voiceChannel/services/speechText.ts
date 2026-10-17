@@ -67,6 +67,24 @@ export const spokenText = (text: string, position: SpeechPosition = WHOLE_TEXT):
   return (position.final ? withoutEmphasis.replace(FINAL_CLOSING_EMPHASIS, "") : withoutEmphasis).replace(INLINE_CODE, "");
 };
 
+const STREAMED_REPLY: SpeechPosition = { startsLine: true, final: false };
+
+/**
+ * How much of `written`, a reply as it streamed, its caller heard as `spoken`, the speech pieces cut
+ * from its start: the length of the shortest start of `written` that speaks as exactly `spoken`. That
+ * start ends where the last piece ends, so it holds every delimiter, link and marker of the sentences
+ * spoken and none that opens the next one. Null when no start of `written` speaks that way.
+ */
+export const writtenLengthSpokenAs = (written: string, spoken: string): number | null => {
+  // Speech only removes characters, so no shorter start can speak as `spoken`.
+  for (let length = spoken.length; length <= written.length; length += 1) {
+    if (spokenText(written.slice(0, length), STREAMED_REPLY) === spoken) {
+      return length;
+    }
+  }
+  return null;
+};
+
 /** Spoken text as two renderings of it agree on: zero-width spaces dropped, whitespace single, ends trimmed. */
 const comparable = (text: string): string => text.replace(/\u200B/gu, "").replace(/\s+/gu, " ").trim();
 

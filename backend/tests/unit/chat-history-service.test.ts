@@ -861,7 +861,7 @@ describe("chat history service interrupted replies", () => {
     const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     const question = await messageRepository.create({ conversationId: conversation.id, workspaceId: "workspace-1", role: "user", content: "When do you open?" });
     const cutReply = await messageRepository.create({ conversationId: conversation.id, workspaceId: "workspace-1", role: "assistant", content: "We open at nine on weekdays." });
-    cutReply.interruption = { heardCharacterCount: 12, spokenCharacterCount: 40 };
+    cutReply.interruption = { heardCharacterCount: 12, spokenCharacterCount: 40, partial: false };
     const fullReply = await messageRepository.create({ conversationId: conversation.id, workspaceId: "workspace-1", role: "assistant", content: "And at ten on Saturdays." });
     return { service, messageRepository, conversation, question, cutReply, fullReply };
   };
@@ -878,7 +878,7 @@ describe("chat history service interrupted replies", () => {
     for (const messages of reads) {
       for (const message of messages) {
         if (message.id === cutReply.id) {
-          expect(message.interruption).toEqual({ heardCharacterCount: 12, spokenCharacterCount: 40 });
+          expect(message.interruption).toEqual({ heardCharacterCount: 12, spokenCharacterCount: 40, partial: false });
         } else {
           expect(message).not.toHaveProperty("interruption");
         }

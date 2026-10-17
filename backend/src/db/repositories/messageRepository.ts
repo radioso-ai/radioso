@@ -146,6 +146,11 @@ export interface MessageRepositoryPort {
     operatorDisplayName?: string;
     /** A teammate's reply the conversation's caller hears on their next turn: stored as pending speech. */
     pendingSpeech?: boolean;
+    /**
+     * A reply stored already cut short, such as the heard part of one cut off mid-stream: its
+     * marker, kept where a later mark keeps one, so no later mark changes it.
+     */
+    interruption?: ReplyInterruption;
     inputMetadata?: UserMessageInputMetadata;
     metadata?: Record<string, unknown>;
     skillName?: string;
@@ -233,11 +238,25 @@ const mapInputMetadata = (value: unknown): UserMessageInputMetadata | undefined 
   };
 };
 
-/** The marker {@link MessageRepository.markReplyInterrupted} keeps in the metadata; a malformed one reads as none. */
+/**
+ * The marker as the metadata keeps it: `partial` only on a reply stored as its heard part, which
+ * carries its marker from the start; a mark written later carries `recordedAt`.
+ */
+const storedInterruptionSchema = replyInterruptionSchema.extend({ partial: z.boolean().optional() });
+
+const storedInterruption = (interruption: ReplyInterruption): z.infer<typeof storedInterruptionSchema> => ({
+  heardCharacterCount: interruption.heardCharacterCount,
+  spokenCharacterCount: interruption.spokenCharacterCount,
+  ...(interruption.partial ? { partial: true as const } : {}),
+});
+
+/** The marker {@link MessageRepository.markReplyInterrupted} or `create` keeps in the metadata; a malformed one reads as none. */
 const mapInterruption = (metadata: unknown): ReplyInterruption | undefined => {
   const marker = metadata && typeof metadata === "object" ? (metadata as { interruption?: unknown }).interruption : undefined;
-  const parsed = replyInterruptionSchema.safeParse(marker);
-  return parsed.success ? parsed.data : undefined;
+  const parsed = storedInterruptionSchema.safeParse(marker);
+  return parsed.success
+    ? { heardCharacterCount: parsed.data.heardCharacterCount, spokenCharacterCount: parsed.data.spokenCharacterCount, partial: parsed.data.partial === true }
+    : undefined;
 };
 
 /**
@@ -725,6 +744,7 @@ export class MessageRepository
     operatorUserId?: string;
     operatorDisplayName?: string;
     pendingSpeech?: boolean;
+    interruption?: ReplyInterruption;
     inputMetadata?: UserMessageInputMetadata;
     metadata?: Record<string, unknown>;
     skillName?: string;
@@ -735,6 +755,7 @@ export class MessageRepository
   }): Promise<MessageRecord> {
     const metadata = {
       ...(input.metadata ?? input.inputMetadata ?? {}),
+      ...(input.interruption ? { interruption: storedInterruption(input.interruption) } : {}),
       ...(input.operatorAccountId || input.operatorUserId || input.operatorDisplayName
         ? {
             humanAgent: {
@@ -782,7 +803,7 @@ export class MessageRepository
     workspaceId: string;
     conversationId: string;
     messageId: string;
-  } & ReplyInterruption): Promise<boolean> {
+  } & Omit<ReplyInterruption, "partial">): Promise<boolean> {
     const counts = { heardCharacterCount: input.heardCharacterCount, spokenCharacterCount: input.spokenCharacterCount };
     const marker = jsonbConcat(toJsonb(counts), sql`jsonb_build_object('recordedAt', ${markerRecordedAt})`);
     // A reply that already carries a marker is matched and rewritten unchanged, so a retried note

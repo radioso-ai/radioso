@@ -9,6 +9,58 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.18.0] - 2026-10-17
+
+### Added
+
+- **privacy:** erase a conversation or a visitor and everything derived from them ([#1550](https://github.com/radioso-ai/radioso/pull/1550))
+- **embed:** a talk button in the website embed ([#1537](https://github.com/radioso-ai/radioso/pull/1537))
+- **background-jobs:** add retry schedules, a per-attempt hook, a skipped outcome, and a same-drain reclaim guard ([#1535](https://github.com/radioso-ai/radioso/pull/1535))
+- **voice:** workspace-held vendor credentials and a Radioso-minted voice session start ([#1534](https://github.com/radioso-ai/radioso/pull/1534))
+- **voice:** voice settings in the dashboard and Ray descriptors for the voice and mechanics blocks ([#1531](https://github.com/radioso-ai/radioso/pull/1531))
+- **worker:** add a generic durable job port and run conversation summary refresh on it ([#1512](https://github.com/radioso-ai/radioso/pull/1512))
+- **voice:** mark a reply the caller cut short on the stored message and show it in history ([#1513](https://github.com/radioso-ai/radioso/pull/1513))
+- **chat:** let the turn planner answer conversational mechanics in one call ([#1498](https://github.com/radioso-ai/radioso/pull/1498))
+- **voice:** derive web hand-off outcomes and expose them to the runtime ([#1501](https://github.com/radioso-ai/radioso/pull/1501))
+- **voice:** let the newest utterance win and replay a reply the caller lost ([#1500](https://github.com/radioso-ai/radioso/pull/1500))
+- **voice:** add bridge lines and a turn limit as a vendor-neutral turn policy ([#1495](https://github.com/radioso-ai/radioso/pull/1495))
+- **voice:** add vendor-neutral voice channel with an OpenAI-compatible completions adapter ([#1485](https://github.com/radioso-ai/radioso/pull/1485))
+
+### Fixed
+
+- **slack:** run Slack inbound turns as durable worker jobs instead of detached promises ([#1516](https://github.com/radioso-ai/radioso/pull/1516))
+- **worker:** run periodic tasks on the worker and load application modules in push workers ([#1510](https://github.com/radioso-ai/radioso/pull/1510))
+- **chat:** read a single-bracket [?] marker as [[?]] wherever model text enters ([#1514](https://github.com/radioso-ai/radioso/pull/1514))
+- **chat:** answer with the decline a grounded envelope commits instead of failing on its empty text ([#1499](https://github.com/radioso-ai/radioso/pull/1499))
+
+### Internal
+
+- **chat:** move the action outbox onto the background-job runtime ([#1532](https://github.com/radioso-ai/radioso/pull/1532))
+- **worker:** move facet extraction onto the background-job port ([#1533](https://github.com/radioso-ai/radioso/pull/1533))
+
+### Database migrations
+
+This release adds 16 migrations. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `214_voice_sessions.sql`
+- `225_background_jobs.sql`
+- `226_workspace_provider_credentials_voice_vendors.sql`
+- `227_voice_session_starts.sql`
+- `228_conversation_erasure_clarification_states.sql`
+- `228_conversation_erasure_context_variables.sql`
+- `228_conversation_erasure_directive_states.sql`
+- `228_conversation_erasure_email_inbound_deliveries.sql`
+- `228_conversation_erasure_email_skill_activity.sql`
+- `228_conversation_erasure_notification_delivery_outcomes.sql`
+- `228_conversation_erasure_pending_decisions.sql`
+- `228_conversation_erasure_routine_action_requests.sql`
+- `228_conversation_erasure_routine_states.sql`
+- `228_conversation_erasure_topic_memberships.sql`
+- `228_conversation_erasure_usage_events.sql`
+- `229_conversation_erasure_links_validate.sql`
+
+[1.18.0]: https://github.com/radioso-ai/radioso/compare/v1.17.2...v1.18.0
+
 ## [1.17.2] - 2026-10-14
 
 ### Fixed

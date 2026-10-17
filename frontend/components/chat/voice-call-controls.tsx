@@ -43,21 +43,32 @@ const liveStatusText = (state: VoiceSessionState, copy: WebsiteEmbedCopy): strin
   return copy.publicChatVoiceConnectingStatus
 }
 
-/** Stands in for the composer while a call connects or runs: who is talking, and End call. */
+/**
+ * Stands in for the composer while a call connects or runs: who is talking, and End call. Above it,
+ * the agent's recording notice, when the agent wrote one for the call's language.
+ */
 export function VoiceCallBar({
   theme,
   copy,
   state,
   onStop,
+  recordingNotice = null,
 }: {
   theme: WebsiteEmbedTheme
   copy: WebsiteEmbedCopy
   state: VoiceSessionState
   onStop: () => void
+  recordingNotice?: string | null
 }) {
   const speaking = state.status === 'live' && state.mode === 'speaking'
   return (
     <div className="mx-auto max-w-3xl">
+      {recordingNotice ? (
+        <p className="mb-1.5 px-2 text-xs" style={{ color: theme.mutedForeground }}>
+          {recordingNotice}
+        </p>
+      ) : null}
+
       <div
         className="flex items-center gap-3 rounded-3xl border px-3 py-1.5"
         style={{ background: theme.inputBackground, borderColor: theme.inputBorder, color: theme.inputForeground }}

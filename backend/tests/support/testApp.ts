@@ -2,7 +2,11 @@ import { createAgentBundleServices } from "../../src/app/composition/agentBundle
 import { createDefaultApplicationComposition } from "../../src/app/composition/defaultComposition.js";
 import { chatTurnQueuedActionTypes } from "../../src/app/composition/applicationModule.js";
 import { createAgentPublicProfileComposition } from "../../src/app/composition/agentDiscovery.js";
-import { createVoiceSessionStartComposition, refreshEmbedConfigsOnVoiceVendorKeyChange } from "../../src/app/composition/voiceChannel.js";
+import {
+  createVoiceRecordingComposition,
+  createVoiceSessionStartComposition,
+  refreshEmbedConfigsOnVoiceVendorKeyChange,
+} from "../../src/app/composition/voiceChannel.js";
 import { createDefaultVisitorGeoResolver } from "../../src/app/composition/visitorGeoResolver.js";
 import { InMemoryAgentBundleImportRepository } from "./inMemoryAgentBundleImports.js";
 import { setTimeout as delay } from "node:timers/promises";
@@ -51,9 +55,13 @@ import { RetrievalTurnController } from "../../src/modules/chat/services/retriev
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
 import {
   VoiceTurnService,
+  type VoiceRecordingStore,
+  type VoiceRecordingToErase,
+  type VoiceSessionRef,
   type VoiceSessionStartLookup,
   type VoiceSessionStartRegistry,
   type VoiceSessionStore,
+  type VoiceSessionVendorAgent,
   type VoiceSessionVisitor,
 } from "../../src/modules/voiceChannel/public.js";
 import { AssistantHistoryService } from "../../src/modules/chat/services/assistantHistoryService.js";
@@ -830,14 +838,46 @@ class InMemoryContextVariableRepository implements ContextVariableRepositoryPort
   }
 }
 
-/** `voice_sessions` in memory: session bindings, and started sessions waiting for their first turn. */
-const createInMemoryVoiceSessions = (): VoiceSessionStore & VoiceSessionStartRegistry & VoiceSessionStartLookup & {
-  readonly started: ReadonlyMap<string, { visitor: VoiceSessionVisitor; expiresAt: Date }>;
+interface InMemoryVoiceStart {
+  session: VoiceSessionRef;
+  visitor: VoiceSessionVisitor;
+  expiresAt: Date;
+  vendorAgent: VoiceSessionVendorAgent;
+  vendorConversationId?: string;
+}
+
+/**
+ * `voice_sessions` in memory: session bindings, started sessions waiting for their first turn, and
+ * the vendor conversation their page reported, which names the call's recording.
+ */
+const createInMemoryVoiceSessions = (): VoiceSessionStore & VoiceSessionStartRegistry & VoiceSessionStartLookup & VoiceRecordingStore & {
+  readonly started: ReadonlyMap<string, InMemoryVoiceStart>;
 } => {
   const bound = new Map<string, string>();
-  const started = new Map<string, { visitor: VoiceSessionVisitor; expiresAt: Date }>();
+  const started = new Map<string, InMemoryVoiceStart>();
   const keyOf = (session: { workspaceId: string; agentId: string; vendor: string; sessionKey: string }) =>
     JSON.stringify([session.workspaceId, session.agentId, session.vendor, session.sessionKey]);
+  const recordings = (): Array<{ recording: VoiceRecordingToErase; visitorKey: string | null }> =>
+    [...started.entries()].flatMap(([key, start]) => start.vendorConversationId
+      ? [{
+        recording: {
+          workspaceId: start.session.workspaceId,
+          conversationId: bound.get(key) ?? null,
+          vendor: "elevenlabs" as const,
+          region: start.vendorAgent.region,
+          vendorConversationId: start.vendorConversationId,
+        },
+        visitorKey: start.visitor.visitorKey,
+      }]
+      : []);
+  const reportable = (report: { workspaceId: string; agentId: string; sessionKey: string; publicSessionId: string }) =>
+    [...started.values()].find((candidate) =>
+      candidate.session.workspaceId === report.workspaceId
+      && candidate.session.agentId === report.agentId
+      && candidate.session.sessionKey === report.sessionKey
+      && candidate.visitor.publicSessionId === report.publicSessionId
+      && candidate.expiresAt.getTime() > Date.now()
+      && !candidate.vendorConversationId);
   return {
     started,
     findConversationId: async (session) => bound.get(keyOf(session)) ?? null,
@@ -845,9 +885,33 @@ const createInMemoryVoiceSessions = (): VoiceSessionStore & VoiceSessionStartReg
       if (!bound.has(keyOf(session))) bound.set(keyOf(session), conversationId);
       return bound.get(keyOf(session)) ?? conversationId;
     },
-    register: async ({ session, visitor, expiresAt }) => {
-      if (!started.has(keyOf(session))) started.set(keyOf(session), { visitor, expiresAt });
+    register: async ({ session, visitor, expiresAt, vendorAgent }) => {
+      if (!started.has(keyOf(session))) started.set(keyOf(session), { session, visitor, expiresAt, vendorAgent });
     },
+    findReportableSession: async (report) => {
+      const start = reportable(report);
+      return start ? { vendor: "elevenlabs" as const, vendorAgent: start.vendorAgent } : null;
+    },
+    recordVendorConversation: async (report) => {
+      const start = reportable(report);
+      const taken = [...started.values()].some((candidate) => candidate.vendorConversationId === report.vendorConversationId);
+      if (!start || taken) return false;
+      start.vendorConversationId = report.vendorConversationId;
+      return true;
+    },
+    findRecording: async ({ workspaceId, conversationId }) => {
+      const recording = recordings()
+        .map((candidate) => candidate.recording)
+        .find((candidate) => candidate.workspaceId === workspaceId && candidate.conversationId === conversationId);
+      return recording ? { conversationId, vendor: recording.vendor, region: recording.region, vendorConversationId: recording.vendorConversationId } : null;
+    },
+    listRecordings: async (scope) =>
+      recordings()
+        .filter(({ recording, visitorKey }) => recording.workspaceId === scope.workspaceId
+          && (scope.kind === "workspace"
+            || (scope.kind === "conversations" && recording.conversationId !== null && scope.conversationIds.includes(recording.conversationId))
+            || (scope.kind === "visitor_key" && visitorKey === scope.visitorKey)))
+        .map(({ recording }) => recording),
     findStartedVisitor: async (session) => {
       const start = started.get(keyOf(session));
       if (!start || bound.has(keyOf(session)) || start.expiresAt.getTime() <= Date.now()) return null;
@@ -1435,11 +1499,9 @@ export const createTestDependencies = (overrides: {
       };
     },
   } satisfies TurnRouter;
-  const workspaceService = new WorkspaceService(workspaceRepository, auditService, accountMembershipRepository);
   const workspaceSummaryService = new WorkspaceSummaryService(documentRepository, conversationRepository, {
     websiteCrawlerEnabled: env.WEBSITE_CRAWLER_ENABLED,
   });
-  const workspaceSessionService = new WorkspaceSessionService(workspaceService);
   const abuseControlService = new AbuseControlService(
     overrides.abuseControlRepository ?? new InMemoryAbuseControlRepository(),
   );
@@ -1450,6 +1512,28 @@ export const createTestDependencies = (overrides: {
     auditService,
     { key: env.CONNECTOR_ENCRYPTION_KEY },
   );
+  const voiceVendorFetch: typeof globalThis.fetch = overrides.voiceVendorFetch ?? (async () => {
+    throw new TypeError("Voice vendor calls are disabled in tests");
+  });
+  const voiceRecordings = createVoiceRecordingComposition({
+    recordings: voiceSessions,
+    // The in-memory app has no transactions: every handle reads the same store.
+    recordingsIn: () => voiceSessions,
+    credentials: workspaceProviderCredentialsService,
+    fetch: voiceVendorFetch,
+    auditService,
+    metricsRegistry,
+    logger,
+  });
+  const workspaceService = new WorkspaceService(
+    workspaceRepository,
+    auditService,
+    accountMembershipRepository,
+    undefined,
+    undefined,
+    { eraser: voiceRecordings.erasure, logger },
+  );
+  const workspaceSessionService = new WorkspaceSessionService(workspaceService);
   const oauthConnectionRepository = new InMemoryOauthConnectionRepository();
   const integrationConnectionRepository = new InMemoryIntegrationConnectionRepository();
   const slackInstallationRepository = new InMemorySlackInstallationRepository();
@@ -2424,6 +2508,7 @@ export const createTestDependencies = (overrides: {
       validate: routineDefinitionService.validate.bind(routineDefinitionService),
     },
     chatHistoryService,
+    voiceRecordings: voiceRecordings.recordings,
     agentTurnProbe: agentTurnProbeService,
     retrievalProbe: retrievalProbeService,
     testChat: testChatService,
@@ -2672,9 +2757,7 @@ export const createTestDependencies = (overrides: {
     agentRepository,
     starts: voiceSessions,
     credentials: workspaceProviderCredentialsService,
-    fetch: overrides.voiceVendorFetch ?? (async () => {
-      throw new TypeError("Voice vendor calls are disabled in tests");
-    }),
+    fetch: voiceVendorFetch,
     metricsRegistry,
     logger,
   });
@@ -2920,6 +3003,7 @@ export const createTestDependencies = (overrides: {
     }),
     voiceSessionStarts,
     voiceSessionAvailability: voiceSessionStarts,
+    voiceRecordings: voiceRecordings.recordings,
     assistantHistoryService,
     conversationErasure: overrides.conversationErasure ?? {
       // The in-memory app has no transaction to erase in; the Postgres erasure is covered by

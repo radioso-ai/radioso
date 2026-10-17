@@ -1937,7 +1937,7 @@ export interface Visitors {
 }
 
 export interface VoiceSessions {
-  agent_id: string;
+  agent_id: string | null;
   conversation_id: string | null;
   created_at: Generated<Timestamp>;
   id: Generated<string>;
@@ -1946,6 +1946,9 @@ export interface VoiceSessions {
   started_public_session_id: string | null;
   started_visitor_key: string | null;
   vendor: string;
+  vendor_agent_id: string | null;
+  vendor_conversation_id: string | null;
+  vendor_region: string | null;
   workspace_id: string;
 }
 

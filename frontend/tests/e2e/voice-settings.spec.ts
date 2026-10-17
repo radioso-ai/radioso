@@ -7,6 +7,7 @@ const SECOND_BRIDGE_LINE = "One moment please while I look that up in our docume
 const SHORT_ACKNOWLEDGEMENT = "Got it.";
 const ITALIAN_BRIDGE_LINE = "Controllo subito per te, ci vorrà solo un momento.";
 const FALLBACK_LINE = "Sorry, this is taking much longer than it should, could you ask me again?";
+const RECORDING_NOTICE = "This call is recorded so the team can review it.";
 const GREETING = "Hi! How can I help you today?";
 const VENDOR_AGENT_ID = "agent_01jxk2v9qbe8n7r6t5w4";
 const noReplies = { thanks: [], farewell: [], acknowledgement: [] };
@@ -70,6 +71,7 @@ test("an operator binds the ElevenLabs agent, writes voice lines in two language
   await english.getByRole("button", { name: "Remove check line 2" }).click();
   await english.getByRole("button", { name: "Remove acknowledge line 1" }).click();
   await english.getByLabel("Fallback line").fill(FALLBACK_LINE);
+  await english.getByLabel("Recording notice").fill(RECORDING_NOTICE);
   await italian.getByRole("button", { name: "Remove language" }).click();
   await german.getByRole("button", { name: "Remove language" }).click();
   await save(card);
@@ -93,6 +95,7 @@ test("an operator binds the ElevenLabs agent, writes voice lines in two language
         bridgeLines: { en: { acknowledge: [], check: [BRIDGE_LINE] } },
         fallbackLine: { en: FALLBACK_LINE },
         runtime: { vendor: "elevenlabs", agentId: VENDOR_AGENT_ID, region: "eu" },
+        recordingNotice: { en: RECORDING_NOTICE },
       },
       mechanicsReplies: { en: { greeting: [GREETING], ...noReplies } },
     },
@@ -109,6 +112,7 @@ test("an operator binds the ElevenLabs agent, writes voice lines in two language
   await expect(reloadedEnglish.getByRole("textbox", { name: "Check line 2" })).toHaveCount(0);
   await expect(reloadedEnglish.getByRole("textbox", { name: "Acknowledge line 1" })).toHaveCount(0);
   await expect(reloadedEnglish.getByLabel("Fallback line")).toHaveValue(FALLBACK_LINE);
+  await expect(reloadedEnglish.getByLabel("Recording notice")).toHaveValue(RECORDING_NOTICE);
   await expect(reloadedEnglish.getByRole("textbox", { name: "Greeting line 1" })).toHaveValue(GREETING);
   await expect(reloaded.getByRole("group", { name: /^Voice lines: / })).toHaveCount(1);
 });

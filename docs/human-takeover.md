@@ -744,6 +744,17 @@ inspecting and testing a conversation — replying, taking over, handing back,
 and approving or rejecting a pending decision all happen from the reading
 pane instead.
 
+A voice call started from the website widget shows **Listen** in the header,
+next to **Open in debug view**, once the widget has told Radioso which
+ElevenLabs conversation the call was. Listen plays the call in the pane,
+streamed from your ElevenLabs account through Radioso with the workspace's
+key; nothing is fetched until you press it, and every play is recorded in the
+audit log as `conversation.recording_played` with your user id. ElevenLabs
+finishes a recording shortly after the call ends, so until then the player
+reads "The recording can't be played right now." The conversation detail
+says whether a call has one as `recording: { "available": true }`. See
+[Voice channel → Recordings](voice-channel.md#recordings).
+
 Ray reads the same queue. Ask it what is waiting and it lists the open
 approvals, handoffs, and commented negative feedback longest wait first, each row
 carrying the decision or turn behind it and the number of rows its source

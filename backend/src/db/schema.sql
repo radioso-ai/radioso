@@ -4063,7 +4063,7 @@ CREATE TABLE public.visitors (
 CREATE TABLE public.voice_sessions (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     workspace_id uuid NOT NULL,
-    agent_id uuid NOT NULL,
+    agent_id uuid,
     vendor text NOT NULL,
     session_key text NOT NULL,
     conversation_id uuid,
@@ -4071,11 +4071,17 @@ CREATE TABLE public.voice_sessions (
     started_public_session_id text,
     started_visitor_key text,
     start_expires_at timestamp with time zone,
-    CONSTRAINT voice_sessions_bound_or_started CHECK (((conversation_id IS NOT NULL) OR ((started_public_session_id IS NOT NULL) AND (start_expires_at IS NOT NULL)))),
+    vendor_agent_id text,
+    vendor_region text,
+    vendor_conversation_id text,
     CONSTRAINT voice_sessions_session_key_check CHECK (((length(session_key) >= 1) AND (length(session_key) <= 256))),
     CONSTRAINT voice_sessions_started_public_session_id_check CHECK (((started_public_session_id IS NULL) OR ((length(started_public_session_id) >= 1) AND (length(started_public_session_id) <= 256)))),
     CONSTRAINT voice_sessions_started_visitor_key_check CHECK (((started_visitor_key IS NULL) OR ((length(started_visitor_key) >= 1) AND (length(started_visitor_key) <= 256)))),
-    CONSTRAINT voice_sessions_vendor_check CHECK (((length(vendor) >= 1) AND (length(vendor) <= 64)))
+    CONSTRAINT voice_sessions_vendor_agent_id_check CHECK (((vendor_agent_id IS NULL) OR ((length(vendor_agent_id) >= 1) AND (length(vendor_agent_id) <= 128)))),
+    CONSTRAINT voice_sessions_vendor_check CHECK (((length(vendor) >= 1) AND (length(vendor) <= 64))),
+    CONSTRAINT voice_sessions_vendor_conversation_has_origin CHECK (((vendor_conversation_id IS NULL) OR ((vendor_region IS NOT NULL) AND (vendor_agent_id IS NOT NULL)))),
+    CONSTRAINT voice_sessions_vendor_conversation_id_check CHECK (((vendor_conversation_id IS NULL) OR ((length(vendor_conversation_id) >= 1) AND (length(vendor_conversation_id) <= 128)))),
+    CONSTRAINT voice_sessions_vendor_region_check CHECK (((vendor_region IS NULL) OR ((length(vendor_region) >= 1) AND (length(vendor_region) <= 16))))
 );
 
 
@@ -9067,6 +9073,13 @@ CREATE INDEX voice_sessions_conversation_id_idx ON public.voice_sessions USING b
 
 
 --
+-- Name: voice_sessions_vendor_conversation_uniq; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX voice_sessions_vendor_conversation_uniq ON public.voice_sessions USING btree (vendor, vendor_region, vendor_conversation_id) WHERE (vendor_conversation_id IS NOT NULL);
+
+
+--
 -- Name: chunk_embeddings_p0_pkey; Type: INDEX ATTACH; Schema: public; Owner: -
 --
 
@@ -12485,7 +12498,7 @@ ALTER TABLE ONLY public.visitors
 --
 
 ALTER TABLE ONLY public.voice_sessions
-    ADD CONSTRAINT voice_sessions_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
+    ADD CONSTRAINT voice_sessions_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE SET NULL;
 
 
 --
@@ -12493,7 +12506,7 @@ ALTER TABLE ONLY public.voice_sessions
 --
 
 ALTER TABLE ONLY public.voice_sessions
-    ADD CONSTRAINT voice_sessions_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE CASCADE;
+    ADD CONSTRAINT voice_sessions_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE SET NULL;
 
 
 --

@@ -861,6 +861,11 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       activity: z.array(ConversationActivityEntrySchema).optional().openapi({
         description: "What teammates and the agent did to the conversation, oldest first: handoffs, claims, reassignments, hand-backs, approvals decided, and — for a caller with Quality access — feedback resolved or dismissed.",
       }),
+      recording: z.object({ available: z.boolean() }).optional().openapi({
+        description: "On a voice conversation read by a dashboard session: whether the call has a recording `getConversationRecording` can play. "
+          + "`available` is true when the website embed reported the vendor's id for the call and the workspace holds a vendor key the backend can read; "
+          + "it is read from Radioso alone, so the vendor may still hold no audio for a call that has not ended. Machine credentials, which cannot play it, get no `recording`.",
+      }),
     }),
   );
 
@@ -905,6 +910,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       visitor: true,
       requestContext: true,
       messages: true,
+      recording: true,
     }).extend({
       messages: z.array(PublicChatConversationMessageSchema),
     }),

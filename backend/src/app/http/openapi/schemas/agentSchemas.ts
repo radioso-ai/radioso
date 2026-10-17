@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { publicChatSessionSchema, publicVoiceSessionStartSchema } from "../../routes/publicChatRouteSchemas.js";
+import { publicChatSessionSchema, publicVoiceSessionStartSchema, publicVoiceVendorConversationSchema } from "../../routes/publicChatRouteSchemas.js";
 import { createRevisionCandidateBodySchema, publishRevisionBodySchema } from "../../routes/agentRevisionRequestSchemas.js";
 import {
   agentChannelChatSchema,
@@ -126,8 +126,10 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     "AgentVoiceSettings",
     agentVoiceSettingsSchema.openapi({
       description:
-        "How the agent sounds on the voice channel. `bridgeLines` and `fallbackLine` are keyed by language tag "
-        + "(at most 10 each); each style holds at most 5 lines of 1 to 200 characters. `runtime` binds the agent to one "
+        "How the agent sounds on the voice channel. `bridgeLines`, `fallbackLine` and the optional `recordingNotice` are keyed by language tag "
+        + "(at most 10 each); each style holds at most 5 lines of 1 to 200 characters, and each notice is one line of 1 to 200 characters. "
+        + "The website embed shows the `recordingNotice` for the session's language as a call starts. `runtime` binds the agent to one "
+
         + "vendor agent (the vendor's own agent id, 1 to 128 letters, digits, underscores and hyphens), which a voice "
         + "session start opens, in the data residency region of the vendor account (`region`, which picks the vendor host); "
         + "null binds none. An update replaces the block whole.",
@@ -777,6 +779,16 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       expiresAt: z.string().datetime().optional().openapi({
         description: "When `signedUrl` stops opening sessions: Radioso computes it from the validity the vendor documents (15 minutes on `elevenlabs`) and the time it asked for the URL.",
       }),
+      recordingNotice: z.string().optional().openapi({
+        description: "The agent's `voice.recordingNotice` in the session's language, when the agent wrote one for it: the page shows it to the caller as the call starts.",
+      }),
+    }),
+  );
+
+  const PublicVoiceVendorConversationRequestSchema = registry.register(
+    "PublicVoiceVendorConversationRequest",
+    publicVoiceVendorConversationSchema.openapi({
+      description: "The vendor's id for the call the page opened: on `elevenlabs`, what the client's `getId()` returns once the session is connected.",
     }),
   );
 
@@ -1242,6 +1254,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     PublicChatSessionRequestSchema,
     PublicVoiceSessionRequestSchema,
     PublicVoiceSessionResponseSchema,
+    PublicVoiceVendorConversationRequestSchema,
     WorkspaceIngestionReprocessResponseSchema,
     AgentConfigRefPlaceholderSchema,
     AgentBundleAgentConfigSchema,

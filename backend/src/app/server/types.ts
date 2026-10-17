@@ -69,7 +69,14 @@ import type { Database } from "../../shared/infra/database.js";
 import type { Env } from "../config/env.js";
 import type { VisitorGeoResolver } from "../../shared/domain/visitorGeoResolver.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
-import type { VoiceSessionAvailabilityPort, VoiceSessionStartPort, VoiceTurnPort } from "../../modules/voiceChannel/public.js";
+import type {
+  VoiceRecordingAvailabilityPort,
+  VoiceRecordingPlaybackPort,
+  VoiceSessionAvailabilityPort,
+  VoiceSessionStartPort,
+  VoiceTurnPort,
+  VoiceVendorConversationReportPort,
+} from "../../modules/voiceChannel/public.js";
 import type { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
 import type { WorkspaceProviderCredentialsService } from "../../modules/security/credentials/services/workspaceProviderCredentialsService.js";
 import type { WebhookDestinationPublicAdapter } from "../../modules/webhooks/public.js";
@@ -359,6 +366,12 @@ export interface AppDependencies {
   voiceSessionStarts: VoiceSessionStartPort;
   /** Whether a page should offer a caller voice sessions with an agent; the website embed asks. */
   voiceSessionAvailability: VoiceSessionAvailabilityPort;
+  /**
+   * A call's recording, kept by the vendor: the page reports the vendor's id for the call, the
+   * Inbox learns whether a conversation has one, and a teammate plays it.
+   */
+  voiceRecordings: VoiceVendorConversationReportPort & VoiceRecordingAvailabilityPort & VoiceRecordingPlaybackPort;
+
   assistantHistoryService: AssistantHistoryService;
   /** Permanent erasure of a conversation, or of a visitor and their conversations. */
   conversationErasure: ConversationErasure;

@@ -1,6 +1,6 @@
 ---
 title: "Voice Channel"
-description: "Let a voice runtime such as ElevenLabs Agents speak for a Radioso agent through an OpenAI-compatible chat-completions endpoint, with sessions Radioso starts on your vendor key, one conversation per voice session, and authored lines that cover the wait."
+description: "Let a voice runtime such as ElevenLabs Agents speak for a Radioso agent through an OpenAI-compatible chat-completions endpoint, with sessions Radioso starts on your vendor key, one conversation per voice session, authored lines that cover the wait, and the call's recording in the Inbox."
 last_updated: 2026-10-17
 ---
 
@@ -163,10 +163,19 @@ does.
      signedUrl: start.signedUrl,
      customLlmExtraBody: { session_key: start.sessionKey, locale: start.locale },
    })
+
+   await fetch(`${appHost}/api/public/chat/${launchToken}/voice/sessions/${start.sessionKey}/vendor-conversation`, {
+     method: 'POST',
+     headers: { 'content-type': 'application/json', 'x-radioso-public-session': embed.publicSessionToken },
+     body: JSON.stringify({ vendorConversationId: conversation.getId() }),
+   })
    ```
 
    `launchToken` is the website embed token in your embed snippet. A page that
-   already runs the embed can reuse the embed's public session.
+   already runs the embed can reuse the embed's public session. The last
+   request tells Radioso which ElevenLabs conversation the call is, so the
+   Inbox can play its recording; a page that leaves it out still talks, and
+   its calls have no recording in Radioso. See [Recordings](#recordings).
 
 The start answers with the session the page opens:
 
@@ -176,7 +185,8 @@ The start answers with the session the page opens:
   "signedUrl": "wss://api.elevenlabs.io/v1/convai/conversation?agent_id=agent_01jxk2v9qbe8n7r6t5w4&conversation_signature=…",
   "sessionKey": "3f0c2a8e-5b1d-4c47-9a1e-0d6b2f7c9e41",
   "locale": "it",
-  "expiresAt": "2026-10-16T12:15:00.000Z"
+  "expiresAt": "2026-10-16T12:15:00.000Z",
+  "recordingNotice": "Questa chiamata viene registrata per il nostro team."
 }
 ```
 
@@ -194,7 +204,9 @@ after the start, well past the URL's 15 minutes; a call whose first turn comes
 later still is its own conversation with no visitor. Each start mints a new key. `locale` is
 optional in the request. It tells Radioso which language the caller speaks, so
 bridge and fallback lines come in that language; leave it out and the response
-carries the agent's default locale, or `en`.
+carries the agent's default locale, or `en`. `recordingNotice` is the agent's
+recording notice for the call, present when the agent wrote one: show it to
+the caller as the call starts. See [The recording notice](#the-recording-notice).
 
 Every start opens a session ElevenLabs bills to your account, so starts spend
 their own small budgets before ElevenLabs is called: by default 3 per visitor
@@ -280,7 +292,10 @@ When a visitor presses **Talk**:
    when the session opens within 30 seconds of that tap.
 3. The composer gives way to a call bar that reads **Connecting…**, then
    **Listening** while the visitor talks and **Speaking** while the agent
-   answers, with **End call** beside it. The visitor can talk over the agent:
+   answers, with **End call** beside it. When the agent has a recording
+   notice for the call's language, it sits above the bar for the whole call.
+   Once ElevenLabs has opened the session, the embed tells Radioso which
+   ElevenLabs conversation it is, so the Inbox can play the call later. The visitor can talk over the agent:
    ElevenLabs stops the reply, and the Inbox marks it as interrupted.
 4. Each thing the visitor says and each reply appears in the panel as it
    happens, marked **Spoken**. A reply the visitor talked over is cut to the
@@ -415,6 +430,10 @@ to the agent settings API yourself:
       "en": "Sorry, this is taking much longer than it should, could you ask me again?",
       "it": "Scusa, ci sto mettendo troppo, puoi ripetere la domanda per favore?"
     },
+    "recordingNotice": {
+      "en": "This call is recorded so our team can review it.",
+      "it": "Questa chiamata viene registrata per il nostro team."
+    },
     "runtime": { "vendor": "elevenlabs", "agentId": "agent_01jxk2v9qbe8n7r6t5w4" }
   }
 }
@@ -437,7 +456,8 @@ returns the block as `voice`, and the quick replies as `mechanicsReplies`.
 The block is replaced whole, whether the card, Ray, or your own request
 writes it: a request that carries `voice` must carry `enabled`,
 `bridgeLines` and `fallbackLine`, a `voice` without `runtime` binds no vendor
-agent, and a request without `voice` keeps the stored one. To turn voice off, send the block back with
+agent, a `voice` without `recordingNotice` shows no notice, and a request
+without `voice` keeps the stored one. To turn voice off, send the block back with
 `"enabled": false`. Keys are language tags such as `en`, `it` or `pt-BR`, up
 to 10 for each map. Each style holds up to 5 lines, and every line is 1 to 200
 characters. The lines above follow the
@@ -754,6 +774,174 @@ conversation reply, like the REST agent channel.
 
 Deleting the conversation also forgets the session: the next request with
 that session key starts a new conversation.
+
+A call started through Radioso's session start also records the data
+residency region of the ElevenLabs account and, once the page reports it,
+ElevenLabs's id for the call. Together they name the call's recording; see
+[Recordings](#recordings).
+
+## Recordings
+
+ElevenLabs records each call and keeps the audio in your ElevenLabs account.
+Radioso keeps no audio. What it keeps is where to find it: when the website
+embed (or [your own page](#start-sessions-from-your-own-page)) has opened a
+session that Radioso started, it reports ElevenLabs's id for the call with
+`POST /api/v1/public/chat/{token}/voice/sessions/{sessionKey}/vendor-conversation`
+and `{ "vendorConversationId": "conv_…" }`. Before storing it, Radioso asks
+ElevenLabs, with the workspace's key and on the account's region host, which
+agent the conversation was held on, and stores the id only when that is the
+ElevenLabs agent the session was started on. So a visitor cannot attach
+another call from the same ElevenLabs account. Radioso takes the id once, from the same website
+embed public session the session was started for, within an hour of the
+start, and only ever uses it to look the recording up with the workspace's
+own key. A session your page starts without Radioso's session start has no
+recording in Radioso.
+
+| Status | `error.code` | What it means |
+|---|---|---|
+| `204` | | The id is stored. |
+| `400` | `validation_error` | The session key is not a UUID, or the id is not 1 to 128 letters, digits, underscores and hyphens. |
+| `404` | `not_found` | No session this public session started waits for an id (it has one, its start expired, or Radioso never started it), or ElevenLabs says the conversation was held on another agent. Sending it again changes nothing. |
+| `503` | `voice_unavailable` | Radioso could not check the id with ElevenLabs now: ElevenLabs does not show the conversation yet (as can happen right after the call connects), the key cannot be read, or ElevenLabs did not answer. Send it again. |
+
+The website embed sends the report with `keepalive`, so it still goes out
+when the page closes, including for a call stopped while ElevenLabs was still
+opening it. It tries once more when the report does not get through, leaves a
+throttled (`429`) report for the call's end, and sends it again as the call
+ends if no `204` came back. The log line
+`Voice vendor conversation report was refused` or `… could not be checked`
+names the `outcome` (`no_session`, `vendor_agent_mismatch`,
+`vendor_not_found`, `already_reported`, `credential_*`, `vendor_failed`,
+`store_failed`), and `voice_vendor_conversation_report_total` counts them,
+`recorded` included.
+
+### Listen in the Inbox
+
+Teammates who can read the workspace's conversations hear the call from the
+Inbox: a voice conversation whose call has a recording shows **Listen** in
+the header, and the call plays in the pane. Each conversation starts silent,
+so going back to one never resumes its player. Behind it, a dashboard
+session's conversation detail (`GET /api/v1/history/chat/{conversationId}`)
+carries `recording: { "available": true }` when the page reported the call
+and the workspace holds an ElevenLabs key Radioso can read. Radioso answers
+that from its own records, without asking ElevenLabs, so a call that has just
+ended can read as available a little before ElevenLabs has its audio. Machine
+credentials get no `recording`. Ray's `conversation_transcript` says the same
+as `recordingAvailable`, and Ray never hears the audio.
+
+The player streams from
+`GET /api/v1/conversations/{conversationId}/recording`: Radioso asks
+ElevenLabs for the call's audio (`audio/mpeg`, unencoded) on the host of the
+account's data residency region, with the workspace's key, and passes it on
+with `Cache-Control: private, no-store`. The key, the ElevenLabs URL and the
+ElevenLabs id never reach the browser. The route takes dashboard sessions
+only, with the history read permission, and only from the dashboard's own
+pages. A browser request whose `Sec-Fetch-Site` is anything but
+`same-origin` gets `403`, so a link on another site cannot start a play
+under a teammate's name. `HEAD` gets `405`. An `<audio>` element cannot send
+`X-Workspace-Id`, so the workspace may come as a `workspaceId` query
+parameter, checked against the session the same way. A `Range` header naming
+one byte range (`bytes=1000-`, `bytes=1000-1999` or `bytes=-500`) goes on to
+ElevenLabs. The answer is `206` with ElevenLabs's `Content-Range` when
+ElevenLabs honours it, and the whole recording with `200` when it ignores
+the range. A stream that stops sending for 15 seconds while the player waits
+for it is closed.
+
+| Status | `error.code` | What it means |
+|---|---|---|
+| `404` | `not_found` | The conversation has no recording in Radioso, or ElevenLabs holds no audio for the call yet (it finishes the recording shortly after the call ends). |
+| `416` | | The byte range lies past the end of the recording; `Content-Range` names its length. |
+| `503` | `recording_unavailable` | There is a recording and it could not be read now. |
+
+The backend log line `Voice recording could not be read` says why, as
+`outcome`: `store_failed` or `credential_read_failed` (Radioso could not
+reach its database), `vendor_not_found`, `credential_missing`,
+`credential_unreadable` (enter the ElevenLabs key again), `vendor_failed`
+(ElevenLabs refused, did not answer within 5 seconds, or answered with
+something that is not audio; `vendorStatus: 401` means the stored key is
+wrong), or `audit_failed`. The `voice_recording_fetch_total` metric counts
+every outcome, `served`, `no_recording` and `range_not_satisfiable`
+included. A teammate who closes the player or seeks while ElevenLabs is
+still answering leaves no log line, no count and no audit event. Log lines
+and metrics carry ids only.
+
+### Every play is audited
+
+Every answer that carries audio first records a `conversation.recording_played`
+audit event with the conversation id, the teammate's user id, the vendor, and
+`partial: true` when the audio sent starts past the first byte, as it does
+when the player seeks. A player that reads a recording in parts leaves one
+event per part. When the audit event cannot be written, the recording does
+not play.
+
+### Deletion and retention
+
+The recording lives in your ElevenLabs account until it is deleted there,
+by you or by the retention you set on the ElevenLabs agent, or until Radioso
+deletes it. Deleting the conversation (`DELETE /api/v1/history/chat/{conversationId}`),
+its visitor (`DELETE /api/v1/history/visitors/{visitorId}`), the workspace or
+the organization asks ElevenLabs to delete each call's conversation, audio
+included, on the account's region host, after the deletion has gone through.
+A visitor deletion also reaches a call the widget started for that visitor
+whose first turn never came, which has no conversation in Radioso, by the
+visitor's key; a workspace or organization deletion reaches every such call.
+Radioso reads the recordings and the key first, because the deletion takes
+both with it. For a conversation or a visitor that read runs in the
+deletion's own transaction and holds the call's session rows, so a report
+arriving meanwhile waits; when it fails, the deletion fails whole and can be
+sent again, rather than go on without knowing where the recordings are.
+Deleting an agent deletes no recording: its conversations stay, and so do
+their recordings, which still play from the Inbox and go when their
+workspace does. Radioso's record of where a recording is also outlives the
+call's conversation, so a workspace deletion still reaches a recording whose
+conversation was deleted before it.
+
+Each recording Radioso deletes is recorded as a
+`conversation.recording_deleted` audit event with the conversation id, the
+vendor and `outcome` (`deleted`, or `already_absent` when ElevenLabs no
+longer held it), beside the conversation's own `conversation.erased` or
+`visitor.erased` event. When a workspace is deleted, the event belongs to the
+organization and names `deletedWorkspaceId`, so the organization keeps its
+proof of erasure.
+When the organization itself is deleted, the event names it as
+`deletedAccountId`.
+
+The deletion never waits on ElevenLabs. Every deletion works through its
+recordings (for an organization, its workspaces in order) four calls at a
+time, for at most 20 seconds in all. A recording ElevenLabs refuses to delete or does not answer for, and
+every recording not yet deleted when the time runs out (a delete still
+waiting on ElevenLabs is let go of then), stays in your ElevenLabs account and is logged as `Voice recording was left at the vendor`
+with its `conversationId` and `vendorConversationId`. Radioso does not try
+again, so delete those from the ElevenLabs dashboard by that id.
+`voice_recording_delete_total` counts each outcome.
+
+Recordings are deleted with the workspace's ElevenLabs key. Once you remove
+that key, or replace it with a key for another ElevenLabs account, Radioso
+can neither play nor delete the recordings made on the old account. They
+stay there until you delete them in ElevenLabs.
+
+### Data residency
+
+The recording stays in the data residency region of the ElevenLabs account
+bound under **Runtime**, and Radioso reads and deletes it on that region's
+host only. For a workspace whose data must stay in the EU, use an
+ElevenLabs account on EU data residency and pick **European Union** under
+**Data residency**; a US account keeps EU callers' recordings in the US.
+
+### The recording notice
+
+Some jurisdictions require telling a caller the call is recorded. Write the
+notice per language on the agent's **Voice** card, under **Recording
+notice**, or as `recordingNotice` in the `voice` block, keyed by language tag
+like `fallbackLine`, one line of 1 to 200 characters each. The website embed
+shows the notice above the call bar for the whole call, and a session start
+hands your own page the same line as `recordingNotice`. The notice is in the
+call's language. When the agent has none in that language, it is in the
+agent's default language, then English, then whichever notice you wrote
+first, so a caller is always told when the agent has a notice at all. The
+agent does not speak it: the caller first hears ElevenLabs's own first
+message, so to have the call say it out loud, put the same words in the
+ElevenLabs agent's first message.
 
 ## Limits and failure modes
 

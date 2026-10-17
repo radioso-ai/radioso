@@ -17,8 +17,9 @@ const vendor = vi.hoisted(() => ({
 vi.mock('@/lib/api-public-voice', () => ({
   startPublicVoiceSession: vi.fn(async () => ({
     kind: 'started',
-    session: { vendor: 'elevenlabs', signedUrl: 'wss://vendor.test/s', sessionKey: 'session-key-1', locale: 'en' },
+    session: { vendor: 'elevenlabs', signedUrl: 'wss://vendor.test/s', sessionKey: 'session-key-1', locale: 'en', recordingNotice: 'This call is recorded.' },
   })),
+  reportVoiceVendorConversation: vi.fn(async () => undefined),
 }))
 
 vi.mock('@/lib/voice-runtime', async (importActual) => ({
@@ -30,7 +31,7 @@ vi.mock('@/lib/voice-runtime', async (importActual) => ({
         vendor.opens += 1
         if (vendor.hold) await vendor.hold
         vendor.callbacks = callbacks
-        return { end: vendor.end }
+        return { end: vendor.end, vendorConversationId: 'conv_1' }
       },
     },
   })),
@@ -72,6 +73,18 @@ describe('useVoiceSession', () => {
 
   afterEach(async () => {
     await act(async () => root.unmount())
+  })
+
+  it("shows the agent's recording notice for the call, reports the vendor's id for it, and forgets the notice when the conversation is cleared", async () => {
+    const { reportVoiceVendorConversation } = await import('@/lib/api-public-voice')
+    await act(async () => latest.talk())
+    await settle()
+
+    expect(latest.recordingNotice).toBe('This call is recorded.')
+    expect(reportVoiceVendorConversation).toHaveBeenCalledWith('launch-token', { sessionKey: 'session-key-1', vendorConversationId: 'conv_1' })
+
+    await act(async () => latest.reset())
+    expect(latest.recordingNotice).toBeNull()
   })
 
   it('adds nothing a vendor delivers after it hung up', async () => {

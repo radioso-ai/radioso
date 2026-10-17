@@ -242,6 +242,45 @@ describeIfDatabase("quality turns integration", () => {
     expect(page.total).toBe(2);
   });
 
+  it("leaves out the heard part of a voice reply cut off mid-stream, and keeps a whole reply marked interrupted", async () => {
+    const accountId = randomUUID();
+    const workspaceId = randomUUID();
+    const agentId = randomUUID();
+    const conversationId = randomUUID();
+    await database.query(
+      `INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, $2, $3, $4)`,
+      [accountId, "Voice Account", `voice-${accountId}@example.com`, "hash"],
+    );
+    await database.query(
+      `INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, $3, $4)`,
+      [workspaceId, accountId, "Voice WS", `vq-${workspaceId.slice(0, 8)}`],
+    );
+    await database.query(`INSERT INTO agents (id, workspace_id, name) VALUES ($1, $2, $3)`, [agentId, workspaceId, "Voice Bot"]);
+    await database.query(
+      `INSERT INTO conversations (id, workspace_id, agent_id, source_channel) VALUES ($1, $2, $3, 'voice')`,
+      [conversationId, workspaceId, agentId],
+    );
+    const wholeId = randomUUID();
+    const interruptedId = randomUUID();
+    const heardPartId = randomUUID();
+    await database.query(
+      `INSERT INTO messages (id, conversation_id, workspace_id, role, content, skill_name, skill_outcome, skill_status, metadata_json, created_at)
+       VALUES
+         ($1, $4, $5, 'assistant', 'Whole refusal', 'retrieval.answer', 'no_context', 'completed', '{}'::jsonb, $6),
+         ($2, $4, $5, 'assistant', 'Interrupted refusal', 'retrieval.answer', 'no_context', 'completed',
+          '{"interruption":{"heardCharacterCount":5,"spokenCharacterCount":19}}'::jsonb, $7),
+         ($3, $4, $5, 'assistant', 'Heard part', 'retrieval.answer', 'no_context', 'completed',
+          '{"interruption":{"heardCharacterCount":10,"spokenCharacterCount":10,"partial":true}}'::jsonb, $8)`,
+      [wholeId, interruptedId, heardPartId, conversationId, workspaceId, "2026-05-24T10:00:00.000Z", "2026-05-24T10:00:01.000Z", "2026-05-24T10:00:02.000Z"],
+    );
+
+    const service = new QualityTurnsService(database.kysely, stubOutcomeCatalog(), unrecordedConversationActivity);
+    const page = await service.listLowQualityTurns(workspaceId, { limit: 25 });
+
+    expect(page.items.map((item) => item.assistantMessageId).sort()).toEqual([wholeId, interruptedId].sort());
+    expect(page.total).toBe(2);
+  });
+
   it("filters by action tuple and scopes to workspace", async () => {
     const accountId = randomUUID();
     const workspaceA = randomUUID();

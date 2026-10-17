@@ -15,7 +15,7 @@ describe("what a caller heard of a turn's speech", () => {
   });
 
   it("counts the pieces heard to their end, and the characters heard into the piece the cut landed in", () => {
-    expect(heardSpeechOf({ operatorReplies: [], bridge: null, answer }, "We open at nine on weekdays.  ​Saturdays at")).toEqual({
+    expect(heardSpeechOf({ operatorReplies: [], bridge: null, answer }, "We open at nine on weekdays.  \u200BSaturdays at")).toEqual({
       operatorReplyPieces: 0,
       answerPieces: 1,
       answerHeardCharacterCount: 41,

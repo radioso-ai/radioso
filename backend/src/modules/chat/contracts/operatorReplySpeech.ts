@@ -4,9 +4,9 @@ import { z } from "zod";
 /**
  * Where a teammate's reply stands on a conversation whose caller hears replies rather than reads
  * them, as readers see it: `pending` from the moment it is stored, `spoken` once a turn of the call
- * spoke it and the call moved on past it (`spokenAt`: when that turn ended), `skipped` when it has
- * no words a call can speak. A call speaks only when its caller does, so a reply waits for the
- * caller's next turn.
+ * spoke it and the caller heard it to its end (`spokenAt`: when that turn ended), `skipped` when
+ * it has no words a call can speak. A call speaks only when its caller does, so a reply waits for
+ * the caller's next turn.
  */
 export const operatorReplySpeechSchema = z.object({
   state: z.enum(["pending", "spoken", "skipped"]),

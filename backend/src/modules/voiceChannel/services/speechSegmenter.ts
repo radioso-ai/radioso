@@ -53,7 +53,7 @@ export const wholeTextSpeech = (text: string): string[] => {
 const ENDS_LINE = /\n\s*$/u;
 
 /** A sentence of a streamed reply as it is spoken, and where it ends in the reply as written. */
-export interface SpeechPiece {
+interface SpeechPiece {
   text: string;
   /** The offset, in the reply's text as it streamed, right after the sentence's last spoken character. */
   writtenEnd: number;

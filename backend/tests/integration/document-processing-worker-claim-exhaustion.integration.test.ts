@@ -436,10 +436,29 @@ describeIntegration("DocumentProcessingWorker claim-expiry attempt exhaustion (P
   it("keeps booting when startup reconciliation for one job always throws", async () => {
     const documentId = await insertDocument("processing");
     const job = await jobs.enqueue({ documentId, workspaceId, documentRevision: 1 });
-    await jobs.claimById(job.id, new Date());
+    // claimById's own available_at<=now check compares this process's clock
+    // against the row's available_at, stamped by the database's own now()
+    // at enqueue time. A few seconds of headroom (the same margin used
+    // elsewhere in this file) keeps the claim itself from being the thing
+    // under test here.
+    const claimed = await jobs.claimById(job.id, secondsFromNow(5));
+    expect(claimed?.status).toBe("processing");
 
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
-    vi.spyOn(documents, "findByIdAndWorkspaceId").mockRejectedValueOnce(new Error("db blip"));
+    // listProcessingJobs() is global, not scoped to this test's workspace —
+    // by design, a recovery sweep must find any stuck job, not just ones in
+    // one workspace. So this only throws for our own document, rather than
+    // consuming a single "once" rejection that unrelated in-flight jobs
+    // elsewhere in the suite could just as easily claim first.
+    const originalFindByIdAndWorkspaceId = documents.findByIdAndWorkspaceId.bind(documents);
+    const findSpy = vi
+      .spyOn(documents, "findByIdAndWorkspaceId")
+      .mockImplementation(async (queriedDocumentId, queriedWorkspaceId) => {
+        if (queriedDocumentId === documentId) {
+          throw new Error("db blip");
+        }
+        return originalFindByIdAndWorkspaceId(queriedDocumentId, queriedWorkspaceId);
+      });
     const worker = new DocumentProcessingWorker(
       documents,
       jobs,
@@ -453,6 +472,7 @@ describeIntegration("DocumentProcessingWorker claim-expiry attempt exhaustion (P
 
     await expect(worker.start()).resolves.toBeUndefined();
     await worker.stop();
+    findSpy.mockRestore();
 
     expect(logger.error).toHaveBeenCalledWith(
       expect.objectContaining({ role: "worker", jobId: job.id, errorClass: "Error" }),

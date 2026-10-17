@@ -3,6 +3,7 @@ import { createDefaultApplicationComposition } from "../../src/app/composition/d
 import { chatTurnQueuedActionTypes } from "../../src/app/composition/applicationModule.js";
 import { createAgentPublicProfileComposition } from "../../src/app/composition/agentDiscovery.js";
 import {
+  createVoiceChannelComposition,
   createVoiceRecordingComposition,
   createVoiceSessionStartComposition,
   refreshEmbedConfigsOnVoiceVendorKeyChange,
@@ -54,7 +55,6 @@ import { createSkillOutcomeCapabilityProvider } from "../../src/modules/chat/ser
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
 import {
-  VoiceTurnService,
   type VoiceRecordingStore,
   type VoiceRecordingToErase,
   type VoiceSessionRef,
@@ -192,7 +192,6 @@ import { SlackSkillDefinitionService } from "../../src/modules/slackSkills/publi
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import {
   ConversationOwnershipService,
-  isHumanOwned,
   OperatorIdentityResolver,
   OperatorReplyService,
 } from "../../src/modules/handoff/public.js";
@@ -2986,19 +2985,15 @@ export const createTestDependencies = (overrides: {
     }),
     chatHistoryService,
     assistantChatService,
-    voiceTurns: new VoiceTurnService({
+    voiceTurns: createVoiceChannelComposition({
       sessions: voiceSessions,
-      starts: voiceSessions,
-      chat: { streamTurn: (request) => assistantChatService.streamAnswer({ ...request, stream: true }) },
-      agents: {
-        findVoiceProfile: async ({ workspaceId, agentId }) => {
-          const agent = await agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
-          return agent ? { voice: agent.voice, defaultLocale: agent.assistantDefaultLocale } : null;
-        },
-      },
-      routines: { isRoutineActive: async (conversationId) => (await routineStateStore.loadActive({ sessionId: conversationId })) !== null },
-      ownership: { isHumanOwned: async (conversationId) => isHumanOwned(await conversationOwnershipRepository.load(conversationId)) },
-      metrics: metricsRegistry,
+      assistantChatService,
+      agentRepository,
+      routineStates: routineStateStore,
+      conversationOwnership: conversationOwnershipRepository,
+      replies: messageRepository,
+      auditService,
+      metricsRegistry,
       logger,
     }),
     voiceSessionStarts,

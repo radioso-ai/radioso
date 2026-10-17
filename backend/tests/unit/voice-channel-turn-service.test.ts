@@ -938,7 +938,11 @@ describe("VoiceTurnService", () => {
       { atMs, event: { ...done(), answer: text } as ChatStreamEvent },
     ];
 
-    const fakeNotes = () => ({ replyInterrupted: vi.fn().mockResolvedValue(undefined), replyReplayed: vi.fn().mockResolvedValue(undefined) });
+    const fakeNotes = () => ({
+      replyInterrupted: vi.fn().mockResolvedValue(undefined),
+      replyReplayed: vi.fn().mockResolvedValue(undefined),
+      operatorRepliesSpoken: vi.fn().mockResolvedValue(undefined),
+    });
     const fakeMetrics = () => ({ observeHistogram: vi.fn(), incrementCounter: vi.fn() });
 
     const service = (chat: { streamTurn: (request: VoiceChatTurnRequest) => AsyncIterable<ChatStreamEvent> }, overrides: Partial<ConstructorParameters<typeof VoiceTurnService>[0]> = {}) =>
@@ -1407,6 +1411,189 @@ describe("VoiceTurnService", () => {
         await next;
 
         expect(notes.replyInterrupted).not.toHaveBeenCalled();
+      });
+    });
+
+    describe("a teammate's replies to the caller", () => {
+      const fourWorks = { messageId: "77777777-7777-4777-8777-777777777771", text: "Yes, **four** works." };
+      const bringCard = { messageId: "77777777-7777-4777-8777-777777777772", text: "Bring your card, please. See you then" };
+
+      /** Chat on a turn a person owns, once a teammate has written: no waiting line, no reply. */
+      const silentWhileHumanOwned: Step[] = [
+        { atMs: 0, event: { type: "status", stage: "interpreting" } },
+        { atMs: 0, event: { type: "status", stage: "composing" } },
+        { atMs: 50, event: waitingDone("") },
+      ];
+
+      /** Chat's store of the conversation's teammate replies: a reply stays pending until the note marks it spoken. */
+      const teammateReplies = (...replies: Array<{ messageId: string; text: string }>) => {
+        const pending = new Map(replies.map((reply, index) => [reply.messageId, { ...reply, createdAt: new Date(Date.UTC(2026, 9, 17, 10, index)) }]));
+        const notes = fakeNotes();
+        notes.operatorRepliesSpoken.mockImplementation(async ({ messageIds }: { messageIds: string[] }) => {
+          for (const messageId of messageIds) pending.delete(messageId);
+        });
+        return {
+          notes,
+          operatorReplies: { pendingOperatorReplies: vi.fn(async () => [...pending.values()]) },
+        };
+      };
+
+      const speechOf = (events: VoiceTurnEvent[]) => events.filter((event) => event.type === "speech");
+
+      it("speaks the pending replies in order on a turn a person owns, in place of the waiting line, and marks them spoken", async () => {
+        const { notes, operatorReplies } = teammateReplies(fourWorks, bringCard);
+        const metrics = fakeMetrics();
+        const logger = fakeLogger();
+        const chat = supersedingChat([silentWhileHumanOwned]);
+        const turns = service(chat, { ownership: conversationOwnership(true), operatorReplies, notes, metrics, logger });
+
+        const turn = start(turns, input({ utterance: "Can I come at four?" }));
+        await vi.runAllTimersAsync();
+        const events = await turn;
+
+        expect(events.map((event) => event.type)).toEqual(["conversation", "speech", "speech", "speech", "speech", "outcome"]);
+        expect(speechOf(events)).toEqual([
+          { type: "speech", text: "Yes, four works.\n", last: false },
+          { type: "speech", text: "Bring your card, please. ", last: false },
+          { type: "speech", text: "See you then\n", last: false },
+          { type: "speech", text: "", last: true },
+        ]);
+        expect(events.at(-1)).toEqual({ type: "outcome", outcome: { kind: "continue" } });
+        expect(chat.requests.map((request) => request.message)).toEqual(["Can I come at four?"]);
+        expect(operatorReplies.pendingOperatorReplies).toHaveBeenCalledWith({ workspaceId, conversationId });
+        expect(notes.operatorRepliesSpoken).toHaveBeenCalledTimes(1);
+        expect(notes.operatorRepliesSpoken).toHaveBeenCalledWith({ workspaceId, conversationId, messageIds: [fourWorks.messageId, bringCard.messageId] });
+        expect(metrics.incrementCounter).toHaveBeenCalledWith("voice_operator_reply_spoken_total", expect.objectContaining({ value: 2 }));
+        expect(logger.info).toHaveBeenCalledWith(
+          expect.objectContaining({ result: "completed", outcome: "continue", speechPieceCount: 4, spokenOperatorReplies: 2 }),
+          "Voice turn finished",
+        );
+        expect(metrics.incrementCounter).not.toHaveBeenCalledWith("voice_bridge_emitted_total", expect.anything());
+      });
+
+      it("speaks a reply once: the next turn hears chat again", async () => {
+        const waiting = "Thanks for waiting.";
+        const { notes, operatorReplies } = teammateReplies(fourWorks);
+        const chat = supersedingChat([silentWhileHumanOwned, [
+          { atMs: 0, event: { type: "chunk", text: waiting } },
+          { atMs: 0, event: waitingDone(waiting) },
+        ]]);
+        const logger = fakeLogger();
+        const turns = service(chat, { ownership: conversationOwnership(true), operatorReplies, notes, logger });
+
+        const first = start(turns, input({ utterance: "Four?" }));
+        await vi.runAllTimersAsync();
+        await first;
+        const second = start(turns, input({ utterance: "Great, thanks." }));
+        await vi.runAllTimersAsync();
+
+        expect(spokenText(await second)).toBe(waiting);
+        expect(notes.operatorRepliesSpoken).toHaveBeenCalledTimes(1);
+        const [, secondLog] = logger.info.mock.calls.map(([fields]) => fields as Record<string, unknown>);
+        expect(secondLog).not.toHaveProperty("spokenOperatorReplies");
+      });
+
+      it("speaks a reply still pending at hand-back ahead of the agent's answer, which the bridge and the limit still cover", async () => {
+        const { notes, operatorReplies } = teammateReplies(fourWorks);
+        const metrics = fakeMetrics();
+        const chat = supersedingChat([[
+          { atMs: 0, event: { type: "conversation", conversationId } },
+          { atMs: 0, event: { type: "status", stage: "searching" } },
+          { atMs: 3_000, event: { type: "chunk", text: "We open at nine." } },
+          { atMs: 3_000, event: done() },
+        ]]);
+        const turns = service(chat, { operatorReplies, notes, metrics });
+
+        const turn = start(turns, input({ utterance: "And when do you open?" }));
+        await vi.runAllTimersAsync();
+        const events = await turn;
+
+        expect(events).toEqual([
+          { type: "conversation", conversationId },
+          { type: "speech", text: "Yes, four works.\n", last: false },
+          { type: "bridge", text: "Let me check that for you." },
+          { type: "speech", text: "We open at nine.", last: true },
+          { type: "outcome", outcome: { kind: "continue" } },
+        ]);
+        expect(notes.operatorRepliesSpoken).toHaveBeenCalledWith({ workspaceId, conversationId, messageIds: [fourWorks.messageId] });
+        expect(metrics.observeHistogram).toHaveBeenCalledWith("voice_turn_first_speech_ms", expect.objectContaining({ labels: { bridged: "yes" } }));
+      });
+
+      it("counts what the caller heard of the agent's reply after a teammate's reply, not the teammate's words", async () => {
+        const { notes, operatorReplies } = teammateReplies(fourWorks);
+        const chat = supersedingChat([answered("We open at nine. See you then!"), answered("Yes.")]);
+        const turns = service(chat, { operatorReplies, notes });
+
+        const first = start(turns, input({ utterance: "And when do you open?" }));
+        await vi.runAllTimersAsync();
+        await first;
+        const next = start(turns, input({ utterance: "Sorry, on Sundays?", heardUntil: "Yes, four works.\n \u200BWe open at nine.  \u200BSee" }));
+        await vi.runAllTimersAsync();
+        await next;
+
+        expect(notes.replyInterrupted).toHaveBeenCalledWith({
+          workspaceId, conversationId, assistantMessageId, heardCharacterCount: 20, spokenCharacterCount: 30,
+        });
+      });
+
+      it("leaves the replies pending when the runtime hung up before they left, so the next turn speaks them", async () => {
+        const { notes, operatorReplies } = teammateReplies(fourWorks);
+        const chat = supersedingChat([silentWhileHumanOwned, silentWhileHumanOwned]);
+        const turns = service(chat, { ownership: conversationOwnership(true), operatorReplies, notes });
+        const hungUp = new AbortController();
+        hungUp.abort();
+
+        const lost = start(turns, input({ utterance: "Four?" }), hungUp.signal);
+        await vi.runAllTimersAsync();
+        await lost;
+        expect(notes.operatorRepliesSpoken).not.toHaveBeenCalled();
+
+        const next = start(turns, input({ utterance: "Hello?" }));
+        await vi.runAllTimersAsync();
+
+        expect(speechOf(await next)[0]).toEqual({ type: "speech", text: "Yes, four works.\n", last: false });
+        expect(notes.operatorRepliesSpoken).toHaveBeenCalledTimes(1);
+      });
+
+      it("speaks nothing of them on a request a newer one overtook while it set up; the newer one speaks them", async () => {
+        const { notes, operatorReplies } = teammateReplies(fourWorks);
+        const read = operatorReplies.pendingOperatorReplies.getMockImplementation()!;
+        operatorReplies.pendingOperatorReplies.mockImplementation(() => new Promise((resolve) => {
+          setTimeout(() => resolve(read()), 150);
+        }));
+        const chat = supersedingChat([silentWhileHumanOwned]);
+        const turns = service(chat, { ownership: conversationOwnership(true), operatorReplies, notes });
+
+        const overtaken = start(turns, input({ utterance: "Four" }));
+        await vi.advanceTimersByTimeAsync(100);
+        const newest = start(turns, input({ utterance: "Four o'clock?" }));
+        await vi.runAllTimersAsync();
+
+        expect(await overtaken).toEqual([{ type: "outcome", outcome: { kind: "continue" } }]);
+        expect(speechOf(await newest)[0]).toEqual({ type: "speech", text: "Yes, four works.\n", last: false });
+        expect(notes.operatorRepliesSpoken).toHaveBeenCalledTimes(1);
+      });
+
+      it("runs the turn as chat answers it when the pending replies cannot be read, and warns", async () => {
+        const waiting = "Thanks for waiting.";
+        const logger = fakeLogger();
+        const notes = fakeNotes();
+        const operatorReplies = { pendingOperatorReplies: vi.fn().mockRejectedValue(new Error("connection reset")) };
+        const chat = supersedingChat([[
+          { atMs: 0, event: { type: "chunk", text: waiting } },
+          { atMs: 0, event: waitingDone(waiting) },
+        ]]);
+        const turns = service(chat, { ownership: conversationOwnership(true), operatorReplies, notes, logger });
+
+        const turn = start(turns);
+        await vi.runAllTimersAsync();
+
+        expect(spokenText(await turn)).toBe(waiting);
+        expect(notes.operatorRepliesSpoken).not.toHaveBeenCalled();
+        expect(logger.warn).toHaveBeenCalledWith(
+          { agentId, vendor: "elevenlabs", conversationId, errorClass: "Error" },
+          "Voice turn could not read the teammate's pending replies; they wait for the next turn",
+        );
       });
     });
   });

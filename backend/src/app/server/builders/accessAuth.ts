@@ -160,13 +160,14 @@ export const buildWorkspaceProviderCredentialsService = (input: {
   auditService: AuditPort;
   env: Pick<Env, "CONNECTOR_ENCRYPTION_KEY">;
   logger: Pick<AppLogger, "warn">;
-  repositories: { workspaceProviderCredentialsRepository: WorkspaceProviderCredentialsRepositoryPort };
+  repositories: { workspaceProviderCredentialsRepository: WorkspaceProviderCredentialsRepositoryPort; documentProcessingJobRepository?: { requeueProviderCredentialFailures(workspaceId: string): Promise<number> } };
 }): WorkspaceProviderCredentialsService => {
   const service = new WorkspaceProviderCredentialsService(
     input.repositories.workspaceProviderCredentialsRepository,
     input.auditService,
     { key: input.env.CONNECTOR_ENCRYPTION_KEY },
     input.logger,
+    input.repositories.documentProcessingJobRepository,
   );
   service.onDecryptError((error, provider) => {
     input.logger.warn(

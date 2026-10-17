@@ -13,7 +13,7 @@ import type { BillingCustomerRepository, BillingCustomerRow } from "./billingCus
 import { PostgresBillingCustomerRepository } from "./billingCustomerRepository.js";
 import type { AutoTopUpRepository, AutoTopUpSettingsRow } from "./autoTopUpRepository.js";
 import { PostgresAutoTopUpRepository } from "./autoTopUpRepository.js";
-import { isAutoTopUpAvailable, isTopUpEligible, lookupKeyFor, upgradePlanIdFor } from "./planPricing.js";
+import { isAutoTopUpAvailable, isTopUpEligible, lookupKeyFor, upgradePlanIdFor, upgradePlanIdsFor } from "./planPricing.js";
 import { handleBillingWebhookEvent } from "./billingWebhookHandler.js";
 import { StripeSignatureVerificationError, type StripeGateway } from "./stripeGateway.js";
 
@@ -202,6 +202,7 @@ export const createBillingRoutes = (
         interval: row?.interval ?? null,
         currentPeriodEnd: row?.currentPeriodEnd ? row.currentPeriodEnd.toISOString() : null,
         upgradePlanId: upgradePlanIdFor(plan.id),
+        upgradePlanIds: upgradePlanIdsFor(plan.id),
         // Resolved against the account's real (possibly catalog-unknown) plan id, not the
         // display fallback above — a legacy or hand-assigned profile must read ineligible rather
         // than inheriting the free plan's display fallback.
@@ -298,6 +299,17 @@ export const createBillingRoutes = (
       if (!plan?.stripe || !lookupKey) {
         throw new HttpError(409, "plan_not_self_serve", "This plan cannot be purchased through self-serve checkout.");
       }
+      const existing = await repository.findByAccount(accountId);
+      // Stripe's portal mutates the existing subscription with its configured
+      // `always_invoice` proration. Checkout would create a second subscription.
+      if (existing?.stripeSubscriptionId && (existing.status === "active" || existing.status === "past_due")) {
+        const session = await activeGateway.createPortalSession({
+          customerId: existing.stripeCustomerId,
+          returnUrl: `${appBaseUrl}${body.returnPath}`,
+        });
+        res.status(200).json({ url: session.url, mode: "portal" });
+        return;
+      }
       const priceRef = await activeGateway.findPriceByLookupKey(lookupKey);
       if (!priceRef) {
         throw new HttpError(503, "billing_not_configured", "The plan price is not configured in Stripe.");
@@ -378,6 +390,19 @@ export const createBillingRoutes = (
         appBaseUrl,
         metadataKey: config.metadataKey,
       });
+      const subscriptionProductId = event.type === "checkout.session.completed" && "session" in event
+        ? event.session.productId
+        : event.type === "customer.subscription.updated" && "subscription" in event
+          ? event.subscription.productId
+          : null;
+      const subscriptionProduct = result.outcome === "unmapped_price" && subscriptionProductId
+        ? await activeGateway.getProduct(subscriptionProductId)
+        : null;
+      if (subscriptionProduct && Object.hasOwn(subscriptionProduct.metadata, config.metadataKey)) {
+        // A revision without the new catalog entry must make Stripe retry after
+        // rollout rather than acknowledge a price it cannot map.
+        throw new HttpError(503, "billing_price_unmapped", "Subscription price is not mapped by this deployment.");
+      }
       res.status(200).json({ received: true, outcome: result.outcome });
     } catch (error) {
       next(error);

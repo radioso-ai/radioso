@@ -152,6 +152,31 @@ describe("desiredStripeCatalog", () => {
     }
   });
 
+  it("creates the managed Planet product and its approved monthly and yearly prices", () => {
+    const target = desired();
+
+    expect(target.products).toContainEqual({
+      id: "radioso_plan_planet_managed",
+      name: "Radioso Planet + managed models",
+      taxCode: SAAS_TAX_CODE,
+      metadata: { [STRIPE_PLAN_METADATA_KEY]: "planet_managed" },
+    });
+    expect(target.prices).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        lookupKey: "planet_managed_month",
+        productId: "radioso_plan_planet_managed",
+        unitAmount: 74900,
+        recurringInterval: "month",
+      }),
+      expect.objectContaining({
+        lookupKey: "planet_managed_year",
+        productId: "radioso_plan_planet_managed",
+        unitAmount: 749000,
+        recurringInterval: "year",
+      }),
+    ]));
+  });
+
   it("maps the top-up to a one-time price on a product that grants no plan", () => {
     const target = desired();
     const product = target.products.find((candidate) => candidate.id === "radioso_topup");

@@ -22,7 +22,7 @@ composition calls them and assembles the result.
 - `applicationModule.ts`: module registration shape.
 - `builtIn/`: built-in module registrations for optional surfaces that ship
   with the default app.
-- `workspaceLlmCapabilityResolver.ts`: workspace-scoped LLM capability wiring. Precedence is agent override → workspace preference → env default, then a registered `ManagedModelPolicy` (`shared/domain/managedModelPolicy.ts`, `registerManagedModelPolicy`) may replace the candidate for a workspace that holds no key of its own for the candidate provider; `resolvedBy` on the result names the winning step.
+- `workspaceLlmCapabilityResolver.ts`: workspace-scoped LLM capability wiring. Precedence is agent override → workspace preference → env default, then a registered `ManagedModelPolicy` (`shared/domain/managedModelPolicy.ts`, `registerManagedModelPolicy`) may replace the candidate for a workspace that holds no key of its own for the candidate provider, including on `planet_managed`; a workspace key for that provider keeps the candidate, and removing the key restores the managed selection. `resolvedBy` on the result names the winning model-selection step.
 - `backend/src/modules/*/composition.ts`: module-owned construction helpers.
 - `backgroundJobs.ts`: the durable background job queue, the runtime the worker
   drains, and the dead-letter retention sweep. Modules enqueue through the

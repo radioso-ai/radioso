@@ -27,6 +27,7 @@ import {
   PLAN_USAGE_KIND_LABELS,
   type PlanUsageKind,
 } from '@/lib/plan-card-usage'
+import { planUpgradeDestination, planUpgradeOptions } from '@/lib/plan-upgrade-options'
 
 type MonthlyConversations = NonNullable<AccountUsageSummary['monthlyConversations']>
 type PendingAction = 'upgrade' | 'pack' | 'portal' | null
@@ -116,8 +117,8 @@ export function PlanCard({ monthlyConversations }: { monthlyConversations: Month
     }
   }
 
-  const runPortal = async () => {
-    setPendingAction('portal')
+  const runPortal = async (action: 'upgrade' | 'portal' = 'portal') => {
+    setPendingAction(action)
     setError(null)
     try {
       const { url } = await enterpriseBillingApi.createPortal({ returnPath: pathname })
@@ -152,6 +153,22 @@ export function PlanCard({ monthlyConversations }: { monthlyConversations: Month
   const largestKind = largestPlanUsageKind(monthlyConversations.byKind)
   // The backend derives the next self-serve plan from the catalog; the card never names plans.
   const upgradePlanId = billing.upgradePlanId
+  const upgradePlanIds = billing.upgradePlanIds ?? (upgradePlanId ? [upgradePlanId] : [])
+  const upgradePlan = plans.plans.find((entry) => entry.id === upgradePlanId)
+  const managedModelUpgrade = plan?.models === 'byok'
+    && upgradePlan?.models === 'managed'
+    && plan.monthlyConversations === upgradePlan.monthlyConversations
+    && plan.storedBytes === upgradePlan.storedBytes
+    && plan.monthlyIndexedBytes === upgradePlan.monthlyIndexedBytes
+    && plan.documents === upgradePlan.documents
+    && plan.support === upgradePlan.support
+  const managedModelPremium = managedModelUpgrade
+    ? upgradePlan.priceCents - plan.priceCents
+    : null
+  const upgradeLabel = managedModelPremium !== null && managedModelPremium > 0
+    ? `Use Radioso's models (+${formatPlanPriceCents(managedModelPremium, plans.currency)}/month)`
+    : 'Upgrade'
+  const upgradeDestination = planUpgradeDestination(billing.status)
 
   const priceLabel = plan
     ? plan.priceCents === 0
@@ -178,20 +195,47 @@ export function PlanCard({ monthlyConversations }: { monthlyConversations: Month
 
   const actions = (
     <div className="flex flex-wrap items-center gap-2">
-      {upgradePlanId ? (
+      {upgradePlanIds.length > 0 ? (
         <>
-          <SegmentedControl
-            value={checkoutInterval}
-            onValueChange={(nextInterval) => setCheckoutInterval(nextInterval)}
-            options={INTERVAL_OPTIONS}
-            aria-label="Billing interval"
-          />
-          <Button
-            onClick={() => void runCheckout({ plan: upgradePlanId, interval: checkoutInterval, returnPath: pathname }, 'upgrade')}
-            disabled={pendingAction !== null}
-          >
-            Upgrade
-          </Button>
+          {upgradeDestination === 'checkout' ? (
+            <SegmentedControl
+              value={checkoutInterval}
+              onValueChange={(nextInterval) => setCheckoutInterval(nextInterval)}
+              options={INTERVAL_OPTIONS}
+              aria-label="Billing interval"
+            />
+          ) : null}
+          {planUpgradeOptions(billing.planId, upgradePlanIds).map(({ planId, label, requiresWorkspaceKey }) => {
+            const targetPlan = plans.plans.find((entry) => entry.id === planId)
+            const preservesWorkspaceProviderKeys = plan?.models === 'byok'
+              && targetPlan?.models === 'managed'
+              && plan.monthlyConversations === targetPlan.monthlyConversations
+              && plan.storedBytes === targetPlan.storedBytes
+            return (
+              <div key={planId} className="space-y-1">
+                <Button
+                  onClick={() => {
+                    if (upgradeDestination === 'portal') {
+                      void runPortal('upgrade')
+                      return
+                    }
+                    void runCheckout({ plan: planId, interval: checkoutInterval, returnPath: pathname }, 'upgrade')
+                  }}
+                  disabled={pendingAction !== null}
+                >
+                  {planId === upgradePlanId ? upgradeLabel : label}
+                </Button>
+                {requiresWorkspaceKey ? (
+                  <p className="text-xs text-amber-700 dark:text-amber-300">Planet requires a workspace provider key. Add one in Settings before using chat or ingestion.</p>
+                ) : null}
+                {preservesWorkspaceProviderKeys ? (
+                  <p className="max-w-md text-xs text-muted-foreground">
+                    Stored workspace keys stay active for their selected capabilities. Remove a key in Settings to use Radioso&apos;s managed default for that capability.
+                  </p>
+                ) : null}
+              </div>
+            )
+          })}
         </>
       ) : null}
       {billing.topUpAvailable ? (

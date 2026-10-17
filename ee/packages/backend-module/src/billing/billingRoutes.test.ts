@@ -526,6 +526,23 @@ describe("PUT /api/v1/ee/billing/auto-top-up", () => {
 });
 
 describe("POST /api/v1/ee/billing/checkout", () => {
+  it.each(["planet", "planet_managed"])("uses the subscription portal for an active subscriber selecting %s", async (plan) => {
+    const repository = new FakeBillingCustomerRepository();
+    const gateway = createFakeGateway();
+    repository.rows.set(sessionAccountId, {
+      accountId: sessionAccountId, stripeCustomerId: "cus_active", stripeSubscriptionId: "sub_active", priceId: "price_old",
+      interval: "month", status: "active", billingEmail: null, currentPeriodEnd: null, createdAt: new Date(), updatedAt: new Date(),
+    });
+    const response = await withSessionCookie(
+      request(createApp(configuredConfig, { gateway, repository }))
+        .post("/api/v1/ee/billing/checkout")
+        .send({ plan, interval: "month", returnPath: "/billing" }),
+    );
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ mode: "portal" });
+    expect(gateway.createCheckoutSession).not.toHaveBeenCalled();
+    expect(gateway.createPortalSession).toHaveBeenCalledWith({ customerId: "cus_active", returnUrl: "https://app.example.com/billing" });
+  });
   it("returns 503 when billing is unconfigured", async () => {
     await withSessionCookie(
       request(createApp(unconfiguredConfig))
@@ -572,6 +589,17 @@ describe("POST /api/v1/ee/billing/checkout", () => {
     expect(gateway.createCheckoutSession).toHaveBeenCalledWith(
       expect.objectContaining({ mode: "subscription", clientReferenceId: sessionAccountId }),
     );
+  });
+
+  it("checks out the managed Planet price through the catalog lookup key", async () => {
+    const gateway = createFakeGateway();
+    await withSessionCookie(
+      request(createApp(configuredConfig, { gateway }))
+        .post("/api/v1/ee/billing/checkout")
+        .send({ plan: "planet_managed", interval: "month", returnPath: "/usage" }),
+    ).expect(200);
+
+    expect(gateway.findPriceByLookupKey).toHaveBeenCalledWith("planet_managed_month");
   });
 
   it("returns a checkout URL for the top-up pack on a paid plan", async () => {
@@ -706,5 +734,67 @@ describe("POST /api/v1/ee/billing/webhook", () => {
       .expect(200);
 
     expect(response.body).toEqual({ received: true, outcome: "ignored" });
+  });
+
+  it("returns 503 for an unknown Radioso plan so Stripe retries after rollout", async () => {
+    const event: StripeWebhookEvent = {
+      id: "evt_future_plan",
+      type: "checkout.session.completed",
+      session: {
+        id: "cs_future_plan",
+        mode: "subscription",
+        customerId: "cus_1",
+        clientReferenceId: sessionAccountId,
+        subscriptionId: "sub_future_plan",
+        priceId: "price_future_plan",
+        priceLookupKey: "future_plan_month",
+        productId: "prod_future_plan",
+        interval: "month",
+        currentPeriodEnd: null,
+      },
+    };
+    const gateway = createFakeGateway({
+      constructWebhookEvent: vi.fn(async () => event),
+      getProduct: vi.fn(async (id: string) => ({ id, metadata: { plan: "future_plan" } })),
+    });
+
+    const response = await request(createApp(configuredConfig, { gateway }))
+      .post("/api/v1/ee/billing/webhook")
+      .set("stripe-signature", "t=1,v1=good")
+      .send({ id: event.id })
+      .expect(503);
+
+    expect(response.body.error.code).toBe("billing_price_unmapped");
+  });
+
+  it("acknowledges an unmapped subscription product without Radioso plan metadata", async () => {
+    const event: StripeWebhookEvent = {
+      id: "evt_foreign_product",
+      type: "checkout.session.completed",
+      session: {
+        id: "cs_foreign_product",
+        mode: "subscription",
+        customerId: "cus_1",
+        clientReferenceId: sessionAccountId,
+        subscriptionId: "sub_foreign_product",
+        priceId: "price_foreign_product",
+        priceLookupKey: null,
+        productId: "prod_foreign_product",
+        interval: "month",
+        currentPeriodEnd: null,
+      },
+    };
+    const gateway = createFakeGateway({
+      constructWebhookEvent: vi.fn(async () => event),
+      getProduct: vi.fn(async (id: string) => ({ id, metadata: {} })),
+    });
+
+    const response = await request(createApp(configuredConfig, { gateway }))
+      .post("/api/v1/ee/billing/webhook")
+      .set("stripe-signature", "t=1,v1=good")
+      .send({ id: event.id })
+      .expect(200);
+
+    expect(response.body).toEqual({ received: true, outcome: "unmapped_price" });
   });
 });

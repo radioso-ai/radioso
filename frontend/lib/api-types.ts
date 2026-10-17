@@ -821,6 +821,8 @@ export interface EnterpriseBillingSummary {
   currentPeriodEnd: string | null
   /** Next self-serve plan above `planId`. Null at the catalog's self-serve ceiling. */
   upgradePlanId: string | null
+  /** Eligible upgrade destinations; Satellite has two Planet credential-policy choices. */
+  upgradePlanIds?: string[]
   /** Whether this account's plan may buy the prepaid top-up pack — false on the free plan and on
    *  a plan id the catalog does not recognize (a legacy or hand-assigned profile). Server-computed;
    *  the frontend never re-derives this from plan id, since it has no catalog of its own to check it against. */

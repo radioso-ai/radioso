@@ -106,6 +106,68 @@ describe("WorkspaceProviderCredentialsService", () => {
       expect(decryptField(stored!.ciphertext, TEST_KEY)).toBe("sk-test-1234567890");
     });
 
+    it("drains credential-blocked document work in bounded batches", async () => {
+      const recovery = {
+        requeueProviderCredentialFailures: vi.fn()
+          .mockResolvedValueOnce(100)
+          .mockResolvedValueOnce(100)
+          .mockResolvedValueOnce(2),
+      };
+      const recoveringService = new WorkspaceProviderCredentialsService(repo, audit, configWithKey, undefined, recovery);
+
+      await recoveringService.setApiKey({
+        workspaceId: WORKSPACE_ID,
+        provider: "openai",
+        apiKey: "sk-test-1234567890",
+        actor: { accountId: "acc-1" },
+      });
+
+      await vi.waitFor(() => expect(recovery.requeueProviderCredentialFailures).toHaveBeenCalledTimes(3));
+      expect(recovery.requeueProviderCredentialFailures).toHaveBeenNthCalledWith(1, WORKSPACE_ID, 100);
+      expect(recovery.requeueProviderCredentialFailures).toHaveBeenNthCalledWith(2, WORKSPACE_ID, 100);
+      expect(recovery.requeueProviderCredentialFailures).toHaveBeenNthCalledWith(3, WORKSPACE_ID, 100);
+    });
+
+    it("does not wait for document recovery before saving a credential", async () => {
+      let finishRecovery: ((count: number) => void) | undefined;
+      const recovery = {
+        requeueProviderCredentialFailures: vi.fn(() => new Promise<number>((resolve) => {
+          finishRecovery = resolve;
+        })),
+      };
+      const recoveringService = new WorkspaceProviderCredentialsService(repo, audit, configWithKey, undefined, recovery);
+
+      await expect(recoveringService.setApiKey({
+        workspaceId: WORKSPACE_ID,
+        provider: "openai",
+        apiKey: "sk-test-1234567890",
+        actor: { accountId: "acc-1" },
+      })).resolves.toBeUndefined();
+
+      expect(repo.rows.has(`${WORKSPACE_ID}:openai`)).toBe(true);
+      finishRecovery?.(0);
+    });
+
+    it("keeps a saved credential when asynchronous document recovery fails", async () => {
+      const logger = { warn: vi.fn() };
+      const recoveryError = new Error("recovery unavailable");
+      const recovery = { requeueProviderCredentialFailures: vi.fn(async () => Promise.reject(recoveryError)) };
+      const recoveringService = new WorkspaceProviderCredentialsService(repo, audit, configWithKey, logger, recovery);
+
+      await expect(recoveringService.setApiKey({
+        workspaceId: WORKSPACE_ID,
+        provider: "openai",
+        apiKey: "sk-test-1234567890",
+        actor: { accountId: "acc-1" },
+      })).resolves.toBeUndefined();
+
+      expect(repo.rows.has(`${WORKSPACE_ID}:openai`)).toBe(true);
+      await vi.waitFor(() => expect(logger.warn).toHaveBeenCalledWith(
+        { workspaceId: WORKSPACE_ID, err: recoveryError.message },
+        "Provider credential recovery failed",
+      ));
+    });
+
     it("retrieves and decrypts a stored api key", async () => {
       await service.setApiKey({
         workspaceId: WORKSPACE_ID,

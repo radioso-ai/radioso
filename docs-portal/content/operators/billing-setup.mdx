@@ -1,14 +1,14 @@
 ---
 title: "Billing setup"
 description: "Connect Stripe to Radioso Enterprise: sync the plan catalog into Stripe products, prices, customer portal, tax defaults, and webhook, then set the environment variables that turn billing on."
-last_updated: 2026-10-17
+last_updated: 2026-10-18
 ---
 
 # Billing setup
 
 Radioso Enterprise's plan card lets an account subscribe to a paid plan, buy a conversation top-up, and open the Stripe customer portal without an operator touching the console. All of it runs through Stripe Checkout and the Stripe customer portal; Radioso never stores a card number.
 
-The top-up pack is sold on Satellite and both Planet profiles, never on Comet: a free account plus a few packs would undercut Satellite. Each pack's conversations expire 12 months after purchase, with the oldest conversations spent first. `POST /api/v1/ee/billing/checkout` checks plan eligibility against the catalog before it creates a Stripe session, so a Comet account (or an account on a plan the catalog doesn't list) gets `409 top_up_unavailable` rather than a checkout URL.
+The top-up pack is sold on Satellite and Planet, never on Comet: a free account plus a few packs would undercut Satellite. Each pack's conversations expire 12 months after purchase, with the oldest conversations spent first. `POST /api/v1/ee/billing/checkout` checks plan eligibility against the catalog before it creates a Stripe session, so a Comet account (or an account on a plan the catalog doesn't list) gets `409 top_up_unavailable` rather than a checkout URL.
 
 Getting there takes three steps: run `stripe:sync` so your Stripe account matches the plan catalog, give Stripe Tax a head office address, and set the environment variables below. The same steps work for a Stripe sandbox and for live mode, so both accounts end up configured identically.
 
@@ -24,7 +24,7 @@ A self-hosted install that never sets `STRIPE_SECRET_KEY` runs with billing off 
 
 ## Sync the catalog into Stripe
 
-`@radioso/plan-catalog` (`ee/packages/plan-catalog/src/plans.json`) holds every number Radioso sells through self-serve billing: plan prices and the conversation top-up. The `stripe:sync` command reads it and makes the Stripe account behind `STRIPE_SECRET_KEY` match it. It creates or corrects the products, the lookup-keyed prices, the account's tax defaults, the customer portal configuration, and, when you pass a URL, the webhook endpoint. Run it as often as you like: once the account matches, it plans nothing.
+`@radioso/plan-catalog` (`ee/packages/plan-catalog/src/plans.json`) holds every number Radioso sells: plan prices, the conversation top-up, and the managed service. The `stripe:sync` command reads it and makes the Stripe account behind `STRIPE_SECRET_KEY` match it. It creates or corrects the products, the lookup-keyed prices, the account's tax defaults, the customer portal configuration, and, when you pass a URL, the webhook endpoint. Run it as often as you like: once the account matches, it plans nothing.
 
 Start with a dry run. It prints the mode, the account, and every change it would make, and changes nothing:
 
@@ -35,15 +35,15 @@ STRIPE_SECRET_KEY=sk_test_... pnpm --filter @radioso/enterprise-backend-module r
 ```text
 Stripe TEST mode
 Account: acct_1Sandbox (Radioso Sandbox)
-Catalog: 4 products, 7 prices, prices exclude tax (tax behavior exclusive)
+Catalog: 4 products, 6 prices, prices exclude tax (tax behavior exclusive)
 Stripe Tax: status pending, 0 active registrations
 
-Planned changes (13):
+Planned changes (12):
   1. create product radioso_plan_satellite "Radioso Satellite", tax code txcd_10103001, metadata plan=satellite
   ...
   5. create price satellite_month: €149 per month, tax exclusive, on radioso_plan_satellite
   ...
-  13. create customer portal configuration offering radioso_plan_satellite (satellite_month, satellite_year), radioso_plan_planet (planet_month, planet_year), radioso_plan_planet_managed (planet_managed_month, planet_managed_year)
+  12. create customer portal configuration offering radioso_plan_satellite (satellite_month, satellite_year), radioso_plan_planet (planet_month, planet_year)
 
 Warning: Stripe Tax is pending (missing: head_office). Checkout sends automatic_tax, so it fails until you set the head office address in Dashboard > Tax.
 
@@ -51,10 +51,6 @@ Dry run: nothing changed. Re-run with --apply to make these changes.
 ```
 
 The script builds the plan catalog and the backend module before it runs, so it always reads the catalog in your working tree.
-
-### Publishing a new catalog price
-
-Deploy the catalog-aware application revision to every region and drain older revisions before exposing a new live Stripe price. An older webhook consumer cannot map that price; it returns a retryable response so Stripe retains the event until the rollout completes. After every serving revision recognizes the catalog entry, run the live sync with the owner-provided live key.
 
 When the plan looks right, apply it and create the webhook endpoint in the same run:
 
@@ -92,6 +88,10 @@ The sync reads `STRIPE_PLAN_METADATA_KEY` the same way the backend does. A restr
 
 Edit the number in `plans.json`, then run the sync. For each price whose amount, interval, currency, or tax behavior changed, the sync creates a new price and moves the lookup key to it with `transfer_lookup_key`, then points the customer portal at it. The previous price stays active: subscribers on it keep renewing at the price they signed up for, and Radioso still maps them to the right plan through the product metadata. New checkouts use the new price straight away, with no Radioso configuration change.
 
+### Adding a plan
+
+A new plan brings a Stripe product that older application revisions don't know. Deploy the revision that carries the catalog entry to every region and drain older revisions before running the live sync. Until then, an older revision that receives a subscription event for a product carrying Radioso's plan metadata answers with a retryable error, so Stripe redelivers the event after the rollout instead of it being dropped. Events for products without Radioso's metadata are acknowledged.
+
 ## Tax
 
 Catalog prices exclude VAT. `plans.json` says so with `"taxBehavior": "exclusive"`, and every price the sync creates carries `tax_behavior: exclusive`, so a customer on Satellite sees €149 plus their VAT at checkout. The sync also sets the account's Stripe Tax defaults to tax behavior `exclusive` and tax code `txcd_10103001` (software as a service, business use), and gives every product that tax code.
@@ -109,8 +109,8 @@ Radioso looks up every Stripe price by its **lookup key**, never by price ID. Th
 |---|---|---|
 | `radioso_plan_satellite` | Radioso Satellite | `plan = satellite` |
 | `radioso_plan_planet` | Radioso Planet | `plan = planet` |
-| `radioso_plan_planet_managed` | Radioso Planet + managed models | `plan = planet_managed` |
 | `radioso_topup` | Radioso conversation top-up (300 conversations) | none |
+| `radioso_managed_service` | Radioso managed service | none |
 
 The sync owns the products at these ids: it creates them where they're missing and keeps their name, tax code, and plan metadata matching the catalog. On an account where one of the lookup keys below already sits on a different, hand-created product, the dry run lists that key moving to the sync's product, naming the price it replaces — review that line before you `--apply`.
 
@@ -120,15 +120,14 @@ The sync owns the products at these ids: it creates them where they're missing a
 | `satellite_year` | `radioso_plan_satellite` | Annual |
 | `planet_month` | `radioso_plan_planet` | Monthly |
 | `planet_year` | `radioso_plan_planet` | Annual |
-| `planet_managed_month` | `radioso_plan_planet_managed` | Monthly |
-| `planet_managed_year` | `radioso_plan_planet_managed` | Annual |
 | `topup_300` | `radioso_topup` | One-time |
+| `managed_month` | `radioso_managed_service` | Monthly |
 
 The amount behind each key comes from the catalog, in EUR and excluding VAT, so what a customer pays lines up with what Radioso grants.
 
 ## Product metadata
 
-Radioso resolves a Stripe price back to a plan through the price's **product**, not the price itself — every price on a product, current or grandfathered, maps to the same plan. The sync sets `plan = satellite` on `radioso_plan_satellite`, `plan = planet` on `radioso_plan_planet`, and `plan = planet_managed` on `radioso_plan_planet_managed`, and puts the value back if it drifts. The top-up product carries no `plan` key, because buying it changes no plan. The free plan has no Stripe product, since nothing is purchased to get it.
+Radioso resolves a Stripe price back to a plan through the price's **product**, not the price itself — every price on a product, current or grandfathered, maps to the same plan. The sync sets `plan = satellite` on `radioso_plan_satellite` and `plan = planet` on `radioso_plan_planet`, and puts the value back if it drifts. The top-up and managed-service products carry no `plan` key, because buying them changes no plan. The free plan has no Stripe product, since nothing is purchased to get it.
 
 The sync manages only the `plan` key (or your `STRIPE_PLAN_METADATA_KEY`); any other metadata you add to these products stays as you set it.
 
@@ -141,7 +140,7 @@ Stripe opens every portal session with the account's default portal configuratio
 - Customers can update their email, billing address, tax ID, and name.
 - Invoice history and payment method updates are on.
 - Cancellation takes effect at the end of the billing period.
-- Customers can switch between the Satellite, Planet, and Planet + managed models monthly and annual prices. Prorations are invoiced immediately (`always_invoice`): a plan grants its quota the moment it starts, so an upgrade is charged when it happens.
+- Customers can switch between the Satellite and Planet monthly and annual prices. Prorations are invoiced immediately (`always_invoice`): a plan grants its quota the moment it starts, so an upgrade is charged when it happens.
 
 If the account has no portal configuration yet, the sync creates one. When Stripe doesn't make that new configuration the default, the sync warns: open **Settings → Billing → Customer portal** in the Dashboard, click **Save** once to create the default, and run the sync again so the default carries these settings.
 

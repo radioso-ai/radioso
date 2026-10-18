@@ -64,49 +64,11 @@ describe("catalog invariants", () => {
       ["comet", 100],
       ["satellite", 1000],
       ["planet", 5000],
-      ["planet_managed", 5000],
     ]);
     for (const plan of PLAN_CATALOG.plans) {
       expect(Number.isInteger(plan.dailyNotificationEmails)).toBe(true);
       expect(plan.dailyNotificationEmails).toBeGreaterThan(0);
     }
-  });
-
-  it("prices managed Planet at an €80 monthly premium over Planet, with Planet allowance parity", () => {
-    const planet = findPlan("planet")!;
-    const managed = findPlan("planet_managed")!;
-
-    expect(managed).toMatchObject({
-      id: "planet_managed",
-      name: "Planet + managed models",
-      priceCents: 57900,
-      annualPriceCents: 579000,
-      models: "managed",
-      stripe: {
-        monthLookupKey: "planet_managed_month",
-        yearLookupKey: "planet_managed_year",
-      },
-    });
-    expect({
-      monthlyConversations: managed.monthlyConversations,
-      dailyNotificationEmails: managed.dailyNotificationEmails,
-      storedBytes: managed.storedBytes,
-      monthlyIndexedBytes: managed.monthlyIndexedBytes,
-      documents: managed.documents,
-      support: managed.support,
-      topUps: managed.topUps,
-    }).toEqual({
-      monthlyConversations: planet.monthlyConversations,
-      dailyNotificationEmails: planet.dailyNotificationEmails,
-      storedBytes: planet.storedBytes,
-      monthlyIndexedBytes: planet.monthlyIndexedBytes,
-      documents: planet.documents,
-      support: planet.support,
-      topUps: planet.topUps,
-    });
-    expect(managed.priceCents - planet.priceCents).toBe(8000);
-    expect(managed.annualPriceCents - planet.annualPriceCents).toBe(80000);
-    expect(PLAN_CATALOG.selfServeCeilingPlanId).toBe("planet_managed");
   });
 
   it("resolves defaultPlanId to a real plan", () => {
@@ -135,7 +97,7 @@ describe("catalog invariants", () => {
     }
   });
 
-  it("never reuses a Stripe lookup key across plans or the top-up", () => {
+  it("never reuses a Stripe lookup key across plans, top-up, or the managed service", () => {
     const lookupKeys = [
       ...PLAN_CATALOG.plans.flatMap((plan) => (plan.stripe ? [plan.stripe.monthLookupKey, plan.stripe.yearLookupKey] : [])),
       PLAN_CATALOG.topUp.stripeLookupKey,

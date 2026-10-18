@@ -74,7 +74,6 @@ export const isAutoTopUpAvailable = (input: {
 /** The next self-serve plan above `planId`, in catalog order. `null` at the self-serve ceiling
  *  plan or for a plan id the catalog does not recognize. */
 export const upgradePlanIdFor = (planId: string): PlanId | null => {
-  if (planId === "satellite") return null;
   if (planId === PLAN_CATALOG.selfServeCeilingPlanId) {
     return null;
   }
@@ -85,15 +84,6 @@ export const upgradePlanIdFor = (planId: string): PlanId | null => {
   const next = PLAN_CATALOG.plans.slice(index + 1).find((plan) => plan.stripe !== null);
   return next?.id ?? null;
 };
-
-/** Satellite's two Planet destinations differ by credential policy, not capacity. */
-export const upgradePlanIdsFor = (planId: string): readonly PlanId[] =>
-  planId === "satellite"
-    ? ["planet", "planet_managed"]
-    : (() => {
-        const next = upgradePlanIdFor(planId);
-        return next ? [next] : [];
-      })();
 
 /** Maps a raw Stripe subscription status to our narrower billing status. Unrecognized statuses
  *  (e.g. `paused`) fall back to `none` rather than throwing, since a webhook must never 500 on an

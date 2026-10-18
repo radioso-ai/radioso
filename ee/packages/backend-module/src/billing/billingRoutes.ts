@@ -13,7 +13,7 @@ import type { BillingCustomerRepository, BillingCustomerRow } from "./billingCus
 import { PostgresBillingCustomerRepository } from "./billingCustomerRepository.js";
 import type { AutoTopUpRepository, AutoTopUpSettingsRow } from "./autoTopUpRepository.js";
 import { PostgresAutoTopUpRepository } from "./autoTopUpRepository.js";
-import { isAutoTopUpAvailable, isTopUpEligible, lookupKeyFor, upgradePlanIdFor, upgradePlanIdsFor } from "./planPricing.js";
+import { isAutoTopUpAvailable, isTopUpEligible, lookupKeyFor, upgradePlanIdFor } from "./planPricing.js";
 import { handleBillingWebhookEvent } from "./billingWebhookHandler.js";
 import { StripeSignatureVerificationError, type StripeGateway } from "./stripeGateway.js";
 
@@ -202,7 +202,6 @@ export const createBillingRoutes = (
         interval: row?.interval ?? null,
         currentPeriodEnd: row?.currentPeriodEnd ? row.currentPeriodEnd.toISOString() : null,
         upgradePlanId: upgradePlanIdFor(plan.id),
-        upgradePlanIds: upgradePlanIdsFor(plan.id),
         // Resolved against the account's real (possibly catalog-unknown) plan id, not the
         // display fallback above — a legacy or hand-assigned profile must read ineligible rather
         // than inheriting the free plan's display fallback.

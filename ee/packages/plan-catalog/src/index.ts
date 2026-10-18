@@ -1,6 +1,6 @@
 import plansJson from "./plans.json" with { type: "json" };
 
-export type PlanId = "comet" | "satellite" | "planet" | "planet_managed";
+export type PlanId = "comet" | "satellite" | "planet";
 
 export type PlanModels = "managed" | "byok";
 
@@ -18,7 +18,7 @@ export interface PlanStripePricing {
   readonly yearLookupKey: string;
 }
 
-/** Stripe product metadata key whose value is a paid plan id. */
+/** Stripe product metadata key whose value is the plan id (`satellite`, `planet`). */
 export const STRIPE_PLAN_METADATA_KEY = "plan";
 
 export interface Plan {

@@ -1,14 +1,13 @@
 # @radioso/plan-catalog
 
-The single source of truth for Radioso Cloud plan numbers: prices, quotas, whether a plan uses
-Radioso-managed models or workspace provider credentials, the free/default plan, the self-serve
-ceiling, usage-counting weights, the conversation grace share, the conversation top-up, the model
-set managed plans run on (`managedModels`), and whether prices
-include VAT (`taxBehavior`). `src/plans.json` holds the data; `src/index.ts` exports typed access
-(`PLAN_CATALOG`, `findPlan`, `formatPrice`) and no runtime validation library, so a change here is
-a data edit plus the invariants in `tests/planCatalog.test.ts`.
+The single source of truth for Radioso Cloud plan numbers: prices, quotas, the free/default plan,
+the self-serve ceiling, usage-counting weights, the conversation grace share, the conversation
+top-up, the managed-service add-on, the model set managed plans run on (`managedModels`), and
+whether prices include VAT (`taxBehavior`). `src/plans.json` holds the data; `src/index.ts` exports
+typed access (`PLAN_CATALOG`, `findPlan`, `formatPrice`) and no runtime validation library, so a
+change here is a data edit plus the invariants in `tests/planCatalog.test.ts`.
 
-Stripe prices are referenced by `lookup_key` (`satellite_month`, `planet_managed_month`, `topup_300`, …), never by price
+Stripe prices are referenced by `lookup_key` (`satellite_month`, `topup_300`, …), never by price
 id. A price change is a new Stripe price with the key transferred to it; the app needs no config
 change. Webhooks resolve a price back to its plan through the Stripe product's `plan` metadata, so
 customers grandfathered on an older price still map to the right plan.
@@ -30,8 +29,6 @@ it.
 - `ee/packages/backend-module/src/managedModels` turns `managedModels` into the backend's
   `ManagedModelPolicy`: a workspace on a `models: "managed"` plan with no key of its own for the
   provider it would otherwise use runs `managedModels.chat` for chat and `managedModels.default`
-  for rewrite and rerank. A `models: "byok"` plan picks freely, the same as self-host: a workspace
-  key for the provider it would use takes precedence, and the deployment's own provider key still
-  covers a capability the workspace has not configured.
+  for rewrite and rerank.
 - The Radioso website snapshots `GET /api/v1/plans` for its pricing page, so a plan-numbers change
   here reaches the website without a separate edit there.

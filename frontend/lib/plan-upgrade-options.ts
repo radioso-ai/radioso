@@ -1,17 +1,7 @@
-type PlanUpgradeOption = { planId: string; label: string; requiresWorkspaceKey: boolean }
 type BillingSubscriptionStatus = 'active' | 'past_due' | 'canceled' | 'none'
 
-export const planUpgradeOptions = (currentPlanId: string, planIds: readonly string[]): PlanUpgradeOption[] =>
-  planIds.map((planId) => ({
-    planId,
-    label: planId === 'planet_managed'
-      ? "Planet with Radioso's models"
-      : planId === 'planet'
-        ? 'Planet — bring your own provider keys'
-        : 'Upgrade',
-    requiresWorkspaceKey: currentPlanId === 'satellite' && planId === 'planet',
-  }))
-
+// An active or past-due subscriber changes plan through Stripe's customer portal, which updates
+// the existing subscription; a new checkout would create a second subscription.
 export const planUpgradeDestination = (
   subscriptionStatus: BillingSubscriptionStatus,
 ): 'portal' | 'checkout' =>

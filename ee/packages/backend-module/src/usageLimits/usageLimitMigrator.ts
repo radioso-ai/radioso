@@ -270,7 +270,7 @@ export const usageLimitMigrator: ApplicationDatabaseMigrator = {
       ON CONFLICT (key) DO NOTHING
     `);
 
-    // One profile per @radioso/plan-catalog plan. `DO NOTHING`
+    // One profile per @radioso/plan-catalog plan (comet/satellite/planet). `DO NOTHING`
     // on conflict so a console edit to a seeded profile is never reverted by a later boot.
     for (const plan of PLAN_CATALOG.plans) {
       const seed = profileSeedFromPlan(plan, PLAN_CATALOG.repliesPerConversation);

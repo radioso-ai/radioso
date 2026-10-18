@@ -10,7 +10,6 @@ import {
   planIdForProduct,
   statusFromStripe,
   upgradePlanIdFor,
-  upgradePlanIdsFor,
 } from "./planPricing.js";
 
 describe("lookupKeyFor", () => {
@@ -76,15 +75,7 @@ describe("upgradePlanIdFor", () => {
   });
 
   it("returns the next self-serve plan above a mid-tier plan", () => {
-    expect(upgradePlanIdFor("satellite")).toBeNull();
-  });
-
-  it("offers both Planet credential policies from Satellite", () => {
-    expect(upgradePlanIdsFor("satellite")).toEqual(["planet", "planet_managed"]);
-  });
-
-  it("offers the managed-model variant above Planet BYOK", () => {
-    expect(upgradePlanIdFor("planet")).toBe("planet_managed");
+    expect(upgradePlanIdFor("satellite")).toBe("planet");
   });
 
   it("returns null at the self-serve ceiling plan", () => {

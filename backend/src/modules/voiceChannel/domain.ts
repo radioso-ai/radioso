@@ -34,6 +34,11 @@ export interface VoiceTurnInput {
    * ones back; the turn prefers bridge lines at least this long.
    */
   minReleasableSentenceChars?: number;
+  /**
+   * The runtime receives each piece of speech as the turn hands it on (a streamed response).
+   * False: it receives the whole turn at its outcome, so nothing reaches it before then.
+   */
+  streamsSpeech: boolean;
 }
 
 /**
@@ -83,6 +88,9 @@ export interface VoiceTurnPort {
 }
 
 export type VoiceChannelContext = Extract<ConversationChannelContext, { provider: "voice" }>;
+
+/** The audit event a reply the caller spoke over leaves: ids and character counts, never the text. */
+export const VOICE_REPLY_INTERRUPTED_EVENT = "voice.reply_interrupted";
 
 /** A vendor's API key, held by the workspace and read only to start that vendor's sessions. */
 export interface VoiceVendorCredential {

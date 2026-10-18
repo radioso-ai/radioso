@@ -106,6 +106,8 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     const { workspace, conversation } = await seedConversation();
     const sessionId = conversation.id;
     const assistantMessageId = randomUUID();
+    const executionId = randomUUID();
+    const startedMessageId = randomUUID();
 
     const { message } = await persistence.completeAssistantTurn({
       workspaceId: workspace.id,
@@ -135,6 +137,8 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
         state: {
           sessionId,
           routineId: "routine_1",
+          executionId,
+          startedMessageId,
           path: ["ask_email", "ask_message"],
           variables: { email: "alex@example.com" },
           attempts: { ask_email: 1, ask_message: 2 },
@@ -160,8 +164,11 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
       path: string[];
       variables: unknown;
       expires_at: Date | null;
+      execution_id: string | null;
+      started_message_id: string | null;
+      started_execution_id: string | null;
     }>(
-      "SELECT status, attempts, reask_count, path, variables, expires_at FROM routine_states WHERE session_id = $1",
+      "SELECT status, attempts, reask_count, path, variables, expires_at, execution_id, started_message_id, started_execution_id FROM routine_states WHERE session_id = $1",
       [sessionId],
     );
     expect(savedState).toMatchObject({
@@ -170,9 +177,61 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
       reask_count: 2,
       path: ["ask_email", "ask_message"],
       variables: { email: "alex@example.com" },
+      execution_id: executionId,
+      started_message_id: startedMessageId,
+      started_execution_id: executionId,
     });
     // active (not suspended) state gets a TTL-derived expiry, never null
     expect(savedState.expires_at).toBeInstanceOf(Date);
+  });
+
+  it("keeps an old-revision execution anchor unknown, then stores a new execution's anchor", async () => {
+    const { conversation } = await seedConversation();
+    const store = new RoutineStateRepository(database.kysely, 60_000);
+    const previousExecutionId = randomUUID();
+    const oldRevisionExecutionId = randomUUID();
+    const nextExecutionId = randomUUID();
+    const firstAnchor = randomUUID();
+    const nextAnchor = randomUUID();
+    await store.save({
+      sessionId: conversation.id,
+      routineId: "routine_1",
+      executionId: previousExecutionId,
+      startedMessageId: firstAnchor,
+      path: ["ask_contact"],
+      variables: {},
+      status: "active",
+    });
+    await expect(store.loadActive({ sessionId: conversation.id })).resolves.toMatchObject({
+      executionId: previousExecutionId,
+      startedMessageId: firstAnchor,
+    });
+
+    await database.query(
+      `INSERT INTO routine_states (session_id, routine_id, execution_id, path, variables, attempts, reask_count, status, expires_at, updated_at)
+       VALUES ($1, 'routine_1', $2, ARRAY['ask_again'], '{}'::jsonb, '{}'::jsonb, 0, 'active', now() + interval '1 hour', now())
+       ON CONFLICT (session_id) DO UPDATE SET execution_id = EXCLUDED.execution_id, path = EXCLUDED.path, updated_at = now()`,
+      [conversation.id, oldRevisionExecutionId],
+    );
+
+    const oldRevisionState = await store.loadActive({ sessionId: conversation.id });
+    expect(oldRevisionState?.executionId).toBe(oldRevisionExecutionId);
+    expect(oldRevisionState).not.toHaveProperty("startedMessageId");
+
+    await store.save({
+      sessionId: conversation.id,
+      routineId: "routine_1",
+      executionId: nextExecutionId,
+      startedMessageId: nextAnchor,
+      path: ["ask_contact"],
+      variables: {},
+      status: "active",
+    });
+
+    await expect(store.loadActive({ sessionId: conversation.id })).resolves.toMatchObject({
+      executionId: nextExecutionId,
+      startedMessageId: nextAnchor,
+    });
   });
 
   it("round-trips the re-ask count through the routine state repository", async () => {
@@ -514,6 +573,76 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
       })).rejects.toThrow();
 
       await expect(counts(userMessage.id, conversation.id)).resolves.toEqual({ messages: "1", audits: "0" });
+    });
+  });
+
+  describe("storing the heard part of a reply cut off mid-stream", () => {
+    const seedCutTurn = async () => {
+      const seeded = await seedConversation();
+      const messages = new MessageRepository(database.kysely);
+      await messages.create({ conversationId: seeded.conversation.id, workspaceId: seeded.workspace.id, role: "user", content: "When do you open?" });
+      const assistantMessage = {
+        id: randomUUID(),
+        conversationId: seeded.conversation.id,
+        workspaceId: seeded.workspace.id,
+        role: "assistant" as const,
+        content: "We open at **nine** on weekdays.",
+        interruption: { heardCharacterCount: 30, spokenCharacterCount: 30, partial: true },
+      };
+      const cancelledEvent = (accountId: string) => ({
+        accountId,
+        workspaceId: seeded.workspace.id,
+        eventType: "chat.answer",
+        eventStatus: "cancelled" as const,
+        metadata: { conversationId: seeded.conversation.id, assistantMessageId: assistantMessage.id, partialReplyStored: true },
+      });
+      return { ...seeded, messages, assistantMessage, cancelledEvent };
+    };
+
+    const cancelledAudits = async (conversationId: string) => (await database.queryOne<{ audits: string }>(
+      `SELECT COUNT(*)::text AS audits FROM audit_events WHERE metadata_json->>'conversationId' = $1 AND event_status = 'cancelled'`,
+      [conversationId],
+    ))?.audits;
+
+    it("stores the part marked cut short and its cancelled event together, after the caller's message", async () => {
+      const { accountId, workspace, conversation, messages, assistantMessage, cancelledEvent } = await seedCutTurn();
+
+      await persistence.storeCutReply({
+        workspaceId: workspace.id,
+        conversationId: conversation.id,
+        assistantMessage,
+        auditEvents: [cancelledEvent(accountId), { accountId, workspaceId: workspace.id, eventType: "voice.reply_interrupted", eventStatus: "success", metadata: { conversationId: conversation.id, assistantMessageId: assistantMessage.id } }],
+      });
+
+      const stored = await messages.listByConversationId(workspace.id, conversation.id);
+      expect(stored.map((message) => [message.role, message.content])).toEqual([
+        ["user", "When do you open?"],
+        ["assistant", "We open at **nine** on weekdays."],
+      ]);
+      expect(stored[1]).toMatchObject({ id: assistantMessage.id, source: "ai_agent", interruption: { heardCharacterCount: 30, spokenCharacterCount: 30, partial: true } });
+      await expect(cancelledAudits(conversation.id)).resolves.toBe("1");
+      await expect(database.queryOne<{ audits: string }>(
+        `SELECT COUNT(*)::text AS audits FROM audit_events WHERE metadata_json->>'assistantMessageId' = $1 AND event_type = 'voice.reply_interrupted'`,
+        [assistantMessage.id],
+      )).resolves.toEqual({ audits: "1" });
+      // A later report that the caller heard less keeps the marker the part was stored with.
+      await messages.markReplyInterrupted({ workspaceId: workspace.id, conversationId: conversation.id, messageId: assistantMessage.id, heardCharacterCount: 4, spokenCharacterCount: 30 });
+      expect((await messages.findByIdAndWorkspaceId(workspace.id, assistantMessage.id))?.interruption).toEqual({ heardCharacterCount: 30, spokenCharacterCount: 30, partial: true });
+    });
+
+    it("stores no part when its cancelled event cannot be recorded", async () => {
+      const { workspace, conversation, messages, assistantMessage, cancelledEvent } = await seedCutTurn();
+
+      // An account that does not exist fails the audit insert on its foreign key.
+      await expect(persistence.storeCutReply({
+        workspaceId: workspace.id,
+        conversationId: conversation.id,
+        assistantMessage,
+        auditEvents: [cancelledEvent(randomUUID())],
+      })).rejects.toThrow();
+
+      await expect(messages.findByIdAndWorkspaceId(workspace.id, assistantMessage.id)).resolves.toBeNull();
+      await expect(cancelledAudits(conversation.id)).resolves.toBe("0");
     });
   });
 

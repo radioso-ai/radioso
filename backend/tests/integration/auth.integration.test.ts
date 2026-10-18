@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import request from "supertest";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createTestApp, issueTestSession } from "../support/testApp.js";
 import type { InMemoryAuditService } from "../support/fakes.js";
@@ -44,7 +44,163 @@ class OssAdditionalOrganizationGuard implements OrganizationCreationGuard {
   }
 }
 
+const requireCookie = (cookie: string | undefined): string => {
+  expect(cookie).toBeDefined();
+  return cookie ?? "";
+};
+
 describe("auth integration", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("creates a session while atomically consuming a verification link", async () => {
+    const { app } = createTestApp({
+      envOverrides: {
+        NODE_ENV: "development",
+        AUTH_EXPOSE_EMAIL_VERIFICATION_LINK: true,
+      },
+    });
+    const registration = await request(app).post("/api/v1/auth/register").send({
+      email: "session-on-verify@example.com",
+      password: "verysecurepassword",
+    });
+    const verificationUrl = new URL(registration.body.developmentVerificationUrl);
+    const token = verificationUrl.searchParams.get("token");
+
+    const verified = await request(app)
+      .post("/api/v1/auth/email-verification/verify")
+      .send({ token });
+    const sessionCookie = requireCookie(
+      [verified.headers["set-cookie"]].flat().find((cookie) => cookie?.startsWith("radioso_session=")),
+    );
+    const replayed = await request(app)
+      .post("/api/v1/auth/email-verification/verify")
+      .send({ token });
+    const session = await request(app)
+      .get("/api/v1/auth/session")
+      .set("Cookie", sessionCookie);
+
+    expect(verified.status).toBe(200);
+    expect(verified.body).toEqual({ verified: true });
+    expect(sessionCookie).toContain("HttpOnly");
+    expect(sessionCookie).toContain("Secure");
+    expect(sessionCookie).toContain("SameSite=Lax");
+    expect(session.status).toBe(200);
+    expect(session.body.email).toBe("session-on-verify@example.com");
+    expect(replayed.status).toBe(401);
+    expect(replayed.headers["set-cookie"]).toBeUndefined();
+  });
+
+  it("exchanges the registering browser's pending ticket after another tab verifies", async () => {
+    const { app } = createTestApp({
+      envOverrides: {
+        NODE_ENV: "development",
+        AUTH_EXPOSE_EMAIL_VERIFICATION_LINK: true,
+      },
+    });
+    const registration = await request(app).post("/api/v1/auth/register").send({
+      email: "waiting-tab@example.com",
+      password: "verysecurepassword",
+    });
+    const pendingCookie = requireCookie([registration.headers["set-cookie"]].flat().find(
+      (cookie) => cookie?.startsWith("radioso_pending_registration="),
+    ));
+    const token = new URL(registration.body.developmentVerificationUrl).searchParams.get("token");
+
+    const beforeVerification = await request(app)
+      .post("/api/v1/auth/email-verification/pending-session")
+      .set("Cookie", pendingCookie);
+    await request(app).post("/api/v1/auth/email-verification/verify").send({ token }).expect(200);
+    const exchanged = await request(app)
+      .post("/api/v1/auth/email-verification/pending-session")
+      .set("Cookie", pendingCookie);
+    const replayed = await request(app)
+      .post("/api/v1/auth/email-verification/pending-session")
+      .set("Cookie", pendingCookie);
+    const missing = await request(app).post("/api/v1/auth/email-verification/pending-session");
+
+    expect(pendingCookie).toContain("HttpOnly");
+    expect(pendingCookie).toContain("Secure");
+    expect(pendingCookie).toContain("SameSite=Lax");
+    expect(pendingCookie).toContain("Max-Age=900");
+    expect(beforeVerification.body).toEqual({ ready: false });
+    expect(exchanged.body).toEqual({ ready: true });
+    expect(exchanged.headers["set-cookie"]).toEqual(expect.arrayContaining([
+      expect.stringContaining("radioso_session="),
+      expect.stringContaining("radioso_pending_registration=;"),
+    ]));
+    expect(replayed.body).toEqual({ ready: false });
+    expect(replayed.headers["set-cookie"]).toBeUndefined();
+    expect(missing.body).toEqual({ ready: false });
+    expect(Object.keys(missing.body)).toEqual(Object.keys(replayed.body));
+  });
+
+  it("does not create a session from an expired verification link", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-13T10:00:00.000Z"));
+    const { app } = createTestApp({
+      envOverrides: {
+        NODE_ENV: "development",
+        AUTH_EXPOSE_EMAIL_VERIFICATION_LINK: true,
+        EMAIL_VERIFICATION_TOKEN_TTL_MINUTES: 1,
+        AUTH_PENDING_REGISTRATION_TTL_MINUTES: 1,
+      },
+    });
+    const registration = await request(app).post("/api/v1/auth/register").send({
+      email: "expired-auth-funnel@example.com",
+      password: "verysecurepassword",
+    });
+    const pendingCookie = requireCookie([registration.headers["set-cookie"]].flat().find(
+      (cookie) => cookie?.startsWith("radioso_pending_registration="),
+    ));
+    const token = new URL(registration.body.developmentVerificationUrl).searchParams.get("token");
+    vi.setSystemTime(new Date("2026-10-13T10:02:00.000Z"));
+
+    const verify = await request(app).post("/api/v1/auth/email-verification/verify").send({ token });
+    const pending = await request(app)
+      .post("/api/v1/auth/email-verification/pending-session")
+      .set("Cookie", pendingCookie);
+
+    expect(verify.status).toBe(401);
+    expect(verify.headers["set-cookie"]).toBeUndefined();
+    expect(pending.status).toBe(200);
+    expect(pending.body).toEqual({ ready: false });
+    expect(pending.headers["set-cookie"]).toBeUndefined();
+  });
+
+  it("does not create a session from an expired pending ticket after verification", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-10-13T10:00:00.000Z"));
+    const { app } = createTestApp({
+      envOverrides: {
+        NODE_ENV: "development",
+        AUTH_EXPOSE_EMAIL_VERIFICATION_LINK: true,
+        EMAIL_VERIFICATION_TOKEN_TTL_MINUTES: 3,
+        AUTH_PENDING_REGISTRATION_TTL_MINUTES: 1,
+      },
+    });
+    const registration = await request(app).post("/api/v1/auth/register").send({
+      email: "expired-pending-ticket@example.com",
+      password: "verysecurepassword",
+    });
+    const pendingCookie = requireCookie([registration.headers["set-cookie"]].flat().find(
+      (cookie) => cookie?.startsWith("radioso_pending_registration="),
+    ));
+    const token = new URL(registration.body.developmentVerificationUrl).searchParams.get("token");
+    vi.setSystemTime(new Date("2026-10-13T10:02:00.000Z"));
+
+    const verify = await request(app).post("/api/v1/auth/email-verification/verify").send({ token });
+    const pending = await request(app)
+      .post("/api/v1/auth/email-verification/pending-session")
+      .set("Cookie", pendingCookie);
+
+    expect(verify.status).toBe(200);
+    expect(pending.status).toBe(200);
+    expect(pending.body).toEqual({ ready: false });
+    expect(pending.headers["set-cookie"]).toBeUndefined();
+  });
+
   it("rejects direct OSS additional-organization requests without mutation", async () => {
     const { app } = createTestApp({ organizationCreationGuard: new OssAdditionalOrganizationGuard() });
     const session = await issueTestSession(app, "oss-direct-additional@example.com");
@@ -114,7 +270,8 @@ describe("auth integration", () => {
     expect(response.body.workspaceId).toBeDefined();
     expect(response.body.token).toBeUndefined();
     expect(response.body.requiresEmailVerification).toBe(true);
-    expect(response.headers["set-cookie"]).toBeUndefined();
+    expect(response.headers["set-cookie"]?.[0]).toContain("radioso_pending_registration=");
+    expect(response.body.pendingTicket).toBeUndefined();
   });
 
   it("supports multi-workspace session flows without exposing a shared workspace token", async () => {

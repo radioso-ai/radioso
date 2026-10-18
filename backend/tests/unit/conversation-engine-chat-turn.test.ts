@@ -435,11 +435,23 @@ describe("ChatTurnAssembly.claimRoutineTurn", () => {
     ],
     transitions: [{ from: "ask_email", to: "ask_message", condition: "an email was given" }],
   };
-  const activeRoutine = { sessionId: "conv_1", routineId: "contact", path: [], variables: {}, status: "active" as const };
+  const activeRoutine = {
+    sessionId: "conv_1",
+    routineId: "contact",
+    executionId: "execution_1",
+    startedMessageId: "activation_msg",
+    path: [],
+    variables: {},
+    status: "active" as const,
+  };
+  type ActiveRoutine = typeof activeRoutine | Omit<typeof activeRoutine, "startedMessageId"> & { startedMessageId?: undefined };
 
   // One assembly per turn, over the real engine, runner, selector, and step renderer: only the
   // host model gateway is scripted, and it records which call ran, how, and under which usage key.
-  const assemblyForTurn = ({ hostStreams = true }: { hostStreams?: boolean } = {}) => {
+  const assemblyForTurn = ({
+    hostStreams = true,
+    active = activeRoutine,
+  }: { hostStreams?: boolean; active?: ActiveRoutine | null } = {}) => {
     const modelCalls: string[] = [];
     const pageReadCommits: number[] = [];
     const isSelector = (input: ChatGatewayInput): boolean =>
@@ -472,11 +484,15 @@ describe("ChatTurnAssembly.claimRoutineTurn", () => {
       },
       conversationEngine: new DefaultConversationEngine(),
       turnSkills: [],
-      routineStore: { loadActive: async () => activeRoutine, save: async () => {}, clear: async () => {} },
+      routineStore: { loadActive: async () => active, save: async () => {}, clear: async () => {} },
       routineProvider: {
         forTurn: async ({ modelGateway }: { modelGateway: ConstructorParameters<typeof RoutineStepRenderer>[0] }) => ({
           routines: [contactRoutine],
-          activator: { activate: async () => null },
+          activator: {
+            activate: async () => active
+              ? null
+              : { kind: "activate" as const, routineId: "contact" },
+          },
           runner: new DefaultRoutineRunner(
             [contactRoutine],
             new RoutineNextStepSelector(modelGateway),
@@ -495,7 +511,7 @@ describe("ChatTurnAssembly.claimRoutineTurn", () => {
 
     const streamed = assemblyForTurn();
     const claim = await streamed.assembly.claimRoutineTurn(session(), turnInput);
-    expect(claim?.effects).toEqual({ routineExecution: { routineId: "contact" } });
+    expect(claim?.effects).toEqual({ routineExecution: { routineId: "contact", executionId: "execution_1" } });
     expect(streamed.modelCalls).toEqual(["selector answer routine_turn"]);
     expect(streamed.pageReadCommits).toEqual([]);
 
@@ -515,9 +531,46 @@ describe("ChatTurnAssembly.claimRoutineTurn", () => {
     expect(rendered.pageReadCommits).toEqual([2]);
     expect(next.value.presentation).toEqual(whole?.presentation);
     expect(next.value.routineStateTransition).toEqual(whole?.routineStateTransition);
-    expect(next.value.routineStateTransition).toMatchObject({ kind: "save", state: { path: ["ask_message"] } });
+    expect(next.value.routineStateTransition).toMatchObject({
+      kind: "save",
+      state: { path: ["ask_message"], startedMessageId: "activation_msg" },
+    });
     expect(next.value.engineTrace?.stages.map((stage) => stage.kind))
       .toEqual(whole?.engineTrace?.stages.map((stage) => stage.kind));
+  });
+
+  it("anchors a freshly activated routine to the current visitor message", async () => {
+    const fresh = assemblyForTurn({ active: null });
+    const claim = await fresh.assembly.claimRoutineTurn(session(), {
+      responseLanguage: Promise.resolve(undefined),
+      activeRoutine: null,
+    });
+
+    const result = await claim!.reply.render();
+
+    expect(result.routineStateTransition).toMatchObject({
+      kind: "save",
+      state: { startedMessageId: "msg_1" },
+    });
+  });
+
+  it("keeps the routine anchor unknown when resuming a legacy execution", async () => {
+    const legacy = assemblyForTurn({
+      active: { ...activeRoutine, startedMessageId: undefined },
+    });
+    const visitorTurn = session();
+    const claim = await legacy.assembly.claimRoutineTurn(visitorTurn, {
+      responseLanguage: Promise.resolve(undefined),
+      activeRoutine: { ...activeRoutine, startedMessageId: undefined },
+    });
+
+    const result = await claim!.reply.render();
+
+    expect(visitorTurn.routineStartMessageId).toBeUndefined();
+    expect(result.routineStateTransition).not.toMatchObject({
+      kind: "save",
+      state: { startedMessageId: "msg_1" },
+    });
   });
 
   it("offers no reply stream when the host gateway can only complete, and still renders the reply", async () => {

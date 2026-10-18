@@ -52,6 +52,7 @@ describe("voice channel composition: turn notes", () => {
         assistantMessageId: "message-1",
         heardCharacterCount: 12,
         spokenCharacterCount: 40,
+        partial: false,
       },
     }]);
   });
@@ -83,5 +84,19 @@ describe("voice channel composition: turn notes", () => {
 
     expect(writes).toEqual(["audit:voice.reply_replayed"]);
     expect(audits[0]?.metadata).toEqual({ conversationId: "conversation-1", assistantMessageId: "message-1" });
+  });
+
+  it("audits a teammate's replies recorded as spoken by id only", async () => {
+    const { notes, writes, audits } = sinks();
+
+    await notes.operatorRepliesSpoken({ workspaceId: "workspace-1", conversationId: "conversation-1", messageIds: ["reply-1", "reply-2"] });
+
+    expect(writes).toEqual(["audit:voice.operator_reply_spoken"]);
+    expect(audits).toEqual([{
+      workspaceId: "workspace-1",
+      eventType: "voice.operator_reply_spoken",
+      eventStatus: "success",
+      metadata: { conversationId: "conversation-1", messageIds: ["reply-1", "reply-2"] },
+    }]);
   });
 });

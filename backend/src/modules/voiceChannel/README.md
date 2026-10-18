@@ -27,11 +27,18 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   pure sentence cutter (punctuation only, no words); `speechText.ts` turns
   text into what a caller hears: it removes the composer's citation markers
   (`[1]`, `[?]`, `[[1]]`, `[[?]]`) and markdown syntax (emphasis, inline code, line-start heading and
-  list markers, link syntax) from everything spoken, by structure only, and
-  compares a runtime's record of what was heard with what was spoken;
+  list markers, link syntax) from everything spoken, by structure only,
+  as one list of removals (`speechRemovals`) the sentence cutter shares;
   while a reply streams, `speechSegmenter.ts`'s sentence cutter closes an
   emphasis only before a space, line break or punctuation (the end of the
-  reply closes the rest) and removes list markers only at a real line start;
+  reply closes the rest), removes list markers only at a real line start,
+  and reports where each sentence it releases ends in the written reply
+  (`writtenEnd`, by a source map it keeps for its tail only; null where it
+  cannot place one); `heardSpeech.ts` is the pure measure of how much of a
+  turn's speech its caller heard, by the runtime's own record of what it
+  played, compared piece by piece so whatever the runtime puts between
+  pieces (a flush delta, a space, nothing after a full-width terminator)
+  does not matter;
   `voiceTurnPolicy.ts` is the pure timing wrapper (bridge and turn limit) over
   those events; `voiceLines.ts` picks the turn's bridge and fallback lines by
   routine state and locale (tag structure only, never the lines' words);
@@ -118,9 +125,14 @@ helpers and the shared chat message limit from `app/http`
   session store, `AssistantChatService.streamAnswer`, the agent repository (voice
   settings and default locale), the routine state store, the conversation
   ownership reader (`handoff/public.ts`), the message repository as chat's
-  `ReplyInterruptionMarker` and the audit service (the
-  `voice.reply_interrupted` and `voice.reply_replayed` notes, built by
-  `createVoiceTurnNotes`); exposed as `AppDependencies.voiceTurns`.
+  `OperatorReplySpeechClaims` (with `randomUUID` minting each turn's claim id)
+  and `ReplyInterruptionMarker`, and the audit service (the
+  `voice.reply_interrupted`, `voice.reply_replayed` and
+  `voice.operator_reply_spoken` notes, built by `createVoiceTurnNotes`; a
+  reply chat stored as its heard part carries its `voice.reply_interrupted`
+  event in chat's store, so no note is written for it);
+  exposed as `AppDependencies.voiceTurns`. The test app builds its port
+  through the same function.
   `createVoiceSessionStartComposition` in the same file builds the session
   start over the agent repository, the ElevenLabs starter with `fetch`, the
   workspace credential store's `getApiKey` as the credential reader, and the
@@ -315,7 +327,8 @@ helpers and the shared chat message limit from `app/http`
   suppressed means this turn handed off: `callback_requested` (with
   `handoffReason`) when `done.handoff.collectedSlotCount > 0`, else
   `continue`. Suppressed means a person owned the conversation at turn start:
-  `continue`, and the speech is chat's waiting message as chat wrote it.
+  `continue`, and the speech is the teammate's pending replies, else chat's
+  waiting message as chat wrote it.
   Anything else is `continue`. "Captured contact details" is structural: chat's
   `handoff` report counts the declared slots the ending routine held a value
   for (the keys of the engine's `handoff.collected`, counted in
@@ -381,11 +394,83 @@ helpers and the shared chat message limit from `app/http`
   exchange stays in an orphaned conversation (logged as a warn). This stays an
   in-process guarantee until a database-level session claim lands with
   Phase 0.
-- **Operator takeover reaches no one.** `customerReplyDelivery.ts` has no
-  `voice` deliverer, so an operator's Inbox reply never reaches the caller; the
-  Inbox offers no Send on a voice conversation
-  (`frontend/lib/email-send-readiness.ts`). Until an operator writes, each caller
-  turn hears the chat service's waiting line; after that, silence.
+- **A teammate's reply is spoken on the caller's next turn, once.** A call
+  speaks only when the runtime asks, on the caller's next utterance, and there
+  is no push channel, so an Inbox reply waits for that request. The handoff
+  module stores a reply on a voice conversation with `speech: { state:
+  "pending" }` (`operatorRepliesAreSpoken` in
+  `chat/contracts/operatorReplySpeech.ts`); `customerReplyDelivery.ts` has no
+  `voice` deliverer and needs none. The voice domain knows one chat-side port
+  of the reply, `OperatorReplySpeechClaims` (the turn service's mandatory
+  `operatorReplies.claims`): `claimPendingOperatorReplies` claims and reads
+  the conversation's pending replies in one UPDATE ... RETURNING (`[{ messageId,
+  text }]`, oldest first), and `markOperatorRepliesSpoken`,
+  `skipOperatorReplies` and `releaseOperatorReplies` settle what the turn
+  still holds. Chat owns what a reply means and how it is stored.
+  Exactly-once is a fact in the stored state, not in process memory: a reply
+  is `pending`, `claimed` (with `claimedAt` and the turn's `claimTurnId`),
+  `spoken` (`spokenAt`) or `skipped`; every change is one conditional UPDATE,
+  so two turns on two instances never both hold a reply, and a claim older
+  than `VOICE_BEHAVIOR.operatorReplyClaimExpiryMs` (60 s) reads as pending
+  again. `services/operatorReplySpeaker.ts` is one turn's side of it: it
+  claims beside the turn's profile, routine and owner reads, cuts each reply
+  with `wholeTextSpeech` (`speechSegmenter.ts`, through `speechText.ts`, so
+  markdown is removed and every piece ends in whitespace; a reply with no
+  words is skipped), and settles once. The turn speaks what it claimed after
+  its `conversation` event, ahead of chat's answer and outside the turn
+  policy, whoever owns the conversation. On a human-owned turn chat answers
+  nothing once a teammate has written (its waiting line stops at the first
+  human reply in its ten-message history window), so the replies take the
+  waiting line's place and the turn ends `continue`; after a hand-back the
+  agent's answer follows under its turn limit, and `mayBridge` holds the
+  bridge line back once a reply was spoken. A replay of a lost answer claims
+  the pending replies too and speaks them before the answer; one overtaken
+  while it claims ends `continue` and hands its claim back. The turn settles
+  as its outcome leaves, before a turn-limit drain: the replies its caller
+  heard to their end (next decision) are marked spoken (the first `spokenAt`
+  stays), then counted, then audited through the `operatorRepliesSpoken` note
+  (`voice.operator_reply_spoken`, conversation id and marked ids, never the
+  text); the rest go back to pending. A request that overtook a turn of the
+  session whose outcome had not left (`VoiceTurnClaim.overtook`, in process)
+  settles that turn's claim first, within the note timeout, before it claims,
+  so a caller who speaks over a reply hears it whole on that turn; across
+  instances that turn is not visible, and the reply waits for it or for the
+  claim's expiry. A
+  settling write that fails warns and leaves the claim to expire; an audit
+  that fails after the mark is logged and not retried. The session's
+  interruption bookkeeping measures the replies' pieces ahead of the answer
+  (`VoiceExchange.spoken`, the same `heardSpeechOf` measure), so a reply cut
+  short after them is marked with its own characters only.
+- **What the caller heard.** Text reaches the runtime far ahead of its
+  speech, and the runtime keeps the old stream open while the caller's new
+  utterance is spoken and transcribed, so what reached the runtime overstates
+  what was heard by the synthesis backlog and the whole barge-in. The measure
+  is the runtime's own: the request that cuts in carries the reply cut short
+  to what was played (`heardUntil`). When it overtook a turn still in flight
+  whose speech reached the runtime, `noteInterruptedReply` keeps it on that
+  turn's record (`reported`, measured once there, a mismatch warning once)
+  and never applies it to the stored exchange before it; it always arrives
+  before chat asks that turn what to keep. A report for a turn whose whole
+  reply settles after the request that sent it is reserved against that
+  turn's own exchange (`reserveInterruptionOf`). The record keeps each piece
+  that left the turn with whether it reached the runtime before the turn lost
+  its caller (`reached`, against `cutOffAt`; never on a response with
+  `VoiceTurnInput.streamsSpeech` false, which the runtime gets only at its
+  outcome), and each answer piece with where it ends in the written answer,
+  carried on its speech event through the policy and stripped before the
+  port's output. `heardSpeech.ts` (`heardSpeechOf`) measures that speech
+  against the report: the teammate pieces and the answer pieces played to
+  their end, and the answer characters heard; with no report, everything that
+  reached the runtime counts as heard. A teammate's reply is marked spoken when
+  its turn's outcome reached the runtime before the cut, or when the report
+  shows all its pieces played (`operatorReplyPiecesHeard`, handed to
+  `OperatorReplySpeaker.settle`); the reply the caller cut into, every reply
+  after it, and all of them without a report go back to pending, so the turn
+  that cut in speaks them whole, and a barge-in on a call a person owns is
+  not met with silence. A turn that fails hands every reply back
+  (`settle(null)`). A reply whose turn completed stays Spoken even when the
+  caller then talks over its audio while the runtime still plays it; only the
+  agent's replies are marked interrupted.
 - **Newest utterance wins.** ElevenLabs does not abort the HTTP stream when
   the caller interrupts: the next utterance arrives as a new request while the
   previous reply may still stream. Every voice chat turn runs with
@@ -396,7 +481,9 @@ helpers and the shared chat message limit from `app/http`
   runs to completion). The cancelled turn yields chat's `cancelled` event, the
   service ends it with `continue`, and the route closes its stream with `stop`
   and `[DONE]`. A turn cancelled after it started emitting keeps its user
-  message and stores no reply. That holds while its reply is being stored too:
+  message, and keeps as its reply only what reached the caller (next
+  decision); no whole reply is stored for it. That holds while its reply is
+  being stored too:
   chat checks the lease once more right before the store and latches it for
   the commit as the storing transaction's last step, so the newer utterance and
   the stored reply have one winner: before the latch the newer utterance
@@ -422,12 +509,32 @@ helpers and the shared chat message limit from `app/http`
   replaced while it waits for its predecessor stores nothing at all. "Before
   emission" means before chat's first chunk, which can precede the first
   spoken sentence by up to one sentence.
-- **A reply cut mid-stream.** When a newer utterance arrives while a reply is
-  still streaming, the caller has heard part of it and the vendor keeps the
-  truncated text, but Radioso stores the caller's message with no reply. The Inbox shows an unanswered
-  message, and the next turn (including a routine collecting slots) does not
-  know what the agent started to say. The cut reply is not billed as an
-  answer; its model tokens stay in the usage ledger.
+- **A reply cut mid-stream is stored as far as it was heard.** Every voice
+  chat turn hands chat a `deliveredReply` reader (chat's
+  `DeliveredReplyReader`, in `chat/contracts/interruption.ts`). When a newer
+  utterance cancels the turn after its reply started, chat's lifecycle asks
+  it once, while the turn still holds its lease, so the newer turn waits for
+  the store as it waits for a commit. The turn answers with the answer's
+  pieces the caller heard to their end (previous decision), cut at the
+  written end of the last of them (an unplaceable one warns and stores no
+  part), the answer
+  characters heard and those that reached the runtime, and its own audit
+  event of the cut (`voice.reply_interrupted`, counts and `partial: true`);
+  null when no piece with words was heard whole or the fallback line stood in
+  for the answer. A report that does not match what reached the runtime warns
+  (`Voice reply reported heard does not match what reached the runtime; the
+  stored part follows what reached it`, with counts) and falls back to what
+  reached it. Chat stores the part, citation markers and delimiters the cut
+  left open removed and markdown kept, marked `interruption: { heardCharacterCount,
+  spokenCharacterCount, partial: true }`, with the cancelled `chat.answer`
+  event and that audit event in one transaction, and names it on its
+  `cancelled` event (`storedReply`, `partial: true`; a whole reply chat had
+  stored before the cut comes as `partial: false` and is the turn's reply as
+  it streamed); the turn counts and logs the
+  interruption then. The turn remembers the part as the exchange's reply
+  (`VoiceStoredReply.partial`): the session counts it measured, so a later
+  `heardUntil` for it is a no-op, and it is never replayed. The cut reply is
+  not billed as an answer; its model tokens stay in the usage ledger.
 - **Bursts.** A transcriber that flaps sends several requests in a second or
   two. `VoiceSessionMemory.arrive` marks the previous request of the session
   superseded; one still setting up (session lookup, voice profile) ends with
@@ -447,6 +554,8 @@ helpers and the shared chat message limit from `app/http`
   `VOICE_BEHAVIOR.replayWindowMs` (30 s): an identical utterance (whitespace
   aside) for the session, with no chat turn running, is answered with the
   stored answer as speech, with no chat turn, no bridge and no user message.
+  A reply stored as its heard part is not replayed: the utterance runs a new
+  turn, which sees the part in its history.
   The replayed turn writes its `voice.reply_replayed` note once its outcome
   has left, off the response's path: the response and the session's settling
   never wait for the audit write, and a note that fails or takes longer than
@@ -469,7 +578,8 @@ helpers and the shared chat message limit from `app/http`
   limit, and the session counts it recorded only once both writes succeed (`VoiceSessionMemory.reserveInterruption`): a failed note is written
   again on the next report of the same reply, where the mark is idempotent,
   and the log line and the metric follow the recorded note. The stored reply
-  keeps its full text.
+  keeps its full text. A reply stored as its heard part is born marked
+  (`partial: true`), so no report of it is noted again.
 - **ElevenLabs session key.** ElevenLabs sends no conversation id; Radioso's
   session start or the page that starts the session mints `session_key`, and
   the page passes it as the custom LLM extra body, which arrives as
@@ -482,18 +592,28 @@ helpers and the shared chat message limit from `app/http`
 
 One log per turn with `agentId`, `vendor`, `transport`, `conversationId`,
 `result`, `durationMs` and `speechPieceCount`, `outcome` (the kind the runtime
-received) and `handoffReason` (when the turn handed off), plus `bridged`,
+received), `handoffReason` (when the turn handed off) and
+`spokenOperatorReplies` (when it spoke a teammate's replies),
+`storedPartialReply: true` (when chat kept the heard part of its cut-off
+reply), plus `bridged`,
 `turnLimitReached` and `fallbackSpoken` when the voice policy ran: `Voice turn
 reached the turn limit` at warn when the limit fired, else `Voice turn finished` at info
 (`completed`, `replayed`, `superseded` with `supersededAt`: `before_speech` or
 `after_speech`, `abandoned`), or `Voice turn failed` at warn with
 `errorClass`. `Voice reply was interrupted` at info names the conversation,
-the reply's message id and the two character counts, once the note is
-recorded; a note that fails to record, or takes longer than 5 s, logs `Voice
+the reply's message id, the two character counts and `partial`, once the note
+is recorded (for a reply chat stored as its heard part, once chat names the
+stored part, whose audit event committed with it); a report of what was heard
+that does not match what reached the runtime logs `Voice reply reported heard
+does not match what reached the runtime; the stored part follows what reached
+it` at warn with `agentId`, `vendor`, `conversationId`,
+`reachedCharacterCount` and `reportedCharacterCount`; a note that fails to record, or takes longer than 5 s, logs `Voice
 turn note could not be recorded` at warn, and an interrupted reply the
 conversation no longer holds logs `Voice reply to mark interrupted was not
 found` at warn (workspace, conversation and message ids) and writes no audit
-event. A warn when a concurrent first turn bound the session to another
+event. `Voice turn could not update the teammate's pending replies` at warn
+with `agentId`, `vendor`, `conversationId`, `errorClass` and `step`
+(`claim`, `mark`, `skip`, `release`). A warn when a concurrent first turn bound the session to another
 conversation, and a warn naming only `dialect` and `agentId` when a request
 carries no usable session key (a 400). Once per agent per process, when a
 turn's bridge line is below the dialect's minimum, `Voice bridge line is
@@ -522,7 +642,11 @@ had no line, so nothing was spoken) and `voice_turn_limit_total`
 (`locale_resolved`: `no` when there was no fallback line and the turn kept
 waiting). The service records `voice_turn_superseded_total` (`stage`:
 `before_speech`, `after_speech`), `voice_turn_replayed_total`,
-`voice_reply_interrupted_total` and `voice_turn_outcome_total` (`kind`:
+`voice_reply_interrupted_total` (`partial`: `yes` for a reply stored as its
+heard part, counted as its store commits; `no` for a finished one, counted
+once its note is recorded), `voice_operator_reply_spoken_total` (one
+per teammate reply a turn recorded as spoken, no labels) and
+`voice_turn_outcome_total` (`kind`:
 `continue`, `callback_requested`; `handoff_reason`: `routine_handoff`,
 `routine_stuck`, `retrieval_miss`, `none`), once per turn that sent an
 outcome. Labels are closed enums; no line text, locale tag or id. The chat registry's `chat_turn_cancellations_total` counts a voice
@@ -563,6 +687,12 @@ the key, the vendor URL or any audio.
 - `cd backend && pnpm exec vitest run tests/contract/public-voice-session.contract.test.ts tests/contract/settings-credentials.contract.test.ts`
   (the session start through the embed's public session, with a fake vendor
   `fetch`; the ElevenLabs key in the credential store)
+- `cd backend && pnpm exec vitest run tests/contract/voice-operator-reply.contract.test.ts`
+  (an Inbox reply on a human-owned call spoken on the next turn, then marked
+  and audited; a reply pending at hand-back spoken before the agent's answer)
+- `cd backend && pnpm exec vitest run tests/contract/voice-cut-reply.contract.test.ts`
+  (a streamed reply the caller speaks over mid-stream, stored as far as it was
+  spoken, marked `partial`, and audited)
 - `cd backend && pnpm exec vitest run tests/contract/voice-recording.contract.test.ts`
   (the report, the detail flag, playback through a fake vendor `fetch`, and
   deletion with the workspace)

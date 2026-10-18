@@ -97,8 +97,7 @@ import {
 } from "../../../modules/retrieval/composition.js";
 import type { ClusteringEmbeddingPort } from "../../../modules/embeddingProfiles/contracts/embeddingConsumers.js";
 import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
-import { AbuseControlRepository } from "../../../db/repositories/abuseControlRepository.js";
-import { AbuseControlService } from "../../../modules/security/services/abuseControlService.js";
+import type { AbuseControlService } from "../../../modules/security/services/abuseControlService.js";
 import { CustomerEmailConnectionRepository } from "../../../db/repositories/customerEmailConnectionRepository.js";
 import { EmailSkillDefinitionRepository } from "../../../db/repositories/emailSkillDefinitionRepository.js";
 import { EmailSkillActivityRepository } from "../../../db/repositories/emailSkillActivityRepository.js";
@@ -209,6 +208,7 @@ export const buildMcpConverseServices = (
 };
 
 export const buildChatServices = (input: {
+  abuseControlService: AbuseControlService;
   accountAccessService: AccountAccessService;
   agentService: AgentService;
   agentSkillRepository: AgentSkillRepository;
@@ -307,7 +307,7 @@ export const buildChatServices = (input: {
     normalize: answerPresentationService.normalize.bind(answerPresentationService),
     present: answerPresentationService.present.bind(answerPresentationService),
   };
-  const abuseControlService = new AbuseControlService(new AbuseControlRepository(input.database.kysely));
+  const abuseControlService = input.abuseControlService;
   // Conversation-action outbox drain push (contact-outbox fix): every current
   // producer of `routine_action_requests` rows requests a drain once its enqueue is
   // durable. Cloud Tasks under WORKER_DISPATCH_DRIVER=cloud-tasks + a configured
@@ -534,6 +534,16 @@ export const buildChatServices = (input: {
   // The fallback (non-transactional) enqueue path — see `ChatTurnLifecycle`'s
   // `assistantTurnPersistence`-absent branch — also requests a drain once durable.
   const pushingActionOutbox = new DrainTriggeringActionOutbox(actionOutbox, actionDrainDispatcher, input.logger);
+  // Commits each turn, and keeps the heard part of a reply cut off mid-stream, transactionally.
+  const assistantTurnPersistence = new PostgresAssistantTurnPersistence(
+    input.database.kysely,
+    input.conversationActivity.recorder,
+    undefined,
+    input.conversationOwnershipRepository,
+    actionDrainDispatcher,
+    input.logger,
+    input.backgroundJobs,
+  );
   const actionHandlerRegistry = new ActionHandlerRegistry(
     input.composition.actionHandlerRegistrations.map((registration) => ({
       type: registration.type,
@@ -552,6 +562,8 @@ export const buildChatServices = (input: {
               errorReporter: input.errorReporter,
               metrics: input.metricsRegistry ?? null,
               publisher: input.workspaceInvalidationPublisher,
+              llmRegistry: input.llmRegistry,
+              usageEventRecorder: input.usageEventRecorder,
             })
           : registration.handler,
     })),
@@ -873,15 +885,8 @@ export const buildChatServices = (input: {
     // non-DB hosts) — production writes actions through `assistantTurnPersistence`
     // below instead, transactionally with the rest of the turn.
     actionOutbox: pushingActionOutbox,
-    assistantTurnPersistence: new PostgresAssistantTurnPersistence(
-      input.database.kysely,
-      input.conversationActivity.recorder,
-      undefined,
-      input.conversationOwnershipRepository,
-      actionDrainDispatcher,
-      input.logger,
-      input.backgroundJobs,
-    ),
+    assistantTurnPersistence,
+    cutReplyStore: assistantTurnPersistence,
     actionCapabilities: input.composition.actionCapabilityMap,
     capabilityPolicy: input.composition.capabilityPolicy,
     logger: input.logger,

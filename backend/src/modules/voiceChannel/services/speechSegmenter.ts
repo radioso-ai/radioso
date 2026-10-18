@@ -1,4 +1,4 @@
-import { spokenText, type SpeechPosition } from "./speechText.js";
+import { hasSpokenWords, speechRemovals, spokenText, type SpeechPosition } from "./speechText.js";
 
 /**
  * A sentence ends at a Unicode sentence terminator (`.`, `?`, `؟`, `।`, …) or an ellipsis, with any
@@ -17,6 +17,16 @@ interface SentenceSplit {
 
 const STREAMING_REPLY_START: SpeechPosition = { startsLine: true, final: false };
 
+/** Where each complete sentence of spoken text ends, in order. */
+const sentenceEnds = (spoken: string): number[] =>
+  [...spoken.matchAll(SENTENCE_BOUNDARY)].map((match) => match.index + match[0].length);
+
+/** The sentences of spoken text cut at `ends`, and what follows the last. */
+const splitAt = (spoken: string, ends: readonly number[]): SentenceSplit => ({
+  sentences: ends.map((end, index) => spoken.slice(index === 0 ? 0 : ends[index - 1], end)),
+  remainder: spoken.slice(ends.at(-1) ?? 0),
+});
+
 /**
  * Cuts the complete sentences off the front of `buffer` once it is spoken text (assertion markers
  * and markdown removed); joined back together they are that cleaned buffer. A marker or delimiter
@@ -24,44 +34,112 @@ const STREAMING_REPLY_START: SpeechPosition = { startsLine: true, final: false }
  * `position` places the buffer in its reply; by default it starts a reply that is still streaming.
  */
 export const splitCompleteSentences = (rawBuffer: string, position: SpeechPosition = STREAMING_REPLY_START): SentenceSplit => {
-  const buffer = spokenText(rawBuffer, position);
-  const sentences: string[] = [];
-  let start = 0;
-  for (const match of buffer.matchAll(SENTENCE_BOUNDARY)) {
-    const end = match.index + match[0].length;
-    sentences.push(buffer.slice(start, end));
-    start = end;
-  }
-  return { sentences, remainder: buffer.slice(start) };
+  const text = spokenText(rawBuffer, position);
+  return splitAt(text, sentenceEnds(text));
+};
+
+/**
+ * A whole text nobody streams, such as a teammate's reply, as speech: its sentences once it is
+ * spoken text, each ending in whitespace, so its last piece stays apart from what is spoken next.
+ * A text with no words to say is no speech at all.
+ */
+export const wholeTextSpeech = (text: string): string[] => {
+  // The line break that ends the text closes its last sentence.
+  const { sentences, remainder } = splitCompleteSentences(`${text}\n`, { startsLine: true, final: true });
+  return [...sentences, remainder].filter(hasSpokenWords);
 };
 
 /** A cut sentence ends its line when the whitespace after its terminator holds a line break. */
 const ENDS_LINE = /\n\s*$/u;
 
+/** Spoken text, with where each of its characters (UTF-16 units) stands in the reply as written. */
+interface SourcedText {
+  text: string;
+  source: number[];
+}
+
+/** `mapped` without `pattern`'s matches, each removed whole but for its group `keptGroup`, as `replace` removes them. */
+const removeMatches = (mapped: SourcedText, pattern: RegExp, keptGroup?: number): SourcedText => {
+  const kept: string[] = [];
+  const source: number[] = [];
+  const keep = (from: number, to: number): void => {
+    kept.push(mapped.text.slice(from, to));
+    for (let index = from; index < to; index += 1) {
+      source.push(mapped.source[index]);
+    }
+  };
+  const matches = pattern.global ? mapped.text.matchAll(pattern) : [mapped.text.match(pattern)].filter((match) => match !== null);
+  let cursor = 0;
+  for (const match of matches) {
+    const start = match.index ?? 0;
+    keep(cursor, start);
+    const group = keptGroup === undefined ? undefined : match.indices?.[keptGroup];
+    if (group) {
+      keep(group[0], group[1]);
+    }
+    cursor = start + match[0].length;
+  }
+  keep(cursor, mapped.text.length);
+  return { text: kept.join(""), source };
+};
+
+/** `spokenText`, keeping where each spoken character stands in the reply as written. */
+const sourcedSpokenText = (mapped: SourcedText, position: SpeechPosition): SourcedText =>
+  speechRemovals(position).reduce((text, { pattern, keptGroup }) => removeMatches(text, pattern, keptGroup), mapped);
+
+/**
+ * A sentence of a streamed reply as it is spoken, and where it ends in the reply as written:
+ * right after its last spoken character; null should that character's place be unknown.
+ */
+interface SpeechPiece {
+  text: string;
+  writtenEnd: number | null;
+}
+
 /**
  * A streamed reply cut into sentences as its chunks arrive. It remembers whether its unfinished
  * tail starts a line of the reply, so a list marker is removed only at a real line start, and it
- * closes an emphasis left open at the end only once the reply is whole.
+ * closes an emphasis left open at the end only once the reply is whole. Its tail is kept as spoken
+ * text with each character's offset in the reply as written, so every sentence it releases knows
+ * where it ends there.
  */
 export const createSentenceCutter = (): {
-  /** The sentences `text` completes. */
-  push(text: string): string[];
+  /** The sentences `text` completes, each with where it ends in the reply as written. */
+  push(text: string): SpeechPiece[];
   /** The rest of the reply once no more text follows: any sentences, then the unterminated tail. */
-  finish(): SentenceSplit;
+  finish(): { sentences: SpeechPiece[]; remainder: SpeechPiece };
 } => {
-  let pending = "";
+  let pending: SourcedText = { text: "", source: [] };
+  let written = 0;
   let startsLine = true;
-  const cut = (text: string, final: boolean): SentenceSplit => {
-    const split = splitCompleteSentences(pending + text, { startsLine, final });
+  const cut = (text: string, final: boolean): { pieces: SpeechPiece[]; remainder: string } => {
+    const source = pending.source.slice();
+    for (let index = 0; index < text.length; index += 1) {
+      source.push(written + index);
+    }
+    written += text.length;
+    const spoken = sourcedSpokenText({ text: pending.text + text, source }, { startsLine, final });
+    const ends = sentenceEnds(spoken.text);
+    const split = splitAt(spoken.text, ends);
     const last = split.sentences.at(-1);
     if (last !== undefined) {
       startsLine = ENDS_LINE.test(last);
     }
-    pending = final ? "" : split.remainder;
-    return split;
+    const rest = ends.at(-1) ?? 0;
+    pending = final ? { text: "", source: [] } : { text: split.remainder, source: spoken.source.slice(rest) };
+    return {
+      pieces: split.sentences.map((sentence, index) => {
+        const lastSpoken = spoken.source[ends[index] - 1];
+        return { text: sentence, writtenEnd: lastSpoken === undefined ? null : lastSpoken + 1 };
+      }),
+      remainder: split.remainder,
+    };
   };
   return {
-    push: (text) => cut(text, false).sentences,
-    finish: () => cut("", true),
+    push: (text) => cut(text, false).pieces,
+    finish: () => {
+      const { pieces, remainder } = cut("", true);
+      return { sentences: pieces, remainder: { text: remainder, writtenEnd: written } };
+    },
   };
 };

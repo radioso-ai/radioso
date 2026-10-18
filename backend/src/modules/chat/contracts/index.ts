@@ -58,13 +58,25 @@ export { buildAgentReplyEnvelope, isChatTurnResponse } from "../services/agentRe
 export { chatRequestInputFor, resolveAgentTurnInput, type AgentTurnInput } from "../services/agentTurnInput.js";
 export type { ChatRoutineInvocationReport, ChatRoutineTurnState } from "./routineTurnState.js";
 export type { ChatStreamEvent } from "./streamEvents.js";
-// A channel whose caller spoke over a stored reply marks that reply; history reads the marker back.
+// A channel whose caller spoke over a reply marks it, or reports the part that reached the caller
+// of a reply cut off mid-stream so chat stores that part; history reads the marker back.
 export {
   replyInterruptionSchema,
   type ConversationTurnSupersession,
+  type DeliveredReplyPart,
+  type DeliveredReplyReader,
   type ReplyInterruption,
   type ReplyInterruptionMarker,
 } from "./interruption.js";
+// A teammate's reply on a call waits for the caller's next turn; the voice channel reads and marks it.
+export {
+  operatorRepliesAreSpoken,
+  operatorReplySpeechSchema,
+  type OperatorReplyClaim,
+  type OperatorReplySpeech,
+  type OperatorReplySpeechClaims,
+  type PendingOperatorReply,
+} from "./operatorReplySpeech.js";
 export type {
   ActionHandler,
   ActionHandlerContext,

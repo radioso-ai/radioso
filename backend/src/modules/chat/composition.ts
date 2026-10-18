@@ -58,6 +58,7 @@ export {
   WorkspaceOwnerContactRecipientResolver,
 } from "./services/actions/contactSendActionHandler.js";
 export { RoutineEndingNotifyActionHandler } from "./services/actions/routineEndingNotifyActionHandler.js";
+export { ModelRoutineEndingNoticeSummaryGenerator } from "./services/actions/routineEndingNoticeSummary.js";
 export { RepositoryRoutineEndingNotificationSubjectResolver } from "./services/actions/routineEndingNotificationSubjectResolver.js";
 export { ROUTINE_ENDING_NOTICE_ACTIONS } from "./services/operatorNoticeAction.js";
 export { EmailWebhookOperatorNotificationSink } from "./services/actions/emailWebhookSink.js";

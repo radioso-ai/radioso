@@ -57,6 +57,7 @@ import type {
   SessionRepositoryPort,
 } from "../../src/modules/auth/services/authService.js";
 import type { CreateUserParams, UserRecord, UserRepositoryPort } from "../../src/db/repositories/userRepository.js";
+import type { AuthFunnelRepositoryPort } from "../../src/modules/auth/services/authFunnelService.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../src/db/repositories/workspaceRepository.js";
 import type {
   AgentGreetingUpdateOptions,
@@ -183,6 +184,9 @@ import type {
 } from "../../src/db/repositories/messageRepository.js";
 import type { MessageSource } from "@radioso/conversation-contract";
 import { deriveMessageSourceFromRole } from "../../src/db/repositories/messageRepository.js";
+import type { OperatorReplyClaim, PendingOperatorReply, ReplyInterruption } from "../../src/modules/chat/contracts/index.js";
+import { VOICE_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
+import { isHumanAuthoredMessageSource } from "../../src/shared/domain/messageAuthorship.js";
 import type {
   IngestionSettingsRecord,
   ValidatedIngestionSettingsInput,
@@ -205,6 +209,7 @@ import type {
   DocumentStorageUploadInput,
 } from "../../src/modules/documents/contracts/storage.js";
 import { createWorkspacePublicRouteKey } from "../../src/modules/workspace/domain/publicRouteKey.js";
+import type { CutReplyStore, CutReplyStoreInput } from "../../src/modules/chat/services/chatTurnLifecycle.js";
 import { conflict, notFound } from "../../src/shared/domain/errors.js";
 import {
   DEFAULT_DOCUMENT_TYPE_CATALOG_REVISION,
@@ -715,6 +720,16 @@ export class InMemoryEmailVerificationTokenRepository implements EmailVerificati
     return record;
   }
 
+  async createIfUnverified(params: {
+    userId: string;
+    tokenHash: string;
+    expiresAt: Date;
+    requestIp?: string | null;
+    requestUserAgent?: string | null;
+  }): Promise<EmailVerificationTokenRecord | null> {
+    return this.create(params);
+  }
+
   async findByTokenHash(tokenHash: string): Promise<EmailVerificationTokenRecord | null> {
     return [...this.items.values()].find((item) => item.tokenHash === tokenHash) ?? null;
   }
@@ -741,6 +756,171 @@ export class InMemoryEmailVerificationTokenRepository implements EmailVerificati
       }
     }
     return count;
+  }
+}
+
+export class InMemoryAuthFunnelRepository implements AuthFunnelRepositoryPort {
+  private readonly tickets = new Map<string, {
+    id: string;
+    userId: string;
+    accountId: string;
+    tokenHash: string;
+    expiresAt: Date;
+    activatedAt: Date | null;
+    usedAt: Date | null;
+  }>();
+
+  constructor(private readonly dependencies: {
+    emailVerificationTokens: InMemoryEmailVerificationTokenRepository;
+    users: InMemoryUserRepository;
+    sessions: Pick<SessionRepositoryPort, "create" | "revokeAllForUser">;
+    listMemberships: (userId: string) => Promise<AccountMembershipRecord[]>;
+    passwordResetTokens?: InMemoryPasswordResetTokenRepository;
+    federatedIdentities?: Pick<FederatedIdentityRepositoryPort, "deleteForUser">;
+  }) {}
+
+  async createRegistrationChallenge(input: {
+    userId: string;
+    accountId: string;
+    verificationTokenId: string;
+    verificationTokenHash: string;
+    verificationExpiresAt: Date;
+    pendingTicketId: string;
+    pendingTokenHash: string;
+    pendingExpiresAt: Date;
+    requestIp: string | null;
+    requestUserAgent: string | null;
+  }): Promise<boolean> {
+    const user = await this.dependencies.users.findById(input.userId);
+    if (!user || user.emailVerifiedAt || this.dependencies.users.disabledAt(input.userId)) return false;
+    this.dependencies.emailVerificationTokens.items.set(input.verificationTokenId, {
+      id: input.verificationTokenId,
+      userId: input.userId,
+      tokenHash: input.verificationTokenHash,
+      expiresAt: input.verificationExpiresAt,
+      usedAt: null,
+      createdAt: new Date(),
+    });
+    this.tickets.set(input.pendingTicketId, {
+      id: input.pendingTicketId,
+      userId: input.userId,
+      accountId: input.accountId,
+      tokenHash: input.pendingTokenHash,
+      expiresAt: input.pendingExpiresAt,
+      activatedAt: null,
+      usedAt: null,
+    });
+    return true;
+  }
+
+  async verifyEmailAndCreateSession(input: {
+    verificationTokenHash: string;
+    sessionId: string;
+    sessionTokenHash: string;
+    sessionExpiresAt: Date;
+    now: Date;
+  }): Promise<{ userId: string; accountId: string } | null> {
+    const token = await this.dependencies.emailVerificationTokens.findByTokenHash(input.verificationTokenHash);
+    if (!token || token.usedAt || token.expiresAt <= input.now) return null;
+    const latest = await this.dependencies.emailVerificationTokens.findLatestActiveForUser(token.userId, input.now);
+    if (latest?.id !== token.id) return null;
+    const user = await this.dependencies.users.findById(token.userId);
+    const membership = (await this.dependencies.listMemberships(token.userId))[0];
+    if (!user || user.emailVerifiedAt || !membership) return null;
+    await this.dependencies.users.markEmailVerified(user.id, input.now);
+    await this.dependencies.emailVerificationTokens.markAllActiveUsedForUser(user.id, input.now);
+    for (const ticket of this.tickets.values()) {
+      if (ticket.userId === user.id && !ticket.usedAt && ticket.expiresAt > input.now) {
+        ticket.activatedAt = input.now;
+      }
+    }
+    await this.dependencies.sessions.create({
+      userId: user.id,
+      accountId: membership.accountId,
+      sessionTokenHash: input.sessionTokenHash,
+      expiresAt: input.sessionExpiresAt,
+    });
+    return { userId: user.id, accountId: membership.accountId };
+  }
+
+  async exchangePendingTicket(input: {
+    pendingTokenHash: string;
+    sessionId: string;
+    sessionTokenHash: string;
+    sessionExpiresAt: Date;
+    now: Date;
+  }): Promise<{ userId: string; accountId: string } | null> {
+    const ticket = [...this.tickets.values()].find((candidate) => candidate.tokenHash === input.pendingTokenHash);
+    if (!ticket || ticket.usedAt || !ticket.activatedAt || ticket.expiresAt <= input.now) return null;
+    const user = await this.dependencies.users.findById(ticket.userId);
+    const membership = (await this.dependencies.listMemberships(ticket.userId))
+      .find((candidate) => candidate.accountId === ticket.accountId);
+    if (!user?.emailVerifiedAt || !membership) return null;
+    ticket.usedAt = input.now;
+    await this.dependencies.sessions.create({
+      userId: user.id,
+      accountId: membership.accountId,
+      sessionTokenHash: input.sessionTokenHash,
+      expiresAt: input.sessionExpiresAt,
+    });
+    return { userId: user.id, accountId: membership.accountId };
+  }
+
+  async completePasswordReset(input: {
+    resetTokenHash: string;
+    passwordHash: string;
+    now: Date;
+  }): Promise<{
+    userId: string;
+    email: string;
+    displayName: string | null;
+    revokedFederatedIdentities: number;
+  } | null> {
+    const tokens = this.dependencies.passwordResetTokens;
+    if (!tokens) throw new Error("Password reset repository is not configured");
+    const token = await tokens.findByTokenHash(input.resetTokenHash);
+    if (!token || token.usedAt || token.expiresAt <= input.now) return null;
+    const latest = await tokens.findLatestActiveForUser(token.userId, input.now);
+    if (latest?.id !== token.id) {
+      await tokens.markUsed(token.id, input.now);
+      return null;
+    }
+    const user = await this.dependencies.users.findById(token.userId);
+    if (!user || await tokens.markUsed(token.id, input.now) !== 1) return null;
+    const displayName = user.emailVerifiedAt ? user.displayName : null;
+    await this.dependencies.users.updatePassword(user.id, input.passwordHash);
+    await this.dependencies.users.updateDisplayName(user.id, displayName);
+    await this.dependencies.users.markEmailVerified(user.id, input.now);
+    await tokens.markAllActiveUsedForUser(user.id, input.now);
+    await this.invalidateRecoveryCredentials(user.id, input.now);
+    const revokedFederatedIdentities = await this.dependencies.federatedIdentities?.deleteForUser(user.id) ?? 0;
+    return { userId: user.id, email: user.email, displayName, revokedFederatedIdentities };
+  }
+
+  async recoverFederatedUser(input: {
+    userId: string;
+    passwordHash: string;
+    displayName: string | null;
+    now: Date;
+  }): Promise<{ recovered: boolean; displayName: string | null } | null> {
+    const user = await this.dependencies.users.findById(input.userId);
+    if (!user) return null;
+    if (user.emailVerifiedAt) return { recovered: false, displayName: user.displayName };
+    await this.dependencies.users.updatePassword(user.id, input.passwordHash);
+    await this.dependencies.users.updateDisplayName(user.id, input.displayName);
+    await this.dependencies.users.markEmailVerified(user.id, input.now);
+    await this.invalidateRecoveryCredentials(user.id, input.now);
+    return { recovered: true, displayName: input.displayName };
+  }
+
+  private async invalidateRecoveryCredentials(userId: string, now: Date): Promise<void> {
+    await this.dependencies.sessions.revokeAllForUser(userId, now);
+    await this.dependencies.emailVerificationTokens.markAllActiveUsedForUser(userId, now);
+    for (const ticket of this.tickets.values()) {
+      if (ticket.userId === userId && !ticket.usedAt) {
+        ticket.usedAt = now;
+      }
+    }
   }
 }
 
@@ -1657,6 +1837,7 @@ export const admittedAbuseControlDecision = (
   limit: 100,
   remaining: 99,
   resetAtMs: Date.now() + 60_000,
+  resetAfterSeconds: 60,
   ...overrides,
 });
 
@@ -1710,7 +1891,12 @@ export class InMemoryAbuseControlRepository implements AbuseControlRepositoryPor
       windowStartedAt,
       blockedUntil,
     });
-    return { entry, blocked: Boolean(blockedUntil && blockedUntil > input.now), weightedAttemptCount };
+    return {
+      entry,
+      evaluatedAt: input.now,
+      blocked: Boolean(blockedUntil && blockedUntil > input.now),
+      weightedAttemptCount,
+    };
   }
 
   private store(input: {
@@ -4794,6 +4980,8 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     operatorAccountId?: string;
     operatorUserId?: string;
     operatorDisplayName?: string;
+    pendingSpeech?: boolean;
+    interruption?: ReplyInterruption;
     inputMetadata?: MessageRecord["inputMetadata"];
     metadata?: Record<string, unknown>;
     skillName?: string;
@@ -4823,12 +5011,97 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
       skillName: input.skillName,
       skillOutcome: input.skillOutcome,
       skillStatus: input.skillStatus,
+      ...(input.pendingSpeech ? { speech: { state: "pending" as const } } : {}),
+      ...(input.interruption ? { interruption: { ...input.interruption } } : {}),
       createdAt: new Date(this.nextCreatedAtMs++),
     };
     const items = this.items.get(input.conversationId) ?? [];
     items.push(record);
     this.items.set(input.conversationId, items);
     return record;
+  }
+
+  async markReplyInterrupted(input: { workspaceId: string; conversationId: string; messageId: string } & Omit<ReplyInterruption, "partial">): Promise<boolean> {
+    const reply = (this.items.get(input.conversationId) ?? [])
+      .find((message) => message.id === input.messageId && message.workspaceId === input.workspaceId && message.role === "assistant");
+    if (!reply) return false;
+    reply.interruption ??= { heardCharacterCount: input.heardCharacterCount, spokenCharacterCount: input.spokenCharacterCount, partial: false };
+    return true;
+  }
+
+  /** Claims on teammate replies by message id, as the Postgres repository keeps them in `speech`. */
+  private readonly speechClaims = new Map<string, { claimTurnId: string; claimedAtMs: number }>();
+
+  /** The conversation's teammate replies, as the Postgres repository orders them: oldest first, then by id. */
+  private teammateReplies(input: { workspaceId: string; conversationId: string }): MessageRecord[] {
+    return (this.items.get(input.conversationId) ?? [])
+      .filter((message) => message.workspaceId === input.workspaceId && message.role === "assistant" && isHumanAuthoredMessageSource(message.source))
+      .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime() || left.id.localeCompare(right.id));
+  }
+
+  /** Pending, or claimed by a turn that never settled it within the expiry. */
+  private awaitsSpeech(message: MessageRecord): boolean {
+    if (message.speech?.state !== "pending") return false;
+    const claim = this.speechClaims.get(message.id);
+    return !claim || Date.now() - claim.claimedAtMs > VOICE_BEHAVIOR.operatorReplyClaimExpiryMs;
+  }
+
+  private claimedBy(message: MessageRecord, claimTurnId: string): boolean {
+    return message.speech?.state === "pending" && this.speechClaims.get(message.id)?.claimTurnId === claimTurnId;
+  }
+
+  async claimPendingOperatorReplies(input: { workspaceId: string; conversationId: string; claimTurnId: string }): Promise<PendingOperatorReply[]> {
+    return this.teammateReplies(input)
+      .filter((message) => this.awaitsSpeech(message))
+      .map((message) => {
+        this.speechClaims.set(message.id, { claimTurnId: input.claimTurnId, claimedAtMs: Date.now() });
+        return { messageId: message.id, text: message.content };
+      });
+  }
+
+  async markOperatorRepliesSpoken(input: OperatorReplyClaim): Promise<string[]> {
+    return this.replaceSpeech(input, { state: "spoken", spokenAt: new Date().toISOString() });
+  }
+
+  async skipOperatorReplies(input: OperatorReplyClaim): Promise<string[]> {
+    return this.replaceSpeech(input, { state: "skipped" });
+  }
+
+  async releaseOperatorReplies(input: OperatorReplyClaim): Promise<string[]> {
+    return this.replaceSpeech(input, { state: "pending" });
+  }
+
+  /** Replaces the speech of those of `messageIds` the turn still holds. */
+  private replaceSpeech(input: OperatorReplyClaim, next: NonNullable<MessageRecord["speech"]>): string[] {
+    const replaced: string[] = [];
+    for (const message of this.teammateReplies(input)) {
+      if (input.messageIds.includes(message.id) && this.claimedBy(message, input.claimTurnId)) {
+        this.speechClaims.delete(message.id);
+        message.speech = next;
+        replaced.push(message.id);
+      }
+    }
+    return replaced;
+  }
+}
+
+/**
+ * The Postgres turn persistence's cut-reply store over the in-memory repositories: the heard part
+ * of a reply cut off mid-stream, the conversation's touch, and the turn's audit events.
+ */
+export class InMemoryCutReplyStore implements CutReplyStore {
+  constructor(
+    private readonly messages: Pick<InMemoryMessageRepository, "create">,
+    private readonly conversations: Pick<ConversationRepositoryPort, "touch">,
+    private readonly auditEvents: Pick<InMemoryAuditEventRepository, "create">,
+  ) {}
+
+  async storeCutReply(input: CutReplyStoreInput): Promise<void> {
+    await this.messages.create(input.assistantMessage);
+    await this.conversations.touch(input.conversationId, input.workspaceId);
+    for (const auditEvent of input.auditEvents) {
+      await this.auditEvents.create(auditEvent);
+    }
   }
 }
 

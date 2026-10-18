@@ -51,6 +51,13 @@ const httpWebhookUrl = z.string().url().refine((value) => {
     return false;
   }
 }, { message: "must be an HTTP(S) URL" });
+const redisUrl = z.string().url().refine((value) => {
+  try {
+    return ["redis:", "rediss:"].includes(new URL(value).protocol);
+  } catch {
+    return false;
+  }
+}, { message: "must be a redis:// or rediss:// URL" });
 
 const RESEND_CHANNEL_REGIONS = ["us-east-1", "eu-west-1", "sa-east-1", "ap-northeast-1"] as const;
 // Structural DNS hostname: two or more letter-digit-hyphen labels, checked after lower-casing.
@@ -188,6 +195,8 @@ const envSchema = z.object({
   DB_QUERY_TIMEOUT_MS: z.coerce.number().int().positive().default(20_000),
   DB_MIGRATION_LOCK_TIMEOUT_MS: z.coerce.number().int().positive().default(10_000),
   DB_MIGRATION_STATEMENT_TIMEOUT_MS: z.coerce.number().int().positive().default(25_000),
+  ABUSE_CONTROL_REDIS_URL: emptyStringToUndefined(redisUrl),
+  ABUSE_CONTROL_REDIS_COMMAND_TIMEOUT_MS: z.coerce.number().int().positive().default(1_000),
   OPENAI_API_KEY: emptyStringToUndefined(z.string().min(1)),
   OPENAI_CHAT_MODEL: emptyStringToUndefined(z.string().min(1)),
   OPENAI_RERANK_MODEL: emptyStringToUndefined(z.string().min(1)),
@@ -213,6 +222,8 @@ const envSchema = z.object({
   WEBSITE_EMBED_SECRET: emptyStringToUndefined(z.string().min(16)),
   SESSION_TTL_HOURS: z.coerce.number().int().positive().default(168),
   AUTH_AUTO_VERIFY_EMAIL: booleanish(false),
+  AUTH_EXPOSE_EMAIL_VERIFICATION_LINK: booleanish(false),
+  AUTH_PENDING_REGISTRATION_TTL_MINUTES: z.coerce.number().int().positive().max(60).default(15),
   CONNECTOR_ENCRYPTION_KEY: emptyStringToUndefined(
     z
       .string()
@@ -510,6 +521,13 @@ const envSchema = z.object({
       message: "AUTH_AUTO_VERIFY_EMAIL can only be enabled when NODE_ENV is development",
     });
   }
+  if (value.NODE_ENV !== "development" && value.AUTH_EXPOSE_EMAIL_VERIFICATION_LINK) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["AUTH_EXPOSE_EMAIL_VERIFICATION_LINK"],
+      message: "AUTH_EXPOSE_EMAIL_VERIFICATION_LINK can only be enabled when NODE_ENV is development",
+    });
+  }
 
   const operatorMcpFields = [
     "OPERATOR_MCP_RESOURCE_URL",
@@ -567,7 +585,8 @@ type ParsedEnv = z.infer<typeof envSchema>;
 type RealtimeEnvInputKey = Extract<keyof ParsedEnv, `REALTIME_${string}`>;
 type OperatorMcpEnvInputKey = Extract<keyof ParsedEnv, `OPERATOR_MCP_${string}`>;
 type EmailChannelEnvInputKey = Extract<keyof ParsedEnv, keyof typeof emailChannelEnvShape>;
-type OptionalEnvInputKey = RealtimeEnvInputKey | OperatorMcpEnvInputKey | EmailChannelEnvInputKey;
+type AbuseControlEnvInputKey = Extract<keyof ParsedEnv, `ABUSE_CONTROL_${string}`>;
+type OptionalEnvInputKey = RealtimeEnvInputKey | OperatorMcpEnvInputKey | EmailChannelEnvInputKey | AbuseControlEnvInputKey;
 
 // Realtime and the email channel are opt-in runtimes: existing API/worker test compositions may
 // omit their inputs, and each one's parser supplies the defaults.

@@ -46,6 +46,7 @@ const coverage: Record<string, ErasureCoverage> = {
   "email_inbound_deliveries.message_id": { kind: "row_cascades_with", column: "conversation_id" },
   "eval_snapshots.source_message_id": { kind: "row_cascades_with", column: "source_conversation_id" },
   "held_replies.released_message_id": { kind: "row_cascades_with", column: "conversation_id" },
+  "routine_states.started_message_id": { kind: "row_cascades_with", column: "session_id", reason: "The visitor message that started the current routine execution, in the same conversation." },
   "voice_sessions.conversation_id": {
     kind: "eraser",
     owner: "voice-channel",

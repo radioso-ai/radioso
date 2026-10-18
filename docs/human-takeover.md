@@ -193,6 +193,18 @@ the customer wrote to and renews the thread's
 for its headers and delivery states. On one whose sending domain has not
 verified, the reply is refused before anything is written at all.
 
+On a voice conversation, the reply is spoken to the caller the next time they
+speak: a call speaks only when its caller does, so the reply waits for their
+next utterance and is then spoken in place of the agent's waiting line. The
+reply carries `speech: { "state": "pending" }` in history until then, and
+`{ "state": "spoken", "spokenAt": "…" }` after, where `spokenAt` is when the
+turn that spoke it completed; a reply with no words a call can say is
+`{ "state": "skipped" }` and is never spoken. The Inbox shows it as
+**Pending**, then **Spoken** (or **Not spoken: no words to say**), and says
+beside Send that the caller hears the reply on their next turn. A reply still
+pending when you hand the call back is spoken before the agent answers. See
+[Voice Channel](voice-channel.md#outcomes).
+
 Otherwise, the ownership check, the saved reply, and its delivery to a
 customer channel such as Slack or email commit together, with the
 conversation and its ownership record locked in between. A transfer or
@@ -652,9 +664,11 @@ unsigned reply, or one whose only signature is an email address, shows as
 "👤 A teammate". The operator tail also includes each reply's `operatorLabel`
 and, once a teammate has been involved in the conversation, its `ownership`
 record — AI-owned after a hand-back — so a reader polling the tail sees a claim,
-transfer, or hand-back made elsewhere. The operator conversation detail carries
-the same record, so whichever of the two a reader loaded last, the higher
-`version` is the current one. Both also carry the conversation's
+transfer, or hand-back made elsewhere. On a voice conversation the operator
+tail also returns a reply it already delivered once the call has spoken or
+skipped it, now carrying `speech` with that state, so merge messages by `id`. The
+operator conversation detail carries the same record, so whichever of the two a
+reader loaded last, the higher `version` is the current one. Both also carry the conversation's
 [activity](#conversation-activity). The visitor tail and detail carry none of these.
 
 The third caller is an AI agent on the other side of the MCP converse surface. It
@@ -683,8 +697,13 @@ message until a topic exists — with an outcome chip (In progress, Completed,
 or Handed off) plus search and filters for outcome, agent, and site.
 
 In **Needs you**, the left pane lists open items with search and filters for
-type, agent, and **Taken by**, which groups items by teammate — **Me** matches
-the conversations you hold; critical escalations — an approval
+type, agent, channel, and **Taken by**, which groups items by teammate — **Me** matches
+the conversations you hold. Type, agent, and channel stay in the URL, so you can
+share a narrowed queue or return to it after a refresh. The Inbox reads every
+available page of waiting handoffs; when a cursor-backed source still has older
+items, **Load older** names the remaining handoffs and brings them into the queue.
+Commented feedback keeps the queue focused on its newest 25 items and names any
+additional feedback with a link to the matching Quality review. Critical escalations — an approval
 to decide, a handoff awaiting or held by a human — sort to the top, followed
 by written negative feedback ordered by its latest creation or edit.
 Automatically detected signals and uncommented feedback stay in **Quality**

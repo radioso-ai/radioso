@@ -666,6 +666,10 @@ describe("runtime startup", () => {
       expect(Reflect.get(lifecycle as ChatTurnLifecycle, "assistantTurnPersistence")).toBeInstanceOf(
         PostgresAssistantTurnPersistence,
       );
+      // The heard part of a reply cut off mid-stream is kept with its audit events in one transaction.
+      expect(Reflect.get(lifecycle as ChatTurnLifecycle, "cutReplyStore")).toBe(
+        Reflect.get(lifecycle as ChatTurnLifecycle, "assistantTurnPersistence"),
+      );
     } finally {
       await dependencies.connectorDb.close();
     }

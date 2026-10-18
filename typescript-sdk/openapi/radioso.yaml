@@ -141,6 +141,10 @@ components:
           type: string
         requiresEmailVerification:
           type: boolean
+        developmentVerificationUrl:
+          type: string
+          format: uri
+          description: Development-only verification URL. Absent unless explicitly enabled in a development runtime.
       required:
         - userId
         - displayName
@@ -237,6 +241,13 @@ components:
             - true
       required:
         - verified
+    PendingRegistrationSessionResponse:
+      type: object
+      properties:
+        ready:
+          type: boolean
+      required:
+        - ready
     Workspace:
       type: object
       properties:
@@ -296,6 +307,69 @@ components:
             $ref: "#/components/schemas/Workspace"
       required:
         - workspaces
+    WorkspaceSetupState:
+      type: object
+      properties:
+        purpose:
+          type:
+            - string
+            - "null"
+        dismissed:
+          type: boolean
+        skippedSteps:
+          type: array
+          items:
+            type: string
+            enum:
+              - purpose
+              - documents
+              - conversation
+              - directives_or_routines
+              - notify_destination
+              - credential
+        shouldShowFirstRun:
+          type: boolean
+        hasDirectivesOrRoutines:
+          type: boolean
+        hasNotifyDestination:
+          type: boolean
+        hasNotifyDeliveryConfirmed:
+          type: boolean
+        hasCredential:
+          type: boolean
+      required:
+        - purpose
+        - dismissed
+        - skippedSteps
+        - shouldShowFirstRun
+        - hasDirectivesOrRoutines
+        - hasNotifyDestination
+        - hasNotifyDeliveryConfirmed
+        - hasCredential
+    UpdateWorkspaceSetupStateRequest:
+      type: object
+      properties:
+        purpose:
+          type:
+            - string
+            - "null"
+          minLength: 1
+          maxLength: 2000
+        dismissed:
+          type: boolean
+        skippedSteps:
+          type: array
+          items:
+            type: string
+            enum:
+              - purpose
+              - documents
+              - conversation
+              - directives_or_routines
+              - notify_destination
+              - credential
+          maxItems: 6
+      additionalProperties: false
     WorkspaceSummaryResponse:
       type: object
       properties:
@@ -330,6 +404,8 @@ components:
           type: boolean
         websiteCrawlerEnabled:
           type: boolean
+        setup:
+          $ref: "#/components/schemas/WorkspaceSetupState"
       required:
         - documentCount
         - readyDocumentCount
@@ -343,6 +419,7 @@ components:
         - hasCompletedChat
         - sampleDocumentsImported
         - websiteCrawlerEnabled
+        - setup
     RegisterRequest:
       type: object
       properties:
@@ -4219,6 +4296,8 @@ components:
                     minLength: 1
                     maxLength: 120
                     pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                  includeAiSummary:
+                    type: boolean
                 additionalProperties: false
               ordinal:
                 type: integer
@@ -4623,6 +4702,8 @@ components:
                         minLength: 1
                         maxLength: 120
                         pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                      includeAiSummary:
+                        type: boolean
                     additionalProperties: false
                   ordinal:
                     type: integer
@@ -5089,6 +5170,8 @@ components:
                     minLength: 1
                     maxLength: 120
                     pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                  includeAiSummary:
+                    type: boolean
                 additionalProperties: false
               ordinal:
                 type: integer
@@ -5547,6 +5630,8 @@ components:
                         minLength: 1
                         maxLength: 120
                         pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                      includeAiSummary:
+                        type: boolean
                     additionalProperties: false
                   ordinal:
                     type: integer
@@ -6748,6 +6833,8 @@ components:
                         minLength: 1
                         maxLength: 120
                         pattern: ^[A-Za-z_][A-Za-z0-9_]*$
+                      includeAiSummary:
+                        type: boolean
                     additionalProperties: false
                   ordinal:
                     type: integer
@@ -10896,10 +10983,28 @@ components:
         spokenCharacterCount:
           type: integer
           minimum: 0
+        partial:
+          type: boolean
       required:
         - heardCharacterCount
         - spokenCharacterCount
-      description: "Present on an assistant reply the caller cut short by speaking over it on the voice channel: how much of the reply they heard. Both counts are in the characters the channel spoke, so they do not index into `content`, which keeps the full reply."
+        - partial
+      description: "Present on an assistant reply the caller cut short by speaking over it on the voice channel: how much of the reply they heard. Both counts are in the characters the channel spoke, so they do not index into `content`. `partial: false`: the reply had finished, and `content` keeps all of it. `partial: true`: the caller cut the reply off while it was still being said, so `content` keeps only the sentences they heard whole; `heardCharacterCount` follows the voice runtime's record of what it played, and `spokenCharacterCount` counts what reached the runtime. Without such a record, everything that reached the runtime counts as heard and the two counts are equal."
+    OperatorReplySpeech:
+      type: object
+      properties:
+        state:
+          type: string
+          enum:
+            - pending
+            - spoken
+            - skipped
+        spokenAt:
+          type: string
+          format: date-time
+      required:
+        - state
+      description: "Present on a teammate's reply on a voice conversation. A call speaks only when its caller does, so the reply is `pending` until the caller's next turn speaks it, then `spoken`, with `spokenAt` set to when the turn that spoke it ended. When the caller speaks over a turn before it finished, a reply the voice runtime played to its end is `spoken`, and the reply it was playing, with any after it, stays `pending` for the turn that cut in to speak whole. `skipped`: the reply has no words a call can speak, so no turn speaks it."
     ChatConversationMessage:
       type: object
       properties:
@@ -10947,6 +11052,8 @@ components:
           type: string
         interruption:
           $ref: "#/components/schemas/ReplyInterruption"
+        speech:
+          $ref: "#/components/schemas/OperatorReplySpeech"
         debug:
           $ref: "#/components/schemas/ChatConversationMessageDebug"
         turnFailure:
@@ -10999,6 +11106,8 @@ components:
           type: string
         interruption:
           $ref: "#/components/schemas/ReplyInterruption"
+        speech:
+          $ref: "#/components/schemas/OperatorReplySpeech"
       required:
         - id
         - role
@@ -15329,6 +15438,11 @@ components:
         conversationId:
           type: string
           format: uuid
+        channel:
+          type:
+            - string
+            - "null"
+          description: The conversation's source channel; null when its conversation record is unavailable.
         agentId:
           type:
             - string
@@ -15443,6 +15557,7 @@ components:
       required:
         - id
         - conversationId
+        - channel
         - agentId
         - state
         - holdReason
@@ -15553,6 +15668,10 @@ components:
         createdAt:
           type: string
           format: date-time
+        channel:
+          type:
+            - string
+            - "null"
       required:
         - handle
         - conversationId
@@ -15565,6 +15684,7 @@ components:
         - canResolve
         - deadline
         - createdAt
+        - channel
     PendingApprovalDecisionListResponse:
       type: object
       properties:
@@ -17249,7 +17369,7 @@ paths:
               $ref: "#/components/schemas/RegisterRequest"
       responses:
         "201":
-          description: Account created; email verification may be required before sign-in
+          description: Account created; when email verification is required, a pending-registration cookie is also issued
           content:
             application/json:
               schema:
@@ -17385,7 +17505,7 @@ paths:
               $ref: "#/components/schemas/EmailVerificationVerifyRequest"
       responses:
         "200":
-          description: Email address verified
+          description: Email address verified and a session cookie established
           content:
             application/json:
               schema:
@@ -17423,6 +17543,26 @@ paths:
                 $ref: "#/components/schemas/AcceptedResponse"
         "400":
           description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/auth/email-verification/pending-session:
+    post:
+      tags:
+        - Auth
+      summary: Exchange a pending registration ticket for a session
+      description: Uses the short-lived httpOnly pending-registration cookie. Returns the same response shape when the cookie is missing, invalid, expired, used, or waiting for verification.
+      operationId: exchangePendingRegistrationSession
+      responses:
+        "200":
+          description: Pending registration status returned; a ready response also establishes the session cookie
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PendingRegistrationSessionResponse"
+        "429":
+          description: Rate limit exceeded
           content:
             application/json:
               schema:
@@ -21978,6 +22118,41 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/workspace/setup-state:
+    get:
+      tags:
+        - Workspace
+      summary: Get workspace setup state and outcome checklist
+      operationId: getWorkspaceSetupState
+      security:
+        - bearerAuth: []
+      responses:
+        "200":
+          description: Workspace setup state returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceSetupState"
+    patch:
+      tags:
+        - Workspace
+      summary: Update persisted workspace setup state
+      operationId: updateWorkspaceSetupState
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateWorkspaceSetupStateRequest"
+      responses:
+        "200":
+          description: Workspace setup state updated
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorkspaceSetupState"
   /api/v1/workspace/summary:
     get:
       tags:
@@ -32784,6 +32959,19 @@ paths:
           required: false
           name: ownership
           in: query
+        - schema:
+            type: string
+            format: uuid
+          required: false
+          name: agentId
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+          required: false
+          name: channel
+          in: query
       responses:
         "200":
           description: Chat history summaries
@@ -32944,7 +33132,7 @@ paths:
       tags:
         - History
       summary: Poll new messages for a saved assistant conversation
-      description: Returns the messages after `cursor`. It also returns an assistant reply the client has already seen once the caller has marked it interrupted, carrying `interruption`, in time order with the new messages. Merge messages by `id`, so a re-delivered message replaces the one you hold.
+      description: "Returns the messages after `cursor`. It also returns an assistant reply the client has already seen once it is marked: the caller cut it short, carrying `interruption`, or a teammate's reply was spoken to the caller or skipped, carrying `speech` with `state: \"spoken\"` or `\"skipped\"`. Re-delivered replies come in time order with the new messages. Merge messages by `id`, so a re-delivered message replaces the one you hold."
       operationId: tailHistoryConversation
       security:
         - bearerAuth: []
@@ -33656,6 +33844,13 @@ paths:
         - schema:
             type: string
             minLength: 1
+            maxLength: 100
+          required: false
+          name: channel
+          in: query
+        - schema:
+            type: string
+            minLength: 1
           required: false
           name: cursor
           in: query
@@ -33822,6 +34017,13 @@ paths:
             format: uuid
           required: false
           name: agentId
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+          required: false
+          name: channel
           in: query
         - schema:
             type: string
@@ -34034,6 +34236,20 @@ paths:
       operationId: listPendingDecisions
       security:
         - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: false
+          name: agentId
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+          required: false
+          name: channel
+          in: query
       responses:
         "200":
           description: Pending approval decisions for the workspace

@@ -57,6 +57,7 @@ import { hasSpokenWords, spokenLength } from "./speechText.js";
 import { heardSpeechOf, type HeardSpeech, type ReachedSpeech } from "./heardSpeech.js";
 import {
   cutOffAt,
+  supersededBeforeOutcome,
   VoiceSessionMemory,
   type ReplayableVoiceExchange,
   type VoiceExchange,
@@ -663,8 +664,7 @@ export class VoiceTurnService implements VoiceTurnPort {
     }
     const reply = switched.reply.read();
     yield* this.delivered(prepared ? applyVoiceTurnPolicy(reply, prepared.policy) : withoutPhaseMarkers(reply), record, claim, sessionKey);
-    const overtaken = claim.supersededAt !== null && (claim.outcomeAt === null || claim.supersededAt <= claim.outcomeAt);
-    record.result = overtaken ? "superseded" : "completed";
+    record.result = supersededBeforeOutcome(claim) ? "superseded" : "completed";
   }
 
   /**
@@ -708,8 +708,7 @@ export class VoiceTurnService implements VoiceTurnPort {
     }
     const reply = this.storedReplyEvents(input, conversationId, record, startedAt + this.timing.turnLimitMs);
     yield* this.delivered(prepared ? applyVoiceTurnPolicy(reply, prepared.policy) : withoutPhaseMarkers(reply), record, claim, sessionKey);
-    const overtaken = claim.supersededAt !== null && (claim.outcomeAt === null || claim.supersededAt <= claim.outcomeAt);
-    record.result = overtaken ? "superseded" : "completed";
+    record.result = supersededBeforeOutcome(claim) ? "superseded" : "completed";
   }
 
   /**

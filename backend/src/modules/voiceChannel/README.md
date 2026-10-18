@@ -136,8 +136,9 @@ helpers and the shared chat message limit from `app/http`
   session store, `AssistantChatService.streamAnswer`, the agent repository (voice
   settings and default locale), the routine state store, the conversation
   ownership reader (`handoff/public.ts`), the message repository as chat's
-  `OperatorReplySpeechClaims` (with `randomUUID` minting each turn's claim id)
-  and `ReplyInterruptionMarker`, and the audit service (the
+  `OperatorReplySpeechClaims` (with `randomUUID` minting each turn's claim id),
+  `ReplyInterruptionMarker` and, through `createVoiceStoredReplyReader`, the
+  `VoiceStoredReplyReader` a switch's follow-up reads, and the audit service (the
   `voice.reply_interrupted`, `voice.reply_replayed` and
   `voice.operator_reply_spoken` notes, built by `createVoiceTurnNotes`; a
   reply chat stored as its heard part carries its `voice.reply_interrupted`
@@ -386,33 +387,47 @@ helpers and the shared chat message limit from `app/http`
 - **Switching the call's language.** On an agent with
   `voice.languageSwitching`, a request whose `tools` offer the dialect's
   switching tool (`VoiceTurnInput.languageSwitchOffer`, with the languages the
-  runtime refused on the call) may switch the call. Chat reports the turn's
-  response language as a `language` stream event (the planner's
-  `responseLanguageTag`; the request sets `reportResponseLanguage`), and until
-  it arrives the policy holds the bridges a phase brings; the 2.5 s stall
-  bridge and the limit stay armed. When the tag's primary subtag differs from
-  the call's (`resolveVoiceLanguage` over the reported turn language, the
-  session locale and the agent default), was not refused, and nothing was
-  spoken on the request (a teammate's reply or a bridge), the turn yields
-  `switchLanguage` (the primary subtag, reason `response_language`, an id from
-  `newLanguageSwitchId`) and `outcome: continue`, and the presenter renders the
-  tool call alone with `finish_reason: "tool_calls"`, since content beside it
-  is spoken twice (probe, 2026-10-18). The chat turn runs on behind the
-  response: `SwitchedTurns` holds its remaining events, with the phases seen,
-  for the follow-up, keyed by session, switch id and utterance, for
-  `replayWindowMs`; the turn settles and logs `languageSwitch: "emitted"`
-  (with no outcome count) when its chat turn ends. The runtime's follow-up
-  (`VoiceTurnInput.languageSwitchResult`, the replayed `fc_` prefix removed)
-  speaks those events under the policy as a turn of its own (its clock, its
-  lines in the language it reports), claims the teammate replies pending by
-  then, logs `confirmed` or `refused`, counts the outcome, and is the record
-  chat's `deliveredReply` consults if a newer utterance cuts it off; its
-  exchange (the switched turn's stored reply, the follow-up's speech) is the
-  session's newest. A switch with no follow-up in the window, or overtaken by
-  a new utterance, is `unanswered`; its answer stays the conversation's reply.
-  `voice_language_switch_total{outcome}` counts the four outcomes. A follow-up
-  this process holds no switch for logs `Voice language switch follow-up
-  found no answer to speak` at warn and speaks nothing.
+  runtime refused on the call) may switch the call. Only such a turn asks
+  chat for the `language` stream event (`reportResponseLanguage`; the
+  planner's `responseLanguageTag`), and until it arrives the policy holds the
+  bridges a phase brings; the 2.5 s stall bridge and the limit stay armed.
+  The window closes `VOICE_BEHAVIOR.languageSwitchDecisionMs` (4 s) into the
+  turn, at the first spoken line, or when the language arrives. The turn
+  switches when the tag's primary subtag differs from the call's
+  (`resolveVoiceLanguage` over the reported turn language, the session locale
+  and the agent default; compared only when both subtags have two letters),
+  the runtime did not refuse it, the request reports no `unreadable` switch,
+  and no teammate's reply was spoken: it yields `switchLanguage` (the primary
+  subtag, reason `response_language`, an id from `newLanguageSwitchId`) and
+  `outcome: continue`, and the presenter renders the tool call alone with
+  `finish_reason: "tool_calls"`, since content beside it is spoken twice. The
+  dialect's whitespace keep-alive before it is safe, and its replay as a
+  whitespace-only assistant message reads as nothing said (probe,
+  2026-10-18). The chat turn runs on behind the response: `SwitchedTurns`
+  holds its remaining events, with the phases seen, its start, profile and
+  routine state, for the follow-up, one per session, for `replayWindowMs`; the
+  turn settles and logs `languageSwitch: "emitted"` when its chat turn ends.
+  The runtime's follow-up (`VoiceTurnInput.languageSwitchResult`, recognized
+  by Radioso's own reason, the replayed `fc_` prefix removed) takes the
+  session's held turn when the utterance matches (warning when it names
+  another switch id; another utterance lets the held turn go as
+  `mismatched`), reads only the conversation's owner, and speaks those events
+  under the policy as part of the switched turn: its bridge and limit count
+  from that turn's start, its lines are in the language it reports. It claims
+  the teammate replies pending by then, counts `confirmed` or `refused` once
+  it is past its supersession check (overtaken before it spoke, the switch is
+  `unanswered`), is the record chat's `deliveredReply` consults if a newer
+  utterance cuts it off, and its exchange is the session's newest. A
+  follow-up this process holds nothing for (`unheld`) reads the conversation
+  through `VoiceStoredReplyReader` every `switchFollowUpPollMs`: it bridges in
+  its language and speaks the agent's answer whole once it is stored, or the
+  fallback line at the limit. A switch let go unspoken (`unanswered`,
+  `mismatched`) marks its exchange cut off at the switch, so an identical
+  re-request replays it, and counts its outcome once its chat turn ends; a
+  switching turn's outcome and lines' language are counted once. A reply that
+  fails after the switch is the switched turn's failure, logged once. A switch
+  Radioso asked for is no `userExpectedLocale` news on the next turn.
+  `voice_language_switch_total{outcome}` counts the six outcomes.
 - **Another tool's follow-up is no turn.** A request whose newest message has
   `role: "tool"` for any other tool is the runtime's follow-up after running
   it; read as a turn, its newest user message would be answered again (a

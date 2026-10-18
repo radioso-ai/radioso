@@ -93,7 +93,7 @@ interface HeldTurn<Turn> {
 export type UnspokenSwitchReason = "unanswered" | "mismatched";
 
 /** What a follow-up finds: the session's held turn, and whether it names the switch that turn asked for. */
-export type SwitchedTurnTake<Turn> = { kind: "taken"; turn: Turn; sameSwitch: boolean } | { kind: "none" };
+type SwitchedTurnTake<Turn> = { kind: "taken"; turn: Turn; sameSwitch: boolean } | { kind: "none" };
 
 /**
  * The turns of each session that asked the runtime to switch the call's language and wait for its

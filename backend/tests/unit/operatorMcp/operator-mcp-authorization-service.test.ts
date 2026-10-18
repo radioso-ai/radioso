@@ -4,6 +4,10 @@ import { describe, expect, it, vi } from "vitest";
 
 import { OperatorMcpAuthorizationService } from "../../../src/modules/operatorMcpAuthorization/authorizationService.js";
 import { hashOpaqueCredential } from "../../../src/modules/operatorMcpAuthorization/domain.js";
+import type {
+  OperatorMcpAuthorizationFlowRepositoryPort,
+  OperatorMcpAuthorizationTransactionRecord,
+} from "../../../src/modules/operatorMcpAuthorization/contracts.js";
 
 const id = (suffix: string): string => `00000000-0000-4000-8000-${suffix.padStart(12, "0")}`;
 const now = new Date("2026-09-04T00:00:00.000Z");
@@ -20,7 +24,7 @@ const config = {
   refreshAbsoluteTtlDays: 90,
 };
 
-const transaction = {
+const transaction: OperatorMcpAuthorizationTransactionRecord = {
   id: id("1"), clientRecordId: id("2"), clientId: "https://client.example/cimd", clientVersion: "3",
   clientMetadataSnapshotId: id("3"), clientMetadataDigest: "sha256:metadata", clientDisplayName: "Example Client",
   clientUri: "https://client.example/app",
@@ -37,10 +41,9 @@ const flowRepository = () => ({
   findTransaction: vi.fn(async () => transaction),
   decideTransaction: vi.fn(async () => true),
   exchangeAuthorizationCode: vi.fn(async () => ({ grantId: id("4"), toolScopes: ["operator:read"] as const, offlineAccess: true, attribution })),
-  rotateRefreshCredential: vi.fn<() => Promise<
-    | { status: "rotated"; grantId: string; toolScopes: readonly ["operator:read"] }
-    | { status: "replay" }
-  >>(async () => ({ status: "rotated", grantId: id("4"), toolScopes: ["operator:read"] })),
+  rotateRefreshCredential: vi.fn<OperatorMcpAuthorizationFlowRepositoryPort["rotateRefreshCredential"]>(
+    async () => ({ status: "rotated", grantId: id("4"), toolScopes: ["operator:read"] }),
+  ),
   revokeCredentialByDigest: vi.fn<() => Promise<typeof attribution | null>>(async () => null),
 });
 

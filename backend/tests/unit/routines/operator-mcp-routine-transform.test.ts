@@ -6,6 +6,9 @@ import {
 } from "../../../src/modules/routines/operatorMcpRoutineTransform.js";
 import { validateRoutineDefinition } from "../../../src/modules/routines/validator.js";
 import type { RoutineDefinition } from "../../../src/modules/routines/domain.js";
+import { routineDefinitionSchema } from "@radioso/routine-definition";
+
+type RoutineTransition = RoutineDefinition["transitions"][number];
 
 const routine = (): RoutineDefinition => ({
   id: "routine_1",
@@ -17,9 +20,9 @@ const routine = (): RoutineDefinition => ({
   activation: { triggerDescription: "Check eligibility.", gateRef: null, priority: 0, reentryMode: "once_per_conversation" },
   slots: [{ stableSlotId: "slot_email", key: "email", type: "email", required: true, description: null, ordinal: 0 }],
   steps: [
-    { stableStepId: "start", kind: "chat", instruction: "Start with {{slot.email}}.", ordinal: 0, metadata: {} },
-    { stableStepId: "check", kind: "chat", instruction: "Check.", ordinal: 1, metadata: {} },
-    { stableStepId: "follow_up", kind: "chat", instruction: "Follow up.", ordinal: 2, metadata: {} },
+    { stableStepId: "start", kind: "chat", instruction: "Start with {{slot.email}}.", toolRef: null, ordinal: 0, metadata: {} },
+    { stableStepId: "check", kind: "chat", instruction: "Check.", toolRef: null, ordinal: 1, metadata: {} },
+    { stableStepId: "follow_up", kind: "chat", instruction: "Follow up.", toolRef: null, ordinal: 2, metadata: {} },
   ],
   transitions: [
     { fromStep: "start", toRef: "check", guardKind: "default", guardText: null, ordinal: 0 },
@@ -106,10 +109,10 @@ describe("applyOperatorMcpRoutineTransform", () => {
     });
 
     expect(transformed.enabled).toBe(false);
-    expect(transformed.slots[0]).toEqual(expect.objectContaining({ required: false }));
+    expect(transformed.slots?.[0]).toEqual(expect.objectContaining({ required: false }));
     expect(transformed.terminals).toContainEqual(expect.objectContaining({ stableStepId: "handoff" }));
     expect(transformed.steps[0]).toEqual(expect.objectContaining({ instruction: "Welcome {{slot.email}}." }));
-    expect(validateRoutineDefinition({ ...routine(), ...transformed }).ok).toBe(true);
+    expect(validateRoutineDefinition(routineDefinitionSchema.parse({ ...routine(), ...transformed })).ok).toBe(true);
   });
 
   it("rejects stale exact references and incomplete reorder lists", () => {
@@ -123,7 +126,7 @@ describe("applyOperatorMcpRoutineTransform", () => {
 
   it("matches transitions structurally, independent of field order, and rejects an ambiguous edge", () => {
     const source = routine();
-    const target = { guardText: null, ordinal: 0, toRef: "check", guardKind: "default", fromStep: "start" };
+    const target: RoutineTransition = { guardText: null, ordinal: 0, toRef: "check", guardKind: "default", fromStep: "start" };
     const transformed = applyOperatorMcpRoutineTransform(source, {
       operations: [{ kind: "replace_transition", previous: target, next: { ...target, toRef: "done" } }],
     });

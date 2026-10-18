@@ -64,6 +64,17 @@ const noopAuditRepository = {
       createdAt: new Date(),
     };
   },
+  async createIfConversationLive() {
+    return {
+      id: randomUUID(),
+      accountId: null,
+      workspaceId: null,
+      eventType: "",
+      eventStatus: "",
+      metadata: {},
+      createdAt: new Date(),
+    };
+  },
   async listChatAnswerEventsByConversationId() {
     return [];
   },

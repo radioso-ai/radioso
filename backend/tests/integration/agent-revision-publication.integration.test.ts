@@ -157,6 +157,9 @@ describeDb("agent revision publication concurrency", () => {
     const draft = await service.mutateDraft(workspaceId, recoveryAgentId, (current) => ({ ...current, customInstruction: "later" }));
     const later = await service.createCandidate(workspaceId, recoveryAgentId, draft.generation);
     await service.publish(workspaceId, recoveryAgentId, accountId, { revisionId: later.id, expectedDraftGeneration: draft.generation, expectedPublishedRevisionId: targetRef.candidateRevisionId, idempotencyKey: "later-execution" });
-    await expect(adapter.applyIfVersionMatches(workspaceId, targetRef, payload, versionToken, { surface: "mcp", accountId, executionInvocationId: "original-execution" })).resolves.toMatchObject({ outcome: "applied", appliedRef: { publicationId: first.appliedRef.publicationId, revisionId: targetRef.candidateRevisionId } });
+    // The port's `appliedRef` is `unknown` by design (every proposal target shapes it
+    // differently); this adapter's own concrete shape is `{ publicationId, revisionId, publishedAt }`.
+    const firstAppliedRef = first.appliedRef as { publicationId: string };
+    await expect(adapter.applyIfVersionMatches(workspaceId, targetRef, payload, versionToken, { surface: "mcp", accountId, executionInvocationId: "original-execution" })).resolves.toMatchObject({ outcome: "applied", appliedRef: { publicationId: firstAppliedRef.publicationId, revisionId: targetRef.candidateRevisionId } });
   });
 });

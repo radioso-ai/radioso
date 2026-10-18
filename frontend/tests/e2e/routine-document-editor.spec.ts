@@ -638,31 +638,64 @@ test("the gutter's hover trash deletes a step and persists the removal through a
   ).toMatchObject([{ instruction: "Second step text" }]);
 });
 
-test("a new routine's first save keeps the step being edited open, focused, and holding every keystroke", async ({ page }) => {
-  const routineUpdates: RoutineMutationFixture[] = [];
+const newRoutineUrl = new RegExp(`/agents/${defaultAgentId}/routines/new$`);
+const savedRoutineUrl = new RegExp(`/agents/${defaultAgentId}/routines/55555555-[0-9a-f-]+$`);
 
-  await seedDashboardStorage(page);
-  await installDashboardApiMocks(page, { routineUpdates });
-  // Holds the create request so keystrokes land while the first save is in flight. Registered
-  // after the dashboard mocks, so it sees the request first and then hands it on to them.
-  let createRequested = false;
-  let releaseCreate = () => {};
-  const createReleased = new Promise<void>((resolve) => { releaseCreate = resolve; });
+// Holds every create request until released, so keystrokes land while a new routine's first
+// save is in flight. Registered after the dashboard mocks, so it sees each request first and
+// then hands it on to them.
+const holdRoutineCreates = async (page: Page) => {
+  let requests = 0;
+  let release = () => {};
+  const released = new Promise<void>((resolve) => { release = resolve; });
   await page.route(
     (url) => url.pathname === `/backend/api/v1/agents/${defaultAgentId}/routines`,
     async (route) => {
       if (route.request().method() === "POST") {
-        createRequested = true;
-        await createReleased;
+        requests += 1;
+        await released;
       }
       await route.fallback();
     },
   );
+  return { requests: () => requests, release: () => release() };
+};
 
+type HeldAddressMoves = { heldRoutineAddressMoves: () => number; releaseRoutineAddressMoves: () => void };
+
+// Holds the editor's move to a saved routine's address until released. Unheld, the moment
+// between a create returning and the route naming the saved routine lasts about one render.
+const holdRoutineAddressMove = async (page: Page) => {
+  await page.evaluate(() => {
+    const history = window.history;
+    const replaceState = history.replaceState.bind(history);
+    const held: Parameters<History["replaceState"]>[] = [];
+    Object.assign(window, {
+      heldRoutineAddressMoves: () => held.length,
+      releaseRoutineAddressMoves: () => {
+        history.replaceState = replaceState;
+        for (const move of held.splice(0)) replaceState(...move);
+      },
+    });
+    history.replaceState = (...move) => {
+      const url = move[2];
+      if (typeof url === "string" && /\/routines\/(?!new\b)/.test(url)) held.push(move);
+      else replaceState(...move);
+    };
+  });
+  return {
+    requested: () => expect.poll(() => page.evaluate(() => (window as unknown as HeldAddressMoves).heldRoutineAddressMoves())).toBe(1),
+    release: () => page.evaluate(() => (window as unknown as HeldAddressMoves).releaseRoutineAddressMoves()),
+  };
+};
+
+// Opens a new routine with a name and trigger, then its first step's empty instruction, focused:
+// one keystroke short of a draft valid enough to save.
+const openNewRoutineStep = async (page: Page, name: string) => {
   await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
   await page.getByRole("button", { name: "New routine" }).click();
-  await expect(page).toHaveURL(new RegExp(`/agents/${defaultAgentId}/routines/new$`));
-  await page.getByLabel("Name", { exact: true }).fill("Typed across the first save");
+  await expect(page).toHaveURL(newRoutineUrl);
+  await page.getByLabel("Name", { exact: true }).fill(name);
 
   const documentEditor = page.getByRole("article", { name: "Routine document editor" });
   await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
@@ -674,16 +707,30 @@ test("a new routine's first save keeps the step being edited open, focused, and 
   await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
   const instruction = documentEditor.getByLabel("Step 1 instruction");
   await instruction.click();
+  return instruction;
+};
+
+test("a new routine's first save keeps the step being edited open, focused, and holding every keystroke", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+  const creates = await holdRoutineCreates(page);
+  const instruction = await openNewRoutineStep(page, "Typed across the first save");
+  const addressMove = await holdRoutineAddressMove(page);
 
   // The first keystrokes make the draft valid, which starts the first autosave: a create.
   await instruction.pressSequentially("Greet the visitor.");
-  await expect.poll(() => createRequested, { timeout: 15_000 }).toBe(true);
+  await expect.poll(creates.requests, { timeout: 15_000 }).toBe(1);
   // Typed while the create is in flight.
   await page.keyboard.type(" Ask what they need.");
-  releaseCreate();
-  // Typed against the create's response and the move to the saved routine's address.
+  creates.release();
+  // Typed after the create returns, while the route still names a new routine.
+  await addressMove.requested();
   await page.keyboard.type(" Offer help.");
-  await expect(page).toHaveURL(new RegExp(`/agents/${defaultAgentId}/routines/55555555-[0-9a-f-]+$`));
+  await expect(page).toHaveURL(newRoutineUrl);
+  await addressMove.release();
+  await expect(page).toHaveURL(savedRoutineUrl);
   // Typed once the address names the saved routine.
   await page.keyboard.type(" Thank them.");
 
@@ -697,8 +744,9 @@ test("a new routine's first save keeps the step being edited open, focused, and 
   ).toBe(typed);
   expect(routineUpdates.filter((update) => update.method === "POST")).toHaveLength(1);
 
-  // The list carries the new routine, and the next new routine starts blank rather than
-  // recovering this one's draft.
+  // The list carries the new routine, and the next new routine starts blank: the keystrokes
+  // typed while the route still named a new routine did not write this one back as a draft
+  // to recover.
   await page.getByRole("button", { name: "Back to routines" }).click();
   await expect(page.getByRole("button", { name: /^Typed across the first save/ })).toBeVisible();
   await page.getByRole("button", { name: "New routine" }).click();
@@ -708,8 +756,44 @@ test("a new routine's first save keeps the step being edited open, focused, and 
   // The history entry the first save rewrote opens the saved routine, not a blank new one.
   await page.goBack();
   await page.goBack();
-  await expect(page).toHaveURL(new RegExp(`/agents/${defaultAgentId}/routines/55555555-[0-9a-f-]+$`));
+  await expect(page).toHaveURL(savedRoutineUrl);
   await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Typed across the first save");
+  await expect(page.getByRole("article", { name: "Routine document editor" })).toContainText(typed);
+});
+
+test("saves that start while a new routine's create is in flight update the routine it creates", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+  const creates = await holdRoutineCreates(page);
+  const instruction = await openNewRoutineStep(page, "Created once");
+
+  await instruction.pressSequentially("Greet the visitor.");
+  await expect.poll(creates.requests, { timeout: 15_000 }).toBe(1);
+  // Keeps the create held past the 1.5s autosave debounce, so the next autosave starts while
+  // there is no id to update yet.
+  await page.keyboard.type(" Ask what they need.");
+  await page.waitForTimeout(2_000);
+  await page.keyboard.type(" Offer help.");
+  creates.release();
+
+  await expect(page).toHaveURL(savedRoutineUrl);
+  const routineId = new URL(page.url()).pathname.split("/").at(-1);
+  // Test flushes the last keystroke into the routine before leaving for Test Chat.
+  await page.keyboard.type(" Thank them.");
+  await page.getByRole("button", { name: "Test", exact: true }).click();
+  await expect(page).not.toHaveURL(/\/routines\//);
+
+  const typed = "Greet the visitor. Ask what they need. Offer help. Thank them.";
+  expect(creates.requests()).toBe(1);
+  const updates = routineUpdates.filter((update) => update.method === "PATCH");
+  expect(updates.map((update) => update.routineId)).toEqual(updates.map(() => routineId));
+  expect(updates.at(-1)?.body?.steps?.[0]?.instruction).toBe(typed);
+
+  // Back on the routine the address names, every keystroke is in it.
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`/routines/${routineId}$`));
   await expect(page.getByRole("article", { name: "Routine document editor" })).toContainText(typed);
 });
 

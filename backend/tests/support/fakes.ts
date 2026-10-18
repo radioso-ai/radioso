@@ -209,6 +209,7 @@ import type {
   DocumentStorageUploadInput,
 } from "../../src/modules/documents/contracts/storage.js";
 import { createWorkspacePublicRouteKey } from "../../src/modules/workspace/domain/publicRouteKey.js";
+import type { CutReplyStore, CutReplyStoreInput } from "../../src/modules/chat/services/chatTurnLifecycle.js";
 import { conflict, notFound } from "../../src/shared/domain/errors.js";
 import {
   DEFAULT_DOCUMENT_TYPE_CATALOG_REVISION,
@@ -4980,6 +4981,7 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     operatorUserId?: string;
     operatorDisplayName?: string;
     pendingSpeech?: boolean;
+    interruption?: ReplyInterruption;
     inputMetadata?: MessageRecord["inputMetadata"];
     metadata?: Record<string, unknown>;
     skillName?: string;
@@ -5010,6 +5012,7 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
       skillOutcome: input.skillOutcome,
       skillStatus: input.skillStatus,
       ...(input.pendingSpeech ? { speech: { state: "pending" as const } } : {}),
+      ...(input.interruption ? { interruption: { ...input.interruption } } : {}),
       createdAt: new Date(this.nextCreatedAtMs++),
     };
     const items = this.items.get(input.conversationId) ?? [];
@@ -5018,11 +5021,11 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     return record;
   }
 
-  async markReplyInterrupted(input: { workspaceId: string; conversationId: string; messageId: string } & ReplyInterruption): Promise<boolean> {
+  async markReplyInterrupted(input: { workspaceId: string; conversationId: string; messageId: string } & Omit<ReplyInterruption, "partial">): Promise<boolean> {
     const reply = (this.items.get(input.conversationId) ?? [])
       .find((message) => message.id === input.messageId && message.workspaceId === input.workspaceId && message.role === "assistant");
     if (!reply) return false;
-    reply.interruption ??= { heardCharacterCount: input.heardCharacterCount, spokenCharacterCount: input.spokenCharacterCount };
+    reply.interruption ??= { heardCharacterCount: input.heardCharacterCount, spokenCharacterCount: input.spokenCharacterCount, partial: false };
     return true;
   }
 
@@ -5079,6 +5082,26 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
       }
     }
     return replaced;
+  }
+}
+
+/**
+ * The Postgres turn persistence's cut-reply store over the in-memory repositories: the heard part
+ * of a reply cut off mid-stream, the conversation's touch, and the turn's audit events.
+ */
+export class InMemoryCutReplyStore implements CutReplyStore {
+  constructor(
+    private readonly messages: Pick<InMemoryMessageRepository, "create">,
+    private readonly conversations: Pick<ConversationRepositoryPort, "touch">,
+    private readonly auditEvents: Pick<InMemoryAuditEventRepository, "create">,
+  ) {}
+
+  async storeCutReply(input: CutReplyStoreInput): Promise<void> {
+    await this.messages.create(input.assistantMessage);
+    await this.conversations.touch(input.conversationId, input.workspaceId);
+    for (const auditEvent of input.auditEvents) {
+      await this.auditEvents.create(auditEvent);
+    }
   }
 }
 

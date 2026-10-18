@@ -211,6 +211,12 @@ subject never hides what the guest said. A value the routine did not collect
 shows as `—`. The webhook body is documented under
 [Operator notifications](/api/agents-and-skills#operator-notifications).
 
+Turn on **Include AI summary** when the team also needs relevant context the
+routine did not collect in a field. Radioso generates it after the ending has
+queued its notice, keeps the collected values as the authoritative record, and
+labels the extra section **AI summary**. If generation cannot finish, the notice
+still sends without that section.
+
 Under **Notify the team**, the **Send with** select chooses which notify
 skill delivers the notice: **Default**, or any enabled notify skill the
 routine can name directly. The line underneath shows where that choice goes

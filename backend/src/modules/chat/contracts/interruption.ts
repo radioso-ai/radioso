@@ -21,25 +21,56 @@ export type ConversationTurnSupersession = "until_emission" | "latest_input_wins
 
 /**
  * How much of a stored assistant reply the caller heard before speaking over it, counted in the
- * characters the channel spoke (the reply as speech text), not in the stored content.
+ * characters the channel spoke (the reply as speech text), not in the stored content. `partial`:
+ * the caller cut the reply off while it was still being spoken, so only the sentences they heard
+ * whole are stored, and `spokenCharacterCount` counts what reached the channel's runtime;
+ * otherwise the reply finished and is stored whole.
  */
 export const replyInterruptionSchema = z.object({
   heardCharacterCount: z.number().int().nonnegative(),
   spokenCharacterCount: z.number().int().nonnegative(),
+  partial: z.boolean(),
 });
 export type ReplyInterruption = z.infer<typeof replyInterruptionSchema>;
 
 /**
  * Marks a stored assistant reply as cut short, keeping the reply's text and other metadata. The
  * first marker on a reply stays as written: a later mark, with the same counts or others, changes
- * nothing. Resolves true when the conversation holds the assistant reply, which then carries a
- * marker, and false when it holds no such reply; a message that is not an assistant reply of the
- * conversation is left alone.
+ * nothing, and a reply stored as its heard part already carries its marker. Resolves true when the
+ * conversation holds the assistant reply, which then carries a marker, and false when it holds no
+ * such reply; a message that is not an assistant reply of the conversation is left alone.
  */
 export interface ReplyInterruptionMarker {
   markReplyInterrupted(input: {
     workspaceId: string;
     conversationId: string;
     messageId: string;
-  } & ReplyInterruption): Promise<boolean>;
+  } & Omit<ReplyInterruption, "partial">): Promise<boolean>;
 }
+
+/**
+ * The part of a reply its listener heard before a newer input cut the turn off while the reply was
+ * still streaming: the reply's own text, as the turn streamed it, up to the end of the last
+ * sentence heard whole (`text`); how many of the reply's characters, as the channel spoke them,
+ * were heard, which can reach into the sentence the cut landed in; and how many reached the
+ * channel's runtime to be spoken. The two counts are equal when the channel has no record of what
+ * was heard and counts everything that reached its runtime as heard.
+ */
+export interface DeliveredReplyPart {
+  text: string;
+  heardCharacterCount: number;
+  spokenCharacterCount: number;
+  /**
+   * The channel's own audit record of the cut, ids and counts only, never what was said: written
+   * in the transaction that stores the part, with the conversation's and the stored message's ids
+   * added to its metadata as `conversationId` and `assistantMessageId`.
+   */
+  auditEvent?: { eventType: string; metadata: Record<string, unknown> };
+}
+
+/**
+ * Asked once, by a `latest_input_wins` turn that a newer input cuts off after its reply started
+ * reaching the listener, so the conversation keeps what the listener got as the turn's reply. The
+ * channel that delivers the reply answers it; null when none of the reply reached the listener.
+ */
+export type DeliveredReplyReader = () => DeliveredReplyPart | null;

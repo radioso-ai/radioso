@@ -8,6 +8,7 @@ import {
   EmailWebhookOperatorNotificationSink,
   FetchContactWebhookHttpClient,
   RoutineEndingNotifyActionHandler,
+  ModelRoutineEndingNoticeSummaryGenerator,
   RepositoryRoutineEndingNotificationSubjectResolver,
   ROUTINE_ENDING_NOTICE_ACTIONS,
   ApprovalRequestActionHandler,
@@ -23,6 +24,7 @@ import { ActionRequestRepository } from "../../../db/repositories/actionRequestR
 import { NotificationDeliveryOutcomeRepository } from "../../../db/repositories/notificationDeliveryOutcomeRepository.js";
 import { PendingDecisionRepository } from "../../../db/repositories/pendingDecisionRepository.js";
 import { RoutineDefinitionRepository } from "../../../db/repositories/routineDefinitionRepository.js";
+import { MessageRepository } from "../../../db/repositories/messageRepository.js";
 import {
   NotificationDeliveryAdmissionService,
   OperatorNotificationDispatcher,
@@ -180,7 +182,7 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
         requiredCapabilities: [capabilityNames.humanContact.request],
         // The turn that reaches the ending queues it; an author sets the notice on the ending.
         queuedFrom: "chat_turn",
-        handler: ({ database, env, logger, mailService, usageLimitPolicy, auditService, assertPublicWebsiteUrl, metrics }) => new RoutineEndingNotifyActionHandler({
+        handler: ({ database, env, logger, mailService, usageLimitPolicy, auditService, assertPublicWebsiteUrl, metrics, llmRegistry, usageEventRecorder }) => new RoutineEndingNotifyActionHandler({
           ending,
           dispatcher: buildOperatorNotificationDispatcher({
             database,
@@ -196,6 +198,11 @@ export const createContactRoutineApplicationModule = (): ApplicationModule => ({
             new RoutineDefinitionRepository(database.kysely),
             new ConversationRepository(database.kysely),
           ),
+          summaryGenerator: new ModelRoutineEndingNoticeSummaryGenerator(
+            new MessageRepository(database.kysely),
+            llmRegistry.createRewriteInferencePipeline(usageEventRecorder),
+          ),
+          logger,
         }),
       });
     }

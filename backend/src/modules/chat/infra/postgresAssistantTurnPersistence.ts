@@ -4,6 +4,7 @@ import { sql } from "kysely";
 import type { RoutineState } from "@radioso/conversation-contract";
 
 import { DEFAULT_ROUTINE_STATE_TTL_MS } from "../../../db/repositories/routineStateRepository.js";
+import { ConversationRepository } from "../../../db/repositories/conversationRepository.js";
 import { MessageRepository, type MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { PendingDecisionCreateInput } from "../../../db/repositories/pendingDecisionRepository.js";
 import { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
@@ -14,6 +15,8 @@ import {
   actionIdempotencyKey,
   type AssistantTurnPersistenceReceipt,
   type AssistantTurnPersistencePort,
+  type CutReplyStore,
+  type CutReplyStoreInput,
 } from "../services/chatTurnLifecycle.js";
 import type { CapturedRoutineTransition } from "../services/routines/deferredRoutineStore.js";
 import type { CapturedClarificationTransition } from "../services/clarification/deferredClarificationStore.js";
@@ -103,11 +106,13 @@ const saveRoutineState = async (
 ): Promise<void> => {
   const expiresAt = state.status === "suspended" ? null : new Date(Date.now() + ttlMs).toISOString();
   await sql`
-    INSERT INTO routine_states (session_id, routine_id, execution_id, path, variables, attempts, reask_count, status, expires_at, updated_at)
+    INSERT INTO routine_states (session_id, routine_id, execution_id, started_message_id, started_execution_id, path, variables, attempts, reask_count, status, expires_at, updated_at)
     VALUES (
       ${state.sessionId},
       ${state.routineId},
       ${state.executionId ?? null},
+      ${state.startedMessageId ?? null},
+      ${state.startedMessageId ? state.executionId ?? null : null},
       ${sql.val(state.path)}::text[],
       ${toJsonb(state.variables)},
       ${toJsonb(state.attempts ?? {})},
@@ -119,6 +124,8 @@ const saveRoutineState = async (
     ON CONFLICT (session_id) DO UPDATE SET
       routine_id = EXCLUDED.routine_id,
       execution_id = EXCLUDED.execution_id,
+      started_message_id = EXCLUDED.started_message_id,
+      started_execution_id = EXCLUDED.started_execution_id,
       path = EXCLUDED.path,
       variables = EXCLUDED.variables,
       attempts = EXCLUDED.attempts,
@@ -259,7 +266,7 @@ const insertAuditEvent = async (
   `.execute(db);
 };
 
-export class PostgresAssistantTurnPersistence implements AssistantTurnPersistencePort {
+export class PostgresAssistantTurnPersistence implements AssistantTurnPersistencePort, CutReplyStore {
   constructor(
     private readonly db: Db,
     // Records the handoff a turn requests in the turn's own transaction.
@@ -441,6 +448,16 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
         await insertAuditEvent(trx, input.auditEvent);
       }
       return deleted;
+    });
+  }
+
+  async storeCutReply(input: CutReplyStoreInput): Promise<void> {
+    await this.db.transaction().execute(async (trx) => {
+      await new MessageRepository(trx).create(input.assistantMessage);
+      await new ConversationRepository(trx).touch(input.conversationId, input.workspaceId);
+      for (const auditEvent of input.auditEvents) {
+        await insertAuditEvent(trx, auditEvent);
+      }
     });
   }
 

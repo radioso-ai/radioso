@@ -50,7 +50,12 @@ describe("message interruption marker", () => {
 
   it("reads the counts of a well-formed marker on an assistant reply, without its recorded time", () => {
     expect(mapMessageRow(assistantRow({ heardCharacterCount: 7, spokenCharacterCount: 16, recordedAt: "2026-10-15T10:00:00.000Z" })).interruption)
-      .toEqual({ heardCharacterCount: 7, spokenCharacterCount: 16 });
+      .toEqual({ heardCharacterCount: 7, spokenCharacterCount: 16, partial: false });
+  });
+
+  it("reads the marker of a reply stored as its heard part as partial", () => {
+    expect(mapMessageRow(assistantRow({ heardCharacterCount: 16, spokenCharacterCount: 16, partial: true })).interruption)
+      .toEqual({ heardCharacterCount: 16, spokenCharacterCount: 16, partial: true });
   });
 
   it.each([
@@ -60,6 +65,7 @@ describe("message interruption marker", () => {
     ["a string count", { heardCharacterCount: "7", spokenCharacterCount: 16 }],
     ["a fractional count", { heardCharacterCount: 7.5, spokenCharacterCount: 16 }],
     ["a missing count", { heardCharacterCount: 7 }],
+    ["a partial flag that is not a boolean", { heardCharacterCount: 7, spokenCharacterCount: 7, partial: "yes" }],
   ])("reads %s as no marker", (_label, interruption) => {
     expect(mapMessageRow(assistantRow(interruption)).interruption).toBeUndefined();
   });

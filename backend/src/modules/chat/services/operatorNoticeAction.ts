@@ -56,6 +56,8 @@ export const operatorNoticeActionPayload = (input: {
   /** The routine's declared slot values, forwarded to the operator notice as-is. */
   collected?: Record<string, unknown>;
   notice?: RoutineOperatorNoticeTemplate;
+  responseLanguage?: string;
+  routineStartMessageId?: string;
 }): Record<string, unknown> => ({
   conversationId: input.conversationId,
   workspaceId: input.workspaceId,
@@ -64,8 +66,10 @@ export const operatorNoticeActionPayload = (input: {
   reason: input.reason,
   routineId: input.routineId,
   stepId: input.stepId,
+  ...(input.responseLanguage ? { responseLanguage: input.responseLanguage } : {}),
+  ...(input.routineStartMessageId ? { routineStartMessageId: input.routineStartMessageId } : {}),
   ...(input.collected ? { collected: input.collected } : {}),
-  ...(input.notice?.subject || input.notice?.intro || input.notice?.replyToSlot ? { notice: authoredNotice(input.notice) } : {}),
+  ...(input.notice?.subject || input.notice?.intro || input.notice?.replyToSlot || input.notice?.includeAiSummary ? { notice: authoredNotice(input.notice) } : {}),
 });
 
 /**
@@ -78,4 +82,5 @@ const authoredNotice = (notice: RoutineOperatorNoticeTemplate): RoutineOperatorN
   ...(notice.subject ? { subject: notice.subject } : {}),
   ...(notice.intro ? { intro: notice.intro } : {}),
   ...(notice.replyToSlot ? { replyToSlot: notice.replyToSlot } : {}),
+  ...(notice.includeAiSummary ? { includeAiSummary: true } : {}),
 });

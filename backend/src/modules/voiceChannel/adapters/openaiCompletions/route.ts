@@ -100,6 +100,7 @@ const turnInputFor = (
   }
   const locale = localeFor(dialect, request);
   const heardUntil = heardUntilFor(dialect, parsed.data);
+  const stream = parsed.data.stream ?? false;
   return {
     input: {
       session: { workspaceId: caller.workspaceId, agentId: caller.agentId, vendor: dialect.id, sessionKey },
@@ -110,9 +111,11 @@ const turnInputFor = (
       ...(dialect.minReleasableSentenceChars === undefined
         ? {}
         : { minReleasableSentenceChars: dialect.minReleasableSentenceChars }),
+      // A completion that is not streamed is written whole at the outcome.
+      streamsSpeech: stream,
     },
     model: parsed.data.model ?? DEFAULT_MODEL_NAME,
-    stream: parsed.data.stream ?? false,
+    stream,
   };
 };
 

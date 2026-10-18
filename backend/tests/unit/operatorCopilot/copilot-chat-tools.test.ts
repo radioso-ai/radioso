@@ -166,12 +166,12 @@ describe("copilot chat readers", () => {
       updatedAt: "2026-08-18T10:00:02.000Z",
       messageCount: 2,
       messages: [
-        { ...reply("cccccccc-cccc-4ccc-8ccc-cccccccccccc", "We open at nine on weekdays."), interruption: { heardCharacterCount: 12, spokenCharacterCount: 40 } },
+        { ...reply("cccccccc-cccc-4ccc-8ccc-cccccccccccc", "We open at nine on weekdays."), interruption: { heardCharacterCount: 12, spokenCharacterCount: 40, partial: false } },
         reply("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", "And at ten on Saturdays."),
       ],
     });
 
-    const cutReply = { ...reply("cccccccc-cccc-4ccc-8ccc-cccccccccccc", "We open at nine on weekdays."), interruption: { heardCharacterCount: 12, spokenCharacterCount: 40 } };
+    const cutReply = { ...reply("cccccccc-cccc-4ccc-8ccc-cccccccccccc", "We open at nine on weekdays."), interruption: { heardCharacterCount: 12, spokenCharacterCount: 40, partial: false } };
     ports.getConversationTurn.mockResolvedValue({ conversationId, message: cutReply });
     const traceTool = ports.descriptors.find((descriptor) => descriptor.name === "turn_trace")!;
 
@@ -179,9 +179,9 @@ describe("copilot chat readers", () => {
     const trace = await traceTool.createTool(context(null)).invoke({ messageId: cutReply.id }, {} as never);
 
     expect(transcript).toMatchObject({
-      transcript: { messages: [{ interruption: { heardCharacterCount: 12, spokenCharacterCount: 40 } }, { interruption: null }] },
+      transcript: { messages: [{ interruption: { heardCharacterCount: 12, spokenCharacterCount: 40, partial: false } }, { interruption: null }] },
     });
-    expect(trace).toMatchObject({ trace: { message: { interruption: { heardCharacterCount: 12, spokenCharacterCount: 40 } } } });
+    expect(trace).toMatchObject({ trace: { message: { interruption: { heardCharacterCount: 12, spokenCharacterCount: 40, partial: false } } } });
     expect(tool.outputSchema.safeParse(transcript).success).toBe(true);
     expect(traceTool.outputSchema.safeParse(trace).success).toBe(true);
   });

@@ -4,8 +4,9 @@ import { z } from "zod";
 /**
  * Where a teammate's reply stands on a conversation whose caller hears replies rather than reads
  * them, as readers see it: `pending` from the moment it is stored, `spoken` once a turn of the call
- * spoke it (`spokenAt`: when that turn completed), `skipped` when it has no words a call can
- * speak. A call speaks only when its caller does, so a reply waits for the caller's next turn.
+ * spoke it and the caller heard it to its end (`spokenAt`: when that turn ended), `skipped` when
+ * it has no words a call can speak. A call speaks only when its caller does, so a reply waits for
+ * the caller's next turn.
  */
 export const operatorReplySpeechSchema = z.object({
   state: z.enum(["pending", "spoken", "skipped"]),
@@ -47,10 +48,10 @@ export interface OperatorReplyClaim extends ConversationRef {
 export interface OperatorReplySpeechClaims {
   /** Claims the conversation's pending replies for the turn; resolves them, oldest first. */
   claimPendingOperatorReplies(input: ConversationRef & { claimTurnId: string }): Promise<PendingOperatorReply[]>;
-  /** The turn spoke them and completed; a reply spoken already keeps its first `spokenAt`. */
+  /** The turn spoke them and the caller heard them through; a reply spoken already keeps its first `spokenAt`. */
   markOperatorRepliesSpoken(input: OperatorReplyClaim): Promise<string[]>;
   /** The turn had nothing to say for them. */
   skipOperatorReplies(input: OperatorReplyClaim): Promise<string[]>;
-  /** The turn did not reach its caller; the replies wait for the next turn. */
+  /** The caller did not hear them through; the replies wait for the next turn. */
   releaseOperatorReplies(input: OperatorReplyClaim): Promise<string[]>;
 }

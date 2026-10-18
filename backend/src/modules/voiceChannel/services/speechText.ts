@@ -6,7 +6,7 @@
 const ASSERTION_MARKER_RUN = /\s*(?:\[\[(?:\d+|\?)\]\]|(?<!\[)\[(?:\d+|\?)\](?!\]))+/gu;
 
 /** `[text](url)` and `![alt](url)`, with one level of parentheses inside the url; the text is spoken. */
-const MARKDOWN_LINK = /!?\[([^\]\n]*)\]\((?:[^()\s]|\([^()\s]*\))*\)/gu;
+const MARKDOWN_LINK = /!?\[([^\]\n]*)\]\((?:[^()\s]|\([^()\s]*\))*\)/gdu;
 
 /** A heading (`#`…`######`) or list (`-`, `*`, `+`, `1.`, `1)`) marker. */
 const LINE_MARKER = String.raw`[ \t]*(?:#{1,6}|[-*+]|\d{1,3}[.)])[ \t]+`;
@@ -45,50 +45,52 @@ export interface SpeechPosition {
 
 const WHOLE_TEXT: SpeechPosition = { startsLine: true, final: true };
 
+/** One removal speech makes: every match of `pattern` goes, except its group `keptGroup` (a link's text). */
+interface SpeechRemoval {
+  pattern: RegExp;
+  keptGroup?: number;
+}
+
+/**
+ * The removals that turn text into speech, in order: links to their text, assertion markers,
+ * heading and list markers at a line start (at the text's start only when it starts a line),
+ * bold and underline runs, single emphasis delimiters (one still open at the end only once the
+ * text is final), and inline code backticks. Structure only, so it reads any language the same way.
+ */
+export const speechRemovals = (position: SpeechPosition): readonly SpeechRemoval[] => [
+  { pattern: MARKDOWN_LINK, keptGroup: 1 },
+  { pattern: ASSERTION_MARKER_RUN },
+  { pattern: LINE_START_MARKER },
+  ...(position.startsLine ? [{ pattern: TEXT_START_MARKER }] : []),
+  { pattern: DOUBLE_EMPHASIS },
+  { pattern: OPENING_EMPHASIS },
+  { pattern: CLOSING_EMPHASIS },
+  ...(position.final ? [{ pattern: FINAL_CLOSING_EMPHASIS }] : []),
+  { pattern: INLINE_CODE },
+];
+
 /**
  * The text a caller hears: assertion markers and markdown syntax (emphasis, inline code, heading
  * and list markers at a line start, links) removed, the words kept. "la **versione open-source**"
- * becomes "la versione open-source"; hyphens, apostrophes, decimals and ellipses stay. Structure
- * only, so it reads any language the same way. For a streamed piece, `position` says whether it
- * starts a line and whether more text follows; applied again to its own output with more text
- * appended it changes nothing already decided, so a delimiter split across chunks is removed
- * once the chunk that completes it arrives.
+ * becomes "la versione open-source"; hyphens, apostrophes, decimals and ellipses stay. For a
+ * streamed piece, `position` says whether it starts a line and whether more text follows; applied
+ * again to its own output with more text appended it changes nothing already decided, so a
+ * delimiter split across chunks is removed once the chunk that completes it arrives.
  */
-export const spokenText = (text: string, position: SpeechPosition = WHOLE_TEXT): string => {
-  const withoutMarkers = text
-    .replace(MARKDOWN_LINK, "$1")
-    .replace(ASSERTION_MARKER_RUN, "")
-    .replace(LINE_START_MARKER, "");
-  const withoutLineMarkers = position.startsLine ? withoutMarkers.replace(TEXT_START_MARKER, "") : withoutMarkers;
-  const withoutEmphasis = withoutLineMarkers
-    .replace(DOUBLE_EMPHASIS, "")
-    .replace(OPENING_EMPHASIS, "")
-    .replace(CLOSING_EMPHASIS, "");
-  return (position.final ? withoutEmphasis.replace(FINAL_CLOSING_EMPHASIS, "") : withoutEmphasis).replace(INLINE_CODE, "");
-};
+export const spokenText = (text: string, position: SpeechPosition = WHOLE_TEXT): string =>
+  speechRemovals(position).reduce(
+    (spoken, { pattern, keptGroup }) => spoken.replace(pattern, keptGroup === undefined ? "" : `$${keptGroup}`),
+    text,
+  );
 
 /** Spoken text as two renderings of it agree on: zero-width spaces dropped, whitespace single, ends trimmed. */
-const comparable = (text: string): string => text.replace(/\u200B/gu, "").replace(/\s+/gu, " ").trim();
+export const comparableSpeech = (text: string): string => text.replace(/\u200B/gu, "").replace(/\s+/gu, " ").trim();
 
 /** The length of spoken text in characters (code points), as the caller's runtime renders it. */
-export const spokenLength = (text: string): number => Array.from(comparable(text)).length;
+export const spokenLength = (text: string): number => Array.from(comparableSpeech(text)).length;
 
 /** What is left after a heard prefix carries no words: only punctuation and whitespace. */
 const WORDLESS = /^[\p{P}\s]*$/u;
 
 /** Whether spoken text holds anything to say: more than punctuation and whitespace. */
 export const hasSpokenWords = (text: string): boolean => !WORDLESS.test(text);
-
-/**
- * How many characters of `spoken` the caller heard, when `heard` (the runtime's record of it, cut
- * short) is a strict prefix of it once both are compared as plainly spaced text; null when it is
- * not, or when all it leaves out is punctuation, as when a reply ending in "..." was heard whole.
- */
-export const heardPrefixLength = (spoken: string, heard: string): number | null => {
-  const whole = comparable(spoken);
-  const prefix = comparable(heard);
-  if (!whole.startsWith(prefix) || !hasSpokenWords(whole.slice(prefix.length))) {
-    return null;
-  }
-  return Array.from(prefix).length;
-};

@@ -158,6 +158,7 @@ describe("voice completions route", () => {
       transport: "web",
       utterance: "When do you open?",
       minReleasableSentenceChars: 45,
+      streamsSpeech: true,
     }, expect.any(AbortSignal), expect.any(AbortSignal));
     expect(dependencies.accessGrantService.recordAgentChannelChatSucceeded).toHaveBeenCalledWith({
       grant: expect.objectContaining({ id: grant().id, agentId }),
@@ -197,6 +198,7 @@ describe("voice completions route", () => {
       utterance: "And on Saturdays?",
       heardUntil: "Thanks for asking, let me",
       minReleasableSentenceChars: 45,
+      streamsSpeech: true,
     }, expect.any(AbortSignal), expect.any(AbortSignal));
   });
 
@@ -334,6 +336,8 @@ describe("voice completions route", () => {
     expect(dependencies.voiceTurns.runTurn).toHaveBeenCalledWith(expect.objectContaining({
       session: { workspaceId, agentId, vendor: "generic", sessionKey: "room-7" },
       utterance: "Hello",
+      // A request that does not ask for a stream gets the whole turn at its outcome.
+      streamsSpeech: false,
     }), expect.any(AbortSignal), expect.any(AbortSignal));
   });
 
@@ -1066,6 +1070,7 @@ describe("voice completions route outcomes", () => {
         session: { workspaceId, agentId, vendor: "elevenlabs", sessionKey: "conv_abc" },
         transport: "web",
         utterance: "When do you open?",
+        streamsSpeech: true,
       };
       for await (const _event of turns.runTurn(firstTurn, new AbortController().signal, hungUp.signal)) {
         // Drained like the runtime that went away.

@@ -534,6 +534,16 @@ export const buildChatServices = (input: {
   // The fallback (non-transactional) enqueue path — see `ChatTurnLifecycle`'s
   // `assistantTurnPersistence`-absent branch — also requests a drain once durable.
   const pushingActionOutbox = new DrainTriggeringActionOutbox(actionOutbox, actionDrainDispatcher, input.logger);
+  // Commits each turn, and keeps the heard part of a reply cut off mid-stream, transactionally.
+  const assistantTurnPersistence = new PostgresAssistantTurnPersistence(
+    input.database.kysely,
+    input.conversationActivity.recorder,
+    undefined,
+    input.conversationOwnershipRepository,
+    actionDrainDispatcher,
+    input.logger,
+    input.backgroundJobs,
+  );
   const actionHandlerRegistry = new ActionHandlerRegistry(
     input.composition.actionHandlerRegistrations.map((registration) => ({
       type: registration.type,
@@ -875,15 +885,8 @@ export const buildChatServices = (input: {
     // non-DB hosts) — production writes actions through `assistantTurnPersistence`
     // below instead, transactionally with the rest of the turn.
     actionOutbox: pushingActionOutbox,
-    assistantTurnPersistence: new PostgresAssistantTurnPersistence(
-      input.database.kysely,
-      input.conversationActivity.recorder,
-      undefined,
-      input.conversationOwnershipRepository,
-      actionDrainDispatcher,
-      input.logger,
-      input.backgroundJobs,
-    ),
+    assistantTurnPersistence,
+    cutReplyStore: assistantTurnPersistence,
     actionCapabilities: input.composition.actionCapabilityMap,
     capabilityPolicy: input.composition.capabilityPolicy,
     logger: input.logger,

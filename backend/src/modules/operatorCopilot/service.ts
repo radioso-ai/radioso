@@ -784,6 +784,12 @@ export class OperatorCopilotService {
         {
           systemPrompt: buildCopilotSystemPrompt(this.deps.prompt, workspaceKey),
           userMessage: buildCopilotTurnInput(input.pageContext, priorTranscript, input.message),
+          usageContext: {
+            workspaceId: input.workspaceId,
+            requestId: turnId,
+            surface: "operator_copilot",
+            attemptKey: "copilot_turn",
+          },
           // The operator reads this answer, so a turn that gives up mid-loop still owes them a
           // sentence rather than a blank card.
           requireFinalMessage: true,

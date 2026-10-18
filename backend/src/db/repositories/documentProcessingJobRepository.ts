@@ -31,6 +31,7 @@ export interface DocumentProcessingJobRecord {
   status: DocumentProcessingJobStatus;
   attemptCount: number;
   lastError: string | null;
+  lastErrorCode?: string | null;
   availableAt: Date;
   claimedAt: Date | null;
   completedAt: Date | null;
@@ -110,13 +111,14 @@ export interface DocumentProcessingJobRepositoryPort {
   // Returns false when the row was no longer "processing" — the run this
   // was failing was not actually dead and already completed it first. The
   // caller must treat false as "leave it alone", not retry the write.
-  markFailed(jobId: string, errorMessage: string): Promise<boolean>;
+  markFailed(jobId: string, errorMessage: string, errorCode?: string | null): Promise<boolean>;
   markFailedIfDocumentMatches(input: {
     jobId: string;
     documentId: string;
     workspaceId: string;
     revision: number;
     errorMessage: string;
+    errorCode?: string | null;
   }): Promise<boolean>;
   reschedule(jobId: string, nextAttemptAt: Date, errorMessage: string): Promise<void>;
   // Atomically decides, for one expired claim, between releasing it back to the
@@ -344,6 +346,7 @@ interface DocumentProcessingJobRow {
   status: DocumentProcessingJobStatus;
   attempt_count: number;
   last_error: string | null;
+  last_error_code: string | null;
   available_at: Date;
   claimed_at: Date | null;
   completed_at: Date | null;
@@ -363,6 +366,7 @@ const mapJob = (row: DocumentProcessingJobRow): DocumentProcessingJobRecord => (
   status: row.status,
   attemptCount: row.attempt_count,
   lastError: row.last_error,
+  lastErrorCode: row.last_error_code,
   availableAt: new Date(row.available_at),
   claimedAt: row.claimed_at ? new Date(row.claimed_at) : null,
   completedAt: row.completed_at ? new Date(row.completed_at) : null,
@@ -398,6 +402,7 @@ const documentProcessingJobColumns = [
   "status",
   "attempt_count",
   "last_error",
+  "last_error_code",
   "available_at",
   "claimed_at",
   "completed_at",
@@ -956,12 +961,13 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
       .execute();
   }
 
-  async markFailed(jobId: string, errorMessage: string): Promise<boolean> {
+  async markFailed(jobId: string, errorMessage: string, errorCode: string | null = null): Promise<boolean> {
     const row = await this.db
       .updateTable("document_processing_jobs")
       .set({
         status: "failed",
         last_error: errorMessage,
+        last_error_code: errorCode,
         completed_at: currentTimestamp(),
         updated_at: currentTimestamp(),
       })
@@ -979,6 +985,7 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
     workspaceId: string;
     revision: number;
     errorMessage: string;
+    errorCode?: string | null;
   }): Promise<boolean> {
     return this.db.transaction().execute(async (trx) => {
       // Lock the job row and confirm it is still ours to fail before writing
@@ -1025,6 +1032,7 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
         .set({
           status: "failed",
           last_error: input.errorMessage,
+          last_error_code: input.errorCode ?? null,
           completed_at: currentTimestamp(),
           updated_at: currentTimestamp(),
         })
@@ -1032,6 +1040,58 @@ export class DocumentProcessingJobRepository implements DocumentProcessingJobRep
         .execute();
 
       return true;
+    });
+  }
+
+  async requeueProviderCredentialFailures(workspaceId: string, limit = 100): Promise<number> {
+    return this.db.transaction().execute(async (trx) => {
+      const failed = await trx
+        .selectFrom("document_processing_jobs as job")
+        .innerJoin("documents as document", "document.id", "job.document_id")
+        .select(["job.id", "job.document_id", "job.document_revision", "job.kind"])
+        .where("job.workspace_id", "=", workspaceId)
+        .whereRef("document.workspace_id", "=", "job.workspace_id")
+        .whereRef("document.revision", "=", "job.document_revision")
+        .where("job.status", "=", "failed")
+        .where("job.last_error_code", "=", "provider_misconfigured")
+        .orderBy("job.created_at")
+        .forUpdate()
+        .skipLocked()
+        .limit(limit)
+        .execute();
+      if (failed.length === 0) return 0;
+      const ids = failed.map((job) => job.id);
+      const vectorizeDocumentIds = failed
+        .filter((job) => job.kind === "vectorize")
+        .map((job) => job.document_id);
+      await trx
+        .updateTable("document_processing_jobs")
+        .set({
+          status: "queued",
+          last_error: null,
+          last_error_code: null,
+          completed_at: null,
+          claimed_at: null,
+          available_at: currentTimestamp(),
+          updated_at: currentTimestamp(),
+        })
+        .where("id", "in", ids)
+        .execute();
+      if (vectorizeDocumentIds.length > 0) {
+        await trx
+          .updateTable("documents")
+          .set({
+            status: "queued",
+            failure_reason: null,
+            failed_at: null,
+            updated_at: currentTimestamp(),
+          })
+          .where("workspace_id", "=", workspaceId)
+          .where("id", "in", vectorizeDocumentIds)
+          .where("status", "=", "failed")
+          .execute();
+      }
+      return ids.length;
     });
   }
 

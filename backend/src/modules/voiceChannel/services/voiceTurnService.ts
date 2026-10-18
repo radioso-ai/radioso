@@ -517,9 +517,7 @@ export class VoiceTurnService implements VoiceTurnPort {
         const replies = await this.claimOperatorReplies(claim, record, replay.conversationId);
         if (claim.supersededAt !== null) {
           // Overtaken while claiming: the newer request owns the session, and the claim goes back.
-          record.result = "superseded";
-          record.outcome = CONTINUE_OUTCOME;
-          yield CONTINUE;
+          yield* this.endWithoutSpeech(record, "superseded");
           return;
         }
         yield { type: "conversation", conversationId: replay.conversationId };
@@ -534,8 +532,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       } else {
         record.conversationId = sessionClaim.conversationId;
       }
-      // No bridge line follows a teammate's reply: the caller has just heard someone speak.
-      const mayBridge = (): boolean => record.spoken.operatorReplies.length === 0 && this.memory.mayBridge(sessionKey, claim, this.now());
+      const mayBridge = this.mayBridgeFor(record, sessionKey, claim);
       const [prepared, replies] = claim.supersededAt === null
         ? await Promise.all([
             this.policyFor(input, sessionClaim.conversationId, startedAt, record, mayBridge, { sessionKey, claim }),
@@ -545,9 +542,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       if (claim.supersededAt !== null) {
         // A newer request of the session arrived while this one was setting up; it owns the turn,
         // and the replies this one claimed go back to pending as it settles.
-        record.result = "superseded";
-        record.outcome = CONTINUE_OUTCOME;
-        yield CONTINUE;
+        yield* this.endWithoutSpeech(record, "superseded");
         return;
       }
       if (sessionClaim.conversationId) {
@@ -626,9 +621,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       // follow-up, which no turn here is held for, says nothing.
       record.languageSwitch = "mismatched";
       recordVoiceLanguageSwitchFollowUp(this.dependencies.metrics, "unheld");
-      record.result = "completed";
-      record.outcome = CONTINUE_OUTCOME;
-      yield CONTINUE;
+      yield* this.endWithoutSpeech(record, "completed");
       return;
     }
     if (taken.kind === "none") {
@@ -651,7 +644,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       }, "Voice language switch follow-up names another switch than its session's; it speaks the session's switched turn");
     }
     record.conversationId = conversationId;
-    const mayBridge = (): boolean => record.spoken.operatorReplies.length === 0 && this.memory.mayBridge(sessionKey, claim, this.now());
+    const mayBridge = this.mayBridgeFor(record, sessionKey, claim);
     // Only the owner can have changed since the switched turn read the rest; a teammate who took
     // the call over meanwhile silences the bridge and the limit as on any turn.
     const [humanOwned, replies] = await Promise.all([
@@ -662,9 +655,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       // A newer request overtook this one before it spoke: the switched turn's answer goes unheard.
       record.languageSwitch = "unanswered";
       this.switchUnspoken(switched, "unanswered");
-      record.result = "superseded";
-      record.outcome = CONTINUE_OUTCOME;
-      yield CONTINUE;
+      yield* this.endWithoutSpeech(record, "superseded");
       return;
     }
     record.languageSwitch = result.confirmed ? "confirmed" : "refused";
@@ -702,21 +693,18 @@ export class VoiceTurnService implements VoiceTurnPort {
     recordVoiceLanguageSwitchFollowUp(this.dependencies.metrics, "unheld");
     const conversationId = await this.dependencies.sessions.findConversationId(input.session);
     if (!conversationId) {
-      record.result = "completed";
-      record.outcome = CONTINUE_OUTCOME;
-      yield CONTINUE;
+      // No turn of the session ever named a conversation, so nothing is stored to speak.
+      yield* this.endWithoutSpeech(record, "completed");
       return;
     }
     record.conversationId = conversationId;
-    const mayBridge = (): boolean => record.spoken.operatorReplies.length === 0 && this.memory.mayBridge(sessionKey, claim, this.now());
+    const mayBridge = this.mayBridgeFor(record, sessionKey, claim);
     const [prepared, replies] = await Promise.all([
       this.policyFor(input, conversationId, startedAt, record, mayBridge, null),
       this.claimOperatorReplies(claim, record, conversationId),
     ]);
     if (claim.supersededAt !== null) {
-      record.result = "superseded";
-      record.outcome = CONTINUE_OUTCOME;
-      yield CONTINUE;
+      yield* this.endWithoutSpeech(record, "superseded");
       return;
     }
     yield { type: "conversation", conversationId };
@@ -799,6 +787,21 @@ export class VoiceTurnService implements VoiceTurnPort {
       }, "Voice switch follow-up could not read the conversation's answer");
       return null;
     }
+  }
+
+  /**
+   * Whether the request may speak its bridge line now: no line follows a teammate's reply (the
+   * caller has just heard someone speak), and the session memory's rule holds.
+   */
+  private mayBridgeFor(record: VoiceTurnRecord, sessionKey: string, claim: VoiceTurnClaim): () => boolean {
+    return () => record.spoken.operatorReplies.length === 0 && this.memory.mayBridge(sessionKey, claim, this.now());
+  }
+
+  /** Ends the request with `continue` and nothing said: overtaken (`superseded`), or with nothing to say (`completed`). */
+  private *endWithoutSpeech(record: VoiceTurnRecord, result: Extract<VoiceTurnResult, "superseded" | "completed">): Generator<VoiceTurnEvent> {
+    record.result = result;
+    record.outcome = CONTINUE_OUTCOME;
+    yield CONTINUE;
   }
 
   /** Passes the turn's events on, remembering what the caller could hear and when the outcome left. */

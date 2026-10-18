@@ -4486,8 +4486,8 @@ describe("DefaultRoutineRunner operator notices", () => {
   });
 });
 
-describe("DefaultRoutineRunner on a turn whose message states no slot values (#1563)", () => {
-  // A routine invoked as a tool: its input is the start values, and the turn's message is
+describe("DefaultRoutineRunner on a run whose opening message states no slot values (#1563)", () => {
+  // A routine invoked as a tool: its input is the start values, and the opening message is
   // only the call rendered as text. Each step's exit is the gate the compiler puts on a plain
   // slot step.
   const slotGate = (from: string, to: string, slot: string) => ({
@@ -4532,7 +4532,7 @@ describe("DefaultRoutineRunner on a turn whose message states no slot values (#1
   it("asks for the slot the start values leave empty, asking the selector nothing and running no skill", async () => {
     const select = readsIntoTheCall();
     const dispatch = vi.fn(async () => ({ status: "completed" as const }));
-    const runner = new DefaultRoutineRunner([returnRoutine], { select }, echoRenderer, { dispatch }, { messageStatesSlotValues: false });
+    const runner = new DefaultRoutineRunner([returnRoutine], { select }, echoRenderer, { dispatch }, { openingMessageStatesSlotValues: false });
 
     const result = await runner.resume({ turn: callTurn, state: started({ orderId: "A-1001" }), activationTurn: true });
 
@@ -4549,7 +4549,7 @@ describe("DefaultRoutineRunner on a turn whose message states no slot values (#1
   it("runs the skill when the start values fill every step before it", async () => {
     const select = readsIntoTheCall();
     const dispatch = vi.fn(async () => ({ status: "completed" as const }));
-    const runner = new DefaultRoutineRunner([returnRoutine], { select }, echoRenderer, { dispatch }, { messageStatesSlotValues: false });
+    const runner = new DefaultRoutineRunner([returnRoutine], { select }, echoRenderer, { dispatch }, { openingMessageStatesSlotValues: false });
 
     const result = await runner.resume({
       turn: callTurn,
@@ -4582,7 +4582,7 @@ describe("DefaultRoutineRunner on a turn whose message states no slot values (#1
       variables: { plan: "Small (monthly)", note: "cheapest" },
       selection: { outcome: "transition", returnedSlotKeys: ["plan"] },
     }));
-    const runner = new DefaultRoutineRunner([planRoutine], { select }, echoRenderer, undefined, { messageStatesSlotValues: false });
+    const runner = new DefaultRoutineRunner([planRoutine], { select }, echoRenderer, undefined, { openingMessageStatesSlotValues: false });
 
     const result = await runner.resume({ turn: callTurn, state: { ...started({ plan: "small" }), routineId: "plan" }, activationTurn: true });
 
@@ -4599,14 +4599,85 @@ describe("DefaultRoutineRunner on a turn whose message states no slot values (#1
     expect(result.trace?.steps[0]).not.toHaveProperty("capturedSlotKeys");
   });
 
-  it("reads the message for values on any other turn", async () => {
-    const select = readsIntoTheCall();
+  // A later turn of the run is a reply, or a re-call while the run is active: the run never
+  // received that call's input, so the message is read like any other (#1563 review).
+  const parkedOnReason = (): RoutineState => ({ ...state(["ask_order", "ask_reason"], { orderId: "A-1001" }), routineId: "return" });
+
+  it("reads a later turn's message for values and runs the skill they let it reach", async () => {
+    const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({
+      nextStepId: "create_return",
+      variables: { reason: "It arrived damaged." },
+      selection: { outcome: "transition", returnedSlotKeys: ["reason"] },
+    }));
     const dispatch = vi.fn(async () => ({ status: "completed" as const }));
-    const runner = new DefaultRoutineRunner([returnRoutine], { select }, echoRenderer, { dispatch });
+    const runner = new DefaultRoutineRunner([returnRoutine], { select }, echoRenderer, { dispatch }, { openingMessageStatesSlotValues: false });
+    const reCall: TurnContext = {
+      ...turn,
+      inputEvent: { ...turn.inputEvent, content: 'start_return {"orderId":"A-1001","reason":"It arrived damaged."}' },
+    };
 
-    const result = await runner.resume({ turn: callTurn, state: started({ orderId: "A-1001" }), activationTurn: true });
+    const result = await runner.resume({ turn: reCall, state: parkedOnReason() });
 
-    expect(select).toHaveBeenCalled();
-    expect(result.trace?.steps[0]).toMatchObject({ stepId: "ask_order", viaSelector: true, readOpeningMessage: true });
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ skillName: "create_return_ticket" }));
+    expect(result.terminal).toMatchObject({ kind: "complete", collected: { orderId: "A-1001", reason: "It arrived damaged." } });
+  });
+
+  it("yields a later turn the selector reads as a different request", async () => {
+    const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({
+      nextStepId: "ask_reason",
+      yieldTurn: true,
+      selection: { outcome: "off_topic", returnedSlotKeys: [] },
+    }));
+    const runner = new DefaultRoutineRunner([returnRoutine], { select }, echoRenderer, undefined, { openingMessageStatesSlotValues: false });
+
+    const result = await runner.resume({ turn: callTurn, state: parkedOnReason() });
+
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(result.yielded).toBe(true);
+  });
+
+  // A first step that collects only an optional slot, started with no value for it.
+  const billingTicket = (transitions: Routine["transitions"]): Routine => ({
+    id: "billing",
+    rootStepId: "ask_category",
+    slots: [{ id: "slot_category", key: "category", type: "text", required: false }],
+    steps: [
+      { id: "ask_category", kind: "chat", action: "Ask which kind of billing issue it is.", metadata: { collectsSlots: ["category"] } },
+      { id: "open_ticket", kind: "skill", skillName: "open_billing_ticket" },
+      { id: "done", kind: "terminal", action: "Confirm the ticket is open." },
+    ],
+    transitions: [...transitions, { from: "open_ticket", to: "done", condition: "default", guard: { kind: "default" } }],
+  });
+
+  it.each([
+    {
+      exits: "exits the author left to the model",
+      routine: billingTicket([
+        { from: "ask_category", to: "open_ticket", condition: "The user described a billing problem." },
+        { from: "ask_category", to: "done", condition: "The user has no billing problem." },
+      ]),
+    },
+    {
+      exits: "a rule exit and a default exit",
+      routine: billingTicket([
+        { from: "ask_category", to: "done", condition: "refund", guard: { kind: "field", ref: "category", op: "equals", value: "refund" } },
+        { from: "ask_category", to: "open_ticket", condition: "default", guard: { kind: "default" } },
+      ]),
+    },
+  ])("asks a first step whose slots the start values leave empty, whatever its $exits", async ({ routine }) => {
+    const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({
+      nextStepId: "open_ticket",
+      selection: { outcome: "transition", returnedSlotKeys: [] },
+    }));
+    const dispatch = vi.fn(async () => ({ status: "completed" as const }));
+    const runner = new DefaultRoutineRunner([routine], { select }, echoRenderer, { dispatch }, { openingMessageStatesSlotValues: false });
+
+    const result = await runner.resume({ turn: callTurn, state: { ...started({}), routineId: "billing" }, activationTurn: true });
+
+    expect(select).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(result.nextState).toMatchObject({ path: [], variables: {} });
+    expect(result.trace?.steps).toEqual([{ stepId: "ask_category", kind: "chat", event: "rendered", viaSelector: false }]);
   });
 });

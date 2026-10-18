@@ -24,12 +24,15 @@ const inertSlotCorrection: ConversationRoutineSlotCorrection = {
   rejectInvalid: () => Promise.reject(new Error("routine_slot_correction_inert_on_invocation")),
 };
 
-// The call's input is the routine's start values, and the turn's message is only that call
-// rendered as text. Read as a visitor's reply, the next-step selector took it for an
+// The call's input is the start values of the run it starts, and the turn's message is only
+// that call rendered as text. Read as a visitor's reply, the next-step selector took it for an
 // authority claim, holding a step the input fills, and read values into it, such as a reason
 // for a return the caller never gave, which carried the routine past the step that asks for
-// it and into its tool step (#1563). A slot holds only what the call's input gave it.
-const invocationRunnerOptions = { messageStatesSlotValues: false } as const;
+// it and into its tool step (#1563). On the turn the call starts a run, a slot holds only what
+// the call's input gave it. Only this activator starts a run on a call turn (the reentry and
+// slot-correction gates are inert), so the option scopes to that run; a routine already
+// active when the call arrives never received its input and reads the call as a message.
+const invocationRunnerOptions = { openingMessageStatesSlotValues: false } as const;
 
 interface DirectInvocationTurnPorts {
   /** The routine the tool name resolved to among this turn's registrations; null when absent. */
@@ -37,7 +40,7 @@ interface DirectInvocationTurnPorts {
   activator: ConversationRoutineActivator;
   reentryGate: ConversationRoutineReentryGate;
   slotCorrection: ConversationRoutineSlotCorrection;
-  /** The turn's routine runner options: the message states no slot values. */
+  /** The turn's routine runner options: the message that opens a run states no slot values. */
   runnerOptions: typeof invocationRunnerOptions;
   /** Reports the admitted state as usual and, when the activator declined, the completed routine it named. */
   reporter: RoutineTurnReporter;

@@ -6,7 +6,7 @@ import type { RoutineRegistration } from "@radioso/conversation-defaults";
 import { compileRoutineDefinition } from "../../../src/modules/routines/compiler.js";
 import { createRoutineTurnProvider } from "../../../src/modules/routines/turnProvider.js";
 import { MetricsRegistry } from "../../../src/shared/observability/metrics/metricsRegistry.js";
-import { CREATE_RETURN_TICKET_SKILL, startReturnRoutine } from "../../fixtures/conversation-quality/routines.js";
+import { contactSupportRoutine, CREATE_RETURN_TICKET_SKILL, startReturnRoutine } from "../../fixtures/conversation-quality/routines.js";
 
 const turn: TurnContext = {
   agent: { id: "agent-1", name: "Assistant" },
@@ -191,9 +191,9 @@ describe("routine turn provider on a direct invocation turn", () => {
 // asking a reason for, and the call taken for an authority claim, which held the first step and
 // asked again for the order number the call gave.
 describe("a return routine invoked as a tool", () => {
-  type SelectorReading = { variables?: Record<string, unknown>; claimsAuthority?: boolean; condition?: number | null };
-  const selectorReply = ({ variables = {}, claimsAuthority = false, condition = null }: SelectorReading): string =>
-    JSON.stringify({ variables, claimsAuthority, condition, offTopic: false });
+  type SelectorReading = { variables?: Record<string, unknown>; claimsAuthority?: boolean; condition?: number | null; offTopic?: boolean };
+  const selectorReply = ({ variables = {}, claimsAuthority = false, condition = null, offTopic = false }: SelectorReading): string =>
+    JSON.stringify({ variables, claimsAuthority, condition, offTopic });
 
   // Answers a next-step selector prompt with what the model read for the step it asks about,
   // and any other prompt (the step reply) with plain text.
@@ -310,5 +310,73 @@ describe("a return routine invoked as a tool", () => {
 
     expect(result.trace?.landedStepId).toBe("small");
     expect(result.endedVariables).toEqual({ plan: "small" });
+  });
+
+  // A call that arrives while a routine is active starts nothing (`not_started`): the active
+  // routine reads it like any other message (#1563 review).
+  const resumeOnCall = async (
+    registrations: Routine[],
+    modelGateway: ConversationModelGateway,
+    call: { toolName: string; input: Record<string, string> },
+    active: { routineId: string; path: string[]; variables: Record<string, unknown> },
+  ) => {
+    const skillExecutorRegistry = { resolve: vi.fn(() => null) };
+    const provider = createRoutineTurnProvider({ ...dependencies(registrations.map(registration)), skillExecutorRegistry } as never);
+    const ports = await provider.forTurn({ modelGateway, agentId: "agent-1", routineInvocation: call });
+    const result = await ports!.runner.resume({
+      turn: callTurnFor(call.toolName, call.input),
+      state: { sessionId: turn.sessionId, status: "active", ...active },
+    });
+    return { result, skillExecutorRegistry, invocation: ports!.reporter!.describeInvocation() };
+  };
+
+  it("opens the ticket when the caller calls again with the reason the first call left out", async () => {
+    const compiled = compileRoutineDefinition(startReturnRoutine);
+    const gateway = readingTheCall({
+      askOrder: { variables: { orderId: "A-1001" }, condition: 1 },
+      askReason: { variables: { reason: "It arrived damaged." }, condition: 1 },
+    });
+    const first = await runInvocationTurn(compiled, gateway, startReturn({ orderId: "A-1001" }));
+    expect(first.result.nextState).toMatchObject({ path: ["ask_reason"] });
+
+    const reCall = await resumeOnCall([compiled], gateway, startReturn({ orderId: "A-1001", reason: "It arrived damaged." }), {
+      routineId: compiled.id,
+      path: first.result.nextState!.path,
+      variables: first.result.nextState!.variables,
+    });
+
+    expect(reCall.result.trace?.steps).toContainEqual(expect.objectContaining({
+      stepId: "create_return",
+      event: "skill_dispatched",
+      skillName: CREATE_RETURN_TICKET_SKILL,
+    }));
+    expect(reCall.result.terminal).toMatchObject({ collected: { orderId: "A-1001", reason: "It arrived damaged." } });
+    expect(reCall.skillExecutorRegistry.resolve).toHaveBeenCalledTimes(1);
+    expect(reCall.invocation).toEqual({ toolName: "start_return", outcome: "not_started" });
+  });
+
+  it("lets another active routine yield a call it reads as a different request, reporting the call as not started", async () => {
+    const returns = compileRoutineDefinition(startReturnRoutine);
+    const contact = compileRoutineDefinition(contactSupportRoutine);
+    let selectorReads = 0;
+    const gateway: ConversationModelGateway = {
+      complete: vi.fn(async ({ systemPrompt = "" }) => {
+        if (!systemPrompt.includes('"claimsAuthority"')) {
+          return { text: "Noted." };
+        }
+        selectorReads += 1;
+        return { text: selectorReply({ offTopic: true }) };
+      }),
+    };
+
+    const resumed = await resumeOnCall([returns, contact], gateway, startReturn({ orderId: "A-1001" }), {
+      routineId: contact.id,
+      path: ["ask_email"],
+      variables: {},
+    });
+
+    expect(selectorReads).toBe(1);
+    expect(resumed.result.yielded).toBe(true);
+    expect(resumed.invocation).toEqual({ toolName: "start_return", outcome: "not_started" });
   });
 });

@@ -808,14 +808,21 @@ On such a turn:
   locale it started with, and nothing in the conversation or the visitor's
   profile changes with it.
 
-Every turn's log line names the language its lines were picked in as
-`turnLanguage`, and where it came from as `languageSource`: `vendor_detected`
-(a switch in the `elevenlabs` history), `turn_field` (the `generic` field),
-`session` (the session locale), `agent_default` (the agent's default locale)
-or `builtin_default` (`en`, when nothing else names one). When the newest
-switch in the history was not taken, the line carries `languageReport`:
-`blocked` when ElevenLabs refused it, `unreadable` when Radioso could not read
-it.
+A turn's log line names its languages in two fields:
+
+- `reportedTurnLanguage` is the turn language the request reported, on every
+  turn that reports one, voice settings on or off.
+- `turnLanguage` is the language the bridge and fallback lines were picked
+  in, on a turn that ran with them: voice on, the agent answering, and the
+  turn still the session's newest when its reply started. `languageSource`
+  beside it says where that language came from: `vendor_detected` (a switch
+  in the `elevenlabs` history), `turn_field` (the `generic` field), `session`
+  (the session locale), `agent_default` (the agent's default locale) or
+  `builtin_default` (`en`, when nothing else names one).
+
+When the newest switch in the history was not taken, the line carries
+`languageReport`: `blocked` when ElevenLabs refused it, `unreadable` when
+Radioso could not read it.
 
 Write bridge lines for every language your callers may speak. A turn in a
 language with no bridge line of its own hears none; its fallback line falls

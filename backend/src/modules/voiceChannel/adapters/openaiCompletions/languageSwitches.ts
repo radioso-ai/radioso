@@ -22,7 +22,6 @@ export interface LanguageSwitchTool {
 /** What a request reports about its turn's language, as the wire carries it. */
 export interface TurnLanguageReading {
   turnLanguage?: VoiceReportedTurnLanguage;
-  turnLanguageIsNew?: boolean;
   languageReport?: VoiceLanguageReportProblem;
 }
 
@@ -135,8 +134,7 @@ export const readLanguageSwitch = (messages: readonly CompletionsMessage[], swit
         continue;
       }
       return {
-        turnLanguage: { tag: outcome.tag, source: "vendor_detected" },
-        turnLanguageIsNew: index > previousUtterance,
+        turnLanguage: { tag: outcome.tag, source: "vendor_detected", isNew: index > previousUtterance },
         ...(refused ? { languageReport: "blocked" as const } : {}),
       };
     }

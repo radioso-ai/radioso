@@ -171,7 +171,7 @@ export const turnLanguageFor = (
     }
     const tag = firstValue([source.field], request, isLocaleTag);
     if (tag) {
-      return { turnLanguage: { tag, source: "turn_field" }, turnLanguageIsNew: true };
+      return { turnLanguage: { tag, source: "turn_field", isNew: true } };
     }
   }
   return {};

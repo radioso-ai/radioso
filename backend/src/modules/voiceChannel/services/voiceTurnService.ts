@@ -90,7 +90,7 @@ export interface VoiceChatTurnRequest {
   visitorKey?: string;
   /**
    * The language the request reports as news on this turn (`VoiceTurnInput.turnLanguage` with
-   * `turnLanguageIsNew`), as chat's locale hint. Absent otherwise: chat then reads the caller's
+   * `isNew`), as chat's locale hint. Absent otherwise: chat then reads the caller's
    * language from what they said, so neither the session's locale nor a switch an earlier turn made
    * holds a caller who moved on to it.
    */
@@ -187,7 +187,7 @@ interface VoiceTurnRecord {
   result: VoiceTurnResult;
   /** Present when the agent's voice policy ran. */
   policy?: { bridged: boolean; turnLimitReached: boolean; fallbackSpoken: boolean };
-  /** The language the policy picked the turn's lines in, when it chose lines for the turn. */
+  /** The language the turn's lines were picked in, once the turn runs with them. */
   language?: VoiceTurnLanguage;
   /** Chat reported progress, so it stored the turn's user message. */
   chatPrepared: boolean;
@@ -341,11 +341,14 @@ const sessionKeyOf = (session: VoiceSessionRef): string =>
   JSON.stringify([session.workspaceId, session.agentId, session.vendor, session.sessionKey]);
 
 /**
- * The turn's language on its log line: the one its lines were picked in, else the one the request
- * reported; and why the newest switch the request carried was not taken. Tags and closed values only.
+ * The turn's languages on its log line: the one its lines were picked in, when it ran with them
+ * (the same turns `voice_turn_language_source_total` counts); the one the request reported, on
+ * every turn that reports one; and why the newest switch the request carried was not taken. Tags
+ * and closed values only.
  */
-const languageFields = (language: VoiceTurnLanguage | undefined, input: Pick<VoiceTurnInput, "languageReport">) => ({
-  ...(language ? { turnLanguage: language.tag, languageSource: language.source } : {}),
+const languageFields = (linesLanguage: VoiceTurnLanguage | undefined, input: Pick<VoiceTurnInput, "turnLanguage" | "languageReport">) => ({
+  ...(linesLanguage ? { turnLanguage: linesLanguage.tag, languageSource: linesLanguage.source } : {}),
+  ...(input.turnLanguage ? { reportedTurnLanguage: input.turnLanguage.tag } : {}),
   ...(input.languageReport ? { languageReport: input.languageReport } : {}),
 });
 
@@ -445,7 +448,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       }
       // No bridge line follows a teammate's reply: the caller has just heard someone speak.
       const mayBridge = (): boolean => record.spoken.operatorReplies.length === 0 && this.memory.mayBridge(sessionKey, claim, this.now());
-      const [policy, replies] = claim.supersededAt === null
+      const [prepared, replies] = claim.supersededAt === null
         ? await Promise.all([
             this.policyFor(input, sessionClaim.conversationId, startedAt, record, mayBridge),
             sessionClaim.conversationId ? this.claimOperatorReplies(claim, record, sessionClaim.conversationId) : [],
@@ -463,11 +466,13 @@ export class VoiceTurnService implements VoiceTurnPort {
         yield { type: "conversation", conversationId: sessionClaim.conversationId };
         yield* this.operatorReplySpeech(replies, record, claim);
       }
-      if (policy && record.language) {
-        recordVoiceTurnLanguage(this.dependencies.metrics, record.language.source);
+      if (prepared?.linesLanguage) {
+        // The turn runs with its lines from here on, so their language is the turn's to report.
+        record.language = prepared.linesLanguage;
+        recordVoiceTurnLanguage(this.dependencies.metrics, prepared.linesLanguage.source);
       }
       const reply = this.replyEvents(input, sessionClaim, record, signal, sessionKey);
-      yield* this.delivered(policy ? applyVoiceTurnPolicy(reply, policy) : withoutPhaseMarkers(reply), record, claim, sessionKey);
+      yield* this.delivered(prepared ? applyVoiceTurnPolicy(reply, prepared.policy) : withoutPhaseMarkers(reply), record, claim, sessionKey);
     } catch (error) {
       record.result = "failed";
       failure = error;
@@ -738,7 +743,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       ...(record.handoffReason ? { handoffReason: record.handoffReason } : {}),
       ...(record.reply?.partial ? { storedPartialReply: true } : {}),
       ...record.policy,
-      ...languageFields(record.language ?? input.turnLanguage, input),
+      ...languageFields(record.language, input),
     };
     if (record.result === "failed") {
       logger.warn({ ...fields, errorClass: errorClassOf(failure) }, "Voice turn failed");
@@ -770,7 +775,7 @@ export class VoiceTurnService implements VoiceTurnPort {
         ...(sessionClaim.conversationId ? { conversationId: sessionClaim.conversationId } : {}),
         ...(sessionClaim.conversationId === null && sessionClaim.visitorKey ? { visitorKey: sessionClaim.visitorKey } : {}),
         message: input.utterance,
-        ...(input.turnLanguage && input.turnLanguageIsNew ? { userExpectedLocale: input.turnLanguage.tag } : {}),
+        ...(input.turnLanguage?.isNew ? { userExpectedLocale: input.turnLanguage.tag } : {}),
         sourceChannel: VOICE_SOURCE_CHANNEL,
         channelContext: channelContextFor(input),
         supersession: "latest_input_wins",
@@ -874,8 +879,10 @@ export class VoiceTurnService implements VoiceTurnPort {
   }
 
   /**
-   * The bridge and the turn limit, when the agent has voice on. Three primary-key reads: the agent's
-   * settings, and the conversation's routine state and owner (a session's first turn has neither).
+   * The bridge and the turn limit, when the agent has voice on, with the language the lines were
+   * picked in (null on a turn a person owns, which speaks neither line). Three primary-key reads:
+   * the agent's settings, and the conversation's routine state and owner (a session's first turn
+   * has neither).
    */
   private async policyFor(
     input: VoiceTurnInput,
@@ -883,7 +890,7 @@ export class VoiceTurnService implements VoiceTurnPort {
     startedAt: number,
     record: VoiceTurnRecord,
     mayBridge: () => boolean,
-  ): Promise<VoiceTurnPolicy | null> {
+  ): Promise<{ policy: VoiceTurnPolicy; linesLanguage: VoiceTurnLanguage | null } | null> {
     const [profile, routineActive, humanOwned] = await Promise.all([
       this.dependencies.agents.findVoiceProfile(input.session),
       conversationId ? this.dependencies.routines.isRoutineActive(conversationId) : Promise.resolve(false),
@@ -901,14 +908,10 @@ export class VoiceTurnService implements VoiceTurnPort {
     if (shortBridge && !humanOwned) {
       this.warnShortBridgeOnce(input, shortBridge);
     }
-    if (!humanOwned) {
-      // A turn a person owns speaks neither line, so it chose none.
-      record.language = language;
-    }
     const outcome = { bridged: false, turnLimitReached: false, fallbackSpoken: false };
     record.policy = outcome;
     const { metrics } = this.dependencies;
-    return {
+    const policy: VoiceTurnPolicy = {
       ...lines,
       // The bridge and the limit cover the agent's own answers. When a person owns the
       // conversation, chat answers with its short waiting message, and neither a bridge line
@@ -936,6 +939,7 @@ export class VoiceTurnService implements VoiceTurnPort {
         firstSpeech: (elapsedMs, bridged) => recordVoiceFirstSpeech(metrics, elapsedMs, bridged),
       },
     };
+    return { policy, linesLanguage: humanOwned ? null : language };
   }
 
   /**

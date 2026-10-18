@@ -190,10 +190,10 @@ describe("the language of one turn", () => {
       ...carriedOut("it"),
       { role: "assistant", content: "Certo." },
       { role: "user", content: "Vorrei prenotare un tavolo" },
-    ))).toEqual({ turnLanguage: { tag: "it", source: "vendor_detected" }, turnLanguageIsNew: true });
+    ))).toEqual({ turnLanguage: { tag: "it", source: "vendor_detected", isNew: true } });
     // The vendor's request right after the call, whose newest message is the result.
     expect(turnLanguageOf(dialect("elevenlabs"), elevenlabsHistory(...carriedOut("it"))))
-      .toEqual({ turnLanguage: { tag: "it", source: "vendor_detected" }, turnLanguageIsNew: true });
+      .toEqual({ turnLanguage: { tag: "it", source: "vendor_detected", isNew: true } });
   });
 
   it("keeps a switch an earlier turn made as the call's language, and no longer as news", () => {
@@ -203,7 +203,7 @@ describe("the language of one turn", () => {
       { role: "user", content: "Grazie" },
       { role: "assistant", content: "Prego." },
       { role: "user", content: "Siete aperti domenica?" },
-    ))).toEqual({ turnLanguage: { tag: "it", source: "vendor_detected" }, turnLanguageIsNew: false });
+    ))).toEqual({ turnLanguage: { tag: "it", source: "vendor_detected", isNew: false } });
   });
 
   it("takes the newest switch, across messages and within one message", () => {
@@ -235,7 +235,7 @@ describe("the language of one turn", () => {
       languageSwitch({ reason: "Italian", language: "it" }, "call_2"),
       switchResult("call_2", "Language switching is only available at the start of the conversation. Keep speaking the current language."),
       { role: "user", content: "Ciao" },
-    ))).toEqual({ turnLanguage: { tag: "de", source: "vendor_detected" }, turnLanguageIsNew: false, languageReport: "blocked" });
+    ))).toEqual({ turnLanguage: { tag: "de", source: "vendor_detected", isNew: false }, languageReport: "blocked" });
     expect(turnLanguageOf(dialect("elevenlabs"), elevenlabsHistory(
       languageSwitch({ reason: "Italian", language: "it" }),
       switchResult("call_lang_1", refused),
@@ -247,7 +247,7 @@ describe("the language of one turn", () => {
       languageSwitch({ reason: "Italian", language: "it" }, "call_2"),
       switchResult("call_2", { ...refused, is_error: true }),
       { role: "user", content: "Ciao" },
-    ))).toEqual({ turnLanguage: { tag: "de", source: "vendor_detected" }, turnLanguageIsNew: false, languageReport: "blocked" });
+    ))).toEqual({ turnLanguage: { tag: "de", source: "vendor_detected", isNew: false }, languageReport: "blocked" });
   });
 
   it("reports a newest switch it cannot read as unreadable, rather than an older one the call may have moved past", () => {
@@ -306,7 +306,7 @@ describe("the language of one turn", () => {
       languageSwitch({ reason: "Italian", language: "it" }, "call_1"),
       switchResult("call_1", refused),
       { role: "user", content: "Ciao" },
-    ))).toEqual({ turnLanguage: { tag: "de", source: "vendor_detected" }, turnLanguageIsNew: false, languageReport: "blocked" });
+    ))).toEqual({ turnLanguage: { tag: "de", source: "vendor_detected", isNew: false }, languageReport: "blocked" });
     expect(turnLanguageOf(dialect("elevenlabs"), elevenlabsHistory(
       ...carriedOut("de", "call_1"),
       { role: "user", content: "Danke" },
@@ -343,10 +343,10 @@ describe("the language of one turn", () => {
 
   it("reads the generic turn locale from its header, then the metadata body field, always as this turn's own", () => {
     const generic = dialect("generic");
-    const fromBody = { turnLanguage: { tag: "es", source: "turn_field" }, turnLanguageIsNew: true };
+    const fromBody = { turnLanguage: { tag: "es", source: "turn_field", isNew: true } };
 
     expect(turnLanguageOf(generic, { headers: { "x-radioso-voice-turn-locale": "fr-CA" }, body: { metadata: { turn_locale: "es" } } }))
-      .toEqual({ turnLanguage: { tag: "fr-CA", source: "turn_field" }, turnLanguageIsNew: true });
+      .toEqual({ turnLanguage: { tag: "fr-CA", source: "turn_field", isNew: true } });
     // A header that is not a language tag falls through to the body field: a word, or a header
     // sent twice, which arrives joined.
     expect(turnLanguageOf(generic, { headers: { "x-radioso-voice-turn-locale": "French" }, body: { metadata: { turn_locale: "es" } } })).toEqual(fromBody);

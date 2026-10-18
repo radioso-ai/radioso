@@ -374,13 +374,12 @@ describe("voice completions route", () => {
     expect(inputs[0]).toMatchObject({
       utterance: "Siete aperti domenica?",
       locale: "en",
-      turnLanguage: { tag: "it", source: "vendor_detected" },
-      turnLanguageIsNew: true,
+      turnLanguage: { tag: "it", source: "vendor_detected", isNew: true },
     });
     // A switch with no result to say it happened.
     expect(inputs[1]).toMatchObject({ languageReport: "unreadable" });
     expect(inputs[1]).not.toHaveProperty("turnLanguage");
-    expect(inputs[2]).toMatchObject({ locale: "en", turnLanguage: { tag: "fr", source: "turn_field" }, turnLanguageIsNew: true });
+    expect(inputs[2]).toMatchObject({ locale: "en", turnLanguage: { tag: "fr", source: "turn_field", isNew: true } });
     expect(inputs[3]).toMatchObject({ locale: "en" });
     expect(inputs[3]).not.toHaveProperty("turnLanguage");
     expect(inputs[3]).not.toHaveProperty("languageReport");

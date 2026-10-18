@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AgentVoiceSettings } from "../../src/modules/agents/public.js";
-import { chooseRecordingNotice, chooseVoiceTurnLines, resolveVoiceTurnLocale } from "../../src/modules/voiceChannel/services/voiceLines.js";
+import { chooseRecordingNotice, chooseVoiceTurnLines, resolveVoiceLanguage } from "../../src/modules/voiceChannel/services/voiceLines.js";
 
 const settings: AgentVoiceSettings = {
   enabled: true,
@@ -80,10 +80,23 @@ describe("voice turn lines", () => {
     expect(chooseVoiceTurnLines(mixed, { locale: "en", routineActive: false, rotation: 0 }).bridge.text).toBe("One moment.");
   });
 
-  it("takes the turn's locale from the request, then the agent default, then English", () => {
-    expect(resolveVoiceTurnLocale({ requested: "it-IT", agentDefault: "de" })).toBe("it-IT");
-    expect(resolveVoiceTurnLocale({ agentDefault: "de" })).toBe("de");
-    expect(resolveVoiceTurnLocale({ agentDefault: null })).toBe("en");
+  it("takes the turn's language from the turn's own report, then the session, then the agent default, then English", () => {
+    expect(resolveVoiceLanguage({ turn: { tag: "it", source: "vendor_detected" }, session: "en", agentDefault: "de" }))
+      .toEqual({ tag: "it", source: "vendor_detected" });
+    expect(resolveVoiceLanguage({ turn: { tag: "fr-CA", source: "turn_field" }, agentDefault: null }))
+      .toEqual({ tag: "fr-CA", source: "turn_field" });
+    expect(resolveVoiceLanguage({ session: "it-IT", agentDefault: "de" })).toEqual({ tag: "it-IT", source: "session" });
+    expect(resolveVoiceLanguage({ agentDefault: "de" })).toEqual({ tag: "de", source: "agent_default" });
+    expect(resolveVoiceLanguage({ agentDefault: null })).toEqual({ tag: "en", source: "fallback" });
+  });
+
+  it("speaks a turn that switched to Italian in Italian on a call that started in English", () => {
+    const language = resolveVoiceLanguage({ turn: { tag: "it", source: "vendor_detected" }, session: "en", agentDefault: "en" });
+
+    expect(choose({ locale: language.tag })).toEqual({
+      bridge: { style: "check", text: "Controllo subito." },
+      fallbackLine: "Scusi, può ripetere?",
+    });
   });
 });
 

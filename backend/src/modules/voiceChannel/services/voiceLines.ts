@@ -1,8 +1,15 @@
 import type { AgentVoiceSettings, VoiceBridgeStyle } from "../../agents/public.js";
+import type { VoiceReportedTurnLanguage, VoiceTurnLanguageSource } from "../domain.js";
 import { spokenText } from "./speechText.js";
 
 /** The language a turn falls back to when neither the request nor the agent names one. */
 const FALLBACK_LOCALE = "en";
+
+/** The language a turn's lines are spoken in, and where it came from. */
+export interface VoiceTurnLanguage {
+  tag: string;
+  source: VoiceTurnLanguageSource;
+}
 
 /** What the turn policy may say for this turn; null where the agent authored nothing for it. */
 export interface VoiceTurnLines {
@@ -17,7 +24,7 @@ interface ChosenVoiceTurnLines extends VoiceTurnLines {
 }
 
 interface VoiceTurnLineContext {
-  /** The turn's language tag, from `resolveVoiceTurnLocale`. */
+  /** The turn's language tag, from `resolveVoiceLanguage`. */
   locale: string;
   /** A routine is mid-flight in the conversation at turn start. */
   routineActive: boolean;
@@ -48,8 +55,25 @@ const matchLocale = (tags: readonly string[], locale: string): string | null => 
     ?? null;
 };
 
-export const resolveVoiceTurnLocale = (sources: { requested?: string; agentDefault: string | null }): string =>
-  sources.requested ?? sources.agentDefault ?? FALLBACK_LOCALE;
+/**
+ * The language a call speaks in: on a turn, the one the request reports for that turn, else the
+ * session's, else the agent's default, else English (a session start has no turn). The first that
+ * is present wins; lines then match it by tag structure, so a language without lines of its own
+ * gets none.
+ */
+export const resolveVoiceLanguage = (sources: {
+  turn?: VoiceReportedTurnLanguage;
+  session?: string;
+  agentDefault: string | null;
+}): VoiceTurnLanguage => {
+  if (sources.turn) {
+    return { tag: sources.turn.tag, source: sources.turn.source };
+  }
+  if (sources.session) {
+    return { tag: sources.session, source: "session" };
+  }
+  return sources.agentDefault ? { tag: sources.agentDefault, source: "agent_default" } : { tag: FALLBACK_LOCALE, source: "fallback" };
+};
 
 /**
  * The agent's recording notice for a call, as written: in the call's language, else the agent's

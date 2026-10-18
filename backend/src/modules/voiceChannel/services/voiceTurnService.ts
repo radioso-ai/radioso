@@ -22,11 +22,12 @@ import {
   type VoiceTurnOutcome,
   type VoiceTurnPort,
 } from "../domain.js";
-import { chooseVoiceTurnLines, resolveVoiceTurnLocale } from "./voiceLines.js";
+import { chooseVoiceTurnLines, resolveVoiceLanguage, type VoiceTurnLanguage } from "./voiceLines.js";
 import {
   recordVoiceBridgeDue,
   recordVoiceFirstSpeech,
   recordVoiceReplyInterrupted,
+  recordVoiceTurnLanguage,
   recordVoiceTurnLimit,
   recordVoiceTurnOutcome,
   recordVoiceTurnReplayed,
@@ -86,6 +87,12 @@ export interface VoiceChatTurnRequest {
    * visitor's grouping key, so the new conversation joins the visitor the embed's own chat does.
    */
   visitorKey?: string;
+  /**
+   * The language the request reports for this turn (`VoiceTurnInput.turnLanguage`), as chat's
+   * locale hint. Absent when the request reports only the session's: chat then reads the caller's
+   * language from what they said.
+   */
+  userExpectedLocale?: string;
   signal: AbortSignal;
 }
 
@@ -178,6 +185,8 @@ interface VoiceTurnRecord {
   result: VoiceTurnResult;
   /** Present when the agent's voice policy ran. */
   policy?: { bridged: boolean; turnLimitReached: boolean; fallbackSpoken: boolean };
+  /** The language the policy picked the turn's lines in, when it ran. */
+  language?: VoiceTurnLanguage;
   /** Chat reported progress, so it stored the turn's user message. */
   chatPrepared: boolean;
   /** Chat began the reply, so a newer utterance no longer replaces the user message. */
@@ -715,6 +724,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       ...(record.handoffReason ? { handoffReason: record.handoffReason } : {}),
       ...(record.reply?.partial ? { storedPartialReply: true } : {}),
       ...record.policy,
+      ...(record.language ? { turnLanguage: record.language.tag, languageSource: record.language.source } : {}),
     };
     if (record.result === "failed") {
       logger.warn({ ...fields, errorClass: errorClassOf(failure) }, "Voice turn failed");
@@ -746,6 +756,7 @@ export class VoiceTurnService implements VoiceTurnPort {
         ...(sessionClaim.conversationId ? { conversationId: sessionClaim.conversationId } : {}),
         ...(sessionClaim.conversationId === null && sessionClaim.visitorKey ? { visitorKey: sessionClaim.visitorKey } : {}),
         message: input.utterance,
+        ...(input.turnLanguage ? { userExpectedLocale: input.turnLanguage.tag } : {}),
         sourceChannel: VOICE_SOURCE_CHANNEL,
         channelContext: channelContextFor(input),
         supersession: "latest_input_wins",
@@ -867,8 +878,11 @@ export class VoiceTurnService implements VoiceTurnPort {
     if (!profile?.voice.enabled) {
       return null;
     }
+    const language = resolveVoiceLanguage({ turn: input.turnLanguage, session: input.locale, agentDefault: profile.defaultLocale });
+    record.language = language;
+    recordVoiceTurnLanguage(this.dependencies.metrics, language.source);
     const { shortBridge, ...lines } = chooseVoiceTurnLines(profile.voice, {
-      locale: resolveVoiceTurnLocale({ requested: input.locale, agentDefault: profile.defaultLocale }),
+      locale: language.tag,
       routineActive,
       rotation: this.policyTurns++,
       ...(input.minReleasableSentenceChars === undefined ? {} : { minReleasableChars: input.minReleasableSentenceChars }),

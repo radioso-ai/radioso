@@ -17,13 +17,31 @@ export interface VoiceSessionRef {
   sessionKey: string;
 }
 
+/**
+ * Where a turn's language came from, most specific first: the runtime's own record of switching
+ * the call's language (`vendor_detected`), a field the runtime sets on the turn (`turn_field`), the
+ * session's locale, the agent's default locale, or English. Closed: it is logged and counted.
+ */
+export type VoiceTurnLanguageSource = "vendor_detected" | "turn_field" | "session" | "agent_default" | "fallback";
+
+/** A language the request reports for its turn alone, as a BCP 47 tag. */
+export interface VoiceReportedTurnLanguage {
+  tag: string;
+  source: Extract<VoiceTurnLanguageSource, "vendor_detected" | "turn_field">;
+}
+
 export interface VoiceTurnInput {
   session: VoiceSessionRef;
   transport: VoiceTransport;
   /** The final transcript of one caller turn. */
   utterance: string;
-  /** The caller's language as a BCP 47 tag, when the vendor or the page that started the session names it. */
+  /** The session's language as a BCP 47 tag, when the vendor or the page that started the session names it. */
   locale?: string;
+  /**
+   * The language of this turn, when the request reports it apart from the session's: the language
+   * the runtime switched the call to, or a per-turn field. It is the request's own; nothing stores it.
+   */
+  turnLanguage?: VoiceReportedTurnLanguage;
   /**
    * The agent's previous reply as far as the caller heard it before speaking over it, when the
    * vendor reports it (ElevenLabs replays it cut short in the request's history).

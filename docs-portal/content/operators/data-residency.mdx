@@ -14,12 +14,12 @@ The native `openai` provider backs chat, embeddings, and rerank. By default, pla
 
 Getting OpenAI itself to process requests in-region takes its own setup, separate from this flag:
 
-1. Apply for OpenAI's abuse-monitoring controls and sign its Modified Retention amendment.
-2. Create a new OpenAI project with its region set to Europe (or United States) and issue an API key from it — an existing project can't change region after the fact.
-3. Confirm every model you use, including the embedding model, is served in that region before you switch.
-4. Set `OPENAI_DATA_RESIDENCY` and replace `OPENAI_API_KEY` with the new project's key together, then redeploy.
+1. Apply for OpenAI's abuse-monitoring controls and sign its Modified Retention amendment. Regional processing requires both.
+2. Keep your current key or make a regional one. A key from a project with Global geography works on the regional endpoints: OpenAI applies regional processing per request, by the endpoint the request goes to. A project created with its region set to Europe (or United States) also stores its data in that region, and an existing project can't change region later.
+3. Confirm every model you use, including the embedding model, supports regional processing in that region.
+4. Set `OPENAI_DATA_RESIDENCY`, plus `OPENAI_API_KEY` if you use a regional project's key, then redeploy.
 
-A workspace's own OpenAI key (Settings → Providers, bring-your-own-key) always uses OpenAI's global endpoint, regardless of `OPENAI_DATA_RESIDENCY`. A key from a data-residency project — a Europe-region project, for example — isn't supported as a workspace key: that project is only reachable on its own regional host, and a workspace key always calls the global one.
+A workspace's own OpenAI key (Settings → Providers, bring-your-own-key) always uses OpenAI's global endpoint, regardless of `OPENAI_DATA_RESIDENCY`. A workspace key's requests are therefore processed globally. A key from a project created with a region (a Europe-region project, for example) isn't supported as a workspace key, because that project is only reachable on its own regional host.
 
 ## Anthropic and Gemini
 

@@ -12,6 +12,7 @@ import { createLogger, type AppLogger } from "../shared/observability/logger.js"
 import type { AppDependencies } from "../app/server/types.js";
 import type { RuntimeHandle } from "./types.js";
 import { startRuntimeTracing, stopRuntimeTracing } from "./tracing.js";
+import { runOpenAIResidencyStartupCheck } from "./openAIResidencyStartupCheck.js";
 
 interface ServerLike {
   close(callback?: (error?: Error) => void): void;
@@ -59,6 +60,7 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
   const dependencies = options.buildDependencies
     ? options.buildDependencies(options.env)
     : buildDependencies(options.env, { modules: options.applicationModules });
+  await runOpenAIResidencyStartupCheck(options.env, { logger: dependencies.logger });
   await dependencies.applicationModules.migrateAll(dependencies.connectorDb);
   await dependencies.connectorRegistry.runMigrations(dependencies.connectorDb);
   await dependencies.connectorRegistry.initializeAll({

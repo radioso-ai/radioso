@@ -326,10 +326,15 @@ helpers and the shared chat message limit from `app/http`
   (`resolveVoiceLanguage`), and the lines match it by tag, then primary subtag,
   then any tag of that language. Chat stores no response language per message,
   so the last reply's language is not a source. The bridge is in that
-  language or silent. The fallback line is the first written for the turn
-  language, the session's, the agent default or `en`, in that order: a line in
-  another language beats a caller left waiting past the limit. An agent with
-  no fallback line in any of them keeps waiting past the limit.
+  language or silent, and so is the fallback line, except on a turn that
+  reports its own language: there the fallback line is the first written for
+  the turn language, the session's, the agent default or `en`, in that order,
+  because a caller who switched to a language without lines is better told in
+  the call's other language than left waiting past the limit. A session that
+  reports no turn language keeps the authored rule (one language, or none).
+  An agent with no fallback line for the turn keeps waiting past the limit.
+  `languagesInOrder` in `voiceLines.ts` is the one ordered list behind the
+  turn's language, the fallback order and the recording notice.
 - **Mid-call language.** On `elevenlabs`, Radioso calls none of the
   runtime's tools, so a call keeps its starting language and the lines follow
   the session locale; what follows is what the turn reads when a request

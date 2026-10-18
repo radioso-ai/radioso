@@ -24,22 +24,31 @@ const inertSlotCorrection: ConversationRoutineSlotCorrection = {
   rejectInvalid: () => Promise.reject(new Error("routine_slot_correction_inert_on_invocation")),
 };
 
+// The call's input is the routine's start values, and the turn's message is only that call
+// rendered as text. Read as a visitor's reply, the next-step selector took it for an
+// authority claim, holding a step the input fills, and read values into it, such as a reason
+// for a return the caller never gave, which carried the routine past the step that asks for
+// it and into its tool step (#1563). A slot holds only what the call's input gave it.
+const invocationRunnerOptions = { messageStatesSlotValues: false } as const;
+
 interface DirectInvocationTurnPorts {
   /** The routine the tool name resolved to among this turn's registrations; null when absent. */
   routine: Routine | null;
   activator: ConversationRoutineActivator;
   reentryGate: ConversationRoutineReentryGate;
   slotCorrection: ConversationRoutineSlotCorrection;
+  /** The turn's routine runner options: the message states no slot values. */
+  runnerOptions: typeof invocationRunnerOptions;
   /** Reports the admitted state as usual and, when the activator declined, the completed routine it named. */
   reporter: RoutineTurnReporter;
 }
 
 /**
  * The routine ports a turn provider hands the engine when a tool call names the
- * routine to run. One producer for the pairing — activator, silenced gates, and
- * a reporter that can still describe a declined completed routine — so every
- * provider (production, test app) admits an invocation the same way.
- * `onOutcome` fires once, after the activator decided, for observability.
+ * routine to run. One producer for the pairing — activator, silenced gates, the
+ * runner options, and a reporter that can still describe a declined completed
+ * routine — so every provider (production, test app) admits an invocation the
+ * same way. `onOutcome` fires once, after the activator decided, for observability.
  */
 export const createDirectInvocationTurnPorts = (input: {
   registrations: readonly RoutineRegistration[];
@@ -62,6 +71,7 @@ export const createDirectInvocationTurnPorts = (input: {
     },
     reentryGate: inertReentryGate,
     slotCorrection: inertSlotCorrection,
+    runnerOptions: invocationRunnerOptions,
     reporter: createRoutineTurnReporter(input.routines, {
       invocation: { toolName: input.invocation.toolName, outcome: () => directActivator.outcome() },
     }),

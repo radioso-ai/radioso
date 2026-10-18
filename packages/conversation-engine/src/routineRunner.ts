@@ -588,6 +588,17 @@ interface DefaultRoutineRunnerOptions {
   includeSlotValues?: boolean;
   /** Consecutive no-progress re-asks of one step allowed before the reply asks differently; defaults to 3. */
   reaskLimit?: number;
+  /**
+   * Whether the turn's message can state slot values. Absent/true is a message someone
+   * wrote, which the selector reads for them. A host sets false when the message is a
+   * structured call rendered as text and the routine already holds the call's input
+   * (a routine invoked as a tool). The runner then keeps no value a selector returns and
+   * asks it nothing those values answer: no extraction-only read, no read of the opening
+   * message for a later step, no compiler slot gate. A step the values fill moves on by
+   * its structure, and the first step they leave unfilled is asked (#1563). An exit the
+   * author wrote is still judged by the selector.
+   */
+  messageStatesSlotValues?: boolean;
 }
 
 export class DefaultRoutineRunner implements ConversationRoutineRunner {
@@ -642,6 +653,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     // carries — enter its state here, so they are checked like any selector's (#1374).
     const startCheck = input.activationTurn ? checkDeclaredSlotValues(routine, input.state.variables) : null;
     const state: RoutineState = startCheck ? { ...input.state, variables: startCheck.values } : input.state;
+    const messageStatesSlotValues = this.options.messageStatesSlotValues !== false;
     // The activator's rejections the selector did not make good: the selector reads the same
     // opening message, so a valid value it returns for the slot replaces the rejected one.
     const unreplacedStartRejections = (variables: Record<string, unknown>): RoutineTraceRejectedSlot[] =>
@@ -708,6 +720,12 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       lastSelectorHold = lastSelectorHold || decision.hold === true;
       if (!decision.variables) {
         return decision;
+      }
+      // A message that states no values gives the selector nothing to return but what it read
+      // into the message; its selection still records the keys for the trace.
+      if (!messageStatesSlotValues) {
+        const { variables: _readIntoTheMessage, ...withoutValues } = decision;
+        return withoutValues;
       }
       const checked = checkDeclaredSlotValues(routine, decision.variables);
       lastRejectedSlots = [...lastRejectedSlots, ...checked.rejected];
@@ -801,6 +819,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       const collected = collectedSlotsForStep(input.step);
       let extracted: Record<string, unknown> = {};
       if (
+        messageStatesSlotValues &&
         collected.length > 0 &&
         (input.alwaysExtract || collected.some((key) => !hasVariable(input.variables, key))) &&
         input.transitions.length > 0 &&
@@ -843,6 +862,15 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       const llmTransitions = conditionedTransitions.filter(isLlmTransition);
       if (llmTransitions.length === 0) {
         return withExtracted({ nextStepId: defaultTransition?.to ?? input.step.id });
+      }
+      // A compiler slot gate asks only whether the step's slots hold values. When the message
+      // states none, the values the routine holds are the whole answer: the step moves on by its
+      // structure when they fill it, and stays to be asked when they do not.
+      if (!messageStatesSlotValues && llmTransitions.every(isCompilerSlotGate)) {
+        const exit = isSatisfiedSlotCollectionStep(routine, input.step, variables)
+          ? satisfiedStepExit(input.step, input.transitions, variables)
+          : undefined;
+        return { nextStepId: exit ?? input.step.id };
       }
 
       lastSelectorRan = true;
@@ -977,7 +1005,8 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
           ...(tracedRejected.length > 0 ? { rejectedSlots: tracedRejected } : {}),
           viaSelector: mainSelectorRan,
           ...(mainSelection ? { selection: mainSelection } : {}),
-          ...(input.activationTurn ? { readOpeningMessage: true } : {}),
+          // A message that states no values is read only to judge an exit the author wrote.
+          ...(input.activationTurn && (messageStatesSlotValues || mainSelectorRan) ? { readOpeningMessage: true } : {}),
         };
         traceSteps.push(startEntry);
       }
@@ -1054,9 +1083,11 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
           // step shown on screen, so this never runs past the first turn. The walk never
           // revisits a step (every advance below lands outside `fastForwarded`, and a step a
           // transit step lands on is walked only on its first entry), so nothing needs to
-          // track which steps already had this read.
+          // track which steps already had this read. A message that states no values has
+          // none for this step either.
           if (
             !input.activationTurn ||
+            !messageStatesSlotValues ||
             step.kind !== "chat" ||
             step.id === currentStepId ||
             collectedSlotsForStep(step).length === 0

@@ -468,7 +468,9 @@ function RoutineEditorScreen({
   const [documentDraft, setDocumentDraft] = useState<RoutineDefinitionDraft | null>(null)
   const [draftHeader, setDraftHeader] = useState<RoutineDraftHeader>(() => headerFromDraft(emptyRoutineDraft()))
   // The Document editor owns its state while mounted; flows that replace the whole draft
-  // in place (draft assist) bump this nonce so the editor remounts on the new draft.
+  // from outside it (loading a route, draft assist) bump this nonce so the editor remounts on
+  // the new draft. A new routine's first save does not: the document being typed in becomes
+  // the saved routine's, with its open step and caret.
   const [documentSessionNonce, setDocumentSessionNonce] = useState(0)
   const [validation, setValidation] = useState<RoutineValidationResult | null>(null)
   const [validatedDraftSignature, setValidatedDraftSignature] = useState<string | null>(null)
@@ -621,6 +623,7 @@ function RoutineEditorScreen({
         setDraftHeader(nextHeader)
         setForm(routineToForm(draftAsRoutine(nextDraft)))
         setDocumentDraft(null)
+        setDocumentSessionNonce((nonce) => nonce + 1)
         setIsLoading(false)
         return
       }
@@ -641,6 +644,7 @@ function RoutineEditorScreen({
           setDraftHeader(headerFromDraft(response.routine))
           setForm(routineToForm(response.routine))
           setDocumentDraft(null)
+          setDocumentSessionNonce((nonce) => nonce + 1)
           setValidatedDraftSignature(null)
         })
         .catch((loadError) => {
@@ -694,11 +698,12 @@ function RoutineEditorScreen({
       markSaved()
       if (wasNew) {
         clearNewRoutineRecovery(agentId)
-        // A raw history replacement leaves `routineRouteId === 'new'` mounted, so its
-        // recovery effect writes the just-created draft back into session storage. Route
-        // through Next instead: the persisted editor replaces the new-draft screen.
+        // A shallow replace, not a Next navigation: the dashboard reads its route from the
+        // browser path, so this same editor becomes the saved routine's and keeps the open
+        // step, the caret, and whatever was typed while the create was in flight. A Next
+        // navigation would remount the page and reload the routine as it was sent.
         if (currentBrowserUrlMatches(buildPersistedHref('new'))) {
-          router.replace(buildPersistedHref(response.routine.id))
+          window.history.replaceState(null, '', buildPersistedHref(response.routine.id))
         }
       }
       return response.routine
@@ -758,10 +763,14 @@ function RoutineEditorScreen({
     })()
   }, [flushPendingSave, router, testChatHref])
 
+  // Recovery holds a routine that has never been saved. The route reaches the saved id a
+  // render after the create returns, so the created id, not the route, ends it: a keystroke
+  // in between must not write the saved routine back as a new draft.
+  const isUnsavedNewRoutine = isNewRoutine && !editingRoutineId
   useEffect(() => {
-    if (!isNewRoutine || !activeRoutineDraft) return
+    if (!isUnsavedNewRoutine || !activeRoutineDraft) return
     writeNewRoutineRecovery(agentId, { draft: activeRoutineDraft, header: draftHeader })
-  }, [activeRoutineDraft, agentId, draftHeader, isNewRoutine])
+  }, [activeRoutineDraft, agentId, draftHeader, isUnsavedNewRoutine])
 
   // Mirrors the list row's switch: takes effect immediately for a saved routine, rather than
   // waiting on the autosave debounce that owns the rest of the form.
@@ -924,7 +933,7 @@ function RoutineEditorScreen({
 
             {activeRoutineDraft ? (
               <RoutineDocumentTab
-                key={`${agentId}:${routineRouteId}:${documentSessionNonce}`}
+                key={`${agentId}:${documentSessionNonce}`}
                 draft={activeRoutineDraft}
                 diagnostics={validationDiagnostics}
                 onOpenDraftAssist={onOpenDraftAssist}

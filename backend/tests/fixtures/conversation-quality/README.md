@@ -47,8 +47,11 @@ mixed with a question or a request, an open question or offer in the conversatio
 or price question, a request to repeat) assert `composer`. The unlisted-language case accepts
 either source: an always-on directive names the agent's languages, and the reply may repeat it
 word for word but claim nothing more. The judge rubric allows no factual proposition about
-anything except text a standing instruction supplies word for word, and the positive cases'
-references describe the expected reply (kind, language, no facts) rather than quoting one.
+anything except text a standing instruction supplies word for word. A courtesy about the
+assistant's own willingness or pleasure to help (for example, saying it's glad it could help)
+is not a factual proposition either; a claim about what the assistant can do still is, since
+that's a proposition about its abilities. The positive cases' references describe the expected
+reply (kind, language, no facts) rather than quoting one.
 Run only these cases with:
 
 ```bash

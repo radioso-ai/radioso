@@ -13,6 +13,7 @@ import {
 } from "./usageLimitService.js";
 import { UsageLimitAccountNotFoundError, UsageLimitExceededError } from "./errors.js";
 import { usageLimitMigrator } from "./usageLimitMigrator.js";
+import { SUPERSEDED_MONTHLY_INDEXED_BYTE_SEEDS } from "./planCatalogSeed.js";
 import type { UsageLimitDatabasePort, UsageLimitReservation } from "../radiosoModuleTypes.js";
 
 const tenths = (conversations: number): number => conversations * TENTHS_PER_CONVERSATION;
@@ -656,6 +657,32 @@ describeIfDatabase("EE usage limit service integration", () => {
     const profiles = await service.listProfiles();
     const reread = profiles.find((candidate) => candidate.key === "satellite");
     expect(reread?.monthlyConversationLimit).toBe(42);
+  });
+
+  it("moves a seeded profile still at a superseded monthly indexing cap to the catalog value and leaves an edited one", async () => {
+    const service = new EnterpriseUsageLimitService(database);
+    const comet = PLAN_CATALOG.plans.find((plan) => plan.id === "comet")!;
+    const satellite = PLAN_CATALOG.plans.find((plan) => plan.id === "satellite")!;
+    const upsertWithIndexingCap = (plan: typeof comet, monthlyIndexedByteLimit: number) =>
+      service.upsertProfile({
+        key: plan.id,
+        displayName: plan.name,
+        monthlyAnswerLimit: null,
+        storedDocumentLimit: plan.documents,
+        storedIndexedByteLimit: plan.storedBytes,
+        monthlyIndexedByteLimit,
+        monthlyConversationLimit: plan.monthlyConversations,
+        repliesPerConversation: PLAN_CATALOG.repliesPerConversation,
+      });
+    await upsertWithIndexingCap(comet, SUPERSEDED_MONTHLY_INDEXED_BYTE_SEEDS.comet![0]!);
+    await upsertWithIndexingCap(satellite, 12_345_678);
+
+    await usageLimitMigrator.migrate(database);
+
+    const profiles = await service.listProfiles();
+    expect(profiles.find((candidate) => candidate.key === "comet")?.monthlyIndexedByteLimit).toBe(comet.monthlyIndexedBytes);
+    expect(profiles.find((candidate) => candidate.key === "satellite")?.monthlyIndexedByteLimit).toBe(12_345_678);
+    await upsertWithIndexingCap(satellite, satellite.monthlyIndexedBytes);
   });
 
   it("does not report a monthly-answers cap when the profile meters conversations", async () => {

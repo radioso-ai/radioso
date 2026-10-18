@@ -132,7 +132,9 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
 
         + "vendor agent (the vendor's own agent id, 1 to 128 letters, digits, underscores and hyphens), which a voice "
         + "session start opens, in the data residency region of the vendor account (`region`, which picks the vendor host); "
-        + "null binds none. An update replaces the block whole.",
+        + "null binds none. `languageSwitching` lets the agent switch the call's language, and with it the runtime's voice "
+        + "and transcription, when the caller changes language mid-call; off (absent) unless the operator turns it on, and "
+        + "only on a runtime that offers the switch. An update replaces the block whole.",
     }),
   );
 
@@ -142,6 +144,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       description:
         "The `voice` block as an update sends it: `AgentVoiceSettings`, except that `runtime` may be left out, "
         + "which binds the agent to no vendor agent, and `runtime.region` may be left out for the vendor's default region, `us`. "
+        + "`languageSwitching` may be left out, which turns it off. "
         + "A key either object does not name is refused. The update replaces the block whole.",
     }),
   );

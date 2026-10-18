@@ -70,6 +70,13 @@ export const agentVoiceSettingsSchema = z.object({
   recordingNotice: perLocale(voiceLineSchema).optional(),
   /** Null until the operator binds a vendor agent; a session start needs one. */
   runtime: voiceRuntimeSchema.nullable(),
+  /**
+   * The agent may switch the call's language, and with it the runtime's voice and transcription,
+   * when the caller changes language: on a turn whose answer the planner writes in another
+   * language, and only on a runtime that offers the switch. Off unless the operator turns it on,
+   * because the runtime agent must be set up for the languages it switches to. Absent: off.
+   */
+  languageSwitching: z.boolean().optional(),
 });
 
 /**
@@ -89,13 +96,20 @@ export const agentVoiceSettingsInputSchema = agentVoiceSettingsSchema.extend({
  */
 const storedAgentVoiceSettingsSchema = agentVoiceSettingsSchema.extend({
   runtime: storedVoiceRuntimeSchema.nullable().default(null),
+  languageSwitching: z.boolean().default(false),
 });
 
 export type AgentVoiceSettings = z.infer<typeof agentVoiceSettingsSchema>;
 
 export type VoiceBridgeStyle = keyof z.infer<typeof bridgeLinesSchema>;
 
-export const defaultAgentVoiceSettings = (): AgentVoiceSettings => ({ enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null });
+export const defaultAgentVoiceSettings = (): AgentVoiceSettings => ({
+  enabled: false,
+  bridgeLines: {},
+  fallbackLine: {},
+  runtime: null,
+  languageSwitching: false,
+});
 
 /**
  * Reads a stored block back. A block this version cannot read turns voice off for the agent rather

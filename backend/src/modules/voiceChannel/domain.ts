@@ -49,6 +49,37 @@ export type VoiceReportedTurnLanguage = VoiceTurnLanguage & {
  */
 export type VoiceLanguageReportProblem = "blocked" | "unreadable";
 
+/**
+ * The runtime offers to switch the call's language (its voice and transcription) when the turn
+ * asks it to, and has refused to switch to `refused` (primary language subtags) earlier in the
+ * call, which the turn then never asks for again.
+ */
+export interface VoiceLanguageSwitchOffer {
+  refused: readonly string[];
+}
+
+/**
+ * The runtime's follow-up request after it ran the switch a turn of the session asked for:
+ * `confirmed` when it switched the call, false when it refused or its result could not be read.
+ */
+export interface VoiceLanguageSwitchResult {
+  /** The switch's id, as the turn that asked for it named it. */
+  switchId: string;
+  confirmed: boolean;
+}
+
+/**
+ * Why a turn asks the runtime to switch the call's language: the turn's plan answers in a language
+ * other than the call's. Closed: the runtime is told it as the switch's reason.
+ */
+export type VoiceLanguageSwitchReason = "response_language";
+
+/**
+ * Where a switch a turn asked for stands, as logged and counted: asked for (`emitted`), carried out
+ * by the runtime (`confirmed`), refused by it (`refused`), or never followed up (`unanswered`).
+ */
+export type VoiceLanguageSwitchOutcome = "emitted" | "confirmed" | "refused" | "unanswered";
+
 export interface VoiceTurnInput {
   session: VoiceSessionRef;
   transport: VoiceTransport;
@@ -63,6 +94,14 @@ export interface VoiceTurnInput {
   turnLanguage?: VoiceReportedTurnLanguage;
   /** Present when the newest language switch the request carries was not taken. */
   languageReport?: VoiceLanguageReportProblem;
+  /** Present when the runtime offers to switch the call's language on this request. */
+  languageSwitchOffer?: VoiceLanguageSwitchOffer;
+  /**
+   * Present on the runtime's follow-up after a switch a turn of the session asked for: the request
+   * speaks that turn's answer, which its chat turn is writing or has stored, and runs no turn of
+   * its own. `utterance` is then the utterance that turn answered.
+   */
+  languageSwitchResult?: VoiceLanguageSwitchResult;
   /**
    * The agent's previous reply as far as the caller heard it before speaking over it, when the
    * vendor reports it (ElevenLabs replays it cut short in the request's history).
@@ -96,6 +135,13 @@ export type VoiceTurnEvent =
   | { type: "bridge"; text: string }
   /** A speakable piece of the agent's reply, verbatim; the final piece carries `last: true`. */
   | { type: "speech"; text: string; last: boolean }
+  /**
+   * The turn asks the runtime to switch the call to `language` (a primary language subtag such as
+   * `it`) before it answers, so the answer is spoken in that language's voice. Nothing is spoken on
+   * the request that carries it, before it or after it; its outcome follows at once. The runtime's
+   * follow-up request (`VoiceTurnInput.languageSwitchResult`, with this `switchId`) speaks the answer.
+   */
+  | { type: "switchLanguage"; switchId: string; language: string; reason: VoiceLanguageSwitchReason }
   /** Exactly one, always last: the turn's events end with it. */
   | { type: "outcome"; outcome: VoiceTurnOutcome };
 

@@ -145,6 +145,7 @@ describe("VoiceTurnService", () => {
       sourceChannel: "voice",
       channelContext: { provider: "voice", vendor: "elevenlabs", sessionKey: "conv_abc", transport: "web" },
       supersession: "latest_input_wins",
+      reportResponseLanguage: true,
       deliveredReply: expect.any(Function),
       signal: expect.any(AbortSignal),
     }]);
@@ -2412,6 +2413,341 @@ describe("VoiceTurnService", () => {
           "Voice turn could not update the teammate's pending replies",
         );
       });
+    });
+  });
+
+  describe("a turn that switches the call's language", () => {
+    const voiceOn: AgentVoiceSettings = {
+      enabled: true,
+      bridgeLines: {
+        en: { acknowledge: ["Got it."], check: ["Let me check."] },
+        it: { acknowledge: ["Perfetto."], check: ["Controllo subito."] },
+      },
+      fallbackLine: { en: "Sorry, could you ask me again?" },
+      runtime: null,
+      languageSwitching: true,
+    };
+    const answer = "Apriamo alle nove.";
+    const switchEvent = { type: "switchLanguage", switchId: "switch-1", language: "it", reason: "response_language" } as const;
+
+    type Step = { atMs: number; event: ChatStreamEvent };
+
+    /**
+     * Chat on the fake clock. A newer turn on the conversation cancels the one in flight at its next
+     * step, as the registry does for `latest_input_wins`; a turn cut off after it emitted stores what
+     * the channel says reached the caller.
+     */
+    const scriptedChat = (scripts: Step[][]) => {
+      const requests: VoiceChatTurnRequest[] = [];
+      const heardParts: Array<DeliveredReplyPart | null> = [];
+      const finished: boolean[] = [];
+      let newest = -1;
+      return {
+        requests,
+        heardParts,
+        finished,
+        streamTurn: (request: VoiceChatTurnRequest) => {
+          requests.push(request);
+          const index = requests.length - 1;
+          newest = index;
+          finished[index] = false;
+          const steps = scripts[index] ?? [];
+          return (async function* (): AsyncGenerator<ChatStreamEvent> {
+            const startedAt = Date.now();
+            let emitted = false;
+            try {
+              for (const step of steps) {
+                const wait = startedAt + step.atMs - Date.now();
+                if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+                if (newest !== index) {
+                  const heard = emitted ? request.deliveredReply() : null;
+                  if (emitted) heardParts.push(heard);
+                  yield { type: "cancelled", conversationId, reason: "superseded", stage: "rendering", ...(heard ? { storedReply: { assistantMessageId: `cut-${index}`, partial: true } } : {}) };
+                  return;
+                }
+                emitted ||= step.event.type === "chunk";
+                yield step.event;
+              }
+            } finally {
+              finished[index] = true;
+            }
+          })();
+        },
+      };
+    };
+
+    /** A knowledge turn the planner answers in `tag`: it searches, then writes the answer at `answerAtMs`. */
+    const plannedIn = (tag: string, answerAtMs = 3_000, text = answer): Step[] => [
+      { atMs: 0, event: { type: "status", stage: "interpreting" } },
+      { atMs: 0, event: { type: "conversation", conversationId } },
+      { atMs: 1_100, event: { type: "status", stage: "searching" } },
+      { atMs: 1_105, event: { type: "language", tag } },
+      { atMs: answerAtMs, event: { type: "chunk", text } },
+      { atMs: answerAtMs, event: { ...done(), answer: text } as ChatStreamEvent },
+    ];
+
+    const fakeMetrics = () => ({ observeHistogram: vi.fn(), incrementCounter: vi.fn() });
+    const counted = (metrics: ReturnType<typeof fakeMetrics>, name: string) =>
+      metrics.incrementCounter.mock.calls.filter(([metric]) => metric === name).map(([, options]) => (options as { labels?: unknown }).labels ?? {});
+
+    const service = (
+      chat: { streamTurn: (request: VoiceChatTurnRequest) => AsyncIterable<ChatStreamEvent> },
+      overrides: Partial<ConstructorParameters<typeof VoiceTurnService>[0]> = {},
+      voice: AgentVoiceSettings = voiceOn,
+    ) =>
+      new VoiceTurnService({
+        agents: voiceProfiles(voice, "en"),
+        routines: routineStates(false),
+        ownership: conversationOwnership(false),
+        operatorReplies: noOperatorReplies(),
+        sessions: fakeSessions(conversationId),
+        chat,
+        logger: fakeLogger(),
+        newLanguageSwitchId: () => "switch-1",
+        ...overrides,
+      });
+
+    /** The caller's turn, on a request that offers the switch. */
+    const offered = (overrides: Partial<VoiceTurnInput> = {}): VoiceTurnInput =>
+      input({ utterance: "A che ora aprite?", locale: "en", languageSwitchOffer: { refused: [] }, ...overrides });
+
+    /** The runtime's follow-up after the switch, as its history reports it. */
+    const followUp = (confirmed: boolean, overrides: Partial<VoiceTurnInput> = {}): VoiceTurnInput =>
+      offered({
+        languageSwitchResult: { switchId: "switch-1", confirmed },
+        ...(confirmed ? { turnLanguage: { tag: "it", source: "vendor_detected", isNew: true } } : { languageReport: "blocked" }),
+        ...overrides,
+      });
+
+    /** Starts a request now and collects its events, each with when it left, as the fake clock runs. */
+    const start = (turns: VoiceTurnService, turn: VoiceTurnInput) => {
+      const startedAt = Date.now();
+      const events: Array<{ atMs: number; event: VoiceTurnEvent }> = [];
+      const finished = (async () => {
+        for await (const event of turns.runTurn(turn, new AbortController().signal)) {
+          events.push({ atMs: Date.now() - startedAt, event });
+        }
+        return events;
+      })();
+      return finished;
+    };
+
+    const finishedLog = (logger: ReturnType<typeof fakeLogger>) =>
+      logger.info.mock.calls.filter(([, message]) => message === "Voice turn finished").map(([fields]) => fields as Record<string, unknown>);
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("asks the runtime to switch when the planner answers in another language, and speaks nothing on that request", async () => {
+      const chat = scriptedChat([plannedIn("it")]);
+      const logger = fakeLogger();
+      const metrics = fakeMetrics();
+      const turns = service(chat, { logger, metrics });
+
+      const switching = start(turns, offered());
+      await vi.advanceTimersByTimeAsync(1_200);
+      const events = await switching;
+
+      expect(events).toEqual([
+        { atMs: 0, event: { type: "conversation", conversationId } },
+        { atMs: 1_105, event: switchEvent },
+        { atMs: 1_105, event: { type: "outcome", outcome: { kind: "continue" } } },
+      ]);
+      // The chat turn runs on behind the request and finishes as any turn does.
+      expect(chat.finished[0]).toBe(false);
+      await vi.advanceTimersByTimeAsync(2_000);
+      expect(chat.finished[0]).toBe(true);
+      expect(chat.requests).toHaveLength(1);
+      expect(chat.requests[0]).not.toHaveProperty("userExpectedLocale");
+      expect(finishedLog(logger)).toEqual([expect.objectContaining({ result: "completed", languageSwitch: "emitted", speechPieceCount: 0, outcome: "continue" })]);
+      expect(counted(metrics, "voice_language_switch_total")).toEqual([{ outcome: "emitted" }]);
+      expect(counted(metrics, "voice_bridge_emitted_total")).toEqual([]);
+      // The runtime receives the turn's outcome with its answer, on the follow-up, which counts it.
+      expect(counted(metrics, "voice_turn_outcome_total")).toEqual([]);
+    });
+
+    it("speaks the answer on the runtime's follow-up, with the new language's bridge while the answer is still being written", async () => {
+      const chat = scriptedChat([plannedIn("it")]);
+      const logger = fakeLogger();
+      const metrics = fakeMetrics();
+      const turns = service(chat, { logger, metrics });
+
+      const switching = start(turns, offered());
+      await vi.advanceTimersByTimeAsync(1_655);
+      await switching;
+      const spoken = start(turns, followUp(true));
+      await vi.runAllTimersAsync();
+      const events = await spoken;
+
+      expect(events).toEqual([
+        { atMs: 0, event: { type: "conversation", conversationId } },
+        { atMs: 0, event: { type: "bridge", text: "Controllo subito." } },
+        { atMs: 1_345, event: { type: "speech", text: answer, last: true } },
+        { atMs: 1_345, event: { type: "outcome", outcome: { kind: "continue" } } },
+      ]);
+      // One chat turn answered the utterance: the follow-up ran none of its own.
+      expect(chat.requests).toHaveLength(1);
+      const logs = finishedLog(logger);
+      expect(logs).toContainEqual(expect.objectContaining({ languageSwitch: "emitted", speechPieceCount: 0 }));
+      expect(logs).toContainEqual(expect.objectContaining({ languageSwitch: "confirmed", speechPieceCount: 1, bridged: true, turnLanguage: "it" }));
+      expect(counted(metrics, "voice_language_switch_total")).toEqual([{ outcome: "emitted" }, { outcome: "confirmed" }]);
+      // The turn's outcome is counted once.
+      expect(counted(metrics, "voice_turn_outcome_total")).toHaveLength(1);
+    });
+
+    it("speaks an answer already written at once, without a bridge", async () => {
+      const chat = scriptedChat([plannedIn("it", 1_300)]);
+      const turns = service(chat);
+
+      const switching = start(turns, offered());
+      await vi.advanceTimersByTimeAsync(1_655);
+      await switching;
+      const spoken = start(turns, followUp(true));
+      await vi.runAllTimersAsync();
+
+      expect(await spoken).toEqual([
+        { atMs: 0, event: { type: "conversation", conversationId } },
+        { atMs: 0, event: { type: "speech", text: answer, last: true } },
+        { atMs: 0, event: { type: "outcome", outcome: { kind: "continue" } } },
+      ]);
+    });
+
+    it("speaks the answer anyway when the runtime refused the switch, and logs the refusal", async () => {
+      const chat = scriptedChat([plannedIn("it", 1_300)]);
+      const logger = fakeLogger();
+      const metrics = fakeMetrics();
+      const turns = service(chat, { logger, metrics });
+
+      const switching = start(turns, offered());
+      await vi.advanceTimersByTimeAsync(1_655);
+      await switching;
+      const spoken = start(turns, followUp(false));
+      await vi.runAllTimersAsync();
+
+      expect(spokenText((await spoken).map(({ event }) => event))).toBe(answer);
+      expect(finishedLog(logger)).toContainEqual(expect.objectContaining({ languageSwitch: "refused", languageReport: "blocked" }));
+      expect(counted(metrics, "voice_language_switch_total")).toEqual([{ outcome: "emitted" }, { outcome: "refused" }]);
+    });
+
+    it("runs a normal turn when the agent has not turned language switching on", async () => {
+      const chat = scriptedChat([plannedIn("it", 1_300)]);
+      const turns = service(chat, {}, { ...voiceOn, languageSwitching: false });
+
+      const turn = start(turns, offered());
+      await vi.runAllTimersAsync();
+      const events = (await turn).map(({ event }) => event);
+
+      expect(events.map((event) => event.type)).toEqual(["conversation", "bridge", "speech", "outcome"]);
+      expect(events).toContainEqual({ type: "bridge", text: "Let me check." });
+    });
+
+    it("keeps the call's language when the planner's has the same primary subtag, or the runtime offers no switch, or refused this language before", async () => {
+      const runs = [
+        offered({ locale: "it-IT" }),
+        offered({ languageSwitchOffer: undefined }),
+        offered({ languageSwitchOffer: { refused: ["it"] } }),
+      ];
+      for (const turnInput of runs) {
+        const turns = service(scriptedChat([plannedIn("it", 1_300)]));
+        const turn = start(turns, turnInput);
+        await vi.runAllTimersAsync();
+        const events = (await turn).map(({ event }) => event);
+        expect(events.some((event) => event.type === "switchLanguage")).toBe(false);
+        expect(spokenText(events)).toBe(answer);
+      }
+    });
+
+    it("keeps the call's language on a turn that spoke a teammate's reply first: a switch must be all its request carries", async () => {
+      let pending = [{ messageId: "77777777-7777-4777-8777-777777777771", text: "Ciao, sono Marta." }];
+      const operatorReplies = {
+        claims: {
+          claimPendingOperatorReplies: vi.fn(async () => {
+            const claimed = pending;
+            pending = [];
+            return claimed;
+          }),
+          markOperatorRepliesSpoken: vi.fn(async ({ messageIds }: { messageIds: string[] }) => messageIds),
+          skipOperatorReplies: vi.fn(async () => []),
+          releaseOperatorReplies: vi.fn(async () => []),
+        },
+        newClaimTurnId: () => "turn-1",
+      };
+      const turns = service(scriptedChat([plannedIn("it", 1_300)]), { operatorReplies });
+
+      const turn = start(turns, offered());
+      await vi.runAllTimersAsync();
+      const events = (await turn).map(({ event }) => event);
+
+      expect(events.some((event) => event.type === "switchLanguage")).toBe(false);
+      expect(spokenText(events)).toContain("Ciao, sono Marta.");
+      expect(spokenText(events)).toContain(answer);
+    });
+
+    it("counts a switch the runtime never follows up as unanswered once the replay window passes, and speaks it no more", async () => {
+      const chat = scriptedChat([plannedIn("it", 1_300)]);
+      const logger = fakeLogger();
+      const metrics = fakeMetrics();
+      const turns = service(chat, { logger, metrics });
+
+      const switching = start(turns, offered());
+      await vi.advanceTimersByTimeAsync(1_200);
+      await switching;
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      expect(counted(metrics, "voice_language_switch_total")).toEqual([{ outcome: "emitted" }, { outcome: "unanswered" }]);
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ conversationId, languageSwitch: "unanswered" }),
+        "Voice language switch was not followed up",
+      );
+      const late = start(turns, followUp(true));
+      await vi.runAllTimersAsync();
+      expect((await late).map(({ event }) => event)).toEqual([{ type: "outcome", outcome: { kind: "continue" } }]);
+      expect(chat.requests).toHaveLength(1);
+    });
+
+    it("counts the switch unanswered when the caller's next utterance comes first", async () => {
+      const chat = scriptedChat([plannedIn("it", 1_300), plannedIn("it", 1_300)]);
+      const metrics = fakeMetrics();
+      const turns = service(chat, { metrics });
+
+      const switching = start(turns, offered());
+      await vi.advanceTimersByTimeAsync(1_200);
+      await switching;
+      const next = start(turns, offered({ utterance: "E la domenica?" }));
+      await vi.runAllTimersAsync();
+      await next;
+
+      expect(counted(metrics, "voice_language_switch_total").slice(0, 2)).toEqual([{ outcome: "emitted" }, { outcome: "unanswered" }]);
+    });
+
+    it("stores the part of the answer the follow-up's caller heard when they speak over it", async () => {
+      const chat = scriptedChat([
+        [
+          { atMs: 0, event: { type: "conversation", conversationId } },
+          { atMs: 100, event: { type: "language", tag: "it" } },
+          { atMs: 700, event: { type: "chunk", text: "Apriamo alle nove. " } },
+          { atMs: 5_000, event: { type: "chunk", text: "Chiudiamo alle sei." } },
+          { atMs: 5_000, event: { ...done(), answer: "Apriamo alle nove. Chiudiamo alle sei." } as ChatStreamEvent },
+        ],
+        plannedIn("it", 300),
+      ]);
+      const turns = service(chat);
+
+      const switching = start(turns, offered());
+      await vi.advanceTimersByTimeAsync(650);
+      await switching;
+      const spoken = start(turns, followUp(true));
+      await vi.advanceTimersByTimeAsync(1_000);
+      const cutIn = start(turns, offered({ utterance: "E la domenica?", heardUntil: "Apriamo alle nove." }));
+      await vi.runAllTimersAsync();
+      await Promise.all([spoken, cutIn]);
+
+      expect(chat.heardParts).toEqual([expect.objectContaining({ text: "Apriamo alle nove. ", heardCharacterCount: 18 })]);
     });
   });
 });

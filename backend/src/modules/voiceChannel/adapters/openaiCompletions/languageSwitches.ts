@@ -8,10 +8,14 @@ import { textOf, type CompletionsMessage } from "./requestSchema.js";
  * with the same `tool_call_id`. Data, named by the dialect.
  */
 export interface LanguageSwitchTool {
-  /** The tool's name in `function.name`. */
+  /** The tool's name in `function.name`, in the request's `tools` and in the calls it replays. */
   tool: string;
   /** The argument of `function.arguments` that names the language. */
   argument: string;
+  /** The argument of `function.arguments` that says why, which a call Radioso makes fills. */
+  reasonArgument: string;
+  /** What the runtime puts before the id of a call Radioso made when it replays the call. */
+  replayedCallIdPrefix?: string;
   /**
    * How a result object says whether the switch took effect: its `field` holds `success` when it
    * did and anything else when the runtime refused it, or its `errorFlag` is true.
@@ -140,4 +144,53 @@ export const readLanguageSwitch = (messages: readonly CompletionsMessage[], swit
     }
   }
   return refused ? { languageReport: "blocked" } : {};
+};
+
+/** Whether the request's `tools` offer the tool, so a reply may call it. */
+export const offersLanguageSwitch = (tools: readonly unknown[] | null | undefined, switchTool: Pick<LanguageSwitchTool, "tool">): boolean =>
+  (tools ?? []).some((tool) => isRecord(tool) && isRecord(tool.function) && tool.function.name === switchTool.tool);
+
+/** The languages the runtime refused to switch the call to, as their calls named them, oldest first and once each. */
+export const refusedSwitchLanguages = (messages: readonly CompletionsMessage[], switchTool: LanguageSwitchTool): string[] => {
+  const refused = new Set<string>();
+  messages.forEach((message, index) => {
+    for (const call of callsIn(message, switchTool.tool)) {
+      const tag = tagOf(objectOf(call.function.arguments)?.[switchTool.argument]);
+      if (tag && outcomeOf(call, messages, index, switchTool) === "blocked") {
+        refused.add(tag);
+      }
+    }
+  });
+  return [...refused];
+};
+
+/**
+ * The runtime's follow-up request after running a call of the tool: its newest message is that
+ * call's result. The call's id as Radioso named it (the runtime's replay prefix removed) and
+ * whether the call switched the call's language; a result refused or unreadable switched nothing.
+ * Null when the newest message is no result of a call of this tool.
+ */
+export const switchFollowUpOf = (
+  messages: readonly CompletionsMessage[],
+  switchTool: LanguageSwitchTool,
+): { callId: string; confirmed: boolean } | null => {
+  const newest = messages.at(-1);
+  const replayedId = newest?.role === "tool" ? newest.tool_call_id : undefined;
+  if (typeof replayedId !== "string" || replayedId.length === 0) {
+    return null;
+  }
+  for (let index = messages.length - 2; index >= 0; index -= 1) {
+    const message = messages[index];
+    const call = message ? callsIn(message, switchTool.tool).find((candidate) => candidate.id === replayedId) : undefined;
+    if (call) {
+      const prefix = switchTool.replayedCallIdPrefix;
+      const callId = prefix && replayedId.startsWith(prefix) ? replayedId.slice(prefix.length) : replayedId;
+      return { callId, confirmed: typeof outcomeOf(call, messages, index, switchTool) === "object" };
+    }
+    if (message && callsId(message, replayedId)) {
+      // The result answers a call of another tool.
+      return null;
+    }
+  }
+  return null;
 };

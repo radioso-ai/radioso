@@ -77,7 +77,7 @@ interface VoiceSessionMemoryWindows {
   bridgeAfterMs: number;
 }
 
-const sameUtterance = (left: string, right: string): boolean =>
+export const sameUtterance = (left: string, right: string): boolean =>
   left.replace(/\s+/gu, " ").trim() === right.replace(/\s+/gu, " ").trim();
 
 /**

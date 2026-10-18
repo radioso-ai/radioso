@@ -1,7 +1,7 @@
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type { VoiceBridgeStyle } from "../../agents/public.js";
 import type { ChatTurnHandoffReason } from "../../chat/contracts/index.js";
-import type { VoiceTurnLanguageSource, VoiceTurnOutcome } from "../domain.js";
+import type { VoiceLanguageSwitchOutcome, VoiceTurnLanguageSource, VoiceTurnOutcome } from "../domain.js";
 
 export type VoiceTurnMetricsSink = Pick<MetricsRegistry, "observeHistogram" | "incrementCounter">;
 
@@ -45,6 +45,14 @@ export const recordVoiceTurnLanguage = (metrics: VoiceTurnMetricsSink | null | u
   metrics?.incrementCounter("voice_turn_language_source_total", {
     help: "Voice turns by where the language of their bridge and fallback lines came from; vendor_detected and turn_field are reports for the turn itself",
     labels: { source },
+  });
+};
+
+/** Where a switch of the call's language a turn asked the runtime for stands. The language is never a label. */
+export const recordVoiceLanguageSwitch = (metrics: VoiceTurnMetricsSink | null | undefined, outcome: VoiceLanguageSwitchOutcome): void => {
+  metrics?.incrementCounter("voice_language_switch_total", {
+    help: "Switches of a call's language a voice turn asked the runtime for (emitted), and how the runtime's follow-up reported them (confirmed, refused), or that none came (unanswered)",
+    labels: { outcome },
   });
 };
 

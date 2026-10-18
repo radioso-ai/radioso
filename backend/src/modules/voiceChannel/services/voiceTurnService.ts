@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type {
   ChatStreamEvent,
   ChatTurnHandoffReason,
@@ -15,6 +17,8 @@ import {
   VOICE_REPLY_INTERRUPTED_EVENT,
   VoiceTurnIncompleteError,
   type VoiceChannelContext,
+  type VoiceLanguageSwitchOutcome,
+  type VoiceLanguageSwitchResult,
   type VoiceSessionRef,
   type VoiceSessionStartLookup,
   type VoiceTurnEvent,
@@ -23,10 +27,11 @@ import {
   type VoiceTurnOutcome,
   type VoiceTurnPort,
 } from "../domain.js";
-import { chooseVoiceTurnLines } from "./voiceLines.js";
+import { chooseVoiceTurnLines, languageOf, resolveVoiceLanguage } from "./voiceLines.js";
 import {
   recordVoiceBridgeDue,
   recordVoiceFirstSpeech,
+  recordVoiceLanguageSwitch,
   recordVoiceReplyInterrupted,
   recordVoiceTurnLanguage,
   recordVoiceTurnLimit,
@@ -41,9 +46,11 @@ import {
   withoutPhaseMarkers,
   type VoiceReplyEvent,
   type VoiceTurnDrain,
+  type VoiceTurnLanguageSwitch,
   type VoiceTurnPhase,
   type VoiceTurnPolicy,
 } from "./voiceTurnPolicy.js";
+import { SwitchedReply, SwitchedTurns } from "./switchedTurns.js";
 import { OperatorReplySpeaker, type ClaimedOperatorReply, type OperatorReplySpeakerDependencies } from "./operatorReplySpeaker.js";
 import { createSentenceCutter, splitCompleteSentences } from "./speechSegmenter.js";
 import { hasSpokenWords, spokenLength } from "./speechText.js";
@@ -95,6 +102,8 @@ export interface VoiceChatTurnRequest {
    * holds a caller who moved on to it.
    */
   userExpectedLocale?: string;
+  /** The stream reports the language the turn answers in before the answer, so the turn can switch the call's. */
+  reportResponseLanguage: true;
   signal: AbortSignal;
 }
 
@@ -173,6 +182,8 @@ interface VoiceTurnServiceDependencies {
   operatorReplies: { claims: OperatorReplySpeechClaims; newClaimTurnId: () => string };
   /** The visitor a Radioso-started session was started for; without it, first turns join no visitor. */
   starts?: VoiceSessionStartLookup;
+  /** Mints the id of each switch of the call's language a turn asks the runtime for. */
+  newLanguageSwitchId?: () => string;
   /** Overrides `VOICE_BEHAVIOR`; tests only. */
   timing?: VoiceTurnTiming;
   now?: () => number;
@@ -218,8 +229,24 @@ interface VoiceTurnRecord {
   outcome: VoiceTurnOutcome | null;
   /** Why chat handed the conversation to a person on this turn; null when it did not. */
   handoffReason: ChatTurnHandoffReason | null;
-  /** The reply still draining after the turn limit ended the turn's events; the turn ends with it. */
+  /**
+   * The reply still running after the turn's events ended: drained after the turn limit, or written
+   * for the follow-up of a turn that switched the call's language. The turn ends with it.
+   */
   drain?: Promise<VoiceTurnDrain>;
+  /** Where the language switch this request asked for, or followed up, stands. */
+  languageSwitch?: VoiceLanguageSwitchOutcome;
+  /** On a turn that switched the call's language: the follow-up request speaking its answer, once it came. */
+  speaker?: VoiceTurnRecord;
+  /** On the runtime's follow-up after a switch: the turn whose answer it speaks. */
+  speaksFor?: VoiceTurnRecord;
+}
+
+/** A turn that switched the call's language, held for the runtime's follow-up to speak its answer. */
+interface SwitchedTurn {
+  input: VoiceTurnInput;
+  record: VoiceTurnRecord;
+  reply: SwitchedReply;
 }
 
 const emptyRecord = (operatorReplyClaims: OperatorReplySpeaker, streamsSpeech: boolean): VoiceTurnRecord => ({
@@ -286,13 +313,10 @@ const isAnswerSpeech = (event: VoiceTurnEvent): event is AnswerSpeech => event.t
 /** The end of a whole reply as speech: its remaining sentences, then the tail, which is the last piece. */
 function* lastSpeech(
   rest: { sentences: ReadonlyArray<{ text: string; writtenEnd: number | null }>; remainder: { text: string; writtenEnd: number | null } },
-  record: VoiceTurnRecord,
 ): Generator<AnswerSpeech> {
   for (const sentence of rest.sentences) {
-    record.speechPieceCount += 1;
     yield answerSpeech(sentence, false);
   }
-  record.speechPieceCount += 1;
   yield answerSpeech(rest.remainder, true);
 }
 
@@ -382,11 +406,18 @@ export class VoiceTurnService implements VoiceTurnPort {
   private readonly turnRecords = new WeakMap<VoiceTurnClaim, VoiceTurnRecord>();
   /** Agents already warned about a bridge line shorter than their runtime speaks on its own. */
   private readonly shortBridgeWarned = new Set<string>();
+  /** The turns that switched the call's language, until the runtime's follow-up speaks their answer. */
+  private readonly switchedTurns: SwitchedTurns<SwitchedTurn>;
+  private readonly newLanguageSwitchId: () => string;
 
   constructor(private readonly dependencies: VoiceTurnServiceDependencies) {
     this.now = dependencies.now ?? Date.now;
     this.timing = dependencies.timing ?? VOICE_BEHAVIOR;
     this.memory = new VoiceSessionMemory(this.timing);
+    this.newLanguageSwitchId = dependencies.newLanguageSwitchId ?? randomUUID;
+    // A switched turn's answer is the conversation's reply whether or not it is spoken; a follow-up
+    // that comes later than a replay would finds nothing to speak.
+    this.switchedTurns = new SwitchedTurns(this.timing.replayWindowMs, (turn) => this.switchUnanswered(turn));
     const { notes } = dependencies;
     this.operatorReplySpeaker = {
       replies: dependencies.operatorReplies,
@@ -421,6 +452,12 @@ export class VoiceTurnService implements VoiceTurnPort {
     let firstTurn: FirstTurn | undefined;
 
     try {
+      if (input.languageSwitchResult) {
+        yield* this.switchFollowUp(input, input.languageSwitchResult, claim, record, sessionKey, startedAt);
+        return;
+      }
+      // The caller said something new: a switched turn still waiting for its follow-up gets none.
+      this.switchedTurns.drop(sessionKey);
       this.noteInterruptedReply(input, sessionKey, claim);
       const replay = this.memory.replayFor(sessionKey, input.utterance, startedAt);
       if (replay) {
@@ -450,7 +487,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       const mayBridge = (): boolean => record.spoken.operatorReplies.length === 0 && this.memory.mayBridge(sessionKey, claim, this.now());
       const [prepared, replies] = claim.supersededAt === null
         ? await Promise.all([
-            this.policyFor(input, sessionClaim.conversationId, startedAt, record, mayBridge),
+            this.policyFor(input, sessionClaim.conversationId, startedAt, record, mayBridge, sessionKey),
             sessionClaim.conversationId ? this.claimOperatorReplies(claim, record, sessionClaim.conversationId) : [],
           ])
         : [null, []];
@@ -516,6 +553,58 @@ export class VoiceTurnService implements VoiceTurnPort {
     }
   }
 
+  /**
+   * The runtime's follow-up after a switch of the call's language: it speaks the answer of the
+   * turn that asked for the switch, as that turn's chat turn writes it or as it was stored, with
+   * that turn's phases so far, under the policy as a turn of its own (its clock starts now, and its
+   * lines are in the language the follow-up reports). It runs no chat turn. A follow-up for a
+   * switch this process does not hold speaks nothing.
+   */
+  private async *switchFollowUp(
+    input: VoiceTurnInput,
+    result: VoiceLanguageSwitchResult,
+    claim: VoiceTurnClaim,
+    record: VoiceTurnRecord,
+    sessionKey: string,
+    startedAt: number,
+  ): AsyncGenerator<VoiceTurnEvent> {
+    record.languageSwitch = result.confirmed ? "confirmed" : "refused";
+    recordVoiceLanguageSwitch(this.dependencies.metrics, record.languageSwitch);
+    const switched = this.switchedTurns.take(sessionKey, result.switchId, input.utterance);
+    const conversationId = switched?.record.conversationId;
+    if (!switched || !conversationId) {
+      record.result = "completed";
+      record.outcome = CONTINUE_OUTCOME;
+      yield CONTINUE;
+      return;
+    }
+    // Whatever reached this request's caller of the answer is what chat keeps if they cut it off.
+    switched.record.speaker = record;
+    record.speaksFor = switched.record;
+    record.conversationId = conversationId;
+    const mayBridge = (): boolean => record.spoken.operatorReplies.length === 0 && this.memory.mayBridge(sessionKey, claim, this.now());
+    const [prepared, replies] = await Promise.all([
+      this.policyFor(input, conversationId, startedAt, record, mayBridge, null),
+      this.claimOperatorReplies(claim, record, conversationId),
+    ]);
+    if (claim.supersededAt !== null) {
+      record.result = "superseded";
+      record.outcome = CONTINUE_OUTCOME;
+      yield CONTINUE;
+      return;
+    }
+    yield { type: "conversation", conversationId };
+    yield* this.operatorReplySpeech(replies, record, claim);
+    if (prepared?.linesLanguage) {
+      record.language = prepared.linesLanguage;
+      recordVoiceTurnLanguage(this.dependencies.metrics, prepared.linesLanguage.source);
+    }
+    const reply = switched.reply.read();
+    yield* this.delivered(prepared ? applyVoiceTurnPolicy(reply, prepared.policy) : withoutPhaseMarkers(reply), record, claim, sessionKey);
+    const overtaken = claim.supersededAt !== null && (claim.outcomeAt === null || claim.supersededAt <= claim.outcomeAt);
+    record.result = overtaken ? "superseded" : "completed";
+  }
+
   /** Passes the turn's events on, remembering what the caller could hear and when the outcome left. */
   private async *delivered(
     events: AsyncIterable<VoiceTurnEvent>,
@@ -528,6 +617,7 @@ export class VoiceTurnService implements VoiceTurnPort {
         this.memory.bridgeSpoken(sessionKey, claim, this.now());
         record.spoken.bridge = event.text;
       } else if (isAnswerSpeech(event)) {
+        record.speechPieceCount += 1;
         record.spoken.answer.push({ text: event.text, writtenEnd: event.writtenEnd, reached: this.reaches(record, claim) });
         // Where the piece ends in the written answer is the turn's own bookkeeping, not the port's.
         yield { type: "speech", text: event.text, last: event.last };
@@ -584,7 +674,7 @@ export class VoiceTurnService implements VoiceTurnPort {
     yield* lastSpeech({
       sentences: stored.sentences.map((text) => ({ text, writtenEnd: null })),
       remainder: { text: stored.remainder, writtenEnd: null },
-    }, record);
+    });
     record.result = "replayed";
     recordVoiceTurnReplayed(this.dependencies.metrics);
     try {
@@ -700,14 +790,16 @@ export class VoiceTurnService implements VoiceTurnPort {
    * (with the answer when chat stored one), or undefined when it keeps nothing of it.
    */
   private exchangeOf(input: VoiceTurnInput, record: VoiceTurnRecord, claim: VoiceTurnClaim): VoiceExchange | undefined {
-    const replaced = record.result === "superseded" && !record.chatReplied;
-    if (!record.conversationId || replaced || (!record.chatPrepared && record.result !== "replayed")) {
+    // A switch's follow-up speaks the answer the switched turn's chat turn wrote and stored.
+    const chatTurn = record.speaksFor ?? record;
+    const replaced = chatTurn.result === "superseded" && !chatTurn.chatReplied;
+    if (!record.conversationId || replaced || (!chatTurn.chatPrepared && record.result !== "replayed")) {
       return undefined;
     }
     return {
       utterance: input.utterance,
       conversationId: record.conversationId,
-      reply: record.reply,
+      reply: chatTurn.reply,
       spoken: record.spoken.fallback !== null
         ? null
         : {
@@ -726,9 +818,11 @@ export class VoiceTurnService implements VoiceTurnPort {
     if (record.result === "superseded") {
       recordVoiceTurnSuperseded(metrics, supersededAt);
     }
-    if (record.outcome) {
-      recordVoiceTurnOutcome(metrics, record.outcome.kind, record.handoffReason);
+    // A turn that switched the call's language handed its outcome to its follow-up, which counts it.
+    if (record.outcome && record.languageSwitch !== "emitted") {
+      recordVoiceTurnOutcome(metrics, record.outcome.kind, record.speaksFor?.handoffReason ?? record.handoffReason);
     }
+    const handoffReason = record.speaksFor?.handoffReason ?? record.handoffReason;
     const fields = {
       agentId: input.session.agentId,
       vendor: input.session.vendor,
@@ -740,13 +834,17 @@ export class VoiceTurnService implements VoiceTurnPort {
       speechPieceCount: record.speechPieceCount,
       ...(record.operatorReplyClaims.spokenCount > 0 ? { spokenOperatorReplies: record.operatorReplyClaims.spokenCount } : {}),
       ...(record.outcome ? { outcome: record.outcome.kind } : {}),
-      ...(record.handoffReason ? { handoffReason: record.handoffReason } : {}),
-      ...(record.reply?.partial ? { storedPartialReply: true } : {}),
+      ...(handoffReason ? { handoffReason } : {}),
+      ...((record.speaksFor ?? record).reply?.partial ? { storedPartialReply: true } : {}),
       ...record.policy,
       ...languageFields(record.language, input),
+      ...(record.languageSwitch ? { languageSwitch: record.languageSwitch } : {}),
     };
     if (record.result === "failed") {
       logger.warn({ ...fields, errorClass: errorClassOf(failure) }, "Voice turn failed");
+    } else if (input.languageSwitchResult && !record.speaksFor) {
+      // The caller hears nothing: this process holds no switched turn for the follow-up to speak.
+      logger.warn(fields, "Voice language switch follow-up found no answer to speak");
     } else if (record.policy?.turnLimitReached) {
       // The caller heard the fallback line, or kept waiting when the agent has none for the locale.
       logger.warn(fields, "Voice turn reached the turn limit");
@@ -779,8 +877,10 @@ export class VoiceTurnService implements VoiceTurnPort {
         sourceChannel: VOICE_SOURCE_CHANNEL,
         channelContext: channelContextFor(input),
         supersession: "latest_input_wins",
+        reportResponseLanguage: true,
         deliveredReply: () => {
-          record.deliveredPart = this.deliveredReplyPart(input, record);
+          // A switched turn's answer reaches its caller through the runtime's follow-up request.
+          record.deliveredPart = this.deliveredReplyPart(input, record.speaker ?? record, record.written);
           return record.deliveredPart;
         },
         signal,
@@ -796,18 +896,19 @@ export class VoiceTurnService implements VoiceTurnPort {
 
         if (event.type === "status") {
           yield { type: "phase", phase: PHASE_OF_STAGE[event.stage] };
+        } else if (event.type === "language") {
+          yield event.tag ? { type: "language", tag: event.tag } : { type: "language" };
         } else if (event.type === "chunk") {
           record.chatReplied = true;
           record.written += event.text;
           for (const piece of speech.push(event.text)) {
-            record.speechPieceCount += 1;
             yield answerSpeech(piece, false);
           }
         } else if (event.type === "done") {
           record.reply = event.assistantMessageId ? { messageId: event.assistantMessageId, text: event.answer } : null;
           const { outcome, handoffReason } = deriveVoiceTurnOutcome(event);
           record.handoffReason = handoffReason;
-          yield* lastSpeech(speech.finish(), record);
+          yield* lastSpeech(speech.finish());
           yield { type: "outcome", outcome };
           record.result = "completed";
           // What follows `done` is suggestion enrichment, which nobody hears.
@@ -851,7 +952,7 @@ export class VoiceTurnService implements VoiceTurnPort {
    * warns, with counts only), every sentence that reached it counts as heard. Null when no sentence
    * with words was heard, or the caller heard the fallback line in the answer's place.
    */
-  private deliveredReplyPart(input: VoiceTurnInput, record: VoiceTurnRecord): DeliveredReplyPart | null {
+  private deliveredReplyPart(input: VoiceTurnInput, record: VoiceTurnRecord, written: string): DeliveredReplyPart | null {
     const heard: HeardSpeech | null = record.reported?.heard ?? heardSpeechOf(reachedSpeechOf(record));
     const pieces = record.spoken.answer.filter((piece) => piece.reached).slice(0, heard?.answerPieces ?? 0);
     const lastHeard = pieces.at(-1);
@@ -866,13 +967,13 @@ export class VoiceTurnService implements VoiceTurnPort {
         vendor: input.session.vendor,
         conversationId: record.conversationId,
         heardPieceCount: pieces.length,
-        writtenCharacterCount: record.written.length,
+        writtenCharacterCount: written.length,
       }, "Voice reply's heard sentences could not be placed in its written text; no part of it is stored");
       return null;
     }
     const counts = { heardCharacterCount: heard.answerHeardCharacterCount, spokenCharacterCount: heard.answerSpokenCharacterCount };
     return {
-      text: record.written.slice(0, lastHeard.writtenEnd),
+      text: written.slice(0, lastHeard.writtenEnd),
       ...counts,
       auditEvent: { eventType: VOICE_REPLY_INTERRUPTED_EVENT, metadata: { ...counts, partial: true } },
     };
@@ -890,6 +991,8 @@ export class VoiceTurnService implements VoiceTurnPort {
     startedAt: number,
     record: VoiceTurnRecord,
     mayBridge: () => boolean,
+    /** The session the turn may switch the call's language for; null on a request that may not ask. */
+    switchingSession: string | null,
   ): Promise<{ policy: VoiceTurnPolicy; linesLanguage: VoiceTurnLanguage | null } | null> {
     const [profile, routineActive, humanOwned] = await Promise.all([
       this.dependencies.agents.findVoiceProfile(input.session),
@@ -911,7 +1014,12 @@ export class VoiceTurnService implements VoiceTurnPort {
     const outcome = { bridged: false, turnLimitReached: false, fallbackSpoken: false };
     record.policy = outcome;
     const { metrics } = this.dependencies;
+    // Only the agent's own answers switch: a person who owns the conversation answers in theirs.
+    const languageSwitch = switchingSession !== null && input.languageSwitchOffer && profile.voice.languageSwitching === true && !humanOwned
+      ? this.languageSwitchFor(input, profile, record, switchingSession)
+      : undefined;
     const policy: VoiceTurnPolicy = {
+      ...(languageSwitch ? { languageSwitch } : {}),
       ...lines,
       // The bridge and the limit cover the agent's own answers. When a person owns the
       // conversation, chat answers with its short waiting message, and neither a bridge line
@@ -940,6 +1048,54 @@ export class VoiceTurnService implements VoiceTurnPort {
       },
     };
     return { policy, linesLanguage: humanOwned ? null : language };
+  }
+
+  /**
+   * The turn's switch of the call's language: asked for when the turn's plan answers in a language
+   * whose primary subtag differs from the call's (the language the request reports for the turn,
+   * else the session's, else the agent's default), the runtime has not refused it on this call, and
+   * no teammate's reply was spoken first. Once asked, the turn's answer is held for the runtime's
+   * follow-up, and the turn ends when its chat turn does.
+   */
+  private languageSwitchFor(
+    input: VoiceTurnInput,
+    profile: VoiceAgentProfile,
+    record: VoiceTurnRecord,
+    sessionKey: string,
+  ): VoiceTurnLanguageSwitch {
+    let switchId: string | null = null;
+    return {
+      switchFor: (tag) => {
+        const language = languageOf(tag);
+        const current = resolveVoiceLanguage({ turn: input.turnLanguage, session: input.locale, agentDefault: profile.defaultLocale });
+        const refused = (input.languageSwitchOffer?.refused ?? []).some((earlier) => languageOf(earlier) === language);
+        if (language.length === 0 || refused || languageOf(current.tag) === language || record.spoken.operatorReplies.length > 0) {
+          return null;
+        }
+        switchId = this.newLanguageSwitchId();
+        return { type: "switchLanguage", switchId, language, reason: "response_language" };
+      },
+      switched: (rest, phasesSeen) => {
+        const reply = new SwitchedReply(rest, phasesSeen);
+        record.languageSwitch = "emitted";
+        record.drain = reply.drained;
+        recordVoiceLanguageSwitch(this.dependencies.metrics, "emitted");
+        if (switchId !== null) {
+          this.switchedTurns.hold(sessionKey, { switchId, utterance: input.utterance, turn: { input, record, reply } });
+        }
+      },
+    };
+  }
+
+  /** A switched turn whose answer no follow-up spoke: it stays the conversation's reply. Ids only. */
+  private switchUnanswered(turn: SwitchedTurn): void {
+    recordVoiceLanguageSwitch(this.dependencies.metrics, "unanswered");
+    this.dependencies.logger.info({
+      agentId: turn.input.session.agentId,
+      vendor: turn.input.session.vendor,
+      conversationId: turn.record.conversationId,
+      languageSwitch: "unanswered",
+    }, "Voice language switch was not followed up");
   }
 
   /**

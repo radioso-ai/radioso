@@ -17,13 +17,52 @@ export interface VoiceSessionRef {
   sessionKey: string;
 }
 
+/**
+ * Where a turn's language came from, most specific first: the runtime's own record of switching
+ * the call's language (`vendor_detected`), a field the runtime sets on the turn (`turn_field`), the
+ * session's locale, the agent's default locale, or English when nothing names one
+ * (`builtin_default`). Closed: it is logged and counted.
+ */
+export type VoiceTurnLanguageSource = "vendor_detected" | "turn_field" | "session" | "agent_default" | "builtin_default";
+
+/** The language a turn speaks in, as a BCP 47 tag, and where it came from. */
+export interface VoiceTurnLanguage {
+  tag: string;
+  source: VoiceTurnLanguageSource;
+}
+
+/** A language the request reports for its turn alone. */
+export type VoiceReportedTurnLanguage = VoiceTurnLanguage & {
+  source: Extract<VoiceTurnLanguageSource, "vendor_detected" | "turn_field">;
+  /**
+   * The language is news on this request: a per-turn field, or a switch the runtime made after the
+   * caller's previous utterance. Chat is told to answer in it only then; a switch an earlier turn
+   * made keeps the lines in its language and leaves chat to read the caller.
+   */
+  isNew: boolean;
+};
+
+/**
+ * Why the newest language switch a request carries was not taken: `blocked`, the runtime refused
+ * it, so the call kept the language it had; `unreadable`, Radioso could not read the switch or its
+ * result, so it cannot tell which language the call is in and reports none.
+ */
+export type VoiceLanguageReportProblem = "blocked" | "unreadable";
+
 export interface VoiceTurnInput {
   session: VoiceSessionRef;
   transport: VoiceTransport;
   /** The final transcript of one caller turn. */
   utterance: string;
-  /** The caller's language as a BCP 47 tag, when the vendor or the page that started the session names it. */
+  /** The session's language as a BCP 47 tag, when the vendor or the page that started the session names it. */
   locale?: string;
+  /**
+   * The language of this turn, when the request reports it apart from the session's: the language
+   * the runtime switched the call to, or a per-turn field. It is the request's own; nothing stores it.
+   */
+  turnLanguage?: VoiceReportedTurnLanguage;
+  /** Present when the newest language switch the request carries was not taken. */
+  languageReport?: VoiceLanguageReportProblem;
   /**
    * The agent's previous reply as far as the caller heard it before speaking over it, when the
    * vendor reports it (ElevenLabs replays it cut short in the request's history).

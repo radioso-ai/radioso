@@ -128,8 +128,20 @@ const call = async () => {
       return spoken ? [spoken] : [];
     });
   };
+  /** A request without the bridge wait, as the runtime sends it; resolves the raw response. */
+  const runtimeSendsRaw = (messages: unknown[], stream: boolean) => request(app)
+    .post(`/api/v1/agents/${agentId}/voice/elevenlabs/v1/chat/completions`)
+    .set("Authorization", `Bearer ${runtimeCredential.token}`)
+    .send({ messages, stream, elevenlabs_extra_body: { session_key: sessionKey, locale: "en" } })
+    .expect(200);
+  const conversationMessages = async () => {
+    const history = await request(app).get("/api/v1/history/chat").set(dashboard).expect(200);
+    const id = (history.body.conversations as Array<{ id: string; channelContext?: { sessionKey?: string } | null }>)
+      .find((item) => item.channelContext?.sessionKey === sessionKey)!.id;
+    return ((await request(app).get(`/api/v1/history/chat/${id}`).set(dashboard).expect(200)).body as { messages: Array<{ role: string; content: string }> }).messages;
+  };
   const userExpectedLocales = () => chatTurns.mock.calls.map(([input]) => (input as { userExpectedLocale?: string }).userExpectedLocale);
-  return { runtimeSends, userExpectedLocales };
+  return { runtimeSends, runtimeSendsRaw, conversationMessages, chatTurnCount: () => chatTurns.mock.calls.length, userExpectedLocales };
 };
 
 describe("a call whose caller changes language mid-call", () => {
@@ -173,5 +185,30 @@ describe("a call whose caller changes language mid-call", () => {
     // Chat is told the language on the turn the switch is news; the session's own locale is how the
     // call started, not a language for chat to answer in, and neither is a switch an earlier turn made.
     expect(voiceCall.userExpectedLocales()).toEqual([undefined, "it", undefined]);
+  });
+
+  it("answers the runtime's request right after a tool call with an empty completion, and stores nothing for it", async () => {
+    const voiceCall = await call();
+    const opening = [
+      { role: "system", content: "You are the booking line." },
+      { role: "user", content: "Scusi, parla italiano?" },
+    ];
+    await voiceCall.runtimeSends(opening, ENGLISH_BRIDGE);
+    const stored = await voiceCall.conversationMessages();
+
+    // The runtime's follow-up once its tool ran: the newest message is the tool's result, so the
+    // newest user message is the one the previous request already answered.
+    const followUp = [...opening, ...languageSwitch("it")];
+    const streamed = await voiceCall.runtimeSendsRaw(followUp, true);
+    const whole = await voiceCall.runtimeSendsRaw(followUp, false);
+
+    const frames = streamed.text.split("\n\n").filter(Boolean).map((frame) => frame.replace(/^data: /u, ""));
+    expect(frames.at(-1)).toBe("[DONE]");
+    expect(frames.slice(0, -1).map((frame) => (JSON.parse(frame) as { choices: Array<{ delta: { content?: string }; finish_reason: string | null }> }).choices[0]))
+      .toEqual([{ index: 0, delta: { role: "assistant", content: "" }, finish_reason: null }, { index: 0, delta: {}, finish_reason: "stop" }]);
+    expect(whole.headers["x-radioso-voice-outcome"]).toBe("continue");
+    expect((whole.body as { choices: Array<{ message: { content: string } }> }).choices[0]?.message.content).toBe("");
+    expect(voiceCall.chatTurnCount()).toBe(1);
+    expect(await voiceCall.conversationMessages()).toEqual(stored);
   });
 });

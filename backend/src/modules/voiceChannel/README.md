@@ -338,16 +338,20 @@ helpers and the shared chat message limit from `app/http`
   switches the call's voice and transcription:
   https://elevenlabs.io/docs/eleven-agents/customization/tools/system-tools/language-detection)
   in an assistant message's OpenAI `tool_calls` anywhere in the replayed
-  history, paired with its `role: "tool"` result by `tool_call_id`
-  (`adapters/openaiCompletions/languageSwitches.ts`). The result is read as
-  the vendor's system tool result object (`is_error`, and `status:
-  "success"`, after the conversation API's `LanguageDetectionToolResultModel`,
-  https://elevenlabs.io/docs/api-reference/conversations/get); the
-  custom-LLM wire carrying it that way is unverified. A refused switch
-  (`is_error`, or another `status`) is skipped, and the switch before it
-  stands; a newest switch with no result, a result of another shape, or no
-  language tag in its arguments ends the search with no turn language, since
-  the call may be in either language. On `generic` it is the
+  history, paired with the nearest `role: "tool"` result after it with its
+  `tool_call_id`, before any later call that reuses the id
+  (`adapters/openaiCompletions/languageSwitches.ts`, over the schema's parsed
+  `messages`). A result object is read as the vendor's system tool result
+  (`is_error`, and `status: "success"`, after the conversation API's
+  `LanguageDetectionToolResultModel`,
+  https://elevenlabs.io/docs/api-reference/conversations/get); a plain-text
+  result is the error the vendor gives the LLM for a refused switch ("the
+  tool returns an error to the LLM"); the custom-LLM wire carrying either is
+  unverified. A refused switch is skipped, and the switch before it stands.
+  The search ends with no turn language and `unreadable` at the first switch
+  it cannot read (no result, a result object of another shape or JSON that
+  does not parse, or no language tag in its arguments), refused ones above it
+  included, since the call may be in either language. On `generic` it is the
   `X-Radioso-Voice-Turn-Locale` header, then `metadata.turn_locale` (a header
   sent twice arrives joined and is not a tag). The source is
   `vendor_detected` or `turn_field`; a skipped or unread newest switch is
@@ -367,6 +371,14 @@ helpers and the shared chat message limit from `app/http`
   request facts). The cut-off reply (`heardUntil`) is the assistant message
   said right before the newest user message, past any tool result or
   tool-call-only assistant message replayed between them.
+- **A tool result follow-up is no turn.** A request whose newest message has
+  `role: "tool"` is the runtime's follow-up after running a tool; read as a
+  turn, its newest user message would be answered again (a replay, or a
+  second user message). The route answers it with an empty completion
+  (`stop`, outcome `continue`) before `turnInputFor`, runs no turn, calls no
+  `onTurnAccepted`, and logs `voice.tool_followup_ignored` at debug. The
+  adapter calls no tools today, so this is the seam a reply that does call
+  one (`language_detection`) replaces.
 - **Outcomes (web column of the contract's table).** `voiceTurnOutcome.ts`
   reads chat's closing `done` event. `ownership` human-owned and not
   suppressed means this turn handed off: `callback_requested` (with
@@ -650,7 +662,10 @@ newest language switch the request carried was not taken: `Voice turn
 reached the turn limit` at warn when the limit fired, else `Voice turn finished` at info
 (`completed`, `replayed`, `superseded` with `supersededAt`: `before_speech` or
 `after_speech`, `abandoned`), or `Voice turn failed` at warn with
-`errorClass`. `Voice reply was interrupted` at info names the conversation,
+`errorClass`. A tool result follow-up logs `Voice tool result follow-up
+answered with an empty completion` at debug with `event:
+"voice.tool_followup_ignored"`, `dialect` and `agentId`, and no turn line.
+`Voice reply was interrupted` at info names the conversation,
 the reply's message id, the two character counts and `partial`, once the note
 is recorded (for a reply chat stored as its heard part, once chat names the
 stored part, whose audit event committed with it); a report of what was heard

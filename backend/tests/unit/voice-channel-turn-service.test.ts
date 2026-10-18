@@ -157,15 +157,15 @@ describe("VoiceTurnService", () => {
     const service = new VoiceTurnService({ ...voiceOff, sessions: fakeSessions(conversationId), chat, logger });
 
     await collect(service.runTurn(
-      input({ utterance: "Siete aperti?", locale: "en", turnLanguage: { tag: "it", source: "vendor_detected" }, turnLanguageIsNew: true }),
+      input({ utterance: "Siete aperti?", locale: "en", turnLanguage: { tag: "it", source: "vendor_detected", isNew: true } }),
       new AbortController().signal,
     ));
 
     expect(chat.requests[0]).toMatchObject({ userExpectedLocale: "it" });
-    expect(logger.info).toHaveBeenCalledWith(
-      expect.objectContaining({ turnLanguage: "it", languageSource: "vendor_detected" }),
-      "Voice turn finished",
-    );
+    expect(logger.info).toHaveBeenCalledWith(expect.objectContaining({ reportedTurnLanguage: "it" }), "Voice turn finished");
+    // No lines were picked with voice off, so no language of theirs is named.
+    expect(logger.info.mock.calls[0]?.[0]).not.toHaveProperty("turnLanguage");
+    expect(logger.info.mock.calls[0]?.[0]).not.toHaveProperty("languageSource");
   });
 
   it("gives chat no hint for a switch an earlier turn made, so a caller who moved on is answered in what they speak", async () => {
@@ -173,7 +173,7 @@ describe("VoiceTurnService", () => {
     const service = new VoiceTurnService({ ...voiceOff, sessions: fakeSessions(conversationId), chat, logger: fakeLogger() });
 
     await collect(service.runTurn(
-      input({ utterance: "Sorry, are you open?", locale: "en", turnLanguage: { tag: "it", source: "vendor_detected" }, turnLanguageIsNew: false }),
+      input({ utterance: "Sorry, are you open?", locale: "en", turnLanguage: { tag: "it", source: "vendor_detected", isNew: false } }),
       new AbortController().signal,
     ));
 
@@ -193,6 +193,7 @@ describe("VoiceTurnService", () => {
 
     expect(logger.info).toHaveBeenCalledWith(expect.objectContaining({ languageReport: "unreadable" }), "Voice turn finished");
     expect(logger.info.mock.calls[0]?.[0]).not.toHaveProperty("turnLanguage");
+    expect(logger.info.mock.calls[0]?.[0]).not.toHaveProperty("reportedTurnLanguage");
   });
 
   it("continues the bound conversation of a known session and names it before the turn runs", async () => {
@@ -862,8 +863,7 @@ describe("VoiceTurnService", () => {
       const events = await runWithClock(service, input({
         utterance: "Vorrei prenotare un tavolo",
         locale: "en",
-        turnLanguage: { tag: "it", source: "vendor_detected" },
-        turnLanguageIsNew: true,
+        turnLanguage: { tag: "it", source: "vendor_detected", isNew: true },
       }));
 
       expect(events.slice(1)).toEqual([
@@ -876,7 +876,7 @@ describe("VoiceTurnService", () => {
         labels: { source: "vendor_detected" },
       }));
       expect(logger.warn).toHaveBeenCalledWith(
-        expect.objectContaining({ turnLanguage: "it", languageSource: "vendor_detected" }),
+        expect.objectContaining({ turnLanguage: "it", languageSource: "vendor_detected", reportedTurnLanguage: "it" }),
         "Voice turn reached the turn limit",
       );
       // The tag is in the log only; no metric label carries it.
@@ -895,7 +895,7 @@ describe("VoiceTurnService", () => {
         logger: fakeLogger(),
       });
 
-      const events = await runWithClock(service, input({ locale: "en", turnLanguage: { tag: "it", source: "vendor_detected" }, turnLanguageIsNew: false }));
+      const events = await runWithClock(service, input({ locale: "en", turnLanguage: { tag: "it", source: "vendor_detected", isNew: false } }));
 
       expect(events).toContainEqual({ type: "bridge", text: "Controllo subito." });
       expect(chat.requests[0]).not.toHaveProperty("userExpectedLocale");
@@ -918,8 +918,7 @@ describe("VoiceTurnService", () => {
       const events = await runWithClock(service, input({
         utterance: "Ich möchte einen Tisch reservieren",
         locale: "en",
-        turnLanguage: { tag: "de", source: "vendor_detected" },
-        turnLanguageIsNew: true,
+        turnLanguage: { tag: "de", source: "vendor_detected", isNew: true },
       }));
 
       expect(events.slice(1)).toEqual([
@@ -1207,9 +1206,10 @@ describe("VoiceTurnService", () => {
         }),
       };
       const metrics = fakeMetrics();
-      const turns = service(chat, { agents, metrics });
+      const logger = fakeLogger();
+      const turns = service(chat, { agents, metrics, logger });
 
-      const first = start(turns, input({ utterance: "Are you open on Saturdays?" }));
+      const first = start(turns, input({ utterance: "Are you open on Saturdays?", turnLanguage: { tag: "it", source: "turn_field", isNew: true } }));
       await vi.waitFor(() => expect(agents.findVoiceProfile).toHaveBeenCalledTimes(1));
       const second = start(turns, input({ utterance: "Are you open on Sundays?" }));
       await vi.waitFor(() => expect(chat.requests).toHaveLength(1));
@@ -1221,8 +1221,13 @@ describe("VoiceTurnService", () => {
         { type: "speech", text: "Yes, on Sundays from ten.", last: true },
       ]);
       expect(chat.requests.map((request) => request.message)).toEqual(["Are you open on Sundays?"]);
-      // The first request chose its lines, then lost the session before it used them.
+      // The first request chose its lines, then lost the session before it used them: its log names
+      // the language it was told, and none it spoke in.
       expect(counted(metrics, "voice_turn_language_source_total")).toEqual([{ source: "builtin_default" }]);
+      const logged = logger.info.mock.calls.map(([fields]) => fields as Record<string, unknown>);
+      expect(logged.find((fields) => fields.result === "superseded")).toMatchObject({ reportedTurnLanguage: "it" });
+      expect(logged.find((fields) => fields.result === "superseded")).not.toHaveProperty("turnLanguage");
+      expect(logged.find((fields) => fields.result === "completed")).toMatchObject({ turnLanguage: "en", languageSource: "builtin_default" });
     });
 
     it("counts a turn cut off after it spoke as superseded after speech", async () => {

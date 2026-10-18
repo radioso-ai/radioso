@@ -34,6 +34,12 @@ export interface VoiceTurnLanguage {
 /** A language the request reports for its turn alone. */
 export type VoiceReportedTurnLanguage = VoiceTurnLanguage & {
   source: Extract<VoiceTurnLanguageSource, "vendor_detected" | "turn_field">;
+  /**
+   * The language is news on this request: a per-turn field, or a switch the runtime made after the
+   * caller's previous utterance. Chat is told to answer in it only then; a switch an earlier turn
+   * made keeps the lines in its language and leaves chat to read the caller.
+   */
+  isNew: boolean;
 };
 
 /**
@@ -55,12 +61,6 @@ export interface VoiceTurnInput {
    * the runtime switched the call to, or a per-turn field. It is the request's own; nothing stores it.
    */
   turnLanguage?: VoiceReportedTurnLanguage;
-  /**
-   * `turnLanguage` is news on this request: a per-turn field, or a switch the runtime made after
-   * the caller's previous utterance. Chat is told to answer in it only then; a switch an earlier
-   * turn made keeps the lines in its language and leaves chat to read the caller.
-   */
-  turnLanguageIsNew?: boolean;
   /** Present when the newest language switch the request carries was not taken. */
   languageReport?: VoiceLanguageReportProblem;
   /**

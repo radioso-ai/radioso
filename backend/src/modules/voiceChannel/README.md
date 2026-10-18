@@ -363,7 +363,7 @@ helpers and the shared chat message limit from `app/http`
   `VoiceTurnInput.languageReport` (`blocked`, `unreadable`). The reported
   language picks the lines (previous decision). It reaches chat as the turn's
   `userExpectedLocale` only when it is news on the request
-  (`VoiceTurnInput.turnLanguageIsNew`: a per-turn field, or a switch after the
+  (`VoiceTurnInput.turnLanguage.isNew`: a per-turn field, or a switch after the
   caller's previous utterance); chat's no-evidence replies and action
   suggestions follow it, and the planner, the composers and the quick replies
   read the caller's language from the utterance on every turn. A session
@@ -659,11 +659,13 @@ received), `handoffReason` (when the turn handed off) and
 `storedPartialReply: true` (when chat kept the heard part of its cut-off
 reply), plus `bridged`,
 `turnLimitReached` and `fallbackSpoken` when the voice policy ran,
-`turnLanguage` (the BCP 47 tag the lines were picked in, else the one the
-request reported, voice off included) with `languageSource`
-(`vendor_detected`, `turn_field`, `session`, `agent_default`,
-`builtin_default`), and `languageReport` (`blocked`, `unreadable`) when the
-newest language switch the request carried was not taken: `Voice turn
+`turnLanguage` (the BCP 47 tag the lines were picked in) with
+`languageSource` (`vendor_detected`, `turn_field`, `session`,
+`agent_default`, `builtin_default`) on a turn that ran with its lines (the
+turns `voice_turn_language_source_total` counts), `reportedTurnLanguage` (the
+tag the request reported) on every turn that reports one, voice off
+included, and `languageReport` (`blocked`, `unreadable`) when the newest
+language switch the request carried was not taken: `Voice turn
 reached the turn limit` at warn when the limit fired, else `Voice turn finished` at info
 (`completed`, `replayed`, `superseded` with `supersededAt`: `before_speech` or
 `after_speech`, `abandoned`), or `Voice turn failed` at warn with

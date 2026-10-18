@@ -24,7 +24,7 @@ interface ChosenVoiceTurnLines extends VoiceTurnLines {
 /** Where a call's language can come from, most specific first. */
 interface VoiceLanguageSources {
   /** The language the request reports for its turn; a session start has none. */
-  turn?: VoiceReportedTurnLanguage;
+  turn?: Pick<VoiceReportedTurnLanguage, "tag" | "source">;
   /** The session's language tag, as the request carries it. */
   session?: string;
   agentDefault: string | null;

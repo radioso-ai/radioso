@@ -72,15 +72,15 @@ describe("catalog invariants", () => {
     }
   });
 
-  it("prices managed Planet at five cents per included conversation with Planet allowance parity", () => {
+  it("prices managed Planet at an €80 monthly premium over Planet, with Planet allowance parity", () => {
     const planet = findPlan("planet")!;
     const managed = findPlan("planet_managed")!;
 
     expect(managed).toMatchObject({
       id: "planet_managed",
       name: "Planet + managed models",
-      priceCents: 74900,
-      annualPriceCents: 749000,
+      priceCents: 57900,
+      annualPriceCents: 579000,
       models: "managed",
       stripe: {
         monthLookupKey: "planet_managed_month",
@@ -104,7 +104,8 @@ describe("catalog invariants", () => {
       support: planet.support,
       topUps: planet.topUps,
     });
-    expect((managed.priceCents - planet.priceCents) / managed.monthlyConversations).toBe(5);
+    expect(managed.priceCents - planet.priceCents).toBe(8000);
+    expect(managed.annualPriceCents - planet.annualPriceCents).toBe(80000);
     expect(PLAN_CATALOG.selfServeCeilingPlanId).toBe("planet_managed");
   });
 

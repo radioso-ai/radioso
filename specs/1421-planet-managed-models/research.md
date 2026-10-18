@@ -34,7 +34,7 @@ One policy lookup per capability resolution avoids a second database query on ma
 
 ### Catalog units and inference rate
 
-`priceCents` and `annualPriceCents` are integer euro cents. Satellite includes managed models inside its fixed plan price; the catalog does not store a separate per-conversation inference field or bill a metered inference line item. The approved Planet premium expresses the pass-through rate through the fixed plan price and conversation allowance: €250 divided by 5,000 included conversations is €0.05 per conversation. `planet_managed` mirrors Satellite's catalog structure at 74,900 cents monthly and 749,000 cents annually.
+`priceCents` and `annualPriceCents` are integer euro cents. Satellite includes managed models inside its fixed plan price; the catalog does not store a separate per-conversation inference field or bill a metered inference line item. The approved Planet premium expresses the pass-through rate through the fixed plan price and conversation allowance: €80 divided by 5,000 included conversations is €0.016 per conversation. `planet_managed` mirrors Satellite's catalog structure at 57,900 cents monthly and 579,000 cents annually.
 
 ### Decision
 
@@ -46,7 +46,7 @@ Add `planet_managed` directly after `planet` in catalog order with managed model
 - Usage-limit profile seeding at Enterprise boot without a schema migration.
 - Managed-model policy resolution from the assigned profile key.
 
-`upgradePlanIdFor` remains catalog ordered: Satellite upgrades to Planet BYOK, Planet upgrades to `planet_managed`, and the managed variant has no further upgrade. The frontend derives the special Planet action from a BYOK current plan followed by a managed upgrade with equal allowances, showing the approved €250/month premium without hard-coding a plan id.
+`upgradePlanIdFor` remains catalog ordered: Satellite upgrades to Planet BYOK, Planet upgrades to `planet_managed`, and the managed variant has no further upgrade. The frontend derives the special Planet action from a BYOK current plan followed by a managed upgrade with equal allowances, showing the approved €80/month premium without hard-coding a plan id.
 
 ## Enumeration Audit
 

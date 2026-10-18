@@ -25,7 +25,7 @@
 
 ## Phase 3: User Story 2 - Choose Managed Models On Planet (Priority: P1)
 
-**Goal**: Sell a quota-equivalent managed Planet variant at €749/month and €7,490/year.
+**Goal**: Sell a quota-equivalent managed Planet variant at €579/month and €5,790/year.
 
 **Independent Test**: Catalog, checkout, webhook, Stripe sync, upgrade ordering, usage-limit seeds, and the Plan card all recognize and present `planet_managed` through existing generic paths.
 

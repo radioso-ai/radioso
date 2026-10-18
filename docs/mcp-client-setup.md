@@ -1,7 +1,7 @@
 ---
 title: "MCP Client Setup"
 description: "Connect an MCP client either to one Radioso agent or to Ray's governed operator tools."
-last_updated: 2026-10-13
+last_updated: 2026-10-18
 ---
 
 # MCP Client Setup
@@ -224,7 +224,7 @@ Authorization: Bearer <session token>
 
 Each descriptor's `inputSchema` is JSON Schema built from the routine's declared slots: `text` becomes `string`, `number` and `boolean` keep their types, `email` is `string` with `format: "email"`, `date` is `string` with `format: "date"` (an ISO calendar day such as `2026-09-01`), and `required` follows the slot. A routine with no slots is a tool with an empty object schema.
 
-Call a tool by sending `routine` instead of `message` on the same ask route. The routine starts at once with those slots filled, skips the steps that would have asked for them, and then behaves exactly as it would for a person: confirmation steps, approvals, and handoff all apply.
+Call a tool by sending `routine` instead of `message` on the same ask route. The routine starts at once with those slots filled, skips the steps that would have asked for them, and then behaves exactly as it would for a person: confirmation steps, approvals, and handoff all apply. The input is all the call tells the routine: a slot you leave out stays open, the routine stops on the step that asks for it, and no skill step past that step runs until a reply fills it.
 
 ```http
 POST /api/v1/mcp/converse/ask

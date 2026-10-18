@@ -20,9 +20,10 @@ export interface VoiceSessionRef {
 /**
  * Where a turn's language came from, most specific first: the runtime's own record of switching
  * the call's language (`vendor_detected`), a field the runtime sets on the turn (`turn_field`), the
- * session's locale, the agent's default locale, or English. Closed: it is logged and counted.
+ * session's locale, the agent's default locale, or English when nothing names one
+ * (`builtin_default`). Closed: it is logged and counted.
  */
-export type VoiceTurnLanguageSource = "vendor_detected" | "turn_field" | "session" | "agent_default" | "fallback";
+export type VoiceTurnLanguageSource = "vendor_detected" | "turn_field" | "session" | "agent_default" | "builtin_default";
 
 /** The language a turn speaks in, as a BCP 47 tag, and where it came from. */
 export interface VoiceTurnLanguage {
@@ -34,6 +35,13 @@ export interface VoiceTurnLanguage {
 export type VoiceReportedTurnLanguage = VoiceTurnLanguage & {
   source: Extract<VoiceTurnLanguageSource, "vendor_detected" | "turn_field">;
 };
+
+/**
+ * Why the newest language switch a request carries was not taken: `blocked`, the runtime refused
+ * it, so the call kept the language it had; `unreadable`, Radioso could not read the switch or its
+ * result, so it cannot tell which language the call is in and reports none.
+ */
+export type VoiceLanguageReportProblem = "blocked" | "unreadable";
 
 export interface VoiceTurnInput {
   session: VoiceSessionRef;
@@ -47,6 +55,14 @@ export interface VoiceTurnInput {
    * the runtime switched the call to, or a per-turn field. It is the request's own; nothing stores it.
    */
   turnLanguage?: VoiceReportedTurnLanguage;
+  /**
+   * `turnLanguage` is news on this request: a per-turn field, or a switch the runtime made after
+   * the caller's previous utterance. Chat is told to answer in it only then; a switch an earlier
+   * turn made keeps the lines in its language and leaves chat to read the caller.
+   */
+  turnLanguageIsNew?: boolean;
+  /** Present when the newest language switch the request carries was not taken. */
+  languageReport?: VoiceLanguageReportProblem;
   /**
    * The agent's previous reply as far as the caller heard it before speaking over it, when the
    * vendor reports it (ElevenLabs replays it cut short in the request's history).

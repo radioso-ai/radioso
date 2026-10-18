@@ -23,7 +23,7 @@ import {
   type VoiceTurnOutcome,
   type VoiceTurnPort,
 } from "../domain.js";
-import { chooseVoiceTurnLines, resolveVoiceLanguage } from "./voiceLines.js";
+import { chooseVoiceTurnLines } from "./voiceLines.js";
 import {
   recordVoiceBridgeDue,
   recordVoiceFirstSpeech,
@@ -89,9 +89,10 @@ export interface VoiceChatTurnRequest {
    */
   visitorKey?: string;
   /**
-   * The language the request reports for this turn (`VoiceTurnInput.turnLanguage`), as chat's
-   * locale hint. Absent when the request reports only the session's: chat then reads the caller's
-   * language from what they said.
+   * The language the request reports as news on this turn (`VoiceTurnInput.turnLanguage` with
+   * `turnLanguageIsNew`), as chat's locale hint. Absent otherwise: chat then reads the caller's
+   * language from what they said, so neither the session's locale nor a switch an earlier turn made
+   * holds a caller who moved on to it.
    */
   userExpectedLocale?: string;
   signal: AbortSignal;
@@ -186,7 +187,7 @@ interface VoiceTurnRecord {
   result: VoiceTurnResult;
   /** Present when the agent's voice policy ran. */
   policy?: { bridged: boolean; turnLimitReached: boolean; fallbackSpoken: boolean };
-  /** The language the policy picked the turn's lines in, when it ran. */
+  /** The language the policy picked the turn's lines in, when it chose lines for the turn. */
   language?: VoiceTurnLanguage;
   /** Chat reported progress, so it stored the turn's user message. */
   chatPrepared: boolean;
@@ -339,6 +340,15 @@ const createFirstTurn = (): FirstTurn => {
 const sessionKeyOf = (session: VoiceSessionRef): string =>
   JSON.stringify([session.workspaceId, session.agentId, session.vendor, session.sessionKey]);
 
+/**
+ * The turn's language on its log line: the one its lines were picked in, else the one the request
+ * reported; and why the newest switch the request carried was not taken. Tags and closed values only.
+ */
+const languageFields = (language: VoiceTurnLanguage | undefined, input: Pick<VoiceTurnInput, "languageReport">) => ({
+  ...(language ? { turnLanguage: language.tag, languageSource: language.source } : {}),
+  ...(input.languageReport ? { languageReport: input.languageReport } : {}),
+});
+
 const channelContextFor = (input: VoiceTurnInput): VoiceChannelContext => ({
   provider: "voice",
   vendor: input.session.vendor,
@@ -452,6 +462,9 @@ export class VoiceTurnService implements VoiceTurnPort {
       if (sessionClaim.conversationId) {
         yield { type: "conversation", conversationId: sessionClaim.conversationId };
         yield* this.operatorReplySpeech(replies, record, claim);
+      }
+      if (policy && record.language) {
+        recordVoiceTurnLanguage(this.dependencies.metrics, record.language.source);
       }
       const reply = this.replyEvents(input, sessionClaim, record, signal, sessionKey);
       yield* this.delivered(policy ? applyVoiceTurnPolicy(reply, policy) : withoutPhaseMarkers(reply), record, claim, sessionKey);
@@ -725,7 +738,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       ...(record.handoffReason ? { handoffReason: record.handoffReason } : {}),
       ...(record.reply?.partial ? { storedPartialReply: true } : {}),
       ...record.policy,
-      ...(record.language ? { turnLanguage: record.language.tag, languageSource: record.language.source } : {}),
+      ...languageFields(record.language ?? input.turnLanguage, input),
     };
     if (record.result === "failed") {
       logger.warn({ ...fields, errorClass: errorClassOf(failure) }, "Voice turn failed");
@@ -757,7 +770,7 @@ export class VoiceTurnService implements VoiceTurnPort {
         ...(sessionClaim.conversationId ? { conversationId: sessionClaim.conversationId } : {}),
         ...(sessionClaim.conversationId === null && sessionClaim.visitorKey ? { visitorKey: sessionClaim.visitorKey } : {}),
         message: input.utterance,
-        ...(input.turnLanguage ? { userExpectedLocale: input.turnLanguage.tag } : {}),
+        ...(input.turnLanguage && input.turnLanguageIsNew ? { userExpectedLocale: input.turnLanguage.tag } : {}),
         sourceChannel: VOICE_SOURCE_CHANNEL,
         channelContext: channelContextFor(input),
         supersession: "latest_input_wins",
@@ -879,17 +892,18 @@ export class VoiceTurnService implements VoiceTurnPort {
     if (!profile?.voice.enabled) {
       return null;
     }
-    const language = resolveVoiceLanguage({ turn: input.turnLanguage, session: input.locale, agentDefault: profile.defaultLocale });
-    record.language = language;
-    recordVoiceTurnLanguage(this.dependencies.metrics, language.source);
-    const { shortBridge, ...lines } = chooseVoiceTurnLines(profile.voice, {
-      locale: language.tag,
+    const { shortBridge, language, ...lines } = chooseVoiceTurnLines(profile.voice, {
+      languages: { turn: input.turnLanguage, session: input.locale, agentDefault: profile.defaultLocale },
       routineActive,
       rotation: this.policyTurns++,
       ...(input.minReleasableSentenceChars === undefined ? {} : { minReleasableChars: input.minReleasableSentenceChars }),
     });
     if (shortBridge && !humanOwned) {
       this.warnShortBridgeOnce(input, shortBridge);
+    }
+    if (!humanOwned) {
+      // A turn a person owns speaks neither line, so it chose none.
+      record.language = language;
     }
     const outcome = { bridged: false, turnLimitReached: false, fallbackSpoken: false };
     record.policy = outcome;

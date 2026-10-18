@@ -159,6 +159,14 @@ const languageSwitch = (args: unknown, id = "call_lang_1") => ({
   tool_calls: [{ id, type: "function", function: { name: "language_detection", arguments: typeof args === "string" ? args : JSON.stringify(args) } }],
 });
 
+/** The tool's result as the next request replays it: the vendor's result model, as JSON. */
+const switchResult = (id: string, result: unknown) => ({ role: "tool", tool_call_id: id, content: typeof result === "string" ? result : JSON.stringify(result) });
+const switched = (language: string) => ({ result_type: "language_detection_success", status: "success", reason: "The caller speaks another language", language });
+const refused = { status: "error", error: "Switching is only allowed at the start of the conversation" };
+
+/** A switch to `language` the vendor carried out. */
+const carriedOut = (language: string, id = "call_lang_1") => [languageSwitch({ reason: "Caller", language }, id), switchResult(id, switched(language))];
+
 const elevenlabsHistory = (...messages: unknown[]) => ({
   headers: {},
   body: {
@@ -169,22 +177,93 @@ const elevenlabsHistory = (...messages: unknown[]) => ({
 });
 
 describe("the language of one turn", () => {
-  it("reads the language the newest language_detection call in the elevenlabs history switched to", () => {
+  it("reads the language the newest language_detection call switched to, as new on the turn after the caller's previous utterance", () => {
     expect(turnLanguageFor(dialect("elevenlabs"), elevenlabsHistory(
       { role: "assistant", content: "Hi, how can I help?" },
-      languageSwitch({ reason: "The caller speaks Italian", language: "it" }),
-      { role: "tool", tool_call_id: "call_lang_1", content: "Switched." },
+      { role: "user", content: "Parla italiano?" },
+      ...carriedOut("it"),
+      { role: "assistant", content: "Certo." },
       { role: "user", content: "Vorrei prenotare un tavolo" },
-    ))).toEqual({ tag: "it", source: "vendor_detected" });
-    // The newest switch wins, wherever it sits against the newest user message.
-    expect(turnLanguageFor(dialect("elevenlabs"), elevenlabsHistory(
-      languageSwitch({ reason: "Italian", language: "it" }, "call_1"),
-      { role: "user", content: "Grazie" },
-      languageSwitch({ reason: "English", language: "en" }, "call_2"),
-    ))).toEqual({ tag: "en", source: "vendor_detected" });
+    ))).toEqual({ turnLanguage: { tag: "it", source: "vendor_detected" }, turnLanguageIsNew: true });
+    // The vendor's request right after the call, whose newest message is the result.
+    expect(turnLanguageFor(dialect("elevenlabs"), elevenlabsHistory(...carriedOut("it"))))
+      .toEqual({ turnLanguage: { tag: "it", source: "vendor_detected" }, turnLanguageIsNew: true });
   });
 
-  it("takes the arguments as an object too, and ignores the vendor's other tools", () => {
+  it("keeps a switch an earlier turn made as the call's language, and no longer as news", () => {
+    expect(turnLanguageFor(dialect("elevenlabs"), elevenlabsHistory(
+      ...carriedOut("it"),
+      { role: "assistant", content: "Certo." },
+      { role: "user", content: "Grazie" },
+      { role: "assistant", content: "Prego." },
+      { role: "user", content: "Siete aperti domenica?" },
+    ))).toEqual({ turnLanguage: { tag: "it", source: "vendor_detected" }, turnLanguageIsNew: false });
+  });
+
+  it("takes the newest switch, across messages and within one message", () => {
+    expect(turnLanguageFor(dialect("elevenlabs"), elevenlabsHistory(
+      ...carriedOut("it", "call_1"),
+      { role: "user", content: "Grazie" },
+      ...carriedOut("en", "call_2"),
+    ))).toMatchObject({ turnLanguage: { tag: "en", source: "vendor_detected" } });
+    expect(turnLanguageFor(dialect("elevenlabs"), elevenlabsHistory(
+      {
+        role: "assistant",
+        content: null,
+        tool_calls: [
+          { id: "call_a", type: "function", function: { name: "language_detection", arguments: JSON.stringify({ reason: "German", language: "de" }) } },
+          { id: "call_b", type: "function", function: { name: "language_detection", arguments: JSON.stringify({ reason: "Italian", language: "it" }) } },
+        ],
+      },
+      switchResult("call_a", switched("de")),
+      switchResult("call_b", switched("it")),
+      { role: "user", content: "Ciao" },
+    ))).toMatchObject({ turnLanguage: { tag: "it" } });
+  });
+
+  it("does not take a switch the vendor refused, and keeps the one before it", () => {
+    expect(turnLanguageFor(dialect("elevenlabs"), elevenlabsHistory(
+      languageSwitch({ reason: "Italian", language: "it" }),
+      switchResult("call_lang_1", refused),
+      { role: "user", content: "Ciao" },
+    ))).toEqual({ languageReport: "blocked" });
+    expect(turnLanguageFor(dialect("elevenlabs"), elevenlabsHistory(
+      ...carriedOut("de", "call_1"),
+      { role: "user", content: "Danke" },
+      languageSwitch({ reason: "Italian", language: "it" }, "call_2"),
+      switchResult("call_2", { ...refused, is_error: true }),
+      { role: "user", content: "Ciao" },
+    ))).toEqual({ turnLanguage: { tag: "de", source: "vendor_detected" }, turnLanguageIsNew: false, languageReport: "blocked" });
+  });
+
+  it("reports a newest switch it cannot read as unreadable, rather than an older one the call may have moved past", () => {
+    const after = (...newest: unknown[]) => turnLanguageFor(dialect("elevenlabs"), elevenlabsHistory(
+      ...carriedOut("de", "call_1"),
+      { role: "user", content: "Danke" },
+      ...newest,
+      { role: "user", content: "Ciao" },
+    ));
+
+    // No result to say whether the switch happened.
+    expect(after(languageSwitch({ reason: "Italian", language: "it" }, "call_2"))).toEqual({ languageReport: "unreadable" });
+    // A result of a shape the vendor's model does not have.
+    expect(after(languageSwitch({ reason: "Italian", language: "it" }, "call_2"), switchResult("call_2", "Switched."))).toEqual({ languageReport: "unreadable" });
+    expect(after(languageSwitch({ reason: "Italian", language: "it" }, "call_2"), switchResult("call_2", { language: "it" }))).toEqual({ languageReport: "unreadable" });
+    // A result for another call does not answer this one.
+    expect(after(languageSwitch({ reason: "Italian", language: "it" }, "call_2"), switchResult("call_9", switched("it")))).toEqual({ languageReport: "unreadable" });
+    // Arguments that are not JSON, or name no language tag.
+    for (const unreadable of ["{not json", { reason: "Italian" }, { reason: "Italian", language: "Italian" }, { language: 7 }]) {
+      expect(after(languageSwitch(unreadable, "call_2"), switchResult("call_2", switched("it")))).toEqual({ languageReport: "unreadable" });
+    }
+    // A call with no id cannot be paired with its result.
+    expect(after({
+      role: "assistant",
+      content: null,
+      tool_calls: [{ type: "function", function: { name: "language_detection", arguments: JSON.stringify({ reason: "Italian", language: "it" }) } }],
+    }, switchResult("call_2", switched("it")))).toEqual({ languageReport: "unreadable" });
+  });
+
+  it("takes the arguments as an object too, reads text-part results, and ignores the vendor's other tools", () => {
     expect(turnLanguageFor(dialect("elevenlabs"), elevenlabsHistory({
       role: "assistant",
       content: "",
@@ -192,44 +271,36 @@ describe("the language of one turn", () => {
         { id: "call_end", type: "function", function: { name: "end_call", arguments: "{\"reason\":\"done\"}" } },
         { id: "call_lang", type: "function", function: { name: "language_detection", arguments: { reason: "German", language: "de-AT" } } },
       ],
-    }, { role: "user", content: "Danke" }))).toEqual({ tag: "de-AT", source: "vendor_detected" });
+    }, { role: "tool", tool_call_id: "call_lang", content: [{ type: "text", text: JSON.stringify(switched("de-AT")) }] }, { role: "user", content: "Danke" })))
+      .toMatchObject({ turnLanguage: { tag: "de-AT", source: "vendor_detected" } });
     expect(turnLanguageFor(dialect("elevenlabs"), elevenlabsHistory({
       role: "assistant",
       content: null,
       tool_calls: [{ id: "call_end", type: "function", function: { name: "end_call", arguments: "{}" } }],
-    }, { role: "user", content: "Bye" }))).toBeUndefined();
+    }, { role: "user", content: "Bye" }))).toEqual({});
   });
 
-  it("reports nothing for a newest switch it cannot read, rather than an older one the vendor moved past", () => {
-    for (const unreadable of ["{not json", { reason: "Italian" }, { reason: "Italian", language: "Italian" }, { language: 7 }]) {
-      expect(turnLanguageFor(dialect("elevenlabs"), elevenlabsHistory(
-        languageSwitch({ reason: "German", language: "de" }, "call_1"),
-        languageSwitch(unreadable, "call_2"),
-        { role: "user", content: "Ciao" },
-      ))).toBeUndefined();
-    }
+  it("reports nothing for a call with no switch, and leaves the session's locale to the session", () => {
+    expect(turnLanguageFor(dialect("elevenlabs"), elevenlabsHistory({ role: "user", content: "When do you open?" }))).toEqual({});
     expect(turnLanguageFor(dialect("elevenlabs"), elevenlabsHistory({ role: "user", content: [{ type: "text", text: "Hi" }], tool_calls: "language_detection" })))
-      .toBeUndefined();
-  });
-
-  it("leaves the session's locale to the session: a call with no switch reports no turn language", () => {
-    expect(turnLanguageFor(dialect("elevenlabs"), elevenlabsHistory({ role: "user", content: "When do you open?" }))).toBeUndefined();
-    expect(turnLanguageFor(dialect("elevenlabs"), { headers: {}, body: null })).toBeUndefined();
+      .toEqual({});
+    expect(turnLanguageFor(dialect("elevenlabs"), { headers: {}, body: null })).toEqual({});
     // The elevenlabs dialect reads no generic header.
-    expect(turnLanguageFor(dialect("elevenlabs"), { headers: { "x-radioso-voice-turn-locale": "fr" }, body: {} })).toBeUndefined();
+    expect(turnLanguageFor(dialect("elevenlabs"), { headers: { "x-radioso-voice-turn-locale": "fr" }, body: {} })).toEqual({});
   });
 
-  it("reads the generic turn locale from its header, then the metadata body field, and no tool call", () => {
+  it("reads the generic turn locale from its header, then the metadata body field, always as this turn's own", () => {
     const generic = dialect("generic");
+    const fromBody = { turnLanguage: { tag: "es", source: "turn_field" }, turnLanguageIsNew: true };
 
     expect(turnLanguageFor(generic, { headers: { "x-radioso-voice-turn-locale": "fr-CA" }, body: { metadata: { turn_locale: "es" } } }))
-      .toEqual({ tag: "fr-CA", source: "turn_field" });
-    // A header that is not a language tag falls through to the body field.
-    expect(turnLanguageFor(generic, { headers: { "x-radioso-voice-turn-locale": "French" }, body: { metadata: { turn_locale: "es" } } }))
-      .toEqual({ tag: "es", source: "turn_field" });
-    expect(turnLanguageFor(generic, { headers: { "x-radioso-voice-locale": "de" }, body: { metadata: { locale: "de" } } })).toBeUndefined();
-    expect(turnLanguageFor(generic, elevenlabsHistory(languageSwitch({ reason: "Italian", language: "it" }), { role: "user", content: "Ciao" })))
-      .toBeUndefined();
+      .toEqual({ turnLanguage: { tag: "fr-CA", source: "turn_field" }, turnLanguageIsNew: true });
+    // A header that is not a language tag falls through to the body field: a word, or a header
+    // sent twice, which arrives joined.
+    expect(turnLanguageFor(generic, { headers: { "x-radioso-voice-turn-locale": "French" }, body: { metadata: { turn_locale: "es" } } })).toEqual(fromBody);
+    expect(turnLanguageFor(generic, { headers: { "x-radioso-voice-turn-locale": "it, en" }, body: { metadata: { turn_locale: "es" } } })).toEqual(fromBody);
+    expect(turnLanguageFor(generic, { headers: { "x-radioso-voice-locale": "de" }, body: { metadata: { locale: "de" } } })).toEqual({});
+    expect(turnLanguageFor(generic, elevenlabsHistory(...carriedOut("it"), { role: "user", content: "Ciao" }))).toEqual({});
   });
 });
 
@@ -237,14 +308,29 @@ describe("a replayed history that carries the vendor's tool calls", () => {
   it("parses, and its newest user message is still the utterance", () => {
     const request = completionsRequestSchema.parse(elevenlabsHistory(
       { role: "assistant", content: "Hi, how can I help?" },
-      languageSwitch({ reason: "The caller speaks Italian", language: "it" }),
-      { role: "tool", tool_call_id: "call_lang_1", content: "Language switched to it" },
+      ...carriedOut("it"),
       { role: "assistant", content: "Certo, posso aiutarti..." },
       { role: "user", content: "Vorrei prenotare un tavolo" },
     ).body);
 
     expect(utteranceOf(request)).toBe("Vorrei prenotare un tavolo");
     expect(heardUntilFor(dialect("elevenlabs"), request)).toBe("Certo, posso aiutarti");
+  });
+
+  it("finds the reply the caller cut short behind the tool calls and results replayed after it", () => {
+    const request = completionsRequestSchema.parse(elevenlabsHistory(
+      { role: "assistant", content: "Certo, posso aiutarti..." },
+      ...carriedOut("it"),
+      { role: "user", content: "Vorrei prenotare un tavolo" },
+    ).body);
+
+    expect(heardUntilFor(dialect("elevenlabs"), request)).toBe("Certo, posso aiutarti");
+    // A message that says something is the reply, tool calls or not.
+    expect(heardUntilFor(dialect("elevenlabs"), completionsRequestSchema.parse(elevenlabsHistory(
+      { role: "assistant", content: "We open at..." },
+      { ...languageSwitch({ reason: "Italian", language: "it" }), content: "Un momento." },
+      { role: "user", content: "Vorrei prenotare" },
+    ).body))).toBeUndefined();
   });
 });
 

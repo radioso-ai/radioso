@@ -165,13 +165,13 @@ describe("desiredStripeCatalog", () => {
       expect.objectContaining({
         lookupKey: "planet_managed_month",
         productId: "radioso_plan_planet_managed",
-        unitAmount: 74900,
+        unitAmount: 57900,
         recurringInterval: "month",
       }),
       expect.objectContaining({
         lookupKey: "planet_managed_year",
         productId: "radioso_plan_planet_managed",
-        unitAmount: 749000,
+        unitAmount: 579000,
         recurringInterval: "year",
       }),
     ]));

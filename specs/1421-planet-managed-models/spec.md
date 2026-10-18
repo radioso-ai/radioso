@@ -30,14 +30,14 @@ As a Planet customer on the bring-your-own-key plan, I need every model and embe
 
 As a Planet buyer, I need to choose either my own provider keys or Radioso-managed models so I can trade provider administration for a clear monthly premium.
 
-**Why this priority**: The approved €749/month option cannot be purchased or represented until it is a first-class catalog plan.
+**Why this priority**: The approved €579/month option cannot be purchased or represented until it is a first-class catalog plan.
 
 **Independent Test**: Fetch catalog plans and exercise billing UI selection, checkout mapping, webhook assignment, and upgrade helpers for `planet_managed`, verifying Planet quota parity and the approved managed-model price and usage rate.
 
 **Acceptance Scenarios**:
 
-1. **Given** the plan catalog, **when** `planet_managed` is read, **then** it costs €749 monthly or €7,490 yearly, uses managed models, charges €0.05 per conversation, and otherwise matches Planet allowances.
-2. **Given** a buyer viewing Planet, **when** they select Radioso's models, **then** the UI clearly identifies the €250/month premium and checks out the managed variant.
+1. **Given** the plan catalog, **when** `planet_managed` is read, **then** it costs €579 monthly or €5,790 yearly, uses managed models at an €80 monthly premium over Planet, and otherwise matches Planet allowances.
+2. **Given** a buyer viewing Planet, **when** they select Radioso's models, **then** the UI clearly identifies the €80/month premium and checks out the managed variant.
 3. **Given** Stripe test prices synchronized from the catalog, **when** checkout or a webhook resolves the new lookup keys, **then** the existing catalog-native billing path assigns `planet_managed` without a new billing code path.
 4. **Given** plan ordering, upgrade, downgrade, analytics, or operator-console logic, **when** it receives `planet_managed`, **then** it treats the variant intentionally rather than as an unknown plan.
 
@@ -57,10 +57,10 @@ As a Planet buyer, I need to choose either my own provider keys or Radioso-manag
 - **FR-002**: The credential boundary MUST cover chat turns, Ray/copilot, document-worker embeddings, suggested questions, conversation summaries and titles, and every other model or embedding call site discovered during implementation.
 - **FR-003**: Missing BYOK credentials MUST preserve the existing operator-facing connect-an-AI-provider state.
 - **FR-004**: Automated tests MUST pin the BYOK-without-keys behavior even if the audit finds no current leak.
-- **FR-005**: The plan catalog MUST define `planet_managed` as a managed-model variant priced at 74,900 monthly units and 749,000 yearly units after verifying catalog units.
+- **FR-005**: The plan catalog MUST define `planet_managed` as a managed-model variant priced at 57,900 monthly units and 579,000 yearly units after verifying catalog units.
 - **FR-006**: `planet_managed` MUST charge the same managed-model per-conversation rate as Satellite and otherwise have quota and allowance parity with Planet.
 - **FR-007**: Existing catalog-derived managed-model policy, Stripe lookup-key mapping, checkout, and webhook assignment MUST support the new plan without a plan-specific runtime path.
-- **FR-008**: The billing UI MUST offer an explicit Planet choice to use Radioso's models for an additional €250/month.
+- **FR-008**: The billing UI MUST offer an explicit Planet choice to use Radioso's models for an additional €80/month.
 - **FR-009**: Upgrade, downgrade, display ordering, analytics, and Enterprise operator-console plan enumerations MUST handle `planet_managed` intentionally.
 - **FR-010**: Stripe catalog sync definitions MUST include the new monthly and yearly prices. Only test-mode sync MAY run during implementation; live sync MUST be documented as an owner-run step with the exact command.
 - **FR-011**: Pricing and billing documentation in `docs-portal` and relevant Enterprise READMEs MUST describe both Planet model choices, pricing, and managed usage charges.

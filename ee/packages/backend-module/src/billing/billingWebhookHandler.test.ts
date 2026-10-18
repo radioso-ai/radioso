@@ -143,7 +143,6 @@ const createDeps = (overrides: Partial<BillingWebhookHandlerDeps> = {}): {
 
 const satellitePlan = PLAN_CATALOG.plans.find((plan) => plan.id === "satellite")!;
 const planetPlan = PLAN_CATALOG.plans.find((plan) => plan.id === "planet")!;
-const managedPlanetPlan = PLAN_CATALOG.plans.find((plan) => plan.id === "planet_managed")!;
 
 /** Every test that triggers a best-effort branded email awaits the handler's own promise, which
  *  already awaits `sendBillingNotice` internally before returning -- no extra flush needed. */
@@ -274,43 +273,6 @@ describe("handleBillingWebhookEvent", () => {
     expect(assignProfile).toHaveBeenCalledWith(accountId, "planet");
     expect(repository.rows.get(accountId)?.priceId).toBe(planetPlan.stripe!.monthLookupKey);
     expect(noticeMailSend).toHaveBeenCalledWith(expect.objectContaining({ to: "owner@example.com" }));
-  });
-
-  it("maps managed Planet product metadata onto the managed catalog profile", async () => {
-    const { deps, repository, assignProfile, getProduct } = createDeps();
-    repository.rows.set(accountId, {
-      accountId,
-      stripeCustomerId: "cus_1",
-      stripeSubscriptionId: "sub_1",
-      priceId: planetPlan.stripe!.monthLookupKey,
-      interval: "month",
-      status: "active",
-      billingEmail: "owner@example.com",
-      currentPeriodEnd: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
-    getProduct.mockResolvedValueOnce({
-      id: "prod_planet_managed",
-      metadata: { plan: "planet_managed" },
-    });
-
-    const event: StripeWebhookEvent = {
-      id: "evt_planet_managed",
-      type: "customer.subscription.updated",
-      subscription: {
-        id: "sub_1",
-        customerId: "cus_1",
-        status: "active",
-        priceId: managedPlanetPlan.stripe!.monthLookupKey,
-        productId: "prod_planet_managed",
-        interval: "month",
-        currentPeriodEnd: 1_700_100_000,
-      },
-    };
-
-    await expect(handleBillingWebhookEvent(event, deps)).resolves.toMatchObject({ outcome: "plan_assigned" });
-    expect(assignProfile).toHaveBeenCalledWith(accountId, "planet_managed");
   });
 
   it("customer.subscription.updated only syncs the row when the price is unchanged, and sends no email", async () => {

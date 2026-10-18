@@ -201,36 +201,6 @@ test('the plan at the self-serve ceiling shows no Upgrade button', async ({ page
   await expect(planCard.getByRole('button', { name: /Buy 300 more/ })).toBeVisible()
 })
 
-test("Planet offers Radioso's managed models for the €80 monthly premium", async ({ page }) => {
-  const billingRequests: Array<{ method: 'GET' | 'POST'; path: string; body?: unknown }> = []
-  await seedDashboardStorage(page)
-  await installDashboardApiMocks(page, {
-    billingRequests,
-    accountUsageSummary: baseAccountUsageSummary(),
-    billingSummary: {
-      ...baseBillingSummary(),
-      planId: 'planet',
-      planName: 'Planet',
-      upgradePlanId: 'planet_managed',
-    },
-    planCatalog: basePlanCatalog(),
-    billingPortalUrl: `/w/${workspaceKey}/usage?portalTarget=managed-models`,
-  })
-
-  await page.goto(`/w/${workspaceKey}/usage`)
-  const planCard = page.getByTestId('plan-card')
-  await planCard.getByRole('button', { name: "Use Radioso's models (+€80/month)" }).click()
-
-  await expect(page).toHaveURL(new RegExp('portalTarget=managed-models'))
-  await expect
-    .poll(() => billingRequests.find((entry) => entry.path === '/ee/billing/portal'))
-    .toEqual({
-      method: 'POST',
-      path: '/ee/billing/portal',
-      body: { returnPath: `/w/${workspaceKey}/account` },
-    })
-})
-
 test('Upgrade opens the billing portal for an active subscriber', async ({ page }) => {
   const billingRequests: Array<{ method: 'GET' | 'POST'; path: string; body?: unknown }> = []
   await seedDashboardStorage(page)

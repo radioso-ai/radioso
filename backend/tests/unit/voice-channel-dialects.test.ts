@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   findCompletionsDialect,
+  languageSwitchOfferFor,
+  languageSwitchResultFor,
   sessionKeyFor,
   turnLanguageFor,
   type CompletionsDialect,
@@ -353,6 +355,62 @@ describe("the language of one turn", () => {
     expect(turnLanguageOf(generic, { headers: { "x-radioso-voice-turn-locale": "it, en" }, body: { metadata: { turn_locale: "es" } } })).toEqual(fromBody);
     expect(turnLanguageOf(generic, { headers: { "x-radioso-voice-locale": "de" }, body: { metadata: { locale: "de" } } })).toEqual({});
     expect(turnLanguageOf(generic, elevenlabsHistory(...carriedOut("it"), { role: "user", content: "Ciao" }))).toEqual({});
+  });
+});
+
+describe("the switch of the call's language a turn may ask for", () => {
+  /** `language_detection` as the vendor offers it in every request's `tools`, observed 2026-10-18. */
+  const languageDetectionTool = {
+    type: "function",
+    function: {
+      name: "language_detection",
+      description: "Switch the conversation language",
+      parameters: { type: "object", properties: { reason: { type: "string" }, language: { type: "string" } }, required: ["reason", "language"] },
+    },
+  };
+  const endCallTool = { type: "function", function: { name: "end_call", parameters: { type: "object", properties: {} } } };
+  const parsed = (history: ReturnType<typeof elevenlabsHistory>, tools?: unknown[]) =>
+    completionsRequestSchema.parse({ ...history.body, ...(tools ? { tools } : {}) });
+
+  /** The history of the follow-up after the switch Radioso asked for as `switch-1`, as the vendor replays it. */
+  const followUpAfter = (result: unknown, callId = "fc_switch-1", tool = "language_detection") => elevenlabsHistory(
+    { role: "assistant", content: "Hi, how can I help?" },
+    { role: "user", content: "A che ora aprite?" },
+    { role: "assistant", content: null, tool_calls: [{ id: callId, type: "function", function: { name: tool, arguments: JSON.stringify({ reason: "response_language", language: "it" }) } }] },
+    switchResult(callId, result),
+  );
+
+  it("reads the offer from the request's tools, with the languages the runtime refused earlier in the call", () => {
+    const utterance = elevenlabsHistory({ role: "user", content: "A che ora aprite?" });
+    const afterRefusal = elevenlabsHistory(
+      languageSwitch({ reason: "response_language", language: "it" }, "fc_switch-0"),
+      switchResult("fc_switch-0", "Invalid language. Keep speaking English."),
+      { role: "user", content: "A che ora aprite?" },
+    );
+
+    expect(languageSwitchOfferFor(dialect("elevenlabs"), parsed(utterance, [endCallTool, languageDetectionTool]))).toEqual({ refused: [] });
+    expect(languageSwitchOfferFor(dialect("elevenlabs"), parsed(afterRefusal, [languageDetectionTool]))).toEqual({ refused: ["it"] });
+    expect(languageSwitchOfferFor(dialect("elevenlabs"), parsed(utterance))).toBeUndefined();
+    expect(languageSwitchOfferFor(dialect("elevenlabs"), parsed(utterance, [endCallTool]))).toBeUndefined();
+    expect(languageSwitchOfferFor(dialect("generic"), parsed(utterance, [languageDetectionTool]))).toBeUndefined();
+  });
+
+  it("reads the runtime's follow-up after the switch Radioso asked for, by the id the runtime replays it under", () => {
+    const success = { result_type: "language_detection_success", status: "success", reason: "response_language", language: "it" };
+
+    expect(languageSwitchResultFor(dialect("elevenlabs"), parsed(followUpAfter(success)))).toEqual({ switchId: "switch-1", confirmed: true });
+    // A language outside the agent's presets: the vendor answers in plain text, and still asks again.
+    expect(languageSwitchResultFor(dialect("elevenlabs"), parsed(followUpAfter("Invalid language. Keep speaking English."))))
+      .toEqual({ switchId: "switch-1", confirmed: false });
+    // A result it cannot read is no confirmation; an id the vendor did not prefix is still the switch's.
+    expect(languageSwitchResultFor(dialect("elevenlabs"), parsed(followUpAfter("{not json", "switch-1"))))
+      .toEqual({ switchId: "switch-1", confirmed: false });
+  });
+
+  it("reads no follow-up of the switch for another tool's result, a turn, or the generic dialect", () => {
+    expect(languageSwitchResultFor(dialect("elevenlabs"), parsed(followUpAfter("ok", "fc_end-1", "end_call")))).toBeNull();
+    expect(languageSwitchResultFor(dialect("elevenlabs"), parsed(elevenlabsHistory({ role: "user", content: "A che ora aprite?" })))).toBeNull();
+    expect(languageSwitchResultFor(dialect("generic"), parsed(followUpAfter({ status: "success" })))).toBeNull();
   });
 });
 

@@ -39,10 +39,33 @@ const drainUnheard = async (
 export type VoiceTurnPhase = "interpreting" | "searching" | "composing";
 
 /**
- * What the policy reads: the turn's events, plus phase markers the turn service derives from the
- * chat stream. Markers are internal to the voice services; the policy never passes one on.
+ * What the policy reads: the turn's events, plus markers the turn service derives from the chat
+ * stream: the turn's phase, and the language the turn answers in once it has read it (`tag` when
+ * its plan gives one). Markers are internal to the voice services; the policy never passes one on.
  */
-export type VoiceReplyEvent = VoiceTurnEvent | { type: "phase"; phase: VoiceTurnPhase };
+export type VoiceReplyEvent =
+  | VoiceTurnEvent
+  | { type: "phase"; phase: VoiceTurnPhase }
+  | { type: "language"; tag?: string };
+
+type VoiceLanguageSwitchEvent = Extract<VoiceTurnEvent, { type: "switchLanguage" }>;
+
+/**
+ * A turn that may ask the runtime to switch the call's language before it answers. Such a switch
+ * must be all the request carries, so until the turn's language is known the policy holds back the
+ * bridge a phase would bring (the stall bridge and the limit stay armed), and once it is known,
+ * with nothing spoken, it asks `switchFor`.
+ */
+export interface VoiceTurnLanguageSwitch {
+  /** The switch to ask for when the turn answers in `tag`; null keeps the call's language. */
+  switchFor(tag: string): VoiceLanguageSwitchEvent | null;
+  /**
+   * The request ends with the switch and its outcome while the reply goes on: `rest` is the
+   * reply's remaining events, and `phasesSeen` the phases the turn reported before the switch.
+   * Called before the switch leaves.
+   */
+  switched(rest: AsyncIterable<VoiceReplyEvent>, phasesSeen: readonly VoiceTurnPhase[]): void;
+}
 
 export interface VoiceTurnPolicy extends Omit<VoiceTurnLines, "bridge"> {
   /** The line that covers the wait; null: the turn has no bridge. */
@@ -61,6 +84,8 @@ export interface VoiceTurnPolicy extends Omit<VoiceTurnLines, "bridge"> {
    * request owns the session, or a turn this one superseded spoke a bridge moments ago). Absent: true.
    */
   mayBridge?: () => boolean;
+  /** Present when the turn may switch the call's language before it answers. */
+  languageSwitch?: VoiceTurnLanguageSwitch;
   observer: VoiceTurnPolicyObserver;
 }
 
@@ -87,7 +112,10 @@ const waitFor = (pull: Promise<IteratorResult<VoiceReplyEvent>>, deadline: Deadl
  * line and closes the turn with `continue`. An outcome disarms both. After the limit its events
  * end with the outcome, and the reply drains behind them (`observer.drainingAfterLimit`), so the
  * chat turn still finishes and is stored as usual — the stored answer is then not what the
- * caller heard. Phase markers are dropped; everything else passes through.
+ * caller heard. On a turn that may switch the call's language (`languageSwitch`), the phase bridges
+ * wait for the turn's language; a switch then ends its events with the switch and the outcome, and
+ * the reply goes on behind them, handed on whole. Markers are dropped; everything else passes
+ * through.
  */
 export async function* applyVoiceTurnPolicy(
   events: AsyncIterable<VoiceReplyEvent>,
@@ -105,8 +133,13 @@ export async function* applyVoiceTurnPolicy(
   /** When the turn started composing, in ms since its start; null until it does. */
   let composingAt: number | null = null;
   let pending: Promise<IteratorResult<VoiceReplyEvent>> | undefined;
+  /** The phase bridges wait for the turn's language, on a turn that may switch it. */
+  let languageKnown = !policy.languageSwitch;
+  /** The turn searched while its language was not known yet, so its bridge is due once it is. */
+  let searchHeld = false;
+  const phasesSeen: VoiceTurnPhase[] = [];
 
-  const bridgeAt = (): number => (composingAt === null ? policy.bridgeAfterMs : composingAt + policy.bridgeAfterComposingIdleMs);
+  const bridgeAt = (): number => (composingAt === null || !languageKnown ? policy.bridgeAfterMs : composingAt + policy.bridgeAfterComposingIdleMs);
 
   /** The earlier of the armed deadlines. */
   const nextDeadline = (): { deadline: Deadline; delayMs: number } | null => {
@@ -166,8 +199,11 @@ export async function* applyVoiceTurnPolicy(
       }
       const event = pull.step.value;
       if (event.type === "phase") {
+        phasesSeen.push(event.phase);
         const open = !bridgeHandled && !spoken && !ended;
-        if (open && event.phase === "searching") {
+        if (open && event.phase === "searching" && !languageKnown) {
+          searchHeld = true;
+        } else if (open && event.phase === "searching") {
           // A retrieval turn always has seconds of work ahead.
           const bridge = bridgeNow();
           if (bridge) yield bridge;
@@ -175,6 +211,29 @@ export async function* applyVoiceTurnPolicy(
           composingAt ??= elapsed();
         }
         continue;
+      }
+      if (event.type === "language") {
+        if (languageKnown) continue;
+        languageKnown = true;
+        const switched = event.tag && !bridged && !spoken && !ended ? policy.languageSwitch?.switchFor(event.tag) : null;
+        if (switched) {
+          // Nothing is spoken on a request that switches. The reply is handed on whole before the
+          // switch leaves, so it runs on behind the request whatever its consumer does next.
+          finished = true;
+          policy.languageSwitch?.switched({ [Symbol.asyncIterator]: () => iterator }, phasesSeen);
+          yield switched;
+          yield { type: "outcome", outcome: { kind: "continue" } };
+          return;
+        }
+        if (searchHeld && !bridgeHandled && !spoken && !ended) {
+          const bridge = bridgeNow();
+          if (bridge) yield bridge;
+        }
+        continue;
+      }
+      if (event.type === "speech" || event.type === "outcome") {
+        // Too late to switch: the turn speaks, or ends, in the call's language.
+        languageKnown = true;
       }
       if (event.type === "speech" && !spoken) {
         spoken = true;
@@ -192,10 +251,10 @@ export async function* applyVoiceTurnPolicy(
   }
 }
 
-/** The reply without its phase markers, for a turn that runs without the policy. */
+/** The reply without its markers, for a turn that runs without the policy. */
 export async function* withoutPhaseMarkers(events: AsyncIterable<VoiceReplyEvent>): AsyncGenerator<VoiceTurnEvent> {
   for await (const event of events) {
-    if (event.type !== "phase") {
+    if (event.type !== "phase" && event.type !== "language") {
       yield event;
     }
   }

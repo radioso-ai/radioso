@@ -428,6 +428,127 @@ describe("voice turn policy", () => {
     });
   });
 
+  describe("on a turn that may switch the call's language", () => {
+    type SwitchEvent = Extract<VoiceTurnEvent, { type: "switchLanguage" }>;
+    const switchTo = (language: string): SwitchEvent => ({ type: "switchLanguage", switchId: "switch-1", language, reason: "response_language" });
+    const language = (tag?: string): VoiceReplyEvent => (tag ? { type: "language", tag } : { type: "language" });
+
+    /** The turn's switch decision, and what the policy handed on when it switched. */
+    const switching = (decide: (tag: string) => SwitchEvent | null) => {
+      const handedOff: Array<{ rest: AsyncIterable<VoiceReplyEvent>; phasesSeen: readonly VoiceTurnPhase[] }> = [];
+      const switchFor = vi.fn(decide);
+      return {
+        handedOff,
+        switchFor,
+        languageSwitch: { switchFor, switched: (rest: AsyncIterable<VoiceReplyEvent>, phasesSeen: readonly VoiceTurnPhase[]) => { handedOff.push({ rest, phasesSeen }); } },
+      };
+    };
+
+    const readAll = async (events: AsyncIterable<VoiceReplyEvent>): Promise<VoiceReplyEvent[]> => {
+      const read: VoiceReplyEvent[] = [];
+      const reading = (async () => {
+        for await (const event of events) read.push(event);
+      })();
+      await vi.runAllTimersAsync();
+      await reading;
+      return read;
+    };
+
+    it("holds the search's bridge until the language is known, then asks for the switch and ends the request with nothing spoken", async () => {
+      const { events, state } = timedReply([
+        { atMs: 0, event: conversation },
+        { atMs: 0, event: phase("interpreting") },
+        { atMs: 1_100, event: phase("searching") },
+        { atMs: 1_105, event: language("it") },
+        { atMs: 3_000, event: speech("Apriamo alle nove.", true) },
+        { atMs: 3_000, event: outcome },
+      ]);
+      const { observer, calls, drains } = recordingObserver();
+      const decision = switching(() => switchTo("it"));
+
+      const seen = await run(events, policy({ observer, languageSwitch: decision.languageSwitch }));
+
+      expect(seen).toEqual([
+        { atMs: 0, event: conversation },
+        { atMs: 1_105, event: switchTo("it") },
+        { atMs: 1_105, event: outcome },
+      ]);
+      // Nothing was due or spoken, and the limit is not the request's to keep.
+      expect(calls).toEqual([]);
+      expect(drains).toEqual([]);
+      expect(decision.switchFor).toHaveBeenCalledWith("it");
+      expect(decision.handedOff).toHaveLength(1);
+      expect(decision.handedOff[0]?.phasesSeen).toEqual(["interpreting", "searching"]);
+      // The reply goes on behind the request, for the follow-up to speak.
+      expect(state.closed).toBe(false);
+      expect(await readAll(decision.handedOff[0].rest)).toEqual([speech("Apriamo alle nove.", true), outcome]);
+      expect(state.exhausted).toBe(true);
+    });
+
+    it("bridges at once for a held search when the turn keeps the call's language", async () => {
+      const { events } = timedReply([
+        { atMs: 0, event: phase("interpreting") },
+        { atMs: 1_100, event: phase("searching") },
+        { atMs: 1_150, event: language("en") },
+        { atMs: 3_000, event: speech("We open at nine.", true) },
+        { atMs: 3_000, event: outcome },
+      ]);
+      const decision = switching(() => null);
+
+      const seen = await run(events, policy({ languageSwitch: decision.languageSwitch }));
+
+      expect(seen).toEqual([
+        { atMs: 1_150, event: { type: "bridge", text: "Let me check." } },
+        { atMs: 3_000, event: speech("We open at nine.", true) },
+        { atMs: 3_000, event: outcome },
+      ]);
+      expect(decision.handedOff).toEqual([]);
+    });
+
+    it("releases a held search's bridge without asking when the turn's language carries no tag", async () => {
+      const { events } = timedReply([
+        { atMs: 1_100, event: phase("searching") },
+        { atMs: 1_150, event: language() },
+        { atMs: 3_000, event: speech("We open at nine.", true) },
+        { atMs: 3_000, event: outcome },
+      ]);
+      const decision = switching(() => switchTo("it"));
+
+      const seen = await run(events, policy({ languageSwitch: decision.languageSwitch }));
+
+      expect(seen.map(({ atMs, event }) => [atMs, event.type])).toEqual([[1_150, "bridge"], [3_000, "speech"], [3_000, "outcome"]]);
+      expect(decision.switchFor).not.toHaveBeenCalled();
+    });
+
+    it("asks for no switch once a line went out: a stalled turn's bridge was spoken first", async () => {
+      const { events } = timedReply([
+        { atMs: 0, event: phase("interpreting") },
+        { atMs: 2_600, event: language("it") },
+        { atMs: 3_000, event: speech("Apriamo alle nove.", true) },
+        { atMs: 3_000, event: outcome },
+      ]);
+      const decision = switching(() => switchTo("it"));
+
+      const seen = await run(events, policy({ languageSwitch: decision.languageSwitch }));
+
+      expect(seen.map(({ atMs, event }) => [atMs, event.type])).toEqual([[2_500, "bridge"], [3_000, "speech"], [3_000, "outcome"]]);
+      expect(decision.switchFor).not.toHaveBeenCalled();
+    });
+
+    it("keeps the stall bridge and the limit for a turn that never reports its language", async () => {
+      const { events } = timedReply([
+        { atMs: 1_100, event: phase("searching") },
+        { atMs: 11_000, event: speech("We open at nine.", true) },
+        { atMs: 11_000, event: outcome },
+      ]);
+      const decision = switching(() => switchTo("it"));
+
+      const seen = await run(events, policy({ languageSwitch: decision.languageSwitch }));
+
+      expect(seen.map(({ atMs, event }) => [atMs, event.type])).toEqual([[2_500, "bridge"], [10_000, "speech"], [10_000, "outcome"]]);
+    });
+  });
+
   it("closes the reply stream when its consumer stops early", async () => {
     const reply = timedReply([{ atMs: 0, event: conversation }, { atMs: 100, event: speech("Yes.", true) }]);
 

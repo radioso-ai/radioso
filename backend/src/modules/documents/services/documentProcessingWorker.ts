@@ -17,6 +17,7 @@ import type {
 } from "../../../db/repositories/documentProcessingJobRepository.js";
 import { DocumentProcessingService } from "./documentProcessingService.js";
 import { getProviderFailureReason, isPermanentProviderFailure } from "../../../shared/infra/llm/providerErrors.js";
+import { AppError } from "../../../shared/domain/errors.js";
 import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
 import type {
   EmbeddingProfileJobService,
@@ -501,6 +502,7 @@ export class DocumentProcessingWorker {
       : undefined;
     await this.failJobTerminally(job, {
       reason: message,
+      errorCode: error instanceof AppError ? error.code : null,
       isPermanent,
       terminalProfileFailureKind,
       durationMs,
@@ -519,13 +521,14 @@ export class DocumentProcessingWorker {
     job: DocumentProcessingJobRecord,
     input: {
       reason: string;
+      errorCode?: string | null;
       isPermanent: boolean;
       terminalProfileFailureKind: EmbeddingProfileTerminalFailureKind | undefined;
       durationMs: number;
     },
   ): Promise<void> {
     return traceActiveSpan("document.worker.job_failure", buildDocumentWorkerJobTraceAttributes(job), async () => {
-      const { reason: message, isPermanent, terminalProfileFailureKind, durationMs } = input;
+      const { reason: message, errorCode = null, isPermanent, terminalProfileFailureKind, durationMs } = input;
 
       // A vectorize job can finish publishing a document and then be cut off
       // before its own completion bookkeeping runs — the same window the
@@ -539,6 +542,9 @@ export class DocumentProcessingWorker {
       }
 
       if (job.kind !== "vectorize") {
+        // The document is already queryable; a failed enrich job must never flip
+        // it to "failed". Mark only the job failed and leave the document ready.
+        //
         // Fenced on status='processing': if the run this was recovering for
         // was not actually dead and already completed the job (the same
         // race completeAlreadyPublishedJob covers for vectorize, but enrich
@@ -546,7 +552,7 @@ export class DocumentProcessingWorker {
         // no document-readiness signal to check first), this is a no-op —
         // leave the completion alone and skip the embedding-profile side
         // effect below rather than recording a failure after a success.
-        const stillProcessing = await this.jobRepository.markFailed(job.id, message);
+        const stillProcessing = await this.jobRepository.markFailed(job.id, message, errorCode);
         if (!stillProcessing) {
           return;
         }
@@ -577,6 +583,7 @@ export class DocumentProcessingWorker {
           workspaceId: job.workspaceId,
           revision: job.documentRevision,
           errorMessage: message,
+          errorCode,
         });
         if (!markedFailed) {
           // Fenced the same way: this also no-ops if the job already resolved

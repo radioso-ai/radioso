@@ -19,6 +19,10 @@ export interface WorkspaceCredentialsEncryptionConfig {
   key: string | undefined;
 }
 
+interface ProviderCredentialFailureRecoveryPort {
+  requeueProviderCredentialFailures(workspaceId: string, limit?: number): Promise<number>;
+}
+
 interface SetApiKeyInput {
   workspaceId: string;
   provider: WorkspaceCredentialProvider;
@@ -49,6 +53,7 @@ export class WorkspaceProviderCredentialsService {
     private readonly auditService: AuditPort,
     private readonly encryption: WorkspaceCredentialsEncryptionConfig,
     private readonly logger?: Pick<AppLogger, "warn">,
+    private readonly recovery?: ProviderCredentialFailureRecoveryPort,
   ) {}
 
   isEncryptionConfigured(): boolean {
@@ -102,6 +107,7 @@ export class WorkspaceProviderCredentialsService {
         provider: input.provider,
         ciphertext,
       });
+      this.recoverProviderCredentialFailures(input.workspaceId);
       await this.recordAudit({
         accountId: input.actor.accountId,
         workspaceId: input.workspaceId,
@@ -123,6 +129,19 @@ export class WorkspaceProviderCredentialsService {
       throw error;
     }
     await this.notifyChange(input.workspaceId, input.provider);
+  }
+
+  private recoverProviderCredentialFailures(workspaceId: string): void {
+    if (!this.recovery) return;
+    void (async () => {
+      try {
+        while (await this.recovery!.requeueProviderCredentialFailures(workspaceId, 100) === 100) {
+          // Each transaction claims a bounded, revision-fenced batch.
+        }
+      } catch (error) {
+        this.logger?.warn({ workspaceId, err: error instanceof Error ? error.message : String(error) }, "Provider credential recovery failed");
+      }
+    })();
   }
 
   async getApiKey(workspaceId: string, provider: WorkspaceCredentialProvider): Promise<string | undefined> {

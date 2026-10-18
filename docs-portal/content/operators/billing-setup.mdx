@@ -1,7 +1,7 @@
 ---
 title: "Billing setup"
 description: "Connect Stripe to Radioso Enterprise: sync the plan catalog into Stripe products, prices, customer portal, tax defaults, and webhook, then set the environment variables that turn billing on."
-last_updated: 2026-10-11
+last_updated: 2026-10-18
 ---
 
 # Billing setup
@@ -87,6 +87,10 @@ The sync reads `STRIPE_PLAN_METADATA_KEY` the same way the backend does. A restr
 ### Changing a price
 
 Edit the number in `plans.json`, then run the sync. For each price whose amount, interval, currency, or tax behavior changed, the sync creates a new price and moves the lookup key to it with `transfer_lookup_key`, then points the customer portal at it. The previous price stays active: subscribers on it keep renewing at the price they signed up for, and Radioso still maps them to the right plan through the product metadata. New checkouts use the new price straight away, with no Radioso configuration change.
+
+### Adding a plan
+
+A new plan brings a Stripe product that older application revisions don't know. Deploy the revision that carries the catalog entry to every region and drain older revisions before running the live sync. Until then, an older revision that receives a subscription event for a product carrying Radioso's plan metadata answers with a retryable error, so Stripe redelivers the event after the rollout instead of it being dropped. Events for products without Radioso's metadata are acknowledged.
 
 ## Tax
 

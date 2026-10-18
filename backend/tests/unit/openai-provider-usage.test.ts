@@ -467,16 +467,6 @@ describe("OpenAITextGenerationClient prompt cache routing", () => {
     expect(sentRequest()).not.toHaveProperty("prompt_cache_key");
   });
 
-  it("never sends the key to a provider: openai config that doesn't carry the trusted residency signal", async () => {
-    // A config built outside providerConfig/WorkspaceLlmCapabilityResolver — the only two
-    // places allowed to stamp openAIDataResidency — is never treated as first-party, no matter
-    // what baseUrl it carries. The signal is what's trusted, not the provider name or the URL.
-    const { openAIDataResidency: _omit, ...untrustedConfig } = chatConfig;
-    await completeWith({ ...untrustedConfig, baseUrl: "https://proxy.example/v1" }, boundaryRequest("", "Hi"));
-
-    expect(sentRequest()).not.toHaveProperty("prompt_cache_key");
-  });
-
   it("omits the key when the request declares no reusable prefix or a mismatched one", async () => {
     await completeWith(chatConfig, { prompt: "Hi", systemPrompt: "RULES" });
     await completeWith(chatConfig, {

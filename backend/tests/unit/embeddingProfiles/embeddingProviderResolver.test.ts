@@ -82,4 +82,20 @@ describe("embedding provider binding resolution", () => {
     expect(first).not.toContain("embeddings.example");
     expect(first).not.toContain("secret");
   });
+
+  it("distinguishes native openai's data-residency endpoints, without shifting the default (global) scope", () => {
+    const global = endpointScopeFingerprint(openai);
+    const globalExplicit = endpointScopeFingerprint({ ...openai, openAIDataResidency: "global" });
+    const eu = endpointScopeFingerprint({ ...openai, openAIDataResidency: "eu" });
+    const us = endpointScopeFingerprint({ ...openai, openAIDataResidency: "us" });
+
+    // Pinned to the exact pre-data-residency value: an unset residency and an explicit
+    // "global" one both match it, so no deployment that predates this setting sees its
+    // persisted embedding spaces' fingerprint change underneath it.
+    expect(global).toBe("de82d5077cc230354de650bce4c29d57c8a74e2ea95b6de9c193a649e328845d");
+    expect(globalExplicit).toBe(global);
+    expect(eu).not.toBe(global);
+    expect(us).not.toBe(global);
+    expect(eu).not.toBe(us);
+  });
 });

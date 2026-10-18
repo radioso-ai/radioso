@@ -154,15 +154,44 @@ export interface LlmCapabilitySelection {
   resolvedBy: LlmCapabilityResolvedBy;
 }
 
+/**
+ * The only data-residency values a native `openai` call ever carries: `global` (OpenAI's
+ * default endpoint), or an explicit US or EU data-residency endpoint for a platform-held key.
+ * Never describes a workspace's own (BYOK) key, which always resolves as `global` regardless
+ * of this setting. The single source for this list — `env.ts`'s zod enum reads it too, so an
+ * allowed value can never drift between the two.
+ */
+export const OPENAI_DATA_RESIDENCIES = ["global", "us", "eu"] as const;
+export type OpenAIDataResidency = (typeof OPENAI_DATA_RESIDENCIES)[number];
+
+/**
+ * The host each residency reaches, including `global`. This is the one place that maps a
+ * residency to a concrete OpenAI host; the client factory (`openaiProvider.ts`) uses it to
+ * build every native `openai` request's base URL, and `providerConfig.ts` uses it for the
+ * non-default residencies it stamps onto a resolved capability.
+ */
+export const OPENAI_RESIDENCY_HOSTS: Record<OpenAIDataResidency, string> = {
+  global: "https://api.openai.com/v1",
+  us: "https://us.api.openai.com/v1",
+  eu: "https://eu.api.openai.com/v1",
+};
+
 export interface LlmCapabilityConfig extends LlmProviderMetadata {
   apiKey: string;
   baseUrl?: string;
+  /**
+   * Set only for `provider: "openai"`, and only when a platform OpenAI key resolved to a
+   * non-default residency. The client factory treats an unset value as `global`.
+   */
+  openAIDataResidency?: OpenAIDataResidency;
   resolvedBy?: LlmCapabilityResolvedBy;
 }
 
 /** Boot-safe provider/model defaults. Credentials are attached only when a call starts. */
 export interface LlmCapabilityDefault extends LlmProviderMetadata {
   baseUrl?: string;
+  /** See {@link LlmCapabilityConfig.openAIDataResidency}. */
+  openAIDataResidency?: OpenAIDataResidency;
 }
 
 export interface ResolvedLlmConfig {
@@ -172,6 +201,16 @@ export interface ResolvedLlmConfig {
   embeddings: LlmCapabilityDefault;
   embeddingProviderConfigs: LlmCapabilityDefault[];
   providerApiKeys?: Partial<Record<LlmProviderName, string>>;
+  /**
+   * The platform-held `OPENAI_API_KEY`'s resolved data residency, derived once here from
+   * `OPENAI_DATA_RESIDENCY`. Present only when a platform OpenAI key is configured — a
+   * deployment running entirely on workspace (BYOK) OpenAI keys has no platform residency to
+   * report or route by. Composition and the startup log read this instead of re-deriving it.
+   */
+  openAIPlatformResidency?: {
+    residency: OpenAIDataResidency;
+    baseUrl?: string;
+  };
 }
 
 import { AppError } from "../../domain/errors.js";

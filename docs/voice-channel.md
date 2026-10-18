@@ -134,7 +134,9 @@ does.
    European Union, India or Singapore. An account on ElevenLabs data residency
    lives only on its region's host (`api.eu.residency.elevenlabs.io` for the
    EU), so a wrong region reads like a wrong key. Then select **Save voice
-   settings**.
+   settings**. This is independent of where the agent's own OpenAI calls run;
+   see [Data residency](../docs-portal/content/operators/data-residency.mdx)
+   for that setting.
 3. Add the page's origin to the website embed's allowed origins. Only a
    website embed session can start a call, because only its origin is checked.
 4. Put the website embed on the page. Turn on **Offer calls on the website**

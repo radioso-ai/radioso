@@ -589,16 +589,18 @@ interface DefaultRoutineRunnerOptions {
   /** Consecutive no-progress re-asks of one step allowed before the reply asks differently; defaults to 3. */
   reaskLimit?: number;
   /**
-   * Whether the turn's message can state slot values. Absent/true is a message someone
-   * wrote, which the selector reads for them. A host sets false when the message is a
-   * structured call rendered as text and the routine already holds the call's input
-   * (a routine invoked as a tool). The runner then keeps no value a selector returns and
-   * asks it nothing those values answer: no extraction-only read, no read of the opening
-   * message for a later step, no compiler slot gate. A step the values fill moves on by
-   * its structure, and the first step they leave unfilled is asked (#1563). An exit the
-   * author wrote is still judged by the selector.
+   * Whether the message that opens a run can state slot values. Absent/true is a message
+   * someone wrote, which the selector reads for them. A host sets false when that message is
+   * a structured call rendered as text and the run starts with the call's input (a routine
+   * invoked as a tool). On the activation turn the runner then keeps no value a selector
+   * returns and asks it nothing those values answer: no extraction-only read, no read of the
+   * opening message for a later step, no compiler slot gate. A step the values fill moves on
+   * by its structure, and the first chat step that collects a slot they leave unfilled is
+   * asked, whatever its exits (#1563). An exit the author wrote leaving a filled step is still
+   * judged by the selector. Every later turn, and a run resumed on this turn, reads its
+   * message as a reply.
    */
-  messageStatesSlotValues?: boolean;
+  openingMessageStatesSlotValues?: boolean;
 }
 
 export class DefaultRoutineRunner implements ConversationRoutineRunner {
@@ -653,7 +655,9 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     // carries — enter its state here, so they are checked like any selector's (#1374).
     const startCheck = input.activationTurn ? checkDeclaredSlotValues(routine, input.state.variables) : null;
     const state: RoutineState = startCheck ? { ...input.state, variables: startCheck.values } : input.state;
-    const messageStatesSlotValues = this.options.messageStatesSlotValues !== false;
+    // Whether this turn's message can state slot values: a resumed run never received the
+    // input of a call that opens a run, so it reads the message as a reply.
+    const messageStatesSlotValues = !input.activationTurn || this.options.openingMessageStatesSlotValues !== false;
     // The activator's rejections the selector did not make good: the selector reads the same
     // opening message, so a valid value it returns for the slot replaces the rejected one.
     const unreplacedStartRejections = (variables: Record<string, unknown>): RoutineTraceRejectedSlot[] =>
@@ -817,6 +821,16 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       // a model round-trip to a deterministic path, let an unrelated message overwrite an
       // already-filled slot, and could spuriously yield the turn.
       const collected = collectedSlotsForStep(input.step);
+      // When the message states no values, nothing this turn can fill a slot the values the
+      // run holds leave empty, so the step is asked before any exit is weighed: neither a
+      // default or rule exit nor an exit the model judges carries the run past it.
+      if (
+        !messageStatesSlotValues &&
+        collected.length > 0 &&
+        !isSatisfiedSlotCollectionStep(routine, input.step, input.variables)
+      ) {
+        return { nextStepId: input.step.id };
+      }
       let extracted: Record<string, unknown> = {};
       if (
         messageStatesSlotValues &&
@@ -863,14 +877,10 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
       if (llmTransitions.length === 0) {
         return withExtracted({ nextStepId: defaultTransition?.to ?? input.step.id });
       }
-      // A compiler slot gate asks only whether the step's slots hold values. When the message
-      // states none, the values the routine holds are the whole answer: the step moves on by its
-      // structure when they fill it, and stays to be asked when they do not.
+      // A compiler slot gate asks only whether the step's slots hold values, and when the message
+      // states none the step reaching here holds them: it moves on by its structure.
       if (!messageStatesSlotValues && llmTransitions.every(isCompilerSlotGate)) {
-        const exit = isSatisfiedSlotCollectionStep(routine, input.step, variables)
-          ? satisfiedStepExit(input.step, input.transitions, variables)
-          : undefined;
-        return { nextStepId: exit ?? input.step.id };
+        return { nextStepId: satisfiedStepExit(input.step, input.transitions, variables) ?? input.step.id };
       }
 
       lastSelectorRan = true;

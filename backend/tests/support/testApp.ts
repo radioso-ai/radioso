@@ -377,6 +377,9 @@ export const createTestEnv = (): Env => ({
   METRICS_ENABLED: false,
   METRICS_PATH: "/metrics",
   METRICS_AUTH_TOKEN: undefined,
+  SLACK_INBOUND_EVENT_RETENTION_DAYS: 7,
+  EXTERNAL_MCP_TOOL_CALL_TIMEOUT_MS: 30_000,
+  ANSWER_COVERAGE_SHADOW_ASSESSOR_ENABLED: true,
   OTEL_ENABLED: false,
   OTEL_EXPORTER_OTLP_ENDPOINT: undefined,
   OTEL_LOGS_ENABLED: false,
@@ -2789,6 +2792,8 @@ export const createTestDependencies = (overrides: {
   });
   const dependencies: AppDependencies = {
     env,
+    noticeMail: { send: async () => ({ dispatched: false }) },
+    accountAdministrators: { list: async () => [] },
     agentBundleExportService: agentBundleServices.exportService,
     agentBundleImportService: agentBundleServices.importService,
     agentBundleImportCleanupWorker: agentBundleServices.cleanupWorker,

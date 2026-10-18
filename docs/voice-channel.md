@@ -928,19 +928,35 @@ Radioso could not read it.
 
 A switch adds `languageSwitch` to the log lines of both requests: `emitted`
 on the request that asked for it, logged once the turn's answer is written
-(with `speechPieceCount: 0`), and `confirmed` or `refused` on the follow-up
-that spoke the answer. A switch no follow-up spoke logs
-`Voice language switch was not followed up`, with `languageSwitch:
-"unanswered"` (none came in 30 seconds, the caller spoke again first, or the
-follow-up was overtaken before it spoke) or `"mismatched"` (the session's
-follow-up was for another utterance). A follow-up that found no switched turn
-on its server logs `Voice language switch follow-up found no switched turn
-here` at warn, with `languageSwitch: "unheld"`. The metric
-`voice_language_switch_total` counts these six outcomes in its `outcome`
-label. A switching turn counts its outcome (`voice_turn_outcome_total`) and
-its lines' language (`voice_turn_language_source_total`) once: on the
-follow-up that spoke it, or, for its outcome, when its switch is let go
-unspoken. A reply that fails after the switch is logged once, as the
+(with `speechPieceCount: 0` and the answer's own outcome), and `confirmed` or
+`refused` on the follow-up that spoke the answer. A switch no follow-up spoke
+logs `Voice language switch was not followed up` once its turn's answer is
+written, with the answer's outcome, the lines' language, and
+`languageSwitch: "unanswered"` (none came in 30 seconds, the caller spoke
+again first, or the follow-up was overtaken before it spoke) or
+`"mismatched"` (the session's follow-up was for another utterance; that
+follow-up logs `"mismatched"` too and says nothing). A follow-up that found
+no switched turn on its server logs `Voice language switch follow-up found no
+switched turn here` at info, with `languageSwitch: "unheld"`: on a call
+served by several servers that is the expected path, and the server holding
+the switching turn counts that turn `unanswered`.
+
+Two metrics count switches, each partitioning its own events:
+
+- `voice_language_switch_total{outcome}`, counted where the switching turn
+  is held: `emitted` for every switch asked for, then `unanswered` or
+  `mismatched` for one let go unspoken.
+- `voice_language_switch_followup_total{outcome}`, counted where the
+  runtime's follow-up arrives: `confirmed` or `refused` when it spoke the
+  held answer, `unheld` when it held none for the follow-up (it then plays
+  the stored answer whole, or says nothing for another utterance's
+  follow-up). A follow-up overtaken before it spoke counts in neither label;
+  its switch counts `unanswered`.
+
+A switching turn counts its outcome (`voice_turn_outcome_total`) and its
+lines' language (`voice_turn_language_source_total`) once: on the follow-up
+that spoke it, or, when its switch is let go unspoken, once its answer is
+written. A reply that fails after the switch is logged once, as the
 switching turn's failure.
 
 Write bridge lines for every language your callers may speak. A turn in a

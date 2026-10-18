@@ -27,6 +27,10 @@ const baseEnv = {
 
 const buildLogger = () => ({ info: vi.fn(), warn: vi.fn() });
 
+/** An API failure the way the OpenAI SDK throws it: an Error carrying the HTTP status and error code. */
+const apiError = (fields: { status: number; code?: string | null }) =>
+  Object.assign(new Error(`OpenAI API error ${fields.status}`), fields);
+
 describe("runOpenAIResidencyStartupCheck", () => {
   it("skips with no call at the default (global) residency", async () => {
     const env = getEnv({ ...baseEnv });
@@ -83,7 +87,7 @@ describe("runOpenAIResidencyStartupCheck", () => {
   it("throws OpenAIRegionalEndpointRejectedError and never logs ok/warn on a definitive 401 rejection", async () => {
     const env = getEnv({ ...baseEnv, OPENAI_DATA_RESIDENCY: "eu" });
     const callEmbeddings = vi.fn(async () => {
-      throw { status: 401, code: null };
+      throw apiError({ status: 401, code: null });
     });
     const logger = buildLogger();
 
@@ -97,7 +101,7 @@ describe("runOpenAIResidencyStartupCheck", () => {
   it("throws on a definitive 403 rejection", async () => {
     const env = getEnv({ ...baseEnv, OPENAI_DATA_RESIDENCY: "us" });
     const callEmbeddings = vi.fn(async () => {
-      throw { status: 403 };
+      throw apiError({ status: 403 });
     });
 
     await expect(runOpenAIResidencyStartupCheck(env, { logger: buildLogger(), callEmbeddings })).rejects.toThrow(
@@ -108,7 +112,7 @@ describe("runOpenAIResidencyStartupCheck", () => {
   it("throws on a definitive 404 rejection (the model isn't offered in this region)", async () => {
     const env = getEnv({ ...baseEnv, OPENAI_DATA_RESIDENCY: "eu" });
     const callEmbeddings = vi.fn(async () => {
-      throw { status: 404 };
+      throw apiError({ status: 404 });
     });
 
     await expect(runOpenAIResidencyStartupCheck(env, { logger: buildLogger(), callEmbeddings })).rejects.toThrow(
@@ -119,7 +123,7 @@ describe("runOpenAIResidencyStartupCheck", () => {
   it("the rejection error names the residency, the embedding model, and OPENAI_DATA_RESIDENCY", async () => {
     const env = getEnv({ ...baseEnv, OPENAI_DATA_RESIDENCY: "eu", OPENAI_VECTOR_MODEL: "text-embedding-3-small" });
     const callEmbeddings = vi.fn(async () => {
-      throw { status: 401 };
+      throw apiError({ status: 401 });
     });
 
     let failure: Error | undefined;
@@ -138,9 +142,9 @@ describe("runOpenAIResidencyStartupCheck", () => {
     const env = getEnv({ ...baseEnv, OPENAI_DATA_RESIDENCY: "eu" });
     for (const rejection of [
       new Error("fetch failed"),
-      { status: 429 },
-      { status: 500 },
-      { status: 503 },
+      apiError({ status: 429 }),
+      apiError({ status: 500 }),
+      apiError({ status: 503 }),
     ]) {
       const logger = buildLogger();
       const callEmbeddings = vi.fn(async () => {

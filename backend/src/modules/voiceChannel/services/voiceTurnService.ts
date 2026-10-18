@@ -102,8 +102,8 @@ export interface VoiceChatTurnRequest {
    * holds a caller who moved on to it.
    */
   userExpectedLocale?: string;
-  /** The stream reports the language the turn answers in before the answer, so the turn can switch the call's. */
-  reportResponseLanguage: true;
+  /** On a turn that may switch the call's language: the stream reports the language the turn answers in before the answer. */
+  reportResponseLanguage?: true;
   signal: AbortSignal;
 }
 
@@ -140,6 +140,7 @@ interface VoiceTurnTiming {
   turnLimitMs: number;
   replayWindowMs: number;
   switchFollowUpPollMs: number;
+  languageSwitchDecisionMs: number;
 }
 
 /**
@@ -396,6 +397,16 @@ const sessionKeyOf = (session: VoiceSessionRef): string =>
   JSON.stringify([session.workspaceId, session.agentId, session.vendor, session.sessionKey]);
 
 /**
+ * Whether two language tags name different languages, by their primary subtags; null when that
+ * cannot be told, a three-letter subtag beside a two-letter one, which may name the same language.
+ */
+const namesOtherLanguage = (left: string, right: string): boolean | null => {
+  const [one, other] = [languageOf(left), languageOf(right)];
+  if (one === other) return false;
+  return one.length === 2 && other.length === 2 ? true : null;
+};
+
+/**
  * The turn's languages on its log line: the one its lines were picked in, when it ran with them
  * (the same turns `voice_turn_language_source_total` counts); the one the request reported, on
  * every turn that reports one; and why the newest switch the request carried was not taken. Tags
@@ -538,7 +549,8 @@ export class VoiceTurnService implements VoiceTurnPort {
         // The turn runs with its lines from here on, so their language is the turn's to report.
         record.language = prepared.linesLanguage;
       }
-      const reply = this.replyEvents(input, sessionClaim, record, signal, sessionKey);
+      // Only a turn that may switch the call's language asks chat for its language.
+      const reply = this.replyEvents(input, sessionClaim, record, signal, sessionKey, prepared?.policy.languageSwitch !== undefined);
       yield* this.delivered(prepared ? applyVoiceTurnPolicy(reply, prepared.policy) : withoutPhaseMarkers(reply), record, claim, sessionKey);
     } catch (error) {
       record.result = "failed";
@@ -1024,6 +1036,7 @@ export class VoiceTurnService implements VoiceTurnPort {
     record: VoiceTurnRecord,
     signal: AbortSignal,
     sessionKey: string,
+    reportsLanguage: boolean,
   ): AsyncGenerator<VoiceReplyEvent> {
     const speech = createSentenceCutter();
     this.memory.chatTurnStarted(sessionKey, this.now());
@@ -1038,7 +1051,7 @@ export class VoiceTurnService implements VoiceTurnPort {
         sourceChannel: VOICE_SOURCE_CHANNEL,
         channelContext: channelContextFor(input),
         supersession: "latest_input_wins",
-        reportResponseLanguage: true,
+        ...(reportsLanguage ? { reportResponseLanguage: true as const } : {}),
         deliveredReply: () => {
           // A switched turn's answer reaches its caller through the runtime's follow-up request.
           record.deliveredPart = this.deliveredReplyPart(input, record.speaker ?? record, record.written);
@@ -1240,15 +1253,19 @@ export class VoiceTurnService implements VoiceTurnPort {
     const { profile } = setting;
     let switchId: string | null = null;
     return {
+      decideWithinMs: this.timing.languageSwitchDecisionMs,
       switchFor: (tag) => {
-        const language = languageOf(tag);
+        // A switch the request cannot read leaves the call's language unknown, so nothing is asked.
+        if (input.languageReport === "unreadable" || record.spoken.operatorReplies.length > 0) {
+          return null;
+        }
         const current = resolveVoiceLanguage({ turn: input.turnLanguage, session: input.locale, agentDefault: profile.defaultLocale });
-        const refused = (input.languageSwitchOffer?.refused ?? []).some((earlier) => languageOf(earlier) === language);
-        if (language.length === 0 || refused || languageOf(current.tag) === language || record.spoken.operatorReplies.length > 0) {
+        const refusedBefore = (input.languageSwitchOffer?.refused ?? []).some((earlier) => namesOtherLanguage(earlier, tag) !== true);
+        if (namesOtherLanguage(current.tag, tag) !== true || refusedBefore) {
           return null;
         }
         switchId = this.newLanguageSwitchId();
-        return { type: "switchLanguage", switchId, language, reason: "response_language" };
+        return { type: "switchLanguage", switchId, language: languageOf(tag), reason: "response_language" };
       },
       switched: (rest, phasesSeen) => {
         const reply = new SwitchedReply(rest, phasesSeen);

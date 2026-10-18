@@ -145,7 +145,6 @@ describe("VoiceTurnService", () => {
       sourceChannel: "voice",
       channelContext: { provider: "voice", vendor: "elevenlabs", sessionKey: "conv_abc", transport: "web" },
       supersession: "latest_input_wins",
-      reportResponseLanguage: true,
       deliveredReply: expect.any(Function),
       signal: expect.any(AbortSignal),
     }]);
@@ -2564,6 +2563,8 @@ describe("VoiceTurnService", () => {
       expect(chat.finished[0]).toBe(true);
       expect(chat.requests).toHaveLength(1);
       expect(chat.requests[0]).not.toHaveProperty("userExpectedLocale");
+      // A turn that may switch asks chat to report the language it answers in.
+      expect(chat.requests[0]).toMatchObject({ reportResponseLanguage: true });
       expect(finishedLog(logger)).toEqual([expect.objectContaining({ result: "completed", languageSwitch: "emitted", speechPieceCount: 0, outcome: "continue" })]);
       expect(counted(metrics, "voice_language_switch_total")).toEqual([{ outcome: "emitted" }]);
       expect(counted(metrics, "voice_bridge_emitted_total")).toEqual([]);
@@ -2635,7 +2636,7 @@ describe("VoiceTurnService", () => {
       expect(counted(metrics, "voice_language_switch_total")).toEqual([{ outcome: "emitted" }, { outcome: "refused" }]);
     });
 
-    it("runs a normal turn when the agent has not turned language switching on", async () => {
+    it("runs a normal turn when the agent has not turned language switching on, and asks chat for no language", async () => {
       const chat = scriptedChat([plannedIn("it", 1_300)]);
       const turns = service(chat, {}, { ...voiceOn, languageSwitching: false });
 
@@ -2645,6 +2646,23 @@ describe("VoiceTurnService", () => {
 
       expect(events.map((event) => event.type)).toEqual(["conversation", "bridge", "speech", "outcome"]);
       expect(events).toContainEqual({ type: "bridge", text: "Let me check." });
+      expect(chat.requests[0]).not.toHaveProperty("reportResponseLanguage");
+    });
+
+    it("asks for no switch while the call's language is unknown: an unreadable switch, or a three-letter tag beside a two-letter one", async () => {
+      const runs: Array<{ turn: VoiceTurnInput; planned: string }> = [
+        { turn: offered({ languageReport: "unreadable" }), planned: "it" },
+        { turn: offered(), planned: "ita" },
+        { turn: offered({ languageSwitchOffer: { refused: ["ita"] } }), planned: "it" },
+      ];
+      for (const { turn, planned } of runs) {
+        const turns = service(scriptedChat([plannedIn(planned, 1_300)]));
+        const events = start(turns, turn);
+        await vi.runAllTimersAsync();
+        const seen = (await events).map(({ event }) => event);
+        expect(seen.some((event) => event.type === "switchLanguage"), planned).toBe(false);
+        expect(spokenText(seen)).toBe(answer);
+      }
     });
 
     it("keeps the call's language when the planner's has the same primary subtag, or the runtime offers no switch, or refused this language before", async () => {

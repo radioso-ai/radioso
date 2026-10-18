@@ -440,7 +440,11 @@ describe("voice turn policy", () => {
       return {
         handedOff,
         switchFor,
-        languageSwitch: { switchFor, switched: (rest: AsyncIterable<VoiceReplyEvent>, phasesSeen: readonly VoiceTurnPhase[]) => { handedOff.push({ rest, phasesSeen }); } },
+        languageSwitch: {
+          decideWithinMs: 4_000,
+          switchFor,
+          switched: (rest: AsyncIterable<VoiceReplyEvent>, phasesSeen: readonly VoiceTurnPhase[]) => { handedOff.push({ rest, phasesSeen }); },
+        },
       };
     };
 
@@ -532,6 +536,35 @@ describe("voice turn policy", () => {
       const seen = await run(events, policy({ languageSwitch: decision.languageSwitch }));
 
       expect(seen.map(({ atMs, event }) => [atMs, event.type])).toEqual([[2_500, "bridge"], [3_000, "speech"], [3_000, "outcome"]]);
+      expect(decision.switchFor).not.toHaveBeenCalled();
+    });
+
+    it("still switches on a language that comes late, while nothing was spoken: the stall bridge had no line", async () => {
+      const { events } = timedReply([
+        { atMs: 0, event: phase("interpreting") },
+        { atMs: 3_900, event: language("it") },
+        { atMs: 5_000, event: speech("Apriamo alle nove.", true) },
+        { atMs: 5_000, event: outcome },
+      ]);
+      const decision = switching(() => switchTo("it"));
+
+      const seen = await run(events, policy({ bridge: { style: "check", text: null }, languageSwitch: decision.languageSwitch }));
+
+      expect(seen).toEqual([{ atMs: 3_900, event: switchTo("it") }, { atMs: 3_900, event: outcome }]);
+    });
+
+    it("closes the switch's window at its deadline: the held search bridges then, and a later language keeps the call's", async () => {
+      const { events } = timedReply([
+        { atMs: 1_100, event: phase("searching") },
+        { atMs: 4_200, event: language("it") },
+        { atMs: 5_000, event: speech("Apriamo alle nove.", true) },
+        { atMs: 5_000, event: outcome },
+      ]);
+      const decision = switching(() => switchTo("it"));
+
+      const seen = await run(events, policy({ bridgeAfterMs: 10_000, languageSwitch: decision.languageSwitch }));
+
+      expect(seen.map(({ atMs, event }) => [atMs, event.type])).toEqual([[4_000, "bridge"], [5_000, "speech"], [5_000, "outcome"]]);
       expect(decision.switchFor).not.toHaveBeenCalled();
     });
 

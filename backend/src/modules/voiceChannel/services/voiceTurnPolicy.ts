@@ -57,6 +57,11 @@ type VoiceLanguageSwitchEvent = Extract<VoiceTurnEvent, { type: "switchLanguage"
  * with nothing spoken, it asks `switchFor`.
  */
 export interface VoiceTurnLanguageSwitch {
+  /**
+   * How long into the turn it may still switch: past this the window closes, a search's bridge
+   * held for the language is spoken, and a language that arrives later keeps the call's.
+   */
+  decideWithinMs: number;
   /** The switch to ask for when the turn answers in `tag`; null keeps the call's language. */
   switchFor(tag: string): VoiceLanguageSwitchEvent | null;
   /**
@@ -89,7 +94,7 @@ export interface VoiceTurnPolicy extends Omit<VoiceTurnLines, "bridge"> {
   observer: VoiceTurnPolicyObserver;
 }
 
-type Deadline = "bridge" | "limit";
+type Deadline = "bridge" | "limit" | "decision";
 
 type Pull =
   | { kind: "event"; step: IteratorResult<VoiceReplyEvent> }
@@ -147,6 +152,7 @@ export async function* applyVoiceTurnPolicy(
     const armed: Array<{ deadline: Deadline; atMs: number }> = [
       ...(bridgeHandled || policy.bridge === null ? [] : [{ deadline: "bridge" as const, atMs: bridgeAt() }]),
       ...(limitHandled || policy.turnLimitMs === null ? [] : [{ deadline: "limit" as const, atMs: policy.turnLimitMs }]),
+      ...(languageKnown || !policy.languageSwitch ? [] : [{ deadline: "decision" as const, atMs: policy.languageSwitch.decideWithinMs }]),
     ];
     const first = armed.reduce<{ deadline: Deadline; atMs: number } | null>(
       (earliest, candidate) => (earliest === null || candidate.atMs < earliest.atMs ? candidate : earliest),
@@ -175,6 +181,16 @@ export async function* applyVoiceTurnPolicy(
       if (pull.kind === "deadline" && pull.deadline === "bridge") {
         const bridge = bridgeNow();
         if (bridge) yield bridge;
+        continue;
+      }
+
+      if (pull.kind === "deadline" && pull.deadline === "decision") {
+        // Too late to switch: the call keeps its language, and a held search's bridge is due.
+        languageKnown = true;
+        if (searchHeld && !bridgeHandled) {
+          const bridge = bridgeNow();
+          if (bridge) yield bridge;
+        }
         continue;
       }
 

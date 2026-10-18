@@ -58,7 +58,10 @@ const modelThatWaitsForTheBridge = () => {
   };
 };
 
-/** The language the vendor's `language_detection` tool switched the call to, as ElevenLabs replays it. */
+/**
+ * The language the vendor's `language_detection` tool switched the call to, as ElevenLabs replays
+ * it: the call, then its result (the vendor's `LanguageDetectionToolResultModel`, as JSON).
+ */
 const languageSwitch = (language: string) => [
   {
     role: "assistant",
@@ -69,7 +72,11 @@ const languageSwitch = (language: string) => [
       function: { name: "language_detection", arguments: JSON.stringify({ reason: "The caller speaks Italian", language }) },
     }],
   },
-  { role: "tool", tool_call_id: "call_language", content: `Language switched to ${language}` },
+  {
+    role: "tool",
+    tool_call_id: "call_language",
+    content: JSON.stringify({ result_type: "language_detection_success", status: "success", reason: "The caller speaks Italian", language }),
+  },
 ];
 
 const call = async () => {
@@ -126,7 +133,7 @@ const call = async () => {
 };
 
 describe("a call whose caller changes language mid-call", () => {
-  it("bridges in the session's English until ElevenLabs switches the call to Italian, then in Italian, and hands chat the switched language", async () => {
+  it("bridges in the session's English until ElevenLabs switches the call to Italian, then in Italian, and hands chat the language on the turn it switched", async () => {
     const voiceCall = await call();
 
     const english = await voiceCall.runtimeSends([
@@ -149,7 +156,22 @@ describe("a call whose caller changes language mid-call", () => {
     expect(italian[0]).toBe(ITALIAN_BRIDGE);
     expect(italian.length).toBeGreaterThan(1);
 
-    // The session's own locale is how the call started, not a language for chat to answer in.
-    expect(voiceCall.userExpectedLocales()).toEqual([undefined, "it"]);
+    // The call stays in Italian: the switch is still the newest in the history, and an earlier turn made it.
+    const later = await voiceCall.runtimeSends([
+      { role: "system", content: "You are the booking line." },
+      { role: "user", content: "Hello, when are you open?" },
+      { role: "assistant", content: english.join(" ") },
+      { role: "user", content: "Scusi, parla italiano?" },
+      ...languageSwitch("it"),
+      { role: "assistant", content: "Certo, parlo italiano." },
+      { role: "user", content: "Siete aperti domenica?" },
+      { role: "assistant", content: italian.join(" ") },
+      { role: "user", content: "E il sabato?" },
+    ], ITALIAN_BRIDGE);
+    expect(later[0]).toBe(ITALIAN_BRIDGE);
+
+    // Chat is told the language on the turn the switch is news; the session's own locale is how the
+    // call started, not a language for chat to answer in, and neither is a switch an earlier turn made.
+    expect(voiceCall.userExpectedLocales()).toEqual([undefined, "it", undefined]);
   });
 });

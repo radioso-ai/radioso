@@ -339,10 +339,21 @@ describe("voice completions route", () => {
             content: null,
             tool_calls: [{ id: "call_lang", type: "function", function: { name: "language_detection", arguments: "{\"reason\":\"Italian\",\"language\":\"it\"}" } }],
           },
-          { role: "tool", tool_call_id: "call_lang", content: "ok" },
+          { role: "tool", tool_call_id: "call_lang", content: JSON.stringify({ result_type: "language_detection_success", status: "success", language: "it" }) },
           { role: "user", content: "Siete aperti domenica?" },
         ],
         elevenlabs_extra_body: { session_key: "conv_abc", locale: "en" },
+      }))
+      .expect(200);
+    await request(app)
+      .post(completionsPath())
+      .set("Authorization", "Bearer voice-secret")
+      .send(elevenlabsBody({
+        messages: [
+          { role: "user", content: "Hi" },
+          { role: "assistant", content: null, tool_calls: [{ id: "call_lang", type: "function", function: { name: "language_detection", arguments: "{\"language\":\"it\"}" } }] },
+          { role: "user", content: "Siete aperti domenica?" },
+        ],
       }))
       .expect(200);
     await request(app)
@@ -360,10 +371,19 @@ describe("voice completions route", () => {
       .expect(200);
 
     const inputs = vi.mocked(dependencies.voiceTurns.runTurn).mock.calls.map(([turn]) => turn);
-    expect(inputs[0]).toMatchObject({ utterance: "Siete aperti domenica?", locale: "en", turnLanguage: { tag: "it", source: "vendor_detected" } });
-    expect(inputs[1]).toMatchObject({ locale: "en", turnLanguage: { tag: "fr", source: "turn_field" } });
-    expect(inputs[2]).toMatchObject({ locale: "en" });
-    expect(inputs[2]).not.toHaveProperty("turnLanguage");
+    expect(inputs[0]).toMatchObject({
+      utterance: "Siete aperti domenica?",
+      locale: "en",
+      turnLanguage: { tag: "it", source: "vendor_detected" },
+      turnLanguageIsNew: true,
+    });
+    // A switch with no result to say it happened.
+    expect(inputs[1]).toMatchObject({ languageReport: "unreadable" });
+    expect(inputs[1]).not.toHaveProperty("turnLanguage");
+    expect(inputs[2]).toMatchObject({ locale: "en", turnLanguage: { tag: "fr", source: "turn_field" }, turnLanguageIsNew: true });
+    expect(inputs[3]).toMatchObject({ locale: "en" });
+    expect(inputs[3]).not.toHaveProperty("turnLanguage");
+    expect(inputs[3]).not.toHaveProperty("languageReport");
   });
 
   it("reads the generic dialect's session key from its header", async () => {

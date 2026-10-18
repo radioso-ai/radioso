@@ -149,7 +149,7 @@ export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSes
       });
       this.record(vendor, "started");
       const locale = resolveVoiceLanguage({ session: input.locale, agentDefault: profile.defaultLocale }).tag;
-      const recordingNotice = chooseRecordingNotice(profile.voice, { locale, agentDefault: profile.defaultLocale });
+      const recordingNotice = chooseRecordingNotice(profile.voice, { session: input.locale, agentDefault: profile.defaultLocale });
       return {
         kind: "started",
         vendor,

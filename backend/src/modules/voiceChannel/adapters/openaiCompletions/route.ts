@@ -108,7 +108,7 @@ const turnInputFor = (
       transport: dialect.transportDefault,
       utterance,
       ...(locale ? { locale } : {}),
-      ...(turnLanguage ? { turnLanguage } : {}),
+      ...turnLanguage,
       ...(heardUntil === undefined ? {} : { heardUntil }),
       ...(dialect.minReleasableSentenceChars === undefined
         ? {}

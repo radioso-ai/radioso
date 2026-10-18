@@ -1,22 +1,15 @@
 import { isLocaleTag } from "../../../../shared/domain/locale.js";
-import type { VoiceReportedTurnLanguage, VoiceTransport } from "../../domain.js";
+import type { VoiceTransport } from "../../domain.js";
+import { readLanguageSwitch, type LanguageSwitchReading, type LanguageSwitchTool } from "./languageSwitches.js";
 
 /** Where one value travels on a request: a header, or a path into the JSON body. */
 type CompletionsFieldSource = { header: string } | { bodyPath: readonly string[] };
 
 /**
- * A call of one of the runtime's own tools, as the request's replayed history carries it (the
- * OpenAI `tool_calls` of an assistant message): the named argument of the newest call of `tool`.
+ * Where the language of one turn travels: the runtime's replayed calls of a tool that switches the
+ * call's language (reported as `vendor_detected`), or a field it sets per turn (`turn_field`).
  */
-interface CompletionsToolCallSource {
-  toolCall: { tool: string; argument: string };
-}
-
-/**
- * Where the language of one turn travels: the runtime's record of switching the call's language
- * (a tool call it replays, reported as `vendor_detected`), or a field it sets per turn (`turn_field`).
- */
-type CompletionsTurnLocaleSource = CompletionsToolCallSource | { field: CompletionsFieldSource };
+type CompletionsTurnLocaleSource = { languageSwitch: LanguageSwitchTool } | { field: CompletionsFieldSource };
 
 /**
  * What tells one vendor's chat-completions requests apart from another's. Data only: the wire is
@@ -73,8 +66,13 @@ const COMPLETIONS_DIALECTS = new Map<string, CompletionsDialect>([
     // The `language_detection` system tool switches the call's voice and transcription to the
     // language its `language` argument names (an ISO 639-1 code such as "it"), as an OpenAI tool
     // call: https://elevenlabs.io/docs/eleven-agents/customization/tools/system-tools/language-detection
-    // Each request replays the call's history, so the newest such call is the call's language now.
-    turnLocaleFrom: [{ toolCall: { tool: "language_detection", argument: "language" } }],
+    // Its result follows the conversation API's system tool result: `is_error`, and the
+    // `LanguageDetectionToolResultModel` with `status: "success"`
+    // (https://elevenlabs.io/docs/api-reference/conversations/get). Unverified on the custom-LLM
+    // wire: Radioso calls no tools, so no live request has carried one.
+    turnLocaleFrom: [{
+      languageSwitch: { tool: "language_detection", argument: "language", result: { field: "status", success: "success", errorFlag: "is_error" } },
+    }],
     transportDefault: "web",
     // Observed 2026-10-13: ElevenLabs hands a sentence to speech once its terminator is followed by
     // whitespace and a later non-blank delta arrives. Pieces end on the terminator, so the flush is
@@ -152,62 +150,25 @@ export const sessionKeyFor = (dialect: CompletionsDialect, request: CompletionsR
 export const localeFor = (dialect: CompletionsDialect, request: CompletionsRequestParts): string | undefined =>
   firstValue(dialect.localeFrom, request, isLocaleTag);
 
-/** A tool call's arguments: OpenAI sends them as a JSON string; an object is taken as it is. */
-const argumentsOf = (value: unknown): Record<string, unknown> | undefined => {
-  if (isRecord(value)) {
-    return value;
-  }
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  try {
-    const parsed: unknown = JSON.parse(value);
-    return isRecord(parsed) ? parsed : undefined;
-  } catch {
-    return undefined;
-  }
-};
-
-/** The OpenAI tool calls of one replayed message, in order; none for a message that is not the assistant's. */
-const toolCallsOf = (message: unknown): readonly unknown[] =>
-  isRecord(message) && message.role === "assistant" && Array.isArray(message.tool_calls) ? message.tool_calls : [];
-
-const isCallOf = (tool: string) => (call: unknown): call is { function: Record<string, unknown> } =>
-  isRecord(call) && isRecord(call.function) && call.function.name === tool;
-
 /**
- * The named argument of the newest call of the tool in the replayed history. Only the newest call
- * counts: when it cannot be read, an older one would name a language the call has moved past.
+ * The language this one turn reports apart from the session's. A per-turn field is the first that
+ * carries a language tag, and always this turn's news. A language switch is the newest in the
+ * history that took effect; one that cannot be read stops the search and is reported, since the
+ * call may then be in either language.
  */
-const readToolCallArgument = ({ toolCall }: CompletionsToolCallSource, body: unknown): unknown => {
-  const messages = isRecord(body) && Array.isArray(body.messages) ? body.messages as unknown[] : [];
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const newest = toolCallsOf(messages[index]).filter(isCallOf(toolCall.tool)).at(-1);
-    if (newest) {
-      const args = argumentsOf(newest.function.arguments);
-      return args && Object.hasOwn(args, toolCall.argument) ? args[toolCall.argument] : undefined;
-    }
-  }
-  return undefined;
-};
-
-/**
- * The language this one turn reports apart from the session's: the first source that carries a
- * well-formed tag, and whether the runtime's own language switch or a per-turn field named it.
- */
-export const turnLanguageFor = (dialect: CompletionsDialect, request: CompletionsRequestParts): VoiceReportedTurnLanguage | undefined => {
+export const turnLanguageFor = (dialect: CompletionsDialect, request: CompletionsRequestParts): LanguageSwitchReading => {
   for (const source of dialect.turnLocaleFrom) {
-    if ("toolCall" in source) {
-      const tag = usableValue(readToolCallArgument(source, request.body));
-      if (tag && isLocaleTag(tag)) {
-        return { tag, source: "vendor_detected" };
+    if ("languageSwitch" in source) {
+      const reading = readLanguageSwitch(request.body, source.languageSwitch);
+      if (reading.turnLanguage || reading.languageReport) {
+        return reading;
       }
       continue;
     }
     const tag = firstValue([source.field], request, isLocaleTag);
     if (tag) {
-      return { tag, source: "turn_field" };
+      return { turnLanguage: { tag, source: "turn_field" }, turnLanguageIsNew: true };
     }
   }
-  return undefined;
+  return {};
 };

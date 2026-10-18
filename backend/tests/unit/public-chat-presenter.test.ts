@@ -172,7 +172,7 @@ describe("public chat presenter", () => {
       content,
       createdAt: "2026-09-30T10:00:00.000Z",
     });
-    const cutReply = { ...reply("m1", "We open at nine on weekdays."), interruption: { heardCharacterCount: 12, spokenCharacterCount: 40 } };
+    const cutReply = { ...reply("m1", "We open at nine on weekdays."), interruption: { heardCharacterCount: 12, spokenCharacterCount: 40, partial: false } };
     const fullReply = reply("m2", "And at ten on Saturdays.");
     const tail = stripPublicConversationTailCitationArtifacts({ messages: [cutReply, fullReply], cursor: null }, true);
     const detail = stripPublicConversationCitationArtifacts(
@@ -182,7 +182,7 @@ describe("public chat presenter", () => {
     );
 
     for (const messages of [tail.messages, detail.messages]) {
-      expect(messages[0]).toMatchObject({ id: "m1", interruption: { heardCharacterCount: 12, spokenCharacterCount: 40 } });
+      expect(messages[0]).toMatchObject({ id: "m1", interruption: { heardCharacterCount: 12, spokenCharacterCount: 40, partial: false } });
       expect(messages[1]).not.toHaveProperty("interruption");
     }
   });

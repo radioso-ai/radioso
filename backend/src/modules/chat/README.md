@@ -365,8 +365,31 @@ imports from `services/`.
   lease's commit latch (`ConversationTurnLease.beginCommit`). A turn cancelled
   before the latch stores no reply or effects, commits no usage and emits no
   `done`, and one whose reply never reached the client counts as superseded
-  before emission. Once latched, no newer turn cancels it while its COMMIT
-  runs: a newer input waits for it, and it finishes as usual. The
+  before emission. A channel that delivers the reply as it streams can pass a
+  `deliveredReply` reader (`DeliveredReplyReader` in `contracts/interruption.ts`;
+  the voice channel does): when a newer input cuts the turn off after its reply
+  reached the client, `recordSupersession` asks it once, while the lease is
+  still held, so the newer turn waits for what follows, and stores the part
+  the listener heard as the turn's reply (`cutReplyMessage.ts`: citation
+  markers and delimiters the cut left open removed by
+  `shared/text/unclosedMarkdownDelimiters.ts`, markdown kept,
+  `interruption: { heardCharacterCount, spokenCharacterCount, partial: true }`
+  with the channel's counts) through the narrow `CutReplyStore` port: the
+  message, the conversation's touch, the cancelled `chat.answer` event
+  (`partialReplyStored: true`) and the channel's own audit event of the cut
+  (`DeliveredReplyPart.auditEvent`, given the conversation's and message's
+  ids) in one transaction. `PostgresAssistantTurnPersistence` implements it;
+  a host without a store keeps no part. It then names the reply the turn
+  keeps on `cancelled` (`storedReply`: the part, `partial: true`, or a whole
+  reply stored before the cut, `partial: false`). The turn's effects, usage, coverage link and
+  directive state stay uncommitted, as for any cancelled turn; a part that
+  cannot be stored logs `The part of a cut-off reply could not be stored` at
+  warn and the event is recorded alone. `completeAssistantTurn` reports the
+  stored reply's id to its caller the moment it is stored (`onReplyStored`),
+  before any step after the store that could throw, so a turn handled as
+  cancelled after its reply was stored never keeps a second, partial one.
+  Once latched, no newer turn cancels it
+  while its COMMIT runs: a newer input waits for it, and it finishes as usual. The
   waiting message of a human-owned turn is generated on the lease's signal, so
   a newer turn cancels a stalled generation instead of waiting behind it.
 - Suggestions and public chat actions: `publicChatActionAdvertiser.ts`,

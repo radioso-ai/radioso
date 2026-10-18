@@ -576,6 +576,76 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     });
   });
 
+  describe("storing the heard part of a reply cut off mid-stream", () => {
+    const seedCutTurn = async () => {
+      const seeded = await seedConversation();
+      const messages = new MessageRepository(database.kysely);
+      await messages.create({ conversationId: seeded.conversation.id, workspaceId: seeded.workspace.id, role: "user", content: "When do you open?" });
+      const assistantMessage = {
+        id: randomUUID(),
+        conversationId: seeded.conversation.id,
+        workspaceId: seeded.workspace.id,
+        role: "assistant" as const,
+        content: "We open at **nine** on weekdays.",
+        interruption: { heardCharacterCount: 30, spokenCharacterCount: 30, partial: true },
+      };
+      const cancelledEvent = (accountId: string) => ({
+        accountId,
+        workspaceId: seeded.workspace.id,
+        eventType: "chat.answer",
+        eventStatus: "cancelled" as const,
+        metadata: { conversationId: seeded.conversation.id, assistantMessageId: assistantMessage.id, partialReplyStored: true },
+      });
+      return { ...seeded, messages, assistantMessage, cancelledEvent };
+    };
+
+    const cancelledAudits = async (conversationId: string) => (await database.queryOne<{ audits: string }>(
+      `SELECT COUNT(*)::text AS audits FROM audit_events WHERE metadata_json->>'conversationId' = $1 AND event_status = 'cancelled'`,
+      [conversationId],
+    ))?.audits;
+
+    it("stores the part marked cut short and its cancelled event together, after the caller's message", async () => {
+      const { accountId, workspace, conversation, messages, assistantMessage, cancelledEvent } = await seedCutTurn();
+
+      await persistence.storeCutReply({
+        workspaceId: workspace.id,
+        conversationId: conversation.id,
+        assistantMessage,
+        auditEvents: [cancelledEvent(accountId), { accountId, workspaceId: workspace.id, eventType: "voice.reply_interrupted", eventStatus: "success", metadata: { conversationId: conversation.id, assistantMessageId: assistantMessage.id } }],
+      });
+
+      const stored = await messages.listByConversationId(workspace.id, conversation.id);
+      expect(stored.map((message) => [message.role, message.content])).toEqual([
+        ["user", "When do you open?"],
+        ["assistant", "We open at **nine** on weekdays."],
+      ]);
+      expect(stored[1]).toMatchObject({ id: assistantMessage.id, source: "ai_agent", interruption: { heardCharacterCount: 30, spokenCharacterCount: 30, partial: true } });
+      await expect(cancelledAudits(conversation.id)).resolves.toBe("1");
+      await expect(database.queryOne<{ audits: string }>(
+        `SELECT COUNT(*)::text AS audits FROM audit_events WHERE metadata_json->>'assistantMessageId' = $1 AND event_type = 'voice.reply_interrupted'`,
+        [assistantMessage.id],
+      )).resolves.toEqual({ audits: "1" });
+      // A later report that the caller heard less keeps the marker the part was stored with.
+      await messages.markReplyInterrupted({ workspaceId: workspace.id, conversationId: conversation.id, messageId: assistantMessage.id, heardCharacterCount: 4, spokenCharacterCount: 30 });
+      expect((await messages.findByIdAndWorkspaceId(workspace.id, assistantMessage.id))?.interruption).toEqual({ heardCharacterCount: 30, spokenCharacterCount: 30, partial: true });
+    });
+
+    it("stores no part when its cancelled event cannot be recorded", async () => {
+      const { workspace, conversation, messages, assistantMessage, cancelledEvent } = await seedCutTurn();
+
+      // An account that does not exist fails the audit insert on its foreign key.
+      await expect(persistence.storeCutReply({
+        workspaceId: workspace.id,
+        conversationId: conversation.id,
+        assistantMessage,
+        auditEvents: [cancelledEvent(randomUUID())],
+      })).rejects.toThrow();
+
+      await expect(messages.findByIdAndWorkspaceId(workspace.id, assistantMessage.id)).resolves.toBeNull();
+      await expect(cancelledAudits(conversation.id)).resolves.toBe("0");
+    });
+  });
+
   it("returns facts to a caller-owned transaction while leaving a later rollback silent and durable-state free", async () => {
     const { accountId, workspace, conversation } = await seedConversation();
     const assistantMessageId = randomUUID();

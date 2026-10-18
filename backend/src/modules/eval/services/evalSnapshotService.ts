@@ -409,6 +409,11 @@ export class EvalSnapshotService {
     const assistantTurn = replayTarget?.assistantMessageId
       ? sliced.find((message) => message.id === replayTarget.assistantMessageId && message.role === "assistant")
       : undefined;
+    if (assistantTurn?.interruption?.partial) {
+      // Only the sentences the caller heard of it are stored, without the turn's grounding or
+      // retrieved chunks, so it is no answer an eval can replay and compare against.
+      throw badRequest("A voice reply cut off while it was being said holds only its heard part and cannot be captured for eval");
+    }
 
     const retrieval = assistantTurn ? extractRetrievedChunks(assistantTurn.metadata) : null;
     const instructionBlock = assistantTurn

@@ -52,6 +52,7 @@ describe("voice channel composition: turn notes", () => {
         assistantMessageId: "message-1",
         heardCharacterCount: 12,
         spokenCharacterCount: 40,
+        partial: false,
       },
     }]);
   });

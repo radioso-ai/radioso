@@ -123,7 +123,7 @@ describeIntegration("MessageRepository (Postgres)", () => {
 
     const reloaded = await repository.findByIdAndWorkspaceId(workspaceId, reply.id);
     expect(reloaded?.content).toBe("We open at nine.");
-    expect(reloaded?.interruption).toEqual({ heardCharacterCount: 7, spokenCharacterCount: 16 });
+    expect(reloaded?.interruption).toEqual({ heardCharacterCount: 7, spokenCharacterCount: 16, partial: false });
     expect(reloaded?.metadata).toMatchObject({
       suggestions,
       interruption: { heardCharacterCount: 7, spokenCharacterCount: 16, recordedAt: expect.any(String) },
@@ -150,6 +150,25 @@ describeIntegration("MessageRepository (Postgres)", () => {
     expect(await storedMarker()).toEqual(first);
   });
 
+  it("stores a reply already cut short with its marker, which no later mark changes", async () => {
+    const reply = await repository.create({
+      conversationId,
+      workspaceId,
+      role: "assistant",
+      content: "We open at nine.",
+      interruption: { heardCharacterCount: 16, spokenCharacterCount: 16, partial: true },
+    });
+    expect(reply.interruption).toEqual({ heardCharacterCount: 16, spokenCharacterCount: 16, partial: true });
+
+    await expect(repository.markReplyInterrupted({ workspaceId, conversationId, messageId: reply.id, heardCharacterCount: 3, spokenCharacterCount: 16 }))
+      .resolves.toBe(true);
+
+    const reloaded = await repository.findByIdAndWorkspaceId(workspaceId, reply.id);
+    expect(reloaded?.interruption).toEqual({ heardCharacterCount: 16, spokenCharacterCount: 16, partial: true });
+    // Born marked, so the tail never returns it again for its marker.
+    expect(reloaded?.metadata?.interruption).toEqual({ heardCharacterCount: 16, spokenCharacterCount: 16, partial: true });
+  });
+
   it("marks a reply whose metadata holds a null interruption, which reads as unmarked", async () => {
     const reply = await repository.create({ conversationId, workspaceId, role: "assistant", content: "We open at nine.", metadata: { interruption: null } });
     expect((await repository.findByIdAndWorkspaceId(workspaceId, reply.id))?.interruption).toBeUndefined();
@@ -157,7 +176,7 @@ describeIntegration("MessageRepository (Postgres)", () => {
     await expect(repository.markReplyInterrupted({ workspaceId, conversationId, messageId: reply.id, heardCharacterCount: 7, spokenCharacterCount: 16 }))
       .resolves.toBe(true);
 
-    expect((await repository.findByIdAndWorkspaceId(workspaceId, reply.id))?.interruption).toEqual({ heardCharacterCount: 7, spokenCharacterCount: 16 });
+    expect((await repository.findByIdAndWorkspaceId(workspaceId, reply.id))?.interruption).toEqual({ heardCharacterCount: 7, spokenCharacterCount: 16, partial: false });
   });
 
   it("leaves a message alone that is not an assistant reply of the conversation", async () => {
@@ -206,7 +225,7 @@ describeIntegration("MessageRepository (Postgres)", () => {
       expect((await tail(seen, false)).messages).toEqual([]);
       const redelivered = await tail(seen);
       expect(redelivered.messages.map((message) => [message.id, message.interruption])).toEqual([
-        [reply.id, { heardCharacterCount: 7, spokenCharacterCount: 16 }],
+        [reply.id, { heardCharacterCount: 7, spokenCharacterCount: 16, partial: false }],
       ]);
       expect(decodeCursorWithKeys(redelivered.latestCursor!, ["createdAt", "id"]).keys.id).toBe(reply.id);
       expect((await tail(redelivered.latestCursor)).messages).toEqual([]);

@@ -56,9 +56,11 @@ export const recordVoiceTurnReplayed = (metrics: VoiceTurnMetricsSink | null | u
   });
 };
 
-export const recordVoiceReplyInterrupted = (metrics: VoiceTurnMetricsSink | null | undefined): void => {
+/** `partial`: the caller cut the reply off while it streamed, so only its heard part is stored. */
+export const recordVoiceReplyInterrupted = (metrics: VoiceTurnMetricsSink | null | undefined, partial: boolean): void => {
   metrics?.incrementCounter("voice_reply_interrupted_total", {
-    help: "Stored voice replies the vendor reported cut short because the caller spoke over them",
+    help: "Stored voice replies the caller spoke over; partial=yes when the reply was cut off mid-stream and only its heard part is stored",
+    labels: { partial: yesNo(partial) },
   });
 };
 

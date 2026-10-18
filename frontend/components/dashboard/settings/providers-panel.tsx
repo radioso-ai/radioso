@@ -724,7 +724,8 @@ function ModelRow({
           <p className="text-xs leading-relaxed text-muted-foreground">{visual.description}</p>
           {locked ? (
             <p className="text-xs leading-relaxed text-foreground" data-testid={`llm-model-managed-${capability}`}>
-              Managed plans run on {managed.model}. Add your own keys, or move to Planet, to choose.
+              This capability uses Radioso&apos;s managed default, {managed.model}. Add a workspace key for{' '}
+              {providerDisplayName[value?.provider ?? managed.provider]} to use your own account; remove that key to return here.
             </p>
           ) : null}
           <p className="sr-only">

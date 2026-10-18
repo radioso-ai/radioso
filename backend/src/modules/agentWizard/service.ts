@@ -4,6 +4,7 @@ import type { ModelCallUsageContext } from "../../shared/domain/modelCallUsageCo
 import { normalizeLocaleTag } from "../../shared/domain/locale.js";
 import { renderPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { stringifyUnknown } from "../../shared/text/stringifyUnknown.js";
+import { ProviderConfigurationError } from "../../shared/infra/llm/providerTypes.js";
 
 interface AgentWizardAgentServicePort {
   create(workspaceId: string, input: {
@@ -836,7 +837,11 @@ export class AgentWizardService {
         signal,
       });
       return parseLlmResponse(raw);
-    } catch {
+    } catch (error) {
+      // Configuration failures are actionable (the dashboard maps this to its
+      // existing connect-an-AI-provider state); only malformed/transient model
+      // responses get the JSON retry.
+      if (error instanceof ProviderConfigurationError) throw error;
       return null;
     }
   }

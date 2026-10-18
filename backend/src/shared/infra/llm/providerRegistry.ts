@@ -459,7 +459,15 @@ export class LlmProviderRegistry {
     workspaceId?: string,
     preserveProviderModel = false,
   ): Promise<LlmCapabilityConfig> {
-    if (this.resolver && workspaceId && workspaceId !== "unknown") {
+    if (this.resolver) {
+      if (!workspaceId || workspaceId === "unknown") {
+        throw new ProviderConfigurationError("A workspace identity is required to resolve provider credentials.", {
+          kind: "missing_api_key",
+          provider: config.provider,
+          capability: config.capability,
+          remediation: "Retry the request with its workspace context.",
+        });
+      }
       return this.resolver.resolve(config.capability, {
         workspaceId,
         ...(preserveProviderModel

@@ -337,6 +337,10 @@ export const VOICE_BEHAVIOR = {
   // this window the channel speaks the stored answer again instead of running
   // and storing a second turn; past it, an identical utterance is a new question.
   replayWindowMs: 30_000,
+  // A switch's follow-up that lands on an instance holding no switched turn finds the answer by
+  // reading the conversation, as often as this until the turn limit, so the caller hears the
+  // answer the other instance stores rather than silence.
+  switchFollowUpPollMs: 250,
   // A turn claims the teammate replies it speaks until it settles, which is at most the turn limit
   // plus the note timeout after it starts on a turn the agent owns, and a moment on one a person
   // owns. A claim older than this belongs to a turn that never settled (its process stopped, or

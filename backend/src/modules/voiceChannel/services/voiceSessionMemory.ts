@@ -153,6 +153,18 @@ export class VoiceSessionMemory {
     state.chatTurns = Math.max(0, state.chatTurns - 1);
   }
 
+  /**
+   * The caller never heard the request's turn although its outcome left (a switch of the call's
+   * language no follow-up spoke): its exchange, once settled and still the session's newest, reads
+   * as cut off at `at`, so an identical re-request within the replay window hears the answer.
+   */
+  markUnheard(sessionKey: string, claim: VoiceTurnClaim, at: number): void {
+    const last = this.sessions.get(sessionKey)?.lastExchange;
+    if (last?.sequence === claim.sequence) {
+      last.exchange.cutOffAt ??= at;
+    }
+  }
+
   bridgeSpoken(sessionKey: string, claim: VoiceTurnClaim, now: number): void {
     this.stateOf(sessionKey, now).lastBridge = { at: now, claim };
   }

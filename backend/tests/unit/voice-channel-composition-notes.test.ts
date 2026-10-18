@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createVoiceTurnNotes } from "../../src/app/composition/voiceChannel.js";
+import { createVoiceStoredReplyReader, createVoiceTurnNotes } from "../../src/app/composition/voiceChannel.js";
 import type { AuditEventInput } from "../../src/modules/audit/contracts/index.js";
 
 const note = {
@@ -98,5 +98,34 @@ describe("voice channel composition: turn notes", () => {
       eventStatus: "success",
       metadata: { conversationId: "conversation-1", messageIds: ["reply-1", "reply-2"] },
     }]);
+  });
+});
+
+describe("voice channel composition: the stored answer a switch's follow-up reads", () => {
+  const conversation = { workspaceId: "workspace-1", conversationId: "conversation-1" };
+  const readerOver = (messages: Array<{ id: string; role: string; content: string; source?: string }>) => {
+    const listRecentByConversationId = vi.fn(async () => messages);
+    return { reader: createVoiceStoredReplyReader({ listRecentByConversationId }), listRecentByConversationId };
+  };
+
+  it("reads the agent's answer to the newest user message, past a system message", async () => {
+    const { reader, listRecentByConversationId } = readerOver([
+      { id: "u1", role: "user", content: "A che ora aprite?" },
+      { id: "a1", role: "assistant", content: "Apriamo alle nove.", source: "ai_agent" },
+      { id: "s1", role: "system", content: "routine note" },
+    ]);
+
+    expect(await reader.replyToNewestUtterance(conversation)).toEqual({ messageId: "a1", text: "Apriamo alle nove." });
+    expect(listRecentByConversationId).toHaveBeenCalledWith("workspace-1", "conversation-1", 4, { roles: ["user", "assistant"] });
+  });
+
+  it("reads nothing while the newest message is the caller's, a teammate's reply, or an empty answer", async () => {
+    const pending = readerOver([{ id: "a0", role: "assistant", content: "Ciao." }, { id: "u1", role: "user", content: "A che ora aprite?" }]);
+    const teammate = readerOver([{ id: "u1", role: "user", content: "A che ora aprite?" }, { id: "o1", role: "assistant", content: "Sono Marta.", source: "human_agent" }]);
+    const empty = readerOver([{ id: "u1", role: "user", content: "A che ora aprite?" }, { id: "a1", role: "assistant", content: "  " }]);
+
+    expect(await pending.reader.replyToNewestUtterance(conversation)).toBeNull();
+    expect(await teammate.reader.replyToNewestUtterance(conversation)).toBeNull();
+    expect(await empty.reader.replyToNewestUtterance(conversation)).toBeNull();
   });
 });

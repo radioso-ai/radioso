@@ -70,15 +70,20 @@ export interface VoiceLanguageSwitchResult {
 
 /**
  * Why a turn asks the runtime to switch the call's language: the turn's plan answers in a language
- * other than the call's. Closed: the runtime is told it as the switch's reason.
+ * other than the call's. Closed: the runtime is told it as the switch's reason, and replays it, so
+ * a switch carrying one of these is one Radioso asked for.
  */
-export type VoiceLanguageSwitchReason = "response_language";
+export const VOICE_LANGUAGE_SWITCH_REASONS = ["response_language"] as const;
+
+export type VoiceLanguageSwitchReason = (typeof VOICE_LANGUAGE_SWITCH_REASONS)[number];
 
 /**
- * Where a switch a turn asked for stands, as logged and counted: asked for (`emitted`), carried out
- * by the runtime (`confirmed`), refused by it (`refused`), or never followed up (`unanswered`).
+ * Where a switch a turn asked for stands, as logged and counted: asked for (`emitted`); followed up
+ * by the runtime, which carried it out (`confirmed`) or refused it (`refused`); never followed up,
+ * or overtaken by the caller's next utterance (`unanswered`); dropped for a follow-up of another
+ * utterance (`mismatched`); or a follow-up this process holds no switched turn for (`unheld`).
  */
-export type VoiceLanguageSwitchOutcome = "emitted" | "confirmed" | "refused" | "unanswered";
+export type VoiceLanguageSwitchOutcome = "emitted" | "confirmed" | "refused" | "unanswered" | "mismatched" | "unheld";
 
 export interface VoiceTurnInput {
   session: VoiceSessionRef;

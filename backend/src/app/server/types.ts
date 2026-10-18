@@ -39,6 +39,7 @@ import type {
 } from "../../modules/retrieval/public.js";
 import type { AuthService } from "../../modules/auth/services/authService.js";
 import type { EmailVerificationService } from "../../modules/auth/services/emailVerificationService.js";
+import type { AuthFunnelService } from "../../modules/auth/services/authFunnelService.js";
 import type { PasswordResetService } from "../../modules/auth/services/passwordResetService.js";
 import type { AccountAccessService } from "../../modules/account/services/accountAccessService.js";
 import type { AgentRevisionService } from "../../modules/agents/public.js";
@@ -208,6 +209,7 @@ export interface AppDependencies {
   accessGrantService: AccessGrantService;
   passwordResetService: PasswordResetService;
   emailVerificationService: EmailVerificationService;
+  authFunnelService: AuthFunnelService;
   accountAccessService: AccountAccessService;
   accountInvitationService: AccountInvitationService;
   apiPrincipalAuthenticator: ApiPrincipalAuthenticator;
@@ -294,6 +296,7 @@ export interface AppDependencies {
   chatService: ChatService;
   approvalDecisionService: ApprovalDecisionService;
   closeApprovalResumeEffectJournal(): Promise<void>;
+  closeAbuseControlRepository?(): Promise<void>;
   /** Who handles a human-owned conversation: take over, reply, transfer, hand back. */
   conversationOwnershipService: ConversationOwnershipService;
   /** Records a customer message without running a turn; connectors reach it through their chat port. */

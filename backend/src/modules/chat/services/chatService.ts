@@ -104,6 +104,7 @@ import type {
 import {
   ChatTurnLifecycle,
   type AssistantTurnPersistencePort,
+  type CutReplyStore,
   type ChatActionOutboxPort,
   type CompletedAssistantTurn,
 } from "./chatTurnLifecycle.js";
@@ -171,7 +172,7 @@ import {
   type ConversationTurnRegistry,
   type ConversationTurnStage,
 } from "./conversationTurnRegistry.js";
-import type { ConversationTurnSupersession } from "../contracts/interruption.js";
+import type { ConversationTurnSupersession, DeliveredReplyReader } from "../contracts/interruption.js";
 import { AnswerCoverageHeadRecorder } from "./answerCoverageHeadRecorder.js";
 import type { AnswerCoverageShadowAssessor } from "./answerCoverageShadowAssessor.js";
 import { buildAgentChatWorkspaceContext } from "./agentChatWorkspaceContext.js";
@@ -248,6 +249,8 @@ export interface ChatServiceOptions {
   /** Optional: when wired, routine-emitted fire-and-forget actions are enqueued to the outbox. */
   actionOutbox?: ChatActionOutboxPort;
   assistantTurnPersistence?: AssistantTurnPersistencePort;
+  /** Keeps the heard part of a reply a newer input cut off mid-stream; absent, such a turn stores no reply. */
+  cutReplyStore?: CutReplyStore;
   actionCapabilities?: ActionCapabilityMap;
   capabilityPolicy?: CapabilityPolicy;
   logger?: Pick<AppLogger, "warn">;
@@ -477,6 +480,7 @@ export class ChatService {
       turnAssemblyFactory,
       actionOutbox,
       assistantTurnPersistence,
+      cutReplyStore,
       actionCapabilities,
       capabilityPolicy,
       logger,
@@ -546,6 +550,7 @@ export class ChatService {
       backgroundJobs,
       turnRuntime.metrics,
       workspaceInvalidationPublisher,
+      cutReplyStore,
     );
     this.chatSessionPreparer = new ChatSessionPreparer(
       conversationRepository,
@@ -1434,6 +1439,12 @@ export class ChatService {
     /** How a newer turn on the conversation cuts this one off; `until_emission` when absent. */
     supersession?: ConversationTurnSupersession;
     /**
+     * For a `latest_input_wins` turn whose channel delivers the reply as it streams: what reached
+     * the listener of a reply a newer input cut off mid-stream, which the turn then keeps as its
+     * reply. Absent: a turn cut off mid-reply keeps its user message and stores no reply.
+     */
+    deliveredReply?: DeliveredReplyReader;
+    /**
      * Caller-owned abort signal (#885), independent of the registry's own
      * supersession signal. The HTTP presenter fires this once the client has
      * disconnected and the turn has not settled within its post-disconnect
@@ -1507,6 +1518,7 @@ export class ChatService {
     verifiedIdentity?: Record<string, unknown> | null;
     previewRoutineIds?: string[];
     routineInvocation?: RoutineInvocation;
+    deliveredReply?: DeliveredReplyReader;
     signal?: AbortSignal;
   }, coordination: TurnCoordinationState, modelCallTrace: ModelCallTraceCollector, requestReceivedAt: number): AsyncIterable<ChatStreamEvent> {
     let firstAnswerChunkObserved = false;
@@ -1525,6 +1537,11 @@ export class ChatService {
     };
     let session: PreparedSession | null = null;
     let assistantMessageId: string | undefined;
+    // Set the moment the reply is stored, so a failure after the store never reads as a turn
+    // without a reply (whose cut-off part would then be stored again).
+    const onReplyStored = (storedId: string): void => {
+      assistantMessageId = storedId;
+    };
     /** Some of the reply reached the client, so a newer input can no longer replace the turn whole. */
     let replyReachedClient = false;
     let lazySuggestionsPromise:
@@ -1716,6 +1733,7 @@ export class ChatService {
             clarificationTransition: routineTurn.clarificationTransition,
             commitClarificationState: routineTurn.commitClarificationState,
             commitFence,
+            onReplyStored,
           });
         } catch (error) {
           // A cancelled turn is not a failed write: the newer turn or the disconnect owns the outcome.
@@ -1838,6 +1856,7 @@ export class ChatService {
             clarificationTransition: clarification.store?.getTransition(),
             commitClarificationState: clarification.store ? () => clarification.store!.commit() : undefined,
             commitFence: this.latestInputCommitFence(coordination),
+            onReplyStored,
           });
           assistantMessageId = completedTurn.assistantMessageId;
           await usageReservation.commit();
@@ -2046,6 +2065,7 @@ export class ChatService {
         commitClarificationState: coverageRoutineEffects.commitClarificationState
           ?? (clarification.store ? () => clarification.store!.commit() : undefined),
         commitFence,
+        onReplyStored,
       });
       assistantMessageId = completedTurn.assistantMessageId;
       await usageReservation.commit();
@@ -2096,12 +2116,16 @@ export class ChatService {
       }
       await releaseUsageReservation();
       if (preferredError instanceof ChatTurnSupersededError) {
-        await this.chatTurnLifecycle.recordSupersession(input, session, assistantMessageId, preferredError, workflowPolicy);
+        // Still holding the lease: a newer turn waits for the part of the reply this one keeps.
+        const cutReplyId = await this.chatTurnLifecycle.recordSupersession(input, session, assistantMessageId, preferredError, workflowPolicy);
         yield {
           type: "cancelled",
           conversationId: preferredError.conversationId,
           reason: "superseded",
           stage: preferredError.stage,
+          ...(cutReplyId
+            ? { storedReply: { assistantMessageId: cutReplyId, partial: true } }
+            : assistantMessageId ? { storedReply: { assistantMessageId, partial: false } } : {}),
         };
         return;
       }

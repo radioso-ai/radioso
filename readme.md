@@ -72,7 +72,7 @@ The bootstrap generates secrets and starts the full stack. OpenAI, OpenAI-compat
 
 Then, five minutes and three steps:
 
-1. **Register.** The first registration on an empty server creates the organization and default workspace; the development stack verifies the account and signs you in.
+1. **Register.** Open `/signup` to create the first organization and default workspace. The development stack verifies the account and signs you in; `/login` is the returning-user entry point.
 2. **Answer.** Upload a document and ask about it. The reply comes back cited to the document it came from.
 3. **Act and hand off.** On the agent's Skills tab, add a Notify Human skill named `contact_human` with a recipient email, then ask to speak to a person. The built-in contact routine takes over: it collects an email and a message, sends them to that recipient, and confirms. That flow is itself just routine data — [authoring routines](https://docs.radioso.ai/guides/authoring-routines) shows how to build your own.
 

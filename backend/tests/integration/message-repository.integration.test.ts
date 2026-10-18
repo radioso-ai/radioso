@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { MessageRepository } from "../../src/db/repositories/messageRepository.js";
+import { VOICE_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 import { decodeCursorWithKeys } from "../../src/shared/domain/cursorPagination.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
@@ -122,7 +123,7 @@ describeIntegration("MessageRepository (Postgres)", () => {
 
     const reloaded = await repository.findByIdAndWorkspaceId(workspaceId, reply.id);
     expect(reloaded?.content).toBe("We open at nine.");
-    expect(reloaded?.interruption).toEqual({ heardCharacterCount: 7, spokenCharacterCount: 16 });
+    expect(reloaded?.interruption).toEqual({ heardCharacterCount: 7, spokenCharacterCount: 16, partial: false });
     expect(reloaded?.metadata).toMatchObject({
       suggestions,
       interruption: { heardCharacterCount: 7, spokenCharacterCount: 16, recordedAt: expect.any(String) },
@@ -149,6 +150,25 @@ describeIntegration("MessageRepository (Postgres)", () => {
     expect(await storedMarker()).toEqual(first);
   });
 
+  it("stores a reply already cut short with its marker, which no later mark changes", async () => {
+    const reply = await repository.create({
+      conversationId,
+      workspaceId,
+      role: "assistant",
+      content: "We open at nine.",
+      interruption: { heardCharacterCount: 16, spokenCharacterCount: 16, partial: true },
+    });
+    expect(reply.interruption).toEqual({ heardCharacterCount: 16, spokenCharacterCount: 16, partial: true });
+
+    await expect(repository.markReplyInterrupted({ workspaceId, conversationId, messageId: reply.id, heardCharacterCount: 3, spokenCharacterCount: 16 }))
+      .resolves.toBe(true);
+
+    const reloaded = await repository.findByIdAndWorkspaceId(workspaceId, reply.id);
+    expect(reloaded?.interruption).toEqual({ heardCharacterCount: 16, spokenCharacterCount: 16, partial: true });
+    // Born marked, so the tail never returns it again for its marker.
+    expect(reloaded?.metadata?.interruption).toEqual({ heardCharacterCount: 16, spokenCharacterCount: 16, partial: true });
+  });
+
   it("marks a reply whose metadata holds a null interruption, which reads as unmarked", async () => {
     const reply = await repository.create({ conversationId, workspaceId, role: "assistant", content: "We open at nine.", metadata: { interruption: null } });
     expect((await repository.findByIdAndWorkspaceId(workspaceId, reply.id))?.interruption).toBeUndefined();
@@ -156,7 +176,7 @@ describeIntegration("MessageRepository (Postgres)", () => {
     await expect(repository.markReplyInterrupted({ workspaceId, conversationId, messageId: reply.id, heardCharacterCount: 7, spokenCharacterCount: 16 }))
       .resolves.toBe(true);
 
-    expect((await repository.findByIdAndWorkspaceId(workspaceId, reply.id))?.interruption).toEqual({ heardCharacterCount: 7, spokenCharacterCount: 16 });
+    expect((await repository.findByIdAndWorkspaceId(workspaceId, reply.id))?.interruption).toEqual({ heardCharacterCount: 7, spokenCharacterCount: 16, partial: false });
   });
 
   it("leaves a message alone that is not an assistant reply of the conversation", async () => {
@@ -176,13 +196,13 @@ describeIntegration("MessageRepository (Postgres)", () => {
     expect((await repository.findByIdAndWorkspaceId(workspaceId, otherReply.id))?.interruption).toBeUndefined();
   });
 
-  describe("tail re-delivery of interrupted replies", () => {
+  describe("tail re-delivery of marked replies", () => {
     const sinceCursor = (cursor: string | null) => {
       const { keys } = decodeCursorWithKeys(cursor!, ["createdAt", "id"]);
       return { sinceCreatedAt: new Date(keys.createdAt), sinceId: keys.id, sinceMarkedAt: (keys as Record<string, string>).markedAt };
     };
-    const tail = (cursor: string | null, redeliverInterruptedReplies = true) =>
-      repository.listSinceByConversationId(workspaceId, conversationId, { ...sinceCursor(cursor), limit: 10, redeliverInterruptedReplies });
+    const tail = (cursor: string | null, redeliverMarkedReplies = true) =>
+      repository.listSinceByConversationId(workspaceId, conversationId, { ...sinceCursor(cursor), limit: 10, redeliverMarkedReplies });
     const markReply = (messageId: string) =>
       repository.markReplyInterrupted({ workspaceId, conversationId, messageId, heardCharacterCount: 7, spokenCharacterCount: 16 });
     // Whole milliseconds, as the cursor keeps them, so a read after the cursor's own message starts
@@ -205,7 +225,7 @@ describeIntegration("MessageRepository (Postgres)", () => {
       expect((await tail(seen, false)).messages).toEqual([]);
       const redelivered = await tail(seen);
       expect(redelivered.messages.map((message) => [message.id, message.interruption])).toEqual([
-        [reply.id, { heardCharacterCount: 7, spokenCharacterCount: 16 }],
+        [reply.id, { heardCharacterCount: 7, spokenCharacterCount: 16, partial: false }],
       ]);
       expect(decodeCursorWithKeys(redelivered.latestCursor!, ["createdAt", "id"]).keys.id).toBe(reply.id);
       expect((await tail(redelivered.latestCursor)).messages).toEqual([]);
@@ -222,6 +242,154 @@ describeIntegration("MessageRepository (Postgres)", () => {
       expect(page.messages.map((message) => message.id)).toEqual([reply.id, next.id]);
       expect(decodeCursorWithKeys(page.latestCursor!, ["createdAt", "id"]).keys.id).toBe(next.id);
       expect((await tail(page.latestCursor)).messages).toEqual([]);
+    });
+
+    it("re-delivers a teammate's reply once the caller heard it, after an interruption it already delivered", async () => {
+      const agentReply = await createAt("assistant", "We open at nine.", "2026-06-01T00:00:01.000Z");
+      const teammateReply = await repository.create({
+        conversationId, workspaceId, role: "assistant", source: "human_agent", content: "Four works.", pendingSpeech: true,
+      });
+      await setTime(teammateReply.id, "2026-06-01T00:00:02.000Z");
+      const { latestCursor: seen } = await repository.listSinceByConversationId(workspaceId, conversationId, { limit: 10 });
+
+      await markReply(agentReply.id);
+      const interrupted = await tail(seen);
+      expect(interrupted.messages.map((message) => message.id)).toEqual([agentReply.id]);
+
+      await repository.claimPendingOperatorReplies({ workspaceId, conversationId, claimTurnId: "turn-1" });
+      await repository.markOperatorRepliesSpoken({ workspaceId, conversationId, messageIds: [teammateReply.id], claimTurnId: "turn-1" });
+
+      const spoken = await tail(interrupted.latestCursor);
+      expect(spoken.messages.map((message) => [message.id, message.speech?.state])).toEqual([[teammateReply.id, "spoken"]]);
+      expect((await tail(spoken.latestCursor)).messages).toEqual([]);
+    });
+
+    it("re-delivers a teammate's reply once it is skipped for having no words to say", async () => {
+      const wordless = await repository.create({
+        conversationId, workspaceId, role: "assistant", source: "human_agent", content: "**", pendingSpeech: true,
+      });
+      await setTime(wordless.id, "2026-06-01T00:00:01.000Z");
+      const { latestCursor: seen } = await repository.listSinceByConversationId(workspaceId, conversationId, { limit: 10 });
+
+      await repository.claimPendingOperatorReplies({ workspaceId, conversationId, claimTurnId: "turn-1" });
+      await repository.skipOperatorReplies({ workspaceId, conversationId, messageIds: [wordless.id], claimTurnId: "turn-1" });
+
+      const skipped = await tail(seen);
+      expect(skipped.messages.map((message) => [message.id, message.speech?.state])).toEqual([[wordless.id, "skipped"]]);
+      expect((await tail(skipped.latestCursor)).messages).toEqual([]);
+    });
+  });
+
+  describe("a teammate's replies on a call", () => {
+    const teammateReply = (content: string, iso: string, pendingSpeech = true) =>
+      repository.create({ conversationId, workspaceId, role: "assistant", source: "human_agent", content, operatorUserId: "user-1", pendingSpeech })
+        .then(async (message) => {
+          await setTime(message.id, iso);
+          return message;
+        });
+    const claim = (claimTurnId: string, workspace = workspaceId) =>
+      repository.claimPendingOperatorReplies({ workspaceId: workspace, conversationId, claimTurnId });
+    const claimedIds = async (claimTurnId: string) => (await claim(claimTurnId)).map((reply) => reply.messageId);
+    const held = (claimTurnId: string, messageIds: string[], workspace = workspaceId) =>
+      ({ workspaceId: workspace, conversationId, messageIds, claimTurnId });
+    const speechOf = async (messageId: string) => (await repository.findByIdAndWorkspaceId(workspaceId, messageId))?.speech;
+    const storedSpeech = async (messageId: string) =>
+      (await repository.findByIdAndWorkspaceId(workspaceId, messageId))?.metadata?.speech as Record<string, unknown> | undefined;
+    /** Moves a claim back in time, as a turn whose process stopped leaves it. */
+    const ageClaim = (messageId: string, ms: number) =>
+      database.query(
+        `UPDATE messages SET metadata_json = jsonb_set(metadata_json, '{speech,claimedAt}',
+          to_jsonb(to_char((clock_timestamp() - make_interval(secs => $2)) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"'))) WHERE id = $1`,
+        [messageId, ms / 1000],
+      );
+
+    it("stores a reply the caller hears as pending, and claims and reads the pending ones oldest first in one write", async () => {
+      const later = await teammateReply("Bring your card.", "2026-06-01T00:00:03.000Z");
+      const first = await teammateReply("We can fit you in at **four**.", "2026-06-01T00:00:01.000Z");
+      const wordless = await teammateReply("**", "2026-06-01T00:00:02.000Z");
+      await teammateReply("Written, never spoken.", "2026-06-01T00:00:04.000Z", false);
+      await repository.create({ conversationId, workspaceId, role: "assistant", content: "We open at nine.", metadata: { speech: { state: "pending" } } });
+
+      expect(await speechOf(first.id)).toEqual({ state: "pending" });
+      expect((await repository.findByIdAndWorkspaceId(workspaceId, first.id))?.metadata).toMatchObject({ humanAgent: { userId: "user-1" } });
+      await expect(claim("turn-a", randomUUID())).resolves.toEqual([]);
+      expect(await claim("turn-a")).toEqual([
+        { messageId: first.id, text: "We can fit you in at **four**." },
+        { messageId: wordless.id, text: "**" },
+        { messageId: later.id, text: "Bring your card." },
+      ]);
+      expect(await storedSpeech(first.id)).toEqual({ state: "claimed", claimTurnId: "turn-a", claimedAt: expect.any(String) });
+      // A claim still reads as pending to everyone else.
+      expect(await speechOf(first.id)).toEqual({ state: "pending" });
+    });
+
+    it("claims a pending reply for one turn only, and lets another claim it once released", async () => {
+      const reply = await teammateReply("Four works.", "2026-06-01T00:00:01.000Z");
+
+      expect(await claimedIds("turn-a")).toEqual([reply.id]);
+      expect(await claimedIds("turn-b")).toEqual([]);
+
+      await expect(repository.releaseOperatorReplies(held("turn-b", [reply.id]))).resolves.toEqual([]);
+      expect(await claimedIds("turn-b")).toEqual([]);
+      await expect(repository.releaseOperatorReplies(held("turn-a", [reply.id]))).resolves.toEqual([reply.id]);
+      expect(await claimedIds("turn-b")).toEqual([reply.id]);
+    });
+
+    it("lets one of two turns claiming at once have each reply", async () => {
+      const reply = await teammateReply("Four works.", "2026-06-01T00:00:01.000Z");
+
+      const claims = await Promise.all([claimedIds("turn-a"), claimedIds("turn-b")]);
+
+      expect(claims.flat()).toEqual([reply.id]);
+    });
+
+    it("lets a later turn claim a reply whose claim is older than the expiry", async () => {
+      const reply = await teammateReply("Four works.", "2026-06-01T00:00:01.000Z");
+      await claim("turn-a");
+
+      await ageClaim(reply.id, VOICE_BEHAVIOR.operatorReplyClaimExpiryMs - 5_000);
+      expect(await claimedIds("turn-b")).toEqual([]);
+
+      await ageClaim(reply.id, VOICE_BEHAVIOR.operatorReplyClaimExpiryMs + 5_000);
+      expect(await claimedIds("turn-b")).toEqual([reply.id]);
+      // The turn whose claim expired no longer holds it: it can neither mark nor release it.
+      await expect(repository.markOperatorRepliesSpoken(held("turn-a", [reply.id]))).resolves.toEqual([]);
+      await expect(repository.releaseOperatorReplies(held("turn-a", [reply.id]))).resolves.toEqual([]);
+    });
+
+    it("marks the replies a turn holds spoken once, keeps the first time, and leaves every other message alone", async () => {
+      const reply = await teammateReply("Four works.", "2026-06-01T00:00:01.000Z");
+      const agentReply = await repository.create({ conversationId, workspaceId, role: "assistant", content: "We open at nine." });
+      const question = await repository.create({ conversationId, workspaceId, role: "user", content: "When?" });
+      await claim("turn-a");
+      const unclaimed = await teammateReply("Bring your card.", "2026-06-01T00:00:02.000Z");
+
+      await expect(repository.markOperatorRepliesSpoken(held("turn-a", [reply.id], randomUUID()))).resolves.toEqual([]);
+      await expect(repository.markOperatorRepliesSpoken(held("turn-a", [reply.id, unclaimed.id, agentReply.id, question.id, randomUUID()])))
+        .resolves.toEqual([reply.id]);
+      const spoken = await speechOf(reply.id);
+      expect(spoken).toEqual({ state: "spoken", spokenAt: expect.any(String) });
+      expect(new Date(spoken!.spokenAt!).toISOString()).toBe(spoken!.spokenAt);
+      expect(await speechOf(unclaimed.id)).toEqual({ state: "pending" });
+
+      await expect(repository.markOperatorRepliesSpoken(held("turn-a", [reply.id]))).resolves.toEqual([]);
+      expect(await claimedIds("turn-b")).toEqual([unclaimed.id]);
+      await expect(repository.releaseOperatorReplies(held("turn-a", [reply.id]))).resolves.toEqual([]);
+      expect(await speechOf(reply.id)).toEqual(spoken);
+      expect((await repository.findByIdAndWorkspaceId(workspaceId, agentReply.id))?.metadata).not.toHaveProperty("speech");
+      expect((await repository.findByIdAndWorkspaceId(workspaceId, question.id))?.metadata).not.toHaveProperty("speech");
+    });
+
+    it("marks a claimed reply with no words to say as skipped, which no turn claims again", async () => {
+      const wordless = await teammateReply("**", "2026-06-01T00:00:01.000Z");
+      await claim("turn-a");
+
+      await expect(repository.skipOperatorReplies(held("turn-b", [wordless.id]))).resolves.toEqual([]);
+      await expect(repository.skipOperatorReplies(held("turn-a", [wordless.id]))).resolves.toEqual([wordless.id]);
+
+      expect(await speechOf(wordless.id)).toEqual({ state: "skipped" });
+      await ageClaim(wordless.id, VOICE_BEHAVIOR.operatorReplyClaimExpiryMs + 5_000);
+      expect(await claimedIds("turn-b")).toEqual([]);
     });
   });
 

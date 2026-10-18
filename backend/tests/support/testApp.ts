@@ -3,6 +3,7 @@ import { createDefaultApplicationComposition } from "../../src/app/composition/d
 import { chatTurnQueuedActionTypes } from "../../src/app/composition/applicationModule.js";
 import { createAgentPublicProfileComposition } from "../../src/app/composition/agentDiscovery.js";
 import {
+  createVoiceChannelComposition,
   createVoiceRecordingComposition,
   createVoiceSessionStartComposition,
   refreshEmbedConfigsOnVoiceVendorKeyChange,
@@ -29,6 +30,7 @@ import { AccountInvitationService } from "../../src/modules/account/services/acc
 import { ApprovalDecisionService } from "../../src/modules/approvals/public.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
 import { EmailVerificationService } from "../../src/modules/auth/services/emailVerificationService.js";
+import { AuthFunnelService } from "../../src/modules/auth/services/authFunnelService.js";
 import { PasswordResetService } from "../../src/modules/auth/services/passwordResetService.js";
 import { ChatBootstrapService } from "../../src/modules/chat/services/chatBootstrapService.js";
 import { ReviewTurnAuditReader } from "../../src/modules/chat/contracts/index.js";
@@ -43,7 +45,7 @@ import {
   type RoutineRegistration,
   type WorkbenchReplayRunner,
 } from "../../src/modules/chat/composition.js";
-import { ChatService, type ChatGateway, type ChatRoutineProvider } from "../../src/modules/chat/services/chatService.js";
+import { ChatService, type ChatGateway, type ChatRoutineProvider, type ChatServiceOptions } from "../../src/modules/chat/services/chatService.js";
 import type { TurnRouter } from "../../src/modules/chat/services/turnRouter.js";
 import { BackgroundJobRuntime } from "../../src/shared/background-jobs/index.js";
 import { PeriodicTaskRunner } from "../../src/app/composition/periodicTaskRunner.js";
@@ -54,7 +56,6 @@ import { createSkillOutcomeCapabilityProvider } from "../../src/modules/chat/ser
 import { RetrievalTurnController } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
 import {
-  VoiceTurnService,
   type VoiceRecordingStore,
   type VoiceRecordingToErase,
   type VoiceSessionRef,
@@ -142,6 +143,7 @@ import type { VectorCandidateSearchPort } from "../../src/modules/retrieval/doma
 import type { ChunkCandidateHydratorPort } from "../../src/modules/retrieval/infra/chunkCandidateHydrator.js";
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
 import { WorkspaceSummaryService } from "../../src/modules/workspace/services/workspaceSummaryService.js";
+import { InMemoryWorkspaceSetupStateRepository } from "./inMemoryWorkspaceSetupState.js";
 import { WorkspaceSessionService } from "../../src/modules/auth/services/workspaceSessionService.js";
 import {
   ApiPrincipalAuthenticator,
@@ -192,7 +194,6 @@ import { SlackSkillDefinitionService } from "../../src/modules/slackSkills/publi
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import {
   ConversationOwnershipService,
-  isHumanOwned,
   OperatorIdentityResolver,
   OperatorReplyService,
 } from "../../src/modules/handoff/public.js";
@@ -327,6 +328,7 @@ import {
   InMemoryWorkspaceGrantRepository,
   InMemoryChunkRepository,
   InMemoryConversationRepository,
+  InMemoryCutReplyStore,
   InMemoryVisitorProfileRepository,
   InMemoryDocumentRepository,
   InMemoryDocumentSourceRepository,
@@ -342,6 +344,7 @@ import {
   InMemoryFederatedIdentityRepository,
   InMemorySessionRepository,
   InMemoryEmailVerificationTokenRepository,
+  InMemoryAuthFunnelRepository,
   InMemoryPasswordResetTokenRepository,
   InMemoryWorkspaceRepository,
   InMemoryAgentRepository,
@@ -391,9 +394,6 @@ export const createTestEnv = (): Env => ({
   OPS_EVENT_WEBHOOK_MIN_ERROR_SEVERITY: "error",
   OPS_EVENT_WEBHOOK_QUEUE_LIMIT: 500,
   NOTIFICATION_RECIPIENT_CONFIRMATION_ENABLED: true,
-  SLACK_INBOUND_EVENT_RETENTION_DAYS: 30,
-  EXTERNAL_MCP_TOOL_CALL_TIMEOUT_MS: 30_000,
-  ANSWER_COVERAGE_SHADOW_ASSESSOR_ENABLED: true,
   GOOGLE_CLOUD_PROJECT: "radioso-test",
   DATABASE_URL: "postgres://test:test@localhost:5432/test",
   DB_POOL_MAX: 10,
@@ -413,8 +413,13 @@ export const createTestEnv = (): Env => ({
   PUBLIC_CHAT_SESSION_SECRET: "00112233445566778899aabbccddeeff",
   SESSION_TTL_HOURS: 168,
   AUTH_AUTO_VERIFY_EMAIL: false,
+  AUTH_EXPOSE_EMAIL_VERIFICATION_LINK: false,
+  AUTH_PENDING_REGISTRATION_TTL_MINUTES: 15,
   AUTH_RATE_LIMIT_WINDOW_MS: 60_000,
   AUTH_RATE_LIMIT_MAX_ATTEMPTS: 10,
+  SLACK_INBOUND_EVENT_RETENTION_DAYS: 7,
+  EXTERNAL_MCP_TOOL_CALL_TIMEOUT_MS: 30_000,
+  ANSWER_COVERAGE_SHADOW_ASSESSOR_ENABLED: true,
   PASSWORD_RESET_TOKEN_TTL_MINUTES: 30,
   EMAIL_VERIFICATION_TOKEN_TTL_MINUTES: 30,
   UPLOAD_RATE_LIMIT_MAX_ATTEMPTS: 20,
@@ -957,6 +962,10 @@ export const createTestDependencies = (overrides: {
   heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;
   /** The `fetch` voice vendor session starters call; omitted means every vendor call fails as unreachable. */
   voiceVendorFetch?: typeof globalThis.fetch;
+  /** Writes chat's line for a turn a person owns before a teammate has replied; omitted means no line. */
+  handoffWaitingMessageGenerator?: ChatServiceOptions["handoffWaitingMessageGenerator"];
+  /** Keeps the heard part of a reply cut off mid-stream; omitted means the in-memory store over the test repositories. */
+  cutReplyStore?: ChatServiceOptions["cutReplyStore"];
   /** Observes the embed-config CDN invalidations; omitted means the deployment has no CDN to invalidate. */
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
   /** Composes the agent tool catalog over the test app's agent row and published-revision readers. */
@@ -1030,7 +1039,17 @@ export const createTestDependencies = (overrides: {
     }),
   );
   const sessionRepository = new InMemorySessionRepository();
+  const emailVerificationTokenRepository = new InMemoryEmailVerificationTokenRepository();
+  const passwordResetTokenRepository = new InMemoryPasswordResetTokenRepository();
   const federatedIdentityRepository = new InMemoryFederatedIdentityRepository();
+  const authFunnelRepository = new InMemoryAuthFunnelRepository({
+    emailVerificationTokens: emailVerificationTokenRepository,
+    users: userRepository,
+    sessions: sessionRepository,
+    listMemberships: (userId) => accountAccessService.listUserMemberships(userId),
+    passwordResetTokens: passwordResetTokenRepository,
+    federatedIdentities: federatedIdentityRepository,
+  });
   const machineAccessRepository = new InMemoryMachineAccessRepository();
   const ingestionSettingsRepository = new InMemoryIngestionSettingsRepository();
   const retrievalSettingsRepository = new InMemoryRetrievalSettingsRepository();
@@ -1502,7 +1521,7 @@ export const createTestDependencies = (overrides: {
       };
     },
   } satisfies TurnRouter;
-  const workspaceSummaryService = new WorkspaceSummaryService(documentRepository, conversationRepository, {
+  const workspaceSummaryService = new WorkspaceSummaryService(documentRepository, conversationRepository, new InMemoryWorkspaceSetupStateRepository(), {
     websiteCrawlerEnabled: env.WEBSITE_CRAWLER_ENABLED,
   });
   const abuseControlService = new AbuseControlService(
@@ -2158,6 +2177,7 @@ export const createTestDependencies = (overrides: {
     // Per-conversation directive firing memory (#865) so lifecycle suppression is
     // exercised end-to-end; exposed on the returned harness for assertions.
     directiveStateStore,
+    handoffWaitingMessageGenerator: overrides.handoffWaitingMessageGenerator,
     agentSkillTurnSkillProvider: overrides.agentSkillTurnSkillProvider ?? new RepositoryAgentSkillTurnSkillProvider({
       agentSkills: agentSkillRepository,
       executorRegistry: skillExecutorRegistry,
@@ -2168,6 +2188,8 @@ export const createTestDependencies = (overrides: {
     ),
     // Mirror production wiring: a human-owned conversation suppresses the agent's turn.
     conversationOwnershipReader: conversationOwnershipRepository,
+    // Mirror production wiring: a reply cut off mid-stream keeps the part its listener heard.
+    cutReplyStore: overrides.cutReplyStore ?? new InMemoryCutReplyStore(messageRepository, conversationRepository, auditEventRepository),
     logger,
   });
   const chatBootstrapService = new ChatBootstrapService(
@@ -2716,6 +2738,7 @@ export const createTestDependencies = (overrides: {
     userRepository,
     sessionRepository,
     federatedIdentityRepository,
+    authFunnelRepository,
     workspaceService,
     accountAccessService,
     accountInvitationService,
@@ -2858,18 +2881,23 @@ export const createTestDependencies = (overrides: {
       accountRepository,
       userRepository,
       sessionRepository,
-      federatedIdentityRepository,
+      authFunnelRepository,
       accountAccessService,
       workspaceService,
-      passwordResetTokenRepository: new InMemoryPasswordResetTokenRepository(),
+      passwordResetTokenRepository,
       mailService: createMailService({ MAIL_DRIVER: "noop" }),
     }),
     emailVerificationService: new EmailVerificationService({
       env,
       auditService,
       userRepository,
-      emailVerificationTokenRepository: new InMemoryEmailVerificationTokenRepository(),
+      emailVerificationTokenRepository,
       mailService: createMailService({ MAIL_DRIVER: "noop" }),
+    }),
+    authFunnelService: new AuthFunnelService({
+      env,
+      repository: authFunnelRepository,
+      auditService,
     }),
     workspaceService,
     workspaceSummaryService,
@@ -2994,19 +3022,15 @@ export const createTestDependencies = (overrides: {
     }),
     chatHistoryService,
     assistantChatService,
-    voiceTurns: new VoiceTurnService({
+    voiceTurns: createVoiceChannelComposition({
       sessions: voiceSessions,
-      starts: voiceSessions,
-      chat: { streamTurn: (request) => assistantChatService.streamAnswer({ ...request, stream: true }) },
-      agents: {
-        findVoiceProfile: async ({ workspaceId, agentId }) => {
-          const agent = await agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
-          return agent ? { voice: agent.voice, defaultLocale: agent.assistantDefaultLocale } : null;
-        },
-      },
-      routines: { isRoutineActive: async (conversationId) => (await routineStateStore.loadActive({ sessionId: conversationId })) !== null },
-      ownership: { isHumanOwned: async (conversationId) => isHumanOwned(await conversationOwnershipRepository.load(conversationId)) },
-      metrics: metricsRegistry,
+      assistantChatService,
+      agentRepository,
+      routineStates: routineStateStore,
+      conversationOwnership: conversationOwnershipRepository,
+      replies: messageRepository,
+      auditService,
+      metricsRegistry,
       logger,
     }),
     voiceSessionStarts,
@@ -3138,6 +3162,8 @@ export const createTestApp = (overrides: {
   conversationErasure?: AppDependencies["conversationErasure"];
   heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;
   voiceVendorFetch?: typeof globalThis.fetch;
+  handoffWaitingMessageGenerator?: ChatServiceOptions["handoffWaitingMessageGenerator"];
+  cutReplyStore?: ChatServiceOptions["cutReplyStore"];
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
 } = {}) => {
   const {

@@ -166,12 +166,12 @@ describe("copilot chat readers", () => {
       updatedAt: "2026-08-18T10:00:02.000Z",
       messageCount: 2,
       messages: [
-        { ...reply("cccccccc-cccc-4ccc-8ccc-cccccccccccc", "We open at nine on weekdays."), interruption: { heardCharacterCount: 12, spokenCharacterCount: 40 } },
+        { ...reply("cccccccc-cccc-4ccc-8ccc-cccccccccccc", "We open at nine on weekdays."), interruption: { heardCharacterCount: 12, spokenCharacterCount: 40, partial: false } },
         reply("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", "And at ten on Saturdays."),
       ],
     });
 
-    const cutReply = { ...reply("cccccccc-cccc-4ccc-8ccc-cccccccccccc", "We open at nine on weekdays."), interruption: { heardCharacterCount: 12, spokenCharacterCount: 40 } };
+    const cutReply = { ...reply("cccccccc-cccc-4ccc-8ccc-cccccccccccc", "We open at nine on weekdays."), interruption: { heardCharacterCount: 12, spokenCharacterCount: 40, partial: false } };
     ports.getConversationTurn.mockResolvedValue({ conversationId, message: cutReply });
     const traceTool = ports.descriptors.find((descriptor) => descriptor.name === "turn_trace")!;
 
@@ -179,11 +179,40 @@ describe("copilot chat readers", () => {
     const trace = await traceTool.createTool(context(null)).invoke({ messageId: cutReply.id }, {} as never);
 
     expect(transcript).toMatchObject({
-      transcript: { messages: [{ interruption: { heardCharacterCount: 12, spokenCharacterCount: 40 } }, { interruption: null }] },
+      transcript: { messages: [{ interruption: { heardCharacterCount: 12, spokenCharacterCount: 40, partial: false } }, { interruption: null }] },
     });
-    expect(trace).toMatchObject({ trace: { message: { interruption: { heardCharacterCount: 12, spokenCharacterCount: 40 } } } });
+    expect(trace).toMatchObject({ trace: { message: { interruption: { heardCharacterCount: 12, spokenCharacterCount: 40, partial: false } } } });
     expect(tool.outputSchema.safeParse(transcript).success).toBe(true);
     expect(traceTool.outputSchema.safeParse(trace).success).toBe(true);
+  });
+
+  it("tells Ray in one word whether a teammate's reply on a call was spoken to the caller yet", async () => {
+    const ports = dependencies();
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "conversation_transcript")!;
+    const conversationId = "dddddddd-dddd-4ddd-8ddd-dddddddddddd";
+    const teammateReply = (id: string, content: string) => ({ id, role: "assistant" as const, source: "human_agent", content, createdAt: "2026-10-17T10:00:02.000Z" });
+    ports.getConversation.mockResolvedValue({
+      conversationId,
+      agentId: null,
+      agentName: null,
+      sourceChannel: "voice",
+      callerKind: "human" as const,
+      createdAt: "2026-10-17T10:00:00.000Z",
+      updatedAt: "2026-10-17T10:00:03.000Z",
+      messageCount: 3,
+      messages: [
+        { ...teammateReply("cccccccc-cccc-4ccc-8ccc-cccccccccccc", "Four works."), speech: { state: "spoken" as const, spokenAt: "2026-10-17T10:00:05.000Z" } },
+        { ...teammateReply("eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee", "Bring your card."), speech: { state: "pending" as const } },
+        { id: "ffffffff-ffff-4fff-8fff-ffffffffffff", role: "user" as const, source: "customer", content: "Thanks.", createdAt: "2026-10-17T10:00:03.000Z" },
+      ],
+    });
+
+    const transcript = await tool.createTool(context(null)).invoke({ conversationId }, {} as never);
+
+    expect(transcript).toMatchObject({
+      transcript: { messages: [{ speech: "spoken" }, { speech: "pending" }, { speech: null }] },
+    });
+    expect(tool.outputSchema.safeParse(transcript).success).toBe(true);
   });
 
   /**

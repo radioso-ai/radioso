@@ -58,11 +58,12 @@ export const routineFieldPatchSchema = z.object({
     operatorNotice: z.object({
       skillName: z.string().trim().min(1).max(ROUTINE_DEFINITION_LIMITS.toolRef).nullable().optional(),
       replyToSlot: z.string().trim().min(1).max(ROUTINE_DEFINITION_LIMITS.slotKey).nullable().optional(),
-    }).strict().refine((notice) => notice.skillName !== undefined || notice.replyToSlot !== undefined, {
-      message: "an operator notice edit must set its skillName or replyToSlot",
+      includeAiSummary: z.boolean().optional(),
+    }).strict().refine((notice) => notice.skillName !== undefined || notice.replyToSlot !== undefined || notice.includeAiSummary !== undefined, {
+      message: "an operator notice edit must set its skillName, replyToSlot, or includeAiSummary",
     }).optional(),
   }).strict().refine((terminal) => terminal.instruction !== undefined || terminal.operatorNotice !== undefined, {
-    message: "an ending edit must set an instruction or the operator notice's skillName or replyToSlot",
+    message: "an ending edit must set an instruction or the operator notice's routing or AI summary setting",
   })).min(1), (terminal) => terminal.stableStepId, "ending").optional(),
   slots: addressedOnce(z.array(z.object({
     key: z.string().trim().min(1).max(ROUTINE_DEFINITION_LIMITS.slotKey),
@@ -146,11 +147,11 @@ type DraftTerminal = RoutineDefinitionDraftAuthoringInput["terminals"][number];
 
 type NoticeRoutingEdit = NonNullable<NonNullable<RoutineFieldPatch["terminals"]>[number]["operatorNotice"]>;
 
-const noticeRoutingKeys = ["skillName", "replyToSlot"] as const;
+const noticeRoutingKeys = ["skillName", "replyToSlot", "includeAiSummary"] as const;
 
 const withNoticeRouting = (terminal: DraftTerminal, edit: NoticeRoutingEdit): DraftTerminal => {
   const { operatorNotice, ...withoutNotice } = terminal;
-  const setsAny = noticeRoutingKeys.some((key) => typeof edit[key] === "string");
+  const setsAny = noticeRoutingKeys.some((key) => edit[key] !== undefined && edit[key] !== null);
   if (!operatorNotice) {
     // Clearing a sender or reply-to the ending never had changes nothing.
     if (!setsAny) return terminal;
@@ -164,12 +165,15 @@ const withNoticeRouting = (terminal: DraftTerminal, edit: NoticeRoutingEdit): Dr
     }
   }
   const next: NonNullable<DraftTerminal["operatorNotice"]> = { subject: null, intro: null, ...operatorNotice };
-  for (const key of noticeRoutingKeys) {
+  for (const key of ["skillName", "replyToSlot"] as const) {
     const value = edit[key];
     if (value === undefined) continue;
-    // The default destination and no reply-to are the absence of the key, never a null.
     if (value === null) delete next[key];
     else next[key] = value;
+  }
+  if (edit.includeAiSummary !== undefined) {
+    if (edit.includeAiSummary) next.includeAiSummary = true;
+    else delete next.includeAiSummary;
   }
   return { ...withoutNotice, operatorNotice: next };
 };

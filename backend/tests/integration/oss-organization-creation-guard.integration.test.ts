@@ -7,6 +7,7 @@ import { OssOrganizationCreationGuard } from "../../src/modules/auth/composition
 import { PostgresOssOrganizationBootstrap } from "../../src/modules/auth/infra/postgresOssOrganizationBootstrap.js";
 import { PostgresOrganizationProvisioner } from "../../src/modules/auth/infra/postgresOrganizationProvisioner.js";
 import { AuthService } from "../../src/modules/auth/services/authService.js";
+import { AuthFunnelRepository } from "../../src/db/repositories/authFunnelRepository.js";
 import { AccountRepository } from "../../src/db/repositories/accountRepository.js";
 import { UserRepository } from "../../src/db/repositories/userRepository.js";
 import { AccountMembershipRepository } from "../../src/db/repositories/accountMembershipRepository.js";
@@ -44,7 +45,7 @@ describeIntegration("OSS organization creation guard integration", () => {
     const admin = new pg.Pool({ connectionString: integrationDatabaseUrl });
     try {
       await admin.query(`CREATE SCHEMA "${schema}"`);
-      for (const table of ["accounts", "users", "account_memberships", "workspaces"]) {
+      for (const table of ["accounts", "users", "account_memberships", "workspaces", "workspace_setup_state"]) {
         await admin.query(`CREATE TABLE "${schema}"."${table}" (LIKE public."${table}" INCLUDING ALL)`);
       }
     } finally {
@@ -67,6 +68,7 @@ describeIntegration("OSS organization creation guard integration", () => {
   });
 
   beforeEach(async () => {
+    await database.query("DELETE FROM workspace_setup_state");
     await database.query("DELETE FROM account_memberships");
     await database.query("DELETE FROM workspaces");
     await database.query("DELETE FROM accounts");
@@ -87,6 +89,8 @@ describeIntegration("OSS organization creation guard integration", () => {
     await expect(database.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM account_memberships"))
       .resolves.toEqual([{ count: "1" }]);
     await expect(database.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM workspaces"))
+      .resolves.toEqual([{ count: "1" }]);
+    await expect(database.query<{ count: string }>("SELECT COUNT(*)::text AS count FROM workspace_setup_state"))
       .resolves.toEqual([{ count: "1" }]);
   });
 
@@ -191,6 +195,7 @@ const createAuthService = (database: Database): AuthService => {
     userRepository,
     sessionRepository: new InMemorySessionRepository(),
     federatedIdentityRepository: new InMemoryFederatedIdentityRepository(),
+    authFunnelRepository: new AuthFunnelRepository(database.kysely),
     workspaceService,
     accountAccessService,
     accountInvitationService: new AccountInvitationService(

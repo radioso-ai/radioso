@@ -9,7 +9,7 @@ import { LogoSpinner } from '@/components/ui/spinner'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { UsageDetailsView } from '@/components/dashboard/usage-details-view'
 import { UsageTrendsView } from '@/components/dashboard/usage-trends-view'
-import { enterpriseUsageApi, workspaceApi, type AccountUsageSummary, type WorkspaceSummaryResponse } from '@/lib/api'
+import { enterpriseUsageApi, workspaceApi, type AccountUsageSummary } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
 import { editionController } from '@/lib/edition-controller'
 import { formatBytes } from '@/lib/format-bytes'
@@ -91,7 +91,7 @@ export function UsageView({ accountId }: { accountId: string }) {
   const usageLimitsEnabled = editionController.canUseEnterpriseUsageLimits()
   const [activeTab, setActiveTab] = useState<UsageViewTab>('overview')
   const [usage, setUsage] = useState<AccountUsageSummary | null>(null)
-  const [workspaceSummary, setWorkspaceSummary] = useState<WorkspaceSummaryResponse | null>(null)
+  const [workspaceSummary, setWorkspaceSummary] = useState<Awaited<ReturnType<typeof workspaceApi.getSummary>> | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 

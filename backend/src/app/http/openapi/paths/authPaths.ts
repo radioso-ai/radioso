@@ -44,7 +44,7 @@ export const registerAuthPaths = (
     },
     responses: {
       201: {
-        description: "Account created; email verification may be required before sign-in",
+        description: "Account created; when email verification is required, a pending-registration cookie is also issued",
         content: {
           "application/json": {
             schema: schemas.RegisterResponseSchema,
@@ -236,7 +236,7 @@ export const registerAuthPaths = (
     },
     responses: {
       200: {
-        description: "Email address verified",
+        description: "Email address verified and a session cookie established",
         content: {
           "application/json": {
             schema: schemas.EmailVerificationVerifyResponseSchema,
@@ -289,6 +289,34 @@ export const registerAuthPaths = (
       },
       400: {
         description: "Request validation failed",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/auth/email-verification/pending-session",
+    tags: ["Auth"],
+    summary: "Exchange a pending registration ticket for a session",
+    description:
+      "Uses the short-lived httpOnly pending-registration cookie. Returns the same response shape when the cookie is missing, invalid, expired, used, or waiting for verification.",
+    operationId: "exchangePendingRegistrationSession",
+    responses: {
+      200: {
+        description: "Pending registration status returned; a ready response also establishes the session cookie",
+        content: {
+          "application/json": {
+            schema: schemas.PendingRegistrationSessionResponseSchema,
+          },
+        },
+      },
+      429: {
+        description: "Rate limit exceeded",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,

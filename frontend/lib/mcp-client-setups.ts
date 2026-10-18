@@ -7,6 +7,10 @@ export interface McpClientSetup {
   name: string
   steps: readonly string[]
   buildSnippet: (mcpUrl: string, secret: string) => string
+  openAccess?: {
+    name: string
+    buildSnippet: (mcpUrl: string) => string
+  }
 }
 
 /** Server name the generated configuration registers the agent under. */
@@ -24,6 +28,10 @@ export const MCP_CLIENT_SETUPS: readonly McpClientSetup[] = [
       'Merge this into claude_desktop_config.json and restart Claude Desktop.',
     ],
     buildSnippet: buildConverseClientConfig,
+    openAccess: {
+      name: 'Claude',
+      buildSnippet: (mcpUrl) => buildConverseClientConfig(mcpUrl),
+    },
   },
   {
     id: 'claude-code',
@@ -39,6 +47,10 @@ export const MCP_CLIENT_SETUPS: readonly McpClientSetup[] = [
       'or merge this into ~/.cursor/mcp.json.',
     ],
     buildSnippet: buildConverseClientConfig,
+    openAccess: {
+      name: 'Cursor',
+      buildSnippet: (mcpUrl) => buildConverseClientConfig(mcpUrl),
+    },
   },
   {
     id: 'other',
@@ -47,6 +59,37 @@ export const MCP_CLIENT_SETUPS: readonly McpClientSetup[] = [
     buildSnippet: buildConverseClientConfig,
   },
 ]
+
+const buildChatGptConnectorSteps = (mcpUrl: string) => [
+  'In ChatGPT, enable Developer Mode and create a custom app.',
+  `Set the MCP server endpoint to ${mcpUrl}.`,
+  'For open access, choose no authentication. For protected access, issue an MCP credential with Connect a client and configure that credential as static bearer authentication.',
+]
+
+const buildOpenAiResponsesConfig = (mcpUrl: string) => `const response = await client.responses.create({
+  model: 'gpt-5',
+  tools: [{
+    type: 'mcp',
+    server_label: '${MCP_SERVER_NAME}',
+    server_url: '${mcpUrl}',
+    require_approval: 'never',
+  }],
+  input: 'Ask the agent a question.',
+})`
+
+/**
+ * The public-access variants live beside the credentialed client setups so endpoint
+ * syntax stays consistent while the authentication boundary remains explicit.
+ */
+export const MCP_OPEN_ACCESS_CLIENT_SETUPS = [
+  ...MCP_CLIENT_SETUPS.flatMap((setup) => setup.openAccess ? [{
+    id: setup.id,
+    name: setup.openAccess.name,
+    buildSnippet: setup.openAccess.buildSnippet,
+  }] : []),
+  { id: 'chatgpt', name: 'ChatGPT', buildSteps: buildChatGptConnectorSteps },
+  { id: 'openai-responses', name: 'OpenAI Responses API', buildSnippet: buildOpenAiResponsesConfig },
+] as const
 
 export const DEFAULT_MCP_CLIENT_ID: McpClientId = 'claude-desktop'
 

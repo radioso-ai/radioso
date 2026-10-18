@@ -61,11 +61,12 @@ describeIntegration("held replies (Postgres)", () => {
     return { workspaceId, agentId };
   };
 
-  const seedConversation = async (workspaceId: string) => {
+  const seedConversation = async (workspaceId: string, sourceChannel = "email") => {
     const conversationId = randomUUID();
-    await database.execute("INSERT INTO conversations (id, workspace_id, source_channel) VALUES ($1, $2, 'email')", [
+    await database.execute("INSERT INTO conversations (id, workspace_id, source_channel) VALUES ($1, $2, $3)", [
       conversationId,
       workspaceId,
+      sourceChannel,
     ]);
     const inboundId = await addMessage(workspaceId, conversationId, "user");
     return { conversationId, inboundId };
@@ -390,6 +391,24 @@ describeIntegration("held replies (Postgres)", () => {
     expect((await heldReplies.current(scope.workspaceId, scope.conversationId))?.id).toBe(second.id);
     expect(await heldReplies.current(randomUUID(), scope.conversationId)).toBeNull();
     expect(first.id).not.toBe(second.id);
+  });
+
+  it("filters AI-owned held replies by agent and channel across every filtered cursor page", async () => {
+    const { workspaceId, agentId } = await seedWorkspace();
+    const otherAgentId = randomUUID();
+    await database.execute("INSERT INTO agents (id, workspace_id, name) VALUES ($1, $2, 'Other')", [otherAgentId, workspaceId]);
+    const one = await seedConversation(workspaceId, "email");
+    const two = await seedConversation(workspaceId, "email");
+    const web = await seedConversation(workspaceId, "website_embed");
+    const first = (await heldReplies.insert(holdInput({ workspaceId, agentId, ...one }))).record;
+    const second = (await heldReplies.insert(holdInput({ workspaceId, agentId, ...two }))).record;
+    await heldReplies.insert(holdInput({ workspaceId, agentId: otherAgentId, ...web }));
+    const query = { agentId, channel: "email", after: null, limit: 1 };
+    const pageOne = await heldReplies.listOpen(workspaceId, query);
+    const pageTwo = await heldReplies.listOpen(workspaceId, { ...query, after: { createdAt: pageOne[0].createdAt, id: pageOne[0].id } });
+    expect([...pageOne, ...pageTwo].map((row) => row.id).sort()).toEqual([first.id, second.id].sort());
+    expect([...pageOne, ...pageTwo].every((row) => row.agentId === agentId && row.sourceChannel === "email")).toBe(true);
+    expect(await heldReplies.listOpen(randomUUID(), query)).toEqual([]);
   });
 
   it("goes with its conversation, and a deleted released message only clears the link", async () => {

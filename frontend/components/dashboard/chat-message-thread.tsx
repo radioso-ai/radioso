@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Textarea } from '@/components/ui/textarea'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { TypingIndicator } from '@/components/ui/typing-indicator'
-import { Check, CircleCheckBig, Copy, Mic, PauseCircle, ThumbsDown, ThumbsUp, VolumeX, Wrench, Workflow } from 'lucide-react'
+import { Check, CircleCheckBig, Clock, Copy, Mic, PauseCircle, ThumbsDown, ThumbsUp, Volume2, VolumeX, Wrench, Workflow } from 'lucide-react'
 import { DEFAULT_WEBSITE_EMBED_COPY, type WebsiteEmbedCopy, type WebsiteEmbedTheme } from '@/lib/embed-widget'
 import { computeSkillGroupInfo } from '@/lib/skill-thread-grouping'
 import type { RoutineThreadMarker } from '@/lib/routine-thread-grouping'
@@ -29,7 +29,7 @@ import type { WebsiteEmbedAnalyticsInput } from '@/lib/embed-analytics'
 import { humanReplyAuthor, type ReplyAttributionAudience } from '@/lib/reply-attribution'
 import { heardPercent } from '@/lib/reply-interruption'
 import { activityLine, placeActivity, threadDayBreaks } from '@/lib/conversation-activity'
-import type { ConversationActivityEntry, ReplyInterruption } from '@/lib/api-types'
+import type { ConversationActivityEntry, OperatorReplySpeech, ReplyInterruption } from '@/lib/api-types'
 import type {
   AnswerFeedbackEntry,
   AnswerFeedbackState,
@@ -178,6 +178,8 @@ export interface ChatThreadMessage {
   operatorLabel?: string
   /** A reply the caller spoke over: how much of it they heard, in spoken characters. */
   interruption?: ReplyInterruption
+  /** A teammate's reply on a call: pending until the caller's next turn speaks it, then spoken. */
+  speech?: OperatorReplySpeech
   /** A line said on a voice call rather than typed; the label marks it, in the visitor's language. */
   spokenLabel?: string
 }
@@ -196,6 +198,10 @@ function SpokenMarker({ label, theme }: { label: string; theme?: WebsiteEmbedThe
 
 function InterruptedReplyBadge({ interruption }: { interruption: ReplyInterruption }) {
   const percent = heardPercent(interruption.heardCharacterCount, interruption.spokenCharacterCount)
+  // A reply cut off mid-stream is stored as far as it was heard, so there is no share to state.
+  const tooltip = interruption.partial
+    ? 'Cut off while speaking. Only what was heard is stored.'
+    : `The caller spoke over this reply.${percent === undefined ? '' : ` About ${percent}% was heard.`}`
   return (
     <Tooltip>
       <TooltipTrigger asChild>
@@ -204,9 +210,28 @@ function InterruptedReplyBadge({ interruption }: { interruption: ReplyInterrupti
           Interrupted
         </Badge>
       </TooltipTrigger>
-      <TooltipContent side="bottom">
-        The caller spoke over this reply.{percent === undefined ? '' : ` About ${percent}% was heard.`}
-      </TooltipContent>
+      <TooltipContent side="bottom">{tooltip}</TooltipContent>
+    </Tooltip>
+  )
+}
+
+const OPERATOR_REPLY_SPEECH_BADGES = {
+  pending: { Icon: Clock, label: 'Pending', tooltip: 'The caller hears this on their next turn.' },
+  spoken: { Icon: Volume2, label: 'Spoken', tooltip: 'Spoken to the caller on the call.' },
+  skipped: { Icon: VolumeX, label: 'Not spoken: no words to say', tooltip: 'A call speaks words only, and this reply has none.' },
+} as const satisfies Record<OperatorReplySpeech['state'], { Icon: typeof Clock; label: string; tooltip: string }>
+
+function OperatorReplySpeechBadge({ speech }: { speech: OperatorReplySpeech }) {
+  const { Icon, label, tooltip } = OPERATOR_REPLY_SPEECH_BADGES[speech.state]
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Badge variant="outline" tabIndex={0} className="w-fit cursor-default gap-1 px-2 py-0 text-[11px] font-medium">
+          <Icon aria-hidden="true" className="size-3" />
+          {label}
+        </Badge>
+      </TooltipTrigger>
+      <TooltipContent side="bottom">{tooltip}</TooltipContent>
     </Tooltip>
   )
 }
@@ -845,6 +870,9 @@ export function ChatMessageThread({
                       {audience === 'operator' && message.interruption ? (
                         <InterruptedReplyBadge interruption={message.interruption} />
                       ) : null}
+                      {audience === 'operator' && message.speech ? (
+                        <OperatorReplySpeechBadge speech={message.speech} />
+                      ) : null}
                       {message.spokenLabel ? <SpokenMarker label={message.spokenLabel} theme={theme} /> : null}
                       <div
                         {...getSelectableMessageProps(message.id)}
@@ -962,7 +990,8 @@ export function ChatMessageThread({
                           {message.content ? (
                             <MessageCopyButton content={message.content} theme={theme} />
                           ) : null}
-                          {evalCaptureEnabled && conversationId && assistantMessageId
+                          {/* The heard part of a voice reply cut off mid-stream is no whole answer to evaluate. */}
+                          {evalCaptureEnabled && conversationId && assistantMessageId && !message.interruption?.partial
                             && (shouldShowEvalCapture?.(assistantMessageId) ?? true) ? (
                             <SendToEvalAction
                               conversationId={conversationId}

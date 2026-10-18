@@ -842,6 +842,17 @@ const emptyCrawlJobs = {
   hasMore: false,
 };
 
+const establishedWorkspaceSetupState = () => ({
+  purpose: null,
+  dismissed: true,
+  skippedSteps: [],
+  shouldShowFirstRun: false,
+  hasDirectivesOrRoutines: true,
+  hasNotifyDestination: false,
+  hasNotifyDeliveryConfirmed: false,
+  hasCredential: true,
+});
+
 const buildWorkspaceSummary = (input: {
   documentList: unknown;
   historyList: unknown;
@@ -874,6 +885,7 @@ const buildWorkspaceSummary = (input: {
     hasCompletedChat: conversationCount > 0,
     sampleDocumentsImported: sampleDocumentSlugs.length > 0,
     websiteCrawlerEnabled: true,
+    setup: establishedWorkspaceSetupState(),
   };
 };
 
@@ -1390,6 +1402,8 @@ export const installDashboardApiMocks = async (
     hasMore: (historyList as { hasMore?: boolean }).hasMore ?? false,
   };
   const workspaceSummary = options.workspaceSummary ?? buildWorkspaceSummary({ documentList: documents, historyList });
+  const workspaceSetupState = (workspaceSummary as { setup?: Record<string, unknown> }).setup
+    ?? establishedWorkspaceSetupState();
   const usageTrends = options.usageTrends ?? {
     granularity: "day",
     from: "2026-05-28",
@@ -1539,7 +1553,19 @@ export const installDashboardApiMocks = async (
     }
 
     if (request.method() === "GET" && path === "/workspace/summary") {
-      await json(route, workspaceSummary);
+      await json(route, { ...workspaceSummary, setup: workspaceSetupState });
+      return;
+    }
+
+    if (request.method() === "GET" && path === "/workspace/setup-state") {
+      await json(route, workspaceSetupState);
+      return;
+    }
+
+    if (request.method() === "PATCH" && path === "/workspace/setup-state") {
+      Object.assign(workspaceSetupState, request.postDataJSON());
+      workspaceSetupState.shouldShowFirstRun = workspaceSetupState.dismissed !== true;
+      await json(route, workspaceSetupState);
       return;
     }
 

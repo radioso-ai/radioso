@@ -165,6 +165,11 @@ export const buildTurnPopulationFilters = (
   );
   filters.push(`(m.source IS NULL OR m.source NOT IN (${sourcePlaceholders.join(", ")}))`);
 
+  // The heard part of a voice reply cut off mid-stream is no whole answer: it is stored without
+  // a skill outcome, grounding or retrieved chunks, so it is no AI-quality turn. A reply stored
+  // whole and marked interrupted later still is one.
+  filters.push(`COALESCE(m.metadata_json -> 'interruption' ->> 'partial', 'false') <> 'true'`);
+
   if (scope.agentId) {
     filters.push(`c.agent_id = ${bindParam(params, scope.agentId)}`);
   }

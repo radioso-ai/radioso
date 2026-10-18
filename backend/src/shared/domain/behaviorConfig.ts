@@ -337,6 +337,12 @@ export const VOICE_BEHAVIOR = {
   // this window the channel speaks the stored answer again instead of running
   // and storing a second turn; past it, an identical utterance is a new question.
   replayWindowMs: 30_000,
+  // A turn claims the teammate replies it speaks until it settles, which is at most the turn limit
+  // plus the note timeout after it starts on a turn the agent owns, and a moment on one a person
+  // owns. A claim older than this belongs to a turn that never settled (its process stopped, or
+  // its settling write was lost), so the replies count as pending again and a later turn speaks
+  // them; no live turn holds a claim this long.
+  operatorReplyClaimExpiryMs: 60_000,
   // ElevenLabs documents that a signed URL opens sessions for 15 minutes after it is issued. The
   // ElevenLabs session starter reports a start's expiresAt from it.
   elevenLabsSignedUrlValidityMs: 15 * 60_000,

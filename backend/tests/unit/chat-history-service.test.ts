@@ -861,7 +861,7 @@ describe("chat history service interrupted replies", () => {
     const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
     const question = await messageRepository.create({ conversationId: conversation.id, workspaceId: "workspace-1", role: "user", content: "When do you open?" });
     const cutReply = await messageRepository.create({ conversationId: conversation.id, workspaceId: "workspace-1", role: "assistant", content: "We open at nine on weekdays." });
-    cutReply.interruption = { heardCharacterCount: 12, spokenCharacterCount: 40 };
+    cutReply.interruption = { heardCharacterCount: 12, spokenCharacterCount: 40, partial: false };
     const fullReply = await messageRepository.create({ conversationId: conversation.id, workspaceId: "workspace-1", role: "assistant", content: "And at ten on Saturdays." });
     return { service, messageRepository, conversation, question, cutReply, fullReply };
   };
@@ -878,7 +878,7 @@ describe("chat history service interrupted replies", () => {
     for (const messages of reads) {
       for (const message of messages) {
         if (message.id === cutReply.id) {
-          expect(message.interruption).toEqual({ heardCharacterCount: 12, spokenCharacterCount: 40 });
+          expect(message.interruption).toEqual({ heardCharacterCount: 12, spokenCharacterCount: 40, partial: false });
         } else {
           expect(message).not.toHaveProperty("interruption");
         }
@@ -892,13 +892,43 @@ describe("chat history service interrupted replies", () => {
     const listSince = vi.spyOn(messageRepository, "listSinceByConversationId");
     const cursor = encodeCursor({ createdAt: fullReply.createdAt.toISOString(), id: fullReply.id, markedAt: "2026-10-15T10:00:00.000Z" });
 
-    await service.tailConversation("workspace-1", conversation.id, { cursor, limit: 10 }, { redeliverInterruptedReplies: true });
+    await service.tailConversation("workspace-1", conversation.id, { cursor, limit: 10 }, { redeliverMarkedReplies: true });
     await service.tailConversation("workspace-1", conversation.id, { cursor, limit: 10 }, { includeOwnership: true });
 
     expect(listSince.mock.calls.map(([, , input]) => input)).toEqual([
-      { sinceCreatedAt: fullReply.createdAt, sinceId: fullReply.id, sinceMarkedAt: "2026-10-15T10:00:00.000Z", limit: 10, redeliverInterruptedReplies: true },
-      { sinceCreatedAt: fullReply.createdAt, sinceId: fullReply.id, sinceMarkedAt: "2026-10-15T10:00:00.000Z", limit: 10, redeliverInterruptedReplies: false },
+      { sinceCreatedAt: fullReply.createdAt, sinceId: fullReply.id, sinceMarkedAt: "2026-10-15T10:00:00.000Z", limit: 10, redeliverMarkedReplies: true },
+      { sinceCreatedAt: fullReply.createdAt, sinceId: fullReply.id, sinceMarkedAt: "2026-10-15T10:00:00.000Z", limit: 10, redeliverMarkedReplies: false },
     ]);
+  });
+});
+
+describe("chat history service teammate replies to a caller", () => {
+  it("carries the speech state on a teammate's reply to a caller, and on no other message, on every read", async () => {
+    const { service, conversationRepository, messageRepository } = createService();
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
+    const question = await messageRepository.create({ conversationId: conversation.id, workspaceId: "workspace-1", role: "user", content: "Can I come at four?" });
+    const pending = await messageRepository.create({ conversationId: conversation.id, workspaceId: "workspace-1", role: "assistant", source: "human_agent", content: "Four works." });
+    pending.speech = { state: "pending" };
+    const spoken = await messageRepository.create({ conversationId: conversation.id, workspaceId: "workspace-1", role: "assistant", source: "human_agent", content: "See you then." });
+    spoken.speech = { state: "spoken", spokenAt: "2026-10-17T10:00:00.000Z" };
+    const expected = new Map<string, unknown>([[pending.id, { state: "pending" }], [spoken.id, { state: "spoken", spokenAt: "2026-10-17T10:00:00.000Z" }]]);
+
+    const reads = [
+      (await service.getConversation("workspace-1", conversation.id, { limit: 50, offset: 0 })).messages,
+      (await service.tailConversation("workspace-1", conversation.id, { cursor: messageRepository.cursorFor(question), limit: 10 })).messages,
+      [(await service.getConversationTurn("workspace-1", pending.id)).message],
+    ];
+
+    for (const messages of reads) {
+      for (const message of messages) {
+        if (expected.has(message.id)) {
+          expect(message.speech).toEqual(expected.get(message.id));
+        } else {
+          expect(message).not.toHaveProperty("speech");
+        }
+      }
+    }
+    expect(reads[1]?.map((message) => message.id)).toEqual([pending.id, spoken.id]);
   });
 });
 

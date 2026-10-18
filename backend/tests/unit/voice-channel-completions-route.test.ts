@@ -110,6 +110,17 @@ const elevenlabsBody = (overrides: Record<string, unknown> = {}) => ({
 
 const dataFrames = (body: string): string[] => body.split("\n\n").filter(Boolean).map((frame) => frame.slice("data: ".length));
 
+/** Chat's teammate replies on a conversation that holds none for the caller. */
+const noOperatorReplies = {
+  claims: {
+    claimPendingOperatorReplies: async () => [],
+    markOperatorRepliesSpoken: async () => [],
+    skipOperatorReplies: async () => [],
+    releaseOperatorReplies: async () => [],
+  },
+  newClaimTurnId: () => "turn-0",
+};
+
 describe("voice completions route", () => {
   it("streams the agent's reply as OpenAI chat.completion.chunk frames ending in [DONE]", async () => {
     const dependencies = createDependencies();
@@ -147,6 +158,7 @@ describe("voice completions route", () => {
       transport: "web",
       utterance: "When do you open?",
       minReleasableSentenceChars: 45,
+      streamsSpeech: true,
     }, expect.any(AbortSignal), expect.any(AbortSignal));
     expect(dependencies.accessGrantService.recordAgentChannelChatSucceeded).toHaveBeenCalledWith({
       grant: expect.objectContaining({ id: grant().id, agentId }),
@@ -186,6 +198,7 @@ describe("voice completions route", () => {
       utterance: "And on Saturdays?",
       heardUntil: "Thanks for asking, let me",
       minReleasableSentenceChars: 45,
+      streamsSpeech: true,
     }, expect.any(AbortSignal), expect.any(AbortSignal));
   });
 
@@ -323,6 +336,8 @@ describe("voice completions route", () => {
     expect(dependencies.voiceTurns.runTurn).toHaveBeenCalledWith(expect.objectContaining({
       session: { workspaceId, agentId, vendor: "generic", sessionKey: "room-7" },
       utterance: "Hello",
+      // A request that does not ask for a stream gets the whole turn at its outcome.
+      streamsSpeech: false,
     }), expect.any(AbortSignal), expect.any(AbortSignal));
   });
 
@@ -728,6 +743,7 @@ describe("voice completions route when a newer utterance supersedes the turn", (
       agents: { findVoiceProfile: async () => ({ voice: defaultAgentVoiceSettings(), defaultLocale: null }) },
       routines: { isRoutineActive: async () => false },
       ownership: { isHumanOwned: async () => false },
+      operatorReplies: noOperatorReplies,
       logger: { info: vi.fn(), warn: vi.fn() },
     });
 
@@ -964,6 +980,7 @@ describe("voice completions route outcomes", () => {
       agents: { findVoiceProfile: async () => ({ voice: defaultAgentVoiceSettings(), defaultLocale: null }) },
       routines: { isRoutineActive: async () => false },
       ownership: { isHumanOwned: async () => humanOwned },
+      operatorReplies: noOperatorReplies,
       logger: { info: vi.fn(), warn: vi.fn() },
     });
 
@@ -993,6 +1010,7 @@ describe("voice completions route outcomes", () => {
         },
         routines: { isRoutineActive: async () => false },
         ownership: { isHumanOwned: async () => false },
+        operatorReplies: noOperatorReplies,
         logger,
         timing: { bridgeAfterMs: 10_000, bridgeAfterComposingIdleMs: 10_000, turnLimitMs: 20, replayWindowMs: 30_000 },
       });
@@ -1036,9 +1054,14 @@ describe("voice completions route outcomes", () => {
         agents: { findVoiceProfile: async () => ({ voice: defaultAgentVoiceSettings(), defaultLocale: null }) },
         routines: { isRoutineActive: async () => false },
         ownership: { isHumanOwned: async () => false },
+        operatorReplies: noOperatorReplies,
         logger,
         // The audit store never answers the replay's note.
-        notes: { replyInterrupted: vi.fn(async () => {}), replyReplayed: vi.fn(() => new Promise<void>(() => {})) },
+        notes: {
+          replyInterrupted: vi.fn(async () => {}),
+          replyReplayed: vi.fn(() => new Promise<void>(() => {})),
+          operatorRepliesSpoken: vi.fn(async () => {}),
+        },
       });
       // The runtime hung up on the session's first turn before its outcome, so its stored answer is replayable.
       const hungUp = new AbortController();
@@ -1047,6 +1070,7 @@ describe("voice completions route outcomes", () => {
         session: { workspaceId, agentId, vendor: "elevenlabs", sessionKey: "conv_abc" },
         transport: "web",
         utterance: "When do you open?",
+        streamsSpeech: true,
       };
       for await (const _event of turns.runTurn(firstTurn, new AbortController().signal, hungUp.signal)) {
         // Drained like the runtime that went away.

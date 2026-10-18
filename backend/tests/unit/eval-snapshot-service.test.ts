@@ -654,6 +654,63 @@ describe("EvalSnapshotService.capture", () => {
     expect(snapshot.messages[1]?.directiveFirings).toEqual(["intro-once"]);
   });
 
+  it("refuses to capture the heard part of a voice reply cut off mid-stream, which holds no whole answer to replay against", async () => {
+    const conversation: ConversationRecord = {
+      id: "conv-voice-cut",
+      workspaceId: "ws-1",
+      agentId: null,
+      purpose: "production",
+      agentName: null,
+      agentInternalName: null,
+      sourceChannel: "voice",
+      callerKind: "human" as const,
+      sourceOrigin: null,
+      channelContext: null,
+      anonymousSessionId: null,
+      verifiedCustomerId: null,
+      entryPageUrl: null,
+      title: null,
+      createdAt: fixedDate,
+      updatedAt: fixedDate,
+    };
+    const messages: MessageRecord[] = [
+      { id: "u1", conversationId: conversation.id, workspaceId: "ws-1", role: "user", content: "When do you open?", createdAt: fixedDate },
+      {
+        id: "a1",
+        conversationId: conversation.id,
+        workspaceId: "ws-1",
+        role: "assistant",
+        content: "We open at nine.",
+        createdAt: fixedDate,
+        interruption: { heardCharacterCount: 16, spokenCharacterCount: 40, partial: true },
+      },
+      { id: "u2", conversationId: conversation.id, workspaceId: "ws-1", role: "user", content: "And Sundays?", createdAt: fixedDate },
+      {
+        id: "a2",
+        conversationId: conversation.id,
+        workspaceId: "ws-1",
+        role: "assistant",
+        content: "Closed on Sundays.",
+        createdAt: fixedDate,
+        interruption: { heardCharacterCount: 6, spokenCharacterCount: 18, partial: false },
+      },
+    ];
+    const service = new EvalSnapshotService(
+      new StubConversationRepository(conversation),
+      new StubMessageRepository(messages),
+      new StubAgentRepository(null),
+      new StubRetrievalDefaultsProvider(),
+      createRetrievalSkillSettingsResolver(),
+      new CapturingEvalRepository(),
+    );
+    const capture = (messageId: string) => service.capture({ workspaceId: "ws-1", conversationId: conversation.id, messageId, capturedBy: "account-1" });
+
+    await expect(capture("a1")).rejects.toMatchObject({ statusCode: 400 });
+    // A whole reply the caller spoke over is still an answer, and the cut part before it is history.
+    const snapshot = await capture("a2");
+    expect(snapshot.messages.map((message) => message.id)).toEqual(["u1", "a1", "u2", "a2"]);
+  });
+
   it("records a user-only replay target when the selected message is the user turn", async () => {
     const conversation: ConversationRecord = {
       id: "conv-user-target",

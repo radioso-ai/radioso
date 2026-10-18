@@ -160,6 +160,7 @@ export interface PreparedSession {
   priorRewriteContinuityState?: RewriteContinuityState;
   /** Shared per-turn response language label detected from the user message and history. */
   responseLanguage?: string;
+  routineStartMessageId?: string;
   /** Behavioral steering matched for this turn; consumed by the answer composer and the trace. */
   directiveSteering?: DirectiveSteeringResult;
   /** Ephemeral semantic assessment for this turn's admitted retrieval evidence. */

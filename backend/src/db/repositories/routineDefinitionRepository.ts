@@ -126,11 +126,13 @@ const readOperatorNotice = (
 ): NonNullable<RoutineDefinition["terminals"][number]["operatorNotice"]> => {
   const skillName = readNullableString(terminal, "operatorNoticeSkillName");
   const replyToSlot = readNullableString(terminal, "operatorNoticeReplyToSlot");
+  const includeAiSummary = readBoolean(terminal, "operatorNoticeIncludeAiSummary");
   return {
     subject: readNullableString(terminal, "operatorNoticeSubject"),
     intro: readNullableString(terminal, "operatorNoticeIntro"),
     ...(skillName ? { skillName } : {}),
     ...(replyToSlot ? { replyToSlot } : {}),
+    ...(includeAiSummary ? { includeAiSummary: true } : {}),
   };
 };
 
@@ -270,6 +272,7 @@ const definitionSelect = sql`
       'operatorNoticeIntro', te.operator_notice_intro,
       'operatorNoticeSkillName', te.operator_notice_skill_name,
       'operatorNoticeReplyToSlot', te.operator_notice_reply_to_slot,
+      'operatorNoticeIncludeAiSummary', te.operator_notice_include_ai_summary,
       'ordinal', te.ordinal
     ) ORDER BY te.ordinal ASC, te.stable_step_id ASC) AS items
     FROM routine_terminal te
@@ -1005,6 +1008,7 @@ export class RoutineDefinitionRepository {
           operator_notice_intro: terminal.operatorNotice?.intro ?? null,
           operator_notice_skill_name: terminal.operatorNotice?.skillName ?? null,
           operator_notice_reply_to_slot: terminal.operatorNotice?.replyToSlot ?? null,
+          operator_notice_include_ai_summary: terminal.operatorNotice?.includeAiSummary === true,
           ordinal: terminal.ordinal,
         })
         .execute();

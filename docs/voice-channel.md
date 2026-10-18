@@ -717,7 +717,7 @@ language since; see [Mid-call language](#mid-call-language).
 | Dialect | Session key, in order | Session locale, in order | Turn language, in order | Transport |
 |---|---|---|---|---|
 | `elevenlabs` | body `elevenlabs_extra_body.session_key` | body `elevenlabs_extra_body.locale` | the `language` argument of the newest `language_detection` tool call in `messages` | `web` |
-| `generic` | header `X-Radioso-Voice-Session`, then body `metadata.session_key` | header `X-Radioso-Voice-Locale`, then body `metadata.locale` | header `X-Radioso-Voice-Turn-Locale`, then body `metadata.turnLocale` | `web` |
+| `generic` | header `X-Radioso-Voice-Session`, then body `metadata.session_key` | header `X-Radioso-Voice-Locale`, then body `metadata.locale` | header `X-Radioso-Voice-Turn-Locale`, then body `metadata.turn_locale` | `web` |
 
 ElevenLabs hands a sentence to speech once the terminator is followed by
 whitespace and a later non-blank delta arrives; the dialect sends a space plus

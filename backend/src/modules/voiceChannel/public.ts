@@ -16,7 +16,13 @@ export type {
   VoiceSessionVisitor,
   VoiceTurnPort,
 } from "./domain.js";
-export { VoiceTurnService, type VoiceChatTurnRequest, type VoiceSessionStore, type VoiceTurnNotes } from "./services/voiceTurnService.js";
+export {
+  VoiceTurnService,
+  type VoiceChatTurnRequest,
+  type VoiceSessionStore,
+  type VoiceStoredReplyReader,
+  type VoiceTurnNotes,
+} from "./services/voiceTurnService.js";
 export { VoiceSessionStartService } from "./services/voiceSessionStartService.js";
 export { VoiceRecordingService, type VoiceRecordingAudit } from "./services/voiceRecordingService.js";
 export { VoiceRecordingErasureService } from "./services/voiceRecordingErasureService.js";

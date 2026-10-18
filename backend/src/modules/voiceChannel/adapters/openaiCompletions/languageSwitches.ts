@@ -1,5 +1,5 @@
 import { isLocaleTag } from "../../../../shared/domain/locale.js";
-import type { VoiceLanguageReportProblem, VoiceReportedTurnLanguage } from "../../domain.js";
+import { VOICE_LANGUAGE_SWITCH_REASONS, type VoiceLanguageReportProblem, type VoiceReportedTurnLanguage } from "../../domain.js";
 import { textOf, type CompletionsMessage } from "./requestSchema.js";
 
 /**
@@ -164,11 +164,17 @@ export const refusedSwitchLanguages = (messages: readonly CompletionsMessage[], 
   return [...refused];
 };
 
+/** Whether a call is one Radioso made: its reason argument is one Radioso writes. */
+const askedByRadioso = (call: ToolCall, switchTool: LanguageSwitchTool): boolean => {
+  const reason = objectOf(call.function.arguments)?.[switchTool.reasonArgument];
+  return typeof reason === "string" && (VOICE_LANGUAGE_SWITCH_REASONS as readonly string[]).includes(reason);
+};
+
 /**
- * The runtime's follow-up request after running a call of the tool: its newest message is that
- * call's result. The call's id as Radioso named it (the runtime's replay prefix removed) and
- * whether the call switched the call's language; a result refused or unreadable switched nothing.
- * Null when the newest message is no result of a call of this tool.
+ * The runtime's follow-up request after running a call of the tool that Radioso made: its newest
+ * message is that call's result. The call's id as Radioso named it (the runtime's replay prefix
+ * removed) and whether the call switched the call's language; a result refused or unreadable
+ * switched nothing. Null when the newest message is no result of such a call.
  */
 export const switchFollowUpOf = (
   messages: readonly CompletionsMessage[],
@@ -183,6 +189,9 @@ export const switchFollowUpOf = (
     const message = messages[index];
     const call = message ? callsIn(message, switchTool.tool).find((candidate) => candidate.id === replayedId) : undefined;
     if (call) {
+      if (!askedByRadioso(call, switchTool)) {
+        return null;
+      }
       const prefix = switchTool.replayedCallIdPrefix;
       const callId = prefix && replayedId.startsWith(prefix) ? replayedId.slice(prefix.length) : replayedId;
       return { callId, confirmed: typeof outcomeOf(call, messages, index, switchTool) === "object" };

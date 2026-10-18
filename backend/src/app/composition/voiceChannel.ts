@@ -21,6 +21,7 @@ import {
   type VoiceSessionStartPort,
   type VoiceSessionStartRegistry,
   type VoiceSessionStore,
+  type VoiceStoredReplyReader,
   type VoiceTurnNotes,
   type VoiceTurnPort,
   VOICE_REPLY_INTERRUPTED_EVENT,
@@ -31,6 +32,7 @@ import { isHumanOwned, type ConversationOwnershipReader } from "../../modules/ha
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
+import { isHumanAuthoredMessageSource } from "../../shared/domain/messageAuthorship.js";
 import { isVoiceVendor, type VoiceVendor } from "../../shared/domain/voiceVendor.js";
 import { ProviderConfigurationError } from "../../shared/infra/llm/providerTypes.js";
 
@@ -89,6 +91,31 @@ export const createVoiceTurnNotes = (deps: {
  * replies, marks them spoken, and marks an interrupted one. Vendor adapters mount over this port
  * in the HTTP layer.
  */
+/** The conversation's newest messages, as the message store lists them, oldest first. */
+interface RecentMessages {
+  listRecentByConversationId(
+    workspaceId: string,
+    conversationId: string,
+    limit: number,
+    options?: { roles?: readonly ("user" | "assistant" | "system")[] },
+  ): Promise<ReadonlyArray<{ id: string; role: string; content: string; source?: string }>>;
+}
+
+/**
+ * The agent's reply to the conversation's newest user message: the newest of its user and
+ * assistant messages, when that is the agent's answer with words (a teammate's reply is spoken as
+ * one, through its own claims).
+ */
+export const createVoiceStoredReplyReader = (messages: RecentMessages): VoiceStoredReplyReader => ({
+  replyToNewestUtterance: async ({ workspaceId, conversationId }) => {
+    const recent = await messages.listRecentByConversationId(workspaceId, conversationId, 4, { roles: ["user", "assistant"] });
+    const newest = recent.filter((message) => message.role === "user" || message.role === "assistant").at(-1);
+    return newest?.role === "assistant" && !isHumanAuthoredMessageSource(newest.source) && newest.content.trim().length > 0
+      ? { messageId: newest.id, text: newest.content }
+      : null;
+  },
+});
+
 export const createVoiceChannelComposition = (deps: {
   sessions: VoiceSessionStore & VoiceSessionStartLookup;
   assistantChatService: {
@@ -97,7 +124,7 @@ export const createVoiceChannelComposition = (deps: {
   agentRepository: AgentVoiceProfileRepository;
   routineStates: { loadActive(input: { sessionId: string }): Promise<unknown> };
   conversationOwnership: ConversationOwnershipReader;
-  replies: ReplyInterruptionMarker & OperatorReplySpeechClaims;
+  replies: ReplyInterruptionMarker & OperatorReplySpeechClaims & RecentMessages;
   auditService: Pick<AuditPort, "record">;
   metricsRegistry: MetricsRegistry | null;
   logger: AppLogger;
@@ -111,6 +138,7 @@ export const createVoiceChannelComposition = (deps: {
     routines: { isRoutineActive: async (conversationId) => (await deps.routineStates.loadActive({ sessionId: conversationId })) !== null },
     ownership: { isHumanOwned: async (conversationId) => isHumanOwned(await deps.conversationOwnership.load(conversationId)) },
     operatorReplies: { claims: deps.replies, newClaimTurnId: randomUUID },
+    storedReplies: createVoiceStoredReplyReader(deps.replies),
     notes: createVoiceTurnNotes({ replies: deps.replies, auditService: deps.auditService, logger: deps.logger }),
     metrics: deps.metricsRegistry,
     logger: deps.logger,

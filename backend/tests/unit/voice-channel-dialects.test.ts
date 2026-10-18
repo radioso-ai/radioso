@@ -198,6 +198,19 @@ describe("the language of one turn", () => {
       .toEqual({ turnLanguage: { tag: "it", source: "vendor_detected", isNew: true } });
   });
 
+  it("reads a switch Radioso asked for as no news for chat, and one with another reason as news", () => {
+    const asked = (reason: string) => turnLanguageOf(dialect("elevenlabs"), elevenlabsHistory(
+      { role: "user", content: "A che ora aprite?" },
+      languageSwitch({ reason, language: "it" }, "fc_switch-1"),
+      switchResult("fc_switch-1", switched("it")),
+      { role: "assistant", content: "Apriamo alle nove." },
+      { role: "user", content: "E la domenica?" },
+    ));
+
+    expect(asked("response_language")).toEqual({ turnLanguage: { tag: "it", source: "vendor_detected", isNew: false } });
+    expect(asked("The caller speaks Italian")).toEqual({ turnLanguage: { tag: "it", source: "vendor_detected", isNew: true } });
+  });
+
   it("keeps a switch an earlier turn made as the call's language, and no longer as news", () => {
     expect(turnLanguageOf(dialect("elevenlabs"), elevenlabsHistory(
       ...carriedOut("it"),
@@ -411,6 +424,23 @@ describe("the switch of the call's language a turn may ask for", () => {
     expect(languageSwitchResultFor(dialect("elevenlabs"), parsed(followUpAfter("ok", "fc_end-1", "end_call")))).toBeNull();
     expect(languageSwitchResultFor(dialect("elevenlabs"), parsed(elevenlabsHistory({ role: "user", content: "A che ora aprite?" })))).toBeNull();
     expect(languageSwitchResultFor(dialect("generic"), parsed(followUpAfter({ status: "success" })))).toBeNull();
+  });
+});
+
+describe("a replayed history that carries the vendor's keep-alive before a tool call", () => {
+  it("finds the reply the caller cut short behind the whitespace-only message the keep-alive left", () => {
+    // Observed 2026-10-18: a keep-alive sent before the switch's tool call is replayed as an
+    // assistant message of its own, holding only the space and zero-width space.
+    const request = completionsRequestSchema.parse(elevenlabsHistory(
+      { role: "user", content: "A che ora aprite?" },
+      { role: "assistant", content: "Apriamo alle nove, e la domenica..." },
+      { role: "assistant", content: " \u200B \u200B" },
+      ...carriedOut("it"),
+      { role: "user", content: "E la domenica?" },
+    ).body);
+
+    expect(heardUntilFor(dialect("elevenlabs"), request)).toBe("Apriamo alle nove, e la domenica");
+    expect(utteranceOf(request)).toBe("E la domenica?");
   });
 });
 

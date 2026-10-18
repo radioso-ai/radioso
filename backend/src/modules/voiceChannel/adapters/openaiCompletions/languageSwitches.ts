@@ -115,6 +115,12 @@ const outcomeOf = (call: ToolCall, messages: readonly CompletionsMessage[], inde
   return result[field] === success ? { tag } : "blocked";
 };
 
+/** Whether a call is one Radioso made: its reason argument is one Radioso writes. */
+const askedByRadioso = (call: ToolCall, switchTool: LanguageSwitchTool): boolean => {
+  const reason = objectOf(call.function.arguments)?.[switchTool.reasonArgument];
+  return typeof reason === "string" && (VOICE_LANGUAGE_SWITCH_REASONS as readonly string[]).includes(reason);
+};
+
 /**
  * The call's language by the newest switch the history carries that took effect. A refused switch
  * leaves the language as the one before it had it, so the search goes on past it; a switch that
@@ -137,8 +143,9 @@ export const readLanguageSwitch = (messages: readonly CompletionsMessage[], swit
         refused = true;
         continue;
       }
+      // A switch Radioso asked for is no news to chat: the turn that asked answered in it already.
       return {
-        turnLanguage: { tag: outcome.tag, source: "vendor_detected", isNew: index > previousUtterance },
+        turnLanguage: { tag: outcome.tag, source: "vendor_detected", isNew: index > previousUtterance && !askedByRadioso(call, switchTool) },
         ...(refused ? { languageReport: "blocked" as const } : {}),
       };
     }
@@ -162,12 +169,6 @@ export const refusedSwitchLanguages = (messages: readonly CompletionsMessage[], 
     }
   });
   return [...refused];
-};
-
-/** Whether a call is one Radioso made: its reason argument is one Radioso writes. */
-const askedByRadioso = (call: ToolCall, switchTool: LanguageSwitchTool): boolean => {
-  const reason = objectOf(call.function.arguments)?.[switchTool.reasonArgument];
-  return typeof reason === "string" && (VOICE_LANGUAGE_SWITCH_REASONS as readonly string[]).includes(reason);
 };
 
 /**

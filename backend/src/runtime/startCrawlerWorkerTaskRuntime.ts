@@ -10,6 +10,7 @@ import { ensureNoPendingMigrations, type MigrationTimeoutOptions } from "../db/r
 import { createLogger, type AppLogger } from "../shared/observability/logger.js";
 import type { RuntimeHandle } from "./types.js";
 import { startRuntimeTracing, stopRuntimeTracing } from "./tracing.js";
+import { runOpenAIResidencyStartupCheck } from "./openAIResidencyStartupCheck.js";
 
 interface ServerLike {
   close(callback?: (error?: Error) => void): void;
@@ -46,6 +47,7 @@ export const startCrawlerWorkerTaskRuntime = async (
     ? options.buildDependencies(options.env)
     : buildDependencies(options.env, { modules: options.applicationModules });
   dependencies.logger.info({ role: "crawler-worker-task" }, "Radioso crawler worker task runtime starting");
+  await runOpenAIResidencyStartupCheck(options.env, { logger: dependencies.logger });
   await dependencies.applicationModules.initializeAll();
   const app = (options.createApp ?? createCrawlerWorkerTaskApp)(dependencies);
   const server = (options.listen ?? defaultListen)(app, options.env.PORT, () => {

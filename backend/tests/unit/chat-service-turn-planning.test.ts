@@ -586,6 +586,44 @@ describe("chat service fused turn planning", () => {
     }
   });
 
+  it("reports the language of a planned retrieval turn while retrieval runs, ahead of the search it reported first", async () => {
+    const timeline: string[] = [];
+    let languageReported!: () => void;
+    const reported = new Promise<void>((resolve) => { languageReported = resolve; });
+    const pipeline = retrievalPipeline([]);
+    const service = buildService({
+      planner: plannerFactory({ completions: [planJson({ route: "retrieval", responseLanguage: "Italian", responseLanguageTag: "it" })] }),
+      pipeline: {
+        ...pipeline,
+        async runInterpreted(interpreted: { request: { query: string } }) {
+          timeline.push("retrieval started");
+          // Retrieval finishes only once the stream has reported the language: the report never waits for it.
+          await reported;
+          timeline.push("retrieval finished");
+          return pipeline.runInterpreted(interpreted);
+        },
+      },
+      chatGateway: pipelineChatGateway("Apriamo alle nove [[1]]."),
+      staged: countingStagedPorts(),
+    });
+
+    for await (const event of service.streamAnswer({ workspaceId: "workspace-1", query: "A che ora aprite?", stream: true, reportResponseLanguage: true })) {
+      if (event.type === "status") timeline.push(`status:${event.stage}`);
+      if (event.type === "chunk" && !timeline.includes("chunk")) timeline.push("chunk");
+      if (event.type === "language") {
+        timeline.push("language");
+        languageReported();
+      }
+    }
+
+    // Pinned as the engine path delivers it: the engine reports the search and starts retrieval,
+    // which reads the language first; the language report reaches the stream ahead of the
+    // already-queued search status, which follows once the stream is read again.
+    expect(timeline).toEqual([
+      "status:interpreting", "retrieval started", "language", "retrieval finished", "status:searching", "status:composing", "chunk",
+    ]);
+  });
+
   it("reports the response language without a tag on the stream when the plan gives its label alone", async () => {
     const service = buildService({
       planner: plannerFactory({ completions: [planJson({ route: "direct", responseLanguage: "Italian" })] }),

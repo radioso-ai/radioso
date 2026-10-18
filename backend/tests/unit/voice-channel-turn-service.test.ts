@@ -2895,6 +2895,54 @@ describe("VoiceTurnService", () => {
       );
     });
 
+    it("keeps the call in the new language on the turn after a confirmed switch: no switch again, and its lines", async () => {
+      const chat = scriptedChat([plannedIn("it")]);
+      const turns = service(chat);
+
+      const next = start(turns, offered({ utterance: "E la domenica?", turnLanguage: { tag: "it", source: "vendor_detected", isNew: false } }));
+      await vi.runAllTimersAsync();
+      const events = (await next).map(({ event }) => event);
+
+      expect(events.some((event) => event.type === "switchLanguage")).toBe(false);
+      expect(events).toContainEqual({ type: "bridge", text: "Controllo subito." });
+      expect(spokenText(events)).toBe(answer);
+      expect(chat.requests[0]).not.toHaveProperty("userExpectedLocale");
+    });
+
+    it("switches twice in one session, each switch spoken by its own follow-up", async () => {
+      const english = "We are closed on Sundays.";
+      const chat = scriptedChat([plannedIn("it", 1_300), plannedIn("en", 1_300, english)]);
+      const ids = ["switch-1", "switch-2"];
+      const metrics = fakeMetrics();
+      const turns = service(chat, { metrics, newLanguageSwitchId: () => ids.shift() ?? "switch-x" });
+      const italian = { tag: "it", source: "vendor_detected" as const, isNew: false };
+
+      const first = start(turns, offered());
+      await vi.advanceTimersByTimeAsync(1_655);
+      expect((await first).map(({ event }) => event)).toContainEqual(switchEvent);
+      const firstFollowUp = start(turns, followUp(true));
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(spokenText((await firstFollowUp).map(({ event }) => event))).toBe(answer);
+
+      const second = start(turns, offered({ utterance: "Do you open on Sundays?", turnLanguage: italian }));
+      await vi.advanceTimersByTimeAsync(1_655);
+      expect((await second).map(({ event }) => event)).toContainEqual({ ...switchEvent, switchId: "switch-2", language: "en" });
+      const secondFollowUp = start(turns, offered({
+        utterance: "Do you open on Sundays?",
+        languageSwitchResult: { switchId: "switch-2", confirmed: true },
+        turnLanguage: { tag: "en", source: "vendor_detected", isNew: false },
+      }));
+      await vi.runAllTimersAsync();
+      const spoken = (await secondFollowUp).map(({ event }) => event);
+
+      // The answer was written before the follow-up came, so it is spoken at once.
+      expect(spoken.map((event) => event.type)).toEqual(["conversation", "speech", "outcome"]);
+      expect(spokenText(spoken)).toBe(english);
+      expect(counted(metrics, "voice_language_switch_total")).toEqual([
+        { outcome: "emitted" }, { outcome: "confirmed" }, { outcome: "emitted" }, { outcome: "confirmed" },
+      ]);
+    });
+
     it("counts the switch unanswered when the caller's next utterance comes first", async () => {
       const chat = scriptedChat([plannedIn("it", 1_300), plannedIn("it", 1_300)]);
       const metrics = fakeMetrics();

@@ -803,8 +803,8 @@ Set it up in two places:
 
 On a turn, the agent's plan names the language the turn answers in, as a
 language tag. When its primary subtag (the `it` of `it-IT`) differs from the
-call's language, and the request's `tools` offer `language_detection`, the
-turn switches the call:
+call's language, the request's `tools` offer `language_detection`, and the
+turn is less than 4 seconds old, the turn switches the call:
 
 1. Radioso's reply to that request is the tool call and nothing else: one
    `tool_calls` delta whose arguments are
@@ -814,9 +814,10 @@ turn switches the call:
 2. ElevenLabs switches the voice and transcription and, about half a second
    later, sends a follow-up request whose newest message is the tool's result.
 3. Radioso speaks the answer on that follow-up, as far as it is written and
-   then as it streams. When the answer is still a while off, the caller hears
-   a bridge line in the new language, and the turn limit counts from the
-   follow-up's arrival.
+   then as it streams. The follow-up is part of the same turn: when the
+   answer is still a while off, the caller hears a bridge line in the new
+   language, and the bridge delay and the 10-second turn limit count from the
+   start of the turn, not from the follow-up.
 
 The call's language is the newest switch ElevenLabs carried out, else the
 session locale, else the agent's default locale, so the turns after a switch
@@ -832,15 +833,35 @@ earlier in the call.
 
 A turn keeps the call's language when anything was spoken on its request
 before the turn knew its language: a teammate's reply from the Inbox, or the
-bridge line of a planner that took longer than 2.5 s. A turn whose plan gives
-no language tag keeps it too; a routine step the agent is running answers
-without one. On a request that may switch, the bridge line for a search waits
-until the turn knows its language, which on a planned turn is a few
-milliseconds.
+bridge line of a planner that took longer than 2.5 s. It keeps it, too, when
+the language comes more than 4 seconds into the turn
+(`VOICE_BEHAVIOR.languageSwitchDecisionMs`), when its plan gives no language
+tag (a routine step the agent is running answers without one), when the
+request carries a switch Radioso cannot read, and when one of the two
+languages has a three-letter subtag, which Radioso cannot tell apart from a
+two-letter one. On a request that may switch, the bridge line for a search
+waits until the turn knows its language, which on a planned turn is a few
+milliseconds, or until the 4 seconds pass.
 
-When no follow-up comes within 30 seconds, or the caller speaks again first,
-the answer stays in the conversation as the turn's reply and is not spoken
-later.
+While the turn waits, the `elevenlabs` keep-alive (a space and a zero-width
+space every 2.5 s of silence) may go out before the tool call. That is safe:
+ElevenLabs shows the client an `agent_response` of whitespace, replays a
+whitespace-only assistant message before the tool call, which Radioso reads
+as nothing said, and runs the switch (probe, 2026-10-18).
+
+A follow-up can reach a Radioso server other than the one that asked for the
+switch. It reads the call's conversation instead: it bridges in the new
+language, speaks the agent's answer whole once the other server stores it,
+and speaks the fallback line in the new language if no answer is stored by
+the turn limit.
+
+When no follow-up comes within 30 seconds, the answer the turn wrote is the
+conversation's reply, and the same utterance sent again within those 30
+seconds hears it. When the caller speaks again before the follow-up and the
+answer is still being written, the newer utterance cancels the turn like any
+newer utterance: a turn that had not started its reply keeps neither the
+caller's message nor an answer, and one that had keeps the message without
+an answer, since none of it reached the caller.
 
 #### What Radioso reads
 
@@ -870,8 +891,9 @@ On such a turn:
 - The bridge line and the fallback line come in that language, ahead of the
   session locale (see [Bridge lines and the turn limit](#bridge-lines-and-the-turn-limit)).
 - When the language is news on the request (a `generic` field, or an
-  `elevenlabs` switch made after the caller's previous utterance), the agent
-  gets it as the turn's locale hint, so a reply it writes without your
+  `elevenlabs` switch made after the caller's previous utterance that
+  Radioso did not ask for itself), the agent gets it as the turn's locale
+  hint, so a reply it writes without your
   documents, such as the one to a question they do not cover, is in that
   language too. The session locale is no hint for the agent: it says how the
   call started, not what the caller speaks now.
@@ -900,12 +922,19 @@ Radioso could not read it.
 A switch adds `languageSwitch` to the log lines of both requests: `emitted`
 on the request that asked for it, logged once the turn's answer is written
 (with `speechPieceCount: 0`), and `confirmed` or `refused` on the follow-up
-that spoke the answer. A switch that got no follow-up logs
-`Voice language switch was not followed up` with
-`languageSwitch: "unanswered"`. The metric `voice_language_switch_total`
-counts the same four outcomes in its `outcome` label. The turn's outcome
-(`voice_turn_outcome_total`) is counted on the follow-up, which is the request
-the runtime receives it on.
+that spoke the answer. A switch no follow-up spoke logs
+`Voice language switch was not followed up`, with `languageSwitch:
+"unanswered"` (none came in 30 seconds, the caller spoke again first, or the
+follow-up was overtaken before it spoke) or `"mismatched"` (the session's
+follow-up was for another utterance). A follow-up that found no switched turn
+on its server logs `Voice language switch follow-up found no switched turn
+here` at warn, with `languageSwitch: "unheld"`. The metric
+`voice_language_switch_total` counts these six outcomes in its `outcome`
+label. A switching turn counts its outcome (`voice_turn_outcome_total`) and
+its lines' language (`voice_turn_language_source_total`) once: on the
+follow-up that spoke it, or, for its outcome, when its switch is let go
+unspoken. A reply that fails after the switch is logged once, as the
+switching turn's failure.
 
 Write bridge lines for every language your callers may speak. A turn in a
 language with no bridge line of its own hears none; its fallback line falls
@@ -941,10 +970,11 @@ A request whose newest message has `role: "tool"` is the runtime's
 follow-up after running a tool, not a caller turn: its newest `user` message
 is one an earlier request already answered. When the tool is the
 `language_detection` call Radioso made on the session, the follow-up speaks
-that turn's answer. Any other follow-up gets an empty completion
-(`finish_reason: "stop"`, outcome `continue`), runs no turn, and stores
-nothing; so does a `language_detection` follow-up that reaches a Radioso
-server other than the one that made the call, or comes after 30 seconds.
+that turn's answer, on whichever Radioso server it reaches (see
+[Mid-call language](#mid-call-language)). Any other follow-up, including one
+for a `language_detection` call Radioso did not make, gets an empty
+completion (`finish_reason: "stop"`, outcome `continue`), runs no turn, and
+stores nothing.
 
 ## Response
 
@@ -1227,14 +1257,14 @@ ElevenLabs agent's first message.
   workspace. The credential budget is shared by every call that uses the
   credential at the same time, so five concurrent calls share 30 turns a
   minute. Past it, the runtime gets `429`.
-- The newest-utterance rule, the 30-second replay, the bridge rule and the
-  language switch's follow-up hold within one Radioso instance. Requests of
-  one session that land on different instances do not see each other there:
-  a burst of revised transcripts split across two instances can store two
-  caller messages, a re-request that lands on another instance runs as a new
-  turn, and a switch's follow-up that lands on another instance speaks
-  nothing, so the caller hears silence for that turn while its answer is
-  stored.
+- The newest-utterance rule, the 30-second replay and the bridge rule hold
+  within one Radioso instance. Requests of one session that land on different
+  instances do not see each other there: a burst of revised transcripts split
+  across two instances can store two caller messages, and a re-request that
+  lands on another instance runs as a new turn. A language switch's
+  follow-up that lands on another instance reads the stored answer instead of
+  the switching turn's stream, so the caller hears it whole once it is
+  stored, after a bridge line, rather than sentence by sentence.
 - A reply cut off while it streamed is stored as far as ElevenLabs reports
   playing it, in whole sentences. When the newer request carries no record of
   what was played, it is stored as far as it reached ElevenLabs, which runs

@@ -69,11 +69,32 @@ const spokenOf = (frames: Array<Frame | "[DONE]">): string =>
     // The elevenlabs dialect's flush delta (a space and a zero-width space) is wire-level, not speech.
     .join("").replace(/ ?\u200B/gu, "").trim();
 
-const call = async () => {
+/** A model whose first answer waits until the test lets it go; every later one answers at once. */
+const modelHeldOnce = () => {
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => { release = resolve; });
+  let calls = 0;
+  const answerFor = async (): Promise<string> => {
+    calls += 1;
+    if (calls === 1) await released;
+    return calls === 1 ? ANSWER : LATER_ANSWER;
+  };
+  const gateway: ChatGateway = {
+    answer: answerFor,
+    async *streamAnswer() {
+      yield await answerFor();
+    },
+  };
+  return { gateway, release: () => release() };
+};
+
+const LATER_ANSWER = "La domenica siamo chiusi.";
+
+const call = async (chatGateway: ChatGateway = answeringModel) => {
   const logger = createLogger("silent");
   const info = vi.spyOn(logger, "info");
   const { app, dependencies } = createTestApp({
-    chatGateway: answeringModel,
+    chatGateway,
     logger,
     turnPlanCoordinator: new TurnPlanCoordinator(new TurnPlanService(plannerInItalian)),
   });
@@ -118,7 +139,7 @@ const call = async () => {
   const turnLogs = () => info.mock.calls
     .filter(([, message]) => message === "Voice turn finished")
     .map(([fields]) => fields as Record<string, unknown>);
-  return { runtimeSends, conversationMessages, turnLogs, chatTurnCount: () => chatTurns.mock.calls.length };
+  return { runtimeSends, conversationMessages, turnLogs, chatTurnCount: () => chatTurns.mock.calls.length, info };
 };
 
 const opening = [
@@ -186,5 +207,35 @@ describe("a call whose caller changes language, on an agent that switches with t
     expect(voiceCall.chatTurnCount()).toBe(1);
     await vi.waitFor(() => expect(voiceCall.turnLogs()).toHaveLength(2));
     expect(voiceCall.turnLogs()).toContainEqual(expect.objectContaining({ languageSwitch: "refused", languageReport: "blocked" }));
+  });
+
+  it("stores no answer for a switched turn the caller talked over while it was still writing, and answers the newer utterance", async () => {
+    const model = modelHeldOnce();
+    const voiceCall = await call(model.gateway);
+
+    const switching = await voiceCall.runtimeSends(opening);
+    const switchId = (switching[0] as Frame).choices[0]?.delta.tool_calls?.[0]?.id ?? "";
+    // The caller speaks again before the follow-up comes: ElevenLabs sends the new utterance with
+    // the switch it ran in the history.
+    const newer = voiceCall.runtimeSends([
+      ...followUpAfter(switchId, JSON.stringify({ result_type: "language_detection_success", status: "success", reason: "response_language", language: "it" })),
+      { role: "user", content: "E la domenica?" },
+    ]);
+    setTimeout(() => model.release(), 200);
+    const answered = await newer;
+
+    // The call is Italian now, so the newer turn answers without another switch.
+    expect(JSON.stringify(answered)).not.toContain("tool_calls");
+    expect(spokenOf(answered)).toContain(LATER_ANSWER);
+    // The newer utterance cancelled the switched turn before it replied: it keeps neither its
+    // user message nor an answer, and the newer turn's exchange is the conversation's.
+    expect((await voiceCall.conversationMessages()).map(({ role, content }) => ({ role, content }))).toEqual([
+      { role: "user", content: "E la domenica?" },
+      { role: "assistant", content: LATER_ANSWER },
+    ]);
+    await vi.waitFor(() => expect(voiceCall.info).toHaveBeenCalledWith(
+      expect.objectContaining({ languageSwitch: "unanswered" }),
+      "Voice language switch was not followed up",
+    ));
   });
 });

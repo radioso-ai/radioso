@@ -505,10 +505,12 @@ What happens on a turn while `enabled` is true:
   else `en`. The first of these the turn has decides; a line keyed `it` serves
   `it-IT` and `it-CH`, and an exact tag such as `pt-BR` wins over a bare `pt`.
   With no bridge line for that language and style, the caller hears nothing
-  extra. The fallback line is the first one written for the turn language, the
-  session locale, the agent's default locale or `en`, in that order, because
-  a fallback line in another language beats silence; with none of them, the
-  turn keeps waiting for the reply past 10 seconds.
+  extra. The fallback line is the one written for that language. On a turn
+  that reports a turn language, it is the first one written for the turn
+  language, the session locale, the agent's default locale or `en`, in that
+  order, so a caller who switched to a language without lines hears the
+  call's other language rather than silence. With no fallback line for the
+  language, the turn keeps waiting for the reply past 10 seconds.
 
 The 400 ms, 2.5 second and 10 second marks are the same for every agent. They follow from
 how long a caller tolerates silence, not from what an agent says, so they are
@@ -817,7 +819,7 @@ it.
 
 Write bridge lines for every language your callers may speak. A turn in a
 language with no bridge line of its own hears none; its fallback line falls
-back to the session locale's.
+back to the session locale's, then the agent's default locale's, then `en`.
 
 ```bash
 curl -sS -i -X POST \

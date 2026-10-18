@@ -44,12 +44,15 @@ describe("voice turn lines", () => {
     expect(choose({ locale: "it-IT" }).fallbackLine).toBe("Scusi, può ripetere?");
   });
 
-  it("speaks no bridge when the language has no line for the style", () => {
+  it("speaks no bridge when the session's language has no line for the style, and no fallback when it has none", () => {
     expect(choose({ locale: "pt-BR", routineActive: true }).bridge).toEqual({ style: "acknowledge", text: null });
-    expect(choose({ locale: "de" }).bridge).toEqual({ style: "check", text: null });
+    expect(choose({ locale: "de" })).toEqual({ language: { tag: "de", source: "session" }, bridge: { style: "check", text: null }, fallbackLine: null });
+    expect(choose({ locale: "pt-BR" }).fallbackLine).toBeNull();
+    // Without a turn language, the agent's default and English stand in for no session language.
+    expect(chooseVoiceTurnLines(settings, { ...inEnglish, languages: { session: "pt", agentDefault: "en" } }).fallbackLine).toBeNull();
   });
 
-  it("speaks the fallback line of the next language that has one: the turn's, the session's, the agent default's, then English", () => {
+  it("speaks a reported turn language's fallback line, else the next language's that has one: the session's, the agent default's, then English", () => {
     const fallbackOnly: AgentVoiceSettings = { ...settings, fallbackLine: { de: "Entschuldigung, bitte noch einmal.", fr: "Pardon, pouvez-vous répéter ?", en: "Sorry, could you ask me again?" } };
     const fallbackFor = (languages: LineTurn["languages"]) => chooseVoiceTurnLines(fallbackOnly, { ...inEnglish, languages }).fallbackLine;
 
@@ -57,8 +60,12 @@ describe("voice turn lines", () => {
     expect(fallbackFor({ turn: { tag: "it", source: "vendor_detected" }, session: "de-AT", agentDefault: "fr" })).toBe("Entschuldigung, bitte noch einmal.");
     expect(fallbackFor({ turn: { tag: "it", source: "turn_field" }, session: "pt", agentDefault: "fr" })).toBe("Pardon, pouvez-vous répéter ?");
     expect(fallbackFor({ turn: { tag: "it", source: "turn_field" }, session: "pt", agentDefault: "es" })).toBe("Sorry, could you ask me again?");
-    expect(chooseVoiceTurnLines({ ...settings, fallbackLine: { "it-CH": "Scusi." } }, { ...inEnglish, languages: { session: "de", agentDefault: null } }).fallbackLine)
+    expect(fallbackFor({ turn: { tag: "pt", source: "turn_field" }, session: "it", agentDefault: null })).toBe("Sorry, could you ask me again?");
+    expect(chooseVoiceTurnLines({ ...settings, fallbackLine: { "it-CH": "Scusi." } }, { ...inEnglish, languages: { turn: { tag: "de", source: "vendor_detected" }, session: "fr", agentDefault: null } }).fallbackLine)
       .toBeNull();
+    // A line that is only markers is no line, and the next language's stands in.
+    expect(chooseVoiceTurnLines({ ...settings, fallbackLine: { de: "[1]", en: "Sorry, could you ask me again?" } }, { ...inEnglish, languages: { turn: { tag: "de", source: "vendor_detected" }, agentDefault: null } }).fallbackLine)
+      .toBe("Sorry, could you ask me again?");
   });
 
   it("holds the bridge to the turn's own language while the fallback line falls through", () => {

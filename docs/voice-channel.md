@@ -1,7 +1,7 @@
 ---
 title: "Voice Channel"
-description: "Let a voice runtime such as ElevenLabs Agents speak for a Radioso agent through an OpenAI-compatible chat-completions endpoint, with sessions Radioso starts on your vendor key, one conversation per voice session, authored lines that cover the wait, a teammate's Inbox replies spoken to the caller, and the call's recording in the Inbox."
-last_updated: 2026-10-17
+description: "Let a voice runtime such as ElevenLabs Agents speak for a Radioso agent through an OpenAI-compatible chat-completions endpoint, with sessions Radioso starts on your vendor key, one conversation per voice session, authored lines that cover the wait in the language of each turn, a teammate's Inbox replies spoken to the caller, and the call's recording in the Inbox."
+last_updated: 2026-10-18
 ---
 
 # Voice Channel
@@ -110,7 +110,8 @@ session starts with a session key that ElevenLabs sends back on every turn in
 the custom LLM extra body. Allow that on the agent with
 `platform_settings.overrides.custom_llm_extra_body: true`. Radioso reads
 `elevenlabs_extra_body.session_key`, and `elevenlabs_extra_body.locale` when
-the session names the caller's language.
+the session names the caller's language. For callers who switch language
+during a call, see [Mid-call language](#mid-call-language).
 
 ### Start sessions from Radioso
 
@@ -202,9 +203,10 @@ joins the website visitor who started it, so the Inbox and Activity show the
 call next to that visitor's chats. Radioso remembers that visitor for an hour
 after the start, well past the URL's 15 minutes; a call whose first turn comes
 later still is its own conversation with no visitor. Each start mints a new key. `locale` is
-optional in the request. It tells Radioso which language the caller speaks, so
-bridge and fallback lines come in that language; leave it out and the response
-carries the agent's default locale, or `en`. `recordingNotice` is the agent's
+optional in the request. It tells Radioso which language the call starts in,
+so bridge and fallback lines come in that language until a turn reports
+another (see [Mid-call language](#mid-call-language)); leave it out and the
+response carries the agent's default locale, or `en`. `recordingNotice` is the agent's
 recording notice for the call, present when the agent wrote one: show it to
 the caller as the call starts. See [The recording notice](#the-recording-notice).
 
@@ -497,12 +499,14 @@ What happens on a turn while `enabled` is true:
   finishes in the background and is stored in the conversation. The limit
   covers the agent's own answers: once a person owns the conversation, the
   caller hears the short waiting line however long it takes to write.
-- **Language.** The lines come in the caller's language: the locale the request
-  carries (see the dialect table), else the agent's default locale, else `en`.
-  A line keyed `it` serves `it-IT` and `it-CH`; an exact tag such as `pt-BR`
-  wins over a bare `pt`. With no line for that language and style, the caller
-  hears nothing extra. With no fallback line for the language, the turn keeps
-  waiting for the reply past 10 seconds.
+- **Language.** The lines come in the turn's language: the turn language the
+  request reports (see [Mid-call language](#mid-call-language)), else the
+  session locale (see the dialect table), else the agent's default locale,
+  else `en`. The first of these the turn has decides; a line keyed `it` serves
+  `it-IT` and `it-CH`, and an exact tag such as `pt-BR` wins over a bare `pt`.
+  With no line for that language and style, the caller hears nothing extra.
+  With no fallback line for the language, the turn keeps waiting for the reply
+  past 10 seconds.
 
 The 400 ms, 2.5 second and 10 second marks are the same for every agent. They follow from
 how long a caller tolerates silence, not from what an agent says, so they are
@@ -705,10 +709,15 @@ the call and the caller's language. The dialect in the path tells Radioso
 where to look. Sources are tried in order, and the first non-empty string
 wins. A locale that is not a language tag is ignored.
 
-| Dialect | Session key, in order | Locale, in order | Transport |
-|---|---|---|---|
-| `elevenlabs` | body `elevenlabs_extra_body.session_key` | body `elevenlabs_extra_body.locale` | `web` |
-| `generic` | header `X-Radioso-Voice-Session`, then body `metadata.session_key` | header `X-Radioso-Voice-Locale`, then body `metadata.locale` | `web` |
+There are two languages to look for. The session locale is the language the
+call starts in, named once for the session. The turn language is the
+language of one turn, which a request reports when the caller has changed
+language since; see [Mid-call language](#mid-call-language).
+
+| Dialect | Session key, in order | Session locale, in order | Turn language, in order | Transport |
+|---|---|---|---|---|
+| `elevenlabs` | body `elevenlabs_extra_body.session_key` | body `elevenlabs_extra_body.locale` | the `language` argument of the newest `language_detection` tool call in `messages` | `web` |
+| `generic` | header `X-Radioso-Voice-Session`, then body `metadata.session_key` | header `X-Radioso-Voice-Locale`, then body `metadata.locale` | header `X-Radioso-Voice-Turn-Locale`, then body `metadata.turnLocale` | `web` |
 
 ElevenLabs hands a sentence to speech once the terminator is followed by
 whitespace and a later non-blank delta arrives; the dialect sends a space plus
@@ -744,13 +753,91 @@ this dialect, a style that has lines of both lengths speaks only its lines of
 line, and the server logs `voice.bridge_line_below_vendor_minimum` at warn once
 per agent, naming the agent and the two lengths.
 
+### Mid-call language
+
+A caller can start a call in English and carry on in Italian. The agent's
+answers follow by themselves: on every turn the agent reads the caller's
+language from what they said, and its quick replies come in that language
+too. The turn language is for the parts the agent does not write on the turn:
+the bridge line and the fallback line.
+
+On a turn that reports a turn language:
+
+- The bridge line and the fallback line come in that language, ahead of the
+  session locale (see [Bridge lines and the turn limit](#bridge-lines-and-the-turn-limit)).
+- The agent gets it as the turn's locale hint, so a reply it writes without
+  your documents, such as the one to a question they do not cover, is in that
+  language too.
+- The turn's log line carries `turnLanguage` and `languageSource`
+  (`vendor_detected` or `turn_field`).
+
+A turn that reports none speaks the session locale's lines, and the agent
+answers in the language the caller spoke; the session locale is no hint for
+the agent, because it says how the call started, not what the caller speaks
+now. The turn language belongs to its request alone: the session keeps the
+locale it started with, and nothing in the conversation or the visitor's
+profile changes with it.
+
+Write bridge and fallback lines for every language a caller can switch to. A
+turn in a language with no lines of its own hears no bridge line, and with no
+fallback line it keeps waiting past 10 seconds, as any turn does.
+
+**ElevenLabs.** ElevenLabs switches a call's language with its
+`language_detection` system tool, which changes the call's voice and speech
+recognition to the new language. To turn it on, list the call's languages in
+the ElevenLabs agent's **Agent** tab and add the **Detect language** system
+tool to the agent. A switch is an OpenAI tool call whose arguments carry a
+`reason` and a `language` code from that list, such as `it`, and every later
+request replays it in `messages`:
+
+```json
+{
+  "role": "assistant",
+  "content": null,
+  "tool_calls": [{
+    "id": "call_1",
+    "type": "function",
+    "function": { "name": "language_detection", "arguments": "{\"reason\":\"The caller speaks Italian\",\"language\":\"it\"}" }
+  }]
+}
+```
+
+Radioso takes the `language` of the newest such call as the turn language,
+wherever it sits in the history. When that call cannot be read (its arguments
+are not JSON, or its `language` is not a language tag), the turn reports none
+rather than an older language. ElevenLabs's
+[language detection guide](https://elevenlabs.io/docs/eleven-agents/customization/tools/system-tools/language-detection)
+covers the tool and its settings, such as switching only at the start of a
+call.
+
+ElevenLabs describes `language_detection` as a tool the LLM calls, and on a
+custom-LLM agent Radioso is the LLM. Radioso's replies carry text only and
+never call the runtime's tools (see [Request](#request)), so a call's history
+holds a switch only when ElevenLabs records one itself. Without one, the call
+keeps the language it started in, every turn speaks the session locale's
+lines, and the agent's answers still follow the caller.
+
+**Your own runtime.** On the `generic` dialect, set the turn language on each
+request whose utterance your speech recognizer heard in another language:
+
+```bash
+curl -sS -i -X POST \
+  "https://api.radioso.ai/api/v1/agents/<agent-id>/voice/generic/v1/chat/completions" \
+  -H "Authorization: Bearer $RADIOSO_AGENT_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -H "X-Radioso-Voice-Session: curl-test-1" \
+  -H "X-Radioso-Voice-Locale: en" \
+  -H "X-Radioso-Voice-Turn-Locale: it" \
+  -d '{"stream":false,"messages":[{"role":"user","content":"Siete aperti domenica?"}]}'
+```
+
 ## Request
 
 The body is an OpenAI chat-completions request.
 
 | Field | Meaning |
 |---|---|
-| `messages` | Required. The call so far. The last message with `role: "user"` is the utterance, up to 4,000 characters; its `content` is a string or an array of content parts, of which the `text` parts are read. On `elevenlabs`, an `assistant` message right before the utterance that ends in `...` is read as the part of the previous reply the caller heard. Other earlier messages and the runtime's `system` prompt are ignored. |
+| `messages` | Required. The call so far. The last message with `role: "user"` is the utterance, up to 4,000 characters; its `content` is a string or an array of content parts, of which the `text` parts are read. On `elevenlabs`, an `assistant` message right before the utterance that ends in `...` is read as the part of the previous reply the caller heard, and the newest `language_detection` call in an `assistant` message's `tool_calls` names the turn language. Other earlier messages, `tool` results and the runtime's `system` prompt are ignored. |
 | `stream` | `true` for SSE frames, `false` or absent for one JSON object. Voice runtimes send `true`. |
 | `model` | Echoed back in every response. Radioso answers with the agent's own model configuration. |
 | `tools` | Accepted. Replies carry text only and never call the runtime's tools. |
@@ -1011,7 +1098,9 @@ notice**, or as `recordingNotice` in the `voice` block, keyed by language tag
 like `fallbackLine`, one line of 1 to 200 characters each. The website embed
 shows the notice above the call bar for the whole call, and a session start
 hands your own page the same line as `recordingNotice`. The notice is in the
-call's language. When the agent has none in that language, it is in the
+call's language, the session locale, as the call starts; a caller who
+switches language later keeps the notice they were shown. When the agent has
+none in that language, it is in the
 agent's default language, then English, then whichever notice you wrote
 first, so a caller is always told when the agent has a notice at all. The
 agent does not speak it: the caller first hears ElevenLabs's own first

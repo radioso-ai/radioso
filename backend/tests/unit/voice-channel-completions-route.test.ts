@@ -76,7 +76,7 @@ const createDependencies = (overrides: Partial<AppDependencies> = {}): AppDepend
     findByIdAndWorkspaceId: vi.fn().mockResolvedValue({ id: agentId, workspaceId }),
   },
   voiceTurns: voiceTurns(),
-  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   ...overrides,
 } as unknown as AppDependencies);
 
@@ -384,6 +384,35 @@ describe("voice completions route", () => {
     expect(inputs[3]).toMatchObject({ locale: "en" });
     expect(inputs[3]).not.toHaveProperty("turnLanguage");
     expect(inputs[3]).not.toHaveProperty("languageReport");
+  });
+
+  it("answers the runtime's follow-up to a tool call with an empty completion and runs no turn", async () => {
+    const dependencies = createDependencies();
+    const app = createApp(dependencies);
+    const followUp = elevenlabsBody({
+      messages: [
+        { role: "user", content: "Parla italiano?" },
+        { role: "assistant", content: null, tool_calls: [{ id: "call_lang", type: "function", function: { name: "language_detection", arguments: "{\"language\":\"it\"}" } }] },
+        { role: "tool", tool_call_id: "call_lang", content: "{\"status\":\"success\"}" },
+      ],
+    });
+
+    const streamed = await request(app).post(completionsPath()).set("Authorization", "Bearer voice-secret").send(followUp).expect(200);
+    const whole = await request(app).post(completionsPath()).set("Authorization", "Bearer voice-secret").send({ ...followUp, stream: false }).expect(200);
+
+    expect(dataFrames(streamed.text).map((frame) => (frame === "[DONE]" ? frame : JSON.parse(frame).choices[0]))).toEqual([
+      { index: 0, delta: { role: "assistant", content: "" }, finish_reason: null },
+      { index: 0, delta: {}, finish_reason: "stop" },
+      "[DONE]",
+    ]);
+    expect(whole.headers["x-radioso-voice-outcome"]).toBe("continue");
+    expect(whole.body.choices[0]).toMatchObject({ message: { role: "assistant", content: "" }, finish_reason: "stop" });
+    expect(dependencies.voiceTurns.runTurn).not.toHaveBeenCalled();
+    expect(dependencies.accessGrantService.recordAgentChannelChatSucceeded).not.toHaveBeenCalled();
+    expect(dependencies.logger.debug).toHaveBeenCalledWith(
+      { event: "voice.tool_followup_ignored", dialect: "elevenlabs", agentId },
+      "Voice tool result follow-up answered with an empty completion",
+    );
   });
 
   it("reads the generic dialect's session key from its header", async () => {

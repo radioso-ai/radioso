@@ -777,14 +777,17 @@ What Radioso reads, on a request that reports a turn language:
 - **`elevenlabs`:** a call of ElevenLabs's `language_detection` system tool
   in `messages`, an assistant message's OpenAI tool call whose arguments
   carry a `reason` and a `language` code such as `it`, with the `tool`
-  message that answers it (the same `tool_call_id`). The result is the
-  tool's result object as JSON, read by its `status` (`success`) and
-  `is_error`, as ElevenLabs's
+  message that answers it: the nearest one after it with the same
+  `tool_call_id`. A result object (JSON) is read by its `status` (`success`)
+  and `is_error`, as ElevenLabs's
   [conversation API](https://elevenlabs.io/docs/api-reference/conversations/get)
-  describes system tool results. The newest call that took effect is the
-  call's language. A call ElevenLabs refused leaves the language the one
-  before it set. A newest call without a result, with a result of another
-  shape, or without a language tag gives the turn no turn language.
+  describes system tool results; a result in plain text is the error
+  ElevenLabs gives the LLM for a switch it refused. The newest call that took
+  effect is the call's language, and a refused call leaves the language the
+  one before it set. When Radioso reaches a call it cannot read (no result, a
+  result object of another shape or JSON that does not parse, or no language
+  tag in its arguments), the call may be in either language, so the turn has
+  no turn language.
 - **`generic`:** the `X-Radioso-Voice-Turn-Locale` header, then
   `metadata.turn_locale`, on each request whose utterance your speech
   recognizer heard in another language.
@@ -841,6 +844,12 @@ The body is an OpenAI chat-completions request.
 
 Other fields, such as `temperature`, `max_tokens` and `stream_options`, are
 accepted and have no effect.
+
+A request whose newest message has `role: "tool"` is the runtime's
+follow-up after running a tool, not a caller turn: its newest `user` message
+is one an earlier request already answered. Radioso answers it with an empty
+completion (`finish_reason: "stop"`, outcome `continue`), runs no turn, and
+stores nothing.
 
 ## Response
 

@@ -10,9 +10,11 @@ const messageSchema = z.object({
   content: z.union([z.string(), z.array(contentPartSchema)]).nullish(),
 }).passthrough();
 
-type CompletionsMessage = z.infer<typeof messageSchema>;
+/** One message of the call the runtime replays; fields Radioso does not name (`tool_calls`, `tool_call_id`) pass through. */
+export type CompletionsMessage = z.infer<typeof messageSchema>;
 
-const textOf = (content: CompletionsMessage["content"]): string => {
+/** A message's text: a string, or its `text` content parts joined. */
+export const textOf = (content: CompletionsMessage["content"]): string => {
   if (typeof content === "string") {
     return content;
   }
@@ -65,6 +67,12 @@ export const completionsRequestSchema = z.object({
 });
 
 type CompletionsRequest = z.infer<typeof completionsRequestSchema>;
+
+/**
+ * The runtime's request right after it ran a tool the reply called: the newest message is that
+ * tool's result, so the newest user message is one an earlier request already answered.
+ */
+export const isToolResultFollowUp = (request: CompletionsRequest): boolean => request.messages.at(-1)?.role === "tool";
 
 export const utteranceOf = (request: CompletionsRequest): string | null => {
   const utterance = utteranceIn(request.messages);

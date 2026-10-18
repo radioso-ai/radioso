@@ -1,6 +1,7 @@
 import { isLocaleTag } from "../../../../shared/domain/locale.js";
 import type { VoiceTransport } from "../../domain.js";
-import { readLanguageSwitch, type LanguageSwitchReading, type LanguageSwitchTool } from "./languageSwitches.js";
+import { readLanguageSwitch, type LanguageSwitchTool, type TurnLanguageReading } from "./languageSwitches.js";
+import type { CompletionsMessage } from "./requestSchema.js";
 
 /** Where one value travels on a request: a header, or a path into the JSON body. */
 type CompletionsFieldSource = { header: string } | { bodyPath: readonly string[] };
@@ -156,10 +157,13 @@ export const localeFor = (dialect: CompletionsDialect, request: CompletionsReque
  * history that took effect; one that cannot be read stops the search and is reported, since the
  * call may then be in either language.
  */
-export const turnLanguageFor = (dialect: CompletionsDialect, request: CompletionsRequestParts): LanguageSwitchReading => {
+export const turnLanguageFor = (
+  dialect: CompletionsDialect,
+  request: CompletionsRequestParts & { messages: readonly CompletionsMessage[] },
+): TurnLanguageReading => {
   for (const source of dialect.turnLocaleFrom) {
     if ("languageSwitch" in source) {
-      const reading = readLanguageSwitch(request.body, source.languageSwitch);
+      const reading = readLanguageSwitch(request.messages, source.languageSwitch);
       if (reading.turnLanguage || reading.languageReport) {
         return reading;
       }

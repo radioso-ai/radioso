@@ -426,8 +426,14 @@ helpers and the shared chat message limit from `app/http`
   re-request replays it, and counts its outcome once its chat turn ends; a
   switching turn's outcome and lines' language are counted once. A reply that
   fails after the switch is the switched turn's failure, logged once. A switch
-  Radioso asked for is no `userExpectedLocale` news on the next turn.
-  `voice_language_switch_total{outcome}` counts the six outcomes.
+  Radioso asked for is no `userExpectedLocale` news on the next turn. Two
+  series count switches: `voice_language_switch_total{emitted, unanswered,
+  mismatched}` where the switching turn is held, and
+  `voice_language_switch_followup_total{confirmed, refused, unheld}` where the
+  follow-up arrives; `unheld` logs at info, since it is the multi-instance
+  path. A switch let go unspoken counts its turn's outcome and lines'
+  language when its chat turn ends, and the switching turn's own log line
+  carries its reply's outcome rather than the switch's `continue`.
 - **Another tool's follow-up is no turn.** A request whose newest message has
   `role: "tool"` for any other tool is the runtime's follow-up after running
   it; read as a turn, its newest user message would be answered again (a

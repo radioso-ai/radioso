@@ -3,6 +3,12 @@ import type { VoiceBridgeStyle } from "../../agents/public.js";
 import type { ChatTurnHandoffReason } from "../../chat/contracts/index.js";
 import type { VoiceLanguageSwitchOutcome, VoiceTurnLanguageSource, VoiceTurnOutcome } from "../domain.js";
 
+/** A switch's fate, as the instance holding the turn that asked for it sees it. */
+type VoiceLanguageSwitchFate = Extract<VoiceLanguageSwitchOutcome, "emitted" | "unanswered" | "mismatched">;
+
+/** How the runtime's follow-up after a switch was handled, as the instance it reached sees it. */
+type VoiceLanguageSwitchFollowUp = Extract<VoiceLanguageSwitchOutcome, "confirmed" | "refused" | "unheld">;
+
 export type VoiceTurnMetricsSink = Pick<MetricsRegistry, "observeHistogram" | "incrementCounter">;
 
 const FIRST_SPEECH_BUCKETS_MS = [250, 500, 900, 1_200, 1_500, 2_000, 3_000, 5_000, 8_000, 10_000, 12_000];
@@ -48,10 +54,26 @@ export const recordVoiceTurnLanguage = (metrics: VoiceTurnMetricsSink | null | u
   });
 };
 
-/** Where a switch of the call's language a turn asked the runtime for stands. The language is never a label. */
-export const recordVoiceLanguageSwitch = (metrics: VoiceTurnMetricsSink | null | undefined, outcome: VoiceLanguageSwitchOutcome): void => {
+/**
+ * Switches of the call's language: each one a turn asks for (`emitted`), and each one let go with
+ * no follow-up speaking it (`unanswered`, `mismatched`), by the instance holding the turn. The
+ * language is never a label.
+ */
+export const recordVoiceLanguageSwitch = (metrics: VoiceTurnMetricsSink | null | undefined, outcome: VoiceLanguageSwitchFate): void => {
   metrics?.incrementCounter("voice_language_switch_total", {
-    help: "Switches of a call's language a voice turn asked the runtime for (emitted), and how the runtime's follow-up reported them (confirmed, refused), or that none came (unanswered)",
+    help: "Switches of a call's language voice turns asked the runtime for (emitted), and those let go unspoken: no follow-up came or one was overtaken (unanswered), or the session's follow-up was for another utterance (mismatched)",
+    labels: { outcome },
+  });
+};
+
+/**
+ * The runtime's follow-ups after a switch, by the instance each reached: it spoke the held turn's
+ * answer after the runtime carried the switch out (`confirmed`) or refused it (`refused`), or it
+ * held no turn for the follow-up (`unheld`).
+ */
+export const recordVoiceLanguageSwitchFollowUp = (metrics: VoiceTurnMetricsSink | null | undefined, outcome: VoiceLanguageSwitchFollowUp): void => {
+  metrics?.incrementCounter("voice_language_switch_followup_total", {
+    help: "Follow-ups of a voice turn's switch of the call's language: speaking the held answer once the runtime switched (confirmed) or refused (refused), or holding no switched turn for it (unheld)",
     labels: { outcome },
   });
 };

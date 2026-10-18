@@ -32,6 +32,7 @@ import {
   recordVoiceBridgeDue,
   recordVoiceFirstSpeech,
   recordVoiceLanguageSwitch,
+  recordVoiceLanguageSwitchFollowUp,
   recordVoiceReplyInterrupted,
   recordVoiceTurnLanguage,
   recordVoiceTurnLimit,
@@ -262,6 +263,8 @@ interface VoiceTurnRecord {
   spokeStoredReply?: boolean;
   /** On a turn that switched: when no follow-up spoke its answer, so its exchange reads as cut off then. */
   unheardAt?: number;
+  /** On a turn that switched: its reply, running on for the follow-up; its outcome is the turn's own. */
+  switchedReply?: SwitchedReply;
 }
 
 /** What a turn's policy is built from: the agent's voice profile and the conversation's state at turn start. */
@@ -620,8 +623,9 @@ export class VoiceTurnService implements VoiceTurnPort {
     const taken = this.switchedTurns.take(sessionKey, result.switchId, input.utterance);
     if (taken.kind === "mismatched") {
       // The session's switched turn answered another utterance; it is let go, replayable, and this
-      // follow-up, for a switch no turn here asked for, says nothing.
+      // follow-up, which no turn here is held for, says nothing.
       record.languageSwitch = "mismatched";
+      recordVoiceLanguageSwitchFollowUp(this.dependencies.metrics, "unheld");
       record.result = "completed";
       record.outcome = CONTINUE_OUTCOME;
       yield CONTINUE;
@@ -664,7 +668,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       return;
     }
     record.languageSwitch = result.confirmed ? "confirmed" : "refused";
-    recordVoiceLanguageSwitch(this.dependencies.metrics, record.languageSwitch);
+    recordVoiceLanguageSwitchFollowUp(this.dependencies.metrics, record.languageSwitch);
     // This request delivers the switched turn's outcome, so its log counts it.
     switched.outcomeCounted = true;
     // Whatever reached this request's caller of the answer is what chat keeps if they cut it off.
@@ -695,7 +699,7 @@ export class VoiceTurnService implements VoiceTurnPort {
     startedAt: number,
   ): AsyncGenerator<VoiceTurnEvent> {
     record.languageSwitch = "unheld";
-    recordVoiceLanguageSwitch(this.dependencies.metrics, "unheld");
+    recordVoiceLanguageSwitchFollowUp(this.dependencies.metrics, "unheld");
     const conversationId = await this.dependencies.sessions.findConversationId(input.session);
     if (!conversationId) {
       record.result = "completed";
@@ -1017,8 +1021,10 @@ export class VoiceTurnService implements VoiceTurnPort {
     // outcome when it is let go. A follow-up that found no switched turn counts no outcome either.
     const switchedOnly = record.languageSwitch !== undefined && record.languageSwitch !== "confirmed" && record.languageSwitch !== "refused";
     const handoffReason = record.speaksFor?.record.handoffReason ?? record.handoffReason;
-    if (record.outcome && !switchedOnly) {
-      recordVoiceTurnOutcome(metrics, record.outcome.kind, handoffReason);
+    // A turn that switched delivered only the switch; its reply's own outcome is the turn's.
+    const outcome = record.switchedReply?.outcome() ?? record.outcome;
+    if (outcome && !switchedOnly) {
+      recordVoiceTurnOutcome(metrics, outcome.kind, handoffReason);
     }
     if (record.language && record.languageSwitch !== "emitted") {
       recordVoiceTurnLanguage(metrics, record.language.source);
@@ -1035,7 +1041,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       durationMs: finishedAt - startedAt,
       speechPieceCount: record.speechPieceCount,
       ...(record.operatorReplyClaims.spokenCount > 0 ? { spokenOperatorReplies: record.operatorReplyClaims.spokenCount } : {}),
-      ...(record.outcome ? { outcome: record.outcome.kind } : {}),
+      ...(outcome ? { outcome: outcome.kind } : {}),
       ...(handoffReason ? { handoffReason } : {}),
       ...((record.speaksFor?.record ?? record).reply?.partial ? { storedPartialReply: true } : {}),
       ...record.policy,
@@ -1047,8 +1053,9 @@ export class VoiceTurnService implements VoiceTurnPort {
     } else if (record.result === "failed") {
       logger.warn({ ...fields, errorClass: errorClassOf(failure) }, "Voice turn failed");
     } else if (record.languageSwitch === "unheld") {
-      // The switched turn runs elsewhere, or was let go: the caller heard its stored answer, or the fallback line.
-      logger.warn(fields, "Voice language switch follow-up found no switched turn here");
+      // The expected path when the switched turn runs on another instance: the caller heard its
+      // stored answer whole, or the fallback line.
+      logger.info(fields, "Voice language switch follow-up found no switched turn here");
     } else if (record.policy?.turnLimitReached) {
       // The caller heard the fallback line, or kept waiting when the agent has none for the locale.
       logger.warn(fields, "Voice turn reached the turn limit");
@@ -1302,6 +1309,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       switched: (rest, phasesSeen) => {
         const reply = new SwitchedReply(rest, phasesSeen);
         record.languageSwitch = "emitted";
+        record.switchedReply = reply;
         record.drain = reply.drained;
         recordVoiceLanguageSwitch(this.dependencies.metrics, "emitted");
         if (switchId !== null) {
@@ -1322,20 +1330,30 @@ export class VoiceTurnService implements VoiceTurnPort {
    */
   private switchUnspoken(turn: SwitchedTurn, reason: UnspokenSwitchReason): void {
     recordVoiceLanguageSwitch(this.dependencies.metrics, reason);
-    this.dependencies.logger.info({
-      agentId: turn.input.session.agentId,
-      vendor: turn.input.session.vendor,
-      conversationId: turn.record.conversationId,
-      languageSwitch: reason,
-    }, "Voice language switch was not followed up");
     turn.record.unheardAt = turn.claim.outcomeAt ?? this.now();
     this.memory.markUnheard(turn.sessionKey, turn.claim, turn.record.unheardAt);
+    // No follow-up counts the turn's outcome and lines' language, so they are counted here, once
+    // its chat turn ends, and logged with the reply's own outcome.
     void turn.reply.drained.then(() => {
+      if (turn.outcomeCounted) return;
+      turn.outcomeCounted = true;
       const outcome = turn.reply.outcome();
-      if (!turn.outcomeCounted && outcome) {
-        turn.outcomeCounted = true;
-        recordVoiceTurnOutcome(this.dependencies.metrics, outcome.kind, turn.record.handoffReason);
+      const { record } = turn;
+      if (outcome) {
+        recordVoiceTurnOutcome(this.dependencies.metrics, outcome.kind, record.handoffReason);
       }
+      if (record.language) {
+        recordVoiceTurnLanguage(this.dependencies.metrics, record.language.source);
+      }
+      this.dependencies.logger.info({
+        agentId: turn.input.session.agentId,
+        vendor: turn.input.session.vendor,
+        conversationId: record.conversationId,
+        languageSwitch: reason,
+        ...(outcome ? { outcome: outcome.kind } : {}),
+        ...(record.handoffReason ? { handoffReason: record.handoffReason } : {}),
+        ...languageFields(record.language, turn.input),
+      }, "Voice language switch was not followed up");
     });
   }
 

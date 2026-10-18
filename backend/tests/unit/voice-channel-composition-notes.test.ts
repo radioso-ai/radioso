@@ -108,24 +108,26 @@ describe("voice channel composition: the stored answer a switch's follow-up read
     return { reader: createVoiceStoredReplyReader({ listRecentByConversationId }), listRecentByConversationId };
   };
 
-  it("reads the agent's answer to the newest user message, past a system message", async () => {
+  it("reads the newest user message and the agent's answer to it, past a system message", async () => {
     const { reader, listRecentByConversationId } = readerOver([
       { id: "u1", role: "user", content: "A che ora aprite?" },
       { id: "a1", role: "assistant", content: "Apriamo alle nove.", source: "ai_agent" },
       { id: "s1", role: "system", content: "routine note" },
     ]);
 
-    expect(await reader.replyToNewestUtterance(conversation)).toEqual({ messageId: "a1", text: "Apriamo alle nove." });
+    expect(await reader.newestExchange(conversation)).toEqual({ utterance: "A che ora aprite?", reply: { messageId: "a1", text: "Apriamo alle nove." } });
     expect(listRecentByConversationId).toHaveBeenCalledWith("workspace-1", "conversation-1", 4, { roles: ["user", "assistant"] });
   });
 
-  it("reads nothing while the newest message is the caller's, a teammate's reply, or an empty answer", async () => {
+  it("reads no answer while the newest message is the caller's, a teammate's reply, or an empty answer", async () => {
     const pending = readerOver([{ id: "a0", role: "assistant", content: "Ciao." }, { id: "u1", role: "user", content: "A che ora aprite?" }]);
     const teammate = readerOver([{ id: "u1", role: "user", content: "A che ora aprite?" }, { id: "o1", role: "assistant", content: "Sono Marta.", source: "human_agent" }]);
     const empty = readerOver([{ id: "u1", role: "user", content: "A che ora aprite?" }, { id: "a1", role: "assistant", content: "  " }]);
+    const none = readerOver([{ id: "a0", role: "assistant", content: "Ciao." }]);
 
-    expect(await pending.reader.replyToNewestUtterance(conversation)).toBeNull();
-    expect(await teammate.reader.replyToNewestUtterance(conversation)).toBeNull();
-    expect(await empty.reader.replyToNewestUtterance(conversation)).toBeNull();
+    expect(await pending.reader.newestExchange(conversation)).toEqual({ utterance: "A che ora aprite?", reply: null });
+    expect(await teammate.reader.newestExchange(conversation)).toEqual({ utterance: "A che ora aprite?", reply: null });
+    expect(await empty.reader.newestExchange(conversation)).toEqual({ utterance: "A che ora aprite?", reply: null });
+    expect(await none.reader.newestExchange(conversation)).toBeNull();
   });
 });

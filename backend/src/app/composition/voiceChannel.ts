@@ -102,17 +102,21 @@ interface RecentMessages {
 }
 
 /**
- * The agent's reply to the conversation's newest user message: the newest of its user and
- * assistant messages, when that is the agent's answer with words (a teammate's reply is spoken as
- * one, through its own claims).
+ * The conversation's newest user message and the agent's reply to it: an assistant message after
+ * it with words, written by the agent (a teammate's reply is spoken through its own claims).
  */
 export const createVoiceStoredReplyReader = (messages: RecentMessages): VoiceStoredReplyReader => ({
-  replyToNewestUtterance: async ({ workspaceId, conversationId }) => {
-    const recent = await messages.listRecentByConversationId(workspaceId, conversationId, 4, { roles: ["user", "assistant"] });
-    const newest = recent.filter((message) => message.role === "user" || message.role === "assistant").at(-1);
-    return newest?.role === "assistant" && !isHumanAuthoredMessageSource(newest.source) && newest.content.trim().length > 0
-      ? { messageId: newest.id, text: newest.content }
-      : null;
+  newestExchange: async ({ workspaceId, conversationId }) => {
+    const recent = (await messages.listRecentByConversationId(workspaceId, conversationId, 4, { roles: ["user", "assistant"] }))
+      .filter((message) => message.role === "user" || message.role === "assistant");
+    const userIndex = recent.map((message) => message.role).lastIndexOf("user");
+    const utterance = recent[userIndex];
+    if (!utterance) {
+      return null;
+    }
+    const reply = recent.slice(userIndex + 1)
+      .find((message) => !isHumanAuthoredMessageSource(message.source) && message.content.trim().length > 0);
+    return { utterance: utterance.content, reply: reply ? { messageId: reply.id, text: reply.content } : null };
   },
 });
 

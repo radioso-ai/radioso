@@ -13,6 +13,8 @@ export interface VoiceTurnClaim {
   /** When the turn's outcome left the turn. */
   outcomeAt: number | null;
   settled: boolean;
+  /** Aborted once the request loses its caller: a newer request of the session overtakes it, or the runtime hangs up. */
+  readonly lost: AbortController;
 }
 
 /** A turn's stored answer. */
@@ -122,9 +124,18 @@ export class VoiceSessionMemory {
     const previous = state.newest;
     if (previous && !previous.settled) {
       previous.supersededAt ??= now;
+      previous.lost.abort();
     }
     const overtook = previous && !previous.settled ? previous : null;
-    const claim: VoiceTurnClaim = { sequence: ++this.arrivals, overtook, supersededAt: null, hungUpAt: null, outcomeAt: null, settled: false };
+    const claim: VoiceTurnClaim = {
+      sequence: ++this.arrivals,
+      overtook,
+      supersededAt: null,
+      hungUpAt: null,
+      outcomeAt: null,
+      settled: false,
+      lost: new AbortController(),
+    };
     state.newest = claim;
     state.open += 1;
     return claim;

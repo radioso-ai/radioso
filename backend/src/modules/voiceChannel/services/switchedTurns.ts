@@ -23,11 +23,17 @@ export class SwitchedReply {
   /**
    * The reply's events from its first, as far as they have come, then as they come; it fails as the
    * reply did. A phase the reply has already moved past (speech or the outcome came after it) is
-   * left out, so a follow-up that finds the answer written does not bridge before it.
+   * left out, so a follow-up that finds the answer written does not bridge before it. Once
+   * `stop` aborts (the reader lost its caller) it ends with `continue` at once, without waiting
+   * for the reply's next event; the reply itself runs on.
    */
-  async *read(): AsyncGenerator<VoiceReplyEvent> {
+  async *read(stop?: AbortSignal): AsyncGenerator<VoiceReplyEvent> {
     let index = 0;
     for (;;) {
+      if (stop?.aborted) {
+        yield { type: "outcome", outcome: { kind: "continue" } };
+        return;
+      }
       if (index < this.events.length) {
         const event = this.events[index];
         index += 1;
@@ -40,6 +46,7 @@ export class SwitchedReply {
       }
       await new Promise<void>((resolve) => {
         this.waiting.push(resolve);
+        stop?.addEventListener("abort", () => resolve(), { once: true });
       });
     }
   }
@@ -92,8 +99,11 @@ interface HeldTurn<Turn> {
 /** Why a held turn is let go without a follow-up speaking it. */
 export type UnspokenSwitchReason = "unanswered" | "mismatched";
 
-/** What a follow-up finds: the session's held turn, and whether it names the switch that turn asked for. */
-type SwitchedTurnTake<Turn> = { kind: "taken"; turn: Turn; sameSwitch: boolean } | { kind: "none" };
+/**
+ * What a follow-up finds: the session's held turn, and whether it names the switch that turn
+ * asked for; a held turn for another utterance, which it lets go; or nothing held.
+ */
+type SwitchedTurnTake<Turn> = { kind: "taken"; turn: Turn; sameSwitch: boolean } | { kind: "mismatched" } | { kind: "none" };
 
 /**
  * The turns of each session that asked the runtime to switch the call's language and wait for its
@@ -135,7 +145,7 @@ export class SwitchedTurns<Turn> {
     }
     if (!sameUtterance(held.utterance, utterance)) {
       this.unspoken(held.turn, "mismatched");
-      return { kind: "none" };
+      return { kind: "mismatched" };
     }
     return { kind: "taken", turn: held.turn, sameSwitch: held.switchId === switchId };
   }

@@ -8,7 +8,7 @@ import { z } from "zod";
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
-import { isLocaleTag } from "../../../shared/domain/locale.js";
+import { isLocaleTag, localeTagOf } from "../../../shared/domain/locale.js";
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import { normalizeLlmClassifierLanguageLabel } from "../../../shared/domain/llmClassifierFields.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
@@ -476,9 +476,10 @@ const rawTurnPlanSchema = z.object({
   intentTopic: z.string().nullable(),
   rewrite: rewriteSchema.nullable(),
   responseLanguage: z.string().nullable(),
-  // Optional (required in the provider schema) so the schema-less fallback contract still
-  // parses a reply that omits it; an unusable tag is dropped without failing the plan.
-  responseLanguageTag: z.string().nullable().optional(),
+  // Read on its own, like the quick-reply fields: the plan's one structural language field is
+  // optional (required in the provider schema), and a missing or unusable value of any type is
+  // dropped without failing the plan on any channel.
+  responseLanguageTag: z.unknown().optional(),
   routineRankings: z.array(z.object({
     routineId: z.string().min(1),
     confidence: confidenceSchema,
@@ -820,12 +821,6 @@ const parseQuickReply = (
   };
 };
 
-/** A planner-written language tag when it has the BCP 47 shape; undefined otherwise. */
-const languageTagOf = (value: string | null | undefined): string | undefined => {
-  const tag = value?.trim() ?? "";
-  return isLocaleTag(tag) ? tag : undefined;
-};
-
 /**
  * Strict parse + semantic validation. Any structural or semantic problem returns
  * `null` (whole-plan rejection — never partial acceptance), so the caller falls
@@ -879,7 +874,7 @@ export const parseTurnPlan = (
   if (parsed.responseLanguage !== null && !responseLanguage) {
     return null;
   }
-  const responseLanguageTag = responseLanguage ? languageTagOf(parsed.responseLanguageTag) : undefined;
+  const responseLanguageTag = responseLanguage ? localeTagOf(parsed.responseLanguageTag) : undefined;
 
   const routineRankings: TurnPlan["routineRankings"] = [];
   const seenRoutineIds = new Set<string>();

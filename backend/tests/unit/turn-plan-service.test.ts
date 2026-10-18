@@ -359,6 +359,14 @@ describe("parseTurnPlan", () => {
     expect(withoutLanguage).not.toHaveProperty("responseLanguageTag");
   });
 
+  it("keeps the plan when the language tag is not a string at all", () => {
+    for (const responseLanguageTag of [7, { tag: "it" }, ["it"], true]) {
+      const plan = parseTurnPlan(validPlanJson({ responseLanguage: "Italian", responseLanguageTag }), candidates);
+      expect(plan?.responseLanguage).toBe("Italian");
+      expect(plan).not.toHaveProperty("responseLanguageTag");
+    }
+  });
+
   it("parses a plan without a language tag (schema-less fallback contract)", () => {
     const plan = parseTurnPlan(validPlanJson(), candidates);
     expect(plan?.responseLanguage).toBe("English");

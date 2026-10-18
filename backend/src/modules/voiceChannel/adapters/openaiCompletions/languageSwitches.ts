@@ -1,4 +1,4 @@
-import { isLocaleTag } from "../../../../shared/domain/locale.js";
+import { localeTagOf } from "../../../../shared/domain/locale.js";
 import { VOICE_LANGUAGE_SWITCH_REASONS, type VoiceLanguageReportProblem, type VoiceReportedTurnLanguage } from "../../domain.js";
 import { textOf, type CompletionsMessage } from "./requestSchema.js";
 
@@ -52,11 +52,6 @@ const objectOf = (value: unknown): Record<string, unknown> | undefined => {
 /** Text that is meant as JSON: an object or an array, by its first character. */
 const looksLikeJson = (text: string): boolean => text.startsWith("{") || text.startsWith("[");
 
-const tagOf = (value: unknown): string | undefined => {
-  const tag = typeof value === "string" ? value.trim() : "";
-  return isLocaleTag(tag) ? tag : undefined;
-};
-
 /** The calls of the tool in one replayed message, oldest first; none for a message that is not the assistant's. */
 const callsIn = (message: CompletionsMessage, tool: string): ToolCall[] =>
   message.role === "assistant" && Array.isArray(message.tool_calls)
@@ -93,7 +88,7 @@ const resultTextOf = (messages: readonly CompletionsMessage[], after: number, ca
  * JSON is a refusal; a result object reads by its fields.
  */
 const outcomeOf = (call: ToolCall, messages: readonly CompletionsMessage[], index: number, switchTool: LanguageSwitchTool): SwitchOutcome => {
-  const tag = tagOf(objectOf(call.function.arguments)?.[switchTool.argument]);
+  const tag = localeTagOf(objectOf(call.function.arguments)?.[switchTool.argument]);
   const text = resultTextOf(messages, index, call.id);
   if (!tag || text === undefined) {
     return "unreadable";
@@ -162,7 +157,7 @@ export const refusedSwitchLanguages = (messages: readonly CompletionsMessage[], 
   const refused = new Set<string>();
   messages.forEach((message, index) => {
     for (const call of callsIn(message, switchTool.tool)) {
-      const tag = tagOf(objectOf(call.function.arguments)?.[switchTool.argument]);
+      const tag = localeTagOf(objectOf(call.function.arguments)?.[switchTool.argument]);
       if (tag && outcomeOf(call, messages, index, switchTool) === "blocked") {
         refused.add(tag);
       }

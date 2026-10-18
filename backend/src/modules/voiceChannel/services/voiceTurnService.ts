@@ -57,6 +57,7 @@ import { hasSpokenWords, spokenLength } from "./speechText.js";
 import { heardSpeechOf, type HeardSpeech, type ReachedSpeech } from "./heardSpeech.js";
 import {
   cutOffAt,
+  sameUtterance,
   supersededBeforeOutcome,
   VoiceSessionMemory,
   type ReplayableVoiceExchange,
@@ -145,12 +146,15 @@ interface VoiceTurnTiming {
 }
 
 /**
- * The agent's stored answers, read by a switch's follow-up that finds no switched turn in this
- * process: the turn that switched runs on another instance and stores its answer there.
+ * The conversation's newest exchange, read by a switch's follow-up that finds no switched turn in
+ * this process: the turn that switched runs on another instance and stores its answer there.
  */
 export interface VoiceStoredReplyReader {
-  /** The agent's reply to the conversation's newest user message, once stored; null until then. */
-  replyToNewestUtterance(conversation: { workspaceId: string; conversationId: string }): Promise<VoiceStoredReply | null>;
+  /**
+   * The conversation's newest user message, as its text, and the agent's reply to it once stored
+   * (null until then); null when the conversation holds no user message.
+   */
+  newestExchange(conversation: { workspaceId: string; conversationId: string }): Promise<{ utterance: string; reply: VoiceStoredReply | null } | null>;
 }
 
 /** Durable notes on a session's turns, keyed to their stored replies. Never the reply's text. */
@@ -483,6 +487,7 @@ export class VoiceTurnService implements VoiceTurnPort {
     const claim = this.memory.arrive(sessionKey, startedAt);
     const onHangUp = (): void => {
       claim.hungUpAt ??= this.now();
+      claim.lost.abort();
     };
     if (hungUp?.aborted) {
       onHangUp();
@@ -613,6 +618,15 @@ export class VoiceTurnService implements VoiceTurnPort {
     startedAt: number,
   ): AsyncGenerator<VoiceTurnEvent> {
     const taken = this.switchedTurns.take(sessionKey, result.switchId, input.utterance);
+    if (taken.kind === "mismatched") {
+      // The session's switched turn answered another utterance; it is let go, replayable, and this
+      // follow-up, for a switch no turn here asked for, says nothing.
+      record.languageSwitch = "mismatched";
+      record.result = "completed";
+      record.outcome = CONTINUE_OUTCOME;
+      yield CONTINUE;
+      return;
+    }
     if (taken.kind === "none") {
       yield* this.unheldFollowUp(input, claim, record, sessionKey, startedAt);
       return;
@@ -662,7 +676,7 @@ export class VoiceTurnService implements VoiceTurnPort {
     if (prepared?.linesLanguage) {
       record.language = prepared.linesLanguage;
     }
-    const reply = switched.reply.read();
+    const reply = switched.reply.read(claim.lost.signal);
     yield* this.delivered(prepared ? applyVoiceTurnPolicy(reply, prepared.policy) : withoutPhaseMarkers(reply), record, claim, sessionKey);
     record.result = supersededBeforeOutcome(claim) ? "superseded" : "completed";
   }
@@ -706,24 +720,31 @@ export class VoiceTurnService implements VoiceTurnPort {
     if (prepared?.linesLanguage) {
       record.language = prepared.linesLanguage;
     }
-    const reply = this.storedReplyEvents(input, conversationId, record, startedAt + this.timing.turnLimitMs);
+    const reply = this.storedReplyEvents(input, conversationId, record, claim, startedAt + this.timing.turnLimitMs);
     yield* this.delivered(prepared ? applyVoiceTurnPolicy(reply, prepared.policy) : withoutPhaseMarkers(reply), record, claim, sessionKey);
     record.result = supersededBeforeOutcome(claim) ? "superseded" : "completed";
   }
 
   /**
-   * The agent's answer as the conversation stores it, spoken whole once it is there. Until then
-   * the turn reports a search, so the policy bridges at once, and it checks again every
-   * `switchFollowUpPollMs` until `waitUntil`, the turn limit, after which it ends with nothing.
+   * The agent's answer to this utterance as the conversation stores it, spoken whole once it is
+   * there. Until then the turn reports a search, so the policy bridges at once, and it checks again
+   * every `switchFollowUpPollMs` until `waitUntil`, the turn limit, or until the request loses its
+   * caller, after which it ends with nothing.
    */
   private async *storedReplyEvents(
     input: VoiceTurnInput,
     conversationId: string,
     record: VoiceTurnRecord,
+    claim: VoiceTurnClaim,
     waitUntil: number,
   ): AsyncGenerator<VoiceReplyEvent> {
     let searching = false;
+    const lost = claim.lost.signal;
     for (;;) {
+      if (lost.aborted) {
+        yield CONTINUE;
+        return;
+      }
       const stored = await this.readStoredReply(input, conversationId);
       if (stored) {
         record.reply = stored;
@@ -744,16 +765,27 @@ export class VoiceTurnService implements VoiceTurnPort {
         searching = true;
         yield { type: "phase", phase: "searching" };
       }
-      await new Promise((resolve) => setTimeout(resolve, this.timing.switchFollowUpPollMs));
+      await new Promise<void>((resolve) => {
+        const timer = setTimeout(resolve, this.timing.switchFollowUpPollMs);
+        lost.addEventListener("abort", () => {
+          clearTimeout(timer);
+          resolve();
+        }, { once: true });
+      });
     }
   }
 
-  /** The stored answer, or null when there is none yet or the store cannot be read now (warned, ids only). */
+  /**
+   * The stored answer to this request's utterance: the conversation's newest user message must be
+   * it, so an earlier exchange's answer is never spoken for it. Null when there is none yet, or the
+   * store cannot be read now (warned, ids only).
+   */
   private async readStoredReply(input: VoiceTurnInput, conversationId: string): Promise<VoiceStoredReply | null> {
     const reader = this.dependencies.storedReplies;
     if (!reader) return null;
     try {
-      return await reader.replyToNewestUtterance({ workspaceId: input.session.workspaceId, conversationId });
+      const exchange = await reader.newestExchange({ workspaceId: input.session.workspaceId, conversationId });
+      return exchange && sameUtterance(exchange.utterance, input.utterance) ? exchange.reply : null;
     } catch (error) {
       this.dependencies.logger.warn({
         agentId: input.session.agentId,
@@ -1254,8 +1286,9 @@ export class VoiceTurnService implements VoiceTurnPort {
     return {
       decideWithinMs: this.timing.languageSwitchDecisionMs,
       switchFor: (tag) => {
-        // A switch the request cannot read leaves the call's language unknown, so nothing is asked.
-        if (input.languageReport === "unreadable" || record.spoken.operatorReplies.length > 0) {
+        // A request that lost its caller asks nothing: its follow-up would speak over the newer
+        // turn. A switch the request cannot read leaves the call's language unknown.
+        if (cutOffAt(turn.claim) !== null || input.languageReport === "unreadable" || record.spoken.operatorReplies.length > 0) {
           return null;
         }
         const current = resolveVoiceLanguage({ turn: input.turnLanguage, session: input.locale, agentDefault: profile.defaultLocale });

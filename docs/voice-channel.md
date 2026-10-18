@@ -831,17 +831,21 @@ follow-up still comes, and Radioso speaks the answer in the voice the call
 already has. Radioso does not ask again for a language ElevenLabs refused
 earlier in the call.
 
-A turn keeps the call's language when anything was spoken on its request
-before the turn knew its language: a teammate's reply from the Inbox, or the
-bridge line of a planner that took longer than 2.5 s. It keeps it, too, when
-the language comes more than 4 seconds into the turn
-(`VOICE_BEHAVIOR.languageSwitchDecisionMs`), when its plan gives no language
-tag (a routine step the agent is running answers without one), when the
-request carries a switch Radioso cannot read, and when one of the two
-languages has a three-letter subtag, which Radioso cannot tell apart from a
-two-letter one. On a request that may switch, the bridge line for a search
-waits until the turn knows its language, which on a planned turn is a few
-milliseconds, or until the 4 seconds pass.
+A turn keeps the call's language when a teammate's reply from the Inbox was
+spoken on its request first, when the language comes more than 4 seconds
+into the turn (`VOICE_BEHAVIOR.languageSwitchDecisionMs`), when the caller
+spoke again or the runtime hung up before the language came, when its plan
+gives no language tag (a routine step the agent is running answers without
+one), when the request carries a switch Radioso cannot read, and when one of
+the two languages has a three-letter subtag, which Radioso cannot tell apart
+from a two-letter one.
+
+On a request that may switch, no bridge line plays until the turn knows its
+language or the 4 seconds pass, the 2.5-second bridge for a stalled planner
+included, since a line spoken first would rule the switch out. On a planned
+turn the language comes within a few milliseconds of the plan, so the
+trade-off only shows when the planner is slow: up to 4 seconds of silence,
+held open by the keep-alive, before the bridge line.
 
 While the turn waits, the `elevenlabs` keep-alive (a space and a zero-width
 space every 2.5 s of silence) may go out before the tool call. That is safe:
@@ -851,9 +855,12 @@ as nothing said, and runs the switch (probe, 2026-10-18).
 
 A follow-up can reach a Radioso server other than the one that asked for the
 switch. It reads the call's conversation instead: it bridges in the new
-language, speaks the agent's answer whole once the other server stores it,
-and speaks the fallback line in the new language if no answer is stored by
-the turn limit.
+language and, once the other server stores the agent's answer to the
+caller's newest message, speaks it whole rather than as it streams; it
+speaks the fallback line in the new language if no answer is stored by the
+turn limit, and stops reading once the caller is gone. A follow-up for
+another utterance than the one the session's switching turn answered says
+nothing, and that turn's answer stays replayable.
 
 When no follow-up comes within 30 seconds, the answer the turn wrote is the
 conversation's reply, and the same utterance sent again within those 30

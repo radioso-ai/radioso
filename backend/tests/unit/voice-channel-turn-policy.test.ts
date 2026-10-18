@@ -524,7 +524,7 @@ describe("voice turn policy", () => {
       expect(decision.switchFor).not.toHaveBeenCalled();
     });
 
-    it("asks for no switch once a line went out: a stalled turn's bridge was spoken first", async () => {
+    it("holds the stall bridge while the turn may still switch, so a stalled planner's language at 2.6 s switches", async () => {
       const { events } = timedReply([
         { atMs: 0, event: phase("interpreting") },
         { atMs: 2_600, event: language("it") },
@@ -535,7 +535,33 @@ describe("voice turn policy", () => {
 
       const seen = await run(events, policy({ languageSwitch: decision.languageSwitch }));
 
-      expect(seen.map(({ atMs, event }) => [atMs, event.type])).toEqual([[2_500, "bridge"], [3_000, "speech"], [3_000, "outcome"]]);
+      expect(seen).toEqual([{ atMs: 2_600, event: switchTo("it") }, { atMs: 2_600, event: outcome }]);
+    });
+
+    it("bridges at once when the turn keeps the call's language after the stall bridge was held", async () => {
+      const { events } = timedReply([
+        { atMs: 0, event: phase("interpreting") },
+        { atMs: 3_000, event: language("en") },
+        { atMs: 5_000, event: speech("We open at nine.", true) },
+        { atMs: 5_000, event: outcome },
+      ]);
+      const decision = switching(() => null);
+
+      const seen = await run(events, policy({ languageSwitch: decision.languageSwitch }));
+
+      expect(seen.map(({ atMs, event }) => [atMs, event.type])).toEqual([[3_000, "bridge"], [5_000, "speech"], [5_000, "outcome"]]);
+    });
+
+    it("asks for no switch once the answer started speaking", async () => {
+      const { events } = timedReply([
+        { atMs: 900, event: speech("Hi!", true) },
+        { atMs: 1_000, event: language("it") },
+        { atMs: 1_000, event: outcome },
+      ]);
+      const decision = switching(() => switchTo("it"));
+
+      await run(events, policy({ languageSwitch: decision.languageSwitch }));
+
       expect(decision.switchFor).not.toHaveBeenCalled();
     });
 
@@ -578,7 +604,8 @@ describe("voice turn policy", () => {
 
       const seen = await run(events, policy({ languageSwitch: decision.languageSwitch }));
 
-      expect(seen.map(({ atMs, event }) => [atMs, event.type])).toEqual([[2_500, "bridge"], [10_000, "speech"], [10_000, "outcome"]]);
+      // The decision window holds every bridge until it closes at 4 s.
+      expect(seen.map(({ atMs, event }) => [atMs, event.type])).toEqual([[4_000, "bridge"], [10_000, "speech"], [10_000, "outcome"]]);
     });
   });
 

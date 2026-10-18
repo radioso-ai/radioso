@@ -2748,11 +2748,13 @@ describe("VoiceTurnService", () => {
     describe("a follow-up this instance holds no switched turn for", () => {
       const voiceWithItalianFallback: AgentVoiceSettings = { ...voiceOn, fallbackLine: { en: "Sorry, could you ask me again?", it: "Scusa, puoi ripetere?" } };
       /** The conversation as the instance that switched stores it: the answer lands at `answerAtMs`. */
-      const storedAnswerAt = (answerAtMs: number | null) => {
+      const storedAnswerAt = (answerAtMs: number | null, utterance = "A che ora aprite?") => {
         const startedAt = Date.now();
         return {
-          replyToNewestUtterance: vi.fn(async () =>
-            answerAtMs !== null && Date.now() - startedAt >= answerAtMs ? { messageId: "66666666-6666-4666-8666-666666666666", text: answer } : null),
+          newestExchange: vi.fn(async () => ({
+            utterance,
+            reply: answerAtMs !== null && Date.now() - startedAt >= answerAtMs ? { messageId: "66666666-6666-4666-8666-666666666666", text: answer } : null,
+          })),
         };
       };
 
@@ -2798,19 +2800,52 @@ describe("VoiceTurnService", () => {
         ]);
       });
 
-      it("lets the session's held switch go as mismatched when the follow-up is for another utterance", async () => {
+      it("lets the session's held switch go as mismatched for a follow-up of another utterance, which says nothing, and keeps it replayable", async () => {
         const chat = scriptedChat([plannedIn("it", 1_300)]);
         const metrics = fakeMetrics();
-        const turns = service(chat, { metrics, storedReplies: storedAnswerAt(0) });
+        const storedReplies = storedAnswerAt(0);
+        const turns = service(chat, { metrics, storedReplies });
 
         const switching = start(turns, offered());
         await vi.advanceTimersByTimeAsync(1_655);
         await switching;
         const other = start(turns, followUp(true, { utterance: "E la domenica?" }));
         await vi.runAllTimersAsync();
-        await other;
 
-        expect(counted(metrics, "voice_language_switch_total")).toEqual([{ outcome: "emitted" }, { outcome: "mismatched" }, { outcome: "unheld" }]);
+        expect((await other).map(({ event }) => event)).toEqual([{ type: "outcome", outcome: { kind: "continue" } }]);
+        expect(storedReplies.newestExchange).not.toHaveBeenCalled();
+        expect(counted(metrics, "voice_language_switch_total")).toEqual([{ outcome: "emitted" }, { outcome: "mismatched" }]);
+        const repeat = start(turns, offered());
+        await vi.runAllTimersAsync();
+        expect(spokenText((await repeat).map(({ event }) => event))).toBe(answer);
+        expect(chat.requests).toHaveLength(1);
+      });
+
+      it("speaks no earlier exchange's answer when the conversation's newest user message is not this utterance", async () => {
+        const storedReplies = storedAnswerAt(0, "Ciao!");
+        const elsewhere = service(scriptedChat([]), { storedReplies }, voiceWithItalianFallback);
+
+        const spoken = start(elsewhere, followUp(true));
+        await vi.runAllTimersAsync();
+
+        expect((await spoken).filter(({ event }) => event.type === "speech")).toEqual([
+          { atMs: 10_000, event: { type: "speech", text: "Scusa, puoi ripetere?", last: true } },
+        ]);
+      });
+
+      it("stops reading the conversation once the caller is gone", async () => {
+        const storedReplies = storedAnswerAt(null);
+        const elsewhere = service(scriptedChat([]), { storedReplies });
+        const hungUp = new AbortController();
+
+        const spoken = collect(elsewhere.runTurn(followUp(true), new AbortController().signal, hungUp.signal));
+        await vi.advanceTimersByTimeAsync(1_000);
+        const readsBefore = storedReplies.newestExchange.mock.calls.length;
+        hungUp.abort();
+        await vi.advanceTimersByTimeAsync(5_000);
+
+        expect(await spoken).toContainEqual({ type: "outcome", outcome: { kind: "continue" } });
+        expect(storedReplies.newestExchange.mock.calls.length).toBe(readsBefore);
       });
     });
 
@@ -2893,6 +2928,42 @@ describe("VoiceTurnService", () => {
         expect.objectContaining({ result: "failed", languageSwitch: "confirmed" }),
         "Voice language switch follow-up ended with its switched turn's failure",
       );
+    });
+
+    it("asks for no switch once a newer request overtook the turn, or the runtime hung up on it, before its language came", async () => {
+      for (const lose of ["overtaken", "hung up"] as const) {
+        const chat = scriptedChat([plannedIn("it", 1_300), plannedIn("it", 1_300)]);
+        const turns = service(chat);
+        const hungUp = new AbortController();
+
+        const switching = collect(turns.runTurn(offered(), new AbortController().signal, hungUp.signal));
+        await vi.advanceTimersByTimeAsync(1_000);
+        const newer = lose === "overtaken" ? start(turns, offered({ utterance: "E la domenica?" })) : null;
+        if (lose === "hung up") hungUp.abort();
+        await vi.runAllTimersAsync();
+        await newer;
+
+        expect((await switching).some((event) => event.type === "switchLanguage"), lose).toBe(false);
+      }
+    });
+
+    it("ends a follow-up promptly with continue when a newer utterance overtakes it while the answer is still being written", async () => {
+      const chat = scriptedChat([plannedIn("it", 20_000), plannedIn("it", 1_300)]);
+      const turns = service(chat, { storedReplies: undefined });
+
+      const switching = start(turns, offered());
+      await vi.advanceTimersByTimeAsync(1_655);
+      await switching;
+      const followed = start(turns, followUp(true));
+      await vi.advanceTimersByTimeAsync(500);
+      const newer = start(turns, offered({ utterance: "E la domenica?" }));
+      await vi.advanceTimersByTimeAsync(10);
+
+      // The follow-up was waiting on the switched turn's reply; it ends without waiting for it.
+      const ended = await followed;
+      expect(ended.at(-1)).toEqual({ atMs: 500, event: { type: "outcome", outcome: { kind: "continue" } } });
+      await vi.runAllTimersAsync();
+      await newer;
     });
 
     it("keeps the call in the new language on the turn after a confirmed switch: no switch again, and its lines", async () => {

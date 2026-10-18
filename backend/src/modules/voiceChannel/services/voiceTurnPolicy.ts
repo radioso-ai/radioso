@@ -52,9 +52,9 @@ type VoiceLanguageSwitchEvent = Extract<VoiceTurnEvent, { type: "switchLanguage"
 
 /**
  * A turn that may ask the runtime to switch the call's language before it answers. Such a switch
- * must be all the request carries, so until the turn's language is known the policy holds back the
- * bridge a phase would bring (the stall bridge and the limit stay armed), and once it is known,
- * with nothing spoken, it asks `switchFor`.
+ * must be all the request carries, so until the turn's language is known, or `decideWithinMs`
+ * passes, the policy speaks no bridge line, the stall bridge included (the limit stays armed); once
+ * the language is known, with nothing spoken, it asks `switchFor`.
  */
 export interface VoiceTurnLanguageSwitch {
   /**
@@ -144,13 +144,14 @@ export async function* applyVoiceTurnPolicy(
   let searchHeld = false;
   const phasesSeen: VoiceTurnPhase[] = [];
 
-  const bridgeAt = (): number => (composingAt === null || !languageKnown ? policy.bridgeAfterMs : composingAt + policy.bridgeAfterComposingIdleMs);
+  const bridgeAt = (): number => (composingAt === null ? policy.bridgeAfterMs : composingAt + policy.bridgeAfterComposingIdleMs);
 
   /** The earlier of the armed deadlines. */
   const nextDeadline = (): { deadline: Deadline; delayMs: number } | null => {
     if (spoken || ended) return null;
     const armed: Array<{ deadline: Deadline; atMs: number }> = [
-      ...(bridgeHandled || policy.bridge === null ? [] : [{ deadline: "bridge" as const, atMs: bridgeAt() }]),
+      // While a turn may still switch, no bridge is due: the decision deadline releases it.
+      ...(bridgeHandled || policy.bridge === null || !languageKnown ? [] : [{ deadline: "bridge" as const, atMs: bridgeAt() }]),
       ...(limitHandled || policy.turnLimitMs === null ? [] : [{ deadline: "limit" as const, atMs: policy.turnLimitMs }]),
       ...(languageKnown || !policy.languageSwitch ? [] : [{ deadline: "decision" as const, atMs: policy.languageSwitch.decideWithinMs }]),
     ];

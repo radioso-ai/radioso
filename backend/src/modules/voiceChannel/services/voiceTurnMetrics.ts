@@ -1,7 +1,7 @@
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type { VoiceBridgeStyle } from "../../agents/public.js";
 import type { ChatTurnHandoffReason } from "../../chat/contracts/index.js";
-import type { VoiceTurnOutcome } from "../domain.js";
+import type { VoiceTurnLanguageSource, VoiceTurnOutcome } from "../domain.js";
 
 export type VoiceTurnMetricsSink = Pick<MetricsRegistry, "observeHistogram" | "incrementCounter">;
 
@@ -37,6 +37,14 @@ export const recordVoiceTurnLimit = (metrics: VoiceTurnMetricsSink | null | unde
   metrics?.incrementCounter("voice_turn_limit_total", {
     help: "Voice turns that reached the turn limit without speech; locale_resolved=no means no fallback line, so the turn kept waiting",
     labels: { locale_resolved: yesNo(spoken) },
+  });
+};
+
+/** Where the language a policy turn's lines were picked in came from. The tag itself is never a label. */
+export const recordVoiceTurnLanguage = (metrics: VoiceTurnMetricsSink | null | undefined, source: VoiceTurnLanguageSource): void => {
+  metrics?.incrementCounter("voice_turn_language_source_total", {
+    help: "Voice turns by where the language of their bridge and fallback lines came from; vendor_detected and turn_field are reports for the turn itself",
+    labels: { source },
   });
 };
 

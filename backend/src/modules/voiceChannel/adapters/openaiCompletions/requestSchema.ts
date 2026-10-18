@@ -10,9 +10,11 @@ const messageSchema = z.object({
   content: z.union([z.string(), z.array(contentPartSchema)]).nullish(),
 }).passthrough();
 
-type CompletionsMessage = z.infer<typeof messageSchema>;
+/** One message of the call the runtime replays; fields Radioso does not name (`tool_calls`, `tool_call_id`) pass through. */
+export type CompletionsMessage = z.infer<typeof messageSchema>;
 
-const textOf = (content: CompletionsMessage["content"]): string => {
+/** A message's text: a string, or its `text` content parts joined. */
+export const textOf = (content: CompletionsMessage["content"]): string => {
   if (typeof content === "string") {
     return content;
   }
@@ -66,22 +68,48 @@ export const completionsRequestSchema = z.object({
 
 type CompletionsRequest = z.infer<typeof completionsRequestSchema>;
 
+/**
+ * The runtime's request right after it ran a tool the reply called: the newest message is that
+ * tool's result, so the newest user message is one an earlier request already answered.
+ */
+export const isToolResultFollowUp = (request: CompletionsRequest): boolean => request.messages.at(-1)?.role === "tool";
+
 export const utteranceOf = (request: CompletionsRequest): string | null => {
   const utterance = utteranceIn(request.messages);
   return utterance.length > 0 ? utterance : null;
 };
 
 /**
+ * A replayed tool exchange rather than something said: a tool's result, or an assistant message
+ * that only calls tools.
+ */
+const isToolExchange = (message: CompletionsMessage): boolean =>
+  message.role === "tool"
+  || (message.role === "assistant" && Array.isArray(message.tool_calls) && message.tool_calls.length > 0 && textOf(message.content).trim().length === 0);
+
+/** The message said right before the newest user message, past any tool exchange replayed between them. */
+const previousSaid = (messages: readonly CompletionsMessage[]): CompletionsMessage | undefined => {
+  for (let index = lastUserIndex(messages) - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (message && !isToolExchange(message)) {
+      return message;
+    }
+  }
+  return undefined;
+};
+
+/**
  * What the caller heard of the agent's previous reply, when the dialect's runtime replays it cut
- * short: the assistant message right before the newest user message, ending in the dialect's
- * suffix, without it. Undefined when that reply was heard whole or the dialect reports nothing.
+ * short: the assistant message said right before the newest user message (tool calls and results
+ * replayed between them aside), ending in the dialect's suffix, without it. Undefined when that
+ * reply was heard whole or the dialect reports nothing.
  */
 export const heardUntilFor = (
   dialect: Pick<CompletionsDialect, "interruptedReplySuffix">,
   request: CompletionsRequest,
 ): string | undefined => {
   const suffix = dialect.interruptedReplySuffix;
-  const previous = request.messages[lastUserIndex(request.messages) - 1];
+  const previous = previousSaid(request.messages);
   if (!suffix || previous?.role !== "assistant") {
     return undefined;
   }

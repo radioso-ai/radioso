@@ -637,3 +637,93 @@ test("the gutter's hover trash deletes a step and persists the removal through a
     { timeout: 15_000 },
   ).toMatchObject([{ instruction: "Second step text" }]);
 });
+
+test("a new routine's first save keeps the step being edited open, focused, and holding every keystroke", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+  // Holds the create request so keystrokes land while the first save is in flight. Registered
+  // after the dashboard mocks, so it sees the request first and then hands it on to them.
+  let createRequested = false;
+  let releaseCreate = () => {};
+  const createReleased = new Promise<void>((resolve) => { releaseCreate = resolve; });
+  await page.route(
+    (url) => url.pathname === `/backend/api/v1/agents/${defaultAgentId}/routines`,
+    async (route) => {
+      if (route.request().method() === "POST") {
+        createRequested = true;
+        await createReleased;
+      }
+      await route.fallback();
+    },
+  );
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "New routine" }).click();
+  await expect(page).toHaveURL(new RegExp(`/agents/${defaultAgentId}/routines/new$`));
+  await page.getByLabel("Name", { exact: true }).fill("Typed across the first save");
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await documentEditor.getByLabel("Activation trigger", { exact: true }).fill("a visitor opens a conversation.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Chat" }).click();
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
+  const instruction = documentEditor.getByLabel("Step 1 instruction");
+  await instruction.click();
+
+  // The first keystrokes make the draft valid, which starts the first autosave: a create.
+  await instruction.pressSequentially("Greet the visitor.");
+  await expect.poll(() => createRequested, { timeout: 15_000 }).toBe(true);
+  // Typed while the create is in flight.
+  await page.keyboard.type(" Ask what they need.");
+  releaseCreate();
+  // Typed against the create's response and the move to the saved routine's address.
+  await page.keyboard.type(" Offer help.");
+  await expect(page).toHaveURL(new RegExp(`/agents/${defaultAgentId}/routines/55555555-[0-9a-f-]+$`));
+  // Typed once the address names the saved routine.
+  await page.keyboard.type(" Thank them.");
+
+  const typed = "Greet the visitor. Ask what they need. Offer help. Thank them.";
+  await expect(instruction).toBeFocused();
+  await expect(instruction).toHaveText(typed);
+  // The next autosave updates the routine the first one created, with every keystroke in it.
+  await expect.poll(
+    () => routineUpdates.filter((update) => update.method === "PATCH").at(-1)?.body?.steps?.[0]?.instruction,
+    { timeout: 15_000 },
+  ).toBe(typed);
+  expect(routineUpdates.filter((update) => update.method === "POST")).toHaveLength(1);
+
+  // The list carries the new routine, and the next new routine starts blank rather than
+  // recovering this one's draft.
+  await page.getByRole("button", { name: "Back to routines" }).click();
+  await expect(page.getByRole("button", { name: /^Typed across the first save/ })).toBeVisible();
+  await page.getByRole("button", { name: "New routine" }).click();
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("");
+  await expect(page.getByRole("article", { name: "Routine document editor" })).not.toContainText("Greet the visitor.");
+
+  // The history entry the first save rewrote opens the saved routine, not a blank new one.
+  await page.goBack();
+  await page.goBack();
+  await expect(page).toHaveURL(new RegExp(`/agents/${defaultAgentId}/routines/55555555-[0-9a-f-]+$`));
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Typed across the first save");
+  await expect(page.getByRole("article", { name: "Routine document editor" })).toContainText(typed);
+});
+
+test("reloading an unsaved new routine recovers its draft", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await page.getByRole("button", { name: "New routine" }).click();
+  await expect(page).toHaveURL(new RegExp(`/agents/${defaultAgentId}/routines/new$`));
+  // A name alone leaves the draft invalid, so nothing saves it: only recovery can bring it back.
+  await page.getByLabel("Name", { exact: true }).fill("Not saved yet");
+
+  await page.reload();
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Not saved yet");
+  await expect(page).toHaveURL(new RegExp(`/agents/${defaultAgentId}/routines/new$`));
+});

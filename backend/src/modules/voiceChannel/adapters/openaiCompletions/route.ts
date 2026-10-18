@@ -19,7 +19,7 @@ import {
   renderCompletion,
   type CompletionIdentity,
 } from "./completionsPresenter.js";
-import { findCompletionsDialect, localeFor, sessionKeyFor, type CompletionsDialect } from "./dialects.js";
+import { findCompletionsDialect, localeFor, sessionKeyFor, turnLanguageFor, type CompletionsDialect } from "./dialects.js";
 import { completionsRequestSchema, heardUntilFor, utteranceOf } from "./requestSchema.js";
 
 const COMPLETIONS_PATH = "/:agentId/voice/:dialect/v1/chat/completions";
@@ -99,6 +99,7 @@ const turnInputFor = (
     throw badRequest(`The request carries no usable voice session key for the ${dialect.id} dialect`);
   }
   const locale = localeFor(dialect, request);
+  const turnLanguage = turnLanguageFor(dialect, request);
   const heardUntil = heardUntilFor(dialect, parsed.data);
   const stream = parsed.data.stream ?? false;
   return {
@@ -107,6 +108,7 @@ const turnInputFor = (
       transport: dialect.transportDefault,
       utterance,
       ...(locale ? { locale } : {}),
+      ...(turnLanguage ? { turnLanguage } : {}),
       ...(heardUntil === undefined ? {} : { heardUntil }),
       ...(dialect.minReleasableSentenceChars === undefined
         ? {}

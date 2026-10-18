@@ -151,6 +151,18 @@ describe("VoiceTurnService", () => {
     expect(chat.requests[0]).not.toHaveProperty("conversationId");
   });
 
+  it("hands chat the language the request reports for the turn, with voice off too", async () => {
+    const chat = fakeChat([{ type: "conversation", conversationId }, { type: "chunk", text: "Sì." }, done()]);
+    const service = new VoiceTurnService({ ...voiceOff, sessions: fakeSessions(conversationId), chat, logger: fakeLogger() });
+
+    await collect(service.runTurn(
+      input({ utterance: "Siete aperti?", locale: "en", turnLanguage: { tag: "it", source: "vendor_detected" } }),
+      new AbortController().signal,
+    ));
+
+    expect(chat.requests[0]).toMatchObject({ userExpectedLocale: "it" });
+  });
+
   it("continues the bound conversation of a known session and names it before the turn runs", async () => {
     const chat = fakeChat([{ type: "conversation", conversationId }, { type: "chunk", text: "Yes." }, done()]);
     const sessions = fakeSessions(conversationId);
@@ -771,20 +783,71 @@ describe("VoiceTurnService", () => {
       expect(routines.isRoutineActive).not.toHaveBeenCalled();
     });
 
-    it("speaks in the request's locale ahead of the agent's default", async () => {
+    it("speaks in the session's locale ahead of the agent's default, and leaves chat to read the caller's language itself", async () => {
+      const logger = fakeLogger();
+      const metrics = fakeMetrics();
+      const chat = timedChat(slowReply(3_000));
       const service = new VoiceTurnService({
         agents: voiceProfiles(voiceOn, "en"),
         routines: routineStates(false),
         ownership: conversationOwnership(false),
         operatorReplies: noOperatorReplies(),
         sessions: fakeSessions(conversationId),
-        chat: timedChat(slowReply(3_000)),
-        logger: fakeLogger(),
+        chat,
+        logger,
+        metrics,
       });
 
       const events = await runWithClock(service, input({ locale: "it-IT" }));
 
       expect(events).toContainEqual({ type: "bridge", text: "Controllo subito." });
+      // A session's locale says how the call started, not what the caller speaks now.
+      expect(chat.requests[0]).not.toHaveProperty("userExpectedLocale");
+      expect(logger.info).toHaveBeenCalledWith(
+        expect.objectContaining({ turnLanguage: "it-IT", languageSource: "session" }),
+        "Voice turn finished",
+      );
+      expect(metrics.incrementCounter).toHaveBeenCalledWith("voice_turn_language_source_total", expect.objectContaining({
+        labels: { source: "session" },
+      }));
+    });
+
+    it("speaks a turn the vendor switched to Italian in Italian on an English agent whose call started in English, and tells chat", async () => {
+      const metrics = fakeMetrics();
+      const logger = fakeLogger();
+      const chat = timedChat(slowReply(12_000));
+      const service = new VoiceTurnService({
+        agents: voiceProfiles({ ...voiceOn, fallbackLine: { ...voiceOn.fallbackLine, it: "Scusa, puoi ripetere la domanda?" } }, "en"),
+        routines: routineStates(false),
+        ownership: conversationOwnership(false),
+        operatorReplies: noOperatorReplies(),
+        sessions: fakeSessions(conversationId),
+        chat,
+        logger,
+        metrics,
+      });
+
+      const events = await runWithClock(service, input({
+        utterance: "Vorrei prenotare un tavolo",
+        locale: "en",
+        turnLanguage: { tag: "it", source: "vendor_detected" },
+      }));
+
+      expect(events.slice(1)).toEqual([
+        { type: "bridge", text: "Controllo subito." },
+        { type: "speech", text: "Scusa, puoi ripetere la domanda?", last: true },
+        { type: "outcome", outcome: { kind: "continue" } },
+      ]);
+      expect(chat.requests[0]).toMatchObject({ userExpectedLocale: "it" });
+      expect(metrics.incrementCounter).toHaveBeenCalledWith("voice_turn_language_source_total", expect.objectContaining({
+        labels: { source: "vendor_detected" },
+      }));
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ turnLanguage: "it", languageSource: "vendor_detected" }),
+        "Voice turn reached the turn limit",
+      );
+      // The tag is in the log only; no metric label carries it.
+      expect(JSON.stringify(metrics.incrementCounter.mock.calls)).not.toContain('"it"');
     });
 
     it("measures the turn and logs whether the bridge and the limit fired, with bounded labels only", async () => {
@@ -848,7 +911,8 @@ describe("VoiceTurnService", () => {
       expect(events.at(-2)).toEqual({ type: "speech", text: "We open at nine.", last: true });
       expect(logger.warn).toHaveBeenCalledWith(
         { agentId, vendor: "elevenlabs", transport: "web", conversationId, result: "completed", durationMs: 11_000,
-          speechPieceCount: 1, outcome: "continue", bridged: true, turnLimitReached: true, fallbackSpoken: false },
+          speechPieceCount: 1, outcome: "continue", bridged: true, turnLimitReached: true, fallbackSpoken: false,
+          turnLanguage: "en", languageSource: "fallback" },
         "Voice turn reached the turn limit",
       );
     });

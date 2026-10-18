@@ -17,7 +17,7 @@ import {
   type VoiceVendorCredentialReader,
   type VoiceVendorCredentialReading,
 } from "../domain.js";
-import { chooseRecordingNotice, resolveVoiceTurnLocale } from "./voiceLines.js";
+import { chooseRecordingNotice, resolveVoiceLanguage } from "./voiceLines.js";
 
 /** What a session start needs from the agent's settings. */
 interface VoiceRuntimeProfileSource {
@@ -148,7 +148,7 @@ export class VoiceSessionStartService implements VoiceSessionStartPort, VoiceSes
         credential: reading.credential,
       });
       this.record(vendor, "started");
-      const locale = resolveVoiceTurnLocale({ requested: input.locale, agentDefault: profile.defaultLocale });
+      const locale = resolveVoiceLanguage({ session: input.locale, agentDefault: profile.defaultLocale }).tag;
       const recordingNotice = chooseRecordingNotice(profile.voice, { locale, agentDefault: profile.defaultLocale });
       return {
         kind: "started",

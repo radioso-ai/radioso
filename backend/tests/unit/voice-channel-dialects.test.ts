@@ -3,11 +3,13 @@ import { describe, expect, it } from "vitest";
 import {
   findCompletionsDialect,
   sessionKeyFor,
+  turnLanguageFor,
   type CompletionsDialect,
 } from "../../src/modules/voiceChannel/adapters/openaiCompletions/dialects.js";
 import {
   completionsRequestSchema,
   heardUntilFor,
+  utteranceOf,
 } from "../../src/modules/voiceChannel/adapters/openaiCompletions/requestSchema.js";
 import { heardSpeechOf } from "../../src/modules/voiceChannel/services/heardSpeech.js";
 import { ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS } from "../../src/modules/voiceChannel/public.js";
@@ -143,6 +145,106 @@ describe("completions dialects", () => {
       expect(heard(["We open at nine!"], "We open at nine")).toMatchObject({ answerHeardCharacterCount: 16, answerSpokenCharacterCount: 16 });
       expect(heard(["We open at nine."], "We close at")).toBeNull();
     });
+  });
+});
+
+/**
+ * The assistant message ElevenLabs replays for a call of its `language_detection` system tool, in
+ * the OpenAI tool-call shape its custom-LLM docs give (`function.arguments` a JSON string with
+ * `reason` and `language`).
+ */
+const languageSwitch = (args: unknown, id = "call_lang_1") => ({
+  role: "assistant",
+  content: null,
+  tool_calls: [{ id, type: "function", function: { name: "language_detection", arguments: typeof args === "string" ? args : JSON.stringify(args) } }],
+});
+
+const elevenlabsHistory = (...messages: unknown[]) => ({
+  headers: {},
+  body: {
+    stream: true,
+    messages: [{ role: "system", content: "Vendor prompt" }, { role: "user", content: "Hello" }, ...messages],
+    elevenlabs_extra_body: { session_key: "conv_abc", locale: "en" },
+  },
+});
+
+describe("the language of one turn", () => {
+  it("reads the language the newest language_detection call in the elevenlabs history switched to", () => {
+    expect(turnLanguageFor(dialect("elevenlabs"), elevenlabsHistory(
+      { role: "assistant", content: "Hi, how can I help?" },
+      languageSwitch({ reason: "The caller speaks Italian", language: "it" }),
+      { role: "tool", tool_call_id: "call_lang_1", content: "Switched." },
+      { role: "user", content: "Vorrei prenotare un tavolo" },
+    ))).toEqual({ tag: "it", source: "vendor_detected" });
+    // The newest switch wins, wherever it sits against the newest user message.
+    expect(turnLanguageFor(dialect("elevenlabs"), elevenlabsHistory(
+      languageSwitch({ reason: "Italian", language: "it" }, "call_1"),
+      { role: "user", content: "Grazie" },
+      languageSwitch({ reason: "English", language: "en" }, "call_2"),
+    ))).toEqual({ tag: "en", source: "vendor_detected" });
+  });
+
+  it("takes the arguments as an object too, and ignores the vendor's other tools", () => {
+    expect(turnLanguageFor(dialect("elevenlabs"), elevenlabsHistory({
+      role: "assistant",
+      content: "",
+      tool_calls: [
+        { id: "call_end", type: "function", function: { name: "end_call", arguments: "{\"reason\":\"done\"}" } },
+        { id: "call_lang", type: "function", function: { name: "language_detection", arguments: { reason: "German", language: "de-AT" } } },
+      ],
+    }, { role: "user", content: "Danke" }))).toEqual({ tag: "de-AT", source: "vendor_detected" });
+    expect(turnLanguageFor(dialect("elevenlabs"), elevenlabsHistory({
+      role: "assistant",
+      content: null,
+      tool_calls: [{ id: "call_end", type: "function", function: { name: "end_call", arguments: "{}" } }],
+    }, { role: "user", content: "Bye" }))).toBeUndefined();
+  });
+
+  it("reports nothing for a newest switch it cannot read, rather than an older one the vendor moved past", () => {
+    for (const unreadable of ["{not json", { reason: "Italian" }, { reason: "Italian", language: "Italian" }, { language: 7 }]) {
+      expect(turnLanguageFor(dialect("elevenlabs"), elevenlabsHistory(
+        languageSwitch({ reason: "German", language: "de" }, "call_1"),
+        languageSwitch(unreadable, "call_2"),
+        { role: "user", content: "Ciao" },
+      ))).toBeUndefined();
+    }
+    expect(turnLanguageFor(dialect("elevenlabs"), elevenlabsHistory({ role: "user", content: [{ type: "text", text: "Hi" }], tool_calls: "language_detection" })))
+      .toBeUndefined();
+  });
+
+  it("leaves the session's locale to the session: a call with no switch reports no turn language", () => {
+    expect(turnLanguageFor(dialect("elevenlabs"), elevenlabsHistory({ role: "user", content: "When do you open?" }))).toBeUndefined();
+    expect(turnLanguageFor(dialect("elevenlabs"), { headers: {}, body: null })).toBeUndefined();
+    // The elevenlabs dialect reads no generic header.
+    expect(turnLanguageFor(dialect("elevenlabs"), { headers: { "x-radioso-voice-turn-locale": "fr" }, body: {} })).toBeUndefined();
+  });
+
+  it("reads the generic turn locale from its header, then the metadata body field, and no tool call", () => {
+    const generic = dialect("generic");
+
+    expect(turnLanguageFor(generic, { headers: { "x-radioso-voice-turn-locale": "fr-CA" }, body: { metadata: { turnLocale: "es" } } }))
+      .toEqual({ tag: "fr-CA", source: "turn_field" });
+    // A header that is not a language tag falls through to the body field.
+    expect(turnLanguageFor(generic, { headers: { "x-radioso-voice-turn-locale": "French" }, body: { metadata: { turnLocale: "es" } } }))
+      .toEqual({ tag: "es", source: "turn_field" });
+    expect(turnLanguageFor(generic, { headers: { "x-radioso-voice-locale": "de" }, body: { metadata: { locale: "de" } } })).toBeUndefined();
+    expect(turnLanguageFor(generic, elevenlabsHistory(languageSwitch({ reason: "Italian", language: "it" }), { role: "user", content: "Ciao" })))
+      .toBeUndefined();
+  });
+});
+
+describe("a replayed history that carries the vendor's tool calls", () => {
+  it("parses, and its newest user message is still the utterance", () => {
+    const request = completionsRequestSchema.parse(elevenlabsHistory(
+      { role: "assistant", content: "Hi, how can I help?" },
+      languageSwitch({ reason: "The caller speaks Italian", language: "it" }),
+      { role: "tool", tool_call_id: "call_lang_1", content: "Language switched to it" },
+      { role: "assistant", content: "Certo, posso aiutarti..." },
+      { role: "user", content: "Vorrei prenotare un tavolo" },
+    ).body);
+
+    expect(utteranceOf(request)).toBe("Vorrei prenotare un tavolo");
+    expect(heardUntilFor(dialect("elevenlabs"), request)).toBe("Certo, posso aiutarti");
   });
 });
 

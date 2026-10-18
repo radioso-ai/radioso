@@ -323,6 +323,49 @@ describe("voice completions route", () => {
     expect(inputs[3]).toMatchObject({ locale: "de-AT" });
   });
 
+  it("passes on the language the request reports for the turn beside the session's locale", async () => {
+    const dependencies = createDependencies();
+    const app = createApp(dependencies);
+    const base = elevenlabsBody();
+
+    await request(app)
+      .post(completionsPath())
+      .set("Authorization", "Bearer voice-secret")
+      .send(elevenlabsBody({
+        messages: [
+          ...base.messages.slice(0, 3),
+          {
+            role: "assistant",
+            content: null,
+            tool_calls: [{ id: "call_lang", type: "function", function: { name: "language_detection", arguments: "{\"reason\":\"Italian\",\"language\":\"it\"}" } }],
+          },
+          { role: "tool", tool_call_id: "call_lang", content: "ok" },
+          { role: "user", content: "Siete aperti domenica?" },
+        ],
+        elevenlabs_extra_body: { session_key: "conv_abc", locale: "en" },
+      }))
+      .expect(200);
+    await request(app)
+      .post(completionsPath("generic"))
+      .set("Authorization", "Bearer voice-secret")
+      .set("X-Radioso-Voice-Session", "room-7")
+      .set("X-Radioso-Voice-Locale", "en")
+      .set("X-Radioso-Voice-Turn-Locale", "fr")
+      .send({ messages: [{ role: "user", content: "Bonjour" }] })
+      .expect(200);
+    await request(app)
+      .post(completionsPath())
+      .set("Authorization", "Bearer voice-secret")
+      .send(elevenlabsBody({ elevenlabs_extra_body: { session_key: "conv_abc", locale: "en" } }))
+      .expect(200);
+
+    const inputs = vi.mocked(dependencies.voiceTurns.runTurn).mock.calls.map(([turn]) => turn);
+    expect(inputs[0]).toMatchObject({ utterance: "Siete aperti domenica?", locale: "en", turnLanguage: { tag: "it", source: "vendor_detected" } });
+    expect(inputs[1]).toMatchObject({ locale: "en", turnLanguage: { tag: "fr", source: "turn_field" } });
+    expect(inputs[2]).toMatchObject({ locale: "en" });
+    expect(inputs[2]).not.toHaveProperty("turnLanguage");
+  });
+
   it("reads the generic dialect's session key from its header", async () => {
     const dependencies = createDependencies();
 

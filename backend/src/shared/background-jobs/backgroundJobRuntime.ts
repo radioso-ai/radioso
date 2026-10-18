@@ -416,7 +416,7 @@ export class BackgroundJobRuntime {
     if (!isExpectedPermanent) {
       this.report("background_job.dead_lettered", { kind: claim.kind, attempt: claim.attempt, jobId: claim.id, lastError: summary });
     }
-    return this.record(claim, "dead_lettered", startedAt, summary, isExpectedPermanent);
+    return this.record(claim, "dead_lettered", startedAt, summary, { expectedPermanent: isExpectedPermanent });
   }
 
   /**
@@ -493,7 +493,7 @@ export class BackgroundJobRuntime {
     outcome: RunOutcome,
     startedAt: number,
     failure?: string,
-    expectedPermanent?: boolean,
+    options?: { expectedPermanent?: boolean },
   ): RunOutcome {
     const durationMs = Math.max(0, Date.now() - startedAt);
     this.options.metrics?.incrementCounter("background_jobs_total", {
@@ -525,7 +525,7 @@ export class BackgroundJobRuntime {
             : "Background job completed; rerun queued",
       );
     } else if (outcome === "dead_lettered") {
-      if (expectedPermanent) {
+      if (options?.expectedPermanent) {
         this.options.logger.warn(fields, "Background job dead-lettered");
       } else {
         this.options.logger.error(fields, "Background job dead-lettered");

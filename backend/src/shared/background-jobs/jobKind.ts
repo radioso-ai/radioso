@@ -38,8 +38,9 @@ const DUPLICATE_KEY_MODES: readonly BackgroundJobDuplicateKeyMode[] = ["ignore",
 const KIND_PATTERN = /^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)*$/;
 
 /**
- * Thrown by a handler for a failure no retry can fix (the subject is gone, the input can never
- * succeed). The runtime dead-letters the job on the spot instead of spending its retry budget.
+ * Thrown by a handler for an expected permanent outcome, such as a deleted subject or an invalid
+ * customer-supplied provider key. The runtime dead-letters it without an error report. For an
+ * unexpected failure that may indicate a bug, throw a plain Error so it is reported.
  */
 export class NonRetryableBackgroundJobError extends Error {
   constructor(message: string) {

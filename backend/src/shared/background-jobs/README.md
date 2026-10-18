@@ -139,9 +139,13 @@ rather than discovering in an incident:
   contract sets an explicit `retryDelaysSeconds` schedule instead (indexed by
   attempt; the last entry repeats past the end of the list) — `[60]` for a flat
   60 s backoff, `[1, 5, 15]` for a three-step one.
-  `NonRetryableBackgroundJobError` dead-letters at once, and so does a stored
-  payload that no longer matches its schema. A job whose every lease expired
-  without finishing is dead-lettered on its next claim past `maxAttempts`.
+  `NonRetryableBackgroundJobError` dead-letters at once without an error
+  report; use it for expected permanent outcomes such as a deleted subject or
+  an invalid customer-supplied provider key. Throw a plain error for an
+  unexpected failure that may indicate a bug so it is reported. A stored
+  payload that no longer matches its schema is also dead-lettered. A job whose
+  every lease expired without finishing is dead-lettered on its next claim past
+  `maxAttempts`.
 - **Per-attempt failure hook.** `backgroundJobHandler(kind, handle, {
   onAttemptFailed })` runs `onAttemptFailed(payload, { jobId, attempt,
   idempotencyKey, error, transaction })` once per attempt the runtime is about
@@ -164,7 +168,7 @@ rather than discovering in an incident:
   the error itself. Expected permanent failures (`NonRetryableBackgroundJobError`,
   distinct from unparseable payloads) log at `warn` level and record metrics,
   but send no error report. Dead-letters from retries running out, timeouts,
-  crashes, or unparseable payloads (`InvalidBackgroundJobPayloadError`) still
+  crashes, or unparseable payloads (`InvalidBackgroundJobPayloadError`)
   send an error report. `onAttemptFailed` and `onDeadLetter` additionally get
   `cause`: the underlying error itself (`undefined` for a synthetic failure
   such as a lease that expired with no run to blame). Unlike `error`, the

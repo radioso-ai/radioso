@@ -98,6 +98,12 @@ export interface TurnPlan {
   /** Structured retrieval rewrite, present only for retrieval-routed turns. */
   rewriteProposal?: StructuredRewriteResult;
   responseLanguage?: string;
+  /**
+   * The BCP 47 tag of `responseLanguage` (`it`, `pt-BR`), for a host that must name the language
+   * structurally, such as a voice runtime switching its voice. Absent with the label, or when the
+   * planner gave no usable tag.
+   */
+  responseLanguageTag?: string;
   routineRankings: RankedRoutineMatch[];
   directiveClassifications: Array<{ name: string; matched: boolean; confidence: number }>;
   pageRead?: PageReadDecision;
@@ -295,7 +301,7 @@ const turnPlanOutputShapeBlock = (input: {
       ? "requestPresent, openQuestion, and quickReply are always present and always last, in that order; quickReply is kind none with an empty text unless the Quick Reply Rules allow a reply.\n"
       : "") +
     "Shape:\n" +
-    `{"route":"retrieval|direct","isIdentityQuestion":false,"intentTopic":"string|null","rewrite":{"resolutionNote":"string|null","turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","temporalQueryMode":"none|listing|topic_refinement","retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null"}],"unresolved":false,"confidence":0.95},"responseLanguage":"string|null"${optionalFields.length > 0 ? `,${optionalFields.join(",")}` : ""}}`;
+    `{"route":"retrieval|direct","isIdentityQuestion":false,"intentTopic":"string|null","rewrite":{"resolutionNote":"string|null","turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","temporalQueryMode":"none|listing|topic_refinement","retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null"}],"unresolved":false,"confidence":0.95},"responseLanguage":"string|null","responseLanguageTag":"string|null"${optionalFields.length > 0 ? `,${optionalFields.join(",")}` : ""}}`;
 };
 
 /**
@@ -470,6 +476,9 @@ const rawTurnPlanSchema = z.object({
   intentTopic: z.string().nullable(),
   rewrite: rewriteSchema.nullable(),
   responseLanguage: z.string().nullable(),
+  // Optional (required in the provider schema) so the schema-less fallback contract still
+  // parses a reply that omits it; an unusable tag is dropped without failing the plan.
+  responseLanguageTag: z.string().nullable().optional(),
   routineRankings: z.array(z.object({
     routineId: z.string().min(1),
     confidence: confidenceSchema,
@@ -619,6 +628,7 @@ export const buildTurnPlanResponseFormat = (candidates: {
     intentTopic: nullableStringJsonSchema,
     rewrite: rewriteJsonSchema,
     responseLanguage: nullableStringJsonSchema,
+    responseLanguageTag: nullableStringJsonSchema,
   };
   const required = [
     "route",
@@ -626,6 +636,7 @@ export const buildTurnPlanResponseFormat = (candidates: {
     "intentTopic",
     "rewrite",
     "responseLanguage",
+    "responseLanguageTag",
   ];
 
   if (candidates.routineIds.length > 0) {
@@ -809,6 +820,12 @@ const parseQuickReply = (
   };
 };
 
+/** A planner-written language tag when it has the BCP 47 shape; undefined otherwise. */
+const languageTagOf = (value: string | null | undefined): string | undefined => {
+  const tag = value?.trim() ?? "";
+  return isLocaleTag(tag) ? tag : undefined;
+};
+
 /**
  * Strict parse + semantic validation. Any structural or semantic problem returns
  * `null` (whole-plan rejection — never partial acceptance), so the caller falls
@@ -862,6 +879,7 @@ export const parseTurnPlan = (
   if (parsed.responseLanguage !== null && !responseLanguage) {
     return null;
   }
+  const responseLanguageTag = responseLanguage ? languageTagOf(parsed.responseLanguageTag) : undefined;
 
   const routineRankings: TurnPlan["routineRankings"] = [];
   const seenRoutineIds = new Set<string>();
@@ -907,6 +925,7 @@ export const parseTurnPlan = (
     framing: routing.framing,
     ...(rewriteProposal ? { rewriteProposal } : {}),
     ...(responseLanguage ? { responseLanguage } : {}),
+    ...(responseLanguageTag ? { responseLanguageTag } : {}),
     routineRankings,
     directiveClassifications,
     ...(pageRead ? { pageRead } : {}),

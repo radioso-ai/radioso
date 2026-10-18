@@ -51,6 +51,7 @@ If there is no explicit language instruction, use the language of the latest use
 If the latest user message is short, neutral, or language-ambiguous, preserve the most recent explicit language instruction from the conversation when one exists.
 Return a concise human-readable language label such as "English", "Spanish", or "Estonian".
 If there is no user message or no reliable language can be determined, use null.
+responseLanguageTag is the BCP 47 tag of that same language, language subtag first, such as en, es, et or pt-BR; it is null exactly when responseLanguage is null.
 
 Semantic rewrite guidance:
 {{semantic_rewrite_instructions}}

@@ -119,6 +119,7 @@ import {
   type PendingClarificationResolution,
 } from "./clarification/pendingClarificationResolver.js";
 import { retrievalInputForResolvedSense } from "./clarification/retrievalSenseResolutionInput.js";
+import { createTurnLanguageReport, withTurnLanguageReport, type TurnLanguageReport } from "./turnLanguageReport.js";
 import {
   type RetrievalSenseDetectorPort,
 } from "../../retrieval/public.js";
@@ -1445,6 +1446,12 @@ export class ChatService {
      */
     deliveredReply?: DeliveredReplyReader;
     /**
+     * The stream reports the language the turn answers in, as a `language` event, once the turn
+     * has read it and before the answer's first chunk: for a channel that acts on the language
+     * before the answer (voice). Absent: the stream carries no such event.
+     */
+    reportResponseLanguage?: boolean;
+    /**
      * Caller-owned abort signal (#885), independent of the registry's own
      * supersession signal. The HTTP presenter fires this once the client has
      * disconnected and the turn has not settled within its post-disconnect
@@ -1472,7 +1479,8 @@ export class ChatService {
     try {
       await coordination.lease?.waitForPredecessor();
       const modelCallTrace = createModelCallTraceCollector();
-      yield* runAsyncIterableWithModelCallTrace(modelCallTrace, () =>
+      const turnLanguage = input.reportResponseLanguage ? createTurnLanguageReport() : null;
+      const events = runAsyncIterableWithModelCallTrace(modelCallTrace, () =>
         traceAsyncIterable({
           name: "chat.turn",
           attributes: chatTurnTraceAttributes(input),
@@ -1481,8 +1489,10 @@ export class ChatService {
             coordination,
             modelCallTrace,
             requestReceivedAt,
+            turnLanguage,
           ),
         }));
+      yield* turnLanguage ? withTurnLanguageReport(events, turnLanguage) : events;
     } finally {
       input.signal?.removeEventListener("abort", abortLeaseForDisconnect);
       coordination.lease?.complete();
@@ -1520,7 +1530,7 @@ export class ChatService {
     routineInvocation?: RoutineInvocation;
     deliveredReply?: DeliveredReplyReader;
     signal?: AbortSignal;
-  }, coordination: TurnCoordinationState, modelCallTrace: ModelCallTraceCollector, requestReceivedAt: number): AsyncIterable<ChatStreamEvent> {
+  }, coordination: TurnCoordinationState, modelCallTrace: ModelCallTraceCollector, requestReceivedAt: number, turnLanguage: TurnLanguageReport | null): AsyncIterable<ChatStreamEvent> {
     let firstAnswerChunkObserved = false;
     const observeFirstAnswerChunk = (
       route: "direct" | "retrieval" | "routine" | "other",
@@ -1631,7 +1641,10 @@ export class ChatService {
         pendingClarification: clarification.resolution?.resolvedPending === true,
         suspendedRoutine: Boolean(suspendedRoutine),
       }, coordination.lease?.signal);
-      const responseLanguagePromise = this.planAwareResponseLanguagePromise(input, session);
+      const plannedResponseLanguage = this.planAwareResponseLanguagePromise(input, session);
+      const responseLanguagePromise = turnLanguage
+        ? turnLanguage.observe(plannedResponseLanguage, session.turnPlan)
+        : plannedResponseLanguage;
 
       // Match main's complete JSON preflight boundary: all state reads above must
       // succeed before the first SSE event commits the response.

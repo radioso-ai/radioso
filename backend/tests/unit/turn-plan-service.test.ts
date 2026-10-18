@@ -345,6 +345,26 @@ describe("parseTurnPlan", () => {
     expect(plan?.responseLanguage).toBeUndefined();
   });
 
+  it("carries the language tag the planner gives the response language", () => {
+    const plan = parseTurnPlan(validPlanJson({ responseLanguage: "Italian", responseLanguageTag: "it" }), candidates);
+    expect(plan).toMatchObject({ responseLanguage: "Italian", responseLanguageTag: "it" });
+  });
+
+  it("drops a language tag that is no language tag, or names no response language, and keeps the plan", () => {
+    const notATag = parseTurnPlan(validPlanJson({ responseLanguage: "Italian", responseLanguageTag: "Italian" }), candidates);
+    const withoutLanguage = parseTurnPlan(validPlanJson({ responseLanguage: null, responseLanguageTag: "it" }), candidates);
+    expect(notATag?.responseLanguage).toBe("Italian");
+    expect(notATag).not.toHaveProperty("responseLanguageTag");
+    expect(withoutLanguage).not.toBeNull();
+    expect(withoutLanguage).not.toHaveProperty("responseLanguageTag");
+  });
+
+  it("parses a plan without a language tag (schema-less fallback contract)", () => {
+    const plan = parseTurnPlan(validPlanJson(), candidates);
+    expect(plan?.responseLanguage).toBe("English");
+    expect(plan).not.toHaveProperty("responseLanguageTag");
+  });
+
   it("keeps pageRead absent without a capability and still parses existing fixtures", () => {
     const plan = parseTurnPlan(validPlanJson(), candidates);
     expect(plan).not.toBeNull();
@@ -518,7 +538,15 @@ describe("buildTurnPlanResponseFormat", () => {
   it("uses nullable type unions rather than string for optional fields", () => {
     const format = buildTurnPlanResponseFormat({ routineIds: [], directiveNames: [] });
     expect(schemaProperty(format, "responseLanguage")?.type).toEqual(["string", "null"]);
+    expect(schemaProperty(format, "responseLanguageTag")?.type).toEqual(["string", "null"]);
     expect(schemaProperty(format, "rewrite")?.type).toEqual(["object", "null"]);
+  });
+
+  it("asks for the response language's tag right after its label", () => {
+    const format = buildTurnPlanResponseFormat({ routineIds: [], directiveNames: [] });
+    const keys = Object.keys(format.schema.properties ?? {});
+    expect(keys.indexOf("responseLanguageTag")).toBe(keys.indexOf("responseLanguage") + 1);
+    expect(format.schema.required).toContain("responseLanguageTag");
   });
 
   it("orders rewrite properties and required derivation-first, resolutionNote before turnKind and proposedActiveSubject, before the resolved query fields", () => {
@@ -824,6 +852,12 @@ describe("buildTurnPlanningPrompt", () => {
       '"rewrite":{"resolutionNote":"string|null","turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","temporalQueryMode":"none|listing|topic_refinement","retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null"}],"unresolved":false,"confidence":0.95}',
     );
     expect(prompt).toContain("resolutionNote");
+  });
+
+  it("asks for the response language as a label and as its language tag", () => {
+    const prompt = rendered(promptInput());
+    expect(prompt).toContain('"responseLanguage":"string|null","responseLanguageTag":"string|null"');
+    expect(prompt).toContain("responseLanguageTag");
   });
 
   it("omits candidate-dependent fields from the fallback output shape when candidates are absent", () => {
@@ -1182,7 +1216,7 @@ describe("quick reply", () => {
         expect(format.schema.properties ?? {}).not.toHaveProperty(field);
         expect(format.schema.required).not.toContain(field);
       }
-      expect(Object.keys(format.schema.properties ?? {}).at(-1)).toBe("responseLanguage");
+      expect(Object.keys(format.schema.properties ?? {}).at(-1)).toBe("responseLanguageTag");
     });
 
     it("requires requestPresent, openQuestion, then a strict quickReply object as the last fields, after every derivation field", () => {
@@ -1228,7 +1262,7 @@ describe("quick reply", () => {
       expect(prompt.systemPrompt.split("\n")[0]).toBe(
         "Plan the assistant's next turn in a single pass. Produce independent decisions about how to route it, how to rewrite it for retrieval, and which language to answer in.",
       );
-      expect(prompt.systemPrompt).toMatch(/"responseLanguage":"string\|null","directiveClassifications":\[\{"name":"string","matched":false,"confidence":0\.0\}\]\}/);
+      expect(prompt.systemPrompt).toMatch(/"responseLanguage":"string\|null","responseLanguageTag":"string\|null","directiveClassifications":\[\{"name":"string","matched":false,"confidence":0\.0\}\]\}/);
       expect(prompt.systemPrompt).not.toMatch(/\n\n\n/);
     });
 

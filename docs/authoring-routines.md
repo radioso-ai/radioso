@@ -282,6 +282,11 @@ taking text at the limit. Leave them blank for the default subject, `Book accomm
 for a finish or `Book accommodation: needs a human` for a hand-off. Whatever you
 write, the notice lists every collected value below the intro, so a short
 subject never hides what the guest said. See [Operator notices](#operator-notices)
+
+**Include AI summary** adds a labelled, background-generated note beneath those
+values. It covers relevant details the routine did not collect and uses the
+agent's response language where configured, otherwise the conversation's
+language. If the model call fails, the notice still sends without the note.
 for what the team receives.
 
 **Send with** chooses which notify skill delivers the notice — stored as

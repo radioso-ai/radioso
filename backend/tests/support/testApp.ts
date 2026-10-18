@@ -328,6 +328,7 @@ import {
   InMemoryWorkspaceGrantRepository,
   InMemoryChunkRepository,
   InMemoryConversationRepository,
+  InMemoryCutReplyStore,
   InMemoryVisitorProfileRepository,
   InMemoryDocumentRepository,
   InMemoryDocumentSourceRepository,
@@ -376,6 +377,9 @@ export const createTestEnv = (): Env => ({
   METRICS_ENABLED: false,
   METRICS_PATH: "/metrics",
   METRICS_AUTH_TOKEN: undefined,
+  SLACK_INBOUND_EVENT_RETENTION_DAYS: 7,
+  EXTERNAL_MCP_TOOL_CALL_TIMEOUT_MS: 30_000,
+  ANSWER_COVERAGE_SHADOW_ASSESSOR_ENABLED: true,
   OTEL_ENABLED: false,
   OTEL_EXPORTER_OTLP_ENDPOINT: undefined,
   OTEL_LOGS_ENABLED: false,
@@ -960,6 +964,8 @@ export const createTestDependencies = (overrides: {
   voiceVendorFetch?: typeof globalThis.fetch;
   /** Writes chat's line for a turn a person owns before a teammate has replied; omitted means no line. */
   handoffWaitingMessageGenerator?: ChatServiceOptions["handoffWaitingMessageGenerator"];
+  /** Keeps the heard part of a reply cut off mid-stream; omitted means the in-memory store over the test repositories. */
+  cutReplyStore?: ChatServiceOptions["cutReplyStore"];
   /** Observes the embed-config CDN invalidations; omitted means the deployment has no CDN to invalidate. */
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
   /** Composes the agent tool catalog over the test app's agent row and published-revision readers. */
@@ -2182,6 +2188,8 @@ export const createTestDependencies = (overrides: {
     ),
     // Mirror production wiring: a human-owned conversation suppresses the agent's turn.
     conversationOwnershipReader: conversationOwnershipRepository,
+    // Mirror production wiring: a reply cut off mid-stream keeps the part its listener heard.
+    cutReplyStore: overrides.cutReplyStore ?? new InMemoryCutReplyStore(messageRepository, conversationRepository, auditEventRepository),
     logger,
   });
   const chatBootstrapService = new ChatBootstrapService(
@@ -2784,6 +2792,8 @@ export const createTestDependencies = (overrides: {
   });
   const dependencies: AppDependencies = {
     env,
+    noticeMail: { send: async () => ({ dispatched: false }) },
+    accountAdministrators: { list: async () => [] },
     agentBundleExportService: agentBundleServices.exportService,
     agentBundleImportService: agentBundleServices.importService,
     agentBundleImportCleanupWorker: agentBundleServices.cleanupWorker,
@@ -3153,6 +3163,7 @@ export const createTestApp = (overrides: {
   heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;
   voiceVendorFetch?: typeof globalThis.fetch;
   handoffWaitingMessageGenerator?: ChatServiceOptions["handoffWaitingMessageGenerator"];
+  cutReplyStore?: ChatServiceOptions["cutReplyStore"];
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
 } = {}) => {
   const {

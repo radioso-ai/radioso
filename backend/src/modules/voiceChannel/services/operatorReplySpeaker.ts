@@ -33,7 +33,8 @@ export class OperatorReplySpeaker {
   /** How many claimed replies were recorded as spoken once the turn settled. */
   spokenCount = 0;
   private readonly claimTurnId: string;
-  private taken: { conversationId: string; claimed: string[]; wordless: string[] } | null = null;
+  /** The replies the claim took: those with words, oldest first, with how many speech pieces each is said in, and those without. */
+  private taken: { conversationId: string; claimed: Array<{ messageId: string; pieceCount: number }>; wordless: string[] } | null = null;
   /** The claim, once asked for; it never rejects. Settling waits for it, so a claim in flight is settled too. */
   private claiming: Promise<unknown> | null = null;
   private claimLanded = false;
@@ -77,7 +78,7 @@ export class OperatorReplySpeaker {
       const speakable = replies.filter((reply) => reply.speech.length > 0);
       this.taken = {
         conversationId,
-        claimed: speakable.map((reply) => reply.messageId),
+        claimed: speakable.map((reply) => ({ messageId: reply.messageId, pieceCount: reply.speech.length })),
         wordless: replies.filter((reply) => reply.speech.length === 0).map((reply) => reply.messageId),
       };
       return speakable;
@@ -99,19 +100,22 @@ export class OperatorReplySpeaker {
   }
 
   /**
-   * `heard`: the turn's outcome left before it was cut off, so the caller heard the claimed replies;
-   * they are recorded as spoken, and only then counted and audited. Otherwise they go back to
-   * pending for the next turn. Replies with no words to say are skipped. The first settle decides:
-   * a later one resolves with it. Null when the turn claimed nothing.
+   * `heardThrough`: how many pieces of the turn's speech, counted from the first piece of the first
+   * claimed reply, the caller heard through, because the runtime had more of the turn (a later
+   * piece, or the outcome) before the turn lost its caller; null when the turn failed and nobody
+   * knows. A reply whose pieces all lie within that count is recorded as spoken, and only then
+   * counted and audited. The rest, the reply the caller cut into included, go back to pending, so
+   * the next turn speaks them whole. Replies with no words to say are skipped. The first settle
+   * decides: a later one resolves with it. Null when the turn claimed nothing.
    */
-  settle(heard: boolean): Promise<void> | null {
+  settle(heardThrough: number | null): Promise<void> | null {
     if (!this.settled && this.claiming) {
       if (this.claimLanded && !this.holdsReplies()) {
         // A claim that took nothing has nothing to settle; the turn need not wait on it.
         this.settled = Promise.resolve();
         return null;
       }
-      this.settled = this.claiming.then(() => this.settleClaims(heard));
+      this.settled = this.claiming.then(() => this.settleClaims(heardThrough));
     }
     return this.settled;
   }
@@ -120,17 +124,27 @@ export class OperatorReplySpeaker {
     return this.taken !== null && (this.taken.claimed.length > 0 || this.taken.wordless.length > 0);
   }
 
-  private async settleClaims(heard: boolean): Promise<void> {
+  private async settleClaims(heardThrough: number | null): Promise<void> {
     const { taken } = this;
     if (!taken) {
       return;
+    }
+    const heard: string[] = [];
+    const unheard: string[] = [];
+    let piecesSpoken = 0;
+    for (const reply of taken.claimed) {
+      piecesSpoken += reply.pieceCount;
+      (heardThrough !== null && piecesSpoken <= heardThrough ? heard : unheard).push(reply.messageId);
     }
     const writes: Array<Promise<unknown>> = [];
     if (taken.wordless.length > 0) {
       writes.push(this.settleWrite("skip", taken.wordless));
     }
-    if (taken.claimed.length > 0) {
-      writes.push(heard ? this.recordSpoken(taken.claimed) : this.settleWrite("release", taken.claimed));
+    if (heard.length > 0) {
+      writes.push(this.recordSpoken(heard));
+    }
+    if (unheard.length > 0) {
+      writes.push(this.settleWrite("release", unheard));
     }
     await Promise.all(writes);
   }

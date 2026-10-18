@@ -309,7 +309,7 @@ was written.
 
 Workspaces choose which provider and model are used for each LLM job — chat, query rewrite, rerank. (This is a model-selection job slot, distinct from a skill's `capability` field elsewhere in this API, such as `retrieve` or `email` — see [Agents and skills](/api/agents-and-skills).) Resolution at request time walks: agent override (chat only) → workspace preference → env default. API keys come from the workspace credential first, then the matching environment variable.
 
-On Radioso Cloud, a workspace on a managed plan (Comet or Satellite) runs the plan catalog's managed model set: `gpt-5.4-mini` on OpenAI for chat (answers and Ray), query rewrite, and rerank. The lock applies while the workspace has no credential of its own for the provider its preference or agent override names; add that credential and the preference takes effect exactly as on any other workspace. Planet and self-hosted deployments choose freely. Embedding models are set through ingestion settings and are never managed.
+On Radioso Cloud, a managed plan (Comet, Satellite, or Planet with Radioso's models) runs the catalog's managed model set for chat (including Ray), query rewrite, and rerank, using Radioso deployment credentials. A stored key for the provider a capability selected lifts that managed default for that capability; remove the key to return to Radioso's managed model. Planet and self-hosted deployments choose freely: a workspace key takes precedence over the plan's default, and resolution falls back to the deployment's environment key when the workspace has none. Embedding models are set through ingestion settings and are never managed.
 
 `GET /api/v1/settings/llm-models` returns the current preferences plus, under `managed`, what the plan runs instead of them. `null` for a job means "inherit env default"; `null` under `managed` means the workspace's own choice applies:
 
@@ -326,9 +326,9 @@ On Radioso Cloud, a workspace on a managed plan (Comet or Satellite) runs the pl
 }
 ```
 
-Here the workspace has asked for `claude-sonnet-4-5` for chat, but its plan runs `gpt-5.4-mini` because the workspace holds no Claude key of its own. The dashboard shows the same picture: the picker is read-only with the managed model and a line explaining why. A stored preference stays stored, so it applies as soon as the workspace adds its own key or moves to Planet.
+Here the workspace has asked for `claude-sonnet-4-5` for chat, but its managed plan runs `gpt-5.4-mini` because the workspace has no Claude key. The dashboard shows the same picture: the picker is read-only with the managed model and a line explaining why. Adding a Claude workspace key lifts the managed default for chat and applies the stored preference; removing the key restores the managed default. The same override rule applies to every managed plan, including Planet with Radioso's models.
 
-`PUT /api/v1/settings/llm-models` is a merge-update. Send only the jobs you want to change. Pass `null` to clear one and fall back to the env default. The response is the same shape as `GET`: the full stored preferences plus the plan's `managed` view and `knownModelsByProvider`, refreshed for the change just applied.
+`PUT /api/v1/settings/llm-models` is a merge-update. Send only the jobs you want to change. Pass `null` to clear one and use the policy's default provider and model: the managed default on a managed plan, or the environment default otherwise. The response is the same shape as `GET`: the full stored preferences plus the plan's `managed` view and `knownModelsByProvider`, refreshed for the change just applied.
 
 ```json
 {

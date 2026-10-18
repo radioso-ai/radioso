@@ -111,6 +111,7 @@ export class AssistantChatService {
       chatSessionId,
       sourceOrigin: input.sourceOrigin ?? input.sourceContext?.sourceOrigin ?? null,
       supersession: input.supersession,
+      deliveredReply: input.deliveredReply,
       signal: input.signal,
     });
   }

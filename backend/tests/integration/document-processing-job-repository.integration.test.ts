@@ -14,6 +14,7 @@ describeIntegration("DocumentProcessingJobRepository (Postgres)", () => {
 
   const accountId = randomUUID();
   const workspaceId = randomUUID();
+  const otherWorkspaceId = randomUUID();
 
   beforeAll(async () => {
     await database.query(
@@ -24,10 +25,14 @@ describeIntegration("DocumentProcessingJobRepository (Postgres)", () => {
       `INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, $3, $4)`,
       [workspaceId, accountId, "Processing Job Workspace", `job-route-${workspaceId}`],
     );
+    await database.query(
+      `INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, $3, $4)`,
+      [otherWorkspaceId, accountId, "Other Processing Job Workspace", `job-route-${otherWorkspaceId}`],
+    );
   });
 
   beforeEach(async () => {
-    await database.query("DELETE FROM documents WHERE workspace_id = $1", [workspaceId]);
+    await database.query("DELETE FROM documents WHERE workspace_id = ANY($1::uuid[])", [[workspaceId, otherWorkspaceId]]);
   });
 
   afterAll(async () => {
@@ -35,14 +40,42 @@ describeIntegration("DocumentProcessingJobRepository (Postgres)", () => {
     await database.close().catch(() => undefined);
   });
 
-  const insertDocument = async (revision = 1): Promise<string> => {
+  const insertDocument = async (
+    revision = 1,
+    targetWorkspaceId = workspaceId,
+    status: "queued" | "ready" | "failed" = "queued",
+  ): Promise<string> => {
     const documentId = randomUUID();
     await database.query(
       `INSERT INTO documents (id, workspace_id, title, source_content, markdown_content, status, revision, metadata)
-       VALUES ($1, $2, $3, $4, $4, 'queued', $5, '{}'::jsonb)`,
-      [documentId, workspaceId, "Queued Document", "Queued content", revision],
+       VALUES ($1, $2, $3, $4, $4, $5, $6, '{}'::jsonb)`,
+      [documentId, targetWorkspaceId, "Queued Document", "Queued content", status, revision],
     );
     return documentId;
+  };
+
+  const insertFailedJob = async (input: {
+    documentId: string;
+    workspaceId?: string;
+    revision?: number;
+    kind?: "vectorize" | "enrich";
+    errorCode?: string;
+  }): Promise<string> => {
+    const jobId = randomUUID();
+    await database.query(
+      `INSERT INTO document_processing_jobs
+         (id, document_id, workspace_id, document_revision, kind, status, last_error, last_error_code, completed_at)
+       VALUES ($1, $2, $3, $4, $5, 'failed', 'provider unavailable', $6, now())`,
+      [
+        jobId,
+        input.documentId,
+        input.workspaceId ?? workspaceId,
+        input.revision ?? 1,
+        input.kind ?? "vectorize",
+        input.errorCode ?? "provider_misconfigured",
+      ],
+    );
+    return jobId;
   };
 
   it("persists processing job options through lookup and claim paths", async () => {
@@ -311,5 +344,104 @@ describeIntegration("DocumentProcessingJobRepository (Postgres)", () => {
         documentRevision: 1,
       }))?.options,
     ).toBeNull();
+  });
+
+  it("requeues credential failures in bounded batches and is idempotent once drained", async () => {
+    const documentIds = await Promise.all([
+      insertDocument(1, workspaceId, "failed"),
+      insertDocument(1, workspaceId, "failed"),
+      insertDocument(1, workspaceId, "failed"),
+    ]);
+    await Promise.all(documentIds.map((documentId) => insertFailedJob({ documentId })));
+
+    await expect(repository.requeueProviderCredentialFailures(workspaceId, 2)).resolves.toBe(2);
+    const afterFirstBatch = await database.query<{ status: string; count: string }>(
+      `SELECT status, count(*)::text AS count
+       FROM document_processing_jobs
+       WHERE workspace_id = $1
+       GROUP BY status`,
+      [workspaceId],
+    );
+    expect(Object.fromEntries(afterFirstBatch.map((row) => [row.status, Number(row.count)]))).toEqual({
+      failed: 1,
+      queued: 2,
+    });
+
+    await expect(repository.requeueProviderCredentialFailures(workspaceId, 2)).resolves.toBe(1);
+    await expect(repository.requeueProviderCredentialFailures(workspaceId, 2)).resolves.toBe(0);
+    const documents = await database.query<{ status: string }>(
+      `SELECT status FROM documents WHERE id = ANY($1::uuid[])`,
+      [documentIds],
+    );
+    expect(documents).toHaveLength(3);
+    expect(documents.every((row) => row.status === "queued")).toBe(true);
+  });
+
+  it("ignores stale revisions and credential failures from another workspace", async () => {
+    const currentDocumentId = await insertDocument(1, workspaceId, "failed");
+    const staleDocumentId = await insertDocument(2, workspaceId, "failed");
+    const otherDocumentId = await insertDocument(1, otherWorkspaceId, "failed");
+    const currentJobId = await insertFailedJob({ documentId: currentDocumentId });
+    const staleJobId = await insertFailedJob({ documentId: staleDocumentId, revision: 1 });
+    const otherJobId = await insertFailedJob({ documentId: otherDocumentId, workspaceId: otherWorkspaceId });
+
+    await expect(repository.requeueProviderCredentialFailures(workspaceId, 100)).resolves.toBe(1);
+
+    const jobs = await database.query<{ id: string; status: string }>(
+      `SELECT id, status FROM document_processing_jobs WHERE id = ANY($1::uuid[])`,
+      [[currentJobId, staleJobId, otherJobId]],
+    );
+    expect(Object.fromEntries(jobs.map((row) => [row.id, row.status]))).toEqual({
+      [currentJobId]: "queued",
+      [staleJobId]: "failed",
+      [otherJobId]: "failed",
+    });
+    const untouchedDocuments = await database.query<{ id: string; status: string }>(
+      `SELECT id, status FROM documents WHERE id = ANY($1::uuid[])`,
+      [[staleDocumentId, otherDocumentId]],
+    );
+    expect(Object.fromEntries(untouchedDocuments.map((row) => [row.id, row.status]))).toEqual({
+      [staleDocumentId]: "failed",
+      [otherDocumentId]: "failed",
+    });
+  });
+
+  it("matches the stored provider failure code instead of error message text", async () => {
+    const credentialDocumentId = await insertDocument(1, workspaceId, "failed");
+    const transientDocumentId = await insertDocument(1, workspaceId, "failed");
+    const credentialJobId = await insertFailedJob({ documentId: credentialDocumentId });
+    const transientJobId = await insertFailedJob({
+      documentId: transientDocumentId,
+      errorCode: "provider_transient",
+    });
+
+    await expect(repository.requeueProviderCredentialFailures(workspaceId, 100)).resolves.toBe(1);
+
+    const jobs = await database.query<{ id: string; status: string }>(
+      `SELECT id, status FROM document_processing_jobs WHERE id = ANY($1::uuid[])`,
+      [[credentialJobId, transientJobId]],
+    );
+    expect(Object.fromEntries(jobs.map((row) => [row.id, row.status]))).toEqual({
+      [credentialJobId]: "queued",
+      [transientJobId]: "failed",
+    });
+  });
+
+  it("restores document state only for current-revision vectorize jobs", async () => {
+    const vectorizeDocumentId = await insertDocument(1, workspaceId, "failed");
+    const enrichDocumentId = await insertDocument(1, workspaceId, "ready");
+    await insertFailedJob({ documentId: vectorizeDocumentId, kind: "vectorize" });
+    await insertFailedJob({ documentId: enrichDocumentId, kind: "enrich" });
+
+    await expect(repository.requeueProviderCredentialFailures(workspaceId, 100)).resolves.toBe(2);
+
+    const documents = await database.query<{ id: string; status: string }>(
+      `SELECT id, status FROM documents WHERE id = ANY($1::uuid[])`,
+      [[vectorizeDocumentId, enrichDocumentId]],
+    );
+    expect(Object.fromEntries(documents.map((row) => [row.id, row.status]))).toEqual({
+      [vectorizeDocumentId]: "queued",
+      [enrichDocumentId]: "ready",
+    });
   });
 });

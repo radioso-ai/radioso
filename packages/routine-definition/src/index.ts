@@ -373,7 +373,8 @@ const routineOperatorNoticeSchemaFor = <TText extends z.ZodTypeAny>(text: (maxLe
   subject: text(ROUTINE_DEFINITION_LIMITS.operatorNoticeSubject),
   intro: text(ROUTINE_DEFINITION_LIMITS.operatorNoticeIntro),
   skillName: z.string().trim().min(1).max(ROUTINE_DEFINITION_LIMITS.toolRef).regex(agentSkillNamePattern).optional(),
-  replyToSlot: trimmedText(ROUTINE_DEFINITION_LIMITS.slotKey).regex(slotKeyPattern).optional(),
+ replyToSlot: trimmedText(ROUTINE_DEFINITION_LIMITS.slotKey).regex(slotKeyPattern).optional(),
+  includeAiSummary: z.boolean().optional(),
 }).strict();
 
 export const routineOperatorNoticeSchema = routineOperatorNoticeSchemaFor(optionalTrimmedText);

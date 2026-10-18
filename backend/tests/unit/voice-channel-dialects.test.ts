@@ -9,7 +9,7 @@ import {
   completionsRequestSchema,
   heardUntilFor,
 } from "../../src/modules/voiceChannel/adapters/openaiCompletions/requestSchema.js";
-import { heardPrefixLength } from "../../src/modules/voiceChannel/services/speechText.js";
+import { heardSpeechOf } from "../../src/modules/voiceChannel/services/heardSpeech.js";
 import { ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS } from "../../src/modules/voiceChannel/public.js";
 import { readFileSync } from "node:fs";
 
@@ -133,14 +133,15 @@ describe("completions dialects", () => {
       ))).toBeUndefined();
     });
 
-    it("counts the heard characters of a spoken reply when the replay is a strict prefix of it", () => {
-      expect(heardPrefixLength("We open at nine. See you then!", "We open at nine.  \u200BSee")).toBe(20);
-      expect(heardPrefixLength("Sì, è gratis.", "Sì, è")).toBe(5);
-      expect(heardPrefixLength("We open at nine.", "We open at nine.")).toBeNull();
+    it("counts the heard characters of a spoken reply from what the replay leaves out", () => {
+      const heard = (answer: string[], report: string) => heardSpeechOf({ operatorReplies: [], bridge: null, answer }, report);
+      expect(heard(["We open at nine. ", "See you then!"], "We open at nine.  \u200BSee")?.answerHeardCharacterCount).toBe(20);
+      expect(heard(["Sì, è gratis."], "Sì, è")?.answerHeardCharacterCount).toBe(5);
+      expect(heard(["We open at nine."], "We open at nine.")).toMatchObject({ answerHeardCharacterCount: 16, answerSpokenCharacterCount: 16 });
       // A reply that itself ends in "..." comes back with only its own punctuation missing: heard whole.
-      expect(heardPrefixLength("Let me check...", "Let me check")).toBeNull();
-      expect(heardPrefixLength("We open at nine!", "We open at nine")).toBeNull();
-      expect(heardPrefixLength("We open at nine.", "We close at")).toBeNull();
+      expect(heard(["Let me check..."], "Let me check")).toMatchObject({ answerHeardCharacterCount: 15, answerSpokenCharacterCount: 15 });
+      expect(heard(["We open at nine!"], "We open at nine")).toMatchObject({ answerHeardCharacterCount: 16, answerSpokenCharacterCount: 16 });
+      expect(heard(["We open at nine."], "We close at")).toBeNull();
     });
   });
 });

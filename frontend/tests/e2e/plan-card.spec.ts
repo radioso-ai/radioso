@@ -201,13 +201,38 @@ test('the plan at the self-serve ceiling shows no Upgrade button', async ({ page
   await expect(planCard.getByRole('button', { name: /Buy 300 more/ })).toBeVisible()
 })
 
-test('Upgrade posts the plan and interval and navigates to the returned URL', async ({ page }) => {
+test('Upgrade opens the billing portal for an active subscriber', async ({ page }) => {
   const billingRequests: Array<{ method: 'GET' | 'POST'; path: string; body?: unknown }> = []
   await seedDashboardStorage(page)
   await installDashboardApiMocks(page, {
     billingRequests,
     accountUsageSummary: baseAccountUsageSummary(),
     billingSummary: baseBillingSummary(),
+    planCatalog: basePlanCatalog(),
+    billingPortalUrl: `/w/${workspaceKey}/usage?portalTarget=1`,
+  })
+
+  await page.goto(`/w/${workspaceKey}/usage`)
+  const planCard = page.getByTestId('plan-card')
+  await planCard.getByRole('button', { name: 'Upgrade' }).click()
+
+  await expect(page).toHaveURL(new RegExp(`/w/${workspaceKey}/usage\\?portalTarget=1`))
+  await expect
+    .poll(() => billingRequests.find((entry) => entry.path === '/ee/billing/portal'))
+    .toEqual({
+      method: 'POST',
+      path: '/ee/billing/portal',
+      body: { returnPath: `/w/${workspaceKey}/account` },
+    })
+})
+
+test('Upgrade starts checkout when the account has no active subscription', async ({ page }) => {
+  const billingRequests: Array<{ method: 'GET' | 'POST'; path: string; body?: unknown }> = []
+  await seedDashboardStorage(page)
+  await installDashboardApiMocks(page, {
+    billingRequests,
+    accountUsageSummary: baseAccountUsageSummary(),
+    billingSummary: { ...baseBillingSummary(), status: 'canceled' },
     planCatalog: basePlanCatalog(),
     billingCheckoutUrl: `/w/${workspaceKey}/usage?checkoutTarget=1`,
   })

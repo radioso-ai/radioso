@@ -66,12 +66,13 @@ describe("operator reply speaker", () => {
     expect(speaker.holdsClaims).toBe(true);
   });
 
-  it("records the claimed replies spoken once the turn was heard, then counts and audits them, and skips the wordless ones", async () => {
+  it("records the claimed replies spoken once the caller heard them through, then counts and audits them, and skips the wordless ones", async () => {
     const store = claimStore([wordless, fourWorks]);
     const { speaker, metrics, audit } = speakerOver(store);
     await speaker.claim(conversationId);
 
-    await speaker.settle(true);
+    // Both pieces of the reply were heard through.
+    await speaker.settle(2);
 
     expect(store.speech.get(fourWorks.messageId)).toEqual({ state: "spoken" });
     expect(store.speech.get(wordless.messageId)).toEqual({ state: "skipped" });
@@ -86,25 +87,46 @@ describe("operator reply speaker", () => {
     const { speaker } = speakerOver(store, { withoutAudit: true });
     await speaker.claim(conversationId);
 
-    await speaker.settle(true);
+    await speaker.settle(2);
 
     expect(store.speech.get(fourWorks.messageId)).toEqual({ state: "spoken" });
     expect(speaker.spokenCount).toBe(1);
   });
 
-  it("hands the claimed replies back when the turn was not heard, and keeps that first decision", async () => {
+  it("hands the claimed replies back when the caller did not hear them through, and keeps that first decision", async () => {
     const store = claimStore([fourWorks]);
     const { speaker, metrics, audit } = speakerOver(store);
     await speaker.claim(conversationId);
 
-    await speaker.settle(false);
-    await speaker.settle(true);
+    // The caller spoke over the reply's last piece.
+    await speaker.settle(1);
+    await speaker.settle(2);
 
     expect(store.speech.get(fourWorks.messageId)).toEqual({ state: "pending" });
     expect(store.claims.markOperatorRepliesSpoken).not.toHaveBeenCalled();
     expect(speaker.spokenCount).toBe(0);
     expect(metrics.incrementCounter).not.toHaveBeenCalled();
     expect(audit).not.toHaveBeenCalled();
+  });
+
+  it("records spoken the replies the caller heard through and hands back the one they cut into, or all when the turn failed", async () => {
+    const bringCard = { messageId: "reply-card", text: "Bring your card." };
+    const store = claimStore([fourWorks, bringCard]);
+    const { speaker, audit } = speakerOver(store);
+    await speaker.claim(conversationId);
+
+    // The first reply's two pieces were heard through; the caller spoke over the second reply.
+    await speaker.settle(2);
+
+    expect(store.speech.get(fourWorks.messageId)).toEqual({ state: "spoken" });
+    expect(store.speech.get(bringCard.messageId)).toEqual({ state: "pending" });
+    expect(audit).toHaveBeenCalledWith({ workspaceId, conversationId, messageIds: [fourWorks.messageId] });
+
+    const failedStore = claimStore([fourWorks]);
+    const failed = speakerOver(failedStore).speaker;
+    await failed.claim(conversationId);
+    await failed.settle(null);
+    expect(failedStore.speech.get(fourWorks.messageId)).toEqual({ state: "pending" });
   });
 
   it("settles a claim still being written once it lands", async () => {
@@ -119,7 +141,7 @@ describe("operator reply speaker", () => {
     const { speaker } = speakerOver(store);
 
     const claiming = speaker.claim(conversationId);
-    const settled = speaker.settle(false);
+    const settled = speaker.settle(0);
     land();
     await Promise.all([claiming, settled]);
 
@@ -133,7 +155,7 @@ describe("operator reply speaker", () => {
 
     await first.claim(conversationId);
     expect(await second.claim(conversationId)).toEqual([]);
-    await first.settle(false);
+    await first.settle(0);
     expect(await second.claim(conversationId)).toEqual([]);
 
     expect(store.claims.claimPendingOperatorReplies).toHaveBeenCalledTimes(2);
@@ -142,7 +164,7 @@ describe("operator reply speaker", () => {
   it("settles nothing for a turn that claimed nothing", () => {
     const { speaker } = speakerOver(claimStore([]));
 
-    expect(speaker.settle(true)).toBeNull();
+    expect(speaker.settle(0)).toBeNull();
     expect(speaker.holdsClaims).toBe(false);
   });
 
@@ -152,7 +174,7 @@ describe("operator reply speaker", () => {
     const { speaker, logger } = speakerOver(store);
     await speaker.claim(conversationId);
 
-    await speaker.settle(false);
+    await speaker.settle(0);
 
     expect(logger.warn).toHaveBeenCalledWith(
       { agentId: session.agentId, vendor: "elevenlabs", conversationId, errorClass: "Error", step: "release" },

@@ -73,8 +73,9 @@ const noticeFromPayload = (value: unknown): OperatorNoticeTemplate | null => {
   const subject = asString(value.subject);
   const intro = asString(value.intro);
   const replyToSlot = asString(value.replyToSlot);
-  return subject || intro || replyToSlot
-    ? { ...(subject ? { subject } : {}), ...(intro ? { intro } : {}), ...(replyToSlot ? { replyToSlot } : {}) }
+  const includeAiSummary = value.includeAiSummary === true;
+  return subject || intro || replyToSlot || includeAiSummary
+    ? { ...(subject ? { subject } : {}), ...(intro ? { intro } : {}), ...(replyToSlot ? { replyToSlot } : {}), ...(includeAiSummary ? { includeAiSummary: true } : {}) }
     : null;
 };
 

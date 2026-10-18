@@ -26,6 +26,38 @@ const session = {
 const existingAction = { type: "webhook.send", payload: { destinationRef: "dest_1" } };
 
 describe("routineEndingEffectsForTurn", () => {
+  it("queues the configured assistant locale ahead of the detected turn language", () => {
+    const localizedSession = {
+      ...session,
+      agent: { id: "agent_1", assistantDefaultLocale: "it" },
+      responseLanguage: "English",
+    } as PreparedSession;
+
+    const effects = routineEndingEffectsForTurn({
+      session: localizedSession,
+      workspaceId: "ws_1",
+      turn: { operatorNotice: { routineId: "routine_1", stepId: "done", terminalKind: "complete" } },
+    });
+
+    expect(effects.actions?.at(-1)?.payload.responseLanguage).toBe("it");
+  });
+
+  it("queues the detected turn language when the assistant has no configured locale", () => {
+    const detectedSession = {
+      ...session,
+      agent: { id: "agent_1", assistantDefaultLocale: null },
+      responseLanguage: "Estonian",
+    } as PreparedSession;
+
+    const effects = routineEndingEffectsForTurn({
+      session: detectedSession,
+      workspaceId: "ws_1",
+      turn: { operatorNotice: { routineId: "routine_1", stepId: "done", terminalKind: "complete" } },
+    });
+
+    expect(effects.actions?.at(-1)?.payload.responseLanguage).toBe("Estonian");
+  });
+
   it("queues completion.notify for a completion with a notice and leaves ownership alone", () => {
     const effects = routineEndingEffectsForTurn({
       session,
@@ -292,7 +324,13 @@ describe("a stored hand-off without a notice, from definition to effects", () =>
     transitions: [
       { fromStep: "ask_name", toRef: "reception", guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, fieldRef: null, fieldOp: null, fieldValue: null, fieldValues: null, fieldUnit: null, ordinal: 0 },
     ],
-    terminals: [{ stableStepId: "reception", kind: "handoff", instruction: null, ordinal: 0 }],
+    terminals: [{
+      stableStepId: "reception",
+      kind: "handoff",
+      instruction: null,
+      operatorNotice: { subject: null, intro: null, includeAiSummary: true },
+      ordinal: 0,
+    }],
   };
 
   const renderer: ConversationRoutineStepRenderer = {
@@ -337,6 +375,7 @@ describe("a stored hand-off without a notice, from definition to effects", () =>
       routineId: compiled.id,
       stepId: "reception",
       collected: { guest_name: "Ada Lovelace" },
+      notice: { includeAiSummary: true },
     }));
   });
 });

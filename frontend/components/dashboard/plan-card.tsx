@@ -6,6 +6,7 @@ import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { SegmentedControl, type SegmentedControlOption } from '@/components/ui/segmented-control'
+import { planUpgradeDestination } from '@/lib/plan-upgrade-options'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import {
@@ -116,8 +117,8 @@ export function PlanCard({ monthlyConversations }: { monthlyConversations: Month
     }
   }
 
-  const runPortal = async () => {
-    setPendingAction('portal')
+  const runPortal = async (action: 'upgrade' | 'portal' = 'portal') => {
+    setPendingAction(action)
     setError(null)
     try {
       const { url } = await enterpriseBillingApi.createPortal({ returnPath: pathname })
@@ -152,6 +153,7 @@ export function PlanCard({ monthlyConversations }: { monthlyConversations: Month
   const largestKind = largestPlanUsageKind(monthlyConversations.byKind)
   // The backend derives the next self-serve plan from the catalog; the card never names plans.
   const upgradePlanId = billing.upgradePlanId
+  const upgradeDestination = planUpgradeDestination(billing.status)
 
   const priceLabel = plan
     ? plan.priceCents === 0
@@ -180,14 +182,22 @@ export function PlanCard({ monthlyConversations }: { monthlyConversations: Month
     <div className="flex flex-wrap items-center gap-2">
       {upgradePlanId ? (
         <>
-          <SegmentedControl
-            value={checkoutInterval}
-            onValueChange={(nextInterval) => setCheckoutInterval(nextInterval)}
-            options={INTERVAL_OPTIONS}
-            aria-label="Billing interval"
-          />
+          {upgradeDestination === 'checkout' ? (
+            <SegmentedControl
+              value={checkoutInterval}
+              onValueChange={(nextInterval) => setCheckoutInterval(nextInterval)}
+              options={INTERVAL_OPTIONS}
+              aria-label="Billing interval"
+            />
+          ) : null}
           <Button
-            onClick={() => void runCheckout({ plan: upgradePlanId, interval: checkoutInterval, returnPath: pathname }, 'upgrade')}
+            onClick={() => {
+              if (upgradeDestination === 'portal') {
+                void runPortal('upgrade')
+                return
+              }
+              void runCheckout({ plan: upgradePlanId, interval: checkoutInterval, returnPath: pathname }, 'upgrade')
+            }}
             disabled={pendingAction !== null}
           >
             Upgrade

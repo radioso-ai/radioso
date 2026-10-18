@@ -57,6 +57,7 @@ const createEnv = (port: number): Env => ({
   DB_MIGRATION_STATEMENT_TIMEOUT_MS: 25_000,
   OPENAI_API_KEY: "test-key",
   OPENAI_CHAT_MODEL: "gpt-5.2",
+  OPENAI_DATA_RESIDENCY: "global",
   OPENAI_VECTOR_MODEL: "text-embedding-3-small",
   LLM_PROVIDER: "openai",
   SESSION_COOKIE_NAME: "radioso_session",

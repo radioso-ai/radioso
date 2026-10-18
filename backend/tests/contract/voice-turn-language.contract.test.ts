@@ -30,7 +30,13 @@ const modelThatWaitsForTheBridge = () => {
   let bridgeHeard: () => void = () => undefined;
   let heard = Promise.resolve();
   const waitForBridge = async (): Promise<void> => {
-    await Promise.race([heard, new Promise((resolve) => setTimeout(resolve, 5_000))]);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const limit = new Promise<void>((resolve) => { timer = setTimeout(resolve, 5_000); });
+    try {
+      await Promise.race([heard, limit]);
+    } finally {
+      clearTimeout(timer);
+    }
   };
   const gateway: ChatGateway = {
     answer: async () => {
@@ -85,8 +91,11 @@ const call = async () => {
   const chatTurns = vi.spyOn(dependencies.assistantChatService, "streamAnswer");
   const sessionKey = randomUUID();
 
-  /** One streamed turn as ElevenLabs sends it, for a session the page started in English; resolves the text the runtime received. */
-  const runtimeSends = async (messages: unknown[], expectedBridge: string): Promise<string> => {
+  /**
+   * One streamed turn as ElevenLabs sends it, for a session the page started in English; resolves
+   * the content frames the runtime received, in order, without the dialect's wire-only deltas.
+   */
+  const runtimeSends = async (messages: unknown[], expectedBridge: string): Promise<string[]> => {
     const bridgeHeard = model.nextBridge();
     const response = await request(app)
       .post(`/api/v1/agents/${agentId}/voice/elevenlabs/v1/chat/completions`)
@@ -108,8 +117,9 @@ const call = async () => {
     return frames.slice(0, -1).flatMap((frame) => {
       const content = (JSON.parse(frame) as { choices: Array<{ delta: { content?: string } }> }).choices[0]?.delta.content;
       // The elevenlabs dialect's flush delta and keep-alive (a space and a zero-width space) are wire-level, not speech.
-      return content ? [content.replace(/ ?\u200B/gu, "")] : [];
-    }).join("");
+      const spoken = content?.replace(/ ?\u200B/gu, "").trim();
+      return spoken ? [spoken] : [];
+    });
   };
   const userExpectedLocales = () => chatTurns.mock.calls.map(([input]) => (input as { userExpectedLocale?: string }).userExpectedLocale);
   return { runtimeSends, userExpectedLocales };
@@ -123,20 +133,21 @@ describe("a call whose caller changes language mid-call", () => {
       { role: "system", content: "You are the booking line." },
       { role: "user", content: "Hello, when are you open?" },
     ], ENGLISH_BRIDGE);
-    expect(english.startsWith(ENGLISH_BRIDGE)).toBe(true);
+    // The bridge line is the turn's first frame, and the answer follows it.
+    expect(english[0]).toBe(ENGLISH_BRIDGE);
+    expect(english.length).toBeGreaterThan(1);
 
     const italian = await voiceCall.runtimeSends([
       { role: "system", content: "You are the booking line." },
       { role: "user", content: "Hello, when are you open?" },
-      { role: "assistant", content: english },
+      { role: "assistant", content: english.join(" ") },
       { role: "user", content: "Scusi, parla italiano?" },
       ...languageSwitch("it"),
       { role: "assistant", content: "Certo, parlo italiano." },
       { role: "user", content: "Siete aperti domenica?" },
     ], ITALIAN_BRIDGE);
-    expect(italian.startsWith(ITALIAN_BRIDGE)).toBe(true);
-    // The answer follows the bridge line on the same turn.
-    expect(italian.slice(ITALIAN_BRIDGE.length).trim()).not.toBe("");
+    expect(italian[0]).toBe(ITALIAN_BRIDGE);
+    expect(italian.length).toBeGreaterThan(1);
 
     // The session's own locale is how the call started, not a language for chat to answer in.
     expect(voiceCall.userExpectedLocales()).toEqual([undefined, "it"]);

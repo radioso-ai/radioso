@@ -197,9 +197,16 @@ const readToolCallArgument = ({ toolCall }: CompletionsToolCallSource, body: unk
  */
 export const turnLanguageFor = (dialect: CompletionsDialect, request: CompletionsRequestParts): VoiceReportedTurnLanguage | undefined => {
   for (const source of dialect.turnLocaleFrom) {
-    const tag = usableValue("toolCall" in source ? readToolCallArgument(source, request.body) : readSource(source.field, request));
-    if (tag && isLocaleTag(tag)) {
-      return { tag, source: "toolCall" in source ? "vendor_detected" : "turn_field" };
+    if ("toolCall" in source) {
+      const tag = usableValue(readToolCallArgument(source, request.body));
+      if (tag && isLocaleTag(tag)) {
+        return { tag, source: "vendor_detected" };
+      }
+      continue;
+    }
+    const tag = firstValue([source.field], request, isLocaleTag);
+    if (tag) {
+      return { tag, source: "turn_field" };
     }
   }
   return undefined;

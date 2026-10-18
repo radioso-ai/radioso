@@ -1,15 +1,9 @@
 import type { AgentVoiceSettings, VoiceBridgeStyle } from "../../agents/public.js";
-import type { VoiceReportedTurnLanguage, VoiceTurnLanguageSource } from "../domain.js";
+import type { VoiceReportedTurnLanguage, VoiceTurnLanguage } from "../domain.js";
 import { spokenText } from "./speechText.js";
 
 /** The language a turn falls back to when neither the request nor the agent names one. */
 const FALLBACK_LOCALE = "en";
-
-/** The language a turn's lines are spoken in, and where it came from. */
-export interface VoiceTurnLanguage {
-  tag: string;
-  source: VoiceTurnLanguageSource;
-}
 
 /** What the turn policy may say for this turn; null where the agent authored nothing for it. */
 export interface VoiceTurnLines {
@@ -67,7 +61,7 @@ export const resolveVoiceLanguage = (sources: {
   agentDefault: string | null;
 }): VoiceTurnLanguage => {
   if (sources.turn) {
-    return { tag: sources.turn.tag, source: sources.turn.source };
+    return sources.turn;
   }
   if (sources.session) {
     return { tag: sources.session, source: "session" };

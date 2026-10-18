@@ -19,10 +19,11 @@ import {
   type VoiceSessionStartLookup,
   type VoiceTurnEvent,
   type VoiceTurnInput,
+  type VoiceTurnLanguage,
   type VoiceTurnOutcome,
   type VoiceTurnPort,
 } from "../domain.js";
-import { chooseVoiceTurnLines, resolveVoiceLanguage, type VoiceTurnLanguage } from "./voiceLines.js";
+import { chooseVoiceTurnLines, resolveVoiceLanguage } from "./voiceLines.js";
 import {
   recordVoiceBridgeDue,
   recordVoiceFirstSpeech,

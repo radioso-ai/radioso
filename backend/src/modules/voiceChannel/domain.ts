@@ -24,11 +24,16 @@ export interface VoiceSessionRef {
  */
 export type VoiceTurnLanguageSource = "vendor_detected" | "turn_field" | "session" | "agent_default" | "fallback";
 
-/** A language the request reports for its turn alone, as a BCP 47 tag. */
-export interface VoiceReportedTurnLanguage {
+/** The language a turn speaks in, as a BCP 47 tag, and where it came from. */
+export interface VoiceTurnLanguage {
   tag: string;
-  source: Extract<VoiceTurnLanguageSource, "vendor_detected" | "turn_field">;
+  source: VoiceTurnLanguageSource;
 }
+
+/** A language the request reports for its turn alone. */
+export type VoiceReportedTurnLanguage = VoiceTurnLanguage & {
+  source: Extract<VoiceTurnLanguageSource, "vendor_detected" | "turn_field">;
+};
 
 export interface VoiceTurnInput {
   session: VoiceSessionRef;

@@ -222,10 +222,10 @@ describe("the language of one turn", () => {
   it("reads the generic turn locale from its header, then the metadata body field, and no tool call", () => {
     const generic = dialect("generic");
 
-    expect(turnLanguageFor(generic, { headers: { "x-radioso-voice-turn-locale": "fr-CA" }, body: { metadata: { turnLocale: "es" } } }))
+    expect(turnLanguageFor(generic, { headers: { "x-radioso-voice-turn-locale": "fr-CA" }, body: { metadata: { turn_locale: "es" } } }))
       .toEqual({ tag: "fr-CA", source: "turn_field" });
     // A header that is not a language tag falls through to the body field.
-    expect(turnLanguageFor(generic, { headers: { "x-radioso-voice-turn-locale": "French" }, body: { metadata: { turnLocale: "es" } } }))
+    expect(turnLanguageFor(generic, { headers: { "x-radioso-voice-turn-locale": "French" }, body: { metadata: { turn_locale: "es" } } }))
       .toEqual({ tag: "es", source: "turn_field" });
     expect(turnLanguageFor(generic, { headers: { "x-radioso-voice-locale": "de" }, body: { metadata: { locale: "de" } } })).toBeUndefined();
     expect(turnLanguageFor(generic, elevenlabsHistory(languageSwitch({ reason: "Italian", language: "it" }), { role: "user", content: "Ciao" })))

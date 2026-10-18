@@ -88,7 +88,8 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   vendors that share it differ only by a dialect in `dialects.ts`, which is
   data: where the session key, the session's locale and the turn's own
   language travel (a header, a body path, or the newest call of a named tool
-  in the replayed `messages`), the default transport, the flush and keep-alive deltas a runtime needs, and the suffix
+  in the replayed `messages`), the default transport, the flush and
+  keep-alive deltas a runtime needs, and the suffix
   it appends to a reply the caller cut short. Vendor field names live there
   and in `requestSchema.ts`, never in the domain. `adapters/elevenlabs/` is
   the ElevenLabs `VoiceSessionStarter`: the signed-URL request with the key in
@@ -334,7 +335,7 @@ helpers and the shared chat message limit from `app/http`
   tool that switches the call's voice and transcription:
   https://elevenlabs.io/docs/eleven-agents/customization/tools/system-tools/language-detection);
   on `generic`, the `X-Radioso-Voice-Turn-Locale` header, then
-  `metadata.turnLocale`. A newest call that cannot be read (arguments that are
+  `metadata.turn_locale`. A newest call that cannot be read (arguments that are
   not JSON, a `language` that is not a tag) reports nothing rather than an
   older language. The source is `vendor_detected` or `turn_field`. The
   reported language picks the lines (previous decision) and reaches chat as

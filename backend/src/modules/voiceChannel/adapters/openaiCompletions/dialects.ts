@@ -92,7 +92,7 @@ const COMPLETIONS_DIALECTS = new Map<string, CompletionsDialect>([
     id: "generic",
     sessionKeyFrom: [{ header: "x-radioso-voice-session" }, { bodyPath: ["metadata", "session_key"] }],
     localeFrom: [{ header: "x-radioso-voice-locale" }, { bodyPath: ["metadata", "locale"] }],
-    turnLocaleFrom: [{ field: { header: "x-radioso-voice-turn-locale" } }, { field: { bodyPath: ["metadata", "turnLocale"] } }],
+    turnLocaleFrom: [{ field: { header: "x-radioso-voice-turn-locale" } }, { field: { bodyPath: ["metadata", "turn_locale"] } }],
     transportDefault: "web",
   }],
 ]);

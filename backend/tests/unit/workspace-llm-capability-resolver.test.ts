@@ -307,8 +307,11 @@ describe("WorkspaceLlmCapabilityResolver", () => {
 
     const config = await resolver.resolve("chat", { workspaceId: "ws-1" });
 
-    expect(config).toMatchObject({ provider: "openai", apiKey: "ws-openai-key", openAIDataResidency: "global" });
+    expect(config).toMatchObject({ provider: "openai", apiKey: "ws-openai-key" });
     expect(config.baseUrl).toBeUndefined();
+    // Omitted, not stamped "global": agrees with providerConfig's own present-only-when-it-
+    // matters convention for this field.
+    expect(config.openAIDataResidency).toBeUndefined();
   });
 
   it("produces no base URL for a native openai capability at the default (global) residency", async () => {
@@ -322,7 +325,7 @@ describe("WorkspaceLlmCapabilityResolver", () => {
     const config = await resolver.resolve("chat", { workspaceId: "ws-1" });
 
     expect(config.baseUrl).toBeUndefined();
-    expect(config.openAIDataResidency).toBe("global");
+    expect(config.openAIDataResidency).toBeUndefined();
   });
 
   it("reaches the platform's residency even when a workspace preference moves a different capability's own env default onto openai", async () => {

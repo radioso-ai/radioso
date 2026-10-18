@@ -42,8 +42,13 @@ interface WorkspaceLlmCapabilityResolverDependencies {
   settings: WorkspaceCapabilityPreferencePort;
   credentials: WorkspaceCapabilityCredentialPort;
   envKeys: EnvProviderKeyResolver;
-  /** Base URLs for env-configured providers (e.g. openai-compatible). */
-  envBaseUrls?: Partial<Record<LlmProviderName, string>>;
+  /**
+   * The env-configured openai-compatible base URL. Native `openai` never reaches this port —
+   * its platform endpoint comes solely from `defaults.openAIPlatformResidency` — so there is
+   * exactly one channel per provider for "where composition's env config supplies a base URL",
+   * not two.
+   */
+  envBaseUrls?: { "openai-compatible"?: string };
   /** Absent means every workspace picks freely (self-host). */
   managedModelPolicy?: ManagedModelPolicy;
   logger?: Pick<AppLogger, "debug" | "info">;
@@ -245,17 +250,16 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
    */
   private resolveOpenAIEndpoint(
     credentialSource: LlmCredentialSource,
-  ): { baseUrl?: string; openAIDataResidency: OpenAIDataResidency } {
+  ): { baseUrl?: string; openAIDataResidency?: OpenAIDataResidency } {
     if (credentialSource !== "environment") {
-      return { openAIDataResidency: "global" };
+      return {};
     }
     const platform = this.deps.defaults.openAIPlatformResidency;
-    if (!platform) {
-      return { openAIDataResidency: "global" };
+    // Omitted at the default (global) residency too, agreeing with providerConfig's own
+    // present-only-when-it-matters convention for this field.
+    if (!platform || platform.residency === "global") {
+      return {};
     }
-    return {
-      openAIDataResidency: platform.residency,
-      ...(platform.baseUrl ? { baseUrl: platform.baseUrl } : {}),
-    };
+    return { openAIDataResidency: platform.residency, baseUrl: platform.baseUrl };
   }
 }

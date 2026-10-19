@@ -468,7 +468,9 @@ function RoutineEditorScreen({
   const [documentDraft, setDocumentDraft] = useState<RoutineDefinitionDraft | null>(null)
   const [draftHeader, setDraftHeader] = useState<RoutineDraftHeader>(() => headerFromDraft(emptyRoutineDraft()))
   // The Document editor owns its state while mounted; flows that replace the whole draft
-  // in place (draft assist) bump this nonce so the editor remounts on the new draft.
+  // from outside it (loading a route, draft assist) bump this nonce so the editor remounts on
+  // the new draft. A new routine's first save does not: the document being typed in becomes
+  // the saved routine's, with its open step and caret.
   const [documentSessionNonce, setDocumentSessionNonce] = useState(0)
   const [validation, setValidation] = useState<RoutineValidationResult | null>(null)
   const [validatedDraftSignature, setValidatedDraftSignature] = useState<string | null>(null)
@@ -486,8 +488,10 @@ function RoutineEditorScreen({
   const [mapDialogOpen, setMapDialogOpen] = useState(false)
   const currentRoutineIdRef = useRef<string | null>(null)
   const isTogglingEnabledRef = useRef(false)
-  const pendingRoutineToggleRef = useRef<{ routineId: string; previousEnabled: boolean } | null>(null)
+  const pendingRoutineToggleRef = useRef<{ previousEnabled: boolean } | null>(null)
   const initializedRouteKeyRef = useRef<string | null>(null)
+  // A new routine's first create while it is in flight; see `saveDraft`.
+  const createInFlightRef = useRef<Promise<unknown> | null>(null)
   const { beginSave, isCurrentSave, markError, markSaved } = useSettingsSaveStatus(onSaveStateChange)
   useCopilotEntity(
     'routine',
@@ -597,6 +601,9 @@ function RoutineEditorScreen({
     queueMicrotask(() => {
       if (!active) return
       if (routineRouteId !== 'new' && currentRoutineIdRef.current === routineRouteId) {
+        // The route caught up to the routine this editor already holds, as after a new
+        // routine's first save. Recording it means a later route to /new starts a fresh draft.
+        initializedRouteKeyRef.current = `${agentId}:${routineRouteId}`
         setIsLoading(false)
         return
       }
@@ -621,6 +628,7 @@ function RoutineEditorScreen({
         setDraftHeader(nextHeader)
         setForm(routineToForm(draftAsRoutine(nextDraft)))
         setDocumentDraft(null)
+        setDocumentSessionNonce((nonce) => nonce + 1)
         setIsLoading(false)
         return
       }
@@ -641,6 +649,7 @@ function RoutineEditorScreen({
           setDraftHeader(headerFromDraft(response.routine))
           setForm(routineToForm(response.routine))
           setDocumentDraft(null)
+          setDocumentSessionNonce((nonce) => nonce + 1)
           setValidatedDraftSignature(null)
         })
         .catch((loadError) => {
@@ -657,6 +666,45 @@ function RoutineEditorScreen({
     }
   }, [agentId, routineRouteId])
 
+  // The created routine becomes this editor's whether or not its save is still the current
+  // one: every later save, including one already waiting on this create, must update it.
+  const adoptCreatedRoutine = (routine: RoutineDefinition) => {
+    currentRoutineIdRef.current = routine.id
+    setEditingRoutine(routine)
+    setEditingRoutineId(routine.id)
+    clearNewRoutineRecovery(agentId)
+    // A shallow replace, not a Next navigation: the dashboard reads its route from the
+    // browser path, so this same editor becomes the saved routine's and keeps the open
+    // step, the caret, and whatever was typed while the create was in flight. A Next
+    // navigation would remount the page and reload the routine as it was sent.
+    if (currentBrowserUrlMatches(buildPersistedHref('new'))) {
+      window.history.replaceState(null, '', buildPersistedHref(routine.id))
+    }
+  }
+
+  // The id a write goes to, or null while the routine is unsaved. A write that starts during a
+  // new routine's first create waits for that create and goes to the routine it made. Read
+  // from the ref, not a render's `editingRoutineId`: the autosave timer can run a closure from
+  // before the created id reached state.
+  const resolveSavedRoutineId = useCallback(async (): Promise<string | null> => {
+    if (currentRoutineIdRef.current === null && createInFlightRef.current) {
+      await createInFlightRef.current.catch(() => undefined)
+    }
+    return currentRoutineIdRef.current
+  }, [])
+
+  const createRoutine = async (draft: RoutineDefinitionDraft) => {
+    const creating = routinesApi.createRoutine(agentId, draft)
+    createInFlightRef.current = creating
+    try {
+      const response = await creating
+      adoptCreatedRoutine(response.routine)
+      return response
+    } finally {
+      if (createInFlightRef.current === creating) createInFlightRef.current = null
+    }
+  }
+
   const saveDraft = async ({ refreshEditor = true }: { refreshEditor?: boolean } = {}): Promise<RoutineDefinition | null> => {
     const draft = activeRoutineDraft
     if (!draft) return null
@@ -668,18 +716,21 @@ function RoutineEditorScreen({
     }
     const draftSignature = JSON.stringify(draft)
     const saveId = beginSave()
-    const wasNew = !editingRoutineId
     setIsSaving(true)
     setError(null)
     try {
+      // A second create would leave the first one orphaned. If a newer save started while
+      // this one waited, it carries a newer draft and this one has nothing to send.
+      const routineId = await resolveSavedRoutineId()
+      if (!isCurrentSave(saveId)) return null
       // The update branch never sends `enabled`: the enable/disable toggle
       // (toggleRoutineEnabled) is this field's only writer, so a content autosave that also
       // carried a copy of it could race that toggle's own PATCH and overwrite it with a stale
       // value regardless of which request the operator triggered second. A brand-new routine
       // has no stored value to preserve, so create still sends whatever the header holds.
-      const response = editingRoutineId
-        ? await routinesApi.updateRoutine(agentId, editingRoutineId, routineContentUpdatePayload(draft))
-        : await routinesApi.createRoutine(agentId, draft)
+      const response = routineId
+        ? await routinesApi.updateRoutine(agentId, routineId, routineContentUpdatePayload(draft))
+        : await createRoutine(draft)
       if (!isCurrentSave(saveId)) return null
       currentRoutineIdRef.current = response.routine.id
       setEditingRoutine(response.routine)
@@ -692,15 +743,6 @@ function RoutineEditorScreen({
       setValidation(response.validation)
       setValidatedDraftSignature(draftSignature)
       markSaved()
-      if (wasNew) {
-        clearNewRoutineRecovery(agentId)
-        // A raw history replacement leaves `routineRouteId === 'new'` mounted, so its
-        // recovery effect writes the just-created draft back into session storage. Route
-        // through Next instead: the persisted editor replaces the new-draft screen.
-        if (currentBrowserUrlMatches(buildPersistedHref('new'))) {
-          router.replace(buildPersistedHref(response.routine.id))
-        }
-      }
       return response.routine
     } catch (saveError) {
       if (!isCurrentSave(saveId)) return null
@@ -758,10 +800,14 @@ function RoutineEditorScreen({
     })()
   }, [flushPendingSave, router, testChatHref])
 
+  // Recovery holds a routine that has never been saved. The route reaches the saved id a
+  // render after the create returns, so the created id, not the route, ends it: a keystroke
+  // in between must not write the saved routine back as a new draft.
+  const isUnsavedNewRoutine = isNewRoutine && !editingRoutineId
   useEffect(() => {
-    if (!isNewRoutine || !activeRoutineDraft) return
+    if (!isUnsavedNewRoutine || !activeRoutineDraft) return
     writeNewRoutineRecovery(agentId, { draft: activeRoutineDraft, header: draftHeader })
-  }, [activeRoutineDraft, agentId, draftHeader, isNewRoutine])
+  }, [activeRoutineDraft, agentId, draftHeader, isUnsavedNewRoutine])
 
   // Mirrors the list row's switch: takes effect immediately for a saved routine, rather than
   // waiting on the autosave debounce that owns the rest of the form.
@@ -776,21 +822,25 @@ function RoutineEditorScreen({
     // The ref closes the small gap before React has rendered the disabled switch. Without it,
     // two discrete events could still start overlapping PATCHes and let the older response win.
     if (isTogglingEnabledRef.current) return
+    const pending = { previousEnabled: draftHeader.enabled }
     setDraftHeader((current) => ({ ...current, enabled }))
-    if (!editingRoutineId) return
-    setError(null)
-    const pending = { routineId: editingRoutineId, previousEnabled: draftHeader.enabled }
     pendingRoutineToggleRef.current = pending
     isTogglingEnabledRef.current = true
     setIsTogglingEnabled(true)
     try {
-      await applyRoutineEnabledToggle(editingRoutineId, enabled, {
+      // A toggle during the first create must wait for its id: the create already sent the
+      // old value, and content saves never send `enabled`, so only this PATCH can carry it.
+      // With no id at all the routine is unsaved, and the header is what its create sends.
+      const routineId = await resolveSavedRoutineId()
+      if (!routineId) return
+      setError(null)
+      await applyRoutineEnabledToggle(routineId, enabled, {
         onSuccess: (routine) => {
           if (pendingRoutineToggleRef.current !== pending || currentRoutineIdRef.current !== routine.id) return
           setEditingRoutine(routine)
         },
         onError: (message) => {
-          if (pendingRoutineToggleRef.current !== pending || currentRoutineIdRef.current !== pending.routineId) return
+          if (pendingRoutineToggleRef.current !== pending || currentRoutineIdRef.current !== routineId) return
           setError(message)
           setDraftHeader((current) => ({ ...current, enabled: pending.previousEnabled }))
         },
@@ -802,7 +852,7 @@ function RoutineEditorScreen({
         setIsTogglingEnabled(false)
       }
     }
-  }, [applyRoutineEnabledToggle, draftHeader.enabled, editingRoutineId])
+  }, [applyRoutineEnabledToggle, draftHeader.enabled, resolveSavedRoutineId])
 
   const deleteRoutine = async () => {
     if (!editingRoutine) return
@@ -924,7 +974,7 @@ function RoutineEditorScreen({
 
             {activeRoutineDraft ? (
               <RoutineDocumentTab
-                key={`${agentId}:${routineRouteId}:${documentSessionNonce}`}
+                key={`${agentId}:${documentSessionNonce}`}
                 draft={activeRoutineDraft}
                 diagnostics={validationDiagnostics}
                 onOpenDraftAssist={onOpenDraftAssist}

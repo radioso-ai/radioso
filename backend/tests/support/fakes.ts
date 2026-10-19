@@ -183,7 +183,7 @@ import type {
   MessageRepositoryPort,
 } from "../../src/db/repositories/messageRepository.js";
 import type { MessageSource } from "@radioso/conversation-contract";
-import { deriveMessageSourceFromRole } from "../../src/db/repositories/messageRepository.js";
+import { deriveMessageSourceFromRole, ISO_INSTANT_PATTERN } from "../../src/db/repositories/messageRepository.js";
 import type { OperatorReplyClaim, PendingOperatorReply, ReplyInterruption } from "../../src/modules/chat/contracts/index.js";
 import { VOICE_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 import { isHumanAuthoredMessageSource } from "../../src/shared/domain/messageAuthorship.js";
@@ -218,7 +218,7 @@ import {
   type OperatorDocumentTypeDefinition,
   type RetiredDocumentTypeFieldIdentity,
 } from "../../src/modules/documentTypes/contracts/documentTypeCatalog.js";
-import { decodeCursorWithKeys, encodeCursor } from "../../src/shared/domain/cursorPagination.js";
+import { CursorPaginationError, decodeCursorWithKeys, encodeCursor } from "../../src/shared/domain/cursorPagination.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 
 interface InMemoryConnectorConfigRecord {
@@ -4926,6 +4926,13 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
         messages: newest,
         latestCursor: lastReturned ? this.cursorFor(lastReturned) : latestCursor,
       };
+    }
+
+    // Mirrors MessageRepository.preciseTimestamptz: a caller-supplied cursor is format-checked
+    // before use, so a malformed one answers the cursor's own 400 rather than reaching a cast
+    // error on the real repository (#1518 follow-up).
+    if (!ISO_INSTANT_PATTERN.test(input.sinceCreatedAt)) {
+      throw new CursorPaginationError("Cursor createdAt is not a valid timestamp");
     }
 
     // The in-memory store only ever creates millisecond-precision `Date`s, so comparing the

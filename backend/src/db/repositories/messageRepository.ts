@@ -20,7 +20,7 @@ import { VOICE_BEHAVIOR } from "../../shared/domain/behaviorConfig.js";
 import { HUMAN_AUTHORED_MESSAGE_SOURCES, isHumanAuthoredMessageSource } from "../../shared/domain/messageAuthorship.js";
 import { clockTimestamp, clockTimestampMinusSeconds, jsonbConcat, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
-import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
+import { CursorPaginationError, decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 import type { GroundingDiagnosticSnapshot } from "../../shared/domain/groundingDiagnostic.js";
 
 export type MessageRole = "user" | "assistant" | "system";
@@ -314,8 +314,27 @@ const markerRecordedAt = isoText(clockTimestamp());
  */
 const preciseIsoText = (columnName: string) =>
   sql<string>`to_char(${sql.ref(columnName)} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US') || 'Z'`;
-/** A tail cursor's `createdAt` text, cast back to `timestamptz` at its own precision for a column comparison. */
-const preciseTimestamptz = (text: string) => sql<Date>`${text}::timestamptz`;
+
+/**
+ * An ISO-8601 UTC instant with zero to six fractional-second digits — `preciseIsoText`'s own shape,
+ * and a legacy `Date.prototype.toISOString()` cursor's. Structural format check, not a timestamp
+ * parse: it rejects anything that isn't this shape before the text ever reaches a cast.
+ */
+export const ISO_INSTANT_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,6})?Z$/;
+
+/**
+ * A tail cursor's `createdAt` text, cast back to `timestamptz` at its own precision for a column
+ * comparison. This text now reaches Postgres directly rather than through a JS `Date` (which would
+ * have produced `Invalid Date` for garbage input, not a crash), so a caller-supplied cursor is
+ * format-checked here first: an untrusted cursor that fails the cast would otherwise surface as a
+ * raw database error (500) instead of the cursor's own 400.
+ */
+export const preciseTimestamptz = (text: string) => {
+  if (!ISO_INSTANT_PATTERN.test(text)) {
+    throw new CursorPaginationError("Cursor createdAt is not a valid timestamp");
+  }
+  return sql<Date>`${text}::timestamptz`;
+};
 
 /**
  * Builds a message tail cursor from a row carrying {@link preciseIsoText}'s `created_at_precise`
@@ -514,19 +533,24 @@ export class MessageRepository
           .where("conversation_id", "=", conversationId)
           .executeTakeFirst())?.count ?? "0");
 
-    const cursorCreatedAt = cursor ? new Date(cursor.keys.createdAt) : null;
+    // The boundary is resolved in Postgres from the cursor's id, not its `createdAt` text: `created_at`
+    // carries microseconds (`clock_timestamp()`), and a JS `Date` round trip of the cursor's text would
+    // truncate them, permanently skipping a row recorded within the boundary's millisecond (same fix as
+    // `listBeforeByConversationId`). A boundary id no longer in the conversation (e.g. a deleted user
+    // message) makes the subquery return no row, so the comparison is unknown and nothing matches.
     const rows = await this.db
       .selectFrom("messages")
       .select(messageColumns)
       .where("workspace_id", "=", workspaceId)
       .where("conversation_id", "=", conversationId)
       .$if(Boolean(cursor), (qb) =>
-        qb.where((eb) =>
-          eb.or([
-            eb("created_at", "<", cursorCreatedAt!),
-            eb.and([eb("created_at", "=", cursorCreatedAt!), eb("id", "<", cursor!.keys.id)]),
-          ]),
-        ),
+        qb.where(sql<boolean>`(created_at, id) < (
+          SELECT boundary.created_at, boundary.id
+            FROM messages boundary
+           WHERE boundary.id = ${cursor!.keys.id}
+             AND boundary.workspace_id = ${workspaceId}
+             AND boundary.conversation_id = ${conversationId}
+        )`),
       )
       .orderBy("created_at", "desc")
       .orderBy("id", "desc")
@@ -558,11 +582,16 @@ export class MessageRepository
   ): Promise<{ messages: MessageRecord[]; latestCursor: string | null }> {
     // Tail cursor is (created_at, id), `created_at` carried as `preciseIsoText` so the cursor
     // round-trips the database's full microsecond precision rather than the millisecond precision
-    // a JS `Date` read of the column would round it to. `id` is a tie-break only for a genuine
-    // full-precision tie; messages within a conversation are inserted one-per-operation via
-    // clock_timestamp() and are causally sequential, so that tie is not otherwise expected. Do not
-    // batch-insert multiple messages to one conversation in a single statement, which could produce
-    // one.
+    // a JS `Date` read of the column would round it to. `id` is a tie-break only for two rows that
+    // land on the exact same clock_timestamp() value (do not batch-insert multiple messages to one
+    // conversation in a single statement, which could produce one).
+    //
+    // This is not a defense against a message committing out of clock_timestamp() order: two
+    // writers to one conversation (an operator reply landing mid-turn, or two channels such as
+    // email and web) are not serialized against each other, and clock_timestamp() is read before
+    // commit, so a transaction that reads an earlier timestamp can still commit after one that
+    // read a later one and was already delivered. A message that lands behind an
+    // already-delivered cursor this way is a pre-existing gap, not introduced or closed here.
     const latestRow = await this.db
       .selectFrom("messages")
       .select([...messageColumns, preciseIsoText("created_at").as("created_at_precise")])

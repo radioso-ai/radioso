@@ -414,6 +414,34 @@ describeIntegration("MessageRepository (Postgres)", () => {
     expect(page2.hasMore).toBe(false);
   });
 
+  it("loses no message within the cursor's millisecond when paging a window back, at full Postgres precision", async () => {
+    const earliest = await repository.create({ conversationId, workspaceId, role: "user", content: "earliest" });
+    const middle = await repository.create({ conversationId, workspaceId, role: "user", content: "middle" });
+    const newest = await repository.create({ conversationId, workspaceId, role: "user", content: "newest" });
+    // All three read back as the same millisecond in a JS Date; only the microseconds order them.
+    await setTime(earliest.id, "2026-06-05T00:00:00.123100Z");
+    await setTime(middle.id, "2026-06-05T00:00:00.123200Z");
+    await setTime(newest.id, "2026-06-05T00:00:00.123456Z");
+
+    const page1 = await repository.listWindowByConversationId(workspaceId, conversationId, { limit: 1 });
+    expect(page1.messages.map((m) => m.id)).toEqual([newest.id]);
+    expect(page1.hasMore).toBe(true);
+
+    const page2 = await repository.listWindowByConversationId(workspaceId, conversationId, {
+      limit: 1,
+      cursor: page1.nextCursor!,
+    });
+    expect(page2.messages.map((m) => m.id)).toEqual([middle.id]);
+    expect(page2.hasMore).toBe(true);
+
+    const page3 = await repository.listWindowByConversationId(workspaceId, conversationId, {
+      limit: 1,
+      cursor: page2.nextCursor!,
+    });
+    expect(page3.messages.map((m) => m.id)).toEqual([earliest.id]);
+    expect(page3.hasMore).toBe(false);
+  });
+
   it("lists the newest messages before a (created_at, id) boundary, oldest first, ignoring later ones before limiting", async () => {
     const created = [];
     for (let i = 0; i < 7; i += 1) {

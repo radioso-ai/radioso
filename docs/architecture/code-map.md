@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-10-18
+last_updated: 2026-10-19
 ---
 
 # Code Map
@@ -1515,7 +1515,8 @@ Related specs:
 Owns the operator's view of answer quality: which assistant turns are worth
 reviewing, the structured triage decision an operator assigns them, and the
 rates those turns aggregate to. Signal meaning is derived from skill-catalog
-metadata rather than outcome-name matching.
+metadata rather than outcome-name matching, and from the directive grades chat
+persists on the assistant message (`unmet_directives`).
 
 Should not own anything that influences a turn. Nothing here feeds retrieval,
 routing, or answer composition. Current triage and its append-only transition

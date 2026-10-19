@@ -3,6 +3,9 @@ import { describe, expect, it } from "vitest";
 import {
   createDirectiveAdherenceProbe,
   createDirectiveAdherenceSideChannel,
+  directiveAdherenceMetadataOf,
+  unmetDirectiveNames,
+  type DirectiveAdherenceTally,
 } from "../../src/shared/domain/directiveAdherence.js";
 import { buildGroundedAnswerResponseFormat } from "../../src/modules/chat/services/groundedAnswerEnvelope.js";
 import type { SteeringRule } from "@radioso/conversation-contract";
@@ -38,6 +41,17 @@ describe("createDirectiveAdherenceProbe", () => {
     expect(JSON.stringify(noIds)).toBe(JSON.stringify(fragment));
     expect(JSON.stringify(otherTurn)).toBe(JSON.stringify(fragment));
     expect(fragment.required).toEqual(["adherence"]);
+    expect(fragment.beforeAnswer?.required).toEqual(["adherencePlan"]);
+    expect(fragment.beforeAnswer?.properties).toMatchObject({
+      adherencePlan: {
+        type: "array",
+        items: {
+          additionalProperties: false,
+          required: ["rule", "commitment"],
+          properties: { rule: { type: "string" }, commitment: { type: "string" } },
+        },
+      },
+    });
     expect(fragment.properties).toMatchObject({
       adherence: {
         type: "array",
@@ -69,9 +83,17 @@ describe("createDirectiveAdherenceProbe", () => {
     const probe = createDirectiveAdherenceProbe([rule("d1", "be-brief")]);
 
     expect(probe.resolve({
+      adherencePlan: [{ rule: "[d1]", commitment: "two sentences at most" }],
       adherence: [{ rule: "[d1]", satisfied: true, applicable: true, note: "kept it short" }],
-    })).toEqual([
-      { directive: "be-brief", ruleId: "d1", satisfied: true, applicable: true, note: "kept it short" },
+    })?.entries).toEqual([
+      {
+        directive: "be-brief",
+        ruleId: "d1",
+        commitment: "two sentences at most",
+        satisfied: true,
+        applicable: true,
+        note: "kept it short",
+      },
     ]);
   });
 
@@ -87,9 +109,10 @@ describe("createDirectiveAdherenceProbe", () => {
       ],
     });
 
-    expect(resolved).toEqual([
-      { directive: "be-brief", ruleId: "d1", satisfied: true, applicable: true, note: "kept it short" },
-    ]);
+    expect(resolved).toEqual({
+      entries: [{ directive: "be-brief", ruleId: "d1", satisfied: true, applicable: true, note: "kept it short" }],
+      ungraded: [],
+    });
   });
 
   it("resolves a conditional rule's unmet criteria as not applicable rather than unsatisfied", () => {
@@ -101,7 +124,7 @@ describe("createDirectiveAdherenceProbe", () => {
       ],
     });
 
-    expect(resolved).toEqual([
+    expect(resolved?.entries).toEqual([
       {
         directive: "offer-form-on-partial",
         ruleId: "d1",
@@ -112,8 +135,67 @@ describe("createDirectiveAdherenceProbe", () => {
     ]);
   });
 
-  it("returns undefined when there is no side-channel or nothing survives", () => {
-    const probe = createDirectiveAdherenceProbe([rule("d1", "be-brief")]);
+  // #1575: the answer commits to each rule before it writes (`adherencePlan`, ahead of
+  // `answer`), then grades itself after. Both resolve onto the same per-rule entry.
+  it("attaches each rule's pre-answer commitment to its grade, and drops a commitment to an unrendered rule", () => {
+    const probe = createDirectiveAdherenceProbe([rule("d1", "prices-from-the-course-page"), rule("d2", "be-brief")]);
+
+    const resolved = probe.resolve({
+      adherencePlan: [
+        { rule: "d1", commitment: "  leave out every figure;\n point to the course page " },
+        { rule: "ghost", commitment: "not a rendered rule" },
+        { rule: "d2", commitment: "" },
+      ],
+      adherence: [
+        { rule: "d1", satisfied: true, applicable: true, note: "no figures given" },
+        { rule: "d2", satisfied: true, applicable: true, note: "short" },
+      ],
+    });
+
+    expect(resolved?.entries).toEqual([
+      {
+        directive: "prices-from-the-course-page",
+        ruleId: "d1",
+        commitment: "leave out every figure; point to the course page",
+        satisfied: true,
+        applicable: true,
+        note: "no figures given",
+      },
+      // An empty commitment is no commitment, so the entry carries none.
+      { directive: "be-brief", ruleId: "d2", satisfied: true, applicable: true, note: "short" },
+    ]);
+  });
+
+  it("names every rendered rule the answer returned no grade for, whatever else it returned", () => {
+    const probe = createDirectiveAdherenceProbe([
+      rule("d1", "inline-supported-links"),
+      rule("d2", "represent-organization"),
+      rule("d3", "prices-from-the-course-page"),
+      rule(undefined, "not-attestable"),
+    ]);
+
+    expect(probe.resolve({
+      adherencePlan: [{ rule: "d3", commitment: "leave out every figure" }],
+      adherence: [
+        { rule: "d1", satisfied: false, applicable: true, note: "no link" },
+        { rule: "d1", satisfied: true, applicable: true, note: "a second grade for the same rule" },
+        { rule: "d3", satisfied: "yes", applicable: true, note: "malformed" },
+      ],
+    })).toEqual({
+      // One grade per rule: the first one counts.
+      entries: [{ directive: "inline-supported-links", ruleId: "d1", satisfied: false, applicable: true, note: "no link" }],
+      // A commitment without a grade still leaves the rule ungraded.
+      ungraded: ["represent-organization", "prices-from-the-course-page"],
+    });
+    // A reply that carried no grades at all leaves every rendered rule ungraded.
+    expect(probe.resolve(undefined)).toEqual({
+      entries: [],
+      ungraded: ["inline-supported-links", "represent-organization", "prices-from-the-course-page"],
+    });
+  });
+
+  it("returns undefined when no attestable rule was rendered, whatever the model returned", () => {
+    const probe = createDirectiveAdherenceProbe([rule(undefined, "no-id")]);
     expect(probe.resolve(undefined)).toBeUndefined();
     expect(probe.resolve({})).toBeUndefined();
     expect(probe.resolve({ adherence: [{ rule: "ghost", satisfied: true, applicable: true, note: "x" }] })).toBeUndefined();
@@ -138,8 +220,65 @@ describe("createDirectiveAdherenceSideChannel", () => {
     expect(channel.resolve({ adherence: [{ rule: "d1", satisfied: true, applicable: true, note: "kept it short" }] })).toEqual({
       directiveAdherence: [{ directive: "be-brief", ruleId: "d1", satisfied: true, applicable: true, note: "kept it short" }],
     });
-    // Nothing to attach → no patch, so the composer adds no metadata at all.
-    expect(channel.resolve(undefined)).toBeUndefined();
-    expect(channel.resolve({})).toBeUndefined();
+    // Nothing rendered → nothing to attach, so the composer adds no metadata at all.
+    const nothingRendered = createDirectiveAdherenceSideChannel([]);
+    expect(nothingRendered.resolve(undefined)).toBeUndefined();
+    expect(nothingRendered.resolve({})).toBeUndefined();
+  });
+
+  it("names the rendered rules left ungraded in the patch, beside the grades that did arrive", () => {
+    const channel = createDirectiveAdherenceSideChannel([rule("d1", "be-brief"), rule("d2", "cite-sources")]);
+
+    expect(channel.resolve({ adherence: [{ rule: "d1", satisfied: true, applicable: true, note: "short" }] })).toEqual({
+      directiveAdherence: [{ directive: "be-brief", ruleId: "d1", satisfied: true, applicable: true, note: "short" }],
+      ungradedDirectives: ["cite-sources"],
+    });
+    expect(channel.resolve(undefined)).toEqual({ ungradedDirectives: ["be-brief", "cite-sources"] });
+  });
+
+  it("reports one tally of verdict counts per resolved answer, and none when nothing was rendered", () => {
+    const tallies: DirectiveAdherenceTally[] = [];
+    const channel = createDirectiveAdherenceSideChannel(
+      [rule("d1", "be-brief"), rule("d2", "cite-sources"), rule("d3", "offer-form-on-partial"), rule("d4", "warm-tone")],
+      { onTally: (tally) => tallies.push(tally) },
+    );
+
+    channel.resolve({
+      adherence: [
+        { rule: "d1", satisfied: true, applicable: true, note: "short" },
+        { rule: "d2", satisfied: false, applicable: true, note: "no citation" },
+        { rule: "d3", satisfied: false, applicable: false, note: "coverage was answered" },
+      ],
+    });
+    createDirectiveAdherenceSideChannel([], { onTally: (tally) => tallies.push(tally) }).resolve({});
+
+    expect(tallies).toEqual([{ satisfied: 1, unsatisfied: 1, notApplicable: 1, ungraded: 1 }]);
+  });
+});
+
+describe("unmetDirectiveNames", () => {
+  it("names each directive graded applicable and unsatisfied once, never a not-applicable one", () => {
+    expect(unmetDirectiveNames([
+      { directive: "prices-from-the-course-page", ruleId: "d1", satisfied: false, applicable: true, note: "quoted prices" },
+      { directive: "offer-form-on-partial", ruleId: "d2", satisfied: false, applicable: false, note: "answered" },
+      { directive: "be-brief", ruleId: "d3", satisfied: true, applicable: true, note: "short" },
+      { directive: "prices-from-the-course-page", ruleId: "d4", satisfied: false, applicable: true, note: "again" },
+    ])).toEqual(["prices-from-the-course-page"]);
+    expect(unmetDirectiveNames([])).toEqual([]);
+  });
+});
+
+describe("directiveAdherenceMetadataOf", () => {
+  it("picks the adherence keys out of a presentation's metadata and nothing else", () => {
+    const directiveAdherence = [{ directive: "be-brief", ruleId: "d1", satisfied: true, applicable: true, note: "short" }];
+
+    expect(directiveAdherenceMetadataOf({
+      directiveAdherence,
+      ungradedDirectives: ["cite-sources"],
+      skillName: "retrieval.answer",
+    })).toEqual({ directiveAdherence, ungradedDirectives: ["cite-sources"] });
+    expect(directiveAdherenceMetadataOf({ directiveAdherence })).toEqual({ directiveAdherence });
+    expect(directiveAdherenceMetadataOf({ skillName: "retrieval.answer" })).toEqual({});
+    expect(directiveAdherenceMetadataOf(undefined)).toEqual({});
   });
 });

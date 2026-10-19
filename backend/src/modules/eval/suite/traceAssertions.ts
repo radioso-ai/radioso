@@ -8,10 +8,11 @@ import type { ConversationQualityObservedOutput } from "./observedOutput.js";
  * (its `turnTrace` spine and grounding summary) rather than the prose answer. They are
  * the deterministic, LLM-free half of the conversation-quality suite: which route was
  * classified, which skill produced the answer, whether a routine claimed the turn and
- * how far it advanced, whether the turn asked a clarifying question, and the grounding
- * verdict, and whether the answer came from the composer or the turn planner's own
- * reply. A review turn carries no trace, so its coverage verdict and the replies it
- * persisted are read from its review observation instead. Because they never call a model
+ * how far it advanced, whether the turn asked a clarifying question, the grounding
+ * verdict, whether the answer came from the composer or the turn planner's own reply,
+ * and whether it committed to a directive before writing. A review turn carries no
+ * trace, so its coverage verdict and the replies it persisted are read from its review
+ * observation instead. Because they never call a model
  * they are cheap and stable enough to gate on every run.
  *
  * They live in the suite's own union — NOT the shipped product `EvalAssertion` union —
@@ -38,7 +39,14 @@ export type SuiteTraceAssertion =
    * (the compose stage records that source and ran no model call), `composer` when an
    * answer composer wrote it.
    */
-  | { type: "turn_reply_source"; source: "turn_planning" | "composer" };
+  | { type: "turn_reply_source"; source: "turn_planning" | "composer" }
+  /**
+   * The answer committed to what `directive` requires before it wrote the answer, and
+   * graded itself against it after: the compose stage's adherence entry for it carries a
+   * commitment. It says the directive was weighed, not that it was followed; pair it with
+   * an assertion on the answer itself.
+   */
+  | { type: "turn_directive_committed"; directive: string };
 
 const TRACE_ASSERTION_TYPES = new Set<string>([
   "turn_route",
@@ -53,6 +61,7 @@ const TRACE_ASSERTION_TYPES = new Set<string>([
   "turn_answer_coverage",
   "turn_persists_no_reply",
   "turn_reply_source",
+  "turn_directive_committed",
 ]);
 
 export const isTraceAssertion = (assertion: { type: string }): assertion is SuiteTraceAssertion =>
@@ -148,6 +157,26 @@ const observedReplySource = (output: EvalRunObservedOutput): "turn_planning" | "
     return undefined;
   }
   return readString(compose.outputs, "source") === "turn_planning" ? "turn_planning" : "composer";
+};
+
+/** The compose stage's record of one directive: its graded entry, or whether it was left ungraded. */
+const observedDirectiveAdherence = (
+  output: EvalRunObservedOutput,
+  directive: string,
+): { composed: boolean; commitment?: string; graded: boolean; ungraded: boolean } => {
+  const compose = stages(output).find((stage) => stage.kind === "compose");
+  const adherence = compose?.outputs?.adherence;
+  const entry = (Array.isArray(adherence) ? adherence : []).find(
+    (candidate): candidate is Record<string, unknown> =>
+      typeof candidate === "object" && candidate !== null && (candidate as Record<string, unknown>).directive === directive,
+  );
+  const ungraded = compose?.outputs?.ungradedDirectives;
+  return {
+    composed: compose !== undefined,
+    ...(typeof entry?.commitment === "string" && entry.commitment ? { commitment: entry.commitment } : {}),
+    graded: entry !== undefined,
+    ungraded: Array.isArray(ungraded) && ungraded.includes(directive),
+  };
 };
 
 const routineTrace = (stage: TraceStage): RoutineRunTrace | undefined => {
@@ -377,6 +406,27 @@ export const evaluateTraceAssertion = (
         return pass(assertion, `The answer came from "${source}".`);
       }
       return fail(assertion, `The answer came from "${source}"; expected "${assertion.source}".`);
+    }
+    case "turn_directive_committed": {
+      if (!output.turnTrace) {
+        return missingTrace(assertion);
+      }
+      const observed = observedDirectiveAdherence(output, assertion.directive);
+      if (observed.commitment) {
+        return pass(assertion, `The answer committed to "${assertion.directive}" before writing: ${observed.commitment}`);
+      }
+      if (observed.graded) {
+        return fail(assertion, `The answer graded "${assertion.directive}" but made no commitment for it before writing.`);
+      }
+      if (observed.ungraded) {
+        return fail(assertion, `The answer left "${assertion.directive}" ungraded.`);
+      }
+      return fail(
+        assertion,
+        observed.composed
+          ? `The compose stage recorded nothing for "${assertion.directive}": it was not rendered into the answer prompt, or a decline replaced the graded answer.`
+          : `The turn composed no answer (no compose stage); expected a commitment to "${assertion.directive}".`,
+      );
     }
   }
 };

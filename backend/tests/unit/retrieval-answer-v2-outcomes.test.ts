@@ -543,6 +543,53 @@ describe("retrieval answer envelope v2", () => {
     ]);
   });
 
+  // #1575: the model commits to what each rendered rule requires before it writes the
+  // answer, so the schema the gateway receives must put that commitment ahead of `answer`.
+  it("asks for each rule's commitment ahead of the answer and carries it, with the ungraded rules, into trace metadata", async () => {
+    const session = baseSession();
+    session.directiveSteering = {
+      rules: [
+        { id: "d1", directiveName: "prices-from-the-course-page", action: "Leave out every figure.", source: "directive", lifespan: "response" },
+        { id: "d2", directiveName: "Be concise", action: "Keep the response concise.", source: "directive", lifespan: "response" },
+      ],
+      matches: [],
+      omissions: [],
+    };
+    const { composer, responseFormats } = buildComposer(JSON.stringify({
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "the workshop fee",
+      outcome: "answer",
+      adherencePlan: [
+        { rule: "d1", commitment: "leave out every figure; point to the course page" },
+        { rule: "d2", commitment: "two sentences" },
+      ],
+      answer: "The fees are on the workshop page[[1]].",
+      v: 2,
+      claims: [[1]],
+      suggestions: [],
+      grounding: "degraded",
+      adherence: [{ rule: "d1", satisfied: true, applicable: true, note: "no figures" }],
+    }));
+
+    const presented = await composer.composeAnswer(session, "How much is the workshop?", undefined, undefined);
+
+    const [format] = responseFormats() as Array<{ schema: { properties: Record<string, unknown> } }>;
+    const keys = Object.keys(format?.schema.properties ?? {});
+    expect(keys.indexOf("adherencePlan")).toBeGreaterThan(keys.indexOf("outcome"));
+    expect(keys.indexOf("adherencePlan")).toBeLessThan(keys.indexOf("answer"));
+    expect(presented.metadata).toMatchObject({
+      directiveAdherence: [{
+        directive: "prices-from-the-course-page",
+        ruleId: "d1",
+        commitment: "leave out every figure; point to the course page",
+        satisfied: true,
+        applicable: true,
+        note: "no figures",
+      }],
+      ungradedDirectives: ["Be concise"],
+    });
+  });
+
   it("lets retrieval evidence answer even when turn planning marks the request outside scope", async () => {
     const session = baseSession();
     session.agent.chatModelOverride = { provider: "openai", model: "gpt-5-nano" };

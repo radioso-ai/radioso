@@ -51,6 +51,42 @@ describe("parseGroundedAnswerEnvelope", () => {
     expect(base.schema.required).not.toContain("adherence");
   });
 
+  // Providers emit keys in schema order, so a field placed before `answer` is written
+  // before the answer is (#1575): the extension's commitment comes after the envelope's
+  // own head (the coverage verdict the head reader acts on) and before the answer text.
+  it("places an extension's beforeAnswer fields after the verdict head and ahead of the answer", () => {
+    const extended = buildGroundedAnswerResponseFormat({
+      properties: { adherence: { type: "array" } },
+      required: ["adherence"],
+      beforeAnswer: { properties: { adherencePlan: { type: "array" } }, required: ["adherencePlan"] },
+    });
+
+    expect(Object.keys(extended.schema.properties as Record<string, unknown>)).toEqual([
+      "coverage",
+      "requestFocus",
+      "outcome",
+      "adherencePlan",
+      "answer",
+      "v",
+      "claims",
+      "suggestions",
+      "grounding",
+      "adherence",
+    ]);
+    expect(extended.schema.required).toEqual([
+      "coverage",
+      "requestFocus",
+      "outcome",
+      "adherencePlan",
+      "answer",
+      "v",
+      "claims",
+      "suggestions",
+      "grounding",
+      "adherence",
+    ]);
+  });
+
   it("parses a provider-enforced structured envelope", () => {
     expect(parseGroundedAnswerEnvelope(JSON.stringify({
       coverage: "answered_sufficient_evidence",
@@ -286,6 +322,30 @@ describe("GroundedAnswerEnvelopeReader", () => {
     expect(emitted).toBe("Answer[[1]].");
     expect(emitted).not.toContain("adherence");
     expect(finalized.extras).toEqual({ adherence: [{ rule: "d1", satisfied: true, note: "concise" }] });
+  });
+
+  it("streams only the answer when a commitment written ahead of it names an answer field", () => {
+    const reader = new GroundedAnswerEnvelopeReader();
+    const plan = [{ rule: "d1", commitment: "the \"answer\": leave out every figure" }];
+    const raw = JSON.stringify({
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "the course fee",
+      outcome: "answer",
+      adherencePlan: plan,
+      answer: "Fees are on the course page[[1]].",
+      v: 2,
+      claims: [[1]],
+      suggestions: [],
+      grounding: "degraded",
+    });
+    const emitted: string[] = [];
+    for (let offset = 0; offset < raw.length; offset += 5) {
+      emitted.push(reader.push(raw.slice(offset, offset + 5)));
+    }
+    const finalized = reader.finalize();
+
+    expect(emitted.join("") + finalized.trailingAnswer).toBe("Fees are on the course page[[1]].");
+    expect(finalized.extras).toEqual({ adherencePlan: plan });
   });
 
   it("returns held answer bytes with missing status when no sentinel arrives", () => {

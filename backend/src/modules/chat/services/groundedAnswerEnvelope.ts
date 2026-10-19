@@ -123,25 +123,44 @@ const GROUNDED_ANSWER_RESPONSE_FORMAT_BASE: JsonSchemaResponseFormat = {
 };
 
 /**
+ * The envelope's own head: the verdict the model commits to first, which the head
+ * reader acts on while the reply streams. An extension's `beforeAnswer` fields follow
+ * it and precede `answer`.
+ */
+const HEAD_KEYS: ReadonlySet<string> = new Set(["coverage", "requestFocus", "outcome"]);
+const isHeadKey = (key: string): boolean => HEAD_KEYS.has(key);
+
+/**
  * Builds the strict grounded-envelope schema, optionally merging a caller-supplied
- * structured extension (extra `properties` + `required`). The envelope stays
- * capability-neutral: it does not know what the extension means, only how to carry
- * it. Callers that have nothing to add pass no extension and get the base schema.
+ * structured extension. The envelope stays capability-neutral: it does not know what
+ * the extension means, only where to put it. Providers write keys in schema order, so
+ * `beforeAnswer` fields land between the verdict head and `answer`, and the rest after
+ * the envelope's own fields. Callers that have nothing to add get the base schema.
  */
 export const buildGroundedAnswerResponseFormat = (
   extension?: AnswerSchemaExtension | null,
 ): JsonSchemaResponseFormat => {
-  const baseProperties = GROUNDED_ANSWER_RESPONSE_FORMAT_BASE.schema.properties as Record<string, unknown>;
-  const baseRequired = GROUNDED_ANSWER_RESPONSE_FORMAT_BASE.schema.required as string[];
   if (!extension) {
     return GROUNDED_ANSWER_RESPONSE_FORMAT_BASE;
   }
+  const baseProperties = Object.entries(GROUNDED_ANSWER_RESPONSE_FORMAT_BASE.schema.properties as Record<string, unknown>);
+  const baseRequired = GROUNDED_ANSWER_RESPONSE_FORMAT_BASE.schema.required as string[];
   return {
     ...GROUNDED_ANSWER_RESPONSE_FORMAT_BASE,
     schema: {
       ...GROUNDED_ANSWER_RESPONSE_FORMAT_BASE.schema,
-      properties: { ...baseProperties, ...extension.properties },
-      required: [...baseRequired, ...extension.required],
+      properties: Object.fromEntries([
+        ...baseProperties.filter(([key]) => isHeadKey(key)),
+        ...Object.entries(extension.beforeAnswer?.properties ?? {}),
+        ...baseProperties.filter(([key]) => !isHeadKey(key)),
+        ...Object.entries(extension.properties),
+      ]),
+      required: [
+        ...baseRequired.filter(isHeadKey),
+        ...(extension.beforeAnswer?.required ?? []),
+        ...baseRequired.filter((key) => !isHeadKey(key)),
+        ...extension.required,
+      ],
     },
   };
 };

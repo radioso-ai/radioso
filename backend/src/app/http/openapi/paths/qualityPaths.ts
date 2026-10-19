@@ -29,7 +29,8 @@ export const registerQualityPaths = (
         signal: csvOrArrayString
           .describe(
             "Comma-separated `QualitySignalId` values (`negative_feedback`, `grounding_gaps`, " +
-            "`skill_failures`), resolved server-side from the skill catalog. " +
+            "`skill_failures`, `unmet_directives`), resolved server-side. `unmet_directives` " +
+            "matches turns whose answer graded a directive that applied to the turn as not followed. " +
             "A turn matches if it carries any listed signal, and the result is layered on top " +
             "of the other filters rather than replacing them.",
           )

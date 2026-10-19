@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-10-18
+last_updated: 2026-10-19
 ---
 
 # Code Map
@@ -857,6 +857,40 @@ Focused checks:
 Related docs:
 
 - [Deleting conversation data](../../docs-portal/content/operators/deleting-conversation-data.mdx)
+
+## Privacy Notice
+
+Owns the operator's privacy notice (#1545): one line and a policy link per
+language, shown before a visitor's first message, carried by an email
+conversation's first reply, and handed to an embed-started call. Each notice
+has a version derived from its language, line and link; a conversation records
+the version its visitor was shown in `conversations.privacy_notice_version`
+(migration `238_conversation_privacy_notice_version.sql`), which the
+conversation's erasure removes with the row. It is a notice, not consent.
+
+The agents module owns the notice and its rules; chat records a version a
+client reports (only when the agent's notices carry it, on the turn that
+creates the conversation); the email channel appends it at the send's
+commitment; the voice channel only reads the version from the request.
+
+Public surfaces and key files:
+
+- `backend/src/modules/agents/privacyNotice.ts` (schema, normalization and version, `choosePrivacyNotice`, `isPrivacyNoticeVersionOf`)
+- `backend/src/modules/chat/services/chatSessionPreparer.ts` (`acceptedPrivacyNoticeVersion`, the `privacy_notice_reports_total{outcome}` counter)
+- `backend/src/app/http/routes/publicChatRouteSchemas.ts` (`privacyNoticeVersion` on the public chat message body)
+- `backend/src/modules/emailChannel/outbound/sendCommitment.ts` and `backend/src/app/composition/emailChannel/outbound.ts` (`EmailFirstReplyNoticeScope` and its Postgres binding)
+- `backend/src/modules/voiceChannel/adapters/openaiCompletions/dialects.ts` (`privacyNoticeVersionFor`)
+- `frontend/lib/privacy-notice.ts`, `frontend/components/chat/assistant-identity.tsx` (`PrivacyNoticeLine`), `frontend/components/dashboard/settings/privacy-notice-card.tsx`, `frontend/lib/anonymous-chat-context.tsx` (the version the first message reports)
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/agents/privacyNotice.test.ts tests/unit/chat-session-preparer-privacy-notice.test.ts tests/unit/email-channel/send-commitment.test.ts tests/contract/public-chat.contract.test.ts tests/contract/voice-privacy-notice.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/conversation-repository.integration.test.ts tests/integration/email-send-idempotency.integration.test.ts --no-file-parallelism`
+- `cd frontend && pnpm exec vitest run tests/unit/privacy-notice.test.ts && pnpm exec playwright test tests/e2e/privacy-notice.spec.ts`
+
+Related docs:
+
+- [Privacy notice settings copy](../settings-docs/general/privacy-notice.md)
 
 ## Agent Revisions
 

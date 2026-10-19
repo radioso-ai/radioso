@@ -1,7 +1,7 @@
 ---
 title: "Email Channel"
 description: "Connect a support mailbox to a Radioso agent by forwarding, review and send the agent's drafted replies or let grounded ones send themselves, bound what runs without a person, verify sending on your own domain, reply with delivery tracked through to the customer, and work the mailbox event log and raw mail from operator settings."
-last_updated: 2026-10-11
+last_updated: 2026-10-19
 ---
 
 # Email Channel
@@ -173,6 +173,17 @@ a reply can't bounce against a forward nobody has proven handles
 plus-addressing. Agent-authored mail carries `Auto-Submitted:
 auto-generated`; an operator's reply carries no `Auto-Submitted` header at
 all.
+
+**The privacy notice.** When the mailbox's agent has a privacy notice, the
+first reply of each email conversation carries it: a blank line below the
+reply, then the notice's line and its policy link, each on its own line,
+word for word, in the agent's default language (else English, else the first
+language written). It goes with whichever reply is sent first, a teammate's
+or the agent's, and only that one: the send that carries it records the
+notice's version on the conversation, in the same transaction that freezes
+the email, and the Inbox shows the reply as written. A conversation that
+started before the agent had a notice gets it on its next reply. A mailbox
+with no agent sends none.
 
 **Delivery states.** Each outbound message shows one state:
 

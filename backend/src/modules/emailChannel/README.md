@@ -114,7 +114,10 @@ It does not own:
   commits the send on the first attempt only through `sendCommitment.ts` —
   the authority check and the request's freeze in one transaction, under the
   conversation lock protocol's locks (bound by
-  `createPostgresEmailSendCommitmentUnitOfWork`) — and sends through
+  `createPostgresEmailSendCommitmentUnitOfWork`), with the agent's privacy
+  notice below the conversation's first reply and its version recorded on
+  the conversation (`EmailFirstReplyNoticeScope`, which locks the
+  conversation row first when a notice is pending) — and sends through
   `providerSendAttempt.ts` with no transaction held across the provider
   call; `sendReconciler.ts` re-POSTs unknown outcomes inside 23 hours while
   the trigger's authority holds (`repostAuthorized`) and looks accepted sends,

@@ -1,7 +1,7 @@
 ---
 title: Embed on your website
 description: Launch the Radioso embed flow against a local test site, then adapt it for production.
-last_updated: 2026-10-17
+last_updated: 2026-10-19
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -56,7 +56,9 @@ Opening either URL loads a config form, not a working widget yet: it asks for yo
 
 ## Example launcher snippet
 
-In production, the Enterprise launcher is a normal script include with the embed token. Branding, visitor-facing wording, theme colors, and expert overrides are stored in Radioso settings — the **Web chat** page under the agent's Channels section previews them live as you edit. **Look** holds the logo, brand color, and surface style; **Wording** holds the twelve visitor-facing strings, with **Add a translation** for a per-language pack the widget serves to visitors in that language; **Footer** holds the privacy policy URL.
+In production, the Enterprise launcher is a normal script include with the embed token. Branding, visitor-facing wording, theme colors, and expert overrides are stored in Radioso settings — the **Web chat** page under the agent's Channels section previews them live as you edit. **Look** holds the logo, brand color, and surface style; **Wording** holds the thirteen visitor-facing strings, with **Add a translation** for a per-language pack the widget serves to visitors in that language; **Footer** holds the privacy policy URL; **Privacy notice** holds the line and policy link a visitor sees before their first message, per language.
+
+With a privacy notice set, the widget shows it word for word with the agent's name and AI marker, as one block above the conversation: in the empty panel before the visitor types, and at the top of the thread once they do. The message that starts the conversation reports the notice's `version`, and the conversation records it, so the **Visitor** panel in Activity says which notice that visitor saw. The public chat link and Test Chat show the same block; an agent with no notice shows none. A visitor whose language has no notice sees the English one, or else the first language you wrote.
 
 ![The Web chat page with the Look section's brand color and surface style beside a live preview of the chat widget answering a question.](/screenshots/dashboard-agent-behavior.png)
 

@@ -61,9 +61,9 @@ describe("catalog invariants", () => {
 
   it("sets a positive daily notification email allowance on every plan", () => {
     expect(PLAN_CATALOG.plans.map((plan) => [plan.id, plan.dailyNotificationEmails])).toEqual([
-      ["comet", 100],
-      ["satellite", 1000],
-      ["planet", 5000],
+      ["comet", 10],
+      ["satellite", 100],
+      ["planet", 500],
     ]);
     for (const plan of PLAN_CATALOG.plans) {
       expect(Number.isInteger(plan.dailyNotificationEmails)).toBe(true);

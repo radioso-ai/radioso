@@ -129,6 +129,12 @@ export const sendChatSse = (
       res.flushHeaders();
     }
 
+    if (event.type === "language") {
+      // The turn's language is for channels that act on it before the answer; the HTTP stream
+      // carries the answer's language in nothing but its text.
+      return;
+    }
+
     if (event.type === "conversation") {
       res.write("event: conversation\n");
       res.write(`data: ${JSON.stringify({ conversationId: event.conversationId })}\n\n`);

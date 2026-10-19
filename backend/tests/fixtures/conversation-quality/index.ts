@@ -1,7 +1,10 @@
 export {
+  ARTS_WEEKEND_DOC_ID,
+  BREATH_COURSE_DOC_ID,
   conversationQualityCorpus,
   type ConversationQualityDocument,
   GETTING_STARTED_DOC_ID,
+  ONLINE_YOGA_DOC_ID,
   PRICING_DOC_ID,
   REFUND_POLICY_DOC_ID,
   SECURITY_DOC_ID,

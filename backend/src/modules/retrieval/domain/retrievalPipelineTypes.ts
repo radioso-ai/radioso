@@ -67,6 +67,12 @@ export interface StructuredRewriteResult {
   retrievalSubqueries?: RetrievalSubquery[];
   turnKind: RewriteTurnKind;
   proposedActiveSubject?: string;
+  /**
+   * The referential subject the rewrite itself added to the retrieval queries, as
+   * opposed to subject text the model already wrote into them. Set by the rewrite,
+   * never by the model.
+   */
+  anchoredSubject?: string;
   relatedEntities: string[];
   unresolved: boolean;
   confidence: number;

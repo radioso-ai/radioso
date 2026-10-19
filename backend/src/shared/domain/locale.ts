@@ -6,6 +6,12 @@ export const LOCALE_TAG_PATTERN = /^[A-Za-z]{2,3}(?:-[A-Za-z]{4})?(?:-(?:[A-Za-z
 
 export const isLocaleTag = (value: string): boolean => LOCALE_TAG_PATTERN.test(value);
 
+/** A value read from outside (a model's output, a vendor's payload) as a language tag: trimmed when it is one, undefined otherwise. */
+export const localeTagOf = (value: unknown): string | undefined => {
+  const tag = typeof value === "string" ? value.trim() : "";
+  return isLocaleTag(tag) ? tag : undefined;
+};
+
 
 export const normalizeLocaleTag = (
   value: unknown,

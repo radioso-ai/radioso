@@ -73,7 +73,8 @@ Radioso silently picks when:
 
 - one candidate clears the confidence margin over the next candidate
 - routine candidates are close, but one has a unique highest authored priority
-- a routine is already active, including a yielded off-topic turn
+- a routine is already active, including a yielded off-topic turn, unless the
+  turn's retrieval senses are too close to call (see the note on active routines)
 - the loop guard would otherwise ask the same clarification again
 - retrieval-sense labels cannot be safely phrased as visitor intents; the trace
   records `label_fallback`
@@ -123,7 +124,13 @@ ask-or-offer behavior — even if every other group in that set was judged
 complementary or redundant.
 
 For active routines, clarification asks are suppressed. This keeps the active
-routine as the only state waiting on the visitor's next message.
+routine as the only state waiting on the visitor's next message. When a visitor
+asks a question in the middle of a routine and the matched documents are too
+close to call, the answer draws on all of them, because the visitor has no
+offer to redirect a wrong guess. The trace and the ask-rate metric record
+`suppressed` with the reason `all_senses_kept`, and the trace names no chosen
+candidate. A sense that clears the margin still narrows the answer to that
+document, recorded as `suppressed` with the reason `suppressed`.
 
 ## Reading the debug view
 
@@ -150,8 +157,8 @@ The detail panel shows:
   compatible-facets turn shows `none` here; the ask-rate metric records it as
   `not_clarified`
 - `reason` — why the turn resolved the way it did, such as `clear_margin`,
-  `priority`, `suppressed`, `loop_guard`, `label_fallback`, `phrasing_fallback`,
-  `compatible_facets`, or `redundant_sources`
+  `priority`, `suppressed`, `all_senses_kept`, `loop_guard`, `label_fallback`,
+  `phrasing_fallback`, `compatible_facets`, or `redundant_sources`
 - `candidates` — candidate ids, labels, and confidence values; the chosen winner
   and offered alternatives are labels only
 - `offerOutcome` — whether an inline offer was accepted as an alternative or

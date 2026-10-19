@@ -964,6 +964,8 @@ export const createTestDependencies = (overrides: {
   handoffWaitingMessageGenerator?: ChatServiceOptions["handoffWaitingMessageGenerator"];
   /** Keeps the heard part of a reply cut off mid-stream; omitted means the in-memory store over the test repositories. */
   cutReplyStore?: ChatServiceOptions["cutReplyStore"];
+  /** Plans each fresh turn in one model call; omitted means turns run the staged path without a planner. */
+  turnPlanCoordinator?: ChatServiceOptions["turnPlanCoordinator"];
   /** Observes the embed-config CDN invalidations; omitted means the deployment has no CDN to invalidate. */
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
   /** Composes the agent tool catalog over the test app's agent row and published-revision readers. */
@@ -2192,6 +2194,7 @@ export const createTestDependencies = (overrides: {
     conversationOwnershipReader: conversationOwnershipRepository,
     // Mirror production wiring: a reply cut off mid-stream keeps the part its listener heard.
     cutReplyStore: overrides.cutReplyStore ?? new InMemoryCutReplyStore(messageRepository, conversationRepository, auditEventRepository),
+    ...(overrides.turnPlanCoordinator ? { turnPlanCoordinator: overrides.turnPlanCoordinator } : {}),
     logger,
   });
   const chatBootstrapService = new ChatBootstrapService(
@@ -3165,6 +3168,7 @@ export const createTestApp = (overrides: {
   voiceVendorFetch?: typeof globalThis.fetch;
   handoffWaitingMessageGenerator?: ChatServiceOptions["handoffWaitingMessageGenerator"];
   cutReplyStore?: ChatServiceOptions["cutReplyStore"];
+  turnPlanCoordinator?: ChatServiceOptions["turnPlanCoordinator"];
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
 } = {}) => {
   const {

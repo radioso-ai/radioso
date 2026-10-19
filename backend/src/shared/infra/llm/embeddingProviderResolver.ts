@@ -115,7 +115,12 @@ export const resolveEmbeddingProviderBinding = (
 
 const normalizedEndpointScope = (config: LlmCapabilityDefault): string => {
   if (config.provider === "openai") {
-    return "openai:public-api";
+    // A regional data-residency endpoint is a distinct scope from the global one — distinct
+    // enough that caching or binding across them must not collapse together (#1555 finding 1).
+    // The default (global) scope string is unchanged from before data residency existed, so no
+    // already-persisted embedding space's fingerprint shifts under it.
+    const residency = config.openAIDataResidency ?? "global";
+    return residency === "global" ? "openai:public-api" : `openai:public-api:${residency}`;
   }
   if (config.provider === "gemini") {
     return "gemini:public-api";

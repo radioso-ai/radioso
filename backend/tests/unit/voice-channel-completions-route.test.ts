@@ -76,7 +76,7 @@ const createDependencies = (overrides: Partial<AppDependencies> = {}): AppDepend
     findByIdAndWorkspaceId: vi.fn().mockResolvedValue({ id: agentId, workspaceId }),
   },
   voiceTurns: voiceTurns(),
-  logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
   ...overrides,
 } as unknown as AppDependencies);
 
@@ -323,6 +323,97 @@ describe("voice completions route", () => {
     expect(inputs[3]).toMatchObject({ locale: "de-AT" });
   });
 
+  it("passes on the language the request reports for the turn beside the session's locale", async () => {
+    const dependencies = createDependencies();
+    const app = createApp(dependencies);
+    const base = elevenlabsBody();
+
+    await request(app)
+      .post(completionsPath())
+      .set("Authorization", "Bearer voice-secret")
+      .send(elevenlabsBody({
+        messages: [
+          ...base.messages.slice(0, 3),
+          {
+            role: "assistant",
+            content: null,
+            tool_calls: [{ id: "call_lang", type: "function", function: { name: "language_detection", arguments: "{\"reason\":\"Italian\",\"language\":\"it\"}" } }],
+          },
+          { role: "tool", tool_call_id: "call_lang", content: JSON.stringify({ result_type: "language_detection_success", status: "success", language: "it" }) },
+          { role: "user", content: "Siete aperti domenica?" },
+        ],
+        elevenlabs_extra_body: { session_key: "conv_abc", locale: "en" },
+      }))
+      .expect(200);
+    await request(app)
+      .post(completionsPath())
+      .set("Authorization", "Bearer voice-secret")
+      .send(elevenlabsBody({
+        messages: [
+          { role: "user", content: "Hi" },
+          { role: "assistant", content: null, tool_calls: [{ id: "call_lang", type: "function", function: { name: "language_detection", arguments: "{\"language\":\"it\"}" } }] },
+          { role: "user", content: "Siete aperti domenica?" },
+        ],
+      }))
+      .expect(200);
+    await request(app)
+      .post(completionsPath("generic"))
+      .set("Authorization", "Bearer voice-secret")
+      .set("X-Radioso-Voice-Session", "room-7")
+      .set("X-Radioso-Voice-Locale", "en")
+      .set("X-Radioso-Voice-Turn-Locale", "fr")
+      .send({ messages: [{ role: "user", content: "Bonjour" }] })
+      .expect(200);
+    await request(app)
+      .post(completionsPath())
+      .set("Authorization", "Bearer voice-secret")
+      .send(elevenlabsBody({ elevenlabs_extra_body: { session_key: "conv_abc", locale: "en" } }))
+      .expect(200);
+
+    const inputs = vi.mocked(dependencies.voiceTurns.runTurn).mock.calls.map(([turn]) => turn);
+    expect(inputs[0]).toMatchObject({
+      utterance: "Siete aperti domenica?",
+      locale: "en",
+      turnLanguage: { tag: "it", source: "vendor_detected", isNew: true },
+    });
+    // A switch with no result to say it happened.
+    expect(inputs[1]).toMatchObject({ languageReport: "unreadable" });
+    expect(inputs[1]).not.toHaveProperty("turnLanguage");
+    expect(inputs[2]).toMatchObject({ locale: "en", turnLanguage: { tag: "fr", source: "turn_field", isNew: true } });
+    expect(inputs[3]).toMatchObject({ locale: "en" });
+    expect(inputs[3]).not.toHaveProperty("turnLanguage");
+    expect(inputs[3]).not.toHaveProperty("languageReport");
+  });
+
+  it("answers the runtime's follow-up to a tool call with an empty completion and runs no turn", async () => {
+    const dependencies = createDependencies();
+    const app = createApp(dependencies);
+    const followUp = elevenlabsBody({
+      messages: [
+        { role: "user", content: "Parla italiano?" },
+        { role: "assistant", content: null, tool_calls: [{ id: "call_lang", type: "function", function: { name: "language_detection", arguments: "{\"language\":\"it\"}" } }] },
+        { role: "tool", tool_call_id: "call_lang", content: "{\"status\":\"success\"}" },
+      ],
+    });
+
+    const streamed = await request(app).post(completionsPath()).set("Authorization", "Bearer voice-secret").send(followUp).expect(200);
+    const whole = await request(app).post(completionsPath()).set("Authorization", "Bearer voice-secret").send({ ...followUp, stream: false }).expect(200);
+
+    expect(dataFrames(streamed.text).map((frame) => (frame === "[DONE]" ? frame : JSON.parse(frame).choices[0]))).toEqual([
+      { index: 0, delta: { role: "assistant", content: "" }, finish_reason: null },
+      { index: 0, delta: {}, finish_reason: "stop" },
+      "[DONE]",
+    ]);
+    expect(whole.headers["x-radioso-voice-outcome"]).toBe("continue");
+    expect(whole.body.choices[0]).toMatchObject({ message: { role: "assistant", content: "" }, finish_reason: "stop" });
+    expect(dependencies.voiceTurns.runTurn).not.toHaveBeenCalled();
+    expect(dependencies.accessGrantService.recordAgentChannelChatSucceeded).not.toHaveBeenCalled();
+    expect(dependencies.logger.debug).toHaveBeenCalledWith(
+      { event: "voice.tool_followup_ignored", dialect: "elevenlabs", agentId },
+      "Voice tool result follow-up answered with an empty completion",
+    );
+  });
+
   it("reads the generic dialect's session key from its header", async () => {
     const dependencies = createDependencies();
 
@@ -536,7 +627,7 @@ describe("voice completions route when the vendor disconnects mid-reply", () => 
     registerOpenAiCompletionsRoute(router, {
       turns,
       admission: { handlers: [], callerOf: () => ({ workspaceId, agentId }), onTurnAccepted: () => undefined },
-      logger: { warn: vi.fn() },
+      logger: { debug: vi.fn(), warn: vi.fn() },
       disconnectAbortCeilingMs: ceilingMs,
     });
     app.use("/api/v1/agents", router);
@@ -630,7 +721,7 @@ describe("voice completions route keep-alive", () => {
         },
       },
       admission: { handlers: [], callerOf: () => ({ workspaceId, agentId }), onTurnAccepted: () => undefined },
-      logger: { warn: vi.fn() },
+      logger: { debug: vi.fn(), warn: vi.fn() },
     });
     app.use("/api/v1/agents", router);
     const server = app.listen(0, "127.0.0.1");
@@ -772,7 +863,7 @@ describe("voice completions route hang-up signal", () => {
     registerOpenAiCompletionsRoute(router, {
       turns,
       admission: { handlers: [], callerOf: () => ({ workspaceId, agentId }), onTurnAccepted: () => undefined },
-      logger: { warn: vi.fn() },
+      logger: { debug: vi.fn(), warn: vi.fn() },
     });
     app.use("/api/v1/agents", router);
     const server = app.listen(0, "127.0.0.1");

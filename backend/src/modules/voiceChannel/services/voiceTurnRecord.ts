@@ -77,6 +77,32 @@ export interface VoiceTurnSummary {
   languageSwitch?: VoiceLanguageSwitchOutcome;
 }
 
+/** Every field a turn summary can carry, once each; a field added to the summary fails to compile here. */
+const SUMMARY_FIELDS: Record<keyof VoiceTurnSummary, true> = {
+  agentId: true,
+  vendor: true,
+  transport: true,
+  conversationId: true,
+  result: true,
+  supersededAt: true,
+  durationMs: true,
+  speechPieceCount: true,
+  spokenOperatorReplies: true,
+  outcome: true,
+  handoffReason: true,
+  storedPartialReply: true,
+  bridged: true,
+  turnLimitReached: true,
+  fallbackSpoken: true,
+  turnLanguage: true,
+  languageSource: true,
+  reportedTurnLanguage: true,
+  languageReport: true,
+  languageSwitch: true,
+};
+
+export const VOICE_TURN_SUMMARY_FIELDS = Object.keys(SUMMARY_FIELDS) as [keyof VoiceTurnSummary, ...Array<keyof VoiceTurnSummary>];
+
 /**
  * Which turn a summary is of, for a reader in the serving process: the vendor's session key, and the
  * turn's arrival order in the process (a later request of the session has a larger `sequence`).

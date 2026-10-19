@@ -177,6 +177,28 @@ describe("the voice cases", () => {
     expect(() => parseConversationQualityCases([{ ...voiceCase, voice: { before: [{ kind: "teammate_takes_over" }] } }])).toThrow(/the caller speaks first/u);
   });
 
+  it("refuse a turn-record assertion that names no field, or a field a turn's record never carries", () => {
+    const voiceCase = conversationQualityVoiceCases[0];
+    const withRecord = (fields: Record<string, unknown>) => [{ ...voiceCase, assertions: [{ type: "voice_turn_record", fields }] }];
+
+    expect(() => parseConversationQualityCases(withRecord({}))).toThrow(/names at least one field/u);
+    expect(() => parseConversationQualityCases(withRecord({ bridgedd: true }))).toThrow();
+    expect(parseConversationQualityCases(withRecord({ bridged: true, conversationId: null }))).toHaveLength(1);
+  });
+
+  it("always gate a live case on a well-formed stream, and refuse one that would gate nothing else", () => {
+    const base = { id: "voice-x", name: "Voice: x", voice: {}, query: "Hi" };
+
+    expect(scopeVoiceCasesForLiveRun([{ ...base, assertions: [{ type: "voice_outcome", kind: "continue" }] }])[0]?.assertions).toEqual([
+      { type: "voice_turn_well_formed" },
+      { type: "voice_outcome", kind: "continue" },
+    ]);
+    expect(() => scopeVoiceCasesForLiveRun([{
+      ...base,
+      assertions: [{ type: "voice_turn_well_formed" }, { type: "voice_bridge_spoken", spoken: false, latencyDependent: true }, { type: "voice_speech_piece_count", count: 1 }],
+    }])).toThrow(/gates nothing live beyond a well-formed stream/u);
+  });
+
   it("run live without the scripted-timing cases, gated on the wire's view of their behaviour", () => {
     const live = scopeVoiceCasesForLiveRun(conversationQualityVoiceCases);
 

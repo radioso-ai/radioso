@@ -3110,3 +3110,44 @@ describe("VoiceTurnService", () => {
     });
   });
 });
+
+describe("VoiceTurnService turn observer", () => {
+  it("tells the observer each finished turn, keyed by its session and arrival, after the log line", async () => {
+    const logger = fakeLogger();
+    const turnFinished = vi.fn(() => {
+      expect(logger.info).toHaveBeenCalledWith(expect.anything(), "Voice turn finished");
+    });
+    const chat = () => fakeChat([{ type: "conversation", conversationId }, { type: "chunk", text: "Yes." }, done()]);
+    const service = new VoiceTurnService({ ...voiceOff, sessions: fakeSessions(conversationId), chat: chat(), logger, observer: { turnFinished } });
+
+    await collect(service.runTurn(input(), new AbortController().signal));
+    await collect(service.runTurn(input({ utterance: "And on Sundays?" }), new AbortController().signal));
+
+    await vi.waitFor(() => expect(turnFinished).toHaveBeenCalledTimes(2));
+    const [[first, firstSummary], [second]] = turnFinished.mock.calls as unknown as Array<[{ sessionKey: string; sequence: number }, Record<string, unknown>]>;
+    expect(first.sessionKey).toBe("conv_abc");
+    expect(second.sequence).toBeGreaterThan(first.sequence);
+    expect(firstSummary).toEqual(logger.info.mock.calls[0]?.[0]);
+  });
+
+  it("logs an observer that throws, and the turn, its log line and its outcome are unaffected", async () => {
+    const logger = fakeLogger();
+    const chat = fakeChat([{ type: "conversation", conversationId }, { type: "chunk", text: "Yes." }, done()]);
+    const service = new VoiceTurnService({
+      ...voiceOff,
+      sessions: fakeSessions(conversationId),
+      chat,
+      logger,
+      observer: { turnFinished: () => { throw new TypeError("observer broke"); } },
+    });
+
+    const events = await collect(service.runTurn(input(), new AbortController().signal));
+
+    expect(events.at(-1)).toEqual({ type: "outcome", outcome: { kind: "continue" } });
+    await vi.waitFor(() => expect(logger.warn).toHaveBeenCalledWith(
+      { agentId, vendor: "elevenlabs", errorClass: "TypeError" },
+      "Voice turn observer failed",
+    ));
+    expect(logger.info).toHaveBeenCalledWith(expect.objectContaining({ result: "completed" }), "Voice turn finished");
+  });
+});

@@ -1,6 +1,9 @@
+import { once } from "node:events";
 import { readFileSync } from "node:fs";
+import http from "node:http";
+import type { AddressInfo } from "node:net";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import {
   formatVoiceLatencyReport,
@@ -13,7 +16,10 @@ import {
 } from "../../../src/modules/eval/suite/index.js";
 import { conversationQualityVoiceCases, conversationQualityVoiceSettings } from "../../fixtures/conversation-quality/index.js";
 import {
+  collectVoiceTurnRecords,
+  createVoiceCallRunnerPort,
   observeVoiceTurn,
+  postVoiceTurn,
   readVoiceStream,
   voiceLineCatalog,
   type VoiceWireChunk,
@@ -264,5 +270,118 @@ describe("the voice report", () => {
         "voice-other": { firstByteMs: 1, firstSpeechMs: 2, turnMs: 3 },
       },
     });
+  });
+});
+
+describe("the voice runner on the wire", () => {
+  const servers: http.Server[] = [];
+  afterEach(() => {
+    for (const server of servers.splice(0)) {
+      server.closeAllConnections();
+      server.close();
+    }
+  });
+
+  /** A runtime's door served by `handle`, which is told each request's order on the server. */
+  const serve = async (handle: (request: number, req: http.IncomingMessage, res: http.ServerResponse) => void) => {
+    let requests = 0;
+    const server = http.createServer((req, res) => {
+      req.resume();
+      req.on("end", () => handle(requests++, req, res));
+    });
+    servers.push(server);
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    return { origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, agentId: "agent-1", token: "token" };
+  };
+  const openStream = (res: http.ServerResponse): void => {
+    res.writeHead(200, { "content-type": "text/event-stream", trailer: "X-Radioso-Voice-Outcome" });
+  };
+  const endStream = (res: http.ServerResponse): void => {
+    res.write(chunk({}, "stop") + DONE);
+    res.addTrailers({ "X-Radioso-Voice-Outcome": "continue" });
+    res.end();
+  };
+
+  it("resolves a stream the server cuts off mid-way with what it carried, read as a cut stream", async () => {
+    const door = await serve((_request, _req, res) => {
+      openStream(res);
+      res.write(chunk({ role: "assistant", content: "We open at nine. " }), () => res.socket?.destroy());
+    });
+
+    const cut = await postVoiceTurn(door, { sessionKey: "s", utterance: "When do you open?" });
+
+    expect(observeVoiceTurn(cut, lines)).toMatchObject({
+      protocol: { ok: false, problem: "The stream ended without [DONE]." },
+      outcome: null,
+      pieces: [{ kind: "speech", text: "We open at nine. " }],
+    });
+  });
+
+  const interruptedCase = parseConversationQualityCases([{
+    id: "voice-cut",
+    name: "Voice: cut",
+    voice: { interruption: { utterance: "Thanks.", afterSpeechPieces: 1 } },
+    query: "When do you open?",
+    assertions: [{ type: "voice_turn_well_formed" }],
+  }])[0];
+  const stackFor = (door: Awaited<ReturnType<typeof serve>>) => ({
+    door,
+    teammate: { takeOver: async () => undefined, reply: async () => undefined, handBack: async () => undefined },
+    conversations: { conversationOf: async () => null },
+    lines,
+  });
+
+  it.each([
+    ["is cut off mid-way", (res: http.ServerResponse) => { openStream(res); res.write(chunk({ role: "assistant", content: "Bye" }), () => res.socket?.destroy()); }, "The stream ended without [DONE]."],
+    ["never answers", (res: http.ServerResponse) => res.socket?.destroy(), "socket hang up"],
+  ])("reports, and never leaves unhandled, an utterance spoken over the turn whose request %s", async (_name, failNewer, problem) => {
+    let releaseScored!: () => void;
+    const newerArrived = new Promise<void>((resolve) => { releaseScored = resolve; });
+    const door = await serve((request, _req, res) => {
+      if (request === 0) {
+        openStream(res);
+        res.write(chunk({ role: "assistant", content: "We open at nine. " }));
+        void newerArrived.then(() => endStream(res));
+        return;
+      }
+      failNewer(res);
+      releaseScored();
+    });
+
+    const output = createVoiceCallRunnerPort(stackFor(door)).voice!(interruptedCase);
+
+    await expect(output).rejects.toThrow(`The utterance spoken over the scored turn failed: ${problem}`);
+  });
+
+  it("gives the scored turn its own record when the utterance spoken over it finishes first", async () => {
+    const records = collectVoiceTurnRecords();
+    const summary = (result: "completed" | "superseded") => ({
+      agentId: "agent-1", vendor: "generic", transport: "web" as const, conversationId: "conversation-1", result, durationMs: 1, speechPieceCount: 1,
+    });
+    let releaseScored!: () => void;
+    const newerArrived = new Promise<void>((resolve) => { releaseScored = resolve; });
+    const door = await serve((request, req, res) => {
+      const sessionKey = String(req.headers["x-radioso-voice-session"]);
+      if (request === 0) {
+        openStream(res);
+        res.write(chunk({ role: "assistant", content: "We open at nine. " }));
+        // The cut turn's record arrives after the newer turn's, with the earlier arrival.
+        void newerArrived.then(() => {
+          endStream(res);
+          setTimeout(() => records.turnFinished({ sessionKey, sequence: 1 }, summary("superseded")), 20);
+        });
+        return;
+      }
+      openStream(res);
+      res.write(chunk({ role: "assistant", content: "You're welcome." }));
+      endStream(res);
+      records.turnFinished({ sessionKey, sequence: 2 }, summary("completed"));
+      releaseScored();
+    });
+
+    const output = await createVoiceCallRunnerPort({ ...stackFor(door), turnRecords: records }).voice!(interruptedCase);
+
+    expect(output.voiceTurn?.turnRecord?.result).toBe("superseded");
   });
 });

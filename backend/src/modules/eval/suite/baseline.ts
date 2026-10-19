@@ -266,3 +266,28 @@ export const mergeBaselineFile = (
     ...buildBaselineFile(current, generatedAt, passThreshold).cases,
   },
 });
+
+const isMissingFile = (error: unknown): boolean =>
+  typeof error === "object" && error !== null && (error as { code?: unknown }).code === "ENOENT";
+
+/**
+ * A committed baseline file's JSON object, read with `readText`; null when the file does not exist,
+ * which the gate then refuses as uninitialized. A file that cannot be read or parsed throws, so a
+ * recording run never takes a damaged file for an empty one and writes the other cases away.
+ */
+export const readBaselineJson = (readText: () => string): Record<string, unknown> | null => {
+  let text: string;
+  try {
+    text = readText();
+  } catch (error) {
+    if (isMissingFile(error)) {
+      return null;
+    }
+    throw error;
+  }
+  const parsed: unknown = JSON.parse(text);
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error("A baseline file holds one JSON object.");
+  }
+  return parsed as Record<string, unknown>;
+};

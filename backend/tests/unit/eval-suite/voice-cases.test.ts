@@ -220,7 +220,10 @@ const scriptedBrains: Record<string, ScriptedBrain> = {
 };
 
 /** The voice turns' records, as the test app's voice service reports each finished turn. */
-const turnRecordsOf = (): VoiceTurnRecordReader & { turnFinished(summary: Readonly<VoiceTurnSummary>): void } => {
+const turnRecordsOf = (): VoiceTurnRecordReader & {
+  turnFinished(summary: Readonly<VoiceTurnSummary>): void;
+  latestConversationId(): string | null;
+} => {
   const records: Array<Readonly<VoiceTurnSummary>> = [];
   const waiters: Array<() => void> = [];
   return {
@@ -229,6 +232,7 @@ const turnRecordsOf = (): VoiceTurnRecordReader & { turnFinished(summary: Readon
       waiters.splice(0).forEach((wake) => wake());
     },
     count: () => records.length,
+    latestConversationId: () => [...records].reverse().find((record) => record.conversationId !== null)?.conversationId ?? null,
     next: async (after) => {
       while (records.length <= after) await new Promise<void>((wake) => waiters.push(wake));
       return records[after];
@@ -262,6 +266,8 @@ const voiceStackFor = async (evalCase: ConversationQualityCase): Promise<{ serve
         userId: runtime.session.userId,
         workspaceId: runtime.session.workspaceId,
       }),
+      // One call per test app, so the conversation its turns ran in is the call's.
+      conversations: { conversationOf: async () => turnRecords.latestConversationId() },
       lines: voiceLineCatalog(conversationQualityVoiceSettings),
       clock: () => Date.now(),
       settle,

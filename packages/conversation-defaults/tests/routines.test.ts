@@ -797,20 +797,24 @@ describe("routine defaults", () => {
         turn,
       });
 
-      expect(decision.selection).toEqual({ outcome: "unreadable", returnedSlotKeys: [] });
+      expect(decision.selection).toEqual({ outcome: "unreadable", returnedSlotKeys: [], unreadableReason: "no_json_object", retried: true });
     });
   });
 
   describe("unreadable decision retry", () => {
-    // Unlike `gateway`, returns a different completion on each successive call — needed to
-    // prove the selector's retry actually sends a second request rather than reusing the first.
-    const sequencedGateway = (texts: string[]): ConversationModelGateway => {
+    // Unlike `gateway`, returns a different completion (or throws) on each successive
+    // call — needed to prove the selector's retry actually sends a second request rather
+    // than reusing the first, and to simulate the retry call itself failing.
+    const sequencedGateway = (responses: Array<string | { throws: unknown }>): ConversationModelGateway => {
       let callCount = 0;
       return {
         complete: vi.fn(async () => {
-          const text = texts[Math.min(callCount, texts.length - 1)];
+          const response = responses[Math.min(callCount, responses.length - 1)];
           callCount += 1;
-          return { text };
+          if (typeof response !== "string") {
+            throw response.throws;
+          }
+          return { text: response };
         }),
       };
     };
@@ -828,13 +832,14 @@ describe("routine defaults", () => {
       expect(decision).toEqual({
         nextStepId: "ask_message",
         variables: { email: "a@b.c" },
-        selection: { outcome: "transition", returnedSlotKeys: ["email"] },
+        selection: { outcome: "transition", returnedSlotKeys: ["email"], retried: true },
       });
       expect(gw.complete).toHaveBeenCalledTimes(2);
       expect(onUnreadable).toHaveBeenCalledTimes(1);
       expect(onUnreadable).toHaveBeenCalledWith({
         routineId: routine.id,
         stepId: currentStep.id,
+        sessionId: state.sessionId,
         reason: "no_json_object",
         attempt: 1,
       });
@@ -850,12 +855,12 @@ describe("routine defaults", () => {
       expect(decision).toEqual({
         nextStepId: "ask_email",
         variables: {},
-        selection: { outcome: "unreadable", returnedSlotKeys: [] },
+        selection: { outcome: "unreadable", returnedSlotKeys: [], unreadableReason: "no_json_object", retried: true },
       });
       expect(gw.complete).toHaveBeenCalledTimes(2);
       expect(onUnreadable).toHaveBeenCalledTimes(2);
-      expect(onUnreadable).toHaveBeenNthCalledWith(1, { routineId: routine.id, stepId: currentStep.id, reason: "no_json_object", attempt: 1 });
-      expect(onUnreadable).toHaveBeenNthCalledWith(2, { routineId: routine.id, stepId: currentStep.id, reason: "no_json_object", attempt: 2 });
+      expect(onUnreadable).toHaveBeenNthCalledWith(1, { routineId: routine.id, stepId: currentStep.id, sessionId: state.sessionId, reason: "no_json_object", attempt: 1 });
+      expect(onUnreadable).toHaveBeenNthCalledWith(2, { routineId: routine.id, stepId: currentStep.id, sessionId: state.sessionId, reason: "no_json_object", attempt: 2 });
     });
 
     it("calls the model only once, and never the observer, when the first completion is readable", async () => {
@@ -866,6 +871,69 @@ describe("routine defaults", () => {
 
       expect(gw.complete).toHaveBeenCalledTimes(1);
       expect(onUnreadable).not.toHaveBeenCalled();
+    });
+
+    it("keeps the first unreadable decision, rather than throwing, when the retry call itself rejects for a reason other than cancellation", async () => {
+      const onUnreadable = vi.fn();
+      const gw = sequencedGateway(["I think they want a retreat.", { throws: new Error("provider_timeout") }]);
+
+      const decision = await new RoutineNextStepSelector(gw, { onUnreadable })
+        .select({ routine, state, currentStep, transitions, turn });
+
+      expect(decision).toEqual({
+        nextStepId: "ask_email",
+        variables: {},
+        selection: { outcome: "unreadable", returnedSlotKeys: [], unreadableReason: "no_json_object", retried: true },
+      });
+      expect(gw.complete).toHaveBeenCalledTimes(2);
+      // Only the first attempt's own unreadable completion is reported — the retry's error
+      // is not a reading of a completion, so it has no reason to report.
+      expect(onUnreadable).toHaveBeenCalledTimes(1);
+      expect(onUnreadable).toHaveBeenCalledWith({ routineId: routine.id, stepId: currentStep.id, sessionId: state.sessionId, reason: "no_json_object", attempt: 1 });
+    });
+
+    it("rethrows an aborted retry instead of swallowing the cancellation", async () => {
+      const abortError = Object.assign(new Error("The operation was aborted."), { name: "AbortError" });
+      const gw = sequencedGateway(["I think they want a retreat.", { throws: abortError }]);
+
+      await expect(
+        new RoutineNextStepSelector(gw).select({ routine, state, currentStep, transitions, turn }),
+      ).rejects.toBe(abortError);
+    });
+
+    it("rethrows when the first (non-retry) completion call itself fails", async () => {
+      const error = new Error("provider_timeout");
+      const gw: ConversationModelGateway = { complete: vi.fn(async () => { throw error; }) };
+
+      await expect(
+        new RoutineNextStepSelector(gw).select({ routine, state, currentStep, transitions, turn }),
+      ).rejects.toBe(error);
+    });
+
+    it("does not fail the turn when the onUnreadable observer itself throws", async () => {
+      const onUnreadable = vi.fn(() => {
+        throw new Error("observer boom");
+      });
+      const gw = sequencedGateway([
+        "I think they want a retreat.",
+        '{"claimsAuthority": false, "condition": 1, "variables": {}}',
+      ]);
+
+      await expect(
+        new RoutineNextStepSelector(gw, { onUnreadable }).select({ routine, state, currentStep, transitions, turn }),
+      ).resolves.toMatchObject({ nextStepId: "ask_message" });
+      expect(onUnreadable).toHaveBeenCalledTimes(1);
+    });
+
+    it.each<[string, "no_json_object" | "invalid_json" | "missing_required_fields"]>([
+      ["I think they want a retreat.", "no_json_object"],
+      ['{"claimsAuthority": true,}', "invalid_json"],
+      ['{"condition": 1, "offTopic": false, "variables": {}}', "missing_required_fields"],
+    ])("records %s as unreadableReason %s on the trace once both attempts fail", async (text, reason) => {
+      const decision = await new RoutineNextStepSelector(gateway(text))
+        .select({ routine, state, currentStep, transitions, turn });
+
+      expect(decision.selection).toEqual({ outcome: "unreadable", returnedSlotKeys: [], unreadableReason: reason, retried: true });
     });
   });
 
@@ -927,7 +995,7 @@ describe("routine defaults", () => {
         await expect(select(text)).resolves.toEqual({
           nextStepId: "ask_email",
           variables: {},
-          selection: { outcome: "unreadable", returnedSlotKeys: [] },
+          selection: { outcome: "unreadable", returnedSlotKeys: [], unreadableReason: "missing_required_fields", retried: true },
         });
       }
     });

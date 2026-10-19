@@ -19,8 +19,8 @@ import {
   renderCompletion,
   type CompletionIdentity,
 } from "./completionsPresenter.js";
-import { findCompletionsDialect, localeFor, sessionKeyFor, type CompletionsDialect } from "./dialects.js";
-import { completionsRequestSchema, heardUntilFor, utteranceOf } from "./requestSchema.js";
+import { findCompletionsDialect, localeFor, sessionKeyFor, turnLanguageFor, type CompletionsDialect } from "./dialects.js";
+import { completionsRequestSchema, heardUntilFor, isToolResultFollowUp, utteranceOf } from "./requestSchema.js";
 
 const COMPLETIONS_PATH = "/:agentId/voice/:dialect/v1/chat/completions";
 const CONVERSATION_ID_HEADER = "X-Radioso-Conversation-Id";
@@ -51,7 +51,7 @@ interface CompletionsAdmission {
 interface CompletionsRouteDependencies {
   turns: VoiceTurnPort;
   admission: CompletionsAdmission;
-  logger: Pick<AppLogger, "warn">;
+  logger: Pick<AppLogger, "debug" | "warn">;
   /** Overrides `CHAT_BEHAVIOR.streaming.disconnectAbortCeilingMs`; tests only. */
   disconnectAbortCeilingMs?: number;
 }
@@ -73,21 +73,24 @@ const resolveDialect: RequestHandler = (req, _res, next) => {
   }
 };
 
-const turnInputFor = (
-  req: Request,
-  caller: VoiceCaller,
-  dialect: CompletionsDialect,
-  logger: Pick<AppLogger, "warn">,
-): {
-  input: VoiceTurnInput;
-  model: string;
-  stream: boolean;
-} => {
+type CompletionsRequest = ReturnType<typeof completionsRequestSchema.parse>;
+
+const parseCompletionsRequest = (req: Request): CompletionsRequest => {
   const parsed = completionsRequestSchema.safeParse(req.body);
   if (!parsed.success) {
     throw badRequest("Invalid chat completions request", parsed.error.flatten());
   }
-  const utterance = utteranceOf(parsed.data);
+  return parsed.data;
+};
+
+const turnInputFor = (
+  req: Request,
+  parsed: CompletionsRequest,
+  caller: VoiceCaller,
+  dialect: CompletionsDialect,
+  logger: Pick<AppLogger, "warn">,
+): VoiceTurnInput => {
+  const utterance = utteranceOf(parsed);
   if (!utterance) {
     throw badRequest("The request has no user message to answer");
   }
@@ -99,25 +102,27 @@ const turnInputFor = (
     throw badRequest(`The request carries no usable voice session key for the ${dialect.id} dialect`);
   }
   const locale = localeFor(dialect, request);
-  const heardUntil = heardUntilFor(dialect, parsed.data);
-  const stream = parsed.data.stream ?? false;
+  const turnLanguage = turnLanguageFor(dialect, { ...request, messages: parsed.messages });
+  const heardUntil = heardUntilFor(dialect, parsed);
   return {
-    input: {
-      session: { workspaceId: caller.workspaceId, agentId: caller.agentId, vendor: dialect.id, sessionKey },
-      transport: dialect.transportDefault,
-      utterance,
-      ...(locale ? { locale } : {}),
-      ...(heardUntil === undefined ? {} : { heardUntil }),
-      ...(dialect.minReleasableSentenceChars === undefined
-        ? {}
-        : { minReleasableSentenceChars: dialect.minReleasableSentenceChars }),
-      // A completion that is not streamed is written whole at the outcome.
-      streamsSpeech: stream,
-    },
-    model: parsed.data.model ?? DEFAULT_MODEL_NAME,
-    stream,
+    session: { workspaceId: caller.workspaceId, agentId: caller.agentId, vendor: dialect.id, sessionKey },
+    transport: dialect.transportDefault,
+    utterance,
+    ...(locale ? { locale } : {}),
+    ...turnLanguage,
+    ...(heardUntil === undefined ? {} : { heardUntil }),
+    ...(dialect.minReleasableSentenceChars === undefined
+      ? {}
+      : { minReleasableSentenceChars: dialect.minReleasableSentenceChars }),
+    // A completion that is not streamed is written whole at the outcome.
+    streamsSpeech: parsed.stream ?? false,
   };
 };
+
+/** The events of a request that is no caller turn: nothing to say, and the call goes on. */
+async function* emptyTurn(): AsyncGenerator<VoiceTurnEvent> {
+  yield { type: "outcome", outcome: { kind: "continue" } };
+}
 
 const openEventStream = (res: Response, conversationId: string | null): void => {
   res.status(200);
@@ -314,23 +319,33 @@ export const registerOpenAiCompletionsRoute = (router: Router, dependencies: Com
   router.post(COMPLETIONS_PATH, resolveDialect, ...dependencies.admission.handlers, async (req, res, next) => {
     try {
       const dialect = requireDialect(req.params.dialect);
-      const { input, model, stream } = turnInputFor(
-        req,
-        dependencies.admission.callerOf(res),
-        dialect,
-        dependencies.logger,
-      );
+      const parsed = parseCompletionsRequest(req);
+      const caller = dependencies.admission.callerOf(res);
+      const stream = parsed.stream ?? false;
       const identity: CompletionIdentity = {
         id: `chatcmpl-${randomUUID()}`,
         created: Math.floor(Date.now() / 1000),
-        model,
+        model: parsed.model ?? DEFAULT_MODEL_NAME,
       };
-      dependencies.admission.onTurnAccepted(res);
       const abort = new AbortController();
       const hangUp = new AbortController();
+      let events: AsyncIterable<VoiceTurnEvent>;
+      if (isToolResultFollowUp(parsed)) {
+        // Read as a turn, it would answer the previous utterance again: replay its answer, or store
+        // a second user message. The reply that called the tool already spoke for that utterance.
+        dependencies.logger.debug(
+          { event: "voice.tool_followup_ignored", dialect: dialect.id, agentId: caller.agentId },
+          "Voice tool result follow-up answered with an empty completion",
+        );
+        events = emptyTurn();
+      } else {
+        const input = turnInputFor(req, parsed, caller, dialect, dependencies.logger);
+        dependencies.admission.onTurnAccepted(res);
+        events = dependencies.turns.runTurn(input, abort.signal, hangUp.signal);
+      }
       const drain: TurnDrain = {
         res,
-        events: dependencies.turns.runTurn(input, abort.signal, hangUp.signal),
+        events,
         abort,
         hangUp,
         disconnectAbortCeilingMs: dependencies.disconnectAbortCeilingMs,

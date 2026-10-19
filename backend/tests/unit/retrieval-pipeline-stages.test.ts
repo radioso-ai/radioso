@@ -1736,6 +1736,10 @@ describe("retrieval pipeline stages", () => {
     expect(result.lexicalContexts).toEqual([]);
     expect(result.activeQuery).toBe("summer retreat pricing");
     expect(result.activeParsedQuery.lexicalQuery).toBe("summer retreat price");
+    expect(result.activeRetrievalSubqueries.map((subquery) => subquery.lexicalQuery)).toEqual([
+      "summer retreat price",
+      "summer retreat",
+    ]);
   });
 
   it("reports rejected rewrites as having run in diagnostics", async () => {

@@ -15,6 +15,9 @@ export const REFUND_POLICY_DOC_ID = "22222222-2222-4222-8222-222222222201";
 export const PRICING_DOC_ID = "22222222-2222-4222-8222-222222222202";
 export const SECURITY_DOC_ID = "22222222-2222-4222-8222-222222222203";
 export const GETTING_STARTED_DOC_ID = "22222222-2222-4222-8222-222222222204";
+export const BREATH_COURSE_DOC_ID = "22222222-2222-4222-8222-222222222205";
+export const ARTS_WEEKEND_DOC_ID = "22222222-2222-4222-8222-222222222206";
+export const ONLINE_YOGA_DOC_ID = "22222222-2222-4222-8222-222222222207";
 
 export const conversationQualityCorpus: ConversationQualityDocument[] = [
   {
@@ -58,6 +61,43 @@ export const conversationQualityCorpus: ConversationQualityDocument[] = [
       "",
       "Create a workspace, upload your first documents, and the ingestion worker chunks and embeds them automatically.",
       "Once processing completes, ask your assistant a question to get a grounded, cited answer.",
+    ].join("\n"),
+  },
+  // Two residential courses with the same price structure and different figures, so an answer
+  // that quotes the wrong one is visible. Only the arts weekend uses the words a generic quote
+  // request carries ("evento", "preventivo", "pernottamento").
+  {
+    id: BREATH_COURSE_DOC_ID,
+    title: "CORSO RESIDENZIALE: Il respiro Superconsapevole",
+    content: [
+      "CORSO RESIDENZIALE: Il respiro Superconsapevole",
+      "",
+      "Dal 26 al 29 novembre 2031 nella nostra sede di campagna.",
+      "Quattro giorni di pratica guidata del respiro superconsapevole, con meditazione al mattino e alla sera.",
+      "Quota di partecipazione, vitto e alloggio inclusi: 260 euro in camera singola, 200 euro in camera doppia, 180 euro in dormitorio.",
+      "Per iscriversi scrivere a corsi@example.org.",
+    ].join("\n"),
+  },
+  {
+    id: ARTS_WEEKEND_DOC_ID,
+    title: "CORSO RESIDENZIALE: Weekend delle arti creative",
+    content: [
+      "CORSO RESIDENZIALE: Weekend delle arti creative",
+      "",
+      "Evento residenziale dal 22 al 24 agosto 2031 nella nostra sede di campagna.",
+      "Un weekend di musica, danza e pittura aperto a tutti i livelli.",
+      "Preventivo completo, pernottamento e pasti compresi: 280 euro in camera singola, 220 euro in camera doppia, 200 euro in dormitorio.",
+      "Per iscriversi scrivere a corsi@example.org.",
+    ].join("\n"),
+  },
+  {
+    id: ONLINE_YOGA_DOC_ID,
+    title: "Lezioni di yoga online",
+    content: [
+      "Lezioni di yoga online",
+      "",
+      "Ogni martedì e giovedì alle 19:00 in diretta video.",
+      "Abbonamento mensile: 40 euro. La prima lezione è gratuita.",
     ].join("\n"),
   },
 ];

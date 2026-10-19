@@ -100,6 +100,11 @@ const summarizeRewriteProposal = (value: unknown): Record<string, unknown> | und
     ...(typeof proposal.queryShape === "string" ? { queryShape: proposal.queryShape } : {}),
     ...(typeof proposal.temporalQueryMode === "string" ? { temporalQueryMode: proposal.temporalQueryMode } : {}),
     ...(typeof proposal.turnKind === "string" ? { turnKind: proposal.turnKind } : {}),
+    // Whether a subject was resolved, not which: the retrieval trace records its text.
+    ...("proposedActiveSubject" in proposal
+      ? { hasProposedActiveSubject: typeof proposal.proposedActiveSubject === "string" && proposal.proposedActiveSubject.length > 0 }
+      : {}),
+    ...(Array.isArray(proposal.relatedEntities) ? { relatedEntityCount: proposal.relatedEntities.length } : {}),
     ...(typeof proposal.unresolved === "boolean" ? { unresolved: proposal.unresolved } : {}),
     ...(typeof proposal.confidence === "number" ? { confidence: proposal.confidence } : {}),
     ...(Array.isArray(proposal.retrievalSubqueries)

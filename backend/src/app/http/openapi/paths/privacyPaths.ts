@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 
+import { DATA_SUBJECT_MAX_CONVERSATIONS } from "../../../../modules/privacy/public.js";
+
 import {
   dataSubjectIdentitiesRequestSchema,
   dataSubjectIdentitySchema,
@@ -44,6 +46,7 @@ const registerPrivacySchemas = (registry: OpenAPIRegistry) => {
     visitorCount: z.number().int().min(0),
     conversationCount: z.number().int().min(0),
     messageCount: z.number().int().min(0),
+    complete: z.boolean().openapi({ description: "False only in the `details.receipt` of a `500`: the erasure stopped partway." }),
   }));
   return {
     DataSubjectLookupRequestSchema: registry.register("DataSubjectLookupRequest", dataSubjectLookupRequestSchema),
@@ -76,6 +79,9 @@ export const registerPrivacyPaths = (
     403: errorResponse("Caller lacks workspace.history.delete"),
   };
   const identitiesBody = { body: { content: json(privacy.DataSubjectIdentitiesRequestSchema), required: true } };
+  const tooLarge = errorResponse(
+    `\`data_subject_request_too_large\`: the identities reach more than ${DATA_SUBJECT_MAX_CONVERSATIONS} conversations. \`details\` carries \`conversationCount\` and \`maxConversations\`; split the request by identity.`,
+  );
 
   registry.registerPath({
     method: "post",
@@ -119,6 +125,7 @@ export const registerPrivacyPaths = (
     responses: {
       200: { description: "The export", content: json(privacy.DataSubjectExportSchema) },
       ...common,
+      413: tooLarge,
     },
   });
 
@@ -127,13 +134,15 @@ export const registerPrivacyPaths = (
     path: "/api/v1/privacy/data-subjects/erase",
     tags: TAGS,
     summary: "Permanently erase a data subject's data",
-    description: "Erases each web visitor among the confirmed identities as `DELETE /api/v1/history/visitors/{visitorId}` does, then every other conversation the identities reach as `DELETE /api/v1/history/chat/{conversationId}` does, each with its own audit event. One already erased is skipped. There is no undo.",
+    description: "Erases each web visitor among the confirmed identities as `DELETE /api/v1/history/visitors/{visitorId}` does, then every other conversation the identities reach as `DELETE /api/v1/history/chat/{conversationId}` does, each with its own audit event, and records one `data_subject.erased` audit event for the request with identity records and totals. One already erased is skipped. There is no undo.",
     operationId: "eraseDataSubject",
     security: sec,
     request: identitiesBody,
     responses: {
       200: { description: "What was erased", content: json(privacy.DataSubjectErasureSchema) },
       ...common,
+      413: tooLarge,
+      500: errorResponse("`data_subject_erasure_incomplete`: the erasure stopped partway. `details.receipt` is a `DataSubjectErasure` with what it erased and `complete: false`; send the same request again to erase the rest."),
     },
   });
 };

@@ -5,8 +5,8 @@ import type {
   BackgroundJobSkipped,
   BackgroundJobStore,
 } from "../../shared/background-jobs/index.js";
+import { SUBJECT_ACTION_TYPES, subjectActionValues } from "../../modules/chat/contracts/index.js";
 import {
-  exportJson,
   exportTimestamp,
   type DataSubjectDataExporter,
   type DataSubjectExportRecord,
@@ -358,9 +358,10 @@ const mapJobClaim = (row: JobClaimRow, availableAt: Date, kind: string): Backgro
 
 
 /**
- * The export's `routine_actions` section: what a conversation's routines handed on, such as an
- * operator notice carrying the values a routine collected, or a skill call's input. It outlives the
- * routine state the values came from.
+ * The export's `routine_actions` section: what a conversation's routines handed on about the person,
+ * such as a contact request or the values a routine's ending carried to the team or to a webhook.
+ * It outlives the routine state the values came from. Only the action types that carry the
+ * person's own values are exported, each reduced to them (`subjectActionValues`).
  */
 export class ActionRequestExporter implements DataSubjectDataExporter {
   readonly section = "routine_actions";
@@ -371,19 +372,22 @@ export class ActionRequestExporter implements DataSubjectDataExporter {
     if (scope.conversationIds.length === 0) return [];
     const rows = await this.db
       .selectFrom("routine_action_requests")
-      .select(["conversation_id", "type", "skill_name", "status", "payload", "created_at"])
+      .select(["conversation_id", "type", "payload", "created_at"])
       .where("workspace_id", "=", scope.workspaceId)
       .where((eb) => anyOf(eb.ref("conversation_id"), scope.conversationIds, "uuid[]"))
+      .where((eb) => anyOf(eb.ref("type"), SUBJECT_ACTION_TYPES, "text[]"))
       .orderBy("created_at")
       .orderBy("id")
       .execute();
-    return rows.map((row) => ({
-      conversationId: row.conversation_id,
-      type: row.type,
-      skillName: row.skill_name,
-      status: row.status,
-      payload: exportJson(row.payload),
-      createdAt: exportTimestamp(row.created_at),
-    }));
+    return rows.flatMap((row) => {
+      const projected = subjectActionValues(row.type, row.payload);
+      return projected ? [{
+        conversationId: row.conversation_id,
+        type: row.type,
+        routineId: projected.routineId,
+        values: projected.values,
+        createdAt: exportTimestamp(row.created_at),
+      }] : [];
+    });
   }
 }

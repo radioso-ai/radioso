@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { apiPrincipalRoutePolicy } from "../../src/app/http/apiPrincipalRoutePolicy.js";
 import type { DataSubjectAccess, DataSubjectExportDocument } from "../../src/modules/privacy/public.js";
-import { forbidden } from "../../src/shared/domain/errors.js";
+import { AppError, forbidden } from "../../src/shared/domain/errors.js";
 import { adminSessionHeaders, createTestApp, issueTestSession, issueTestToken } from "../support/testApp.js";
 
 const ROUTES = ["lookup", "conversations", "export", "erase"] as const;
@@ -40,7 +40,7 @@ const harness = async () => {
       identities,
       sections: { conversations: [{ id: "conv-1", messages: [] }] },
     })),
-    erase: vi.fn<DataSubjectAccess["erase"]>(async () => ({ visitorCount: 1, conversationCount: 3, messageCount: 9 })),
+    erase: vi.fn<DataSubjectAccess["erase"]>(async () => ({ visitorCount: 1, conversationCount: 3, messageCount: 9, complete: true })),
   };
   const { app, dependencies } = createTestApp({ dataSubjectAccess: access });
   const session = await issueTestSession(app, `data-subject-${randomUUID()}@example.com`);
@@ -92,7 +92,7 @@ describe("data subject request contract", () => {
     expect(exported.headers["cache-control"]).toBe("no-store");
 
     const erased = await post(h, "erase", { identities: IDENTITIES }).expect(200);
-    expect(erased.body).toEqual({ visitorCount: 1, conversationCount: 3, messageCount: 9 });
+    expect(erased.body).toEqual({ visitorCount: 1, conversationCount: 3, messageCount: 9, complete: true });
     expect(h.access.erase).toHaveBeenCalledWith({
       workspaceId: h.session.workspaceId,
       identities: IDENTITIES,
@@ -112,6 +112,39 @@ describe("data subject request contract", () => {
     expect(h.access.export).not.toHaveBeenCalled();
     expect(h.access.erase).not.toHaveBeenCalled();
     expect(h.access.listConversations).not.toHaveBeenCalled();
+  });
+
+  it("refuses an export or erasure past the cap with 413 and says to split it by identity", async () => {
+    const h = await harness();
+    const tooLarge = new AppError(413, "data_subject_request_too_large", "These identities reach 501 conversations; one request may reach at most 500. Split the request by identity.", {
+      conversationCount: 501,
+      maxConversations: 500,
+    });
+    h.access.export.mockRejectedValueOnce(tooLarge);
+    h.access.erase.mockRejectedValueOnce(tooLarge);
+
+    for (const route of ["export", "erase"]) {
+      const response = await post(h, route, { identities: IDENTITIES }).expect(413);
+      expect(response.body.error).toMatchObject({
+        code: "data_subject_request_too_large",
+        message: expect.stringContaining("Split the request by identity"),
+        details: { conversationCount: 501, maxConversations: 500 },
+      });
+    }
+  });
+
+  it("answers an erasure that stopped partway with 500 and what it erased so far", async () => {
+    const h = await harness();
+    h.access.erase.mockRejectedValueOnce(new AppError(500, "data_subject_erasure_incomplete", "The erasure stopped before it erased everything the identities reach.", {
+      receipt: { visitorCount: 1, conversationCount: 2, messageCount: 5, complete: false },
+    }));
+
+    const response = await post(h, "erase", { identities: IDENTITIES }).expect(500);
+
+    expect(response.body.error).toMatchObject({
+      code: "data_subject_erasure_incomplete",
+      details: { receipt: { visitorCount: 1, conversationCount: 2, messageCount: 5, complete: false } },
+    });
   });
 
   it("never echoes the query back in a refusal", async () => {

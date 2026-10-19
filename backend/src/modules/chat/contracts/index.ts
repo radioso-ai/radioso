@@ -34,6 +34,8 @@ export { SKILL_TURN_OUTCOME } from "../services/assistantTurnOutcomeTypes.js";
 // The contact.send action type is a chat contract shared with the notify capability; exposed
 // here (not via chat/composition) so cross-module consumers stay off the app-wiring entrypoint.
 export { CONTACT_SEND_ACTION_TYPE } from "../services/routines/contactRoutine.js";
+// What a queued action carried about the person, for a data subject's export.
+export { SUBJECT_ACTION_TYPES, subjectActionValues } from "../services/actions/subjectActionValues.js";
 export { appendDirectiveSteeringStage } from "../services/directiveTracePresenter.js";
 export { appendConversationSummaryStage } from "../services/conversationSummaryTracePresenter.js";
 export type { TurnTraceEnvelope } from "../services/turnTraceEnvelope.js";

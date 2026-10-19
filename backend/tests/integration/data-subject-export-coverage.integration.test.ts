@@ -9,10 +9,11 @@ import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 /**
- * Where a table that holds data about a conversation, a chat session, a visitor or a message goes in
- * a data subject's export. Every such table needs an entry, so a table added with a `conversation_id`
- * fails here until it gets a section in `app/composition/dataSubjectAccess.ts` or a stated reason it
- * stays out.
+ * Where a table that holds data about a conversation, a chat session, a visitor or a message, or
+ * that is keyed by a person's identifier (a verified customer id, a visitor key, an address), goes
+ * in a data subject's export. Every such table needs an entry, so a table added with a
+ * `conversation_id` or a `sender_address` fails here until it gets a section in
+ * `app/composition/dataSubjectAccess.ts` or a stated reason it stays out.
  */
 type ExportCoverage =
   /** A registered exporter writes the table's rows to this section. */
@@ -34,6 +35,7 @@ const coverage: Record<string, ExportCoverage> = {
   email_inbound_deliveries: { kind: "exported", section: "email_messages" },
   assistant_answer_feedback: { kind: "exported", section: "answer_feedback" },
 
+  email_mailboxes: excluded("The workspace's own mailbox and its address, not anyone who wrote to it."),
   email_thread_links: excluded("How the email finder finds a sender's threads. Its latest subject, Cc and display name copy what email_messages carries for each mail."),
   slack_conversation_links: excluded("How the Slack finder finds a member's threads: a routing key naming the Slack workspace, channel and thread, which the conversation's channel context carries too."),
   email_send_intents: excluded("Delivery bookkeeping for replies the export carries as messages: provider ids, states and the authority to send."),
@@ -69,8 +71,17 @@ const coverage: Record<string, ExportCoverage> = {
   ee_usage_limit_conversation_replies: { kind: "excluded", edition: "ee", reason: "The Enterprise Edition's reply quota counter: an id and a count." },
 };
 
-/** Tables keyed by a subject some other way than a conversation, session, visitor or message column. */
-const SUBJECT_KEYED_TABLES = ["visitors", "context_variable_values"] as const;
+/**
+ * Tables keyed by a subject in a way no column name shows: customer-scoped context values carry the
+ * verified customer id in a generic `scope_id`.
+ */
+const SUBJECT_KEYED_TABLES = ["context_variable_values"] as const;
+
+/**
+ * Columns that name a conversation, chat session, visitor or message, or carry a person's own
+ * identifier: a verified customer id, a visitor key, an address. Matched whatever their type.
+ */
+const SUBJECT_COLUMN_PATTERN = "(^|_)(conversation|session|visitor|message)_id$|(^|_)(verified_customer_id|visitor_key)$|(^|_)address(es)?$";
 
 describeIntegration("data subject export schema coverage", () => {
   const database = new Database(integrationDatabaseUrl);
@@ -83,15 +94,14 @@ describeIntegration("data subject export schema coverage", () => {
       "SELECT table_name FROM information_schema.tables WHERE table_schema = 'public' AND table_type = 'BASE TABLE'",
     );
     tables = new Set(all.map((row) => row.table_name));
-    // The same columns the erasure coverage polices: anything named like a conversation, chat
-    // session, visitor or message reference, whatever its type.
+    // The columns the erasure coverage polices, and those keyed by a person's identifier.
     const referencing = await database.query<{ table_name: string }>(`
       SELECT DISTINCT c.table_name
         FROM information_schema.columns c
         JOIN information_schema.tables t
           ON t.table_schema = c.table_schema AND t.table_name = c.table_name AND t.table_type = 'BASE TABLE'
        WHERE c.table_schema = 'public'
-         AND c.column_name ~ '(^|_)(conversation|session|visitor|message)_id$'`);
+         AND c.column_name ~ $1`, [SUBJECT_COLUMN_PATTERN]);
     referencingTables = new Set(referencing.map((row) => row.table_name));
   });
 
@@ -108,6 +118,10 @@ describeIntegration("data subject export schema coverage", () => {
   it("finds the tables it is meant to police", () => {
     expect(referencingTables.has("messages")).toBe(true);
     expect(referencingTables.has("routine_states")).toBe(true);
+    // Keyed by a person's identifier rather than a conversation.
+    expect(referencingTables.has("visitors")).toBe(true);
+    expect(referencingTables.has("email_thread_links")).toBe(true);
+    expect(referencingTables.has("email_inbound_deliveries")).toBe(true);
     for (const table of SUBJECT_KEYED_TABLES) expect(tables.has(table)).toBe(true);
     expect(referencingTables.size).toBeGreaterThan(30);
   });

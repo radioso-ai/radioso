@@ -15,32 +15,30 @@ import {
   type DataSubjectIdentityFinder,
   type DataSubjectIdentityKind,
   type DataSubjectIdentityMatch,
-  type DataSubjectReach,
+  type DataSubjectIdentityReach,
 } from "../../src/shared/domain/dataSubjectAccess.js";
 import type { Db } from "../../src/shared/infra/kysely/types.js";
-import { notFound } from "../../src/shared/domain/errors.js";
+import { AppError, notFound } from "../../src/shared/domain/errors.js";
 
 const WORKSPACE = "11111111-1111-4111-8111-111111111111";
 const ACTOR = { accountId: "acct-1", userId: "user-1" };
 const NOW = new Date("2026-10-19T12:00:00.000Z");
 const ADDRESS = "jane@example.com";
 
-const noReach: DataSubjectReach = { conversationIds: [], visitorIds: [], verifiedCustomerIds: [] };
+const noReach: DataSubjectIdentityReach = { conversationIds: [], visitorIds: [], verifiedCustomerIds: [], recordIds: [] };
 
 const finder = (
   kind: DataSubjectIdentityKind,
   options: {
     channel: string;
-    personalKey: boolean;
     matches?: Record<string, DataSubjectIdentityMatch[]>;
-    reach?: Record<string, Partial<DataSubjectReach>>;
+    reach?: Record<string, Partial<DataSubjectIdentityReach>>;
   },
 ) => {
   const reached: string[][] = [];
   const port: DataSubjectIdentityFinder = {
     kind,
     channel: options.channel,
-    personalKey: options.personalKey,
     async find({ query }) {
       return options.matches?.[query] ?? [];
     },
@@ -51,16 +49,18 @@ const finder = (
         conversationIds: parts.flatMap((part) => part.conversationIds),
         visitorIds: parts.flatMap((part) => part.visitorIds),
         verifiedCustomerIds: parts.flatMap((part) => part.verifiedCustomerIds),
+        recordIds: parts.flatMap((part) => part.recordIds),
       };
     },
   };
   return { port, reached };
 };
 
-const match = (key: string, label: string, conversationCount: number): DataSubjectIdentityMatch => ({
+const match = (key: string, label: string, conversationCount: number, recordIds: string[]): DataSubjectIdentityMatch => ({
   key,
   label,
   conversationCount,
+  recordIds,
   firstSeenAt: new Date("2026-09-01T08:00:00.000Z"),
   lastSeenAt: new Date("2026-10-01T08:00:00.000Z"),
 });
@@ -74,26 +74,27 @@ const conversation = (id: string, channel: string, lastActivityAt: string): Data
   messageCount: 2,
 });
 
-const createHarness = () => {
+const createHarness = (options: { maxConversations?: number } = {}) => {
   const web = finder("web_visitor", {
     channel: "web",
-    personalKey: false,
-    matches: { "cust-42": [match("visitor-1", "cust-42", 2)] },
-    reach: { "visitor-1": { conversationIds: ["conv-web-1", "conv-web-2"], visitorIds: ["visitor-1"], verifiedCustomerIds: ["cust-42"] } },
+    matches: { "cust-42": [match("visitor-1", "cust-42", 2, ["visitor-1"])] },
+    reach: { "visitor-1": { conversationIds: ["conv-web-1", "conv-web-2"], visitorIds: ["visitor-1"], verifiedCustomerIds: ["cust-42"], recordIds: ["visitor-1"] } },
   });
+  // Email thread links are keyed by their conversation.
   const email = finder("email_address", {
     channel: "email",
-    personalKey: true,
-    matches: { [ADDRESS]: [match(ADDRESS, ADDRESS, 1)] },
-    reach: { [ADDRESS]: { conversationIds: ["conv-mail-1", "conv-web-1"] } },
+    matches: { [ADDRESS]: [match(ADDRESS, ADDRESS, 1, ["conv-mail-1"])] },
+    reach: { [ADDRESS]: { conversationIds: ["conv-mail-1", "conv-web-1"], recordIds: ["conv-mail-1", "conv-web-1"] } },
   });
-  const slack = finder("slack_user", { channel: "slack", personalKey: true });
+  const slack = finder("slack_user", { channel: "slack" });
   const exportScopes: DataSubjectExportScope[] = [];
+  const exported: string[] = [];
   const exporters: DataSubjectDataExporter[] = [
     {
       section: "conversations",
       async export(scope) {
         exportScopes.push(scope);
+        exported.push("conversations");
         return scope.conversationIds.map((id) => ({ id, messages: [{ role: "user", content: "My order 1182 never arrived" }] }));
       },
     },
@@ -120,8 +121,9 @@ const createHarness = () => {
     erasure,
     audit: { record: async (event) => { audit.push(event); } },
     now: () => NOW,
+    ...(options.maxConversations === undefined ? {} : { maxConversations: options.maxConversations }),
   });
-  return { service, web, email, slack, directory, exportScopes, audit, erasure, runs: () => runs };
+  return { service, web, email, slack, directory, exportScopes, exported, audit, erasure, runs: () => runs };
 };
 
 const confirmed = [
@@ -146,25 +148,23 @@ describe("DataSubjectAccessService", () => {
       }]);
     });
 
-    it("records who looked up and which identities they found, never the query or a personal key", async () => {
+    it("records who looked up and the identity records they found, never the query or a key", async () => {
       const h = createHarness();
 
       await h.service.lookup({ workspaceId: WORKSPACE, query: ADDRESS, actor: ACTOR });
 
-      expect(h.audit).toHaveLength(1);
-      const [event] = h.audit;
-      expect(event).toMatchObject({
+      expect(h.audit).toEqual([{
         accountId: ACTOR.accountId,
         workspaceId: WORKSPACE,
         eventType: "data_subject.looked_up",
         eventStatus: "success",
-        metadata: { actorUserId: ACTOR.userId, identityCount: 1, conversationCount: 1 },
-      });
-      const identities = event.metadata?.identities as { kind: string; ref: string }[];
-      expect(identities).toHaveLength(1);
-      expect(identities[0].kind).toBe("email_address");
-      expect(identities[0].ref).toMatch(/^sha256:[0-9a-f]{64}$/);
-      expect(JSON.stringify(event)).not.toContain(ADDRESS);
+        metadata: {
+          actorUserId: ACTOR.userId,
+          identities: [{ kind: "email_address", recordIds: ["conv-mail-1"] }],
+          identityCount: 1,
+          conversationCount: 1,
+        },
+      }]);
     });
 
     it("records a lookup that found nobody", async () => {
@@ -219,36 +219,51 @@ describe("DataSubjectAccessService", () => {
       expect(h.runs()).toBe(1);
     });
 
-    it("audits counts per section and the identities by reference, never content", async () => {
+    it("audits counts per section and each identity kind's records, never a key or content", async () => {
       const h = createHarness();
 
       await h.service.export({ workspaceId: WORKSPACE, identities: confirmed, actor: ACTOR });
 
-      const [event] = h.audit;
-      expect(event).toMatchObject({
+      expect(h.audit).toEqual([expect.objectContaining({
         eventType: "data_subject.exported",
+        eventStatus: "success",
         metadata: {
           actorUserId: ACTOR.userId,
+          identities: [
+            { kind: "web_visitor", recordIds: ["visitor-1"] },
+            { kind: "email_address", recordIds: ["conv-mail-1", "conv-web-1"] },
+          ],
           conversationCount: 3,
           recordsBySection: { conversations: 3, routine_values: 0 },
         },
-      });
-      const identities = event.metadata?.identities as { kind: string; ref: string }[];
-      expect(identities[0]).toEqual({ kind: "web_visitor", ref: "visitor-1" });
-      expect(identities[1].ref).toMatch(/^sha256:/);
-      const recorded = JSON.stringify(event);
+      })]);
+      const recorded = JSON.stringify(h.audit);
       expect(recorded).not.toContain(ADDRESS);
       expect(recorded).not.toContain("1182");
     });
 
-    it("references a personal identity the same way in its lookup and its export", async () => {
-      const h = createHarness();
+    it("exports a request that reaches exactly the most conversations one request may", async () => {
+      const h = createHarness({ maxConversations: 3 });
 
-      await h.service.lookup({ workspaceId: WORKSPACE, query: ADDRESS, actor: ACTOR });
-      await h.service.export({ workspaceId: WORKSPACE, identities: [{ kind: "email_address", key: ADDRESS }], actor: ACTOR });
+      const document = await h.service.export({ workspaceId: WORKSPACE, identities: confirmed, actor: ACTOR });
 
-      const [lookedUp, exported] = h.audit.map((event) => event.metadata?.identities);
-      expect(exported).toEqual(lookedUp);
+      expect(document.sections.conversations).toHaveLength(3);
+    });
+
+    it("refuses a request that reaches one more, before exporting or recording anything", async () => {
+      const h = createHarness({ maxConversations: 2 });
+
+      const refusal = await h.service.export({ workspaceId: WORKSPACE, identities: confirmed, actor: ACTOR }).catch((error: unknown) => error);
+
+      expect(refusal).toBeInstanceOf(AppError);
+      expect(refusal).toMatchObject({
+        statusCode: 413,
+        code: "data_subject_request_too_large",
+        details: { conversationCount: 3, maxConversations: 2 },
+      });
+      expect((refusal as AppError).message).toContain("by identity");
+      expect(h.exported).toEqual([]);
+      expect(h.audit).toEqual([]);
     });
   });
 
@@ -266,7 +281,7 @@ describe("DataSubjectAccessService", () => {
       expect(h.erasure.eraseVisitor).toHaveBeenCalledWith({ workspaceId: WORKSPACE, visitorId: "visitor-1", actor: ACTOR });
       expect(h.erasure.eraseConversation.mock.calls.map(([input]) => input.conversationId)).toEqual(["conv-mail-1", "conv-web-1", "conv-web-2"]);
       expect(h.erasure.eraseVisitor.mock.invocationCallOrder[0]).toBeLessThan(h.erasure.eraseConversation.mock.invocationCallOrder[0]);
-      expect(receipt).toEqual({ visitorCount: 1, conversationCount: 3, messageCount: 8 });
+      expect(receipt).toEqual({ visitorCount: 1, conversationCount: 3, messageCount: 8, complete: true });
     });
 
     it("goes on past a visitor or conversation erased meanwhile", async () => {
@@ -275,23 +290,66 @@ describe("DataSubjectAccessService", () => {
       h.erasure.eraseConversation.mockRejectedValue(notFound("Conversation not found"));
 
       expect(await h.service.erase({ workspaceId: WORKSPACE, identities: confirmed, actor: ACTOR }))
-        .toEqual({ visitorCount: 0, conversationCount: 0, messageCount: 0 });
+        .toEqual({ visitorCount: 0, conversationCount: 0, messageCount: 0, complete: true });
     });
 
-    it("stops at an erasure that fails for any other reason", async () => {
+    it("stops at an erasure that fails for any other reason and answers with what it erased so far", async () => {
       const h = createHarness();
       h.erasure.eraseConversation.mockRejectedValueOnce(new Error("deadlock"));
 
-      await expect(h.service.erase({ workspaceId: WORKSPACE, identities: confirmed, actor: ACTOR })).rejects.toThrow("deadlock");
+      const failure = await h.service.erase({ workspaceId: WORKSPACE, identities: confirmed, actor: ACTOR }).catch((error: unknown) => error);
+
+      expect(failure).toBeInstanceOf(AppError);
+      expect(failure).toMatchObject({
+        statusCode: 500,
+        code: "data_subject_erasure_incomplete",
+        details: { receipt: { visitorCount: 1, conversationCount: 2, messageCount: 5, complete: false } },
+      });
       expect(h.erasure.eraseConversation).toHaveBeenCalledTimes(1);
+      expect(h.audit).toEqual([expect.objectContaining({
+        eventType: "data_subject.erased",
+        eventStatus: "failure",
+        metadata: expect.objectContaining({ visitorCount: 1, conversationCount: 2, messageCount: 5, complete: false }),
+      })]);
     });
 
-    it("leaves the audit to each erasure it runs", async () => {
+    it("records one event for the request, with each identity kind's records and the totals", async () => {
       const h = createHarness();
 
       await h.service.erase({ workspaceId: WORKSPACE, identities: confirmed, actor: ACTOR });
 
-      expect(h.audit).toEqual([]);
+      expect(h.audit).toEqual([{
+        accountId: ACTOR.accountId,
+        workspaceId: WORKSPACE,
+        eventType: "data_subject.erased",
+        eventStatus: "success",
+        metadata: {
+          actorUserId: ACTOR.userId,
+          identities: [
+            { kind: "web_visitor", recordIds: ["visitor-1"] },
+            { kind: "email_address", recordIds: ["conv-mail-1", "conv-web-1"] },
+          ],
+          conversationsReached: 3,
+          visitorCount: 1,
+          conversationCount: 5,
+          messageCount: 14,
+          complete: true,
+        },
+      }]);
+      expect(JSON.stringify(h.audit)).not.toContain(ADDRESS);
+    });
+
+    it("erases a request at the cap, and refuses one past it before erasing anything", async () => {
+      const atCap = createHarness({ maxConversations: 3 });
+      await atCap.service.erase({ workspaceId: WORKSPACE, identities: confirmed, actor: ACTOR });
+      expect(atCap.erasure.eraseVisitor).toHaveBeenCalledTimes(1);
+
+      const pastCap = createHarness({ maxConversations: 2 });
+      await expect(pastCap.service.erase({ workspaceId: WORKSPACE, identities: confirmed, actor: ACTOR }))
+        .rejects.toMatchObject({ statusCode: 413, code: "data_subject_request_too_large" });
+      expect(pastCap.erasure.eraseVisitor).not.toHaveBeenCalled();
+      expect(pastCap.erasure.eraseConversation).not.toHaveBeenCalled();
+      expect(pastCap.audit).toEqual([]);
     });
   });
 

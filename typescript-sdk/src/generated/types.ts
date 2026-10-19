@@ -3416,7 +3416,7 @@ export interface paths {
         put?: never;
         /**
          * Permanently erase a data subject's data
-         * @description Erases each web visitor among the confirmed identities as `DELETE /api/v1/history/visitors/{visitorId}` does, then every other conversation the identities reach as `DELETE /api/v1/history/chat/{conversationId}` does, each with its own audit event. One already erased is skipped. There is no undo.
+         * @description Erases each web visitor among the confirmed identities as `DELETE /api/v1/history/visitors/{visitorId}` does, then every other conversation the identities reach as `DELETE /api/v1/history/chat/{conversationId}` does, each with its own audit event, and records one `data_subject.erased` audit event for the request with identity records and totals. One already erased is skipped. There is no undo.
          */
         post: operations["eraseDataSubject"];
         delete?: never;
@@ -10224,6 +10224,8 @@ export interface components {
             visitorCount: number;
             conversationCount: number;
             messageCount: number;
+            /** @description False only in the `details.receipt` of a `500`: the erasure stopped partway. */
+            complete: boolean;
         };
         DataSubjectLookupRequest: {
             /** @description A verified customer id, an email address, or a Slack member id. Matched exactly: an address without regard to case, the others as stored. */
@@ -25838,6 +25840,15 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
+            /** @description `data_subject_request_too_large`: the identities reach more than 200 conversations. `details` carries `conversationCount` and `maxConversations`; split the request by identity. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     eraseDataSubject: {
@@ -25882,6 +25893,24 @@ export interface operations {
             };
             /** @description Caller lacks workspace.history.delete */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `data_subject_request_too_large`: the identities reach more than 200 conversations. `details` carries `conversationCount` and `maxConversations`; split the request by identity. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `data_subject_erasure_incomplete`: the erasure stopped partway. `details.receipt` is a `DataSubjectErasure` with what it erased and `complete: false`; send the same request again to erase the rest. */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

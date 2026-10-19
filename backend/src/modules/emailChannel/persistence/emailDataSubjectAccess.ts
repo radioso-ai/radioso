@@ -6,7 +6,7 @@ import {
   type DataSubjectExportScope,
   type DataSubjectIdentityFinder,
   type DataSubjectIdentityMatch,
-  type DataSubjectReach,
+  type DataSubjectIdentityReach,
 } from "../../../shared/domain/dataSubjectAccess.js";
 import { anyOf } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
@@ -16,12 +16,12 @@ const normalizeAddress = (address: string): string => address.trim().toLowerCase
 
 /**
  * Email senders as data subject identities: the address a thread's participant writes from, across
- * every mailbox of the workspace, keyed by the address itself. Audit events carry it as a digest.
+ * every mailbox of the workspace, keyed by the address itself. Its records are its thread links,
+ * which are keyed by their conversation.
  */
 export class EmailSenderIdentityFinder implements DataSubjectIdentityFinder {
   readonly kind = "email_address" as const;
   readonly channel = "email";
-  readonly personalKey = true;
 
   constructor(private readonly db: Db) {}
 
@@ -32,6 +32,7 @@ export class EmailSenderIdentityFinder implements DataSubjectIdentityFinder {
         eb.fn.countAll<string>().as("conversation_count"),
         eb.fn.min("l.created_at").as("first_seen_at"),
         eb.fn.max(eb.fn.coalesce("l.latest_inbound_at", "l.created_at")).as("last_seen_at"),
+        eb.fn.agg<string[]>("array_agg", ["l.conversation_id"]).as("conversation_ids"),
       ])
       .executeTakeFirst();
     const conversationCount = Number(row?.conversation_count ?? 0);
@@ -42,13 +43,15 @@ export class EmailSenderIdentityFinder implements DataSubjectIdentityFinder {
       conversationCount,
       firstSeenAt: row.first_seen_at,
       lastSeenAt: row.last_seen_at,
+      recordIds: row.conversation_ids,
     }];
   }
 
-  async reach(input: { workspaceId: string; keys: readonly string[] }): Promise<DataSubjectReach> {
+  async reach(input: { workspaceId: string; keys: readonly string[] }): Promise<DataSubjectIdentityReach> {
     const addresses = [...new Set(input.keys.map(normalizeAddress))];
     const rows = addresses.length === 0 ? [] : await this.threads(input.workspaceId, addresses).select("l.conversation_id").execute();
-    return { conversationIds: rows.map((row) => row.conversation_id), visitorIds: [], verifiedCustomerIds: [] };
+    const conversationIds = rows.map((row) => row.conversation_id);
+    return { conversationIds, visitorIds: [], verifiedCustomerIds: [], recordIds: conversationIds };
   }
 
   /** The workspace's threads with these participants, through the mailbox and participant index. */

@@ -4,8 +4,12 @@ import { z } from "zod";
 import { OperatorCatalogResponseSchema, OperatorToolDescriptorSchema } from "@radioso/operator-mcp-contract";
 
 import { operatorMcpToolSchemas } from "../../../src/modules/operatorCopilot/mcpToolSchema.js";
-import type { CopilotToolDescriptor } from "../../../src/modules/operatorCopilot/contracts.js";
+import type { CopilotMcpDisposition, CopilotToolDescriptor } from "../../../src/modules/operatorCopilot/contracts.js";
 import { realCatalog } from "./realCatalogTestSupport.js";
+
+type EligibleToolDescriptor = CopilotToolDescriptor & {
+  mcpDisposition: Extract<CopilotMcpDisposition, { status: "eligible" }>;
+};
 
 /**
  * MCP advertises tool schemas in JSON Schema 2020-12, and a client that checks them against the
@@ -15,7 +19,9 @@ import { realCatalog } from "./realCatalogTestSupport.js";
  */
 const metaschema = new Ajv2020({ strict: false, validateFormats: false });
 
-const eligible = realCatalog().filter((descriptor) => descriptor.mcpDisposition?.status === "eligible");
+const eligible = realCatalog().filter(
+  (descriptor): descriptor is EligibleToolDescriptor => descriptor.mcpDisposition?.status === "eligible",
+);
 
 describe("operator MCP tool schema dialect", () => {
   it("has eligible descriptors to check", () => {
@@ -39,13 +45,24 @@ describe("operator MCP tool schema dialect", () => {
  * `tools/list`, so one descriptor over a contract bound (a description past its length cap, say)
  * fails the parse and every client gets no tools at all.
  */
+describe("every copilot tool description", () => {
+  // Ray serves the same descriptors over MCP, whose edge refuses a whole catalog with one
+  // description past its bound; held to that bound here for every tool, eligible or not yet.
+  it.each(realCatalog().map((descriptor) => [descriptor.name, descriptor.description] as const))(
+    "fits the edge's description bound: %s",
+    (_name, description) => {
+      expect(OperatorToolDescriptorSchema.shape.description.safeParse(description).error?.issues).toBeUndefined();
+    },
+  );
+});
+
 describe("operator MCP catalog contract", () => {
   const advertised = eligible.map((descriptor) => ({
     name: descriptor.name,
     description: descriptor.description,
     ...operatorMcpToolSchemas(descriptor),
     shape: descriptor.shape,
-    requiredScope: descriptor.mcpDisposition!.scope,
+    requiredScope: descriptor.mcpDisposition.scope,
   }));
 
   it.each(advertised.map((tool) => [tool.name, tool] as const))(

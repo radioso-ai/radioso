@@ -151,6 +151,9 @@ describe("email channel composition", () => {
       errorReporter: {} as never,
       metrics: null,
       publisher: { enqueue: vi.fn() },
+      usageLimitPolicy: {} as never,
+      llmRegistry: {} as never,
+      usageEventRecorder: {} as never,
     });
     expect(handler).toBeInstanceOf(EmailSendActionHandler);
     expect(drainDispatcherFor).toHaveBeenCalledWith(workerEnv, localConfig());
@@ -248,6 +251,9 @@ describe("email channel composition", () => {
       errorReporter: { report: vi.fn(async () => undefined) },
       metrics: null,
       publisher,
+      usageLimitPolicy: {} as never,
+      llmRegistry: {} as never,
+      usageEventRecorder: {} as never,
     });
 
     await handler.handle({

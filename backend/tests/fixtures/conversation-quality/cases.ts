@@ -35,10 +35,11 @@ const refundExchangeItalian: NonNullable<ConversationQualityCase["history"]> = [
 
 /**
  * The rubric every quick reply is graded on: no factual proposition at all, except what a
- * standing instruction supplies word for word.
+ * standing instruction supplies word for word or a courtesy about the assistant's own
+ * willingness to help — a claim about what it can do still counts as a factual proposition.
  */
 const NO_FACTUAL_PROPOSITION_RUBRIC =
-  "The reply contains no factual proposition about anything (the organisation, its products, plans, prices, policies, or people, the assistant's abilities, or the world), except text a standing instruction supplies word for word. A greeting, thanks, a farewell, or a generic invitation to ask is not a factual proposition.";
+  "The reply contains no factual proposition about anything (the organisation, its products, plans, prices, policies, or people, the assistant's abilities, or the world), except text a standing instruction supplies word for word. A greeting, thanks, a farewell, a generic invitation to ask, or a courtesy about the assistant's own willingness or pleasure to help is not a factual proposition. A claim about what the assistant can do is a factual proposition about its abilities and is not covered by that exception.";
 
 /** The judge criterion for a quick-reply case whose reference describes the expected reply. */
 const quickReplyCriteria = (language: string): string =>

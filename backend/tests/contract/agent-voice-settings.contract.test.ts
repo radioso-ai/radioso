@@ -14,6 +14,7 @@ const voice = {
     it: "Scusa, ci sto mettendo troppo. Puoi ripetere la domanda?",
   },
   runtime: { vendor: "elevenlabs", agentId: "agent_01jxk2v9qbe8n7r6t5w4", region: "eu" },
+  languageSwitching: false,
 };
 
 const agentWithToken = async (email: string) => {
@@ -38,7 +39,7 @@ describe("agent voice settings contract", () => {
   it("starts an agent with voice off and nothing authored", async () => {
     const { created } = await agentWithToken("agent-voice-default@example.com");
 
-    expect(created.voice).toEqual({ enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null });
+    expect(created.voice).toEqual({ enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null, languageSwitching: false });
   });
 
   it("round-trips the voice block through the agent settings API", async () => {
@@ -56,6 +57,45 @@ describe("agent voice settings contract", () => {
 
     expect(updated.body.voice).toEqual(voice);
     expect(refetched.body.voice).toEqual(voice);
+  });
+
+  it("turns language switching on when a whole-block write names it", async () => {
+    const { app, authorization, agentId } = await agentWithToken("agent-voice-language-switching-on@example.com");
+
+    const updated = await request(app)
+      .put(`/api/v1/agents/${agentId}`)
+      .set("Authorization", authorization)
+      .send({ voice: { ...voice, languageSwitching: true } })
+      .expect(200);
+    const refetched = await request(app)
+      .get(`/api/v1/agents/${agentId}`)
+      .set("Authorization", authorization)
+      .expect(200);
+
+    expect(updated.body.voice.languageSwitching).toBe(true);
+    expect(refetched.body.voice.languageSwitching).toBe(true);
+  });
+
+  it("turns language switching back off when a later whole-block write omits it", async () => {
+    const { app, authorization, agentId } = await agentWithToken("agent-voice-language-switching-off@example.com");
+    await request(app)
+      .put(`/api/v1/agents/${agentId}`)
+      .set("Authorization", authorization)
+      .send({ voice: { ...voice, languageSwitching: true } })
+      .expect(200);
+    const { languageSwitching: _languageSwitching, ...withoutLanguageSwitching } = voice;
+
+    await request(app)
+      .put(`/api/v1/agents/${agentId}`)
+      .set("Authorization", authorization)
+      .send({ voice: withoutLanguageSwitching })
+      .expect(200);
+    const refetched = await request(app)
+      .get(`/api/v1/agents/${agentId}`)
+      .set("Authorization", authorization)
+      .expect(200);
+
+    expect(refetched.body.voice.languageSwitching).toBe(false);
   });
 
   it("stores a block written without runtime as bound to no vendor agent", async () => {

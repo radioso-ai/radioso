@@ -138,3 +138,51 @@ describe("OpenAI completions presenter", () => {
     });
   });
 });
+
+describe("a switch of the call's language", () => {
+  /** How the elevenlabs dialect names its `language_detection` tool and arguments. */
+  const languageSwitch = { tool: "language_detection", argument: "language", reasonArgument: "reason" };
+  const switching: VoiceTurnEvent[] = [
+    { type: "conversation", conversationId: "55555555-5555-4555-8555-555555555555" },
+    { type: "switchLanguage", switchId: "switch-1", language: "it", reason: "response_language" },
+    { type: "outcome", outcome: { kind: "continue" } },
+  ];
+  const chunk = (choice: string) =>
+    `data: {"id":"chatcmpl-test","object":"chat.completion.chunk","created":1760000000,"model":"radioso-voice","choices":[${choice}]}\n\n`;
+  const toolCall = '{"index":0,"id":"switch-1","type":"function","function":{"name":"language_detection","arguments":"{\\"reason\\":\\"response_language\\",\\"language\\":\\"it\\"}"}}';
+
+  it("streams the tool call alone and ends it with tool_calls and [DONE]: no content, so the runtime speaks nothing twice", () => {
+    const render = createCompletionChunkRenderer(identity, { sentenceFlushDelta: " ​", languageSwitch });
+
+    expect(switching.flatMap(render)).toEqual([
+      chunk(`{"index":0,"delta":{"role":"assistant","tool_calls":[${toolCall}]},"finish_reason":null}`),
+      chunk('{"index":0,"delta":{},"finish_reason":"tool_calls"}'),
+      "data: [DONE]\n\n",
+    ]);
+  });
+
+  it("does not repeat the role after a keep-alive opened the reply", () => {
+    const render = createCompletionChunkRenderer(identity, { languageSwitch });
+
+    render({ type: "keep_alive", delta: " ​" });
+    expect(deltaOf(render(switching[1])[0])).toEqual(JSON.parse(`{"tool_calls":[${toolCall}]}`));
+  });
+
+  it("answers a request that is not streamed with one tool-call message", () => {
+    expect(renderCompletion(identity, switching, { languageSwitch })).toEqual({
+      id: "chatcmpl-test",
+      object: "chat.completion",
+      created: 1_760_000_000,
+      model: "radioso-voice",
+      choices: [{
+        index: 0,
+        message: {
+          role: "assistant",
+          content: null,
+          tool_calls: [{ id: "switch-1", type: "function", function: { name: "language_detection", arguments: '{"reason":"response_language","language":"it"}' } }],
+        },
+        finish_reason: "tool_calls",
+      }],
+    });
+  });
+});

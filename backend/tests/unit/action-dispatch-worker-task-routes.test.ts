@@ -16,7 +16,10 @@ const drained = { claimed: 1, completed: 1, skipped: 0, requeued: 0, retried: 0,
 const DRAIN_PATH = "/internal/tasks/actions/drain";
 const RECOVER_PATH = "/internal/tasks/actions/recover";
 
-const buildApp = (drain: ReturnType<typeof vi.fn>, reportActionOutboxQueueState: ReturnType<typeof vi.fn> = vi.fn(async () => undefined)) => {
+const buildApp = (
+  drain: ReturnType<typeof vi.fn>,
+  reportActionOutboxQueueState: ReturnType<typeof vi.fn<() => Promise<void>>> = vi.fn(async () => undefined),
+) => {
   const app = express();
   app.use(express.json());
   app.use(createActionDispatchWorkerTaskRoutes({ actionDispatchJobRuntime: { drain } as never, reportActionOutboxQueueState }));

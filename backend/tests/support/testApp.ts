@@ -405,6 +405,7 @@ export const createTestEnv = (): Env => ({
   DB_MIGRATION_STATEMENT_TIMEOUT_MS: 25_000,
   OPENAI_API_KEY: "test-key",
   OPENAI_CHAT_MODEL: "gpt-5-mini",
+  OPENAI_DATA_RESIDENCY: "global",
   OPENAI_VECTOR_MODEL: "text-embedding-3-small",
   LLM_PROVIDER: "openai",
   SESSION_COOKIE_NAME: "radioso_session",
@@ -417,9 +418,6 @@ export const createTestEnv = (): Env => ({
   AUTH_PENDING_REGISTRATION_TTL_MINUTES: 15,
   AUTH_RATE_LIMIT_WINDOW_MS: 60_000,
   AUTH_RATE_LIMIT_MAX_ATTEMPTS: 10,
-  SLACK_INBOUND_EVENT_RETENTION_DAYS: 7,
-  EXTERNAL_MCP_TOOL_CALL_TIMEOUT_MS: 30_000,
-  ANSWER_COVERAGE_SHADOW_ASSESSOR_ENABLED: true,
   PASSWORD_RESET_TOKEN_TTL_MINUTES: 30,
   EMAIL_VERIFICATION_TOKEN_TTL_MINUTES: 30,
   UPLOAD_RATE_LIMIT_MAX_ATTEMPTS: 20,
@@ -966,6 +964,8 @@ export const createTestDependencies = (overrides: {
   handoffWaitingMessageGenerator?: ChatServiceOptions["handoffWaitingMessageGenerator"];
   /** Keeps the heard part of a reply cut off mid-stream; omitted means the in-memory store over the test repositories. */
   cutReplyStore?: ChatServiceOptions["cutReplyStore"];
+  /** Plans each fresh turn in one model call; omitted means turns run the staged path without a planner. */
+  turnPlanCoordinator?: ChatServiceOptions["turnPlanCoordinator"];
   /** Observes the embed-config CDN invalidations; omitted means the deployment has no CDN to invalidate. */
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
   /** Composes the agent tool catalog over the test app's agent row and published-revision readers. */
@@ -2106,6 +2106,14 @@ export const createTestDependencies = (overrides: {
       if (routineRegistry.isEmpty && routines.length === 0) {
         return null;
       }
+      // Same port pairing production uses (routines/exposure/directInvocationTurn.ts).
+      const direct = routineInvocation
+        ? createDirectInvocationTurnPorts({
+          registrations: [...staticRoutineRegistrations, ...publishedRegistrations, ...pinnedRegistrations],
+          routines,
+          invocation: routineInvocation,
+        })
+        : null;
       const runner = new DefaultRoutineRunner(
         routines,
         new RoutineNextStepSelector(modelGateway, {
@@ -2116,14 +2124,10 @@ export const createTestDependencies = (overrides: {
           responseLanguage,
           groundedAnswerRenderer,
         }),
+        undefined,
+        { ...direct?.runnerOptions },
       );
-      if (routineInvocation) {
-        // Same port pairing production uses (routines/exposure/directInvocationTurn.ts).
-        const direct = createDirectInvocationTurnPorts({
-          registrations: [...staticRoutineRegistrations, ...publishedRegistrations, ...pinnedRegistrations],
-          routines,
-          invocation: routineInvocation,
-        });
+      if (direct) {
         return {
           reporter: direct.reporter,
           activator: direct.activator,
@@ -2190,6 +2194,7 @@ export const createTestDependencies = (overrides: {
     conversationOwnershipReader: conversationOwnershipRepository,
     // Mirror production wiring: a reply cut off mid-stream keeps the part its listener heard.
     cutReplyStore: overrides.cutReplyStore ?? new InMemoryCutReplyStore(messageRepository, conversationRepository, auditEventRepository),
+    ...(overrides.turnPlanCoordinator ? { turnPlanCoordinator: overrides.turnPlanCoordinator } : {}),
     logger,
   });
   const chatBootstrapService = new ChatBootstrapService(
@@ -2680,6 +2685,7 @@ export const createTestDependencies = (overrides: {
     ingestionSettings: ingestionSettingsService,
     directiveAuthor: directiveAuthorService,
     directives: authoredDirectiveService,
+    workspaceSetupState: workspaceSummaryService,
     documents: new DocumentReviewedOperationService(
       documentRepository,
       documentIngestionService,
@@ -2835,8 +2841,6 @@ export const createTestDependencies = (overrides: {
     }),
     auditService,
     mailService: createMailService({ MAIL_DRIVER: "noop" }),
-    noticeMail: { send: async () => ({ dispatched: false }) },
-    accountAdministrators: { list: async () => [] },
     accountAccessService,
     accountInvitationService,
     workspaceSessionService,
@@ -3164,6 +3168,7 @@ export const createTestApp = (overrides: {
   voiceVendorFetch?: typeof globalThis.fetch;
   handoffWaitingMessageGenerator?: ChatServiceOptions["handoffWaitingMessageGenerator"];
   cutReplyStore?: ChatServiceOptions["cutReplyStore"];
+  turnPlanCoordinator?: ChatServiceOptions["turnPlanCoordinator"];
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
 } = {}) => {
   const {

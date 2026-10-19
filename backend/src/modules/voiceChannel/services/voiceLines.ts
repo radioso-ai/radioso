@@ -49,7 +49,7 @@ const spoken = (line: string | undefined): string | null => {
 const characterCount = (text: string): number => Array.from(text).length;
 
 /** Language tags compare case-insensitively; the primary subtag is the language. */
-const languageOf = (tag: string): string => tag.split("-")[0]?.toLowerCase() ?? "";
+export const languageOf = (tag: string): string => tag.split("-")[0]?.toLowerCase() ?? "";
 
 /** The exact tag, else the bare language, else any tag of the same language. Structure only. */
 const matchLocale = (tags: readonly string[], locale: string): string | null => {

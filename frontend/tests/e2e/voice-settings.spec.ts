@@ -86,6 +86,7 @@ test("an operator binds the ElevenLabs agent, writes voice lines in two language
         },
         fallbackLine: {},
         runtime: { vendor: "elevenlabs", agentId: VENDOR_AGENT_ID, region: "eu" },
+        languageSwitching: false,
       },
       mechanicsReplies: { en: { greeting: [GREETING], ...noReplies } },
     },
@@ -96,6 +97,7 @@ test("an operator binds the ElevenLabs agent, writes voice lines in two language
         fallbackLine: { en: FALLBACK_LINE },
         runtime: { vendor: "elevenlabs", agentId: VENDOR_AGENT_ID, region: "eu" },
         recordingNotice: { en: RECORDING_NOTICE },
+        languageSwitching: false,
       },
       mechanicsReplies: { en: { greeting: [GREETING], ...noReplies } },
     },
@@ -163,13 +165,33 @@ test("an operator unbinds the ElevenLabs agent, clears the voice lines, then the
 
   // Each save carries both blocks whole and nothing else, so every other agent setting stays as stored.
   expect(agentUpdates).toEqual([
-    { voice: { enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null }, mechanicsReplies: { en: { greeting: [GREETING], ...noReplies } } },
-    { voice: { enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null }, mechanicsReplies: {} },
+    { voice: { enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null, languageSwitching: false }, mechanicsReplies: { en: { greeting: [GREETING], ...noReplies } } },
+    { voice: { enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null, languageSwitching: false }, mechanicsReplies: {} },
   ]);
 
   await page.reload();
   await expect(page.locator("#voice-channel").getByRole("switch", { name: "Voice channel" })).toBeVisible();
   await expect(page.locator("#voice-channel").getByRole("group", { name: /^Voice lines: / })).toHaveCount(0);
+});
+
+test("an operator turns on switching language with the caller, saves it, and finds it still on after a reload", async ({ page }) => {
+  const agentUpdates: unknown[] = [];
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { agentUpdates });
+
+  const card = await openVoiceCard(page);
+  const languageSwitching = card.getByRole("switch", { name: "Switch language with the caller" });
+  await expect(languageSwitching).not.toBeChecked();
+  await languageSwitching.click();
+  await save(card);
+
+  expect(agentUpdates).toEqual([
+    { voice: { enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null, languageSwitching: true }, mechanicsReplies: {} },
+  ]);
+
+  await page.reload();
+  const reloaded = page.locator("#voice-channel");
+  await expect(reloaded.getByRole("switch", { name: "Switch language with the caller" })).toBeChecked();
 });
 
 test("switching to another agent shows that agent's own lines before its voice settings can be saved", async ({ page }) => {
@@ -215,7 +237,7 @@ test("switching to another agent shows that agent's own lines before its voice s
   await save(otherCard);
 
   expect(otherAgentUpdates).toEqual([{
-    voice: { enabled: false, bridgeLines: { en: { acknowledge: [], check: [otherBridgeLine] } }, fallbackLine: {}, runtime: null },
+    voice: { enabled: false, bridgeLines: { en: { acknowledge: [], check: [otherBridgeLine] } }, fallbackLine: {}, runtime: null, languageSwitching: false },
     mechanicsReplies: {},
   }]);
   expect(agentUpdates).toEqual([]);

@@ -429,6 +429,49 @@ describe("LlmProviderRegistry", () => {
     });
   });
 
+  it("keys the embedding provider cache by endpoint, not just by API key, so an eu platform call and a global BYOK call sharing a key bind to their own endpoints", async () => {
+    const encodedEmbedding = Buffer.alloc(1536 * Float32Array.BYTES_PER_ELEMENT);
+    encodedEmbedding.writeFloatLE(1, 0);
+    const resolve = vi.fn()
+      .mockResolvedValueOnce({
+        capability: "embeddings" as const,
+        provider: "openai" as const,
+        model: "text-embedding-3-small",
+        apiKey: "shared-key",
+        openAIDataResidency: "eu" as const,
+      })
+      .mockResolvedValueOnce({
+        capability: "embeddings" as const,
+        provider: "openai" as const,
+        model: "text-embedding-3-small",
+        apiKey: "shared-key",
+      });
+    const resolver = { resolve };
+    const requests: string[] = [];
+    vi.stubGlobal("fetch", async (input: string | URL | Request) => {
+      requests.push(input instanceof Request ? input.url : String(input));
+      return Response.json({
+        data: [{ index: 0, embedding: encodedEmbedding.toString("base64") }],
+        usage: { prompt_tokens: 1, total_tokens: 1 },
+      });
+    });
+
+    const registry = new LlmProviderRegistry(resolveLlmConfig({ OPENAI_API_KEY: "env-key" }), undefined, { resolver });
+    const gateway = registry.createEmbeddingGateway();
+
+    await gateway.embedTexts(["hello"], {
+      usageContext: { workspaceId: "ws-eu", requestId: "r1", surface: "embedding", operation: "embedding", attemptKey: "e:0" },
+    });
+    await gateway.embedTexts(["hello"], {
+      usageContext: { workspaceId: "ws-global", requestId: "r2", surface: "embedding", operation: "embedding", attemptKey: "e:1" },
+    });
+
+    expect(requests).toHaveLength(2);
+    expect(requests[0]).toContain("eu.api.openai.com");
+    expect(requests[1]).toContain("api.openai.com");
+    expect(requests[1]).not.toContain("eu.api.openai.com");
+  });
+
   it("rejects claude embeddings before use", () => {
     const config = resolveLlmConfig({
       OPENAI_API_KEY: "openai-key",

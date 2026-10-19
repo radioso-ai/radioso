@@ -153,6 +153,7 @@ jobs:
           MONITORING_ENABLED: ${{ vars.MONITORING_ENABLED }}
           MONITORING_EXTRA_NOTIFICATION_CHANNEL_IDS: ${{ vars.MONITORING_EXTRA_NOTIFICATION_CHANNEL_IDS }}
           MONITORING_NOTIFICATION_EMAILS: ${{ vars.MONITORING_NOTIFICATION_EMAILS }}
+          OPENAI_DATA_RESIDENCY: ${{ vars.OPENAI_DATA_RESIDENCY }}
           OPS_EVENT_WEBHOOK_EVENTS: ${{ vars.OPS_EVENT_WEBHOOK_EVENTS }}
           OPS_EVENT_WEBHOOK_SECRET: ${{ secrets.OPS_EVENT_WEBHOOK_SECRET }}
           OPS_EVENT_WEBHOOK_URL: ${{ vars.OPS_EVENT_WEBHOOK_URL }}
@@ -174,6 +175,10 @@ jobs:
 
           if [ -n "${MAIL_FROM_NAME}" ]; then
             echo "TF_VAR_mail_from_name=${MAIL_FROM_NAME}" >> "$GITHUB_ENV"
+          fi
+
+          if [ -n "${OPENAI_DATA_RESIDENCY}" ]; then
+            echo "TF_VAR_openai_data_residency=${OPENAI_DATA_RESIDENCY}" >> "$GITHUB_ENV"
           fi
 
           # Alerting stays off until an environment opts in. Terraform's own precondition

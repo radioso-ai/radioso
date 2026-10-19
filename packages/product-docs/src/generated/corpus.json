@@ -1,7 +1,7 @@
 {
   "generatedFrom": "docs-portal/content",
   "citationBase": "https://docs.radioso.ai",
-  "pageCount": 60,
+  "pageCount": 61,
   "pages": [
     {
       "slug": "api",
@@ -897,7 +897,7 @@
       "title": "Connect a calling agent",
       "description": "Read the reply envelope ask_agent returns, call an exposed routine as a typed tool, and come back for a human's reply after a handoff.",
       "section": "Guides",
-      "lastUpdated": "2026-10-13",
+      "lastUpdated": "2026-10-18",
       "intro": "Another AI agent can hold a conversation with one of yours and act on what comes back. It sends a message through `ask_agent`, or calls a routine you have exposed as a named tool, and gets a structured reply envelope beside the prose: what the answer covered, who owns the conversation, and where a routine landed. That envelope is what lets a calling model decide its next move instead of parsing sentences.\n\nStart with [MCP server](https://docs.radioso.ai/guides/mcp-server) to issue the credential and point a client at the server, or with [Publish and open an agent](https://docs.radioso.ai/guides/publish-an-agent) if you want callers to reach the agent with no credential at all. This page covers what the client does once it is connected.",
       "sections": [
         {
@@ -918,7 +918,7 @@
         {
           "id": "routines-as-tools",
           "heading": "Routines as tools",
-          "body": "A routine an operator has [exposed as a tool](https://docs.radioso.ai/guides/authoring-routines#expose-a-routine-as-a-tool) is listed for the session by `GET /api/v1/mcp/converse/tools`, one `AgentToolDescriptor` per routine with a JSON Schema `inputSchema` built from the routine's declared slots. A direct converse client invokes it by sending `routine` instead of `message` on the ask route:\n\n```json\n{ \"routine\": { \"toolName\": \"start_return\", \"input\": { \"orderId\": \"A-1001\" } } }\n```\n\nThe routine starts with those slots filled, skips the steps that would have asked for them, and reports where it landed in `routine` (`toolName` names the tool) and what the call did in `invocation.outcome`: `started`; `reentered` (a completed routine started again, as its reentry setting allows); `declined` (completed under **Once per conversation** — the turn answers normally and `routine` still reports `status: \"completed\"`); `not_started` (another routine was mid-flight or awaiting approval and kept the turn — `routine` describes it); or `unknown_tool`. Input is validated before anything is recorded: an unknown tool returns `404` with `error.details.code` `routine_tool_unknown`; mismatched input returns `400` with `error.details.code` `routine_invocation_invalid` and one `{ path, code }` entry per field in `error.details.errors` (`required`, `type`, `format`, `unknown_field`, `too_long` over 2000 characters; a blank string counts as missing). Both routes check the tool name against the release the conversation is pinned to, while `GET /api/v1/mcp/converse/tools` lists the current published catalog, so a routine exposed after the conversation began can be listed yet answer `routine_tool_unknown`.\n\nAn MCP client gets the same catalog as tools. The standalone server reads it once, when it exchanges the credential for a session, and pins the result, so the session's `tools/list` is stable for its lifetime: `ask_agent`, the two documentation tools, and one tool per exposed routine — `start_return(orderId, reason?)` above — each carrying the operator's description and the descriptor's JSON Schema. Calling a routine tool checks the arguments against that schema first (a miss is a tool error before the backend is involved, audited with the tool name only), then runs the invocation above. The result's `structuredContent` is the full envelope and its text content is `answer.text` followed by that envelope as JSON, exactly as for `ask_agent`.\n\nA routine exposed, renamed, or withdrawn after the session opened appears when the client's next session is established; the server sends no `notifications/tools/list_changed`.\n\nThe converse session does not grant access to other agents, workspace administration, account management, API-access settings, Ray, the skill catalogue, connector secrets, or provider keys."
+          "body": "A routine an operator has [exposed as a tool](https://docs.radioso.ai/guides/authoring-routines#expose-a-routine-as-a-tool) is listed for the session by `GET /api/v1/mcp/converse/tools`, one `AgentToolDescriptor` per routine with a JSON Schema `inputSchema` built from the routine's declared slots. A direct converse client invokes it by sending `routine` instead of `message` on the ask route:\n\n```json\n{ \"routine\": { \"toolName\": \"start_return\", \"input\": { \"orderId\": \"A-1001\" } } }\n```\n\nThe routine starts with those slots filled and walks past the steps they satisfy. On that turn the input is its only source of values: it stops on the first step whose required slots the call left out (or, on a step that collects only optional slots, any of its slots), runs nothing after that step, skill steps included, and lists what that step still needs in `pendingInput`. A step moves on once its required slots have values, so an optional slot beside them stays empty unless the call gives it. The caller supplies a missing value in a follow-up message or a second call. The reply reports where the routine landed in `routine` (`toolName` names the tool) and what the call did in `invocation.outcome`: `started`; `reentered` (a completed routine started again, as its reentry setting allows); `declined` (completed under **Once per conversation** — the turn answers normally and `routine` still reports `status: \"completed\"`); `not_started` (a routine, the one called or another, was mid-flight or awaiting approval and kept the turn; an active routine reads the call as it reads any message, which is how a second call fills what the first left out — `routine` describes it); or `unknown_tool`. Input is validated before anything is recorded: an unknown tool returns `404` with `error.details.code` `routine_tool_unknown`; mismatched input returns `400` with `error.details.code` `routine_invocation_invalid` and one `{ path, code }` entry per field in `error.details.errors` (`required`, `type`, `format`, `unknown_field`, `too_long` over 2000 characters; a blank string counts as missing). Both routes check the tool name against the release the conversation is pinned to, while `GET /api/v1/mcp/converse/tools` lists the current published catalog, so a routine exposed after the conversation began can be listed yet answer `routine_tool_unknown`.\n\nAn MCP client gets the same catalog as tools. The standalone server reads it once, when it exchanges the credential for a session, and pins the result, so the session's `tools/list` is stable for its lifetime: `ask_agent`, the two documentation tools, and one tool per exposed routine — `start_return(orderId, reason?)` above — each carrying the operator's description and the descriptor's JSON Schema. Calling a routine tool checks the arguments against that schema first (a miss is a tool error before the backend is involved, audited with the tool name only), then runs the invocation above. The result's `structuredContent` is the full envelope and its text content is `answer.text` followed by that envelope as JSON, exactly as for `ask_agent`.\n\nA routine exposed, renamed, or withdrawn after the session opened appears when the client's next session is established; the server sends no `notifications/tools/list_changed`.\n\nThe converse session does not grant access to other agents, workspace administration, account management, API-access settings, Ray, the skill catalogue, connector secrets, or provider keys."
         },
         {
           "id": "come-back-after-a-handoff",
@@ -1733,6 +1733,52 @@
       ]
     },
     {
+      "slug": "operators/data-residency",
+      "url": "https://docs.radioso.ai/operators/data-residency",
+      "title": "Data Residency",
+      "description": "Where each outside service Radioso calls processes data, and which setting controls its region.",
+      "section": "Operator guides",
+      "lastUpdated": "2026-10-17",
+      "intro": "Radioso's own backend, database, and documents run wherever you deploy them. A handful of outside services sit behind that: a model provider for chat and embeddings, a voice vendor for calls, an email provider for outbound and inbound mail, product analytics, Slack, and Stripe. Each one decides where it processes the data you send it, and that's a separate question from where Radioso itself runs. This page lists each one, what it handles, and the setting — if there is one — that controls its region.",
+      "sections": [
+        {
+          "id": "openai",
+          "heading": "OpenAI",
+          "body": "The native `openai` provider backs chat, embeddings, and rerank. By default, platform-held OpenAI traffic goes to OpenAI's global API. Set `OPENAI_DATA_RESIDENCY=eu` or `OPENAI_DATA_RESIDENCY=us` on the backend, document worker, and crawler worker to send it to OpenAI's EU or US data-residency endpoint instead.\n\nGetting OpenAI itself to process requests in-region takes its own setup, separate from this flag:\n\n1. Apply for OpenAI's abuse-monitoring controls and sign its Modified Retention amendment. Regional processing requires both.\n2. Create a project with its region set to Europe (or United States) and issue an API key from it. An existing project can't change region later. A key from a project with Global geography reaches chat and Responses on the regional endpoints once your organization is eligible. The regional embeddings endpoint accepts only keys from a project created with a region.\n3. Confirm every model you use, including the embedding model, supports regional processing in that region.\n4. Set `OPENAI_DATA_RESIDENCY` and `OPENAI_API_KEY` (the regional project's key) together, then redeploy. Each runtime — the backend, the document worker, and the crawler worker — checks the key against its regional embeddings endpoint once at startup, before it serves traffic, and refuses to start if that endpoint rejects it. An OpenAI outage during that check only logs a warning and lets startup continue, so a transient OpenAI problem never blocks an otherwise-good deploy.\n\nA workspace's own OpenAI key (Settings → Providers, bring-your-own-key) always uses OpenAI's global endpoint, regardless of `OPENAI_DATA_RESIDENCY`. A workspace key's requests are therefore processed globally. A key from a project created with a region (a Europe-region project, for example) isn't supported as a workspace key, because that project is only reachable on its own regional host."
+        },
+        {
+          "id": "anthropic-and-gemini",
+          "heading": "Anthropic and Gemini",
+          "body": "Claude and Gemini each take either a platform-held key (`ANTHROPIC_API_KEY`, `GEMINI_API_KEY`) or a workspace's own key. Both call their provider's global endpoint either way; there's no region setting for either provider."
+        },
+        {
+          "id": "elevenlabs-voice-channel",
+          "heading": "ElevenLabs (voice channel)",
+          "body": "A voice runtime key is a workspace's own ElevenLabs account, set under Settings → Providers → Voice runtime keys. The agent's **Voice** card picks that account's **Data residency** — United States (the default), European Union, India, or Singapore — and it has to match whichever region the ElevenLabs account itself is provisioned for. EU residency needs an Enterprise ElevenLabs account; picking it on an account that isn't Enterprise reads like a wrong key, because the account's data only ever lives on its region's host."
+        },
+        {
+          "id": "resend-email",
+          "heading": "Resend (email)",
+          "body": "Resend sends and receives mail for the email channel. `RESEND_CHANNEL_REGION` picks the region of the sending domain Resend provisions for the channel — `eu-west-1` for an EU deployment, `us-east-1` by default. It doesn't move Resend's own account data, delivery metadata, logs, or received message content, which Resend keeps in the United States regardless. If your deployment needs a safeguard for that transfer — standard contractual clauses, for example — put it in place separately; this setting doesn't provide one."
+        },
+        {
+          "id": "posthog-and-otel-log-export",
+          "heading": "PostHog and OTEL log export",
+          "body": "PostHog product analytics and PostHog error reporting (`PRODUCT_ANALYTICS_SINKS` or `ERROR_SINKS` including `posthog`, an Enterprise Edition sink) send to `POSTHOG_HOST`. Point it at PostHog's EU ingestion host (`https://eu.i.posthog.com`) to keep that data in the EU, or its US host to keep it in the US.\n\nOTEL log export is a separate mechanism with its own setting, `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`; it doesn't read `POSTHOG_HOST`. As a Terraform convenience, the Terraform module defaults `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` to `<posthog_host>/i/v1/logs` when OTEL logs are enabled and no explicit endpoint is set, but a deployment that sets `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` directly controls its own region independently of `POSTHOG_HOST`."
+        },
+        {
+          "id": "slack-and-stripe",
+          "heading": "Slack and Stripe",
+          "body": "The Slack and Stripe integrations each reach their provider's global, US-based API. Neither has a region setting."
+        },
+        {
+          "id": "read-next",
+          "heading": "Read next",
+          "body": "* [Deployment](https://docs.radioso.ai/operators/deployment) — the production contract and required configuration categories these settings sit inside.\n* [Email channel](https://docs.radioso.ai/operators/email-channel) — connect a mailbox and verify sending."
+        }
+      ]
+    },
+    {
       "slug": "operators/deleting-conversation-data",
       "url": "https://docs.radioso.ai/operators/deleting-conversation-data",
       "title": "Deleting conversation data",
@@ -1805,7 +1851,7 @@
         {
           "id": "required-configuration-categories",
           "heading": "Required configuration categories",
-          "body": "At minimum, a production deployment needs:\n\n* database connectivity\n* model provider credentials\n* session and token secrets\n* storage configuration for uploaded files\n* public base URLs for customer-facing flows such as public chat and Enterprise Edition modules\n* Operator MCP resource and issuer URLs when delegated Ray access is enabled\n\nRelevant runtime flags are defined in `.env.example` and enforced by `backend/src/app/config/env.ts`."
+          "body": "At minimum, a production deployment needs:\n\n* database connectivity\n* model provider credentials\n* session and token secrets\n* storage configuration for uploaded files\n* public base URLs for customer-facing flows such as public chat and Enterprise Edition modules\n* Operator MCP resource and issuer URLs when delegated Ray access is enabled\n\nRelevant runtime flags are defined in `.env.example` and enforced by `backend/src/app/config/env.ts`. See [Data residency](https://docs.radioso.ai/operators/data-residency) for which outside service processes what, and which of those categories carries a region setting."
         },
         {
           "id": "live-dashboard-updates",
@@ -1925,7 +1971,7 @@
         {
           "id": "read-next",
           "heading": "Read next",
-          "body": "* [Self-hosting operations](https://docs.radioso.ai/operators/self-hosting-operations) — backup, restore, and upgrade steps for deployments you run yourself, including the migration-startup incident playbook this page's startup-migration behavior feeds into.\n* [Enterprise usage limits](https://docs.radioso.ai/operators/enterprise-usage-limits) — cap indexed storage, monthly content, and monthly answers per account.\n* [Deployment topology](https://docs.radioso.ai/architecture/deployment-topology) — how the backend, frontend, and worker services relate at runtime."
+          "body": "* [Self-hosting operations](https://docs.radioso.ai/operators/self-hosting-operations) — backup, restore, and upgrade steps for deployments you run yourself, including the migration-startup incident playbook this page's startup-migration behavior feeds into.\n* [Enterprise usage limits](https://docs.radioso.ai/operators/enterprise-usage-limits) — cap indexed storage, monthly content, and monthly answers per account.\n* [Deployment topology](https://docs.radioso.ai/architecture/deployment-topology) — how the backend, frontend, and worker services relate at runtime.\n* [Data residency](https://docs.radioso.ai/operators/data-residency) — where each outside service processes data, and which setting controls its region."
         }
       ]
     },
@@ -2042,7 +2088,7 @@
         {
           "id": "read-next",
           "heading": "Read next",
-          "body": "* [Human takeover](https://docs.radioso.ai/operators/human-takeover) — how ownership, handoffs, and the Inbox work across every channel, email included.\n* [Slack channel](https://docs.radioso.ai/operators/slack-channel) — the other connector channel, for comparison.\n* [Author a directive](https://docs.radioso.ai/guides/authoring-directives) — write finer rules for when an agent should and shouldn't engage, beyond a mailbox's mode."
+          "body": "* [Human takeover](https://docs.radioso.ai/operators/human-takeover) — how ownership, handoffs, and the Inbox work across every channel, email included.\n* [Slack channel](https://docs.radioso.ai/operators/slack-channel) — the other connector channel, for comparison.\n* [Author a directive](https://docs.radioso.ai/guides/authoring-directives) — write finer rules for when an agent should and shouldn't engage, beyond a mailbox's mode.\n* [Data residency](https://docs.radioso.ai/operators/data-residency) — where Resend sends and receives this channel's mail, and what stays in the United States regardless."
         }
       ]
     },

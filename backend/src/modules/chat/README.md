@@ -325,7 +325,14 @@ imports from `services/`.
   before anchor grouping, the streaming `CitationAnchorSanitizer`, and the decline
   composer in `fallbackReplyComposer.ts`. From there the `[[?]]` handling applies
   unchanged. `[?]` inside an inline code span on the same line stays, and a
-  single-bracket number (`[n]`) is never touched. `implicitCitationDiagnostics.ts`
+  single-bracket number (`[n]`) is never touched. The model sometimes drops the
+  closing `]`, leaving `[[?]` or `[[12]` instead of the complete `[[?]]`/`[[12]]`;
+  `underClosedCitationAnchor.ts` is the shared grammar for that shape, so
+  `stripResidualCitationSyntax`, `fallbackReplyComposer.ts`, and the streaming
+  `CitationAnchorSanitizer` all remove exactly the token and keep every word
+  around it. The streaming sanitizer only removes an under-closed marker once a
+  received character after it confirms it cannot still complete, so the carry
+  cap and `flush()` never discard answer text. `implicitCitationDiagnostics.ts`
   records aggregate rollout diagnostics and never attaches citation artifacts or
   changes verdicts and suggestions.
   `citationTextNormalization.ts` owns the punctuation classes for the anchor

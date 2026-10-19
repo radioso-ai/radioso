@@ -1,5 +1,6 @@
 import { removeDetachedPunctuationSpacing, STRANDABLE_PUNCTUATION } from "./citationTextNormalization.js";
 import { canonicalizeUnsourcedMarkers, endsInInlineCode } from "./unsourcedMarkerCanonicalization.js";
+import { isUnderClosedAnchorAttempt, removeLockedInUnderClosedCitationAnchors } from "./underClosedCitationAnchor.js";
 
 const COMPLETE_ANCHOR = /\[\[\d+\]\]/g;
 const ANY_BRACKET_ANCHOR = /\[\[[^\]]*?\]\]/g;
@@ -46,12 +47,22 @@ export class CitationAnchorSanitizer {
 
     combined = canonicalizeUnsourcedMarkers(combined, this.inInlineCode);
     const reflowed = combined.replace(DETACHED_ANCHOR_BEFORE_PUNCTUATION, "");
-    const stripped = stripCompleteAnchors(reflowed);
+    // A marker closed by one `]` instead of two (#1517) can never complete once a
+    // received character after it is confirmed not to be `]`. Resolving that the moment
+    // it is known — however far into the buffer — means the carry cap below never has to
+    // hold, and potentially drop, the answer text that follows the marker.
+    const stripped = removeLockedInUnderClosedCitationAnchors(stripCompleteAnchors(reflowed));
 
     const suffixMatch = stripped.match(/\[\[(?:(?!\]\]).)*$/s);
     if (suffixMatch && suffixMatch.index !== undefined) {
       const start = suffixMatch.index;
-      this.carry = stripped.slice(start).slice(-32);
+      const open = stripped.slice(start);
+      // An in-progress or under-closed anchor attempt holds nothing but the token
+      // itself (the step above already released everything after a resolved one), so
+      // capping it could only ever discard token characters, never answer text. Leave
+      // it uncapped: a later chunk, or flush(), resolves it correctly regardless of how
+      // long the model's citation number runs.
+      this.carry = isUnderClosedAnchorAttempt(open) ? open : open.slice(-32);
       return stripped.slice(0, start);
     }
 
@@ -84,6 +95,12 @@ export class CitationAnchorSanitizer {
   }
 
   flush(): string {
+    // Nothing discarded here is ever answer text: `release()` only ever leaves an
+    // in-progress or under-closed anchor attempt in `carry` — never that plus
+    // whatever followed it, since the locked-in removal above already released that
+    // part as soon as it was confirmed. The stream is over, so this attempt cannot
+    // complete either way; removing it here matches how every other anchor shape
+    // (complete or malformed) stays invisible to the visitor.
     this.carry = "";
     this.pendingLineBreak = "";
     this.inInlineCode = false;

@@ -2509,6 +2509,26 @@ components:
         - ready
         - missing
       description: "Whether the agent's voice is ready for calls, and when it is not, the first piece missing: the voice channel, the runtime binding, the workspace's vendor key, or the backend's master key to read it."
+    AgentPrivacyNotices:
+      type: object
+      additionalProperties:
+        type: object
+        properties:
+          text:
+            type: string
+          url:
+            type: string
+          version:
+            type: string
+        required:
+          - text
+          - url
+          - version
+      description: "The agent's privacy notice, keyed by language tag (at most 10): one line (`text`, 1 to 200 characters) and a link to the operator's policy (`url`, http or https, at most 500 characters). Chat surfaces show it before the visitor's first message, the first reply of an email conversation carries it, and a voice session start hands it to the call. `version` is derived from the language, line and link: the same notice keeps its version, a changed one gets a new one. Empty until the operator writes one."
+      propertyNames:
+        type: string
+        pattern: ^[A-Za-z]{2,3}(?:-[A-Za-z]{4})?(?:-(?:[A-Za-z]{2}|[0-9]{3}))?$
+      maxProperties: 10
     ConversationAgent:
       allOf:
         - $ref: "#/components/schemas/Agent"
@@ -2557,6 +2577,8 @@ components:
                   type:
                     - string
                     - "null"
+                privacyNotice:
+                  $ref: "#/components/schemas/AgentPrivacyNotices"
               required:
                 - hidePoweredBy
                 - privacyPolicyUrl
@@ -2737,6 +2759,25 @@ components:
                 - string
                 - "null"
               maxLength: 2048
+            privacyNotice:
+              type: object
+              additionalProperties:
+                type: object
+                properties:
+                  text:
+                    type: string
+                    maxLength: 200
+                  url:
+                    type: string
+                    maxLength: 500
+                  version:
+                    type: string
+                    maxLength: 64
+                required:
+                  - text
+                  - url
+              description: "Replaces the stored notices whole: name every language the agent keeps. A `version` sent along is ignored."
+          description: "Replaced whole: a field left out takes its default (`hidePoweredBy` false, no policy link, no privacy notice)."
         retrievalEnabled:
           type: boolean
         sourceScope:
@@ -5844,6 +5885,8 @@ components:
               type:
                 - string
                 - "null"
+            privacyNotice:
+              $ref: "#/components/schemas/AgentPrivacyNotices"
           required:
             - hidePoweredBy
             - privacyPolicyUrl
@@ -6333,6 +6376,8 @@ components:
               type:
                 - string
                 - "null"
+            privacyNotice:
+              $ref: "#/components/schemas/AgentPrivacyNotices"
           required:
             - hidePoweredBy
             - privacyPolicyUrl
@@ -7142,6 +7187,8 @@ components:
               type:
                 - string
                 - "null"
+            privacyNotice:
+              $ref: "#/components/schemas/AgentPrivacyNotices"
           required:
             - hidePoweredBy
             - privacyPolicyUrl
@@ -10120,6 +10167,10 @@ components:
         signedIdentity:
           type: string
           maxLength: 8192
+        privacyNoticeVersion:
+          type: string
+          minLength: 1
+          maxLength: 64
         inputMetadata:
           type: object
           properties:
@@ -10518,6 +10569,8 @@ components:
               type:
                 - string
                 - "null"
+            privacyNotice:
+              $ref: "#/components/schemas/AgentPrivacyNotices"
           required:
             - hidePoweredBy
             - privacyPolicyUrl
@@ -11478,6 +11531,11 @@ components:
             - type: "null"
             - type: "null"
           description: Edge-observed request facts captured once at conversation creation. IP included — dashboard-only.
+        privacyNoticeVersion:
+          type:
+            - string
+            - "null"
+          description: The `version` of the agent's privacy notice the visitor was shown before their first message; null when none was. Dashboard-only.
         title:
           type:
             - string

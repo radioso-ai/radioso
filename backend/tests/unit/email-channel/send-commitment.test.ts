@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { SendCommitment, type EmailSendCommitmentUnitOfWork } from "../../../src/modules/emailChannel/public.js";
+import { SendCommitment, type EmailFirstReplyNotice, type EmailSendCommitmentUnitOfWork } from "../../../src/modules/emailChannel/public.js";
 import { rfcMessageId } from "../../../src/modules/mail/public.js";
 import type { EmailSendIntentRecord } from "../../../src/modules/emailChannel/persistence/emailSendIntentRepository.js";
 import { createSendPathHarness, SEND_IDS } from "../../support/inMemoryEmailSend.js";
@@ -11,13 +11,25 @@ type Harness = ReturnType<typeof createSendPathHarness>;
  * The commitment over the harness's stores, recording every read and write its one unit makes, in
  * order, and how many units it opened.
  */
-const recordingCommitment = (h: Harness) => {
+const recordingCommitment = (h: Harness, options: { pendingNotice?: EmailFirstReplyNotice } = {}) => {
   const calls: string[] = [];
   const units = { opened: 0 };
+  const recorded: { conversationId: string; version: string }[] = [];
   const unitOfWork: EmailSendCommitmentUnitOfWork = {
     run: async (work) => {
       units.opened += 1;
       return work({
+        firstReplyNotice: {
+          pending: async () => {
+            if (!options.pendingNotice) return null;
+            calls.push("conversation");
+            return options.pendingNotice;
+          },
+          record: async ({ conversationId, version }) => {
+            calls.push("notice_recorded");
+            recorded.push({ conversationId, version });
+          },
+        },
         conversations: {
           lockOwnership: async ({ conversationId }) => {
             calls.push("conversation+ownership");
@@ -40,7 +52,13 @@ const recordingCommitment = (h: Harness) => {
       });
     },
   };
-  return { commitment: new SendCommitment({ unitOfWork }), calls, units };
+  return { commitment: new SendCommitment({ unitOfWork }), calls, units, recorded };
+};
+
+const NOTICE: EmailFirstReplyNotice = {
+  text: "We use your messages to answer you.",
+  url: "https://example.com/privacy",
+  version: "en:0123456789abcdef",
 };
 
 /** An operator reply's intent, materialized and not yet frozen. */
@@ -119,6 +137,52 @@ describe("SendCommitment", () => {
 
     expect(await commitment.commit(intent)).toEqual({ outcome: "refused", refusal: { verdict: "halt", haltReason: "sending_not_verified" } });
     expect(calls).not.toContain("freeze");
+  });
+
+  it("sends the agent's privacy notice, word for word, below a conversation's first reply, and records its version (#1545)", async () => {
+    const h = createSendPathHarness();
+    const intent = await operatorIntent(h);
+    const { commitment, calls, recorded } = recordingCommitment(h, { pendingNotice: NOTICE });
+
+    const committed = await commitment.commit(intent);
+
+    expect(committed).toMatchObject({ outcome: "frozen" });
+    expect(h.onlyIntent().request?.body?.text).toBe(
+      "Your order ships on Monday.\n\nWe use your messages to answer you.\nhttps://example.com/privacy",
+    );
+    expect(recorded).toEqual([{ conversationId: SEND_IDS.conversation, version: NOTICE.version }]);
+    // The conversation row is the protocol's first lock; the record writes the row it already holds.
+    expect(calls).toEqual(["conversation", "mailbox", "domain", "thread", "freeze", "notice_recorded"]);
+  });
+
+  it("locks the conversation once for an automatic first reply, before its ownership", async () => {
+    const h = createSendPathHarness();
+    const intent = await autoIntent(h);
+    const { commitment, calls } = recordingCommitment(h, { pendingNotice: NOTICE });
+
+    expect(await commitment.commit(intent)).toMatchObject({ outcome: "frozen" });
+    expect(calls).toEqual(["conversation", "conversation+ownership", "mailbox", "domain", "thread", "freeze", "notice_recorded"]);
+  });
+
+  it("sends a reply as written once the conversation has had its notice", async () => {
+    const h = createSendPathHarness();
+    const intent = await operatorIntent(h);
+    const { commitment, recorded } = recordingCommitment(h);
+
+    await commitment.commit(intent);
+
+    expect(h.onlyIntent().request?.body?.text).toBe("Your order ships on Monday.");
+    expect(recorded).toEqual([]);
+  });
+
+  it("records no notice for a send it refuses", async () => {
+    const h = createSendPathHarness();
+    const intent = await operatorIntent(h);
+    h.domains.seed({ ...h.domain, sendingStatus: "pending" });
+    const { commitment, recorded } = recordingCommitment(h, { pendingNotice: NOTICE });
+
+    expect(await commitment.commit(intent)).toMatchObject({ outcome: "refused" });
+    expect(recorded).toEqual([]);
   });
 
   it("reports the intent as another claim left it when that claim froze it first", async () => {

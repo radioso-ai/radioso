@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 
 import { ActionRequestRepository } from "../../src/db/repositories/actionRequestRepository.js";
+import { normalizePrivacyNotices } from "../../src/modules/agents/public.js";
 import { EMAIL_SEND_ACTION_TYPE, emailSendKey } from "../../src/modules/emailChannel/public.js";
 import { ResendEmailDriver } from "../../src/modules/mail/public.js";
 import type { Database } from "../../src/shared/infra/database.js";
@@ -163,6 +164,31 @@ describeIntegration("email send idempotency (Postgres, User Story 3)", () => {
       "SELECT rfc_message_id, direction, origin FROM email_thread_messages WHERE message_id = $1",
       [messageId],
     )).toEqual([{ rfc_message_id: intent.suppliedRfcMessageId, direction: "outbound", origin: "radioso_generated" }]);
+  });
+
+  it("carries the agent's privacy notice below the conversation's first reply only, and records its version (#1545)", async () => {
+    // An operator-only mailbox bound to an agent: its conversations carry the agent's notice, and no turn runs.
+    const conversation = await openConversation({ withAgent: true });
+    const notice = { text: "We use your messages to answer you.", url: "https://example.com/privacy" };
+    await database.execute(
+      `UPDATE agents SET behavior_settings = jsonb_set(coalesce(behavior_settings, '{}'::jsonb), '{branding}', $2::jsonb) WHERE id = $1`,
+      [conversation.agentId, JSON.stringify({ hidePoweredBy: false, privacyPolicyUrl: null, privacyNotice: { en: notice } })],
+    );
+    const version = normalizePrivacyNotices({ en: notice }).en.version;
+
+    const firstId = await replyFromInbox(database, api, conversation, REPLY);
+    expect(await workerNode().dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
+    const secondId = await replyFromInbox(database, api, conversation, "Anything else?");
+    expect(await workerNode().dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
+
+    const [first] = await providerAcceptsUnder(spool.dir, emailSendKey.message(firstId));
+    const [second] = await providerAcceptsUnder(spool.dir, emailSendKey.message(secondId));
+    expect(first?.message.text).toBe(`${REPLY}\n\n${notice.text}\n${notice.url}`);
+    expect(second?.message.text).toBe("Anything else?");
+    expect(await database.query("SELECT privacy_notice_version FROM conversations WHERE id = $1", [conversation.conversationId]))
+      .toEqual([{ privacy_notice_version: version }]);
+    // The Inbox shows the reply the teammate wrote; the notice rides the mail.
+    expect((await messagesOf(database, conversation.conversationId)).find((message) => message.id === firstId)?.content).toBe(REPLY);
   });
 
   it("rolls the reply back when its email.send action cannot be queued", async () => {

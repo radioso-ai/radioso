@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { isLocaleTag } from "../../../shared/domain/locale.js";
+import { PRIVACY_NOTICE_VERSION_MAX_LENGTH } from "../../../modules/agents/public.js";
 
 import { chatMessageSchema } from "../schemas/textInputLimits.js";
 
@@ -51,6 +52,11 @@ export const anonymousChatSchema = z.object({
   pageContext: pageContextSchema,
   clientContextCapabilities: clientContextCapabilitiesSchema,
   signedIdentity: z.string().max(8192).optional(),
+  /**
+   * The `version` of the `branding.privacyNotice` entry the page showed before this first message.
+   * Recorded on the conversation the message starts when the agent's notices carry it now.
+   */
+  privacyNoticeVersion: z.string().trim().min(1).max(PRIVACY_NOTICE_VERSION_MAX_LENGTH).optional(),
   inputMetadata: z.object({
     method: z.enum(["typed", "suggestion_click", "intent_click"]),
     suggestionSourceMessageId: z.string().uuid().optional(),

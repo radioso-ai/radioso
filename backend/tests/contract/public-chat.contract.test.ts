@@ -275,6 +275,60 @@ describe("public chat contract", () => {
     expect(stillFirstReferrer?.entryReferrer).toBe("https://google.com/search?q=radioso");
   });
 
+  it("records the privacy notice version the visitor was shown on the conversation their first message starts (#1545)", async () => {
+    const { app, dependencies, repositories } = createTestApp();
+    const session = await issueTestSession(app, "public-chat-privacy-notice@example.com");
+    const chatToken = await enableAnonymousChat(app, session);
+    const agent = await dependencies.agentService.resolve(session.workspaceId);
+    await dependencies.agentService.update(session.workspaceId, agent.id, {
+      branding: {
+        hidePoweredBy: false,
+        privacyPolicyUrl: null,
+        privacyNotice: { en: { text: "We use your messages to answer you.", url: "https://example.com/privacy", version: "" } },
+      },
+    });
+
+    const sessionResponse = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}/sessions`)
+      .send({ channel: "anonymous_link" });
+    const listed = await request(app)
+      .get(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", sessionResponse.body.publicSessionToken);
+    expect(listed.status).toBe(200);
+    const shown = listed.body.branding.privacyNotice.en;
+    expect(shown).toEqual({
+      text: "We use your messages to answer you.",
+      url: "https://example.com/privacy",
+      version: expect.stringMatching(/^en:[0-9a-f]{16}$/),
+    });
+
+    const stale = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", sessionResponse.body.publicSessionToken)
+      .send({ message: "Hello", stream: false, privacyNoticeVersion: "en:0000000000000000" });
+    expect(stale.status).toBe(200);
+    expect(repositories.conversationRepository.items.get(stale.body.conversationId)?.privacyNoticeVersion).toBeNull();
+
+    const first = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", sessionResponse.body.publicSessionToken)
+      .send({ message: "Hello again", stream: false, privacyNoticeVersion: shown.version });
+    expect(first.status).toBe(200);
+    expect(repositories.conversationRepository.items.get(first.body.conversationId)?.privacyNoticeVersion).toBe(shown.version);
+
+    const detail = await request(app)
+      .get(`/api/v1/history/chat/${first.body.conversationId}`)
+      .set(adminSessionHeaders(session));
+    expect(detail.status).toBe(200);
+    expect(detail.body.privacyNoticeVersion).toBe(shown.version);
+
+    const visitorDetail = await request(app)
+      .get(`/api/v1/public/chat/${chatToken}/history/${first.body.conversationId}`)
+      .set("x-radioso-public-session", sessionResponse.body.publicSessionToken)
+      .set("Cookie", findAnonymousCookie(first.headers["set-cookie"])!);
+    expect(visitorDetail.body).not.toHaveProperty("privacyNoticeVersion");
+  });
+
   it("drops a non-http(s) pageContext.referrer instead of persisting it (FR-013)", async () => {
     const { app, repositories } = createTestApp();
     const session = await issueTestSession(app, "public-chat-entry-referrer-invalid@example.com");

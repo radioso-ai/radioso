@@ -55,6 +55,7 @@ const fullyConfiguredAgent = (): ConversationAgent => ({
   branding: {
     hidePoweredBy: true,
     privacyPolicyUrl: "https://example.com/privacy",
+    privacyNotice: {},
   },
   greetingInstruction: "Welcome the visitor by role.",
   assistantDefaultLocale: "en-US",

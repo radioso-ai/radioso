@@ -33,7 +33,7 @@ const baseAgent = (): ConversationAgent => ({
   retrievalEnabled: true,
   logo: null,
   theme: { brand: "#112233", brandText: "#ffffff", surface: "#f8fafc", text: "#101820" },
-  branding: { hidePoweredBy: false, privacyPolicyUrl: null },
+  branding: { hidePoweredBy: false, privacyPolicyUrl: null, privacyNotice: {} },
   greetingInstruction: "Welcome the visitor.",
   assistantDefaultLocale: "en-US",
   proactiveGreetingEnabled: false,

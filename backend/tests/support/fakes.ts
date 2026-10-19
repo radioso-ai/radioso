@@ -4301,6 +4301,7 @@ export class InMemoryConversationRepository implements ConversationRepositoryPor
       entryReferrer: input.entryReferrer ?? null,
       visitorId: input.visitorId ?? null,
       requestContext: input.requestContext ?? null,
+      privacyNoticeVersion: input.privacyNoticeVersion ?? null,
       title: null,
       createdAt: new Date(),
       updatedAt: new Date(),

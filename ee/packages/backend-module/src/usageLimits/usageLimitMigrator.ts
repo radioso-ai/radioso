@@ -1,7 +1,7 @@
 import { PLAN_CATALOG } from "@radioso/plan-catalog";
 
 import type { ApplicationDatabaseMigrator } from "../radiosoModuleTypes.js";
-import { SUPERSEDED_MONTHLY_INDEXED_BYTE_SEEDS, profileSeedFromPlan } from "./planCatalogSeed.js";
+import { SUPERSEDED_PROFILE_COLUMNS, SUPERSEDED_PROFILE_SEEDS, profileSeedFromPlan, seedValueForColumn } from "./planCatalogSeed.js";
 
 // NOTE: the durable usage-event ledger (usage_events / embedding_usage_items /
 // usage_daily_rollups) is now owned by OSS (backend migration
@@ -300,18 +300,19 @@ export const usageLimitMigrator: ApplicationDatabaseMigrator = {
           seed.repliesPerConversation,
         ],
       );
-      // The insert above never touches an existing profile, so a catalog change to the monthly
-      // indexing cap reaches existing profiles only here, and only where the profile still holds
-      // a value an earlier catalog seeded.
-      const superseded = SUPERSEDED_MONTHLY_INDEXED_BYTE_SEEDS[plan.id] ?? [];
-      if (superseded.length > 0) {
+      // The insert above never touches an existing profile, so a catalog change to one of these
+      // caps reaches existing profiles only here, and only where a profile still holds a value an
+      // earlier catalog seeded. The column names come from a fixed list, never from input.
+      for (const column of SUPERSEDED_PROFILE_COLUMNS) {
+        const superseded = SUPERSEDED_PROFILE_SEEDS[column][plan.id] ?? [];
+        if (superseded.length === 0) continue;
         await database.query(
           `
           UPDATE ee_usage_limit_profiles
-          SET monthly_indexed_byte_limit = $2, updated_at = NOW()
-          WHERE key = $1 AND monthly_indexed_byte_limit = ANY($3::bigint[])
+          SET ${column} = $2, updated_at = NOW()
+          WHERE key = $1 AND ${column} = ANY($3::bigint[])
           `,
-          [seed.key, seed.monthlyIndexedByteLimit, superseded],
+          [seed.key, seedValueForColumn(seed, column), superseded],
         );
       }
     }

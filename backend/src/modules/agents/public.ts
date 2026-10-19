@@ -31,6 +31,7 @@ export {
   isPrivacyNoticeVersionOf,
   normalizePrivacyNotices,
   PRIVACY_NOTICE_VERSION_MAX_LENGTH,
+  type AgentPrivacyNotices,
 } from "./privacyNotice.js";
 export {
   AGENT_CONFIG_FULL_TEXT_FIELD_PATHS,

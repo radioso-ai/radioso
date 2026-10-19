@@ -177,13 +177,18 @@ all.
 **The privacy notice.** When the mailbox's agent has a privacy notice, the
 first reply of each email conversation carries it: a blank line below the
 reply, then the notice's line and its policy link, each on its own line,
-word for word, in the agent's default language (else English, else the first
-language written). It goes with whichever reply is sent first, a teammate's
-or the agent's, and only that one: the send that carries it records the
-notice's version on the conversation, in the same transaction that freezes
-the email, and the Inbox shows the reply as written. A conversation that
-started before the agent had a notice gets it on its next reply. A mailbox
-with no agent sends none.
+word for word. The notice is in the language the agent's reply was written
+in, the one its review turn answered in; a teammate's reply, or a reply whose
+turn reported no language, gets the agent's default language. When the agent
+wrote no notice in that language, it is English, else the first language
+written. It goes with whichever reply is sent first, a teammate's or the
+agent's, and only that one: the send that carries it records the notice's
+version on the conversation, in the same transaction that freezes the email,
+and the Inbox shows the reply as written. Two replies sent at once both check
+the conversation under its lock, so exactly one carries the notice. An
+operator's resend sends the same text its message's earlier send froze,
+notice included. A conversation that started before the agent had a notice
+gets it on its next reply. A mailbox with no agent sends none.
 
 **Delivery states.** Each outbound message shows one state:
 

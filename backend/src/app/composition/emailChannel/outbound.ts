@@ -9,9 +9,8 @@ import { ConversationOwnershipRepository } from "../../../db/repositories/conver
 import { ConversationRepository } from "../../../db/repositories/conversationRepository.js";
 import { HeldReplyRepository } from "../../../db/repositories/heldReplyRepository.js";
 import { MessageRepository } from "../../../db/repositories/messageRepository.js";
-import { choosePrivacyNotice } from "../../../modules/agents/public.js";
 import type { AuditPort } from "../../../modules/audit/contracts/index.js";
-import { NoopActionDrainDispatcher, type ActionDrainDispatcherPort } from "../../../modules/chat/composition.js";
+import { NoopActionDrainDispatcher, replyLanguageTagOf, type ActionDrainDispatcherPort } from "../../../modules/chat/composition.js";
 import type { ConversationActivityRecorder } from "../../../modules/conversationActivity/contracts/index.js";
 import { bindDeliveryFailureRecorder, ConversationDeliveryFailureRepository } from "../../../modules/customerReplyDelivery/public.js";
 import {
@@ -30,6 +29,7 @@ import {
   type EmailChannelDrainDispatcherPort,
   type EmailFirstReplyNoticeScope,
   type EmailSendCommitmentUnitOfWork,
+  type EmailSendMessageReader,
   type EmailSendUnitOfWork,
 } from "../../../modules/emailChannel/public.js";
 import { HeldReplyService, type HeldReplyDispatchPort } from "../../../modules/handoff/public.js";
@@ -207,11 +207,11 @@ export const createPostgresEmailSendUnitOfWork = (deps: {
 });
 
 /**
- * The agent's privacy notice a conversation's first reply carries (#1545), over the commitment's
- * transaction: in the agent's default language, else English, else its first. A conversation that
- * recorded a notice, or whose agent has none, has none pending and is not locked. When one is
- * pending, the conversation row is locked first, as the protocol's step 1, and read again, since a
- * send that committed meanwhile may have carried it.
+ * The agent's privacy notices a conversation's first reply reads (#1545), over the commitment's
+ * transaction. A conversation that recorded a notice, or whose agent has none, has none pending and
+ * is not locked. When one is pending, the conversation row is locked first, as the protocol's step
+ * 1, and read again, since a send that committed meanwhile may have carried it. Which language the
+ * reply carries is the send's decision.
  */
 const firstReplyNoticeOver = (trx: Kysely<DB>): EmailFirstReplyNoticeScope => {
   const conversations = new ConversationRepository(trx);
@@ -220,14 +220,28 @@ const firstReplyNoticeOver = (trx: Kysely<DB>): EmailFirstReplyNoticeScope => {
       const conversation = await conversations.findByIdAndWorkspaceId(conversationId, workspaceId);
       if (!conversation?.agentId || conversation.privacyNoticeVersion) return null;
       const agent = await new AgentRepository(trx).findByIdAndWorkspaceId(conversation.agentId, workspaceId);
-      const notice = agent ? choosePrivacyNotice(agent.branding.privacyNotice, [agent.assistantDefaultLocale]) : null;
-      if (!notice) return null;
+      if (!agent || Object.keys(agent.branding.privacyNotice).length === 0) return null;
       await conversations.lockForUpdate(conversationId, workspaceId);
       const locked = await conversations.findByIdAndWorkspaceId(conversationId, workspaceId);
-      return locked && !locked.privacyNoticeVersion ? { text: notice.text, url: notice.url, version: notice.version } : null;
+      return locked && !locked.privacyNoticeVersion
+        ? { notices: agent.branding.privacyNotice, defaultLocale: agent.assistantDefaultLocale }
+        : null;
     },
     record: async ({ workspaceId, conversationId, version }) => {
       await conversations.recordPrivacyNoticeVersion(conversationId, workspaceId, version);
+    },
+  };
+};
+
+/** The message a send delivers, with the language tag a published agent reply keeps in its metadata. */
+const sendMessagesOver = (trx: Kysely<DB>): EmailSendMessageReader => {
+  const messages = new MessageRepository(trx);
+  return {
+    findByIdAndWorkspaceId: async (workspaceId, messageId) => {
+      const message = await messages.findByIdAndWorkspaceId(workspaceId, messageId);
+      return message
+        ? { id: message.id, conversationId: message.conversationId, content: message.content, source: message.source, replyLanguageTag: replyLanguageTagOf(message.metadata) }
+        : null;
     },
   };
 };
@@ -257,7 +271,7 @@ export const createPostgresEmailSendCommitmentUnitOfWork = (deps: {
       mailboxes: new EmailMailboxRepository(trx),
       domains: new EmailDomainRepository(trx),
       threads: new EmailThreadRepository(trx),
-      messages: new MessageRepository(trx),
+      messages: sendMessagesOver(trx),
       intents: new EmailSendIntentRepository(trx),
     });
   }, { unit: "email_send_commitment", logger: deps.logger }),

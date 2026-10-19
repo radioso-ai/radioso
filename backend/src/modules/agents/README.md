@@ -47,7 +47,7 @@ line and link. It is live, like the rest of `branding`, and the whole `branding`
 is replaced on write. `choosePrivacyNotice` picks the notice for a conversation (the
 preferred language, else English, else the first in tag order) and
 `isPrivacyNoticeVersionOf` is the check a reported version must pass; the chat session
-preparer, the email send commitment's composition and the voice dialects read them from
+preparer, the email send commitment (which tries the reply's language first) and the voice dialects read them from
 `public.ts`. The Web chat page's Privacy notice card
 (`frontend/components/dashboard/settings/privacy-notice-card.tsx`) writes it.
 

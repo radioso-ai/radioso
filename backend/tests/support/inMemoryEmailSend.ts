@@ -377,6 +377,7 @@ interface FakeMessage {
   conversationId: string;
   content: string;
   source: string | null;
+  replyLanguageTag?: string | null;
 }
 
 /**

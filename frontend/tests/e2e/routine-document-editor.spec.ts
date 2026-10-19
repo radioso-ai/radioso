@@ -764,6 +764,9 @@ test("a new routine's first save keeps the step being edited open, focused, and 
 test("saves that start while a new routine's create is in flight update the routine it creates", async ({ page }) => {
   const routineUpdates: RoutineMutationFixture[] = [];
 
+  // The page's timers run on Playwright's clock, so the autosave debounce can be made to fire
+  // while the create is held, however slow the runner.
+  await page.clock.install();
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, { routineUpdates });
   const creates = await holdRoutineCreates(page);
@@ -771,30 +774,58 @@ test("saves that start while a new routine's create is in flight update the rout
 
   await instruction.pressSequentially("Greet the visitor.");
   await expect.poll(creates.requests, { timeout: 15_000 }).toBe(1);
-  // Keeps the create held past the 1.5s autosave debounce, so the next autosave starts while
-  // there is no id to update yet.
-  await page.keyboard.type(" Ask what they need.");
-  await page.waitForTimeout(2_000);
-  await page.keyboard.type(" Offer help.");
+  // An edit while the create is held, then the whole autosave debounce: the next autosave
+  // starts before there is an id to update.
+  await page.getByLabel("Name", { exact: true }).fill("Created once, renamed");
+  await page.clock.runFor(1_600);
   creates.release();
 
   await expect(page).toHaveURL(savedRoutineUrl);
   const routineId = new URL(page.url()).pathname.split("/").at(-1);
-  // Test flushes the last keystroke into the routine before leaving for Test Chat.
-  await page.keyboard.type(" Thank them.");
+  // Test flushes any unsaved edit into the routine before leaving for Test Chat.
   await page.getByRole("button", { name: "Test", exact: true }).click();
   await expect(page).not.toHaveURL(/\/routines\//);
 
-  const typed = "Greet the visitor. Ask what they need. Offer help. Thank them.";
   expect(creates.requests()).toBe(1);
   const updates = routineUpdates.filter((update) => update.method === "PATCH");
   expect(updates.map((update) => update.routineId)).toEqual(updates.map(() => routineId));
-  expect(updates.at(-1)?.body?.steps?.[0]?.instruction).toBe(typed);
+  expect(updates.at(-1)?.body).toMatchObject({
+    name: "Created once, renamed",
+    steps: [{ instruction: "Greet the visitor." }],
+  });
 
-  // Back on the routine the address names, every keystroke is in it.
+  // Back on the routine the address names, the edit made during the create is in it.
   await page.goBack();
   await expect(page).toHaveURL(new RegExp(`/routines/${routineId}$`));
-  await expect(page.getByRole("article", { name: "Routine document editor" })).toContainText(typed);
+  await expect(page.getByLabel("Name", { exact: true })).toHaveValue("Created once, renamed");
+  await expect(page.getByRole("article", { name: "Routine document editor" })).toContainText("Greet the visitor.");
+});
+
+test("taking a new routine out of service while its create is in flight reaches the routine it creates", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+  const creates = await holdRoutineCreates(page);
+  const instruction = await openNewRoutineStep(page, "Paused during its create");
+
+  await instruction.pressSequentially("Greet the visitor.");
+  await expect.poll(creates.requests, { timeout: 15_000 }).toBe(1);
+  // A new routine starts live, and its create already carries that.
+  await page.getByRole("button", { name: "Disable routine" }).click();
+  creates.release();
+
+  await expect(page).toHaveURL(savedRoutineUrl);
+  const routineId = new URL(page.url()).pathname.split("/").at(-1);
+  await expect.poll(
+    () => routineUpdates.filter((update) => update.method === "PATCH" && update.body?.enabled !== undefined),
+    { timeout: 15_000 },
+  ).toEqual([{ method: "PATCH", routineId, body: { enabled: false } }]);
+  await expect(page.getByRole("button", { name: "Enable routine" })).toBeVisible();
+
+  // The header reads back what the server stored.
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Enable routine" })).toBeVisible();
 });
 
 test("reloading an unsaved new routine recovers its draft", async ({ page }) => {

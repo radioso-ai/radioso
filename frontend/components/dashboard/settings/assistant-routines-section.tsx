@@ -488,7 +488,7 @@ function RoutineEditorScreen({
   const [mapDialogOpen, setMapDialogOpen] = useState(false)
   const currentRoutineIdRef = useRef<string | null>(null)
   const isTogglingEnabledRef = useRef(false)
-  const pendingRoutineToggleRef = useRef<{ routineId: string; previousEnabled: boolean } | null>(null)
+  const pendingRoutineToggleRef = useRef<{ previousEnabled: boolean } | null>(null)
   const initializedRouteKeyRef = useRef<string | null>(null)
   // A new routine's first create while it is in flight; see `saveDraft`.
   const createInFlightRef = useRef<Promise<unknown> | null>(null)
@@ -682,6 +682,17 @@ function RoutineEditorScreen({
     }
   }
 
+  // The id a write goes to, or null while the routine is unsaved. A write that starts during a
+  // new routine's first create waits for that create and goes to the routine it made. Read
+  // from the ref, not a render's `editingRoutineId`: the autosave timer can run a closure from
+  // before the created id reached state.
+  const resolveSavedRoutineId = useCallback(async (): Promise<string | null> => {
+    if (currentRoutineIdRef.current === null && createInFlightRef.current) {
+      await createInFlightRef.current.catch(() => undefined)
+    }
+    return currentRoutineIdRef.current
+  }, [])
+
   const createRoutine = async (draft: RoutineDefinitionDraft) => {
     const creating = routinesApi.createRoutine(agentId, draft)
     createInFlightRef.current = creating
@@ -708,16 +719,10 @@ function RoutineEditorScreen({
     setIsSaving(true)
     setError(null)
     try {
-      // A save that starts while the first create is in flight waits for it, then updates
-      // the routine it made; a second create would leave the first one orphaned. If a newer
-      // save started meanwhile, it carries a newer draft and this one has nothing to send.
-      if (currentRoutineIdRef.current === null && createInFlightRef.current) {
-        await createInFlightRef.current.catch(() => undefined)
-        if (!isCurrentSave(saveId)) return null
-      }
-      // Read from the ref, not this render's `editingRoutineId`: the autosave timer can run a
-      // closure from before the create's id reached state.
-      const routineId = currentRoutineIdRef.current
+      // A second create would leave the first one orphaned. If a newer save started while
+      // this one waited, it carries a newer draft and this one has nothing to send.
+      const routineId = await resolveSavedRoutineId()
+      if (!isCurrentSave(saveId)) return null
       // The update branch never sends `enabled`: the enable/disable toggle
       // (toggleRoutineEnabled) is this field's only writer, so a content autosave that also
       // carried a copy of it could race that toggle's own PATCH and overwrite it with a stale
@@ -817,21 +822,25 @@ function RoutineEditorScreen({
     // The ref closes the small gap before React has rendered the disabled switch. Without it,
     // two discrete events could still start overlapping PATCHes and let the older response win.
     if (isTogglingEnabledRef.current) return
+    const pending = { previousEnabled: draftHeader.enabled }
     setDraftHeader((current) => ({ ...current, enabled }))
-    if (!editingRoutineId) return
-    setError(null)
-    const pending = { routineId: editingRoutineId, previousEnabled: draftHeader.enabled }
     pendingRoutineToggleRef.current = pending
     isTogglingEnabledRef.current = true
     setIsTogglingEnabled(true)
     try {
-      await applyRoutineEnabledToggle(editingRoutineId, enabled, {
+      // A toggle during the first create must wait for its id: the create already sent the
+      // old value, and content saves never send `enabled`, so only this PATCH can carry it.
+      // With no id at all the routine is unsaved, and the header is what its create sends.
+      const routineId = await resolveSavedRoutineId()
+      if (!routineId) return
+      setError(null)
+      await applyRoutineEnabledToggle(routineId, enabled, {
         onSuccess: (routine) => {
           if (pendingRoutineToggleRef.current !== pending || currentRoutineIdRef.current !== routine.id) return
           setEditingRoutine(routine)
         },
         onError: (message) => {
-          if (pendingRoutineToggleRef.current !== pending || currentRoutineIdRef.current !== pending.routineId) return
+          if (pendingRoutineToggleRef.current !== pending || currentRoutineIdRef.current !== routineId) return
           setError(message)
           setDraftHeader((current) => ({ ...current, enabled: pending.previousEnabled }))
         },
@@ -843,7 +852,7 @@ function RoutineEditorScreen({
         setIsTogglingEnabled(false)
       }
     }
-  }, [applyRoutineEnabledToggle, draftHeader.enabled, editingRoutineId])
+  }, [applyRoutineEnabledToggle, draftHeader.enabled, resolveSavedRoutineId])
 
   const deleteRoutine = async () => {
     if (!editingRoutine) return

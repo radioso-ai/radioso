@@ -30,4 +30,5 @@ export { createElevenLabsSessionStarter } from "./adapters/elevenlabs/sessionSta
 export { VoiceSessionRepository } from "./persistence/voiceSessionRepository.js";
 export { VoiceSessionEraser } from "./persistence/voiceSessionEraser.js";
 export { registerOpenAiCompletionsRoute } from "./adapters/openaiCompletions/route.js";
+export { isSilentText } from "./adapters/openaiCompletions/requestSchema.js";
 export { ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS } from "./adapters/openaiCompletions/dialects.js";

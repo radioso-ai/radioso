@@ -2174,7 +2174,9 @@ Primary paths:
 - `backend/scripts/runEvals.ts` — headless CLI that seeds fixtures, drives turns
   through `WorkbenchReplayRunner`, scores, and gates on the baseline; every selected
   case must have a committed baseline entry. `--channel voice` drives the voice
-  cases through the served app's completions door instead
+  cases through the served app's completions door instead, in
+  `backend/scripts/runVoiceEvals.ts`; both channels build on
+  `backend/scripts/evalRunSupport.ts` (target, corpus, publishing, baseline gate)
 - `backend/scripts/voiceEvalRunnerAdapter.ts` — the voice cases' runner: the
   `generic`-dialect client, the SSE reader that times each piece, and the call
   driver both halves share; `voiceAssertions.ts` and `voiceReport.ts` in the

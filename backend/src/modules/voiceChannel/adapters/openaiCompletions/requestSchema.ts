@@ -82,6 +82,9 @@ export const utteranceOf = (request: CompletionsRequest): string | null => {
 /** Text with nothing to hear: whitespace and zero-width spaces, such as a dialect's keep-alive deltas. */
 const SILENT_TEXT = /^[\s\u200B]*$/u;
 
+/** Whether `text` has nothing to hear, as a runtime receiving it would find: a flush, a keep-alive, padding. */
+export const isSilentText = (text: string): boolean => SILENT_TEXT.test(text);
+
 /**
  * A replayed message that says nothing: a tool's result, an assistant message that only calls
  * tools, or one that holds only keep-alive whitespace (ElevenLabs replays a reply that sent its
@@ -89,7 +92,7 @@ const SILENT_TEXT = /^[\s\u200B]*$/u;
  */
 const isToolExchange = (message: CompletionsMessage): boolean =>
   message.role === "tool"
-  || (message.role === "assistant" && SILENT_TEXT.test(textOf(message.content)));
+  || (message.role === "assistant" && isSilentText(textOf(message.content)));
 
 /** The message said right before the newest user message, past any tool exchange or keep-alive replayed between them. */
 const previousSaid = (messages: readonly CompletionsMessage[]): CompletionsMessage | undefined => {

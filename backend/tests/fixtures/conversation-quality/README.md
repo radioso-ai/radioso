@@ -135,8 +135,9 @@ the report and in the workflow's step summary.
 
 Record the baseline in CI, on the runner the nightly uses, because latency measured on a laptop is
 not the nightly's: dispatch the Conversation Quality Evals workflow with `record_voice_baseline`,
-which runs the voice step with `--update-baseline` and uploads `voice-baseline.json` as the
-`voice-eval-baseline` artifact, and commit that file. A status-only change, such as a new case's
+which runs the voice step with `--update-baseline` at `voice_samples` (3 by default, the depth the
+nightly gates at) and uploads `voice-baseline.json` as the `voice-eval-baseline` artifact, even when
+the text step failed, and commit that file. A status-only change, such as a new case's
 expected `pass`, can be written by hand, with its latency left `null` for the next recording run.
 
 ## Review cases

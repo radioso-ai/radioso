@@ -1,4 +1,4 @@
-import type { VoiceTurnOutcome } from "../../voiceChannel/public.js";
+import type { VoiceTurnOutcome, VoiceTurnSummary } from "../../voiceChannel/public.js";
 import type { AssertionVerdictStatus } from "../domain/types.js";
 import type { ConversationQualityObservedOutput } from "./observedOutput.js";
 
@@ -9,8 +9,8 @@ export type VoiceOutcomeKind = VoiceTurnOutcome["kind"];
 
 export const VOICE_OUTCOME_KINDS = ["continue", "callback_requested"] as const satisfies readonly VoiceOutcomeKind[];
 
-/** A field of the turn's own log record; null: the record does not carry it. */
-type VoiceTurnLogValue = string | number | boolean | null;
+/** What a field of the turn's record must be: a value (null included), or absent from the record. */
+type VoiceTurnRecordExpectation = string | number | boolean | null | { absent: true };
 
 /**
  * One voice turn as a voice runtime received it on the wire, read by the runner: the pieces it
@@ -33,14 +33,14 @@ export interface VoiceTurnObservation {
     /** The response's end. */
     turnMs: number;
   };
-  /** The turn's own log record, when the runner shares the process that served the turn. */
-  turnLog?: Readonly<Record<string, unknown>>;
+  /** The turn's own record, the fields its log line carries, when the runner shares the serving process. */
+  turnRecord?: Readonly<VoiceTurnSummary>;
 }
 
 /**
- * Voice assertions read a {@link VoiceTurnObservation}. All but `voice_turn_log` read the wire,
- * which both halves observe; the turn's log record is read only where the runner shares the
- * serving process, which the deterministic half does.
+ * Voice assertions read a {@link VoiceTurnObservation}. All but `voice_turn_record` read the wire,
+ * which both halves observe; the turn's record is read only where the runner shares the serving
+ * process, which the deterministic half does.
  */
 export type VoiceAssertion =
   /** The stream ended in `[DONE]` with no error frame and named a known outcome. */
@@ -53,8 +53,8 @@ export type VoiceAssertion =
   | { type: "voice_speech_piece_count"; count: number }
   /** The first piece other than the bridge line, trimmed, is exactly this text. */
   | { type: "voice_first_speech"; text: string }
-  /** Each field of the turn's log record has this value; null: the record does not carry the field. */
-  | { type: "voice_turn_log"; fields: Record<string, VoiceTurnLogValue> };
+  /** Each named field of the turn's record has this value, or is absent from it. */
+  | { type: "voice_turn_record"; fields: Partial<Record<keyof VoiceTurnSummary, VoiceTurnRecordExpectation>> };
 
 const VOICE_ASSERTION_TYPES = new Set<string>([
   "voice_turn_well_formed",
@@ -63,7 +63,7 @@ const VOICE_ASSERTION_TYPES = new Set<string>([
   "voice_speech_order",
   "voice_speech_piece_count",
   "voice_first_speech",
-  "voice_turn_log",
+  "voice_turn_record",
 ] satisfies Array<VoiceAssertion["type"]>);
 
 export const isVoiceAssertion = (assertion: { type: string }): assertion is VoiceAssertion =>
@@ -85,7 +85,14 @@ const verdict = (assertion: VoiceAssertion, held: boolean, reason: string): Voic
 const voicePieceOrder = (pieces: VoiceTurnObservation["pieces"]): VoicePieceKind[] =>
   pieces.reduce<VoicePieceKind[]>((order, piece) => (order.at(-1) === piece.kind ? order : [...order, piece.kind]), []);
 
-const describeLogValue = (value: unknown): string => (value === undefined ? "absent" : JSON.stringify(value));
+const isAbsence = (expected: VoiceTurnRecordExpectation): expected is { absent: true } =>
+  typeof expected === "object" && expected !== null;
+
+const describeField = (record: Readonly<VoiceTurnSummary>, field: keyof VoiceTurnSummary): string =>
+  field in record ? JSON.stringify(record[field]) : "absent";
+
+const describeExpectation = (expected: VoiceTurnRecordExpectation): string =>
+  isAbsence(expected) ? "absent" : JSON.stringify(expected);
 
 const evaluateOnTurn = (assertion: VoiceAssertion, turn: VoiceTurnObservation): VoiceAssertionVerdict => {
   switch (assertion.type) {
@@ -126,23 +133,23 @@ const evaluateOnTurn = (assertion: VoiceAssertion, turn: VoiceTurnObservation): 
         first ? `The first speech was ${JSON.stringify(text)}.` : "Nothing but a bridge line was heard.",
       );
     }
-    case "voice_turn_log": {
-      const log = turn.turnLog;
-      if (!log) {
+    case "voice_turn_record": {
+      const record = turn.turnRecord;
+      if (!record) {
         return {
           assertion,
           status: "error",
-          reason: "The turn's log record is read only where the runner shares the serving process.",
+          reason: "The turn's record is read only where the runner shares the serving process.",
         };
       }
-      const mismatches = Object.entries(assertion.fields).filter(([field, expected]) =>
-        expected === null ? field in log : log[field] !== expected);
+      const mismatches = (Object.entries(assertion.fields) as Array<[keyof VoiceTurnSummary, VoiceTurnRecordExpectation]>)
+        .filter(([field, expected]) => (isAbsence(expected) ? field in record : !(field in record) || record[field] !== expected));
       return mismatches.length === 0
-        ? verdict(assertion, true, "The turn's log record carried the expected fields.")
+        ? verdict(assertion, true, "The turn's record carried the expected fields.")
         : verdict(
           assertion,
           false,
-          mismatches.map(([field, expected]) => `${field} was ${describeLogValue(log[field])}; expected ${describeLogValue(expected ?? undefined)}`).join("; "),
+          mismatches.map(([field, expected]) => `${field} was ${describeField(record, field)}; expected ${describeExpectation(expected)}`).join("; "),
         );
     }
   }

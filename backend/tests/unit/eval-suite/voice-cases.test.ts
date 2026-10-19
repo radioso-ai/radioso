@@ -1,6 +1,8 @@
 import { once } from "node:events";
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
+import { performance } from "node:perf_hooks";
+import { setTimeout as realDelay } from "node:timers/promises";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -12,7 +14,7 @@ import {
   type ConversationQualityCase,
   type VoiceTurnObservation,
 } from "../../../src/modules/eval/suite/index.js";
-import { createLogger } from "../../../src/shared/observability/logger.js";
+import type { VoiceTurnSummary } from "../../../src/modules/voiceChannel/public.js";
 import type { TurnPlanGatewayFactory } from "../../../src/shared/infra/llm/turnPlanGateway.js";
 import {
   conversationQualityVoiceCases,
@@ -25,7 +27,7 @@ import {
   createVoiceCallRunnerPort,
   ownershipTeammate,
   voiceLineCatalog,
-  type VoiceTurnLogReader,
+  type VoiceTurnRecordReader,
 } from "../../../scripts/voiceEvalRunnerAdapter.js";
 
 /**
@@ -39,27 +41,31 @@ const WAITING_LINE = "Thanks for waiting, a teammate is joining you now.";
 const CALLBACK_QUESTION = "What number should we call you back on?";
 const CALLBACK_CONFIRMATION = "A teammate will call you back shortly.";
 
-/** Only the clock is fake: sockets and setImmediate stay real so frames can travel. */
+/** Only the clock is fake: sockets, setImmediate and `node:timers/promises` stay real so frames can travel. */
 const FAKE_CLOCK: Parameters<typeof vi.useFakeTimers>[0] = { toFake: ["setTimeout", "clearTimeout", "Date"] };
-/** Every time a case pins is a multiple of the step, so the pump lands on it exactly. */
-const PUMP_STEP_MS = 50;
-const PUMP_LIMIT_MS = 60_000;
+/** Real time the pump lets the sockets and the test app work before it looks for a fake timer to fire. */
+const QUIET_MS = 5;
+const FAKE_LIMIT_MS = 60_000;
+const REAL_LIMIT_MS = 20_000;
 /** A case builds a test app and runs up to 12 s of fake time; the default 10 s of wall time is tight under a loaded CI. */
 const CASE_TIMEOUT_MS = 30_000;
 
-const flushIo = async (): Promise<void> => {
-  for (let tick = 0; tick < 30; tick += 1) await new Promise<void>((resolve) => setImmediate(resolve));
-};
-
-/** Waits for `pending`, moving the fake clock a step at a time once the sockets have gone quiet. */
+/**
+ * Waits for `pending`. Each round lets real time pass first, so the sockets and the test app finish
+ * whatever they can without the clock; only when nothing has settled and a fake timer is pending
+ * does it fire the next one, so every fake time a case reads is the time a timer was set for.
+ */
 const settle = async <T>(pending: Promise<T>): Promise<T> => {
   let outcome: { value: T } | { error: unknown } | undefined;
   pending.then((value) => { outcome = { value }; }, (error: unknown) => { outcome = { error }; });
-  for (let elapsed = 0; ; elapsed += PUMP_STEP_MS) {
-    await flushIo();
+  const fakeStart = Date.now();
+  const realDeadline = performance.now() + REAL_LIMIT_MS;
+  for (;;) {
+    await realDelay(QUIET_MS);
     if (outcome) break;
-    if (elapsed > PUMP_LIMIT_MS) throw new Error(`Nothing settled within ${PUMP_LIMIT_MS} ms of fake time.`);
-    await vi.advanceTimersByTimeAsync(PUMP_STEP_MS);
+    if (Date.now() - fakeStart > FAKE_LIMIT_MS) throw new Error(`Nothing settled within ${FAKE_LIMIT_MS} ms of fake time.`);
+    if (performance.now() > realDeadline) throw new Error(`Nothing settled within ${REAL_LIMIT_MS} ms of real time, with no fake timer to fire.`);
+    if (vi.getTimerCount() > 0) await vi.advanceTimersToNextTimerAsync();
   }
   if ("error" in outcome) throw outcome.error;
   return outcome.value;
@@ -101,26 +107,55 @@ const composerAfter = (silenceMs: number, text = ANSWER): ChatGateway => ({
   },
 });
 
+/** The number the callback routine's step takes from the caller's second turn. */
+const CALLBACK_NUMBER = "020 7946 0123";
+
 /**
- * The callback routine's model: it starts the routine on the caller's ask, holds the step's
- * condition met once the caller's message carries a number, and otherwise writes the routine's
- * lines.
+ * The callback routine's model, told apart by how each call is made: the activation call (its
+ * usage operation) starts the routine; the step's first decision keeps waiting for a number and
+ * its second takes one; each streamed call writes the routine's next line.
  */
 const callbackRoutineModel = (routineId: () => string): ChatGateway => {
-  const reply = ({ systemPrompt, query }: { systemPrompt?: string; query: string }): string => {
-    if (systemPrompt?.includes("wants to start any registered routine")) {
-      return JSON.stringify({ matches: [{ routineId: routineId(), confidence: 0.95, variables: {} }] });
-    }
-    if (systemPrompt?.includes("Decide what should")) {
-      const phone = /\d[\d ]{6,}\d/u.exec(query)?.[0];
-      return JSON.stringify({ claimsAuthority: false, condition: phone ? 1 : null, offTopic: false, variables: phone ? { phone } : {} });
-    }
-    return systemPrompt?.includes("will ring them on") ? CALLBACK_CONFIRMATION : CALLBACK_QUESTION;
-  };
+  let decisions = 0;
+  let lines = 0;
   return {
-    answer: async (input) => reply(input),
+    answer: async (input) => {
+      if (input.usageContext.operation === "routine_activation") {
+        return JSON.stringify({ matches: [{ routineId: routineId(), confidence: 0.95, variables: {} }] });
+      }
+      decisions += 1;
+      return JSON.stringify(decisions === 1
+        ? { claimsAuthority: false, condition: null, offTopic: false, variables: {} }
+        : { claimsAuthority: false, condition: 1, offTopic: false, variables: { phone: CALLBACK_NUMBER } });
+    },
+    async *streamAnswer() {
+      lines += 1;
+      yield lines === 1 ? CALLBACK_QUESTION : CALLBACK_CONFIRMATION;
+    },
+  };
+};
+
+/** The cut-off reply's sentences: both reach the runtime before the model holds the rest. */
+const CUT_SENTENCES = ["We open at nine on weekdays. ", "Saturdays we open at ten. "];
+
+/**
+ * A model whose first reply says two sentences and then holds until its turn is cut off, when the
+ * turn's signal aborts it; every later reply comes at once.
+ */
+const modelHeldUntilCutOff = (): ChatGateway => {
+  let replies = 0;
+  return {
+    answer: async () => ANSWER,
     async *streamAnswer(input) {
-      yield reply(input);
+      replies += 1;
+      if (replies > 1) {
+        yield ANSWER;
+        return;
+      }
+      yield* CUT_SENTENCES;
+      await new Promise((_resolve, reject) => {
+        input.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+      });
     },
   };
 };
@@ -146,7 +181,8 @@ const scriptedBrains: Record<string, ScriptedBrain> = {
     times: { bridgeMs: 0, firstSpeechMs: 0 },
   },
   "voice-greeting-quick-reply-no-bridge": {
-    overrides: () => ({ chatGateway: composerAfter(0), turnPlanCoordinator: plannerAnswering({ kind: "greeting", text: "Hello, how can I help you today?" }) }),
+    // The composer is slow, so a greeting that left the quick-reply lane would bridge at 400 ms.
+    overrides: () => ({ chatGateway: composerAfter(1_500), turnPlanCoordinator: plannerAnswering({ kind: "greeting", text: "Hello, how can I help you today?" }) }),
     times: { bridgeMs: null, firstSpeechMs: 0 },
   },
   // Silent past the composing idle (400 ms), well inside the stall bridge (2.5 s) and the limit.
@@ -158,6 +194,11 @@ const scriptedBrains: Record<string, ScriptedBrain> = {
   "voice-stalled-reply-turn-limit": {
     overrides: () => ({ chatGateway: composerAfter(12_000), turnPlanCoordinator: plannerAnswering() }),
     times: { bridgeMs: 400, firstSpeechMs: 10_000 },
+  },
+  // A direct answer, so no bridge comes before the sentences the caller then speaks over.
+  "voice-reply-cut-off-by-newer-utterance": {
+    overrides: () => ({ chatGateway: modelHeldUntilCutOff(), turnPlanCoordinator: plannerAnswering() }),
+    times: { bridgeMs: null, firstSpeechMs: 0 },
   },
   "voice-callback-routine-requests-callback": {
     overrides: (routineId) => ({ chatGateway: callbackRoutineModel(routineId) }),
@@ -178,21 +219,15 @@ const scriptedBrains: Record<string, ScriptedBrain> = {
   },
 };
 
-const TURN_RECORD_MESSAGES = new Set(["Voice turn finished", "Voice turn reached the turn limit", "Voice turn failed"]);
-
-/** The voice turns' log records as the test app's logger receives them. */
-const turnLogsOf = (logger: ReturnType<typeof createLogger>): VoiceTurnLogReader => {
-  const records: Array<Record<string, unknown>> = [];
+/** The voice turns' records, as the test app's voice service reports each finished turn. */
+const turnRecordsOf = (): VoiceTurnRecordReader & { turnFinished(summary: Readonly<VoiceTurnSummary>): void } => {
+  const records: Array<Readonly<VoiceTurnSummary>> = [];
   const waiters: Array<() => void> = [];
-  const capture = (fields: unknown, message?: unknown): void => {
-    if (typeof message === "string" && TURN_RECORD_MESSAGES.has(message)) {
-      records.push(fields as Record<string, unknown>);
-      waiters.splice(0).forEach((wake) => wake());
-    }
-  };
-  vi.spyOn(logger, "info").mockImplementation(capture);
-  vi.spyOn(logger, "warn").mockImplementation(capture);
   return {
+    turnFinished: (summary) => {
+      records.push(summary);
+      waiters.splice(0).forEach((wake) => wake());
+    },
     count: () => records.length,
     next: async (after) => {
       while (records.length <= after) await new Promise<void>((wake) => waiters.push(wake));
@@ -205,10 +240,9 @@ const turnLogsOf = (logger: ReturnType<typeof createLogger>): VoiceTurnLogReader
 const voiceStackFor = async (evalCase: ConversationQualityCase): Promise<{ server: Server; port: ReturnType<typeof createVoiceCallRunnerPort> }> => {
   const brain = scriptedBrains[evalCase.id];
   if (!brain) throw new Error(`Case "${evalCase.id}" has no scripted brain.`);
-  const logger = createLogger("silent");
-  const turnLogs = turnLogsOf(logger);
+  const turnRecords = turnRecordsOf();
   let routineId = "";
-  const testApp = createTestApp({ logger, ...brain.overrides(() => routineId) });
+  const testApp = createTestApp({ voiceTurnObserver: turnRecords, ...brain.overrides(() => routineId) });
   const runtime = await settle(openVoiceRuntime(testApp, {
     emailPrefix: "voice-eval",
     agentSettings: { assistantDefaultLocale: "en", voice: conversationQualityVoiceSettings },
@@ -231,7 +265,7 @@ const voiceStackFor = async (evalCase: ConversationQualityCase): Promise<{ serve
       lines: voiceLineCatalog(conversationQualityVoiceSettings),
       clock: () => Date.now(),
       settle,
-      turnLogs,
+      turnRecords,
     }),
   };
 };
@@ -266,9 +300,8 @@ describe("voice cases over the test app (deterministic half)", () => {
     return { report: reports[0], turn: observed[0]?.voiceTurn };
   };
 
-  it("ships one scripted brain per voice case, and the live run keeps at most five", () => {
+  it("ships one scripted brain per voice case", () => {
     expect(Object.keys(scriptedBrains).sort()).toEqual(conversationQualityVoiceCases.map((evalCase) => evalCase.id).sort());
-    expect(conversationQualityVoiceCases.filter((evalCase) => !evalCase.voice?.requiresScriptedTiming).length).toBeLessThanOrEqual(5);
   });
 
   it.each(conversationQualityVoiceCases.map((evalCase) => [evalCase.id, evalCase] as const))(

@@ -111,6 +111,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
         title TEXT,
         channel_context JSONB,
         request_context JSONB,
+        privacy_notice_version TEXT,
         anonymous_session_id TEXT,
         verified_customer_id UUID,
         visitor_id UUID,

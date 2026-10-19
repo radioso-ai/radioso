@@ -120,7 +120,7 @@ export function AssistantAiChip({
 }
 
 /** The notice as a surface shows it, with the link label from the visitor's copy pack. */
-export const privacyNoticeDisplayOf = (
+const privacyNoticeDisplayOf = (
   copy: Pick<WebsiteEmbedCopy, 'publicChatPrivacyNoticeLinkLabel'>,
   notice: Pick<ShownPrivacyNotice, 'text' | 'url'> | null | undefined,
 ): PrivacyNoticeDisplay | null =>

@@ -294,4 +294,33 @@ describe("activity trace assembler", () => {
 
     expect(outputs?.resolutionNote).toBeNull();
   });
+
+  it("surfaces the subject and entities the interpreter resolved in the interpretation stage output", () => {
+    const assembler = new ActivityTraceAssembler();
+    const input = baseInput();
+    input.prompt.rewrittenQuery.structuredResult = {
+      rewrittenQuery: "Le soluzioni super coscienti: preventivo con pernottamento",
+      turnKind: "referential_followup",
+      proposedActiveSubject: "Le soluzioni super coscienti",
+      relatedEntities: ["corso residenziale"],
+      unresolved: false,
+      confidence: 0.93,
+    };
+
+    const trace = assembler.assemble(input);
+    const outputs = trace.stages.find((stage) => stage.kind === "query_interpretation")?.outputs;
+
+    expect(outputs).toMatchObject({
+      proposedActiveSubject: "Le soluzioni super coscienti",
+      relatedEntities: ["corso residenziale"],
+    });
+  });
+
+  it("records no resolved subject when the rewrite has none", () => {
+    const outputs = new ActivityTraceAssembler()
+      .assemble(baseInput())
+      .stages.find((stage) => stage.kind === "query_interpretation")?.outputs;
+
+    expect(outputs).toMatchObject({ proposedActiveSubject: null, relatedEntities: [] });
+  });
 });

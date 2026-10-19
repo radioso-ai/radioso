@@ -14,7 +14,10 @@ import {
   buildGroundedAnswerResponseFormat,
   SUGGESTIONS_SENTINEL,
 } from "../../src/modules/chat/services/groundedAnswerEnvelope.js";
-import { createDirectiveAdherenceSideChannel } from "../../src/shared/domain/directiveAdherence.js";
+import {
+  createDirectiveAdherenceSideChannel,
+  type DirectiveAdherenceTally,
+} from "../../src/shared/domain/directiveAdherence.js";
 import { RetrievalAnswerComposer } from "../../src/modules/chat/services/retrievalTurnSkill.js";
 import { buildAnswerCoverageAssessmentFromHead } from "../../src/modules/chat/services/answerCoverageFromHead.js";
 import {
@@ -98,6 +101,7 @@ const buildComposer = (
   let fallbackWorkspaceContext: unknown;
   const attemptKeys: string[] = [];
   const metricWrites: Array<{ name: string; labels?: Record<string, string> }> = [];
+  const adherenceTallies: DirectiveAdherenceTally[] = [];
   const responseFormats: unknown[] = [];
   const answerInputs: ChatGatewayInput[] = [];
   const streamInputs: ChatGatewayInput[] = [];
@@ -137,7 +141,12 @@ const buildComposer = (
       incrementCounter(name, options) {
         metricWrites.push({ name, labels: options.labels });
       },
-    }, { forSteeringRules: (rules) => createDirectiveAdherenceSideChannel(rules) }),
+    }, {
+      forSteeringRules: (rules) => createDirectiveAdherenceSideChannel(rules, {
+        onTally: (tally) => adherenceTallies.push(tally),
+      }),
+    }),
+    adherenceTallies: () => adherenceTallies,
     counts: () => ({ answerCalls, streamCalls, fallbackCalls }),
     fallbackWorkspaceContext: () => fallbackWorkspaceContext,
     attemptKeys,
@@ -214,6 +223,25 @@ describe("retrieval answer decline classification", () => {
     );
 
     expect(result.finalPresentation.skillOutcome).toBe("out_of_scope");
+  });
+
+  // #1575: a decline composed without the grounded envelope carried no plan or grades, so it
+  // reports no rule as ungraded and counts nothing.
+  it("reports no adherence for a streamed zero-context decline composed without an envelope", async () => {
+    const { composer, adherenceTallies } = buildComposer("unused", { text: "I can't confirm that.", declineReason: "content_gap" });
+    const session = zeroContextSession();
+    session.directiveSteering = {
+      rules: [{ id: "d1", directiveName: "represent-organization", action: "Speak as the organization.", source: "directive", lifespan: "response" }],
+      matches: [],
+      omissions: [],
+    };
+
+    const { result } = await drain(composer.streamAnswer(session, "Refund policy?", undefined, undefined));
+
+    expect(result.finalPresentation.answer).toBe("I can't confirm that.");
+    expect(result.finalPresentation.metadata ?? {}).not.toHaveProperty("ungradedDirectives");
+    expect(result.finalPresentation.metadata ?? {}).not.toHaveProperty("directiveAdherence");
+    expect(adherenceTallies()).toEqual([]);
   });
 
   it("tags an out-of-scope envelope decline with the out_of_scope outcome", async () => {
@@ -988,6 +1016,33 @@ describe("a decline the grounded answer commits without text", () => {
       });
     },
   );
+
+  // #1575: the draft's plan and grades describe a draft that never ships, so a streamed
+  // blank decline carries no adherence and counts nothing.
+  it("drops the replaced draft's adherence from a streamed blank decline", async () => {
+    const draft = JSON.parse(blankEnvelope("no_support")) as Record<string, unknown>;
+    const { composer, adherenceTallies } = buildComposer(JSON.stringify({
+      ...draft,
+      adherencePlan: [{ rule: "d1", commitment: "leave out every figure" }],
+      adherence: [{ rule: "d1", satisfied: true, applicable: true, note: "no figures" }],
+    }));
+    const session = baseSession();
+    session.directiveSteering = {
+      rules: [
+        { id: "d1", directiveName: "prices-from-the-course-page", action: "Leave out every figure.", source: "directive", lifespan: "response" },
+        { id: "d2", directiveName: "represent-organization", action: "Speak as the organization.", source: "directive", lifespan: "response" },
+      ],
+      matches: [],
+      omissions: [],
+    };
+
+    const { result } = await drain(composer.streamAnswer(session, "How much does it cost?", undefined, undefined));
+
+    expect(result.finalPresentation.answer).toBe("FOCUSED GROUNDED MISS");
+    expect(result.finalPresentation.metadata ?? {}).not.toHaveProperty("directiveAdherence");
+    expect(result.finalPresentation.metadata ?? {}).not.toHaveProperty("ungradedDirectives");
+    expect(adherenceTallies()).toEqual([]);
+  });
 
   it.each(committedDeclines)(
     "streams the focused decline for a $outcome commitment with an empty answer",

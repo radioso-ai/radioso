@@ -132,7 +132,7 @@ describe('Needs Attention query state', () => {
       pageParams: [null],
     })
     expect(qualityApi.listTurns).toHaveBeenNthCalledWith(1, expect.objectContaining({ feedback: ['down'], limit: 25, offset: 0 }), expect.any(AbortSignal))
-    expect(qualityApi.listTurns).toHaveBeenNthCalledWith(2, expect.objectContaining({ signal: ['grounding_gaps', 'negative_feedback', 'skill_failures', 'unmet_directives'], triageStates: ['acknowledged', 'open'], limit: 1, offset: 0 }), expect.any(AbortSignal))
+    expect(qualityApi.listTurns).toHaveBeenNthCalledWith(2, expect.objectContaining({ signal: ['grounding_gaps', 'negative_feedback', 'skill_failures'], triageStates: ['acknowledged', 'open'], limit: 1, offset: 0 }), expect.any(AbortSignal))
   })
 
   it('forwards Query cancellation to every source', async () => {
@@ -444,7 +444,7 @@ describe('Needs Attention query state', () => {
 
   it('keeps the approved quality discriminators canonical', () => {
     expect(needsAttentionQualityInputs.commentedFeedback).toMatchObject({ feedback: ['down'], activeNegativeFeedbackOnly: true, hasComment: true, pageSize: 25 })
-    expect(needsAttentionQualityInputs.reviewSummary).toMatchObject({ signal: ['negative_feedback', 'grounding_gaps', 'skill_failures', 'unmet_directives'], triageStates: ['open', 'acknowledged'], pageSize: 1 })
+    expect(needsAttentionQualityInputs.reviewSummary).toMatchObject({ signal: ['negative_feedback', 'grounding_gaps', 'skill_failures'], triageStates: ['open', 'acknowledged'], pageSize: 1 })
   })
 
   it('builds the promoted composite from the current query results without mutating prior rows', () => {

@@ -794,9 +794,11 @@ different scopes. **Health** covers a rolling 7- or 30-day window: answer
 volume, grounded-answer rate, negative-feedback rate, and skill-failure rate,
 each shown against the equal preceding window. **Queue** is the full,
 paginated backlog and per-turn triage for negative feedback, grounding gaps,
-skill failures, and unmet directives — answers that graded one of their own
-directives as not followed. The Inbox links to this union as one deduplicated count
-rather than listing its automatic signals individually. The queue is not
+and skill failures. The Inbox links to this union as one deduplicated count
+rather than listing its automatic signals individually. The **Unmet directives**
+chip, answers that graded one of their own directives as not followed, is opt-in:
+it lists those turns when you choose it, and stays out of the default queue and
+the Inbox count. The queue is not
 windowed, so a turn that is still untriaged stays visible however old it is.
 Its resolution breakdown and filters open exact reason/closure-time queues,
 while **Add to Eval** preserves a failed answer, which then shows timestamped

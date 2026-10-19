@@ -62,11 +62,19 @@ pnpm run evals -- --tag quick-reply
 
 The `directive-withholds`-tagged cases add an always-on directive that keeps every price out
 of the answer, ask for a price the Results state, and assert the fixture's figures are absent.
-The Italian case asks what a residential course costs, and its page lists the fee and three room rates; the English one asks for the Pro plan price,
-which the seeded `pricing-precision` directive asks to quote exactly. `turn_directive_committed`
-checks that the answer wrote a commitment to the directive before it wrote the answer, read
-from the compose stage. A test in `tests/unit/eval-suite/suite-core.test.ts` drives the Italian
-case through the chat pipeline with a scripted reply, so that path is covered without a model.
+The Italian case asks what a residential course costs, and its page lists the fee and three
+room rates. A test in `tests/unit/eval-suite/suite-core.test.ts` drives the Italian case through
+the chat pipeline with scripted replies and checks `turn_directive_committed`: that the answer
+wrote a commitment to the directive before writing the answer, read from the compose stage.
+The live cases leave that check out, since a withholding answer can carry no citation and be
+replaced by a focused decline, which records no commitment.
+
+`directive-withholds-figures-en` is informational. It asks for the Pro plan price, which the
+seeded `pricing-precision` directive asks to quote exactly, and the answer still quotes it in
+some samples while the built-in `represent-organization` reads as "state the price". Its
+recorded rate is too low for the gate to flag a drop, so read its rate in the report rather
+than relying on the gate, until the `represent-organization` follow-up lands.
+
 Run only these cases with:
 
 ```bash

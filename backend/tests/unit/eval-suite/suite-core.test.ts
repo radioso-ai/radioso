@@ -806,10 +806,14 @@ describe("withheld-figures directive through the chat pipeline", () => {
     action: pricesFromTheCoursePageDirective.action,
     priority: 75,
   };
-  // The harness records no retrieved chunks; the route, commitment, and answer assertions are its to check.
+  // The harness records no retrieved chunks; the route and answer assertions are its to check, and
+  // the commitment the live case leaves unchecked (a focused decline records none) is checked here.
   const pipelineCase: ConversationQualityCase = {
     ...withheldCase,
-    assertions: withheldCase.assertions.filter((assertion) => !assertion.type.startsWith("retrieval_")),
+    assertions: [
+      ...withheldCase.assertions.filter((assertion) => !assertion.type.startsWith("retrieval_")),
+      { type: "turn_directive_committed", directive: "prices-from-the-course-page" },
+    ],
   };
   // `satisfied` absent: the reply returns the commitment but no grade for the directive.
   const scriptedReply = (input: { answer: string; satisfied?: boolean }) => canonicalAnswerEnvelope({
@@ -855,6 +859,7 @@ describe("withheld-figures directive through the chat pipeline", () => {
     expect(report?.status).toBe("fail");
     expect(report?.verdicts.filter((verdict) => verdict.status === "fail").map((verdict) => verdict.assertion.type))
       .toEqual(["answer_does_not_contain", "answer_does_not_contain", "answer_does_not_contain"]);
+    expect(report?.verdicts.find((verdict) => verdict.assertion.type === "turn_directive_committed")?.status).toBe("pass");
     expect(assistantMessage?.metadata?.unmetDirectives).toEqual(["prices-from-the-course-page"]);
   });
 

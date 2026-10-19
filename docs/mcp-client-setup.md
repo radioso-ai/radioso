@@ -1,7 +1,7 @@
 ---
 title: "MCP Client Setup"
 description: "Connect an MCP client either to one Radioso agent or to Ray's governed operator tools."
-last_updated: 2026-10-13
+last_updated: 2026-10-18
 ---
 
 # MCP Client Setup
@@ -224,7 +224,7 @@ Authorization: Bearer <session token>
 
 Each descriptor's `inputSchema` is JSON Schema built from the routine's declared slots: `text` becomes `string`, `number` and `boolean` keep their types, `email` is `string` with `format: "email"`, `date` is `string` with `format: "date"` (an ISO calendar day such as `2026-09-01`), and `required` follows the slot. A routine with no slots is a tool with an empty object schema.
 
-Call a tool by sending `routine` instead of `message` on the same ask route. The routine starts at once with those slots filled, skips the steps that would have asked for them, and then behaves exactly as it would for a person: confirmation steps, approvals, and handoff all apply.
+Call a tool by sending `routine` instead of `message` on the same ask route. The routine starts at once with those slots filled and walks past the steps they satisfy. On that turn the input is all the call tells the routine: it stops on the first step whose required slots you left out (or, on a step that collects only optional slots, any of its slots), and nothing after that step runs, skill steps included. A step moves on once its required slots have values, so an optional slot beside them stays empty unless you send it. A satisfied step moves on by itself, unless its way on is a condition the author wrote for the model to judge, which is judged against your call; when the model finds none of those conditions holds, the step's rule or default exit decides, and a step with only model-judged exits stays and asks. Past the steps the input satisfies, the routine behaves as it would for a person: a confirmation step asks, an approval waits for an operator, and a handoff hands the conversation over.
 
 ```http
 POST /api/v1/mcp/converse/ask
@@ -253,7 +253,7 @@ The reply is the same envelope, and `routine` tells you where the call landed:
 }
 ```
 
-Supply the pending slots in a follow-up `message`; the routine reads them the way it reads any reply. A call with every slot the routine collects runs straight through to its skill steps and reports `status: "completed"`, or `waiting_for_approval` when a step needs a person's decision.
+Supply the pending slots in a follow-up `message`, or call the tool again with them. Either way the active routine reads your turn the way it reads any reply, and a second call reports `invocation.outcome` `not_started`, because the routine it names is already running. A call with every slot the routine collects runs straight through to its skill steps and reports `status: "completed"`, or `waiting_for_approval` when a step needs a person's decision.
 
 Input is checked against the descriptor before anything is recorded, so a bad call leaves the conversation untouched:
 
@@ -266,7 +266,7 @@ Input is checked against the descriptor before anything is recorded, so a bad ca
 - `started` — the routine began with your input.
 - `reentered` — the routine had already completed in this conversation and started again with the new input, because its reentry setting allows it (**Every time it matches**, or the semantic setting — an explicit call already answers the question that setting asks of a message).
 - `declined` — the routine had already completed and **Once per conversation** keeps it closed. The turn answers normally, and `routine` still carries `{ "toolName", "name", "status": "completed", "pendingInput": [] }` so you learn why nothing started.
-- `not_started` — a different routine was mid-flight or waiting for an operator's approval, so the existing interruption and approval rules kept the turn: an active routine reads your call like any other message, a suspended one holds it. `routine` describes that routine, so you can see what it still needs.
+- `not_started` — a routine was already mid-flight in this conversation, the one you called or another, or one was waiting for an operator's approval, so the existing interruption and approval rules kept the turn: an active routine reads your call like any other message, a suspended one holds it. `routine` describes that routine, so you can see what it still needs.
 - `unknown_tool` — the release this conversation runs on carries no routine under that name. The pre-check below normally refuses such a call with `404` before the turn; this outcome covers a release that changed between the check and the turn.
 
 The tool name is checked against the release the conversation is pinned to, on both the MCP ask route and the REST agent channel, before any message is recorded. The conversation behind a session stays on the release it started on, while `GET /api/v1/mcp/converse/tools` returns the agent's current published catalog on every call (the session token only says which agent), so a routine exposed or renamed after the conversation began can appear in `tools` yet return `routine_tool_unknown` when called; rotating the credential starts a fresh conversation on the current release. Draft routines are never listed — the operator's Test Chat is the place to try one.

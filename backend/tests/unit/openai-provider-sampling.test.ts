@@ -51,6 +51,7 @@ const chatConfig = (model: string): LlmCapabilityConfig => ({
   provider: "openai",
   model,
   apiKey: "sk-test",
+  openAIDataResidency: "global",
 });
 
 const compatibleChatConfig = (model: string, baseUrl: string): LlmCapabilityConfig => ({

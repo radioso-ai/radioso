@@ -2,8 +2,27 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createAgentPublicationCopilotTools } from "../../../src/modules/operatorCopilot/tools/agentPublication.js";
 import { createReviewedProposalExecutionTool } from "../../../src/modules/operatorCopilot/tools/reviewedProposalExecution.js";
+import type { AgentRevision, AgentRevisionState } from "../../../src/modules/agents/agentRevision.js";
 
-const context = { workspaceId: "workspace-1", accountId: "account-1", operatorUserId: "operator-1", currentAuthorization: { hasAllPermissions: vi.fn(async () => true) }, copilotConversationId: undefined, operatorMcpInvocationId: "invocation-1", surface: "mcp" as const, pageContext: { view: "agent" as const, agentId: "agent-1", conversationId: null, selection: null, entities: [] } };
+const fixtureDraftState = (): AgentRevisionState => ({
+  agentId: "agent-1",
+  status: "draft_dirty",
+  draft: { generation: 1, basePublishedRevisionId: null, updatedAt: new Date("2026-09-13T00:00:00Z") },
+  publishedRevision: null,
+  canPublish: true,
+});
+
+const fixtureCandidateRevision = (): AgentRevision => ({
+  id: "candidate-1",
+  snapshot: { customInstruction: "", directives: [], routines: [], contextVariableEnablements: [] },
+  sourceDraftGeneration: 1,
+  sourceBasePublishedRevisionId: null,
+  createdAt: new Date("2026-09-13T00:00:00Z"),
+  publishedAt: null,
+  publishedVersion: null,
+});
+
+const context ={ workspaceId: "workspace-1", accountId: "account-1", operatorUserId: "operator-1", currentAuthorization: { hasAllPermissions: vi.fn(async () => true) }, copilotConversationId: undefined, operatorMcpInvocationId: "invocation-1", surface: "mcp" as const, pageContext: { view: "agent" as const, agentId: "agent-1", conversationId: null, selection: null, entities: [] } };
 
 describe("agent publication MCP tools", () => {
   it("recovers the original publication review without creating another candidate", async () => {
@@ -44,7 +63,7 @@ describe("agent publication MCP tools", () => {
   it("does not create a candidate or proposal when permission is revoked while reading state", async () => {
     const authorization = { hasAllPermissions: vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(false) };
     const createCandidate = vi.fn(); const createProposal = vi.fn();
-    const tools = createAgentPublicationCopilotTools({ revisions: { state: vi.fn(async () => ({ draft: { generation: 1, basePublishedRevisionId: null } })), createCandidate, detail: vi.fn(), describeCandidateRelease: vi.fn(), describeCandidatePublicationReview: vi.fn(), readCandidateReleaseChange: vi.fn(), publish: vi.fn() }, proposalRepository: { createProposal }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, proposalAdapters: [], auditService: { record: vi.fn() } });
+    const tools = createAgentPublicationCopilotTools({ revisions: { state: vi.fn(async () => fixtureDraftState()), createCandidate, detail: vi.fn(), describeCandidateRelease: vi.fn(), describeCandidatePublicationReview: vi.fn(), readCandidateReleaseChange: vi.fn(), publish: vi.fn() }, proposalRepository: { createProposal }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, proposalAdapters: [], auditService: { record: vi.fn() } });
     const prepare = tools.find((tool) => tool.name === "prepare_agent_publication")!;
     await expect(prepare.createTool({ ...context, currentAuthorization: authorization }).invoke({}, {} as never)).rejects.toThrow();
     expect(createCandidate).not.toHaveBeenCalled(); expect(createProposal).not.toHaveBeenCalled();
@@ -52,8 +71,8 @@ describe("agent publication MCP tools", () => {
 
   it("does not persist a proposal when permission is revoked after candidate creation", async () => {
     const authorization = { hasAllPermissions: vi.fn().mockResolvedValueOnce(true).mockResolvedValueOnce(true).mockResolvedValueOnce(false) };
-    const createCandidate = vi.fn(async () => ({ id: "candidate-1" })); const createProposal = vi.fn();
-    const tools = createAgentPublicationCopilotTools({ revisions: { state: vi.fn(async () => ({ draft: { generation: 1, basePublishedRevisionId: null } })), createCandidate, detail: vi.fn(), describeCandidateRelease: vi.fn(), describeCandidatePublicationReview: vi.fn(), readCandidateReleaseChange: vi.fn(), publish: vi.fn() }, proposalRepository: { createProposal }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, proposalAdapters: [], auditService: { record: vi.fn() } });
+    const createCandidate = vi.fn(async () => fixtureCandidateRevision()); const createProposal = vi.fn();
+    const tools = createAgentPublicationCopilotTools({ revisions: { state: vi.fn(async () => fixtureDraftState()), createCandidate, detail: vi.fn(), describeCandidateRelease: vi.fn(), describeCandidatePublicationReview: vi.fn(), readCandidateReleaseChange: vi.fn(), publish: vi.fn() }, proposalRepository: { createProposal }, proposalRecovery: { recoverOperatorMcpProposal: vi.fn() }, proposalAdapters: [], auditService: { record: vi.fn() } });
     const prepare = tools.find((tool) => tool.name === "prepare_agent_publication")!;
     await expect(prepare.createTool({ ...context, currentAuthorization: authorization }).invoke({}, {} as never)).rejects.toThrow();
     expect(createCandidate).toHaveBeenCalledOnce(); expect(createProposal).not.toHaveBeenCalled();

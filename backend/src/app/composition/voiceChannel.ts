@@ -21,6 +21,7 @@ import {
   type VoiceSessionStartPort,
   type VoiceSessionStartRegistry,
   type VoiceSessionStore,
+  type VoiceStoredReplyReader,
   type VoiceTurnNotes,
   type VoiceTurnPort,
   VOICE_REPLY_INTERRUPTED_EVENT,
@@ -31,6 +32,7 @@ import { isHumanOwned, type ConversationOwnershipReader } from "../../modules/ha
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
+import { isHumanAuthoredMessageSource } from "../../shared/domain/messageAuthorship.js";
 import { isVoiceVendor, type VoiceVendor } from "../../shared/domain/voiceVendor.js";
 import { ProviderConfigurationError } from "../../shared/infra/llm/providerTypes.js";
 
@@ -89,6 +91,44 @@ export const createVoiceTurnNotes = (deps: {
  * replies, marks them spoken, and marks an interrupted one. Vendor adapters mount over this port
  * in the HTTP layer.
  */
+/** The conversation's newest messages of the roles asked for, as the message store lists them, oldest first. */
+interface RecentMessages {
+  listRecentByConversationId(
+    workspaceId: string,
+    conversationId: string,
+    limit: number,
+    options?: { roles?: readonly ("user" | "assistant" | "system")[] },
+  ): Promise<ReadonlyArray<{ id: string; role: string; content: string; source?: string; createdAt: Date }>>;
+}
+
+/**
+ * How many of the conversation's newest assistant messages are searched for the agent's answer:
+ * teammate replies written in the seconds after the caller's message sit among them.
+ */
+const STORED_REPLY_SEARCH_LIMIT = 20;
+
+/**
+ * The conversation's newest user message, read on its own, and the agent's reply to it: the
+ * first assistant message after it with words written by the agent (a teammate's reply is spoken
+ * through its own claims), however many teammate replies came in between.
+ */
+export const createVoiceStoredReplyReader = (messages: RecentMessages): VoiceStoredReplyReader => ({
+  newestExchange: async ({ workspaceId, conversationId }) => {
+    const [utterance] = (await messages.listRecentByConversationId(workspaceId, conversationId, 1, { roles: ["user"] }))
+      .filter((message) => message.role === "user");
+    if (!utterance) {
+      return null;
+    }
+    const reply = (await messages.listRecentByConversationId(workspaceId, conversationId, STORED_REPLY_SEARCH_LIMIT, { roles: ["assistant"] }))
+      .find((message) =>
+        message.role === "assistant"
+        && message.createdAt.getTime() >= utterance.createdAt.getTime()
+        && !isHumanAuthoredMessageSource(message.source)
+        && message.content.trim().length > 0);
+    return { utterance: utterance.content, reply: reply ? { messageId: reply.id, text: reply.content } : null };
+  },
+});
+
 export const createVoiceChannelComposition = (deps: {
   sessions: VoiceSessionStore & VoiceSessionStartLookup;
   assistantChatService: {
@@ -97,7 +137,7 @@ export const createVoiceChannelComposition = (deps: {
   agentRepository: AgentVoiceProfileRepository;
   routineStates: { loadActive(input: { sessionId: string }): Promise<unknown> };
   conversationOwnership: ConversationOwnershipReader;
-  replies: ReplyInterruptionMarker & OperatorReplySpeechClaims;
+  replies: ReplyInterruptionMarker & OperatorReplySpeechClaims & RecentMessages;
   auditService: Pick<AuditPort, "record">;
   metricsRegistry: MetricsRegistry | null;
   logger: AppLogger;
@@ -111,6 +151,7 @@ export const createVoiceChannelComposition = (deps: {
     routines: { isRoutineActive: async (conversationId) => (await deps.routineStates.loadActive({ sessionId: conversationId })) !== null },
     ownership: { isHumanOwned: async (conversationId) => isHumanOwned(await deps.conversationOwnership.load(conversationId)) },
     operatorReplies: { claims: deps.replies, newClaimTurnId: randomUUID },
+    storedReplies: createVoiceStoredReplyReader(deps.replies),
     notes: createVoiceTurnNotes({ replies: deps.replies, auditService: deps.auditService, logger: deps.logger }),
     metrics: deps.metricsRegistry,
     logger: deps.logger,

@@ -216,6 +216,14 @@ class StubAgentRepository implements AgentRepositoryPort {
     throw new Error("not implemented");
   }
 
+  async findByPublicId(): Promise<ConversationAgent | null> {
+    throw new Error("not implemented");
+  }
+
+  async applyProposalPatch(): Promise<never> {
+    throw new Error("not implemented");
+  }
+
   async listByWorkspaceId(): Promise<ConversationAgent[]> {
     throw new Error("not implemented");
   }

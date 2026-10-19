@@ -306,7 +306,12 @@ describe("AgentRevisionService", () => {
 
   it("rejects an invalid candidate rather than labeling it valid", async () => {
     const repository = new InMemoryRevisionRepository();
-    repository.revisions.set("candidate-invalid", { ...snapshot("invalid"), directives: [{ id: "00000000-0000-4000-8000-000000000007", agentId, name: "bad", instruction: "bad", enabled: true, tags: [`routine:${routineId}`], createdAt: new Date(), updatedAt: new Date() }] });
+    repository.revisions.set("candidate-invalid", { ...snapshot("invalid"), directives: [{
+      id: "00000000-0000-4000-8000-000000000007", agentId, name: "bad", condition: { kind: "always" as const },
+      action: "bad", priority: null, requiredCapabilities: [], dependsOn: [], excludes: [], routes: [], surfaces: [],
+      tags: [`routine:${routineId}`], description: null, binding: null, lifecycle: null, enabled: true, metadata: {},
+      createdAt: new Date(), updatedAt: new Date(),
+    }] });
     const service = new AgentRevisionService(repository, () => "candidate-1");
     await expect(service.describeCandidateRelease(workspaceId, agentId, "candidate-invalid")).rejects.toMatchObject({ code: "revision_invalid" });
   });

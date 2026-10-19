@@ -24,7 +24,7 @@ describe("structural routine proposal adapter", () => {
       routineMcpApply: { apply },
       scopedReferences: { assertNoScopedReferences: vi.fn() },
     });
-    const context = { surface: "mcp" as const, proposalId: "proposal-1", executionInvocationId: "receipt-1", operatorUserId: "operator-1", applyClaimedAt: new Date("2026-09-02T00:00:00Z") };
+    const context = { surface: "mcp" as const, accountId: "account-1", proposalId: "proposal-1", executionInvocationId: "receipt-1", operatorUserId: "operator-1", applyClaimedAt: new Date("2026-09-02T00:00:00Z") };
     const draft = { name: "Created", enabled: true, activation: routine.activation, steps: routine.steps, terminals: routine.terminals, slots: [], transitions: routine.transitions };
 
     await expect(adapter.applyIfVersionMatches(workspaceId, { agentId, routineId: null }, { kind: "create", draft }, "open", context)).resolves.toMatchObject({ outcome: "applied", appliedRef: { routineId: "created-routine" } });
@@ -45,8 +45,23 @@ describe("structural routine proposal adapter", () => {
   });
 
   it("allows a reclaimed pending atomic create or delete to retry after a pre-commit crash", async () => {
-    const adapter = createRoutineCopilotProposalAdapter({ agentService: {}, routineDraftAssistService: {}, routineDefinitionService: {} });
-    const base = { workspaceId, targetRef: { agentId, routineId }, versionToken: routine.updatedAt.toISOString(), executionInvocationId: "receipt-1", previousAttemptStartedAt: new Date() };
+    const adapter = createRoutineCopilotProposalAdapter({
+      agentService: { get: vi.fn() },
+      routineDraftAssistService: { draft: vi.fn() },
+      routineDefinitionService: {
+        get: vi.fn(),
+        list: vi.fn(),
+        createDraft: vi.fn(),
+        findCreateConflict: vi.fn(),
+        updateDraft: vi.fn(),
+        updateDraftForCopilotProposal: vi.fn(),
+        completeExternalDraftMutation: vi.fn(),
+        validate: vi.fn(),
+        validateForDraftMutation: vi.fn(),
+        deleteDraft: vi.fn(),
+      },
+    });
+    const base = { workspaceId, accountId: "account-1", targetRef: { agentId, routineId }, versionToken: routine.updatedAt.toISOString(), executionInvocationId: "receipt-1", previousAttemptStartedAt: new Date() };
     await expect(adapter.reconcileMcpInterruptedApply?.({ ...base, payload: { kind: "create", draft: { name: "Created" } } })).resolves.toEqual({ outcome: "not_applied" });
     await expect(adapter.reconcileMcpInterruptedApply?.({ ...base, payload: { kind: "delete" } })).resolves.toEqual({ outcome: "not_applied" });
   });
@@ -63,7 +78,7 @@ describe("structural routine proposal adapter", () => {
       routineDefinitionService: { get: vi.fn(async () => routine), validateForDraftMutation: vi.fn(async () => ({ ok: true, diagnostics: [] })) } as never,
       routineMcpApply: { apply }, scopedReferences: { assertNoScopedReferences },
     });
-    const context = { surface: "mcp" as const, proposalId: "proposal-1", executionInvocationId: "receipt-1", operatorUserId: "operator-1", applyClaimedAt: new Date("2026-09-02T00:00:00Z") };
+    const context = { surface: "mcp" as const, accountId: "account-1", proposalId: "proposal-1", executionInvocationId: "receipt-1", operatorUserId: "operator-1", applyClaimedAt: new Date("2026-09-02T00:00:00Z") };
     await expect(adapter.applyIfVersionMatches(workspaceId, { agentId, routineId }, { kind: "delete" }, routine.updatedAt.toISOString(), context)).resolves.toEqual({ outcome: "failed", reason: expect.stringContaining("scoped directive") });
     await expect(adapter.applyIfVersionMatches(workspaceId, { agentId, routineId }, { ...payload, draft: { ...payload.draft, steps: [{ ...routine.steps[0], stableStepId: "step_replacement" }] } }, routine.updatedAt.toISOString(), context)).resolves.toEqual({ outcome: "failed", reason: expect.stringContaining("scoped directive") });
     expect(assertNoScopedReferences).toHaveBeenNthCalledWith(1, expect.objectContaining({ removedNodeIds: ["step_collect", "terminal_done"] }));

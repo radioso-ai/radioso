@@ -31,7 +31,7 @@ At minimum, a production deployment needs:
 - public base URLs for customer-facing flows such as public chat and Enterprise Edition modules
 - Operator MCP resource and issuer URLs when delegated Ray access is enabled
 
-Relevant runtime flags are defined in `.env.example` and enforced by `backend/src/app/config/env.ts`.
+Relevant runtime flags are defined in `.env.example` and enforced by `backend/src/app/config/env.ts`. See [Data residency](/operators/data-residency) for which outside service processes what, and which of those categories carries a region setting.
 
 ## Live dashboard updates
 
@@ -321,3 +321,4 @@ The docs portal is its own Next.js app under `docs-portal/`. It syncs the backen
 - [Self-hosting operations](/operators/self-hosting-operations) — backup, restore, and upgrade steps for deployments you run yourself, including the migration-startup incident playbook this page's startup-migration behavior feeds into.
 - [Enterprise usage limits](/operators/enterprise-usage-limits) — cap indexed storage, monthly content, and monthly answers per account.
 - [Deployment topology](/architecture/deployment-topology) — how the backend, frontend, and worker services relate at runtime.
+- [Data residency](/operators/data-residency) — where each outside service processes data, and which setting controls its region.

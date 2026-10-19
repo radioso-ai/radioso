@@ -62,6 +62,7 @@ const fallbackReplyComposer: FallbackReplyComposer = {
 const planJson = (input: {
   route: "direct" | "retrieval";
   responseLanguage?: string;
+  responseLanguageTag?: string;
   routineRankings?: Array<{ routineId: string; confidence: number; variables?: Record<string, unknown> }>;
   directiveClassifications?: Array<{ name: string; matched: boolean; confidence: number }>;
   pageRead?: {
@@ -94,6 +95,7 @@ const planJson = (input: {
         }
       : null,
     responseLanguage: input.responseLanguage ?? "English",
+    ...(input.responseLanguageTag ? { responseLanguageTag: input.responseLanguageTag } : {}),
     // The planner wire format carries slot values as field/value pairs, not a
     // free-form object (strict provider schema). Convert the fixture's record here.
     routineRankings: (input.routineRankings ?? []).map((ranking) => ({
@@ -557,6 +559,97 @@ describe("chat service fused turn planning", () => {
     expect(planner.completeCalls()).toBe(1);
     expect(staged.routerClassify).not.toHaveBeenCalled();
     expect(staged.languageDetect).not.toHaveBeenCalled();
+  });
+
+  it("reports the planned response language's tag on the stream before the answer's first chunk", async () => {
+    const turnEvents = async (route: "direct" | "retrieval") => {
+      const service = buildService({
+        planner: plannerFactory({ completions: [planJson({ route, responseLanguage: "Italian", responseLanguageTag: "it" })] }),
+        pipeline: route === "direct" ? directPipeline("grazie!") : retrievalPipeline([]),
+        chatGateway: pipelineChatGateway(route === "direct" ? "Prego!" : "Apriamo alle nove [[1]]."),
+        staged: countingStagedPorts(),
+      });
+      const events: ChatStreamEvent[] = [];
+      for await (const event of service.streamAnswer({ workspaceId: "workspace-1", query: "grazie!", stream: true, reportResponseLanguage: true })) {
+        events.push(event);
+      }
+      return events;
+    };
+
+    for (const route of ["direct", "retrieval"] as const) {
+      const events = await turnEvents(route);
+      const languages = events.filter((event) => event.type === "language");
+      const languageAt = events.findIndex((event) => event.type === "language");
+      const firstChunkAt = events.findIndex((event) => event.type === "chunk");
+      expect(languages, route).toEqual([{ type: "language", tag: "it" }]);
+      expect(firstChunkAt, route).toBeGreaterThan(languageAt);
+    }
+  });
+
+  it("reports the language of a planned retrieval turn while retrieval runs, ahead of the search it reported first", async () => {
+    const timeline: string[] = [];
+    let languageReported!: () => void;
+    const reported = new Promise<void>((resolve) => { languageReported = resolve; });
+    const pipeline = retrievalPipeline([]);
+    const service = buildService({
+      planner: plannerFactory({ completions: [planJson({ route: "retrieval", responseLanguage: "Italian", responseLanguageTag: "it" })] }),
+      pipeline: {
+        ...pipeline,
+        async runInterpreted(interpreted: { request: { query: string } }) {
+          timeline.push("retrieval started");
+          // Retrieval finishes only once the stream has reported the language: the report never waits for it.
+          await reported;
+          timeline.push("retrieval finished");
+          return pipeline.runInterpreted(interpreted);
+        },
+      },
+      chatGateway: pipelineChatGateway("Apriamo alle nove [[1]]."),
+      staged: countingStagedPorts(),
+    });
+
+    for await (const event of service.streamAnswer({ workspaceId: "workspace-1", query: "A che ora aprite?", stream: true, reportResponseLanguage: true })) {
+      if (event.type === "status") timeline.push(`status:${event.stage}`);
+      if (event.type === "chunk" && !timeline.includes("chunk")) timeline.push("chunk");
+      if (event.type === "language") {
+        timeline.push("language");
+        languageReported();
+      }
+    }
+
+    // Pinned as the engine path delivers it: the engine reports the search and starts retrieval,
+    // which reads the language first; the language report reaches the stream ahead of the
+    // already-queued search status, which follows once the stream is read again.
+    expect(timeline).toEqual([
+      "status:interpreting", "retrieval started", "language", "retrieval finished", "status:searching", "status:composing", "chunk",
+    ]);
+  });
+
+  it("reports the response language without a tag on the stream when the plan gives its label alone", async () => {
+    const service = buildService({
+      planner: plannerFactory({ completions: [planJson({ route: "direct", responseLanguage: "Italian" })] }),
+      pipeline: directPipeline("grazie!"),
+      chatGateway: pipelineChatGateway("Prego!"),
+      staged: countingStagedPorts(),
+    });
+
+    const events: ChatStreamEvent[] = [];
+    for await (const event of service.streamAnswer({ workspaceId: "workspace-1", query: "grazie!", stream: true, reportResponseLanguage: true })) {
+      events.push(event);
+    }
+    const unasked: ChatStreamEvent[] = [];
+    for await (const event of buildService({
+      planner: plannerFactory({ completions: [planJson({ route: "direct", responseLanguage: "Italian", responseLanguageTag: "it" })] }),
+      pipeline: directPipeline("grazie!"),
+      chatGateway: pipelineChatGateway("Prego!"),
+      staged: countingStagedPorts(),
+    }).streamAnswer({ workspaceId: "workspace-1", query: "grazie!", stream: true })) {
+      unasked.push(event);
+    }
+
+    expect(events.some((event) => event.type === "chunk")).toBe(true);
+    expect(events.filter((event) => event.type === "language")).toEqual([{ type: "language" }]);
+    // A stream whose request does not ask for the report carries none.
+    expect(unasked.some((event) => event.type === "language")).toBe(false);
   });
 
   it("runs a planned retrieval turn with zero staged classification calls and the plan's rewrite", async () => {
@@ -2081,6 +2174,7 @@ describe("chat service built-in routine resume on a revision-bound conversation"
       routineRegistrations: builtInRegistrations(),
       routineTriggerEmbeddingService: { persistPublished: vi.fn() },
       skillExecutorRegistry: {} as never,
+      approvalResumeEffectJournal: {} as never,
       turnPlanAdapters: {
         activator: ({ fallback }) => fallback,
         reentryGate: ({ fallback }) => fallback,

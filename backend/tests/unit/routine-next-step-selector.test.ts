@@ -163,4 +163,17 @@ describe("RoutineNextStepSelector", () => {
     expect(call.systemPrompt).toContain("requestId");
     expect(call.messages.at(-1)).toEqual({ role: "user", content: "alex@example.com" });
   });
+
+  it("retries once, then calls the onUnreadable observer for each unreadable attempt with the routine and step id, never the raw model text", async () => {
+    const onUnreadable = vi.fn();
+    // A fixed-text gateway returns the same unreadable completion on the retry too, so both
+    // attempts are reported and the selector falls back to the unreadable decision.
+    const gw = gateway("not json at all");
+    const selector = new RoutineNextStepSelector(gw, { onUnreadable });
+    const decision = await selector.select({ routine, state, currentStep, transitions, turn });
+    expect(gw.complete).toHaveBeenCalledTimes(2);
+    expect(decision.nextStepId).toBe("ask_email");
+    expect(onUnreadable).toHaveBeenNthCalledWith(1, { routineId: routine.id, stepId: currentStep.id, reason: "no_json_object", attempt: 1 });
+    expect(onUnreadable).toHaveBeenNthCalledWith(2, { routineId: routine.id, stepId: currentStep.id, reason: "no_json_object", attempt: 2 });
+  });
 });

@@ -3,12 +3,13 @@ import http from "node:http";
 import https from "node:https";
 
 import type { AgentVoiceSettings } from "../src/modules/agents/public.js";
-import type {
-  ConversationQualityCase,
-  ConversationQualityRunnerPort,
-  ConversationQualityVoiceCallStep,
-  VoicePieceKind,
-  VoiceTurnObservation,
+import {
+  VOICE_OUTCOME_KINDS,
+  type ConversationQualityCase,
+  type ConversationQualityRunnerPort,
+  type ConversationQualityVoiceCallStep,
+  type VoicePieceKind,
+  type VoiceTurnObservation,
 } from "../src/modules/eval/suite/index.js";
 import type { ConversationOwnershipService, OwnershipActor } from "../src/modules/handoff/public.js";
 
@@ -33,6 +34,8 @@ const LOCALE_HEADER = "x-radioso-voice-locale";
 const OUTCOME_FIELD = "x-radioso-voice-outcome";
 const CONVERSATION_HEADER = "x-radioso-conversation-id";
 const DONE_DATA = "[DONE]";
+/** A turn's response goes quiet for at most the turn limit and its drain; past this the socket is given up. */
+const SOCKET_IDLE_TIMEOUT_MS = 60_000;
 
 const completionsPath = (agentId: string): string =>
   `/api/v1/agents/${encodeURIComponent(agentId)}/voice/generic/v1/chat/completions`;
@@ -78,6 +81,7 @@ export const postVoiceTurn = (
       },
     });
     client.on("error", reject);
+    client.setTimeout(SOCKET_IDLE_TIMEOUT_MS, () => client.destroy(new Error(`The voice turn went silent for ${SOCKET_IDLE_TIMEOUT_MS} ms.`)));
     client.on("response", (response) => {
       const chunks: VoiceWireChunk[] = [];
       response.setEncoding("utf8");
@@ -157,10 +161,8 @@ const pieceKind = (text: string, lines: VoiceLineCatalog): VoicePieceKind => {
   return lines.fallback.has(line) ? "fallback" : "speech";
 };
 
-const OUTCOME_KINDS: ReadonlyArray<NonNullable<VoiceTurnObservation["outcome"]>> = ["continue", "callback_requested"];
-
 const knownOutcome = (outcome: string | null): VoiceTurnObservation["outcome"] =>
-  OUTCOME_KINDS.find((kind) => kind === outcome) ?? null;
+  VOICE_OUTCOME_KINDS.find((kind) => kind === outcome) ?? null;
 
 const protocolOf = (recording: VoiceWireRecording, reading: VoiceStreamReading): VoiceTurnObservation["protocol"] => {
   const problem = recording.status !== 200
@@ -268,20 +270,20 @@ const runVoiceCall = async (stack: VoiceCallStack, evalCase: ConversationQuality
   const call = evalCase.voice ?? {};
   const settle = stack.settle ?? (<T>(pending: Promise<T>) => pending);
   const sessionKey = `voice-eval-${randomUUID()}`;
-  const callerTurn = async (utterance: string): Promise<VoiceTurnObservation & { conversationId: string | null }> => {
+  const callerTurn = async (utterance: string): Promise<{ observation: VoiceTurnObservation; conversationId: string | null }> => {
     const logsBefore = stack.turnLogs?.count() ?? 0;
     const recording = await settle(postVoiceTurn(stack.door, { sessionKey, utterance, ...(call.locale ? { locale: call.locale } : {}) }, stack.clock));
     const observation = observeVoiceTurn(recording, stack.lines);
     const turnLog = stack.turnLogs ? await settle(stack.turnLogs.next(logsBefore)) : undefined;
-    return { ...observation, ...(turnLog ? { turnLog } : {}), conversationId: recording.conversationId };
+    return { observation: turnLog ? { ...observation, turnLog } : observation, conversationId: recording.conversationId };
   };
 
   let conversationId: string | null = null;
   for (const [index, step] of (call.before ?? []).entries()) {
     if (step.kind === "caller") {
       const earlier = await callerTurn(step.utterance);
-      if (!earlier.protocol.ok) {
-        throw new Error(`The call's step ${index + 1} failed: ${earlier.protocol.problem}`);
+      if (!earlier.observation.protocol.ok) {
+        throw new Error(`The call's step ${index + 1} failed: ${earlier.observation.protocol.problem}`);
       }
       conversationId ??= earlier.conversationId;
       continue;
@@ -291,8 +293,7 @@ const runVoiceCall = async (stack: VoiceCallStack, evalCase: ConversationQuality
     }
     await settle(runTeammateStep(stack.teammate, conversationId, step));
   }
-  const { conversationId: _scoredConversation, ...scored } = await callerTurn(evalCase.query ?? "");
-  return scored;
+  return (await callerTurn(evalCase.query ?? "")).observation;
 };
 
 /** A runner port that drives voice cases only; a text case is an error for this case alone. */

@@ -627,7 +627,7 @@ describe("voice completions route when the vendor disconnects mid-reply", () => 
     registerOpenAiCompletionsRoute(router, {
       turns,
       admission: { handlers: [], callerOf: () => ({ workspaceId, agentId }), onTurnAccepted: () => undefined },
-      logger: { warn: vi.fn() },
+      logger: { debug: vi.fn(), warn: vi.fn() },
       disconnectAbortCeilingMs: ceilingMs,
     });
     app.use("/api/v1/agents", router);
@@ -721,7 +721,7 @@ describe("voice completions route keep-alive", () => {
         },
       },
       admission: { handlers: [], callerOf: () => ({ workspaceId, agentId }), onTurnAccepted: () => undefined },
-      logger: { warn: vi.fn() },
+      logger: { debug: vi.fn(), warn: vi.fn() },
     });
     app.use("/api/v1/agents", router);
     const server = app.listen(0, "127.0.0.1");
@@ -863,7 +863,7 @@ describe("voice completions route hang-up signal", () => {
     registerOpenAiCompletionsRoute(router, {
       turns,
       admission: { handlers: [], callerOf: () => ({ workspaceId, agentId }), onTurnAccepted: () => undefined },
-      logger: { warn: vi.fn() },
+      logger: { debug: vi.fn(), warn: vi.fn() },
     });
     app.use("/api/v1/agents", router);
     const server = app.listen(0, "127.0.0.1");

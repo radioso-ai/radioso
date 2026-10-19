@@ -1,0 +1,47 @@
+{
+  "passThreshold": 1,
+  "cases": {
+    "voice-callback-routine-requests-callback": {
+      "status": "pass"
+    },
+    "voice-greeting-quick-reply-no-bridge": {
+      "status": "pass"
+    },
+    "voice-human-owned-waiting-line": {
+      "status": "pass"
+    },
+    "voice-knowledge-bridge-on-search": {
+      "status": "pass"
+    },
+    "voice-teammate-reply-spoken-first": {
+      "status": "pass"
+    }
+  },
+  "latency": {
+    "voice-callback-routine-requests-callback": {
+      "firstByteMs": null,
+      "firstSpeechMs": null,
+      "turnMs": null
+    },
+    "voice-greeting-quick-reply-no-bridge": {
+      "firstByteMs": null,
+      "firstSpeechMs": null,
+      "turnMs": null
+    },
+    "voice-human-owned-waiting-line": {
+      "firstByteMs": null,
+      "firstSpeechMs": null,
+      "turnMs": null
+    },
+    "voice-knowledge-bridge-on-search": {
+      "firstByteMs": null,
+      "firstSpeechMs": null,
+      "turnMs": null
+    },
+    "voice-teammate-reply-spoken-first": {
+      "firstByteMs": null,
+      "firstSpeechMs": null,
+      "turnMs": null
+    }
+  }
+}

@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
+import { createTestApp } from "../support/testApp.js";
+import { openVoiceRuntime } from "../support/voiceRuntime.js";
 
 type HistoryMessage = { id: string; source: string; content: string; speech?: { state: string; spokenAt?: string } };
 
@@ -16,26 +17,16 @@ const WAITING_LINE = "Thanks for waiting, a teammate is joining.";
 
 const callWorkspace = async () => {
   // Chat's line for a turn a person owns before a teammate has written in the conversation.
-  const { app, dependencies, repositories } = createTestApp({ handoffWaitingMessageGenerator: { generate: async () => WAITING_LINE } });
-  const session = await issueTestSession(app, `voice-reply-${randomUUID()}@example.com`);
-  const dashboard = adminSessionHeaders(session);
-  const agents = await request(app).get("/api/v1/agents").set(dashboard).expect(200);
-  const agentId = (agents.body.agents as Array<{ id: string; isDefault: boolean }>).find((agent) => agent.isDefault)!.id;
-  const runtimeCredential = await dependencies.accessGrantService.issueGrant({
-    agentId,
-    workspaceId: session.workspaceId,
-    principalKind: "agent-api",
-    channel: "agent-api",
-    originConstraint: { mode: "allow-all", origins: [] },
-    expiresAt: new Date(Date.now() + 600_000),
-  });
+  const testApp = createTestApp({ handoffWaitingMessageGenerator: { generate: async () => WAITING_LINE } });
+  const { app, repositories } = testApp;
+  const { session, dashboard, agentId, runtimeToken } = await openVoiceRuntime(testApp, { emailPrefix: "voice-reply" });
   const sessionKey = randomUUID();
 
   /** One caller utterance as the voice runtime sends it; resolves what the caller hears. */
   const callerSays = async (utterance: string) => {
     const response = await request(app)
       .post(`/api/v1/agents/${agentId}/voice/elevenlabs/v1/chat/completions`)
-      .set("Authorization", `Bearer ${runtimeCredential.token}`)
+      .set("Authorization", `Bearer ${runtimeToken}`)
       .send({ messages: [{ role: "user", content: utterance }], stream: false, elevenlabs_extra_body: { session_key: sessionKey } })
       .expect(200);
     return { heard: response.body.choices[0].message.content as string, outcome: response.headers["x-radioso-voice-outcome"] };
@@ -44,7 +35,7 @@ const callWorkspace = async () => {
   const callerSaysStreaming = async (utterance: string) => {
     const response = await request(app)
       .post(`/api/v1/agents/${agentId}/voice/elevenlabs/v1/chat/completions`)
-      .set("Authorization", `Bearer ${runtimeCredential.token}`)
+      .set("Authorization", `Bearer ${runtimeToken}`)
       .send({ messages: [{ role: "user", content: utterance }], stream: true, elevenlabs_extra_body: { session_key: sessionKey } })
       .buffer(true)
       .parse((res, done) => {

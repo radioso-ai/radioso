@@ -9,6 +9,7 @@ import { renderRoutineInvocation } from "../../routines/public.js";
 import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import type { EvalRunRoutineStartState } from "../domain/types.js";
 import type { SuiteAssertion } from "./scoring.js";
+import { VOICE_OUTCOME_KINDS } from "./voiceAssertions.js";
 
 /**
  * A conversation-quality case is a committed, version-controlled unit of expected
@@ -29,6 +30,31 @@ import type { SuiteAssertion } from "./scoring.js";
  * two samples of five and still pass.
  */
 export const ZERO_TOLERANCE_JUDGE_TAG = "judge-zero-tolerance";
+
+/** One thing that happens on a voice case's call before its scored turn. */
+export type ConversationQualityVoiceCallStep =
+  /** The caller says this, as one turn of its own. */
+  | { kind: "caller"; utterance: string }
+  /** A teammate takes the conversation over from the Inbox. */
+  | { kind: "teammate_takes_over" }
+  /** A teammate writes this reply from the Inbox. */
+  | { kind: "teammate_replies"; text: string }
+  /** A teammate hands the conversation back to the agent. */
+  | { kind: "teammate_hands_back" };
+
+/** A voice case's call: what happened on it before the scored turn, and how it was started. */
+export interface ConversationQualityVoiceCall {
+  /** The session's language tag, as the page that starts the call sends it; absent: none is sent. */
+  locale?: string;
+  /** The call before the scored turn, in order: the caller's earlier turns and a teammate's Inbox actions. */
+  before?: ConversationQualityVoiceCallStep[];
+  /**
+   * The scenario is a brain slower than the turn policy's deadlines (a composer that stays silent,
+   * a reply that stalls past the turn limit), which only the deterministic half's scripted brain
+   * is on demand. The live run leaves the case out.
+   */
+  requiresScriptedTiming?: boolean;
+}
 
 export interface ConversationQualityCase {
   id: string;
@@ -60,10 +86,17 @@ export interface ConversationQualityCase {
   /** Seed a mid-routine position so the agent resumes instead of activating fresh. */
   routineStartState?: EvalRunRoutineStartState;
   agentConfigOverride?: Partial<InternalAgentConfig>;
+  /**
+   * Drives the case as a voice call: `query` is the scored caller turn, sent through a voice
+   * runtime's door after the call's `before` steps, and the case asserts what the runtime
+   * received. A voice case takes no other turn input. Absent, the case is a text turn.
+   */
+  voice?: ConversationQualityVoiceCall;
   assertions: SuiteAssertion[];
 }
 
 const answerMatchMode = z.enum(["substring", "regex"]);
+const voicePieceKind = z.enum(["bridge", "speech", "fallback"]);
 const metadataValue = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 const pageContextSchema = z.object({
   pageUrl: z.string().trim().max(2048).nullable().optional(),
@@ -109,10 +142,45 @@ const suiteAssertionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("turn_answer_coverage"), coverage: z.enum(["answered", "partial", "unanswered", "unclear"]) }),
   z.object({ type: z.literal("turn_persists_no_reply") }),
   z.object({ type: z.literal("turn_reply_source"), source: z.enum(["turn_planning", "composer"]) }),
+  z.object({ type: z.literal("voice_turn_well_formed") }),
+  z.object({ type: z.literal("voice_bridge_spoken"), spoken: z.boolean() }),
+  z.object({ type: z.literal("voice_outcome"), kind: z.enum(VOICE_OUTCOME_KINDS) }),
+  z.object({ type: z.literal("voice_speech_order"), order: z.array(voicePieceKind) }),
+  z.object({ type: z.literal("voice_speech_piece_count"), count: z.number().int().nonnegative() }),
+  z.object({ type: z.literal("voice_first_speech"), text: z.string().trim().min(1) }),
+  z.object({ type: z.literal("voice_turn_log"), fields: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])) }),
 ]);
+
+const voiceCallStepSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("caller"), utterance: z.string().trim().min(1) }),
+  z.object({ kind: z.literal("teammate_takes_over") }),
+  z.object({ kind: z.literal("teammate_replies"), text: z.string().trim().min(1) }),
+  z.object({ kind: z.literal("teammate_hands_back") }),
+]);
+
+const voiceCallSchema = z.object({
+  locale: z.string().trim().min(1).max(35).optional(),
+  before: z.array(voiceCallStepSchema).optional(),
+  requiresScriptedTiming: z.boolean().optional(),
+}).strict().refine(
+  // The call's conversation exists once the caller's first turn has run; a teammate acts on it.
+  (call) => call.before === undefined || call.before.length === 0 || call.before[0]?.kind === "caller",
+  { message: "a teammate acts on the call's conversation, so the caller speaks first", path: ["before"] },
+);
 
 /** Turn inputs a review turn has no way to take: it answers a recorded message with its history. */
 const REVIEW_UNSUPPORTED_INPUTS = [
+  "routineInvocation",
+  "routineStartState",
+  "pageContext",
+  "clientContextCapabilities",
+  "agentConfigOverride",
+] as const;
+
+/** Turn inputs a voice call has no way to take: the runtime sends the caller's words and its session. */
+const VOICE_UNSUPPORTED_INPUTS = [
+  "executionMode",
+  "history",
   "routineInvocation",
   "routineStartState",
   "pageContext",
@@ -138,6 +206,7 @@ const conversationQualityCaseSchema = z.object({
   clientContextCapabilities: clientContextCapabilitiesSchema.optional(),
   routineStartState: z.record(z.unknown()).optional(),
   agentConfigOverride: z.record(z.unknown()).optional(),
+  voice: voiceCallSchema.optional(),
   assertions: z.array(suiteAssertionSchema),
 }).refine(
   (value) => (value.query === undefined) !== (value.routineInvocation === undefined),
@@ -145,6 +214,9 @@ const conversationQualityCaseSchema = z.object({
 ).refine(
   (value) => value.executionMode !== "review" || REVIEW_UNSUPPORTED_INPUTS.every((input) => value[input] === undefined),
   { message: `a review case takes only query and history, not ${REVIEW_UNSUPPORTED_INPUTS.join(", ")}`, path: ["executionMode"] },
+).refine(
+  (value) => value.voice === undefined || (value.query !== undefined && VOICE_UNSUPPORTED_INPUTS.every((input) => value[input] === undefined)),
+  { message: `a voice case takes only query and voice, not ${VOICE_UNSUPPORTED_INPUTS.join(", ")}`, path: ["voice"] },
 );
 
 /**

@@ -4,7 +4,8 @@ import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
 import type { ChatGateway } from "../../src/modules/chat/contracts/index.js";
-import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
+import { createTestApp } from "../support/testApp.js";
+import { openVoiceRuntime } from "../support/voiceRuntime.js";
 
 const ENGLISH_BRIDGE = "Let me check that for you, it only takes a moment.";
 const ITALIAN_BRIDGE = "Controllo subito per te, ci vorrà solo un momento.";
@@ -81,20 +82,9 @@ const languageSwitch = (language: string) => [
 
 const call = async () => {
   const model = modelThatWaitsForTheBridge();
-  const { app, dependencies } = createTestApp({ chatGateway: model.gateway });
-  const session = await issueTestSession(app, `voice-language-${randomUUID()}@example.com`);
-  const dashboard = adminSessionHeaders(session);
-  const agents = await request(app).get("/api/v1/agents").set(dashboard).expect(200);
-  const agentId = (agents.body.agents as Array<{ id: string; isDefault: boolean }>).find((agent) => agent.isDefault)!.id;
-  await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({ assistantDefaultLocale: "en", voice }).expect(200);
-  const runtimeCredential = await dependencies.accessGrantService.issueGrant({
-    agentId,
-    workspaceId: session.workspaceId,
-    principalKind: "agent-api",
-    channel: "agent-api",
-    originConstraint: { mode: "allow-all", origins: [] },
-    expiresAt: new Date(Date.now() + 600_000),
-  });
+  const testApp = createTestApp({ chatGateway: model.gateway });
+  const { app, dependencies } = testApp;
+  const { dashboard, agentId, runtimeToken } = await openVoiceRuntime(testApp, { emailPrefix: "voice-language", agentSettings: { assistantDefaultLocale: "en", voice } });
   const chatTurns = vi.spyOn(dependencies.assistantChatService, "streamAnswer");
   const sessionKey = randomUUID();
 
@@ -106,7 +96,7 @@ const call = async () => {
     const bridgeHeard = model.nextBridge();
     const response = await request(app)
       .post(`/api/v1/agents/${agentId}/voice/elevenlabs/v1/chat/completions`)
-      .set("Authorization", `Bearer ${runtimeCredential.token}`)
+      .set("Authorization", `Bearer ${runtimeToken}`)
       .send({ messages, stream: true, elevenlabs_extra_body: { session_key: sessionKey, locale: "en" } })
       .buffer(true)
       .parse((res, done) => {
@@ -131,7 +121,7 @@ const call = async () => {
   /** A request without the bridge wait, as the runtime sends it; resolves the raw response. */
   const runtimeSendsRaw = (messages: unknown[], stream: boolean) => request(app)
     .post(`/api/v1/agents/${agentId}/voice/elevenlabs/v1/chat/completions`)
-    .set("Authorization", `Bearer ${runtimeCredential.token}`)
+    .set("Authorization", `Bearer ${runtimeToken}`)
     .send({ messages, stream, elevenlabs_extra_body: { session_key: sessionKey, locale: "en" } })
     .expect(200);
   const conversationMessages = async () => {

@@ -7,7 +7,8 @@ import type { ChatGateway } from "../../src/modules/chat/contracts/index.js";
 import type { ChatGatewayInput } from "../../src/modules/chat/contracts/chatGateway.js";
 import type { CutReplyStore } from "../../src/modules/chat/services/chatTurnLifecycle.js";
 import { InMemoryCutReplyStore } from "../support/fakes.js";
-import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
+import { createTestApp } from "../support/testApp.js";
+import { openVoiceRuntime } from "../support/voiceRuntime.js";
 
 type HistoryMessage = {
   id: string;
@@ -51,25 +52,15 @@ const stallingModel = () => {
 /** A call on the workspace's default agent, its runtime's requests for one session key, and the call as the Inbox reads it. */
 const call = async (model: ReturnType<typeof stallingModel>, cutReplyStore?: (inner: CutReplyStore) => CutReplyStore) => {
   let store: CutReplyStore | undefined;
-  const { app, dependencies, repositories } = createTestApp({
+  const testApp = createTestApp({
     chatGateway: model.gateway,
     ...(cutReplyStore ? { cutReplyStore: { storeCutReply: (input) => store!.storeCutReply(input) } } : {}),
   });
+  const { app, repositories } = testApp;
   if (cutReplyStore) {
     store = cutReplyStore(new InMemoryCutReplyStore(repositories.messageRepository, repositories.conversationRepository, repositories.auditEventRepository));
   }
-  const session = await issueTestSession(app, `voice-cut-${randomUUID()}@example.com`);
-  const dashboard = adminSessionHeaders(session);
-  const agents = await request(app).get("/api/v1/agents").set(dashboard).expect(200);
-  const agentId = (agents.body.agents as Array<{ id: string; isDefault: boolean }>).find((agent) => agent.isDefault)!.id;
-  const runtimeCredential = await dependencies.accessGrantService.issueGrant({
-    agentId,
-    workspaceId: session.workspaceId,
-    principalKind: "agent-api",
-    channel: "agent-api",
-    originConstraint: { mode: "allow-all", origins: [] },
-    expiresAt: new Date(Date.now() + 600_000),
-  });
+  const { session, dashboard, agentId, runtimeToken } = await openVoiceRuntime(testApp, { emailPrefix: "voice-cut" });
   const sessionKey = randomUUID();
 
   /**
@@ -81,7 +72,7 @@ const call = async (model: ReturnType<typeof stallingModel>, cutReplyStore?: (in
     const received = new Promise<void>((resolve) => { reached = resolve; });
     const heard = request(app)
       .post(`/api/v1/agents/${agentId}/voice/elevenlabs/v1/chat/completions`)
-      .set("Authorization", `Bearer ${runtimeCredential.token}`)
+      .set("Authorization", `Bearer ${runtimeToken}`)
       .send({ messages, stream: options.stream, elevenlabs_extra_body: { session_key: sessionKey } })
       .buffer(true)
       .parse((res, done) => {

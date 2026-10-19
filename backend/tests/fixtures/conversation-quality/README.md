@@ -110,12 +110,17 @@ pnpm run evals:voice -- --tag routine # only cases carrying a tag
 `voice-baseline.json` is a baseline file like `baseline.json`, plus a `latency` map: per case, the
 medians the recording run measured, in ms, for `firstByteMs`, `firstSpeechMs` (the first piece that
 is not the bridge line) and `turnMs`. Statuses gate exactly as the text cases' do. Latency only
-feeds the report: each case's median times across its samples, p50 and p95 across every sample of
-every case, and a warning, which does not fail the run, for a case whose median time to first
-speech is more than twice its baseline median. The committed file expects `pass` from each live
-case and holds `null` latency until a recording run fills it, so the first
-`pnpm run evals:voice:update-baseline` after a known-good run records the pass rates and medians the
-later runs compare against.
+feeds the report: each case's median times across its samples, every count out of all its samples
+(an errored one included), p50 and p95 across every sample of every case, and a warning, which does
+not fail the run, for a case whose median time to first speech is more than twice its baseline
+median. A case with no recorded latency (no entry, or every time `null`) is named in a notice in
+the report and in the workflow's step summary.
+
+Record the baseline in CI, on the runner the nightly uses, because latency measured on a laptop is
+not the nightly's: dispatch the Conversation Quality Evals workflow with `record_voice_baseline`,
+which runs the voice step with `--update-baseline` and uploads `voice-baseline.json` as the
+`voice-eval-baseline` artifact, and commit that file. A status-only change, such as a new case's
+expected `pass`, can be written by hand, with its latency left `null` for the next recording run.
 
 ## Review cases
 

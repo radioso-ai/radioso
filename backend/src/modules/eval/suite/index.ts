@@ -34,10 +34,17 @@ export {
 } from "./sampling.js";
 export type { ConversationQualityRunnerPort } from "./runnerPort.js";
 export type { ConversationQualityObservedOutput } from "./observedOutput.js";
-export { VOICE_OUTCOME_KINDS, type VoicePieceKind, type VoiceTurnObservation } from "./voiceAssertions.js";
+export {
+  scopeVoiceCasesForLiveRun,
+  VOICE_OUTCOME_KINDS,
+  type VoicePieceKind,
+  type VoiceTurnObservation,
+} from "./voiceAssertions.js";
 export {
   formatVoiceLatencyReport,
   recordVoiceBaseline,
   summarizeVoiceCase,
+  unrecordedLatencyNotice,
   type VoiceBaselineFile,
+  type VoiceCaseSample,
 } from "./voiceReport.js";

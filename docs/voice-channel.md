@@ -1304,14 +1304,15 @@ its case expects a bridge, or a different outcome. Its report lists each
 case's time to first byte, to the bridge line, to first speech and to the end
 of the turn, with p50 and p95 across cases. Latency never fails the run; a
 case whose median time to first speech is more than twice its baseline median
-is printed as a warning. To run it yourself you need Postgres, `OPENAI_API_KEY`
-and a running document worker:
+is printed as a warning. The latency baseline is recorded in CI, so it is the
+nightly runner's: dispatch the workflow with **record_voice_baseline** and
+commit the `voice-baseline.json` it uploads. To run the cases yourself you need
+Postgres, `OPENAI_API_KEY` and a running document worker:
 
 ```bash
 cd backend
 pnpm run evals:voice                  # one sample per case
 pnpm run evals:voice:ci               # three samples, as the nightly runs
-pnpm run evals:voice:update-baseline  # re-record the statuses and latency medians
 ```
 
 ## Limits and failure modes

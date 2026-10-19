@@ -148,7 +148,7 @@ const suiteAssertionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("turn_persists_no_reply") }),
   z.object({ type: z.literal("turn_reply_source"), source: z.enum(["turn_planning", "composer"]) }),
   z.object({ type: z.literal("voice_turn_well_formed") }),
-  z.object({ type: z.literal("voice_bridge_spoken"), spoken: z.boolean() }),
+  z.object({ type: z.literal("voice_bridge_spoken"), spoken: z.boolean(), latencyDependent: z.literal(true).optional() }),
   z.object({ type: z.literal("voice_outcome"), kind: z.enum(VOICE_OUTCOME_KINDS) }),
   z.object({ type: z.literal("voice_speech_order"), order: z.array(voicePieceKind) }),
   z.object({ type: z.literal("voice_speech_piece_count"), count: z.number().int().nonnegative() }),

@@ -94,7 +94,7 @@ export const conversationQualityVoiceCases: ConversationQualityCase[] = [
     query: "Hi there!",
     assertions: [
       { type: "voice_turn_well_formed" },
-      { type: "voice_bridge_spoken", spoken: false },
+      { type: "voice_bridge_spoken", spoken: false, latencyDependent: true },
       { type: "voice_speech_order", order: ["speech"] },
       { type: "voice_speech_piece_count", count: 1 },
       { type: "voice_outcome", kind: "continue" },

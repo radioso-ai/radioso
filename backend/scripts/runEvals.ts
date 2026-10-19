@@ -45,7 +45,7 @@
  */
 import { randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -70,12 +70,14 @@ import {
   parseConversationQualityCases,
   recordVoiceBaseline,
   runConversationQualitySuiteSampled,
+  scopeVoiceCasesForLiveRun,
   summarizeRun,
   summarizeVoiceCase,
+  unrecordedLatencyNotice,
   type BaselineFile,
   type ConversationQualityCase,
   type VoiceBaselineFile,
-  type VoiceTurnObservation,
+  type VoiceCaseSample,
 } from "../src/modules/eval/suite/index.js";
 import type { OwnershipActor } from "../src/modules/handoff/public.js";
 import { conversationQualityCases } from "../tests/fixtures/conversation-quality/cases.js";
@@ -472,27 +474,27 @@ const gateOnBaseline = (baseline: BaselineFile, diff: ReturnType<typeof diffAgai
   }
 };
 
-/** The voice assertions a live run gates on: the wire's view of the behaviour, never its wording or the turn's log. */
-const LIVE_VOICE_ASSERTIONS = new Set<string>(["voice_turn_well_formed", "voice_bridge_spoken", "voice_outcome"]);
-
-/**
- * The voice cases a live run drives, scored on what it gates. A case whose scenario is a brain
- * slower than the turn policy's deadlines runs only in the deterministic half, which scripts one.
- */
-export const scopeVoiceCasesForLiveRun = (cases: readonly ConversationQualityCase[]): ConversationQualityCase[] =>
-  cases
-    .filter((evalCase) => evalCase.voice !== undefined && evalCase.voice.requiresScriptedTiming !== true)
-    .map((evalCase) => ({
-      ...evalCase,
-      assertions: evalCase.assertions.filter((assertion) => LIVE_VOICE_ASSERTIONS.has(assertion.type)),
-    }));
-
 const loadVoiceBaseline = (): VoiceBaselineFile => {
   try {
     const parsed = JSON.parse(readFileSync(VOICE_BASELINE_PATH, "utf8")) as Partial<VoiceBaselineFile>;
     return { generatedAt: parsed.generatedAt, passThreshold: parsed.passThreshold, cases: parsed.cases ?? {}, latency: parsed.latency ?? {} };
   } catch {
     return { cases: {}, latency: {} };
+  }
+};
+
+/**
+ * Adds the voice latency section to the GitHub Actions step summary when the run is a workflow
+ * step, with the missing-baseline notice as a warning annotation the run page shows.
+ */
+const writeStepSummary = (latencyReport: string, notice: string | null): void => {
+  const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+  if (!summaryPath) {
+    return;
+  }
+  appendFileSync(summaryPath, `## Voice cases\n\n${notice ? `> ${notice}\n\n` : ""}\`\`\`text\n${latencyReport}\n\`\`\`\n`);
+  if (notice) {
+    console.log(`::warning title=Voice latency baseline::${notice}`);
   }
 };
 
@@ -568,20 +570,26 @@ const runVoiceChannel = async (deps: Deps, flags: Flags, target: EvalTarget): Pr
     expiresAt: new Date(Date.now() + VOICE_CREDENTIAL_TTL_MS),
   });
   try {
-    const observations = new Map<string, VoiceTurnObservation[]>();
+    const samples = new Map<string, VoiceCaseSample[]>();
+    const keep = (caseId: string, sample: VoiceCaseSample): void => {
+      samples.set(caseId, [...(samples.get(caseId) ?? []), sample]);
+    };
     const { reports, outcomes } = await withServedApp(deps, (origin) => {
       const port = createVoiceCallRunnerPort({
         door: { origin, agentId: flags.agentId, token: credential.token },
         teammate,
         lines: voiceLineCatalog(conversationQualityVoiceSettings),
       });
-      // Keeps every sample's observation for the latency section; the sampler keeps only scores.
+      // Keeps every sample for the latency section, an errored one included; the sampler keeps only scores.
       const voice = async (evalCase: ConversationQualityCase) => {
-        const output = await port.voice!(evalCase);
-        if (output.voiceTurn) {
-          observations.set(evalCase.id, [...(observations.get(evalCase.id) ?? []), output.voiceTurn]);
+        try {
+          const output = await port.voice!(evalCase);
+          keep(evalCase.id, output.voiceTurn ?? { error: output.error?.message ?? "The runner observed no voice turn." });
+          return output;
+        } catch (error) {
+          keep(evalCase.id, { error: error instanceof Error ? error.message : "The runner threw a non-Error value." });
+          throw error;
         }
-        return output;
       };
       if (flags.samples > 1) {
         console.log(`Sampling each voice case ${flags.samples}× (pass threshold ${flags.passThreshold})…`);
@@ -594,10 +602,12 @@ const runVoiceChannel = async (deps: Deps, flags: Flags, target: EvalTarget): Pr
       });
     });
 
-    const latencies = cases.map((evalCase) => summarizeVoiceCase(evalCase.id, observations.get(evalCase.id) ?? []));
+    const latencies = cases.map((evalCase) => summarizeVoiceCase(evalCase.id, samples.get(evalCase.id) ?? []));
     const baseline = loadVoiceBaseline();
     const diff = diffAgainstBaseline(outcomes, baseline, { passThreshold: flags.passThreshold });
-    console.log(`\n${formatReport(reports, diff, summarizeRun(outcomes))}\n\n${formatVoiceLatencyReport(latencies, baseline.latency)}\n`);
+    const latencyReport = formatVoiceLatencyReport(latencies, baseline.latency);
+    console.log(`\n${formatReport(reports, diff, summarizeRun(outcomes))}\n\n${latencyReport}\n`);
+    writeStepSummary(latencyReport, unrecordedLatencyNotice(latencies, baseline.latency));
 
     if (flags.updateBaseline) {
       if (flags.tags.length > 0 && baseline.passThreshold !== undefined && baseline.passThreshold !== flags.passThreshold) {

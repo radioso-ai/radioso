@@ -173,7 +173,55 @@ describe("RoutineNextStepSelector", () => {
     const decision = await selector.select({ routine, state, currentStep, transitions, turn });
     expect(gw.complete).toHaveBeenCalledTimes(2);
     expect(decision.nextStepId).toBe("ask_email");
-    expect(onUnreadable).toHaveBeenNthCalledWith(1, { routineId: routine.id, stepId: currentStep.id, reason: "no_json_object", attempt: 1 });
-    expect(onUnreadable).toHaveBeenNthCalledWith(2, { routineId: routine.id, stepId: currentStep.id, reason: "no_json_object", attempt: 2 });
+    expect(decision.selection).toMatchObject({ unreadableReason: "no_json_object", retried: true });
+    expect(onUnreadable).toHaveBeenNthCalledWith(1, { routineId: routine.id, stepId: currentStep.id, sessionId: state.sessionId, reason: "no_json_object", attempt: 1 });
+    expect(onUnreadable).toHaveBeenNthCalledWith(2, { routineId: routine.id, stepId: currentStep.id, sessionId: state.sessionId, reason: "no_json_object", attempt: 2 });
+  });
+
+  it("keeps the unreadable decision, rather than throwing, when the retry call itself fails for a reason other than cancellation", async () => {
+    let callCount = 0;
+    const gw: ConversationModelGateway = {
+      complete: vi.fn(async () => {
+        callCount += 1;
+        if (callCount === 1) {
+          return { text: "not json at all" };
+        }
+        throw new Error("provider_timeout");
+      }),
+    };
+
+    const decision = await new RoutineNextStepSelector(gw).select({ routine, state, currentStep, transitions, turn });
+
+    expect(decision.nextStepId).toBe("ask_email");
+    expect(decision.selection).toMatchObject({ outcome: "unreadable", unreadableReason: "no_json_object", retried: true });
+  });
+
+  it("rethrows an aborted retry instead of swallowing the cancellation", async () => {
+    const abortError = Object.assign(new Error("aborted"), { name: "AbortError" });
+    let callCount = 0;
+    const gw: ConversationModelGateway = {
+      complete: vi.fn(async () => {
+        callCount += 1;
+        if (callCount === 1) {
+          return { text: "not json at all" };
+        }
+        throw abortError;
+      }),
+    };
+
+    await expect(
+      new RoutineNextStepSelector(gw).select({ routine, state, currentStep, transitions, turn }),
+    ).rejects.toBe(abortError);
+  });
+
+  it("does not fail the turn when the onUnreadable observer throws", async () => {
+    const onUnreadable = vi.fn(() => {
+      throw new Error("observer boom");
+    });
+    const gw = gateway("not json at all");
+
+    await expect(
+      new RoutineNextStepSelector(gw, { onUnreadable }).select({ routine, state, currentStep, transitions, turn }),
+    ).resolves.toMatchObject({ nextStepId: "ask_email" });
   });
 });

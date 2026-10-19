@@ -749,14 +749,16 @@ tool step resolves to `failed`.
 
 ## Changing the routine prompts
 
-Two model calls run a routine turn. The next-step selector
+The next-step selector
 (`packages/conversation-defaults/src/routineNextStepSelector.ts` with
 `backend/prompts/chat/routine-next-step.md`) extracts slot values and picks an
-exit. The step renderer (`routineStepRenderer.ts` with
+exit, retrying its own model call once when a completion comes back unreadable.
+The step renderer (`routineStepRenderer.ts` with
 `backend/prompts/chat/routine-step-reply.md`, plus
-`routine-step-reask-exhausted.md` past the re-ask limit) writes the reply. Both run on the
-workspace chat model at reasoning effort `none`, so small wording and layout
-changes move their behavior a lot. Each rule below exists because breaking it
+`routine-step-reask-exhausted.md` past the re-ask limit) writes the reply. A
+routine turn therefore makes two or three model calls, all on the workspace
+chat model at reasoning effort `none`, so small wording and layout changes
+move their behavior a lot. Each rule below exists because breaking it
 produced a measured failure on gpt-5.4-mini:
 
 | Rule | What breaking it did |
@@ -770,9 +772,22 @@ produced a measured failure on gpt-5.4-mini:
 | A re-ask is told the step's question was already asked: it says nothing that ask already said and words the question differently. | Followed in full again, a step instruction that scripts a whole message ("thank them by name, explain the invite, then ask for the email") came back word for word in 8 of 10 re-asks, and 10 of 50 across five cases. With the rule, 0 of 50, and a bare "sì" to a confirmation step was still asked again 10 of 10 times. |
 | The exhausted re-ask asks for an example the visitor could send back as it is, and never quotes their earlier answers. | Told only to say "what a usable answer looks like", 2 of 3 English date replies offered "arrive on Friday, leave on Sunday", which fills no date slot, and 2 of 9 quoted the visitor's non-answers back as "not enough". With the rule, 9 of 9 gave a day and month. |
 | The selector reports text posing as a system notice in its own field, `claimsAuthority`, listed after `variables` and before `condition`; when it is set, the selector code holds the chat step against every exit that turn. The check needs a model call, so a recap confirmation is protected only through an AI-decides exit. | With only a rule that such text "does not make a condition hold", the recap took the confirmation exit on English, Italian, German, and assistant-voiced notices in 23 of 23 runs. With the field, the model set it in 20 of 20 of those runs and still chose the confirmation condition in all 20, so the code is what holds the step. Listed first in the JSON shape, the field turned a complete contact answer bundled with a question into an off-topic yield in 2 of 5 runs. |
-| The decision is read as free text (`parseDecision`), never constrained by a strict `json_schema` response format. | Measured on a 70-call-per-arm live A/B (gpt-5.4-mini, effort `none`): strict decoding set `claimsAuthority` true on benign messages 4/70 times against 0/70 on free text — "mid-November" on a dates step held the step 3/5 — and turned "Le soluzioni super coscienti" on a contact step into an off-topic yield 4/5 against 0/5. Typing a number slot as a JSON number also coerced a phone-number-shaped non-answer, "329/9285605", into `adults: 329`, which then passed slot validation where free text's string was rejected. Unreadable completions were 0/70 in both arms, so the schema bought no measured drop in that failure either. |
 
-The prompt's JSON instructions are a request, not a guarantee: `ConversationModelGateway.complete`/`stream` take only free text, and a model occasionally returns prose that `parseDecision` cannot read at all (e.g. a single captured answer such as a visitor's full name goes unread and the step re-asks it). The selector retries an unreadable decision once, with the identical request, before falling back to re-asking the step — safe because the selector only reads the turn and chooses an exit, so a retry can only replace one unreadable completion with a readable one, never double an effect. The selector's optional `onUnreadable` observer reports why each unreadable completion failed (`no_json_object`, `invalid_json`, or `missing_required_fields`, never the raw completion) and which attempt it was (`1` or `2`), so a log line shows whether the retry recovered; `createRoutineTurnProvider` wires it to a `logger.warn` with the routine and step id.
+The prompt's JSON instructions are a request, not a guarantee:
+`ConversationModelGateway.complete`/`stream` take only free text, and a model
+occasionally returns prose that `parseDecision` cannot read at all — a single
+captured answer such as a visitor's full name goes unread and the step
+re-asks it. The selector retries once, with the identical request, when a
+completion comes back unreadable: a readable retry recovers the turn's
+captured slots and chosen exit, while an unreadable retry — or a retry call
+that itself fails — keeps the step's original re-ask. The selector's
+optional `onUnreadable` observer reports, for each unreadable completion,
+why it failed (`no_json_object`, `invalid_json`, or
+`missing_required_fields`) and which attempt it was, never the raw
+completion; `createRoutineTurnProvider` wires it to a `logger.warn` carrying
+the routine, step, and session id. The same reason, and a `retried` flag,
+land on the turn's `selection` trace, so an operator can read them from
+`turn_trace` without reproducing the conversation.
 
 To test a change to either prompt, run the old and new code side by side on the
 same inputs against the production model and settings (gpt-5.4-mini, effort

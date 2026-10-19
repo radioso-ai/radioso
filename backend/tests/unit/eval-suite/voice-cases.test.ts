@@ -281,5 +281,6 @@ describe("voice cases over the test app (deterministic half)", () => {
       }
       expect(turn?.timings).toMatchObject(scriptedBrains[evalCase.id].times);
     },
+    CASE_TIMEOUT_MS,
   );
 });

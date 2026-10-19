@@ -5,7 +5,14 @@ import type {
   BackgroundJobSkipped,
   BackgroundJobStore,
 } from "../../shared/background-jobs/index.js";
-import { currentTimestamp, nowMinusSeconds, nowPlusSeconds, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import {
+  exportJson,
+  exportTimestamp,
+  type DataSubjectDataExporter,
+  type DataSubjectExportRecord,
+  type DataSubjectExportScope,
+} from "../../shared/domain/dataSubjectAccess.js";
+import { anyOf, currentTimestamp, nowMinusSeconds, nowPlusSeconds, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 export type ActionRequestStatus = "pending" | "in_progress" | "dispatched" | "failed" | "skipped";
@@ -349,3 +356,34 @@ const mapJobClaim = (row: JobClaimRow, availableAt: Date, kind: string): Backgro
   availableAt: new Date(availableAt),
 });
 
+
+/**
+ * The export's `routine_actions` section: what a conversation's routines handed on, such as an
+ * operator notice carrying the values a routine collected, or a skill call's input. It outlives the
+ * routine state the values came from.
+ */
+export class ActionRequestExporter implements DataSubjectDataExporter {
+  readonly section = "routine_actions";
+
+  constructor(private readonly db: Db) {}
+
+  async export(scope: DataSubjectExportScope): Promise<DataSubjectExportRecord[]> {
+    if (scope.conversationIds.length === 0) return [];
+    const rows = await this.db
+      .selectFrom("routine_action_requests")
+      .select(["conversation_id", "type", "skill_name", "status", "payload", "created_at"])
+      .where("workspace_id", "=", scope.workspaceId)
+      .where((eb) => anyOf(eb.ref("conversation_id"), scope.conversationIds, "uuid[]"))
+      .orderBy("created_at")
+      .orderBy("id")
+      .execute();
+    return rows.map((row) => ({
+      conversationId: row.conversation_id,
+      type: row.type,
+      skillName: row.skill_name,
+      status: row.status,
+      payload: exportJson(row.payload),
+      createdAt: exportTimestamp(row.created_at),
+    }));
+  }
+}

@@ -1,0 +1,218 @@
+---
+title: "Answering a data subject request"
+description: "How to find one person's conversations across the website, email and Slack, export what Radioso holds about them as JSON, and erase it."
+last_updated: 2026-10-19
+---
+
+# Answering a data subject request
+
+When someone asks what your agent holds about them, asks for a copy to take elsewhere, or asks you to delete it, you need everything Radioso stores about that person from every channel they used. A data subject request gets you there in three steps: find the identities the person used, confirm which are really theirs, then export or erase what those identities reach.
+
+The running example on this page is Jane. Your site verifies her on the website as `jane@example.com`, she has emailed your support mailbox from the same address, and she once asked your agent a question in Slack.
+
+Data subject requests run over the API, so a request pipeline can automate them. Each step is a `POST`, which keeps the person's address out of URLs and access logs.
+
+## Find the person
+
+A person shows up differently on each channel:
+
+- **Website**: a visitor record. When your site verifies visitors, the record carries the customer id your site gave them.
+- **Email**: the address they write from, across every mailbox of the workspace.
+- **Slack**: the member who started a thread with your agent.
+
+Send what you know about the person:
+
+```http
+POST /api/v1/privacy/data-subjects/lookup
+Content-Type: application/json
+
+{ "query": "jane@example.com" }
+```
+
+Because Jane's customer id is also her address, the lookup finds two identities:
+
+```json
+{
+  "identities": [
+    {
+      "identity": { "kind": "web_visitor", "key": "9383997c-ce37-4efc-bf29-ebf393f7e268" },
+      "channel": "web",
+      "label": "jane@example.com",
+      "conversationCount": 1,
+      "firstSeenAt": "2026-09-01T08:12:40.000Z",
+      "lastSeenAt": "2026-10-02T17:03:11.000Z"
+    },
+    {
+      "identity": { "kind": "email_address", "key": "jane@example.com" },
+      "channel": "email",
+      "label": "jane@example.com",
+      "conversationCount": 2,
+      "firstSeenAt": "2026-09-14T09:30:02.000Z",
+      "lastSeenAt": "2026-10-11T06:45:57.000Z"
+    }
+  ]
+}
+```
+
+Matching is exact, so a lookup never surfaces someone who merely shares part of a name. An email address matches whatever its case. A verified customer id matches exactly as your site set it. A Slack member id is the `U…` id from the person's Slack profile (**⋯ → Copy member ID**).
+
+Run one lookup per identifier you have. For Jane's Slack question, look up her member id:
+
+```http
+POST /api/v1/privacy/data-subjects/lookup
+Content-Type: application/json
+
+{ "query": "U0JANE" }
+```
+
+A Slack identity's key names the Slack workspace and the member, for example `T0ACME:U0JANE`.
+
+## Confirm which identities are theirs
+
+Radioso never merges identities on its own. Two identities with the same address can still be two people, a shared family inbox for instance. Check each candidate's channel, conversation count and dates, and keep only the ones you are sure belong to the person. Every later step takes that confirmed list:
+
+```http
+POST /api/v1/privacy/data-subjects/conversations
+Content-Type: application/json
+
+{
+  "identities": [
+    { "kind": "web_visitor", "key": "9383997c-ce37-4efc-bf29-ebf393f7e268" },
+    { "kind": "email_address", "key": "jane@example.com" },
+    { "kind": "slack_user", "key": "T0ACME:U0JANE" }
+  ]
+}
+```
+
+The answer lists the conversations those identities reach, each once, latest activity first, with its channel, title, start, last activity and message count. Open any of them in the Inbox to check it really is the person before you export or erase anything.
+
+## Export what Radioso holds
+
+Send the same confirmed identities to the export:
+
+```http
+POST /api/v1/privacy/data-subjects/export
+Content-Type: application/json
+
+{ "identities": [ ... ] }
+```
+
+The answer is one JSON document. Save it and send it to the person:
+
+```json
+{
+  "format": "radioso.data_subject_export",
+  "formatVersion": 1,
+  "exportedAt": "2026-10-19T12:00:00.000Z",
+  "workspaceId": "5d7f0c7e-2c41-4a5e-9a51-0e1c7b4c2f10",
+  "identities": [ { "kind": "email_address", "key": "jane@example.com" } ],
+  "sections": {
+    "conversations": [
+      {
+        "id": "b8f1d6a2-6c2e-4a0f-9a8e-3f9e2d1c7b55",
+        "channel": "email",
+        "title": "Where is order 1182?",
+        "startedAt": "2026-09-14T09:30:02.000Z",
+        "messages": [
+          { "role": "user", "content": "Where is order 1182?", "createdAt": "2026-09-14T09:30:02.000Z" },
+          { "role": "assistant", "content": "It left our warehouse on Friday.", "createdAt": "2026-09-14T09:30:09.000Z" }
+        ]
+      }
+    ],
+    "email_messages": [
+      {
+        "conversationId": "b8f1d6a2-6c2e-4a0f-9a8e-3f9e2d1c7b55",
+        "direction": "inbound",
+        "subject": "Where is order 1182?",
+        "senderAddress": "jane@example.com",
+        "senderDisplayName": "Jane Doe",
+        "ccAddresses": [],
+        "attachments": [],
+        "createdAt": "2026-09-14T09:30:02.000Z"
+      }
+    ],
+    "routine_values": [],
+    "routine_actions": [],
+    "conversation_summaries": [],
+    "context_values": [],
+    "visitors": [],
+    "answer_feedback": []
+  }
+}
+```
+
+Each section is a list of records, and every section is present even when it holds nothing for the person:
+
+| Section | What it holds |
+|---|---|
+| `conversations` | Each conversation with its channel, title, the page it started on, the request facts observed when it opened (IP address, country, user agent), the channel's own ids (mailbox, Slack workspace and thread), and every message in order. |
+| `visitors` | Each website visitor record: the verified customer id, the visitor key the browser kept, first and last seen, and the country, language and user agent last observed. |
+| `routine_values` | What the routine a conversation last ran collected, such as a booking's date or a phone number. |
+| `routine_actions` | What routines handed on: operator notices with the values they carried, and skill calls with their input. |
+| `conversation_summaries` | The rolling summary the agent keeps of a long conversation. |
+| `context_values` | Values your site or a skill stored for the person's chat sessions and under their verified customer id. |
+| `email_messages` | Each mail of their email conversations: direction, subject, sender address and display name, Cc, and attachment names, types and sizes. The mail's text is the conversation's message. |
+| `answer_feedback` | The ratings and comments the person left on answers. |
+
+The export reads one consistent snapshot, so a message that arrives while it runs is either in it with everything derived from it, or not in it at all. `formatVersion` changes whenever the document's shape changes, so whatever reads the file can tell which shape it has.
+
+Some records stay out of the export because they are your workspace's own working data, not data about the person:
+
+- teammates' work on a conversation: ownership, activity, answer triage, and drafts held for review that were never sent;
+- copies kept for evaluating and analysing the agent: eval snapshots, search facets, Audience Pulse topic memberships and coverage assessments, each derived from messages the export carries;
+- billing and delivery ledgers: usage events, the notice email cap, send records and delivery failures;
+- inbound mail as raw MIME. The text of each mail is its message, and its sender, subject and Cc are in `email_messages`.
+
+## Erase it
+
+When the person also asks you to delete their data, send the confirmed identities to the erasure:
+
+```http
+POST /api/v1/privacy/data-subjects/erase
+Content-Type: application/json
+
+{ "identities": [ ... ] }
+```
+
+```json
+{ "visitorCount": 1, "conversationCount": 4, "messageCount": 12 }
+```
+
+Radioso erases each website visitor among the identities exactly as `DELETE /api/v1/history/visitors/{visitorId}` does: their conversations, their customer-scoped context values, voice calls their browser started that never reached a first turn, and the visitor record. It then erases every other conversation the identities reach exactly as `DELETE /api/v1/history/chat/{conversationId}` does. An email address or a Slack member has no record of its own beyond its conversations, so erasing those conversations erases the identity, and a lookup afterwards finds nothing. [Deleting conversation data](/operators/deleting-conversation-data) lists everything a deletion removes and the few records it keeps.
+
+Export first, then erase. The same confirmed identities reach the same conversations, so the file you send covers exactly what the erasure removes.
+
+An erasure that stops halfway, say on a dropped connection, is safe to send again; it erases what is left. A conversation that starts after the erasure read the list stays, so look the person up once more when you're done.
+
+## Who can run a request
+
+All four steps need `workspace.history.delete`, the permission deletion needs. Owners and admins of the workspace hold it, and so do admin personal credentials and admin service-account credentials, so a request pipeline can run the whole request without a signed-in session. Members cannot.
+
+Ray does not run data subject requests. Exporting someone's personal data is a teammate's decision, and the export goes to the person, never to a model.
+
+## What Radioso records
+
+The lookup records a `data_subject.looked_up` audit event, and the export a `data_subject.exported` event. Each names who asked, the identities it covered and its counts: conversations found, and records per section for an export. Neither event, and no log line, carries the query or anything the person said.
+
+A website visitor appears in the events by its visitor id. An email address or a Slack member appears as a digest: `sha256:` followed by the SHA-256 of the workspace id, the kind and the key, separated by newlines. To show later that Jane's email data was exported, compute the digest and look for it in the export's event:
+
+```bash
+printf '%s\n%s\n%s' "$WORKSPACE_ID" email_address jane@example.com | shasum -a 256
+```
+
+Each erasure records its own `conversation.erased` or `visitor.erased` event.
+
+## Common failure modes
+
+- **`403`**: the caller lacks `workspace.history.delete`: a member session, or a member credential.
+- **`400`**: the query is empty or longer than 320 characters, an identity kind is not `web_visitor`, `email_address` or `slack_user`, or a request names more than 50 identities.
+- **No email identity for an address you know wrote in**: the mail never became a conversation. Mail from automated senders, bounces and spam stays in the email channel's event log for 30 days and goes on its own.
+- **The website visitor but no email identity, or the other way round**: your site verifies the person by an id that is not the address they mail from. Look up each identifier.
+- **No website identity for a visitor who never signed in**: a lookup finds website visitors by the customer id your site verified them by. For an anonymous visitor, open one of their conversations, take `visitor.id` from its detail, and [delete the visitor](/operators/deleting-conversation-data#delete-a-visitor) by id.
+- **No Slack identity for a member who talked to your agent**: a Slack conversation belongs to the member who started its thread. A member who only replied in someone else's thread is in that thread's messages, but is not its identity.
+
+## Read next
+
+- [Deleting conversation data](/operators/deleting-conversation-data): what a deletion removes and what Radioso keeps.
+- [Visitor data](/operators/visitor-data): what a conversation records about a visit.
+- [Chat and history](/api/chat-and-history): the history API the erasure routes belong to.

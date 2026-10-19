@@ -89,6 +89,21 @@ describe("generated client operation coverage", () => {
     expect(clientSource).toContain("deleteCrawlJob(");
   });
 
+  it("wires the data subject request operations", () => {
+    const clientSource = readFileSync(new URL("../../src/generated/client.ts", import.meta.url), "utf8");
+    const operationIds = operationIdsForPaths([
+      "/api/v1/privacy/data-subjects/lookup",
+      "/api/v1/privacy/data-subjects/conversations",
+      "/api/v1/privacy/data-subjects/export",
+      "/api/v1/privacy/data-subjects/erase",
+    ]);
+
+    expect(operationIds).toEqual(["lookupDataSubject", "listDataSubjectConversations", "exportDataSubject", "eraseDataSubject"]);
+    for (const operationId of operationIds) {
+      expect(clientSource).toContain(`${operationId}(`);
+    }
+  });
+
   it("wires the conversation and visitor erasure operations", () => {
     const clientSource = readFileSync(new URL("../../src/generated/client.ts", import.meta.url), "utf8");
     const operationIds = operationIdsForPaths(["/api/v1/history/visitors/{visitorId}"]);

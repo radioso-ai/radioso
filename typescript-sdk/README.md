@@ -65,6 +65,7 @@ pnpm run build
 - `client.chat.getHistoryConversation(...)`
 - `client.history.listVisitorConversations(visitorId, ...)` — a visitor's other conversations
 - `client.history.deleteChat(conversationId)` and `client.history.deleteVisitor(visitorId)` — permanent erasure; needs `workspace.history.delete`
+- `client.privacy.lookupDataSubject(query)`, then `listDataSubjectConversations(identities)`, `exportDataSubject(identities)` and `eraseDataSubject(identities)` over the identities you confirmed — a data subject request across web, email and Slack; needs `workspace.history.delete`
 
 ### Agent authoring
 

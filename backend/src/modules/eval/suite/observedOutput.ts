@@ -1,5 +1,6 @@
 import type { ChatAnswerCoverageAssessment } from "../../chat/contracts/index.js";
 import type { EvalRunObservedOutput } from "../domain/types.js";
+import type { VoiceTurnObservation } from "./voiceAssertions.js";
 
 /**
  * What a review turn shows besides the shared observed output. A review turn returns its
@@ -13,7 +14,11 @@ interface ReviewTurnObservation {
   persistedAssistantMessageCount: number;
 }
 
-/** The output the suite scores: a live turn's observed output, or a review turn's with its observation. */
+/**
+ * The output the suite scores: a live turn's observed output, a review turn's with its
+ * observation, or a voice case's scored turn as the voice runtime received it.
+ */
 export interface ConversationQualityObservedOutput extends EvalRunObservedOutput {
   reviewTurn?: ReviewTurnObservation;
+  voiceTurn?: VoiceTurnObservation;
 }

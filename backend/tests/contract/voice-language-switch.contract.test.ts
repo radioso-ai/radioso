@@ -8,7 +8,8 @@ import { TurnPlanCoordinator } from "../../src/modules/chat/services/turnPlanCoo
 import { TurnPlanService } from "../../src/modules/chat/services/turnPlanService.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 import type { TurnPlanGatewayFactory } from "../../src/shared/infra/llm/turnPlanGateway.js";
-import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
+import { createTestApp } from "../support/testApp.js";
+import { openVoiceRuntime } from "../support/voiceRuntime.js";
 
 const UTTERANCE = "A che ora aprite domani?";
 const ANSWER = "Domani apriamo alle nove.";
@@ -93,24 +94,13 @@ const LATER_ANSWER = "La domenica siamo chiusi.";
 const call = async (chatGateway: ChatGateway = answeringModel) => {
   const logger = createLogger("silent");
   const info = vi.spyOn(logger, "info");
-  const { app, dependencies } = createTestApp({
+  const testApp = createTestApp({
     chatGateway,
     logger,
     turnPlanCoordinator: new TurnPlanCoordinator(new TurnPlanService(plannerInItalian)),
   });
-  const session = await issueTestSession(app, `voice-switch-${randomUUID()}@example.com`);
-  const dashboard = adminSessionHeaders(session);
-  const agents = await request(app).get("/api/v1/agents").set(dashboard).expect(200);
-  const agentId = (agents.body.agents as Array<{ id: string; isDefault: boolean }>).find((agent) => agent.isDefault)!.id;
-  await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({ assistantDefaultLocale: "en", voice }).expect(200);
-  const runtimeCredential = await dependencies.accessGrantService.issueGrant({
-    agentId,
-    workspaceId: session.workspaceId,
-    principalKind: "agent-api",
-    channel: "agent-api",
-    originConstraint: { mode: "allow-all", origins: [] },
-    expiresAt: new Date(Date.now() + 600_000),
-  });
+  const { app, dependencies } = testApp;
+  const { dashboard, agentId, runtimeToken } = await openVoiceRuntime(testApp, { emailPrefix: "voice-switch", agentSettings: { assistantDefaultLocale: "en", voice } });
   const chatTurns = vi.spyOn(dependencies.assistantChatService, "streamAnswer");
   const sessionKey = randomUUID();
 
@@ -118,7 +108,7 @@ const call = async (chatGateway: ChatGateway = answeringModel) => {
   const runtimeSends = async (messages: unknown[]) => {
     const response = await request(app)
       .post(`/api/v1/agents/${agentId}/voice/elevenlabs/v1/chat/completions`)
-      .set("Authorization", `Bearer ${runtimeCredential.token}`)
+      .set("Authorization", `Bearer ${runtimeToken}`)
       .send({ messages, stream: true, tools: [languageDetectionTool], elevenlabs_extra_body: { session_key: sessionKey, locale: "en" } })
       .buffer(true)
       .parse((res, done) => {

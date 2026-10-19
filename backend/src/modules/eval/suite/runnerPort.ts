@@ -16,17 +16,29 @@ export interface ConversationQualityRunnerPort {
    * because running one as a live turn would persist a reply and could run a routine.
    */
   review?(evalCase: ConversationQualityCase): Promise<ConversationQualityObservedOutput>;
+  /**
+   * Drives a voice case: its call runs through a voice runtime's door, one request per caller
+   * turn, and the scored turn comes back as the runtime received it. Optional; a runner without
+   * it scores its voice cases as errors.
+   */
+  voice?(evalCase: ConversationQualityCase): Promise<ConversationQualityObservedOutput>;
 }
 
 /**
- * Drives one case through the port its execution mode names. A runner that throws, or
- * cannot drive the mode, yields an `error` output for that case alone.
+ * Drives one case through the port its channel or execution mode names. A runner that throws,
+ * or cannot drive the case, yields an `error` output for that case alone.
  */
 export const observeCase = async (
   runner: ConversationQualityRunnerPort,
   evalCase: ConversationQualityCase,
 ): Promise<ConversationQualityObservedOutput> => {
   try {
+    if (evalCase.voice) {
+      if (!runner.voice) {
+        throw new Error(`Case "${evalCase.id}" is a voice case, which this runner cannot drive.`);
+      }
+      return await runner.voice(evalCase);
+    }
     if (evalCase.executionMode !== "review") {
       return await runner.run(evalCase);
     }

@@ -33,3 +33,8 @@ export {
   CQ_WORKSPACE_ID,
 } from "./agent.js";
 export { conversationQualityCases } from "./cases.js";
+export {
+  conversationQualityVoiceCases,
+  conversationQualityVoiceSettings,
+  voiceCallbackRoutineDraft,
+} from "./voiceCases.js";

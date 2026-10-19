@@ -3,22 +3,23 @@ import type { EvalLlmJudgePort } from "../services/evalJudge.js";
 import type {
   AssertionVerdictStatus,
   EvalAssertion,
-  EvalRunObservedOutput,
   EvalRunStatus,
 } from "../domain/types.js";
+import type { ConversationQualityObservedOutput } from "./observedOutput.js";
 import {
   evaluateTraceAssertion,
   isTraceAssertion,
   type SuiteTraceAssertion,
 } from "./traceAssertions.js";
+import { evaluateVoiceAssertion, isVoiceAssertion, type VoiceAssertion } from "./voiceAssertions.js";
 
 /**
  * A suite assertion is either a shipped product assertion (retrieval/citation/answer/
- * llm_judge — scored by the eval domain) or a suite-only trace assertion. Keeping both
- * behind one union lets a single case mix a deterministic route check with a semantic
- * judge check.
+ * llm_judge — scored by the eval domain), a suite-only trace assertion, or a voice assertion
+ * on a voice case's scored turn. Keeping them behind one union lets a single case mix a
+ * deterministic route check with a semantic judge check.
  */
-export type SuiteAssertion = EvalAssertion | SuiteTraceAssertion;
+export type SuiteAssertion = EvalAssertion | SuiteTraceAssertion | VoiceAssertion;
 
 export interface SuiteAssertionVerdict {
   assertion: SuiteAssertion;
@@ -26,13 +27,13 @@ export interface SuiteAssertionVerdict {
   reason: string | null;
 }
 
-export interface SuiteScore {
+interface SuiteScore {
   status: EvalRunStatus;
   reason: string | null;
   verdicts: SuiteAssertionVerdict[];
 }
 
-export interface SuiteScoreContext {
+interface SuiteScoreContext {
   workspaceId: string;
   question: string;
   runId: string;
@@ -70,7 +71,7 @@ const combine = (verdicts: SuiteAssertionVerdict[]): SuiteScore => {
 
 export const scoreObservedOutput = async (
   assertions: SuiteAssertion[],
-  output: EvalRunObservedOutput,
+  output: ConversationQualityObservedOutput,
   context: SuiteScoreContext,
 ): Promise<SuiteScore> => {
   if (output.error) {
@@ -94,6 +95,10 @@ export const scoreObservedOutput = async (
     const assertion = assertions[index];
     if (isTraceAssertion(assertion)) {
       verdicts.push(evaluateTraceAssertion(assertion, output));
+      continue;
+    }
+    if (isVoiceAssertion(assertion)) {
+      verdicts.push(evaluateVoiceAssertion(assertion, output));
       continue;
     }
     if (isLlmJudgeAssertion(assertion)) {

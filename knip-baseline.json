@@ -315,8 +315,6 @@
   "types|backend/src/modules/eval/services/evalSuiteService.ts|EvalSuiteReplayLoggerPort",
   "types|backend/src/modules/eval/services/evalSuiteService.ts|EvalSuiteRunInput",
   "types|backend/src/modules/eval/services/evalSuiteService.ts|EvalSuiteRunResult",
-  "types|backend/src/modules/eval/suite/scoring.ts|SuiteScore",
-  "types|backend/src/modules/eval/suite/scoring.ts|SuiteScoreContext",
   "types|backend/src/modules/externalSkills/oauth/oauthAccessTokenResolver.ts|ResolveFreshAccessTokenInput",
   "types|backend/src/modules/externalSkills/oauth/oauthClient.ts|BuildAuthorizationUrlInput",
   "types|backend/src/modules/externalSkills/oauth/oauthClient.ts|ExchangeCodeInput",

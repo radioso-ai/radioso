@@ -14,6 +14,7 @@ export type {
   VoiceSessionRef,
   VoiceSessionVendorAgent,
   VoiceSessionVisitor,
+  VoiceTurnOutcome,
   VoiceTurnPort,
 } from "./domain.js";
 export { VoiceTurnService, type VoiceChatTurnRequest, type VoiceSessionStore, type VoiceTurnNotes } from "./services/voiceTurnService.js";

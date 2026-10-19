@@ -3,6 +3,7 @@ export {
   parseConversationQualityCases,
   ZERO_TOLERANCE_JUDGE_TAG,
   type ConversationQualityCase,
+  type ConversationQualityVoiceCallStep,
 } from "./caseSchema.js";
 export {
   evaluateTraceAssertion,
@@ -33,3 +34,10 @@ export {
 } from "./sampling.js";
 export type { ConversationQualityRunnerPort } from "./runnerPort.js";
 export type { ConversationQualityObservedOutput } from "./observedOutput.js";
+export type { VoicePieceKind, VoiceTurnObservation } from "./voiceAssertions.js";
+export {
+  formatVoiceLatencyReport,
+  recordVoiceBaseline,
+  summarizeVoiceCase,
+  type VoiceBaselineFile,
+} from "./voiceReport.js";

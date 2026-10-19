@@ -181,14 +181,26 @@ export const evaluateVoiceAssertion = (
  */
 const LIVE_VOICE_ASSERTIONS = new Set<string>(["voice_turn_well_formed", "voice_bridge_spoken", "voice_outcome"] satisfies Array<VoiceAssertion["type"]>);
 
+const WELL_FORMED: VoiceAssertion = { type: "voice_turn_well_formed" };
+
 const gatesLive = (assertion: { type: string }): boolean =>
   LIVE_VOICE_ASSERTIONS.has(assertion.type) && !(isVoiceAssertion(assertion) && assertion.type === "voice_bridge_spoken" && assertion.latencyDependent === true);
 
 /**
- * The voice cases a live run drives, each scored on what it gates. A case whose scenario is a brain
- * slower than the turn policy's deadlines runs only in the deterministic half, which scripts one.
+ * The voice cases a live run drives, each scored on what it gates: always a well-formed stream, and
+ * at least one behaviour besides, or the case is refused, since a case that gates nothing would pass
+ * whatever the agent did. A case whose scenario is a brain slower than the turn policy's deadlines
+ * runs only in the deterministic half, which scripts one.
  */
 export const scopeVoiceCasesForLiveRun = (cases: readonly ConversationQualityCase[]): ConversationQualityCase[] =>
   cases
     .filter((evalCase) => evalCase.voice !== undefined && evalCase.voice.requiresScriptedTiming !== true)
-    .map((evalCase) => ({ ...evalCase, assertions: evalCase.assertions.filter(gatesLive) }));
+    .map((evalCase) => {
+      const behaviour = evalCase.assertions.filter((assertion) => gatesLive(assertion) && assertion.type !== WELL_FORMED.type);
+      if (behaviour.length === 0) {
+        throw new Error(
+          `Voice case "${evalCase.id}" gates nothing live beyond a well-formed stream; give it a gating assertion or mark it requiresScriptedTiming.`,
+        );
+      }
+      return { ...evalCase, assertions: [WELL_FORMED, ...behaviour] };
+    });

@@ -6,6 +6,7 @@ import type {
   AssistantPageContext,
 } from "../../chat/contracts/index.js";
 import { renderRoutineInvocation } from "../../routines/public.js";
+import { VOICE_TURN_SUMMARY_FIELDS } from "../../voiceChannel/public.js";
 import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import type { EvalRunRoutineStartState } from "../domain/types.js";
 import type { SuiteAssertion } from "./scoring.js";
@@ -155,7 +156,10 @@ const suiteAssertionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("voice_first_speech"), text: z.string().trim().min(1) }),
   z.object({
     type: z.literal("voice_turn_record"),
-    fields: z.record(z.union([z.string(), z.number(), z.boolean(), z.null(), z.object({ absent: z.literal(true) }).strict()])),
+    fields: z.record(
+      z.enum(VOICE_TURN_SUMMARY_FIELDS),
+      z.union([z.string(), z.number(), z.boolean(), z.null(), z.object({ absent: z.literal(true) }).strict()]),
+    ).refine((fields) => Object.keys(fields).length > 0, { message: "a voice_turn_record assertion names at least one field" }),
   }),
 ]);
 

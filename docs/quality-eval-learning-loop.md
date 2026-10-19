@@ -99,9 +99,11 @@ is the answering model's own, so treat the list as turns worth reading, not as
 proof of a breach. Pass several as a comma-separated list or repeat the
 parameter; the result is the union, and a turn matching more than one signal is
 listed once. The other filters apply on top of the signal match. The
-dashboard's queue asks for every signal in an `open` or `acknowledged` state by
-default, so the table holds the backlog rather than every answer the agent has
-ever given; its **All answers** toggle drops both defaults.
+dashboard's queue asks for `negative_feedback`, `grounding_gaps`, and
+`skill_failures` in an `open` or `acknowledged` state by default, so the table
+holds the backlog rather than every answer the agent has ever given; its **All
+answers** toggle drops both defaults. `unmet_directives` is opt-in: choose its
+chip, or pass it in `signal`, to see those turns.
 
 For an active thumbs-down queue, combine `sort=negative_feedback_updated_at`
 with `activeNegativeFeedbackOnly=true`. Results are ordered by the latest

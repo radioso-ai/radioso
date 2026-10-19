@@ -104,7 +104,9 @@ export const conversationQualityCorpus: ConversationQualityDocument[] = [
   },
   {
     // An Italian course page that states its fees, so a directive that withholds figures
-    // has something to withhold (#1575). Its figures appear nowhere else in the corpus.
+    // has something to withhold (#1575). Its figures appear nowhere else in the corpus, and it
+    // keeps clear of the quote-request words above so the referent cases still single out
+    // the arts weekend.
     id: MOUNTAIN_COURSE_DOC_ID,
     title: "Corso di yoga in montagna",
     content: [
@@ -112,7 +114,7 @@ export const conversationQualityCorpus: ConversationQualityDocument[] = [
       "",
       "Il corso residenziale si svolge dal venerdì sera alla domenica pomeriggio e comprende pratica, meditazione e pasti vegetariani.",
       "La quota del programma è di 345 €.",
-      "Il pernottamento si paga a parte: camera singola 310 €, camera doppia 255 € a persona, dormitorio 195 € a persona.",
+      "Le camere si pagano a parte: singola 310 €, doppia 255 € a persona, dormitorio 195 € a persona.",
       "Per prenotare scrivi alla reception.",
     ].join("\n"),
   },

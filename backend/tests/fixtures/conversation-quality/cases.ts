@@ -63,6 +63,13 @@ const contactFormAwaitingName: NonNullable<ConversationQualityCase["routineStart
   status: "active",
 };
 
+/** The mountain yoga course's fee and room rates, none of which belongs in an answer about another course. */
+const MOUNTAIN_COURSE_FIGURES_ABSENT: ConversationQualityCase["assertions"] = ["345", "310", "255", "195"].map((figure) => ({
+  type: "answer_does_not_contain",
+  pattern: figure,
+  matchMode: "substring",
+}));
+
 const FULL_QUOTE_FOR_THE_EVENT_ITALIAN = "Mi mandi un preventivo completo compreso di pernottamento per l'evento?";
 
 /**
@@ -224,9 +231,10 @@ export const conversationQualityCases: ConversationQualityCase[] = [
   },
   // #1575: an always-on directive withholds every figure, the Results state the figures, and
   // the built-in represent-organization (priority 80, "state supported facts directly")
-  // ranks above it. The answer commits to what the directive requires before it writes, and
-  // leaves the figures out. Italian like the report; the English variant asks for the
-  // seeded Pro plan price, which the seeded pricing-precision directive asks to quote exactly.
+  // ranks above it. The answer leaves the figures out. Italian like the report. Whether the
+  // answer committed to the directive before writing is checked deterministically in
+  // tests/unit/eval-suite: a withholding answer can carry no citation and be replaced by a
+  // focused decline, which records no commitment, so a live check of it would be flaky.
   {
     id: "directive-withholds-figures-it",
     name: "An always-on directive keeps a course's fees out of an answered price question",
@@ -238,12 +246,7 @@ export const conversationQualityCases: ConversationQualityCase[] = [
     assertions: [
       { type: "turn_route", route: "retrieval" },
       { type: "retrieval_includes_document", documentId: MOUNTAIN_COURSE_DOC_ID },
-      { type: "turn_directive_committed", directive: "prices-from-the-course-page" },
-      ...["345", "310", "255", "195"].map((figure) => ({
-        type: "answer_does_not_contain" as const,
-        pattern: figure,
-        matchMode: "substring" as const,
-      })),
+      ...MOUNTAIN_COURSE_FIGURES_ABSENT,
       // Any euro amount, the corpus writes them both ways: a currency format check, so
       // another course's figures in the same answer break the directive too.
       { type: "answer_does_not_contain", pattern: "\\d\\s?(€|euro)|€\\s?\\d", matchMode: "regex" },
@@ -252,13 +255,14 @@ export const conversationQualityCases: ConversationQualityCase[] = [
   {
     id: "directive-withholds-figures-en",
     name: "An always-on directive keeps the Pro plan price out of an answered price question",
+    description:
+      "Informational until represent-organization stops being read as \"state the price\": the answer still quotes $49 in some samples, so its recorded rate sits too low for the gate to flag a drop. The seeded pricing-precision directive asks to quote prices exactly, which the withholding directive outranks.",
     tags: ["directive", "retrieval", "directive-withholds"],
     query: "How much is the Pro plan?",
     agentConfigOverride: { authoredDirectives: seedDirectiveConfigWith(pricesFromTheCoursePageDirective) },
     assertions: [
       { type: "turn_route", route: "retrieval" },
       { type: "retrieval_includes_document", documentId: PRICING_DOC_ID },
-      { type: "turn_directive_committed", directive: "prices-from-the-course-page" },
       { type: "answer_does_not_contain", pattern: "49", matchMode: "substring" },
     ],
   },
@@ -495,6 +499,7 @@ export const conversationQualityCases: ConversationQualityCase[] = [
       { type: "answer_contains", pattern: "260", matchMode: "substring" },
       { type: "answer_does_not_contain", pattern: "280", matchMode: "substring" },
       { type: "answer_does_not_contain", pattern: "220", matchMode: "substring" },
+      ...MOUNTAIN_COURSE_FIGURES_ABSENT,
     ],
   },
   {
@@ -514,6 +519,7 @@ export const conversationQualityCases: ConversationQualityCase[] = [
       { type: "answer_does_not_contain", pattern: "220", matchMode: "substring" },
       { type: "answer_does_not_contain", pattern: "260", matchMode: "substring" },
       { type: "answer_does_not_contain", pattern: "180", matchMode: "substring" },
+      ...MOUNTAIN_COURSE_FIGURES_ABSENT,
     ],
   },
   {

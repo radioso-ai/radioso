@@ -112,6 +112,7 @@ describe("createDirectiveAdherenceProbe", () => {
     expect(resolved).toEqual({
       entries: [{ directive: "be-brief", ruleId: "d1", satisfied: true, applicable: true, note: "kept it short" }],
       ungraded: [],
+      ungradedRuleCount: 0,
     });
   });
 
@@ -166,6 +167,26 @@ describe("createDirectiveAdherenceProbe", () => {
     ]);
   });
 
+  // #1575 review: the plan is bounded the way the envelope bounds `requestFocus`, with limits
+  // that are part of the turn-invariant schema.
+  it("bounds the plan's length and each commitment's length, and truncates a longer commitment on read", () => {
+    const fragment = createDirectiveAdherenceProbe([]).responseSchemaFragment();
+    const plan = fragment.beforeAnswer?.properties.adherencePlan as {
+      maxItems?: number;
+      items: { properties: { commitment: { maxLength?: number } } };
+    };
+    const maxLength = plan.items.properties.commitment.maxLength;
+
+    expect(plan.maxItems).toEqual(expect.any(Number));
+    expect(maxLength).toEqual(expect.any(Number));
+    const long = "leave out every figure ".repeat(200);
+    const resolved = createDirectiveAdherenceProbe([rule("d1", "prices")]).resolve({
+      adherencePlan: [{ rule: "d1", commitment: long }],
+      adherence: [{ rule: "d1", satisfied: true, applicable: true, note: "no figures" }],
+    });
+    expect(resolved?.entries[0]?.commitment).toBe(long.replace(/\s+/g, " ").trim().slice(0, maxLength));
+  });
+
   it("names every rendered rule the answer returned no grade for, whatever else it returned", () => {
     const probe = createDirectiveAdherenceProbe([
       rule("d1", "inline-supported-links"),
@@ -186,11 +207,13 @@ describe("createDirectiveAdherenceProbe", () => {
       entries: [{ directive: "inline-supported-links", ruleId: "d1", satisfied: false, applicable: true, note: "no link" }],
       // A commitment without a grade still leaves the rule ungraded.
       ungraded: ["represent-organization", "prices-from-the-course-page"],
+      ungradedRuleCount: 2,
     });
     // A reply that carried no grades at all leaves every rendered rule ungraded.
     expect(probe.resolve(undefined)).toEqual({
       entries: [],
       ungraded: ["inline-supported-links", "represent-organization", "prices-from-the-course-page"],
+      ungradedRuleCount: 3,
     });
   });
 
@@ -253,6 +276,22 @@ describe("createDirectiveAdherenceSideChannel", () => {
     createDirectiveAdherenceSideChannel([], { onTally: (tally) => tallies.push(tally) }).resolve({});
 
     expect(tallies).toEqual([{ satisfied: 1, unsatisfied: 1, notApplicable: 1, ungraded: 1 }]);
+  });
+
+  // #1575 review: every verdict counts rendered rules. A directive rendered as two rules is
+  // counted twice, and listed as not graded only when neither rule got a grade.
+  it("counts ungraded rules per rule, and lists a directive as not graded only when none of its rules was graded", () => {
+    const tallies: DirectiveAdherenceTally[] = [];
+    const channel = createDirectiveAdherenceSideChannel(
+      [rule("d1", "split-rule"), rule("d2", "split-rule"), rule("d3", "never-graded"), rule("d4", "never-graded")],
+      { onTally: (tally) => tallies.push(tally) },
+    );
+
+    expect(channel.resolve({ adherence: [{ rule: "d1", satisfied: true, applicable: true, note: "kept" }] })).toEqual({
+      directiveAdherence: [{ directive: "split-rule", ruleId: "d1", satisfied: true, applicable: true, note: "kept" }],
+      ungradedDirectives: ["never-graded"],
+    });
+    expect(tallies).toEqual([{ satisfied: 1, unsatisfied: 0, notApplicable: 0, ungraded: 3 }]);
   });
 });
 

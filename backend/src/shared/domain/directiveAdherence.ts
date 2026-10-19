@@ -17,7 +17,10 @@ type DirectiveAdherenceAttestation = DirectiveAdherenceEntry;
  */
 interface DirectiveAdherenceResolution {
   entries: DirectiveAdherenceAttestation[];
+  /** Directives none of whose rendered rules got a grade, each named once. */
   ungraded: string[];
+  /** Rendered rules with no grade, counted per rule like every other verdict. */
+  ungradedRuleCount: number;
 }
 
 /** Per-verdict counts for one resolved answer: counts only, never directive names or notes. */
@@ -70,6 +73,13 @@ interface DirectiveAdherenceLogger {
 const ADHERENCE_FIELD = "adherence";
 /** The key the pre-answer commitment array occupies, written before `answer` (#1575). */
 const PLAN_FIELD = "adherencePlan";
+/**
+ * Fixed bounds on the plan, so they never vary with the turn's rule set and the schema stays
+ * identical across turns. The item cap sits well above any rendered rule count seen in
+ * practice; a commitment is one clause, and a longer one is cut on read.
+ */
+const PLAN_MAX_ITEMS = 32;
+const COMMITMENT_MAX_LENGTH = 300;
 
 /**
  * The assistant-message metadata key naming the directives an answer graded
@@ -104,7 +114,9 @@ const readCommitment = (entry: unknown): RawCommitment | null => {
   }
   const record = entry as Record<string, unknown>;
   const rule = typeof record.rule === "string" ? unbracketRuleId(record.rule) : "";
-  const commitment = typeof record.commitment === "string" ? normalizeWhitespace(record.commitment) : "";
+  const commitment = typeof record.commitment === "string"
+    ? normalizeWhitespace(record.commitment).slice(0, COMMITMENT_MAX_LENGTH)
+    : "";
   return rule && commitment ? { rule, commitment } : null;
 };
 
@@ -152,6 +164,7 @@ export const createDirectiveAdherenceProbe = (
             [PLAN_FIELD]: {
               type: "array",
               description: "Before you write the answer: one commitment for each active directive rule id, saying what that rule requires of this answer.",
+              maxItems: PLAN_MAX_ITEMS,
               items: {
                 type: "object",
                 additionalProperties: false,
@@ -164,6 +177,7 @@ export const createDirectiveAdherenceProbe = (
                   commitment: {
                     type: "string",
                     description: "One short clause: what this rule makes the answer include, leave out, or do on this turn, or that its condition is not met.",
+                    maxLength: COMMITMENT_MAX_LENGTH,
                   },
                 },
               },
@@ -238,9 +252,13 @@ export const createDirectiveAdherenceProbe = (
           "Dropped invalid directive adherence attestations",
         );
       }
+      const ungradedRuleIds = [...directiveByRuleId.keys()].filter((ruleId) => !graded.has(ruleId));
+      const gradedDirectives = new Set([...graded.values()].map((entry) => entry.directive));
       return {
         entries: [...graded.values()],
-        ungraded: [...new Set([...directiveByRuleId].flatMap(([ruleId, directive]) => (graded.has(ruleId) ? [] : [directive])))],
+        ungraded: [...new Set(ungradedRuleIds.map((ruleId) => directiveByRuleId.get(ruleId) ?? ""))]
+          .filter((directive) => directive && !gradedDirectives.has(directive)),
+        ungradedRuleCount: ungradedRuleIds.length,
       };
     },
   };
@@ -255,7 +273,7 @@ const tallyOf = (resolution: DirectiveAdherenceResolution): DirectiveAdherenceTa
   satisfied: resolution.entries.filter((entry) => entry.applicable && entry.satisfied).length,
   unsatisfied: resolution.entries.filter((entry) => entry.applicable && !entry.satisfied).length,
   notApplicable: resolution.entries.filter((entry) => !entry.applicable).length,
-  ungraded: resolution.ungraded.length,
+  ungraded: resolution.ungradedRuleCount,
 });
 
 /**

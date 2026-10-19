@@ -6,8 +6,9 @@ import type { ConversationQualityCase } from "../../../src/modules/eval/suite/in
  * than a plain chat reply. The deterministic harness (`tests/unit/eval-suite/voice-behaviour.test.ts`)
  * plays each case's `voiceTurn.chatEvents` script against a `VoiceTurnService` built with a tiny
  * timing override, over the stubbed `generic` dialect vendor tag; `scripts/runEvals.ts` runs the
- * same cases against the real brain on its production timing and ignores the script. See
- * `tests/fixtures/conversation-quality/README.md`'s "Voice cases" section.
+ * same cases against the real brain on its production timing, ignores the script, and seeds
+ * `routines.ts`'s `voiceEvalCallbackRoutine` so `voice-outcome-handoff` has a real routine hand-off
+ * to reach. See `tests/fixtures/conversation-quality/README.md`'s "Voice cases" section.
  */
 export const voiceEvalCases: ConversationQualityCase[] = [
   {
@@ -67,7 +68,15 @@ export const voiceEvalCases: ConversationQualityCase[] = [
     id: "voice-outcome-handoff",
     name: "Reports a callback outcome once a hand-off collects a slot",
     tags: ["voice"],
-    query: "I need someone to call me back about my refund.",
+    // States the hand-off and the slot the live run's seeded voiceEvalCallbackRoutine collects
+    // (routines.ts) in one message, so the routine reaches its `handoff` terminal with
+    // `callbackNumber` filled on this turn alone, not a second one — see routines.ts for why a
+    // routine is the only way to produce `callback_requested` at all. Names no topic the seeded
+    // corpus (conversation-quality/corpus.ts, seeded onto the same agent regardless of --tag)
+    // covers: an earlier wording that mentioned "my refund" pulled the live planner toward a
+    // retrieval answer about the refund policy document instead of the callback routine on some
+    // samples.
+    query: "Can someone call me back today? My number is 555-0199.",
     voiceTurn: {
       chatEvents: [
         { type: "status", stage: "interpreting" },

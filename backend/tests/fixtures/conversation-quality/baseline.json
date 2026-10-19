@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-14T10:05:31.416Z",
+  "generatedAt": "2026-10-19T11:59:20.843Z",
   "passThreshold": 1,
   "cases": {
     "clarification-ambiguous-plan": {
@@ -228,6 +228,26 @@
       "samples": 5
     },
     "quick-reply-unlisted-language-standing-directive": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "voice-bridge-on-searching": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "voice-outcome-handoff": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "voice-quick-reply-no-bridge": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "voice-turn-limit-fires": {
       "status": "pass",
       "passRate": 1,
       "samples": 5

@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { ConversationRepositoryPort } from "../src/db/repositories/conversationRepository.js";
 import type { MessageRecord, MessageRepositoryPort } from "../src/db/repositories/messageRepository.js";
 import type { InternalAgentConfig } from "../src/modules/agents/public.js";
@@ -237,12 +239,16 @@ export const createVoiceTurnRunnerPort = (
     if (!evalCase.voiceTurn) {
       throw new Error(`Case "${evalCase.id}" carries no voiceTurn script; it cannot run through the voice port.`);
     }
+    // A fresh session key per call, not per case: a sampled run calls `run()` once per
+    // sample, and a shared key would bind every sample of one case to the same session and
+    // so the same conversation — the second sample would see the first's history, including
+    // any hand-off the routine will not reactivate (`reentryMode: "once_per_conversation"`).
     const input: VoiceTurnInput = {
       session: {
         workspaceId: context.workspaceId,
         agentId: context.agentId,
         vendor: context.vendor,
-        sessionKey: `cq-voice-${evalCase.id}`,
+        sessionKey: `cq-voice-${evalCase.id}-${randomUUID()}`,
       },
       transport: "web",
       utterance: conversationQualityCaseTurnText(evalCase),

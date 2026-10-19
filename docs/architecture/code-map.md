@@ -2168,12 +2168,14 @@ Primary paths:
 - `backend/tests/fixtures/conversation-quality/` — the dataset (corpus, seed
   routines and directives, agent, cases, `baseline.json`) and its `README.md`
 - `backend/tests/fixtures/voice-eval/` — the voice cases (bridge timing, the
-  turn limit, the outcome derivation) and the deterministic runner that drives
-  them through a real `VoiceTurnService` over a scripted chat backend
+  turn limit, the outcome derivation), the one seed routine a hand-off case
+  needs (`routines.ts`), and the deterministic runner that drives the cases
+  through a real `VoiceTurnService` over a scripted chat backend
 - `backend/scripts/runEvals.ts` and `scripts/evalRunnerAdapter.ts` — headless
-  CLI that seeds fixtures (voice settings included, when a voice case is
-  selected), drives text turns through `WorkbenchReplayRunner` and voice turns
-  through `AppDependencies.voiceTurns` (`evalRunnerAdapter.ts`'s
+  CLI that seeds fixtures (voice settings and the voice-eval routine included,
+  when a voice case is selected; publishes the agent, as a review case does),
+  drives text turns through `WorkbenchReplayRunner` and voice turns through
+  `AppDependencies.voiceTurns` (`evalRunnerAdapter.ts`'s
   `createVoiceTurnRunnerPort`/`observeVoiceTurn`), scores, and gates on the
   baseline; every selected case must have a committed baseline entry
 - `.github/workflows/conversation-quality-evals.yml` — nightly live run,

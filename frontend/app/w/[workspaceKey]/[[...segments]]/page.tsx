@@ -28,13 +28,11 @@ const getParamValue = (value: string | string[] | undefined) => {
   return value
 }
 
-const getParamList = (value: string | string[] | undefined) => {
-  if (!value) {
-    return []
-  }
-
-  return Array.isArray(value) ? value : [value]
-}
+// The route comes from the path the browser shows, `/w/<workspaceKey>/<...segments>`, not from the
+// matched params. The two agree after every Next navigation, but only the path follows a shallow
+// `history.replaceState`: that is how an editor changes its own address without the page
+// remounting, as a new routine does when its first save gives it an id.
+const dashboardSegmentsFromPathname = (pathname: string) => pathname.split('/').filter(Boolean).slice(2)
 
 export default function WorkspaceDashboardPage() {
   const params = useParams()
@@ -65,7 +63,7 @@ export default function WorkspaceDashboardPage() {
     }
   })
 
-  const segments = useMemo(() => getParamList(params.segments), [params.segments])
+  const segments = useMemo(() => dashboardSegmentsFromPathname(pathname), [pathname])
   const searchParamsString = searchParams.toString()
   const parsedRoute = useMemo(
     () => parseDashboardRoute(segments, new URLSearchParams(searchParamsString)),

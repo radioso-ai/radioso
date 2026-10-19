@@ -592,12 +592,15 @@ interface DefaultRoutineRunnerOptions {
    * Whether the message that opens a run can state slot values. Absent/true is a message
    * someone wrote, which the selector reads for them. A host sets false when that message is
    * a structured call rendered as text and the run starts with the call's input (a routine
-   * invoked as a tool). On the activation turn the runner then keeps no value a selector
-   * returns and asks it nothing those values answer: no extraction-only read, no read of the
-   * opening message for a later step, no compiler slot gate. A step the values fill moves on
-   * by its structure, and the first chat step that collects a slot they leave unfilled is
-   * asked, whatever its exits (#1563). An exit the author wrote leaving a filled step is still
-   * judged by the selector. Every later turn, and a run resumed on this turn, reads its
+   * invoked as a tool). On the activation turn the runner then keeps no value and no hold a
+   * selector returns, and asks it nothing those values answer: no extraction-only read, no read
+   * of the opening message for a later step, no compiler slot gate. A step the values satisfy
+   * moves on by its structure, and the first chat step they leave unsatisfied is asked, whatever
+   * its exits (#1563): one with a required slot empty, or, on a step that collects only optional
+   * slots, any of those empty. An optional slot beside a required one therefore stays empty once
+   * the required one has a value. An exit the author wrote leaving a satisfied step is still
+   * judged by the selector; when it chooses none, the step's rule or default exit decides, and a
+   * step with neither is asked. Every later turn, and a run resumed on this turn, reads its
    * message as a reply.
    */
   openingMessageStatesSlotValues?: boolean;
@@ -721,15 +724,18 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
     ): Promise<RoutineNextStepDecision> => {
       const decision = await this.selector.select(selectInput);
       lastSelection = decision.selection;
+      // A message that states no values is a structured call, not a visitor's reply: any value
+      // the selector returns is one it read into the call, and an authority claim is the call's
+      // shape mistaken for one. Only the exit it chose is kept; its selection still records what
+      // it returned for the trace. On an authority claim the selector chose the current step, so
+      // the step's rule or default exit decides, and a step with neither is asked.
+      if (!messageStatesSlotValues) {
+        const { variables: _readIntoTheMessage, hold: _readAsAClaim, ...exitOnly } = decision;
+        return exitOnly;
+      }
       lastSelectorHold = lastSelectorHold || decision.hold === true;
       if (!decision.variables) {
         return decision;
-      }
-      // A message that states no values gives the selector nothing to return but what it read
-      // into the message; its selection still records the keys for the trace.
-      if (!messageStatesSlotValues) {
-        const { variables: _readIntoTheMessage, ...withoutValues } = decision;
-        return withoutValues;
       }
       const checked = checkDeclaredSlotValues(routine, decision.variables);
       lastRejectedSlots = [...lastRejectedSlots, ...checked.rejected];

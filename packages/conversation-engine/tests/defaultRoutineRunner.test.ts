@@ -4599,6 +4599,53 @@ describe("DefaultRoutineRunner on a run whose opening message states no slot val
     expect(result.trace?.steps[0]).not.toHaveProperty("capturedSlotKeys");
   });
 
+  // The model took 3 of 5 live calls for an authority claim (#1563). Read for an exit the author
+  // wrote, that claim would hold a step the start values fill and ask again for what the call gave.
+  const choosePlan = (transitions: Routine["transitions"]): Routine => ({
+    id: "plan",
+    rootStepId: "pick",
+    slots: [{ id: "slot_plan", key: "plan", type: "text", required: true }],
+    steps: [
+      { id: "pick", kind: "chat", action: "Ask which plan they want.", metadata: { collectsSlots: ["plan"] } },
+      { id: "large", kind: "terminal", action: "Confirm the large plan." },
+      { id: "small", kind: "terminal", action: "Confirm the small plan." },
+    ],
+    transitions,
+  });
+  const takesTheCallForAnAuthorityClaim = () => vi.fn<ConversationRoutineNextStepSelector["select"]>(async ({ currentStep }) => ({
+    nextStepId: currentStep.id,
+    hold: true,
+    selection: { outcome: "authority_claim", returnedSlotKeys: [] },
+  }));
+
+  it("moves a step the start values fill on by its default exit when the selector takes the call for an authority claim", async () => {
+    const select = takesTheCallForAnAuthorityClaim();
+    const runner = new DefaultRoutineRunner([choosePlan([
+      { from: "pick", to: "large", condition: "The user chose the large plan." },
+      { from: "pick", to: "small", condition: "default", guard: { kind: "default" } },
+    ])], { select }, echoRenderer, undefined, { openingMessageStatesSlotValues: false });
+
+    const result = await runner.resume({ turn: callTurn, state: { ...started({ plan: "small" }), routineId: "plan" }, activationTurn: true });
+
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(result.terminal).toMatchObject({ kind: "complete", stepId: "small" });
+    expect(result.trace?.steps[0]).toMatchObject({ stepId: "pick", event: "advanced", selection: { outcome: "authority_claim" } });
+  });
+
+  it("asks a step the start values fill when its only exits are model-judged and the model chooses none of them", async () => {
+    const select = takesTheCallForAnAuthorityClaim();
+    const runner = new DefaultRoutineRunner([choosePlan([
+      { from: "pick", to: "large", condition: "The user chose the large plan." },
+      { from: "pick", to: "small", condition: "The user chose the small plan." },
+    ])], { select }, echoRenderer, undefined, { openingMessageStatesSlotValues: false });
+
+    const result = await runner.resume({ turn: callTurn, state: { ...started({ plan: "small" }), routineId: "plan" }, activationTurn: true });
+
+    expect(result.terminal).toBeUndefined();
+    expect(result.nextState).toMatchObject({ path: [], variables: { plan: "small" } });
+    expect(result.trace?.steps[0]).toMatchObject({ stepId: "pick", event: "rendered" });
+  });
+
   // A later turn of the run is a reply, or a re-call while the run is active: the run never
   // received that call's input, so the message is read like any other (#1563 review).
   const parkedOnReason = (): RoutineState => ({ ...state(["ask_order", "ask_reason"], { orderId: "A-1001" }), routineId: "return" });

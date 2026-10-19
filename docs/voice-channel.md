@@ -1,7 +1,7 @@
 ---
 title: "Voice Channel"
 description: "Let a voice runtime such as ElevenLabs Agents speak for a Radioso agent through an OpenAI-compatible chat-completions endpoint, with sessions Radioso starts on your vendor key, one conversation per voice session, authored lines that cover the wait in the language of each turn, a call that switches language with its caller, a teammate's Inbox replies spoken to the caller, and the call's recording in the Inbox."
-last_updated: 2026-10-18
+last_updated: 2026-10-19
 ---
 
 # Voice Channel
@@ -1274,6 +1274,45 @@ first, so a caller is always told when the agent has a notice at all. The
 agent does not speak it: the caller first hears ElevenLabs's own first
 message, so to have the call say it out loud, put the same words in the
 ElevenLabs agent's first message.
+
+## Evals
+
+The conversation-quality eval suite carries seven voice cases that call an
+agent the way a runtime does: through the `generic` dialect, one streamed
+request per caller turn, read off the socket. Each case checks what the
+runtime receives: whether a bridge line is spoken, the order of bridge line,
+speech and fallback line, and the outcome trailer. The cases are a knowledge
+question (the bridge as the turn starts searching), a greeting (a quick reply,
+no bridge), a composer that stays silent past the 400 ms composing idle, a
+reply stalled past the 10-second limit (the fallback line), a callback routine
+that captures a number (`callback_requested`), a call a teammate took over
+(the waiting line, with no bridge and no limit), and a teammate's Inbox reply
+spoken before the agent's answer.
+
+Every pull request runs all seven against the test app with a scripted brain
+on a fake clock, so the times are the policy's own: the bridge at 0 ms on a
+search and at 400 ms on a silent composer, the fallback line at 10,000 ms. The
+same run reads each turn's log record for `bridged`, `languageSource` and
+`outcome`.
+
+The nightly Conversation Quality Evals workflow runs the five cases a real
+model can play, with the configured mini model, three samples each. It fails
+on a behavioural regression against
+`backend/tests/fixtures/conversation-quality/voice-baseline.json`: a malformed
+stream, a turn that bridges when its case expects none or stays silent when
+its case expects a bridge, or a different outcome. Its report lists each
+case's time to first byte, to the bridge line, to first speech and to the end
+of the turn, with p50 and p95 across cases. Latency never fails the run; a
+case whose median time to first speech is more than twice its baseline median
+is printed as a warning. To run it yourself you need Postgres, `OPENAI_API_KEY`
+and a running document worker:
+
+```bash
+cd backend
+pnpm run evals:voice                  # one sample per case
+pnpm run evals:voice:ci               # three samples, as the nightly runs
+pnpm run evals:voice:update-baseline  # re-record the statuses and latency medians
+```
 
 ## Limits and failure modes
 

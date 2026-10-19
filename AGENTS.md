@@ -100,6 +100,7 @@ cd backend
 pnpm run evals                 # live five-sample run, gated against the committed baseline
 pnpm run evals:ci              # same five-sample gated shape the nightly workflow runs
 pnpm run evals:update-baseline # re-record the committed baseline from five samples
+pnpm run evals:voice           # voice cases through the generic dialect, one sample; evals:voice:ci samples 3x like the nightly
 ```
 
 Ray behaviour evals (tool selection, proposal quality, never-list adherence). The deterministic half runs in normal CI via `tests/unit/operatorCopilot/copilot-eval-suite.test.ts`; the live half runs on demand and needs Postgres plus `OPENAI_API_KEY`:

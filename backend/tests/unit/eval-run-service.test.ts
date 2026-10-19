@@ -517,6 +517,7 @@ describe("EvalRunService.execute (retrieval_only)", () => {
       sourceBasePublishedRevisionId: null,
       createdAt: new Date(0),
       publishedAt: null,
+      publishedVersion: null,
       snapshot: {
         customInstruction: "Frozen candidate instruction.",
         directives: [],

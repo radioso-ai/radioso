@@ -81,6 +81,7 @@ const build = () => {
     routineRegistrations: builtInRegistrations(),
     routineTriggerEmbeddingService: { persistPublished: vi.fn() },
     skillExecutorRegistry: {} as never,
+    approvalResumeEffectJournal: {} as never,
     turnPlanAdapters: {
       activator: ({ fallback }) => fallback,
       reentryGate: ({ fallback }) => fallback,

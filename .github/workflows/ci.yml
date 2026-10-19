@@ -293,6 +293,13 @@ jobs:
         working-directory: backend
         run: pnpm run build
 
+      - name: Typecheck backend tests
+        # `pnpm run build` just built the workspace packages tests import, so this only needs
+        # the wide project (src + tests + vitest.config.ts); vitest strips types at runtime and
+        # never catches drift here on its own.
+        working-directory: backend
+        run: pnpm exec tsc --noEmit -p tsconfig.json
+
       - name: Upload backend OpenAPI artifacts
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:

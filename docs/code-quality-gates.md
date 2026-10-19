@@ -1,7 +1,7 @@
 ---
 title: "Lint and Dead-Code Gates"
 description: "How the workspace lint run and the dead-code ratchet work, what each one catches, and what to do when they fail."
-last_updated: 2026-10-11
+last_updated: 2026-10-18
 ---
 
 # Lint and Dead-Code Gates
@@ -83,6 +83,14 @@ Type-aware linting needs every file to belong to a TypeScript project. Each pack
 - `tsconfig.build.json` — the narrow emit project. Extends the wide one, restores `rootDir` / `outDir` / `declaration`, and covers `src` alone. This is what `pnpm run build` uses.
 
 Adding a test directory to a package means adding it to the wide `include`, or its files lint without type information.
+
+Vitest strips types, so a test can drift from the domain types it exercises — a fixture missing a field a port gained, a mock returning last year's shape — and the suite still runs green. Backend CI closes that gap on a push or pull request: the `backend-build-openapi` job builds the backend (`pnpm run build`, which runs `build:workspace-deps` first) and then runs `tsc -p tsconfig.json` across `src`, `tests`, and `scripts`, so a type that only a test imports is checked too. Run the same check locally from `backend/`:
+
+```bash
+pnpm run typecheck   # builds workspace deps, then tsc -p tsconfig.json --noEmit
+```
+
+A fixture that falls behind a domain type fails here, not in a flaky test months later.
 
 ## Common failure modes
 

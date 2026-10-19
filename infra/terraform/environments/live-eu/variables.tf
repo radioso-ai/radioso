@@ -250,6 +250,12 @@ variable "openai_vector_model" {
   default     = "text-embedding-3-small"
 }
 
+variable "openai_data_residency" {
+  description = "Endpoint the platform-held openai_api_key calls: global (default), us, or eu."
+  type        = string
+  default     = "global"
+}
+
 variable "session_ttl_hours" {
   description = "Session TTL in hours."
   type        = number

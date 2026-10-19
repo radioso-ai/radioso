@@ -23,6 +23,12 @@ const principal = {
   },
 };
 
+// `Env.RADIOSO_MCP_SIGNING_SECRET` is optional on the real config type, but every test in this
+// file signs with the fixed value `createDependencies` seeds below; reading it back through
+// `dependencies.env` would widen to `string | undefined`, so callers that need the secret use
+// this constant directly instead.
+const MCP_SIGNING_SECRET = "0123456789abcdef0123456789abcdef";
+
 const createDependencies = (overrides: Partial<AppDependencies> = {}): AppDependencies => ({
   env: {
     AGENT_CHANNEL_CHAT_RATE_LIMIT_WINDOW_MS: 60_000,
@@ -32,7 +38,7 @@ const createDependencies = (overrides: Partial<AppDependencies> = {}): AppDepend
     MCP_CONVERSE_SESSION_RATE_LIMIT_WINDOW_MS: 60_000,
     MCP_CONVERSE_SESSION_SOURCE_RATE_LIMIT_MAX_ATTEMPTS: 60,
     MCP_CONVERSE_SESSION_TOKEN_RATE_LIMIT_MAX_ATTEMPTS: 10,
-    RADIOSO_MCP_SIGNING_SECRET: "0123456789abcdef0123456789abcdef",
+    RADIOSO_MCP_SIGNING_SECRET: MCP_SIGNING_SECRET,
   },
   abuseControlService: {
     enforce: vi.fn().mockResolvedValue(admittedAbuseControlDecision()),
@@ -181,7 +187,7 @@ describe("MCP converse ask rate limiting", () => {
       const proof = createMcpSourceProof({
         method: "POST",
         path: "/api/v1/mcp/converse/session/validate",
-        secret: dependencies.env.RADIOSO_MCP_SIGNING_SECRET,
+        secret: MCP_SIGNING_SECRET,
         sourceDigest,
       });
       return {
@@ -337,7 +343,7 @@ describe("MCP converse ask rate limiting", () => {
     const proof = createMcpSourceProof({
       method: "POST",
       path,
-      secret: dependencies.env.RADIOSO_MCP_SIGNING_SECRET,
+      secret: MCP_SIGNING_SECRET,
       sourceDigest: "D0GJ62ZQvM0QF23UXwB8Y6v6nTS26zrXbA_oYopE07g",
     });
 

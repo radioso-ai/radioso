@@ -1,8 +1,16 @@
 import { isLocaleTag } from "../../../../shared/domain/locale.js";
 import type { VoiceTransport } from "../../domain.js";
+import { readLanguageSwitch, type LanguageSwitchTool, type TurnLanguageReading } from "./languageSwitches.js";
+import type { CompletionsMessage } from "./requestSchema.js";
 
 /** Where one value travels on a request: a header, or a path into the JSON body. */
 type CompletionsFieldSource = { header: string } | { bodyPath: readonly string[] };
+
+/**
+ * Where the language of one turn travels: the runtime's replayed calls of a tool that switches the
+ * call's language (reported as `vendor_detected`), or a field it sets per turn (`turn_field`).
+ */
+type CompletionsTurnLocaleSource = { languageSwitch: LanguageSwitchTool } | { field: CompletionsFieldSource };
 
 /**
  * What tells one vendor's chat-completions requests apart from another's. Data only: the wire is
@@ -13,8 +21,10 @@ type CompletionsFieldSource = { header: string } | { bodyPath: readonly string[]
 export interface CompletionsDialect {
   id: string;
   sessionKeyFrom: readonly CompletionsFieldSource[];
-  /** Where the caller's language tag travels, when the runtime or the page that starts the session sends one. */
+  /** Where the session's language tag travels, when the runtime or the page that starts the session sends one. */
   localeFrom: readonly CompletionsFieldSource[];
+  /** Where the language of this one turn travels, when the runtime reports it apart from the session's. */
+  turnLocaleFrom: readonly CompletionsTurnLocaleSource[];
   transportDefault: VoiceTransport;
   /**
    * A delta sent after each bridge line and speech piece, for a runtime that holds a finished
@@ -54,6 +64,16 @@ const COMPLETIONS_DIALECTS = new Map<string, CompletionsDialect>([
     id: "elevenlabs",
     sessionKeyFrom: [{ bodyPath: ["elevenlabs_extra_body", "session_key"] }],
     localeFrom: [{ bodyPath: ["elevenlabs_extra_body", "locale"] }],
+    // The `language_detection` system tool switches the call's voice and transcription to the
+    // language its `language` argument names (an ISO 639-1 code such as "it"), as an OpenAI tool
+    // call: https://elevenlabs.io/docs/eleven-agents/customization/tools/system-tools/language-detection
+    // Its result follows the conversation API's system tool result: `is_error`, and the
+    // `LanguageDetectionToolResultModel` with `status: "success"`
+    // (https://elevenlabs.io/docs/api-reference/conversations/get). Unverified on the custom-LLM
+    // wire: Radioso calls no tools, so no live request has carried one.
+    turnLocaleFrom: [{
+      languageSwitch: { tool: "language_detection", argument: "language", result: { field: "status", success: "success", errorFlag: "is_error" } },
+    }],
     transportDefault: "web",
     // Observed 2026-10-13: ElevenLabs hands a sentence to speech once its terminator is followed by
     // whitespace and a later non-blank delta arrives. Pieces end on the terminator, so the flush is
@@ -71,6 +91,7 @@ const COMPLETIONS_DIALECTS = new Map<string, CompletionsDialect>([
     id: "generic",
     sessionKeyFrom: [{ header: "x-radioso-voice-session" }, { bodyPath: ["metadata", "session_key"] }],
     localeFrom: [{ header: "x-radioso-voice-locale" }, { bodyPath: ["metadata", "locale"] }],
+    turnLocaleFrom: [{ field: { header: "x-radioso-voice-turn-locale" } }, { field: { bodyPath: ["metadata", "turn_locale"] } }],
     transportDefault: "web",
   }],
 ]);
@@ -126,6 +147,32 @@ const firstValue = (
 export const sessionKeyFor = (dialect: CompletionsDialect, request: CompletionsRequestParts): string | null =>
   firstValue(dialect.sessionKeyFrom, request) ?? null;
 
-/** The caller's language tag from the first source that carries a well-formed one. */
+/** The session's language tag from the first source that carries a well-formed one. */
 export const localeFor = (dialect: CompletionsDialect, request: CompletionsRequestParts): string | undefined =>
   firstValue(dialect.localeFrom, request, isLocaleTag);
+
+/**
+ * The language this one turn reports apart from the session's. A per-turn field is the first that
+ * carries a language tag, and always this turn's news. A language switch is the newest in the
+ * history that took effect; one that cannot be read stops the search and is reported, since the
+ * call may then be in either language.
+ */
+export const turnLanguageFor = (
+  dialect: CompletionsDialect,
+  request: CompletionsRequestParts & { messages: readonly CompletionsMessage[] },
+): TurnLanguageReading => {
+  for (const source of dialect.turnLocaleFrom) {
+    if ("languageSwitch" in source) {
+      const reading = readLanguageSwitch(request.messages, source.languageSwitch);
+      if (reading.turnLanguage || reading.languageReport) {
+        return reading;
+      }
+      continue;
+    }
+    const tag = firstValue([source.field], request, isLocaleTag);
+    if (tag) {
+      return { turnLanguage: { tag, source: "turn_field", isNew: true } };
+    }
+  }
+  return {};
+};

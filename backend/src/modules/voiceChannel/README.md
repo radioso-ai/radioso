@@ -40,8 +40,9 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   pieces (a flush delta, a space, nothing after a full-width terminator)
   does not matter;
   `voiceTurnPolicy.ts` is the pure timing wrapper (bridge and turn limit) over
-  those events; `voiceLines.ts` picks the turn's bridge and fallback lines by
-  routine state and locale (tag structure only, never the lines' words);
+  those events; `voiceLines.ts` resolves the turn's language
+  (`resolveVoiceLanguage`) and picks the turn's bridge and fallback lines by
+  routine state and that language (tag structure only, never the lines' words);
   `voiceSessionMemory.ts` is the in-process memory of each session between its
   requests (the newest request, the last bridge, the last exchange);
   `voiceTurnMetrics.ts` names the turn's series;
@@ -85,7 +86,9 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
 - `adapters/*` translate one wire to the domain port and back, and nothing
   else. `adapters/openaiCompletions/` is the OpenAI chat-completions wire;
   vendors that share it differ only by a dialect in `dialects.ts`, which is
-  data: where the session key and the caller's locale travel, the default
+  data: where the session key, the session's locale and the turn's own
+  language travel (a header, a body path, or a named tool's calls and results
+  in the replayed `messages`, which `languageSwitches.ts` reads), the default
   transport, the flush and keep-alive deltas a runtime needs, and the suffix
   it appends to a reply the caller cut short. Vendor field names live there
   and in `requestSchema.ts`, never in the domain. `adapters/elevenlabs/` is
@@ -316,12 +319,71 @@ helpers and the shared chat message limit from `app/http`
   exported from `public.ts` for the Voice card and Ray's descriptors; carried
   on `VoiceTurnInput`) gets only the style's lines that reach it; when none
   does, the shorter line is spoken and
-  the service warns once per agent per process. The locale is the request's
-  (`VoiceTurnInput.locale`, read by the dialect), else the agent's
-  `assistantDefaultLocale`, else `en`; chat stores no response language per
-  message, so the last reply's language is not a source. An agent with no line
-  for the locale and style hears silence, and an agent with no fallback line
-  keeps waiting past the limit.
+  the service warns once per agent per process. The language is the one the
+  request reports for the turn (`VoiceTurnInput.turnLanguage`, next decision),
+  else the session's (`VoiceTurnInput.locale`, read by the dialect), else the
+  agent's `assistantDefaultLocale`, else `en`: the first present wins
+  (`resolveVoiceLanguage`), and the lines match it by tag, then primary subtag,
+  then any tag of that language. Chat stores no response language per message,
+  so the last reply's language is not a source. The bridge is in that
+  language or silent, and so is the fallback line, except on a turn that
+  reports its own language: there the fallback line is the first written for
+  the turn language, the session's, the agent default or `en`, in that order,
+  because a caller who switched to a language without lines is better told in
+  the call's other language than left waiting past the limit. A session that
+  reports no turn language keeps the authored rule (one language, or none).
+  An agent with no fallback line for the turn keeps waiting past the limit.
+  `languagesInOrder` in `voiceLines.ts` is the one ordered list behind the
+  turn's language, the fallback order and the recording notice.
+- **Mid-call language.** On `elevenlabs`, Radioso calls none of the
+  runtime's tools, so a call keeps its starting language and the lines follow
+  the session locale; what follows is what the turn reads when a request
+  reports a turn language, as structured data only. On `elevenlabs` that is
+  the newest `language_detection` call (ElevenLabs's system tool that
+  switches the call's voice and transcription:
+  https://elevenlabs.io/docs/eleven-agents/customization/tools/system-tools/language-detection)
+  in an assistant message's OpenAI `tool_calls` anywhere in the replayed
+  history, paired with the nearest `role: "tool"` result after it with its
+  `tool_call_id`, before any later call that reuses the id
+  (`adapters/openaiCompletions/languageSwitches.ts`, over the schema's parsed
+  `messages`). A result object is read as the vendor's system tool result
+  (`is_error`, and `status: "success"`, after the conversation API's
+  `LanguageDetectionToolResultModel`,
+  https://elevenlabs.io/docs/api-reference/conversations/get); a plain-text
+  result is the error the vendor gives the LLM for a refused switch ("the
+  tool returns an error to the LLM"); the custom-LLM wire carrying either is
+  unverified. A refused switch is skipped, and the switch before it stands.
+  The search ends with no turn language and `unreadable` at the first switch
+  it cannot read (no result, a result object of another shape or JSON that
+  does not parse, or no language tag in its arguments), refused ones above it
+  included, since the call may be in either language. On `generic` it is the
+  `X-Radioso-Voice-Turn-Locale` header, then `metadata.turn_locale` (a header
+  sent twice arrives joined and is not a tag). The source is
+  `vendor_detected` or `turn_field`; a skipped or unread newest switch is
+  `VoiceTurnInput.languageReport` (`blocked`, `unreadable`). The reported
+  language picks the lines (previous decision). It reaches chat as the turn's
+  `userExpectedLocale` only when it is news on the request
+  (`VoiceTurnInput.turnLanguage.isNew`: a per-turn field, or a switch after the
+  caller's previous utterance); chat's no-evidence replies and action
+  suggestions follow it, and the planner, the composers and the quick replies
+  read the caller's language from the utterance on every turn. A session
+  locale, or a switch an earlier turn made, is not passed: either would hold a
+  caller who moved on to a language they no longer speak. The recording
+  notice is chosen at the session start, before any turn, so it follows the
+  session locale. The turn language is the request's alone: it is in the
+  turn's log line, `voice_sessions` keeps no locale, the conversation stores
+  none, and the visitor's `last_language` is not written (the route passes no
+  request facts). The cut-off reply (`heardUntil`) is the assistant message
+  said right before the newest user message, past any tool result or
+  tool-call-only assistant message replayed between them.
+- **A tool result follow-up is no turn.** A request whose newest message has
+  `role: "tool"` is the runtime's follow-up after running a tool; read as a
+  turn, its newest user message would be answered again (a replay, or a
+  second user message). The route answers it with an empty completion
+  (`stop`, outcome `continue`) before `turnInputFor`, runs no turn, calls no
+  `onTurnAccepted`, and logs `voice.tool_followup_ignored` at debug. The
+  adapter calls no tools today, so this is the seam a reply that does call
+  one (`language_detection`) replaces.
 - **Outcomes (web column of the contract's table).** `voiceTurnOutcome.ts`
   reads chat's closing `done` event. `ownership` human-owned and not
   suppressed means this turn handed off: `callback_requested` (with
@@ -596,11 +658,21 @@ received), `handoffReason` (when the turn handed off) and
 `spokenOperatorReplies` (when it spoke a teammate's replies),
 `storedPartialReply: true` (when chat kept the heard part of its cut-off
 reply), plus `bridged`,
-`turnLimitReached` and `fallbackSpoken` when the voice policy ran: `Voice turn
+`turnLimitReached` and `fallbackSpoken` when the voice policy ran,
+`turnLanguage` (the BCP 47 tag the lines were picked in) with
+`languageSource` (`vendor_detected`, `turn_field`, `session`,
+`agent_default`, `builtin_default`) on a turn that ran with its lines (the
+turns `voice_turn_language_source_total` counts), `reportedTurnLanguage` (the
+tag the request reported) on every turn that reports one, voice off
+included, and `languageReport` (`blocked`, `unreadable`) when the newest
+language switch the request carried was not taken: `Voice turn
 reached the turn limit` at warn when the limit fired, else `Voice turn finished` at info
 (`completed`, `replayed`, `superseded` with `supersededAt`: `before_speech` or
 `after_speech`, `abandoned`), or `Voice turn failed` at warn with
-`errorClass`. `Voice reply was interrupted` at info names the conversation,
+`errorClass`. A tool result follow-up logs `Voice tool result follow-up
+answered with an empty completion` at debug with `event:
+"voice.tool_followup_ignored"`, `dialect` and `agentId`, and no turn line.
+`Voice reply was interrupted` at info names the conversation,
 the reply's message id, the two character counts and `partial`, once the note
 is recorded (for a reply chat stored as its heard part, once chat names the
 stored part, whose audit event committed with it); a report of what was heard
@@ -640,7 +712,10 @@ The policy records `voice_turn_first_speech_ms` (histogram, `bridged`),
 `voice_bridge_emitted_total` (`style`, `locale_resolved`: `no` when the agent
 had no line, so nothing was spoken) and `voice_turn_limit_total`
 (`locale_resolved`: `no` when there was no fallback line and the turn kept
-waiting). The service records `voice_turn_superseded_total` (`stage`:
+waiting). The service records `voice_turn_language_source_total` (`source`,
+the same values as `languageSource`) once per turn that runs with the lines
+it chose: not for a turn a person owns, which speaks neither line, nor for one
+a newer request overtook while it set up. It records `voice_turn_superseded_total` (`stage`:
 `before_speech`, `after_speech`), `voice_turn_replayed_total`,
 `voice_reply_interrupted_total` (`partial`: `yes` for a reply stored as its
 heard part, counted as its store commits; `no` for a finished one, counted
@@ -690,6 +765,10 @@ the key, the vendor URL or any audio.
 - `cd backend && pnpm exec vitest run tests/contract/voice-operator-reply.contract.test.ts`
   (an Inbox reply on a human-owned call spoken on the next turn, then marked
   and audited; a reply pending at hand-back spoken before the agent's answer)
+- `cd backend && pnpm exec vitest run tests/contract/voice-turn-language.contract.test.ts`
+  (an ElevenLabs call started in English whose replayed history then carries
+  a `language_detection` switch to Italian: the Italian bridge line, and chat
+  handed `it`)
 - `cd backend && pnpm exec vitest run tests/contract/voice-cut-reply.contract.test.ts`
   (a streamed reply the caller speaks over mid-stream, stored as far as it was
   spoken, marked `partial`, and audited)

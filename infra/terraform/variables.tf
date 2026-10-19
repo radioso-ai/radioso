@@ -693,6 +693,17 @@ variable "openai_vector_model" {
   default     = "text-embedding-3-small"
 }
 
+variable "openai_data_residency" {
+  description = "Endpoint the platform-held openai_api_key calls: global (default), us, or eu. Never applies to a workspace's own OpenAI key."
+  type        = string
+  default     = "global"
+
+  validation {
+    condition     = contains(["global", "us", "eu"], var.openai_data_residency)
+    error_message = "openai_data_residency must be global, us, or eu."
+  }
+}
+
 variable "session_ttl_hours" {
   description = "Session TTL in hours"
   type        = number

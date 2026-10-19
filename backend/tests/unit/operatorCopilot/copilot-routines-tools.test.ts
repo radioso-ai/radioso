@@ -47,7 +47,7 @@ describe("copilot routine readers", () => {
       enabled: false,
       activation: { triggerDescription: "Escalate a refund", gateRef: "refund_gate", priority: 9, reentryMode: "once_per_conversation" },
       slots: [{ stableSlotId: "slot_order", key: "order_id", type: "text", required: true, description: "Order reference", mutable: true, ordinal: 0 }],
-      steps: [{ stableStepId: "collect_order", kind: "chat", instruction: "Ask for the order reference.", toolRef: null, actionType: null, captureKey: "order_id", options: { retries: 2 }, ordinal: 0, metadata: { label: "collect" } }],
+      steps: [{ stableStepId: "collect_order", kind: "approval", instruction: "Ask for the order reference.", toolRef: null, actionType: null, captureKey: "order_id", options: [{ id: "retry", label: "Retry" }, { id: "skip", label: "Skip" }], ordinal: 0, metadata: { label: "collect" } }],
       transitions: [{ fromStep: "collect_order", toRef: "done", guardKind: "field", guardText: "When captured", outcomeStatus: null, counterLimit: null, fieldRef: "order_id", fieldOp: "is_present", fieldValue: null, fieldValues: null, fieldUnit: null, ordinal: 0 }],
       terminals: [{ stableStepId: "done", kind: "complete", instruction: "Complete the refund intake.", ordinal: 1 }],
     });
@@ -70,7 +70,7 @@ describe("copilot routine readers", () => {
       enabled: false,
       activation: { triggerDescription: "Escalate a refund", gateRef: "refund_gate", priority: 9 },
       slots: [{ stableSlotId: "slot_order", key: "order_id", mutable: true }],
-      steps: [{ stableStepId: "collect_order", captureKey: "order_id", options: { retries: 2 } }],
+      steps: [{ stableStepId: "collect_order", captureKey: "order_id", options: [{ id: "retry", label: "Retry" }, { id: "skip", label: "Skip" }] }],
       transitions: [{ guardKind: "field", fieldRef: "order_id", fieldOp: "is_present" }],
     });
   });

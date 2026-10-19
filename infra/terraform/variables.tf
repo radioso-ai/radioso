@@ -14,7 +14,7 @@ variable "environment" {
 }
 
 variable "manage_project_services" {
-  description = "Whether this stack owns the project-wide Google API enablement resources. Disable for additional regional stacks in a project whose primary Terraform state already manages APIs."
+  description = "Whether this stack owns the project-wide resources: Google API enablement and the `_Default` log bucket's retention. Disable for additional regional stacks in a project whose primary Terraform state already manages them."
   type        = bool
   default     = true
 }
@@ -405,6 +405,12 @@ variable "copilot_conversation_retention_days" {
 
 variable "copilot_retention_schedule" {
   description = "Optional cron schedule for the Ray conversation retention sweep. The worker enforces COPILOT_CONVERSATION_RETENTION_DAYS only when this sweep runs, so a deployment without it keeps copilot conversations forever."
+  type        = string
+  default     = null
+}
+
+variable "conversation_retention_schedule" {
+  description = "Optional cron schedule for the conversation retention sweep, which erases conversations past each workspace's retention window and enforces the fixed windows on summaries, routine states and raw inbound mail. Defaults to every 15 minutes, the worker poll loop's own cadence."
   type        = string
   default     = null
 }

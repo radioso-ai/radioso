@@ -35,6 +35,30 @@ export interface ConversationErasure {
   eraseVisitor(input: { workspaceId: string; visitorId: string; actor: ConversationErasureActor }): Promise<ConversationErasureReceipt>;
 }
 
+/**
+ * The erasure a workspace's retention window asks for, through the same erasers and cascade as a
+ * requested one. Its own port, since only the retention sweep calls it.
+ */
+export interface InactiveConversationErasure {
+  /**
+   * Erases up to `limit` of a workspace's conversations with no activity since `inactiveBefore`.
+   * Nobody requested it, so its record names the system as the actor, and a batch that finds
+   * nothing records nothing.
+   */
+  eraseInactiveConversations(input: InactiveConversationBatch): Promise<ConversationErasureReceipt>;
+}
+
+/** One batch of a workspace's retention: the conversations its window has passed. */
+export interface InactiveConversationBatch {
+  workspaceId: string;
+  /** The workspace's organization, which the audit event and the vendors' erasure name. */
+  accountId: string;
+  inactiveBefore: Date;
+  /** The window that set `inactiveBefore`, stated on the audit event. */
+  retentionDays: number;
+  limit: number;
+}
+
 /** The conversations and visitor an erasure removes, as its transaction sees them. */
 export interface ErasureSubjects {
   /** Locks the conversations by the conversation lock protocol and returns the ones the workspace has. */
@@ -55,6 +79,13 @@ export interface ErasureSubjects {
    */
   deleteConversations(workspaceId: string, conversationIds: readonly string[]): Promise<{ conversations: number; messages: number }>;
   deleteVisitor(workspaceId: string, visitorId: string): Promise<void>;
+  /**
+   * Locks up to `limit` of the workspace's conversations with no update and no message since
+   * `inactiveBefore`, by the conversation lock protocol, and returns them. A conversation another unit
+   * holds is skipped rather than waited for, so two sweeps never claim the same one, and each is
+   * checked again once locked, so one a message reached meanwhile is left alone.
+   */
+  lockInactiveConversations(workspaceId: string, inactiveBefore: Date, limit: number): Promise<readonly string[]>;
 }
 
 /** One erasure transaction: its subjects, every module's erasers, and its audit record, bound to it. */
@@ -88,15 +119,17 @@ interface ConversationErasureDependencies {
 /** What an erasure leaves for after its commit: the vendors' copies, read while the transaction ran. */
 type AfterCommit = (erase: () => Promise<void>) => void;
 
-type ErasureSubject =
-  | { eventType: "conversation.erased"; conversationId: string }
-  | { eventType: "visitor.erased"; visitorId: string };
+/** Who an erasure's audit event names, and what it says beyond the counts; null records nothing. */
+type ErasureRecord = (receipt: ConversationErasureReceipt) => { eventType: string; metadata: Record<string, unknown> } | null;
+
+const requestedErasure = (actor: ConversationErasureActor, subject: Record<string, string>, eventType: string): ErasureRecord =>
+  () => ({ eventType, metadata: { actorUserId: actor.userId, ...subject } });
 
 const addRows = (rows: Record<string, number>, owner: string, count: number): void => {
   rows[owner] = (rows[owner] ?? 0) + count;
 };
 
-export class ConversationErasureService implements ConversationErasure {
+export class ConversationErasureService implements ConversationErasure, InactiveConversationErasure {
   constructor(private readonly deps: ConversationErasureDependencies) {}
 
   async eraseConversation(input: {
@@ -104,13 +137,14 @@ export class ConversationErasureService implements ConversationErasure {
     conversationId: string;
     actor: ConversationErasureActor;
   }): Promise<ConversationErasureReceipt> {
-    return this.commit(input, { eventType: "conversation.erased", conversationId: input.conversationId }, async (scope, afterCommit) => {
+    const record = requestedErasure(input.actor, { conversationId: input.conversationId }, "conversation.erased");
+    return this.commit(input.workspaceId, input.actor.accountId, record, async (scope, afterCommit) => {
       const locked = await scope.subjects.lockConversations(input.workspaceId, [input.conversationId]);
       if (!locked.has(input.conversationId)) {
         throw notFound("Conversation not found");
       }
       const ids = [input.conversationId];
-      await this.readVendorHeld(scope, input, [{ kind: "conversations", workspaceId: input.workspaceId, conversationIds: ids }], afterCommit);
+      await this.readVendorHeld(scope, input.actor.accountId, [{ kind: "conversations", workspaceId: input.workspaceId, conversationIds: ids }], afterCommit);
       return this.eraseConversations(scope, input.workspaceId, ids);
     });
   }
@@ -120,7 +154,8 @@ export class ConversationErasureService implements ConversationErasure {
     visitorId: string;
     actor: ConversationErasureActor;
   }): Promise<ConversationErasureReceipt> {
-    return this.commit(input, { eventType: "visitor.erased", visitorId: input.visitorId }, async (scope, afterCommit) => {
+    const record = requestedErasure(input.actor, { visitorId: input.visitorId }, "visitor.erased");
+    return this.commit(input.workspaceId, input.actor.accountId, record, async (scope, afterCommit) => {
       const visitor = await scope.subjects.lockVisitor(input.workspaceId, input.visitorId);
       if (!visitor) {
         throw notFound("Visitor not found");
@@ -130,7 +165,7 @@ export class ConversationErasureService implements ConversationErasure {
         : [];
       // One read for everything vendors hold for the visitor: their conversations, and what they
       // left by their key before any conversation, such as a call whose first turn never came.
-      await this.readVendorHeld(scope, input, [
+      await this.readVendorHeld(scope, input.actor.accountId, [
         ...(conversationIds.length > 0 ? [{ kind: "conversations" as const, workspaceId: input.workspaceId, conversationIds }] : []),
         ...(visitor.visitorKey ? [{ kind: "visitor_key" as const, workspaceId: input.workspaceId, visitorKey: visitor.visitorKey }] : []),
       ], afterCommit);
@@ -156,6 +191,23 @@ export class ConversationErasureService implements ConversationErasure {
     });
   }
 
+  async eraseInactiveConversations(input: InactiveConversationBatch): Promise<ConversationErasureReceipt> {
+    // The schedule acting on its own: stated rather than left absent, so a reader of the audit trail
+    // can tell a retention erasure from a request that lost its attribution.
+    const record: ErasureRecord = (receipt) => receipt.conversationCount === 0 ? null : {
+      eventType: "conversation.retention.enforced",
+      metadata: { principalType: "system", retentionDays: input.retentionDays, cutoff: input.inactiveBefore.toISOString() },
+    };
+    return this.commit(input.workspaceId, input.accountId, record, async (scope, afterCommit) => {
+      const ids = await scope.subjects.lockInactiveConversations(input.workspaceId, input.inactiveBefore, input.limit);
+      if (ids.length === 0) {
+        return { conversationCount: 0, messageCount: 0, rowsByOwner: {} };
+      }
+      await this.readVendorHeld(scope, input.accountId, [{ kind: "conversations", workspaceId: input.workspaceId, conversationIds: ids }], afterCommit);
+      return this.eraseConversations(scope, input.workspaceId, ids);
+    });
+  }
+
   /**
    * Reads what vendors hold for the erased subjects, in the erasure's transaction and before any
    * eraser runs, and leaves its deletion at the vendor for after the commit. A read that rejects
@@ -163,12 +215,12 @@ export class ConversationErasureService implements ConversationErasure {
    */
   private async readVendorHeld(
     scope: ConversationErasureWriteScope,
-    input: { actor: ConversationErasureActor },
+    accountId: string,
     scopes: readonly VendorHeldConversationDataScope[],
     afterCommit: AfterCommit,
   ): Promise<void> {
     if (!scope.vendorHeldData || scopes.length === 0) return;
-    const vendorHeld = await scope.vendorHeldData.prepare({ account: { id: input.actor.accountId, deleted: false }, scopes });
+    const vendorHeld = await scope.vendorHeldData.prepare({ account: { id: accountId, deleted: false }, scopes });
     afterCommit(() => vendorHeld.erase());
   }
 
@@ -188,14 +240,16 @@ export class ConversationErasureService implements ConversationErasure {
   }
 
   /**
-   * Runs `erase` in one transaction with its audit event, then — only once that committed — tells
-   * live dashboards, logs the event, and asks the vendors to delete their copies. A refusal (not
-   * found) rolls everything back, records nothing and asks the vendors nothing; a transaction that
-   * runs again reads the vendors' copies again, and only the run that committed is erased.
+   * Runs `erase` in one transaction with its audit event (none when `record` returns null), then —
+   * only once that committed — tells live dashboards, logs the event, and asks the vendors to delete
+   * their copies. A refusal (not found) rolls everything back, records nothing and asks the vendors
+   * nothing; a transaction that runs again reads the vendors' copies again, and only the run that
+   * committed is erased.
    */
   private async commit(
-    input: { workspaceId: string; actor: ConversationErasureActor },
-    subject: ErasureSubject,
+    workspaceId: string,
+    accountId: string,
+    record: ErasureRecord,
     erase: (scope: ConversationErasureWriteScope, afterCommit: AfterCommit) => Promise<ConversationErasureReceipt>,
   ): Promise<ConversationErasureReceipt> {
     let recorded: AuditEventInput | null = null;
@@ -204,15 +258,15 @@ export class ConversationErasureService implements ConversationErasure {
       recorded = null;
       vendorErasures = [];
       const result = await erase(scope, (eraseAtVendor) => vendorErasures.push(eraseAtVendor));
-      const { eventType, ...subjectIds } = subject;
+      const subject = record(result);
+      if (!subject) return result;
       const event: AuditEventInput = {
-        accountId: input.actor.accountId,
-        workspaceId: input.workspaceId,
-        eventType,
+        accountId,
+        workspaceId,
+        eventType: subject.eventType,
         eventStatus: "success",
         metadata: {
-          actorUserId: input.actor.userId,
-          ...subjectIds,
+          ...subject.metadata,
           conversationCount: result.conversationCount,
           messageCount: result.messageCount,
           rowsByOwner: result.rowsByOwner,
@@ -223,7 +277,7 @@ export class ConversationErasureService implements ConversationErasure {
       return result;
     });
     if (receipt.conversationCount > 0) {
-      this.deps.invalidation.enqueue(input.workspaceId, ["conversation.deleted"]);
+      this.deps.invalidation.enqueue(workspaceId, ["conversation.deleted"]);
     }
     if (recorded) {
       this.deps.auditLog.logRecorded?.(recorded);

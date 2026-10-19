@@ -40,8 +40,18 @@ resource "google_sql_database_instance" "postgres" {
       enable_private_path_for_google_cloud_services = true
     }
 
+    # Pinned rather than left to the provider's defaults, because deleted conversation data lives on
+    # in backups until they age out: seven daily backups and seven days of point-in-time recovery
+    # logs bound how long that is. The data retention docs state the same windows.
     backup_configuration {
-      enabled = true
+      enabled                        = true
+      point_in_time_recovery_enabled = true
+      transaction_log_retention_days = 7
+
+      backup_retention_settings {
+        retained_backups = 7
+        retention_unit   = "COUNT"
+      }
     }
   }
 

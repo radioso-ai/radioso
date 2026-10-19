@@ -3181,6 +3181,41 @@
         ],
         "additionalProperties": false
       },
+      "PrivacySettings": {
+        "type": "object",
+        "properties": {
+          "conversationRetentionDays": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "Days a conversation is kept after its last update or message; the retention sweep then erases it with every record derived from it, as deleting it does. Null keeps conversations until someone deletes them, which is the default.",
+            "example": 365
+          }
+        },
+        "required": [
+          "conversationRetentionDays"
+        ]
+      },
+      "UpdatePrivacySettingsRequest": {
+        "type": "object",
+        "properties": {
+          "conversationRetentionDays": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "minimum": 7,
+            "maximum": 3650,
+            "description": "Whole days from 7 to 3650, or null to keep conversations until they are deleted.",
+            "example": 365
+          }
+        },
+        "required": [
+          "conversationRetentionDays"
+        ],
+        "additionalProperties": false
+      },
       "Agent": {
         "type": "object",
         "properties": {
@@ -33746,6 +33781,118 @@
         }
       }
     },
+    "/api/v1/settings/privacy": {
+      "get": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Read the workspace's privacy settings",
+        "operationId": "getPrivacySettings",
+        "description": "How long the workspace keeps conversations. Requires workspace.settings.read.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The workspace's privacy settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrivacySettings"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks workspace.settings.read",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Settings"
+        ],
+        "summary": "Set how long the workspace keeps conversations",
+        "operationId": "updatePrivacySettings",
+        "description": "Sets the conversation retention window. A conversation with no update and no message for that many days is erased by a sweep that runs every 15 minutes, with every record derived from it, as `DELETE /api/v1/history/chat/{conversationId}` erases one; each batch records one `conversation.retention.enforced` audit event with counts only. Null, the default, keeps conversations until someone deletes them. Requires workspace.settings.manage and workspace.history.delete. There is no undo for what the sweep erases.",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdatePrivacySettingsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The saved privacy settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PrivacySettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed: the window is not whole days from 7 to 3650, or null",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks workspace.settings.manage or workspace.history.delete",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/settings/document-types": {
       "get": {
         "tags": [
@@ -54245,7 +54392,8 @@
                           "website_crawl",
                           "workspace_setting",
                           "agent_publication",
-                          "agent_greeting"
+                          "agent_greeting",
+                          "privacy_setting"
                         ]
                       }
                     }
@@ -54504,7 +54652,8 @@
                                         "website_crawl",
                                         "workspace_setting",
                                         "agent_publication",
-                                        "agent_greeting"
+                                        "agent_greeting",
+                                        "privacy_setting"
                                       ]
                                     },
                                     "targetLabel": {
@@ -54847,7 +54996,8 @@
                         "website_crawl",
                         "workspace_setting",
                         "agent_publication",
-                        "agent_greeting"
+                        "agent_greeting",
+                        "privacy_setting"
                       ]
                     },
                     "targetRef": {},
@@ -54869,7 +55019,8 @@
                             "website_crawl",
                             "workspace_setting",
                             "agent_publication",
-                            "agent_greeting"
+                            "agent_greeting",
+                            "privacy_setting"
                           ]
                         },
                         "ref": {}

@@ -56,6 +56,7 @@ const workspaceSettingsPort = () => ({
     { capability: "chat" as const, provider: "openai", model: "gpt-5-mini", token: "llm-token" },
     { capability: "rerank" as const, provider: "claude", model: "claude-sonnet-4-5", token: "llm-token" },
   ]),
+  getPrivacySettings: vi.fn(async () => ({ conversationRetentionDays: 365 })),
   getManagedLlmModels: vi.fn(async () => ({
     chat: { provider: "claude", model: "claude-sonnet-5", apiKey: "sk-managed-secret" },
     rewrite: null,
@@ -140,7 +141,9 @@ describe("workspace settings copilot reader", () => {
     expect(workspaceSettings.getManagedLlmModels).toHaveBeenCalledWith("workspace-1");
     expect(workspaceSettings.getProviderCredentialHealth).toHaveBeenCalledWith("workspace-1");
     expect(workspaceSettings.getGeneralSettings).toHaveBeenCalledWith("workspace-1");
+    expect(workspaceSettings.getPrivacySettings).toHaveBeenCalledWith("workspace-1");
     expect(result).toMatchObject({
+      privacy: { conversationRetentionDays: 365 },
       retrieval: {
         vectorTopK: 20,
         similarityThreshold: 0.42,

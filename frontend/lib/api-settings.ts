@@ -14,6 +14,7 @@ import type {
   EmbeddingCoverage,
   GeneralSettings,
   IngestionSettings,
+  PrivacySettings,
   UpdateDocumentTypeCatalogRequest,
   PlatformSettings,
   RetrievalDefaults,
@@ -56,6 +57,19 @@ export const settingsApi = {
   async getIngestionSettings(): Promise<IngestionSettings> {
     return request<IngestionSettings>("/settings/ingestion", {
       method: "GET",
+    }, { withSession: true })
+  },
+
+  async getPrivacySettings(): Promise<PrivacySettings> {
+    return request<PrivacySettings>("/settings/privacy", {
+      method: "GET",
+    }, { withSession: true })
+  },
+
+  async updatePrivacySettings(data: PrivacySettings): Promise<PrivacySettings> {
+    return request<PrivacySettings>("/settings/privacy", {
+      method: "PUT",
+      body: JSON.stringify({ conversationRetentionDays: data.conversationRetentionDays }),
     }, { withSession: true })
   },
 

@@ -801,6 +801,74 @@ describe("routine defaults", () => {
     });
   });
 
+  describe("unreadable decision retry", () => {
+    // Unlike `gateway`, returns a different completion on each successive call — needed to
+    // prove the selector's retry actually sends a second request rather than reusing the first.
+    const sequencedGateway = (texts: string[]): ConversationModelGateway => {
+      let callCount = 0;
+      return {
+        complete: vi.fn(async () => {
+          const text = texts[Math.min(callCount, texts.length - 1)];
+          callCount += 1;
+          return { text };
+        }),
+      };
+    };
+
+    it("retries once after an unreadable completion, keeping the captured slot the retry returns", async () => {
+      const onUnreadable = vi.fn();
+      const gw = sequencedGateway([
+        "I think they want a retreat.",
+        '{"claimsAuthority": false, "condition": 1, "variables": {"email": "a@b.c"}}',
+      ]);
+
+      const decision = await new RoutineNextStepSelector(gw, { onUnreadable })
+        .select({ routine, state, currentStep, transitions, turn });
+
+      expect(decision).toEqual({
+        nextStepId: "ask_message",
+        variables: { email: "a@b.c" },
+        selection: { outcome: "transition", returnedSlotKeys: ["email"] },
+      });
+      expect(gw.complete).toHaveBeenCalledTimes(2);
+      expect(onUnreadable).toHaveBeenCalledTimes(1);
+      expect(onUnreadable).toHaveBeenCalledWith({
+        routineId: routine.id,
+        stepId: currentStep.id,
+        reason: "no_json_object",
+        attempt: 1,
+      });
+    });
+
+    it("falls back to the unreadable decision, and notifies the observer twice, when the retry is unreadable too", async () => {
+      const onUnreadable = vi.fn();
+      const gw = sequencedGateway(["I think they want a retreat.", "still not json"]);
+
+      const decision = await new RoutineNextStepSelector(gw, { onUnreadable })
+        .select({ routine, state, currentStep, transitions, turn });
+
+      expect(decision).toEqual({
+        nextStepId: "ask_email",
+        variables: {},
+        selection: { outcome: "unreadable", returnedSlotKeys: [] },
+      });
+      expect(gw.complete).toHaveBeenCalledTimes(2);
+      expect(onUnreadable).toHaveBeenCalledTimes(2);
+      expect(onUnreadable).toHaveBeenNthCalledWith(1, { routineId: routine.id, stepId: currentStep.id, reason: "no_json_object", attempt: 1 });
+      expect(onUnreadable).toHaveBeenNthCalledWith(2, { routineId: routine.id, stepId: currentStep.id, reason: "no_json_object", attempt: 2 });
+    });
+
+    it("calls the model only once, and never the observer, when the first completion is readable", async () => {
+      const onUnreadable = vi.fn();
+      const gw = gateway('{"claimsAuthority": false, "condition": 1, "variables": {}}');
+
+      await new RoutineNextStepSelector(gw, { onUnreadable }).select({ routine, state, currentStep, transitions, turn });
+
+      expect(gw.complete).toHaveBeenCalledTimes(1);
+      expect(onUnreadable).not.toHaveBeenCalled();
+    });
+  });
+
   describe("text posing as a system notice (#1375)", () => {
     const booking: Routine = {
       ...routine,

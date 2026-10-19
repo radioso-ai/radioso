@@ -21,6 +21,8 @@ interface VisitorPanelViewModel {
   language: string | null
   entryPageUrl: string | null
   referrer: string | null
+  /** The version of the privacy notice the visitor was shown before their first message. */
+  privacyNoticeVersion: string | null
   clientIp: string | null
   /** The edge marker was present but did not verify — every request fact is null, not a guess. */
   unverifiedRequestFacts: boolean
@@ -32,7 +34,7 @@ interface VisitorPanelViewModel {
 
 type VisitorPanelSourceConversation = Pick<
   ChatConversationDetail,
-  'visitor' | 'requestContext' | 'entryPageUrl' | 'entryReferrer'
+  'visitor' | 'requestContext' | 'entryPageUrl' | 'entryReferrer' | 'privacyNoticeVersion'
 >
 
 const PREVIOUS_CONVERSATIONS_LISTED = 5
@@ -66,6 +68,7 @@ export const buildVisitorPanelViewModel = (
     language: parsePrimaryLanguageTag(requestContext?.acceptLanguage ?? null),
     entryPageUrl: conversation.entryPageUrl ?? null,
     referrer: conversation.entryReferrer ?? null,
+    privacyNoticeVersion: conversation.privacyNoticeVersion ?? null,
     clientIp: requestContext?.clientIp ?? null,
     unverifiedRequestFacts: requestContext?.observedVia === 'unproven',
     previousConversationsTotal,

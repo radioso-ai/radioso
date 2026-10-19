@@ -27,7 +27,12 @@ import {
   type ChatThreadMessage,
 } from '@/components/dashboard/chat-message-thread'
 import { AssistantMessageContent } from '@/components/dashboard/chat-citations'
-import { AssistantAiChip, buildAssistantIdentity } from '@/components/chat/assistant-identity'
+import {
+  AssistantAiChip,
+  buildAssistantIdentity,
+  PrivacyNoticeLine,
+  type PrivacyNoticeDisplay,
+} from '@/components/chat/assistant-identity'
 import { ScrollToBottomButton } from '@/components/chat/scroll-to-bottom-button'
 import { VoiceCallBar, VoiceCallNotice, VoiceTalkButton } from '@/components/chat/voice-call-controls'
 import { useChatScroll } from '@/hooks/use-chat-scroll'
@@ -441,6 +446,7 @@ function PublicChatCenteredIntro({
   isLoading,
   branding,
   citationDisplayEnabled,
+  privacyNotice,
   children,
 }: {
   copy: ReturnType<typeof getWebsiteEmbedCopy>
@@ -453,6 +459,8 @@ function PublicChatCenteredIntro({
   isLoading: boolean
   branding?: AgentBrandingSettings | null
   citationDisplayEnabled: boolean
+  /** Shown with the name and the AI chip, before the visitor's first message. */
+  privacyNotice?: PrivacyNoticeDisplay | null
   children: ReactNode
 }) {
   const visibleSuggestions = greetingMessage?.suggestions ?? []
@@ -482,6 +490,7 @@ function PublicChatCenteredIntro({
               title={formatWebsiteEmbedDisclaimer(copy, workspaceName).trim() || undefined}
             />
           </div>
+          {privacyNotice ? <PrivacyNoticeLine notice={privacyNotice} theme={theme} className="max-w-xl text-center" /> : null}
         </div>
         {hasGreetingContent ? (
           <div className="max-w-xl text-center text-base leading-relaxed" style={{ color: theme.panelForeground }}>
@@ -593,6 +602,7 @@ function PublicChatContent({
     startNewChat,
     trackAnalyticsEvent,
     visitorLocale,
+    privacyNotice,
   } = useAnonymousChat()
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const messagesScrollRef = useRef<HTMLDivElement>(null)
@@ -610,8 +620,8 @@ function PublicChatContent({
   const resolvedThemeOverrides = assistantTheme ?? themeOverrides
   const theme = getWebsiteEmbedTheme(resolvedThemeOverrides)
   const assistantIdentity = useMemo(
-    () => buildAssistantIdentity(copy, resolvedWorkspaceName),
-    [copy, resolvedWorkspaceName],
+    () => buildAssistantIdentity(copy, resolvedWorkspaceName, privacyNotice),
+    [copy, privacyNotice, resolvedWorkspaceName],
   )
   // The contact button follows the backend-advertised intake action, which the host
   // surfaces only when the agent enabled contact requests. No edition gate here: the
@@ -1036,6 +1046,7 @@ function PublicChatContent({
           isLoading={isLoading}
           branding={branding}
           citationDisplayEnabled={citationDisplayEnabled}
+          privacyNotice={assistantIdentity.notice}
         >
           <PublicChatBubbleComposerForm
             theme={theme}
@@ -1068,6 +1079,9 @@ function PublicChatContent({
                 <p className="max-w-sm text-sm" style={{ color: theme.mutedForeground }}>
                   {copy.publicChatEmptyMessage}
                 </p>
+                {assistantIdentity.notice ? (
+                  <PrivacyNoticeLine notice={assistantIdentity.notice} theme={theme} className="mt-3 max-w-sm" />
+                ) : null}
               </div>
             ) : (
               <div className={`mx-auto max-w-3xl ${isCompactKeyboardLayout ? 'space-y-4' : 'space-y-6'}`}>

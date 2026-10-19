@@ -21,7 +21,8 @@ import {
   ChatMessageThread,
   type ChatThreadMessage,
 } from "@/components/dashboard/chat-message-thread";
-import { buildAssistantIdentity } from "@/components/chat/assistant-identity";
+import { buildAssistantIdentity, PrivacyNoticeLine } from "@/components/chat/assistant-identity";
+import type { ShownPrivacyNotice } from "@/lib/privacy-notice";
 import { TestExecutionHistoryView, UncopiedLink } from "@/components/dashboard/test-execution-history-view";
 import { TestSessionsView } from "@/components/dashboard/workbench/test-sessions-view";
 import { TurnFlowOverlay } from "@/components/dashboard/turn-flow-overlay";
@@ -215,6 +216,7 @@ export function AgentRevisionTestChat({
   agentId,
   workspaceId,
   assistantName,
+  privacyNotice = null,
   evalsHref,
   agentVersionsHref,
   usageHref,
@@ -227,6 +229,8 @@ export function AgentRevisionTestChat({
   agentId: string;
   workspaceId: string;
   assistantName?: string;
+  /** The agent's privacy notice, shown before the first message as a visitor sees it. */
+  privacyNotice?: ShownPrivacyNotice | null;
   evalsHref: string;
   agentVersionsHref: string;
   /** The dashboard link to the workspace's usage tab, shown when a test run hits a plan limit. */
@@ -397,8 +401,8 @@ export function AgentRevisionTestChat({
     [agentId, cases],
   );
   const assistantIdentity = useMemo(
-    () => buildAssistantIdentity(DEFAULT_WEBSITE_EMBED_COPY, assistantName?.trim() || "Your agent"),
-    [assistantName],
+    () => buildAssistantIdentity(DEFAULT_WEBSITE_EMBED_COPY, assistantName?.trim() || "Your agent", privacyNotice),
+    [assistantName, privacyNotice],
   );
   const availableSelectedCaseIds = selectedCaseIds.filter((caseId) =>
     agentCases.some((evalCase) => evalCase.id === caseId),
@@ -1852,7 +1856,10 @@ export function AgentRevisionTestChat({
                                 });
                               }
                             }}
-                          /> : null}
+                          /> : assistantIdentity.notice ? (
+                            // As a visitor sees it before their first message.
+                            <PrivacyNoticeLine notice={assistantIdentity.notice} className="mx-auto max-w-3xl px-1" />
+                          ) : null}
                           {side?.errorCode ? (
                             <p className="mt-3 text-sm text-destructive">
                               {sideFailureContent(side.errorCode, usageHref)}

@@ -44,6 +44,11 @@ constructing ad hoc fetches.
   routes remount. Workspace lifecycle owns disposal when the active workspace
   changes.
 - `embed-widget.ts` and `radioso-embed-launcher.js`: website embed behavior.
+- `privacy-notice.ts`: the agent's privacy notice on the visitor surfaces — which
+  language's notice a visitor sees (the backend's rule: their language, else
+  English, else the first), and the Privacy notice card's form, which saves only
+  complete rows. `anonymous-chat-context.tsx` reports the shown notice's version
+  with the message that starts a conversation.
 
 ## Common Change Paths
 

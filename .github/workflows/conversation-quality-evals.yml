@@ -4,7 +4,8 @@ name: Conversation Quality Evals
 # throwaway workspace and gates on regressions vs the committed baseline. This is NOT a
 # per-PR gate: it needs provider credentials, spends tokens, and is nondeterministic, so
 # it runs nightly (and on demand). The deterministic harness logic is covered separately
-# by tests/unit/eval-suite in the normal CI job.
+# by tests/unit/eval-suite in the normal CI job. A second step runs the voice cases the
+# same way, through the voice runtime's door.
 #
 # Requires the OPENAI_API_KEY secret on the `staging` environment, which the job names below. Sampling (--samples 5) matches how the
 # baseline is recorded, so run-to-run LLM variance does not produce false regressions.
@@ -105,6 +106,14 @@ jobs:
         # assertions on the configuration's rerank-tier model; every other case scores its
         # deterministic layer.
         run: node --env-file=./.env.evals --import tsx ./scripts/runEvals.ts --samples ${{ github.event.inputs.samples || '5' }} --judge-tag quick-reply
+
+      - name: Run voice cases
+        working-directory: backend
+        # The voice cases through the served app's completions door (generic dialect), three samples
+        # each, gated on the wire against voice-baseline.json; latency is reported, never gated. It
+        # runs when the text suite regressed too, so one night reports both.
+        if: ${{ !cancelled() }}
+        run: node --env-file=./.env.evals --import tsx ./scripts/runEvals.ts --channel voice --samples 3
 
       - name: Stop document worker
         if: always()

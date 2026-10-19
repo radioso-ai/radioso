@@ -436,6 +436,7 @@ Focused checks:
 - `cd frontend && pnpm exec playwright test tests/e2e/voice-settings.spec.ts tests/e2e/provider-settings.spec.ts tests/e2e/embed-voice-talk.spec.ts tests/e2e/inbox-call-recording.spec.ts tests/e2e/inbox-voice-operator-reply.spec.ts tests/e2e/inbox-interrupted-reply.spec.ts`
 - `cd frontend && pnpm exec vitest run tests/unit/voice-session.test.ts tests/unit/voice-call.test.ts tests/unit/api-public-voice.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/voice-session-repository.integration.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/eval-suite/voice-cases.test.ts tests/unit/eval-suite/voice-runner.test.ts` (whole voice turns through the `generic` dialect, scored as eval cases; see the Conversation-Quality Eval Suite section)
 
 Related docs:
 
@@ -2168,10 +2169,16 @@ Primary paths:
 - `backend/src/modules/eval/suite/` — case schema, trace assertions, scoring,
   baseline diff, sampling reducer, report
 - `backend/tests/fixtures/conversation-quality/` — the dataset (corpus, seed
-  routines and directives, agent, cases, `baseline.json`) and its `README.md`
+  routines and directives, agent, cases, `baseline.json`; the voice cases in
+  `voiceCases.ts` with `voice-baseline.json`) and its `README.md`
 - `backend/scripts/runEvals.ts` — headless CLI that seeds fixtures, drives turns
   through `WorkbenchReplayRunner`, scores, and gates on the baseline; every selected
-  case must have a committed baseline entry
+  case must have a committed baseline entry. `--channel voice` drives the voice
+  cases through the served app's completions door instead
+- `backend/scripts/voiceEvalRunnerAdapter.ts` — the voice cases' runner: the
+  `generic`-dialect client, the SSE reader that times each piece, and the call
+  driver both halves share; `voiceAssertions.ts` and `voiceReport.ts` in the
+  suite score and report what it observes
 - `.github/workflows/conversation-quality-evals.yml` — nightly live run
 
 Full-assistant runs use the same conversation turn assembly as production chat
@@ -2193,9 +2200,12 @@ Useful searches:
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/eval-suite` — deterministic
-  harness (runs in normal CI)
+  harness (runs in normal CI), the voice cases against the test app on a fake
+  clock included
 - `cd backend && pnpm run evals:ci` — live sampled run (needs Postgres,
   `OPENAI_API_KEY`, and a running document worker); nightly, not per-PR
+- `cd backend && pnpm run evals:voice:ci` — the live voice cases, three samples,
+  gated on the wire, latency reported; nightly, not per-PR
 
 Related docs:
 

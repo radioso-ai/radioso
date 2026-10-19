@@ -841,3 +841,9 @@ the key, the vendor URL or any audio.
   deletion with the workspace)
 - `cd backend && pnpm exec vitest run tests/integration/voice-session-repository.integration.test.ts`
   (needs the disposable integration database; see the code map)
+- `cd backend && pnpm exec vitest run tests/unit/eval-suite/voice-cases.test.ts`
+  (the conversation-quality suite's voice cases: whole calls through the
+  `generic` dialect against the test app on a fake clock, pinning the bridge,
+  limit and outcome per case; `pnpm run evals:voice` runs them live, see
+  `tests/fixtures/conversation-quality/README.md`). The contract tests open
+  their runtime through `tests/support/voiceRuntime.ts`.

@@ -1,3 +1,4 @@
+import { choosePrivacyNotice, type AgentPrivacyNotices } from "../../agents/public.js";
 import { parseRfcMessageId, type RfcMessageId } from "../../mail/public.js";
 import { traceOperation } from "../../../shared/observability/tracing/operations.js";
 import type { EmailDomainRecord, EmailDomainRepository } from "../persistence/emailDomainRepository.js";
@@ -11,19 +12,22 @@ import type { EmailThreadLinkRecord, EmailThreadRepository } from "../persistenc
 import { buildOutboundHeaders, replySubject, replyToAddress } from "./outboundHeaders.js";
 import { firstAttemptAuthority, ownershipFactsOf, type SendOwnershipFacts } from "./sendAuthority.js";
 
-/** The message a send delivers: its author and its text, read when the intent materializes and freezes. */
+/**
+ * The message a send delivers: its author and its text, read when the intent materializes and
+ * freezes, and, for the agent's own reply, the language tag its turn answered in.
+ */
 export interface EmailSendMessageReader {
   findByIdAndWorkspaceId(
     workspaceId: string,
     messageId: string,
-  ): Promise<{ id: string; conversationId: string; content: string; source?: string | null } | null>;
+  ): Promise<{ id: string; conversationId: string; content: string; source?: string | null; replyLanguageTag?: string | null } | null>;
 }
 
-/** The agent's privacy notice as an email carries it: the operator's line and link, word for word (#1545). */
-export interface EmailFirstReplyNotice {
-  text: string;
-  url: string;
-  version: string;
+/** What a conversation's first reply reads to carry the agent's privacy notice (#1545). */
+export interface EmailFirstReplyNoticeFacts {
+  notices: AgentPrivacyNotices;
+  /** The agent's default language: the notice's language when the reply names none of its own. */
+  defaultLocale: string | null;
 }
 
 /**
@@ -32,7 +36,7 @@ export interface EmailFirstReplyNotice {
  */
 export interface EmailFirstReplyNoticeScope {
   /** Step 1 of the protocol when a notice is pending: locks the conversation row, then reads it again. */
-  pending(input: { workspaceId: string; conversationId: string }): Promise<EmailFirstReplyNotice | null>;
+  pending(input: { workspaceId: string; conversationId: string }): Promise<EmailFirstReplyNoticeFacts | null>;
   /** Records the version on the conversation row `pending` locked. */
   record(input: { workspaceId: string; conversationId: string; version: string }): Promise<void>;
 }
@@ -58,7 +62,7 @@ export interface EmailSendCommitmentScope {
   domains: Pick<EmailDomainRepository, "lockForSend">;
   threads: Pick<EmailThreadRepository, "lockLinkForSend" | "findLatestInboundThreading">;
   messages: EmailSendMessageReader;
-  intents: Pick<EmailSendIntentRepository, "freezeRequest">;
+  intents: Pick<EmailSendIntentRepository, "freezeRequest" | "listByMessageId">;
 }
 
 export interface EmailSendCommitmentUnitOfWork {
@@ -104,7 +108,12 @@ export class SendCommitment {
   /** Checks and freezes the send this claim read unfrozen, fenced on the version it read. */
   async commit(intent: EmailSendIntentRecord): Promise<SendCommitmentOutcome> {
     return this.deps.unitOfWork.run(async (scope) => {
-      const notice = await scope.firstReplyNotice.pending({ workspaceId: intent.workspaceId, conversationId: intent.conversationId });
+      // An operator's resend sends what its message's last frozen send sent, notice included; any
+      // other send is rendered, with the notice when the conversation's first reply is still to go.
+      const replayed = intent.trigger === "audited_resend" ? await replayedBodyOf(scope, intent) : null;
+      const pendingNotice = replayed
+        ? null
+        : await scope.firstReplyNotice.pending({ workspaceId: intent.workspaceId, conversationId: intent.conversationId });
       const { facts, verdict } = await traceOperation({
         name: "email.send.revalidate",
         attributes: { trigger: intent.trigger, "radioso.workspace_id": intent.workspaceId, "radioso.email.send_intent_id": intent.id },
@@ -120,10 +129,11 @@ export class SendCommitment {
         }),
       });
       if (verdict.verdict !== "allow") return { outcome: "refused", refusal: verdict };
-      const frozen = await scope.intents.freezeRequest(intent.id, intent.version, await requestOf(scope, intent, facts, notice));
+      const { request, noticeVersion } = await requestOf(scope, intent, facts, { replayed, pendingNotice });
+      const frozen = await scope.intents.freezeRequest(intent.id, intent.version, request);
       if (frozen.outcome === "applied") {
         // The conversation row is already this transaction's, so the record takes no new lock.
-        if (notice) await scope.firstReplyNotice.record({ workspaceId: intent.workspaceId, conversationId: intent.conversationId, version: notice.version });
+        if (noticeVersion) await scope.firstReplyNotice.record({ workspaceId: intent.workspaceId, conversationId: intent.conversationId, version: noticeVersion });
         return { outcome: "frozen", intent: frozen.intent };
       }
       return frozen.outcome === "conflict" ? { outcome: "moved", current: frozen.current } : { outcome: "not_found" };
@@ -142,20 +152,41 @@ const lockFacts = async (scope: EmailSendCommitmentScope, intent: EmailSendInten
   return { mailbox, domain, link, ownership: ownershipFactsOf(ownership) };
 };
 
+/**
+ * The body a resend sends again: the one the last earlier send of its message froze. A send that
+ * never froze (refused at its commitment) leaves none, and the resend renders like a first send.
+ */
+const replayedBodyOf = async (
+  scope: Pick<EmailSendCommitmentScope, "intents">,
+  intent: EmailSendIntentRecord,
+): Promise<FrozenRequest["body"] | null> => {
+  const chain = await scope.intents.listByMessageId(intent.messageId);
+  const earlier = chain.slice(0, Math.max(0, chain.findIndex((sent) => sent.id === intent.id)));
+  return earlier.reverse().find((sent) => sent.request?.body)?.request?.body ?? null;
+};
+
+/**
+ * The notice a first reply carries: in the language the agent's reply was written in, else in the
+ * agent's default language; the agents' rule picks among the languages the notice is written in.
+ */
+const firstReplyNoticeOf = (facts: EmailFirstReplyNoticeFacts, replyLanguageTag: string | null | undefined) =>
+  choosePrivacyNotice(facts.notices, [replyLanguageTag, facts.defaultLocale]);
+
 /** The reply, then the notice's line and its link, each on its own line. */
-const withNotice = (content: string, notice: EmailFirstReplyNotice | null): string =>
+const withNotice = (content: string, notice: { text: string; url: string } | null): string =>
   notice ? `${content.trimEnd()}\n\n${notice.text}\n${notice.url}` : content;
 
 /**
  * The request the send freezes: the mailbox's real address, the thread's headers and the message's
- * text, with the privacy notice below it on the conversation's first reply.
+ * text, with the privacy notice below it on the conversation's first reply, or a resend's replayed
+ * body; and the notice version the conversation records once it freezes.
  */
 const requestOf = async (
   scope: Pick<EmailSendCommitmentScope, "threads" | "messages">,
   intent: EmailSendIntentRecord,
   facts: LockedSendFacts,
-  notice: EmailFirstReplyNotice | null,
-): Promise<FrozenRequest> => {
+  body: { replayed: FrozenRequest["body"] | null; pendingNotice: EmailFirstReplyNoticeFacts | null },
+): Promise<{ request: FrozenRequest; noticeVersion: string | null }> => {
   const { mailbox, domain, link } = facts;
   if (!mailbox || !domain) throw new Error("email_send_mailbox_not_found");
   if (!link) throw new Error("email_send_thread_not_found");
@@ -164,7 +195,8 @@ const requestOf = async (
     scope.messages.findByIdAndWorkspaceId(intent.workspaceId, intent.messageId),
   ]);
   if (!message) throw new Error("email_send_message_not_found");
-  return {
+  const notice = body.pendingNotice ? firstReplyNoticeOf(body.pendingNotice, message.replyLanguageTag) : null;
+  const request: FrozenRequest = {
     from: { email: mailbox.address, name: mailbox.displayName },
     to: link.participantAddress,
     replyTo: replyToAddress({ address: mailbox.address, plusAddressVerified: mailbox.plusAddressVerifiedAt !== null }, link.threadToken),
@@ -178,6 +210,7 @@ const requestOf = async (
       authorKind: intent.authorKind,
       newMessageUuid: intent.id,
     }),
-    body: { text: withNotice(message.content, notice), html: null },
+    body: body.replayed ?? { text: withNotice(message.content, notice), html: null },
   };
+  return { request, noticeVersion: notice?.version ?? null };
 };

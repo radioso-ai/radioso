@@ -16,6 +16,11 @@ export interface TurnLanguageReport {
    * same lazy value, observed, so the report follows the first consumer that reads it.
    */
   observe(responseLanguage: Promise<string | undefined>, plan: ChatTurnPlanHandle | undefined): Promise<string | undefined>;
+  /**
+   * The turn has ended: a report whose language was never read settles with no tag, so a caller
+   * reading the tag after the turn always gets an answer. A language that was read reports as usual.
+   */
+  close(): void;
 }
 
 const planTagOf = async (plan: ChatTurnPlanHandle): Promise<string | undefined> => {
@@ -26,15 +31,20 @@ const planTagOf = async (plan: ChatTurnPlanHandle): Promise<string | undefined> 
 
 export const createTurnLanguageReport = (): TurnLanguageReport => {
   let settle!: (tag: string | undefined) => void;
+  let read = false;
   const tag = new Promise<string | undefined>((resolve) => {
     settle = resolve;
   });
   return {
     tag,
+    close: () => {
+      if (!read) settle(undefined);
+    },
     observe: (responseLanguage, plan) =>
       lazyPromise(() =>
         responseLanguage.then(
           (language) => {
+            read = true;
             if (language && plan) {
               void planTagOf(plan).then(settle, () => settle(undefined));
             } else {
@@ -43,6 +53,7 @@ export const createTurnLanguageReport = (): TurnLanguageReport => {
             return language;
           },
           (error: unknown) => {
+            read = true;
             settle(undefined);
             throw error;
           },

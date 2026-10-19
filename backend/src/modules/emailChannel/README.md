@@ -115,9 +115,12 @@ It does not own:
   the authority check and the request's freeze in one transaction, under the
   conversation lock protocol's locks (bound by
   `createPostgresEmailSendCommitmentUnitOfWork`), with the agent's privacy
-  notice below the conversation's first reply and its version recorded on
-  the conversation (`EmailFirstReplyNoticeScope`, which locks the
-  conversation row first when a notice is pending) — and sends through
+  notice below the conversation's first reply, in the reply's language
+  (`replyLanguageTag` on the message reader) else the agent's default, and
+  its version recorded on the conversation (`EmailFirstReplyNoticeScope`,
+  which locks the conversation row first when a notice is pending); an
+  `audited_resend` freezes the body its message's last frozen send froze —
+  and sends through
   `providerSendAttempt.ts` with no transaction held across the provider
   call; `sendReconciler.ts` re-POSTs unknown outcomes inside 23 hours while
   the trigger's authority holds (`repostAuthorized`) and looks accepted sends,

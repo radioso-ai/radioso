@@ -44,7 +44,7 @@ import { countStreamPersistFailure, observeFirstAnswerChunkLatency } from "./str
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import type { ChatResponse } from "../types/chatResponses.js";
 import type { ChatReviewInput, ChatReviewResult } from "../types/chatReview.js";
-import { chatReviewResult } from "./reviewDraft.js";
+import { chatReviewResult, withReplyLanguageTag } from "./reviewDraft.js";
 import type {
   AssistantClientContextCapabilities,
   AssistantPageContext,
@@ -363,6 +363,8 @@ interface ChatTurnEntry {
   prepare(): Promise<PreparedSession>;
   /** The channel the reply goes out on, which usage is metered against. */
   usageSurface(session: PreparedSession): string | null | undefined;
+  /** Reports the language tag the turn answers in, for an entry whose result carries it. */
+  turnLanguage?: TurnLanguageReport;
 }
 
 /** How a turn ended, before its entry point shapes the result. */
@@ -1036,14 +1038,20 @@ export class ChatService {
       stream: false,
       executionMode: "review",
     };
-    return chatReviewResultFor(await this.runTurn(turnInput, {
+    const turnLanguage = createTurnLanguageReport();
+    const outcome = await this.runTurn(turnInput, {
       prepare: () => this.chatSessionPreparer.prepare(turnInput, {
         skipRetrieval: true,
         existingUserMessage: { message: requestMessage, historyWindow: input.historyWindow },
       }),
       // The reply goes out on the conversation's own channel, so usage is metered there.
       usageSurface: (session) => session.conversation.sourceChannel,
-    }));
+      turnLanguage,
+    });
+    turnLanguage.close();
+    const result = chatReviewResultFor(outcome);
+    // The draft carries the language its turn answered in, which its channel may send with it.
+    return result.kind === "draft" ? { ...result, draft: withReplyLanguageTag(result.draft, await turnLanguage.tag) } : result;
   }
 
   private async runTurn(input: ChatTurnInput, entry: ChatTurnEntry): Promise<ChatTurnOutcome> {
@@ -1125,7 +1133,10 @@ export class ChatService {
         pendingClarification: clarification.resolution?.resolvedPending === true,
         suspendedRoutine: Boolean(suspendedRoutine),
       }, coordination.lease?.signal);
-      const responseLanguagePromise = this.planAwareResponseLanguagePromise(input, session);
+      const plannedResponseLanguage = this.planAwareResponseLanguagePromise(input, session);
+      const responseLanguagePromise = entry.turnLanguage
+        ? entry.turnLanguage.observe(plannedResponseLanguage, session.turnPlan)
+        : plannedResponseLanguage;
       // A routine is a multi-turn skill: attempt it before grounding. If it claims the
       // turn, there is no retrieval — the routine renders its own reply.
       const routineStartedAt = Date.now();

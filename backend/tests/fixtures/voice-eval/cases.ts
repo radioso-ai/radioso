@@ -1,0 +1,82 @@
+import type { ConversationQualityCase } from "../../../src/modules/eval/suite/index.js";
+
+/**
+ * The committed voice cases: bridge timing, the turn limit and the outcome derivation, run
+ * through the real voice turn policy (`modules/voiceChannel/services/voiceTurnPolicy.ts`) rather
+ * than a plain chat reply. The deterministic harness (`tests/unit/eval-suite/voice-behaviour.test.ts`)
+ * plays each case's `voiceTurn.chatEvents` script against a `VoiceTurnService` built with a tiny
+ * timing override, over the stubbed `generic` dialect vendor tag; `scripts/runEvals.ts` runs the
+ * same cases against the real brain on its production timing and ignores the script. See
+ * `tests/fixtures/conversation-quality/README.md`'s "Voice cases" section.
+ */
+export const voiceEvalCases: ConversationQualityCase[] = [
+  {
+    id: "voice-bridge-on-searching",
+    name: "Bridges while the turn searches",
+    tags: ["voice"],
+    query: "Can you check what the cancellation policy says about partial refunds?",
+    voiceTurn: {
+      chatEvents: [
+        { type: "status", stage: "interpreting" },
+        { type: "status", stage: "searching" },
+        { type: "chunk", text: "Partial refunds are available within 14 days of booking." },
+        { type: "done" },
+      ],
+    },
+    assertions: [
+      { type: "voice_bridge_emitted", expected: true },
+      { type: "voice_turn_outcome", kind: "continue" },
+    ],
+  },
+  {
+    id: "voice-quick-reply-no-bridge",
+    name: "Answers a thank-you with no bridge",
+    tags: ["voice"],
+    query: "Great, thanks so much for your help!",
+    voiceTurn: {
+      chatEvents: [
+        { type: "status", stage: "interpreting" },
+        { type: "chunk", text: "You're very welcome!" },
+        { type: "done" },
+      ],
+    },
+    assertions: [
+      { type: "voice_bridge_emitted", expected: false },
+      { type: "voice_turn_outcome", kind: "continue" },
+    ],
+  },
+  {
+    id: "voice-turn-limit-fires",
+    name: "Falls back once the turn limit passes with nothing said",
+    tags: ["voice"],
+    query: "What's the status of the order I placed last week?",
+    voiceTurn: {
+      // Never advances past "interpreting" and never answers, so only the turn's own limit
+      // (not a scripted delay) decides when the fallback line ends the turn.
+      chatEvents: [
+        { type: "status", stage: "interpreting" },
+        { type: "stall" },
+      ],
+    },
+    assertions: [
+      { type: "voice_turn_limit_reached", expected: true },
+      { type: "voice_turn_outcome", kind: "continue" },
+    ],
+  },
+  {
+    id: "voice-outcome-handoff",
+    name: "Reports a callback outcome once a hand-off collects a slot",
+    tags: ["voice"],
+    query: "I need someone to call me back about my refund.",
+    voiceTurn: {
+      chatEvents: [
+        { type: "status", stage: "interpreting" },
+        { type: "chunk", text: "Let me get a teammate to call you back about that." },
+        { type: "done", handoff: { reason: "routine_handoff", collectedSlotCount: 1 } },
+      ],
+    },
+    assertions: [
+      { type: "voice_turn_outcome", kind: "callback_requested" },
+    ],
+  },
+];

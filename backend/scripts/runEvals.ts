@@ -62,7 +62,9 @@ import { conversationQualityCases } from "../tests/fixtures/conversation-quality
 import { conversationQualityCorpus } from "../tests/fixtures/conversation-quality/corpus.js";
 import { conversationQualityDirectives } from "../tests/fixtures/conversation-quality/directives.js";
 import { conversationQualityRoutines, CREATE_RETURN_TICKET_SKILL } from "../tests/fixtures/conversation-quality/routines.js";
-import { createReviewTurnRunnerPort, createWorkbenchReplayRunnerPort } from "./evalRunnerAdapter.js";
+import { VOICE_EVAL_AGENT_VOICE_SETTINGS, VOICE_EVAL_FALLBACK_LINE } from "../tests/fixtures/voice-eval/agent.js";
+import { voiceEvalCases } from "../tests/fixtures/voice-eval/cases.js";
+import { createReviewTurnRunnerPort, createVoiceTurnRunnerPort, createWorkbenchReplayRunnerPort } from "./evalRunnerAdapter.js";
 
 const BASELINE_PATH = fileURLToPath(
   new URL("../tests/fixtures/conversation-quality/baseline.json", import.meta.url),
@@ -290,6 +292,20 @@ const seedFixtures = async (
 export const needsPublishedAgent = (cases: readonly ConversationQualityCase[]): boolean =>
   cases.some((evalCase) => evalCase.executionMode === "review");
 
+/** Only a voice case drives the voice turn policy, so only a run that selects one turns voice on. */
+export const needsVoiceSettings = (cases: readonly ConversationQualityCase[]): boolean =>
+  cases.some((evalCase) => evalCase.voiceTurn !== undefined);
+
+/**
+ * Turns voice on for the seeded agent with the lines the voice cases need: a bridge line so a
+ * case that searches has one to speak, and the fallback line `evalRunnerAdapter.ts`'s
+ * `observeVoiceTurn` reads a turn's whole spoken text against to tell the turn limit apart from
+ * a real answer (see `VOICE_EVAL_FALLBACK_LINE`). No `runtime` is bound: a voice case drives the
+ * turn policy directly and starts no vendor session.
+ */
+const seedVoiceSettings = (deps: Deps, flags: Flags): Promise<unknown> =>
+  deps.agentService.update(flags.workspaceId, flags.agentId, { voice: VOICE_EVAL_AGENT_VOICE_SETTINGS });
+
 /**
  * The skills the seeded routines dispatch. Publishing refuses a routine whose tool step names a
  * skill the agent lacks, so the agent holds these skills while it is published.
@@ -409,7 +425,7 @@ const main = async (): Promise<void> => {
     process.exit(2);
   }
 
-  const dataset = parseConversationQualityCases(conversationQualityCases);
+  const dataset = parseConversationQualityCases([...conversationQualityCases, ...voiceEvalCases]);
   const env = getEnv();
   if (flags.migrate) {
     console.log("Applying migrations…");
@@ -422,9 +438,15 @@ const main = async (): Promise<void> => {
     const target = await ensureTarget(deps, flags);
     flags.workspaceId = target.workspaceId;
     flags.agentId = target.agentId;
+    let cases = filterByTags(dataset, flags.tags);
+    const runsVoiceCases = needsVoiceSettings(cases);
+
     console.log(`Seeding fixtures onto agent ${flags.agentId} in workspace ${flags.workspaceId}…`);
     const { documentIds, routineIds } = await seedFixtures(deps, flags);
     await waitForDocumentsReady(deps, flags.workspaceId, documentIds);
+    if (runsVoiceCases) {
+      await seedVoiceSettings(deps, flags);
+    }
 
     const agent = await deps.agentRepository.findByIdAndWorkspaceId(flags.agentId, flags.workspaceId);
     if (!agent) {
@@ -432,7 +454,6 @@ const main = async (): Promise<void> => {
     }
     const baselineAgentConfig = projectInternalAgentConfig(agent);
 
-    let cases = filterByTags(dataset, flags.tags);
     cases = remapIds(cases, documentIds, routineIds);
     // llm_judge assertions are graded only on the cases a --judge-tag opted in.
     cases = scopeJudgeAssertions(cases, flags.judgeTags);
@@ -456,7 +477,22 @@ const main = async (): Promise<void> => {
           },
         )
       : {};
-    const port = { ...replayPort, ...reviewPort };
+    // A voice case drives the real voice turn policy over `deps.voiceTurns`, never the chat
+    // reply's content, so it has its own port rather than riding the replay runner's.
+    const voicePort = runsVoiceCases
+      ? createVoiceTurnRunnerPort(deps.voiceTurns, {
+          workspaceId: flags.workspaceId,
+          agentId: flags.agentId,
+          vendor: "generic",
+          fallbackLine: VOICE_EVAL_FALLBACK_LINE,
+        })
+      : null;
+    const port = {
+      ...replayPort,
+      ...reviewPort,
+      run: (evalCase: ConversationQualityCase) =>
+        evalCase.voiceTurn && voicePort ? voicePort.run(evalCase) : replayPort.run(evalCase),
+    };
 
     if (flags.samples > 1) {
       console.log(`Sampling each case ${flags.samples}× (pass threshold ${flags.passThreshold})…`);

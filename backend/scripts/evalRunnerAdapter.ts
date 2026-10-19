@@ -14,7 +14,9 @@ import {
   type ConversationQualityCase,
   type ConversationQualityObservedOutput,
   type ConversationQualityRunnerPort,
+  type VoiceTurnObservation,
 } from "../src/modules/eval/suite/index.js";
+import type { VoiceTurnEvent, VoiceTurnInput, VoiceTurnPort } from "../src/modules/voiceChannel/domain.js";
 
 /**
  * Maps a WorkbenchReplayRunner result into the eval domain's observed-output shape that
@@ -181,3 +183,73 @@ export const createReviewTurnRunnerPort = (
     },
   };
 };
+
+/**
+ * Observes one voice turn's port events the way the suite scores them: whether a bridge line
+ * went out, the outcome the turn closed with, and the elapsed ms to the turn's first speech,
+ * timed around the port call (the turn policy times the same instant for its own metrics, which
+ * this does not read — see {@link VoiceTurnObservation}). The turn limit has no event of its own
+ * on this stream, so a turn whose whole spoken text is exactly the fixture's configured fallback
+ * line is read as the limit having fired; `fallbackLine` is that fixture string, not a pattern.
+ */
+export const observeVoiceTurn = async (
+  events: AsyncIterable<VoiceTurnEvent>,
+  fallbackLine: string,
+): Promise<VoiceTurnObservation> => {
+  const startedAt = Date.now();
+  let bridged = false;
+  let outcomeKind: VoiceTurnObservation["outcomeKind"] = null;
+  let firstSpeechMs: number | null = null;
+  let spokenText = "";
+  for await (const event of events) {
+    if (event.type === "bridge") {
+      bridged = true;
+    } else if (event.type === "speech") {
+      firstSpeechMs ??= Date.now() - startedAt;
+      spokenText += event.text;
+    } else if (event.type === "outcome") {
+      outcomeKind = event.outcome.kind;
+    }
+  }
+  return { bridged, turnLimitReached: spokenText === fallbackLine, outcomeKind, firstSpeechMs };
+};
+
+export interface VoiceEvalContext {
+  workspaceId: string;
+  agentId: string;
+  /** The session's vendor tag, matching how the completions route labels a caller's dialect. */
+  vendor: string;
+  /** The agent's configured fallback line; see {@link observeVoiceTurn}. */
+  fallbackLine: string;
+}
+
+/**
+ * Adapts a composed `VoiceTurnPort` into the suite's narrow runner port: drives a voice case's
+ * `query` as one caller utterance and scores the turn policy's own behaviour, never the chat
+ * reply's content. A case without `voiceTurn` has no utterance to script a scenario around, so
+ * it is a caller error, not a runtime one to degrade quietly.
+ */
+export const createVoiceTurnRunnerPort = (
+  voiceTurns: Pick<VoiceTurnPort, "runTurn">,
+  context: VoiceEvalContext,
+): ConversationQualityRunnerPort => ({
+  async run(evalCase) {
+    if (!evalCase.voiceTurn) {
+      throw new Error(`Case "${evalCase.id}" carries no voiceTurn script; it cannot run through the voice port.`);
+    }
+    const input: VoiceTurnInput = {
+      session: {
+        workspaceId: context.workspaceId,
+        agentId: context.agentId,
+        vendor: context.vendor,
+        sessionKey: `cq-voice-${evalCase.id}`,
+      },
+      transport: "web",
+      utterance: conversationQualityCaseTurnText(evalCase),
+      streamsSpeech: true,
+    };
+    const events = voiceTurns.runTurn(input, new AbortController().signal);
+    const voiceTurn = await observeVoiceTurn(events, context.fallbackLine);
+    return { retrievedChunks: [], voiceTurn };
+  },
+});

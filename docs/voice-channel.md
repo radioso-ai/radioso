@@ -858,7 +858,10 @@ switch. It reads the call's conversation instead: it bridges in the new
 language and, once the other server stores the agent's answer to the
 caller's newest message, speaks it whole rather than as it streams; it
 speaks the fallback line in the new language if no answer is stored by the
-turn limit, and stops reading once the caller is gone. A follow-up for
+turn limit, ends at once without a word when the caller's newest message is
+another utterance, and stops reading once the caller is gone. It finds the
+answer however many teammate replies were written after the caller's
+message. A follow-up for
 another utterance than the one the session's switching turn answered says
 nothing, and that turn's answer stays replayable.
 

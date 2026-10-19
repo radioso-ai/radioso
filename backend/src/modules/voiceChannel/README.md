@@ -352,8 +352,8 @@ helpers and the shared chat message limit from `app/http`
   `languagesInOrder` in `voiceLines.ts` is the one ordered list behind the
   turn's language, the fallback order and the recording notice.
 - **Mid-call language.** What the turn reads when a request reports a turn
-  language, as structured data only (the next decision is how a turn switches
-  an `elevenlabs` call itself). On `elevenlabs` that is
+  language, as structured data only (how a turn switches an `elevenlabs`
+  call itself is under **Switching the call's language** below). On `elevenlabs` that is
   the newest `language_detection` call (ElevenLabs's system tool that
   switches the call's voice and transcription:
   https://elevenlabs.io/docs/eleven-agents/customization/tools/system-tools/language-detection)

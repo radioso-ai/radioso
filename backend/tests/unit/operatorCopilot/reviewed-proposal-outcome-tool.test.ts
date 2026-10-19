@@ -43,9 +43,9 @@ describe("reviewed proposal outcome tool", () => {
       currentVersionMatches: true,
     }));
     const tool = createReviewedProposalOutcomeTool({ getMcpReviewedProposal }).createTool(context);
-    const summary = await tool.invoke({ proposalId: "11111111-1111-4111-8111-111111111111" }, {} as never);
+    const summary = await tool.invoke({ proposalId: "11111111-1111-4111-8111-111111111111" }, {} as never) as { review: unknown };
     expect(summary.review).not.toHaveProperty("fullReview");
-    const detail = await tool.invoke({ proposalId: "11111111-1111-4111-8111-111111111111", reviewDetail: { offset: 0, limit: 30 } }, {} as never);
+    const detail = await tool.invoke({ proposalId: "11111111-1111-4111-8111-111111111111", reviewDetail: { offset: 0, limit: 30 } }, {} as never) as { reviewDetail: unknown };
     expect(detail.reviewDetail).toMatchObject({ text: expect.stringContaining("before"), totalLength: expect.any(Number) });
   });
 

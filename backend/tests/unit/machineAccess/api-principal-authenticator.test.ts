@@ -3,6 +3,14 @@ import { describe, expect, it, vi } from "vitest";
 import type { ApiCredentialRecord, ServiceAccountRecord } from "../../../src/modules/machineAccess/ports.js";
 import { ApiPrincipalAuthenticator } from "../../../src/modules/machineAccess/services/apiPrincipalAuthenticator.js";
 import { issueMachineSecret } from "../../../src/modules/machineAccess/credentialSecretCodec.js";
+import type { AuthenticatedPrincipal } from "../../../src/modules/account/public.js";
+
+// `ApiPrincipalAuthenticator#authenticate` declares a broader `AuthenticatedPrincipal` return
+// type than it ever actually produces (every branch returns a personal or service-account
+// credential principal), which is also exactly what `recordSuccessfulUse` requires. Narrowed
+// here rather than widening `recordSuccessfulUse`'s parameter, since that method's own
+// contract is the correct, narrower one.
+type MachineApiPrincipal = Extract<AuthenticatedPrincipal, { type: "personal_api_credential" | "service_account_credential" }>;
 
 const now = new Date("2026-08-31T00:00:00.000Z");
 
@@ -143,7 +151,7 @@ describe("ApiPrincipalAuthenticator", () => {
       principal: { type: "service_account_credential", serviceAccountId: "service-1", role: "member" },
     });
     expect(repository.touchCredentialUse).not.toHaveBeenCalled();
-    authenticator.recordSuccessfulUse(authenticated.principal);
+    authenticator.recordSuccessfulUse(authenticated.principal as MachineApiPrincipal);
     await Promise.resolve();
     expect(authenticationObserver.recordLastUsePersistenceFailure).toHaveBeenCalledOnce();
 
@@ -157,7 +165,7 @@ describe("ApiPrincipalAuthenticator", () => {
     repository.touchCredentialUse.mockImplementationOnce(() => { throw new Error("metadata unavailable"); });
     const authenticated = await authenticator.authenticate(issued.secret);
 
-    expect(() => authenticator.recordSuccessfulUse(authenticated.principal)).not.toThrow();
+    expect(() => authenticator.recordSuccessfulUse(authenticated.principal as MachineApiPrincipal)).not.toThrow();
     expect(authenticationObserver.recordLastUsePersistenceFailure).toHaveBeenCalledOnce();
   });
 

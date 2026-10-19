@@ -103,27 +103,46 @@ describe("voice channel composition: turn notes", () => {
 
 describe("voice channel composition: the stored answer a switch's follow-up reads", () => {
   const conversation = { workspaceId: "workspace-1", conversationId: "conversation-1" };
-  const readerOver = (messages: Array<{ id: string; role: string; content: string; source?: string }>) => {
-    const listRecentByConversationId = vi.fn(async () => messages);
+  type Row = { id: string; role: "user" | "assistant" | "system"; content: string; source?: string; createdAt: Date };
+  const at = (second: number) => new Date(Date.UTC(2026, 9, 19, 10, 0, second));
+  /** The message store as it lists a conversation's newest rows of the roles asked for, oldest first. */
+  const readerOver = (rows: Row[]) => {
+    const listRecentByConversationId = vi.fn(async (_workspaceId: string, _conversationId: string, limit: number, options?: { roles?: readonly string[] }) =>
+      rows.filter((row) => !options?.roles || options.roles.includes(row.role)).slice(-limit));
     return { reader: createVoiceStoredReplyReader({ listRecentByConversationId }), listRecentByConversationId };
   };
 
-  it("reads the newest user message and the agent's answer to it, past a system message", async () => {
+  it("reads the newest user message on its own and the agent's answer after it", async () => {
     const { reader, listRecentByConversationId } = readerOver([
-      { id: "u1", role: "user", content: "A che ora aprite?" },
-      { id: "a1", role: "assistant", content: "Apriamo alle nove.", source: "ai_agent" },
-      { id: "s1", role: "system", content: "routine note" },
+      { id: "u0", role: "user", content: "Ciao", createdAt: at(1) },
+      { id: "a0", role: "assistant", content: "Ciao!", source: "ai_agent", createdAt: at(2) },
+      { id: "u1", role: "user", content: "A che ora aprite?", createdAt: at(3) },
+      { id: "a1", role: "assistant", content: "Apriamo alle nove.", source: "ai_agent", createdAt: at(5) },
+      { id: "s1", role: "system", content: "routine note", createdAt: at(6) },
     ]);
 
     expect(await reader.newestExchange(conversation)).toEqual({ utterance: "A che ora aprite?", reply: { messageId: "a1", text: "Apriamo alle nove." } });
-    expect(listRecentByConversationId).toHaveBeenCalledWith("workspace-1", "conversation-1", 4, { roles: ["user", "assistant"] });
+    expect(listRecentByConversationId).toHaveBeenCalledWith("workspace-1", "conversation-1", 1, { roles: ["user"] });
   });
 
-  it("reads no answer while the newest message is the caller's, a teammate's reply, or an empty answer", async () => {
-    const pending = readerOver([{ id: "a0", role: "assistant", content: "Ciao." }, { id: "u1", role: "user", content: "A che ora aprite?" }]);
-    const teammate = readerOver([{ id: "u1", role: "user", content: "A che ora aprite?" }, { id: "o1", role: "assistant", content: "Sono Marta.", source: "human_agent" }]);
-    const empty = readerOver([{ id: "u1", role: "user", content: "A che ora aprite?" }, { id: "a1", role: "assistant", content: "  " }]);
-    const none = readerOver([{ id: "a0", role: "assistant", content: "Ciao." }]);
+  it("finds the agent's answer past three teammate replies written after the caller's message", async () => {
+    const { reader } = readerOver([
+      { id: "u1", role: "user", content: "A che ora aprite?", createdAt: at(3) },
+      { id: "o1", role: "assistant", content: "Sono Marta.", source: "human_agent", createdAt: at(4) },
+      { id: "o2", role: "assistant", content: "Un attimo.", source: "human_agent", createdAt: at(5) },
+      { id: "o3", role: "assistant", content: "Eccomi.", source: "human_agent", createdAt: at(6) },
+      { id: "a1", role: "assistant", content: "Apriamo alle nove.", source: "ai_agent", createdAt: at(7) },
+    ]);
+
+    expect(await reader.newestExchange(conversation)).toEqual({ utterance: "A che ora aprite?", reply: { messageId: "a1", text: "Apriamo alle nove." } });
+  });
+
+  it("reads no answer while there is only the caller's message, a teammate's reply, an empty answer or an earlier one", async () => {
+    const utterance = { id: "u1", role: "user" as const, content: "A che ora aprite?", createdAt: at(3) };
+    const pending = readerOver([{ id: "a0", role: "assistant", content: "Ciao.", createdAt: at(1) }, utterance]);
+    const teammate = readerOver([utterance, { id: "o1", role: "assistant", content: "Sono Marta.", source: "human_agent", createdAt: at(4) }]);
+    const empty = readerOver([utterance, { id: "a1", role: "assistant", content: "  ", createdAt: at(4) }]);
+    const none = readerOver([{ id: "a0", role: "assistant", content: "Ciao.", createdAt: at(1) }]);
 
     expect(await pending.reader.newestExchange(conversation)).toEqual({ utterance: "A che ora aprite?", reply: null });
     expect(await teammate.reader.newestExchange(conversation)).toEqual({ utterance: "A che ora aprite?", reply: null });

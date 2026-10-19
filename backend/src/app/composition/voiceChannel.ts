@@ -91,31 +91,40 @@ export const createVoiceTurnNotes = (deps: {
  * replies, marks them spoken, and marks an interrupted one. Vendor adapters mount over this port
  * in the HTTP layer.
  */
-/** The conversation's newest messages, as the message store lists them, oldest first. */
+/** The conversation's newest messages of the roles asked for, as the message store lists them, oldest first. */
 interface RecentMessages {
   listRecentByConversationId(
     workspaceId: string,
     conversationId: string,
     limit: number,
     options?: { roles?: readonly ("user" | "assistant" | "system")[] },
-  ): Promise<ReadonlyArray<{ id: string; role: string; content: string; source?: string }>>;
+  ): Promise<ReadonlyArray<{ id: string; role: string; content: string; source?: string; createdAt: Date }>>;
 }
 
 /**
- * The conversation's newest user message and the agent's reply to it: an assistant message after
- * it with words, written by the agent (a teammate's reply is spoken through its own claims).
+ * How many of the conversation's newest assistant messages are searched for the agent's answer:
+ * teammate replies written in the seconds after the caller's message sit among them.
+ */
+const STORED_REPLY_SEARCH_LIMIT = 20;
+
+/**
+ * The conversation's newest user message, read on its own, and the agent's reply to it: the
+ * first assistant message after it with words written by the agent (a teammate's reply is spoken
+ * through its own claims), however many teammate replies came in between.
  */
 export const createVoiceStoredReplyReader = (messages: RecentMessages): VoiceStoredReplyReader => ({
   newestExchange: async ({ workspaceId, conversationId }) => {
-    const recent = (await messages.listRecentByConversationId(workspaceId, conversationId, 4, { roles: ["user", "assistant"] }))
-      .filter((message) => message.role === "user" || message.role === "assistant");
-    const userIndex = recent.map((message) => message.role).lastIndexOf("user");
-    const utterance = recent[userIndex];
+    const [utterance] = (await messages.listRecentByConversationId(workspaceId, conversationId, 1, { roles: ["user"] }))
+      .filter((message) => message.role === "user");
     if (!utterance) {
       return null;
     }
-    const reply = recent.slice(userIndex + 1)
-      .find((message) => !isHumanAuthoredMessageSource(message.source) && message.content.trim().length > 0);
+    const reply = (await messages.listRecentByConversationId(workspaceId, conversationId, STORED_REPLY_SEARCH_LIMIT, { roles: ["assistant"] }))
+      .find((message) =>
+        message.role === "assistant"
+        && message.createdAt.getTime() >= utterance.createdAt.getTime()
+        && !isHumanAuthoredMessageSource(message.source)
+        && message.content.trim().length > 0);
     return { utterance: utterance.content, reply: reply ? { messageId: reply.id, text: reply.content } : null };
   },
 });

@@ -4839,9 +4839,14 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     return [...(this.items.get(conversationId) ?? [])].filter((message) => message.workspaceId === workspaceId);
   }
 
-  async listRecentByConversationId(workspaceId: string, conversationId: string, limit: number): Promise<MessageRecord[]> {
+  async listRecentByConversationId(
+    workspaceId: string,
+    conversationId: string,
+    limit: number,
+    options: { roles?: readonly MessageRecord["role"][] } = {},
+  ): Promise<MessageRecord[]> {
     return [...(this.items.get(conversationId) ?? [])]
-      .filter((message) => message.workspaceId === workspaceId)
+      .filter((message) => message.workspaceId === workspaceId && (!options.roles || options.roles.includes(message.role)))
       .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
       .slice(-limit);
   }

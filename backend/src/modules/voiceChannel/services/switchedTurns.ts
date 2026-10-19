@@ -3,6 +3,23 @@ import { sameUtterance } from "./voiceSessionMemory.js";
 import type { VoiceReplyEvent, VoiceTurnDrain, VoiceTurnPhase } from "./voiceTurnPolicy.js";
 
 /**
+ * One wait-able view of `signal` for a loop that waits many times: a single abort listener for the
+ * whole loop, removed by `dispose`, so repeated waits never pile listeners onto the signal.
+ */
+export const abortWaiter = (signal: AbortSignal | undefined): { aborted: Promise<void>; dispose(): void } => {
+  if (!signal) {
+    return { aborted: new Promise<void>(() => undefined), dispose: () => undefined };
+  }
+  let onAbort: () => void = () => undefined;
+  const aborted = new Promise<void>((resolve) => {
+    onAbort = () => resolve();
+    if (signal.aborted) resolve();
+  });
+  signal.addEventListener("abort", onAbort, { once: true });
+  return { aborted, dispose: () => signal.removeEventListener("abort", onAbort) };
+};
+
+/**
  * The reply of a turn that asked the runtime to switch the call's language, running on after its
  * request ended. It is pulled to its end whether or not anyone speaks it, so the chat turn finishes
  * and stores its answer as any turn does, and it is kept for the runtime's follow-up request to
@@ -28,26 +45,31 @@ export class SwitchedReply {
    * for the reply's next event; the reply itself runs on.
    */
   async *read(stop?: AbortSignal): AsyncGenerator<VoiceReplyEvent> {
-    let index = 0;
-    for (;;) {
-      if (stop?.aborted) {
-        yield { type: "outcome", outcome: { kind: "continue" } };
-        return;
+    const stopped = abortWaiter(stop);
+    try {
+      let index = 0;
+      for (;;) {
+        if (stop?.aborted) {
+          yield { type: "outcome", outcome: { kind: "continue" } };
+          return;
+        }
+        if (index < this.events.length) {
+          const event = this.events[index];
+          index += 1;
+          if (!event || (event.type === "phase" && this.answeredAfter(index))) continue;
+          yield event;
+          // The reply's outcome ends the reading: exactly one outcome leaves it.
+          if (event.type === "outcome") return;
+          continue;
+        }
+        if (this.end) {
+          if (this.end.failed) throw this.end.error;
+          return;
+        }
+        await Promise.race([new Promise<void>((resolve) => { this.waiting.push(resolve); }), stopped.aborted]);
       }
-      if (index < this.events.length) {
-        const event = this.events[index];
-        index += 1;
-        if (event && !(event.type === "phase" && this.answeredAfter(index))) yield event;
-        continue;
-      }
-      if (this.end) {
-        if (this.end.failed) throw this.end.error;
-        return;
-      }
-      await new Promise<void>((resolve) => {
-        this.waiting.push(resolve);
-        stop?.addEventListener("abort", () => resolve(), { once: true });
-      });
+    } finally {
+      stopped.dispose();
     }
   }
 

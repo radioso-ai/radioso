@@ -2709,6 +2709,25 @@ describe("VoiceTurnService", () => {
       expect(spokenText(events)).toContain(answer);
     });
 
+    it("counts the switched reply's own outcome once when its follow-up's caller hangs up mid-answer", async () => {
+      const handedOff = { ...done(), answer, handoff: { reason: "routine_handoff", collectedSlotCount: 1 }, ownership: { state: "human_owned", suppressed: false } } as ChatStreamEvent;
+      const chat = scriptedChat([[...plannedIn("it", 3_000).slice(0, -1), { atMs: 3_000, event: handedOff }]]);
+      const metrics = fakeMetrics();
+      const turns = service(chat, { metrics });
+
+      const switching = start(turns, offered());
+      await vi.advanceTimersByTimeAsync(1_655);
+      await switching;
+      const hungUp = new AbortController();
+      const followed = collect(turns.runTurn(followUp(true), new AbortController().signal, hungUp.signal));
+      await vi.advanceTimersByTimeAsync(300);
+      hungUp.abort();
+      expect((await followed).at(-1)).toEqual({ type: "outcome", outcome: { kind: "continue" } });
+      await vi.runAllTimersAsync();
+
+      expect(counted(metrics, "voice_turn_outcome_total")).toEqual([{ kind: "callback_requested", handoff_reason: "routine_handoff" }]);
+    });
+
     it("logs a switching turn with its reply's own outcome, not the switch's continue", async () => {
       const handedOff = { ...done(), answer, handoff: { reason: "routine_handoff", collectedSlotCount: 1 }, ownership: { state: "human_owned", suppressed: false } } as ChatStreamEvent;
       const chat = scriptedChat([[...plannedIn("it", 1_300).slice(0, -1), { atMs: 1_300, event: handedOff }]]);
@@ -2841,16 +2860,33 @@ describe("VoiceTurnService", () => {
         expect(chat.requests).toHaveLength(1);
       });
 
-      it("speaks no earlier exchange's answer when the conversation's newest user message is not this utterance", async () => {
+      it("ends without speech, at once, when the conversation's newest user message is another utterance", async () => {
         const storedReplies = storedAnswerAt(0, "Ciao!");
         const elsewhere = service(scriptedChat([]), { storedReplies }, voiceWithItalianFallback);
 
         const spoken = start(elsewhere, followUp(true));
         await vi.runAllTimersAsync();
 
-        expect((await spoken).filter(({ event }) => event.type === "speech")).toEqual([
-          { atMs: 10_000, event: { type: "speech", text: "Scusa, puoi ripetere?", last: true } },
+        // No earlier exchange's answer, no fallback line at the limit: this follow-up's answer will not come.
+        expect(await spoken).toEqual([
+          { atMs: 0, event: { type: "conversation", conversationId } },
+          { atMs: 0, event: { type: "outcome", outcome: { kind: "continue" } } },
         ]);
+        expect(storedReplies.newestExchange).toHaveBeenCalledTimes(1);
+      });
+
+      it("waits on its caller with a bounded number of abort listeners while it polls the conversation", async () => {
+        const abortListeners = vi.spyOn(EventTarget.prototype, "addEventListener");
+        const elsewhere = service(scriptedChat([]), { storedReplies: storedAnswerAt(null) });
+
+        const spoken = start(elsewhere, followUp(true));
+        await vi.runAllTimersAsync();
+        await spoken;
+
+        // About forty polls of the conversation, and the caller's signal is listened to once.
+        const onCaller = abortListeners.mock.calls.filter(([type]) => type === "abort");
+        abortListeners.mockRestore();
+        expect(onCaller.length).toBeLessThanOrEqual(2);
       });
 
       it("stops reading the conversation once the caller is gone", async () => {

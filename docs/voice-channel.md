@@ -1290,9 +1290,9 @@ greeting, start the ElevenLabs agent's first message with the variable:
 {{radioso_privacy_notice}} Hi, I'm Claudio. How can I help?
 ```
 
-The embed passes the variable only when the agent has a notice, so a first
-message that names it needs a default value in the ElevenLabs agent for a
-call that starts without one. The session's first turn hands the version to
+The embed sets the variable on every call it starts, empty when the agent has
+no notice, so a first message that names it always finds it. The session's
+first turn hands the version to
 the chat turn, which records it on the conversation the call starts when the
 agent's notices carry it; the conversation's **Visitor** panel shows it. A
 page with its own call controls reports the version the same way, in

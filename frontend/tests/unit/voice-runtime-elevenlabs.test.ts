@@ -66,8 +66,10 @@ describe('ElevenLabs voice runtime', () => {
     expect(options.customLlmExtraBody).toEqual({ session_key: 'k', locale: 'en', privacy_notice_version: notice.version })
     expect(options.dynamicVariables).toEqual({ radioso_privacy_notice: notice.text })
 
+    // With no notice the variable is still set, empty, so a first message that names it never meets a missing one.
     await elevenLabsVoiceRuntime.open({ signedUrl: 'wss://vendor.test', sessionKey: 'k', locale: 'en' }, callbacks(), openSignal())
-    expect(startSession.mock.calls[1][0]).not.toHaveProperty('dynamicVariables')
+    expect((startSession.mock.calls[1][0] as { dynamicVariables?: unknown }).dynamicVariables).toEqual({ radioso_privacy_notice: '' })
+    expect((startSession.mock.calls[1][0] as CapturedOptions).customLlmExtraBody).toEqual({ session_key: 'k', locale: 'en' })
   })
 
   it("names the vendor's id for the call once the session is open, and none when the client has none", async () => {

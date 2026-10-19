@@ -3062,7 +3062,7 @@ export const createTestDependencies = (overrides: {
         identities,
         sections: {},
       }),
-      erase: async () => ({ visitorCount: 0, conversationCount: 0, messageCount: 0 }),
+      erase: async () => ({ visitorCount: 0, conversationCount: 0, messageCount: 0, complete: true }),
     },
     retrievalSearchService,
     retrievalAnswerService,

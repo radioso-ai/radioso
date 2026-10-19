@@ -7,7 +7,7 @@ import {
   type DataSubjectExportScope,
   type DataSubjectIdentityFinder,
   type DataSubjectIdentityMatch,
-  type DataSubjectReach,
+  type DataSubjectIdentityReach,
 } from "../../shared/domain/dataSubjectAccess.js";
 import { anyOf, currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
@@ -296,7 +296,6 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 export class WebVisitorIdentityFinder implements DataSubjectIdentityFinder {
   readonly kind = "web_visitor" as const;
   readonly channel = "web";
-  readonly personalKey = false;
 
   constructor(private readonly db: Db) {}
 
@@ -319,12 +318,13 @@ export class WebVisitorIdentityFinder implements DataSubjectIdentityFinder {
       conversationCount: Number(row.conversation_count ?? 0),
       firstSeenAt: row.first_seen_at,
       lastSeenAt: row.last_seen_at,
+      recordIds: [row.id],
     }));
   }
 
-  async reach(input: { workspaceId: string; keys: readonly string[] }): Promise<DataSubjectReach> {
+  async reach(input: { workspaceId: string; keys: readonly string[] }): Promise<DataSubjectIdentityReach> {
     const keys = input.keys.filter((key) => UUID_PATTERN.test(key));
-    if (keys.length === 0) return { conversationIds: [], visitorIds: [], verifiedCustomerIds: [] };
+    if (keys.length === 0) return { conversationIds: [], visitorIds: [], verifiedCustomerIds: [], recordIds: [] };
     const visitors = await this.db
       .selectFrom("visitors")
       .select(["id", "verified_customer_id"])
@@ -342,6 +342,7 @@ export class WebVisitorIdentityFinder implements DataSubjectIdentityFinder {
       conversationIds: conversations.map((conversation) => conversation.id),
       visitorIds,
       verifiedCustomerIds: visitors.flatMap((visitor) => (visitor.verified_customer_id ? [visitor.verified_customer_id] : [])),
+      recordIds: visitorIds,
     };
   }
 }

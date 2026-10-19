@@ -864,11 +864,16 @@ Owns finding one person across channels and exporting or erasing what Radioso
 holds about them (#1542). `DataSubjectAccessService` (`modules/privacy/`) asks
 every identity finder for a search's matches and returns them as candidate
 identities without merging any; every later step (conversation list, export,
-erase) takes the identities an operator confirmed. Lookup and export record a
-`data_subject.looked_up` / `data_subject.exported` audit event with identity
-references (a visitor id, or a digest of an address or Slack member) and
-counts. Erasure runs the conversation erasure per visitor and per remaining
-conversation, each with its own audit event.
+erase) takes the identities an operator confirmed. Lookup, export and erase
+each record one `data_subject.looked_up` / `.exported` / `.erased` audit event
+naming each identity kind by its record ids (a visitor id, email thread
+conversations, Slack link rows), never by a key, with counts. Export and erase
+refuse more than 200 conversations with `413`. Erasure runs the conversation
+erasure per visitor and per remaining conversation, each with its own audit
+event, and answers a partial run with a `500` carrying its receipt.
+`routine_actions` exports only the action types
+`modules/chat/services/actions/subjectActionValues.ts` projects to the
+person's own values.
 
 The ports live in `backend/src/shared/domain/dataSubjectAccess.ts`. Each module
 that keeps identities implements `DataSubjectIdentityFinder` (web visitors by

@@ -148,17 +148,19 @@ Each section is a list of records, and every section is present even when it hol
 | `conversations` | Each conversation with its channel, title, the page it started on, the request facts observed when it opened (IP address, country, user agent), the channel's own ids (mailbox, Slack workspace and thread), and every message in order. |
 | `visitors` | Each website visitor record: the verified customer id, the visitor key the browser kept, first and last seen, and the country, language and user agent last observed. |
 | `routine_values` | What the routine a conversation last ran collected, such as a booking's date or a phone number. |
-| `routine_actions` | What routines handed on: operator notices with the values they carried, and skill calls with their input. |
+| `routine_actions` | What routines handed on about the person: a contact request's message, address and name, and the values a routine's ending sent to your team or to a webhook. |
 | `conversation_summaries` | The rolling summary the agent keeps of a long conversation. |
 | `context_values` | Values your site or a skill stored for the person's chat sessions and under their verified customer id. |
 | `email_messages` | Each mail of their email conversations: direction, subject, sender address and display name, Cc, and attachment names, types and sizes. The mail's text is the conversation's message. |
 | `answer_feedback` | The ratings and comments the person left on answers. |
 
+One request exports at most 200 conversations, which keeps it well inside the request time limit. A request whose identities reach more answers `413` with `data_subject_request_too_large`, saying how many conversations it reached; split the request by identity and export them in smaller groups. One identity that reaches more than 200 conversations on its own is more than one request can export.
+
 The export reads one consistent snapshot, so a message that arrives while it runs is either in it with everything derived from it, or not in it at all. `formatVersion` changes whenever the document's shape changes, so whatever reads the file can tell which shape it has.
 
 Some records stay out of the export because they are your workspace's own working data, not data about the person:
 
-- teammates' work on a conversation: ownership, activity, answer triage, and drafts held for review that were never sent;
+- teammates' work on a conversation: ownership and transfers between teammates, activity, answer triage, approvals, notices posted to your team's Slack, and drafts held for review that were never sent;
 - copies kept for evaluating and analysing the agent: eval snapshots, search facets, Audience Pulse topic memberships and coverage assessments, each derived from messages the export carries;
 - billing and delivery ledgers: usage events, the notice email cap, send records and delivery failures;
 - inbound mail as raw MIME. The text of each mail is its message, and its sender, subject and Cc are in `email_messages`.
@@ -175,14 +177,16 @@ Content-Type: application/json
 ```
 
 ```json
-{ "visitorCount": 1, "conversationCount": 4, "messageCount": 12 }
+{ "visitorCount": 1, "conversationCount": 4, "messageCount": 12, "complete": true }
 ```
 
 Radioso erases each website visitor among the identities exactly as `DELETE /api/v1/history/visitors/{visitorId}` does: their conversations, their customer-scoped context values, voice calls their browser started that never reached a first turn, and the visitor record. It then erases every other conversation the identities reach exactly as `DELETE /api/v1/history/chat/{conversationId}` does. An email address or a Slack member has no record of its own beyond its conversations, so erasing those conversations erases the identity, and a lookup afterwards finds nothing. [Deleting conversation data](/operators/deleting-conversation-data) lists everything a deletion removes and the few records it keeps.
 
 Export first, then erase. The same confirmed identities reach the same conversations, so the file you send covers exactly what the erasure removes.
 
-An erasure that stops halfway, say on a dropped connection, is safe to send again; it erases what is left. A conversation that starts after the erasure read the list stays, so look the person up once more when you're done.
+An erasure reaches at most 200 conversations, like an export, and refuses a larger request with `413` before it erases anything. Erase the identities in smaller groups. One identity that reaches more than 200 conversations on its own is erased conversation by conversation with `DELETE /api/v1/history/chat/{conversationId}`, or as a visitor with `DELETE /api/v1/history/visitors/{visitorId}`.
+
+An erasure that stops partway answers `500` with `data_subject_erasure_incomplete`, and its `details.receipt` says what it erased before it stopped, with `complete: false`. Send the same request again; it erases what is left. A conversation that starts after the erasure read the list stays, so look the person up once more when you're done.
 
 ## Who can run a request
 
@@ -192,20 +196,16 @@ Ray does not run data subject requests. Exporting someone's personal data is a t
 
 ## What Radioso records
 
-The lookup records a `data_subject.looked_up` audit event, and the export a `data_subject.exported` event. Each names who asked, the identities it covered and its counts: conversations found, and records per section for an export. Neither event, and no log line, carries the query or anything the person said.
+Every step but the conversation list records one audit event: `data_subject.looked_up`, `data_subject.exported` or `data_subject.erased`. Each names who asked, the kind of each identity it covered with Radioso's own ids for its records, and its counts: conversations found, records per section for an export, and for an erasure what it erased and whether it finished. The records are a website visitor's id, the conversations of an email address's threads, and the Slack thread links of a member. No event, and no log line, carries the query, an address, a Slack member id, or anything the person said, so nothing in the audit trail names the person once their data is erased.
 
-A website visitor appears in the events by its visitor id. An email address or a Slack member appears as a digest: `sha256:` followed by the SHA-256 of the workspace id, the kind and the key, separated by newlines. To show later that Jane's email data was exported, compute the digest and look for it in the export's event:
-
-```bash
-printf '%s\n%s\n%s' "$WORKSPACE_ID" email_address jane@example.com | shasum -a 256
-```
-
-Each erasure records its own `conversation.erased` or `visitor.erased` event.
+An erasure also records a `conversation.erased` or `visitor.erased` event for each conversation and visitor it erased.
 
 ## Common failure modes
 
 - **`403`**: the caller lacks `workspace.history.delete`: a member session, or a member credential.
 - **`400`**: the query is empty or longer than 320 characters, an identity kind is not `web_visitor`, `email_address` or `slack_user`, or a request names more than 50 identities.
+- **`413`**: the identities reach more than 200 conversations. Send them in smaller groups.
+- **`500` with `data_subject_erasure_incomplete`**: the erasure stopped partway; `details.receipt` says what it erased. Send the same request again.
 - **No email identity for an address you know wrote in**: the mail never became a conversation. Mail from automated senders, bounces and spam stays in the email channel's event log for 30 days and goes on its own.
 - **The website visitor but no email identity, or the other way round**: your site verifies the person by an id that is not the address they mail from. Look up each identifier.
 - **No website identity for a visitor who never signed in**: a lookup finds website visitors by the customer id your site verified them by. For an anonymous visitor, open one of their conversations, take `visitor.id` from its detail, and [delete the visitor](/operators/deleting-conversation-data#delete-a-visitor) by id.

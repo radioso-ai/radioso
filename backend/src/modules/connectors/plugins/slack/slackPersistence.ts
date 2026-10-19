@@ -7,7 +7,7 @@ import type { BackgroundJobQueue, BackgroundJobRequest } from "../../../../share
 import type {
   DataSubjectIdentityFinder,
   DataSubjectIdentityMatch,
-  DataSubjectReach,
+  DataSubjectIdentityReach,
 } from "../../../../shared/domain/dataSubjectAccess.js";
 import {
   currentTimestamp,
@@ -282,13 +282,12 @@ const parseSlackUserKey = (key: string): { teamId: string; userId: string } | nu
 
 /**
  * Slack users as data subject identities: the member who started a thread the agent answered,
- * found by their Slack member id and keyed by it together with their Slack workspace's id. Audit
- * events carry the key as a digest.
+ * found by their Slack member id and keyed by it together with their Slack workspace's id. Its
+ * records are the conversation links of the threads they started.
  */
 export class SlackUserIdentityFinder implements DataSubjectIdentityFinder {
   readonly kind = "slack_user" as const;
   readonly channel = "slack";
-  readonly personalKey = true;
 
   constructor(private readonly db: Db) {}
 
@@ -301,6 +300,7 @@ export class SlackUserIdentityFinder implements DataSubjectIdentityFinder {
         eb.fn.countAll<string>().as("conversation_count"),
         eb.fn.min("c.created_at").as("first_seen_at"),
         eb.fn.max("c.updated_at").as("last_seen_at"),
+        eb.fn.agg<string[]>("array_agg", ["l.id"]).as("link_ids"),
       ])
       .where(threadUserId, "=", userId)
       .groupBy("i.team_id")
@@ -312,17 +312,23 @@ export class SlackUserIdentityFinder implements DataSubjectIdentityFinder {
       conversationCount: Number(row.conversation_count),
       firstSeenAt: row.first_seen_at,
       lastSeenAt: row.last_seen_at,
+      recordIds: row.link_ids,
     }));
   }
 
-  async reach(input: { workspaceId: string; keys: readonly string[] }): Promise<DataSubjectReach> {
+  async reach(input: { workspaceId: string; keys: readonly string[] }): Promise<DataSubjectIdentityReach> {
     const users = input.keys.flatMap((key) => parseSlackUserKey(key) ?? []);
-    if (users.length === 0) return { conversationIds: [], visitorIds: [], verifiedCustomerIds: [] };
+    if (users.length === 0) return { conversationIds: [], visitorIds: [], verifiedCustomerIds: [], recordIds: [] };
     const rows = await this.links(input.workspaceId)
-      .select("c.id")
+      .select(["c.id", "l.id as link_id"])
       .where((eb) => eb.or(users.map((user) => eb.and([eb("i.team_id", "=", user.teamId), eb(threadUserId, "=", user.userId)]))))
       .execute();
-    return { conversationIds: rows.map((row) => row.id), visitorIds: [], verifiedCustomerIds: [] };
+    return {
+      conversationIds: rows.map((row) => row.id),
+      visitorIds: [],
+      verifiedCustomerIds: [],
+      recordIds: rows.map((row) => row.link_id),
+    };
   }
 
   private links(workspaceId: string) {

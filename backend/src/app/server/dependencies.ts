@@ -1460,6 +1460,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       reads: createPostgresDataSubjectReadUnitOfWork({ db: infrastructure.database.kysely }),
       erasure: conversationErasure,
       audit: infrastructure.auditService,
+      logger,
     }),
     retrievalSearchService: retrieval.retrievalSearchService,
     retrievalAnswerService: chat.retrievalAnswerService,

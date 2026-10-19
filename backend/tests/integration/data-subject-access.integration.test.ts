@@ -22,6 +22,9 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 /** The address Jane writes from, which is also the customer id the host verifies her by on the website. */
 const JANE = "jane@example.com";
 const JANE_SLACK = "U0JANE";
+/** What the workspace's own workflow wrote about Jane's conversation, which her export leaves out. */
+const OPS_CHANNEL = "C0OPSINTERNAL";
+const TEAMMATE_USER_ID = "7d9a3f0e-1b2c-4d5e-8f90-a1b2c3d4e5f6";
 
 interface Tenant {
   accountId: string;
@@ -48,11 +51,13 @@ describeIntegration("data subject lookup, export and erasure (Postgres)", () => 
     invalidation: { enqueue: vi.fn() },
     auditLog: {},
   });
-  const access = new DataSubjectAccessService({
+  const accessWithCap = (maxConversations?: number) => new DataSubjectAccessService({
     reads: createPostgresDataSubjectReadUnitOfWork({ db: database.kysely }),
     erasure,
     audit: { record: async (event) => { await auditEvents.create(event); } },
+    ...(maxConversations === undefined ? {} : { maxConversations }),
   });
+  const access = accessWithCap();
   const seededAccountIds: string[] = [];
   let tenant: Tenant;
   let otherTenant: Tenant;
@@ -181,11 +186,23 @@ describeIntegration("data subject lookup, export and erasure (Postgres)", () => 
       "INSERT INTO routine_states (session_id, routine_id, variables, status) VALUES ($1, 'booking', $2::jsonb, 'completed')",
       [webConversationId, JSON.stringify({ injury: "knee", phone: "+372 5555 0000" })],
     );
-    await database.query(
+    const queueAction = (type: string, payload: Record<string, unknown>) => database.query(
       `INSERT INTO routine_action_requests (type, payload, workspace_id, conversation_id, status)
-       VALUES ('completion.notify', $1::jsonb, $2, $3, 'dispatched')`,
-      [JSON.stringify({ conversationId: webConversationId, reason: "routine_completed", collected: { injury: "knee" } }), t.workspaceId, webConversationId],
+       VALUES ($1, $2::jsonb, $3, $4, 'dispatched')`,
+      [type, JSON.stringify(payload), t.workspaceId, webConversationId],
     );
+    await queueAction("completion.notify", {
+      conversationId: webConversationId,
+      agentId: t.agentId,
+      reason: "routine_completed",
+      routineId: "booking",
+      collected: { injury: "knee" },
+      notice: { subject: "New booking", replyToSlot: "email" },
+    });
+    await queueAction("contact.send", { message: "Please call me back", email: who.address, name: "Jane Doe", destinationRef: "ops-inbox" });
+    // The workspace's own workflow on the same conversation.
+    await queueAction("conversation.transfer_notice", { recipientUserId: TEAMMATE_USER_ID, transferredByUserId: TEAMMATE_USER_ID, ownershipVersion: 2 });
+    await queueAction("slack.post", { kind: "operator_notification", channelId: OPS_CHANNEL, text: "New booking: knee injury", sourceId: webConversationId });
     await database.query(
       `INSERT INTO context_variable_values (workspace_id, variable_id, scope_type, scope_id, data) VALUES
          ($1, $2, 'session', $3, '{"items": ["yoga mat"]}'::jsonb),
@@ -343,7 +360,13 @@ describeIntegration("data subject lookup, export and erasure (Postgres)", () => 
         expect.objectContaining({ conversationId: jane.webConversationId, routineId: "booking", status: "completed", values: { injury: "knee", phone: "+372 5555 0000" } }),
       ]);
       expect(sections.routine_actions).toEqual([
-        expect.objectContaining({ conversationId: jane.webConversationId, type: "completion.notify", payload: expect.objectContaining({ collected: { injury: "knee" } }) }),
+        expect.objectContaining({ conversationId: jane.webConversationId, type: "completion.notify", routineId: "booking", values: { injury: "knee" } }),
+        expect.objectContaining({
+          conversationId: jane.webConversationId,
+          type: "contact.send",
+          routineId: null,
+          values: { message: "Please call me back", email: JANE, name: "Jane Doe" },
+        }),
       ]);
       expect(sections.conversation_summaries).toEqual([
         expect.objectContaining({ conversationId: jane.webConversationId, summary: `Asked about booking with a knee injury (${JANE})` }),
@@ -370,6 +393,41 @@ describeIntegration("data subject lookup, export and erasure (Postgres)", () => 
       expect(exported).not.toContain("U0JOHN");
     });
 
+    it("leaves the workspace's own workflow out: a transfer between teammates, an internal Slack post, authored notices", async () => {
+      const document = await access.export({ workspaceId: tenant.workspaceId, identities: confirmedWebAndEmail(jane), actor: actor(tenant) });
+
+      expect(document.sections.routine_actions.map((action) => action.type)).toEqual(["completion.notify", "contact.send"]);
+      const exported = JSON.stringify(document);
+      expect(exported).not.toContain(TEAMMATE_USER_ID);
+      expect(exported).not.toContain(OPS_CHANNEL);
+      expect(exported).not.toContain("New booking");
+      expect(exported).not.toContain("ops-inbox");
+    });
+
+    it("exports a request at the cap and refuses one conversation more with nothing read out or recorded", async () => {
+      const capped = accessWithCap(3);
+      const slack = { kind: "slack_user" as const, key: `${tenant.slackTeamId}:${JANE_SLACK}` };
+      const before = await database.query("SELECT id FROM audit_events WHERE workspace_id = $1 AND event_type LIKE 'data_subject.%'", [tenant.workspaceId]);
+
+      const atCap = await capped.export({ workspaceId: tenant.workspaceId, identities: confirmedWebAndEmail(jane), actor: actor(tenant) });
+      expect(atCap.sections.conversations).toHaveLength(3);
+
+      for (const run of [
+        () => capped.export({ workspaceId: tenant.workspaceId, identities: [...confirmedWebAndEmail(jane), slack], actor: actor(tenant) }),
+        () => capped.erase({ workspaceId: tenant.workspaceId, identities: [...confirmedWebAndEmail(jane), slack], actor: actor(tenant) }),
+      ]) {
+        await expect(run()).rejects.toMatchObject({
+          statusCode: 413,
+          code: "data_subject_request_too_large",
+          details: { conversationCount: 4, maxConversations: 3 },
+        });
+      }
+      const after = await database.query("SELECT id FROM audit_events WHERE workspace_id = $1 AND event_type LIKE 'data_subject.%'", [tenant.workspaceId]);
+      expect(after.length).toBe(before.length + 1);
+      expect(await database.query("SELECT id FROM conversations WHERE id = $1", [jane.slackConversationId])).toHaveLength(1);
+      expect(await database.query("SELECT id FROM visitors WHERE id = $1", [jane.visitorId])).toHaveLength(1);
+    });
+
     it("records the lookup and the export with ids and counts, never the address or anything said", async () => {
       await access.lookup({ workspaceId: tenant.workspaceId, query: JANE, actor: actor(tenant) });
       await access.export({ workspaceId: tenant.workspaceId, identities: confirmedWebAndEmail(jane), actor: actor(tenant) });
@@ -383,11 +441,20 @@ describeIntegration("data subject lookup, export and erasure (Postgres)", () => 
       expect(exported.metadata_json).toMatchObject({
         conversationCount: 3,
         recordsBySection: expect.objectContaining({ conversations: 3, visitors: 1, email_messages: 2 }),
-        identities: [{ kind: "web_visitor", ref: jane.visitorId }, { kind: "email_address", ref: expect.stringMatching(/^sha256:/) }],
+        identities: [
+          { kind: "web_visitor", recordIds: [jane.visitorId] },
+          { kind: "email_address", recordIds: [...jane.emailConversationIds].sort() },
+        ],
       });
+      const lookedUp = rows.filter((row) => row.event_type === "data_subject.looked_up").at(-1)!;
+      expect(lookedUp.metadata_json.identities).toEqual([
+        { kind: "web_visitor", recordIds: [jane.visitorId] },
+        { kind: "email_address", recordIds: expect.arrayContaining(jane.emailConversationIds) },
+      ]);
       for (const row of rows) {
         const recorded = JSON.stringify(row.metadata_json);
         expect(recorded).not.toContain(JANE);
+        expect(recorded).not.toContain("sha256");
         expect(recorded).not.toContain("knee");
       }
     });
@@ -397,7 +464,16 @@ describeIntegration("data subject lookup, export and erasure (Postgres)", () => 
     it("erases what the confirmed identities reach and leaves every other identity's data", async () => {
       const receipt = await access.erase({ workspaceId: tenant.workspaceId, identities: confirmedWebAndEmail(jane), actor: actor(tenant) });
 
-      expect(receipt).toEqual({ visitorCount: 1, conversationCount: 3, messageCount: 6 });
+      expect(receipt).toEqual({ visitorCount: 1, conversationCount: 3, messageCount: 6, complete: true });
+      const [erased] = await database.query<{ event_status: string; metadata_json: Record<string, unknown> }>(
+        "SELECT event_status, metadata_json FROM audit_events WHERE workspace_id = $1 AND event_type = 'data_subject.erased'",
+        [tenant.workspaceId],
+      );
+      expect(erased).toMatchObject({
+        event_status: "success",
+        metadata_json: { visitorCount: 1, conversationCount: 3, messageCount: 6, complete: true, conversationsReached: 3 },
+      });
+      expect(JSON.stringify(erased)).not.toContain(JANE);
       const remaining = await database.query<{ id: string }>("SELECT id FROM conversations WHERE workspace_id = $1", [tenant.workspaceId]);
       const remainingIds = remaining.map((row) => row.id);
       expect(remainingIds).not.toEqual(expect.arrayContaining([jane.webConversationId]));

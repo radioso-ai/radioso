@@ -29,6 +29,12 @@ export interface DataSubjectIdentityMatch {
   readonly conversationCount: number;
   readonly firstSeenAt: Date | null;
   readonly lastSeenAt: Date | null;
+  /**
+   * Radioso's own ids for the records the identity is made of: a visitor record, Slack link rows,
+   * email thread links (keyed by their conversation). Audit events name an identity by these, never
+   * by its key, which can be the person's own address.
+   */
+  readonly recordIds: readonly string[];
 }
 
 /** What confirmed identities reach in a workspace. */
@@ -40,20 +46,20 @@ export interface DataSubjectReach {
   readonly verifiedCustomerIds: readonly string[];
 }
 
+/** What one finder's keys reach, with the ids of the identity records they resolved to. */
+export interface DataSubjectIdentityReach extends DataSubjectReach {
+  readonly recordIds: readonly string[];
+}
+
 /** One module's identities of one kind. */
 export interface DataSubjectIdentityFinder {
   readonly kind: DataSubjectIdentityKind;
   /** The conversation channel its identities are on. */
   readonly channel: string;
-  /**
-   * True when a key is the person's own identifier on the channel (an email address, a Slack user),
-   * not an id Radioso minted, so audit events and logs carry it only as a digest.
-   */
-  readonly personalKey: boolean;
   /** The identities whose channel identifier is exactly `query`, compared the way the channel compares them. */
   find(input: { workspaceId: string; query: string }): Promise<readonly DataSubjectIdentityMatch[]>;
   /** What the keys reach. A key the finder does not keep reaches nothing. */
-  reach(input: { workspaceId: string; keys: readonly string[] }): Promise<DataSubjectReach>;
+  reach(input: { workspaceId: string; keys: readonly string[] }): Promise<DataSubjectIdentityReach>;
 }
 
 /** A JSON value in an export. */

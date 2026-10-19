@@ -12,11 +12,11 @@ repo-committed regression suite you run from the CLI.
 
 | File | What it is |
 |------|------------|
-| `corpus.ts` | 4 seed documents with quotable facts (30-day refund, $49 Pro plan, SOC 2 Type II) |
+| `corpus.ts` | 7 seed documents with quotable facts (30-day refund, $49 Pro plan, SOC 2 Type II, and two residential courses priced differently) |
 | `routines.ts` | 2 seed `RoutineDefinition`s: `contact-support`, `book-demo` |
 | `directives.ts` | 4 seed `AuthoredDirective`s: pricing-precision, refund-empathy, security-precision, maximally-helpful; plus `contact-form-only`, which only the `routine-step-outranks-always-on-handoff-directive` case adds, and `listed-languages`, which only the `quick-reply-unlisted-language-standing-directive` case adds, both through `agentConfigOverride` |
 | `agent.ts` | the single seed agent (retrieval on, directives attached) all cases run against |
-| `cases.ts` | the 46 seed cases |
+| `cases.ts` | the 48 seed cases |
 | `baseline.json` | committed per-case verdicts; the run diffs against this and fails on regression |
 
 ## Assertion vocabulary

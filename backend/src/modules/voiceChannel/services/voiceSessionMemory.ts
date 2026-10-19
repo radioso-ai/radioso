@@ -13,6 +13,8 @@ export interface VoiceTurnClaim {
   /** When the turn's outcome left the turn. */
   outcomeAt: number | null;
   settled: boolean;
+  /** Aborted once the request loses its caller: a newer request of the session overtakes it, or the runtime hangs up. */
+  readonly lost: AbortController;
 }
 
 /** A turn's stored answer. */
@@ -77,8 +79,12 @@ interface VoiceSessionMemoryWindows {
   bridgeAfterMs: number;
 }
 
-const sameUtterance = (left: string, right: string): boolean =>
+export const sameUtterance = (left: string, right: string): boolean =>
   left.replace(/\s+/gu, " ").trim() === right.replace(/\s+/gu, " ").trim();
+
+/** A loss at `at` came before the outcome left, or the outcome has not left. */
+const lostBeforeOutcome = (claim: VoiceTurnClaim, at: number | null): at is number =>
+  at !== null && (claim.outcomeAt === null || at <= claim.outcomeAt);
 
 /**
  * When the turn lost its caller before its outcome left: overtaken or hung up on; null when delivered.
@@ -86,10 +92,12 @@ const sameUtterance = (left: string, right: string): boolean =>
  * outcome left, so equal clock readings mean the loss came first.
  */
 export const cutOffAt = (claim: VoiceTurnClaim): number | null => {
-  const lost = [claim.supersededAt, claim.hungUpAt]
-    .filter((at): at is number => at !== null && (claim.outcomeAt === null || at <= claim.outcomeAt));
+  const lost = [claim.supersededAt, claim.hungUpAt].filter((at): at is number => lostBeforeOutcome(claim, at));
   return lost.length > 0 ? Math.min(...lost) : null;
 };
+
+/** Whether a newer request of the session overtook the turn before its outcome left. */
+export const supersededBeforeOutcome = (claim: VoiceTurnClaim): boolean => lostBeforeOutcome(claim, claim.supersededAt);
 
 /**
  * What this process remembers of each voice session between its requests: which request is the
@@ -116,9 +124,18 @@ export class VoiceSessionMemory {
     const previous = state.newest;
     if (previous && !previous.settled) {
       previous.supersededAt ??= now;
+      previous.lost.abort();
     }
     const overtook = previous && !previous.settled ? previous : null;
-    const claim: VoiceTurnClaim = { sequence: ++this.arrivals, overtook, supersededAt: null, hungUpAt: null, outcomeAt: null, settled: false };
+    const claim: VoiceTurnClaim = {
+      sequence: ++this.arrivals,
+      overtook,
+      supersededAt: null,
+      hungUpAt: null,
+      outcomeAt: null,
+      settled: false,
+      lost: new AbortController(),
+    };
     state.newest = claim;
     state.open += 1;
     return claim;
@@ -151,6 +168,18 @@ export class VoiceSessionMemory {
   chatTurnEnded(sessionKey: string, now: number): void {
     const state = this.stateOf(sessionKey, now);
     state.chatTurns = Math.max(0, state.chatTurns - 1);
+  }
+
+  /**
+   * The caller never heard the request's turn although its outcome left (a switch of the call's
+   * language no follow-up spoke): its exchange, once settled and still the session's newest, reads
+   * as cut off at `at`, so an identical re-request within the replay window hears the answer.
+   */
+  markUnheard(sessionKey: string, claim: VoiceTurnClaim, at: number): void {
+    const last = this.sessions.get(sessionKey)?.lastExchange;
+    if (last?.sequence === claim.sequence) {
+      last.exchange.cutOffAt ??= at;
+    }
   }
 
   bridgeSpoken(sessionKey: string, claim: VoiceTurnClaim, now: number): void {

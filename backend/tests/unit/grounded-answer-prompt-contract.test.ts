@@ -464,6 +464,9 @@ describe("grounded answer prompt contract", () => {
     // Widened in #1260: the coverage verdict the model now commits to before
     // `answer` (`answer-coverage-head.md`) and its response guidance render on
     // every grounded call, where a separate pre-compose assessment used to.
+    // Widened again when the coverage head bound its verdict to the subject the
+    // conversation established: a Result about another named item no longer
+    // answers a request about that subject.
     const groundedWithSuggestions = stack(
       "retrieval/answer.md",
       "chat/grounded-inline-decline.md",
@@ -473,7 +476,7 @@ describe("grounded answer prompt contract", () => {
       "chat/answer-suggestions.md",
     );
     expect(groundedWithSuggestions).toBeGreaterThanOrEqual(1900);
-    expect(groundedWithSuggestions).toBeLessThanOrEqual(2050);
+    expect(groundedWithSuggestions).toBeLessThanOrEqual(2170);
 
     // Grounded answer, suggestions disabled.
     const groundedNoSuggestions = stack(
@@ -484,7 +487,7 @@ describe("grounded answer prompt contract", () => {
       "chat/answer-coverage-response-guidance.md",
     );
     expect(groundedNoSuggestions).toBeGreaterThanOrEqual(1280);
-    expect(groundedNoSuggestions).toBeLessThanOrEqual(1420);
+    expect(groundedNoSuggestions).toBeLessThanOrEqual(1540);
 
     // Focused decline / grounded-miss owns the full decline ruleset.
     const focusedDecline = stack("chat/grounded-miss.md", "chat/grounded-decline-rules.md");

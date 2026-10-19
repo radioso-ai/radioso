@@ -1,6 +1,7 @@
 import { ZERO_TOLERANCE_JUDGE_TAG, type ConversationQualityCase } from "../../../src/modules/eval/suite/index.js";
 import { seedDirectiveConfigWith } from "./agent.js";
 import {
+  BREATH_COURSE_DOC_ID,
   PRICING_DOC_ID,
   REFUND_POLICY_DOC_ID,
   SECURITY_DOC_ID,
@@ -32,6 +33,36 @@ const refundExchangeItalian: NonNullable<ConversationQualityCase["history"]> = [
   { role: "user", content: "Quanto tempo ho per chiedere un rimborso?" },
   { role: "assistant", content: "Puoi richiedere un rimborso completo entro 30 giorni dall'acquisto." },
 ];
+
+/**
+ * A booking exchange in which the visitor names a course and the assistant's next turn only asks
+ * for contact details, so the course is two turns behind a later reference to "the event".
+ */
+const courseNamedBehindContactFormItalian = (
+  dates: string,
+  course: string,
+): NonNullable<ConversationQualityCase["history"]> => [
+  { role: "user", content: `Vorrei partecipare all'evento ${dates}` },
+  { role: "assistant", content: "Che bello! A quale corso vorresti partecipare?" },
+  { role: "user", content: "Corso residenziale" },
+  { role: "assistant", content: "Perfetto. Per procedere mi servono il tuo nome e il tuo indirizzo email." },
+  { role: "user", content: course },
+  { role: "assistant", content: "Grazie. Per completare la richiesta mi servono il tuo nome e il tuo indirizzo email." },
+];
+
+/**
+ * The form is still waiting on the visitor's name when the quote request arrives, so the request
+ * is a digression the routine yields to retrieval. The demo-booking routine stands in for the
+ * booking form; its first step asks for the name.
+ */
+const contactFormAwaitingName: NonNullable<ConversationQualityCase["routineStartState"]> = {
+  routineId: BOOK_DEMO_ROUTINE_ID,
+  path: ["ask_name"],
+  variables: {},
+  status: "active",
+};
+
+const FULL_QUOTE_FOR_THE_EVENT_ITALIAN = "Mi mandi un preventivo completo compreso di pernottamento per l'evento?";
 
 /**
  * The rubric every quick reply is graded on: no factual proposition at all, except what a
@@ -404,6 +435,44 @@ export const conversationQualityCases: ConversationQualityCase[] = [
     assertions: [
       { type: "retrieval_includes_document", documentId: PRICING_DOC_ID },
       { type: "answer_contains", pattern: "49", matchMode: "substring" },
+    ],
+  },
+  {
+    id: "referent-course-behind-contact-form",
+    name: "A reference to \"the event\" resolves to the course the visitor named before a contact-details question",
+    description:
+      "The visitor names a residential course, the form only asks for name and email, then the visitor asks for a full quote \"for the event\". The quote must come from that course (260/200/180 euro), not from the other residential course whose page uses the request's own words (280/220/200 euro). The visitor's spelling splits the course's compound name.",
+    tags: ["retrieval", "multiturn", "coverage", "multilingual", "referent-resolution"],
+    history: courseNamedBehindContactFormItalian("dal 26/11/2031 al 29/11/2031", "Il respiro super consapevole"),
+    routineStartState: contactFormAwaitingName,
+    query: FULL_QUOTE_FOR_THE_EVENT_ITALIAN,
+    assertions: [
+      { type: "turn_route", route: "retrieval" },
+      { type: "retrieval_includes_document", documentId: BREATH_COURSE_DOC_ID },
+      { type: "answer_cites_document", documentId: BREATH_COURSE_DOC_ID },
+      { type: "turn_answer_coverage", coverage: "answered" },
+      { type: "answer_contains", pattern: "260", matchMode: "substring" },
+      { type: "answer_does_not_contain", pattern: "280", matchMode: "substring" },
+      { type: "answer_does_not_contain", pattern: "220", matchMode: "substring" },
+    ],
+  },
+  {
+    id: "referent-course-missing-from-corpus",
+    name: "A quote for a named course the material does not cover is not answered from another course",
+    description:
+      "The same exchange, but the named course has no page; the two residential courses that do are other courses. Their prices are the requested kind of fact about a different subject, so the coverage verdict stays unanswered and the answer quotes neither course's figures (280/220 and 260/180 euro).",
+    tags: ["retrieval", "multiturn", "coverage", "multilingual", "referent-resolution"],
+    history: courseNamedBehindContactFormItalian("dal 3/10/2031 al 5/10/2031", "Il silenzio del cuore"),
+    routineStartState: contactFormAwaitingName,
+    query: FULL_QUOTE_FOR_THE_EVENT_ITALIAN,
+    assertions: [
+      { type: "turn_route", route: "retrieval" },
+      { type: "turn_answer_coverage", coverage: "unanswered" },
+      // Neither residential course's prices may stand in for the named course's quote.
+      { type: "answer_does_not_contain", pattern: "280", matchMode: "substring" },
+      { type: "answer_does_not_contain", pattern: "220", matchMode: "substring" },
+      { type: "answer_does_not_contain", pattern: "260", matchMode: "substring" },
+      { type: "answer_does_not_contain", pattern: "180", matchMode: "substring" },
     ],
   },
   {

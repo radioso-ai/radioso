@@ -80,6 +80,34 @@ A live review turn can ask the customer which sense they mean instead of answeri
 non-retrieval reply, so its facts carry no grounding or coverage verdict, and the `email` cases
 assert only `turn_persists_no_reply`.
 
+## Voice cases
+
+A case with `voiceTurn` drives `query` as a voice turn instead of a chat message: the real voice
+turn policy (`src/modules/voiceChannel/services/voiceTurnPolicy.ts`) decides the bridge, the
+turn limit and the outcome, over a scripted chat backend (`voiceTurn.chatEvents`) rather than the
+seeded agent's corpus, directives or routines, so a voice case takes only `query` and `voiceTurn`.
+The three voice-only trace assertions — `voice_bridge_emitted`, `voice_turn_limit_reached`,
+`voice_turn_outcome` — read a `VoiceTurnObservation` the runner builds from the turn's
+`VoiceTurnEvent` stream, never the reply's content; `evalRunnerAdapter.ts`'s `observeVoiceTurn`
+is the one place that reads it, for both the deterministic and the live runner.
+
+The cases themselves live in `tests/fixtures/voice-eval/cases.ts`, not here, because they run
+against a different agent configuration (voice turned on, with a bridge and a fallback line, no
+corpus or routines) than every other case in this directory. `scripts/runEvals.ts` seeds that
+configuration onto the same disposable agent whenever the run selects a voice case, and
+combines `voiceEvalCases` with `conversationQualityCases` into one dataset, so a voice case's
+outcome sits in the same `baseline.json` as every other case, keyed by its own id. The
+deterministic harness (`tests/unit/eval-suite/voice-behaviour.test.ts`) plays each case's
+`chatEvents` script against a real `VoiceTurnService` instead of the live brain, over the
+`generic` dialect's vendor tag (`tests/fixtures/voice-eval/deterministicPort.ts`).
+
+The turn limit has no event of its own on the `VoiceTurnEvent` stream the port returns — the
+policy reports it only to its metrics observer — so `observeVoiceTurn` reads it by comparing the
+turn's whole spoken text against the fixture's configured fallback line
+(`VOICE_EVAL_FALLBACK_LINE` in `tests/fixtures/voice-eval/agent.ts`). A live run's
+first-speech latency, averaged per case over its samples, prints in the report
+(`[first speech 820ms]`) but gates nothing: only the three trace assertions above do.
+
 ## Running it
 
 ```bash

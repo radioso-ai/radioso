@@ -38,7 +38,13 @@ export type SuiteTraceAssertion =
    * (the compose stage records that source and ran no model call), `composer` when an
    * answer composer wrote it.
    */
-  | { type: "turn_reply_source"; source: "turn_planning" | "composer" };
+  | { type: "turn_reply_source"; source: "turn_planning" | "composer" }
+  /** Whether the voice turn policy spoke a bridge line before the turn's own speech. */
+  | { type: "voice_bridge_emitted"; expected: boolean }
+  /** Whether the voice turn policy's limit ended the turn with the fallback line. */
+  | { type: "voice_turn_limit_reached"; expected: boolean }
+  /** The outcome the voice turn closed with, the kind the runtime received. */
+  | { type: "voice_turn_outcome"; kind: "continue" | "callback_requested" };
 
 const TRACE_ASSERTION_TYPES = new Set<string>([
   "turn_route",
@@ -53,6 +59,9 @@ const TRACE_ASSERTION_TYPES = new Set<string>([
   "turn_answer_coverage",
   "turn_persists_no_reply",
   "turn_reply_source",
+  "voice_bridge_emitted",
+  "voice_turn_limit_reached",
+  "voice_turn_outcome",
 ]);
 
 export const isTraceAssertion = (assertion: { type: string }): assertion is SuiteTraceAssertion =>
@@ -92,6 +101,12 @@ const missingTrace = (assertion: SuiteTraceAssertion): SuiteTraceAssertionVerdic
   assertion,
   status: "error",
   reason: "No turnTrace was captured for this run, so trace assertions cannot be evaluated.",
+});
+
+const missingVoiceObservation = (assertion: SuiteTraceAssertion): SuiteTraceAssertionVerdict => ({
+  assertion,
+  status: "error",
+  reason: "No voice turn was observed for this run; run the case through a voice runner port.",
 });
 
 const observedRoutes = (output: EvalRunObservedOutput): string[] =>
@@ -377,6 +392,42 @@ export const evaluateTraceAssertion = (
         return pass(assertion, `The answer came from "${source}".`);
       }
       return fail(assertion, `The answer came from "${source}"; expected "${assertion.source}".`);
+    }
+    case "voice_bridge_emitted": {
+      if (!output.voiceTurn) {
+        return missingVoiceObservation(assertion);
+      }
+      const { bridged } = output.voiceTurn;
+      if (bridged === assertion.expected) {
+        return pass(assertion, `Turn ${bridged ? "bridged" : "did not bridge"}.`);
+      }
+      return fail(
+        assertion,
+        `Turn ${bridged ? "bridged" : "did not bridge"}; expected ${assertion.expected ? "a bridge" : "no bridge"}.`,
+      );
+    }
+    case "voice_turn_limit_reached": {
+      if (!output.voiceTurn) {
+        return missingVoiceObservation(assertion);
+      }
+      const { turnLimitReached } = output.voiceTurn;
+      if (turnLimitReached === assertion.expected) {
+        return pass(assertion, `Turn ${turnLimitReached ? "reached" : "did not reach"} the turn limit.`);
+      }
+      return fail(
+        assertion,
+        `Turn ${turnLimitReached ? "reached" : "did not reach"} the turn limit; expected ${assertion.expected ? "it to" : "it not to"}.`,
+      );
+    }
+    case "voice_turn_outcome": {
+      if (!output.voiceTurn) {
+        return missingVoiceObservation(assertion);
+      }
+      const { outcomeKind } = output.voiceTurn;
+      if (outcomeKind === assertion.kind) {
+        return pass(assertion, `Turn outcome was "${outcomeKind}".`);
+      }
+      return fail(assertion, `Turn outcome was ${outcomeKind ?? "none"}; expected "${assertion.kind}".`);
     }
   }
 };

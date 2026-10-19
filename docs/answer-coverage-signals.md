@@ -1,12 +1,14 @@
 ---
 title: "Answer Coverage Signals"
 description: "Read semantic answer coverage in turn diagnostics and Audience Pulse, and use it to steer directives and routines."
-last_updated: 2026-10-05
+last_updated: 2026-10-18
 ---
 
 # Answer Coverage Signals
 
 Answer coverage tells you whether the agent resolved the visitor's contextualized request. It is shown beside retrieval grounding, citation support, execution outcome, and follow-up progress, so a response can cite useful material while still leaving an actual request unanswered.
+
+The request includes the subject the conversation established. A visitor who names a course and then asks for "a full quote for the event" is asking about that course, so prices the agent found for a different course leave the request **Unanswered**. Spelling variants, translations, and aliases of the subject still count as the same subject.
 
 ## Author a reaction
 

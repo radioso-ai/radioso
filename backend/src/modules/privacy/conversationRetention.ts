@@ -36,7 +36,7 @@ const DEFAULT_BUDGET: ConversationRetentionBudget = {
 };
 
 /** What one run removed. Counts only: a run never reports which conversation or row went. */
-export interface ConversationRetentionSweepResult {
+interface ConversationRetentionSweepResult {
   /** Rows removed per table: the conversations and their messages, and each fixed window's table. */
   readonly removed: Readonly<Record<string, number>>;
   /** Rows each owning module's eraser removed along with the conversations, beyond the cascade. */

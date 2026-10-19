@@ -1,7 +1,7 @@
 ---
 title: "MCP server"
 description: "Connect an MCP client to one Radioso agent or to Ray through delegated Operator MCP access."
-last_updated: 2026-10-11
+last_updated: 2026-10-19
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -53,6 +53,8 @@ Operator MCP has five scoped capabilities. `operator:read` reads bounded workspa
 `list_documents` lets an `operator:read` client confirm an import with a cursor-paginated document inventory. It filters by source, status, exact external ids or metadata, case-insensitive title text, and retrieval eligibility; each response has at most 25 rows, and `nextCursor` continues the inventory. Each row carries identifiers, metadata, content length, and timestamps but never the document body. Enterprise workspaces also expose `workspace_usage_limits`, which reports the organization plan and each document and indexing window's used, limit, remaining, and reset values, plus the same for whichever of conversations or answers the plan meters. A plan meters exactly one of those two; the other comes back `null` rather than a limit, so a dormant cap never reads as unlimited.
 
 `propose_workspace_setting` drafts a change to the assistant's wording or its public channels — including the website embed's allowed origins and launcher — for the operator to review and apply. The embed's install snippet carries its token and is never returned over MCP: `workspace_settings` instead returns `general.channels.websiteEmbedSnippetUrl`, the dashboard page where a signed-in operator copies it.
+
+`propose_privacy_setting` drafts the workspace's conversation retention window, `conversationRetentionDays` from 7 to 3650 or `null` to keep conversations until they are deleted; `workspace_settings` reads the current one as `privacy.conversationRetentionDays`. Applying it needs `workspace.history.delete` as well as `workspace.settings.manage`, because the retention sweep then erases conversations idle longer than the window.
 
 Proposal fences compare only the settings a proposal changes. An unrelated update stays out of its way; a stale result names the changed field, or reports `Target deleted` when its target disappeared.
 

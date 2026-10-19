@@ -1,0 +1,77 @@
+---
+title: "Data retention"
+description: "How long Radioso keeps conversations and every copy derived from them, how to set a workspace's conversation retention window, and how long backups and logs outlive a deletion."
+last_updated: 2026-10-19
+---
+
+# Data retention
+
+Every conversation your agent has stays until someone deletes it, unless you give the workspace a retention window. Set one and Radioso erases each conversation once it has gone that many days without activity, with everything derived from it, the same way [deleting a conversation](/operators/deleting-conversation-data) does. Keeping only what you need is most of what the GDPR's storage-limitation principle asks, and it matters most when visitors tell your agent things about their health, beliefs, or circumstances.
+
+## Set a retention window
+
+Open **Settings → Workspace → Conversation retention**, pick a window, and save. The presets are 30, 90 and 180 days, one year and two years; **Custom** takes any whole number of days from 7 to 3650. **Keep until deleted** turns retention off, which is where every workspace starts.
+
+If you have no legal or contractual reason to keep conversations longer, a year suits most support work: long enough to look back on a returning customer's last visit, short enough that an old disclosure does not sit around indefinitely. A workspace whose visitors routinely share health or other sensitive details does well with 90 days.
+
+Saving a window that erases sooner than before — the first window you set, or a shorter one — asks you to confirm, because the sweep then erases every conversation already past it, and none of them can be restored. Lengthening the window or turning it off saves straight away.
+
+Over the API:
+
+```http
+PUT /api/v1/settings/privacy
+Content-Type: application/json
+
+{ "conversationRetentionDays": 365 }
+```
+
+`GET /api/v1/settings/privacy` reads it back; `null` means keep until deleted. Reading needs `workspace.settings.read`. Setting it needs `workspace.settings.manage` and `workspace.history.delete`, which owners and admins hold, since a window erases conversations nobody deletes one by one. Ray can draft the change for you (`propose_privacy_setting`), and an owner or admin applies the card.
+
+## What counts as activity
+
+A conversation is idle from its last message — the visitor's, the agent's, or a teammate's — or the last change that updates the conversation itself, whichever is later. A conversation someone wrote in yesterday is never erased, however old it is.
+
+## How the sweep runs
+
+A sweep runs every 15 minutes in the worker. For each workspace with a window it erases idle conversations in batches of 25, one transaction each, taking turns across workspaces so a large backlog never holds up a small one. A run stops after a bounded number of batches, so a workspace that just set a short window over years of history drains over a few runs. Two runs at once, on two instances, never erase the same conversation twice.
+
+Each batch goes through the same erasure as **Delete conversation**: messages, summaries, routine state, eval snapshots built on it, inbound mail, session context values, the turn audit events that carry its content, and a voice call's recording at ElevenLabs. Each batch records one `conversation.retention.enforced` audit event with the window, the cutoff, and how many conversations, messages, and other rows went. Like every erasure record, it names no conversation and holds none of the content.
+
+## Fixed windows
+
+Some copies of a conversation have a shorter life of their own, whether or not the workspace sets a window. The same sweep enforces them:
+
+| What | Kept for |
+|---|---|
+| A conversation summary | 30 days after it was last refreshed |
+| A routine's progress, with the values it collected | 30 minutes after its last step |
+| A routine waiting on a decision | 90 days without an update, and never while its conversation had activity in those 90 days |
+| The raw copy of an inbound email | 30 days; the parsed message and the facts threading needs stay with the conversation |
+| An inbound email that never opened a conversation | 30 days |
+
+Opening the raw view of an email older than 30 days answers `410 raw_purged`.
+
+## Backups and logs on Radioso Cloud
+
+An erasure reaches what Radioso stores. It cannot reach back into a backup, so a deleted conversation survives in backups and logs until they age out:
+
+| Where | Kept for |
+|---|---|
+| Database backups | the 7 most recent daily backups |
+| Point-in-time recovery logs | 7 days |
+| Application and request logs | 30 days |
+
+Logs carry ids, counts and outcomes, never message content. A self-hosted deployment sets its own backup and log retention; the sweep itself runs in every deployment's worker.
+
+## Common failure modes
+
+- **`400` on save** — the window is not a whole number of days from 7 to 3650. Send `null` to keep conversations until they are deleted.
+- **`403` on save** — the caller lacks `workspace.history.delete`: a member session, or a member credential.
+- **The control is greyed out** — your role on this workspace is member. Ask an owner or admin, or for an admin grant on the workspace.
+- **Old conversations are still there minutes after saving** — a long history drains over several runs, 15 minutes apart. The `conversation.retention.enforced` events show it working.
+
+## Read next
+
+- [Deleting conversation data](/operators/deleting-conversation-data) — erasing one conversation or a visitor now, and what stays.
+- [Visitor data](/operators/visitor-data) — what a conversation records about a visit.
+- [Ray](/operators/copilot) — reviewing and applying the cards Ray drafts.

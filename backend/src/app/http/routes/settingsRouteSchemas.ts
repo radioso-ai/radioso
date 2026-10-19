@@ -173,7 +173,7 @@ export const documentedUpdateDocumentTypeCatalogSchema = updateDocumentTypeCatal
 });
 
 /** Days a conversation is kept after its last activity; null keeps conversations until they are deleted. */
-export const conversationRetentionDaysSchema = z.number().int()
+const conversationRetentionDaysSchema = z.number().int()
   .min(CONVERSATION_RETENTION_DAYS_RANGE.min)
   .max(CONVERSATION_RETENTION_DAYS_RANGE.max)
   .nullable();

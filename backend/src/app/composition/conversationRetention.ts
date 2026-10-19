@@ -22,16 +22,16 @@ type ConversationDataRetentionRuleBinding = (db: Kysely<DB>) => ConversationData
  * conversation's own window. A module that keeps a copy of conversation content with a shorter life
  * than the conversation registers its rule here.
  */
-export const defaultConversationDataRetentionRules: readonly ConversationDataRetentionRuleBinding[] = [
+const defaultConversationDataRetentionRules: readonly ConversationDataRetentionRuleBinding[] = [
   (db) => new ConversationSummaryRetention(db),
   (db) => new RoutineStateRetention(db),
   (db) => new EmailRawMimeRetention(db),
 ];
 
 /** The registration id the worker task route runs it by, and the Cloud Scheduler job names. */
-export const CONVERSATION_RETENTION_TASK_ID = "conversation-retention";
+const CONVERSATION_RETENTION_TASK_ID = "conversation-retention";
 /** The poll worker's cadence; the Cloud Scheduler job in `infra/terraform/scheduler.tf` matches it. */
-export const CONVERSATION_RETENTION_INTERVAL_MS = 15 * 60 * 1_000;
+const CONVERSATION_RETENTION_INTERVAL_MS = 15 * 60 * 1_000;
 
 export const createConversationRetentionSweep = (deps: {
   db: Kysely<DB>;

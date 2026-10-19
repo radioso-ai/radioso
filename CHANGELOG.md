@@ -9,6 +9,59 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.19.0] - 2026-10-19
+
+### Added
+
+- **billing:** tighten document, indexing and notification email limits ([#1570](https://github.com/radioso-ai/radioso/pull/1570))
+- **voice:** switch the call's language when the caller changes language ([#1562](https://github.com/radioso-ai/radioso/pull/1562))
+- **llm:** choose the OpenAI data-residency endpoint for platform keys ([#1555](https://github.com/radioso-ai/radioso/pull/1555))
+- **voice:** follow the caller's language when it changes mid-call ([#1561](https://github.com/radioso-ai/radioso/pull/1561))
+- **billing:** price Planet at €579 and route plan changes through the subscription portal ([#1493](https://github.com/radioso-ai/radioso/pull/1493))
+- add AI summaries to routine notices ([#1488](https://github.com/radioso-ai/radioso/pull/1488))
+- **voice:** speak an operator's Inbox reply on a human-owned call ([#1558](https://github.com/radioso-ai/radioso/pull/1558))
+- **auth:** complete email verification funnel ([#1496](https://github.com/radioso-ai/radioso/pull/1496))
+- **workspace:** add server-owned setup state ([#1490](https://github.com/radioso-ai/radioso/pull/1490))
+- **security:** add Redis abuse-control counter ([#1492](https://github.com/radioso-ai/radioso/pull/1492))
+- **mcp:** add public agent connect snippets ([#1491](https://github.com/radioso-ai/radioso/pull/1491))
+- **inbox:** listen to a voice call's recording from the conversation ([#1553](https://github.com/radioso-ai/radioso/pull/1553))
+- **routines:** flag a notifying ending with no reply-to as a non-blocking advisory ([#1552](https://github.com/radioso-ai/radioso/pull/1552))
+
+### Fixed
+
+- **retrieval:** resolve referential subjects and bind coverage to them ([#1577](https://github.com/radioso-ai/radioso/pull/1577))
+- **routines:** retry an unreadable next-step decision once and log why ([#1574](https://github.com/radioso-ai/radioso/pull/1574))
+- **routines:** keep the open step through a new routine's first save ([#1568](https://github.com/radioso-ai/radioso/pull/1568))
+- **routines:** fill no slot from a tool call's rendered text ([#1571](https://github.com/radioso-ai/radioso/pull/1571))
+- **voice:** store the spoken part of a reply cut off mid-stream ([#1560](https://github.com/radioso-ai/radioso/pull/1560))
+- make Needs-you volume visible ([#1489](https://github.com/radioso-ai/radioso/pull/1489))
+- **deps:** repair the lockfile entry #1451 left pointing at a missing jose version ([#1557](https://github.com/radioso-ai/radioso/pull/1557))
+- **documents:** fail an expired claim once attempts are exhausted instead of reclaiming it ([#1551](https://github.com/radioso-ai/radioso/pull/1551))
+
+### Documentation
+
+- add onboarding docs chain ([#1486](https://github.com/radioso-ai/radioso/pull/1486))
+
+### Internal
+
+- **evals:** let a quick reply say it was glad to help ([#1567](https://github.com/radioso-ai/radioso/pull/1567))
+- type-check backend tests ([#1572](https://github.com/radioso-ai/radioso/pull/1572))
+- **retrieval:** drop retired chunk vector columns ([#1487](https://github.com/radioso-ai/radioso/pull/1487))
+- **deps:** bump the npm_and_yarn group across 1 directory with 2 updates ([#1451](https://github.com/radioso-ai/radioso/pull/1451))
+
+### Database migrations
+
+This release adds 6 migrations. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `230_voice_session_recordings.sql`
+- `231_workspace_setup_state.sql`
+- `232_auth_pending_registration_tickets.sql`
+- `233_routine_state_started_message.sql`
+- `234_drop_legacy_chunk_vectors.sql`
+- `235_document_provider_credential_failure_code.sql`
+
+[1.19.0]: https://github.com/radioso-ai/radioso/compare/v1.18.0...v1.19.0
+
 ## [1.18.0] - 2026-10-17
 
 ### Added

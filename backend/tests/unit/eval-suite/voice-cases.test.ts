@@ -63,7 +63,11 @@ const settle = async <T>(pending: Promise<T>): Promise<T> => {
     await realDelay(QUIET_MS);
     if (outcome) break;
     if (Date.now() - fakeStart > FAKE_LIMIT_MS) throw new Error(`Nothing settled within ${FAKE_LIMIT_MS} ms of fake time.`);
-    if (performance.now() > realDeadline) throw new Error(`Nothing settled within ${REAL_LIMIT_MS} ms of real time, with no fake timer to fire.`);
+    if (performance.now() > realDeadline) {
+      throw new Error(vi.getTimerCount() === 0
+        ? `Nothing settled within ${REAL_LIMIT_MS} ms of real time, with no fake timer to fire.`
+        : `Nothing settled within ${REAL_LIMIT_MS} ms of real time.`);
+    }
     if (vi.getTimerCount() > 0) await vi.advanceTimersToNextTimerAsync();
   }
   if ("error" in outcome) throw outcome.error;

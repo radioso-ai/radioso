@@ -12,7 +12,7 @@ import {
   type VoiceTurnObservation,
 } from "../src/modules/eval/suite/index.js";
 import type { ConversationOwnershipService, OwnershipActor } from "../src/modules/handoff/public.js";
-import type { VoiceTurnObserver, VoiceTurnSummary } from "../src/modules/voiceChannel/public.js";
+import { isSilentText, type VoiceTurnObserver, type VoiceTurnSummary } from "../src/modules/voiceChannel/public.js";
 
 /**
  * The voice cases' runner: it calls the agent the way a voice runtime does, through the
@@ -131,12 +131,10 @@ interface VoiceStreamReading {
 
 type ChunkFrame = { error?: unknown; choices?: Array<{ delta?: { content?: unknown } }> };
 
-/** Whitespace and zero-width spaces are wire padding (a flush or a keep-alive), never speech. */
-const isAudible = (text: string): boolean => text.replace(/[\s\u200B]/gu, "").length > 0;
-
 /**
  * Splits a stream into its SSE frames, however the socket cut it; a frame is stamped with the chunk
- * that completed it, and only a delta with something to hear counts.
+ * that completed it, and only a delta with something to hear counts (whitespace and zero-width
+ * spaces are wire padding, as the voice channel itself reads them).
  */
 export const readVoiceStream = (chunks: readonly VoiceWireChunk[]): VoiceStreamReading => {
   const reading: VoiceStreamReading = { deltas: [], done: false, errorFrame: false, unreadableFrames: 0 };
@@ -157,7 +155,7 @@ export const readVoiceStream = (chunks: readonly VoiceWireChunk[]): VoiceStreamR
           const content = frame.choices?.[0]?.delta?.content;
           if (frame.error !== undefined) {
             reading.errorFrame = true;
-          } else if (typeof content === "string" && isAudible(content)) {
+          } else if (typeof content === "string" && !isSilentText(content)) {
             reading.deltas.push({ text: content, atMs: chunk.atMs });
           }
         } catch {

@@ -14,7 +14,6 @@ import {
   type ConversationQualityCase,
   type VoiceTurnObservation,
 } from "../../../src/modules/eval/suite/index.js";
-import type { VoiceTurnSummary } from "../../../src/modules/voiceChannel/public.js";
 import type { TurnPlanGatewayFactory } from "../../../src/shared/infra/llm/turnPlanGateway.js";
 import {
   conversationQualityVoiceCases,
@@ -27,7 +26,7 @@ import {
   createVoiceCallRunnerPort,
   ownershipTeammate,
   voiceLineCatalog,
-  type VoiceTurnRecordReader,
+  collectVoiceTurnRecords,
 } from "../../../scripts/voiceEvalRunnerAdapter.js";
 
 /**
@@ -219,32 +218,11 @@ const scriptedBrains: Record<string, ScriptedBrain> = {
   },
 };
 
-/** The voice turns' records, as the test app's voice service reports each finished turn. */
-const turnRecordsOf = (): VoiceTurnRecordReader & {
-  turnFinished(summary: Readonly<VoiceTurnSummary>): void;
-  latestConversationId(): string | null;
-} => {
-  const records: Array<Readonly<VoiceTurnSummary>> = [];
-  const waiters: Array<() => void> = [];
-  return {
-    turnFinished: (summary) => {
-      records.push(summary);
-      waiters.splice(0).forEach((wake) => wake());
-    },
-    count: () => records.length,
-    latestConversationId: () => [...records].reverse().find((record) => record.conversationId !== null)?.conversationId ?? null,
-    next: async (after) => {
-      while (records.length <= after) await new Promise<void>((wake) => waiters.push(wake));
-      return records[after];
-    },
-  };
-};
-
 /** A test app for one case, serving on a real socket, and the runner port that calls it. */
 const voiceStackFor = async (evalCase: ConversationQualityCase): Promise<{ server: Server; port: ReturnType<typeof createVoiceCallRunnerPort> }> => {
   const brain = scriptedBrains[evalCase.id];
   if (!brain) throw new Error(`Case "${evalCase.id}" has no scripted brain.`);
-  const turnRecords = turnRecordsOf();
+  const turnRecords = collectVoiceTurnRecords();
   let routineId = "";
   const testApp = createTestApp({ voiceTurnObserver: turnRecords, ...brain.overrides(() => routineId) });
   const runtime = await settle(openVoiceRuntime(testApp, {
@@ -266,8 +244,7 @@ const voiceStackFor = async (evalCase: ConversationQualityCase): Promise<{ serve
         userId: runtime.session.userId,
         workspaceId: runtime.session.workspaceId,
       }),
-      // One call per test app, so the conversation its turns ran in is the call's.
-      conversations: { conversationOf: async () => turnRecords.latestConversationId() },
+      conversations: turnRecords,
       lines: voiceLineCatalog(conversationQualityVoiceSettings),
       clock: () => Date.now(),
       settle,

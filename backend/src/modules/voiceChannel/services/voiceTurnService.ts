@@ -425,9 +425,9 @@ export class VoiceTurnService implements VoiceTurnPort {
         // The log names how many replies were recorded spoken, so it waits for the settling writes;
         // its duration is the turn's own.
         if (repliesSettled) {
-          void repliesSettled.then(() => this.logTurn(input, record, startedAt, finishedAt, failure));
+          void repliesSettled.then(() => this.logTurn(input, record, { sequence: claim.sequence, startedAt, finishedAt }, failure));
         } else {
-          this.logTurn(input, record, startedAt, finishedAt, failure);
+          this.logTurn(input, record, { sequence: claim.sequence, startedAt, finishedAt }, failure);
         }
       };
       // The events end with the outcome; a reply the limit cut off drains behind them, and the
@@ -658,7 +658,13 @@ export class VoiceTurnService implements VoiceTurnPort {
     };
   }
 
-  private logTurn(input: VoiceTurnInput, record: VoiceTurnRecord, startedAt: number, finishedAt: number, failure: unknown): void {
+  private logTurn(
+    input: VoiceTurnInput,
+    record: VoiceTurnRecord,
+    timing: { sequence: number; startedAt: number; finishedAt: number },
+    failure: unknown,
+  ): void {
+    const { sequence, startedAt, finishedAt } = timing;
     const { metrics, logger } = this.dependencies;
     const spokenTexts = [...record.spoken.operatorReplies, ...record.spoken.answer].map((piece) => piece.text).concat(record.spoken.fallback ?? []);
     const supersededAt = spokenTexts.some((text) => text.length > 0) ? "after_speech" : "before_speech";
@@ -698,7 +704,6 @@ export class VoiceTurnService implements VoiceTurnPort {
       ...languageFields(record.language, input),
       ...(record.languageSwitch ? { languageSwitch: record.languageSwitch } : {}),
     };
-    this.dependencies.observer?.turnFinished(fields);
     if (failedWithSwitchedTurn) {
       logger.info(fields, "Voice language switch follow-up ended with its switched turn's failure");
     } else if (record.result === "failed") {
@@ -712,6 +717,20 @@ export class VoiceTurnService implements VoiceTurnPort {
       logger.warn(fields, "Voice turn reached the turn limit");
     } else {
       logger.info(fields, "Voice turn finished");
+    }
+    this.observeTurn(input, sequence, fields);
+  }
+
+  /** Tells the observer the finished turn; an observer that throws is logged, and the turn is unaffected. */
+  private observeTurn(input: VoiceTurnInput, sequence: number, summary: VoiceTurnSummary): void {
+    const { observer, logger } = this.dependencies;
+    try {
+      observer?.turnFinished({ sessionKey: input.session.sessionKey, sequence }, summary);
+    } catch (error) {
+      logger.warn(
+        { agentId: input.session.agentId, vendor: input.session.vendor, errorClass: errorClassOf(error) },
+        "Voice turn observer failed",
+      );
     }
   }
 

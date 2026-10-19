@@ -12,7 +12,7 @@ import {
   type VoiceTurnObservation,
 } from "../src/modules/eval/suite/index.js";
 import type { ConversationOwnershipService, OwnershipActor } from "../src/modules/handoff/public.js";
-import type { VoiceTurnSummary } from "../src/modules/voiceChannel/public.js";
+import type { VoiceTurnObserver, VoiceTurnSummary } from "../src/modules/voiceChannel/public.js";
 
 /**
  * The voice cases' runner: it calls the agent the way a voice runtime does, through the
@@ -62,7 +62,10 @@ const headerValue = (value: string | string[] | undefined): string | null =>
 
 /**
  * Posts one caller turn and records the response as it arrives. `clock` stamps the chunks: the
- * deterministic half passes its fake clock, so the times are the policy's own.
+ * deterministic half passes its fake clock, so the times are the policy's own. Once the response's
+ * headers have arrived, the recording always resolves: a stream the server or the socket cuts off
+ * resolves with the chunks it carried, which the suite then reads as a cut stream. Only a request
+ * that never got a response rejects.
  */
 export const postVoiceTurn = (
   door: VoiceRuntimeDoor,
@@ -83,23 +86,36 @@ export const postVoiceTurn = (
         ...(turn.locale ? { [LOCALE_HEADER]: turn.locale } : {}),
       },
     });
-    client.on("error", reject);
+    let responded = false;
+    client.on("error", (error) => {
+      // After the headers, the response's own close settles the recording.
+      if (!responded) reject(error);
+    });
     client.setTimeout(SOCKET_IDLE_TIMEOUT_MS, () => client.destroy(new Error(`The voice turn went silent for ${SOCKET_IDLE_TIMEOUT_MS} ms.`)));
     client.on("response", (response) => {
+      responded = true;
       const chunks: VoiceWireChunk[] = [];
+      let settled = false;
+      const settle = (): void => {
+        if (settled) return;
+        settled = true;
+        resolve({
+          status: response.statusCode ?? 0,
+          chunks,
+          // A trailer arrives only with a whole stream; a cut one carries none.
+          outcome: headerValue(response.trailers[OUTCOME_FIELD]) ?? headerValue(response.headers[OUTCOME_FIELD]),
+          conversationId: headerValue(response.headers[CONVERSATION_HEADER]),
+          endedAtMs: clock() - startedAt,
+        });
+      };
       response.setEncoding("utf8");
       response.on("data", (text: string) => {
         chunks.push({ atMs: clock() - startedAt, text });
         onChunk?.(chunks);
       });
-      response.on("error", reject);
-      response.on("end", () => resolve({
-        status: response.statusCode ?? 0,
-        chunks,
-        outcome: headerValue(response.trailers[OUTCOME_FIELD]) ?? headerValue(response.headers[OUTCOME_FIELD]),
-        conversationId: headerValue(response.headers[CONVERSATION_HEADER]),
-        endedAtMs: clock() - startedAt,
-      }));
+      response.on("end", settle);
+      response.on("error", settle);
+      response.on("close", settle);
     });
     client.end(JSON.stringify({ model: "radioso-voice-eval", stream: true, messages: [{ role: "user", content: turn.utterance }] }));
   });
@@ -242,11 +258,35 @@ export const ownershipTeammate = (
 
 /** The voice turns' own records, for a runner that shares the process serving them. */
 export interface VoiceTurnRecordReader {
-  /** How many turns the process has finished so far. */
-  count(): number;
-  /** The record of the first turn to finish after the first `after`, once it has finished. */
-  next(after: number): Promise<Readonly<VoiceTurnSummary>>;
+  /**
+   * The records of a session's first `count` turns, in the order their requests arrived, once that
+   * many have finished. Turns that run at once (a reply and the utterance spoken over it) finish in
+   * either order; the arrival order is what tells them apart.
+   */
+  recordsOf(sessionKey: string, count: number): Promise<ReadonlyArray<Readonly<VoiceTurnSummary>>>;
 }
+
+/**
+ * The records a voice service in this process reports, by session: the observer to hand the
+ * service, the reader the call driver waits on, and each session's binding as its turns report it.
+ */
+export const collectVoiceTurnRecords = (): VoiceTurnObserver & VoiceTurnRecordReader & VoiceCallConversations => {
+  const sessions = new Map<string, Array<{ sequence: number; summary: Readonly<VoiceTurnSummary> }>>();
+  const waiters: Array<() => void> = [];
+  const inArrivalOrder = (sessionKey: string) => [...(sessions.get(sessionKey) ?? [])].sort((left, right) => left.sequence - right.sequence);
+  return {
+    turnFinished: (turn, summary) => {
+      sessions.set(turn.sessionKey, [...(sessions.get(turn.sessionKey) ?? []), { sequence: turn.sequence, summary }]);
+      waiters.splice(0).forEach((wake) => wake());
+    },
+    recordsOf: async (sessionKey, count) => {
+      while ((sessions.get(sessionKey)?.length ?? 0) < count) await new Promise<void>((wake) => waiters.push(wake));
+      return inArrivalOrder(sessionKey).slice(0, count).map((entry) => entry.summary);
+    },
+    conversationOf: async (sessionKey) =>
+      inArrivalOrder(sessionKey).reverse().find((entry) => entry.summary.conversationId !== null)?.summary.conversationId ?? null,
+  };
+};
 
 /** Where a call's session is bound: the conversation a session key's turns run in, once one has run. */
 export interface VoiceCallConversations {
@@ -283,30 +323,38 @@ const runTeammateStep = (
 const speechPieceCount = (chunks: readonly VoiceWireChunk[], lines: VoiceLineCatalog): number =>
   readVoiceStream(chunks).deltas.filter((delta) => pieceKind(delta.text, lines) === "speech").length;
 
+/** A turn's recording, or the error that kept it from having one; never a rejected promise left unread. */
+type PostedTurn = { recording: VoiceWireRecording } | { error: unknown };
+
+const posted = (pending: Promise<VoiceWireRecording>): Promise<PostedTurn> =>
+  pending.then((recording) => ({ recording }), (error: unknown) => ({ error }));
+
+const errorMessage = (error: unknown): string => (error instanceof Error ? error.message : "The request failed with a non-Error value.");
+
 /**
- * Runs a voice case's call on a session of its own: the `before` steps in order, each caller
- * turn waited out (and its record, where there is one, so the scored turn's record is its own),
- * then the scored turn, observed. When the case has an `interruption`, the caller speaks it over
- * the scored turn once enough of the turn's speech has arrived, and the call waits that turn out
- * too.
+ * Runs a voice case's call on a session of its own: the `before` steps in order, each caller turn
+ * waited out, then the scored turn, observed. When the case has an `interruption`, the caller speaks
+ * it over the scored turn once enough of the turn's speech has arrived, and the call waits that turn
+ * out too. Where there are records, the scored turn's is the one its request's arrival names.
  */
 const runVoiceCall = async (stack: VoiceCallStack, evalCase: ConversationQualityCase): Promise<VoiceTurnObservation> => {
   const call = evalCase.voice ?? {};
   const settle = stack.settle ?? (<T>(pending: Promise<T>) => pending);
   const sessionKey = `voice-eval-${randomUUID()}`;
-  const post = (utterance: string, onChunk?: (chunks: readonly VoiceWireChunk[]) => void) =>
-    postVoiceTurn(stack.door, { sessionKey, utterance, ...(call.locale ? { locale: call.locale } : {}) }, stack.clock, onChunk);
-  const recordAfter = async (before: number): Promise<Readonly<VoiceTurnSummary> | undefined> =>
-    stack.turnRecords ? settle(stack.turnRecords.next(before)) : undefined;
-  const withRecord = (observation: VoiceTurnObservation, turnRecord: Readonly<VoiceTurnSummary> | undefined): VoiceTurnObservation =>
-    (turnRecord ? { ...observation, turnRecord } : observation);
+  let requestsSent = 0;
+  const post = (utterance: string, onChunk?: (chunks: readonly VoiceWireChunk[]) => void): Promise<VoiceWireRecording> => {
+    requestsSent += 1;
+    return postVoiceTurn(stack.door, { sessionKey, utterance, ...(call.locale ? { locale: call.locale } : {}) }, stack.clock, onChunk);
+  };
+  /** Waits for every request so far to finish its turn; the record of the `request`-th, from zero. */
+  const recordOf = async (request: number): Promise<Readonly<VoiceTurnSummary> | undefined> =>
+    stack.turnRecords ? (await settle(stack.turnRecords.recordsOf(sessionKey, requestsSent)))[request] : undefined;
 
   let conversationId: string | null = null;
   for (const [index, step] of (call.before ?? []).entries()) {
     if (step.kind === "caller") {
-      const before = stack.turnRecords?.count() ?? 0;
       const recording = await settle(post(step.utterance));
-      await recordAfter(before);
+      await recordOf(requestsSent - 1);
       const earlier = observeVoiceTurn(recording, stack.lines);
       if (!earlier.protocol.ok) {
         throw new Error(`The call's step ${index + 1} failed: ${earlier.protocol.problem}`);
@@ -323,26 +371,31 @@ const runVoiceCall = async (stack: VoiceCallStack, evalCase: ConversationQuality
     await settle(runTeammateStep(stack.teammate, conversationId, step));
   }
 
-  const before = stack.turnRecords?.count() ?? 0;
+  const scoredRequest = requestsSent;
   const { interruption } = call;
-  let interrupting: Promise<VoiceWireRecording> | undefined;
+  // Handled from the moment it is sent, so a failure waits here to be reported, never unhandled.
+  let interrupting: Promise<PostedTurn> | undefined;
   const recording = await settle(post(evalCase.query ?? "", interruption
     ? (chunks) => {
-      interrupting ??= speechPieceCount(chunks, stack.lines) >= interruption.afterSpeechPieces ? post(interruption.utterance) : undefined;
+      interrupting ??= speechPieceCount(chunks, stack.lines) >= interruption.afterSpeechPieces ? posted(post(interruption.utterance)) : undefined;
     }
     : undefined));
-  const scored = withRecord(observeVoiceTurn(recording, stack.lines), await recordAfter(before));
   if (interruption) {
     if (!interrupting) {
       throw new Error(`The scored turn ended before ${interruption.afterSpeechPieces} speech piece(s) reached the caller, so nobody spoke over it.`);
     }
-    const newer = observeVoiceTurn(await settle(interrupting), stack.lines);
-    await recordAfter(before + 1);
-    if (!newer.protocol.ok) {
-      throw new Error(`The utterance spoken over the scored turn failed: ${newer.protocol.problem}`);
+    const newer = await settle(interrupting);
+    if ("error" in newer) {
+      throw new Error(`The utterance spoken over the scored turn failed: ${errorMessage(newer.error)}`);
+    }
+    const heard = observeVoiceTurn(newer.recording, stack.lines);
+    if (!heard.protocol.ok) {
+      throw new Error(`The utterance spoken over the scored turn failed: ${heard.protocol.problem}`);
     }
   }
-  return scored;
+  const turnRecord = await recordOf(scoredRequest);
+  const scored = observeVoiceTurn(recording, stack.lines);
+  return turnRecord ? { ...scored, turnRecord } : scored;
 };
 
 /** A runner port that drives voice cases only; a text case is an error for this case alone. */

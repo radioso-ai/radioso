@@ -77,9 +77,22 @@ export interface VoiceTurnSummary {
   languageSwitch?: VoiceLanguageSwitchOutcome;
 }
 
-/** Told each finished turn's summary as its log line is written; for a reader in the serving process. */
+/**
+ * Which turn a summary is of, for a reader in the serving process: the vendor's session key, and the
+ * turn's arrival order in the process (a later request of the session has a larger `sequence`).
+ * Never on the log line.
+ */
+export interface VoiceTurnKey {
+  sessionKey: string;
+  sequence: number;
+}
+
+/**
+ * Told each finished turn's summary once its log line is written; for a reader in the serving
+ * process. One that throws is logged and costs the turn nothing.
+ */
 export interface VoiceTurnObserver {
-  turnFinished(summary: Readonly<VoiceTurnSummary>): void;
+  turnFinished(turn: Readonly<VoiceTurnKey>, summary: Readonly<VoiceTurnSummary>): void;
 }
 
 /** What the turn's one log record reports, and what the session remembers of it. */

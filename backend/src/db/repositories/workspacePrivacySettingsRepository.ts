@@ -6,7 +6,7 @@ import type {
   PrivacySettingsStore,
   WorkspaceConversationRetention,
 } from "../../modules/privacy/public.js";
-import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
+import { anyOf, currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { DB } from "../../shared/infra/kysely/types.js";
 
 /**
@@ -56,10 +56,21 @@ export class WorkspacePrivacySettingsRepository implements PrivacySettingsStore,
       .selectFrom("workspaces")
       .select(["id", "account_id", "conversation_retention_days"])
       .where("conversation_retention_days", "is not", null)
+      .orderBy("conversation_retention_swept_at", (order) => order.asc().nullsFirst())
       .orderBy("id")
       .execute();
     return rows.flatMap((row) => row.conversation_retention_days === null
       ? []
       : [{ workspaceId: row.id, accountId: row.account_id, retentionDays: row.conversation_retention_days }]);
+  }
+
+  /** Leaves the workspace's own `updated_at` alone: a sweep reaching it changes none of its settings. */
+  async recordSwept(workspaceIds: readonly string[], at: Date): Promise<void> {
+    if (workspaceIds.length === 0) return;
+    await this.db
+      .updateTable("workspaces")
+      .set({ conversation_retention_swept_at: at })
+      .where((eb) => anyOf(eb.ref("id"), workspaceIds, "uuid[]"))
+      .execute();
   }
 }

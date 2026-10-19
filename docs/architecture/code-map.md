@@ -869,7 +869,9 @@ it takes `workspace.history.delete` as well as `workspace.settings.manage`.
 erases conversations with no update and no message since the window through
 `ConversationErasureService.eraseInactiveConversations`, the same erasers and
 cascade as a requested erasure, one bounded batch per workspace per round, each
-batch one transaction and one `conversation.retention.enforced` audit event. Then
+batch one transaction and one `conversation.retention.enforced` audit event. A
+check that claims nothing spends its own budget, and each run starts with the
+workspaces reached longest ago (`conversation_retention_swept_at`). Then
 it runs each module's `ConversationDataRetentionRule`
 (`backend/src/shared/domain/conversationDataRetention.ts`), a fixed window over
 rows whose conversation lives on: expired summaries, expired or 90-day-abandoned
@@ -884,8 +886,10 @@ Each run logs `conversation_retention_swept` with counts per table and per
 eraser owner, increments `radioso_retention_rows_removed_total{table}`,
 `radioso_retention_rows_erased_total{owner}` and `radioso_retention_sweeps_total{outcome}`,
 and runs inside a `privacy.retention_sweep` span. Terraform pins the windows that
-outlast it: seven Cloud SQL backups, seven days of point-in-time recovery logs,
-and 30 days in the project's `_Default` log bucket.
+outlast it: seven Cloud SQL backups, 30 days in the project's `_Default` log
+bucket, and seven days of point-in-time recovery logs where a stack turns
+recovery on (`db_point_in_time_recovery_enabled`, off by default, because turning
+it on restarts the instance).
 
 Public surfaces and key files:
 

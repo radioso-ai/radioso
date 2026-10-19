@@ -12,16 +12,26 @@ export interface WorkspaceConversationRetention {
 }
 
 export interface ConversationRetentionPolicies {
-  /** Every workspace with a window set; a workspace without one keeps its conversations. */
+  /**
+   * Every workspace with a window set, least recently swept first; a workspace without one keeps its
+   * conversations.
+   */
   listConversationRetention(): Promise<readonly WorkspaceConversationRetention[]>;
+  /** Marks the workspaces a run reached, so the next run starts with the ones it did not. */
+  recordSwept(workspaceIds: readonly string[], at: Date): Promise<void>;
 }
 
 /** How much one run may do, so a backlog drains over several runs instead of one long one. */
 export interface ConversationRetentionBudget {
   /** Conversations one erasure transaction removes. */
   conversationBatchSize: number;
-  /** Erasure transactions one run makes, across every workspace. */
+  /** Erasure transactions that claimed a conversation, per run, across every workspace. */
   maxConversationBatches: number;
+  /**
+   * Checks that found nothing past a workspace's window, per run. One indexed read each, so a run
+   * looks at many workspaces with nothing to erase without spending the erasure budget on them.
+   */
+  maxEmptyChecks: number;
   /** Rows one rule statement removes. */
   ruleBatchSize: number;
   /** Statements one rule runs per run. */
@@ -31,6 +41,7 @@ export interface ConversationRetentionBudget {
 const DEFAULT_BUDGET: ConversationRetentionBudget = {
   conversationBatchSize: 25,
   maxConversationBatches: 40,
+  maxEmptyChecks: 500,
   ruleBatchSize: 500,
   maxRuleBatches: 20,
 };
@@ -114,22 +125,30 @@ export class ConversationRetentionSweep {
 
   /**
    * One batch per workspace per round, round after round, so one workspace's backlog never keeps
-   * another's from its turn. A workspace leaves the rounds once a batch comes back short.
+   * another's from its turn. A workspace leaves the rounds once a batch claims less than a full one.
+   * The run starts with the workspaces the last run did not reach, and records the ones it reached,
+   * so a run that ends on its budget hands the rest to the next run rather than starting over.
    */
   private async sweepConversations(
     now: Date,
     removed: Record<string, number>,
     erasedByOwner: Record<string, number>,
   ): Promise<{ failed: number; drained: boolean }> {
-    const { conversationBatchSize, maxConversationBatches } = this.budget;
+    const { conversationBatchSize, maxConversationBatches, maxEmptyChecks } = this.budget;
     let pending = [...await this.deps.policies.listConversationRetention()];
-    let batches = 0;
+    const reached = new Set<string>();
+    let erasing = 0;
+    let empty = 0;
     let failed = 0;
-    while (pending.length > 0) {
+    let drained = true;
+    rounds: while (pending.length > 0) {
       const next: WorkspaceConversationRetention[] = [];
       for (const policy of pending) {
-        if (batches >= maxConversationBatches) return { failed, drained: false };
-        batches += 1;
+        if (erasing >= maxConversationBatches || empty >= maxEmptyChecks) {
+          drained = false;
+          break rounds;
+        }
+        reached.add(policy.workspaceId);
         try {
           const receipt = await this.deps.erasure.eraseInactiveConversations({
             workspaceId: policy.workspaceId,
@@ -138,19 +157,35 @@ export class ConversationRetentionSweep {
             retentionDays: policy.retentionDays,
             limit: conversationBatchSize,
           });
+          if (receipt.claimedCount === 0) {
+            empty += 1;
+            continue;
+          }
+          erasing += 1;
           add(removed, "conversations", receipt.conversationCount);
           add(removed, "messages", receipt.messageCount);
           for (const [owner, rows] of Object.entries(receipt.rowsByOwner)) add(erasedByOwner, owner, rows);
-          if (receipt.conversationCount >= conversationBatchSize) next.push(policy);
+          // Decided by what was claimed: a conversation the recheck dropped still filled the batch.
+          if (receipt.claimedCount >= conversationBatchSize) next.push(policy);
         } catch (error) {
           // The workspace is tried again on the next run; one failing never stops the others.
+          erasing += 1;
           failed += 1;
           this.deps.logger.warn({ errorName: errorName(error) }, "conversation_retention_batch_failed");
         }
       }
       pending = next;
     }
-    return { failed, drained: true };
+    if (reached.size > 0) {
+      try {
+        await this.deps.policies.recordSwept([...reached], now);
+      } catch (error) {
+        // What was erased stays erased; the next run starts from the same order and repeats a few checks.
+        failed += 1;
+        this.deps.logger.warn({ errorName: errorName(error) }, "conversation_retention_progress_unrecorded");
+      }
+    }
+    return { failed, drained };
   }
 
   private async sweepRules(now: Date, removed: Record<string, number>): Promise<{ failed: number; drained: boolean }> {

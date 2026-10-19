@@ -856,8 +856,15 @@ describe("runtime configuration", () => {
     expect(schedulerTf).toContain("schedule         = local.conversation_retention_schedule");
     expect(schedulerTf).toContain("/internal/tasks/periodic-tasks/conversation-retention/run");
     // How long deleted conversation data survives in backups and logs is what the data retention
-    // docs state, so the windows are pinned rather than left to provider defaults.
-    expect(databaseTf).toMatch(/backup_configuration \{[\s\S]*?point_in_time_recovery_enabled = true[\s\S]*?transaction_log_retention_days = 7[\s\S]*?retained_backups = 7[\s\S]*?retention_unit\s+= "COUNT"/);
+    // docs state, so the windows are pinned rather than left to provider defaults. Turning
+    // point-in-time recovery on restarts the instance, so it stays a per-stack choice defaulting to
+    // off, and its 7-day log window applies only where it is on.
+    expect(databaseTf).toMatch(/backup_configuration \{[\s\S]*?point_in_time_recovery_enabled = var\.db_point_in_time_recovery_enabled[\s\S]*?transaction_log_retention_days = var\.db_point_in_time_recovery_enabled \? 7 : null[\s\S]*?retained_backups = 7[\s\S]*?retention_unit\s+= "COUNT"/);
+    expect(terraformVariables).toMatch(/variable "db_point_in_time_recovery_enabled" \{[\s\S]*?default\s+= false/);
+    for (const env of [stagingEnv, liveEnv, liveEuEnv]) {
+      expect(env).toMatch(/db_point_in_time_recovery_enabled = var\.db_point_in_time_recovery_enabled/);
+    }
+    expect(monitoringTf).toContain('"${local.resource_name_prefix}-conversation-retention",');
     const loggingTf = await readFile(new URL("../../../infra/terraform/logging.tf", import.meta.url), "utf8");
     expect(loggingTf).toMatch(/resource "google_logging_project_bucket_config" "default" \{[\s\S]*?count = var\.manage_project_services \? 1 : 0[\s\S]*?bucket_id\s+= "_Default"[\s\S]*?retention_days = 30/);
     // Counted against the jobs actually declared rather than a fixed number: the invariant is

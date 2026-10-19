@@ -4257,6 +4257,7 @@ CREATE TABLE public.workspaces (
     public_route_key text NOT NULL,
     default_agent_id uuid,
     conversation_retention_days integer,
+    conversation_retention_swept_at timestamp with time zone,
     CONSTRAINT workspaces_conversation_retention_days_check CHECK (((conversation_retention_days IS NULL) OR ((conversation_retention_days >= 7) AND (conversation_retention_days <= 3650))))
 );
 

@@ -33,7 +33,7 @@ A conversation is idle from its last message — the visitor's, the agent's, or 
 
 ## How the sweep runs
 
-A sweep runs every 15 minutes in the worker. For each workspace with a window it erases idle conversations in batches of 25, one transaction each, taking turns across workspaces so a large backlog never holds up a small one. A run stops after a bounded number of batches, so a workspace that just set a short window over years of history drains over a few runs. Two runs at once, on two instances, never erase the same conversation twice.
+A sweep runs every 15 minutes in the worker. For each workspace with a window it erases idle conversations in batches of 25, one transaction each, taking turns across workspaces so a large backlog never holds up a small one. A run stops after a bounded number of batches, so a workspace that just set a short window over years of history drains over a few runs. Each run starts with the workspaces the last run did not reach, so every workspace gets its turn however many set a window. Two runs at once, on two instances, never erase the same conversation twice.
 
 Each batch goes through the same erasure as **Delete conversation**: messages, summaries, routine state, eval snapshots built on it, inbound mail, session context values, the turn audit events that carry its content, and a voice call's recording at ElevenLabs. Each batch records one `conversation.retention.enforced` audit event with the window, the cutoff, and how many conversations, messages, and other rows went. Like every erasure record, it names no conversation and holds none of the content.
 
@@ -58,10 +58,10 @@ An erasure reaches what Radioso stores. It cannot reach back into a backup, so a
 | Where | Kept for |
 |---|---|
 | Database backups | the 7 most recent daily backups |
-| Point-in-time recovery logs | 7 days |
+| Point-in-time recovery logs, where recovery is on | 7 days |
 | Application and request logs | 30 days |
 
-Logs carry ids, counts and outcomes, never message content. A self-hosted deployment sets its own backup and log retention; the sweep itself runs in every deployment's worker.
+Logs carry ids, counts and outcomes, never message content. Point-in-time recovery is enabled per stack deliberately, because turning it on restarts the database. A self-hosted deployment sets its own backup and log retention; the sweep itself runs in every deployment's worker ([Deployment](/operators/deployment#conversation-retention)).
 
 ## Common failure modes
 

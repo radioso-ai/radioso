@@ -43,10 +43,17 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   those events; on a turn that may switch the call's language it holds the
   bridges a phase brings until chat reports the turn's language, and ends the
   request with the switch when the turn asks for one;
-  `switchedTurns.ts` holds a turn that switched the call's language with its
-  running reply (`SwitchedReply`, pulled to its end whether or not anyone
-  speaks it) for the runtime's follow-up, one per session, until the replay
-  window passes or the caller speaks again; `voiceLines.ts` resolves the turn's language
+  `languageSwitchFollowUp.ts` (`LanguageSwitchFollowUps`) decides a turn's
+  switch of the call's language and runs the runtime's follow-up after it,
+  held or unheld, over the turn service's own steps (`VoiceTurnSteps`: the
+  policy, the teammate replies, the delivery); `switchedTurns.ts` holds a
+  turn that switched with its running reply (`SwitchedReply`, pulled to its
+  end whether or not anyone speaks it), one per session, until the replay
+  window passes or the caller speaks again; `voiceTurnRecord.ts` is the
+  turn's record and the speech helpers both share, with the switch's one
+  pairing (`SwitchedTurn`: the switching turn's record and its speaker's),
+  which the log, the session's exchange and chat's `deliveredReply` read
+  through `chatTurnOf` and `speakerOf`; `voiceLines.ts` resolves the turn's language
   (`resolveVoiceLanguage`) and picks the turn's bridge and fallback lines by
   routine state and that language (tag structure only, never the lines' words);
   `voiceSessionMemory.ts` is the in-process memory of each session between its

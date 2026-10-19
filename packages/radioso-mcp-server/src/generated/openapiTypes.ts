@@ -5528,7 +5528,7 @@ export interface components {
                 url: string;
             };
         };
-        /** @description How the agent sounds on the voice channel. `bridgeLines`, `fallbackLine` and the optional `recordingNotice` are keyed by language tag (at most 10 each); each style holds at most 5 lines of 1 to 200 characters, and each notice is one line of 1 to 200 characters. The website embed shows the `recordingNotice` for the session's language as a call starts. `runtime` binds the agent to one vendor agent (the vendor's own agent id, 1 to 128 letters, digits, underscores and hyphens), which a voice session start opens, in the data residency region of the vendor account (`region`, which picks the vendor host); null binds none. An update replaces the block whole. */
+        /** @description How the agent sounds on the voice channel. `bridgeLines`, `fallbackLine` and the optional `recordingNotice` are keyed by language tag (at most 10 each); each style holds at most 5 lines of 1 to 200 characters, and each notice is one line of 1 to 200 characters. The website embed shows the `recordingNotice` for the session's language as a call starts. `runtime` binds the agent to one vendor agent (the vendor's own agent id, 1 to 128 letters, digits, underscores and hyphens), which a voice session start opens, in the data residency region of the vendor account (`region`, which picks the vendor host); null binds none. `languageSwitching` lets the agent switch the call's language, and with it the runtime's voice and transcription, when the caller changes language mid-call; off (absent) unless the operator turns it on, and only on a runtime that offers the switch. An update replaces the block whole. */
         AgentVoiceSettings: {
             enabled: boolean;
             bridgeLines: {
@@ -5550,8 +5550,9 @@ export interface components {
                 /** @enum {string} */
                 region: "us" | "eu" | "in" | "sg";
             } | null;
+            languageSwitching?: boolean;
         };
-        /** @description The `voice` block as an update sends it: `AgentVoiceSettings`, except that `runtime` may be left out, which binds the agent to no vendor agent, and `runtime.region` may be left out for the vendor's default region, `us`. A key either object does not name is refused. The update replaces the block whole. */
+        /** @description The `voice` block as an update sends it: `AgentVoiceSettings`, except that `runtime` may be left out, which binds the agent to no vendor agent, and `runtime.region` may be left out for the vendor's default region, `us`. `languageSwitching` may be left out, which turns it off. A key either object does not name is refused. The update replaces the block whole. */
         AgentVoiceSettingsUpdate: {
             enabled: boolean;
             bridgeLines: {
@@ -5573,6 +5574,7 @@ export interface components {
                 /** @enum {string} */
                 region?: "us" | "eu" | "in" | "sg";
             } | null;
+            languageSwitching?: boolean;
         };
         /** @description What the agent says, word for word, to a greeting, thanks, farewell, or acknowledgement, keyed by language tag (at most 10). Each locale entry holds every mechanic, each with at most 5 lines of 1 to 200 characters. When a turn is one of these mechanics and the agent has a line for it in the turn's language, the reply is an authored line, rotated per conversation. An update replaces the block whole. */
         AgentMechanicsReplies: {

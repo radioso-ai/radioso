@@ -247,6 +247,20 @@ export function VoiceChannelCard({ agentId }: { agentId: string }) {
             </div>
             <Switch id="voiceEnabled" aria-describedby="voiceEnabledHint" checked={form.enabled} onCheckedChange={(enabled) => edit({ ...form, enabled })} />
           </div>
+          <div className="flex items-center justify-between gap-4">
+            <div className="space-y-0.5">
+              <Label htmlFor="voiceLanguageSwitching" className="text-foreground">Switch language with the caller</Label>
+              <p id="voiceLanguageSwitchingHint" className="text-xs text-muted-foreground">
+                The voice runtime agent needs language detection and each language&rsquo;s voice set up to switch mid-call.
+              </p>
+            </div>
+            <Switch
+              id="voiceLanguageSwitching"
+              aria-describedby="voiceLanguageSwitchingHint"
+              checked={form.languageSwitching}
+              onCheckedChange={(languageSwitching) => edit({ ...form, languageSwitching })}
+            />
+          </div>
           <VoiceRuntimeEditor runtime={form.runtime} onChange={(runtime) => edit({ ...form, runtime })} />
           {form.languages.map((language, index) => (
             <VoiceLanguageEditor

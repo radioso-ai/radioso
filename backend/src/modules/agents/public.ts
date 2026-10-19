@@ -25,6 +25,16 @@ export {
   type WebsiteEmbedSurfaceSettings,
 } from "./domain.js";
 export {
+  agentPrivacyNoticesInputSchema,
+  agentPrivacyNoticesSchema,
+  choosePrivacyNotice,
+  isPrivacyNoticeVersionOf,
+  normalizePrivacyNotices,
+  PRIVACY_NOTICE_VERSION_MAX_LENGTH,
+  type AgentPrivacyNotice,
+  type AgentPrivacyNotices,
+} from "./privacyNotice.js";
+export {
   AGENT_CONFIG_FULL_TEXT_FIELD_PATHS,
   agentInputFieldSchemas,
   agentInputThemeSchema,

@@ -548,6 +548,7 @@ describe("agents contract", () => {
         branding: {
           hidePoweredBy: false,
           privacyPolicyUrl,
+          privacyNotice: { en: { text: "We use your messages to answer you.", url: privacyPolicyUrl, version: "en:forged" } },
         },
         theme: {
           brand: "#5b3df5",
@@ -560,6 +561,7 @@ describe("agents contract", () => {
     expect(updated.body.branding).toEqual({
       hidePoweredBy: false,
       privacyPolicyUrl,
+      privacyNotice: { en: { text: "We use your messages to answer you.", url: privacyPolicyUrl, version: expect.stringMatching(/^en:[0-9a-f]{16}$/) } },
     });
 
     const reloaded = await request(app)
@@ -569,6 +571,7 @@ describe("agents contract", () => {
     expect(reloaded.body.branding).toEqual({
       hidePoweredBy: false,
       privacyPolicyUrl,
+      privacyNotice: { en: { text: "We use your messages to answer you.", url: privacyPolicyUrl, version: expect.stringMatching(/^en:[0-9a-f]{16}$/) } },
     });
 
     const settings = await request(app)
@@ -594,6 +597,7 @@ describe("agents contract", () => {
     expect(publicSession.body.branding).toEqual({
       hidePoweredBy: false,
       privacyPolicyUrl,
+      privacyNotice: { en: { text: "We use your messages to answer you.", url: privacyPolicyUrl, version: expect.stringMatching(/^en:[0-9a-f]{16}$/) } },
     });
     expect(publicSession.body.copy).toEqual({
       en: {
@@ -615,6 +619,7 @@ describe("agents contract", () => {
     expect(historyList.body.branding).toEqual({
       hidePoweredBy: false,
       privacyPolicyUrl,
+      privacyNotice: { en: { text: "We use your messages to answer you.", url: privacyPolicyUrl, version: expect.stringMatching(/^en:[0-9a-f]{16}$/) } },
     });
     expect(historyList.body.copy).toEqual({
       en: {

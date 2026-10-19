@@ -19,17 +19,37 @@ export interface EmailSendMessageReader {
   ): Promise<{ id: string; conversationId: string; content: string; source?: string | null } | null>;
 }
 
+/** The agent's privacy notice as an email carries it: the operator's line and link, word for word (#1545). */
+export interface EmailFirstReplyNotice {
+  text: string;
+  url: string;
+  version: string;
+}
+
+/**
+ * The privacy notice a conversation's first reply carries, whoever wrote the reply. A conversation
+ * that has recorded a notice, or whose agent has none, has none pending.
+ */
+export interface EmailFirstReplyNoticeScope {
+  /** Step 1 of the protocol when a notice is pending: locks the conversation row, then reads it again. */
+  pending(input: { workspaceId: string; conversationId: string }): Promise<EmailFirstReplyNotice | null>;
+  /** Records the version on the conversation row `pending` locked. */
+  record(input: { workspaceId: string; conversationId: string; version: string }): Promise<void>;
+}
+
 /**
  * What a send's commitment reads and writes, bound by composition to one transaction. Each read
  * that decides the send's authority locks its row until the transaction commits, in the
  * conversation lock protocol's order (`app/composition/conversationLockOrder.ts`):
  *
- * 1. an automatic send's conversation row, then its ownership row;
+ * 1. the conversation row when its first reply carries the privacy notice, and an automatic send's
+ *    conversation row, then its ownership row;
  * 2. the mailbox row, then its sending domain's row, each `FOR SHARE`;
  * 3. the thread's link row `FOR SHARE`, which carries the thread's send budget;
  * 4. the send intent, by the freeze's fenced update, the last write.
  */
 export interface EmailSendCommitmentScope {
+  firstReplyNotice: EmailFirstReplyNoticeScope;
   conversations: {
     /** Steps 1 and 2 of the protocol: the conversation row, then its ownership row; the ownership as it now is, null while it has none. */
     lockOwnership(input: { workspaceId: string; conversationId: string }): Promise<SendOwnershipFacts | null>;
@@ -84,6 +104,7 @@ export class SendCommitment {
   /** Checks and freezes the send this claim read unfrozen, fenced on the version it read. */
   async commit(intent: EmailSendIntentRecord): Promise<SendCommitmentOutcome> {
     return this.deps.unitOfWork.run(async (scope) => {
+      const notice = await scope.firstReplyNotice.pending({ workspaceId: intent.workspaceId, conversationId: intent.conversationId });
       const { facts, verdict } = await traceOperation({
         name: "email.send.revalidate",
         attributes: { trigger: intent.trigger, "radioso.workspace_id": intent.workspaceId, "radioso.email.send_intent_id": intent.id },
@@ -99,8 +120,12 @@ export class SendCommitment {
         }),
       });
       if (verdict.verdict !== "allow") return { outcome: "refused", refusal: verdict };
-      const frozen = await scope.intents.freezeRequest(intent.id, intent.version, await requestOf(scope, intent, facts));
-      if (frozen.outcome === "applied") return { outcome: "frozen", intent: frozen.intent };
+      const frozen = await scope.intents.freezeRequest(intent.id, intent.version, await requestOf(scope, intent, facts, notice));
+      if (frozen.outcome === "applied") {
+        // The conversation row is already this transaction's, so the record takes no new lock.
+        if (notice) await scope.firstReplyNotice.record({ workspaceId: intent.workspaceId, conversationId: intent.conversationId, version: notice.version });
+        return { outcome: "frozen", intent: frozen.intent };
+      }
       return frozen.outcome === "conflict" ? { outcome: "moved", current: frozen.current } : { outcome: "not_found" };
     });
   }
@@ -117,11 +142,19 @@ const lockFacts = async (scope: EmailSendCommitmentScope, intent: EmailSendInten
   return { mailbox, domain, link, ownership: ownershipFactsOf(ownership) };
 };
 
-/** The request the send freezes: the mailbox's real address, the thread's headers and the message's text. */
+/** The reply, then the notice's line and its link, each on its own line. */
+const withNotice = (content: string, notice: EmailFirstReplyNotice | null): string =>
+  notice ? `${content.trimEnd()}\n\n${notice.text}\n${notice.url}` : content;
+
+/**
+ * The request the send freezes: the mailbox's real address, the thread's headers and the message's
+ * text, with the privacy notice below it on the conversation's first reply.
+ */
 const requestOf = async (
   scope: Pick<EmailSendCommitmentScope, "threads" | "messages">,
   intent: EmailSendIntentRecord,
   facts: LockedSendFacts,
+  notice: EmailFirstReplyNotice | null,
 ): Promise<FrozenRequest> => {
   const { mailbox, domain, link } = facts;
   if (!mailbox || !domain) throw new Error("email_send_mailbox_not_found");
@@ -145,6 +178,6 @@ const requestOf = async (
       authorKind: intent.authorKind,
       newMessageUuid: intent.id,
     }),
-    body: { text: message.content, html: null },
+    body: { text: withNotice(message.content, notice), html: null },
   };
 };

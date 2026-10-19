@@ -327,6 +327,8 @@ interface ChatAnswerInput {
   requestContext?: ConversationRequestContext | null;
   /** FR-013 (spec 1277): client-claimed referrer of the host page; ignored for a resumed conversation. */
   entryReferrer?: string | null;
+  /** The privacy notice version the client showed before this first message (#1545); ignored for a resumed conversation. */
+  privacyNoticeVersion?: string | null;
   /** Unauthenticated visitor-grouping id from the verified session payload (spec 1277 decision 6); never a credential. */
   visitorKey?: string | null;
   clientContextCapabilities?: AssistantClientContextCapabilities;
@@ -1424,6 +1426,8 @@ export class ChatService {
   requestContext?: ConversationRequestContext | null;
   /** FR-013 (spec 1277): client-claimed referrer of the host page; ignored for a resumed conversation. */
   entryReferrer?: string | null;
+  /** The privacy notice version the client showed before this first message (#1545); ignored for a resumed conversation. */
+  privacyNoticeVersion?: string | null;
   /** Unauthenticated visitor-grouping id from the verified session payload (spec 1277 decision 6); never a credential. */
   visitorKey?: string | null;
     clientContextCapabilities?: AssistantClientContextCapabilities;
@@ -1515,6 +1519,8 @@ export class ChatService {
   requestContext?: ConversationRequestContext | null;
   /** FR-013 (spec 1277): client-claimed referrer of the host page; ignored for a resumed conversation. */
   entryReferrer?: string | null;
+  /** The privacy notice version the client showed before this first message (#1545); ignored for a resumed conversation. */
+  privacyNoticeVersion?: string | null;
   /** Unauthenticated visitor-grouping id from the verified session payload (spec 1277 decision 6); never a credential. */
   visitorKey?: string | null;
     clientContextCapabilities?: AssistantClientContextCapabilities;

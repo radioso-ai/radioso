@@ -31,7 +31,7 @@ const minimalAgent = (): ConversationAgent => ({
   retrievalEnabled: true,
   logo: null,
   theme: { brand: "#000", brandText: "#fff", surface: "#fff", text: "#000" },
-  branding: { hidePoweredBy: false, privacyPolicyUrl: null },
+  branding: { hidePoweredBy: false, privacyPolicyUrl: null, privacyNotice: {} },
   greetingInstruction: "",
   assistantDefaultLocale: null,
   proactiveGreetingEnabled: false,

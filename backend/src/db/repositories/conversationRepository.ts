@@ -48,6 +48,11 @@ export interface ConversationRecord {
   /** Edge-observed request facts captured once at creation (spec 1277, FR-010/011). */
   requestContext?: ConversationRequestContext | null;
   /**
+   * The version of the agent's privacy notice the visitor was shown before their first message
+   * (#1545); null when none was shown or reported. A notice, not consent.
+   */
+  privacyNoticeVersion?: string | null;
+  /**
    * Short LLM-generated topic label (issue #1114), refreshed alongside the rolling
    * summary. Null until the summary service's first successful regeneration; callers
    * fall back to the first-message preview until then.
@@ -76,6 +81,7 @@ export interface CreateConversationInput {
   visitorId?: string | null;
   requestContext?: ConversationRequestContext | null;
   entryReferrer?: string | null;
+  privacyNoticeVersion?: string | null;
 }
 
 export interface ConversationRepositoryPort {
@@ -181,6 +187,7 @@ interface ConversationRow {
   entry_referrer?: string | null;
   visitor_id?: string | null;
   request_context?: ConversationRequestContext | null;
+  privacy_notice_version?: string | null;
   title: string | null;
   created_at: Date;
   updated_at: Date;
@@ -211,6 +218,7 @@ const conversationColumns = [
   "entry_referrer",
   "visitor_id",
   "request_context",
+  "privacy_notice_version",
   "title",
   "created_at",
   "updated_at",
@@ -234,6 +242,7 @@ const conversationSelectColumns = [
   "c.entry_referrer as entry_referrer",
   "c.visitor_id as visitor_id",
   "c.request_context as request_context",
+  "c.privacy_notice_version as privacy_notice_version",
   "c.title as title",
   "c.created_at as created_at",
   "c.updated_at as updated_at",
@@ -275,6 +284,7 @@ const mapConversation = (row: ConversationRow): ConversationRecord => ({
   entryReferrer: row.entry_referrer ?? null,
   visitorId: row.visitor_id ?? null,
   requestContext: row.request_context ?? null,
+  privacyNoticeVersion: row.privacy_notice_version ?? null,
   title: row.title ?? null,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
@@ -296,6 +306,7 @@ const conversationInsertValues = (id: string, input: CreateConversationInput) =>
   entry_referrer: input.entryReferrer ?? null,
   visitor_id: input.visitorId ?? null,
   request_context: input.requestContext ? toJsonb(input.requestContext) : null,
+  privacy_notice_version: input.privacyNoticeVersion ?? null,
 });
 
 export class ConversationRepository implements ConversationRepositoryPort {
@@ -761,6 +772,21 @@ export class ConversationRepository implements ConversationRepositoryPort {
       .forNoKeyUpdate()
       .executeTakeFirst();
     return row !== undefined;
+  }
+
+  /**
+   * Records the privacy notice version a conversation's visitor was shown, once: a conversation that
+   * already holds one keeps it. False when it held one, or is not this workspace's.
+   */
+  async recordPrivacyNoticeVersion(conversationId: string, workspaceId: string, version: string): Promise<boolean> {
+    const result = await this.db
+      .updateTable("conversations")
+      .set({ privacy_notice_version: version })
+      .where("id", "=", conversationId)
+      .where("workspace_id", "=", workspaceId)
+      .where("privacy_notice_version", "is", null)
+      .executeTakeFirst();
+    return Number(result.numUpdatedRows) > 0;
   }
 
   async touch(conversationId: string, workspaceId: string): Promise<void> {

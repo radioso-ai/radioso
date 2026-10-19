@@ -2,6 +2,7 @@ import { z, type ZodType } from "zod";
 
 import { agentSurfacePositions, type AgentInput } from "./domain.js";
 import { agentMechanicsRepliesSchema } from "./mechanicsReplies.js";
+import { agentPrivacyNoticesInputSchema } from "./privacyNotice.js";
 import { agentVoiceSettingsInputSchema } from "./voiceSettings.js";
 
 export const agentInputThemeSchema = z.object({
@@ -56,6 +57,7 @@ export const agentInputFieldSchemas = {
   branding: z.object({
     hidePoweredBy: z.boolean().optional(),
     privacyPolicyUrl: z.string().max(2048).nullable().optional(),
+    privacyNotice: agentPrivacyNoticesInputSchema.optional(),
   }),
   publicDescription: z.string().max(500),
   agentCardEnabled: z.boolean(),

@@ -494,6 +494,7 @@ export const createSendPathHarness = (options: { now?: Date; sendingStatus?: "pe
   const commitment = new SendCommitment({
     unitOfWork: {
       run: (work) => unitOfWork.run(() => work({
+        firstReplyNotice: { pending: async () => null, record: async () => undefined },
         conversations: { lockOwnership: async ({ conversationId }) => ownership.load(conversationId) },
         mailboxes,
         domains,

@@ -136,6 +136,24 @@ describe("operator copilot catalog coverage", () => {
     // agent_configuration returns the live voice block beside the portable configuration.
     expect(catalog.find((descriptor) => descriptor.name === "agent_configuration")?.description).toContain("live voice settings");
   });
+  it("lets Ray author the agent's privacy notice through both agent-settings tools, as one whole branding block (#1545)", () => {
+    const catalog = realCatalog();
+    for (const name of ["propose_agent_setting", "prepare_agent_settings"]) {
+      const description = catalog.find((descriptor) => descriptor.name === name)?.description;
+      expect(description).toContain("branding (privacyNotice too) replaces whole");
+    }
+    const branding = {
+      hidePoweredBy: false,
+      privacyPolicyUrl: null,
+      privacyNotice: { en: { text: "We use your messages to answer you.", url: "https://example.com/privacy" } },
+    };
+    expect(agentReviewedSettingsPatchSchema.safeParse({ branding }).success).toBe(true);
+    // The notice's shape and its whole-block rule ride the field's own schema, which prepare_agent_settings carries.
+    expect(agentInputFieldSchemas.branding.shape.privacyNotice.description).toContain("Replaced whole");
+    expect(agentReviewedSettingsPatchSchema.safeParse({
+      branding: { ...branding, privacyNotice: { en: { text: "x".repeat(201), url: "https://example.com/privacy" } } },
+    }).success).toBe(false);
+  });
   it("states each permanent exclusion's own ground rather than one conflated reason", () => {
     // A permanent exclusion is the strongest claim this map makes, so a wrong one either blocks
     // legitimate work or forces a permanent -> covered flip. Both have happened. Pin the grounds

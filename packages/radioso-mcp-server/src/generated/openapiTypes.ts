@@ -5591,6 +5591,14 @@ export interface components {
             /** @enum {string|null} */
             missing: "voice_channel" | "runtime" | "vendor_key" | "encryption" | null;
         };
+        /** @description The agent's privacy notice, keyed by language tag (at most 10): one line (`text`, 1 to 200 characters) and a link to the operator's policy (`url`, http or https, at most 500 characters). Chat surfaces show it before the visitor's first message, the first reply of an email conversation carries it, and a voice session start hands it to the call. `version` is derived from the language, line and link: the same notice keeps its version, a changed one gets a new one. Empty until the operator writes one. */
+        AgentPrivacyNotices: {
+            [key: string]: {
+                text: string;
+                url: string;
+                version: string;
+            };
+        };
         ConversationAgent: components["schemas"]["Agent"] & {
             isDefault: boolean;
             customInstruction: string;
@@ -5610,6 +5618,7 @@ export interface components {
             branding: {
                 hidePoweredBy: boolean;
                 privacyPolicyUrl: string | null;
+                privacyNotice?: components["schemas"]["AgentPrivacyNotices"];
             };
             retrievalEnabled: boolean;
             sourceScope: components["schemas"]["AgentSourceScope"];
@@ -5669,9 +5678,18 @@ export interface components {
                 surface?: string;
                 text?: string;
             };
+            /** @description Replaced whole: a field left out takes its default (`hidePoweredBy` false, no policy link, no privacy notice). */
             branding?: {
                 hidePoweredBy?: boolean;
                 privacyPolicyUrl?: string | null;
+                /** @description Replaces the stored notices whole: name every language the agent keeps. A `version` sent along is ignored. */
+                privacyNotice?: {
+                    [key: string]: {
+                        text: string;
+                        url: string;
+                        version?: string;
+                    };
+                };
             };
             retrievalEnabled?: boolean;
             sourceScope?: {
@@ -6617,6 +6635,7 @@ export interface components {
             branding?: {
                 hidePoweredBy: boolean;
                 privacyPolicyUrl: string | null;
+                privacyNotice?: components["schemas"]["AgentPrivacyNotices"];
             };
             intakeActions?: {
                 skillName: string;
@@ -6802,6 +6821,7 @@ export interface components {
             branding: {
                 hidePoweredBy: boolean;
                 privacyPolicyUrl: string | null;
+                privacyNotice?: components["schemas"]["AgentPrivacyNotices"];
             };
             greetingInstruction: string;
             assistantDefaultLocale: string | null;
@@ -7070,6 +7090,7 @@ export interface components {
             branding: {
                 hidePoweredBy: boolean;
                 privacyPolicyUrl: string | null;
+                privacyNotice?: components["schemas"]["AgentPrivacyNotices"];
             };
             greetingInstruction: string;
             assistantDefaultLocale: string | null;
@@ -8232,6 +8253,7 @@ export interface components {
                 };
             };
             signedIdentity?: string;
+            privacyNoticeVersion?: string;
             inputMetadata?: {
                 /** @enum {string} */
                 method: "typed" | "suggestion_click" | "intent_click";
@@ -8381,6 +8403,7 @@ export interface components {
             branding?: {
                 hidePoweredBy: boolean;
                 privacyPolicyUrl: string | null;
+                privacyNotice?: components["schemas"]["AgentPrivacyNotices"];
             };
             intakeActions?: {
                 skillName: string;
@@ -8755,6 +8778,8 @@ export interface components {
             visitor?: components["schemas"]["ConversationVisitorProfile"] | null;
             /** @description Edge-observed request facts captured once at conversation creation. IP included — dashboard-only. */
             requestContext?: components["schemas"]["ConversationRequestContext"] | null;
+            /** @description The `version` of the agent's privacy notice the visitor was shown before their first message; null when none was. Dashboard-only. */
+            privacyNoticeVersion?: string | null;
             /** @description See ChatConversationSummary.title. */
             title: string | null;
             channelContext: components["schemas"]["ConversationChannelContext"] | null;

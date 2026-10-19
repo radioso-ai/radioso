@@ -172,6 +172,7 @@ const agent = (): ConversationAgent => ({
   branding: {
     hidePoweredBy: false,
     privacyPolicyUrl: null,
+    privacyNotice: {},
   },
   greetingInstruction: "",
   assistantDefaultLocale: null,

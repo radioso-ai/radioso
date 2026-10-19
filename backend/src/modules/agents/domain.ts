@@ -22,6 +22,7 @@ import {
   defaultAgentMechanicsReplies,
   type AgentMechanicsReplies,
 } from "./mechanicsReplies.js";
+import { normalizePrivacyNotices, type AgentPrivacyNotices } from "./privacyNotice.js";
 
 const AGENT_PROVIDER_NAMES: readonly LlmProviderName[] = [
   "openai",
@@ -74,6 +75,8 @@ const MAX_EMBED_COPY_LOCALES = 10;
 export interface AgentBrandingSettings {
   hidePoweredBy: boolean;
   privacyPolicyUrl: string | null;
+  /** Shown before a visitor's first message, per language; empty until the operator writes one. */
+  privacyNotice: AgentPrivacyNotices;
 }
 
 export interface AgentContactWebhook {
@@ -506,6 +509,7 @@ export const defaultAgentEmbedTheme = (): AgentEmbedTheme => defaultWebsiteEmbed
 export const defaultAgentBrandingSettings = (): AgentBrandingSettings => ({
   hidePoweredBy: false,
   privacyPolicyUrl: null,
+  privacyNotice: {},
 });
 
 const MAX_PRIVACY_POLICY_URL_LENGTH = 2048;
@@ -548,6 +552,7 @@ const normalizeBrandingSettings = (value: unknown): AgentBrandingSettings => {
   return {
     hidePoweredBy: typeof record.hidePoweredBy === "boolean" ? record.hidePoweredBy : defaults.hidePoweredBy,
     privacyPolicyUrl: normalizePrivacyPolicyUrl(record.privacyPolicyUrl),
+    privacyNotice: normalizePrivacyNotices(record.privacyNotice),
   };
 };
 

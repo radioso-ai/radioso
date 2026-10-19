@@ -278,6 +278,7 @@ describe("serializeAgentConfig", () => {
     expect(config.branding).toEqual({
       hidePoweredBy: true,
       privacyPolicyUrl: "https://example.com/privacy",
+      privacyNotice: {},
     });
     expect(config.greetingInstruction).toBe("Welcome the visitor by role.");
     expect(config.assistantDefaultLocale).toBe("en-US");

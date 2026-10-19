@@ -12,6 +12,7 @@ import {
   hasBaselineGateFailures,
   isBaselineInitialized,
   mergeBaselineFile,
+  readBaselineJson,
   parseConversationQualityCases,
   reduceSamples,
   runConversationQualitySuite,
@@ -1114,5 +1115,17 @@ describe("seed fixtures", () => {
         { id: "dup", name: "two", query: "q", assertions: [] },
       ]),
     ).toThrow(/Duplicate/);
+  });
+});
+
+describe("readBaselineJson", () => {
+  it("reads a missing baseline file as none, and throws on one it cannot parse rather than taking it for empty", () => {
+    const missing = Object.assign(new Error("no such file"), { code: "ENOENT" });
+
+    expect(readBaselineJson(() => { throw missing; })).toBeNull();
+    expect(readBaselineJson(() => "{\"cases\":{\"a\":\"pass\"}}")).toEqual({ cases: { a: "pass" } });
+    expect(() => readBaselineJson(() => "{\"cases\": {")).toThrow(SyntaxError);
+    expect(() => readBaselineJson(() => "[]")).toThrow(/one JSON object/u);
+    expect(() => readBaselineJson(() => { throw Object.assign(new Error("denied"), { code: "EACCES" }); })).toThrow(/denied/u);
   });
 });

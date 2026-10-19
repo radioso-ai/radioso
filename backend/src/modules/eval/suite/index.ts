@@ -17,6 +17,7 @@ export {
   hasBaselineGateFailures,
   isBaselineInitialized,
   mergeBaselineFile,
+  readBaselineJson,
   type BaselineCaseEntry,
   type BaselineFile,
   type CaseOutcome,

@@ -68,6 +68,7 @@ import {
   isBaselineInitialized,
   mergeBaselineFile,
   parseConversationQualityCases,
+  readBaselineJson,
   recordVoiceBaseline,
   runConversationQualitySuiteSampled,
   scopeVoiceCasesForLiveRun,
@@ -80,6 +81,7 @@ import {
   type VoiceCaseSample,
 } from "../src/modules/eval/suite/index.js";
 import type { OwnershipActor } from "../src/modules/handoff/public.js";
+import { VoiceSessionRepository } from "../src/modules/voiceChannel/public.js";
 import { conversationQualityCases } from "../tests/fixtures/conversation-quality/cases.js";
 import { conversationQualityCorpus } from "../tests/fixtures/conversation-quality/corpus.js";
 import { conversationQualityDirectives } from "../tests/fixtures/conversation-quality/directives.js";
@@ -179,13 +181,20 @@ const ensureTarget = async (deps: Deps, flags: Flags): Promise<EvalTarget> => {
   };
 };
 
+/** A committed baseline: empty when its file does not exist; a file that cannot be read stops the run. */
+const loadBaselineFile = (filePath: string): BaselineFile & { latency?: VoiceBaselineFile["latency"] } => {
+  const parsed = readBaselineJson(() => readFileSync(filePath, "utf8")) as Partial<VoiceBaselineFile> | null;
+  return {
+    generatedAt: parsed?.generatedAt,
+    passThreshold: parsed?.passThreshold,
+    cases: parsed?.cases ?? {},
+    ...(parsed?.latency ? { latency: parsed.latency } : {}),
+  };
+};
+
 const loadBaseline = (): BaselineFile => {
-  try {
-    const parsed = JSON.parse(readFileSync(BASELINE_PATH, "utf8")) as Partial<BaselineFile>;
-    return { generatedAt: parsed.generatedAt, passThreshold: parsed.passThreshold, cases: parsed.cases ?? {} };
-  } catch {
-    return { cases: {} };
-  }
+  const { latency: _latency, ...baseline } = loadBaselineFile(BASELINE_PATH);
+  return baseline;
 };
 
 /**
@@ -395,20 +404,23 @@ const withRoutineSkills = async <T>(deps: Deps, flags: Flags, run: () => Promise
  * configuration directly; publishing makes both see the seeded directives and routines.
  */
 const publishSeededAgent = (deps: Deps, flags: Flags): Promise<string> =>
-  withRoutineSkills(deps, flags, async () => {
-    const state = await deps.agentRevisionService.state(flags.workspaceId, flags.agentId);
-    if (state.status === "draft_clean" && state.publishedRevision) {
-      return state.publishedRevision.id;
-    }
-    const candidate = await deps.agentRevisionService.createCandidate(flags.workspaceId, flags.agentId, state.draft.generation);
-    const published = await deps.agentRevisionService.publish(flags.workspaceId, flags.agentId, null, {
-      revisionId: candidate.id,
-      expectedDraftGeneration: state.draft.generation,
-      expectedPublishedRevisionId: state.publishedRevision?.id ?? null,
-      idempotencyKey: `conversation-quality-${candidate.id}`,
-    });
-    return published.revisionId;
+  withRoutineSkills(deps, flags, () => publishAgent(deps, flags));
+
+/** Publishes the agent's draft, or returns the published revision when the draft has not moved. */
+const publishAgent = async (deps: Deps, flags: Flags): Promise<string> => {
+  const state = await deps.agentRevisionService.state(flags.workspaceId, flags.agentId);
+  if (state.status === "draft_clean" && state.publishedRevision) {
+    return state.publishedRevision.id;
+  }
+  const candidate = await deps.agentRevisionService.createCandidate(flags.workspaceId, flags.agentId, state.draft.generation);
+  const published = await deps.agentRevisionService.publish(flags.workspaceId, flags.agentId, null, {
+    revisionId: candidate.id,
+    expectedDraftGeneration: state.draft.generation,
+    expectedPublishedRevisionId: state.publishedRevision?.id ?? null,
+    idempotencyKey: `conversation-quality-${candidate.id}`,
   });
+  return published.revisionId;
+};
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -475,12 +487,8 @@ const gateOnBaseline = (baseline: BaselineFile, diff: ReturnType<typeof diffAgai
 };
 
 const loadVoiceBaseline = (): VoiceBaselineFile => {
-  try {
-    const parsed = JSON.parse(readFileSync(VOICE_BASELINE_PATH, "utf8")) as Partial<VoiceBaselineFile>;
-    return { generatedAt: parsed.generatedAt, passThreshold: parsed.passThreshold, cases: parsed.cases ?? {}, latency: parsed.latency ?? {} };
-  } catch {
-    return { cases: {}, latency: {} };
-  }
+  const { latency, ...baseline } = loadBaselineFile(VOICE_BASELINE_PATH);
+  return { ...baseline, latency: latency ?? {} };
 };
 
 /**
@@ -517,21 +525,26 @@ const resolveTeammate = async (deps: Deps, target: EvalTarget): Promise<Ownershi
 
 /**
  * Gives the agent what the voice cases need, then publishes it, since a voice turn runs the
- * published agent: voice on with the fixture's lines, the corpus a knowledge question is answered
- * from, and the callback routine (once; a repeat run finds it by name).
+ * published agent: voice on with the fixture's lines over whatever else its voice block holds, the
+ * corpus a knowledge question is answered from, and the callback routine, found by name and turned
+ * back on when a run before left it off.
  */
 const prepareVoiceAgent = async (deps: Deps, flags: Flags): Promise<void> => {
   await waitForDocumentsReady(deps, flags.workspaceId, await seedCorpus(deps, flags));
-  // The agent's vendor binding, if it has one, stays; the run only needs the lines and voice on.
   const agent = await deps.agentRepository.findByIdAndWorkspaceId(flags.agentId, flags.workspaceId);
-  await deps.agentService.update(flags.workspaceId, flags.agentId, {
-    voice: { ...conversationQualityVoiceSettings, runtime: agent?.voice.runtime ?? null },
-  });
-  const routines = await deps.routineDefinitionService.list(flags.workspaceId, flags.agentId);
-  if (!routines.some((routine) => routine.name === voiceCallbackRoutineDraft.name && routine.enabled)) {
-    await deps.routineDefinitionService.createDraft(flags.workspaceId, flags.agentId, voiceCallbackRoutineDraft);
+  if (!agent) {
+    throw new Error(`Agent ${flags.agentId} not found in workspace ${flags.workspaceId}.`);
   }
-  await publishSeededAgent(deps, flags);
+  await deps.agentService.update(flags.workspaceId, flags.agentId, { voice: { ...agent.voice, ...conversationQualityVoiceSettings } });
+  const callback = (await deps.routineDefinitionService.list(flags.workspaceId, flags.agentId))
+    .find((routine) => routine.name === voiceCallbackRoutineDraft.name);
+  if (!callback) {
+    await deps.routineDefinitionService.createDraft(flags.workspaceId, flags.agentId, voiceCallbackRoutineDraft);
+  } else if (!callback.enabled) {
+    await deps.routineDefinitionService.setEnabled(flags.workspaceId, flags.agentId, callback.id, true);
+  }
+  // The callback routine dispatches no skill, so the agent publishes without the text suite's skills.
+  await publishAgent(deps, flags);
 };
 
 /** How long the voice runtime's credential lives, should the run die before it revokes it. */
@@ -575,9 +588,14 @@ const runVoiceChannel = async (deps: Deps, flags: Flags, target: EvalTarget): Pr
       samples.set(caseId, [...(samples.get(caseId) ?? []), sample]);
     };
     const { reports, outcomes } = await withServedApp(deps, (origin) => {
+      const sessions = new VoiceSessionRepository(deps.connectorDb.kysely);
       const port = createVoiceCallRunnerPort({
         door: { origin, agentId: flags.agentId, token: credential.token },
         teammate,
+        conversations: {
+          conversationOf: (sessionKey) =>
+            sessions.findConversationId({ workspaceId: flags.workspaceId, agentId: flags.agentId, vendor: "generic", sessionKey }),
+        },
         lines: voiceLineCatalog(conversationQualityVoiceSettings),
       });
       // Keeps every sample for the latency section, an errored one included; the sampler keeps only scores.
@@ -732,9 +750,19 @@ const main = async (): Promise<void> => {
 
     gateOnBaseline(baseline, diff, "pnpm run evals:update-baseline");
   } finally {
-    const shutdown = (deps as { shutdown?: () => Promise<void> }).shutdown;
-    if (shutdown) {
-      await shutdown.call(deps);
+    await closeDependencies(deps);
+  }
+};
+
+/** Closes what the composition holds open, ending with the database pool, so the process can exit. */
+const closeDependencies = async (deps: Deps): Promise<void> => {
+  try {
+    await deps.closeApprovalResumeEffectJournal();
+  } finally {
+    try {
+      await deps.closeAbuseControlRepository?.();
+    } finally {
+      await deps.connectorDb.close();
     }
   }
 };

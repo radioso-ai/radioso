@@ -85,6 +85,17 @@ describe("the voice runner's measurement", () => {
     });
   });
 
+  it("hears nothing in a delta of whitespace or zero-width spaces", () => {
+    const padded = observeVoiceTurn(recording([
+      { atMs: 100, text: chunk({ role: "assistant", content: " \u200B" }) },
+      { atMs: 2_500, text: chunk({ content: "\n " }) },
+      { atMs: 3_000, text: chunk({ content: "We open at nine." }) + chunk({}, "stop") + DONE },
+    ]), lines);
+
+    expect(padded.pieces).toEqual([{ kind: "speech", text: "We open at nine.", atMs: 3_000 }]);
+    expect(padded.timings).toMatchObject({ firstByteMs: 100, firstSpeechMs: 3_000 });
+  });
+
   it("names the fallback line spoken at the turn limit, and the callback outcome from the trailer", () => {
     const limited = observeVoiceTurn(recording([
       { atMs: 400, text: chunk({ role: "assistant", content: BRIDGE }) },
@@ -99,6 +110,7 @@ describe("the voice runner's measurement", () => {
   it.each([
     ["an error frame", recording([{ atMs: 300, text: chunk({ role: "assistant", content: BRIDGE }) + ERROR_FRAME }]), "The stream carried an error frame."],
     ["a cut stream", recording([{ atMs: 300, text: chunk({ role: "assistant", content: BRIDGE }) }]), "The stream ended without [DONE]."],
+    ["a stream cut in the middle of a frame", recording([{ atMs: 300, text: chunk({ role: "assistant", content: BRIDGE }) + chunk({ content: "We open" }).slice(0, 30) }]), "The stream ended without [DONE]."],
     ["a frame that is not JSON", recording([{ atMs: 300, text: `data: {not json\n\n${DONE}` }]), "The stream carried 1 frame(s) that are not chat.completion.chunk JSON."],
     ["no outcome trailer", recording(bridgedTurn, { outcome: null }), "The stream named no outcome in its trailer."],
     ["an unknown outcome", recording(bridgedTurn, { outcome: "transfer" }), "The stream named an unknown outcome \"transfer\"."],

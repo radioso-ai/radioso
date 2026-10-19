@@ -115,7 +115,13 @@ interface VoiceStreamReading {
 
 type ChunkFrame = { error?: unknown; choices?: Array<{ delta?: { content?: unknown } }> };
 
-/** Splits a stream into its SSE frames, however the socket cut it; a frame is stamped with the chunk that completed it. */
+/** Whitespace and zero-width spaces are wire padding (a flush or a keep-alive), never speech. */
+const isAudible = (text: string): boolean => text.replace(/[\s\u200B]/gu, "").length > 0;
+
+/**
+ * Splits a stream into its SSE frames, however the socket cut it; a frame is stamped with the chunk
+ * that completed it, and only a delta with something to hear counts.
+ */
 export const readVoiceStream = (chunks: readonly VoiceWireChunk[]): VoiceStreamReading => {
   const reading: VoiceStreamReading = { deltas: [], done: false, errorFrame: false, unreadableFrames: 0 };
   let buffer = "";
@@ -135,7 +141,7 @@ export const readVoiceStream = (chunks: readonly VoiceWireChunk[]): VoiceStreamR
           const content = frame.choices?.[0]?.delta?.content;
           if (frame.error !== undefined) {
             reading.errorFrame = true;
-          } else if (typeof content === "string" && content.length > 0) {
+          } else if (typeof content === "string" && isAudible(content)) {
             reading.deltas.push({ text: content, atMs: chunk.atMs });
           }
         } catch {
@@ -175,10 +181,10 @@ const protocolOf = (recording: VoiceWireRecording, reading: VoiceStreamReading):
     ? `The response was HTTP ${recording.status}.`
     : reading.errorFrame
       ? "The stream carried an error frame."
-      : reading.unreadableFrames > 0
-        ? `The stream carried ${reading.unreadableFrames} frame(s) that are not chat.completion.chunk JSON.`
-        : !reading.done
-          ? "The stream ended without [DONE]."
+      : !reading.done
+        ? "The stream ended without [DONE]."
+        : reading.unreadableFrames > 0
+          ? `The stream carried ${reading.unreadableFrames} frame(s) that are not chat.completion.chunk JSON.`
           : recording.outcome === null
             ? "The stream named no outcome in its trailer."
             : knownOutcome(recording.outcome) === null
@@ -242,9 +248,16 @@ export interface VoiceTurnRecordReader {
   next(after: number): Promise<Readonly<VoiceTurnSummary>>;
 }
 
+/** Where a call's session is bound: the conversation a session key's turns run in, once one has run. */
+export interface VoiceCallConversations {
+  conversationOf(sessionKey: string): Promise<string | null>;
+}
+
 export interface VoiceCallStack {
   door: VoiceRuntimeDoor;
   teammate: VoiceCallTeammate;
+  /** Read when a teammate acts and no caller turn's response named the conversation. */
+  conversations: VoiceCallConversations;
   lines: VoiceLineCatalog;
   clock?: () => number;
   /** Waits for one step of a call; the deterministic half moves its fake clock while it waits. */
@@ -301,6 +314,9 @@ const runVoiceCall = async (stack: VoiceCallStack, evalCase: ConversationQuality
       conversationId ??= recording.conversationId;
       continue;
     }
+    // A turn's stream names its conversation only once the turn has one; a session's first turn can
+    // open its stream with a bridge line before that, so the session's binding is the fallback.
+    conversationId ??= await settle(stack.conversations.conversationOf(sessionKey));
     if (!conversationId) {
       throw new Error(`The call's step ${index + 1} is a teammate's, but the call has no conversation yet.`);
     }

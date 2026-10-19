@@ -520,7 +520,11 @@ const resolveTeammate = async (deps: Deps, target: EvalTarget): Promise<Ownershi
  */
 const prepareVoiceAgent = async (deps: Deps, flags: Flags): Promise<void> => {
   await waitForDocumentsReady(deps, flags.workspaceId, await seedCorpus(deps, flags));
-  await deps.agentService.update(flags.workspaceId, flags.agentId, { voice: { ...conversationQualityVoiceSettings, runtime: null } });
+  // The agent's vendor binding, if it has one, stays; the run only needs the lines and voice on.
+  const agent = await deps.agentRepository.findByIdAndWorkspaceId(flags.agentId, flags.workspaceId);
+  await deps.agentService.update(flags.workspaceId, flags.agentId, {
+    voice: { ...conversationQualityVoiceSettings, runtime: agent?.voice.runtime ?? null },
+  });
   const routines = await deps.routineDefinitionService.list(flags.workspaceId, flags.agentId);
   if (!routines.some((routine) => routine.name === voiceCallbackRoutineDraft.name && routine.enabled)) {
     await deps.routineDefinitionService.createDraft(flags.workspaceId, flags.agentId, voiceCallbackRoutineDraft);

@@ -209,6 +209,12 @@ class InMemoryAgentRepository {
     return this.agents.find((agent) => agent.surfaceSettings.websiteEmbed.token === token) ?? null;
   }
 
+  async findByPublicId(publicId: string): Promise<AgentRecord | null> {
+    return this.agents.find((agent) => agent.publicId === publicId) ?? null;
+  }
+
+  async applyProposalPatch(): Promise<never> { throw new Error("not used"); }
+
   async setDefault(): Promise<void> {}
   async countByWorkspaceId(): Promise<number> { return this.agents.length; }
   async deleteByIdAndWorkspaceId(): Promise<boolean> { return false; }

@@ -6,6 +6,7 @@ import { createLogger, type AppLogger } from "../shared/observability/logger.js"
 import type { AppDependencies } from "../app/server/types.js";
 import type { RuntimeHandle } from "./types.js";
 import { startRuntimeTracing, stopRuntimeTracing } from "./tracing.js";
+import { runOpenAIResidencyStartupCheck } from "./openAIResidencyStartupCheck.js";
 
 interface StartWorkerRuntimeOptions {
   env: Env;
@@ -31,6 +32,7 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
     ? options.buildDependencies(options.env)
     : buildDependencies(options.env, { modules: options.applicationModules });
   dependencies.logger.info({ role: "worker" }, "Radioso document worker starting");
+  await runOpenAIResidencyStartupCheck(options.env, { logger: dependencies.logger });
   await dependencies.applicationModules.initializeAll();
   dependencies.vectorIndexReconciler?.start();
   await dependencies.documentProcessingWorker.start();

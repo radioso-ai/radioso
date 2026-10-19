@@ -39,5 +39,31 @@ export const removeLockedInUnderClosedCitationAnchors = (text: string): string =
 // capping: capping it could only ever discard token characters, never answer text, and
 // leaving it uncapped lets a later chunk, or `flush()`, resolve it correctly no matter
 // how long the model's citation number runs.
-export const isUnderClosedAnchorAttempt = (text: string): boolean =>
+const isUnderClosedAnchorAttempt = (text: string): boolean =>
   /^\[\[(?:\d+|\?)?\]?$/.test(text);
+
+// The longest prefix of a still-open `[[` candidate that could still become a complete
+// or under-closed anchor: the brackets, then optionally its content (digits or `?`),
+// then optionally the one closing bracket that would make it under-closed. Always
+// matches at least `[[` itself.
+const OPEN_ANCHOR_ATTEMPT_PREFIX = /^\[\[(?:\d+|\?)?\]?/;
+
+/**
+ * Splits a still-open `[[` candidate — the sanitizer's unresolved suffix, carrying no
+ * `]]` anywhere in it — into the part that could still become a complete or
+ * under-closed anchor (`carry`) and the part already confirmed to never complete
+ * (`release`, meant to rejoin the visible stream). A character outside the anchor
+ * grammar (anything but a digit, `?`, or the one closing bracket) proves `open` was
+ * never an anchor at all: unlike the locked-in check for an already-closed marker, that
+ * is decidable the instant the disqualifying character is read, with no need to wait
+ * for one more. Holding it any longer, or dropping it at a carry cap, would discard
+ * real answer text — so once confirmed dead, the whole candidate releases, and nothing
+ * is held.
+ */
+export const splitOpenAnchorAttempt = (open: string): { carry: string; release: string } => {
+  if (isUnderClosedAnchorAttempt(open)) {
+    return { carry: open, release: "" };
+  }
+  const deadPrefixLength = open.match(OPEN_ANCHOR_ATTEMPT_PREFIX)?.[0].length ?? 0;
+  return { carry: "", release: open.slice(deadPrefixLength) };
+};

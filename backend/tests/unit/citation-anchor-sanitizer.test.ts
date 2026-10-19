@@ -279,6 +279,29 @@ describe("citation anchor sanitizer", () => {
       expect(stream("claim[[?]")).toBe("claim");
     });
 
+    // A literal `[[` that is never a citation anchor at all — the character right after
+    // it is not a digit or `?` — is confirmed dead the instant that character is read.
+    // It must never hold the rest of the sentence hostage: that held text is answer
+    // content, not part of any token, so the carry cap must release it instead of
+    // dropping everything before its last 32 characters, and the same holds at flush().
+    it("releases a `[[` that never becomes an anchor, and everything after it, instead of dropping text past the carry cap", () => {
+      const chunks = [
+        "see [[",
+        " this long ordinary sentence that keeps going and going well past thirty-two characters",
+        " end.",
+      ];
+      const sanitizer = new CitationAnchorSanitizer();
+      const streamed = [...chunks.map((chunk) => sanitizer.push(chunk)), sanitizer.flush()].join("");
+
+      const whole = new CitationAnchorSanitizer();
+      const sanitizedWhole = [whole.push(chunks.join("")), whole.flush()].join("");
+
+      expect(streamed).toBe(sanitizedWhole);
+      expect(streamed).toBe(
+        "see  this long ordinary sentence that keeps going and going well past thirty-two characters end.",
+      );
+    });
+
     it("produces the same result no matter where the chunk boundary falls, for the `?` example", () => {
       const full = "claim[[?] more words here. Next sentence[[2]].";
       const expected = "claim more words here. Next sentence.";

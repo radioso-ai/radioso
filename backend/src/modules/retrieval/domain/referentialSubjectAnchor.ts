@@ -4,7 +4,7 @@ import type { ResponseLanguagePolicy, RetrievalSubquery } from "./retrievalPipel
 const tokensOf = (value: string): string[] => value.toLocaleLowerCase().match(/[\p{L}\p{M}\p{N}]+/gu) ?? [];
 
 /** Whether every token of the subject appears as a whole token of the query. */
-export const namesSubject = (query: string, subject: string): boolean => {
+const namesSubject = (query: string, subject: string): boolean => {
   const subjectTokens = tokensOf(subject);
   const queryTokens = new Set(tokensOf(query));
   return subjectTokens.length > 0 && subjectTokens.every((token) => queryTokens.has(token));

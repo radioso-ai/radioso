@@ -134,7 +134,10 @@ helpers and the shared chat message limit from `app/http`
 ## Entry points
 
 - `public.ts` — `VoiceTurnPort`, `VoiceTurnService`, `VoiceSessionRepository`,
-  `registerOpenAiCompletionsRoute`; `VoiceSessionStartPort`,
+  `registerOpenAiCompletionsRoute`; `VoiceTurnObserver` and `VoiceTurnSummary`
+  (the service's optional `observer` is told each finished turn's summary, the
+  fields its log line carries; composition wires none in production, and the
+  test app's `voiceTurnObserver` override reads it for the eval suite); `VoiceSessionStartPort`,
   `VoiceSessionStartResult`, `VoiceSessionStartService`,
   `createElevenLabsSessionStarter`; the recording ports,
   `VoiceRecordingService`, `VoiceRecordingErasureService`,

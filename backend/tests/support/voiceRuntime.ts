@@ -2,9 +2,18 @@ import { randomUUID } from "node:crypto";
 
 import request from "supertest";
 
+import type { z } from "zod";
+
+import type { agentVoiceSettingsInputSchema } from "../../src/modules/agents/voiceSettings.js";
 import { adminSessionHeaders, issueTestSession, type createTestApp } from "./testApp.js";
 
 type TestApp = Pick<ReturnType<typeof createTestApp>, "app" | "dependencies">;
+
+/** The agent settings a voice test writes, as the dashboard sends them on `PUT /api/v1/agents/:agentId`. */
+interface VoiceAgentSettings {
+  assistantDefaultLocale?: string;
+  voice?: z.input<typeof agentVoiceSettingsInputSchema>;
+}
 
 /**
  * A voice runtime's way in on a test app: an operator signs up, which publishes the workspace's
@@ -13,7 +22,7 @@ type TestApp = Pick<ReturnType<typeof createTestApp>, "app" | "dependencies">;
  */
 export const openVoiceRuntime = async (
   { app, dependencies }: TestApp,
-  options: { emailPrefix: string; agentSettings?: Record<string, unknown> },
+  options: { emailPrefix: string; agentSettings?: VoiceAgentSettings },
 ) => {
   const session = await issueTestSession(app, `${options.emailPrefix}-${randomUUID()}@example.com`);
   const dashboard = adminSessionHeaders(session);

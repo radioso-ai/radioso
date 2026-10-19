@@ -4,11 +4,16 @@ import type { ConversationQualityCase } from "./caseSchema.js";
 import type { ConversationQualityObservedOutput } from "./observedOutput.js";
 
 /** What a piece the caller heard was: the agent's bridge line, its fallback line, or anything else said. */
-export type VoicePieceKind = "bridge" | "speech" | "fallback";
+export const VOICE_PIECE_KINDS = ["bridge", "speech", "fallback"] as const;
+
+export type VoicePieceKind = (typeof VOICE_PIECE_KINDS)[number];
 
 export type VoiceOutcomeKind = VoiceTurnOutcome["kind"];
 
-export const VOICE_OUTCOME_KINDS = ["continue", "callback_requested"] as const satisfies readonly VoiceOutcomeKind[];
+/** Every outcome kind the voice channel sends, once each; a kind it adds fails to compile here. */
+const OUTCOME_KINDS: Record<VoiceOutcomeKind, true> = { continue: true, callback_requested: true };
+
+export const VOICE_OUTCOME_KINDS = Object.keys(OUTCOME_KINDS) as [VoiceOutcomeKind, ...VoiceOutcomeKind[]];
 
 /** What a field of the turn's record must be: a value (null included), or absent from the record. */
 type VoiceTurnRecordExpectation = string | number | boolean | null | { absent: true };

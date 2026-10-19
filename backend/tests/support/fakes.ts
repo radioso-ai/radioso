@@ -4903,7 +4903,7 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
   async listSinceByConversationId(
     workspaceId: string,
     conversationId: string,
-    input: { sinceCreatedAt?: Date; sinceId?: string; limit: number },
+    input: { sinceCreatedAt?: string; sinceId?: string; limit: number },
   ): Promise<{ messages: MessageRecord[]; latestCursor: string | null }> {
     const messages = [...(this.items.get(conversationId) ?? [])]
       .filter((message) => message.workspaceId === workspaceId)
@@ -4928,10 +4928,14 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
       };
     }
 
+    // The in-memory store only ever creates millisecond-precision `Date`s, so comparing the
+    // cursor's text by parsing it back to a `Date` (unlike the real, Postgres-backed repository)
+    // loses nothing here.
+    const sinceCreatedAtMs = new Date(input.sinceCreatedAt).getTime();
     const newer = messages
       .filter((message) =>
-        message.createdAt.getTime() > input.sinceCreatedAt!.getTime() ||
-        (message.createdAt.getTime() === input.sinceCreatedAt!.getTime() && message.id > input.sinceId!)
+        message.createdAt.getTime() > sinceCreatedAtMs ||
+        (message.createdAt.getTime() === sinceCreatedAtMs && message.id > input.sinceId!)
       )
       .slice(0, input.limit);
 

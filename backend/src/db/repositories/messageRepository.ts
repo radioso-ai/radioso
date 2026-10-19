@@ -78,7 +78,8 @@ export interface ConversationMessageSummary {
 }
 
 export interface TailReadInput {
-  sinceCreatedAt?: Date;
+  /** The tail cursor's `createdAt` text, verbatim — see {@link MessageRepositoryPort.listSinceByConversationId}. */
+  sinceCreatedAt?: string;
   sinceId?: string;
   /** The `markedAt` key of the tail cursor: when the newest marker it delivered was recorded. */
   sinceMarkedAt?: string;
@@ -118,12 +119,16 @@ export interface MessageRepositoryPort {
     input: { limit: number; offset?: number; cursor?: string },
   ): Promise<{ messages: MessageRecord[]; total: number; nextCursor: string | null; hasMore: boolean }>;
   /**
-   * The messages after the `(sinceCreatedAt, sinceId)` cursor, oldest first. With
-   * `redeliverMarkedReplies`, the read also returns, in the same order, the conversation's
-   * assistant replies at or before the cursor whose marker (an interruption, or a teammate's reply
-   * spoken to the caller) was recorded since the cursor's message (and after `sinceMarkedAt`, the
-   * newest marker the cursor already delivered);
-   * the returned cursor carries that newest marker as `markedAt`, so each marker arrives once.
+   * The messages after the `(sinceCreatedAt, sinceId)` cursor, oldest first. `sinceCreatedAt` is
+   * the cursor's `createdAt` text verbatim — full microsecond precision when the cursor was cut
+   * from this repository, millisecond precision for an older cursor — compared against the
+   * `created_at` column at that same precision; never convert it to a JS `Date` first, which
+   * would round it down to milliseconds and let the newest row in a page match its own cursor
+   * again on the next poll. With `redeliverMarkedReplies`, the read also returns, in the same
+   * order, the conversation's assistant replies at or before the cursor whose marker (an
+   * interruption, or a teammate's reply spoken to the caller) was recorded since the cursor's
+   * message (and after `sinceMarkedAt`, the newest marker the cursor already delivered); the
+   * returned cursor carries that newest marker as `markedAt`, so each marker arrives once.
    */
   listSinceByConversationId(
     workspaceId: string,
@@ -291,11 +296,38 @@ const mapSpeech = (metadata: unknown): OperatorReplySpeech | undefined => {
 
 /**
  * A database time as a UTC ISO string with milliseconds: the format `Date.toISOString` writes, so
- * marker times, claim times and tail cursor times compare as text, in time order, without a cast.
+ * marker times, claim times and the tail cursor's `markedAt` watermark compare as text, in time
+ * order, without a cast. Deliberately lossy to stay comparable with `Date`-derived text; for the
+ * tail cursor's own `createdAt` key, which must survive a strict re-comparison against the exact
+ * row it was cut from, use {@link preciseIsoText} instead.
  */
 const isoText = (time: RawBuilder<Date>) => sql<string>`to_char((${time}) AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')`;
 /** When a marker is recorded: now, on the database clock. */
 const markerRecordedAt = isoText(clockTimestamp());
+/**
+ * `<expression>` as a UTC ISO string at the database's full microsecond precision, fixed-width so
+ * it still sorts as text. A JS `Date` read of a `created_at` column rounds to milliseconds; a tail
+ * cursor built from that rounded value is strictly behind the row it came from, so the row matches
+ * `created_at > cursor` again on the very next poll (the newest-message re-delivery this format
+ * exists to prevent). Decode and compare the resulting text directly against the column — through
+ * {@link preciseTimestamptz}, never through `new Date(...)`, which reintroduces the same rounding.
+ */
+const preciseIsoText = (columnName: string) =>
+  sql<string>`to_char(${sql.ref(columnName)} AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US') || 'Z'`;
+/** A tail cursor's `createdAt` text, cast back to `timestamptz` at its own precision for a column comparison. */
+const preciseTimestamptz = (text: string) => sql<Date>`${text}::timestamptz`;
+
+/**
+ * Builds a message tail cursor from a row carrying {@link preciseIsoText}'s `created_at_precise`
+ * column, the one place `listSinceByConversationId` encodes one, so every branch (no cursor
+ * supplied, a limit-capped page, the empty "nothing newer" case) agrees on its shape.
+ */
+export const encodeTailCursor = (row: { created_at_precise: string; id: string }, markedAt?: string): string =>
+  encodeCursor({
+    createdAt: row.created_at_precise,
+    id: row.id,
+    ...(markedAt !== undefined ? { markedAt } : {}),
+  });
 /**
  * The newest marker a reply carries: its interruption's or, on a teammate's reply, when it was
  * spoken or skipped. Null for a reply that carries none; `GREATEST` skips the ones missing.
@@ -524,63 +556,56 @@ export class MessageRepository
     conversationId: string,
     input: TailReadInput,
   ): Promise<{ messages: MessageRecord[]; latestCursor: string | null }> {
-    // Tail cursor is (created_at, id). Safe because messages within a conversation are inserted
-    // one-per-operation via clock_timestamp() and are causally sequential, so created_at is unique
-    // per conversation and the strict (created_at,id) comparison never skips a row. INVARIANT: do
-    // not batch-insert multiple messages to one conversation in a single statement/microsecond
-    // without switching the cursor to a monotonic sequence.
+    // Tail cursor is (created_at, id), `created_at` carried as `preciseIsoText` so the cursor
+    // round-trips the database's full microsecond precision rather than the millisecond precision
+    // a JS `Date` read of the column would round it to. `id` is a tie-break only for a genuine
+    // full-precision tie; messages within a conversation are inserted one-per-operation via
+    // clock_timestamp() and are causally sequential, so that tie is not otherwise expected. Do not
+    // batch-insert multiple messages to one conversation in a single statement, which could produce
+    // one.
     const latestRow = await this.db
       .selectFrom("messages")
-      .select(messageColumns)
+      .select([...messageColumns, preciseIsoText("created_at").as("created_at_precise")])
       .where("workspace_id", "=", workspaceId)
       .where("conversation_id", "=", conversationId)
       .orderBy("created_at", "desc")
       .orderBy("id", "desc")
       .limit(1)
       .executeTakeFirst();
-    const latest = latestRow ? mapMessageRow(latestRow as MessageRow) : null;
-    const newestCursor = latest
-      ? encodeCursor({
-          createdAt: latest.createdAt.toISOString(),
-          id: latest.id,
-        })
-      : null;
+    const newestCursor = latestRow ? encodeTailCursor(latestRow) : null;
 
     if (!input.sinceCreatedAt || !input.sinceId) {
       const rows = await this.db
         .selectFrom("messages")
-        .select(messageColumns)
+        .select([...messageColumns, preciseIsoText("created_at").as("created_at_precise")])
         .where("workspace_id", "=", workspaceId)
         .where("conversation_id", "=", conversationId)
         .orderBy("created_at", "desc")
         .orderBy("id", "desc")
         .limit(input.limit)
         .execute();
+      // DESC order: the first row is the newest, i.e. the one `.reverse()` below puts last.
+      const newestRow = rows[0];
       const messages = rows.map((row) => mapMessageRow(row as MessageRow)).reverse();
-      const lastReturned = messages.at(-1);
 
       return {
         messages,
-        latestCursor: lastReturned
-          ? encodeCursor({
-              createdAt: lastReturned.createdAt.toISOString(),
-              id: lastReturned.id,
-            })
-          : newestCursor,
+        latestCursor: newestRow ? encodeTailCursor(newestRow) : newestCursor,
       };
     }
 
     const sinceCreatedAt = input.sinceCreatedAt;
     const sinceId = input.sinceId;
+    const sinceCreatedAtColumn = preciseTimestamptz(sinceCreatedAt);
     const rows = await this.db
       .selectFrom("messages")
-      .select(messageColumns)
+      .select([...messageColumns, preciseIsoText("created_at").as("created_at_precise")])
       .where("workspace_id", "=", workspaceId)
       .where("conversation_id", "=", conversationId)
       .where((eb) =>
         eb.or([
-          eb("created_at", ">", sinceCreatedAt),
-          eb.and([eb("created_at", "=", sinceCreatedAt), eb("id", ">", sinceId)]),
+          eb("created_at", ">", sinceCreatedAtColumn),
+          eb.and([eb("created_at", "=", sinceCreatedAtColumn), eb("id", ">", sinceId)]),
         ]),
       )
       .orderBy("created_at", "asc")
@@ -589,7 +614,7 @@ export class MessageRepository
       .execute();
 
     const messages = rows.map((row) => mapMessageRow(row as MessageRow));
-    const cursorMessage = messages.at(-1) ?? latest;
+    const cursorRow = rows.at(-1) ?? latestRow;
     const redelivered = input.redeliverMarkedReplies
       ? await this.listMarkedSince(workspaceId, conversationId, {
           sinceCreatedAt,
@@ -605,27 +630,30 @@ export class MessageRepository
 
     return {
       messages: [...redelivered.messages, ...messages],
-      latestCursor: cursorMessage
-        ? encodeCursor({
-            createdAt: cursorMessage.createdAt.toISOString(),
-            id: cursorMessage.id,
+      latestCursor: cursorRow
+        ? encodeTailCursor(
+            cursorRow,
             // Only a marker recorded since the cursor's message still needs the watermark.
-            ...(markedAt !== undefined && markedAt >= cursorMessage.createdAt.toISOString() ? { markedAt } : {}),
-          })
+            markedAt !== undefined && markedAt >= cursorRow.created_at.toISOString() ? markedAt : undefined,
+          )
         : newestCursor,
     };
   }
 
   /**
    * Assistant replies at or before the cursor whose marker was recorded at or after the cursor's
-   * message and after the newest marker already delivered, oldest first. Marker times and cursor
-   * times share one text format, so they compare as text.
+   * message and after the newest marker already delivered, oldest first. The `created_at` boundary
+   * compares at the cursor's own precision (see {@link listSinceByConversationId}); the marker
+   * boundary compares `markerRecordedAtOf` against the cursor's millisecond-rounded text, because
+   * marker times are themselves only ever written at that width.
    */
   private async listMarkedSince(
     workspaceId: string,
     conversationId: string,
-    input: { sinceCreatedAt: Date; sinceId: string; sinceMarkedAt?: string; limit: number },
+    input: { sinceCreatedAt: string; sinceId: string; sinceMarkedAt?: string; limit: number },
   ): Promise<{ messages: MessageRecord[]; newestMarkedAt: string | undefined }> {
+    const sinceCreatedAtColumn = preciseTimestamptz(input.sinceCreatedAt);
+    const sinceCreatedAtMs = new Date(input.sinceCreatedAt).toISOString();
     const rows = await this.db
       .selectFrom("messages")
       .select([...messageColumns, markerRecordedAtOf.as("marked_at")])
@@ -634,12 +662,12 @@ export class MessageRepository
       .where("role", "=", "assistant")
       .where((eb) =>
         eb.or([
-          eb("created_at", "<", input.sinceCreatedAt),
-          eb.and([eb("created_at", "=", input.sinceCreatedAt), eb("id", "<=", input.sinceId)]),
+          eb("created_at", "<", sinceCreatedAtColumn),
+          eb.and([eb("created_at", "=", sinceCreatedAtColumn), eb("id", "<=", input.sinceId)]),
         ]),
       )
       // A reply that carries no marker has a null time, which no comparison passes.
-      .where(markerRecordedAtOf, ">=", input.sinceCreatedAt.toISOString())
+      .where(markerRecordedAtOf, ">=", sinceCreatedAtMs)
       .$if(input.sinceMarkedAt !== undefined, (query) => query.where(markerRecordedAtOf, ">", input.sinceMarkedAt!))
       .orderBy("created_at", "asc")
       .orderBy("id", "asc")

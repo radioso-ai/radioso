@@ -199,7 +199,7 @@ describeIntegration("MessageRepository (Postgres)", () => {
   describe("tail re-delivery of marked replies", () => {
     const sinceCursor = (cursor: string | null) => {
       const { keys } = decodeCursorWithKeys(cursor!, ["createdAt", "id"]);
-      return { sinceCreatedAt: new Date(keys.createdAt), sinceId: keys.id, sinceMarkedAt: (keys as Record<string, string>).markedAt };
+      return { sinceCreatedAt: keys.createdAt, sinceId: keys.id, sinceMarkedAt: (keys as Record<string, string>).markedAt };
     };
     const tail = (cursor: string | null, redeliverMarkedReplies = true) =>
       repository.listSinceByConversationId(workspaceId, conversationId, { ...sinceCursor(cursor), limit: 10, redeliverMarkedReplies });

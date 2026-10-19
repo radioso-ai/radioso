@@ -136,15 +136,19 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   turn still holds into `{ state: "spoken", spokenAt }`, `skipped` or back to
   `pending`. Each is one conditional UPDATE that resolves the ids it changed,
   so two turns never hold one reply; a claim older than
-  `VOICE_BEHAVIOR.operatorReplyClaimExpiryMs` counts as pending. Times are the database clock in the tail cursor's
-  format. `MessageRecord.speech` reads it back on human-authored replies as
+  `VOICE_BEHAVIOR.operatorReplyClaimExpiryMs` counts as pending. Times are the database clock at
+  millisecond precision (the tail cursor's `markedAt` watermark shares this format; the cursor's
+  own `createdAt` key carries the database's full microsecond precision instead, so a quiet poll
+  never re-matches the row it came from — #1518). `MessageRecord.speech` reads it back on human-authored replies as
   readers see it (a claim is still `pending`), and history puts it on the
   reply as `speech` beside `interruption`; the dashboard tail re-delivers a
   reply once it is spoken or skipped. Ray's `conversation_transcript` carries
   the state as one word. Tests:
-  `tests/integration/message-repository.integration.test.ts` (needs the
+  `tests/integration/message-repository.integration.test.ts` and
+  `tests/integration/message-repository-tail.test.ts` (both need the
   disposable integration database), `tests/unit/message-source.test.ts`,
-  `tests/unit/chat-history-service.test.ts`.
+  `tests/unit/chat-history-service.test.ts`,
+  `tests/unit/message-repository-tail-cursor.test.ts`.
 - `composition.ts`: chat module wiring used by application composition.
 - `services/conversationIngestService.ts` (`ConversationIngestPort` in `contracts/`):
   records a customer message without running a turn, for a channel that decides

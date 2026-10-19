@@ -896,8 +896,8 @@ describe("chat history service interrupted replies", () => {
     await service.tailConversation("workspace-1", conversation.id, { cursor, limit: 10 }, { includeOwnership: true });
 
     expect(listSince.mock.calls.map(([, , input]) => input)).toEqual([
-      { sinceCreatedAt: fullReply.createdAt, sinceId: fullReply.id, sinceMarkedAt: "2026-10-15T10:00:00.000Z", limit: 10, redeliverMarkedReplies: true },
-      { sinceCreatedAt: fullReply.createdAt, sinceId: fullReply.id, sinceMarkedAt: "2026-10-15T10:00:00.000Z", limit: 10, redeliverMarkedReplies: false },
+      { sinceCreatedAt: fullReply.createdAt.toISOString(), sinceId: fullReply.id, sinceMarkedAt: "2026-10-15T10:00:00.000Z", limit: 10, redeliverMarkedReplies: true },
+      { sinceCreatedAt: fullReply.createdAt.toISOString(), sinceId: fullReply.id, sinceMarkedAt: "2026-10-15T10:00:00.000Z", limit: 10, redeliverMarkedReplies: false },
     ]);
   });
 });

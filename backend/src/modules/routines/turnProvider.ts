@@ -430,6 +430,24 @@ export const createRoutineTurnProvider = (
       },
     };
 
+    const direct = routineInvocation
+      ? createDirectInvocationTurnPorts({
+        registrations: effectiveRegistrations,
+        routines,
+        invocation: routineInvocation,
+        // Outcomes are counted where the reply reports them (the chat turn
+        // lifecycle), so a call another routine kept from starting counts too.
+        onOutcome: (outcome) => {
+          if (outcome.kind === "unknown_tool") {
+            dependencies.logger.warn(
+              { agentId, agentRevisionId, toolName: routineInvocation.toolName },
+              "Routine invocation named a tool no routine of this turn's release carries; answering normally",
+            );
+          }
+        },
+      })
+      : null;
+
     const runner = new DefaultRoutineRunner(
       routines,
       new RoutineNextStepSelector(modelGateway, {
@@ -476,25 +494,10 @@ export const createRoutineTurnProvider = (
       })(),
       // `{{context.<name>}}` in a step instruction reads staged visitor context through
       // the context-variables module, which owns what each variable may show.
-      { contextRenderer: routineContextRenderer, includeSlotValues },
+      { contextRenderer: routineContextRenderer, includeSlotValues, ...direct?.runnerOptions },
     );
 
-    if (routineInvocation) {
-      const direct = createDirectInvocationTurnPorts({
-        registrations: effectiveRegistrations,
-        routines,
-        invocation: routineInvocation,
-        // Outcomes are counted where the reply reports them (the chat turn
-        // lifecycle), so a call another routine kept from starting counts too.
-        onOutcome: (outcome) => {
-          if (outcome.kind === "unknown_tool") {
-            dependencies.logger.warn(
-              { agentId, agentRevisionId, toolName: routineInvocation.toolName },
-              "Routine invocation named a tool no routine of this turn's release carries; answering normally",
-            );
-          }
-        },
-      });
+    if (routineInvocation && direct) {
       // Attributes on the turn spine (the active span), never a new span; counts only.
       setTraceAttributes({
         "routine.invocation.tool_name": routineInvocation.toolName,

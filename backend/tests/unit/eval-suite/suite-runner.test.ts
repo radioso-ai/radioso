@@ -251,14 +251,17 @@ const routineStack = () => {
   };
   const routineProvider: ChatRoutineProvider = {
     async forTurn({ modelGateway, routineInvocation, responseLanguage }) {
+      const direct = routineInvocation
+        ? createDirectInvocationTurnPorts({ registrations, routines, invocation: routineInvocation })
+        : null;
       const runner = new DefaultRoutineRunner(
         routines,
         new RoutineNextStepSelector(modelGateway, { promptTemplate: loadPromptTemplate("chat/routine-next-step.md") }),
         new RoutineStepRenderer(modelGateway, { promptTemplate: loadPromptTemplate("chat/routine-step-reply.md"), responseLanguage }),
         dispatcher,
+        { ...direct?.runnerOptions },
       );
-      if (routineInvocation) {
-        const direct = createDirectInvocationTurnPorts({ registrations, routines, invocation: routineInvocation });
+      if (direct) {
         return { routines, runner, activator: direct.activator, reentryGate: direct.reentryGate, slotCorrection: direct.slotCorrection, reporter: direct.reporter };
       }
       return { routines, runner, activator: { activate: async () => null }, reporter: createRoutineTurnReporter(routines) };

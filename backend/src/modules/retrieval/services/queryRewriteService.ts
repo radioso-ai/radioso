@@ -33,7 +33,6 @@ export {
   ModelTriggerAnalysisGateway,
   OpenAIQueryRewriteGateway,
   type QueryRewriteGateway,
-  type QueryRewriteGatewayFallbackResult,
   type QueryRewriteGatewayResult,
   type TriggerAnalysisGateway,
   type TriggerAnalysisGatewayInput,
@@ -110,11 +109,15 @@ export class QueryRewriteService {
 
     const hasConversationContext = input.contextWindow.selectedMessages.length > 0;
     const normalizedStructuredResult = this.normalizeStructuredResult(input.query, input.proposal);
+    const referentialSubject = this.resolvedReferentialSubject(normalizedStructuredResult);
 
-    const semanticQuery = this.selectSemanticQuery(
-      input.query,
-      normalizedStructuredResult.semanticQuery ?? normalizedStructuredResult.rewrittenQuery,
-      hasConversationContext,
+    const semanticQuery = this.anchorSemanticQueryToSubject(
+      this.selectSemanticQuery(
+        input.query,
+        normalizedStructuredResult.semanticQuery ?? normalizedStructuredResult.rewrittenQuery,
+        hasConversationContext,
+      ),
+      referentialSubject,
     );
     const lexicalQuery = this.selectLexicalQuery(
       input.query,
@@ -137,6 +140,7 @@ export class QueryRewriteService {
       queryShape: normalizedStructuredResult.queryShape,
       lexicalQuery,
       proposedActiveSubject: normalizedStructuredResult.proposedActiveSubject,
+      referentialSubject,
     });
     const retrievalSubqueries = modelRetrievalSubqueries;
     const applied =
@@ -340,8 +344,10 @@ export class QueryRewriteService {
       const semanticQuery = this.normalizeRewrite(result.semanticQuery ?? result.rewrittenQuery);
       const lexicalQuery = this.normalizeLexicalRewrite(result.lexicalQuery ?? result.rewrittenQuery);
       const responseLanguagePolicy = DEFAULT_RESPONSE_LANGUAGE_POLICY;
+      const resolutionNote = this.normalizeOptionalRewrite(result.resolutionNote);
 
       return {
+        ...(resolutionNote ? { resolutionNote } : {}),
         rewrittenQuery: this.normalizeRewrite(result.rewrittenQuery),
         semanticQuery,
         lexicalQuery,
@@ -503,17 +509,40 @@ export class QueryRewriteService {
     ].slice(0, 8);
   }
 
+  /**
+   * Lexical search ANDs every term, so a lexical query that lacks the referential subject is
+   * replaced by the subject rather than extended with it.
+   */
   private selectResolvedSubjectLexicalQuery(input: {
     queryShape?: RetrievalQueryShape;
     lexicalQuery: string;
     proposedActiveSubject?: string;
+    referentialSubject?: string;
   }): string {
     const subject = input.proposedActiveSubject?.trim();
-    if (!subject || input.queryShape !== "definition_lookup") {
-      return input.lexicalQuery;
+    if (subject && input.queryShape === "definition_lookup") {
+      return subject;
     }
 
-    return subject;
+    return input.referentialSubject && !namesSubject(input.lexicalQuery, input.referentialSubject)
+      ? input.referentialSubject
+      : input.lexicalQuery;
+  }
+
+  /**
+   * The subject a referential follow-up resolved to. A reference such as "the event" has no
+   * searchable term of its own, so retrieval needs the subject the interpreter resolved it to,
+   * whatever shape the request takes. An unresolved turn's subject is a guess and stays out.
+   */
+  private resolvedReferentialSubject(result: StructuredRewriteResult): string | undefined {
+    const subject = result.proposedActiveSubject?.trim();
+    return subject && result.turnKind === REWRITE_TURN_KIND.REFERENTIAL_FOLLOWUP && !result.unresolved
+      ? subject
+      : undefined;
+  }
+
+  private anchorSemanticQueryToSubject(semanticQuery: string, subject: string | undefined): string {
+    return subject && !namesSubject(semanticQuery, subject) ? `${subject}: ${semanticQuery}` : semanticQuery;
   }
 
   private isUsableRewrite(originalQuery: string, rewrittenQuery: string): boolean {
@@ -581,6 +610,9 @@ export class QueryRewriteService {
     return candidateTerms.filter((term) => !originalTerms.has(term)).length;
   }
 }
+
+const namesSubject = (query: string, subject: string): boolean =>
+  query.toLocaleLowerCase().includes(subject.toLocaleLowerCase());
 
 const tokenizeRewriteTerms = (value: string): string[] =>
   value

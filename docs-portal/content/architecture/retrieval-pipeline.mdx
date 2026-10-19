@@ -22,6 +22,8 @@ The pipeline starts by resolving system retrieval defaults, any `retrieval.answe
 
 Radioso parses the original query, applies rewrite logic when enabled, and can split the request into retrieval subqueries. This is where semantic and lexical rewrite instructions matter.
 
+A follow-up such as "send me a quote for the event" names no subject of its own. Interpretation resolves it to the subject the visitor named earlier in the conversation, even when the agent's last turn only asked for a name and email. The resolved subject goes into both queries: the semantic query names it, and the lexical query is the subject alone, because lexical search requires every query term to appear in a chunk. The turn trace's query interpretation stage shows the resolved subject, the related entities, and the one-line resolution note.
+
 ### Candidate retrieval
 
 The system runs semantic and lexical retrieval. Semantic retrieval uses embeddings. Lexical retrieval uses search text built from the document title, chunk content, and metadata-derived text.

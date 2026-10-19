@@ -1148,7 +1148,8 @@ describe("retrieval sense clarification", () => {
     expect(persistedUserMessages.map((message) => message.content)).toEqual([selectorReply]);
   });
 
-  it("suppresses asking while an active routine has yielded and records a suppressed decision", async () => {
+  it("suppresses asking while an active routine has yielded, keeps every sense, and records a suppressed decision", async () => {
+    const capturedRequests: RetrievalPipelineRequest[] = [];
     const detector = {
       detect: vi.fn(async () => [
         { id: "doc-hatha", label: "Hatha yoga", confidence: 0.6, payload: { documentIds: ["doc-hatha"] } },
@@ -1156,6 +1157,7 @@ describe("retrieval sense clarification", () => {
       ]),
     };
     const service = makeService({
+      capturedRequests,
       detector,
       clarificationStore: {
         loadPending: vi.fn(async () => null),
@@ -1182,6 +1184,7 @@ describe("retrieval sense clarification", () => {
     });
 
     expect(response.answer).toBe("Grounded answer");
+    expect(capturedRequests.some((request) => request.documentScope)).toBe(false);
     expect(response.turnTrace?.spine.stages).toEqual(expect.arrayContaining([
       expect.objectContaining({
         kind: "clarification",

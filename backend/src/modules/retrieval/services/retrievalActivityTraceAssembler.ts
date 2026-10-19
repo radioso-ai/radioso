@@ -274,6 +274,8 @@ export class ActivityTraceAssembler {
           promptHistoryReset: prompt.promptHistoryReset,
           turnKind: prompt.rewrittenQuery.structuredResult?.turnKind ?? null,
           resolutionNote: prompt.rewrittenQuery.structuredResult?.resolutionNote ?? null,
+          proposedActiveSubject: prompt.rewrittenQuery.structuredResult?.proposedActiveSubject ?? null,
+          relatedEntities: prompt.rewrittenQuery.structuredResult?.relatedEntities ?? [],
           temporalQueryMode,
           rewriteEligible: prompt.rewrittenQuery.retrievalEligible,
           rewriteRan: diagnostics.rewriteRan ?? false,

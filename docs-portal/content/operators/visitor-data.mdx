@@ -1,7 +1,7 @@
 ---
 title: "Visitor data"
 description: "Every field Radioso records about a visit, where an operator can see it, and how long it lives."
-last_updated: 2026-10-17
+last_updated: 2026-10-19
 ---
 
 # Visitor data
@@ -29,7 +29,7 @@ None of it reaches the model, a prompt, or a stored trace except the six fields 
 
 ## Retention
 
-These fields live as long as the conversation that recorded them. Deleting the conversation removes them, and deleting the visitor removes the visitor record with every conversation it links — see [Deleting conversation data](/operators/deleting-conversation-data). Deleting a workspace deletes every conversation, and every visitor record, that belongs to it.
+These fields live as long as the conversation that recorded them: until someone deletes it, or until the workspace's [retention window](/operators/data-retention) erases it. Deleting the conversation removes them, and deleting the visitor removes the visitor record with every conversation it links — see [Deleting conversation data](/operators/deleting-conversation-data). Deleting a workspace deletes every conversation, and every visitor record, that belongs to it.
 
 ## Read next
 

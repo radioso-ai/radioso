@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-10-18
+last_updated: 2026-10-19
 ---
 
 # Code Map
@@ -857,6 +857,56 @@ Focused checks:
 Related docs:
 
 - [Deleting conversation data](../../docs-portal/content/operators/deleting-conversation-data.mdx)
+
+## Conversation Retention
+
+Owns how long conversation data is kept (#1541). A workspace's privacy settings
+hold a conversation retention window in days (`workspaces.conversation_retention_days`,
+7 to 3650, null keeps conversations until deleted); `PrivacySettingsService`
+validates and audits a change (`workspace.privacy_settings.updated`), and setting
+it takes `workspace.history.delete` as well as `workspace.settings.manage`.
+`ConversationRetentionSweep` enforces it: for each workspace with a window it
+erases conversations with no update and no message since the window through
+`ConversationErasureService.eraseInactiveConversations`, the same erasers and
+cascade as a requested erasure, one bounded batch per workspace per round, each
+batch one transaction and one `conversation.retention.enforced` audit event. Then
+it runs each module's `ConversationDataRetentionRule`
+(`backend/src/shared/domain/conversationDataRetention.ts`), a fixed window over
+rows whose conversation lives on: expired summaries, expired or 90-day-abandoned
+routine states, and inbound mail's raw MIME after 30 days. Claims lock with
+`SKIP LOCKED`, so two runs at once remove each row once. It knows the erasure
+port, the policy list and the rules, and nothing about tables.
+
+The sweep is a built-in periodic task (`conversation-retention`, every 15
+minutes): the poll worker's interval loop, and on Cloud Run the
+`/internal/tasks/periodic-tasks/:taskId/run` route a Cloud Scheduler job calls.
+Each run logs `conversation_retention_swept` with counts per table and per
+eraser owner, increments `radioso_retention_rows_removed_total{table}`,
+`radioso_retention_rows_erased_total{owner}` and `radioso_retention_sweeps_total{outcome}`,
+and runs inside a `privacy.retention_sweep` span. Terraform pins the windows that
+outlast it: seven Cloud SQL backups, seven days of point-in-time recovery logs,
+and 30 days in the project's `_Default` log bucket.
+
+Public surfaces and key files:
+
+- `backend/src/modules/privacy/conversationRetention.ts` (the sweep and its ports)
+- `backend/src/modules/privacy/privacySettings.ts` (the setting, its range and audit)
+- `backend/src/app/composition/conversationRetention.ts` (rule list, sweep, periodic task)
+- `backend/src/db/repositories/workspacePrivacySettingsRepository.ts` (setting store and policy list)
+- `backend/src/app/http/routes/settingsRoutes.ts` (`GET`/`PUT /api/v1/settings/privacy`)
+- `backend/src/modules/operatorCopilot/tools/privacySettingProposals.ts` (`propose_privacy_setting`)
+- `frontend/components/dashboard/settings/conversation-retention-card.tsx` (Settings → Workspace → Conversation retention)
+- `infra/terraform/database.tf`, `infra/terraform/logging.tf`, `infra/terraform/scheduler.tf` (`conversation_retention`)
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/conversation-retention-sweep.test.ts tests/unit/privacy-settings-service.test.ts tests/unit/operatorCopilot/copilot-privacy-setting-proposals.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/conversation-retention.integration.test.ts --no-file-parallelism`
+- `cd frontend && pnpm exec vitest run tests/unit/conversation-retention.test.ts`
+
+Related docs:
+
+- [Data retention](../../docs-portal/content/operators/data-retention.mdx)
 
 ## Agent Revisions
 

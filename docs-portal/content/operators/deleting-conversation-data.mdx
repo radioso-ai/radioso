@@ -1,7 +1,7 @@
 ---
 title: "Deleting conversation data"
 description: "How to permanently delete a conversation or a visitor, what goes with it, and what Radioso keeps."
-last_updated: 2026-10-17
+last_updated: 2026-10-19
 ---
 
 # Deleting conversation data
@@ -82,7 +82,7 @@ Deletion reaches what Radioso stores. It cannot reach what already left:
 - emails your agent already sent to the visitor;
 - anything a model provider received while answering, under that provider's own terms.
 
-Database backups keep deleted data until each backup ages out of its retention window.
+Database backups and logs keep deleted data until they age out: on Radioso Cloud, seven daily backups, seven days of point-in-time recovery logs, and 30 days of logs. See [Data retention](/operators/data-retention).
 
 A voice call's recording lives in your ElevenLabs account, so Radioso asks ElevenLabs to delete it after the deletion went through, and the deletion never waits on ElevenLabs for more than 20 seconds. A recording ElevenLabs refuses to delete, or does not delete in time, stays in your ElevenLabs account; the backend log names it as `Voice recording was left at the vendor` with its ElevenLabs conversation id, so you can delete it in ElevenLabs. Each recording Radioso deleted is recorded as a `conversation.recording_deleted` audit event. Once the workspace's ElevenLabs key is removed, or replaced with one for another ElevenLabs account, Radioso cannot delete the old account's recordings at all.
 
@@ -99,6 +99,7 @@ Deleting a workspace deletes every conversation and visitor in it, with the same
 
 ## Read next
 
+- [Data retention](/operators/data-retention) — erase conversations automatically after a window without activity.
 - [Visitor data](/operators/visitor-data) — what a conversation records about a visit.
 - [Chat and history](/api/chat-and-history) — the history API these routes belong to.
 - [Context variables](/operators/context-variables) — what session- and customer-scoped values hold.

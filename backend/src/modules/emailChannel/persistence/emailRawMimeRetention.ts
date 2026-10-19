@@ -3,7 +3,7 @@ import type { Db } from "../../../shared/infra/kysely/types.js";
 import { UNFINISHED_STATES } from "./emailInboundRepository.js";
 
 /** Days the raw copy of an inbound email is kept; the parsed body and the delivery's facts stay. */
-export const EMAIL_RAW_MIME_RETENTION_DAYS = 30;
+const EMAIL_RAW_MIME_RETENTION_DAYS = 30;
 const DAY_MS = 24 * 60 * 60 * 1_000;
 
 /**

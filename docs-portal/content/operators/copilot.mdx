@@ -1,7 +1,7 @@
 ---
 title: "Ray"
 description: "Use Ray in the dashboard to triage what needs attention, investigate agent behavior, check the email channel and its held replies, edit routines, test a routine change before it ships, and review linked activity and proposals."
-last_updated: 2026-10-04
+last_updated: 2026-10-19
 ---
 
 # Ray
@@ -384,11 +384,19 @@ proposal rotates neither. Ask Ray to change the behavior of one agent among
 several and it drafts an agent setting proposal instead, which targets that agent
 by name.
 
+A privacy settings proposal sets the workspace's conversation retention window:
+how many days a conversation may sit idle before the retention sweep erases it,
+or **keep until deleted**. Ray drafts one when you ask it to keep less data, never
+on its own initiative, and the card says when applying it lets the sweep erase
+conversations sooner, which nothing restores. See
+[Data retention](/operators/data-retention).
+
 **Apply** asks for the permission that governs what the proposal changes, not one
 permission for all of them: `workspace.agents.manage` for an agent, directive, agent
 setting, routine, skill, or context variable; `workspace.documents.manage` for a
 document or a crawl; `workspace.settings.manage` for ingestion settings and
-workspace settings. An
+workspace settings; `workspace.settings.manage` and `workspace.history.delete`
+for privacy settings, since a retention window erases conversations. An
 operator who manages knowledge but not agents sees Apply on the document cards
 and a read-only view of the rest. Ray sends the confirmed proposal through the same guarded
 management service used by the dashboard. Operators with read access can

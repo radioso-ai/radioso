@@ -12,7 +12,6 @@ export {
   ConversationRetentionSweep,
   type ConversationRetentionBudget,
   type ConversationRetentionPolicies,
-  type ConversationRetentionSweepResult,
   type WorkspaceConversationRetention,
 } from "./conversationRetention.js";
 /** Privacy capabilities Ray reads and proposes through, by stable identity. */

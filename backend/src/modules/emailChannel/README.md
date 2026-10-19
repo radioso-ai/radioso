@@ -86,8 +86,11 @@ It does not own:
 - `eventLog/`, `facts/`, `copilot/` — the mailbox event log with its
   operator actions (retry a failed delivery, open its audited raw message),
   the conversation-level email facts, and the read-only Ray projection.
-- `persistence/` — one repository per table, no business rules, plus
-  `EmailBacklogRepository`, the cross-table overdue counts behind the
+- `persistence/` — one repository per table, no business rules;
+  `EmailInboundEraser`, the inbound mail an erased conversation received;
+  `EmailRawMimeRetention`, the retention sweep's rule that clears a settled
+  delivery's raw MIME after 30 days and keeps the row its threading and
+  redelivery dedupe read; and `EmailBacklogRepository`, the cross-table overdue counts behind the
   `email_backlog` gauge, which the API samples when `/metrics` is scraped
   (`app/composition/emailChannel/backlogSampler.ts`).
 - `drains.ts` — the drain and sweep ports the worker and the task routes

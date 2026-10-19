@@ -152,7 +152,7 @@ export class RoutineStateRepository implements ConversationRoutineStore {
 }
 
 /** Days a routine state with no expiry, one waiting on a decision, survives without an update. */
-export const ABANDONED_ROUTINE_STATE_DAYS = 90;
+const ABANDONED_ROUTINE_STATE_DAYS = 90;
 const DAY_MS = 24 * 60 * 60 * 1_000;
 
 /**

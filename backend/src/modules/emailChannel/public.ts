@@ -17,7 +17,7 @@ export {
   type InboundEventRecord,
 } from "./persistence/emailInboundRepository.js";
 export { EmailInboundEraser } from "./persistence/emailInboundEraser.js";
-export { EMAIL_RAW_MIME_RETENTION_DAYS, EmailRawMimeRetention } from "./persistence/emailRawMimeRetention.js";
+export { EmailRawMimeRetention } from "./persistence/emailRawMimeRetention.js";
 export { EmailMailboxRepository } from "./persistence/emailMailboxRepository.js";
 export { EmailSendIntentRepository } from "./persistence/emailSendIntentRepository.js";
 export { EmailThreadRepository } from "./persistence/emailThreadRepository.js";

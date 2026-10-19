@@ -23,7 +23,7 @@ export interface AgentPrivacyNotice {
 
 export type AgentPrivacyNotices = Record<string, AgentPrivacyNotice>;
 
-export const PRIVACY_NOTICE_MAX_LOCALES = 10;
+const PRIVACY_NOTICE_MAX_LOCALES = 10;
 const MAX_TEXT_LENGTH = 200;
 /**
  * Below the operator MCP's 500-character read cap, so `agent_configuration` never shows Ray a cut
@@ -63,7 +63,7 @@ export const agentPrivacyNoticesSchema = z.record(
 
 const fieldOf = (locale: string, field: "text" | "url") => `branding.privacyNotice.${locale}.${field}`;
 
-export const privacyNoticeVersion = (locale: string, notice: Pick<AgentPrivacyNotice, "text" | "url">): string => {
+const privacyNoticeVersion = (locale: string, notice: Pick<AgentPrivacyNotice, "text" | "url">): string => {
   const digest = createHash("sha256").update(JSON.stringify([locale, notice.text, notice.url])).digest("hex");
   return `${locale}:${digest.slice(0, VERSION_HASH_LENGTH)}`;
 };

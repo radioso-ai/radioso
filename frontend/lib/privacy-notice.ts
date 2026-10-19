@@ -1,7 +1,7 @@
 import type { AgentBrandingSettings } from './api-types'
 
 /** The agent's privacy notices as the API serves them, keyed by language tag. */
-export type AgentPrivacyNotices = NonNullable<AgentBrandingSettings['privacyNotice']>
+type AgentPrivacyNotices = NonNullable<AgentBrandingSettings['privacyNotice']>
 
 /** The notice a visitor is shown: the operator's line and link, and the version the conversation records. */
 export interface ShownPrivacyNotice {

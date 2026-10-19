@@ -302,6 +302,7 @@ describe("activity trace assembler", () => {
       rewrittenQuery: "Le soluzioni super coscienti: preventivo con pernottamento",
       turnKind: "referential_followup",
       proposedActiveSubject: "Le soluzioni super coscienti",
+      anchoredSubject: "Le soluzioni super coscienti",
       relatedEntities: ["corso residenziale"],
       unresolved: false,
       confidence: 0.93,
@@ -313,6 +314,8 @@ describe("activity trace assembler", () => {
     expect(outputs).toMatchObject({
       proposedActiveSubject: "Le soluzioni super coscienti",
       relatedEntities: ["corso residenziale"],
+      subjectAnchored: true,
+      anchoredSubject: "Le soluzioni super coscienti",
     });
   });
 
@@ -321,6 +324,11 @@ describe("activity trace assembler", () => {
       .assemble(baseInput())
       .stages.find((stage) => stage.kind === "query_interpretation")?.outputs;
 
-    expect(outputs).toMatchObject({ proposedActiveSubject: null, relatedEntities: [] });
+    expect(outputs).toMatchObject({
+      proposedActiveSubject: null,
+      relatedEntities: [],
+      subjectAnchored: false,
+      anchoredSubject: null,
+    });
   });
 });

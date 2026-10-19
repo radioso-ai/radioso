@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-19T08:37:18.796Z",
+  "generatedAt": "2026-10-19T10:09:19.870Z",
   "passThreshold": 1,
   "cases": {
     "clarification-ambiguous-plan": {
@@ -239,7 +239,7 @@
     },
     "referent-course-missing-from-corpus": {
       "status": "fail",
-      "passRate": 0.6666666666666666,
+      "passRate": 0.3333333333333333,
       "samples": 3
     }
   }

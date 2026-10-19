@@ -114,6 +114,12 @@ variable "db_tier" {
   default     = "db-f1-micro"
 }
 
+variable "db_point_in_time_recovery_enabled" {
+  description = "Whether Cloud SQL keeps transaction logs for point-in-time recovery, retained 7 days. Changing it restarts the instance, so enable it per stack deliberately."
+  type        = bool
+  default     = false
+}
+
 variable "db_deletion_protection" {
   description = "Enable deletion protection on Cloud SQL instance (disable for dev/staging)"
   type        = bool

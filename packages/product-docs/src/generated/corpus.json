@@ -1800,7 +1800,7 @@
         {
           "id": "how-the-sweep-runs",
           "heading": "How the sweep runs",
-          "body": "A sweep runs every 15 minutes in the worker. For each workspace with a window it erases idle conversations in batches of 25, one transaction each, taking turns across workspaces so a large backlog never holds up a small one. A run stops after a bounded number of batches, so a workspace that just set a short window over years of history drains over a few runs. Two runs at once, on two instances, never erase the same conversation twice.\n\nEach batch goes through the same erasure as **Delete conversation**: messages, summaries, routine state, eval snapshots built on it, inbound mail, session context values, the turn audit events that carry its content, and a voice call's recording at ElevenLabs. Each batch records one `conversation.retention.enforced` audit event with the window, the cutoff, and how many conversations, messages, and other rows went. Like every erasure record, it names no conversation and holds none of the content."
+          "body": "A sweep runs every 15 minutes in the worker. For each workspace with a window it erases idle conversations in batches of 25, one transaction each, taking turns across workspaces so a large backlog never holds up a small one. A run stops after a bounded number of batches, so a workspace that just set a short window over years of history drains over a few runs. Each run starts with the workspaces the last run did not reach, so every workspace gets its turn however many set a window. Two runs at once, on two instances, never erase the same conversation twice.\n\nEach batch goes through the same erasure as **Delete conversation**: messages, summaries, routine state, eval snapshots built on it, inbound mail, session context values, the turn audit events that carry its content, and a voice call's recording at ElevenLabs. Each batch records one `conversation.retention.enforced` audit event with the window, the cutoff, and how many conversations, messages, and other rows went. Like every erasure record, it names no conversation and holds none of the content."
         },
         {
           "id": "fixed-windows",
@@ -1810,7 +1810,7 @@
         {
           "id": "backups-and-logs-on-radioso-cloud",
           "heading": "Backups and logs on Radioso Cloud",
-          "body": "An erasure reaches what Radioso stores. It cannot reach back into a backup, so a deleted conversation survives in backups and logs until they age out:\n\n| Where                        | Kept for                        |\n| ---------------------------- | ------------------------------- |\n| Database backups             | the 7 most recent daily backups |\n| Point-in-time recovery logs  | 7 days                          |\n| Application and request logs | 30 days                         |\n\nLogs carry ids, counts and outcomes, never message content. A self-hosted deployment sets its own backup and log retention; the sweep itself runs in every deployment's worker."
+          "body": "An erasure reaches what Radioso stores. It cannot reach back into a backup, so a deleted conversation survives in backups and logs until they age out:\n\n| Where                                             | Kept for                        |\n| ------------------------------------------------- | ------------------------------- |\n| Database backups                                  | the 7 most recent daily backups |\n| Point-in-time recovery logs, where recovery is on | 7 days                          |\n| Application and request logs                      | 30 days                         |\n\nLogs carry ids, counts and outcomes, never message content. Point-in-time recovery is enabled per stack deliberately, because turning it on restarts the database. A self-hosted deployment sets its own backup and log retention; the sweep itself runs in every deployment's worker ([Deployment](https://docs.radioso.ai/operators/deployment#conversation-retention))."
         },
         {
           "id": "common-failure-modes",
@@ -1886,7 +1886,7 @@
       "title": "Deployment",
       "description": "Production deployment expectations for Radioso and the standalone docs portal.",
       "section": "Operator guides",
-      "lastUpdated": "2026-10-17",
+      "lastUpdated": "2026-10-19",
       "intro": "Radioso’s production contract is a multi-service deployment. The backend, frontend, and document worker are separate runtime units. Deployments that enable live dashboard updates add a dedicated realtime runtime and Redis or Valkey. The docs portal stays separate as well.",
       "sections": [
         {
@@ -1958,6 +1958,11 @@
           "id": "ray-conversation-retention",
           "heading": "Ray conversation retention",
           "body": "Ray conversations hold operator questions, configuration detail, and excerpts of customer conversations, so they expire on a schedule. A conversation is deleted 90 days after its last activity, along with its messages and proposals. Set `COPILOT_CONVERSATION_RETENTION_DAYS` to change the window, or `0` to keep conversations indefinitely; the Terraform variable is `copilot_conversation_retention_days`.\n\nThe sweep runs in the document worker, so retention happens only where that process runs. Under the Cloud Run task runtime the trigger is a scheduled push to `POST /internal/tasks/copilot-retention/sweep`, which the bundled Terraform provisions as a daily Cloud Scheduler job. A deployment that runs neither the worker poll loop nor that schedule keeps Ray conversations forever, whatever the window says."
+        },
+        {
+          "id": "conversation-retention",
+          "heading": "Conversation retention",
+          "body": "The conversation retention sweep runs in the document worker every 15 minutes and enforces each workspace's retention window and the fixed windows on summaries, routine state and raw inbound mail (see [Data retention](https://docs.radioso.ai/operators/data-retention)). Under the Cloud Run task runtime the trigger is a scheduled push to `POST /internal/tasks/periodic-tasks/conversation-retention/run`; the bundled Terraform provisions the Cloud Scheduler job (override the cadence with `conversation_retention_schedule`) and alerts on its failures with the other scheduler jobs.\n\nThe same Terraform pins how long deleted data outlives an erasure: seven Cloud SQL backups, and 30 days in the project's `_Default` log bucket. Before the first apply in a project, confirm that bucket is in `global` with `gcloud logging buckets describe _Default --location=global --project=<project>`.\n\nPoint-in-time recovery is a per-stack choice, `db_point_in_time_recovery_enabled`, off by default; when on, it keeps 7 days of transaction logs. Turning it on restarts the Cloud SQL instance, so enable it per stack deliberately, in a quiet window, and never as a side effect of an unrelated apply."
         },
         {
           "id": "slack-inbound-event-retention",

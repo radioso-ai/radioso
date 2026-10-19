@@ -204,6 +204,50 @@ describeIntegration("conversation retention (Postgres)", () => {
       expect(rerun.drained).toBe(true);
     });
 
+    it("keeps a conversation a message reached after the claim's snapshot, by checking again under the locks", async () => {
+      const tenant = await seedTenant(30);
+      const conversationId = await seedConversation(tenant, { idleDays: 45 });
+      await database.query(
+        "INSERT INTO conversation_ownership (conversation_id, workspace_id, state) VALUES ($1, $2, 'ai_owned')",
+        [conversationId, tenant.workspaceId],
+      );
+      // Another unit holds the ownership row, so the erasure stops after its claim locked the
+      // conversation, at step 2 of the lock protocol, with the claim's snapshot already taken.
+      const holder = await database.pool.connect();
+      const writer = await database.pool.connect();
+      try {
+        await holder.query("BEGIN");
+        await holder.query("SELECT 1 FROM conversation_ownership WHERE conversation_id = $1 FOR UPDATE", [conversationId]);
+        const sweeping = sweepWith().run();
+        await expect.poll(async () => {
+          const [row] = await database.query<{ waiting: string }>(
+            `SELECT count(*)::text AS waiting FROM pg_stat_activity
+             WHERE datname = current_database() AND wait_event_type = 'Lock' AND query ILIKE '%conversation_ownership%'`,
+            [],
+          );
+          return Number(row.waiting);
+        }, { timeout: 10_000 }).toBe(1);
+        // A visitor's message commits meanwhile. The claim holds the conversation row, so the message
+        // is written without the foreign key's row lock, which would wait for the erasure instead.
+        await writer.query("SET session_replication_role = replica");
+        await writer.query(
+          "INSERT INTO messages (id, conversation_id, workspace_id, role, content) VALUES ($1, $2, $3, 'user', 'I am back')",
+          [randomUUID(), conversationId, tenant.workspaceId],
+        );
+        await writer.query("SET session_replication_role = origin");
+        await holder.query("COMMIT");
+
+        const result = await sweeping;
+
+        expect(result.removed.conversations ?? 0).toBe(0);
+        expect(await copiesOf(conversationId)).toEqual({ ...whole, messages: 3 });
+      } finally {
+        await holder.query("ROLLBACK").catch(() => undefined);
+        holder.release();
+        writer.release();
+      }
+    });
+
     it("lets two sweeps run at once, each conversation erased by exactly one of them", async () => {
       const tenant = await seedTenant(30);
       const expired = await Promise.all(Array.from({ length: 8 }, () => seedConversation(tenant, { idleDays: 60 })));

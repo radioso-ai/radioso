@@ -4,6 +4,11 @@
 # the retention, and destroying it only drops it from state. One stack per project owns it, the
 # same one that owns the project's API enablement, so a second regional stack in that project
 # leaves it alone while its logs land in the same bucket.
+#
+# The `_Default` bucket's location is assumed to be `global`. Before the first apply in a project,
+# confirm it with `gcloud logging buckets describe _Default --location=global --project=<project>`;
+# if that reports not found, set `location` to the region the command lists under
+# `gcloud logging buckets list --project=<project>`.
 resource "google_logging_project_bucket_config" "default" {
   count = var.manage_project_services ? 1 : 0
 

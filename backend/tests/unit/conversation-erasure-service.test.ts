@@ -122,12 +122,13 @@ const createFake = (input: {
         },
         async lockInactiveConversations(workspaceId, inactiveBefore, limit) {
           order.push("lockInactive");
-          return draft.conversations
+          const inactive = draft.conversations
             .filter((conversation) => conversation.workspaceId === workspaceId
               && (conversation.lastActivityAt ?? new Date(0)).getTime() < inactiveBefore.getTime())
             .map((conversation) => conversation.id)
             .sort()
             .slice(0, limit);
+          return { claimed: inactive.length, inactive };
         },
         async deleteVisitor(workspaceId, visitorId) {
           order.push("deleteVisitor");
@@ -424,7 +425,7 @@ describe("ConversationErasureService.eraseInactiveConversations", () => {
 
     const receipt = await fake.service.eraseInactiveConversations({ ...retention, limit: 10 });
 
-    expect(receipt).toEqual({ conversationCount: 1, messageCount: 3, rowsByOwner: { "context-variables": 1, audit: 2 } });
+    expect(receipt).toEqual({ conversationCount: 1, messageCount: 3, rowsByOwner: { "context-variables": 1, audit: 2 }, claimedCount: 1 });
     expect(fake.order).toEqual(["lockInactive", "erase:context-variables", "erase:audit", "deleteConversations", "audit", "commit"]);
     expect(fake.state().conversations.map((conversation) => conversation.id)).toEqual(["conv-new"]);
     expect(fake.state().audit).toEqual([{
@@ -463,7 +464,7 @@ describe("ConversationErasureService.eraseInactiveConversations", () => {
 
     const receipt = await fake.service.eraseInactiveConversations({ ...retention, limit: 10 });
 
-    expect(receipt).toEqual({ conversationCount: 0, messageCount: 0, rowsByOwner: {} });
+    expect(receipt).toEqual({ conversationCount: 0, messageCount: 0, rowsByOwner: {}, claimedCount: 0 });
     expect(fake.order).toEqual(["lockInactive", "commit"]);
     expect(fake.state().audit).toEqual([]);
     expect(fake.invalidation.enqueue).not.toHaveBeenCalled();

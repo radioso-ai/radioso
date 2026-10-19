@@ -45,7 +45,16 @@ export interface InactiveConversationErasure {
    * Nobody requested it, so its record names the system as the actor, and a batch that finds
    * nothing records nothing.
    */
-  eraseInactiveConversations(input: InactiveConversationBatch): Promise<ConversationErasureReceipt>;
+  eraseInactiveConversations(input: InactiveConversationBatch): Promise<InactiveConversationErasureReceipt>;
+}
+
+/**
+ * A retention batch's receipt. `claimedCount` is how many conversations the batch claimed before
+ * the recheck under their locks dropped any a message reached meanwhile: a full claim means more may
+ * be waiting, however few were erased.
+ */
+export interface InactiveConversationErasureReceipt extends ConversationErasureReceipt {
+  claimedCount: number;
 }
 
 /** One batch of a workspace's retention: the conversations its window has passed. */
@@ -85,7 +94,12 @@ export interface ErasureSubjects {
    * holds is skipped rather than waited for, so two sweeps never claim the same one, and each is
    * checked again once locked, so one a message reached meanwhile is left alone.
    */
-  lockInactiveConversations(workspaceId: string, inactiveBefore: Date, limit: number): Promise<readonly string[]>;
+  lockInactiveConversations(workspaceId: string, inactiveBefore: Date, limit: number): Promise<{
+    /** How many the claim took, before the recheck. */
+    claimed: number;
+    /** The claimed conversations still without activity, which the erasure removes. */
+    inactive: readonly string[];
+  }>;
 }
 
 /** One erasure transaction: its subjects, every module's erasers, and its audit record, bound to it. */
@@ -191,21 +205,24 @@ export class ConversationErasureService implements ConversationErasure, Inactive
     });
   }
 
-  async eraseInactiveConversations(input: InactiveConversationBatch): Promise<ConversationErasureReceipt> {
+  async eraseInactiveConversations(input: InactiveConversationBatch): Promise<InactiveConversationErasureReceipt> {
     // The schedule acting on its own: stated rather than left absent, so a reader of the audit trail
     // can tell a retention erasure from a request that lost its attribution.
     const record: ErasureRecord = (receipt) => receipt.conversationCount === 0 ? null : {
       eventType: "conversation.retention.enforced",
       metadata: { principalType: "system", retentionDays: input.retentionDays, cutoff: input.inactiveBefore.toISOString() },
     };
-    return this.commit(input.workspaceId, input.accountId, record, async (scope, afterCommit) => {
-      const ids = await scope.subjects.lockInactiveConversations(input.workspaceId, input.inactiveBefore, input.limit);
-      if (ids.length === 0) {
+    let claimedCount = 0;
+    const receipt = await this.commit(input.workspaceId, input.accountId, record, async (scope, afterCommit) => {
+      const { claimed, inactive } = await scope.subjects.lockInactiveConversations(input.workspaceId, input.inactiveBefore, input.limit);
+      claimedCount = claimed;
+      if (inactive.length === 0) {
         return { conversationCount: 0, messageCount: 0, rowsByOwner: {} };
       }
-      await this.readVendorHeld(scope, input.accountId, [{ kind: "conversations", workspaceId: input.workspaceId, conversationIds: ids }], afterCommit);
-      return this.eraseConversations(scope, input.workspaceId, ids);
+      await this.readVendorHeld(scope, input.accountId, [{ kind: "conversations", workspaceId: input.workspaceId, conversationIds: inactive }], afterCommit);
+      return this.eraseConversations(scope, input.workspaceId, inactive);
     });
+    return { ...receipt, claimedCount };
   }
 
   /**

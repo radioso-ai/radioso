@@ -88,7 +88,7 @@ export const createPostgresConversationErasureUnitOfWork = (deps: {
             // the ownership rows follow in id order, as the protocol takes them.
             const claimed = await subjects.claimInactiveConversations(workspaceId, inactiveBefore, limit);
             await lockConversationsInOrder(trx, workspaceId, claimed);
-            return subjects.stillInactive(workspaceId, claimed, inactiveBefore);
+            return { claimed: claimed.length, inactive: await subjects.stillInactive(workspaceId, claimed, inactiveBefore) };
           },
         },
         conversationErasers: conversationErasers.map((bind) => bind(trx)),

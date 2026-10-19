@@ -41,8 +41,11 @@ const CALLBACK_CONFIRMATION = "A teammate will call you back shortly.";
 
 /** Only the clock is fake: sockets and setImmediate stay real so frames can travel. */
 const FAKE_CLOCK: Parameters<typeof vi.useFakeTimers>[0] = { toFake: ["setTimeout", "clearTimeout", "Date"] };
-const PUMP_STEP_MS = 25;
+/** Every time a case pins is a multiple of the step, so the pump lands on it exactly. */
+const PUMP_STEP_MS = 50;
 const PUMP_LIMIT_MS = 60_000;
+/** A case builds a test app and runs up to 12 s of fake time; the default 10 s of wall time is tight under a loaded CI. */
+const CASE_TIMEOUT_MS = 30_000;
 
 const flushIo = async (): Promise<void> => {
   for (let tick = 0; tick < 30; tick += 1) await new Promise<void>((resolve) => setImmediate(resolve));

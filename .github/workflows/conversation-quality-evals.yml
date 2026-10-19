@@ -19,6 +19,10 @@ on:
         description: Samples per case (higher = more stable, more tokens)
         required: false
         default: "5"
+      voice_samples:
+        description: Samples per voice case; the voice baseline is recorded and gated at this depth
+        required: false
+        default: "3"
       record_voice_baseline:
         description: Re-record voice-baseline.json from this run's voice cases and upload it as an artifact to commit
         type: boolean
@@ -117,15 +121,18 @@ jobs:
         run: node --env-file=./.env.evals --import tsx ./scripts/runEvals.ts --samples ${{ github.event.inputs.samples || '5' }} --judge-tag quick-reply
 
       - name: Run voice cases
+        id: voice
         working-directory: backend
         # The voice cases through the served app's completions door (generic dialect), gated on the
         # wire against voice-baseline.json; latency is reported, never gated. Three samples a night,
-        # or the dispatch's `samples`. It runs whenever the environment, the migrations and the
-        # worker are up, so a night whose text suite regressed still reports the voice cases.
+        # or the dispatch's `voice_samples`, the depth `evals:voice:update-baseline` records at, so a
+        # recording and the nightly that gates on it sample alike. It runs whenever the environment,
+        # the migrations and the worker are up, so a night whose text suite regressed still reports
+        # the voice cases.
         if: ${{ !cancelled() && steps.env.outcome == 'success' && steps.migrate.outcome == 'success' && steps.worker.outcome == 'success' }}
         run: |
           set -euo pipefail
-          args=(./scripts/runEvals.ts --channel voice --samples "${{ github.event.inputs.samples || '3' }}")
+          args=(./scripts/runEvals.ts --channel voice --samples "${{ github.event.inputs.voice_samples || '3' }}")
           if [ "${{ github.event.inputs.record_voice_baseline }}" = "true" ]; then
             args+=(--update-baseline)
           fi
@@ -134,7 +141,8 @@ jobs:
       # The voice latency baseline is the nightly runner's, not a laptop's: recording happens here,
       # and the file comes back out to be committed.
       - name: Upload recorded voice baseline
-        if: ${{ github.event.inputs.record_voice_baseline == 'true' }}
+        # Kept whenever the voice step recorded, whatever the text suite did before it.
+        if: ${{ !cancelled() && steps.voice.outcome == 'success' && github.event.inputs.record_voice_baseline == 'true' }}
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: voice-eval-baseline

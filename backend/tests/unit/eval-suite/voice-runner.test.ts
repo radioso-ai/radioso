@@ -231,11 +231,16 @@ describe("the live voice run", () => {
     expect(Object.keys(baseline.latency ?? {}).sort()).toEqual(live);
   });
 
-  it("gates and records at the same sampling depth", () => {
+  it("gates and records at the same sampling depth, on a laptop and in the workflow", () => {
     const scripts = readJson("../../../package.json").scripts as Record<string, string>;
+    const workflow = readFileSync(new URL("../../../../.github/workflows/conversation-quality-evals.yml", import.meta.url), "utf8");
+    const samplesOf = (command: string | undefined): string | undefined => /--samples (\d+)/u.exec(command ?? "")?.[1];
+    const recorded = samplesOf(scripts["evals:voice:update-baseline"]);
 
-    expect(scripts["evals:voice:ci"]).toContain("--channel voice --samples 3");
-    expect(scripts["evals:voice:update-baseline"]).toContain("--samples 3");
+    expect(samplesOf(scripts["evals:voice:ci"])).toBe(recorded);
+    // The nightly's depth, and the dispatch default a recording run takes.
+    expect(/--channel voice --samples "\$\{\{ github\.event\.inputs\.voice_samples \|\| '(\d+)' \}\}"/u.exec(workflow)?.[1]).toBe(recorded);
+    expect(/voice_samples:[^\n]*\n(?:\s+[a-z]+:[^\n]*\n)*?\s+default: "(\d+)"/u.exec(workflow)?.[1]).toBe(recorded);
   });
 });
 

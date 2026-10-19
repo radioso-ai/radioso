@@ -102,6 +102,11 @@ export interface VoiceChatTurnRequest {
    */
   visitorKey?: string;
   /**
+   * On a session's first turn: the privacy notice version the page showed, which chat records on the
+   * conversation the turn starts when the agent's notices carry it.
+   */
+  privacyNoticeVersion?: string;
+  /**
    * The language the request reports as news on this turn (`VoiceTurnInput.turnLanguage` with
    * `isNew`), as chat's locale hint. Absent otherwise: chat then reads the caller's
    * language from what they said, so neither the session's locale nor a switch an earlier turn made
@@ -730,6 +735,7 @@ export class VoiceTurnService implements VoiceTurnPort {
         agentId: input.session.agentId,
         ...(sessionClaim.conversationId ? { conversationId: sessionClaim.conversationId } : {}),
         ...(sessionClaim.conversationId === null && sessionClaim.visitorKey ? { visitorKey: sessionClaim.visitorKey } : {}),
+        ...(sessionClaim.conversationId === null && input.privacyNoticeVersion ? { privacyNoticeVersion: input.privacyNoticeVersion } : {}),
         message: input.utterance,
         ...(input.turnLanguage?.isNew ? { userExpectedLocale: input.turnLanguage.tag } : {}),
         sourceChannel: VOICE_SOURCE_CHANNEL,

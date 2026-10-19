@@ -51,9 +51,15 @@ export interface VoiceRuntimeSession {
  * opens abandons the handshake and releases the microphone. One adapter per vendor implements it;
  * the vendor's client library loads only when a call starts, so the chat panel carries none of it.
  */
+/** The privacy notice a call starts with: the line the agent says, and the version its conversation records. */
+export interface VoiceCallPrivacyNotice {
+  text: string
+  version: string
+}
+
 export interface VoiceRuntime {
   open: (
-    input: { signedUrl: string; sessionKey: string; locale: string },
+    input: { signedUrl: string; sessionKey: string; locale: string; privacyNotice?: VoiceCallPrivacyNotice },
     callbacks: VoiceRuntimeCallbacks,
     signal: AbortSignal,
   ) => Promise<VoiceRuntimeSession>

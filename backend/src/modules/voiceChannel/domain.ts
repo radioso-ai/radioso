@@ -108,6 +108,11 @@ export interface VoiceTurnInput {
    */
   languageSwitchResult?: VoiceLanguageSwitchResult;
   /**
+   * The version of the agent's privacy notice the page that started the session showed and handed
+   * to the call, as the request reports it (#1545). Only a session's first turn passes it on.
+   */
+  privacyNoticeVersion?: string;
+  /**
    * The agent's previous reply as far as the caller heard it before speaking over it, when the
    * vendor reports it (ElevenLabs replays it cut short in the request's history).
    */

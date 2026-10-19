@@ -48,6 +48,18 @@ afterEach(() => {
 })
 
 describe('a voice call', () => {
+  it('opens the session with the privacy notice the panel showed, when it showed one (#1545)', async () => {
+    const privacyNotice = { text: 'We use your messages to answer you.', version: 'en:0123456789abcdef' }
+    const { open } = callWith({ startSession: async () => ({ ...started, session: { ...started.session, privacyNotice } }) })
+    await flush()
+
+    expect(open).toHaveBeenCalledWith(
+      { signedUrl: 'wss://vendor.test/session?sig=1', sessionKey: 'session-key-1', locale: 'it', privacyNotice },
+      expect.any(Object),
+      expect.any(AbortSignal),
+    )
+  })
+
   it("loads the vendor's client before the start, then opens the session with what the start returned", async () => {
     const order: string[] = []
     const { open, events, lines, vendor } = callWith({

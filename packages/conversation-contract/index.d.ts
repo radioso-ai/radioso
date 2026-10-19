@@ -1272,6 +1272,12 @@ export interface RoutineNextStepDecision {
 }
 
 /**
+ * Why a next-step selector's completion could not be read as a decision. Structural
+ * parsing failures only, never a judgment about the visitor's message.
+ */
+export type RoutineUnreadableReason = "no_json_object" | "invalid_json" | "missing_required_fields";
+
+/**
  * The next-step selector's own reading of one turn, recorded on the routine trace so
  * an operator can tell "the model returned nothing" from "the model returned a value
  * that was not captured". Slot keys and counts only, never values.
@@ -1292,6 +1298,10 @@ export interface RoutineSelectionTrace {
   returnedSlotKeys: string[];
   /** Keys the model returned that the routine does not declare; they are dropped, never captured. */
   undeclaredKeyCount?: number;
+  /** Set when `outcome` is `unreadable`: why the final completion could not be read. */
+  unreadableReason?: RoutineUnreadableReason;
+  /** Set when the selector retried after its first completion came back unreadable, whether or not the retry recovered. */
+  retried?: true;
 }
 
 /** The result of dispatching a Routine skill (tool) step. */

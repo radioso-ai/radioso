@@ -118,6 +118,7 @@ export function VisitorPanel({
             )}
           </Field>
           <Field label="Referrer">{dash(viewModel.referrer)}</Field>
+          <Field label="Privacy notice">{dash(viewModel.privacyNoticeVersion)}</Field>
           <Field label="IP">{dash(viewModel.clientIp)}</Field>
           <Field label="First seen">
             {viewModel.firstSeenAt ? timestampFormatter.format(new Date(viewModel.firstSeenAt)) : '—'}

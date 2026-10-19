@@ -41,7 +41,8 @@ jobs:
     # scheduled run never waits on an approval.
     environment: staging
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The text suite alone takes about 15 minutes; the voice cases follow it.
+    timeout-minutes: 45
     services:
       postgres:
         image: pgvector/pgvector:0.8.5-pg16
@@ -76,6 +77,7 @@ jobs:
         run: pnpm run build:workspace-deps
 
       - name: Prepare eval environment file
+        id: env
         working-directory: backend
         env:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
@@ -96,10 +98,12 @@ jobs:
           sed -i "s|^CONNECTOR_ENCRYPTION_KEY=.*|CONNECTOR_ENCRYPTION_KEY=cmFkaW9zby1jaS1ldmFsLWtleS0wMDAwMDAwMDAwMDA=|" ./.env.evals
 
       - name: Apply migrations
+        id: migrate
         working-directory: backend
         run: node --env-file=./.env.evals --import tsx ./scripts/migrate.ts
 
       - name: Start document worker
+        id: worker
         working-directory: backend
         run: |
           node --env-file=./.env.evals --import tsx ./src/documentWorker.ts &
@@ -114,13 +118,14 @@ jobs:
 
       - name: Run voice cases
         working-directory: backend
-        # The voice cases through the served app's completions door (generic dialect), three samples
-        # each, gated on the wire against voice-baseline.json; latency is reported, never gated. It
-        # runs when the text suite regressed too, so one night reports both.
-        if: ${{ !cancelled() }}
+        # The voice cases through the served app's completions door (generic dialect), gated on the
+        # wire against voice-baseline.json; latency is reported, never gated. Three samples a night,
+        # or the dispatch's `samples`. It runs whenever the environment, the migrations and the
+        # worker are up, so a night whose text suite regressed still reports the voice cases.
+        if: ${{ !cancelled() && steps.env.outcome == 'success' && steps.migrate.outcome == 'success' && steps.worker.outcome == 'success' }}
         run: |
           set -euo pipefail
-          args=(./scripts/runEvals.ts --channel voice --samples 3)
+          args=(./scripts/runEvals.ts --channel voice --samples "${{ github.event.inputs.samples || '3' }}")
           if [ "${{ github.event.inputs.record_voice_baseline }}" = "true" ]; then
             args+=(--update-baseline)
           fi

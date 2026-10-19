@@ -18,7 +18,7 @@ repo-committed regression suite you run from the CLI.
 | `agent.ts` | the single seed agent (retrieval on, directives attached) all cases run against |
 | `cases.ts` | the 48 seed cases |
 | `baseline.json` | committed per-case verdicts; the run diffs against this and fails on regression |
-| `voiceCases.ts` | the 7 voice cases, the voice block their agent carries, and the callback routine one of them completes |
+| `voiceCases.ts` | the voice cases, the voice block their agent carries, and the callback routine one of them completes |
 | `voice-baseline.json` | the voice cases' committed verdicts and latency medians (see [Voice cases](#voice-cases)) |
 
 ## Assertion vocabulary
@@ -30,9 +30,12 @@ Two layers (see `src/modules/eval/suite/`):
   `turn_grounding_verdict`, `turn_answer_coverage`, `turn_persists_no_reply`, `turn_reply_source`,
   plus the product `retrieval_*`, `answer_cites_document`, `answer_contains` /
   `answer_does_not_contain`.
-- **Voice (read off the wire, gate every run):** `voice_turn_well_formed`, `voice_bridge_spoken`,
-  `voice_outcome`, `voice_speech_order`, `voice_speech_piece_count`, `voice_first_speech`, plus
-  `voice_turn_log`, which reads the turn's own log record and so runs only in process.
+- **Voice (no LLM of their own):** `voice_turn_well_formed`, `voice_bridge_spoken`,
+  `voice_outcome`, `voice_speech_order`, `voice_speech_piece_count` and `voice_first_speech` read
+  the wire; `voice_turn_record` reads the turn's own record (the fields its log line carries, from
+  the voice service's `VoiceTurnObserver`), where `{ "absent": true }` expects a field to be
+  missing and `null` expects it present and null, and so runs only in process. A live run gates
+  on a behavioural subset of them (see [Voice cases](#voice-cases)).
 - **Semantic (LLM judge, paid/non-deterministic):** `llm_judge` — reserved for empathy,
   refusal, precision, and the quick-reply "no factual proposition" checks. The live runner
   drops them unless a case carries a tag passed with `--judge-tag`; those are graded on the
@@ -68,13 +71,17 @@ pnpm run evals -- --tag quick-reply
 A case with a `voice` block runs as a voice call. Its `before` steps happen first, in order: the
 caller's earlier turns (`caller`), and a teammate's Inbox actions on the call's conversation
 (`teammate_takes_over`, `teammate_replies`, `teammate_hands_back`), which the runner performs
-through the conversation ownership service. Then `query` is the scored turn. Every caller turn is
+through the conversation ownership service on the conversation a turn's response named, or the one
+the session is bound to. Then `query` is the scored turn. With an `interruption`, the caller speaks
+its `utterance` over the scored turn once `afterSpeechPieces` of its speech pieces have arrived,
+and the scored turn is the one cut off. Every caller turn is
 one streamed request to the `generic` dialect of
 `POST /api/v1/agents/:agentId/voice/generic/v1/chat/completions`, on a session key of the case's
 own, with the session's `locale` in `X-Radioso-Voice-Locale`. The runner
 (`scripts/voiceEvalRunnerAdapter.ts`) reads the scored turn off the socket: each content delta
 with when it arrived, told apart as the agent's bridge line, its fallback line, or other speech by
-the lines in `conversationQualityVoiceSettings`, and the `X-Radioso-Voice-Outcome` trailer.
+the lines in `conversationQualityVoiceSettings` (a delta of whitespace or zero-width spaces is
+padding, not speech), and the `X-Radioso-Voice-Outcome` trailer.
 
 | Case | The call | What it checks |
 |------|----------|----------------|
@@ -82,6 +89,7 @@ the lines in `conversationQualityVoiceSettings`, and the `X-Radioso-Voice-Outcom
 | `voice-greeting-quick-reply-no-bridge` | "Hi there!" | the quick-reply lane: one speech piece, no bridge |
 | `voice-slow-composer-bridges-after-idle` | a direct answer the composer is slow to write | the bridge at the composing idle, then the answer |
 | `voice-stalled-reply-turn-limit` | a reply that stalls past the turn limit | the bridge, then the fallback line, `continue` |
+| `voice-reply-cut-off-by-newer-utterance` | a reply the caller speaks over mid-stream | the cut turn is `superseded` after speech, with its spoken part stored |
 | `voice-callback-routine-requests-callback` | a callback request, then a phone number | the routine hands off holding the number: `callback_requested` |
 | `voice-human-owned-waiting-line` | a call a teammate took over | chat's waiting line, no bridge, no fallback line |
 | `voice-teammate-reply-spoken-first` | a teammate's reply, a hand-back, then a knowledge question | the teammate's reply first, and no bridge after it |
@@ -90,20 +98,29 @@ the lines in `conversationQualityVoiceSettings`, and the `X-Radioso-Voice-Outcom
 case against the test app over a real socket, with a scripted brain per case and the turn policy on
 a fake clock, so each case also pins its times: the bridge at 0 ms on a search and at 400 ms on a
 silent composer, the fallback line at 10,000 ms, and the waiting line at 11,000 ms with no limit.
-A new voice case needs a scripted brain there; the test fails until it has one.
+The clock moves only when the sockets have gone quiet and a fake timer is pending, and then only to
+that timer, so each time a case reads is a timer's own. A scripted brain picks its answers by how
+each model call is made (the call's usage operation, the order of its calls), never by prompt
+text, and makes the case fail when the behaviour it names is missing: the greeting's composer is
+slow, so a greeting that left the quick-reply lane would bridge at 400 ms. A new voice case needs a
+scripted brain there; the test fails until it has one.
 
 **Live half (nightly, on demand).** `--channel voice` turns voice on for the agent, seeds the corpus
 and `voiceCallbackRoutineDraft`, publishes, serves the composed app on a loopback port with an
 `agent-api` credential it revokes at the end, and runs the cases a real brain can play. A case with
 `requiresScriptedTiming` needs a brain slower than the policy's deadlines on demand, so it runs in
-the deterministic half only. The live run gates on the wire's view of the behaviour alone
+the deterministic half only. The live run gates only on the behavioural subset the wire shows
 (`voice_turn_well_formed`, `voice_bridge_spoken`, `voice_outcome`), because the wording, the
-number of sentences and the log record are the model's or the process's, not the runtime's.
+number of sentences and the turn's record are the model's or the process's, not the runtime's. A
+`voice_bridge_spoken` marked `latencyDependent` is left out too: on a real model, whether the
+bridge is spoken depends on how fast the model answers (any planner slower than the 2.5 s stall
+bridge hears one), and a live run never gates on latency. `scopeVoiceCasesForLiveRun` in
+`src/modules/eval/suite/voiceAssertions.ts` applies both rules.
 
 ```bash
 pnpm run evals:voice                  # one sample per case
 pnpm run evals:voice:ci               # three samples, the nightly's gated shape
-pnpm run evals:voice:update-baseline  # re-record voice-baseline.json from three samples
+pnpm run evals:voice:update-baseline  # re-record voice-baseline.json from three samples (in CI, below)
 pnpm run evals:voice -- --tag routine # only cases carrying a tag
 ```
 

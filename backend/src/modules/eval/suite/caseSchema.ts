@@ -9,7 +9,7 @@ import { renderRoutineInvocation } from "../../routines/public.js";
 import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import type { EvalRunRoutineStartState } from "../domain/types.js";
 import type { SuiteAssertion } from "./scoring.js";
-import { VOICE_OUTCOME_KINDS } from "./voiceAssertions.js";
+import { VOICE_OUTCOME_KINDS, VOICE_PIECE_KINDS } from "./voiceAssertions.js";
 
 /**
  * A conversation-quality case is a committed, version-controlled unit of expected
@@ -101,7 +101,7 @@ export interface ConversationQualityCase {
 }
 
 const answerMatchMode = z.enum(["substring", "regex"]);
-const voicePieceKind = z.enum(["bridge", "speech", "fallback"]);
+const voicePieceKind = z.enum(VOICE_PIECE_KINDS);
 const metadataValue = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 const pageContextSchema = z.object({
   pageUrl: z.string().trim().max(2048).nullable().optional(),

@@ -1277,30 +1277,32 @@ ElevenLabs agent's first message.
 
 ## Evals
 
-The conversation-quality eval suite carries seven voice cases that call an
-agent the way a runtime does: through the `generic` dialect, one streamed
+The conversation-quality eval suite carries voice cases that call an agent
+the way a runtime does: through the `generic` dialect, one streamed
 request per caller turn, read off the socket. Each case checks what the
 runtime receives: whether a bridge line is spoken, the order of bridge line,
 speech and fallback line, and the outcome trailer. The cases are a knowledge
 question (the bridge as the turn starts searching), a greeting (a quick reply,
 no bridge), a composer that stays silent past the 400 ms composing idle, a
-reply stalled past the 10-second limit (the fallback line), a callback routine
+reply stalled past the 10-second limit (the fallback line), a reply the caller
+speaks over (the cut turn's spoken part is stored), a callback routine
 that captures a number (`callback_requested`), a call a teammate took over
 (the waiting line, with no bridge and no limit), and a teammate's Inbox reply
 spoken before the agent's answer.
 
-Every pull request runs all seven against the test app with a scripted brain
+Every pull request runs all of them against the test app with a scripted brain
 on a fake clock, so the times are the policy's own: the bridge at 0 ms on a
 search and at 400 ms on a silent composer, the fallback line at 10,000 ms. The
-same run reads each turn's log record for `bridged`, `languageSource` and
-`outcome`.
+same run reads each turn's record, the fields its log line carries, for
+`bridged`, `languageSource`, `outcome` and `result`.
 
-The nightly Conversation Quality Evals workflow runs the five cases a real
-model can play, with the configured mini model, three samples each. It fails
-on a behavioural regression against
+The nightly Conversation Quality Evals workflow runs the cases a real model can
+play, with the configured mini model, three samples each. It fails on a
+behavioural regression against
 `backend/tests/fixtures/conversation-quality/voice-baseline.json`: a malformed
-stream, a turn that bridges when its case expects none or stays silent when
-its case expects a bridge, or a different outcome. Its report lists each
+stream, a turn that bridges when its case expects none or speaks no bridge
+when its case expects one, or a different outcome. Whether a greeting bridges
+depends on how fast the model answers, so the nightly does not gate on it. Its report lists each
 case's time to first byte, to the bridge line, to first speech and to the end
 of the turn, with p50 and p95 across cases. Latency never fails the run; a
 case whose median time to first speech is more than twice its baseline median

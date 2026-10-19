@@ -87,6 +87,7 @@ const storedVoice = {
   },
   fallbackLine: { en: "Sorry, this is taking much longer than it should, could you ask me again?" },
   runtime: { vendor: "elevenlabs" as const, agentId: "agent_01jxk2v9qbe8n7r6t5w4", region: "us" as const },
+  languageSwitching: false,
 };
 const storedMechanics = {
   en: { greeting: ["Hi! How can I help?"], thanks: [], farewell: ["Goodbye!"], acknowledgement: [] },
@@ -105,6 +106,7 @@ describe("AgentService voice and mechanics replies proposals", () => {
       bridgeLines: { en: { acknowledge: ["Thanks, I have noted that, so let me take the next step."], check: [] } },
       fallbackLine: {},
       runtime: null,
+      languageSwitching: false,
     };
 
     const prepared = await service.prepareFieldProposal("workspace-1", "agent-1", { settingKey: "voice", value: proposed });

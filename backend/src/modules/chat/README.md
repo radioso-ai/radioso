@@ -208,7 +208,12 @@ imports from `services/`.
   selection, dispatch, streaming composition, final event append, and trace
   assembly. Chat still owns Radioso presentation, suggestions, persistence, billing,
   and HTTP stream events, and never pushes retrieval-specific policy into the
-  reusable engine.
+  reusable engine. A request that sets `reportResponseLanguage` (the voice
+  channel's) also gets one `language` event once the turn has read its response
+  language, ahead of the answer's first chunk: `services/turnLanguageReport.ts`
+  observes the lazy response-language promise without starting it and reports
+  the plan's `responseLanguageTag` as soon as the first consumer reads it; the
+  HTTP presenters drop the event.
 - Grounded retrieval answers: `groundedAnswerEnvelope.ts` defines the v2 JSON
   schema and retains the older sentinel parser for compatibility. First-party
   OpenAI and Gemini use native JSON-schema output; Claude uses an equivalent forced
@@ -668,7 +673,10 @@ imports from `services/`.
   `behaviorConfig.turnPlanning`, the lazy memoized `session.turnPlan` handle,
   and the four plan-aware adapters). On eligible fresh turns the one plan
   replaces the staged routine-activation, turn-interpretation,
-  response-language, and directive-match calls; a bypassed or invalid plan
+  response-language, and directive-match calls; the plan's response language
+  comes as a label for the composers and as `responseLanguageTag` (BCP 47,
+  dropped when malformed, never failing the plan) for a host that names the
+  language structurally; a bypassed or invalid plan
   sends every consumer back to its staged call, all-or-nothing. This is standard
   behavior with no rollout configuration. The chat builder (`builders/chat.ts`)
   wires the same coordinator into `ChatService` and

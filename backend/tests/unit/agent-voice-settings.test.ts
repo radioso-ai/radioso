@@ -6,6 +6,7 @@ import {
   changedAgentProposalFields,
   defaultAgentVoiceSettings,
   readStoredAgentVoiceSettings,
+  validateAgentInput,
   type AgentRecord,
 } from "../../src/modules/agents/public.js";
 
@@ -30,7 +31,7 @@ describe("agent voice settings", () => {
   });
 
   it("starts with voice off and nothing authored", () => {
-    expect(defaultAgentVoiceSettings()).toEqual({ enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null });
+    expect(defaultAgentVoiceSettings()).toEqual({ enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null, languageSwitching: false });
   });
 
   it("rejects more than five lines for one style", () => {
@@ -109,14 +110,14 @@ describe("agent voice settings", () => {
   it("reads a stored block written before the runtime binding as bound to no vendor agent", () => {
     const { runtime: _runtime, ...storedWithoutRuntime } = authored;
 
-    expect(readStoredAgentVoiceSettings(storedWithoutRuntime)).toEqual({ ...authored, runtime: null });
+    expect(readStoredAgentVoiceSettings(storedWithoutRuntime)).toEqual({ ...authored, runtime: null, languageSwitching: false });
   });
 
   it("fences a proposal prepared before the runtime binding on the block as stored, so a missing runtime and null compare equal", () => {
     const { runtime: _runtime, ...preparedBefore } = authored;
     const agentWith = (voice: unknown) => ({ voice, name: "Help Desk" }) as unknown as AgentRecord;
 
-    expect(changedAgentProposalFields(agentWith({ ...authored, runtime: null }), [{ key: "voice", value: preparedBefore }])).toEqual([]);
+    expect(changedAgentProposalFields(agentWith({ ...authored, runtime: null, languageSwitching: false }), [{ key: "voice", value: preparedBefore }])).toEqual([]);
     // A bound runtime is a real difference, and other settings compare as they are.
     expect(changedAgentProposalFields(agentWith(authored), [{ key: "voice", value: preparedBefore }])).toEqual(["voice"]);
     expect(changedAgentProposalFields(agentWith(authored), [{ key: "name", value: "Help Desk" }])).toEqual([]);
@@ -131,12 +132,33 @@ describe("agent voice settings", () => {
   });
 
   it("still reads a stored block with a key it does not name", () => {
-    expect(readStoredAgentVoiceSettings({ ...authored, laterSetting: true })).toEqual(authored);
+    expect(readStoredAgentVoiceSettings({ ...authored, laterSetting: true })).toEqual({ ...authored, languageSwitching: false });
   });
 
   it("reads a stored block back as authored, and anything unreadable as voice off", () => {
-    expect(readStoredAgentVoiceSettings(authored)).toEqual(authored);
+    expect(readStoredAgentVoiceSettings(authored)).toEqual({ ...authored, languageSwitching: false });
     expect(readStoredAgentVoiceSettings(undefined)).toEqual(defaultAgentVoiceSettings());
     expect(readStoredAgentVoiceSettings({ enabled: "yes" })).toEqual(defaultAgentVoiceSettings());
+  });
+
+  it("accepts the agent switching the call's language on or off", () => {
+    expect(agentVoiceSettingsSchema.parse({ ...authored, languageSwitching: true }).languageSwitching).toBe(true);
+    expect(agentVoiceSettingsSchema.parse({ ...authored, languageSwitching: false }).languageSwitching).toBe(false);
+  });
+
+  it("refuses a non-boolean languageSwitching, naming its path", () => {
+    const result = agentVoiceSettingsSchema.safeParse({ ...authored, languageSwitching: "yes" });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.path).toEqual(["languageSwitching"]);
+  });
+
+  it("stores languageSwitching as off when a whole-block write omits it, like a write that omits runtime", () => {
+    expect(validateAgentInput({ name: "Support", voice: authored }).voice.languageSwitching).toBe(false);
+    expect(validateAgentInput({ name: "Support", voice: { ...authored, languageSwitching: true } }).voice.languageSwitching).toBe(true);
+  });
+
+  it("reads a stored row that predates languageSwitching as off", () => {
+    expect(readStoredAgentVoiceSettings(authored).languageSwitching).toBe(false);
   });
 });

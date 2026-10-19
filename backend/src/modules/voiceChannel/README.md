@@ -40,7 +40,20 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   pieces (a flush delta, a space, nothing after a full-width terminator)
   does not matter;
   `voiceTurnPolicy.ts` is the pure timing wrapper (bridge and turn limit) over
-  those events; `voiceLines.ts` resolves the turn's language
+  those events; on a turn that may switch the call's language it holds the
+  bridges a phase brings until chat reports the turn's language, and ends the
+  request with the switch when the turn asks for one;
+  `languageSwitchFollowUp.ts` (`LanguageSwitchFollowUps`) decides a turn's
+  switch of the call's language and runs the runtime's follow-up after it,
+  held or unheld, over the turn service's own steps (`VoiceTurnSteps`: the
+  policy, the teammate replies, the delivery); `switchedTurns.ts` holds a
+  turn that switched with its running reply (`SwitchedReply`, pulled to its
+  end whether or not anyone speaks it), one per session, until the replay
+  window passes or the caller speaks again; `voiceTurnRecord.ts` is the
+  turn's record and the speech helpers both share, with the switch's one
+  pairing (`SwitchedTurn`: the switching turn's record and its speaker's),
+  which the log, the session's exchange and chat's `deliveredReply` read
+  through `chatTurnOf` and `speakerOf`; `voiceLines.ts` resolves the turn's language
   (`resolveVoiceLanguage`) and picks the turn's bridge and fallback lines by
   routine state and that language (tag structure only, never the lines' words);
   `voiceSessionMemory.ts` is the in-process memory of each session between its
@@ -88,7 +101,8 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   vendors that share it differ only by a dialect in `dialects.ts`, which is
   data: where the session key, the session's locale and the turn's own
   language travel (a header, a body path, or a named tool's calls and results
-  in the replayed `messages`, which `languageSwitches.ts` reads), the default
+  in the replayed `messages`, which `languageSwitches.ts` reads; the same tool
+  is the one a switching reply calls, and the presenter renders that call), the default
   transport, the flush and keep-alive deltas a runtime needs, and the suffix
   it appends to a reply the caller cut short. Vendor field names live there
   and in `requestSchema.ts`, never in the domain. `adapters/elevenlabs/` is
@@ -106,8 +120,9 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
 Dependency direction is adapter → `VoiceTurnPort` → chat. The service reaches
 chat through the narrow `VoiceChatPort` (`streamTurn`) and imports chat only
 through `modules/chat/contracts`. It asks every chat turn for the
-`latest_input_wins` supersession mode; the chat turn registry owns what that
-means. The domain never imports an adapter or composition.
+`latest_input_wins` supersession mode, which the chat turn registry owns, and
+for the `language` stream event (`reportResponseLanguage`), which carries the
+planner's tag for the turn's response language. The domain never imports an adapter or composition.
 
 The completions route takes its credential check, turn budget and success
 record from the HTTP layer as a `CompletionsAdmission`, so the adapter does
@@ -128,8 +143,9 @@ helpers and the shared chat message limit from `app/http`
   session store, `AssistantChatService.streamAnswer`, the agent repository (voice
   settings and default locale), the routine state store, the conversation
   ownership reader (`handoff/public.ts`), the message repository as chat's
-  `OperatorReplySpeechClaims` (with `randomUUID` minting each turn's claim id)
-  and `ReplyInterruptionMarker`, and the audit service (the
+  `OperatorReplySpeechClaims` (with `randomUUID` minting each turn's claim id),
+  `ReplyInterruptionMarker` and, through `createVoiceStoredReplyReader`, the
+  `VoiceStoredReplyReader` a switch's follow-up reads, and the audit service (the
   `voice.reply_interrupted`, `voice.reply_replayed` and
   `voice.operator_reply_spoken` notes, built by `createVoiceTurnNotes`; a
   reply chat stored as its heard part carries its `voice.reply_interrupted`
@@ -335,10 +351,9 @@ helpers and the shared chat message limit from `app/http`
   An agent with no fallback line for the turn keeps waiting past the limit.
   `languagesInOrder` in `voiceLines.ts` is the one ordered list behind the
   turn's language, the fallback order and the recording notice.
-- **Mid-call language.** On `elevenlabs`, Radioso calls none of the
-  runtime's tools, so a call keeps its starting language and the lines follow
-  the session locale; what follows is what the turn reads when a request
-  reports a turn language, as structured data only. On `elevenlabs` that is
+- **Mid-call language.** What the turn reads when a request reports a turn
+  language, as structured data only (how a turn switches an `elevenlabs`
+  call itself is under **Switching the call's language** below). On `elevenlabs` that is
   the newest `language_detection` call (ElevenLabs's system tool that
   switches the call's voice and transcription:
   https://elevenlabs.io/docs/eleven-agents/customization/tools/system-tools/language-detection)
@@ -351,8 +366,8 @@ helpers and the shared chat message limit from `app/http`
   `LanguageDetectionToolResultModel`,
   https://elevenlabs.io/docs/api-reference/conversations/get); a plain-text
   result is the error the vendor gives the LLM for a refused switch ("the
-  tool returns an error to the LLM"); the custom-LLM wire carrying either is
-  unverified. A refused switch is skipped, and the switch before it stands.
+  tool returns an error to the LLM"); both were seen on the custom-LLM wire
+  in the 2026-10-18 probe. A refused switch is skipped, and the switch before it stands.
   The search ends with no turn language and `unreadable` at the first switch
   it cannot read (no result, a result object of another shape or JSON that
   does not parse, or no language tag in its arguments), refused ones above it
@@ -376,14 +391,63 @@ helpers and the shared chat message limit from `app/http`
   request facts). The cut-off reply (`heardUntil`) is the assistant message
   said right before the newest user message, past any tool result or
   tool-call-only assistant message replayed between them.
-- **A tool result follow-up is no turn.** A request whose newest message has
-  `role: "tool"` is the runtime's follow-up after running a tool; read as a
-  turn, its newest user message would be answered again (a replay, or a
-  second user message). The route answers it with an empty completion
-  (`stop`, outcome `continue`) before `turnInputFor`, runs no turn, calls no
-  `onTurnAccepted`, and logs `voice.tool_followup_ignored` at debug. The
-  adapter calls no tools today, so this is the seam a reply that does call
-  one (`language_detection`) replaces.
+- **Switching the call's language.** On an agent with
+  `voice.languageSwitching`, a request whose `tools` offer the dialect's
+  switching tool (`VoiceTurnInput.languageSwitchOffer`, with the languages the
+  runtime refused on the call) may switch the call. Only such a turn asks
+  chat for the `language` stream event (`reportResponseLanguage`; the
+  planner's `responseLanguageTag`), and until it arrives the policy holds the
+  bridges a phase brings; the 2.5 s stall bridge and the limit stay armed.
+  The window closes `VOICE_BEHAVIOR.languageSwitchDecisionMs` (4 s) into the
+  turn, at the first spoken line, or when the language arrives. The turn
+  switches when the tag's primary subtag differs from the call's
+  (`resolveVoiceLanguage` over the reported turn language, the session locale
+  and the agent default; compared only when both subtags have two letters),
+  the runtime did not refuse it, the request reports no `unreadable` switch,
+  and no teammate's reply was spoken: it yields `switchLanguage` (the primary
+  subtag, reason `response_language`, an id from `newLanguageSwitchId`) and
+  `outcome: continue`, and the presenter renders the tool call alone with
+  `finish_reason: "tool_calls"`, since content beside it is spoken twice. The
+  dialect's whitespace keep-alive before it is safe, and its replay as a
+  whitespace-only assistant message reads as nothing said (probe,
+  2026-10-18). The chat turn runs on behind the response: `SwitchedTurns`
+  holds its remaining events, with the phases seen, its start, profile and
+  routine state, for the follow-up, one per session, for `replayWindowMs`; the
+  turn settles and logs `languageSwitch: "emitted"` when its chat turn ends.
+  The runtime's follow-up (`VoiceTurnInput.languageSwitchResult`, recognized
+  by Radioso's own reason, the replayed `fc_` prefix removed) takes the
+  session's held turn when the utterance matches (warning when it names
+  another switch id; another utterance lets the held turn go as
+  `mismatched`), reads only the conversation's owner, and speaks those events
+  under the policy as part of the switched turn: its bridge and limit count
+  from that turn's start, its lines are in the language it reports. It claims
+  the teammate replies pending by then, counts `confirmed` or `refused` once
+  it is past its supersession check (overtaken before it spoke, the switch is
+  `unanswered`), is the record chat's `deliveredReply` consults if a newer
+  utterance cuts it off, and its exchange is the session's newest. A
+  follow-up this process holds nothing for (`unheld`) reads the conversation
+  through `VoiceStoredReplyReader` every `switchFollowUpPollMs`: it bridges in
+  its language and speaks the agent's answer whole once it is stored, or the
+  fallback line at the limit. A switch let go unspoken (`unanswered`,
+  `mismatched`) marks its exchange cut off at the switch, so an identical
+  re-request replays it, and counts its outcome once its chat turn ends; a
+  switching turn's outcome and lines' language are counted once. A reply that
+  fails after the switch is the switched turn's failure, logged once. A switch
+  Radioso asked for is no `userExpectedLocale` news on the next turn. Two
+  series count switches: `voice_language_switch_total{emitted, unanswered,
+  mismatched}` where the switching turn is held, and
+  `voice_language_switch_followup_total{confirmed, refused, unheld}` where the
+  follow-up arrives; `unheld` logs at info, since it is the multi-instance
+  path. A switch let go unspoken counts its turn's outcome and lines'
+  language when its chat turn ends, and the switching turn's own log line
+  carries its reply's outcome rather than the switch's `continue`.
+- **Another tool's follow-up is no turn.** A request whose newest message has
+  `role: "tool"` for any other tool is the runtime's follow-up after running
+  it; read as a turn, its newest user message would be answered again (a
+  replay, or a second user message). The route answers it with an empty
+  completion (`stop`, outcome `continue`) before `turnInputFor`, runs no turn,
+  calls no `onTurnAccepted`, and logs `voice.tool_followup_ignored` at debug.
+  A switch's follow-up calls no `onTurnAccepted` either: it admits no turn.
 - **Outcomes (web column of the contract's table).** `voiceTurnOutcome.ts`
   reads chat's closing `done` event. `ownership` human-owned and not
   suppressed means this turn handed off: `callback_requested` (with

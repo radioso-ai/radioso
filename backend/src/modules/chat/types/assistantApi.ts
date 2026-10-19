@@ -93,6 +93,11 @@ export interface AssistantChatRequest {
    */
   deliveredReply?: DeliveredReplyReader;
   /**
+   * Used only by `streamAnswer`: the stream reports the language the turn answers in (`language`),
+   * for a channel that acts on it before the answer. Absent: the stream carries no such event.
+   */
+  reportResponseLanguage?: boolean;
+  /**
    * Caller-owned abort signal (#885), used only by `streamAnswer`. The HTTP
    * presenter fires this once the client has disconnected and the turn has
    * not settled within its post-disconnect ceiling, so provider generation

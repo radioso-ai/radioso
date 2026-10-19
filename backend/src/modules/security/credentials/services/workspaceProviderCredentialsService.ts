@@ -2,7 +2,7 @@ import {
   decryptField,
   encryptField,
 } from "../../../../shared/infra/crypto/fieldEncryption.js";
-import { badRequest, AppError } from "../../../../shared/domain/errors.js";
+import { badRequest, notFound, AppError } from "../../../../shared/domain/errors.js";
 import type {
   WorkspaceCredentialProvider,
   WorkspaceProviderCredentialSummary,
@@ -10,7 +10,10 @@ import type {
 } from "../../../../db/repositories/workspaceProviderCredentialsRepository.js";
 import type { AuditPort } from "../../../audit/contracts/index.js";
 import type { AppLogger } from "../../../../shared/observability/logger.js";
-import { ProviderConfigurationError } from "../../../../shared/infra/llm/providerTypes.js";
+import { ProviderConfigurationError, type OpenAIDataResidency } from "../../../../shared/infra/llm/providerTypes.js";
+
+/** Residency is an OpenAI concept; every other provider's row keeps the column's default. */
+const RESIDENCY_PROVIDER: WorkspaceCredentialProvider = "openai";
 
 const KEY_NAME = "CONNECTOR_ENCRYPTION_KEY";
 
@@ -27,12 +30,27 @@ interface SetApiKeyInput {
   workspaceId: string;
   provider: WorkspaceCredentialProvider;
   apiKey: string;
+  /** Omitted keeps the credential's existing residency (or the default, `global`, on first save). */
+  residency?: OpenAIDataResidency;
+  actor: { accountId: string };
+}
+
+interface SetResidencyInput {
+  workspaceId: string;
+  provider: WorkspaceCredentialProvider;
+  residency: OpenAIDataResidency;
   actor: { accountId: string };
 }
 
 interface CredentialActor {
   accountId: string;
 }
+
+const assertResidencyProvider = (provider: WorkspaceCredentialProvider): void => {
+  if (provider !== RESIDENCY_PROVIDER) {
+    throw badRequest(`residency is only configurable for the "${RESIDENCY_PROVIDER}" provider`);
+  }
+};
 
 class EncryptionNotConfiguredError extends AppError {
   constructor() {
@@ -88,6 +106,9 @@ export class WorkspaceProviderCredentialsService {
     if (apiKey.length === 0) {
       throw badRequest("api key must not be empty");
     }
+    if (input.residency !== undefined) {
+      assertResidencyProvider(input.provider);
+    }
     if (!this.isEncryptionConfigured()) {
       await this.recordAudit({
         accountId: input.actor.accountId,
@@ -106,6 +127,7 @@ export class WorkspaceProviderCredentialsService {
         workspaceId: input.workspaceId,
         provider: input.provider,
         ciphertext,
+        residency: input.residency,
       });
       this.recoverProviderCredentialFailures(input.workspaceId);
       await this.recordAudit({
@@ -114,6 +136,7 @@ export class WorkspaceProviderCredentialsService {
         eventType: "workspace_provider_credentials.set",
         eventStatus: "success",
         provider: input.provider,
+        residency: input.residency,
       });
     } catch (error) {
       if (!(error instanceof EncryptionNotConfiguredError)) {
@@ -129,6 +152,38 @@ export class WorkspaceProviderCredentialsService {
       throw error;
     }
     await this.notifyChange(input.workspaceId, input.provider);
+  }
+
+  /** Changes a stored OpenAI credential's residency alone; the key itself is unchanged. */
+  async setResidency(input: SetResidencyInput): Promise<void> {
+    assertResidencyProvider(input.provider);
+    const updated = await this.repository.updateResidency(input.workspaceId, input.provider, input.residency);
+    if (!updated) {
+      await this.recordAudit({
+        accountId: input.actor.accountId,
+        workspaceId: input.workspaceId,
+        eventType: "workspace_provider_credentials.set",
+        eventStatus: "failure",
+        provider: input.provider,
+        reason: "no_credential",
+      });
+      throw notFound(`No stored credential for provider "${input.provider}"`);
+    }
+    await this.recordAudit({
+      accountId: input.actor.accountId,
+      workspaceId: input.workspaceId,
+      eventType: "workspace_provider_credentials.set",
+      eventStatus: "success",
+      provider: input.provider,
+      residency: input.residency,
+    });
+    await this.notifyChange(input.workspaceId, input.provider);
+  }
+
+  /** The workspace's own OpenAI credential's authored residency; `global` when none is stored. */
+  async getOpenAIResidency(workspaceId: string): Promise<OpenAIDataResidency> {
+    const record = await this.repository.findByWorkspaceAndProvider(workspaceId, RESIDENCY_PROVIDER);
+    return record?.residency ?? "global";
   }
 
   private recoverProviderCredentialFailures(workspaceId: string): void {
@@ -217,6 +272,8 @@ export class WorkspaceProviderCredentialsService {
     eventStatus: "success" | "failure";
     provider: WorkspaceCredentialProvider;
     reason?: string;
+    /** The residency an operator chose in this write, when the write touched it. Not a secret. */
+    residency?: OpenAIDataResidency;
   }): Promise<void> {
     try {
       await this.auditService.record({
@@ -227,6 +284,7 @@ export class WorkspaceProviderCredentialsService {
         metadata: {
           provider: input.provider,
           ...(input.reason ? { reason: input.reason } : {}),
+          ...(input.residency ? { residency: input.residency } : {}),
         },
       });
     } catch (error) {

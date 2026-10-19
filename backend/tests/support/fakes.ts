@@ -104,6 +104,7 @@ import type {
   WorkspaceProviderCredentialSummary,
   WorkspaceProviderCredentialsRepositoryPort,
 } from "../../src/db/repositories/workspaceProviderCredentialsRepository.js";
+import type { OpenAIDataResidency } from "../../src/shared/infra/llm/providerTypes.js";
 import type {
   WebhookDestinationRecord,
   WebhookDestinationRepositoryPort,
@@ -1964,6 +1965,7 @@ export class InMemoryWorkspaceProviderCredentialsRepository
       .map((record) => ({
         workspaceId: record.workspaceId,
         provider: record.provider,
+        residency: record.residency,
         updatedAt: record.updatedAt,
       }))
       .sort((a, b) => a.provider.localeCompare(b.provider));
@@ -1973,6 +1975,7 @@ export class InMemoryWorkspaceProviderCredentialsRepository
     workspaceId: string;
     provider: WorkspaceCredentialProvider;
     ciphertext: string;
+    residency?: OpenAIDataResidency;
   }): Promise<WorkspaceProviderCredentialRecord> {
     const key = `${input.workspaceId}:${input.provider}`;
     const existing = this.items.get(key);
@@ -1980,9 +1983,25 @@ export class InMemoryWorkspaceProviderCredentialsRepository
       workspaceId: input.workspaceId,
       provider: input.provider,
       ciphertext: input.ciphertext,
+      residency: input.residency ?? existing?.residency ?? "global",
       createdAt: existing?.createdAt ?? new Date(),
       updatedAt: new Date(),
     };
+    this.items.set(key, record);
+    return record;
+  }
+
+  async updateResidency(
+    workspaceId: string,
+    provider: WorkspaceCredentialProvider,
+    residency: OpenAIDataResidency,
+  ): Promise<WorkspaceProviderCredentialRecord | null> {
+    const key = `${workspaceId}:${provider}`;
+    const existing = this.items.get(key);
+    if (!existing) {
+      return null;
+    }
+    const record: WorkspaceProviderCredentialRecord = { ...existing, residency, updatedAt: new Date() };
     this.items.set(key, record);
     return record;
   }

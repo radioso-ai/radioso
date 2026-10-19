@@ -2543,6 +2543,14 @@
               "elevenlabs"
             ]
           },
+          "residency": {
+            "type": "string",
+            "enum": [
+              "global",
+              "us",
+              "eu"
+            ]
+          },
           "updatedAt": {
             "type": "string",
             "format": "date-time"
@@ -2550,6 +2558,7 @@
         },
         "required": [
           "provider",
+          "residency",
           "updatedAt"
         ]
       },
@@ -2602,11 +2611,16 @@
             "type": "string",
             "minLength": 1,
             "maxLength": 4096
+          },
+          "residency": {
+            "type": "string",
+            "enum": [
+              "global",
+              "us",
+              "eu"
+            ]
           }
-        },
-        "required": [
-          "apiKey"
-        ]
+        }
       },
       "WebhookDestination": {
         "type": "object",

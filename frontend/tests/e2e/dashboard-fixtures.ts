@@ -1146,7 +1146,7 @@ export const installDashboardApiMocks = async (
   }>();
   let channelsLifecycle = buildDefaultChannelsLifecycle(platformSettings);
   const providerEncryptionConfigured = options.providerEncryptionConfigured ?? true;
-  const providerCredentials: Record<string, { updatedAt: string } | null> = {
+  const providerCredentials: Record<string, { updatedAt: string; residency: string } | null> = {
     openai: null,
     "openai-compatible": null,
     gemini: null,
@@ -2835,7 +2835,7 @@ export const installDashboardApiMocks = async (
         encryptionConfigured: providerEncryptionConfigured,
         credentials: Object.entries(providerCredentials)
           .filter(([, value]) => value !== null)
-          .map(([provider, value]) => ({ provider, updatedAt: value!.updatedAt })),
+          .map(([provider, value]) => ({ provider, residency: value!.residency, updatedAt: value!.updatedAt })),
         envProviderAvailability: {
           openai: true,
           "openai-compatible": true,
@@ -2848,7 +2848,11 @@ export const installDashboardApiMocks = async (
 
     if (request.method() === "PUT" && path.startsWith("/settings/credentials/")) {
       const provider = path.replace("/settings/credentials/", "");
-      providerCredentials[provider] = { updatedAt: new Date().toISOString() };
+      const body = (request.postDataJSON() ?? {}) as { apiKey?: string; residency?: string };
+      providerCredentials[provider] = {
+        updatedAt: new Date().toISOString(),
+        residency: body.residency ?? providerCredentials[provider]?.residency ?? "global",
+      };
       providerCredentialUpdates?.push({ method: "PUT", provider, body: request.postDataJSON() });
       await route.fulfill({ status: 204, contentType: "application/json", body: "" });
       return;

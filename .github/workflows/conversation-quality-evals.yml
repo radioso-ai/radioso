@@ -19,6 +19,11 @@ on:
         description: Samples per case (higher = more stable, more tokens)
         required: false
         default: "5"
+      record_voice_baseline:
+        description: Re-record voice-baseline.json from this run's voice cases and upload it as an artifact to commit
+        type: boolean
+        required: false
+        default: false
 
 permissions:
   contents: read
@@ -113,7 +118,23 @@ jobs:
         # each, gated on the wire against voice-baseline.json; latency is reported, never gated. It
         # runs when the text suite regressed too, so one night reports both.
         if: ${{ !cancelled() }}
-        run: node --env-file=./.env.evals --import tsx ./scripts/runEvals.ts --channel voice --samples 3
+        run: |
+          set -euo pipefail
+          args=(./scripts/runEvals.ts --channel voice --samples 3)
+          if [ "${{ github.event.inputs.record_voice_baseline }}" = "true" ]; then
+            args+=(--update-baseline)
+          fi
+          node --env-file=./.env.evals --import tsx "${args[@]}"
+
+      # The voice latency baseline is the nightly runner's, not a laptop's: recording happens here,
+      # and the file comes back out to be committed.
+      - name: Upload recorded voice baseline
+        if: ${{ github.event.inputs.record_voice_baseline == 'true' }}
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
+        with:
+          name: voice-eval-baseline
+          path: backend/tests/fixtures/conversation-quality/voice-baseline.json
+          if-no-files-found: error
 
       - name: Stop document worker
         if: always()

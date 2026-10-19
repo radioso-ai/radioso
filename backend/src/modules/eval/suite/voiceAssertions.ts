@@ -1,5 +1,6 @@
 import type { VoiceTurnOutcome, VoiceTurnSummary } from "../../voiceChannel/public.js";
 import type { AssertionVerdictStatus } from "../domain/types.js";
+import type { ConversationQualityCase } from "./caseSchema.js";
 import type { ConversationQualityObservedOutput } from "./observedOutput.js";
 
 /** What a piece the caller heard was: the agent's bridge line, its fallback line, or anything else said. */
@@ -45,7 +46,12 @@ export interface VoiceTurnObservation {
 export type VoiceAssertion =
   /** The stream ended in `[DONE]` with no error frame and named a known outcome. */
   | { type: "voice_turn_well_formed" }
-  | { type: "voice_bridge_spoken"; spoken: boolean }
+  /**
+   * `latencyDependent`: on a real model, whether the bridge is spoken depends on how fast the model
+   * answers (any planner slower than the stall bridge's 2.5 s hears one), so the live run, which
+   * never gates on latency, leaves the assertion out.
+   */
+  | { type: "voice_bridge_spoken"; spoken: boolean; latencyDependent?: true }
   | { type: "voice_outcome"; kind: VoiceOutcomeKind }
   /** The kinds of the pieces heard, in order, with consecutive pieces of one kind counted once. */
   | { type: "voice_speech_order"; order: VoicePieceKind[] }
@@ -162,3 +168,22 @@ export const evaluateVoiceAssertion = (
   output.voiceTurn
     ? evaluateOnTurn(assertion, output.voiceTurn)
     : { assertion, status: "error", reason: "Voice assertions read a voice turn; run the case as a voice case." };
+
+/**
+ * The voice assertions a live run gates on: what the wire shows of the behaviour. The wording, the
+ * number of sentences and the turn's record are the model's or the serving process's, and a
+ * timing the model sets is latency, which a live run reports and never gates on.
+ */
+const LIVE_VOICE_ASSERTIONS = new Set<string>(["voice_turn_well_formed", "voice_bridge_spoken", "voice_outcome"] satisfies Array<VoiceAssertion["type"]>);
+
+const gatesLive = (assertion: { type: string }): boolean =>
+  LIVE_VOICE_ASSERTIONS.has(assertion.type) && !(isVoiceAssertion(assertion) && assertion.type === "voice_bridge_spoken" && assertion.latencyDependent === true);
+
+/**
+ * The voice cases a live run drives, each scored on what it gates. A case whose scenario is a brain
+ * slower than the turn policy's deadlines runs only in the deterministic half, which scripts one.
+ */
+export const scopeVoiceCasesForLiveRun = (cases: readonly ConversationQualityCase[]): ConversationQualityCase[] =>
+  cases
+    .filter((evalCase) => evalCase.voice !== undefined && evalCase.voice.requiresScriptedTiming !== true)
+    .map((evalCase) => ({ ...evalCase, assertions: evalCase.assertions.filter(gatesLive) }));

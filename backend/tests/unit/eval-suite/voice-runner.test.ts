@@ -6,12 +6,12 @@ import {
   formatVoiceLatencyReport,
   parseConversationQualityCases,
   recordVoiceBaseline,
+  scopeVoiceCasesForLiveRun,
   scoreObservedOutput,
   summarizeVoiceCase,
   type VoiceTurnObservation,
 } from "../../../src/modules/eval/suite/index.js";
 import { conversationQualityVoiceCases, conversationQualityVoiceSettings } from "../../fixtures/conversation-quality/index.js";
-import { scopeVoiceCasesForLiveRun } from "../../../scripts/runEvals.js";
 import {
   observeVoiceTurn,
   readVoiceStream,
@@ -172,6 +172,11 @@ describe("the voice cases", () => {
     expect(new Set(live.flatMap((evalCase) => evalCase.assertions.map((assertion) => assertion.type)))).toEqual(
       new Set(["voice_turn_well_formed", "voice_bridge_spoken", "voice_outcome"]),
     );
+    // A greeting bridges on a real model whenever its planner takes longer than the stall bridge.
+    expect(live.find((evalCase) => evalCase.id === "voice-greeting-quick-reply-no-bridge")?.assertions).toEqual([
+      { type: "voice_turn_well_formed" },
+      { type: "voice_outcome", kind: "continue" },
+    ]);
   });
 });
 
@@ -199,18 +204,19 @@ describe("the voice report", () => {
     observation({ pieces: [], timings: { firstByteMs: 200, bridgeMs: 200, firstSpeechMs: 2_000, turnMs: 2_500 } }),
     observation({ pieces: [], timings: { firstByteMs: 100, bridgeMs: 100, firstSpeechMs: 6_000, turnMs: 6_500 } }),
     observation({ pieces: [], timings: { firstByteMs: 300, bridgeMs: 300, firstSpeechMs: 5_000, turnMs: 5_400 } }),
+    { error: "The call's step 1 failed: The response was HTTP 503." },
   ]);
   const greeting = summarizeVoiceCase("voice-greeting", [
     observation({ timings: { firstByteMs: 900, firstSpeechMs: 900, turnMs: 950 } }),
     observation({ outcome: null, protocol: { ok: false, problem: "The stream ended without [DONE]." }, timings: { firstByteMs: 1_100, firstSpeechMs: 1_100, turnMs: 1_200 } }),
   ]);
 
-  it("summarizes a case's samples: bridged, outcomes, malformed, and median times", () => {
-    expect(knowledge).toMatchObject({ samples: 3, bridged: 3, outcomes: { continue: 3 }, protocolErrors: 0, firstByteMs: 200, bridgeMs: 200, firstSpeechMs: 5_000, turnMs: 5_400 });
-    expect(greeting).toMatchObject({ samples: 2, bridged: 0, outcomes: { continue: 1, none: 1 }, protocolErrors: 1, bridgeMs: null, firstSpeechMs: 900 });
+  it("summarizes a case's samples out of every sample, an errored one included, with median times", () => {
+    expect(knowledge).toMatchObject({ samples: 4, bridged: 3, outcomes: { continue: 3 }, protocolErrors: 0, errored: 1, firstByteMs: 200, bridgeMs: 200, firstSpeechMs: 5_000, turnMs: 5_400 });
+    expect(greeting).toMatchObject({ samples: 2, bridged: 0, outcomes: { continue: 1, none: 1 }, protocolErrors: 1, errored: 0, bridgeMs: null, firstSpeechMs: 900 });
   });
 
-  it("renders each case, the percentiles across every sample, and warns on a case past twice its baseline median", () => {
+  it("renders each case, the percentiles across every sample, the cases with no latency baseline, and a case past twice its baseline median", () => {
     const report = formatVoiceLatencyReport([knowledge, greeting], {
       "voice-knowledge": { firstByteMs: 150, firstSpeechMs: 2_400, turnMs: 2_900 },
       "voice-greeting": { firstByteMs: null, firstSpeechMs: null, turnMs: null },
@@ -218,9 +224,10 @@ describe("the voice report", () => {
 
     expect(report).toBe([
       "Voice turns (medians across samples; latency is reported, never gated):",
-      "  voice-knowledge: bridged 3/3, outcome continue 3/3 | first byte 200 ms, bridge 200 ms, first speech 5000 ms, turn 5400 ms",
+      "  voice-knowledge: bridged 3/4, outcome continue 3/4, 1 errored | first byte 200 ms, bridge 200 ms, first speech 5000 ms, turn 5400 ms",
       "  voice-greeting: bridged 0/2, outcome continue 1/2, none 1/2, 1 malformed | first byte 900 ms, bridge -, first speech 900 ms, turn 950 ms",
       "  Across cases: first speech p50 2000 ms, p95 6000 ms; turn p50 2500 ms, p95 6500 ms",
+      "  No latency baseline for 1 case(s): run `evals:voice:update-baseline` in CI (dispatch Conversation Quality Evals with record_voice_baseline) and commit the voice-baseline.json artifact it uploads.",
       "  Slower than 2x the baseline median (a warning; it does not fail the run):",
       "    ! voice-knowledge: first speech 5000 ms, baseline 2400 ms",
     ].join("\n"));

@@ -202,4 +202,97 @@ describe("citation anchor sanitizer", () => {
       expect(stream("A lone ` backtick.\n", "Claim[?].")).toBe("A lone ` backtick.\nClaim.");
     });
   });
+
+  // #1517: the model sometimes drops the closing `]`, leaving a one-bracket-short anchor
+  // (`[[?]`, `[[12]`) instead of the complete `[[?]]`/`[[12]]`. The token must disappear
+  // without losing any of the surrounding answer text: the carry cap and flush() must
+  // release held text instead of discarding it.
+  describe("under-closed citation anchor marker", () => {
+    const stream = (...chunks: string[]): string => {
+      const sanitizer = new CitationAnchorSanitizer();
+      return [...chunks.map((chunk) => sanitizer.push(chunk)), sanitizer.flush()].join("");
+    };
+
+    it("removes an under-closed `?` marker without losing the text that follows, in one chunk", () => {
+      expect(stream("claim[[?] more words here.")).toBe("claim more words here.");
+    });
+
+    it("removes an under-closed digit marker without losing the text that follows, in one chunk", () => {
+      expect(stream("claim[[1] this is a long sentence that keeps going")).toBe(
+        "claim this is a long sentence that keeps going",
+      );
+    });
+
+    // The exact chunking #1517 reported: the marker and the text right after it arrive
+    // in the first chunk, with a later, complete citation in the next one.
+    it("keeps every word around the marker when split exactly as #1517 reported it", () => {
+      expect(stream("claim[[?] more words here.", " Next sentence[[2]].")).toBe(
+        "claim more words here. Next sentence.",
+      );
+    });
+
+    it("keeps every word around a digit marker when the confirming chunk arrives long after it", () => {
+      expect(stream(
+        "claim[[1] this is a long sentence that keeps going",
+        " and more.",
+      )).toBe("claim this is a long sentence that keeps going and more.");
+    });
+
+    it("never leaks a `?` marker split at any chunk boundary, including inside the marker itself", () => {
+      const marker = "[[?]";
+      for (let split = 1; split < marker.length; split += 1) {
+        expect(
+          stream(`claim${marker.slice(0, split)}`, `${marker.slice(split)} more words here.`),
+          `split at ${split}`,
+        ).toBe("claim more words here.");
+      }
+    });
+
+    it("never leaks a digit marker split at any chunk boundary, including inside the marker itself", () => {
+      const marker = "[[12]";
+      for (let split = 1; split < marker.length; split += 1) {
+        expect(
+          stream(`claim${marker.slice(0, split)}`, `${marker.slice(split)} more words here.`),
+          `split at ${split}`,
+        ).toBe("claim more words here.");
+      }
+    });
+
+    it("does not confuse an under-closed marker with the complete anchor that follows it", () => {
+      expect(stream("claim[[?] more. Next[[2]].")).toBe("claim more. Next.");
+    });
+
+    it("never drops trailing text even when it is far longer than the carry cap, in one chunk", () => {
+      const tail = "x".repeat(200);
+      expect(stream(`claim[[1] ${tail}`)).toBe(`claim ${tail}`);
+    });
+
+    it("never drops trailing text longer than the carry cap when it arrives in a later chunk", () => {
+      const tail = "y".repeat(200);
+      expect(stream("claim[[1]", tail)).toBe(`claim${tail}`);
+    });
+
+    it("hides a trailing marker attempt entirely when the stream ends before it resolves", () => {
+      expect(stream("claim[[1")).toBe("claim");
+      expect(stream("claim[[?")).toBe("claim");
+      expect(stream("claim[[1]")).toBe("claim");
+      expect(stream("claim[[?]")).toBe("claim");
+    });
+
+    it("produces the same result no matter where the chunk boundary falls, for the `?` example", () => {
+      const full = "claim[[?] more words here. Next sentence[[2]].";
+      const expected = "claim more words here. Next sentence.";
+      for (let split = 0; split <= full.length; split += 1) {
+        expect(stream(full.slice(0, split), full.slice(split)), `split at ${split}`).toBe(expected);
+      }
+    });
+
+    it("produces the same result no matter where the chunk boundary falls, for the digit example", () => {
+      const full = "claim[[1] this is a long sentence that keeps going and more.";
+      const expected = "claim this is a long sentence that keeps going and more.";
+      for (let split = 0; split <= full.length; split += 1) {
+        expect(stream(full.slice(0, split), full.slice(split)), `split at ${split}`).toBe(expected);
+      }
+    });
+  });
 });

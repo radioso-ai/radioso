@@ -5194,6 +5194,115 @@ describe("chat service streaming", () => {
     expect(doneAnswer).toBe(fullAnswer);
   });
 
+  // #1517: an under-closed citation anchor (`[[?]`, `[[12]`, one bracket short of the
+  // complete `[[?]]`/`[[12]]`) must stream the same way it is rendered at the end: the
+  // live "chunk" text, once joined, has to equal the sanitized `done.answer` no matter
+  // where the provider happened to split its chunks.
+  it("streams the same text as the sanitized done.answer across under-closed citation marker chunkings", async () => {
+    const lead = "The first supporting claim is fully grounded in the provided source material[[1]]. ";
+    const leadSanitized = "The first supporting claim is fully grounded in the provided source material. ";
+    const scenarios: Array<{ name: string; chunks: string[]; expected: string }> = [
+      {
+        // The exact chunking #1517 reported: the marker and the words right after it
+        // land in the chunk that opens the marker, with a later complete citation.
+        name: "`?` marker then a later complete citation",
+        chunks: [`${lead}claim[[?] more words here.`, " Next sentence[[2]]."],
+        expected: `${leadSanitized}claim more words here. Next sentence.`,
+      },
+      {
+        // The exact chunking #1517 reported for a digit marker: the confirming text
+        // arrives far enough past the marker to have overflowed the old carry cap.
+        name: "digit marker with a long confirming tail",
+        chunks: [`${lead}claim[[1] this is a long sentence that keeps going`, " and more."],
+        expected: `${leadSanitized}claim this is a long sentence that keeps going and more.`,
+      },
+      {
+        name: "a chunk boundary in the middle of the marker itself",
+        chunks: [`${lead}claim[[?`, "] more words here. Next sentence[[2]]."],
+        expected: `${leadSanitized}claim more words here. Next sentence.`,
+      },
+    ];
+
+    for (const scenario of scenarios) {
+      const rawAnswer = scenario.chunks.join("");
+      const conversationRepository = new InMemoryConversationRepository();
+      const messageRepository = new InMemoryMessageRepository();
+      const auditService = createAuditService();
+      const retrievalPipeline = {
+        async run() {
+          return {
+            rewrittenQuery: "explain the grounded topic",
+            contexts: [
+              { chunkId: "chunk-1", documentId: "doc-1", title: "Source", content: rawAnswer },
+            ],
+            prompt: "prompt text",
+            citations: [
+              { documentId: "doc-1", chunkId: "chunk-1", title: "Source" },
+              { documentId: "doc-2", chunkId: "chunk-2", title: "Other" },
+            ],
+            diagnostics: {
+              rewriteStatus: "skipped",
+              rerankStatus: "skipped",
+              originalCandidateCount: 1,
+              rewrittenCandidateCount: 0,
+              lexicalCandidateCount: 1,
+              normalizedCandidateCount: 1,
+              finalContextCount: 1,
+              candidateFallbackApplied: false,
+              fallbackApplied: false,
+              parsedQuery: {
+                semanticQuery: "grounded topic",
+                lexicalQuery: "grounded topic",
+              },
+            },
+            responseSettings: {
+              citationDisplayEnabled: true,
+            },
+          };
+        },
+      } as const;
+      const chatGateway: ChatGateway = {
+        async answer() {
+          return rawAnswer;
+        },
+        async *streamAnswer() {
+          for (const chunk of scenario.chunks) {
+            yield chunk;
+          }
+          yield `\n${SUGGESTIONS_SENTINEL}\n${envelopeTail(rawAnswer)}`;
+        },
+      };
+      const service = makeChatService(
+        conversationRepository,
+        messageRepository,
+        new RetrievalTurnController(asChatActivityPipeline(retrievalPipeline) as never),
+        chatGateway,
+        auditService,
+        fallbackReplyComposer,
+      );
+
+      const chunksOut: string[] = [];
+      let doneAnswer = "";
+      for await (const event of service.streamAnswer({
+        workspaceId: "workspace-1",
+        query: "Explain the grounded topic.",
+        stream: true,
+      })) {
+        if (event.type === "chunk") {
+          expect(event.text, scenario.name).not.toContain("[[");
+          expect(event.text, scenario.name).not.toContain("]]");
+          chunksOut.push(event.text);
+        } else if (event.type === "done") {
+          doneAnswer = event.answer ?? "";
+        }
+      }
+
+      expect(chunksOut.join("").trim(), scenario.name).toBe(doneAnswer);
+      // The words around the marker survive; only the bracket syntax disappears.
+      expect(doneAnswer, scenario.name).toBe(scenario.expected);
+    }
+  });
+
   it("emits grounded answer chunks before the provider stream finishes", async () => {
     const conversationRepository = new InMemoryConversationRepository();
     const messageRepository = new InMemoryMessageRepository();

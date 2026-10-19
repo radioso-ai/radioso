@@ -1,6 +1,7 @@
 import { removeDetachedPunctuationSpacing } from "./citationTextNormalization.js";
+import { stripUnderClosedCitationAnchors } from "./underClosedCitationAnchor.js";
 
-export interface CitationAnchorGroup {
+interface CitationAnchorGroup {
   start: number;
   end: number;
   resultNumbers: number[];
@@ -50,7 +51,7 @@ export const findCitationAnchorGroups = (answer: string): CitationAnchorGroup[] 
 };
 
 export const stripResidualCitationSyntax = (text: string): string =>
-  removeDetachedPunctuationSpacing(text
+  removeDetachedPunctuationSpacing(stripUnderClosedCitationAnchors(text)
     .replace(/\[\[[^\]]*\]\]/g, "")
     .replace(/\[\[[^\s.,;:!?)]*/g, "")
     .replace(/\]\]/g, ""));

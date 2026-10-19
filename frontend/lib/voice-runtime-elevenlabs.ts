@@ -63,7 +63,8 @@ const watchVendorSocket = (vendorOrigin: string, onSocket: (socket: WebSocket) =
 
 /**
  * The dynamic variable that carries the privacy notice's line. The vendor agent's first message
- * starts with `{{radioso_privacy_notice}}` for the call to say it before the greeting.
+ * starts with `{{radioso_privacy_notice}}` for the call to say it before the greeting. Every call the
+ * embed starts sets it, empty when no notice applies, so a first message that names it always finds it.
  */
 const PRIVACY_NOTICE_VARIABLE = 'radioso_privacy_notice'
 
@@ -97,7 +98,7 @@ export const elevenLabsVoiceRuntime: VoiceRuntime = {
           locale,
           ...(privacyNotice ? { privacy_notice_version: privacyNotice.version } : {}),
         },
-        ...(privacyNotice ? { dynamicVariables: { [PRIVACY_NOTICE_VARIABLE]: privacyNotice.text } } : {}),
+        dynamicVariables: { [PRIVACY_NOTICE_VARIABLE]: privacyNotice?.text ?? '' },
         workletPaths: WORKLET_PATHS,
         libsampleratePath: LIBSAMPLERATE_PATH,
         onConnect: () => callbacks.onConnected(),

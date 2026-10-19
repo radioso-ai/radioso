@@ -5310,6 +5310,8 @@ export interface components {
         WorkspaceProviderCredentialSummary: {
             /** @enum {string} */
             provider: "openai" | "openai-compatible" | "gemini" | "claude" | "elevenlabs";
+            /** @enum {string} */
+            residency: "global" | "us" | "eu";
             /** Format: date-time */
             updatedAt: string;
         };
@@ -5324,7 +5326,9 @@ export interface components {
             };
         };
         SetWorkspaceProviderCredentialRequest: {
-            apiKey: string;
+            apiKey?: string;
+            /** @enum {string} */
+            residency?: "global" | "us" | "eu";
         };
         WebhookDestination: {
             id: string;

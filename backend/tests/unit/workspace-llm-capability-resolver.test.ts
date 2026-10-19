@@ -7,8 +7,10 @@ import type {
   WorkspaceLlmCapabilityPreferenceInput,
 } from "../../src/modules/settings/contracts/llmCapability.js";
 import {
+  OPENAI_RESIDENCY_HOSTS,
   ProviderConfigurationError,
   type LlmProviderName,
+  type OpenAIDataResidency,
   type ResolvedLlmConfig,
 } from "../../src/shared/infra/llm/providerTypes.js";
 import type {
@@ -30,12 +32,18 @@ const buildSettings = (rows: Array<WorkspaceLlmCapabilityPreference>) => ({
   },
 });
 
-const buildCredentials = (keys: Record<string, string>) => ({
+const buildCredentials = (
+  keys: Record<string, string>,
+  residencies: Record<string, OpenAIDataResidency> = {},
+) => ({
   async getApiKey(workspaceId: string, provider: LlmProviderName) {
     return keys[`${workspaceId}:${provider}`];
   },
   async hasCredentials(workspaceId: string, provider: LlmProviderName) {
     return `${workspaceId}:${provider}` in keys;
+  },
+  async getOpenAIResidency(workspaceId: string): Promise<OpenAIDataResidency> {
+    return residencies[workspaceId] ?? "global";
   },
 });
 
@@ -311,6 +319,60 @@ describe("WorkspaceLlmCapabilityResolver", () => {
     expect(config.baseUrl).toBeUndefined();
     // Omitted, not stamped "global": agrees with providerConfig's own present-only-when-it-
     // matters convention for this field.
+    expect(config.openAIDataResidency).toBeUndefined();
+  });
+
+  it("applies a workspace BYOK credential's own authored residency, independent of the platform's", async () => {
+    const residencyDefaults: ResolvedLlmConfig = {
+      ...envConfig,
+      openAIPlatformResidency: { residency: "eu", baseUrl: OPENAI_RESIDENCY_HOSTS.eu },
+    };
+    const resolver = new WorkspaceLlmCapabilityResolver({
+      defaults: residencyDefaults,
+      settings: buildSettings([]),
+      credentials: buildCredentials({ "ws-1:openai": "ws-openai-key" }, { "ws-1": "us" }),
+      envKeys: envKeyResolver({ openai: "env-openai" }),
+    });
+
+    const config = await resolver.resolve("chat", { workspaceId: "ws-1" });
+
+    expect(config).toMatchObject({
+      provider: "openai",
+      apiKey: "ws-openai-key",
+      baseUrl: OPENAI_RESIDENCY_HOSTS.us,
+      openAIDataResidency: "us",
+    });
+  });
+
+  it("uses the same host table for a workspace credential's eu residency as the platform setting", async () => {
+    const resolver = new WorkspaceLlmCapabilityResolver({
+      defaults: envConfig,
+      settings: buildSettings([]),
+      credentials: buildCredentials({ "ws-1:openai": "ws-openai-key" }, { "ws-1": "eu" }),
+      envKeys: envKeyResolver({ openai: "env-openai" }),
+    });
+
+    const config = await resolver.resolve("chat", { workspaceId: "ws-1" });
+
+    expect(config.baseUrl).toBe(OPENAI_RESIDENCY_HOSTS.eu);
+    expect(config.openAIDataResidency).toBe("eu");
+  });
+
+  it("produces no base URL for a workspace credential whose own residency is global, even when the platform's is not", async () => {
+    const residencyDefaults: ResolvedLlmConfig = {
+      ...envConfig,
+      openAIPlatformResidency: { residency: "eu", baseUrl: OPENAI_RESIDENCY_HOSTS.eu },
+    };
+    const resolver = new WorkspaceLlmCapabilityResolver({
+      defaults: residencyDefaults,
+      settings: buildSettings([]),
+      credentials: buildCredentials({ "ws-1:openai": "ws-openai-key" }, { "ws-1": "global" }),
+      envKeys: envKeyResolver({ openai: "env-openai" }),
+    });
+
+    const config = await resolver.resolve("chat", { workspaceId: "ws-1" });
+
+    expect(config.baseUrl).toBeUndefined();
     expect(config.openAIDataResidency).toBeUndefined();
   });
 

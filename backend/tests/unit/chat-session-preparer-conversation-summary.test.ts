@@ -83,6 +83,7 @@ const preparerWith = async (store?: Pick<ConversationSummaryStore, "load">) => {
     sourceBasePublishedRevisionId: null,
     createdAt: new Date(),
     publishedAt: new Date(),
+    publishedVersion: 1,
   };
   return {
     conversationRepository,
@@ -217,6 +218,7 @@ describe("ChatSessionPreparer rolling conversation summary (#866)", () => {
       sourceBasePublishedRevisionId: null,
       createdAt: new Date(),
       publishedAt: new Date(),
+      publishedVersion: 1,
     };
     const resolver = new AgentRevisionRuntimeResolver({
       findCurrentPublished: vi.fn(async () => published),
@@ -262,6 +264,7 @@ describe("ChatSessionPreparer rolling conversation summary (#866)", () => {
       sourceBasePublishedRevisionId: null,
       createdAt: new Date(),
       publishedAt: null,
+      publishedVersion: null,
     };
     const privateConversation = await conversationRepository.create({
       workspaceId: "ws-1",
@@ -312,6 +315,7 @@ describe("ChatSessionPreparer rolling conversation summary (#866)", () => {
       sourceBasePublishedRevisionId: null,
       createdAt: new Date(),
       publishedAt: new Date(),
+      publishedVersion: 1,
     };
     const revisionResolver = new AgentRevisionRuntimeResolver({
       findCurrentPublished: async () => published,

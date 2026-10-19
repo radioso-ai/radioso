@@ -1,6 +1,15 @@
 import { randomUUID } from "node:crypto";
 
-import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
+import {
+  exportTimestamp,
+  type DataSubjectDataExporter,
+  type DataSubjectExportRecord,
+  type DataSubjectExportScope,
+  type DataSubjectIdentityFinder,
+  type DataSubjectIdentityMatch,
+  type DataSubjectReach,
+} from "../../shared/domain/dataSubjectAccess.js";
+import { anyOf, currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 export interface VisitorRecord {
@@ -274,5 +283,94 @@ export class VisitorRepository implements VisitorRepositoryPort {
         .where("workspace_id", "=", input.workspaceId)
         .execute();
     });
+  }
+}
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Web visitors as data subject identities: a visitor record found by the customer id the host
+ * verified them by, keyed by the record's own id. A visitor's key alone names nobody an operator
+ * could search for, so an anonymous visitor is found only through a conversation of theirs.
+ */
+export class WebVisitorIdentityFinder implements DataSubjectIdentityFinder {
+  readonly kind = "web_visitor" as const;
+  readonly channel = "web";
+  readonly personalKey = false;
+
+  constructor(private readonly db: Db) {}
+
+  async find(input: { workspaceId: string; query: string }): Promise<DataSubjectIdentityMatch[]> {
+    const rows = await this.db
+      .selectFrom("visitors as v")
+      .select((eb) => [
+        "v.id",
+        "v.verified_customer_id",
+        "v.first_seen_at",
+        "v.last_seen_at",
+        eb.selectFrom("conversations as c").select((inner) => inner.fn.countAll<string>().as("count")).whereRef("c.visitor_id", "=", "v.id").as("conversation_count"),
+      ])
+      .where("v.workspace_id", "=", input.workspaceId)
+      .where("v.verified_customer_id", "=", input.query)
+      .execute();
+    return rows.map((row) => ({
+      key: row.id,
+      label: row.verified_customer_id ?? row.id,
+      conversationCount: Number(row.conversation_count ?? 0),
+      firstSeenAt: row.first_seen_at,
+      lastSeenAt: row.last_seen_at,
+    }));
+  }
+
+  async reach(input: { workspaceId: string; keys: readonly string[] }): Promise<DataSubjectReach> {
+    const keys = input.keys.filter((key) => UUID_PATTERN.test(key));
+    if (keys.length === 0) return { conversationIds: [], visitorIds: [], verifiedCustomerIds: [] };
+    const visitors = await this.db
+      .selectFrom("visitors")
+      .select(["id", "verified_customer_id"])
+      .where("workspace_id", "=", input.workspaceId)
+      .where((eb) => anyOf(eb.ref("id"), keys, "uuid[]"))
+      .execute();
+    const visitorIds = visitors.map((visitor) => visitor.id);
+    const conversations = visitorIds.length === 0 ? [] : await this.db
+      .selectFrom("conversations")
+      .select("id")
+      .where("workspace_id", "=", input.workspaceId)
+      .where((eb) => anyOf(eb.ref("visitor_id"), visitorIds, "uuid[]"))
+      .execute();
+    return {
+      conversationIds: conversations.map((conversation) => conversation.id),
+      visitorIds,
+      verifiedCustomerIds: visitors.flatMap((visitor) => (visitor.verified_customer_id ? [visitor.verified_customer_id] : [])),
+    };
+  }
+}
+
+/** The export's `visitors` section: each visitor record, with what was last observed of the visitor. */
+export class VisitorRecordExporter implements DataSubjectDataExporter {
+  readonly section = "visitors";
+
+  constructor(private readonly db: Db) {}
+
+  async export(scope: DataSubjectExportScope): Promise<DataSubjectExportRecord[]> {
+    if (scope.visitorIds.length === 0) return [];
+    const rows = await this.db
+      .selectFrom("visitors")
+      .select(visitorColumns)
+      .where("workspace_id", "=", scope.workspaceId)
+      .where((eb) => anyOf(eb.ref("id"), scope.visitorIds, "uuid[]"))
+      .orderBy("first_seen_at")
+      .orderBy("id")
+      .execute();
+    return rows.map(mapVisitor).map((visitor) => ({
+      id: visitor.id,
+      verifiedCustomerId: visitor.verifiedCustomerId,
+      visitorKey: visitor.visitorKey,
+      firstSeenAt: exportTimestamp(visitor.firstSeenAt),
+      lastSeenAt: exportTimestamp(visitor.lastSeenAt),
+      lastCountry: visitor.lastCountry,
+      lastLanguage: visitor.lastLanguage,
+      lastUserAgent: visitor.lastUserAgent,
+    }));
   }
 }

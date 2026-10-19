@@ -3345,6 +3345,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/privacy/data-subjects/lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Find a data subject's identities
+         * @description Returns every identity whose verified customer id, email address or Slack member id is exactly the query, each with its channel and conversation count. Identities are never merged: the caller confirms which belong to the subject and passes those to the other operations. Records one `data_subject.looked_up` audit event with identity references and counts.
+         */
+        post: operations["lookupDataSubject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/privacy/data-subjects/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * List the conversations of a data subject's identities
+         * @description The conversations the confirmed identities reach, latest activity first, each once.
+         */
+        post: operations["listDataSubjectConversations"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/privacy/data-subjects/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Export a data subject's data
+         * @description One machine-readable JSON document holding everything the confirmed identities reach, read from one consistent snapshot. Records one `data_subject.exported` audit event with identity references and counts per section, never content.
+         */
+        post: operations["exportDataSubject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/privacy/data-subjects/erase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Permanently erase a data subject's data
+         * @description Erases each web visitor among the confirmed identities as `DELETE /api/v1/history/visitors/{visitorId}` does, then every other conversation the identities reach as `DELETE /api/v1/history/chat/{conversationId}` does, each with its own audit event. One already erased is skipped. There is no undo.
+         */
+        post: operations["eraseDataSubject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/conversations/recently-closed": {
         parameters: {
             query?: never;
@@ -10089,6 +10169,74 @@ export interface components {
         };
         EnableEmailDirectReceivingRequest: {
             confirmation: string;
+        };
+        /** @description One identity a data subject is known by on one channel. `web_visitor`: a visitor record, keyed by its id. `email_address`: an email sender, keyed by the lowercased address. `slack_user`: a Slack member, keyed by the Slack workspace id and the member id. */
+        DataSubjectIdentity: {
+            /** @enum {string} */
+            kind: "web_visitor" | "email_address" | "slack_user";
+            /** @description The identity's key, as the lookup returned it. */
+            key: string;
+        };
+        DataSubjectIdentityCandidate: {
+            identity: components["schemas"]["DataSubjectIdentity"];
+            /** @description The conversation channel the identity is on: `web`, `email` or `slack`. */
+            channel: string;
+            /** @description How the channel knows the person: a verified customer id, an address, or a Slack member id. */
+            label: string;
+            conversationCount: number;
+            /** Format: date-time */
+            firstSeenAt: string | null;
+            /** Format: date-time */
+            lastSeenAt: string | null;
+        };
+        DataSubjectConversation: {
+            /** Format: uuid */
+            id: string;
+            channel: string | null;
+            title: string | null;
+            /** Format: date-time */
+            startedAt: string;
+            /** Format: date-time */
+            lastActivityAt: string;
+            messageCount: number;
+        };
+        DataSubjectExport: {
+            /** @enum {string} */
+            format: "radioso.data_subject_export";
+            /**
+             * @description The format's version. A change to the document's shape is a new version.
+             * @enum {number}
+             */
+            formatVersion: 1;
+            /** Format: date-time */
+            exportedAt: string;
+            /** Format: uuid */
+            workspaceId: string;
+            identities: components["schemas"]["DataSubjectIdentity"][];
+            /** @description Every section, keyed by name, each a list of records: `conversations` (each with its `messages`), `visitors`, `routine_values`, `routine_actions`, `conversation_summaries`, `context_values`, `email_messages`, `answer_feedback`. A section with nothing for the subject is an empty list. */
+            sections: {
+                [key: string]: {
+                    [key: string]: unknown;
+                }[];
+            };
+        };
+        DataSubjectErasure: {
+            visitorCount: number;
+            conversationCount: number;
+            messageCount: number;
+        };
+        DataSubjectLookupRequest: {
+            /** @description A verified customer id, an email address, or a Slack member id. Matched exactly: an address without regard to case, the others as stored. */
+            query: string;
+        };
+        DataSubjectIdentitiesRequest: {
+            /** @description The identities the operator confirmed belong to the data subject. */
+            identities: {
+                /** @enum {string} */
+                kind: "web_visitor" | "email_address" | "slack_user";
+                /** @description The identity's key, as the lookup returned it. */
+                key: string;
+            }[];
         };
         DeliveryFailure: {
             /** Format: uuid */
@@ -25526,6 +25674,214 @@ export interface operations {
             };
             /** @description Search history entry not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    lookupDataSubject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DataSubjectLookupRequest"];
+            };
+        };
+        responses: {
+            /** @description Candidate identities */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        identities: components["schemas"]["DataSubjectIdentityCandidate"][];
+                    };
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.history.delete */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listDataSubjectConversations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DataSubjectIdentitiesRequest"];
+            };
+        };
+        responses: {
+            /** @description The subject's conversations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        conversations: components["schemas"]["DataSubjectConversation"][];
+                    };
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.history.delete */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    exportDataSubject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DataSubjectIdentitiesRequest"];
+            };
+        };
+        responses: {
+            /** @description The export */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataSubjectExport"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.history.delete */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    eraseDataSubject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DataSubjectIdentitiesRequest"];
+            };
+        };
+        responses: {
+            /** @description What was erased */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataSubjectErasure"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.history.delete */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

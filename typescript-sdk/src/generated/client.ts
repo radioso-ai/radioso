@@ -39,6 +39,19 @@ export type HistoryItemsResponse = components["schemas"]["HistoryItemsResponse"]
 export type ChatHistoryListResponse = components["schemas"]["ChatHistoryListResponse"];
 export type ChatConversationDetail = components["schemas"]["ChatConversationDetail"];
 export type VisitorConversationsResponse = components["schemas"]["VisitorConversationsResponse"];
+export type DataSubjectIdentity = components["schemas"]["DataSubjectIdentity"];
+export type DataSubjectIdentityCandidate = components["schemas"]["DataSubjectIdentityCandidate"];
+export type DataSubjectConversation = components["schemas"]["DataSubjectConversation"];
+export type DataSubjectExport = components["schemas"]["DataSubjectExport"];
+export type DataSubjectErasure = components["schemas"]["DataSubjectErasure"];
+export type DataSubjectLookupRequest = components["schemas"]["DataSubjectLookupRequest"];
+export type DataSubjectIdentitiesRequest = components["schemas"]["DataSubjectIdentitiesRequest"];
+export interface DataSubjectLookupResponse {
+  identities: DataSubjectIdentityCandidate[];
+}
+export interface DataSubjectConversationsResponse {
+  conversations: DataSubjectConversation[];
+}
 export type AssistantChatTurnRequest = AssistantChatRequest & { message: string; startConversation?: false };
 export type ChatCreateRequest = Omit<AssistantChatTurnRequest, "stream" | "startConversation"> & {
   stream?: false;
@@ -363,6 +376,42 @@ export class GeneratedRadiosoClient {
     return requestJson(this.config, {
       method: "DELETE",
       path: `/api/v1/history/visitors/${visitorId}`,
+    });
+  }
+
+  /** Finds the identities a verified customer id, email address or Slack member id names. Merges none. */
+  lookupDataSubject(body: DataSubjectLookupRequest): Promise<DataSubjectLookupResponse> {
+    return requestJson(this.config, {
+      method: "POST",
+      path: "/api/v1/privacy/data-subjects/lookup",
+      body,
+    });
+  }
+
+  /** Lists the conversations the confirmed identities reach. */
+  listDataSubjectConversations(body: DataSubjectIdentitiesRequest): Promise<DataSubjectConversationsResponse> {
+    return requestJson(this.config, {
+      method: "POST",
+      path: "/api/v1/privacy/data-subjects/conversations",
+      body,
+    });
+  }
+
+  /** Exports everything the confirmed identities reach as one versioned JSON document. */
+  exportDataSubject(body: DataSubjectIdentitiesRequest): Promise<DataSubjectExport> {
+    return requestJson(this.config, {
+      method: "POST",
+      path: "/api/v1/privacy/data-subjects/export",
+      body,
+    });
+  }
+
+  /** Permanently erases the confirmed identities' visitors and conversations. */
+  eraseDataSubject(body: DataSubjectIdentitiesRequest): Promise<DataSubjectErasure> {
+    return requestJson(this.config, {
+      method: "POST",
+      path: "/api/v1/privacy/data-subjects/erase",
+      body,
     });
   }
 

@@ -45,6 +45,9 @@
       "name": "History"
     },
     {
+      "name": "Privacy"
+    },
+    {
       "name": "Context Variables"
     },
     {
@@ -22399,6 +22402,241 @@
         },
         "required": [
           "confirmation"
+        ],
+        "additionalProperties": false
+      },
+      "DataSubjectIdentity": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "type": "string",
+            "enum": [
+              "web_visitor",
+              "email_address",
+              "slack_user"
+            ]
+          },
+          "key": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512,
+            "description": "The identity's key, as the lookup returned it."
+          }
+        },
+        "required": [
+          "kind",
+          "key"
+        ],
+        "additionalProperties": false,
+        "description": "One identity a data subject is known by on one channel. `web_visitor`: a visitor record, keyed by its id. `email_address`: an email sender, keyed by the lowercased address. `slack_user`: a Slack member, keyed by the Slack workspace id and the member id."
+      },
+      "DataSubjectIdentityCandidate": {
+        "type": "object",
+        "properties": {
+          "identity": {
+            "$ref": "#/components/schemas/DataSubjectIdentity"
+          },
+          "channel": {
+            "type": "string",
+            "description": "The conversation channel the identity is on: `web`, `email` or `slack`."
+          },
+          "label": {
+            "type": "string",
+            "description": "How the channel knows the person: a verified customer id, an address, or a Slack member id."
+          },
+          "conversationCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "firstSeenAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          },
+          "lastSeenAt": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "identity",
+          "channel",
+          "label",
+          "conversationCount",
+          "firstSeenAt",
+          "lastSeenAt"
+        ]
+      },
+      "DataSubjectConversation": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "channel": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "title": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "startedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "lastActivityAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "messageCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "id",
+          "channel",
+          "title",
+          "startedAt",
+          "lastActivityAt",
+          "messageCount"
+        ]
+      },
+      "DataSubjectExport": {
+        "type": "object",
+        "properties": {
+          "format": {
+            "type": "string",
+            "enum": [
+              "radioso.data_subject_export"
+            ]
+          },
+          "formatVersion": {
+            "type": "number",
+            "enum": [
+              1
+            ],
+            "description": "The format's version. A change to the document's shape is a new version."
+          },
+          "exportedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "workspaceId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "identities": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DataSubjectIdentity"
+            }
+          },
+          "sections": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": {}
+              }
+            },
+            "description": "Every section, keyed by name, each a list of records: `conversations` (each with its `messages`), `visitors`, `routine_values`, `routine_actions`, `conversation_summaries`, `context_values`, `email_messages`, `answer_feedback`. A section with nothing for the subject is an empty list."
+          }
+        },
+        "required": [
+          "format",
+          "formatVersion",
+          "exportedAt",
+          "workspaceId",
+          "identities",
+          "sections"
+        ]
+      },
+      "DataSubjectErasure": {
+        "type": "object",
+        "properties": {
+          "visitorCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "conversationCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "messageCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "visitorCount",
+          "conversationCount",
+          "messageCount"
+        ]
+      },
+      "DataSubjectLookupRequest": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 320,
+            "description": "A verified customer id, an email address, or a Slack member id. Matched exactly: an address without regard to case, the others as stored."
+          }
+        },
+        "required": [
+          "query"
+        ],
+        "additionalProperties": false
+      },
+      "DataSubjectIdentitiesRequest": {
+        "type": "object",
+        "properties": {
+          "identities": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "web_visitor",
+                    "email_address",
+                    "slack_user"
+                  ]
+                },
+                "key": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512,
+                  "description": "The identity's key, as the lookup returned it."
+                }
+              },
+              "required": [
+                "kind",
+                "key"
+              ],
+              "additionalProperties": false
+            },
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "The identities the operator confirmed belong to the data subject."
+          }
+        },
+        "required": [
+          "identities"
         ],
         "additionalProperties": false
       },
@@ -51394,6 +51632,296 @@
           },
           "404": {
             "description": "Search history entry not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/privacy/data-subjects/lookup": {
+      "post": {
+        "tags": [
+          "Privacy"
+        ],
+        "summary": "Find a data subject's identities",
+        "description": "Returns every identity whose verified customer id, email address or Slack member id is exactly the query, each with its channel and conversation count. Identities are never merged: the caller confirms which belong to the subject and passes those to the other operations. Records one `data_subject.looked_up` audit event with identity references and counts.",
+        "operationId": "lookupDataSubject",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DataSubjectLookupRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Candidate identities",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "identities": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DataSubjectIdentityCandidate"
+                      }
+                    }
+                  },
+                  "required": [
+                    "identities"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks workspace.history.delete",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/privacy/data-subjects/conversations": {
+      "post": {
+        "tags": [
+          "Privacy"
+        ],
+        "summary": "List the conversations of a data subject's identities",
+        "description": "The conversations the confirmed identities reach, latest activity first, each once.",
+        "operationId": "listDataSubjectConversations",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DataSubjectIdentitiesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The subject's conversations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "conversations": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DataSubjectConversation"
+                      }
+                    }
+                  },
+                  "required": [
+                    "conversations"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks workspace.history.delete",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/privacy/data-subjects/export": {
+      "post": {
+        "tags": [
+          "Privacy"
+        ],
+        "summary": "Export a data subject's data",
+        "description": "One machine-readable JSON document holding everything the confirmed identities reach, read from one consistent snapshot. Records one `data_subject.exported` audit event with identity references and counts per section, never content.",
+        "operationId": "exportDataSubject",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DataSubjectIdentitiesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The export",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataSubjectExport"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks workspace.history.delete",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/privacy/data-subjects/erase": {
+      "post": {
+        "tags": [
+          "Privacy"
+        ],
+        "summary": "Permanently erase a data subject's data",
+        "description": "Erases each web visitor among the confirmed identities as `DELETE /api/v1/history/visitors/{visitorId}` does, then every other conversation the identities reach as `DELETE /api/v1/history/chat/{conversationId}` does, each with its own audit event. One already erased is skipped. There is no undo.",
+        "operationId": "eraseDataSubject",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DataSubjectIdentitiesRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "What was erased",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DataSubjectErasure"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Caller lacks workspace.history.delete",
             "content": {
               "application/json": {
                 "schema": {

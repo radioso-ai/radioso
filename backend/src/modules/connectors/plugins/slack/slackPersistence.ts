@@ -1,8 +1,14 @@
 import { randomUUID } from "node:crypto";
 import type { ConversationChannelContext } from "@radioso/conversation-contract";
+import { sql } from "kysely";
 
 import { ConversationRepository } from "../../../../db/repositories/conversationRepository.js";
 import type { BackgroundJobQueue, BackgroundJobRequest } from "../../../../shared/background-jobs/index.js";
+import type {
+  DataSubjectIdentityFinder,
+  DataSubjectIdentityMatch,
+  DataSubjectReach,
+} from "../../../../shared/domain/dataSubjectAccess.js";
 import {
   currentTimestamp,
   transactionAdvisoryLock,
@@ -259,5 +265,72 @@ export class PostgresSlackPersistence implements SlackPersistencePort {
       .returning(["id", "workspace_id", "installation_id", "slack_key", "conversation_id"])
       .executeTakeFirstOrThrow();
     return mapLink(row);
+  }
+}
+
+/** The Slack user a linked conversation is with: the one who started its thread. */
+const threadUserId = sql<string>`c.channel_context -> 'user' ->> 'id'`;
+
+/** A Slack identity's key: the Slack workspace it belongs to and the user's member id there. */
+const slackUserKey = (teamId: string, userId: string): string => `${teamId}:${userId}`;
+
+const parseSlackUserKey = (key: string): { teamId: string; userId: string } | null => {
+  const separator = key.indexOf(":");
+  if (separator <= 0 || separator === key.length - 1) return null;
+  return { teamId: key.slice(0, separator), userId: key.slice(separator + 1) };
+};
+
+/**
+ * Slack users as data subject identities: the member who started a thread the agent answered,
+ * found by their Slack member id and keyed by it together with their Slack workspace's id. Audit
+ * events carry the key as a digest.
+ */
+export class SlackUserIdentityFinder implements DataSubjectIdentityFinder {
+  readonly kind = "slack_user" as const;
+  readonly channel = "slack";
+  readonly personalKey = true;
+
+  constructor(private readonly db: Db) {}
+
+  async find(input: { workspaceId: string; query: string }): Promise<DataSubjectIdentityMatch[]> {
+    // Slack member ids are upper-case; one pasted from elsewhere may not be.
+    const userId = input.query.trim().toUpperCase();
+    const rows = await this.links(input.workspaceId)
+      .select((eb) => [
+        "i.team_id",
+        eb.fn.countAll<string>().as("conversation_count"),
+        eb.fn.min("c.created_at").as("first_seen_at"),
+        eb.fn.max("c.updated_at").as("last_seen_at"),
+      ])
+      .where(threadUserId, "=", userId)
+      .groupBy("i.team_id")
+      .orderBy("i.team_id")
+      .execute();
+    return rows.map((row) => ({
+      key: slackUserKey(row.team_id, userId),
+      label: userId,
+      conversationCount: Number(row.conversation_count),
+      firstSeenAt: row.first_seen_at,
+      lastSeenAt: row.last_seen_at,
+    }));
+  }
+
+  async reach(input: { workspaceId: string; keys: readonly string[] }): Promise<DataSubjectReach> {
+    const users = input.keys.flatMap((key) => parseSlackUserKey(key) ?? []);
+    if (users.length === 0) return { conversationIds: [], visitorIds: [], verifiedCustomerIds: [] };
+    const rows = await this.links(input.workspaceId)
+      .select("c.id")
+      .where((eb) => eb.or(users.map((user) => eb.and([eb("i.team_id", "=", user.teamId), eb(threadUserId, "=", user.userId)]))))
+      .execute();
+    return { conversationIds: rows.map((row) => row.id), visitorIds: [], verifiedCustomerIds: [] };
+  }
+
+  private links(workspaceId: string) {
+    return this.db
+      .selectFrom("slack_conversation_links as l")
+      .innerJoin("slack_installations as i", "i.id", "l.installation_id")
+      .innerJoin("conversations as c", "c.id", "l.conversation_id")
+      .where("l.workspace_id", "=", workspaceId)
+      .where("c.workspace_id", "=", workspaceId);
   }
 }

@@ -26,6 +26,7 @@ import { registerAgentSkillsPaths } from "./paths/agentSkillsPaths.js";
 import { registerAgentWizardPaths } from "./paths/agentWizardPaths.js";
 import { registerDocumentsPaths } from "./paths/documentsPaths.js";
 import { registerHistoryPaths } from "./paths/historyPaths.js";
+import { registerPrivacyPaths } from "./paths/privacyPaths.js";
 import { registerConversationActivityPaths } from "./paths/conversationActivityPaths.js";
 import { registerConversationOwnershipPaths } from "./paths/conversationOwnershipPaths.js";
 import { registerConversationRecordingPaths } from "./paths/conversationRecordingPaths.js";
@@ -77,6 +78,7 @@ export const registerOpenApiPaths = (
   registerAssistantAuthenticatedChatPaths(registry, schemas, security);
   registerAssistantFeedbackPaths(registry, schemas, security);
   registerHistoryPaths(registry, schemas, security);
+  registerPrivacyPaths(registry, schemas, security);
   registerConversationActivityPaths(registry, schemas, security);
   registerConversationOwnershipPaths(registry, schemas, security);
   registerConversationRecordingPaths(registry, schemas, security);

@@ -2104,6 +2104,14 @@ export const createTestDependencies = (overrides: {
       if (routineRegistry.isEmpty && routines.length === 0) {
         return null;
       }
+      // Same port pairing production uses (routines/exposure/directInvocationTurn.ts).
+      const direct = routineInvocation
+        ? createDirectInvocationTurnPorts({
+          registrations: [...staticRoutineRegistrations, ...publishedRegistrations, ...pinnedRegistrations],
+          routines,
+          invocation: routineInvocation,
+        })
+        : null;
       const runner = new DefaultRoutineRunner(
         routines,
         new RoutineNextStepSelector(modelGateway, {
@@ -2114,14 +2122,10 @@ export const createTestDependencies = (overrides: {
           responseLanguage,
           groundedAnswerRenderer,
         }),
+        undefined,
+        { ...direct?.runnerOptions },
       );
-      if (routineInvocation) {
-        // Same port pairing production uses (routines/exposure/directInvocationTurn.ts).
-        const direct = createDirectInvocationTurnPorts({
-          registrations: [...staticRoutineRegistrations, ...publishedRegistrations, ...pinnedRegistrations],
-          routines,
-          invocation: routineInvocation,
-        });
+      if (direct) {
         return {
           reporter: direct.reporter,
           activator: direct.activator,

@@ -1,6 +1,16 @@
 import { describe, expect, it } from "vitest";
 
+import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
 import { QueryRewriteService } from "../../src/modules/retrieval/services/queryRewriteService.js";
+
+const message = (content: string, role: MessageRecord["role"] = "user"): MessageRecord => ({
+  id: content,
+  conversationId: "c1",
+  workspaceId: "w1",
+  role,
+  content,
+  createdAt: new Date(),
+});
 
 const rewriteComparison = async (
   subqueries: Array<{ label: string; semanticQuery: string; lexicalQuery: string }>,
@@ -490,6 +500,245 @@ describe("query rewrite subqueries", () => {
     expect(result.semanticQuery).toBe("Who is Arya Cheng?");
     expect(result.lexicalQuery).toBe("Arya Cheng");
     expect(result.retrievalSubqueries).toBeUndefined();
+  });
+});
+
+describe("query rewrite referential subject", () => {
+  const SUBJECT = "Le soluzioni super coscienti";
+  const QUERY = "Mi mandi un completo preventivo compreso di pernottamento per l'evento";
+  // The named subject sits two turns back, behind a form question that names nothing.
+  const bookingHistory = [
+    message("Vorrei partecipare al corso residenziale"),
+    message("Quale corso ti interessa?", "assistant"),
+    message(SUBJECT),
+    message("Per completare la richiesta mi servono nome ed email.", "assistant"),
+  ];
+
+  type ProposalSubquery = { label: string; semanticQuery: string; lexicalQuery: string };
+
+  const rewriteReferential = (proposal: {
+    semanticQuery: string;
+    lexicalQuery: string;
+    subject?: string;
+    query?: string;
+    unresolved?: boolean;
+    turnKind?: "referential_followup" | "referential_relation" | "explicit_recenter" | "comparative" | "fresh_subject";
+    retrievalSubqueries?: ProposalSubquery[];
+    history?: MessageRecord[];
+  }) => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          rewrittenQuery: proposal.semanticQuery,
+          semanticQuery: proposal.semanticQuery,
+          lexicalQuery: proposal.lexicalQuery,
+          responseLanguagePolicy: "match_user_question",
+          turnKind: proposal.turnKind ?? "referential_followup",
+          queryShape: "general_grounding",
+          proposedActiveSubject: proposal.subject ?? SUBJECT,
+          relatedEntities: [],
+          unresolved: proposal.unresolved ?? false,
+          confidence: 0.93,
+          ...(proposal.retrievalSubqueries
+            ? {
+                retrievalSubqueries: proposal.retrievalSubqueries.map((subquery) => ({
+                  id: "",
+                  ...subquery,
+                  responseLanguagePolicy: "match_user_question" as const,
+                })),
+              }
+            : {}),
+        };
+      },
+    });
+
+    const history = proposal.history ?? bookingHistory;
+    return service.rewrite({
+      query: proposal.query ?? QUERY,
+      contextWindow: { selectedMessages: history, truncated: false, selectionReason: history.length > 0 ? "recent" : "no-history" },
+      enabled: true,
+    });
+  };
+
+  const lexicalQueriesOf = (result: Awaited<ReturnType<typeof rewriteReferential>>) =>
+    result.retrievalSubqueries?.map((subquery) => subquery.lexicalQuery);
+
+  it("anchors the semantic query and adds a subject-only lexical search when the model left the reference generic", async () => {
+    const result = await rewriteReferential({
+      semanticQuery: "Preventivo completo per l'evento, comprensivo di pernottamento",
+      lexicalQuery: "preventivo completo pernottamento evento",
+    });
+
+    const anchored = `${SUBJECT}: Preventivo completo per l'evento, comprensivo di pernottamento`;
+    expect(result.status).toBe("applied");
+    expect(result.semanticQuery).toBe(anchored);
+    expect(result.effectiveQuery).toBe(anchored);
+    expect(result.lexicalQuery).toBe("preventivo completo pernottamento evento");
+    expect(result.retrievalSubqueries).toEqual([
+      expect.objectContaining({ semanticQuery: anchored, lexicalQuery: "preventivo completo pernottamento evento" }),
+      expect.objectContaining({ semanticQuery: anchored, lexicalQuery: SUBJECT, reason: "referential_subject" }),
+    ]);
+    expect(result.structuredResult?.anchoredSubject).toBe(SUBJECT);
+  });
+
+  it("keeps the model's distinguishing lexical terms and searches the subject beside them", async () => {
+    const result = await rewriteReferential({
+      subject: "Enterprise plan",
+      query: "Does it support SAML?",
+      semanticQuery: "SAML single sign-on support",
+      lexicalQuery: "SAML",
+      history: [message("Tell me about the Enterprise plan"), message("The Enterprise plan adds SSO.", "assistant")],
+    });
+
+    expect(result.semanticQuery).toBe("Enterprise plan: SAML single sign-on support");
+    expect(result.lexicalQuery).toBe("SAML");
+    expect(lexicalQueriesOf(result)).toEqual(["SAML", "Enterprise plan"]);
+  });
+
+  it("still searches the subject alone when the model's lexical query adds terms to it", async () => {
+    const result = await rewriteReferential({
+      semanticQuery: "Preventivo per Le soluzioni super coscienti con pernottamento",
+      lexicalQuery: "Le soluzioni super coscienti pernottamento",
+    });
+
+    expect(result.semanticQuery).toBe("Preventivo per Le soluzioni super coscienti con pernottamento");
+    expect(result.lexicalQuery).toBe("Le soluzioni super coscienti pernottamento");
+    expect(lexicalQueriesOf(result)).toEqual(["Le soluzioni super coscienti pernottamento", SUBJECT]);
+  });
+
+  it("adds no search when the model's lexical query is already the subject", async () => {
+    const result = await rewriteReferential({
+      semanticQuery: "Preventivo per le soluzioni super coscienti",
+      lexicalQuery: "le Soluzioni Super Coscienti",
+    });
+
+    expect(result.lexicalQuery).toBe("le Soluzioni Super Coscienti");
+    expect(result.retrievalSubqueries).toBeUndefined();
+    expect(result.structuredResult?.anchoredSubject).toBeUndefined();
+  });
+
+  it("matches the subject by whole tokens, not substrings", async () => {
+    const result = await rewriteReferential({
+      subject: "Pro",
+      query: "How much is it?",
+      semanticQuery: "Price of the programme",
+      lexicalQuery: "programme price",
+      history: [message("What is the Pro plan?"), message("Pro is our mid tier.", "assistant")],
+    });
+
+    expect(result.semanticQuery).toBe("Pro: Price of the programme");
+    expect(lexicalQueriesOf(result)).toEqual(["programme price", "Pro"]);
+  });
+
+  it("anchors every model subquery and adds the subject-only search beside them", async () => {
+    const result = await rewriteReferential({
+      semanticQuery: "Prezzi e alloggio per l'evento",
+      lexicalQuery: "prezzi alloggio",
+      retrievalSubqueries: [
+        { label: "Quota", semanticQuery: "Quota di partecipazione dell'evento", lexicalQuery: "quota partecipazione" },
+        { label: "Alloggio", semanticQuery: "Costo del pernottamento", lexicalQuery: "pernottamento camera" },
+      ],
+    });
+
+    expect(result.retrievalSubqueries).toEqual([
+      expect.objectContaining({ semanticQuery: `${SUBJECT}: Quota di partecipazione dell'evento`, lexicalQuery: "quota partecipazione" }),
+      expect.objectContaining({ semanticQuery: `${SUBJECT}: Costo del pernottamento`, lexicalQuery: "pernottamento camera" }),
+      expect.objectContaining({ lexicalQuery: SUBJECT, reason: "referential_subject" }),
+    ]);
+    expect(new Set(result.retrievalSubqueries?.map((subquery) => subquery.id)).size).toBe(3);
+  });
+
+  it("anchors a referential relation, whose subject is the one referred back to", async () => {
+    const result = await rewriteReferential({
+      turnKind: "referential_relation",
+      semanticQuery: "Chi insegna l'evento",
+      lexicalQuery: "insegnante",
+    });
+
+    expect(result.semanticQuery).toBe(`${SUBJECT}: Chi insegna l'evento`);
+    expect(lexicalQueriesOf(result)).toEqual(["insegnante", SUBJECT]);
+  });
+
+  it.each(["fresh_subject", "explicit_recenter", "comparative"] as const)(
+    "leaves a %s turn's queries to the model",
+    async (turnKind) => {
+      const result = await rewriteReferential({
+        turnKind,
+        semanticQuery: "Preventivo completo per l'evento, comprensivo di pernottamento",
+        lexicalQuery: "preventivo completo pernottamento evento",
+      });
+
+      expect(result.semanticQuery).toBe("Preventivo completo per l'evento, comprensivo di pernottamento");
+      expect(result.retrievalSubqueries).toBeUndefined();
+    },
+  );
+
+  it("leaves an unresolved reference as the model wrote it", async () => {
+    const result = await rewriteReferential({
+      semanticQuery: "Preventivo completo per l'evento, comprensivo di pernottamento",
+      lexicalQuery: "preventivo completo pernottamento evento",
+      unresolved: true,
+    });
+
+    expect(result.semanticQuery).toBe("Preventivo completo per l'evento, comprensivo di pernottamento");
+    expect(result.lexicalQuery).toBe("preventivo completo pernottamento evento");
+    expect(result.retrievalSubqueries).toBeUndefined();
+  });
+
+  it("does not anchor without conversation context", async () => {
+    const result = await rewriteReferential({
+      history: [],
+      semanticQuery: "Preventivo completo per l'evento, comprensivo di pernottamento",
+      lexicalQuery: "preventivo completo pernottamento evento",
+    });
+
+    expect(result.semanticQuery).not.toContain(SUBJECT);
+    expect(result.retrievalSubqueries).toBeUndefined();
+    expect(result.structuredResult?.anchoredSubject).toBeUndefined();
+  });
+
+  it.each(["L’arte del respiro", "«Le soluzioni super coscienti»"])(
+    "anchors a free-text subject the classifier label rejects: %s",
+    async (subject) => {
+      const result = await rewriteReferential({
+        subject,
+        semanticQuery: "Preventivo completo per l'evento",
+        lexicalQuery: "preventivo evento",
+      });
+
+      expect(result.semanticQuery).toBe(`${subject}: Preventivo completo per l'evento`);
+      expect(lexicalQueriesOf(result)).toEqual(["preventivo evento", subject]);
+      expect(result.structuredResult?.anchoredSubject).toBe(subject);
+      // The classifier label the definition-lookup branch reads is unchanged.
+      expect(result.structuredResult?.proposedActiveSubject).toBeUndefined();
+    },
+  );
+
+  it("keeps the interpreter's resolution note for the trace", async () => {
+    const service = new QueryRewriteService({
+      async rewrite() {
+        return {
+          resolutionNote: "l'evento is the course the user named two turns back",
+          rewrittenQuery: `${SUBJECT}: preventivo con pernottamento`,
+          semanticQuery: `${SUBJECT}: preventivo con pernottamento`,
+          lexicalQuery: SUBJECT,
+          responseLanguagePolicy: "match_user_question",
+          turnKind: "referential_followup",
+          proposedActiveSubject: SUBJECT,
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.93,
+        };
+      },
+    });
+
+    const result = await service.rewrite({
+      query: QUERY,
+      contextWindow: { selectedMessages: bookingHistory, truncated: false, selectionReason: "recent" },
+      enabled: true,
+    });
+
+    expect(result.structuredResult?.resolutionNote).toBe("l'evento is the course the user named two turns back");
   });
 });
 

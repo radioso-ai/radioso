@@ -389,7 +389,6 @@
   "types|backend/src/modules/retrieval/services/agenticTools/rewriteQueryTool.ts|RewriteQueryToolDeps",
   "types|backend/src/modules/retrieval/services/agenticTools/semanticSearchTool.ts|SemanticSearchToolDeps",
   "types|backend/src/modules/retrieval/services/metadataRuleFieldReferenceService.ts|WorkspaceSkillConfigSource",
-  "types|backend/src/modules/retrieval/services/queryRewriteService.ts|QueryRewriteGatewayFallbackResult",
   "types|backend/src/modules/retrieval/services/retrievalAnswerExecutor.ts|RetrievalAnswerExecutorDeps",
   "types|backend/src/modules/retrieval/services/retrievalPipelineActivityTraceBuilder.ts|NonActivityTraceSourceStages",
   "types|backend/src/modules/retrieval/services/retrievalShapeResolver.ts|RetrievalAnswerSkillDiagnosticInput",

@@ -43,7 +43,7 @@ describe("retrieval sense with the visitor's question suppressed", () => {
 
     expect(effect?.kind).toBe("proceed");
     expect(effect && "documentScope" in effect ? effect.documentScope : undefined).toBeUndefined();
-    expect(effect?.stage?.outputs).toMatchObject({ surface: "retrieval_sense", decision: "suppressed" });
+    expect(effect?.stage?.outputs).toMatchObject({ surface: "retrieval_sense", decision: "suppressed", reason: "all_senses_kept" });
     expect(effect?.stage?.outputs).not.toHaveProperty("chosenCandidateId");
     expect((effect?.stage?.outputs as { candidates?: unknown[] }).candidates).toHaveLength(3);
   });

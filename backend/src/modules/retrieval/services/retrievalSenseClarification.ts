@@ -218,6 +218,7 @@ const suppressedWithoutScopeStage = (candidates: ClarificationCandidate[]): Conv
     surface: "retrieval_sense",
     decision: { kind: "none" },
     consideredCandidates: candidates,
+    reason: "all_senses_kept",
   });
   return { ...stage, status: "applied", outputs: { ...stage.outputs, decision: "suppressed" } };
 };

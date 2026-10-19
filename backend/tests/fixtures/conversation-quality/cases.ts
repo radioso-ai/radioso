@@ -460,7 +460,7 @@ export const conversationQualityCases: ConversationQualityCase[] = [
     id: "referent-course-missing-from-corpus",
     name: "A quote for a named course the material does not cover is not answered from another course",
     description:
-      "The same exchange, but the named course has no page; the two residential courses that do are other courses. Their prices are the requested kind of fact about a different subject, so the coverage verdict stays unanswered rather than accepting another course's figures as the quote, which is what an answered verdict citing them would mean.",
+      "The same exchange, but the named course has no page; the two residential courses that do are other courses. Their prices are the requested kind of fact about a different subject, so the coverage verdict stays unanswered and the answer quotes neither course's figures (280/220 and 260/180 euro).",
     tags: ["retrieval", "multiturn", "coverage", "multilingual", "referent-resolution"],
     history: courseNamedBehindContactFormItalian("dal 3/10/2031 al 5/10/2031", "Il silenzio del cuore"),
     routineStartState: contactFormAwaitingName,
@@ -468,6 +468,11 @@ export const conversationQualityCases: ConversationQualityCase[] = [
     assertions: [
       { type: "turn_route", route: "retrieval" },
       { type: "turn_answer_coverage", coverage: "unanswered" },
+      // Neither residential course's prices may stand in for the named course's quote.
+      { type: "answer_does_not_contain", pattern: "280", matchMode: "substring" },
+      { type: "answer_does_not_contain", pattern: "220", matchMode: "substring" },
+      { type: "answer_does_not_contain", pattern: "260", matchMode: "substring" },
+      { type: "answer_does_not_contain", pattern: "180", matchMode: "substring" },
     ],
   },
   {

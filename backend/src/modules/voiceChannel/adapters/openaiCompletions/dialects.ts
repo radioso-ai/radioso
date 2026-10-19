@@ -1,4 +1,5 @@
 import { isLocaleTag } from "../../../../shared/domain/locale.js";
+import { PRIVACY_NOTICE_VERSION_MAX_LENGTH } from "../../../agents/public.js";
 import type { VoiceLanguageSwitchOffer, VoiceLanguageSwitchResult, VoiceTransport } from "../../domain.js";
 import {
   offersLanguageSwitch,
@@ -32,6 +33,8 @@ export interface CompletionsDialect {
   localeFrom: readonly CompletionsFieldSource[];
   /** Where the language of this one turn travels, when the runtime reports it apart from the session's. */
   turnLocaleFrom: readonly CompletionsTurnLocaleSource[];
+  /** Where the page that started the session puts the version of the privacy notice it showed (#1545). */
+  privacyNoticeVersionFrom: readonly CompletionsFieldSource[];
   transportDefault: VoiceTransport;
   /**
    * A delta sent after each bridge line and speech piece, for a runtime that holds a finished
@@ -71,6 +74,7 @@ const COMPLETIONS_DIALECTS = new Map<string, CompletionsDialect>([
     id: "elevenlabs",
     sessionKeyFrom: [{ bodyPath: ["elevenlabs_extra_body", "session_key"] }],
     localeFrom: [{ bodyPath: ["elevenlabs_extra_body", "locale"] }],
+    privacyNoticeVersionFrom: [{ bodyPath: ["elevenlabs_extra_body", "privacy_notice_version"] }],
     // The `language_detection` system tool switches the call's voice and transcription to the
     // language its `language` argument names (an ISO 639-1 code such as "it"), as an OpenAI tool
     // call: https://elevenlabs.io/docs/eleven-agents/customization/tools/system-tools/language-detection
@@ -108,6 +112,7 @@ const COMPLETIONS_DIALECTS = new Map<string, CompletionsDialect>([
     sessionKeyFrom: [{ header: "x-radioso-voice-session" }, { bodyPath: ["metadata", "session_key"] }],
     localeFrom: [{ header: "x-radioso-voice-locale" }, { bodyPath: ["metadata", "locale"] }],
     turnLocaleFrom: [{ field: { header: "x-radioso-voice-turn-locale" } }, { field: { bodyPath: ["metadata", "turn_locale"] } }],
+    privacyNoticeVersionFrom: [{ header: "x-radioso-voice-privacy-notice-version" }, { bodyPath: ["metadata", "privacy_notice_version"] }],
     transportDefault: "web",
   }],
 ]);
@@ -166,6 +171,13 @@ export const sessionKeyFor = (dialect: CompletionsDialect, request: CompletionsR
 /** The session's language tag from the first source that carries a well-formed one. */
 export const localeFor = (dialect: CompletionsDialect, request: CompletionsRequestParts): string | undefined =>
   firstValue(dialect.localeFrom, request, isLocaleTag);
+
+/**
+ * The privacy notice version the page showed before the call, as it reports it. Chat records it on
+ * the conversation the session's first turn starts, when the agent's notices carry it.
+ */
+export const privacyNoticeVersionFor = (dialect: CompletionsDialect, request: CompletionsRequestParts): string | undefined =>
+  firstValue(dialect.privacyNoticeVersionFrom, request, (value) => value.length <= PRIVACY_NOTICE_VERSION_MAX_LENGTH);
 
 /**
  * The language this one turn reports apart from the session's. A per-turn field is the first that

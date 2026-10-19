@@ -655,7 +655,7 @@ function PublicChatContent({
   // Talk needs both the agent's voice and a page that can ask for the microphone.
   const microphoneAskable = useCanAskForMicrophone(surface === 'embed' && voiceAvailable)
   const voiceOffered = surface === 'embed' && voiceAvailable && microphoneAskable
-  const voice = useVoiceSession({ token: publicChatToken, locale: visitorLocale, precedingMessageIds: readMessageIdsNewestFirst, offered: voiceOffered })
+  const voice = useVoiceSession({ token: publicChatToken, locale: visitorLocale, privacyNotice, precedingMessageIds: readMessageIdsNewestFirst, offered: voiceOffered })
   const { isActive: isVoiceCallActive, stop: stopVoiceCall, reset: resetVoiceCall } = voice
   useEffect(() => {
     if (!panelOpen && isVoiceCallActive) stopVoiceCall()

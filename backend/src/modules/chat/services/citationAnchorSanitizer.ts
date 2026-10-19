@@ -1,6 +1,6 @@
 import { removeDetachedPunctuationSpacing, STRANDABLE_PUNCTUATION } from "./citationTextNormalization.js";
 import { canonicalizeUnsourcedMarkers, endsInInlineCode } from "./unsourcedMarkerCanonicalization.js";
-import { isUnderClosedAnchorAttempt, removeLockedInUnderClosedCitationAnchors } from "./underClosedCitationAnchor.js";
+import { removeLockedInUnderClosedCitationAnchors, splitOpenAnchorAttempt } from "./underClosedCitationAnchor.js";
 
 const COMPLETE_ANCHOR = /\[\[\d+\]\]/g;
 const ANY_BRACKET_ANCHOR = /\[\[[^\]]*?\]\]/g;
@@ -56,14 +56,15 @@ export class CitationAnchorSanitizer {
     const suffixMatch = stripped.match(/\[\[(?:(?!\]\]).)*$/s);
     if (suffixMatch && suffixMatch.index !== undefined) {
       const start = suffixMatch.index;
-      const open = stripped.slice(start);
       // An in-progress or under-closed anchor attempt holds nothing but the token
       // itself (the step above already released everything after a resolved one), so
-      // capping it could only ever discard token characters, never answer text. Leave
-      // it uncapped: a later chunk, or flush(), resolves it correctly regardless of how
-      // long the model's citation number runs.
-      this.carry = isUnderClosedAnchorAttempt(open) ? open : open.slice(-32);
-      return stripped.slice(0, start);
+      // it is never capped: capping it could only ever discard token characters, never
+      // answer text. A candidate that turns out not to be an anchor at all — a `[[`
+      // followed by a character outside the anchor grammar — is confirmed dead right
+      // away instead, and releases in full rather than being held, or capped, at all.
+      const { carry, release } = splitOpenAnchorAttempt(stripped.slice(start));
+      this.carry = carry;
+      return stripped.slice(0, start) + release;
     }
 
     // A trailing `[` or `[?` may open an anchor or a single-bracket `[?]` the next chunk

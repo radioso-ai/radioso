@@ -55,8 +55,10 @@ import {
   storedSpeech,
   type PreparedVoicePolicy,
   type VoiceAgentProfile,
+  type VoiceTurnObserver,
   type VoiceTurnRecord,
   type VoiceTurnSetting,
+  type VoiceTurnSummary,
 } from "./voiceTurnRecord.js";
 import { OperatorReplySpeaker, type ClaimedOperatorReply, type OperatorReplySpeakerDependencies } from "./operatorReplySpeaker.js";
 import { createSentenceCutter } from "./speechSegmenter.js";
@@ -187,6 +189,8 @@ interface VoiceTurnServiceDependencies {
   newLanguageSwitchId?: () => string;
   /** Read by a switch's follow-up that finds no switched turn here; without it, that follow-up waits for the turn limit. */
   storedReplies?: VoiceStoredReplyReader;
+  /** Told each finished turn's summary, the fields its log line carries. */
+  observer?: VoiceTurnObserver;
   /** Overrides `VOICE_BEHAVIOR`; tests only. */
   timing?: Partial<VoiceTurnTiming>;
   now?: () => number;
@@ -677,7 +681,7 @@ export class VoiceTurnService implements VoiceTurnPort {
     }
     // A failure of the switched turn's reply is that turn's to report, once.
     const failedWithSwitchedTurn = record.result === "failed" && record.switched?.speaker === record && record.switched.reply.failedWith(failure);
-    const fields = {
+    const fields: VoiceTurnSummary = {
       agentId: input.session.agentId,
       vendor: input.session.vendor,
       transport: input.transport,
@@ -694,6 +698,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       ...languageFields(record.language, input),
       ...(record.languageSwitch ? { languageSwitch: record.languageSwitch } : {}),
     };
+    this.dependencies.observer?.turnFinished(fields);
     if (failedWithSwitchedTurn) {
       logger.info(fields, "Voice language switch follow-up ended with its switched turn's failure");
     } else if (record.result === "failed") {

@@ -64,7 +64,7 @@ export const voiceCallbackRoutineDraft: RoutineDefinitionDraftInput = {
   terminals: [{
     stableStepId: "callback_handoff",
     kind: "handoff",
-    instruction: "Tell them a teammate will ring them on {{slot.phone}} shortly.",
+    instruction: "Tell them a teammate will call them back on {{slot.phone}}.",
     ordinal: 1,
   }],
 };
@@ -82,7 +82,7 @@ export const conversationQualityVoiceCases: ConversationQualityCase[] = [
       { type: "voice_bridge_spoken", spoken: true },
       { type: "voice_speech_order", order: ["bridge", "speech"] },
       { type: "voice_outcome", kind: "continue" },
-      { type: "voice_turn_log", fields: { bridged: true, turnLimitReached: false, languageSource: "session", outcome: "continue" } },
+      { type: "voice_turn_record", fields: { bridged: true, turnLimitReached: false, languageSource: "session", outcome: "continue" } },
     ],
   },
   {
@@ -98,7 +98,7 @@ export const conversationQualityVoiceCases: ConversationQualityCase[] = [
       { type: "voice_speech_order", order: ["speech"] },
       { type: "voice_speech_piece_count", count: 1 },
       { type: "voice_outcome", kind: "continue" },
-      { type: "voice_turn_log", fields: { bridged: false, turnLimitReached: false, languageSource: "session", outcome: "continue" } },
+      { type: "voice_turn_record", fields: { bridged: false, turnLimitReached: false, languageSource: "session", outcome: "continue" } },
     ],
   },
   {
@@ -113,7 +113,7 @@ export const conversationQualityVoiceCases: ConversationQualityCase[] = [
       { type: "voice_bridge_spoken", spoken: true },
       { type: "voice_speech_order", order: ["bridge", "speech"] },
       { type: "voice_outcome", kind: "continue" },
-      { type: "voice_turn_log", fields: { bridged: true, turnLimitReached: false, outcome: "continue" } },
+      { type: "voice_turn_record", fields: { bridged: true, turnLimitReached: false, outcome: "continue" } },
     ],
   },
   {
@@ -127,7 +127,25 @@ export const conversationQualityVoiceCases: ConversationQualityCase[] = [
       { type: "voice_turn_well_formed" },
       { type: "voice_speech_order", order: ["bridge", "fallback"] },
       { type: "voice_outcome", kind: "continue" },
-      { type: "voice_turn_log", fields: { bridged: true, turnLimitReached: true, fallbackSpoken: true, outcome: "continue" } },
+      { type: "voice_turn_record", fields: { bridged: true, turnLimitReached: true, fallbackSpoken: true, outcome: "continue" } },
+    ],
+  },
+  {
+    id: "voice-reply-cut-off-by-newer-utterance",
+    name: "Voice: a reply the caller speaks over is cut off, and its spoken part is stored",
+    description: "The caller speaks again while the reply is still being said; the newer utterance supersedes the turn after its first speech, and chat keeps the part that reached the runtime, marked cut short.",
+    tags: ["voice", "interruption"],
+    voice: {
+      locale: SESSION_LOCALE,
+      interruption: { utterance: "Thanks, that's all I needed.", afterSpeechPieces: 1 },
+      requiresScriptedTiming: true,
+    },
+    query: "When are you open during the week?",
+    assertions: [
+      { type: "voice_turn_well_formed" },
+      { type: "voice_speech_order", order: ["speech"] },
+      { type: "voice_outcome", kind: "continue" },
+      { type: "voice_turn_record", fields: { result: "superseded", supersededAt: "after_speech", storedPartialReply: true } },
     ],
   },
   {
@@ -143,7 +161,7 @@ export const conversationQualityVoiceCases: ConversationQualityCase[] = [
     assertions: [
       { type: "voice_turn_well_formed" },
       { type: "voice_outcome", kind: "callback_requested" },
-      { type: "voice_turn_log", fields: { outcome: "callback_requested", handoffReason: "routine_handoff" } },
+      { type: "voice_turn_record", fields: { outcome: "callback_requested", handoffReason: "routine_handoff" } },
     ],
   },
   {
@@ -161,7 +179,7 @@ export const conversationQualityVoiceCases: ConversationQualityCase[] = [
       { type: "voice_bridge_spoken", spoken: false },
       { type: "voice_speech_order", order: ["speech"] },
       { type: "voice_outcome", kind: "continue" },
-      { type: "voice_turn_log", fields: { bridged: false, turnLimitReached: false, languageSource: null, outcome: "continue" } },
+      { type: "voice_turn_record", fields: { bridged: false, turnLimitReached: false, languageSource: { absent: true }, outcome: "continue" } },
     ],
   },
   {
@@ -184,7 +202,7 @@ export const conversationQualityVoiceCases: ConversationQualityCase[] = [
       { type: "voice_first_speech", text: VOICE_TEAMMATE_REPLY },
       { type: "voice_speech_order", order: ["speech"] },
       { type: "voice_outcome", kind: "continue" },
-      { type: "voice_turn_log", fields: { bridged: false, spokenOperatorReplies: 1, outcome: "continue" } },
+      { type: "voice_turn_record", fields: { bridged: false, spokenOperatorReplies: 1, outcome: "continue" } },
     ],
   },
 ];

@@ -12,6 +12,7 @@ import {
   type VoiceTurnObservation,
 } from "../src/modules/eval/suite/index.js";
 import type { ConversationOwnershipService, OwnershipActor } from "../src/modules/handoff/public.js";
+import type { VoiceTurnSummary } from "../src/modules/voiceChannel/public.js";
 
 /**
  * The voice cases' runner: it calls the agent the way a voice runtime does, through the
@@ -67,6 +68,8 @@ export const postVoiceTurn = (
   door: VoiceRuntimeDoor,
   turn: { sessionKey: string; utterance: string; locale?: string },
   clock: () => number = Date.now,
+  /** Told the chunks so far each time one arrives, while the response streams. */
+  onChunk?: (chunks: readonly VoiceWireChunk[]) => void,
 ): Promise<VoiceWireRecording> =>
   new Promise((resolve, reject) => {
     const url = new URL(completionsPath(door.agentId), door.origin);
@@ -85,7 +88,10 @@ export const postVoiceTurn = (
     client.on("response", (response) => {
       const chunks: VoiceWireChunk[] = [];
       response.setEncoding("utf8");
-      response.on("data", (text: string) => chunks.push({ atMs: clock() - startedAt, text }));
+      response.on("data", (text: string) => {
+        chunks.push({ atMs: clock() - startedAt, text });
+        onChunk?.(chunks);
+      });
       response.on("error", reject);
       response.on("end", () => resolve({
         status: response.statusCode ?? 0,
@@ -228,12 +234,12 @@ export const ownershipTeammate = (
   };
 };
 
-/** The voice turns' own log records, for a runner that shares the process serving them. */
-export interface VoiceTurnLogReader {
-  /** How many turn records the process has logged so far. */
+/** The voice turns' own records, for a runner that shares the process serving them. */
+export interface VoiceTurnRecordReader {
+  /** How many turns the process has finished so far. */
   count(): number;
-  /** The first record logged after the first `after`, once it is logged. */
-  next(after: number): Promise<Readonly<Record<string, unknown>> | undefined>;
+  /** The record of the first turn to finish after the first `after`, once it has finished. */
+  next(after: number): Promise<Readonly<VoiceTurnSummary>>;
 }
 
 export interface VoiceCallStack {
@@ -243,7 +249,7 @@ export interface VoiceCallStack {
   clock?: () => number;
   /** Waits for one step of a call; the deterministic half moves its fake clock while it waits. */
   settle?: <T>(pending: Promise<T>) => Promise<T>;
-  turnLogs?: VoiceTurnLogReader;
+  turnRecords?: VoiceTurnRecordReader;
 }
 
 const runTeammateStep = (
@@ -261,31 +267,38 @@ const runTeammateStep = (
   }
 };
 
+const speechPieceCount = (chunks: readonly VoiceWireChunk[], lines: VoiceLineCatalog): number =>
+  readVoiceStream(chunks).deltas.filter((delta) => pieceKind(delta.text, lines) === "speech").length;
+
 /**
  * Runs a voice case's call on a session of its own: the `before` steps in order, each caller
- * turn waited out (and its log record, where there is one, so the scored turn's record is its
- * own), then the scored turn, observed.
+ * turn waited out (and its record, where there is one, so the scored turn's record is its own),
+ * then the scored turn, observed. When the case has an `interruption`, the caller speaks it over
+ * the scored turn once enough of the turn's speech has arrived, and the call waits that turn out
+ * too.
  */
 const runVoiceCall = async (stack: VoiceCallStack, evalCase: ConversationQualityCase): Promise<VoiceTurnObservation> => {
   const call = evalCase.voice ?? {};
   const settle = stack.settle ?? (<T>(pending: Promise<T>) => pending);
   const sessionKey = `voice-eval-${randomUUID()}`;
-  const callerTurn = async (utterance: string): Promise<{ observation: VoiceTurnObservation; conversationId: string | null }> => {
-    const logsBefore = stack.turnLogs?.count() ?? 0;
-    const recording = await settle(postVoiceTurn(stack.door, { sessionKey, utterance, ...(call.locale ? { locale: call.locale } : {}) }, stack.clock));
-    const observation = observeVoiceTurn(recording, stack.lines);
-    const turnLog = stack.turnLogs ? await settle(stack.turnLogs.next(logsBefore)) : undefined;
-    return { observation: turnLog ? { ...observation, turnLog } : observation, conversationId: recording.conversationId };
-  };
+  const post = (utterance: string, onChunk?: (chunks: readonly VoiceWireChunk[]) => void) =>
+    postVoiceTurn(stack.door, { sessionKey, utterance, ...(call.locale ? { locale: call.locale } : {}) }, stack.clock, onChunk);
+  const recordAfter = async (before: number): Promise<Readonly<VoiceTurnSummary> | undefined> =>
+    stack.turnRecords ? settle(stack.turnRecords.next(before)) : undefined;
+  const withRecord = (observation: VoiceTurnObservation, turnRecord: Readonly<VoiceTurnSummary> | undefined): VoiceTurnObservation =>
+    (turnRecord ? { ...observation, turnRecord } : observation);
 
   let conversationId: string | null = null;
   for (const [index, step] of (call.before ?? []).entries()) {
     if (step.kind === "caller") {
-      const earlier = await callerTurn(step.utterance);
-      if (!earlier.observation.protocol.ok) {
-        throw new Error(`The call's step ${index + 1} failed: ${earlier.observation.protocol.problem}`);
+      const before = stack.turnRecords?.count() ?? 0;
+      const recording = await settle(post(step.utterance));
+      await recordAfter(before);
+      const earlier = observeVoiceTurn(recording, stack.lines);
+      if (!earlier.protocol.ok) {
+        throw new Error(`The call's step ${index + 1} failed: ${earlier.protocol.problem}`);
       }
-      conversationId ??= earlier.conversationId;
+      conversationId ??= recording.conversationId;
       continue;
     }
     if (!conversationId) {
@@ -293,7 +306,27 @@ const runVoiceCall = async (stack: VoiceCallStack, evalCase: ConversationQuality
     }
     await settle(runTeammateStep(stack.teammate, conversationId, step));
   }
-  return (await callerTurn(evalCase.query ?? "")).observation;
+
+  const before = stack.turnRecords?.count() ?? 0;
+  const { interruption } = call;
+  let interrupting: Promise<VoiceWireRecording> | undefined;
+  const recording = await settle(post(evalCase.query ?? "", interruption
+    ? (chunks) => {
+      interrupting ??= speechPieceCount(chunks, stack.lines) >= interruption.afterSpeechPieces ? post(interruption.utterance) : undefined;
+    }
+    : undefined));
+  const scored = withRecord(observeVoiceTurn(recording, stack.lines), await recordAfter(before));
+  if (interruption) {
+    if (!interrupting) {
+      throw new Error(`The scored turn ended before ${interruption.afterSpeechPieces} speech piece(s) reached the caller, so nobody spoke over it.`);
+    }
+    const newer = observeVoiceTurn(await settle(interrupting), stack.lines);
+    await recordAfter(before + 1);
+    if (!newer.protocol.ok) {
+      throw new Error(`The utterance spoken over the scored turn failed: ${newer.protocol.problem}`);
+    }
+  }
+  return scored;
 };
 
 /** A runner port that drives voice cases only; a text case is an error for this case alone. */

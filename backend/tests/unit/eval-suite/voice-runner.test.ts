@@ -116,14 +116,25 @@ describe("voice assertions", () => {
     const turn = observation({
       pieces: [{ kind: "bridge", text: BRIDGE, atMs: 0 }, { kind: "speech", text: "Hi.", atMs: 50 }],
       timings: { bridgeMs: 0, firstSpeechMs: 50 },
-      turnLog: { bridged: true, outcome: "continue", languageSource: "session" },
+      turnRecord: {
+        agentId: "agent-1",
+        vendor: "generic",
+        transport: "web",
+        conversationId: null,
+        result: "completed",
+        durationMs: 50,
+        speechPieceCount: 1,
+        bridged: true,
+        outcome: "continue",
+        languageSource: "session",
+      },
     });
 
     const { verdicts } = await score([
       { type: "voice_bridge_spoken", spoken: false },
       { type: "voice_speech_order", order: ["speech"] },
       { type: "voice_outcome", kind: "callback_requested" },
-      { type: "voice_turn_log", fields: { bridged: false, languageSource: null } },
+      { type: "voice_turn_record", fields: { bridged: false, languageSource: { absent: true }, conversationId: null, turnLanguage: { absent: true } } },
     ], turn);
 
     expect(verdicts.map((verdict) => [verdict.status, verdict.reason])).toEqual([
@@ -134,9 +145,9 @@ describe("voice assertions", () => {
     ]);
   });
 
-  it("errors a voice assertion on a turn the runner could not observe as a voice turn, or without its log", async () => {
+  it("errors a voice assertion on a turn the runner could not observe as a voice turn, or without its record", async () => {
     expect((await score([{ type: "voice_outcome", kind: "continue" }])).status).toBe("error");
-    expect((await score([{ type: "voice_turn_log", fields: { bridged: false } }], observation())).status).toBe("error");
+    expect((await score([{ type: "voice_turn_record", fields: { bridged: false } }], observation())).status).toBe("error");
   });
 });
 

@@ -5,6 +5,7 @@ import type {
   VoiceTurnEvent,
   VoiceTurnInput,
   VoiceTurnLanguage,
+  VoiceTurnLanguageSource,
   VoiceTurnOutcome,
 } from "../domain.js";
 import type { HeardSpeech } from "./heardSpeech.js";
@@ -46,6 +47,39 @@ export interface SpokenPiece {
 /** A piece of the turn's answer, with where it ends in the answer as chat streamed it (null: unknown). */
 export interface SpokenAnswerPiece extends SpokenPiece {
   writtenEnd: number | null;
+}
+
+/**
+ * A finished turn as its log line reports it: ids, closed values, counts and durations, never what
+ * was said. `bridged`, `turnLimitReached` and `fallbackSpoken` are present when the voice policy
+ * ran; `turnLanguage` and `languageSource` when the turn ran with its lines.
+ */
+export interface VoiceTurnSummary {
+  agentId: string;
+  vendor: string;
+  transport: VoiceTurnInput["transport"];
+  conversationId: string | null;
+  result: VoiceTurnResult;
+  supersededAt?: "before_speech" | "after_speech";
+  durationMs: number;
+  speechPieceCount: number;
+  spokenOperatorReplies?: number;
+  outcome?: VoiceTurnOutcome["kind"];
+  handoffReason?: ChatTurnHandoffReason;
+  storedPartialReply?: true;
+  bridged?: boolean;
+  turnLimitReached?: boolean;
+  fallbackSpoken?: boolean;
+  turnLanguage?: string;
+  languageSource?: VoiceTurnLanguageSource;
+  reportedTurnLanguage?: string;
+  languageReport?: NonNullable<VoiceTurnInput["languageReport"]>;
+  languageSwitch?: VoiceLanguageSwitchOutcome;
+}
+
+/** Told each finished turn's summary as its log line is written; for a reader in the serving process. */
+export interface VoiceTurnObserver {
+  turnFinished(summary: Readonly<VoiceTurnSummary>): void;
 }
 
 /** What the turn's one log record reports, and what the session remembers of it. */

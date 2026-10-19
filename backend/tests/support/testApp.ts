@@ -64,6 +64,7 @@ import {
   type VoiceSessionStore,
   type VoiceSessionVendorAgent,
   type VoiceSessionVisitor,
+  type VoiceTurnObserver,
 } from "../../src/modules/voiceChannel/public.js";
 import { AssistantHistoryService } from "../../src/modules/chat/services/assistantHistoryService.js";
 import {
@@ -966,6 +967,8 @@ export const createTestDependencies = (overrides: {
   cutReplyStore?: ChatServiceOptions["cutReplyStore"];
   /** Plans each fresh turn in one model call; omitted means turns run the staged path without a planner. */
   turnPlanCoordinator?: ChatServiceOptions["turnPlanCoordinator"];
+  /** Reads each finished voice turn's summary; omitted means nothing reads them. */
+  voiceTurnObserver?: VoiceTurnObserver;
   /** Observes the embed-config CDN invalidations; omitted means the deployment has no CDN to invalidate. */
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
   /** Composes the agent tool catalog over the test app's agent row and published-revision readers. */
@@ -3036,6 +3039,7 @@ export const createTestDependencies = (overrides: {
       auditService,
       metricsRegistry,
       logger,
+      ...(overrides.voiceTurnObserver ? { turnObserver: overrides.voiceTurnObserver } : {}),
     }),
     voiceSessionStarts,
     voiceSessionAvailability: voiceSessionStarts,
@@ -3169,6 +3173,7 @@ export const createTestApp = (overrides: {
   handoffWaitingMessageGenerator?: ChatServiceOptions["handoffWaitingMessageGenerator"];
   cutReplyStore?: ChatServiceOptions["cutReplyStore"];
   turnPlanCoordinator?: ChatServiceOptions["turnPlanCoordinator"];
+  voiceTurnObserver?: VoiceTurnObserver;
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
 } = {}) => {
   const {

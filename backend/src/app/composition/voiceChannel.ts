@@ -23,6 +23,7 @@ import {
   type VoiceSessionStore,
   type VoiceStoredReplyReader,
   type VoiceTurnNotes,
+  type VoiceTurnObserver,
   type VoiceTurnPort,
   VOICE_REPLY_INTERRUPTED_EVENT,
 } from "../../modules/voiceChannel/public.js";
@@ -141,6 +142,8 @@ export const createVoiceChannelComposition = (deps: {
   auditService: Pick<AuditPort, "record">;
   metricsRegistry: MetricsRegistry | null;
   logger: AppLogger;
+  /** Reads each finished turn's summary in process; none in production. */
+  turnObserver?: VoiceTurnObserver;
 }): VoiceTurnPort =>
   new VoiceTurnService({
     sessions: deps.sessions,
@@ -155,6 +158,7 @@ export const createVoiceChannelComposition = (deps: {
     notes: createVoiceTurnNotes({ replies: deps.replies, auditService: deps.auditService, logger: deps.logger }),
     metrics: deps.metricsRegistry,
     logger: deps.logger,
+    ...(deps.turnObserver ? { observer: deps.turnObserver } : {}),
   });
 
 /** A stored key the store cannot decrypt, as opposed to a store that cannot be read at all. */

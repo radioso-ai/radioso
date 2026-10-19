@@ -49,9 +49,14 @@ export interface ConversationQualityVoiceCall {
   /** The call before the scored turn, in order: the caller's earlier turns and a teammate's Inbox actions. */
   before?: ConversationQualityVoiceCallStep[];
   /**
+   * The caller speaks `utterance` over the scored turn once `afterSpeechPieces` of its speech
+   * pieces have reached the runtime. The scored turn is the one cut off.
+   */
+  interruption?: { utterance: string; afterSpeechPieces: number };
+  /**
    * The scenario is a brain slower than the turn policy's deadlines (a composer that stays silent,
-   * a reply that stalls past the turn limit), which only the deterministic half's scripted brain
-   * is on demand. The live run leaves the case out.
+   * a reply that stalls past the turn limit, a reply held while the caller speaks over it), which
+   * only the deterministic half's scripted brain is on demand. The live run leaves the case out.
    */
   requiresScriptedTiming?: boolean;
 }
@@ -148,7 +153,10 @@ const suiteAssertionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("voice_speech_order"), order: z.array(voicePieceKind) }),
   z.object({ type: z.literal("voice_speech_piece_count"), count: z.number().int().nonnegative() }),
   z.object({ type: z.literal("voice_first_speech"), text: z.string().trim().min(1) }),
-  z.object({ type: z.literal("voice_turn_log"), fields: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])) }),
+  z.object({
+    type: z.literal("voice_turn_record"),
+    fields: z.record(z.union([z.string(), z.number(), z.boolean(), z.null(), z.object({ absent: z.literal(true) }).strict()])),
+  }),
 ]);
 
 const voiceCallStepSchema = z.discriminatedUnion("kind", [
@@ -161,6 +169,7 @@ const voiceCallStepSchema = z.discriminatedUnion("kind", [
 const voiceCallSchema = z.object({
   locale: z.string().trim().min(1).max(35).optional(),
   before: z.array(voiceCallStepSchema).optional(),
+  interruption: z.object({ utterance: z.string().trim().min(1), afterSpeechPieces: z.number().int().positive() }).strict().optional(),
   requiresScriptedTiming: z.boolean().optional(),
 }).strict().refine(
   // The call's conversation exists once the caller's first turn has run; a teammate acts on it.

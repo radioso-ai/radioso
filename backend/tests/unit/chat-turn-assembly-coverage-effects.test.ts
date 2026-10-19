@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { createConversationEngine } from "@radioso/conversation-engine";
+import type {
+  ConversationClarifier,
+  ConversationRoutineActivator,
+  ConversationRoutineRunner,
+  ConversationRoutineStore,
+  PendingClarification,
+} from "@radioso/conversation-contract";
 import { ChatTurnAssembly } from "../../src/modules/chat/services/chatTurnAssembly.js";
 import { DeferredClarificationStore } from "../../src/modules/chat/services/clarification/deferredClarificationStore.js";
 import { resolvePendingClarification } from "../../src/modules/chat/services/clarification/pendingClarificationResolver.js";
@@ -82,10 +89,10 @@ it("projects coverage handoff and suspended approval effects without committing 
 it("carries coverage activation clarification through the existing deferred clarification carrier", async () => {
   const durableStore = { loadActive: vi.fn(async () => null), save: vi.fn(async () => {}), clear: vi.fn(async () => {}) };
   const clarifier = { phraseQuestion: vi.fn(async () => "Which follow-up do you need?"), mapReply: vi.fn() };
-  let pending: Record<string, unknown> | null = null;
+  let pending: PendingClarification | null = null;
   const persistedClarifications = {
     loadPending: vi.fn(async () => pending),
-    save: vi.fn(async (next) => { pending = next; }),
+    save: vi.fn(async (next: PendingClarification) => { pending = next; }),
     clear: vi.fn(async () => { pending = null; }),
   };
   const clarificationStore = new DeferredClarificationStore(persistedClarifications);
@@ -111,10 +118,10 @@ it("carries coverage activation clarification through the existing deferred clar
     clarification: { clarifier, store: clarificationStore },
   });
   const typed = runtime as {
-    coverageRoutineActivator: { activate: (input: unknown) => Promise<unknown> };
-    routineStore: unknown;
-    routineRunner: unknown;
-    clarifier: unknown;
+    coverageRoutineActivator: ConversationRoutineActivator;
+    routineStore: ConversationRoutineStore;
+    routineRunner: ConversationRoutineRunner;
+    clarifier: ConversationClarifier;
     clarificationStore: typeof clarificationStore;
     effects: (result: unknown) => {
       clarificationTransition?: unknown;

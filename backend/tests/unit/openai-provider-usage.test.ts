@@ -25,6 +25,25 @@ const chatConfig: LlmCapabilityConfig = {
   provider: "openai",
   model: "gpt-test",
   apiKey: "sk-test",
+  openAIDataResidency: "global",
+};
+
+const euResidencyChatConfig: LlmCapabilityConfig = {
+  capability: "chat",
+  provider: "openai",
+  model: "gpt-test",
+  apiKey: "sk-test",
+  baseUrl: "https://eu.api.openai.com/v1",
+  openAIDataResidency: "eu",
+};
+
+const usResidencyChatConfig: LlmCapabilityConfig = {
+  capability: "chat",
+  provider: "openai",
+  model: "gpt-test",
+  apiKey: "sk-test",
+  baseUrl: "https://us.api.openai.com/v1",
+  openAIDataResidency: "us",
 };
 
 const compatibleChatConfig: LlmCapabilityConfig = {
@@ -448,12 +467,6 @@ describe("OpenAITextGenerationClient prompt cache routing", () => {
     expect(sentRequest()).not.toHaveProperty("prompt_cache_key");
   });
 
-  it("never sends the key to an OpenAI configuration with a custom base URL", async () => {
-    await completeWith({ ...chatConfig, baseUrl: "https://proxy.example/v1" }, boundaryRequest("", "Hi"));
-
-    expect(sentRequest()).not.toHaveProperty("prompt_cache_key");
-  });
-
   it("omits the key when the request declares no reusable prefix or a mismatched one", async () => {
     await completeWith(chatConfig, { prompt: "Hi", systemPrompt: "RULES" });
     await completeWith(chatConfig, {
@@ -502,6 +515,24 @@ describe("OpenAITextGenerationClient prompt cache routing", () => {
   it("declares implicit cache capability only for first-party OpenAI", () => {
     expect(new OpenAITextGenerationClient(chatConfig).metadata.cacheCapability).toBe("implicit");
     expect(new OpenAITextGenerationClient(compatibleChatConfig).metadata.cacheCapability).toBe("unsupported");
+  });
+
+  it("keeps implicit cache capability and prompt-cache routing for an eu or us data-residency endpoint", async () => {
+    expect(new OpenAITextGenerationClient(euResidencyChatConfig).metadata.cacheCapability).toBe("implicit");
+    expect(new OpenAITextGenerationClient(usResidencyChatConfig).metadata.cacheCapability).toBe("implicit");
+
+    await completeWith(euResidencyChatConfig, boundaryRequest("\n\nTurn steering", "Hi"));
+    expect(sentRequest().prompt_cache_key).toMatch(/^rpc1_[0-9a-f]{32}$/);
+
+    await completeWith(usResidencyChatConfig, boundaryRequest("\n\nTurn steering", "Hi"));
+    expect(sentRequest().prompt_cache_key).toMatch(/^rpc1_[0-9a-f]{32}$/);
+  });
+
+  it("still withholds prompt-cache routing for openai-compatible with a custom URL", async () => {
+    expect(new OpenAITextGenerationClient(compatibleChatConfig).metadata.cacheCapability).toBe("unsupported");
+
+    await completeWith(compatibleChatConfig, boundaryRequest("\n\nTurn steering", "Hi"));
+    expect(sentRequest()).not.toHaveProperty("prompt_cache_key");
   });
 });
 

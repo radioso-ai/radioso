@@ -6,6 +6,7 @@ import { createLogger, type AppLogger } from "../shared/observability/logger.js"
 import type { AppDependencies } from "../app/server/types.js";
 import type { RuntimeHandle } from "./types.js";
 import { startRuntimeTracing, stopRuntimeTracing } from "./tracing.js";
+import { runOpenAIResidencyStartupCheck } from "./openAIResidencyStartupCheck.js";
 
 interface StartCrawlerWorkerRuntimeOptions {
   env: Env;
@@ -33,6 +34,7 @@ export const startCrawlerWorkerRuntime = async (
     ? options.buildDependencies(options.env)
     : buildDependencies(options.env, { modules: options.applicationModules });
   dependencies.logger.info({ role: "crawler-worker" }, "Radioso crawler worker starting");
+  await runOpenAIResidencyStartupCheck(options.env, { logger: dependencies.logger });
   await dependencies.applicationModules.initializeAll();
   await dependencies.websiteCrawlWorker.start();
   await dependencies.websiteCrawlJobConsumer?.start();

@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import type { ChatGateway, ChatGatewayInput } from "../../src/modules/chat/contracts/index.js";
+import type { ChatGateway } from "../../src/modules/chat/contracts/index.js";
+import type { ChatGatewayInput } from "../../src/modules/chat/contracts/chatGateway.js";
 import type { CutReplyStore } from "../../src/modules/chat/services/chatTurnLifecycle.js";
 import { InMemoryCutReplyStore } from "../support/fakes.js";
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";

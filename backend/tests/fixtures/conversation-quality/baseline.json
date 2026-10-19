@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-19T10:09:19.870Z",
+  "generatedAt": "2026-10-19T11:38:58.798Z",
   "passThreshold": 1,
   "cases": {
     "clarification-ambiguous-plan": {
@@ -241,6 +241,16 @@
       "status": "fail",
       "passRate": 0.3333333333333333,
       "samples": 3
+    },
+    "directive-withholds-figures-en": {
+      "status": "fail",
+      "passRate": 0.4,
+      "samples": 5
+    },
+    "directive-withholds-figures-it": {
+      "status": "fail",
+      "passRate": 0.8,
+      "samples": 5
     }
   }
 }

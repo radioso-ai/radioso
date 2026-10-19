@@ -109,6 +109,7 @@ const suiteAssertionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("turn_answer_coverage"), coverage: z.enum(["answered", "partial", "unanswered", "unclear"]) }),
   z.object({ type: z.literal("turn_persists_no_reply") }),
   z.object({ type: z.literal("turn_reply_source"), source: z.enum(["turn_planning", "composer"]) }),
+  z.object({ type: z.literal("turn_directive_committed"), directive: z.string().min(1) }),
 ]);
 
 /** Turn inputs a review turn has no way to take: it answers a recorded message with its history. */

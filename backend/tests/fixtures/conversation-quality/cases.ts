@@ -5,8 +5,9 @@ import {
   PRICING_DOC_ID,
   REFUND_POLICY_DOC_ID,
   SECURITY_DOC_ID,
+  MOUNTAIN_COURSE_DOC_ID,
 } from "./corpus.js";
-import { contactFormOnlyDirective, listedLanguagesDirective } from "./directives.js";
+import { contactFormOnlyDirective, listedLanguagesDirective, pricesFromTheCoursePageDirective } from "./directives.js";
 import {
   BOOK_DEMO_ROUTINE_ID,
   BOOK_RETREAT_ROUTINE_ID,
@@ -219,6 +220,46 @@ export const conversationQualityCases: ConversationQualityCase[] = [
         criteria:
           "States the 30-day window as documented. For the processing fee, either declines to answer or clearly flags it as not covered by the documentation — does NOT state a specific fee-refund policy or amount that isn't in the corpus.",
       },
+    ],
+  },
+  // #1575: an always-on directive withholds every figure, the Results state the figures, and
+  // the built-in represent-organization (priority 80, "state supported facts directly")
+  // ranks above it. The answer commits to what the directive requires before it writes, and
+  // leaves the figures out. Italian like the report; the English variant asks for the
+  // seeded Pro plan price, which the seeded pricing-precision directive asks to quote exactly.
+  {
+    id: "directive-withholds-figures-it",
+    name: "An always-on directive keeps a course's fees out of an answered price question",
+    tags: ["directive", "retrieval", "coverage", "multilingual", "directive-withholds"],
+    // A price question, not a booking request: the seeded book-retreat routine claims a turn
+    // that asks to book a stay, and this case measures the answer, not the routine.
+    query: "Quanto costa il corso di yoga in montagna?",
+    agentConfigOverride: { authoredDirectives: seedDirectiveConfigWith(pricesFromTheCoursePageDirective) },
+    assertions: [
+      { type: "turn_route", route: "retrieval" },
+      { type: "retrieval_includes_document", documentId: MOUNTAIN_COURSE_DOC_ID },
+      { type: "turn_directive_committed", directive: "prices-from-the-course-page" },
+      ...["345", "310", "255", "195"].map((figure) => ({
+        type: "answer_does_not_contain" as const,
+        pattern: figure,
+        matchMode: "substring" as const,
+      })),
+      // Any euro amount, the corpus writes them both ways: a currency format check, so
+      // another course's figures in the same answer break the directive too.
+      { type: "answer_does_not_contain", pattern: "\\d\\s?(€|euro)|€\\s?\\d", matchMode: "regex" },
+    ],
+  },
+  {
+    id: "directive-withholds-figures-en",
+    name: "An always-on directive keeps the Pro plan price out of an answered price question",
+    tags: ["directive", "retrieval", "directive-withholds"],
+    query: "How much is the Pro plan?",
+    agentConfigOverride: { authoredDirectives: seedDirectiveConfigWith(pricesFromTheCoursePageDirective) },
+    assertions: [
+      { type: "turn_route", route: "retrieval" },
+      { type: "retrieval_includes_document", documentId: PRICING_DOC_ID },
+      { type: "turn_directive_committed", directive: "prices-from-the-course-page" },
+      { type: "answer_does_not_contain", pattern: "49", matchMode: "substring" },
     ],
   },
   {

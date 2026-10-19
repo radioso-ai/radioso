@@ -25,6 +25,7 @@ import {
   type ConversationQualityRunnerPort,
 } from "../../../src/modules/eval/suite/index.js";
 import type { EvalLlmJudgePort } from "../../../src/modules/eval/services/evalJudge.js";
+import type { Directive } from "../../../src/modules/directives/public.js";
 import {
   BOOK_DEMO_ROUTINE_ID,
   CONTACT_SUPPORT_ROUTINE_ID,
@@ -33,7 +34,8 @@ import {
   conversationQualityCases,
   conversationQualityRoutines,
 } from "../../fixtures/conversation-quality/index.js";
-import { conversationQualityCorpus } from "../../fixtures/conversation-quality/corpus.js";
+import { conversationQualityCorpus, MOUNTAIN_COURSE_DOC_ID } from "../../fixtures/conversation-quality/corpus.js";
+import { pricesFromTheCoursePageDirective } from "../../fixtures/conversation-quality/directives.js";
 import {
   canonicalAnswerEnvelope,
   conversationQualityChatHarness,
@@ -81,6 +83,26 @@ describe("trace assertions", () => {
     expect(plannedAsComposer.reason).toContain("turn_planning");
     expect(evaluateTraceAssertion({ type: "turn_reply_source", source: "composer" }, composed).status).toBe("pass");
     expect(evaluateTraceAssertion({ type: "turn_reply_source", source: "turn_planning" }, composed).status).toBe("fail");
+  });
+
+  // #1575: the answer commits to what a directive requires before it writes, then grades itself.
+  it("reads turn_directive_committed from the compose stage's commitment and grade for the directive", () => {
+    const compose = (outputs: Record<string, unknown>) =>
+      observed({ turnTrace: trace([{ id: "compose", kind: "compose", status: "applied", outputs }]) });
+    const assertion = { type: "turn_directive_committed", directive: "prices-from-the-course-page" } as const;
+    const graded = { directive: "prices-from-the-course-page", ruleId: "d1", satisfied: true, applicable: true, note: "no figures" };
+
+    expect(evaluateTraceAssertion(assertion, compose({
+      adherence: [{ ...graded, commitment: "leave out every figure" }],
+    })).status).toBe("pass");
+    const uncommitted = evaluateTraceAssertion(assertion, compose({ adherence: [graded] }));
+    expect(uncommitted.status).toBe("fail");
+    expect(uncommitted.reason).toContain("no commitment");
+    const ungraded = evaluateTraceAssertion(assertion, compose({ ungradedDirectives: ["prices-from-the-course-page"] }));
+    expect(ungraded.status).toBe("fail");
+    expect(ungraded.reason).toContain("ungraded");
+    expect(evaluateTraceAssertion(assertion, compose({ answerLength: 12 })).status).toBe("fail");
+    expect(evaluateTraceAssertion(assertion, observed()).status).toBe("error");
   });
 
   it("fails turn_reply_source when no answer was composed, and errors without a trace", () => {
@@ -773,6 +795,81 @@ describe("review execution mode", () => {
   });
 });
 
+// #1575: the withheld-figures case driven through the real chat pipeline with a scripted
+// model reply, so the commitment the answer writes before `answer` is covered end to end:
+// envelope schema, side-channel resolution, compose trace, persisted unmet grade.
+describe("withheld-figures directive through the chat pipeline", () => {
+  const withheldCase = conversationQualityCases.find((evalCase) => evalCase.id === "directive-withholds-figures-it")!;
+  const directive: Directive = {
+    name: pricesFromTheCoursePageDirective.name,
+    condition: pricesFromTheCoursePageDirective.condition,
+    action: pricesFromTheCoursePageDirective.action,
+    priority: 75,
+  };
+  // The harness records no retrieved chunks; the route, commitment, and answer assertions are its to check.
+  const pipelineCase: ConversationQualityCase = {
+    ...withheldCase,
+    assertions: withheldCase.assertions.filter((assertion) => !assertion.type.startsWith("retrieval_")),
+  };
+  // `satisfied` absent: the reply returns the commitment but no grade for the directive.
+  const scriptedReply = (input: { answer: string; satisfied?: boolean }) => canonicalAnswerEnvelope({
+    coverage: "answered_sufficient_evidence",
+    requestFocus: "the full cost of the residential course",
+    outcome: "answer",
+    adherencePlan: [{ rule: "d1", commitment: "leave out every fee; point to the course page and reception" }],
+    answer: input.answer,
+    claims: [[1]],
+    grounding: "grounded",
+    adherence: input.satisfied === undefined
+      ? []
+      : [{ rule: "d1", satisfied: input.satisfied, applicable: true, note: input.satisfied ? "no fees stated" : "fees stated" }],
+  });
+  const runCase = async (reply: { answer: string; satisfied?: boolean }) => {
+    const harness = conversationQualityChatHarness({
+      reply: scriptedReply(reply),
+      retrievedDocumentId: MOUNTAIN_COURSE_DOC_ID,
+      directives: [directive],
+    });
+    const { reports } = await runConversationQualitySuite([pipelineCase], harness.port, { workspaceId: "ws" });
+    const [assistantMessage] = [...harness.messageRepository.items.values()].flat().filter((message) => message.role === "assistant");
+    return { report: reports[0], assistantMessage, metrics: harness.metrics.renderPrometheus() };
+  };
+  const withheldAnswer =
+    "Il corso comprende pratica, meditazione e pasti vegetariani[[1]]. Le quote aggiornate sono sulla pagina del corso; per prenotare scrivi alla reception.";
+
+  it("passes an answer that commits to leaving the fees out and leaves them out", async () => {
+    const { report, assistantMessage } = await runCase({ answer: withheldAnswer, satisfied: true });
+
+    if (report?.status !== "pass") {
+      throw new Error(`expected pass, got ${report?.status}: ${JSON.stringify(report?.verdicts, null, 2)}`);
+    }
+    expect(assistantMessage?.metadata).not.toHaveProperty("unmetDirectives");
+  });
+
+  it("fails an answer that quotes the fees, and persists its own unmet grade for Quality", async () => {
+    const { report, assistantMessage } = await runCase({
+      answer: "La quota del programma è di 345 € e la camera singola costa 310 €[[1]].",
+      satisfied: false,
+    });
+
+    expect(report?.status).toBe("fail");
+    expect(report?.verdicts.filter((verdict) => verdict.status === "fail").map((verdict) => verdict.assertion.type))
+      .toEqual(["answer_does_not_contain", "answer_does_not_contain", "answer_does_not_contain"]);
+    expect(assistantMessage?.metadata?.unmetDirectives).toEqual(["prices-from-the-course-page"]);
+  });
+
+  it("records a directive the answer returned no grade for as ungraded on the compose stage and in the verdict counter", async () => {
+    const { report, assistantMessage, metrics } = await runCase({ answer: withheldAnswer });
+
+    const committed = report?.verdicts.find((verdict) => verdict.assertion.type === "turn_directive_committed");
+    expect(committed?.status).toBe("fail");
+    expect(committed?.reason).toContain("ungraded");
+    expect(assistantMessage?.metadata).not.toHaveProperty("unmetDirectives");
+    expect(metrics).toMatch(/chat_directive_adherence_verdicts_total\{verdict="ungraded"\} 1\b/);
+    expect(metrics).not.toMatch(/chat_directive_adherence_verdicts_total\{verdict="satisfied"\}/);
+  });
+});
+
 describe("reduceSamples", () => {
   const score = (status: "pass" | "fail" | "error" | "recorded", reason = status) => ({ status, reason, verdicts: [] });
 
@@ -987,9 +1084,12 @@ describe("seed fixtures", () => {
     ]))).toEqual({
       "routine-step-outranks-always-on-handoff-directive": [...seededNames, "contact-form-only"],
       "quick-reply-unlisted-language-standing-directive": [...seededNames, "listed-languages"],
+      "directive-withholds-figures-it": [...seededNames, "prices-from-the-course-page"],
+      "directive-withholds-figures-en": [...seededNames, "prices-from-the-course-page"],
     });
     expect(seededNames).not.toContain("contact-form-only");
     expect(seededNames).not.toContain("listed-languages");
+    expect(seededNames).not.toContain("prices-from-the-course-page");
   });
 
   it("validates the seed cases against the schema with unique ids", () => {

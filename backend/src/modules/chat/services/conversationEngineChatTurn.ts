@@ -8,7 +8,6 @@ import type {
   ConversationCoverageVerdictSink,
   ConversationClarifier,
   Directive,
-  DirectiveAdherenceEntry,
   ConversationRoutineActivator,
   ConversationRoutineReentryGate,
   ConversationRoutineSlotCorrection,
@@ -46,6 +45,7 @@ import type { ChatTurnSkillSelector } from "./turnSkillSelector.js";
 import type { ChatStatusStage } from "../contracts/streamEvents.js";
 import { presentRoutineRenderableAnswer } from "./routines/routineGroundedAnswerRenderer.js";
 import { withPlannerReplySource } from "./turnPlanQuickReply.js";
+import { directiveAdherenceMetadataOf } from "../../../shared/domain/directiveAdherence.js";
 
 interface RunPreparedChatTurnWithConversationEngineInput {
   engine: ConversationEngine;
@@ -139,9 +139,7 @@ const toRenderableTurn = (
     answerSegments: presentation.answerSegments,
     planningCitations: presentation.planningCitations,
     grounding: presentation.grounding,
-    ...(presentation.metadata?.directiveAdherence
-      ? { directiveAdherence: presentation.metadata.directiveAdherence as DirectiveAdherenceEntry[] }
-      : {}),
+    ...directiveAdherenceMetadataOf(presentation.metadata),
     ...(traceMetrics ? { traceMetrics } : {}),
   },
   ...(presentation.yielded ? { yielded: true as const } : {}),

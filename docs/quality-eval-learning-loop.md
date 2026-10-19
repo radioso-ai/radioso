@@ -1,7 +1,7 @@
 ---
 title: "Close the Quality Loop with Evals"
 description: "Close answer-quality reviews, optionally classify the outcome, preserve weak turns as Eval cases, and verify the fix."
-last_updated: 2026-08-31
+last_updated: 2026-10-19
 ---
 
 # Close the Quality Loop with Evals
@@ -92,8 +92,11 @@ That closes the review without classification. The response returns
 `resolution: null`.
 
 `GET /api/v1/quality/turns` accepts a `signal` filter that narrows the list to
-one or more classes of issue: `negative_feedback`, `grounding_gaps`, or
-`skill_failures`. Pass several as a comma-separated list or repeat the
+one or more classes of issue: `negative_feedback`, `grounding_gaps`,
+`skill_failures`, or `unmet_directives`. `unmet_directives` lists turns whose
+answer graded a directive that applied to the turn as not followed. That grade
+is the answering model's own, so treat the list as turns worth reading, not as
+proof of a breach. Pass several as a comma-separated list or repeat the
 parameter; the result is the union, and a turn matching more than one signal is
 listed once. The other filters apply on top of the signal match. The
 dashboard's queue asks for every signal in an `open` or `acknowledged` state by

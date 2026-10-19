@@ -60,6 +60,7 @@ describe("operator MCP descriptor disposition", () => {
       "propose_document_retrieval",
       "propose_greeting",
       "propose_ingestion_settings",
+      "propose_privacy_setting",
       "propose_routine",
       "propose_routine_edit",
       "propose_routine_exposure",

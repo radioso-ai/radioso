@@ -2224,7 +2224,7 @@ CREATE TABLE public.copilot_proposals (
     CONSTRAINT copilot_proposals_message_requires_conversation_check CHECK (((message_id IS NULL) OR (conversation_id IS NOT NULL))),
     CONSTRAINT copilot_proposals_reviewed_requirement_check CHECK (((review_digest IS NULL) OR (confirmation_requirement IS NOT NULL))),
     CONSTRAINT copilot_proposals_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'applied'::text, 'dismissed'::text, 'failed'::text, 'stale'::text]))),
-    CONSTRAINT copilot_proposals_target_type_check CHECK ((target_type = ANY (ARRAY['directive'::text, 'agent'::text, 'agent_setting'::text, 'routine'::text, 'agent_skill'::text, 'context_variable'::text, 'document'::text, 'document_operation'::text, 'ingestion_settings'::text, 'website_crawl'::text, 'workspace_setting'::text, 'agent_publication'::text, 'agent_greeting'::text])))
+    CONSTRAINT copilot_proposals_target_type_check CHECK ((target_type = ANY (ARRAY['directive'::text, 'agent'::text, 'agent_setting'::text, 'routine'::text, 'agent_skill'::text, 'context_variable'::text, 'document'::text, 'document_operation'::text, 'ingestion_settings'::text, 'website_crawl'::text, 'workspace_setting'::text, 'agent_publication'::text, 'agent_greeting'::text, 'privacy_setting'::text])))
 );
 
 
@@ -4255,7 +4255,9 @@ CREATE TABLE public.workspaces (
     website_embed_launcher_icon text DEFAULT 'chat'::text NOT NULL,
     website_embed_launcher_position text DEFAULT 'bottom-right'::text NOT NULL,
     public_route_key text NOT NULL,
-    default_agent_id uuid
+    default_agent_id uuid,
+    conversation_retention_days integer,
+    CONSTRAINT workspaces_conversation_retention_days_check CHECK (((conversation_retention_days IS NULL) OR ((conversation_retention_days >= 7) AND (conversation_retention_days <= 3650))))
 );
 
 

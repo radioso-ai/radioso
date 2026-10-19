@@ -53,6 +53,13 @@ locals {
     var.copilot_retention_schedule,
     "30 4 * * *",
   )
+  # Every 15 minutes, matching CONVERSATION_RETENTION_INTERVAL_MS in conversationRetention.ts: each
+  # run erases a bounded batch, so a workspace that just set a window drains its backlog over a few
+  # runs rather than in one long one.
+  conversation_retention_schedule = coalesce(
+    var.conversation_retention_schedule,
+    "*/15 * * * *",
+  )
   agent_bundle_import_cleanup_schedule = coalesce(
     var.agent_bundle_import_cleanup_schedule,
     "*/5 * * * *",

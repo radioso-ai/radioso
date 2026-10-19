@@ -1011,6 +1011,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings/privacy": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the workspace's privacy settings
+         * @description How long the workspace keeps conversations. Requires workspace.settings.read.
+         */
+        get: operations["getPrivacySettings"];
+        /**
+         * Set how long the workspace keeps conversations
+         * @description Sets the conversation retention window. A conversation with no update and no message for that many days is erased by a sweep that runs every 15 minutes, with every record derived from it, as `DELETE /api/v1/history/chat/{conversationId}` erases one; each batch records one `conversation.retention.enforced` audit event with counts only. Null, the default, keeps conversations until someone deletes them. Requires workspace.settings.manage and workspace.history.delete. There is no undo for what the sweep erases.
+         */
+        put: operations["updatePrivacySettings"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/settings/document-types": {
         parameters: {
             query?: never;
@@ -5462,6 +5486,20 @@ export interface components {
                 }[];
             }[];
             disabledBuiltInTypeKeys?: string[];
+        };
+        PrivacySettings: {
+            /**
+             * @description Days a conversation is kept after its last update or message; the retention sweep then erases it with every record derived from it, as deleting it does. Null keeps conversations until someone deletes them, which is the default.
+             * @example 365
+             */
+            conversationRetentionDays: number | null;
+        };
+        UpdatePrivacySettingsRequest: {
+            /**
+             * @description Whole days from 7 to 3650, or null to keep conversations until they are deleted.
+             * @example 365
+             */
+            conversationRetentionDays: number | null;
         };
         Agent: {
             /** Format: uuid */
@@ -15201,6 +15239,95 @@ export interface operations {
             };
             /** @description Authentication required */
             401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getPrivacySettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The workspace's privacy settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrivacySettings"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.settings.read */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updatePrivacySettings: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdatePrivacySettingsRequest"];
+            };
+        };
+        responses: {
+            /** @description The saved privacy settings */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PrivacySettings"];
+                };
+            };
+            /** @description Request validation failed: the window is not whole days from 7 to 3650, or null */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.settings.manage or workspace.history.delete */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -27308,7 +27435,7 @@ export interface operations {
                         /** @enum {string} */
                         reason: "ok" | "no_llm_capability";
                         canManage: boolean;
-                        applyableProposalTargets: ("directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting")[];
+                        applyableProposalTargets: ("directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting" | "privacy_setting")[];
                     };
                 };
             };
@@ -27403,7 +27530,7 @@ export interface operations {
                                 /** Format: uuid */
                                 id: string;
                                 /** @enum {string} */
-                                targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting";
+                                targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting" | "privacy_setting";
                                 targetLabel: string;
                                 summary: string;
                                 /** @enum {string} */
@@ -27549,11 +27676,11 @@ export interface operations {
                         /** Format: uuid */
                         workspaceId: string;
                         /** @enum {string} */
-                        targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting";
+                        targetType: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting" | "privacy_setting";
                         targetRef?: unknown;
                         target: {
                             /** @enum {string} */
-                            type: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting";
+                            type: "directive" | "agent" | "agent_setting" | "routine" | "agent_skill" | "context_variable" | "document" | "document_operation" | "ingestion_settings" | "website_crawl" | "workspace_setting" | "agent_publication" | "agent_greeting" | "privacy_setting";
                             ref?: unknown;
                         };
                         targetLabel: string;

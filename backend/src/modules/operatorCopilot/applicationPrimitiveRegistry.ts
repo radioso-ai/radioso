@@ -42,6 +42,8 @@ export const copilotApplicationPrimitiveRegistry = {
   "operatorCopilot.safe-test.orchestration": { owningModule: "operatorCopilot", exportedPort: "CopilotAgentTurnProbePort" },
   "operatorCopilot.workspace-triage": { owningModule: "operatorCopilot", exportedPort: "WorkspaceTriageCopilotToolDependencies" },
   "operatorCopilot.needs-attention": { owningModule: "operatorCopilot", exportedPort: "NeedsAttentionCopilotToolDependencies" },
+  "privacy.settings.read": { owningModule: "privacy", exportedPort: "PrivacySettingsService" },
+  "privacy.settings.propose": { owningModule: "privacy", exportedPort: "PrivacySettingsService" },
   "productDocs.corpus.read": { owningModule: "productDocs", exportedPort: "ProductDocsService" },
   "retrieval.evidence.probe": { owningModule: "retrieval", exportedPort: "RetrievalSearchService" },
   "routines.definition.read": { owningModule: "routines", exportedPort: "RoutineDefinitionService" },

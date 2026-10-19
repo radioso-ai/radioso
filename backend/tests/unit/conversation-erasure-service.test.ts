@@ -23,6 +23,8 @@ interface FakeConversation {
   chatSessionId: string | null;
   visitorId: string | null;
   messages: number;
+  /** The conversation's latest update or message; the epoch when a test does not care. */
+  lastActivityAt?: Date;
 }
 
 /**
@@ -117,6 +119,15 @@ const createFake = (input: {
           const doomed = draft.conversations.filter((conversation) => conversation.workspaceId === workspaceId && conversationIds.includes(conversation.id));
           draft.conversations = draft.conversations.filter((conversation) => !doomed.includes(conversation));
           return { conversations: doomed.length, messages: doomed.reduce((sum, conversation) => sum + conversation.messages, 0) };
+        },
+        async lockInactiveConversations(workspaceId, inactiveBefore, limit) {
+          order.push("lockInactive");
+          return draft.conversations
+            .filter((conversation) => conversation.workspaceId === workspaceId
+              && (conversation.lastActivityAt ?? new Date(0)).getTime() < inactiveBefore.getTime())
+            .map((conversation) => conversation.id)
+            .sort()
+            .slice(0, limit);
         },
         async deleteVisitor(workspaceId, visitorId) {
           order.push("deleteVisitor");
@@ -395,5 +406,83 @@ describe("ConversationErasureService and what vendors hold", () => {
     await retried.service.eraseConversation({ workspaceId: WORKSPACE, conversationId: "conv-1", actor: ACTOR });
     expect(retried.vendorPrepared).toHaveLength(2);
     expect(retried.vendorErased).toHaveLength(1);
+  });
+});
+
+describe("ConversationErasureService.eraseInactiveConversations", () => {
+  const CUTOFF = new Date("2026-07-01T00:00:00.000Z");
+  const retention = { workspaceId: WORKSPACE, accountId: "acct-1", inactiveBefore: CUTOFF, retentionDays: 90 };
+
+  it("erases the conversations inactive since the cutoff through every eraser, and records the schedule's act with counts only", async () => {
+    const fake = createFake({
+      conversations: [
+        { id: "conv-old", workspaceId: WORKSPACE, chatSessionId: "session-1", visitorId: null, messages: 3, lastActivityAt: new Date("2026-06-01T00:00:00.000Z") },
+        { id: "conv-new", workspaceId: WORKSPACE, chatSessionId: "session-2", visitorId: null, messages: 2, lastActivityAt: new Date("2026-07-02T00:00:00.000Z") },
+      ],
+      eraserRows: { "context-variables": 1, audit: 2 },
+    });
+
+    const receipt = await fake.service.eraseInactiveConversations({ ...retention, limit: 10 });
+
+    expect(receipt).toEqual({ conversationCount: 1, messageCount: 3, rowsByOwner: { "context-variables": 1, audit: 2 } });
+    expect(fake.order).toEqual(["lockInactive", "erase:context-variables", "erase:audit", "deleteConversations", "audit", "commit"]);
+    expect(fake.state().conversations.map((conversation) => conversation.id)).toEqual(["conv-new"]);
+    expect(fake.state().audit).toEqual([{
+      accountId: "acct-1",
+      workspaceId: WORKSPACE,
+      eventType: "conversation.retention.enforced",
+      eventStatus: "success",
+      metadata: {
+        principalType: "system",
+        retentionDays: 90,
+        cutoff: CUTOFF.toISOString(),
+        conversationCount: 1,
+        messageCount: 3,
+        rowsByOwner: { "context-variables": 1, audit: 2 },
+      },
+    }]);
+    expect(JSON.stringify(fake.state().audit)).not.toContain("conv-old");
+    expect(fake.invalidation.enqueue).toHaveBeenCalledWith(WORKSPACE, ["conversation.deleted"]);
+  });
+
+  it("erases at most the batch it was given", async () => {
+    const fake = createFake({
+      conversations: ["conv-a", "conv-b", "conv-c"].map((id) => ({ id, workspaceId: WORKSPACE, chatSessionId: null, visitorId: null, messages: 1 })),
+    });
+
+    const receipt = await fake.service.eraseInactiveConversations({ ...retention, limit: 2 });
+
+    expect(receipt.conversationCount).toBe(2);
+    expect(fake.state().conversations.map((conversation) => conversation.id)).toEqual(["conv-c"]);
+  });
+
+  it("records nothing and tells no dashboard when nothing is past the window", async () => {
+    const fake = createFake({
+      conversations: [{ id: "conv-new", workspaceId: WORKSPACE, chatSessionId: null, visitorId: null, messages: 1, lastActivityAt: new Date("2026-08-01T00:00:00.000Z") }],
+    });
+
+    const receipt = await fake.service.eraseInactiveConversations({ ...retention, limit: 10 });
+
+    expect(receipt).toEqual({ conversationCount: 0, messageCount: 0, rowsByOwner: {} });
+    expect(fake.order).toEqual(["lockInactive", "commit"]);
+    expect(fake.state().audit).toEqual([]);
+    expect(fake.invalidation.enqueue).not.toHaveBeenCalled();
+    expect(fake.auditLog.logRecorded).not.toHaveBeenCalled();
+  });
+
+  it("erases what vendors hold for the expired conversations once the deletion committed", async () => {
+    const fake = createFake({
+      conversations: [{ id: "conv-old", workspaceId: WORKSPACE, chatSessionId: null, visitorId: null, messages: 1 }],
+      vendorHeld: true,
+    });
+
+    await fake.service.eraseInactiveConversations({ ...retention, limit: 10 });
+
+    expect(fake.vendorPrepared).toEqual([{
+      account: { id: "acct-1", deleted: false },
+      scopes: [{ kind: "conversations", workspaceId: WORKSPACE, conversationIds: ["conv-old"] }],
+    }]);
+    expect(fake.order.indexOf("vendor:prepare")).toBeLessThan(fake.order.indexOf("erase:context-variables"));
+    expect(fake.order.at(-1)).toBe("vendor:erase");
   });
 });

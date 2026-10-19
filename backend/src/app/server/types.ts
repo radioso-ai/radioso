@@ -1,4 +1,4 @@
-import type { ConversationErasure } from "../../modules/privacy/public.js";
+import type { ConversationErasure, PrivacySettingsService } from "../../modules/privacy/public.js";
 import type {
   AgentStarterPromptReader,
   AssistantChatService,
@@ -378,6 +378,8 @@ export interface AppDependencies {
   assistantHistoryService: AssistantHistoryService;
   /** Permanent erasure of a conversation, or of a visitor and their conversations. */
   conversationErasure: ConversationErasure;
+  /** How long the workspace keeps conversations; the retention sweep enforces it. */
+  privacySettingsService: PrivacySettingsService;
   retrievalSearchService: RetrievalSearchService;
   retrievalAnswerService: RetrievalAnswerService;
   retrievalDefaultsProvider: RetrievalDefaultsProvider;

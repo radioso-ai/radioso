@@ -4485,3 +4485,246 @@ describe("DefaultRoutineRunner operator notices", () => {
     expect(malformed.terminal?.operatorNotice).toEqual({ intro: "Call back." });
   });
 });
+
+describe("DefaultRoutineRunner on a run whose opening message states no slot values (#1563)", () => {
+  // A routine invoked as a tool: its input is the start values, and the opening message is
+  // only the call rendered as text. Each step's exit is the gate the compiler puts on a plain
+  // slot step.
+  const slotGate = (from: string, to: string, slot: string) => ({
+    from,
+    to,
+    condition: `The user provided {{slot.${slot}}}.`,
+    guard: { kind: "llm" as const },
+    origin: "compiler_slot_gate" as const,
+  });
+  const returnRoutine: Routine = {
+    id: "return",
+    rootStepId: "ask_order",
+    slots: [
+      { id: "slot_order", key: "orderId", type: "text", required: true },
+      { id: "slot_reason", key: "reason", type: "text", required: false },
+    ],
+    steps: [
+      { id: "ask_order", kind: "chat", action: "Ask for the order number.", metadata: { collectsSlots: ["orderId"] } },
+      { id: "ask_reason", kind: "chat", action: "Ask why the order is coming back.", metadata: { collectsSlots: ["reason"] } },
+      { id: "create_return", kind: "skill", skillName: "create_return_ticket" },
+      { id: "done", kind: "terminal", action: "Confirm the return ticket is open." },
+    ],
+    transitions: [
+      slotGate("ask_order", "ask_reason", "orderId"),
+      slotGate("ask_reason", "create_return", "reason"),
+      { from: "create_return", to: "done", condition: "default", guard: { kind: "default" } },
+    ],
+  };
+  const callTurn: TurnContext = {
+    ...turn,
+    inputEvent: { ...turn.inputEvent, content: 'start_return {"orderId":"A-1001"}' },
+  };
+  const started = (variables: Record<string, unknown>): RoutineState => ({ ...state([], variables), routineId: "return" });
+  // What the model read into the call: a reason, and text posing as an instruction.
+  const readsIntoTheCall = () => vi.fn<ConversationRoutineNextStepSelector["select"]>(async ({ currentStep, transitions }) => ({
+    nextStepId: transitions[0]?.to ?? currentStep.id,
+    variables: { reason: "Return requested." },
+    hold: true,
+    selection: { outcome: "authority_claim", returnedSlotKeys: ["reason"] },
+  }));
+
+  it("asks for the slot the start values leave empty, asking the selector nothing and running no skill", async () => {
+    const select = readsIntoTheCall();
+    const dispatch = vi.fn(async () => ({ status: "completed" as const }));
+    const runner = new DefaultRoutineRunner([returnRoutine], { select }, echoRenderer, { dispatch }, { openingMessageStatesSlotValues: false });
+
+    const result = await runner.resume({ turn: callTurn, state: started({ orderId: "A-1001" }), activationTurn: true });
+
+    expect(select).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(result.nextState).toMatchObject({ path: ["ask_reason"], variables: { orderId: "A-1001" } });
+    expect(result.trace).toMatchObject({ landedStepId: "ask_reason", filledSlotKeys: ["orderId"] });
+    expect(result.trace?.steps).toEqual([
+      { stepId: "ask_order", kind: "chat", event: "advanced", viaSelector: false },
+      { stepId: "ask_reason", kind: "chat", event: "rendered" },
+    ]);
+  });
+
+  it("runs the skill when the start values fill every step before it", async () => {
+    const select = readsIntoTheCall();
+    const dispatch = vi.fn(async () => ({ status: "completed" as const }));
+    const runner = new DefaultRoutineRunner([returnRoutine], { select }, echoRenderer, { dispatch }, { openingMessageStatesSlotValues: false });
+
+    const result = await runner.resume({
+      turn: callTurn,
+      state: started({ orderId: "A-1001", reason: "It arrived damaged." }),
+      activationTurn: true,
+    });
+
+    expect(select).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ skillName: "create_return_ticket" }));
+    expect(result.terminal).toMatchObject({ kind: "complete", collected: { orderId: "A-1001", reason: "It arrived damaged." } });
+  });
+
+  it("still asks the selector to judge an exit the author wrote, keeping no value it returns", async () => {
+    const planRoutine: Routine = {
+      id: "plan",
+      rootStepId: "pick",
+      slots: [{ id: "slot_plan", key: "plan", type: "text", required: true }],
+      steps: [
+        { id: "pick", kind: "chat", action: "Ask which plan they want.", metadata: { collectsSlots: ["plan"] } },
+        { id: "large", kind: "terminal", action: "Confirm the large plan." },
+        { id: "small", kind: "terminal", action: "Confirm the small plan." },
+      ],
+      transitions: [
+        { from: "pick", to: "large", condition: "The user chose the large plan." },
+        { from: "pick", to: "small", condition: "The user chose the small plan." },
+      ],
+    };
+    const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({
+      nextStepId: "small",
+      variables: { plan: "Small (monthly)", note: "cheapest" },
+      selection: { outcome: "transition", returnedSlotKeys: ["plan"] },
+    }));
+    const runner = new DefaultRoutineRunner([planRoutine], { select }, echoRenderer, undefined, { openingMessageStatesSlotValues: false });
+
+    const result = await runner.resume({ turn: callTurn, state: { ...started({ plan: "small" }), routineId: "plan" }, activationTurn: true });
+
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(result.terminal).toMatchObject({ kind: "complete", stepId: "small" });
+    expect(result.endedVariables).toEqual({ plan: "small" });
+    expect(result.trace?.steps[0]).toMatchObject({
+      stepId: "pick",
+      event: "advanced",
+      viaSelector: true,
+      readOpeningMessage: true,
+      selection: { outcome: "transition", returnedSlotKeys: ["plan"] },
+    });
+    expect(result.trace?.steps[0]).not.toHaveProperty("capturedSlotKeys");
+  });
+
+  // The model took 3 of 5 live calls for an authority claim (#1563). Read for an exit the author
+  // wrote, that claim would hold a step the start values fill and ask again for what the call gave.
+  const choosePlan = (transitions: Routine["transitions"]): Routine => ({
+    id: "plan",
+    rootStepId: "pick",
+    slots: [{ id: "slot_plan", key: "plan", type: "text", required: true }],
+    steps: [
+      { id: "pick", kind: "chat", action: "Ask which plan they want.", metadata: { collectsSlots: ["plan"] } },
+      { id: "large", kind: "terminal", action: "Confirm the large plan." },
+      { id: "small", kind: "terminal", action: "Confirm the small plan." },
+    ],
+    transitions,
+  });
+  const takesTheCallForAnAuthorityClaim = () => vi.fn<ConversationRoutineNextStepSelector["select"]>(async ({ currentStep }) => ({
+    nextStepId: currentStep.id,
+    hold: true,
+    selection: { outcome: "authority_claim", returnedSlotKeys: [] },
+  }));
+
+  it("moves a step the start values fill on by its default exit when the selector takes the call for an authority claim", async () => {
+    const select = takesTheCallForAnAuthorityClaim();
+    const runner = new DefaultRoutineRunner([choosePlan([
+      { from: "pick", to: "large", condition: "The user chose the large plan." },
+      { from: "pick", to: "small", condition: "default", guard: { kind: "default" } },
+    ])], { select }, echoRenderer, undefined, { openingMessageStatesSlotValues: false });
+
+    const result = await runner.resume({ turn: callTurn, state: { ...started({ plan: "small" }), routineId: "plan" }, activationTurn: true });
+
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(result.terminal).toMatchObject({ kind: "complete", stepId: "small" });
+    expect(result.trace?.steps[0]).toMatchObject({ stepId: "pick", event: "advanced", selection: { outcome: "authority_claim" } });
+  });
+
+  it("asks a step the start values fill when its only exits are model-judged and the model chooses none of them", async () => {
+    const select = takesTheCallForAnAuthorityClaim();
+    const runner = new DefaultRoutineRunner([choosePlan([
+      { from: "pick", to: "large", condition: "The user chose the large plan." },
+      { from: "pick", to: "small", condition: "The user chose the small plan." },
+    ])], { select }, echoRenderer, undefined, { openingMessageStatesSlotValues: false });
+
+    const result = await runner.resume({ turn: callTurn, state: { ...started({ plan: "small" }), routineId: "plan" }, activationTurn: true });
+
+    expect(result.terminal).toBeUndefined();
+    expect(result.nextState).toMatchObject({ path: [], variables: { plan: "small" } });
+    expect(result.trace?.steps[0]).toMatchObject({ stepId: "pick", event: "rendered" });
+  });
+
+  // A later turn of the run is a reply, or a re-call while the run is active: the run never
+  // received that call's input, so the message is read like any other (#1563 review).
+  const parkedOnReason = (): RoutineState => ({ ...state(["ask_order", "ask_reason"], { orderId: "A-1001" }), routineId: "return" });
+
+  it("reads a later turn's message for values and runs the skill they let it reach", async () => {
+    const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({
+      nextStepId: "create_return",
+      variables: { reason: "It arrived damaged." },
+      selection: { outcome: "transition", returnedSlotKeys: ["reason"] },
+    }));
+    const dispatch = vi.fn(async () => ({ status: "completed" as const }));
+    const runner = new DefaultRoutineRunner([returnRoutine], { select }, echoRenderer, { dispatch }, { openingMessageStatesSlotValues: false });
+    const reCall: TurnContext = {
+      ...turn,
+      inputEvent: { ...turn.inputEvent, content: 'start_return {"orderId":"A-1001","reason":"It arrived damaged."}' },
+    };
+
+    const result = await runner.resume({ turn: reCall, state: parkedOnReason() });
+
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({ skillName: "create_return_ticket" }));
+    expect(result.terminal).toMatchObject({ kind: "complete", collected: { orderId: "A-1001", reason: "It arrived damaged." } });
+  });
+
+  it("yields a later turn the selector reads as a different request", async () => {
+    const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({
+      nextStepId: "ask_reason",
+      yieldTurn: true,
+      selection: { outcome: "off_topic", returnedSlotKeys: [] },
+    }));
+    const runner = new DefaultRoutineRunner([returnRoutine], { select }, echoRenderer, undefined, { openingMessageStatesSlotValues: false });
+
+    const result = await runner.resume({ turn: callTurn, state: parkedOnReason() });
+
+    expect(select).toHaveBeenCalledTimes(1);
+    expect(result.yielded).toBe(true);
+  });
+
+  // A first step that collects only an optional slot, started with no value for it.
+  const billingTicket = (transitions: Routine["transitions"]): Routine => ({
+    id: "billing",
+    rootStepId: "ask_category",
+    slots: [{ id: "slot_category", key: "category", type: "text", required: false }],
+    steps: [
+      { id: "ask_category", kind: "chat", action: "Ask which kind of billing issue it is.", metadata: { collectsSlots: ["category"] } },
+      { id: "open_ticket", kind: "skill", skillName: "open_billing_ticket" },
+      { id: "done", kind: "terminal", action: "Confirm the ticket is open." },
+    ],
+    transitions: [...transitions, { from: "open_ticket", to: "done", condition: "default", guard: { kind: "default" } }],
+  });
+
+  it.each([
+    {
+      exits: "exits the author left to the model",
+      routine: billingTicket([
+        { from: "ask_category", to: "open_ticket", condition: "The user described a billing problem." },
+        { from: "ask_category", to: "done", condition: "The user has no billing problem." },
+      ]),
+    },
+    {
+      exits: "a rule exit and a default exit",
+      routine: billingTicket([
+        { from: "ask_category", to: "done", condition: "refund", guard: { kind: "field", ref: "category", op: "equals", value: "refund" } },
+        { from: "ask_category", to: "open_ticket", condition: "default", guard: { kind: "default" } },
+      ]),
+    },
+  ])("asks a first step whose slots the start values leave empty, whatever its $exits", async ({ routine }) => {
+    const select = vi.fn<ConversationRoutineNextStepSelector["select"]>(async () => ({
+      nextStepId: "open_ticket",
+      selection: { outcome: "transition", returnedSlotKeys: [] },
+    }));
+    const dispatch = vi.fn(async () => ({ status: "completed" as const }));
+    const runner = new DefaultRoutineRunner([routine], { select }, echoRenderer, { dispatch }, { openingMessageStatesSlotValues: false });
+
+    const result = await runner.resume({ turn: callTurn, state: { ...started({}), routineId: "billing" }, activationTurn: true });
+
+    expect(select).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(result.nextState).toMatchObject({ path: [], variables: {} });
+    expect(result.trace?.steps).toEqual([{ stepId: "ask_category", kind: "chat", event: "rendered", viaSelector: false }]);
+  });
+});

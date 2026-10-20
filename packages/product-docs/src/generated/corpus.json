@@ -1830,7 +1830,7 @@
       "title": "Deleting conversation data",
       "description": "How to permanently delete a conversation or a visitor, what goes with it, and what Radioso keeps.",
       "section": "Operator guides",
-      "lastUpdated": "2026-10-19",
+      "lastUpdated": "2026-10-20",
       "intro": "When someone asks you to delete what your agent holds about them, delete their conversation, or delete the visitor and every conversation they had. Either way the deletion is permanent: Radioso removes the messages and everything it derived from them in one step, and there is no undo.",
       "sections": [
         {
@@ -1861,7 +1861,7 @@
         {
           "id": "what-deletion-cannot-recall",
           "heading": "What deletion cannot recall",
-          "body": "Deletion reaches what Radioso stores. It cannot reach what already left:\n\n* operator notices already sent by email or posted to Slack;\n* webhook payloads already delivered to another system;\n* emails your agent already sent to the visitor;\n* anything a model provider received while answering, under that provider's own terms.\n\nDatabase backups and logs keep deleted data until they age out: on Radioso Cloud, seven daily backups, seven days of point-in-time recovery logs, and 30 days of logs. See [Data retention](https://docs.radioso.ai/operators/data-retention).\n\nA voice call's recording lives in your ElevenLabs account, so Radioso asks ElevenLabs to delete it after the deletion went through, and the deletion never waits on ElevenLabs for more than 20 seconds. A recording ElevenLabs refuses to delete, or does not delete in time, stays in your ElevenLabs account; the backend log names it as `Voice recording was left at the vendor` with its ElevenLabs conversation id, so you can delete it in ElevenLabs. Each recording Radioso deleted is recorded as a `conversation.recording_deleted` audit event. Once the workspace's ElevenLabs key is removed, or replaced with one for another ElevenLabs account, Radioso cannot delete the old account's recordings at all."
+          "body": "Deletion reaches what Radioso stores. It cannot reach what already left:\n\n* operator notices already sent by email or posted to Slack;\n* webhook payloads already delivered to another system;\n* emails your agent already sent to the visitor;\n* anything a model provider received while answering, under that provider's own terms.\n\nDatabase backups and logs keep deleted data until they age out: on Radioso Cloud, seven daily backups, seven days of point-in-time recovery logs where recovery is on, and 30 days of logs. See [Data retention](https://docs.radioso.ai/operators/data-retention).\n\nA voice call's recording lives in your ElevenLabs account, so Radioso asks ElevenLabs to delete it after the deletion went through, and the deletion never waits on ElevenLabs for more than 20 seconds. A recording ElevenLabs refuses to delete, or does not delete in time, stays in your ElevenLabs account; the backend log names it as `Voice recording was left at the vendor` with its ElevenLabs conversation id, so you can delete it in ElevenLabs. Each recording Radioso deleted is recorded as a `conversation.recording_deleted` audit event. Once the workspace's ElevenLabs key is removed, or replaced with one for another ElevenLabs account, Radioso cannot delete the old account's recordings at all."
         },
         {
           "id": "deleting-everything-at-once",

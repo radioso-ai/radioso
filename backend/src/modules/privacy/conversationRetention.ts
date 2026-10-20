@@ -28,8 +28,10 @@ export interface ConversationRetentionBudget {
   /** Erasure transactions that claimed a conversation, per run, across every workspace. */
   maxConversationBatches: number;
   /**
-   * Checks that found nothing past a workspace's window, per run. One indexed read each, so a run
-   * looks at many workspaces with nothing to erase without spending the erasure budget on them.
+   * Checks that found nothing past a workspace's window, in the run's first round. One indexed read
+   * each, so a run looks at many workspaces with nothing to erase without spending the erasure
+   * budget on them. Later rounds hold only workspaces a batch already found backlogged, so this
+   * budget does not apply to them; the erasure-batch budget bounds those rounds instead.
    */
   maxEmptyChecks: number;
   /** Rows one rule statement removes. */
@@ -128,6 +130,10 @@ export class ConversationRetentionSweep {
    * another's from its turn. A workspace leaves the rounds once a batch claims less than a full one.
    * The run starts with the workspaces the last run did not reach, and records the ones it reached,
    * so a run that ends on its budget hands the rest to the next run rather than starting over.
+   *
+   * The empty-check budget applies only to the first round: once that round ends, every workspace
+   * still in play already returned a full batch, so a run with many idle opted-in workspaces still
+   * gives a backlogged one round after round, bounded only by the erasure-batch budget.
    */
   private async sweepConversations(
     now: Date,
@@ -141,12 +147,17 @@ export class ConversationRetentionSweep {
     let empty = 0;
     let failed = 0;
     let drained = true;
+    let firstRound = true;
     rounds: while (pending.length > 0) {
       const next: WorkspaceConversationRetention[] = [];
       for (const policy of pending) {
-        if (erasing >= maxConversationBatches || empty >= maxEmptyChecks) {
+        if (erasing >= maxConversationBatches) {
           drained = false;
           break rounds;
+        }
+        if (firstRound && empty >= maxEmptyChecks) {
+          drained = false;
+          break;
         }
         reached.add(policy.workspaceId);
         try {
@@ -175,6 +186,7 @@ export class ConversationRetentionSweep {
         }
       }
       pending = next;
+      firstRound = false;
     }
     if (reached.size > 0) {
       try {

@@ -21,6 +21,12 @@ export interface CaseReport extends CaseOutcome {
   passCount?: number;
   /** The samples disagreed — the reduced status was not unanimous. */
   flaky?: boolean;
+  /**
+   * A voice case's elapsed ms to first speech, averaged over its samples. Report-only: nothing
+   * gates on it, so run-to-run latency variance never fails the suite the way a behaviour
+   * regression does.
+   */
+  firstSpeechMs?: number;
 }
 
 export const summarizeRun = (outcomes: CaseOutcome[]): SuiteRunSummary => {
@@ -154,7 +160,8 @@ export const formatReport = (
       report.samples && report.samples > 1
         ? ` (${report.passCount ?? 0}/${report.samples}${report.flaky ? ", flaky" : ""})`
         : "";
-    lines.push(`  [${STATUS_GLYPH[report.status]}] ${report.caseId}${sampleTag} — ${report.name}`);
+    const latencyTag = report.firstSpeechMs === undefined ? "" : ` [first speech ${report.firstSpeechMs}ms]`;
+    lines.push(`  [${STATUS_GLYPH[report.status]}] ${report.caseId}${sampleTag}${latencyTag} — ${report.name}`);
     if (report.status !== "pass") {
       for (const verdict of report.verdicts) {
         if (verdict.status !== "pass") {

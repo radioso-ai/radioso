@@ -38,6 +38,8 @@ export type BaselineCaseEntry = EvalRunStatus | BaselineCaseRecord;
 
 const evalRunStatusSchema = z.enum(["pass", "fail", "error", "recorded"]) satisfies z.ZodType<EvalRunStatus>;
 
+// Strict at both levels: a field the recorder never writes is a damaged file, not one to strip,
+// since a tag-filtered recording rewrites every untouched entry from what this parse kept.
 const baselineFileSchema = z.object({
   generatedAt: z.string().optional(),
   passThreshold: z.number().min(0).max(1).optional(),
@@ -47,9 +49,9 @@ const baselineFileSchema = z.object({
       status: evalRunStatusSchema,
       passRate: z.number().min(0).max(1).optional(),
       samples: z.number().int().positive().optional(),
-    }),
+    }).strict(),
   ])).default({}),
-}) satisfies z.ZodType<BaselineFile, z.ZodTypeDef, unknown>;
+}).strict() satisfies z.ZodType<BaselineFile, z.ZodTypeDef, unknown>;
 
 /**
  * Reads a baseline file's parsed JSON as the shape the recorder writes. Anything else throws, with

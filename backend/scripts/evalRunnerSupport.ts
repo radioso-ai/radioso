@@ -40,6 +40,21 @@ export const registerDisposableAgent = async (deps: DisposableAgentPorts): Promi
   return { workspaceId: registration.workspaceId, agentId: agent.id };
 };
 
+/** The baseline file's text, or null when there is none; any other read failure throws, naming the file. */
+const readBaselineText = (baselinePath: string): string | null => {
+  try {
+    return readFileSync(baselinePath, "utf8");
+  } catch (error) {
+    if (isMissingFile(error)) {
+      return null;
+    }
+    throw new Error(`The baseline at ${baselinePath} cannot be read: ${(error as Error).message}`, { cause: error });
+  }
+};
+
+/** A baseline file that reads but is not one: the only kind a full recording may rewrite. */
+class DamagedBaselineError extends Error {}
+
 /**
  * Reads the committed baseline. A missing file reads as an empty baseline, so the first recording
  * can create it and a run against it fails as uninitialized. A file that cannot be read, does not
@@ -48,19 +63,14 @@ export const registerDisposableAgent = async (deps: DisposableAgentPorts): Promi
  * other case's entry away.
  */
 export const loadBaseline = (baselinePath: string): BaselineFile => {
-  let text: string;
-  try {
-    text = readFileSync(baselinePath, "utf8");
-  } catch (error) {
-    if (isMissingFile(error)) {
-      return { cases: {} };
-    }
-    throw new Error(`The baseline at ${baselinePath} cannot be read: ${(error as Error).message}`, { cause: error });
+  const text = readBaselineText(baselinePath);
+  if (text === null) {
+    return { cases: {} };
   }
   try {
     return parseBaselineFile(JSON.parse(text));
   } catch (error) {
-    throw new Error(
+    throw new DamagedBaselineError(
       `The baseline at ${baselinePath} is no baseline file (${(error as Error).message}); restore it from git before running.`,
       { cause: error },
     );
@@ -68,23 +78,24 @@ export const loadBaseline = (baselinePath: string): BaselineFile => {
 };
 
 /**
- * The baseline a run compares against. A gating run and a tag-filtered recording both read it,
- * the second to merge into it, so a file `loadBaseline` refuses stops them. A full recording
- * rewrites the file whole, so over a file it cannot read it warns and compares against an empty
- * baseline instead.
+ * The baseline a run compares against, read once. A file `loadBaseline` refuses stops a gating
+ * run and a tag-filtered recording, which merges into it. A full recording rewrites the file
+ * whole, so over a damaged file it warns and compares against an empty baseline; a file it cannot
+ * read at all it could not write either, so that still stops it.
  */
 export const readRunBaseline = (
   baselinePath: string,
   run: { updateBaseline: boolean; tags: readonly string[] },
   warn: (message: string) => void,
 ): BaselineFile => {
-  if (!run.updateBaseline || run.tags.length > 0) {
-    return loadBaseline(baselinePath);
-  }
   try {
     return loadBaseline(baselinePath);
   } catch (error) {
-    warn(`${(error as Error).message} A full recording rewrites it, so this run compares against an empty baseline.`);
+    const rewritesWhole = run.updateBaseline && run.tags.length === 0;
+    if (!rewritesWhole || !(error instanceof DamagedBaselineError)) {
+      throw error;
+    }
+    warn(`${error.message} A full recording rewrites it, so this run compares against an empty baseline.`);
     return { cases: {} };
   }
 };
@@ -113,9 +124,9 @@ const isDeterministicOnlyCase = (evalCase: ConversationQualityCase): boolean =>
  * returns them, so each voice assertion carries the scope its definition gives it
  * (`withDefinedVoiceScope`). A case whose every assertion is deterministic-only is skipped.
  * `llm_judge` assertions stay only on the cases `judgeTags` opts in (`scopeJudgeAssertions`), and
- * every voice case drops its deterministic-only assertions. A voice case left with nothing to gate
- * would pass whatever the agent did, so it is refused; the runner scopes before it opens a database
- * pool or registers an account, so a refused run costs nothing.
+ * every case drops its deterministic-only assertions. A case left with nothing to gate, text or
+ * voice, would pass whatever the agent did, so it is refused; the runner scopes before it opens a
+ * database pool or registers an account, so a refused run costs nothing.
  */
 export const scopeCasesForLiveRun = (
   cases: readonly ConversationQualityCase[],
@@ -123,16 +134,13 @@ export const scopeCasesForLiveRun = (
 ): ConversationQualityCase[] =>
   scopeJudgeAssertions(cases.filter((evalCase) => !isDeterministicOnlyCase(evalCase)), judgeTags)
     .map((evalCase) => {
-      if (!evalCase.voiceTurn) {
-        return evalCase;
-      }
       const assertions = evalCase.assertions.filter((assertion) => !isDeterministicOnlyAssertion(assertion));
       if (assertions.length === 0) {
         throw new Error(
-          `Voice case "${evalCase.id}" gates nothing live once its deterministic-only assertions and ungraded judges are dropped; give it an assertion a live turn can check, or mark every assertion deterministicOnly.`,
+          `Case "${evalCase.id}" gates nothing live once its deterministic-only assertions and the judges this run does not grade are dropped; give it an assertion a live turn can check, grade its judge with --judge-tag, or mark every assertion deterministicOnly.`,
         );
       }
-      return { ...evalCase, assertions };
+      return assertions.length === evalCase.assertions.length ? evalCase : { ...evalCase, assertions };
     });
 
 /** Only a review case runs the published revision, so only a run that selects one publishes the agent. */

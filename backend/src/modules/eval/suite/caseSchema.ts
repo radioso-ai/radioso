@@ -9,7 +9,7 @@ import { renderRoutineInvocation } from "../../routines/public.js";
 import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import type { EvalRunRoutineStartState } from "../domain/types.js";
 import type { SuiteAssertion } from "./scoring.js";
-import { withDefinedVoiceScope } from "./traceAssertions.js";
+import { isDeterministicOnlyByDefinition, withDefinedVoiceScope } from "./traceAssertions.js";
 
 /**
  * A conversation-quality case is a committed, version-controlled unit of expected
@@ -244,7 +244,17 @@ const conversationQualityCaseSchema = z.object({
 ).refine(
   (value) => value.voiceTurn === undefined || VOICE_UNSUPPORTED_INPUTS.every((input) => value[input] === undefined),
   { message: `a voice case takes only query and voiceTurn, not ${VOICE_UNSUPPORTED_INPUTS.join(", ")}`, path: ["voiceTurn"] },
-);
+).superRefine((value, context) => {
+  value.assertions.forEach((assertion, index) => {
+    if ("deterministicOnly" in assertion && assertion.deterministicOnly === false && isDeterministicOnlyByDefinition(assertion)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["assertions", index, "deterministicOnly"],
+        message: `${assertion.type} is deterministicOnly by definition: only the brain's speed decides it in a live run, so a live run cannot gate on it; drop deterministicOnly: false`,
+      });
+    }
+  });
+});
 
 /**
  * The text the case's turn runs on: the query, or a tool call rendered exactly as the

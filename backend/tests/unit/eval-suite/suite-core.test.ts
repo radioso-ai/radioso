@@ -1251,6 +1251,19 @@ describe("seed fixtures", () => {
     ]);
   });
 
+  it.each([
+    ["no bridge", { type: "voice_bridge_emitted", expected: false, deterministicOnly: false }],
+    ["the turn limit", { type: "voice_turn_limit_reached", expected: false, deterministicOnly: false }],
+  ])("refuses a case that marks %s live-gated, which only the brain's speed decides live", (_what, assertion) => {
+    expect(() => parseConversationQualityCases([{
+      id: "voice",
+      name: "voice",
+      query: "Hello",
+      voiceTurn: { chatEvents: [{ type: "done" }] },
+      assertions: [assertion],
+    }])).toThrow(/deterministicOnly/u);
+  });
+
   it("rejects a dataset with duplicate case ids", () => {
     expect(() =>
       parseConversationQualityCases([

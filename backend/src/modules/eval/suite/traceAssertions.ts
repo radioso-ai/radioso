@@ -70,12 +70,13 @@ export type SuiteTraceAssertion =
  * neither "it fired" nor "it did not" is a behaviour fact there. The deterministic half scripts the
  * brain, so it asserts both for real.
  */
-export const withDefinedVoiceScope = <Assertion extends { type: string }>(assertion: Assertion): Assertion => {
-  const voice = assertion as Assertion & Partial<{ expected: boolean }>;
-  if (voice.type === "voice_turn_limit_reached" || (voice.type === "voice_bridge_emitted" && voice.expected === false)) {
-    return { ...assertion, deterministicOnly: true };
-  }
-  return assertion;
+export const withDefinedVoiceScope = <Assertion extends { type: string }>(assertion: Assertion): Assertion =>
+  isDeterministicOnlyByDefinition(assertion) ? { ...assertion, deterministicOnly: true } : assertion;
+
+/** Whether an assertion is deterministic-only by its definition, whatever the case says (see {@link withDefinedVoiceScope}). */
+export const isDeterministicOnlyByDefinition = (assertion: { type: string }): boolean => {
+  const voice = assertion as { type: string; expected?: boolean };
+  return voice.type === "voice_turn_limit_reached" || (voice.type === "voice_bridge_emitted" && voice.expected === false);
 };
 
 /** Whether an assertion stays out of a live run's gate, by its definition or its case's marking. */

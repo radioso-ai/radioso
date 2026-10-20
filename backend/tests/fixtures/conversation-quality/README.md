@@ -33,8 +33,11 @@ Two layers (see `src/modules/eval/suite/`):
   drops them unless a case carries a tag passed with `--judge-tag`; those are graded on the
   cheapest text model the configuration resolves (the rerank tier, or `--judge-model`).
   `evals`, `evals:ci`, `evals:update-baseline`, and the nightly workflow all pass
-  `--judge-tag quick-reply`, so the quick-reply judge assertions gate every run and the
-  baseline is recorded the way the gate runs.
+  `--judge-tag quick-reply --judge-tag unavailable`, so the quick-reply judge assertions and the
+  judge of `page-read-metadata-only-summary-unavailable` (its only assertion: no deterministic
+  check can tell an invented page summary from a real one) gate every run, and the baseline is
+  recorded the way the gate runs. A run refuses any case left with nothing to gate, so a
+  filtered run that selects a judge-only case must grade its tag too.
 
 ## Quick-reply cases
 
@@ -158,7 +161,8 @@ turn's whole spoken text against the fixture's configured fallback line
 (`VOICE_EVAL_FALLBACK_LINE` in `tests/fixtures/voice-eval/agent.ts`).
 
 A live run gates a voice case on behaviour, never on latency. A voice assertion can carry a
-`deterministicOnly` flag, and two carry it by definition: `parseConversationQualityCases` marks
+`deterministicOnly` flag, and two carry it by definition (a case that marks either
+`deterministicOnly: false` fails to parse, saying why): `parseConversationQualityCases` marks
 `voice_bridge_emitted` with `expected: false`, since the 2.5-second stall bridge and the 400 ms
 composing-idle bridge fire whenever the live planner or composer is slow, and
 `voice_turn_limit_reached` whatever it expects, since a slow but healthy live turn speaks the
@@ -174,8 +178,8 @@ refused run costs nothing:
   `voice-quick-reply-no-bridge` are both, so neither has a `baseline.json` entry.
 - It scopes `llm_judge` to the cases a `--judge-tag` opts in (`scopeJudgeAssertions`) and drops
   every other case's deterministic-only assertions. A spoken bridge and the outcome still gate.
-- It refuses, with the case's id, a voice case left with nothing to gate, judges the run does
-  not grade included, since that case would pass whatever the agent did.
+- It refuses, with the case's id, any case left with nothing to gate, text or voice, once the
+  judges the run does not grade are dropped, since that case would pass whatever the agent did.
 
 The deterministic harness scores its own unscoped copy of the dataset, so it keeps asserting the
 limit and the quick-reply lane's "no bridge" for real. A live run's first-speech latency, averaged
@@ -268,11 +272,12 @@ the re-asked question.
 initialize it** — run `pnpm run evals:update-baseline` once against a known-good run first.
 A missing `baseline.json` reads as that empty baseline. A file that cannot be read, does not
 parse, or does not fit the shape the recorder writes (each entry's status, pass rate and sample
-count, the pass threshold, the recording time) stops a gating run or a tag-filtered recording
+count, the pass threshold, the recording time, and no field besides) stops a gating run or a
+tag-filtered recording
 before it opens anything, naming the file and the field: restore it from git, because a
 recording that read it as empty would write every other case's entry away. A full
 `--update-baseline` without `--tag` rewrites the file whole, so over a damaged file it warns and
-compares against an empty baseline.
+compares against an empty baseline; a file it cannot read at all stops it too.
 
 When the run ends, a named agent gets its own voice block back, then the run closes what the
 composition opened the way every runtime does (`closeDependencies`) and ends the database pool.

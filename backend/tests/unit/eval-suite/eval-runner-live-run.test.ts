@@ -21,6 +21,9 @@ import {
   seedVoiceSettings,
 } from "../../../scripts/evalRunnerSupport.js";
 
+/** The tags the nightly run and every evals script grade `llm_judge` assertions on. */
+const NIGHTLY_JUDGE_TAGS = ["quick-reply", "unavailable"];
+
 /** A voice case as a run reads it: parsed, so its assertions carry the scope their definitions give them. */
 const voiceCase = (overrides: Partial<ConversationQualityCase>): ConversationQualityCase =>
   parseConversationQualityCases([{
@@ -95,10 +98,37 @@ describe("live runner scope", () => {
       .toEqual([{ type: "llm_judge", expectedAnswer: "The reply thanks the caller." }]);
   });
 
+  it("refuses a text case whose only assertion is a judge the run does not grade, and keeps it when the run grades it", () => {
+    const [judgedOnly] = parseConversationQualityCases([{
+      id: "text-judged-only",
+      name: "A text case gated by its judge alone",
+      tags: ["tone"],
+      query: "Hello there",
+      assertions: [{ type: "llm_judge", expectedAnswer: "A warm greeting." }],
+    }]);
+
+    expect(() => scopeCasesForLiveRun([judgedOnly], [])).toThrow(/"text-judged-only"/u);
+    expect(scopeCasesForLiveRun([judgedOnly], ["tone"])).toEqual([judgedOnly]);
+  });
+
   it("scopes text cases by judge tag alone", () => {
     const committed = parseConversationQualityCases(conversationQualityCases);
 
-    expect(scopeCasesForLiveRun(committed, ["quick-reply"])).toEqual(scopeJudgeAssertions(committed, ["quick-reply"]));
+    expect(scopeCasesForLiveRun(committed, NIGHTLY_JUDGE_TAGS)).toEqual(scopeJudgeAssertions(committed, NIGHTLY_JUDGE_TAGS));
+  });
+
+  it("finds a live assertion on every committed case at the nightly's judge tags, the ones every evals script passes", () => {
+    const scripts = (JSON.parse(readFileSync(new URL("../../../package.json", import.meta.url), "utf8")) as { scripts: Record<string, string> }).scripts;
+    const workflowRun = readFileSync(new URL("../../../../.github/workflows/conversation-quality-evals.yml", import.meta.url), "utf8")
+      .split("\n")
+      .find((line) => line.includes("run:") && line.includes("scripts/runEvals.ts"));
+    const judgeTagsIn = (command: string) => [...command.matchAll(/--judge-tag (\S+)/gu)].map((match) => match[1]);
+
+    for (const command of [scripts.evals, scripts["evals:ci"], scripts["evals:update-baseline"], workflowRun]) {
+      expect(judgeTagsIn(command ?? "")).toEqual(NIGHTLY_JUDGE_TAGS);
+    }
+    expect(() => scopeCasesForLiveRun(parseConversationQualityCases([...conversationQualityCases, ...voiceEvalCases]), NIGHTLY_JUDGE_TAGS))
+      .not.toThrow();
   });
 
   it("runs the committed voice cases live on behaviour alone, without the deterministic-only cases", () => {
@@ -206,6 +236,24 @@ describe("live runner baseline file", () => {
     mkdirSync(baselinePath);
 
     expect(() => loadBaseline(baselinePath)).toThrow(baselinePath);
+  });
+
+  it.each([
+    ["a field the recorder never writes", '{ "passThreshold": 1, "cases": {}, "notes": "kept by hand" }', /notes/u],
+    ["an entry field the recorder never writes", '{ "cases": { "greeting-en": { "status": "pass", "passRate": 1, "owner": "dm" } } }', /owner/u],
+  ])("throws on %s, so a tag-filtered recording cannot write it away", (_shape, contents, field) => {
+    const baselinePath = baselineAt(contents);
+
+    expect(() => loadBaseline(baselinePath)).toThrow(field);
+  });
+
+  it("refuses an unreadable baseline even for a full recording, which could rewrite a damaged file but cannot write this one", () => {
+    const baselinePath = baselineAt();
+    mkdirSync(baselinePath);
+    const warn = vi.fn();
+
+    expect(() => readRunBaseline(baselinePath, { updateBaseline: true, tags: [] }, warn)).toThrow(baselinePath);
+    expect(warn).not.toHaveBeenCalled();
   });
 
   it("refuses a damaged baseline for a gating run and for a tag-filtered recording, which both read it", () => {

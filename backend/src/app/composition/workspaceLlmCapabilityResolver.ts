@@ -16,7 +16,7 @@ import type {
   WorkspaceLlmCapability,
   WorkspaceLlmCapabilityPreference,
 } from "../../modules/settings/contracts/llmCapability.js";
-import { ProviderConfigurationError } from "../../shared/infra/llm/providerTypes.js";
+import { OPENAI_RESIDENCY_HOSTS, ProviderConfigurationError } from "../../shared/infra/llm/providerTypes.js";
 import type { ManagedModelPolicy } from "../../shared/domain/managedModelPolicy.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 
@@ -31,6 +31,12 @@ interface WorkspaceCapabilityCredentialPort {
   getApiKey(workspaceId: string, provider: LlmProviderName): Promise<string | undefined>;
   /** Presence only; never decrypts. */
   hasCredentials(workspaceId: string, provider: LlmProviderName): Promise<boolean>;
+  /**
+   * The workspace's own OpenAI credential's authored residency; `global` when it has none. Only
+   * ever called when an "openai" workspace credential just answered `getApiKey` above, so this
+   * never has to invent a value for a provider or workspace with no credential.
+   */
+  getOpenAIResidency(workspaceId: string): Promise<OpenAIDataResidency>;
 }
 
 interface EnvProviderKeyResolver {
@@ -60,10 +66,10 @@ const isWorkspaceCapability = (capability: LlmCapabilityName): capability is Wor
 type UnmanagedResolvedBy = Exclude<LlmCapabilityResolvedBy, "managed_plan">;
 
 /**
- * Which credential pool answered an API-key lookup. The platform's OpenAI data-residency
- * setting is a property of the platform's own OpenAI project, so it may only follow an
- * "environment" credential: a workspace's own (BYOK) key belongs to a project the workspace
- * controls, with its own residency choice already baked in.
+ * Which credential pool answered an API-key lookup. For native `openai`, this decides whose
+ * residency choice governs the call: the platform's own (`defaults.openAIPlatformResidency`)
+ * for an "environment" credential, or the workspace's own authored choice
+ * (`credentials.getOpenAIResidency`) for a "workspace" one — never a mix of the two.
  */
 type LlmCredentialSource = "workspace" | "environment";
 
@@ -90,12 +96,13 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
     const { provider, model, resolvedBy } = await this.resolveSelection(capability, input);
 
     const { apiKey, source } = await this.resolveApiKey(input.workspaceId, provider, capability);
-    const { baseUrl, openAIDataResidency } = this.resolveProviderEndpoint(
+    const { baseUrl, openAIDataResidency } = await this.resolveProviderEndpoint(
       provider,
       capability,
       envDefault,
       input.capabilityOverride?.baseUrl,
       source,
+      input.workspaceId,
     );
 
     return {
@@ -208,15 +215,16 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
     );
   }
 
-  private resolveProviderEndpoint(
+  private async resolveProviderEndpoint(
     provider: LlmProviderName,
     capability: LlmCapabilityName,
     envDefault: LlmCapabilityDefault,
     overrideBaseUrl: string | undefined,
     credentialSource: LlmCredentialSource,
-  ): { baseUrl?: string; openAIDataResidency?: OpenAIDataResidency } {
+    workspaceId: string,
+  ): Promise<{ baseUrl?: string; openAIDataResidency?: OpenAIDataResidency }> {
     if (provider === "openai") {
-      return this.resolveOpenAIEndpoint(credentialSource);
+      return this.resolveOpenAIEndpoint(credentialSource, workspaceId);
     }
 
     if (provider !== "openai-compatible") {
@@ -243,23 +251,25 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
 
   /**
    * Native `openai` never takes an override or inherited binding base URL: the only endpoint a
-   * call may ever reach is the platform's own resolved data-residency endpoint (`providerConfig`,
-   * the single source, via `this.deps.defaults.openAIPlatformResidency`), and only when the call
-   * is actually using the platform key. A workspace's BYOK key keeps the residency its own
-   * project already chose — the SDK's default (global) endpoint — regardless of this setting.
+   * call may ever reach is whichever key answered it resolved data-residency to — the
+   * platform's (`this.deps.defaults.openAIPlatformResidency`, derived once in `providerConfig`
+   * from `OPENAI_DATA_RESIDENCY`) when the environment key served the call, or the workspace's
+   * own authored choice (`this.deps.credentials.getOpenAIResidency`) when its BYOK key served
+   * it. Both branches resolve a host through the same table, `OPENAI_RESIDENCY_HOSTS` — the one
+   * place a residency maps to a concrete OpenAI host — so a new region is never two edits.
    */
-  private resolveOpenAIEndpoint(
+  private async resolveOpenAIEndpoint(
     credentialSource: LlmCredentialSource,
-  ): { baseUrl?: string; openAIDataResidency?: OpenAIDataResidency } {
-    if (credentialSource !== "environment") {
-      return {};
-    }
-    const platform = this.deps.defaults.openAIPlatformResidency;
+    workspaceId: string,
+  ): Promise<{ baseUrl?: string; openAIDataResidency?: OpenAIDataResidency }> {
+    const residency = credentialSource === "workspace"
+      ? await this.deps.credentials.getOpenAIResidency(workspaceId)
+      : this.deps.defaults.openAIPlatformResidency?.residency;
     // Omitted at the default (global) residency too, agreeing with providerConfig's own
     // present-only-when-it-matters convention for this field.
-    if (!platform || platform.residency === "global") {
+    if (!residency || residency === "global") {
       return {};
     }
-    return { openAIDataResidency: platform.residency, baseUrl: platform.baseUrl };
+    return { openAIDataResidency: residency, baseUrl: OPENAI_RESIDENCY_HOSTS[residency] };
   }
 }

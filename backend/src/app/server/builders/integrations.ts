@@ -130,6 +130,7 @@ export const buildLlmCapabilityResolver = (input: {
     credentials: {
       getApiKey: (workspaceId, provider) => input.credentials.getApiKey(workspaceId, provider),
       hasCredentials: (workspaceId, provider) => input.credentials.hasCredentials(workspaceId, provider),
+      getOpenAIResidency: (workspaceId) => input.credentials.getOpenAIResidency(workspaceId),
     },
     managedModelPolicy: input.managedModelPolicy,
     logger: input.logger,

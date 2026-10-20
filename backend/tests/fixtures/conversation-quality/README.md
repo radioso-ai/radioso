@@ -130,14 +130,25 @@ real `VoiceTurnService` instead of the live brain, over the `generic` dialect's 
 The turn limit has no event of its own on the `VoiceTurnEvent` stream the port returns — the
 policy reports it only to its metrics observer — so `observeVoiceTurn` reads it by comparing the
 turn's whole spoken text against the fixture's configured fallback line
-(`VOICE_EVAL_FALLBACK_LINE` in `tests/fixtures/voice-eval/agent.ts`). No ordinary question holds
-a live turn open for 10 seconds, so `runEvals.ts` scopes `voice_turn_limit_reached` out of what
-it scores (`scopeVoiceTurnLimitAssertions`, the same way `scopeJudgeAssertions` scopes
-`llm_judge`): the live run checks the case's outcome stays `continue` instead, and the
-deterministic harness — which drives the case through its own copy of the dataset, unscoped —
-keeps asserting the limit itself for real. A live run's first-speech latency, averaged per case
-over its samples, prints in the report (`[first speech 3105ms]`) but gates nothing: only the
-trace assertions above do.
+(`VOICE_EVAL_FALLBACK_LINE` in `tests/fixtures/voice-eval/agent.ts`).
+
+A live run gates a voice case on behaviour, never on latency. `runEvals.ts`'s
+`scopeVoiceCasesForLiveRun` decides what each case gates before anything is seeded, the same way
+`scopeJudgeAssertions` scopes `llm_judge`:
+
+- It drops `voice_turn_limit_reached` and any assertion marked `latencyDependent: true`. The
+  10-second limit fires only on a stalled planner, and the 2.5-second stall bridge fires whenever
+  the live planner is slow, so "no bridge" on `voice-quick-reply-no-bridge` is a latency fact live
+  and a behaviour fact only where the brain is scripted.
+- It skips a case marked `voiceTurn.deterministicOnly: true`. `voice-turn-limit-fires` is one: live
+  it would gate only its `continue` outcome, which any answer passes, so it has no `baseline.json`
+  entry.
+- It refuses, with the case's id, a voice case left with no assertion to gate, since that case
+  would pass whatever the agent did. Give it a behaviour assertion or mark it deterministic-only.
+
+The deterministic harness scores its own unscoped copy of the dataset, so it keeps asserting the
+limit and the quick-reply lane's "no bridge" for real. A live run's first-speech latency, averaged
+per case over its samples, prints in the report (`[first speech 3105ms]`) but gates nothing.
 
 A voice case also needs the agent published, like a review case: the voice turn port streams
 through the same chat answer path a real session uses, which answers for the agent as it is
@@ -145,9 +156,9 @@ published, not the draft `WorkbenchReplayRunner` replays directly for a live cas
 
 ### Recording the voice baseline
 
-The four voice cases need their own baseline entries the first time they run, and again whenever
-a wording or routine change might shift their live behaviour. Record (or re-record) only them,
-leaving every other case's entry untouched, with `--tag voice`:
+The voice cases a live run drives need their own baseline entries the first time they run, and
+again whenever a wording or routine change might shift their live behaviour. Record (or
+re-record) only them, leaving every other case's entry untouched, with `--tag voice`:
 
 ```bash
 cd backend

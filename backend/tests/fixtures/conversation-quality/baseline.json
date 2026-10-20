@@ -266,11 +266,6 @@
       "status": "pass",
       "passRate": 1,
       "samples": 5
-    },
-    "voice-turn-limit-fires": {
-      "status": "pass",
-      "passRate": 1,
-      "samples": 5
     }
   }
 }

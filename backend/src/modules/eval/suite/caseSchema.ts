@@ -95,6 +95,12 @@ export type VoiceEvalChatScriptEvent =
  */
 export interface VoiceEvalTurnScript {
   chatEvents: VoiceEvalChatScriptEvent[];
+  /**
+   * The case runs in the deterministic half only, and a live run skips it: its scenario is a
+   * brain slower than the turn policy's deadlines (the turn limit), which the deterministic half
+   * scripts and a live turn never produces on demand, so live it would gate nothing.
+   */
+  deterministicOnly?: boolean;
 }
 
 const answerMatchMode = z.enum(["substring", "regex"]);
@@ -144,7 +150,7 @@ const suiteAssertionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("turn_persists_no_reply") }),
   z.object({ type: z.literal("turn_reply_source"), source: z.enum(["turn_planning", "composer"]) }),
   z.object({ type: z.literal("turn_directive_committed"), directive: z.string().min(1) }),
-  z.object({ type: z.literal("voice_bridge_emitted"), expected: z.boolean() }),
+  z.object({ type: z.literal("voice_bridge_emitted"), expected: z.boolean(), latencyDependent: z.boolean().optional() }),
   z.object({ type: z.literal("voice_turn_limit_reached"), expected: z.boolean() }),
   z.object({ type: z.literal("voice_turn_outcome"), kind: z.enum(["continue", "callback_requested"]) }),
 ]);
@@ -164,6 +170,7 @@ const voiceEvalChatScriptEventSchema = z.discriminatedUnion("type", [
 
 const voiceEvalTurnScriptSchema = z.object({
   chatEvents: z.array(voiceEvalChatScriptEventSchema).min(1),
+  deterministicOnly: z.boolean().optional(),
 });
 
 /** Turn inputs a review turn has no way to take: it answers a recorded message with its history. */

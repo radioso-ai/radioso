@@ -7,7 +7,8 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 
-import { closeDependencies, type ClosableDependencies } from "../src/app/server/closeDependencies.js";
+import { closeInOrder, dependencyCloseSteps, type ClosableDependencies } from "../src/app/server/closeDependencies.js";
+import type { AppDependencies } from "../src/app/server/types.js";
 import type { AgentVoiceSettings } from "../src/modules/agents/public.js";
 import {
   isDeterministicOnlyAssertion,
@@ -171,15 +172,34 @@ export const seedVoiceSettings = async (
 export const seededRoutineSkillNames: readonly string[] = [CREATE_RETURN_TICKET_SKILL];
 
 /**
- * Closes what the composition opened, as the API runtime does (`closeDependencies`), then ends the
- * database pool, each even when a step before it fails, so the process exits once the run is done.
+ * Closes what the composition opened, as every runtime does (`dependencyCloseSteps`), then ends
+ * the database pool, each step even after one before it fails, so the process exits once the run
+ * is done.
  */
-export const closeEvalDependencies = async (
-  deps: ClosableDependencies & { connectorDb: { close(): Promise<void> } },
-): Promise<void> => {
+export const closeEvalDependencies = (
+  deps: ClosableDependencies & Pick<AppDependencies, "connectorDb">,
+): Promise<void> =>
+  closeInOrder(
+    [...dependencyCloseSteps(deps), { name: "database pool", close: () => deps.connectorDb.close() }],
+    deps.logger,
+  );
+
+/**
+ * Runs `run`, then `close`, whatever `run` did. A failure to close goes to `reportCloseFailure`
+ * and is never thrown, so it cannot take the place of the run's own error or of its result.
+ */
+export const runThenClose = async <T>(
+  run: () => Promise<T>,
+  close: () => Promise<void>,
+  reportCloseFailure: (error: unknown) => void,
+): Promise<T> => {
   try {
-    await closeDependencies(deps);
+    return await run();
   } finally {
-    await deps.connectorDb.close();
+    try {
+      await close();
+    } catch (error) {
+      reportCloseFailure(error);
+    }
   }
 };

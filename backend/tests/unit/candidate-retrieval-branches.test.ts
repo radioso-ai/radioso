@@ -607,7 +607,8 @@ describe("candidate retrieval branches", () => {
       },
     ]);
     expect(result.retrievalBranches).toHaveLength(2);
-    expect(result.rewrittenContexts).toHaveLength(2);
+    // The one shared semantic search's hits count once, not once per branch.
+    expect(result.rewrittenContexts).toHaveLength(1);
     // Both branches share one semantic query, so they share that one search's timing.
     expect(result.retrievalBranches[0]?.semanticSearchStartedAtMs).toBeDefined();
     expect(result.retrievalBranches[0]?.semanticSearchStartedAtMs)

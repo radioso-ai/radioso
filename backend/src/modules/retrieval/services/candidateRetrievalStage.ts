@@ -149,12 +149,12 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
       }),
     );
 
-    const originalContexts = input.rewrittenQuery.retrievalEligible
-      ? []
-      : retrievalBranches.flatMap((branch) => branch.semanticContexts);
-    const rewrittenContexts = input.rewrittenQuery.retrievalEligible
-      ? retrievalBranches.flatMap((branch) => branch.semanticContexts)
-      : [];
+    // Branches that share a semantic query share one search; count its hits once.
+    const semanticContexts = retrievalBranches
+      .filter((branch, index) => retrievalBranches.findIndex((other) => other.semanticQuery === branch.semanticQuery) === index)
+      .flatMap((branch) => branch.semanticContexts);
+    const originalContexts = input.rewrittenQuery.retrievalEligible ? [] : semanticContexts;
+    const rewrittenContexts = input.rewrittenQuery.retrievalEligible ? semanticContexts : [];
     const lexicalContexts = retrievalBranches.flatMap((branch) => branch.lexicalContexts);
     const semanticRetrievalAvailability = resolveSemanticAvailability({
       embeddingAvailable: embeddingResult !== null,

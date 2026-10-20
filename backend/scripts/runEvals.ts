@@ -42,7 +42,7 @@ import { buildLlmRegistry } from "../src/app/server/builders/integrations.js";
 import { buildDependencies } from "../src/app/server/dependencies.js";
 import { runMigrations } from "../src/db/runMigrations.js";
 import { createLogger } from "../src/shared/observability/logger.js";
-import { projectInternalAgentConfig } from "../src/modules/agents/public.js";
+import { projectInternalAgentConfig, type AgentVoiceSettings } from "../src/modules/agents/public.js";
 import { ChatGatewayLlmJudge } from "../src/modules/eval/composition.js";
 import { resolveLlmConfig } from "../src/shared/infra/llm/providerConfig.js";
 import {
@@ -62,7 +62,7 @@ import { conversationQualityCases } from "../tests/fixtures/conversation-quality
 import { conversationQualityCorpus } from "../tests/fixtures/conversation-quality/corpus.js";
 import { conversationQualityDirectives } from "../tests/fixtures/conversation-quality/directives.js";
 import { conversationQualityRoutines, CREATE_RETURN_TICKET_SKILL } from "../tests/fixtures/conversation-quality/routines.js";
-import { VOICE_EVAL_AGENT_VOICE_SETTINGS, VOICE_EVAL_FALLBACK_LINE } from "../tests/fixtures/voice-eval/agent.js";
+import { VOICE_EVAL_FALLBACK_LINE, VOICE_EVAL_VOICE_SETTINGS } from "../tests/fixtures/voice-eval/agent.js";
 import { voiceEvalCases } from "../tests/fixtures/voice-eval/cases.js";
 import { voiceEvalRoutines } from "../tests/fixtures/voice-eval/routines.js";
 import { createReviewTurnRunnerPort, createVoiceTurnRunnerPort, createWorkbenchReplayRunnerPort } from "./evalRunnerAdapter.js";
@@ -356,15 +356,33 @@ export const needsPublishedAgent = (cases: readonly ConversationQualityCase[]): 
 export const needsVoiceSettings = (cases: readonly ConversationQualityCase[]): boolean =>
   cases.some((evalCase) => evalCase.voiceTurn !== undefined);
 
+/** The agent reads and writes `seedVoiceSettings` makes, narrowed so a test can hand it fakes. */
+interface VoiceSettingsSeedPorts {
+  agents: { findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<{ voice: AgentVoiceSettings } | null> };
+  agentSettings: { update(workspaceId: string, agentId: string, input: { voice: AgentVoiceSettings }): Promise<unknown> };
+}
+
 /**
  * Turns voice on for the seeded agent with the lines the voice cases need: a bridge line so a
  * case that searches has one to speak, and the fallback line `evalRunnerAdapter.ts`'s
  * `observeVoiceTurn` reads a turn's whole spoken text against to tell the turn limit apart from
- * a real answer (see `VOICE_EVAL_FALLBACK_LINE`). No `runtime` is bound: a voice case drives the
- * turn policy directly and starts no vendor session.
+ * a real answer (see `VOICE_EVAL_FALLBACK_LINE`). The block is written whole, so the lines go
+ * over the agent's own: an agent `RADIOSO_EVAL_AGENT_ID` names keeps its runtime binding,
+ * recording notice and language switching. No case starts a vendor session, so none needs a
+ * runtime.
  */
-const seedVoiceSettings = (deps: Deps, flags: Flags): Promise<unknown> =>
-  deps.agentService.update(flags.workspaceId, flags.agentId, { voice: VOICE_EVAL_AGENT_VOICE_SETTINGS });
+export const seedVoiceSettings = async (
+  ports: VoiceSettingsSeedPorts,
+  target: { workspaceId: string; agentId: string },
+): Promise<void> => {
+  const agent = await ports.agents.findByIdAndWorkspaceId(target.agentId, target.workspaceId);
+  if (!agent) {
+    throw new Error(`Agent ${target.agentId} not found in workspace ${target.workspaceId}.`);
+  }
+  await ports.agentSettings.update(target.workspaceId, target.agentId, {
+    voice: { ...agent.voice, ...VOICE_EVAL_VOICE_SETTINGS },
+  });
+};
 
 /**
  * Seeds `voiceEvalRoutines` (just the callback hand-off routine today) the same idempotent way
@@ -509,6 +527,29 @@ const waitForDocumentsReady = async (
   }
 };
 
+/** What the composition holds open that a finished run must close, the database pool last. */
+interface EvalDependencyClosers {
+  closeApprovalResumeEffectJournal(): Promise<void>;
+  closeAbuseControlRepository?(): Promise<void>;
+  connectorDb: { close(): Promise<void> };
+}
+
+/**
+ * Closes the approval journal's database, then the abuse-control repository, then ends the pool,
+ * each even when one before it fails, so the process can exit once the run is done.
+ */
+export const closeEvalDependencies = async (deps: EvalDependencyClosers): Promise<void> => {
+  try {
+    await deps.closeApprovalResumeEffectJournal();
+  } finally {
+    try {
+      await deps.closeAbuseControlRepository?.();
+    } finally {
+      await deps.connectorDb.close();
+    }
+  }
+};
+
 const main = async (): Promise<void> => {
   const flags = parseFlags(process.argv.slice(2));
   if (flags.judge) {
@@ -541,7 +582,7 @@ const main = async (): Promise<void> => {
     const { documentIds, routineIds } = await seedFixtures(deps, flags);
     await waitForDocumentsReady(deps, flags.workspaceId, documentIds);
     if (runsVoiceCases) {
-      await seedVoiceSettings(deps, flags);
+      await seedVoiceSettings({ agents: deps.agentRepository, agentSettings: deps.agentService }, flags);
       await seedVoiceRoutines(deps, flags);
     }
 
@@ -646,10 +687,7 @@ const main = async (): Promise<void> => {
       process.exitCode = 1;
     }
   } finally {
-    const shutdown = (deps as { shutdown?: () => Promise<void> }).shutdown;
-    if (shutdown) {
-      await shutdown.call(deps);
-    }
+    await closeEvalDependencies(deps);
   }
 };
 

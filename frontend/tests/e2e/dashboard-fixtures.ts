@@ -930,6 +930,7 @@ export const baseQualityStats = () => ({
     negative_feedback: 7,
     grounding_gaps: 3,
     skill_failures: 2,
+    unmet_directives: 1,
   },
   resolutionBreakdown: [],
 });

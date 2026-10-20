@@ -1,7 +1,7 @@
 ---
 title: "Human Takeover"
 description: "Operator API and contract for taking over conversations, suppressing AI while handling manual responses, and reading who did what to a conversation."
-last_updated: 2026-10-17
+last_updated: 2026-10-19
 ---
 
 # Human Takeover
@@ -795,7 +795,10 @@ volume, grounded-answer rate, negative-feedback rate, and skill-failure rate,
 each shown against the equal preceding window. **Queue** is the full,
 paginated backlog and per-turn triage for negative feedback, grounding gaps,
 and skill failures. The Inbox links to this union as one deduplicated count
-rather than listing its automatic signals individually. The queue is not
+rather than listing its automatic signals individually. The **Unmet directives**
+chip, answers that graded one of their own directives as not followed, is opt-in:
+it lists those turns when you choose it, and stays out of the default queue and
+the Inbox count. The queue is not
 windowed, so a turn that is still untriaged stays visible however old it is.
 Its resolution breakdown and filters open exact reason/closure-time queues,
 while **Add to Eval** preserves a failed answer, which then shows timestamped

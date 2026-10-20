@@ -19,7 +19,16 @@ import {
   renderCompletion,
   type CompletionIdentity,
 } from "./completionsPresenter.js";
-import { findCompletionsDialect, localeFor, sessionKeyFor, turnLanguageFor, type CompletionsDialect } from "./dialects.js";
+import {
+  findCompletionsDialect,
+  languageSwitchOfferFor,
+  languageSwitchRenderingFor,
+  languageSwitchResultFor,
+  localeFor,
+  sessionKeyFor,
+  turnLanguageFor,
+  type CompletionsDialect,
+} from "./dialects.js";
 import { completionsRequestSchema, heardUntilFor, isToolResultFollowUp, utteranceOf } from "./requestSchema.js";
 
 const COMPLETIONS_PATH = "/:agentId/voice/:dialect/v1/chat/completions";
@@ -104,12 +113,14 @@ const turnInputFor = (
   const locale = localeFor(dialect, request);
   const turnLanguage = turnLanguageFor(dialect, { ...request, messages: parsed.messages });
   const heardUntil = heardUntilFor(dialect, parsed);
+  const languageSwitchOffer = languageSwitchOfferFor(dialect, parsed);
   return {
     session: { workspaceId: caller.workspaceId, agentId: caller.agentId, vendor: dialect.id, sessionKey },
     transport: dialect.transportDefault,
     utterance,
     ...(locale ? { locale } : {}),
     ...turnLanguage,
+    ...(languageSwitchOffer ? { languageSwitchOffer } : {}),
     ...(heardUntil === undefined ? {} : { heardUntil }),
     ...(dialect.minReleasableSentenceChars === undefined
       ? {}
@@ -233,7 +244,11 @@ const streamCompletion = async (
   dialect: CompletionsDialect,
 ): Promise<void> => {
   const { res } = drain;
-  const render = createCompletionChunkRenderer(identity, { sentenceFlushDelta: dialect.sentenceFlushDelta });
+  const languageSwitch = languageSwitchRenderingFor(dialect);
+  const render = createCompletionChunkRenderer(identity, {
+    sentenceFlushDelta: dialect.sentenceFlushDelta,
+    ...(languageSwitch ? { languageSwitch } : {}),
+  });
   let conversationId: string | null = null;
   let keepAlive: { touch(): void; stop(): void } | undefined;
   const writeFrames = (frames: readonly string[]): void => {
@@ -286,6 +301,7 @@ const streamCompletion = async (
 const sendCompletion = (
   res: Response,
   identity: CompletionIdentity,
+  dialect: CompletionsDialect,
   collected: readonly VoiceTurnEvent[],
   outcome: VoiceTurnOutcome,
 ): void => {
@@ -296,16 +312,17 @@ const sendCompletion = (
     res.setHeader(CONVERSATION_ID_HEADER, conversation.conversationId);
   }
   res.setHeader(OUTCOME_FIELD, outcome.kind);
-  res.status(200).json(renderCompletion(identity, collected));
+  const languageSwitch = languageSwitchRenderingFor(dialect);
+  res.status(200).json(renderCompletion(identity, collected, languageSwitch ? { languageSwitch } : {}));
 };
 
-const answerCompletion = async (drain: TurnDrain, identity: CompletionIdentity): Promise<void> => {
+const answerCompletion = async (drain: TurnDrain, identity: CompletionIdentity, dialect: CompletionsDialect): Promise<void> => {
   const { res } = drain;
   const collected: VoiceTurnEvent[] = [];
   await drainTurn(drain, (event) => {
     collected.push(event);
     if (event.type === "outcome") {
-      sendCompletion(res, identity, collected, event.outcome);
+      sendCompletion(res, identity, dialect, collected, event.outcome);
     }
   });
 };
@@ -330,7 +347,13 @@ export const registerOpenAiCompletionsRoute = (router: Router, dependencies: Com
       const abort = new AbortController();
       const hangUp = new AbortController();
       let events: AsyncIterable<VoiceTurnEvent>;
-      if (isToolResultFollowUp(parsed)) {
+      const languageSwitchResult = languageSwitchResultFor(dialect, parsed);
+      if (languageSwitchResult) {
+        // The runtime ran the switch a reply asked for and asks again for what to say: the answer
+        // of the turn that asked, which that turn's chat turn is writing. No new turn is admitted.
+        const input = turnInputFor(req, parsed, caller, dialect, dependencies.logger);
+        events = dependencies.turns.runTurn({ ...input, languageSwitchResult }, abort.signal, hangUp.signal);
+      } else if (isToolResultFollowUp(parsed)) {
         // Read as a turn, it would answer the previous utterance again: replay its answer, or store
         // a second user message. The reply that called the tool already spoke for that utterance.
         dependencies.logger.debug(
@@ -350,7 +373,7 @@ export const registerOpenAiCompletionsRoute = (router: Router, dependencies: Com
         hangUp,
         disconnectAbortCeilingMs: dependencies.disconnectAbortCeilingMs,
       };
-      await (stream ? streamCompletion(drain, identity, dialect) : answerCompletion(drain, identity));
+      await (stream ? streamCompletion(drain, identity, dialect) : answerCompletion(drain, identity, dialect));
     } catch (error) {
       // A started stream already ended with its error frame, and the turn logged the failure;
       // Express would only destroy the socket under the frame.

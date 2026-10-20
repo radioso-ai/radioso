@@ -122,6 +122,9 @@ export const evaluateRetrievalSenseClarification = async (input: {
   if (decision.kind === "none") {
     return { kind: "proceed", candidates };
   }
+  if (input.suppressAsk && input.suppressAskReason !== "page_capture" && isUndecided(candidates, input)) {
+    return { kind: "proceed", candidates, stage: suppressedWithoutScopeStage(candidates) };
+  }
 
   const labelFallbackCandidate = labelFallbackAutoPickCandidate(decision);
   if (labelFallbackCandidate) {
@@ -190,6 +193,34 @@ export const evaluateRetrievalSenseClarification = async (input: {
       expiresAt: input.expiresAt,
     },
   };
+};
+
+/**
+ * Whether the senses are too close to call: unsuppressed, the policy would ask or offer
+ * rather than pick. A suppressed ask then turns that doubt into a scope on the leading
+ * sense, and with no offer to redirect it, scoping on a guess can drop the one document
+ * that answers the turn. The page-capture suppression keeps its scope, because the page
+ * evidence answers that turn and workspace results only supplement it.
+ */
+const isUndecided = (
+  candidates: ClarificationCandidate[],
+  input: { policy: ClarificationPolicy; loopGuardCandidateIds?: string[] },
+): boolean => {
+  const unsuppressed = decideClarification(candidates, input.policy, {
+    loopGuardCandidateIds: input.loopGuardCandidateIds,
+  });
+  return unsuppressed.kind === "ask" || unsuppressed.kind === "soft_pick";
+};
+
+/** The question was suppressed and no sense was chosen, so retrieval keeps every sense. */
+const suppressedWithoutScopeStage = (candidates: ClarificationCandidate[]): ConversationTraceStage => {
+  const stage = clarificationStage({
+    surface: "retrieval_sense",
+    decision: { kind: "none" },
+    consideredCandidates: candidates,
+    reason: "all_senses_kept",
+  });
+  return { ...stage, status: "applied", outputs: { ...stage.outputs, decision: "suppressed" } };
 };
 
 const NON_EXCLUSIVE_RELATIONSHIPS: ReadonlySet<SenseRelationship> = new Set(["complementary", "redundant"]);

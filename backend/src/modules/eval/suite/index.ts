@@ -3,6 +3,7 @@ export {
   parseConversationQualityCases,
   ZERO_TOLERANCE_JUDGE_TAG,
   type ConversationQualityCase,
+  type VoiceEvalChatScriptEvent,
 } from "./caseSchema.js";
 export {
   evaluateTraceAssertion,
@@ -32,4 +33,4 @@ export {
   type SampleScore,
 } from "./sampling.js";
 export type { ConversationQualityRunnerPort } from "./runnerPort.js";
-export type { ConversationQualityObservedOutput } from "./observedOutput.js";
+export type { ConversationQualityObservedOutput, VoiceTurnObservation } from "./observedOutput.js";

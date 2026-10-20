@@ -1,5 +1,5 @@
-import { isLocaleTag } from "../../../../shared/domain/locale.js";
-import type { VoiceLanguageReportProblem, VoiceReportedTurnLanguage } from "../../domain.js";
+import { localeTagOf } from "../../../../shared/domain/locale.js";
+import { VOICE_LANGUAGE_SWITCH_REASONS, type VoiceLanguageReportProblem, type VoiceReportedTurnLanguage } from "../../domain.js";
 import { textOf, type CompletionsMessage } from "./requestSchema.js";
 
 /**
@@ -8,10 +8,14 @@ import { textOf, type CompletionsMessage } from "./requestSchema.js";
  * with the same `tool_call_id`. Data, named by the dialect.
  */
 export interface LanguageSwitchTool {
-  /** The tool's name in `function.name`. */
+  /** The tool's name in `function.name`, in the request's `tools` and in the calls it replays. */
   tool: string;
   /** The argument of `function.arguments` that names the language. */
   argument: string;
+  /** The argument of `function.arguments` that says why, which a call Radioso makes fills. */
+  reasonArgument: string;
+  /** What the runtime puts before the id of a call Radioso made when it replays the call. */
+  replayedCallIdPrefix?: string;
   /**
    * How a result object says whether the switch took effect: its `field` holds `success` when it
    * did and anything else when the runtime refused it, or its `errorFlag` is true.
@@ -47,11 +51,6 @@ const objectOf = (value: unknown): Record<string, unknown> | undefined => {
 
 /** Text that is meant as JSON: an object or an array, by its first character. */
 const looksLikeJson = (text: string): boolean => text.startsWith("{") || text.startsWith("[");
-
-const tagOf = (value: unknown): string | undefined => {
-  const tag = typeof value === "string" ? value.trim() : "";
-  return isLocaleTag(tag) ? tag : undefined;
-};
 
 /** The calls of the tool in one replayed message, oldest first; none for a message that is not the assistant's. */
 const callsIn = (message: CompletionsMessage, tool: string): ToolCall[] =>
@@ -89,7 +88,7 @@ const resultTextOf = (messages: readonly CompletionsMessage[], after: number, ca
  * JSON is a refusal; a result object reads by its fields.
  */
 const outcomeOf = (call: ToolCall, messages: readonly CompletionsMessage[], index: number, switchTool: LanguageSwitchTool): SwitchOutcome => {
-  const tag = tagOf(objectOf(call.function.arguments)?.[switchTool.argument]);
+  const tag = localeTagOf(objectOf(call.function.arguments)?.[switchTool.argument]);
   const text = resultTextOf(messages, index, call.id);
   if (!tag || text === undefined) {
     return "unreadable";
@@ -109,6 +108,12 @@ const outcomeOf = (call: ToolCall, messages: readonly CompletionsMessage[], inde
     return "unreadable";
   }
   return result[field] === success ? { tag } : "blocked";
+};
+
+/** Whether a call is one Radioso made: its reason argument is one Radioso writes. */
+const askedByRadioso = (call: ToolCall, switchTool: LanguageSwitchTool): boolean => {
+  const reason = objectOf(call.function.arguments)?.[switchTool.reasonArgument];
+  return typeof reason === "string" && (VOICE_LANGUAGE_SWITCH_REASONS as readonly string[]).includes(reason);
 };
 
 /**
@@ -133,11 +138,64 @@ export const readLanguageSwitch = (messages: readonly CompletionsMessage[], swit
         refused = true;
         continue;
       }
+      // A switch Radioso asked for is no news to chat: the turn that asked answered in it already.
       return {
-        turnLanguage: { tag: outcome.tag, source: "vendor_detected", isNew: index > previousUtterance },
+        turnLanguage: { tag: outcome.tag, source: "vendor_detected", isNew: index > previousUtterance && !askedByRadioso(call, switchTool) },
         ...(refused ? { languageReport: "blocked" as const } : {}),
       };
     }
   }
   return refused ? { languageReport: "blocked" } : {};
+};
+
+/** Whether the request's `tools` offer the tool, so a reply may call it. */
+export const offersLanguageSwitch = (tools: readonly unknown[] | null | undefined, switchTool: Pick<LanguageSwitchTool, "tool">): boolean =>
+  (tools ?? []).some((tool) => isRecord(tool) && isRecord(tool.function) && tool.function.name === switchTool.tool);
+
+/** The languages the runtime refused to switch the call to, as their calls named them, oldest first and once each. */
+export const refusedSwitchLanguages = (messages: readonly CompletionsMessage[], switchTool: LanguageSwitchTool): string[] => {
+  const refused = new Set<string>();
+  messages.forEach((message, index) => {
+    for (const call of callsIn(message, switchTool.tool)) {
+      const tag = localeTagOf(objectOf(call.function.arguments)?.[switchTool.argument]);
+      if (tag && outcomeOf(call, messages, index, switchTool) === "blocked") {
+        refused.add(tag);
+      }
+    }
+  });
+  return [...refused];
+};
+
+/**
+ * The runtime's follow-up request after running a call of the tool that Radioso made: its newest
+ * message is that call's result. The call's id as Radioso named it (the runtime's replay prefix
+ * removed) and whether the call switched the call's language; a result refused or unreadable
+ * switched nothing. Null when the newest message is no result of such a call.
+ */
+export const switchFollowUpOf = (
+  messages: readonly CompletionsMessage[],
+  switchTool: LanguageSwitchTool,
+): { callId: string; confirmed: boolean } | null => {
+  const newest = messages.at(-1);
+  const replayedId = newest?.role === "tool" ? newest.tool_call_id : undefined;
+  if (typeof replayedId !== "string" || replayedId.length === 0) {
+    return null;
+  }
+  for (let index = messages.length - 2; index >= 0; index -= 1) {
+    const message = messages[index];
+    const call = message ? callsIn(message, switchTool.tool).find((candidate) => candidate.id === replayedId) : undefined;
+    if (call) {
+      if (!askedByRadioso(call, switchTool)) {
+        return null;
+      }
+      const prefix = switchTool.replayedCallIdPrefix;
+      const callId = prefix && replayedId.startsWith(prefix) ? replayedId.slice(prefix.length) : replayedId;
+      return { callId, confirmed: typeof outcomeOf(call, messages, index, switchTool) === "object" };
+    }
+    if (message && callsId(message, replayedId)) {
+      // The result answers a call of another tool.
+      return null;
+    }
+  }
+  return null;
 };

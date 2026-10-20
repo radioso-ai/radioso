@@ -363,6 +363,30 @@ describe("grounded answer prompt contract", () => {
     expect(prompt).toMatch(/satisfied[\s\S]*ignored/i);
   });
 
+  // #1575: a grade written after the answer only describes it, so the model commits to
+  // each rule before writing, writes against that commitment, then grades the answer.
+  it("asks for a commitment per rule before the answer, an answer that keeps it, and a grade against it", () => {
+    const prompt = loadPromptTemplate("chat/answer-envelope.md");
+
+    expect(prompt).toMatch(/before `answer`[\s\S]*`adherencePlan`/i);
+    expect(prompt).toMatch(/keeps\s+every\s+commitment/i);
+    expect(prompt).toMatch(/no\s+commitment\s+undoing\s+another/i);
+    expect(prompt).toMatch(/`satisfied`\s+is\s+false\s+when\s+the\s+answer\s+breaks\s+its\s+commitment/i);
+    expect(prompt).toMatch(/never\s+restate,\s+quote,\s+or\s+summarize[\s\S]*commitments/i);
+  });
+
+  // #1575: an always-on directive that withholds part of an answered request (prices) was
+  // ignored because the coverage guidance said "answer directly" and a built-in directive said
+  // "state supported facts directly". The guidance says withholding is allowed and is no conflict.
+  it("lets a directive withhold part of an answered request without a stated limitation", () => {
+    const guidance = loadPromptTemplate("chat/answer-coverage-response-guidance.md");
+    const steering = loadPromptTemplate("chat/steering.md");
+
+    expect(guidance).toMatch(/directive may withhold part of an `answered` request/i);
+    expect(guidance).toMatch(/breaks no directive asking you to state supported facts directly/i);
+    expect(steering).toMatch(/one limits what the answer says and another how it says it/i);
+  });
+
   it("scopes decline rules by turn type: compact inline guard on grounded, full rules on focused miss", () => {
     const main = new PromptBuilder().build({
       query: "What?",
@@ -436,7 +460,9 @@ describe("grounded answer prompt contract", () => {
     // out-of-scope example alongside the miss example.
     // Widened in #1260 (review F4): `applicable` was already a required adherence
     // field with no instruction explaining it; documenting it costs a sentence.
-    expect(countWords(loadPromptTemplate("chat/answer-envelope.md"))).toBeLessThanOrEqual(315);
+    // Widened in #1575: the commitment to each rule, written before `answer`, and the
+    // grade against it cost two sentences.
+    expect(countWords(loadPromptTemplate("chat/answer-envelope.md"))).toBeLessThanOrEqual(345);
     expect(countWords(loadPromptTemplate("chat/answer-suggestions.md"))).toBeGreaterThanOrEqual(560);
     // Tightened in #863: the strict provider schema hard-enforces the item field
     // set (additionalProperties:false + required) and JSON-only output, so the
@@ -464,6 +490,11 @@ describe("grounded answer prompt contract", () => {
     // Widened in #1260: the coverage verdict the model now commits to before
     // `answer` (`answer-coverage-head.md`) and its response guidance render on
     // every grounded call, where a separate pre-compose assessment used to.
+    // Widened again when the coverage head bound its verdict to the subject the
+    // conversation established: a Result about another named item no longer
+    // answers a request about that subject.
+    // Widened in #1575: the answer commits to each directive rule before writing, and a
+    // directive may withhold part of an answered request.
     const groundedWithSuggestions = stack(
       "retrieval/answer.md",
       "chat/grounded-inline-decline.md",
@@ -473,9 +504,9 @@ describe("grounded answer prompt contract", () => {
       "chat/answer-suggestions.md",
     );
     expect(groundedWithSuggestions).toBeGreaterThanOrEqual(1900);
-    expect(groundedWithSuggestions).toBeLessThanOrEqual(2050);
+    expect(groundedWithSuggestions).toBeLessThanOrEqual(2200);
 
-    // Grounded answer, suggestions disabled.
+    // Grounded answer, suggestions disabled. Widened in #1575 with the sheet above.
     const groundedNoSuggestions = stack(
       "retrieval/answer.md",
       "chat/grounded-inline-decline.md",
@@ -484,7 +515,7 @@ describe("grounded answer prompt contract", () => {
       "chat/answer-coverage-response-guidance.md",
     );
     expect(groundedNoSuggestions).toBeGreaterThanOrEqual(1280);
-    expect(groundedNoSuggestions).toBeLessThanOrEqual(1420);
+    expect(groundedNoSuggestions).toBeLessThanOrEqual(1570);
 
     // Focused decline / grounded-miss owns the full decline ruleset.
     const focusedDecline = stack("chat/grounded-miss.md", "chat/grounded-decline-rules.md");

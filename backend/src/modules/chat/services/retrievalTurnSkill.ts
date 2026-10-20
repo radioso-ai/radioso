@@ -864,8 +864,9 @@ export class RetrievalAnswerComposer {
         declineReason = this.zeroEvidenceDeclineReason(pageAnswer, decline, true);
       }
       plannedSuggestions = fallbackEnvelope?.suggestions ?? [];
-      metadataPatch = this.sideChannel(session, zeroEvidenceAssessment)?.resolve(fallbackEnvelope?.extras);
+      // A decline composed without the envelope carried no plan or grades to resolve.
       if (fallbackEnvelope) {
+        metadataPatch = this.sideChannel(session, zeroEvidenceAssessment)?.resolve(fallbackEnvelope.extras);
         grounding = computeGroundingSummary({ body: fallbackEnvelope.answer, envelope: fallbackEnvelope, contextCount: 0 });
         this.recordGroundingOutcome(grounding, fallbackEnvelope, true);
       }
@@ -1047,7 +1048,6 @@ export class RetrievalAnswerComposer {
       gate.finish();
       groundingGateWaitMs = citationGateEngaged ? gate.waitDurationMs : undefined;
       plannedSuggestions = finalized.suggestions;
-      metadataPatch = this.sideChannel(session)?.resolve(finalized.extras);
       rawAnswer = finalized.fullAnswer;
       const blankDecline = blankDeclineCommitment(finalized, rawAnswer);
       if (!rawAnswer.trim() && !blankDecline) {
@@ -1076,7 +1076,6 @@ export class RetrievalAnswerComposer {
         rawAnswer = decline.text;
         grounding = "no_support";
         plannedSuggestions = [];
-        metadataPatch = undefined;
       } else if (!hasStreamedAnswer && shouldSuppressUnsupportedDraft(session, finalized, summary)) {
         const decline = await this.composeFocusedDecline(
           session,
@@ -1095,8 +1094,10 @@ export class RetrievalAnswerComposer {
         declineReason = decline.declineReason;
         grounding = "no_support";
         plannedSuggestions = [];
-        metadataPatch = undefined;
       } else {
+        // Resolved only for the answer that ships: a replaced draft's plan and grades
+        // describe text the visitor never sees.
+        metadataPatch = this.sideChannel(session)?.resolve(finalized.extras);
         grounding = summary;
         this.recordGroundingOutcome(summary, finalized, true);
       }

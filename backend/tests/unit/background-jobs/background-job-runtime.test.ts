@@ -166,7 +166,7 @@ describe("BackgroundJobRuntime", () => {
   });
 
   it("dead-letters at once when the handler reports a failure no retry can fix", async () => {
-    const { queue, runtime, store } = setup([
+    const { queue, runtime, store, errorReporter, logger } = setup([
       backgroundJobHandler(REFRESH, async () => {
         throw new NonRetryableBackgroundJobError("subject deleted");
       }),
@@ -175,16 +175,27 @@ describe("BackgroundJobRuntime", () => {
 
     expect(await runtime.drain({ maxJobs: 5 })).toMatchObject({ claimed: 1, deadLettered: 1 });
     expect(onlyRow(store)).toMatchObject({ status: "dead", attempts: 1, lastError: "NonRetryableBackgroundJobError" });
+    expect(errorReporter.report).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "dead_lettered", errorType: "NonRetryableBackgroundJobError" }),
+      "Background job dead-lettered",
+    );
+    expect(logger.error).not.toHaveBeenCalled();
   });
 
   it("dead-letters a stored payload that no longer matches its schema without running the handler", async () => {
     const handle = vi.fn(async () => {});
-    const { runtime, store } = setup([backgroundJobHandler(REFRESH, handle)]);
+    const { runtime, store, errorReporter, logger } = setup([backgroundJobHandler(REFRESH, handle)]);
     await store.insert({ kind: REFRESH.kind, payload: { subjectId: 42 }, onDuplicateKey: "rerun" });
 
     expect(await runtime.drain({ maxJobs: 5 })).toMatchObject({ deadLettered: 1 });
     expect(handle).not.toHaveBeenCalled();
     expect(onlyRow(store).lastError).toBe("InvalidBackgroundJobPayloadError");
+    expect(errorReporter.report).toHaveBeenCalledOnce();
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ outcome: "dead_lettered", errorType: "InvalidBackgroundJobPayloadError" }),
+      "Background job dead-lettered",
+    );
   });
 
   describe("errors it stores", () => {

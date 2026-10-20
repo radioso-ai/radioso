@@ -4,5 +4,9 @@
  * matching `ConversationRepository`; re-exported here so composition never reaches
  * past this module's boundary to wire the domain service.
  */
-export { VisitorRepository } from "../../db/repositories/visitorRepository.js";
+export {
+  VisitorRecordExporter,
+  VisitorRepository,
+  WebVisitorIdentityFinder,
+} from "../../db/repositories/visitorRepository.js";
 export { VisitorResolver } from "./services/visitorResolver.js";

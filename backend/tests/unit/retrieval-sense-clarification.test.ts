@@ -1148,7 +1148,9 @@ describe("retrieval sense clarification", () => {
     expect(persistedUserMessages.map((message) => message.content)).toEqual([selectorReply]);
   });
 
-  it("suppresses asking while an active routine has yielded and records a suppressed decision", async () => {
+  it("suppresses asking while an active routine has yielded, keeps every sense, and records a suppressed decision", async () => {
+    const capturedRequests: RetrievalPipelineRequest[] = [];
+    const decisions: Array<{ surface: string; decision: string; reason?: string }> = [];
     const detector = {
       detect: vi.fn(async () => [
         { id: "doc-hatha", label: "Hatha yoga", confidence: 0.6, payload: { documentIds: ["doc-hatha"] } },
@@ -1156,7 +1158,9 @@ describe("retrieval sense clarification", () => {
       ]),
     };
     const service = makeService({
+      capturedRequests,
       detector,
+      recordClarificationDecision: (decision) => decisions.push(decision),
       clarificationStore: {
         loadPending: vi.fn(async () => null),
         save: vi.fn(),
@@ -1182,12 +1186,14 @@ describe("retrieval sense clarification", () => {
     });
 
     expect(response.answer).toBe("Grounded answer");
+    expect(capturedRequests.some((request) => request.documentScope)).toBe(false);
     expect(response.turnTrace?.spine.stages).toEqual(expect.arrayContaining([
       expect.objectContaining({
         kind: "clarification",
-        outputs: expect.objectContaining({ surface: "retrieval_sense", decision: "suppressed" }),
+        outputs: expect.objectContaining({ surface: "retrieval_sense", decision: "suppressed", reason: "all_senses_kept" }),
       }),
     ]));
+    expect(decisions).toEqual([{ surface: "retrieval_sense", decision: "suppressed", reason: "all_senses_kept" }]);
   });
 
   it("does not invoke retrieval sense detection for standalone retrieval.answer execution", async () => {

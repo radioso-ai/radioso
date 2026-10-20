@@ -277,6 +277,20 @@ describe('CopilotProposalCard', () => {
     })
   })
 
+  it('links a privacy settings proposal at the workspace settings where the retention window lives', () => {
+    const proposal: CopilotProposalSummary = {
+      id: 'proposal-privacy-setting',
+      targetType: 'privacy_setting',
+      targetLabel: 'Privacy settings',
+      summary: 'Erase each conversation, with everything derived from it, 365 days after its last update or message.',
+      status: 'applied',
+    }
+
+    expect(targetReference(proposal, null, { workspaceId: 'workspace-1' })).toEqual({
+      entity: { type: 'workspace_settings' },
+    })
+  })
+
   it('renders a directive enablement proposal as a reversible update with a single enabled-field preview', async () => {
     const proposal: CopilotProposalSummary = {
       id: 'proposal-disable-directive',

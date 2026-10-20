@@ -73,6 +73,7 @@ import { evalCopilotPrimitives } from "../../modules/eval/public.js";
 import { retrievalCopilotPrimitives } from "../../modules/retrieval/public.js";
 import { routineCopilotPrimitives } from "../../modules/routines/public.js";
 import { productDocsCopilotPrimitives } from "../../modules/productDocs/public.js";
+import { privacyCopilotPrimitives } from "../../modules/privacy/public.js";
 import { settingsCopilotPrimitives } from "../../modules/settings/public.js";
 import { contextVariableCopilotPrimitives } from "../../modules/context-variables/public.js";
 import type { WorkspaceRepositoryPort } from "../../db/repositories/workspaceRepository.js";
@@ -233,6 +234,7 @@ export const createCopilotToolCatalog = (deps: {
     ...retrievalCopilotPrimitives,
     ...routineCopilotPrimitives,
     ...productDocsCopilotPrimitives,
+    ...privacyCopilotPrimitives,
     ...settingsCopilotPrimitives,
     ...websiteCrawlerCopilotPrimitives,
   ]);

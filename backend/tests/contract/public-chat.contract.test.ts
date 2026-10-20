@@ -784,6 +784,33 @@ describe("public chat contract", () => {
     expect(detail.body.hasOlderMessages).toBe(false);
   });
 
+  it("rejects a malformed tail cursor as 400, not a database cast error", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "public-chat-tail-malformed-cursor@example.com");
+    const chatToken = await enableAnonymousChat(app, session);
+    const publicSession = await createPublicSession(app, chatToken);
+
+    const chat = await request(app)
+      .post(`/api/v1/public/chat/${chatToken}`)
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
+      .send({ message: "Hello", startConversation: true, stream: false });
+    expect(chat.status).toBe(200);
+    const anonCookie = findAnonymousCookie(chat.headers["set-cookie"]);
+
+    const malformedCursor = Buffer.from(
+      JSON.stringify({ version: 1, keys: { createdAt: "not-a-timestamp", id: "11111111-1111-1111-1111-111111111111" } }),
+    ).toString("base64url");
+
+    const tail = await request(app)
+      .get(`/api/v1/public/chat/${chatToken}/tail/${chat.body.conversationId}`)
+      .query({ cursor: malformedCursor })
+      .set("x-radioso-public-session", publicSession.publicSessionToken)
+      .set("Cookie", anonCookie!);
+
+    expect(tail.status).toBe(400);
+    expect(tail.body.error.code).toBe("bad_request");
+  });
+
   it("keeps operator agent details and entry provenance off the public conversation detail", async () => {
     const { app, repositories } = createTestApp();
     const session = await issueTestToken(app, "public-chat-detail-boundary@example.com");

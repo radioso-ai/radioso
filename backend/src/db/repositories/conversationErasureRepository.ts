@@ -41,6 +41,57 @@ export class ConversationErasureRepository {
   }
 
   /**
+   * Claims up to `limit` of the workspace's conversations with no update and no message since
+   * `inactiveBefore`, least recently updated first, each locked `FOR UPDATE`. A conversation another
+   * transaction holds is skipped rather than waited for: a turn writing to it, or a second sweep that
+   * claimed it first. `FOR UPDATE` conflicts with the key-share lock a message insert takes, so a
+   * conversation a message is being written to is skipped too, and none can be written to it until
+   * this transaction ends.
+   */
+  async claimInactiveConversations(workspaceId: string, inactiveBefore: Date, limit: number): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom("conversations as conversation")
+      .select("conversation.id")
+      .where("conversation.workspace_id", "=", workspaceId)
+      .where("conversation.updated_at", "<", inactiveBefore)
+      .where(({ not, exists, selectFrom }) => not(exists(selectFrom("messages as message")
+        .select("message.id")
+        .whereRef("message.conversation_id", "=", "conversation.id")
+        .where("message.created_at", ">=", inactiveBefore))))
+      .orderBy("conversation.updated_at", "asc")
+      .orderBy("conversation.id", "asc")
+      .limit(limit)
+      .forUpdate()
+      .skipLocked()
+      .execute();
+    return rows.map((row) => row.id);
+  }
+
+  /**
+   * Of conversations this transaction already locked, the ones still without an update or a message
+   * since `inactiveBefore`. Its own statement, so it reads whatever committed before the locks were
+   * taken, which the claim's snapshot may have missed.
+   */
+  async stillInactive(workspaceId: string, conversationIds: readonly string[], inactiveBefore: Date): Promise<string[]> {
+    if (conversationIds.length === 0) {
+      return [];
+    }
+    const rows = await this.db
+      .selectFrom("conversations as conversation")
+      .select("conversation.id")
+      .where("conversation.workspace_id", "=", workspaceId)
+      .where((eb) => anyOf(eb.ref("conversation.id"), conversationIds, "uuid[]"))
+      .where("conversation.updated_at", "<", inactiveBefore)
+      .where(({ not, exists, selectFrom }) => not(exists(selectFrom("messages as message")
+        .select("message.id")
+        .whereRef("message.conversation_id", "=", "conversation.id")
+        .where("message.created_at", ">=", inactiveBefore))))
+      .orderBy("conversation.id")
+      .execute();
+    return rows.map((row) => row.id);
+  }
+
+  /**
    * Deletes the conversations, lowers each of their visitors' conversation count by the ones it
    * lost, and deletes an *anonymous* visitor left with no conversation at all — a verified
    * visitor is the customer's identity, not one conversation's, so it stays as the handle a later

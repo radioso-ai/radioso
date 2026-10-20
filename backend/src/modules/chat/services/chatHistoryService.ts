@@ -1439,7 +1439,9 @@ export class ChatHistoryService {
     const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["createdAt", "id"]) : null;
     const [{ messages, latestCursor }, ownershipRecord, activity] = await Promise.all([
       this.messageRepository.listSinceByConversationId(workspaceId, conversation.id, {
-        sinceCreatedAt: cursor ? new Date(cursor.keys.createdAt) : undefined,
+        // Verbatim: a JS `Date` only carries millisecond precision, and this cursor may carry the
+        // database's full microsecond precision (see `TailReadInput.sinceCreatedAt`).
+        sinceCreatedAt: cursor?.keys.createdAt,
         sinceId: cursor?.keys.id,
         sinceMarkedAt: cursorMarkedAt(cursor),
         limit: input.limit,

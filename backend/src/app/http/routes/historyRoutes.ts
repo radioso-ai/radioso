@@ -59,7 +59,7 @@ const withRecordingAvailability = async <Detail extends { conversationId: string
  * account has no person behind it; its credential joins the audit event from the request's own audit
  * context.
  */
-const erasureActor = (res: Response): ConversationErasureActor => {
+export const erasureActor = (res: Response): ConversationErasureActor => {
   const { accountId, userId, authPrincipal } = res.locals as {
     accountId: string;
     userId?: string;

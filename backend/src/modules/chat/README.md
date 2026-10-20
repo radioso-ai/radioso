@@ -136,15 +136,19 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   turn still holds into `{ state: "spoken", spokenAt }`, `skipped` or back to
   `pending`. Each is one conditional UPDATE that resolves the ids it changed,
   so two turns never hold one reply; a claim older than
-  `VOICE_BEHAVIOR.operatorReplyClaimExpiryMs` counts as pending. Times are the database clock in the tail cursor's
-  format. `MessageRecord.speech` reads it back on human-authored replies as
+  `VOICE_BEHAVIOR.operatorReplyClaimExpiryMs` counts as pending. Times are the database clock at
+  millisecond precision (the tail cursor's `markedAt` watermark shares this format; the cursor's
+  own `createdAt` key carries the database's full microsecond precision instead, so a quiet poll
+  never re-matches the row it came from — #1518). `MessageRecord.speech` reads it back on human-authored replies as
   readers see it (a claim is still `pending`), and history puts it on the
   reply as `speech` beside `interruption`; the dashboard tail re-delivers a
   reply once it is spoken or skipped. Ray's `conversation_transcript` carries
   the state as one word. Tests:
-  `tests/integration/message-repository.integration.test.ts` (needs the
+  `tests/integration/message-repository.integration.test.ts` and
+  `tests/integration/message-repository-tail.test.ts` (both need the
   disposable integration database), `tests/unit/message-source.test.ts`,
-  `tests/unit/chat-history-service.test.ts`.
+  `tests/unit/chat-history-service.test.ts`,
+  `tests/unit/message-repository-tail-cursor.test.ts`.
 - `composition.ts`: chat module wiring used by application composition.
 - `services/conversationIngestService.ts` (`ConversationIngestPort` in `contracts/`):
   records a customer message without running a turn, for a channel that decides
@@ -224,11 +228,18 @@ imports from `services/`.
   visible streaming text. The envelope stays capability-neutral: a caller may merge
   a strict schema extension into the response format and the reader buffers any
   fields it does not interpret as opaque `extras` (like suggestions, never in
-  visible text). Directive adherence rides that seam — the shared
-  `shared/domain/directiveAdherence.ts` probe owns the attestation schema fragment
-  and resolves the raw `extras` back to directive display names, so the envelope
-  never learns directive vocabulary and any composer can carry it. Resolved
-  attestation appears only on the operator-facing compose trace output.
+  visible text). An extension's `beforeAnswer` fields land between the verdict
+  head and `answer`, so the model writes them first. Directive adherence rides
+  that seam — the shared `shared/domain/directiveAdherence.ts` probe owns the
+  schema fragment (an `adherencePlan` commitment per rule before `answer`, an
+  `adherence` grade per rule after it) and resolves the raw `extras` back to
+  directive display names, so the envelope never learns directive vocabulary and
+  any composer can carry it. Resolved commitments and grades, and the rules left
+  ungraded, appear on the operator-facing compose trace output; the
+  `chat_directive_adherence_verdicts_total` counter counts rules per verdict.
+  `chatTurnLifecycle.ts` writes the directives graded applicable and unsatisfied
+  to the assistant message's `unmetDirectives` metadata, which Quality's
+  `unmet_directives` signal reads.
   `groundingAssertions.ts` structurally computes
   `grounded | degraded | no_support`, and `retrievalTurnSkill.ts` performs one
   semantic answer generation on compliant paths.
@@ -330,13 +341,29 @@ imports from `services/`.
   before anchor grouping, the streaming `CitationAnchorSanitizer`, and the decline
   composer in `fallbackReplyComposer.ts`. From there the `[[?]]` handling applies
   unchanged. `[?]` inside an inline code span on the same line stays, and a
-  single-bracket number (`[n]`) is never touched. `implicitCitationDiagnostics.ts`
+  single-bracket number (`[n]`) is never touched. `citationAnchorSyntax.ts` is
+  the one grammar for what counts as anchor syntax: a `[[…]]` span up to
+  `CITATION_ANCHOR_MAX_LENGTH` (64 characters, with no bracket, line break, or
+  backtick inside), an under-closed `[[?]`/`[[12]`, and an anchor the answer ends
+  inside (`[[`, `[[12`). Anything else, a longer span, a `[[` that never closes,
+  a stray `]]`, is literal text and stays. Anchor grouping and
+  `stripResidualCitationSyntax` (`citationAnchorParser.ts`), the decline composer,
+  and the streaming `CitationAnchorSanitizer` all read through it, so the
+  streamed text, joined, equals `done.answer` however the provider chunks it
+  (`tests/unit/citation-anchor-sanitizer.test.ts` checks every split of a
+  corpus). The sanitizer holds a trailing `[[` only while it can still become
+  anchor syntax within the bound, then releases it as text, `[[` included; at
+  the end of the stream `flush()` returns what it still holds, and every caller
+  emits it. `implicitCitationDiagnostics.ts`
   records aggregate rollout diagnostics and never attaches citation artifacts or
   changes verdicts and suggestions.
   `citationTextNormalization.ts` owns the punctuation classes for the anchor
   seam. Both are Unicode properties, never script or keyword lists:
   `Terminal_Punctuation` for the spacing rule that runs over arbitrary answer
-  text, plus `Pe`/`Pf` for the narrower line-leading strand check.
+  text, plus `Pe`/`Pf` for the narrower line-leading strand check. The strand
+  check decides whether anchors detached onto their own line (`claim\n\n[[1]].`)
+  take their line break with them, in the presentation and in both of the
+  sanitizer's cases: anchors and punctuation in one chunk, or split across two.
   Segment boundaries are markdown-safe. Each `AnswerSegment` is rendered through
   its own markdown pass downstream, so `normalizeAnchoredAnswer` runs every
   anchor offset through `shared/text/markdownSplitBoundary.ts` and cuts at the

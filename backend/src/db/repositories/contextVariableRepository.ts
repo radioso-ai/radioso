@@ -21,6 +21,13 @@ import type {
   ContextVariableRepositoryPort,
   ContextVariableUpdateRecord,
 } from "../../modules/context-variables/public.js";
+import {
+  exportJson,
+  exportTimestamp,
+  type DataSubjectDataExporter,
+  type DataSubjectExportRecord,
+  type DataSubjectExportScope,
+} from "../../shared/domain/dataSubjectAccess.js";
 import { badRequest, conflict, notFound } from "../../shared/domain/errors.js";
 import { anyOf, currentTimestamp, optionalTimestampMatch, timestampMatchOrAbsent, toJsonb, transactionAdvisoryLock } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
@@ -835,5 +842,51 @@ export class ContextVariableValueEraser implements ConversationDataEraser, Verif
       .where((eb) => anyOf(eb.ref("scope_id"), [scope.verifiedCustomerId], "text[]"))
       .executeTakeFirst();
     return Number(result.numDeletedRows);
+  }
+}
+
+/**
+ * The export's `context_values` section: what the host or a skill stored about the subject, in the
+ * chat sessions of their conversations and under their verified customer ids.
+ */
+export class ContextVariableValueExporter implements DataSubjectDataExporter {
+  readonly section = "context_values";
+
+  constructor(private readonly db: Db) {}
+
+  async export(scope: DataSubjectExportScope): Promise<DataSubjectExportRecord[]> {
+    const { workspaceId, conversationIds, verifiedCustomerIds } = scope;
+    if (conversationIds.length === 0 && verifiedCustomerIds.length === 0) return [];
+    const rows = await this.db
+      .selectFrom("context_variable_values as v")
+      .innerJoin("context_variables as cv", "cv.id", "v.variable_id")
+      .select(["cv.name", "v.scope_type", "v.data", "v.last_modified"])
+      .where("v.workspace_id", "=", workspaceId)
+      .where((eb) => eb.or([
+        eb.and([
+          eb("v.scope_type", "=", "session"),
+          eb("v.scope_id", "in", eb
+            .selectFrom("conversations")
+            .select("anonymous_session_id")
+            .where("workspace_id", "=", workspaceId)
+            .where("anonymous_session_id", "is not", null)
+            .where((inner) => anyOf(inner.ref("id"), conversationIds, "uuid[]"))
+            .$castTo<{ anonymous_session_id: string }>()),
+        ]),
+        eb.and([
+          eb("v.scope_type", "=", "customer"),
+          anyOf(eb.ref("v.scope_id"), verifiedCustomerIds, "text[]"),
+        ]),
+      ]))
+      .orderBy("v.scope_type")
+      .orderBy("cv.name")
+      .orderBy("v.id")
+      .execute();
+    return rows.map((row) => ({
+      variable: row.name,
+      scope: row.scope_type,
+      value: exportJson(row.data),
+      lastModified: exportTimestamp(row.last_modified),
+    }));
   }
 }

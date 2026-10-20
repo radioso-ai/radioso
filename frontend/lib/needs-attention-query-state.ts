@@ -6,7 +6,7 @@ import { useInfiniteQuery, useQueries, useQuery, type InfiniteData, type UseQuer
 import { chatApi } from './api-chat'
 import { hitlApi } from './api-hitl'
 import { replyReviewApi } from './api-reply-review'
-import { QUALITY_SIGNAL_IDS } from './api-quality'
+import { DEFAULT_QUALITY_SIGNAL_IDS } from './quality-signals'
 import { dashboardQueryKeys } from './dashboard-query-keys'
 import { isDashboardQueryRetryable, useDashboardQueryPolicy } from '@/components/providers/dashboard-query-provider'
 import { useQualityTurnsQuery, type QualityTurnsRequest } from './quality-query-state'
@@ -258,7 +258,7 @@ export const needsAttentionQualityInputs: {
     pageSize: NEEDS_ATTENTION_FEEDBACK_PAGE_SIZE,
   },
   reviewSummary: {
-    signal: [...QUALITY_SIGNAL_IDS],
+    signal: [...DEFAULT_QUALITY_SIGNAL_IDS],
     triageStates: ['open', 'acknowledged'],
     page: 1,
     pageSize: 1,

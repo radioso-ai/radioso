@@ -843,3 +843,8 @@ the key, the vendor URL or any audio.
   deletion with the workspace)
 - `cd backend && pnpm exec vitest run tests/integration/voice-session-repository.integration.test.ts`
   (needs the disposable integration database; see the code map)
+- `cd backend && pnpm exec vitest run tests/unit/eval-suite/voice-behaviour.test.ts`
+  (the conversation-quality suite's voice cases: bridge timing, the turn limit and the
+  outcome derivation, driven through a real `VoiceTurnService` over a scripted chat
+  backend — `tests/fixtures/voice-eval/`; `pnpm run evals`/`evals:ci` run the same cases
+  nightly against the real brain, reporting first-speech latency)

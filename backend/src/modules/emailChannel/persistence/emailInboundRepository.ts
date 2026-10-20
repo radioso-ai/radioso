@@ -53,7 +53,7 @@ const THREAD_MATCHES: readonly ThreadMatch[] = ["in_reply_to", "references", "re
 /** Deliveries whose thread decision is persisted: the reservation log of research B15. */
 const RESERVED_STATES: readonly DeliveryState[] = ["resolved", "ingested", "done"];
 /** Deliveries a step can still advance; retention keeps them, and only they can fail. */
-const UNFINISHED_STATES: readonly DeliveryState[] = ["pending", "fetched", "resolved", "ingested"];
+export const UNFINISHED_STATES: readonly DeliveryState[] = ["pending", "fetched", "resolved", "ingested"];
 /** Events a worker holds or will claim again; retention keeps their deliveries. */
 const UNSETTLED_EVENT_STATES: readonly InboundEventState[] = ["pending", "processing"];
 

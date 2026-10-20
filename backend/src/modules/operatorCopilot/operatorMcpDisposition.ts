@@ -76,6 +76,7 @@ export const operatorMcpDispositions: Readonly<Record<string, CopilotMcpDisposit
   prepare_agent_settings: eligibleProposal,
   prepare_directive: eligibleProposal,
   propose_workspace_setting: eligibleProposal,
+  propose_privacy_setting: eligibleProposal,
   start_crawl: deferredProposal,
   propose_directive_enablement: eligibleProposal,
   propose_directive_removal: eligibleProposal,

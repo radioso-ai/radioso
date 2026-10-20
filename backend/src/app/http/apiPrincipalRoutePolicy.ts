@@ -124,6 +124,10 @@ const declarations: readonly PolicyDeclaration[] = [
   // pipeline erases over the API with an admin credential.
   ...["/chat/:conversationId", "/visitors/:visitorId"]
     .map((path) => allow("DELETE", `/api/v1/history${path}`, "workspace.history.delete")),
+  // A data subject request's lookup and export carry the same weight as its erasure, and a request
+  // pipeline runs them over the API with an admin credential too.
+  ...["/lookup", "/conversations", "/export", "/erase"]
+    .map((path) => allow("POST", `/api/v1/privacy/data-subjects${path}`, "workspace.history.delete")),
 
   ...["", "/sources", "/sources/:sourceId/documents", "/search/history", "/search/history/:searchId", "/:documentId", "/:documentId/chunks", "/:documentId/chunks/:chunkId"]
     .map((path) => allow("GET", `/api/v1/document${path}`, "workspace.documents.read")),
@@ -216,10 +220,12 @@ const declarations: readonly PolicyDeclaration[] = [
   allow("PATCH", "/api/v1/evals/cases/:id", "workspace.retrieval.query"),
   allow("DELETE", "/api/v1/evals/cases/:id", "workspace.retrieval.query"),
 
-  ...["/retrieval-defaults", "/ingestion", "/ingestion/embedding-coverage", "/document-types"]
+  ...["/retrieval-defaults", "/ingestion", "/ingestion/embedding-coverage", "/document-types", "/privacy"]
     .map((path) => allow("GET", `/api/v1/settings${path}`, "workspace.settings.read")),
   ...["/ingestion", "/document-types"]
     .map((path) => allow("PUT", `/api/v1/settings${path}`, "workspace.settings.manage")),
+  // The route also requires workspace.settings.manage; deleting history is the stronger of the two.
+  allow("PUT", "/api/v1/settings/privacy", "workspace.history.delete"),
   allow("POST", "/api/v1/settings/ingestion/embedding-model/cancel", "workspace.settings.manage"),
   allow("POST", "/api/v1/settings/ingestion/reprocess", "workspace.documents.manage"),
   sessionOnly("GET", "/api/v1/settings", "workspace.settings.read"),

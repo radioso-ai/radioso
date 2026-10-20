@@ -261,11 +261,6 @@
       "status": "pass",
       "passRate": 1,
       "samples": 5
-    },
-    "voice-quick-reply-no-bridge": {
-      "status": "pass",
-      "passRate": 1,
-      "samples": 5
     }
   }
 }

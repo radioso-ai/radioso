@@ -96,16 +96,21 @@ export type VoiceEvalChatScriptEvent =
  */
 export interface VoiceEvalTurnScript {
   /**
-   * The turn's chat backend, played over a bare voice turn service. Absent on a case whose
-   * deterministic half runs the real planner, retrieval and composer over a scripted model
-   * (`tests/fixtures/voice-eval/scriptedBrains.ts`), which is how a quick-reply-lane or
-   * retrieval-phase regression fails the case.
+   * The turn's chat backend, played over a bare voice turn service. A case names this or
+   * `scriptedBrain`, exactly one, so its deterministic half always has a way to run it.
    */
   chatEvents?: VoiceEvalChatScriptEvent[];
   /**
-   * The case runs in the deterministic half only, and a live run skips it: its scenario is a
-   * brain slower than the turn policy's deadlines (the turn limit), which the deterministic half
-   * scripts and a live turn never produces on demand, so live it would gate nothing.
+   * The scripted model the deterministic half runs the turn on, by its name in
+   * `tests/fixtures/voice-eval/scriptedBrains.ts`: the real planner, retrieval and composer with
+   * only the model scripted, which is how a quick-reply-lane or retrieval-phase regression fails
+   * the case.
+   */
+  scriptedBrain?: string;
+  /**
+   * The case runs in the deterministic half only, and a live run skips it: what it asserts is a
+   * fact of the brain's speed live (the turn limit, a quick reply's missing bridge), so live it
+   * would gate only an outcome any answer passes.
    */
   deterministicOnly?: boolean;
 }
@@ -157,7 +162,7 @@ const suiteAssertionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("turn_persists_no_reply") }),
   z.object({ type: z.literal("turn_reply_source"), source: z.enum(["turn_planning", "composer"]) }),
   z.object({ type: z.literal("turn_directive_committed"), directive: z.string().min(1) }),
-  z.object({ type: z.literal("voice_bridge_emitted"), expected: z.boolean(), latencyDependent: z.boolean().optional() }),
+  z.object({ type: z.literal("voice_bridge_emitted"), expected: z.boolean() }),
   z.object({ type: z.literal("voice_turn_limit_reached"), expected: z.boolean() }),
   z.object({ type: z.literal("voice_turn_outcome"), kind: z.enum(["continue", "callback_requested"]) }),
 ]);
@@ -177,8 +182,12 @@ const voiceEvalChatScriptEventSchema = z.discriminatedUnion("type", [
 
 const voiceEvalTurnScriptSchema = z.object({
   chatEvents: z.array(voiceEvalChatScriptEventSchema).min(1).optional(),
+  scriptedBrain: z.string().min(1).optional(),
   deterministicOnly: z.boolean().optional(),
-});
+}).refine(
+  (value) => (value.chatEvents === undefined) !== (value.scriptedBrain === undefined),
+  { message: "a voice case names exactly one of chatEvents or scriptedBrain, so its deterministic half can run it" },
+);
 
 /** Turn inputs a review turn has no way to take: it answers a recorded message with its history. */
 const REVIEW_UNSUPPORTED_INPUTS = [

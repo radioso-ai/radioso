@@ -12,7 +12,8 @@ import { voiceEvalCases } from "../../fixtures/voice-eval/cases.js";
 import {
   closeEvalDependencies,
   loadBaseline,
-  scopeVoiceCasesForLiveRun,
+  scopeCasesForLiveRun,
+  scopeJudgeAssertions,
   seedVoiceSettings,
 } from "../../../scripts/evalRunnerSupport.js";
 
@@ -26,62 +27,78 @@ const voiceCase = (overrides: Partial<ConversationQualityCase>): ConversationQua
   ...overrides,
 });
 
-describe("live runner voice scope", () => {
-  it("never gates a live voice case on latency: drops latency-dependent bridge assertions and the turn limit", () => {
-    const [scoped] = scopeVoiceCasesForLiveRun([voiceCase({
+describe("live runner scope", () => {
+  it("never gates a live voice case on latency: drops \"no bridge\" and \"the limit fired\"", () => {
+    const [scoped] = scopeCasesForLiveRun([voiceCase({
       assertions: [
-        { type: "voice_bridge_emitted", expected: false, latencyDependent: true },
-        { type: "voice_turn_limit_reached", expected: false },
+        { type: "voice_bridge_emitted", expected: false },
+        { type: "voice_turn_limit_reached", expected: true },
         { type: "voice_turn_outcome", kind: "continue" },
       ],
-    })]);
+    })], []);
 
     expect(scoped?.assertions).toEqual([{ type: "voice_turn_outcome", kind: "continue" }]);
   });
 
-  it("keeps a bridge assertion the turn's phase decides, not its latency", () => {
-    const [scoped] = scopeVoiceCasesForLiveRun([voiceCase({
-      assertions: [{ type: "voice_bridge_emitted", expected: true }],
-    })]);
+  it("keeps the voice expectations a slow brain cannot break: a bridge, and a turn that never reached its limit", () => {
+    const [scoped] = scopeCasesForLiveRun([voiceCase({
+      assertions: [
+        { type: "voice_bridge_emitted", expected: true },
+        { type: "voice_turn_limit_reached", expected: false },
+      ],
+    })], []);
 
-    expect(scoped?.assertions).toEqual([{ type: "voice_bridge_emitted", expected: true }]);
+    expect(scoped?.assertions).toEqual([
+      { type: "voice_bridge_emitted", expected: true },
+      { type: "voice_turn_limit_reached", expected: false },
+    ]);
   });
 
   it("skips a deterministic-only voice case", () => {
-    const scoped = scopeVoiceCasesForLiveRun([
+    const scoped = scopeCasesForLiveRun([
       voiceCase({ id: "runs-live", assertions: [{ type: "voice_turn_outcome", kind: "continue" }] }),
       voiceCase({
         id: "scripted-only",
         voiceTurn: { chatEvents: [{ type: "stall" }], deterministicOnly: true },
         assertions: [{ type: "voice_turn_limit_reached", expected: true }],
       }),
-    ]);
+    ], []);
 
     expect(scoped.map((evalCase) => evalCase.id)).toEqual(["runs-live"]);
   });
 
   it("refuses a live voice case left with nothing to gate", () => {
-    expect(() => scopeVoiceCasesForLiveRun([voiceCase({
+    expect(() => scopeCasesForLiveRun([voiceCase({
       id: "gates-nothing",
-      assertions: [{ type: "voice_bridge_emitted", expected: false, latencyDependent: true }],
-    })])).toThrow(/"gates-nothing".*deterministicOnly/u);
+      assertions: [{ type: "voice_bridge_emitted", expected: false }],
+    })], [])).toThrow(/"gates-nothing".*deterministicOnly/u);
   });
 
-  it("leaves text cases as they are", () => {
+  it("refuses a live voice case whose only gate is a judge the run does not grade, and keeps it when the run grades it", () => {
+    const judgedOnly = voiceCase({
+      id: "judged-only",
+      tags: ["voice", "voice-wording"],
+      assertions: [{ type: "llm_judge", expectedAnswer: "The reply thanks the caller." }],
+    });
+
+    expect(() => scopeCasesForLiveRun([judgedOnly], [])).toThrow(/"judged-only"/u);
+    expect(scopeCasesForLiveRun([judgedOnly], ["voice-wording"])).toEqual([judgedOnly]);
+  });
+
+  it("scopes text cases by judge tag alone", () => {
     const committed = parseConversationQualityCases(conversationQualityCases);
 
-    expect(scopeVoiceCasesForLiveRun(committed)).toEqual(committed);
+    expect(scopeCasesForLiveRun(committed, ["quick-reply"])).toEqual(scopeJudgeAssertions(committed, ["quick-reply"]));
   });
 
-  it("runs the committed voice cases live on behaviour alone, without the turn-limit case", () => {
-    const scoped = scopeVoiceCasesForLiveRun(parseConversationQualityCases(voiceEvalCases));
+  it("runs the committed voice cases live on behaviour alone, without the deterministic-only cases", () => {
+    const scoped = scopeCasesForLiveRun(parseConversationQualityCases(voiceEvalCases), []);
 
     expect(Object.fromEntries(scoped.map((evalCase) => [evalCase.id, evalCase.assertions]))).toEqual({
       "voice-bridge-on-searching": [
         { type: "voice_bridge_emitted", expected: true },
         { type: "voice_turn_outcome", kind: "continue" },
       ],
-      "voice-quick-reply-no-bridge": [{ type: "voice_turn_outcome", kind: "continue" }],
       "voice-outcome-handoff": [{ type: "voice_turn_outcome", kind: "callback_requested" }],
     });
   });
@@ -93,7 +110,7 @@ describe("live runner voice scope", () => {
     const recordedVoiceCases = Object.keys(baseline.cases).filter((caseId) => voiceEvalCases.some((evalCase) => evalCase.id === caseId));
 
     expect(recordedVoiceCases.sort()).toEqual(
-      scopeVoiceCasesForLiveRun(parseConversationQualityCases(voiceEvalCases)).map((evalCase) => evalCase.id).sort(),
+      scopeCasesForLiveRun(parseConversationQualityCases(voiceEvalCases), []).map((evalCase) => evalCase.id).sort(),
     );
   });
 });

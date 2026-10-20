@@ -143,8 +143,8 @@ const runOnTestApp = async (
 
 /**
  * The deterministic voice runner. A case with `voiceTurn.chatEvents` plays that script over a bare
- * `VoiceTurnService`; any other voice case runs on the test app over its scripted model in
- * `brains` (`scriptedBrains.ts`'s, unless a test hands in its own), so a regression in the
+ * `VoiceTurnService`; a case naming `voiceTurn.scriptedBrain` runs on the test app over that model
+ * in `brains` (`scriptedBrains.ts`'s, unless a test hands in its own), so a regression in the
  * planner's quick-reply lane or the retrieval phase fails the case.
  */
 export const createDeterministicVoiceTurnPort = (
@@ -155,12 +155,13 @@ export const createDeterministicVoiceTurnPort = (
     if (chatEvents) {
       return runOnChatScript(evalCase, chatEvents);
     }
-    const brain = brains[evalCase.id];
-    if (evalCase.voiceTurn && brain) {
+    const brainName = evalCase.voiceTurn?.scriptedBrain;
+    const brain = brainName === undefined ? undefined : brains[brainName];
+    if (brain) {
       return runOnTestApp(evalCase, brain);
     }
     throw new Error(
-      `Case "${evalCase.id}" has neither a voiceTurn.chatEvents script nor a scripted model; it cannot run through the deterministic voice port.`,
+      `Case "${evalCase.id}" names no voiceTurn.chatEvents script and no scripted brain in scriptedBrains.ts${brainName ? ` called "${brainName}"` : ""}; it cannot run through the deterministic voice port.`,
     );
   },
 });

@@ -58,28 +58,28 @@ describe("voice conversation-quality cases", () => {
   });
 
   it("fails the thank-you case when the composer answers it instead of the quick-reply lane", async () => {
-    const lanelessPort = createDeterministicVoiceTurnPort({ "voice-quick-reply-no-bridge": voiceEvalBrainWithoutQuickReply });
+    const lanelessPort = createDeterministicVoiceTurnPort({ "thanks-quick-reply": voiceEvalBrainWithoutQuickReply });
 
     const report = await runCase(caseNamed("voice-quick-reply-no-bridge"), lanelessPort);
 
     expect(report).toMatchObject({ status: "fail" });
     expect(report?.verdicts.filter((verdict) => verdict.status !== "pass").map((verdict) => verdict.assertion))
-      .toEqual([{ type: "voice_bridge_emitted", expected: false, latencyDependent: true }]);
+      .toEqual([{ type: "voice_bridge_emitted", expected: false }]);
   });
 
-  it("drives each case from exactly one of a scripted chat backend or a scripted model", () => {
-    const drivenBy = Object.fromEntries(voiceEvalCases.map((evalCase) => [
-      evalCase.id,
-      [evalCase.voiceTurn?.chatEvents ? "chat script" : null, voiceEvalBrains[evalCase.id] ? "scripted model" : null]
-        .filter((driver) => driver !== null),
-    ]));
+  it("drives each case from a scripted chat backend or a scripted model that exists", () => {
+    const drivenBy = Object.fromEntries(voiceEvalCases.map((evalCase) => {
+      const brain = evalCase.voiceTurn?.scriptedBrain;
+      return [evalCase.id, brain === undefined ? "chat script" : `scripted model ${brain}`];
+    }));
 
     expect(drivenBy).toEqual({
-      "voice-bridge-on-searching": ["scripted model"],
-      "voice-quick-reply-no-bridge": ["scripted model"],
-      "voice-turn-limit-fires": ["chat script"],
-      "voice-outcome-handoff": ["chat script"],
+      "voice-bridge-on-searching": "scripted model searching-then-answer",
+      "voice-quick-reply-no-bridge": "scripted model thanks-quick-reply",
+      "voice-turn-limit-fires": "chat script",
+      "voice-outcome-handoff": "chat script",
     });
+    expect(Object.keys(voiceEvalBrains).sort()).toEqual(["searching-then-answer", "thanks-quick-reply"]);
   });
 
   it("ships exactly the committed voice cases, each tagged voice", () => {

@@ -125,11 +125,13 @@ for a voice run, so a text-only run never carries its "ask for a callback" trigg
 `routines.ts`'s `contactSupportRoutine`.
 
 The deterministic harness (`tests/unit/eval-suite/voice-behaviour.test.ts`, through
-`tests/fixtures/voice-eval/deterministicPort.ts`) runs each case one of two ways:
+`tests/fixtures/voice-eval/deterministicPort.ts`) runs each case one of two ways, and a case names
+exactly one of them in `voiceTurn`, so none can be written that runs nowhere:
 
-- `voice-bridge-on-searching` and `voice-quick-reply-no-bridge` run on a fresh test app's own
-  planner, retrieval, composer and voice turn policy, on production timing, with only the model
-  scripted (`tests/fixtures/voice-eval/scriptedBrains.ts`). The turn goes through the same
+- A case naming `voiceTurn.scriptedBrain` (`voice-bridge-on-searching`,
+  `voice-quick-reply-no-bridge`) runs on a fresh test app's own planner, retrieval, composer and
+  voice turn policy, on production timing, with only the model scripted: the brain of that name in
+  `tests/fixtures/voice-eval/scriptedBrains.ts`. The turn goes through the same
   `seedVoiceSettings` and `createVoiceTurnRunnerPort` the live run uses. The thank-you's composer
   takes a second, so a thank-you that leaves the planner's quick-reply lane bridges on its
   composing phase and fails the case; the harness keeps that regression as a test of its own.
@@ -144,18 +146,21 @@ turn's whole spoken text against the fixture's configured fallback line
 (`VOICE_EVAL_FALLBACK_LINE` in `tests/fixtures/voice-eval/agent.ts`).
 
 A live run gates a voice case on behaviour, never on latency. `scripts/evalRunnerSupport.ts`'s
-`scopeVoiceCasesForLiveRun` decides what each case gates before anything is seeded, the same way
-`scopeJudgeAssertions` scopes `llm_judge`:
+`scopeCasesForLiveRun` decides what each case gates before anything is seeded. It scopes
+`llm_judge` to the cases a `--judge-tag` opts in first (`scopeJudgeAssertions`), then:
 
-- It drops `voice_turn_limit_reached` and any assertion marked `latencyDependent: true`. The
-  10-second limit fires only on a stalled planner, and the 2.5-second stall bridge fires whenever
-  the live planner is slow, so "no bridge" on `voice-quick-reply-no-bridge` is a latency fact live
-  and a behaviour fact only where the brain is scripted.
-- It skips a case marked `voiceTurn.deterministicOnly: true`. `voice-turn-limit-fires` is one: live
-  it would gate only its `continue` outcome, which any answer passes, so it has no `baseline.json`
-  entry.
-- It refuses, with the case's id, a voice case left with no assertion to gate, since that case
-  would pass whatever the agent did. Give it a behaviour assertion or mark it deterministic-only.
+- It drops the two voice expectations only the brain's speed decides live, read off the assertion
+  itself: `voice_bridge_emitted` with `expected: false`, since the 2.5-second stall bridge and the
+  400 ms composing-idle bridge fire whenever the live planner or composer is slow, and
+  `voice_turn_limit_reached` with `expected: true`, since no live question stalls the planner for
+  the 10-second limit. A spoken bridge and a limit that never fired hold however slow the brain
+  is, so those still gate; the second catches a hung planner.
+- It skips a case marked `voiceTurn.deterministicOnly: true`. `voice-turn-limit-fires` and
+  `voice-quick-reply-no-bridge` are both: live, each would gate only its `continue` outcome, which
+  any answer passes, so neither has a `baseline.json` entry.
+- It refuses, with the case's id, a voice case left with no assertion to gate, judges the run
+  does not grade included, since that case would pass whatever the agent did. Give it a behaviour
+  assertion or mark it deterministic-only.
 
 The deterministic harness scores its own unscoped copy of the dataset, so it keeps asserting the
 limit and the quick-reply lane's "no bridge" for real. A live run's first-speech latency, averaged

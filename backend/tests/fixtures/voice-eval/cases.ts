@@ -18,7 +18,7 @@ export const voiceEvalCases: ConversationQualityCase[] = [
     tags: ["voice"],
     query: "Can you check what the cancellation policy says about partial refunds?",
     // The deterministic half runs this on the test app's own retrieval (scriptedBrains.ts).
-    voiceTurn: {},
+    voiceTurn: { scriptedBrain: "searching-then-answer" },
     assertions: [
       { type: "voice_bridge_emitted", expected: true },
       { type: "voice_turn_outcome", kind: "continue" },
@@ -29,14 +29,16 @@ export const voiceEvalCases: ConversationQualityCase[] = [
     name: "Answers a thank-you with no bridge",
     tags: ["voice"],
     query: "Great, thanks so much for your help!",
-    // The deterministic half runs this on the test app's own planner and its quick-reply lane
-    // (scriptedBrains.ts), with a composer slow enough that a thank-you it answered would bridge.
-    voiceTurn: {},
+    voiceTurn: {
+      // The deterministic half runs this on the test app's own planner and its quick-reply lane
+      // (scriptedBrains.ts), with a composer slow enough that a thank-you it answered would bridge.
+      scriptedBrain: "thanks-quick-reply",
+      // Live, "no bridge" holds only while the planner beats the 2.5 s stall bridge, so this case
+      // would gate only its `continue` outcome, which any answer passes.
+      deterministicOnly: true,
+    },
     assertions: [
-      // The stall bridge (2.5 s) fires whenever the live planner is slow, so live this is a
-      // latency fact and gates nothing; only the deterministic half, which scripts the brain,
-      // holds the quick-reply lane to it.
-      { type: "voice_bridge_emitted", expected: false, latencyDependent: true },
+      { type: "voice_bridge_emitted", expected: false },
       { type: "voice_turn_outcome", kind: "continue" },
     ],
   },

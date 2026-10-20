@@ -64,6 +64,28 @@ describe("public chat presenter", () => {
     );
   });
 
+  // A literal `[[` still within the anchor bound when the answer ends could have closed,
+  // so the sanitizer holds it to the end; its text must still reach the visitor, ahead of
+  // the done event, rather than being dropped with the sanitizer.
+  it("releases text held behind a literal `[[` as a final chunk before the done event", async () => {
+    const events = await collect(stripPublicStreamCitationArtifacts((async function* () {
+      yield { type: "chunk" as const, text: "See [[Exam" };
+      yield { type: "chunk" as const, text: "ple Page." };
+      yield {
+        type: "done" as const,
+        conversationId: "c1",
+        assistantMessageId: "m1",
+        route: { type: "retrieval", reason: "evidence_required" },
+        activitySummary: {},
+        activityTrace: {},
+        answer: "See [[Example Page.",
+      } as unknown as ChatStreamEvent;
+    })(), false));
+
+    expect(events.map((event) => event.type === "chunk" ? event.text : "").join("")).toBe("See [[Example Page.");
+    expect(events.at(-1)?.type).toBe("done");
+  });
+
   const payload = () => ({
     answer: "Grounded answer.",
     citations: [

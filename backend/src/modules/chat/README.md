@@ -341,13 +341,29 @@ imports from `services/`.
   before anchor grouping, the streaming `CitationAnchorSanitizer`, and the decline
   composer in `fallbackReplyComposer.ts`. From there the `[[?]]` handling applies
   unchanged. `[?]` inside an inline code span on the same line stays, and a
-  single-bracket number (`[n]`) is never touched. `implicitCitationDiagnostics.ts`
+  single-bracket number (`[n]`) is never touched. `citationAnchorSyntax.ts` is
+  the one grammar for what counts as anchor syntax: a `[[…]]` span up to
+  `CITATION_ANCHOR_MAX_LENGTH` (64 characters, with no bracket, line break, or
+  backtick inside), an under-closed `[[?]`/`[[12]`, and an anchor the answer ends
+  inside (`[[`, `[[12`). Anything else, a longer span, a `[[` that never closes,
+  a stray `]]`, is literal text and stays. Anchor grouping and
+  `stripResidualCitationSyntax` (`citationAnchorParser.ts`), the decline composer,
+  and the streaming `CitationAnchorSanitizer` all read through it, so the
+  streamed text, joined, equals `done.answer` however the provider chunks it
+  (`tests/unit/citation-anchor-sanitizer.test.ts` checks every split of a
+  corpus). The sanitizer holds a trailing `[[` only while it can still become
+  anchor syntax within the bound, then releases it as text, `[[` included; at
+  the end of the stream `flush()` returns what it still holds, and every caller
+  emits it. `implicitCitationDiagnostics.ts`
   records aggregate rollout diagnostics and never attaches citation artifacts or
   changes verdicts and suggestions.
   `citationTextNormalization.ts` owns the punctuation classes for the anchor
   seam. Both are Unicode properties, never script or keyword lists:
   `Terminal_Punctuation` for the spacing rule that runs over arbitrary answer
-  text, plus `Pe`/`Pf` for the narrower line-leading strand check.
+  text, plus `Pe`/`Pf` for the narrower line-leading strand check. The strand
+  check decides whether anchors detached onto their own line (`claim\n\n[[1]].`)
+  take their line break with them, in the presentation and in both of the
+  sanitizer's cases: anchors and punctuation in one chunk, or split across two.
   Segment boundaries are markdown-safe. Each `AnswerSegment` is rendered through
   its own markdown pass downstream, so `normalizeAnchoredAnswer` runs every
   anchor offset through `shared/text/markdownSplitBoundary.ts` and cuts at the

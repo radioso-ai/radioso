@@ -314,6 +314,9 @@ describe("answer presentation service", () => {
     ]);
   });
 
+  // A bracketed span (`[[abc]]`) is anchor syntax and goes; a `[[` that never closes is
+  // literal text and stays, brackets included, as the stream (which cannot know it never
+  // closes until the answer ends) also leaves it (#1517).
   it("drops invalid anchors and removes malformed placeholder syntax from the final answer", () => {
     const service = new AnswerPresentationService();
 
@@ -330,7 +333,7 @@ describe("answer presentation service", () => {
     });
 
     expect(result.answer).toBe(
-      "Author page: https://anandaedizioni.it/autore/narayani-anaya. Price: EUR 18,00. Broken  token and dangling  marker.",
+      "Author page: https://anandaedizioni.it/autore/narayani-anaya. Price: EUR 18,00. Broken  token and dangling [[ marker.",
     );
     expect(result.citations).toEqual([
       { documentId: "doc-1", chunkId: "chunk-1", title: "Narayani Anaya" },
@@ -341,7 +344,7 @@ describe("answer presentation service", () => {
         citationIndices: [0],
       },
       {
-        text: ". Price: EUR 18,00. Broken  token and dangling  marker.",
+        text: ". Price: EUR 18,00. Broken  token and dangling [[ marker.",
       },
     ]);
   });
@@ -394,8 +397,10 @@ describe("answer presentation service", () => {
       ]);
     });
 
-    it("leaves no stranded bracket when a bracket pair follows the marker", () => {
-      expect(present("Claim[?]]] next").answer).toBe("Claim next");
+    // A `]]` with no `[[` of its own is not anchor syntax, so it stays, as it always has in
+    // the stream (#1517): code such as `arr[i[j]]` keeps its brackets.
+    it("leaves a bracket pair that follows the marker as the stream leaves it", () => {
+      expect(present("Claim[?]]] next").answer).toBe("Claim]] next");
     });
 
     it("treats a bracket after the marker as it treats one after [[?]]", () => {
@@ -412,6 +417,59 @@ describe("answer presentation service", () => {
       for (const text of ["Use `[?]` to match a literal question mark.", "The pattern `/a[?]b/` matches ab."]) {
         expect(present(text).answer).toBe(text);
       }
+    });
+  });
+
+  // #1517: the model sometimes drops the closing `]`, leaving a one-bracket-short anchor
+  // (`[[?]`, `[[12]`) instead of the complete `[[?]]`/`[[12]]`. The character class that
+  // strips a dangling `[[` excluded `?`, so the marker used to survive as a literal `?]`
+  // in the answer (`Claim[[?] more` presented as `Claim?] more`). It must disappear like
+  // any other residual citation syntax, without losing any of the surrounding text.
+  describe("under-closed citation anchor marker", () => {
+    it("removes an under-closed `?` marker without leaving a stray `?]`", () => {
+      const result = new AnswerPresentationService().present({
+        answer: "Claim[[?] more words here.",
+        citations: [],
+      });
+
+      expect(result.answer).not.toContain("?]");
+      expect(result.answer).not.toContain("[[?]");
+      expect(result).toEqual({ answer: "Claim more words here." });
+    });
+
+    it("removes an under-closed digit marker without losing the text that follows", () => {
+      const result = new AnswerPresentationService().present({
+        answer: "Claim[[1] more words here.",
+        citations: [],
+      });
+
+      expect(result).toEqual({ answer: "Claim more words here." });
+    });
+
+    it("keeps the text around an under-closed marker in the segment it falls in, ahead of a later citation", () => {
+      const result = new AnswerPresentationService().present({
+        answer: "The workshop is free[[?] more. Registration is open[[1]].",
+        citations: [{ documentId: "doc-1", chunkId: "chunk-1", title: "Guide", content: "Registration is open." }],
+      });
+
+      expect(result.answer).toBe("The workshop is free more. Registration is open.");
+      expect(result.answerSegments).toEqual([
+        { text: "The workshop is free more. Registration is open", citationIndices: [0] },
+        { text: "." },
+      ]);
+    });
+
+    it("does not touch the complete anchor immediately following an under-closed one", () => {
+      const result = new AnswerPresentationService().present({
+        answer: "Claim[[?] more. Next[[2]].",
+        citations: [
+          { documentId: "doc-1", chunkId: "chunk-1", title: "Placeholder", content: "Unused context." },
+          { documentId: "doc-2", chunkId: "chunk-2", title: "Guide", content: "Next." },
+        ],
+      });
+
+      expect(result.answer).toBe("Claim more. Next.");
+      expect(result.citations).toEqual([{ documentId: "doc-2", chunkId: "chunk-2", title: "Guide" }]);
     });
   });
 

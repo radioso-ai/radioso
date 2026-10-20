@@ -1,6 +1,10 @@
+import { randomUUID } from "node:crypto";
+
 import type { ChatStreamEvent } from "../../../src/modules/chat/contracts/index.js";
 import {
   conversationQualityCaseTurnText,
+  type ConversationQualityCase,
+  type ConversationQualityObservedOutput,
   type ConversationQualityRunnerPort,
   type VoiceEvalChatScriptEvent,
 } from "../../../src/modules/eval/suite/index.js";
@@ -9,8 +13,11 @@ import {
   type VoiceChatTurnRequest,
   type VoiceSessionStore,
 } from "../../../src/modules/voiceChannel/public.js";
-import { observeVoiceTurn } from "../../../scripts/evalRunnerAdapter.js";
+import { createVoiceTurnRunnerPort, observeVoiceTurn } from "../../../scripts/evalRunnerAdapter.js";
+import { seedVoiceSettings } from "../../../scripts/runEvals.js";
+import { createTestApp, issueTestSession } from "../../support/testApp.js";
 import { VOICE_EVAL_AGENT_PROFILE, VOICE_EVAL_FALLBACK_LINE } from "./agent.js";
+import { voiceEvalBrains, type VoiceEvalBrain } from "./scriptedBrains.js";
 
 const WORKSPACE_ID = "11111111-1111-4111-8111-111111111111";
 const AGENT_ID = "22222222-2222-4222-8222-222222222222";
@@ -83,34 +90,77 @@ const scriptedChat = (chatEvents: readonly VoiceEvalChatScriptEvent[]) => ({
 });
 
 /**
- * The deterministic voice runner: a fresh, real `VoiceTurnService` per case (the same policy,
- * outcome derivation and lines production runs), over the scripted chat backend above, a
- * voice-enabled agent profile, and no bound conversation, routine or teammate replies — a
- * session's first turn, which is all a voice eval case needs.
+ * Plays a case's chat script: a fresh, real `VoiceTurnService` (the same policy, outcome
+ * derivation and lines production runs) over the scripted chat backend above, a voice-enabled
+ * agent profile, and no bound conversation, routine or teammate replies — a session's first turn.
  */
-export const createDeterministicVoiceTurnPort = (): ConversationQualityRunnerPort => ({
+const runOnChatScript = async (
+  evalCase: ConversationQualityCase,
+  chatEvents: readonly VoiceEvalChatScriptEvent[],
+): Promise<ConversationQualityObservedOutput> => {
+  const service = new VoiceTurnService({
+    sessions: fakeSessions(),
+    chat: scriptedChat(chatEvents),
+    agents: { findVoiceProfile: async () => VOICE_EVAL_AGENT_PROFILE },
+    routines: { isRoutineActive: async () => false },
+    ownership: { isHumanOwned: async () => false },
+    operatorReplies: noOperatorReplies,
+    logger: noopLogger,
+    timing: VOICE_EVAL_TIMING,
+  });
+  const input = {
+    session: { workspaceId: WORKSPACE_ID, agentId: AGENT_ID, vendor: "generic", sessionKey: `voice-eval-${evalCase.id}` },
+    transport: "web" as const,
+    utterance: conversationQualityCaseTurnText(evalCase),
+    streamsSpeech: true,
+  };
+  const events = service.runTurn(input, new AbortController().signal);
+  const voiceTurn = await observeVoiceTurn(events, VOICE_EVAL_FALLBACK_LINE);
+  return { retrievedChunks: [], voiceTurn };
+};
+
+/**
+ * Runs a case on a fresh test app over `brain`: a new workspace's default agent, voice turned on
+ * by the live run's own `seedVoiceSettings`, and the turn driven through the app's composed
+ * `voiceTurns` by the live run's own `createVoiceTurnRunnerPort`. Only the model is scripted; the
+ * planner, retrieval, composer and voice turn policy are the app's own, on production timing.
+ */
+const runOnTestApp = async (
+  evalCase: ConversationQualityCase,
+  brain: VoiceEvalBrain,
+): Promise<ConversationQualityObservedOutput> => {
+  const { app, dependencies } = createTestApp(brain);
+  const { workspaceId } = await issueTestSession(app, `voice-eval-${randomUUID()}@example.com`);
+  const target = { workspaceId, agentId: (await dependencies.agentService.resolve(workspaceId)).id };
+  await seedVoiceSettings({ agents: dependencies.agentRepository, agentSettings: dependencies.agentService }, target);
+  const port = createVoiceTurnRunnerPort(dependencies.voiceTurns, {
+    ...target,
+    vendor: "generic",
+    fallbackLine: VOICE_EVAL_FALLBACK_LINE,
+  });
+  return port.run(evalCase);
+};
+
+/**
+ * The deterministic voice runner. A case with `voiceTurn.chatEvents` plays that script over a bare
+ * `VoiceTurnService`; any other voice case runs on the test app over its scripted model in
+ * `brains` (`scriptedBrains.ts`'s, unless a test hands in its own), so a regression in the
+ * planner's quick-reply lane or the retrieval phase fails the case.
+ */
+export const createDeterministicVoiceTurnPort = (
+  brains: Readonly<Record<string, VoiceEvalBrain>> = voiceEvalBrains,
+): ConversationQualityRunnerPort => ({
   async run(evalCase) {
-    if (!evalCase.voiceTurn) {
-      throw new Error(`Case "${evalCase.id}" carries no voiceTurn script; it cannot run through the deterministic voice port.`);
+    const chatEvents = evalCase.voiceTurn?.chatEvents;
+    if (chatEvents) {
+      return runOnChatScript(evalCase, chatEvents);
     }
-    const service = new VoiceTurnService({
-      sessions: fakeSessions(),
-      chat: scriptedChat(evalCase.voiceTurn.chatEvents),
-      agents: { findVoiceProfile: async () => VOICE_EVAL_AGENT_PROFILE },
-      routines: { isRoutineActive: async () => false },
-      ownership: { isHumanOwned: async () => false },
-      operatorReplies: noOperatorReplies,
-      logger: noopLogger,
-      timing: VOICE_EVAL_TIMING,
-    });
-    const input = {
-      session: { workspaceId: WORKSPACE_ID, agentId: AGENT_ID, vendor: "generic", sessionKey: `voice-eval-${evalCase.id}` },
-      transport: "web" as const,
-      utterance: conversationQualityCaseTurnText(evalCase),
-      streamsSpeech: true,
-    };
-    const events = service.runTurn(input, new AbortController().signal);
-    const voiceTurn = await observeVoiceTurn(events, VOICE_EVAL_FALLBACK_LINE);
-    return { retrievedChunks: [], voiceTurn };
+    const brain = brains[evalCase.id];
+    if (evalCase.voiceTurn && brain) {
+      return runOnTestApp(evalCase, brain);
+    }
+    throw new Error(
+      `Case "${evalCase.id}" has neither a voiceTurn.chatEvents script nor a scripted model; it cannot run through the deterministic voice port.`,
+    );
   },
 });

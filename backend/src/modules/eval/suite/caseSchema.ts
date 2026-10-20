@@ -88,13 +88,20 @@ export type VoiceEvalChatScriptEvent =
   | { type: "stall" };
 
 /**
- * A voice case's scripted chat backend. The plain case shape (`query` plus answer-content or
- * trace assertions) has no way to express a phase timeline or a turn that never answers — which
- * is exactly the behaviour under test here (bridge timing, the turn limit) — so this is the
- * smallest addition that can say it, rather than a second case format or a parallel voice suite.
+ * What a voice case scripts for its deterministic half. The plain case shape (`query` plus
+ * answer-content or trace assertions) has no way to express a phase timeline or a turn that
+ * never answers — which is exactly the behaviour under test here (bridge timing, the turn limit)
+ * — so this is the smallest addition that can say it, rather than a second case format or a
+ * parallel voice suite.
  */
 export interface VoiceEvalTurnScript {
-  chatEvents: VoiceEvalChatScriptEvent[];
+  /**
+   * The turn's chat backend, played over a bare voice turn service. Absent on a case whose
+   * deterministic half runs the real planner, retrieval and composer over a scripted model
+   * (`tests/fixtures/voice-eval/scriptedBrains.ts`), which is how a quick-reply-lane or
+   * retrieval-phase regression fails the case.
+   */
+  chatEvents?: VoiceEvalChatScriptEvent[];
   /**
    * The case runs in the deterministic half only, and a live run skips it: its scenario is a
    * brain slower than the turn policy's deadlines (the turn limit), which the deterministic half
@@ -169,7 +176,7 @@ const voiceEvalChatScriptEventSchema = z.discriminatedUnion("type", [
 ]);
 
 const voiceEvalTurnScriptSchema = z.object({
-  chatEvents: z.array(voiceEvalChatScriptEventSchema).min(1),
+  chatEvents: z.array(voiceEvalChatScriptEventSchema).min(1).optional(),
   deterministicOnly: z.boolean().optional(),
 });
 

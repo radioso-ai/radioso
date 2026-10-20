@@ -149,22 +149,25 @@ policy reports it only to its metrics observer — so `observeVoiceTurn` reads i
 turn's whole spoken text against the fixture's configured fallback line
 (`VOICE_EVAL_FALLBACK_LINE` in `tests/fixtures/voice-eval/agent.ts`).
 
-A live run gates a voice case on behaviour, never on latency. `scripts/evalRunnerSupport.ts`'s
-`scopeCasesForLiveRun` decides what each case gates before anything is seeded. It scopes
-`llm_judge` to the cases a `--judge-tag` opts in first (`scopeJudgeAssertions`), then:
+A live run gates a voice case on behaviour, never on latency. Each voice assertion carries a
+`deterministicOnly` flag, and two carry it by definition: `parseConversationQualityCases` marks
+`voice_bridge_emitted` with `expected: false`, since the 2.5-second stall bridge and the 400 ms
+composing-idle bridge fire whenever the live planner or composer is slow, and
+`voice_turn_limit_reached` whatever it expects, since a slow but healthy live turn speaks the
+fallback line at 10 seconds and no live question stalls the planner on demand. A case can also
+mark an assertion itself, as the turn-limit and quick-reply cases do with their `continue`
+outcomes, which say nothing once the expectation beside them is out of scope.
 
-- It drops the two voice expectations only the brain's speed decides live, read off the assertion
-  itself: `voice_bridge_emitted` with `expected: false`, since the 2.5-second stall bridge and the
-  400 ms composing-idle bridge fire whenever the live planner or composer is slow, and
-  `voice_turn_limit_reached` with `expected: true`, since no live question stalls the planner for
-  the 10-second limit. A spoken bridge and a limit that never fired hold however slow the brain
-  is, so those still gate; the second catches a hung planner.
-- It skips a case marked `voiceTurn.deterministicOnly: true`. `voice-turn-limit-fires` and
-  `voice-quick-reply-no-bridge` are both: live, each would gate only its `continue` outcome, which
-  any answer passes, so neither has a `baseline.json` entry.
-- It refuses, with the case's id, a voice case left with no assertion to gate, judges the run
-  does not grade included, since that case would pass whatever the agent did. Give it a behaviour
-  assertion or mark it deterministic-only.
+`scripts/evalRunnerSupport.ts`'s `scopeCasesForLiveRun` reads those flags. The runner calls it
+right after it reads the baseline, before it opens a database pool or registers an account, so a
+refused run costs nothing:
+
+- It skips a case whose every assertion is deterministic-only. `voice-turn-limit-fires` and
+  `voice-quick-reply-no-bridge` are both, so neither has a `baseline.json` entry.
+- It scopes `llm_judge` to the cases a `--judge-tag` opts in (`scopeJudgeAssertions`) and drops
+  every other case's deterministic-only assertions. A spoken bridge and the outcome still gate.
+- It refuses, with the case's id, a voice case left with nothing to gate, judges the run does
+  not grade included, since that case would pass whatever the agent did.
 
 The deterministic harness scores its own unscoped copy of the dataset, so it keeps asserting the
 limit and the quick-reply lane's "no bridge" for real. A live run's first-speech latency, averaged

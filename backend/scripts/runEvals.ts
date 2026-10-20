@@ -418,8 +418,13 @@ const main = async (): Promise<void> => {
   }
 
   const dataset = parseConversationQualityCases([...conversationQualityCases, ...voiceEvalCases]);
-  // Read before anything runs, so a damaged file stops the run before it seeds or samples.
+  // Read and scoped before the run opens a pool or registers an account, so a damaged baseline or
+  // a refused case stops it at no cost. llm_judge assertions are graded only on the cases a
+  // --judge-tag opted in, a voice case is never gated on latency, and a deterministic-only one
+  // does not run live.
   const baseline = loadBaseline(BASELINE_PATH);
+  let cases = scopeCasesForLiveRun(filterByTags(dataset, flags.tags), flags.judgeTags);
+  const runsVoiceCases = needsVoiceSettings(cases);
   const env = getEnv();
   if (flags.migrate) {
     console.log("Applying migrations…");
@@ -432,10 +437,6 @@ const main = async (): Promise<void> => {
     const target = await ensureTarget(deps, flags);
     flags.workspaceId = target.workspaceId;
     flags.agentId = target.agentId;
-    // llm_judge assertions are graded only on the cases a --judge-tag opted in, a voice case is
-    // never gated on latency, and a deterministic-only one does not run live.
-    let cases = scopeCasesForLiveRun(filterByTags(dataset, flags.tags), flags.judgeTags);
-    const runsVoiceCases = needsVoiceSettings(cases);
 
     console.log(`Seeding fixtures onto agent ${flags.agentId} in workspace ${flags.workspaceId}…`);
     const { documentIds, routineIds } = await seedFixtures(deps, flags);

@@ -9,7 +9,11 @@ import { readFileSync } from "node:fs";
 
 import { closeDependencies, type ClosableDependencies } from "../src/app/server/closeDependencies.js";
 import type { AgentVoiceSettings } from "../src/modules/agents/public.js";
-import type { BaselineFile, ConversationQualityCase } from "../src/modules/eval/suite/index.js";
+import {
+  isDeterministicOnlyAssertion,
+  type BaselineFile,
+  type ConversationQualityCase,
+} from "../src/modules/eval/suite/index.js";
 import { isMissingFile } from "../src/shared/infra/fileErrors.js";
 import { CREATE_RETURN_TICKET_SKILL } from "../tests/fixtures/conversation-quality/routines.js";
 import { VOICE_EVAL_LOCALE, voiceEvalVoiceLines } from "../tests/fixtures/voice-eval/agent.js";
@@ -84,46 +88,32 @@ export const scopeJudgeAssertions = (
         assertions: evalCase.assertions.filter((assertion) => assertion.type !== "llm_judge"),
       });
 
-/**
- * Whether a voice assertion can gate a live run, read off the assertion itself. Live, the brain's
- * speed decides two expectations: "no bridge" holds only while the planner answers inside the
- * stall bridge (`VOICE_BEHAVIOR.bridgeAfterMs`, 2.5 s) and the composer inside the composing-idle
- * bridge (400 ms), and "the limit fired" only on a planner stalled past `turnLimitMs` (10 s), which
- * no live question produces on demand. A bridge that was spoken, and a limit that was not reached,
- * hold however slow the brain is, so those gate; the second catches a hung planner. The
- * deterministic half, which scripts the brain and scores the unscoped case, asserts all four.
- */
-const gatesLiveVoiceRun = (assertion: ConversationQualityCase["assertions"][number]): boolean => {
-  if (assertion.type === "voice_bridge_emitted") {
-    return assertion.expected;
-  }
-  if (assertion.type === "voice_turn_limit_reached") {
-    return !assertion.expected;
-  }
-  return true;
-};
+/** A case whose every assertion is deterministic-only has nothing a live run can check. */
+const isDeterministicOnlyCase = (evalCase: ConversationQualityCase): boolean =>
+  evalCase.assertions.length > 0 && evalCase.assertions.every(isDeterministicOnlyAssertion);
 
 /**
- * What a live run drives, and gates each case on. `llm_judge` assertions stay only on the cases
- * `judgeTags` opts in (`scopeJudgeAssertions`). A `deterministicOnly` voice case is skipped, and
- * every other voice case keeps only the assertions `gatesLiveVoiceRun` lets through. A voice case
- * left with nothing to gate would pass whatever the agent did, so it is refused, before the run
- * seeds anything.
+ * What a live run drives, and gates each case on. Takes cases as `parseConversationQualityCases`
+ * returns them, so each voice assertion carries the scope its definition gives it
+ * (`withDefinedVoiceScope`). A case whose every assertion is deterministic-only is skipped.
+ * `llm_judge` assertions stay only on the cases `judgeTags` opts in (`scopeJudgeAssertions`), and
+ * every voice case drops its deterministic-only assertions. A voice case left with nothing to gate
+ * would pass whatever the agent did, so it is refused; the runner scopes before it opens a database
+ * pool or registers an account, so a refused run costs nothing.
  */
 export const scopeCasesForLiveRun = (
   cases: readonly ConversationQualityCase[],
   judgeTags: readonly string[],
 ): ConversationQualityCase[] =>
-  scopeJudgeAssertions(cases, judgeTags)
-    .filter((evalCase) => evalCase.voiceTurn?.deterministicOnly !== true)
+  scopeJudgeAssertions(cases.filter((evalCase) => !isDeterministicOnlyCase(evalCase)), judgeTags)
     .map((evalCase) => {
       if (!evalCase.voiceTurn) {
         return evalCase;
       }
-      const assertions = evalCase.assertions.filter(gatesLiveVoiceRun);
+      const assertions = evalCase.assertions.filter((assertion) => !isDeterministicOnlyAssertion(assertion));
       if (assertions.length === 0) {
         throw new Error(
-          `Voice case "${evalCase.id}" gates nothing live once its latency facts and ungraded judges are dropped; give it a behaviour assertion or mark it voiceTurn.deterministicOnly.`,
+          `Voice case "${evalCase.id}" gates nothing live once its deterministic-only assertions and ungraded judges are dropped; give it an assertion a live turn can check, or mark every assertion deterministicOnly.`,
         );
       }
       return { ...evalCase, assertions };

@@ -1,6 +1,7 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { isMissingFile } from "../../../shared/infra/fileErrors.js";
 import type {
   DnsRecordView,
   DomainReadiness,
@@ -10,7 +11,6 @@ import type {
   ReadinessStatus,
 } from "../emailDomainProvisioner.js";
 import { normalizeDomainName } from "./dnsDomainName.js";
-import { hasFileErrorCode } from "./localSpool.js";
 import { isRecord } from "./resendApi.js";
 
 /**
@@ -100,7 +100,7 @@ export class LocalEmailDomainProvisioner implements EmailDomainProvisioner {
     try {
       text = await readFile(this.statePath(domain), "utf8");
     } catch (error) {
-      if (hasFileErrorCode(error, "ENOENT")) {
+      if (isMissingFile(error)) {
         return null;
       }
       throw error;

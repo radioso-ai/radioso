@@ -7,7 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AgentVoiceSettings } from "../../../src/modules/agents/public.js";
 import { parseConversationQualityCases, type ConversationQualityCase } from "../../../src/modules/eval/suite/index.js";
 import { conversationQualityCases } from "../../fixtures/conversation-quality/cases.js";
-import { VOICE_EVAL_VOICE_SETTINGS } from "../../fixtures/voice-eval/agent.js";
+import { VOICE_EVAL_BRIDGE_LINES, VOICE_EVAL_FALLBACK_LINE } from "../../fixtures/voice-eval/agent.js";
 import { voiceEvalCases } from "../../fixtures/voice-eval/cases.js";
 import {
   closeEvalDependencies,
@@ -161,34 +161,56 @@ describe("live runner baseline file", () => {
 
     expect(() => loadBaseline(baselinePath)).toThrow(baselinePath);
   });
+
+  it.each([
+    ["an array", "[]"],
+    ["a string", '"greeting-en"'],
+    ["null", "null"],
+  ])("throws on a baseline whose cases are %s", (_shape, cases) => {
+    const baselinePath = baselineAt(`{ "passThreshold": 1, "cases": ${cases} }`);
+
+    expect(() => loadBaseline(baselinePath)).toThrow(baselinePath);
+  });
 });
 
 describe("live runner agent preparation", () => {
   const target = { workspaceId: "11111111-1111-4111-8111-111111111111", agentId: "22222222-2222-4222-8222-222222222222" };
-
-  it("writes the voice cases' lines over the agent's own voice block, keeping its runtime, recording notice and language switching", async () => {
-    const operatorVoice: AgentVoiceSettings = {
-      enabled: false,
-      bridgeLines: { it: { acknowledge: [], check: ["Un attimo, controllo subito."] } },
-      fallbackLine: { it: "Scusa, ci sto mettendo troppo." },
-      recordingNotice: { en: "This call is recorded." },
-      runtime: { vendor: "elevenlabs", agentId: "agent_operator_bound", region: "eu" },
-      languageSwitching: true,
-    };
+  const evalLines = { bridge: VOICE_EVAL_BRIDGE_LINES, fallback: VOICE_EVAL_FALLBACK_LINE };
+  const operatorVoice: AgentVoiceSettings = {
+    enabled: false,
+    bridgeLines: { de: { acknowledge: [], check: ["Einen Moment, ich schaue nach."] } },
+    fallbackLine: { de: "Entschuldigung, das dauert zu lange." },
+    recordingNotice: { en: "This call is recorded." },
+    runtime: { vendor: "elevenlabs", agentId: "agent_operator_bound", region: "eu" },
+    languageSwitching: true,
+  };
+  const seedOnto = async (agent: { voice: AgentVoiceSettings; assistantDefaultLocale: string | null }) => {
     const update = vi.fn(async () => undefined);
+    await seedVoiceSettings({ agents: { findByIdAndWorkspaceId: async () => agent }, agentSettings: { update } }, target);
+    return update;
+  };
 
-    await seedVoiceSettings({
-      agents: { findByIdAndWorkspaceId: async () => ({ voice: operatorVoice }) },
-      agentSettings: { update },
-    }, target);
+  it("writes the voice cases' lines over the agent's own voice block, keeping its runtime, recording notice, language switching and other lines", async () => {
+    const update = await seedOnto({ voice: operatorVoice, assistantDefaultLocale: null });
 
     expect(update).toHaveBeenCalledExactlyOnceWith(target.workspaceId, target.agentId, {
       voice: {
-        ...VOICE_EVAL_VOICE_SETTINGS,
-        recordingNotice: { en: "This call is recorded." },
-        runtime: { vendor: "elevenlabs", agentId: "agent_operator_bound", region: "eu" },
-        languageSwitching: true,
+        ...operatorVoice,
+        enabled: true,
+        bridgeLines: { ...operatorVoice.bridgeLines, en: evalLines.bridge },
+        fallbackLine: { ...operatorVoice.fallbackLine, en: evalLines.fallback },
       },
+    });
+  });
+
+  it("writes the lines in the agent's default language too, which a call with no language of its own speaks in", async () => {
+    const update = await seedOnto({ voice: operatorVoice, assistantDefaultLocale: "it-IT" });
+
+    expect(update).toHaveBeenCalledExactlyOnceWith(target.workspaceId, target.agentId, {
+      voice: expect.objectContaining({
+        bridgeLines: { ...operatorVoice.bridgeLines, en: evalLines.bridge, "it-IT": evalLines.bridge },
+        fallbackLine: { ...operatorVoice.fallbackLine, en: evalLines.fallback, "it-IT": evalLines.fallback },
+      }),
     });
   });
 
@@ -204,25 +226,35 @@ describe("live runner agent preparation", () => {
 });
 
 describe("live runner shutdown", () => {
-  it("closes the approval journal and the abuse-control repository, then ends the pool", async () => {
+  const closers = (closed: string[], failing?: string) => {
+    const step = (name: string) => async (): Promise<void> => {
+      closed.push(name);
+      if (name === failing) {
+        throw new Error(`${name} failed`);
+      }
+    };
+    return {
+      realtimePublisherLifecycle: { shutdown: step("realtime publisher") },
+      applicationModules: { shutdownAll: step("application modules") },
+      closeApprovalResumeEffectJournal: step("approval journal"),
+      closeAbuseControlRepository: step("abuse control"),
+      connectorRegistry: { shutdownAll: step("connectors") },
+      connectorDb: { close: step("pool") },
+    };
+  };
+
+  it("closes what the composition opened in the API runtime's order, then ends the pool", async () => {
     const closed: string[] = [];
 
-    await closeEvalDependencies({
-      closeApprovalResumeEffectJournal: async () => { closed.push("approval journal"); },
-      closeAbuseControlRepository: async () => { closed.push("abuse control"); },
-      connectorDb: { close: async () => { closed.push("pool"); } },
-    });
+    await closeEvalDependencies(closers(closed));
 
-    expect(closed).toEqual(["approval journal", "abuse control", "pool"]);
+    expect(closed).toEqual(["realtime publisher", "application modules", "approval journal", "abuse control", "connectors", "pool"]);
   });
 
-  it("still ends the pool when a closer before it fails, and reports that failure", async () => {
-    const close = vi.fn(async () => undefined);
+  it("still closes everything after a step that fails, and reports that failure", async () => {
+    const closed: string[] = [];
 
-    await expect(closeEvalDependencies({
-      closeApprovalResumeEffectJournal: async () => { throw new Error("journal close failed"); },
-      connectorDb: { close },
-    })).rejects.toThrow("journal close failed");
-    expect(close).toHaveBeenCalledOnce();
+    await expect(closeEvalDependencies(closers(closed, "realtime publisher"))).rejects.toThrow("realtime publisher failed");
+    expect(closed).toEqual(["realtime publisher", "application modules", "approval journal", "abuse control", "connectors", "pool"]);
   });
 });

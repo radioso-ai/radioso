@@ -30,6 +30,10 @@ DELETE /api/v1/history/visitors/{visitorId}
 
 Radioso deletes each of the visitor's conversations as above, then the customer-scoped context values your site pushed for the visitor's verified customer id, then the voice calls the website widget started for the visitor that never reached a first turn, recordings included, then the visitor record itself. Visitor deletion is available over the API; the dashboard deletes one conversation at a time.
 
+## Delete one person across channels
+
+A person who also emailed you, or asked your agent in Slack, has conversations no visitor record groups. [Answering a data subject request](/operators/data-subject-requests) finds them by verified customer id, email address or Slack member id, exports what Radioso holds about them, and erases the visitors and conversations of the identities you confirm in one request.
+
 ## Who can delete
 
 Both routes need `workspace.history.delete`. Owners and admins of the workspace hold it — an organization member granted admin on the workspace counts as an admin there; members can read history but cannot delete it. An admin personal credential or an admin service-account credential can call both routes, so a data-subject request pipeline can delete over the API without a signed-in session.
@@ -99,6 +103,7 @@ Deleting a workspace deletes every conversation and visitor in it, with the same
 
 ## Read next
 
+- [Answering a data subject request](/operators/data-subject-requests) — find, export and delete one person's data across channels.
 - [Visitor data](/operators/visitor-data) — what a conversation records about a visit.
 - [Chat and history](/api/chat-and-history) — the history API these routes belong to.
 - [Context variables](/operators/context-variables) — what session- and customer-scoped values hold.

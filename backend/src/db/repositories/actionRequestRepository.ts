@@ -5,7 +5,14 @@ import type {
   BackgroundJobSkipped,
   BackgroundJobStore,
 } from "../../shared/background-jobs/index.js";
-import { currentTimestamp, nowMinusSeconds, nowPlusSeconds, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import { SUBJECT_ACTION_TYPES, subjectActionValues } from "../../modules/chat/contracts/index.js";
+import {
+  exportTimestamp,
+  type DataSubjectDataExporter,
+  type DataSubjectExportRecord,
+  type DataSubjectExportScope,
+} from "../../shared/domain/dataSubjectAccess.js";
+import { anyOf, currentTimestamp, nowMinusSeconds, nowPlusSeconds, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 export type ActionRequestStatus = "pending" | "in_progress" | "dispatched" | "failed" | "skipped";
@@ -349,3 +356,38 @@ const mapJobClaim = (row: JobClaimRow, availableAt: Date, kind: string): Backgro
   availableAt: new Date(availableAt),
 });
 
+
+/**
+ * The export's `routine_actions` section: what a conversation's routines handed on about the person,
+ * such as a contact request or the values a routine's ending carried to the team or to a webhook.
+ * It outlives the routine state the values came from. Only the action types that carry the
+ * person's own values are exported, each reduced to them (`subjectActionValues`).
+ */
+export class ActionRequestExporter implements DataSubjectDataExporter {
+  readonly section = "routine_actions";
+
+  constructor(private readonly db: Db) {}
+
+  async export(scope: DataSubjectExportScope): Promise<DataSubjectExportRecord[]> {
+    if (scope.conversationIds.length === 0) return [];
+    const rows = await this.db
+      .selectFrom("routine_action_requests")
+      .select(["conversation_id", "type", "payload", "created_at"])
+      .where("workspace_id", "=", scope.workspaceId)
+      .where((eb) => anyOf(eb.ref("conversation_id"), scope.conversationIds, "uuid[]"))
+      .where((eb) => anyOf(eb.ref("type"), SUBJECT_ACTION_TYPES, "text[]"))
+      .orderBy("created_at")
+      .orderBy("id")
+      .execute();
+    return rows.flatMap((row) => {
+      const projected = subjectActionValues(row.type, row.payload);
+      return projected ? [{
+        conversationId: row.conversation_id,
+        type: row.type,
+        routineId: projected.routineId,
+        values: projected.values,
+        createdAt: exportTimestamp(row.created_at),
+      }] : [];
+    });
+  }
+}

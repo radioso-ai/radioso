@@ -144,7 +144,8 @@ import { createConversationActivityComposition } from "../composition/conversati
 import { createPostgresOwnershipChangeUnitOfWork } from "../composition/conversationOwnershipChanges.js";
 import { createPostgresHeldReplyUnitOfWork } from "../composition/heldReplyUnitOfWork.js";
 import { createPostgresConversationErasureUnitOfWork } from "../composition/conversationErasure.js";
-import { ConversationErasureService } from "../../modules/privacy/public.js";
+import { createPostgresDataSubjectReadUnitOfWork } from "../composition/dataSubjectAccess.js";
+import { ConversationErasureService, DataSubjectAccessService } from "../../modules/privacy/public.js";
 import { createPostgresConversationIngestUnitOfWork } from "../composition/conversationIngest.js";
 import { ConversationOwnershipService, HeldReplyService, OperatorIdentityResolver } from "../../modules/handoff/public.js";
 import { HeldReplyRepository } from "../../db/repositories/heldReplyRepository.js";
@@ -1315,6 +1316,16 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     metricsRegistry: infrastructure.metricsRegistry,
     logger,
   });
+  const conversationErasure = new ConversationErasureService({
+    unitOfWork: createPostgresConversationErasureUnitOfWork({
+      db: infrastructure.database.kysely,
+      logger,
+      // Call recordings the voice vendor keeps: read and locked in the erasure's transaction.
+      vendorHeldData: (trx) => voiceRecordings.erasureIn(trx),
+    }),
+    invalidation: realtimePublisherComposition.publisher,
+    auditLog: infrastructure.auditService,
+  });
 
   return {
     env,
@@ -1444,15 +1455,12 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     voiceSessionAvailability: voiceSessionStarts,
     voiceRecordings: voiceRecordings.recordings,
     assistantHistoryService: chat.assistantHistoryService,
-    conversationErasure: new ConversationErasureService({
-      unitOfWork: createPostgresConversationErasureUnitOfWork({
-        db: infrastructure.database.kysely,
-        logger,
-        // Call recordings the voice vendor keeps: read and locked in the erasure's transaction.
-        vendorHeldData: (trx) => voiceRecordings.erasureIn(trx),
-      }),
-      invalidation: realtimePublisherComposition.publisher,
-      auditLog: infrastructure.auditService,
+    conversationErasure,
+    dataSubjectAccess: new DataSubjectAccessService({
+      reads: createPostgresDataSubjectReadUnitOfWork({ db: infrastructure.database.kysely }),
+      erasure: conversationErasure,
+      audit: infrastructure.auditService,
+      logger,
     }),
     retrievalSearchService: retrieval.retrievalSearchService,
     retrievalAnswerService: chat.retrievalAnswerService,

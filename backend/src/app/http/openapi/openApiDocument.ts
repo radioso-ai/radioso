@@ -41,6 +41,7 @@ export const createOpenApiDocument = (
       { name: "Assistant" },
       { name: "Agent Channels" },
       { name: "History" },
+      { name: "Privacy" },
       { name: "Context Variables" },
       { name: "Retrieval" },
       { name: "Settings" },

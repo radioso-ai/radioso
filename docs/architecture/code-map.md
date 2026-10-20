@@ -858,6 +858,52 @@ Related docs:
 
 - [Deleting conversation data](../../docs-portal/content/operators/deleting-conversation-data.mdx)
 
+## Data Subject Requests
+
+Owns finding one person across channels and exporting or erasing what Radioso
+holds about them (#1542). `DataSubjectAccessService` (`modules/privacy/`) asks
+every identity finder for a search's matches and returns them as candidate
+identities without merging any; every later step (conversation list, export,
+erase) takes the identities an operator confirmed. Lookup, export and erase
+each record one `data_subject.looked_up` / `.exported` / `.erased` audit event
+naming each identity kind by its record ids (a visitor id, email thread
+conversations, Slack link rows), never by a key, with counts. Export and erase
+refuse more than 200 conversations with `413`; a caller pages them with
+`conversationIds`, each one the identities reach (`400` otherwise). A page of
+an erasure erases only its conversations, never a visitor. Erasure runs the
+conversation erasure per visitor and per remaining conversation, each with its
+own audit event, and answers a partial run with a `500` carrying its receipt.
+`routine_actions` exports only the action types
+`modules/chat/services/actions/subjectActionValues.ts` projects to the
+person's own values; a contact request exports its payload as queued.
+
+The ports live in `backend/src/shared/domain/dataSubjectAccess.ts`. Each module
+that keeps identities implements `DataSubjectIdentityFinder` (web visitors by
+verified customer id in `db/repositories/visitorRepository.ts`, email senders in
+`modules/emailChannel/persistence/emailDataSubjectAccess.ts`, Slack thread
+starters in `modules/connectors/plugins/slack/slackPersistence.ts`); each module
+that keeps data about the subject implements `DataSubjectDataExporter` for its
+export section. Composition binds both to one read-only, repeatable-read
+transaction. A table that names a conversation, session, visitor or message
+needs an export section or a stated reason in the schema contract test.
+
+Public surfaces and key files:
+
+- `backend/src/modules/privacy/dataSubjectAccess.ts` (use case, export format version)
+- `backend/src/shared/domain/dataSubjectAccess.ts` (finder and exporter ports)
+- `backend/src/app/composition/dataSubjectAccess.ts` (finder and exporter lists, read unit of work)
+- `backend/src/db/repositories/dataSubjectConversationRepository.ts` (conversation directory, `conversations` and `answer_feedback` sections)
+- `backend/src/app/http/routes/privacyRoutes.ts` (`POST /api/v1/privacy/data-subjects/{lookup,conversations,export,erase}`; `workspace.history.delete`)
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/data-subject-access-service.test.ts tests/contract/privacy-data-subjects.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/data-subject-access.integration.test.ts tests/integration/data-subject-export-coverage.integration.test.ts --no-file-parallelism`
+
+Related docs:
+
+- [Answering a data subject request](../../docs-portal/content/operators/data-subject-requests.mdx)
+
 ## Agent Revisions
 
 Owns the mutable agent draft and immutable candidate/publication aggregate. A

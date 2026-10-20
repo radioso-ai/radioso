@@ -95,7 +95,7 @@ describeIfDatabase("MessageRepository forward tail cursor", () => {
     expect(page.messages.map((message) => message.id)).toEqual([first.id, second.id]);
     expect(page.latestCursor).toBeTruthy();
     expect(decodeCursorWithKeys(page.latestCursor!, ["createdAt", "id"]).keys).toEqual({
-      createdAt: "2026-06-01T00:00:01.000Z",
+      createdAt: "2026-06-01T00:00:01.000000Z",
       id: second.id,
     });
   });
@@ -156,7 +156,7 @@ describeIfDatabase("MessageRepository forward tail cursor", () => {
     await setMessageTime(newer.id, "2026-06-01T00:00:02.000Z");
 
     const page = await messages.listSinceByConversationId(workspace.id, conversation.id, {
-      sinceCreatedAt: new Date("2026-06-01T00:00:01.000Z"),
+      sinceCreatedAt: "2026-06-01T00:00:01.000Z",
       sinceId: cursorMessage.id,
       limit: 10,
     });
@@ -164,7 +164,7 @@ describeIfDatabase("MessageRepository forward tail cursor", () => {
     expect(page.messages.map((message) => message.id)).toEqual([sameTimeHigherId.id, newer.id]);
     expect(page.latestCursor).toBeTruthy();
     expect(decodeCursorWithKeys(page.latestCursor!, ["createdAt", "id"]).keys).toEqual({
-      createdAt: "2026-06-01T00:00:02.000Z",
+      createdAt: "2026-06-01T00:00:02.000000Z",
       id: newer.id,
     });
   });
@@ -194,7 +194,7 @@ describeIfDatabase("MessageRepository forward tail cursor", () => {
     await setMessageTime(third.id, "2026-06-01T00:00:02.000Z");
 
     const page = await messages.listSinceByConversationId(workspace.id, conversation.id, {
-      sinceCreatedAt: new Date("2026-06-01T00:00:00.000Z"),
+      sinceCreatedAt: "2026-06-01T00:00:00.000Z",
       sinceId: first.id,
       limit: 1,
     });
@@ -235,21 +235,21 @@ describeIfDatabase("MessageRepository forward tail cursor", () => {
     await setMessageTime(fourth.id, "2026-06-01T00:00:03.000Z");
 
     const firstPage = await messages.listSinceByConversationId(workspace.id, conversation.id, {
-      sinceCreatedAt: new Date("2026-06-01T00:00:00.000Z"),
+      sinceCreatedAt: "2026-06-01T00:00:00.000Z",
       sinceId: first.id,
       limit: 1,
     });
     const firstPageCursor = decodeCursorWithKeys(firstPage.latestCursor!, ["createdAt", "id"]).keys;
 
     const secondPage = await messages.listSinceByConversationId(workspace.id, conversation.id, {
-      sinceCreatedAt: new Date(firstPageCursor.createdAt),
+      sinceCreatedAt: firstPageCursor.createdAt,
       sinceId: firstPageCursor.id,
       limit: 10,
     });
     const secondPageCursor = decodeCursorWithKeys(secondPage.latestCursor!, ["createdAt", "id"]).keys;
 
     const drained = await messages.listSinceByConversationId(workspace.id, conversation.id, {
-      sinceCreatedAt: new Date(secondPageCursor.createdAt),
+      sinceCreatedAt: secondPageCursor.createdAt,
       sinceId: secondPageCursor.id,
       limit: 10,
     });
@@ -273,16 +273,103 @@ describeIfDatabase("MessageRepository forward tail cursor", () => {
     await setMessageTime(latest.id, "2026-06-01T00:00:00.000Z");
 
     const cursor = encodeCursor({
-      createdAt: "2026-06-01T00:00:00.000Z",
+      createdAt: "2026-06-01T00:00:00.000000Z",
       id: latest.id,
     });
     const page = await messages.listSinceByConversationId(workspace.id, conversation.id, {
-      sinceCreatedAt: new Date("2026-06-01T00:00:00.000Z"),
+      sinceCreatedAt: "2026-06-01T00:00:00.000Z",
       sinceId: latest.id,
       limit: 10,
     });
 
     expect(page.messages).toEqual([]);
     expect(page.latestCursor).toBe(cursor);
+  });
+
+  // Regression coverage for #1518: a ms-precision cursor built from a JS `Date` read of
+  // `created_at` is strictly behind the microsecond-precision value Postgres stores, so the row
+  // that produced the cursor matches `created_at > cursor` again on the very next poll.
+  describe("sub-millisecond precision", () => {
+    it("does not re-deliver the newest message on a quiet poll, even at sub-millisecond precision", async () => {
+      const { workspace, conversation } = await seedConversation();
+      const message = await messages.create({
+        conversationId: conversation.id,
+        workspaceId: workspace.id,
+        role: "user",
+        content: "sub-millisecond",
+      });
+      await setMessageTime(message.id, "2026-06-01T00:00:01.123456Z");
+
+      const firstPoll = await messages.listSinceByConversationId(workspace.id, conversation.id, { limit: 10 });
+      expect(firstPoll.messages.map((item) => item.id)).toEqual([message.id]);
+
+      const cursorKeys = decodeCursorWithKeys(firstPoll.latestCursor!, ["createdAt", "id"]).keys;
+      const quietPoll = await messages.listSinceByConversationId(workspace.id, conversation.id, {
+        sinceCreatedAt: cursorKeys.createdAt,
+        sinceId: cursorKeys.id,
+        limit: 10,
+      });
+
+      expect(quietPoll.messages).toEqual([]);
+    });
+
+    it("delivers two messages created within the same millisecond, and never re-delivers either", async () => {
+      const { workspace, conversation } = await seedConversation();
+      const earlier = await messages.create({
+        conversationId: conversation.id,
+        workspaceId: workspace.id,
+        role: "user",
+        content: "earlier in the millisecond",
+      });
+      const later = await messages.create({
+        conversationId: conversation.id,
+        workspaceId: workspace.id,
+        role: "assistant",
+        content: "later in the same millisecond",
+      });
+      await setMessageTime(earlier.id, "2026-06-01T00:00:01.100001Z");
+      await setMessageTime(later.id, "2026-06-01T00:00:01.100002Z");
+
+      const firstPoll = await messages.listSinceByConversationId(workspace.id, conversation.id, { limit: 10 });
+      expect(firstPoll.messages.map((item) => item.id)).toEqual([earlier.id, later.id]);
+
+      const cursorKeys = decodeCursorWithKeys(firstPoll.latestCursor!, ["createdAt", "id"]).keys;
+      const quietPoll = await messages.listSinceByConversationId(workspace.id, conversation.id, {
+        sinceCreatedAt: cursorKeys.createdAt,
+        sinceId: cursorKeys.id,
+        limit: 10,
+      });
+
+      expect(quietPoll.messages).toEqual([]);
+    });
+
+    it("still delivers a later message sharing the cursor's millisecond, losing nothing", async () => {
+      const { workspace, conversation } = await seedConversation();
+      const cursorMessage = await messages.create({
+        conversationId: conversation.id,
+        workspaceId: workspace.id,
+        role: "user",
+        content: "cursor message",
+      });
+      await setMessageTime(cursorMessage.id, "2026-06-01T00:00:01.100001Z");
+      const firstPoll = await messages.listSinceByConversationId(workspace.id, conversation.id, { limit: 10 });
+      const cursorKeys = decodeCursorWithKeys(firstPoll.latestCursor!, ["createdAt", "id"]).keys;
+
+      const next = await messages.create({
+        conversationId: conversation.id,
+        workspaceId: workspace.id,
+        role: "assistant",
+        content: "later in the same millisecond as the cursor",
+      });
+      await setMessageTime(next.id, "2026-06-01T00:00:01.100002Z");
+
+      const secondPoll = await messages.listSinceByConversationId(workspace.id, conversation.id, {
+        sinceCreatedAt: cursorKeys.createdAt,
+        sinceId: cursorKeys.id,
+        limit: 10,
+      });
+
+      expect(secondPoll.messages.map((item) => item.id)).toEqual([next.id]);
+    });
   });
 });

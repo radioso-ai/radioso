@@ -4,7 +4,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { MessageRepository } from "../../src/db/repositories/messageRepository.js";
 import { VOICE_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
-import { decodeCursorWithKeys } from "../../src/shared/domain/cursorPagination.js";
+import { decodeCursorWithKeys, encodeCursor } from "../../src/shared/domain/cursorPagination.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
@@ -199,7 +199,7 @@ describeIntegration("MessageRepository (Postgres)", () => {
   describe("tail re-delivery of marked replies", () => {
     const sinceCursor = (cursor: string | null) => {
       const { keys } = decodeCursorWithKeys(cursor!, ["createdAt", "id"]);
-      return { sinceCreatedAt: new Date(keys.createdAt), sinceId: keys.id, sinceMarkedAt: (keys as Record<string, string>).markedAt };
+      return { sinceCreatedAt: keys.createdAt, sinceId: keys.id, sinceMarkedAt: (keys as Record<string, string>).markedAt };
     };
     const tail = (cursor: string | null, redeliverMarkedReplies = true) =>
       repository.listSinceByConversationId(workspaceId, conversationId, { ...sinceCursor(cursor), limit: 10, redeliverMarkedReplies });
@@ -412,6 +412,65 @@ describeIntegration("MessageRepository (Postgres)", () => {
     });
     expect(page2.messages.map((m) => m.id)).toEqual([ids[0]]);
     expect(page2.hasMore).toBe(false);
+  });
+
+  it("loses no message within the cursor's millisecond when paging a window back, at full Postgres precision", async () => {
+    const earliest = await repository.create({ conversationId, workspaceId, role: "user", content: "earliest" });
+    const middle = await repository.create({ conversationId, workspaceId, role: "user", content: "middle" });
+    const newest = await repository.create({ conversationId, workspaceId, role: "user", content: "newest" });
+    // All three read back as the same millisecond in a JS Date; only the microseconds order them.
+    await setTime(earliest.id, "2026-06-05T00:00:00.123100Z");
+    await setTime(middle.id, "2026-06-05T00:00:00.123200Z");
+    await setTime(newest.id, "2026-06-05T00:00:00.123456Z");
+
+    const page1 = await repository.listWindowByConversationId(workspaceId, conversationId, { limit: 1 });
+    expect(page1.messages.map((m) => m.id)).toEqual([newest.id]);
+    expect(page1.hasMore).toBe(true);
+
+    const page2 = await repository.listWindowByConversationId(workspaceId, conversationId, {
+      limit: 1,
+      cursor: page1.nextCursor!,
+    });
+    expect(page2.messages.map((m) => m.id)).toEqual([middle.id]);
+    expect(page2.hasMore).toBe(true);
+
+    const page3 = await repository.listWindowByConversationId(workspaceId, conversationId, {
+      limit: 1,
+      cursor: page2.nextCursor!,
+    });
+    expect(page3.messages.map((m) => m.id)).toEqual([earliest.id]);
+    expect(page3.hasMore).toBe(false);
+  });
+
+  it("windows nothing for a cursor whose boundary is not a message of the conversation", async () => {
+    const otherConversationId = randomUUID();
+    await database.query(`INSERT INTO conversations (id, workspace_id) VALUES ($1,$2)`, [otherConversationId, workspaceId]);
+    await repository.create({ conversationId, workspaceId, role: "user", content: "kept" });
+    const erased = await repository.create({ conversationId, workspaceId, role: "user", content: "will be erased" });
+    const foreign = await repository.create({ conversationId: otherConversationId, workspaceId, role: "user", content: "other conversation" });
+    const cursorFor = (message: { id: string; createdAt: Date }) =>
+      encodeCursor({ createdAt: message.createdAt.toISOString(), id: message.id });
+    const erasedCursor = cursorFor(erased);
+
+    expect(await repository.deleteUserMessage({ workspaceId, conversationId, messageId: erased.id })).toBe(true);
+
+    // A deleted message's own cursor has nothing after it.
+    const deletedWindow = await repository.listWindowByConversationId(workspaceId, conversationId, {
+      limit: 10,
+      cursor: erasedCursor,
+    });
+    expect(deletedWindow.messages).toEqual([]);
+    expect(deletedWindow.hasMore).toBe(false);
+    expect(deletedWindow.nextCursor).toBeNull();
+
+    // Another conversation's message id is just as unresolvable as a deleted one.
+    const foreignWindow = await repository.listWindowByConversationId(workspaceId, conversationId, {
+      limit: 10,
+      cursor: cursorFor(foreign),
+    });
+    expect(foreignWindow.messages).toEqual([]);
+    expect(foreignWindow.hasMore).toBe(false);
+    expect(foreignWindow.nextCursor).toBeNull();
   });
 
   it("lists the newest messages before a (created_at, id) boundary, oldest first, ignoring later ones before limiting", async () => {

@@ -8,7 +8,7 @@ type ProductionDescriptorName =
   | "eval_results" | "needs_attention" | "operator_notice_destinations" | "propose_agent" | "propose_agent_setting" | "propose_context_variable" | "propose_directive" | "propose_greeting"
   | "propose_document" | "propose_document_removal" | "propose_document_retrieval"
   | "product_doc_page" | "product_docs"
-  | "propose_ingestion_settings" | "prepare_ingestion_settings" | "prepare_agent_settings" | "prepare_directive" | "propose_workspace_setting" | "start_crawl"
+  | "propose_ingestion_settings" | "prepare_ingestion_settings" | "prepare_agent_settings" | "prepare_directive" | "propose_workspace_setting" | "propose_privacy_setting" | "start_crawl"
   | "propose_directive_enablement" | "propose_directive_removal" | "propose_routine"
   | "propose_routine_edit" | "propose_routine_exposure" | "propose_skill_config" | "quality_signals"
   | "replay_eval_case"
@@ -80,6 +80,7 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   prepare_agent_settings: { backingOperationIds: ["updateAgent"], applicationPrimitiveIds: ["agents.setting.propose", "operatorCopilot.proposal.create"], ...rayOnly("The trusted MCP client prepares a digest-bound multi-field agent-settings receipt; it is not a Ray turn capability.") },
   prepare_directive: { backingOperationIds: ["createAgentDirective", "updateAgentDirective", "deleteAgentDirective"], applicationPrimitiveIds: ["agents.directive.propose", "operatorCopilot.proposal.create"], ...rayOnly("The trusted MCP client prepares a digest-bound directive receipt; it is not a Ray turn capability.") },
   propose_workspace_setting: { backingOperationIds: ["updatePlatformSettings"], applicationPrimitiveIds: ["settings.workspace.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before the platform settings service receives an assistant or channel change, and marks the draft when applying it would change who can reach the agent.") },
+  propose_privacy_setting: { backingOperationIds: ["updatePrivacySettings"], applicationPrimitiveIds: ["privacy.settings.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray persists an operator-reviewable draft before the privacy settings receive a retention window, and states on the card when applying it lets the retention sweep erase conversations sooner.") },
   start_crawl: { backingOperationIds: ["crawlWebsiteDocuments"], applicationPrimitiveIds: ["websiteCrawler.crawl.propose", "operatorCopilot.proposal.create"], ...rayOnly("Ray presents a website crawl as a pending, operator-confirmed proposal, because starting one fetches an external site and spends crawl budget.") },
   propose_routine: { backingOperationIds: ["createAgentRoutine"], applicationPrimitiveIds: ["routines.proposal.prepare", "operatorCopilot.proposal.create"], ...rayOnly("Ray drafts routine evidence and review state; authority over what an agent serves remains with the agent revision service.") },
   propose_routine_edit: { backingOperationIds: ["updateAgentRoutine"], applicationPrimitiveIds: ["routines.proposal.prepare", "operatorCopilot.proposal.create"], ...rayOnly("Ray-specific stale-draft guards protect a proposal without expanding routine mutation authority.") },
@@ -112,7 +113,7 @@ export const copilotCapabilityProvenance: Readonly<Record<ProductionDescriptorNa
   test_agent_turn: { backingOperationIds: ["createAssistantChatResponse"], applicationPrimitiveIds: ["operatorCopilot.safe-test.orchestration"], ...rayOnly("Ray adds operator provenance, bounded projection, and proposal evidence to the generic safe-test turn.") },
   turn_trace: { applicationPrimitiveIds: ["chat.conversation.trace.read"] },
   validate_routine: { backingOperationIds: ["validateAgentRoutine"], applicationPrimitiveIds: ["routines.validation"] },
-  workspace_settings: { backingOperationIds: ["getPlatformSettings", "getSettingsRetrievalDefaults", "getIngestionSettings", "getEmbeddingCoverage", "getGeneralSettings", "getWorkspaceLlmModels"], applicationPrimitiveIds: ["settings.workspace.read", "embedding.coverage.read"] },
+  workspace_settings: { backingOperationIds: ["getPlatformSettings", "getSettingsRetrievalDefaults", "getIngestionSettings", "getEmbeddingCoverage", "getGeneralSettings", "getWorkspaceLlmModels", "getPrivacySettings"], applicationPrimitiveIds: ["settings.workspace.read", "embedding.coverage.read", "privacy.settings.read"] },
   workspace_setup_state: { backingOperationIds: ["getWorkspaceSetupState"], applicationPrimitiveIds: ["settings.workspace.read"] },
   workspace_triage: { applicationPrimitiveIds: ["operatorCopilot.workspace-triage"], ...rayOnly("Ray composes authorized source summaries into a ranked operator triage projection.") },
 };

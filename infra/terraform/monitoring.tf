@@ -39,6 +39,7 @@ locals {
     "${local.resource_name_prefix}-copilot-retention",
     "${local.resource_name_prefix}-slack-inbound-event-retention",
     "${local.resource_name_prefix}-agent-bundle-import-cleanup",
+    "${local.resource_name_prefix}-conversation-retention",
   ] : []
 
   # Cloud Monitoring filters use one_of(); Cloud Logging filters use (a OR b). The two

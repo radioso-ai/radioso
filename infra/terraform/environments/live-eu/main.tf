@@ -184,8 +184,9 @@ module "radioso" {
   worker_min_instances   = 0
   worker_max_instances   = var.worker_max_instances
 
-  db_tier                = var.db_tier
-  db_deletion_protection = true
+  db_tier                           = var.db_tier
+  db_deletion_protection            = true
+  db_point_in_time_recovery_enabled = var.db_point_in_time_recovery_enabled
 
   secret_replication_locations = [var.region]
 

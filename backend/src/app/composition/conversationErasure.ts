@@ -83,6 +83,13 @@ export const createPostgresConversationErasureUnitOfWork = (deps: {
           lockVisitor: (workspaceId, visitorId) => subjects.lockVisitor(workspaceId, visitorId),
           deleteConversations: (workspaceId, conversationIds) => subjects.deleteConversations(workspaceId, conversationIds),
           deleteVisitor: (workspaceId, visitorId) => subjects.deleteVisitor(workspaceId, visitorId),
+          lockInactiveConversations: async (workspaceId, inactiveBefore, limit) => {
+            // Step 1 is taken by the claim, which skips what another unit holds and so never waits;
+            // the ownership rows follow in id order, as the protocol takes them.
+            const claimed = await subjects.claimInactiveConversations(workspaceId, inactiveBefore, limit);
+            await lockConversationsInOrder(trx, workspaceId, claimed);
+            return { claimed: claimed.length, inactive: await subjects.stillInactive(workspaceId, claimed, inactiveBefore) };
+          },
         },
         conversationErasers: conversationErasers.map((bind) => bind(trx)),
         verifiedCustomerErasers: verifiedCustomerErasers.map((bind) => bind(trx)),

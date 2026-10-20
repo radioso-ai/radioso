@@ -64,6 +64,10 @@ import type { DB, Db } from "../../shared/infra/kysely/types.js";
  *   conversations. Erasing one conversation updates or deletes its visitor's row after the delete.
  *   A unit that writes a visitor's row while holding one of its conversations meets a visitor's
  *   erasure in the other order; Postgres aborts one, and an erasure it aborts runs again.
+ * - Retention's erasure (`ConversationErasureRepository.claimInactiveConversations`): the
+ *   conversations its window passed, `FOR UPDATE SKIP LOCKED`, so step 1 never waits on another
+ *   unit and two sweeps claim disjoint sets; then their ownership rows in id order, and the rest as
+ *   an erasure.
  *
  * The domain row has no step of its own before the mailbox: every write to it — a readiness refresh,
  * a removal, a claim or an adoption — is a statement on `email_domains` alone, so a unit holding it

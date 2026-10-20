@@ -26,6 +26,8 @@ locals {
   # that registers another periodic task needs its own job here, pointed at its own id.
   usage_limit_alert_sweep_url   = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/periodic-tasks/ee-usage-limit-alerts/run" : null
   billing_auto_top_up_sweep_url = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/periodic-tasks/ee-billing-auto-top-up/run" : null
+  # Built-in periodic task (`CONVERSATION_RETENTION_TASK_ID`), registered in every edition.
+  conversation_retention_url = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/periodic-tasks/conversation-retention/run" : null
 }
 
 resource "google_cloud_scheduler_job" "document_worker_recovery" {
@@ -259,6 +261,33 @@ resource "google_cloud_scheduler_job" "credential_expiry_warning" {
     oidc_token {
       service_account_email = data.google_service_account.worker_task_invoker.email
       audience              = local.credential_expiry_warning_url
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# Erases conversations past each workspace's retention window through the conversation erasure,
+# and enforces the fixed windows on summaries, routine states and raw inbound mail. Each run does a
+# bounded amount and a failed batch answers 500, so the next run picks up where this one stopped.
+resource "google_cloud_scheduler_job" "conversation_retention" {
+  count            = var.deploy_services ? 1 : 0
+  name             = "${local.resource_name_prefix}-conversation-retention"
+  region           = var.region
+  schedule         = local.conversation_retention_schedule
+  attempt_deadline = "300s"
+
+  http_target {
+    http_method = "POST"
+    uri         = local.conversation_retention_url
+    body        = base64encode(jsonencode({}))
+    headers = {
+      "Content-Type"           = "application/json"
+      "X-Radioso-Worker-Token" = random_password.worker_task_auth_token.result
+    }
+    oidc_token {
+      service_account_email = data.google_service_account.worker_task_invoker.email
+      audience              = local.conversation_retention_url
     }
   }
 

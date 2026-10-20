@@ -1,7 +1,7 @@
 ---
 title: "Email Channel"
 description: "Connect a support mailbox to a Radioso agent by forwarding, review and send the agent's drafted replies or let grounded ones send themselves, bound what runs without a person, verify sending on your own domain, reply with delivery tracked through to the customer, and work the mailbox event log and raw mail from operator settings."
-last_updated: 2026-10-11
+last_updated: 2026-10-19
 ---
 
 # Email Channel
@@ -593,9 +593,10 @@ an address no mailbox has, which carries `mailboxId: null` and the reason
 `no_mailbox`. Pass `mailboxId` to narrow it to one mailbox, removed or not.
 
 Events that never opened a conversation are purged after 30 days. The raw
-MIME behind an event is capped at 2 MB and kept under the conversation's
-own retention otherwise, with narrower
-access: reading a raw message needs the takeover permission in addition to
+MIME behind an event is capped at 2 MB and kept for 30 days; after that its
+raw view answers `410 raw_purged`, while the parsed message and the facts
+threading needs stay with the conversation. Raw access is narrower: reading
+a raw message needs the takeover permission in addition to
 settings read, and opening one is audited. The plain-text body is what's
 shown by default; the sanitized HTML view strips scripts, forms, and remote
 resources and renders inside a sandboxed frame. Attachments are recorded by

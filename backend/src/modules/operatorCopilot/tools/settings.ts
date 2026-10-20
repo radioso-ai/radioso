@@ -98,6 +98,7 @@ export interface CopilotWorkspaceSettingsPort {
       websiteEmbedLauncherPosition: string;
     };
   }>;
+  getPrivacySettings(workspaceId: string): Promise<{ conversationRetentionDays: number | null }>;
 }
 
 const workspaceSettingsInputSchema = z.object({}).strict();
@@ -192,9 +193,13 @@ const workspaceSettingsOutputSchema = z.object({
       websiteEmbedSnippetUrl: z.string(),
     }).strict(),
   }).strict(),
+  privacy: z.object({
+    /** Days a conversation is kept after its last activity before the retention sweep erases it; null keeps it until deleted. */
+    conversationRetentionDays: z.number().int().nullable(),
+  }).strict(),
 }).strict();
 
-const DESCRIPTION = "Read safe workspace retrieval, ingestion, model, credential-health, embedding-coverage, and general configuration. Use workspace_usage_limits in Enterprise workspaces for plan limits and current usage. Tokens, secrets, credential values, and connection strings are excluded. For the website embed, general.channels.websiteEmbedSnippetUrl is the dashboard page where a signed-in operator copies the install snippet; the snippet itself is never returned here.";
+const DESCRIPTION = "Read safe workspace retrieval, ingestion, model, credential-health, embedding-coverage, general, and privacy configuration (privacy.conversationRetentionDays: days a conversation is kept after its last activity, null to keep it until deleted). Use workspace_usage_limits in Enterprise workspaces for plan limits and current usage. Tokens, secrets, credential values, and connection strings are excluded. For the website embed, general.channels.websiteEmbedSnippetUrl is the dashboard page where a signed-in operator copies the install snippet; the snippet itself is never returned here.";
 
 export const createWorkspaceSettingsCopilotTools = (deps: {
   readonly workspaceSettings: CopilotWorkspaceSettingsPort;
@@ -220,6 +225,7 @@ export const createWorkspaceSettingsCopilotTools = (deps: {
           embeddingCoverage,
           managedModels,
           workspaceKey,
+          privacy,
         ] = await Promise.all([
           deps.workspaceSettings.getRetrievalDefaults(context.workspaceId),
           deps.workspaceSettings.getIngestionSettings(context.workspaceId),
@@ -229,6 +235,7 @@ export const createWorkspaceSettingsCopilotTools = (deps: {
           deps.workspaceSettings.getEmbeddingCoverage(context.workspaceId),
           deps.workspaceSettings.getManagedLlmModels(context.workspaceId),
           deps.workspaceRouteKeyResolver.resolveWorkspaceKey(context.workspaceId),
+          deps.workspaceSettings.getPrivacySettings(context.workspaceId),
         ]);
         const managedSelection = (capability: "chat" | "rewrite" | "rerank") => {
           const selection = managedModels[capability];
@@ -338,6 +345,7 @@ export const createWorkspaceSettingsCopilotTools = (deps: {
               ),
             },
           },
+          privacy: { conversationRetentionDays: privacy.conversationRetentionDays },
         });
       },
     }),

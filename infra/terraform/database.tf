@@ -40,8 +40,22 @@ resource "google_sql_database_instance" "postgres" {
       enable_private_path_for_google_cloud_services = true
     }
 
+    # Pinned rather than left to the provider's defaults, because deleted conversation data lives on
+    # in backups until they age out: seven daily backups, and seven days of point-in-time recovery
+    # logs where recovery is on. The data retention docs state the same windows.
+    #
+    # Turning point-in-time recovery on restarts the instance, so it is a per-stack variable that
+    # defaults to off, the value the provider has applied all along, and an unrelated plan shows no
+    # recovery diff. Enable it per stack deliberately, in a quiet window.
     backup_configuration {
-      enabled = true
+      enabled                        = true
+      point_in_time_recovery_enabled = var.db_point_in_time_recovery_enabled
+      transaction_log_retention_days = var.db_point_in_time_recovery_enabled ? 7 : null
+
+      backup_retention_settings {
+        retained_backups = 7
+        retention_unit   = "COUNT"
+      }
     }
   }
 

@@ -4878,13 +4878,22 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
       return timeDiff !== 0 ? timeDiff : right.id.localeCompare(left.id);
     });
     const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["createdAt", "id"]) : null;
-    const startIndex = cursor
-      ? latestFirst.findIndex(
-          (item) => item.createdAt.toISOString() === cursor.keys.createdAt && item.id === cursor.keys.id,
-        ) + 1
-      : (input.offset ?? 0);
-    const slice = latestFirst.slice(Math.max(0, startIndex), Math.max(0, startIndex) + input.limit);
-    const hasMore = Math.max(0, startIndex) + input.limit < latestFirst.length;
+    // Mirrors the real repository: the boundary is resolved by the cursor's id, scoped to this
+    // conversation, not by matching its createdAt text. A boundary id no longer in the
+    // conversation (an erased message, or another conversation's id) has no match here, so the
+    // window is empty rather than silently restarting from the newest page.
+    let startIndex: number;
+    if (cursor) {
+      const boundaryIndex = latestFirst.findIndex((item) => item.id === cursor.keys.id);
+      if (boundaryIndex === -1) {
+        return { messages: [], total: messages.length, nextCursor: null, hasMore: false };
+      }
+      startIndex = boundaryIndex + 1;
+    } else {
+      startIndex = input.offset ?? 0;
+    }
+    const slice = latestFirst.slice(startIndex, startIndex + input.limit);
+    const hasMore = startIndex + input.limit < latestFirst.length;
     const oldestFetched = slice.at(-1);
 
     return {

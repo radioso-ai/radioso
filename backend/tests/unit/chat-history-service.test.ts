@@ -1454,6 +1454,45 @@ describe("chat history service", () => {
     });
   });
 
+  it("returns an empty message window, not the newest page, for a cursor whose message is gone from the conversation (#1518)", async () => {
+    const { conversationRepository, messageRepository, service } = createService();
+
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1" });
+    await messageRepository.create({
+      workspaceId: "workspace-1",
+      conversationId: conversation.id,
+      role: "user",
+      content: "First question",
+    });
+    const erased = await messageRepository.create({
+      workspaceId: "workspace-1",
+      conversationId: conversation.id,
+      role: "user",
+      content: "Will be erased",
+    });
+    const newest = await messageRepository.create({
+      workspaceId: "workspace-1",
+      conversationId: conversation.id,
+      role: "assistant",
+      content: "Latest reply",
+    });
+    const staleCursor = messageRepository.cursorFor(erased);
+    await messageRepository.deleteUserMessage({
+      workspaceId: "workspace-1",
+      conversationId: conversation.id,
+      messageId: erased.id,
+    });
+
+    const detail = await service.getConversation("workspace-1", conversation.id, { cursor: staleCursor, limit: 10 });
+
+    expect(detail.messages).toEqual([]);
+    expect(detail.hasOlderMessages).toBe(false);
+    expect(detail.nextCursor).toBeNull();
+    // Confirms the regression this guards: a stale cursor must not fall back to offset 0 and
+    // silently hand back the newest page instead.
+    expect(detail.messages.map((message) => message.id)).not.toContain(newest.id);
+  });
+
   it("replays activity trace metadata for assistant turns", async () => {
     const { conversationRepository, messageRepository, auditRepository, service } = createService();
 

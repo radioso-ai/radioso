@@ -29,8 +29,11 @@ import {
 import {
   deferredDirectiveTransitionOf,
   publishedDraftReply,
+  replyLanguageTagOf,
   reviewedTurnDraft,
 } from "../../../src/modules/chat/services/reviewDraft.js";
+import { TurnPlanCoordinator } from "../../../src/modules/chat/services/turnPlanCoordinator.js";
+import { TurnPlanService } from "../../../src/modules/chat/services/turnPlanService.js";
 import { reviewedTurnAuditEvent } from "../../../src/modules/chat/services/reviewTurnAudit.js";
 import { createRouteScopedDirectiveSteering } from "../../../src/modules/chat/services/routeScopedDirectiveSteering.js";
 import type { Directive, DirectiveFiringState, DirectiveStateStore } from "../../../src/modules/directives/public.js";
@@ -64,6 +67,43 @@ describe("ChatService.review", () => {
       .toBe(countBefore);
     const messages = await harness.messageRepository.listByConversationId(REVIEW_WORKSPACE_ID, harness.conversation.id);
     expect(messages.at(-1)?.id).toBe(harness.requestMessage.id);
+  });
+
+  it("carries the language its turn answered in on the draft, which the published reply keeps (#1545)", async () => {
+    const planText = JSON.stringify({
+      route: "direct",
+      isIdentityQuestion: false,
+      intentTopic: null,
+      rewrite: {
+        rewrittenQuery: "posso cambiare indirizzo",
+        semanticQuery: "cambiare indirizzo di consegna",
+        lexicalQuery: "indirizzo consegna",
+        queryShape: "policy_answer",
+        temporalQueryMode: "none",
+        retrievalSubqueries: [],
+        turnKind: "fresh_subject",
+        proposedActiveSubject: "indirizzo di consegna",
+        relatedEntities: [],
+        unresolved: false,
+        confidence: 0.95,
+      },
+      responseLanguage: "Italian",
+      responseLanguageTag: "it",
+      routineRankings: [],
+      directiveClassifications: [],
+    });
+    const harness = await reviewServiceHarness({
+      answer: "Sì, rispondi con il nuovo indirizzo.",
+      turnPlanCoordinator: new TurnPlanCoordinator(new TurnPlanService({ create: async () => ({ complete: async () => ({ text: planText }) }) })),
+    });
+
+    const result = draftOf(await harness.review());
+
+    expect(result.draft.presentation.metadata).toMatchObject({ responseLanguageTag: "it" });
+    const published = publishedDraftReply({ workspaceId: REVIEW_WORKSPACE_ID, conversationId: harness.conversation.id, draft: result.draft });
+    expect(replyLanguageTagOf(published.metadata)).toBe("it");
+    // A draft from a turn that read no plan carries no tag.
+    expect((draftOf(await (await reviewServiceHarness()).review()).draft.presentation.metadata as Record<string, unknown> | undefined)?.responseLanguageTag).toBeUndefined();
   });
 
   it("rejects a message that does not belong to the conversation, before any turn work", async () => {

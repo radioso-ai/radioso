@@ -2150,6 +2150,7 @@ CREATE TABLE public.conversations (
     request_context jsonb,
     entry_referrer text,
     caller_kind text DEFAULT 'human'::text NOT NULL,
+    privacy_notice_version text,
     CONSTRAINT conversations_purpose_check CHECK ((purpose = ANY (ARRAY['production'::text, 'operator_test'::text])))
 );
 

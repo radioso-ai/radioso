@@ -5,6 +5,7 @@ import { GROUNDING_VERDICTS, type GroundingDiagnosticSnapshot } from "../../../s
 import type { SuppressedSkillEffect } from "../../../shared/domain/suppressedSkillEffect.js";
 import type { DirectiveStateStore } from "../../directives/public.js";
 import type { ChatAnswerCoverageAssessment } from "../contracts/answerCoverage.js";
+import { isLocaleTag } from "../../../shared/domain/locale.js";
 import type { ChatReviewResult, ReviewTurnFactsSource } from "../types/chatReview.js";
 import { SKILL_TURN_OUTCOME, type AssistantTurnOutcome } from "./assistantTurnOutcomeTypes.js";
 import {
@@ -46,6 +47,25 @@ export const reviewedTurnDraft = (
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   value !== null && typeof value === "object" && !Array.isArray(value);
+
+/** Where a published reply's metadata keeps the language tag its turn answered in. */
+const REPLY_LANGUAGE_TAG_KEY = "responseLanguageTag";
+
+/**
+ * The draft with the language tag its turn answered in, carried in the metadata the published
+ * message keeps, so a channel can send what goes with the reply in the reply's language (#1545).
+ */
+export const withReplyLanguageTag = (draft: ReplyDraft, tag: string | undefined): ReplyDraft => {
+  if (!tag) return draft;
+  const metadata = isRecord(draft.presentation.metadata) ? draft.presentation.metadata : {};
+  return { ...draft, presentation: { ...draft.presentation, metadata: { ...metadata, [REPLY_LANGUAGE_TAG_KEY]: tag } } };
+};
+
+/** The language tag a published reply's metadata carries; null for a reply a person wrote, or none recorded. */
+export const replyLanguageTagOf = (metadata: Record<string, unknown> | undefined): string | null => {
+  const tag = metadata?.[REPLY_LANGUAGE_TAG_KEY];
+  return typeof tag === "string" && isLocaleTag(tag) ? tag : null;
+};
 
 /**
  * The directive firing memory advance a draft's turn deferred, read back from a draft that has

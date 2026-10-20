@@ -440,6 +440,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       branding: z.object({
         hidePoweredBy: z.boolean(),
         privacyPolicyUrl: z.string().nullable(),
+        privacyNotice: schemas.AgentPrivacyNoticesSchema.optional(),
       }).optional(),
       intakeActions: z.array(z.object({
         skillName: z.string(),
@@ -842,6 +843,9 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       requestContext: z.union([ConversationRequestContextSchema, z.null()]).optional().openapi({
         description: "Edge-observed request facts captured once at conversation creation. IP included — dashboard-only.",
       }),
+      privacyNoticeVersion: z.string().nullable().optional().openapi({
+        description: "The `version` of the agent's privacy notice the visitor was shown before their first message; null when none was. Dashboard-only.",
+      }),
       title: z.string().nullable().openapi({
         description: "See ChatConversationSummary.title.",
       }),
@@ -917,6 +921,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       entryReferrer: true,
       visitor: true,
       requestContext: true,
+      privacyNoticeVersion: true,
       messages: true,
       recording: true,
     }).extend({

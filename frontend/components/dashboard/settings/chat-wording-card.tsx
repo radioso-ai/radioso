@@ -28,6 +28,7 @@ const COPY_FIELDS = [
   ['publicChatContactHumanMessage', 'Contact-human message', 'I want to talk to a human.'],
   ['publicChatDisclaimerTemplate', 'Disclaimer', '{name} uses AI and can make mistakes.'],
   ['publicChatAiLabel', 'AI chip', 'AI'],
+  ['publicChatPrivacyNoticeLinkLabel', 'Privacy notice link', 'Privacy policy'],
   ['publicChatOpenFullScreenLabel', 'Full-screen button', 'Open full screen'],
   ['publicChatOpenNewTabLabel', 'New-tab menu item', 'Open in new tab'],
   ['publicChatAgentUnavailableMessage', 'Agent-unavailable message', "This assistant isn't available right now. Please try again later."],

@@ -25,6 +25,7 @@ import {
   languageSwitchRenderingFor,
   languageSwitchResultFor,
   localeFor,
+  privacyNoticeVersionFor,
   sessionKeyFor,
   turnLanguageFor,
   type CompletionsDialect,
@@ -114,6 +115,7 @@ const turnInputFor = (
   const turnLanguage = turnLanguageFor(dialect, { ...request, messages: parsed.messages });
   const heardUntil = heardUntilFor(dialect, parsed);
   const languageSwitchOffer = languageSwitchOfferFor(dialect, parsed);
+  const privacyNoticeVersion = privacyNoticeVersionFor(dialect, request);
   return {
     session: { workspaceId: caller.workspaceId, agentId: caller.agentId, vendor: dialect.id, sessionKey },
     transport: dialect.transportDefault,
@@ -122,6 +124,7 @@ const turnInputFor = (
     ...turnLanguage,
     ...(languageSwitchOffer ? { languageSwitchOffer } : {}),
     ...(heardUntil === undefined ? {} : { heardUntil }),
+    ...(privacyNoticeVersion ? { privacyNoticeVersion } : {}),
     ...(dialect.minReleasableSentenceChars === undefined
       ? {}
       : { minReleasableSentenceChars: dialect.minReleasableSentenceChars }),

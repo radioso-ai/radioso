@@ -40,6 +40,17 @@ chat. The Voice card edits it beside the `voice` block, and Ray authors it the s
 reading it through `agent_configuration`. The chat module's quick-reply lane reads it
 (`modules/chat/services/quickReplyWording.ts`).
 
+The agent's privacy notice (`privacyNotice.ts`, #1545) is part of `branding`
+(`behavior_settings.branding.privacyNotice`): one line and a policy link per language
+tag, each stamped on every read and write with a `version` derived from its language,
+line and link. It is live, like the rest of `branding`, and the whole `branding` block
+is replaced on write. `choosePrivacyNotice` picks the notice for a conversation (the
+preferred language, else English, else the first in tag order) and
+`isPrivacyNoticeVersionOf` is the check a reported version must pass; the chat session
+preparer, the email send commitment (which tries the reply's language first) and the voice dialects read them from
+`public.ts`. The Web chat page's Privacy notice card
+(`frontend/components/dashboard/settings/privacy-notice-card.tsx`) writes it.
+
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/agent-revision-service.test.ts tests/unit/agent-revision-routes.test.ts`

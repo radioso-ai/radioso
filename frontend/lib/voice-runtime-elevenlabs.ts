@@ -62,11 +62,19 @@ const watchVendorSocket = (vendorOrigin: string, onSocket: (socket: WebSocket) =
 }
 
 /**
- * ElevenLabs Agents in the browser. The session key and the caller's language travel in the
- * custom LLM extra body, where Radioso's `elevenlabs` dialect reads them on every turn.
+ * The dynamic variable that carries the privacy notice's line. The vendor agent's first message
+ * starts with `{{radioso_privacy_notice}}` for the call to say it before the greeting. Every call the
+ * embed starts sets it, empty when no notice applies, so a first message that names it always finds it.
+ */
+const PRIVACY_NOTICE_VARIABLE = 'radioso_privacy_notice'
+
+/**
+ * ElevenLabs Agents in the browser. The session key, the caller's language and the version of the
+ * privacy notice the panel showed travel in the custom LLM extra body, where Radioso's `elevenlabs`
+ * dialect reads them on every turn; the notice's line is a dynamic variable the first message says.
  */
 export const elevenLabsVoiceRuntime: VoiceRuntime = {
-  async open({ signedUrl, sessionKey, locale }, callbacks, signal) {
+  async open({ signedUrl, sessionKey, locale, privacyNotice }, callbacks, signal) {
     // Until the session opens, aborting abandons its handshake; once it is open, the session's own
     // `end` closes it.
     let abandonHandshake: (() => void) | null = null
@@ -85,7 +93,12 @@ export const elevenLabsVoiceRuntime: VoiceRuntime = {
       const conversation = await Conversation.startSession({
         signedUrl,
         connectionType: 'websocket',
-        customLlmExtraBody: { session_key: sessionKey, locale },
+        customLlmExtraBody: {
+          session_key: sessionKey,
+          locale,
+          ...(privacyNotice ? { privacy_notice_version: privacyNotice.version } : {}),
+        },
+        dynamicVariables: { [PRIVACY_NOTICE_VARIABLE]: privacyNotice?.text ?? '' },
         workletPaths: WORKLET_PATHS,
         libsampleratePath: LIBSAMPLERATE_PATH,
         onConnect: () => callbacks.onConnected(),

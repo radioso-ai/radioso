@@ -4,6 +4,7 @@ import {
   findCompletionsDialect,
   languageSwitchOfferFor,
   languageSwitchResultFor,
+  privacyNoticeVersionFor,
   sessionKeyFor,
   turnLanguageFor,
   type CompletionsDialect,
@@ -67,6 +68,22 @@ describe("completions dialects", () => {
       body: {},
     })).toBe("room-8");
     expect(sessionKeyFor(generic, { headers: {}, body: { metadata: { session_key: "body-key" } } })).toBe("body-key");
+  });
+
+  it("reads the privacy notice version the page showed from where each dialect carries the session's facts (#1545)", () => {
+    expect(privacyNoticeVersionFor(dialect("elevenlabs"), {
+      headers: {},
+      body: { elevenlabs_extra_body: { session_key: "s", privacy_notice_version: " en:0123456789abcdef " } },
+    })).toBe("en:0123456789abcdef");
+    expect(privacyNoticeVersionFor(dialect("elevenlabs"), { headers: {}, body: { elevenlabs_extra_body: { session_key: "s" } } })).toBeUndefined();
+    expect(privacyNoticeVersionFor(dialect("generic"), {
+      headers: { "x-radioso-voice-privacy-notice-version": "de:0123456789abcdef" },
+      body: { metadata: { privacy_notice_version: "en:0123456789abcdef" } },
+    })).toBe("de:0123456789abcdef");
+    expect(privacyNoticeVersionFor(dialect("generic"), {
+      headers: {},
+      body: { metadata: { privacy_notice_version: "x".repeat(65) } },
+    })).toBeUndefined();
   });
 
   it("treats an uninterpolated template placeholder as no session key, so calls never merge on it", () => {

@@ -12,6 +12,8 @@ import {
   AGENT_CONFIG_SCHEMA_VERSION,
   AGENT_MECHANICS_REPLIES_MAX_LOCALES,
   agentMechanicsRepliesSchema,
+  agentPrivacyNoticesInputSchema,
+  agentPrivacyNoticesSchema,
   agentSurfacePositions,
   agentVoiceSettingsInputSchema,
   agentVoiceSettingsSchema,
@@ -179,6 +181,21 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     }),
   );
 
+  const privacyNoticeKeyBounds: { propertyNames: { type: "string"; pattern: string }; maxProperties: number } = {
+    propertyNames: { type: "string", pattern: LOCALE_TAG_PATTERN.source },
+    maxProperties: 10,
+  };
+  const AgentPrivacyNoticesSchema = registry.register(
+    "AgentPrivacyNotices",
+    agentPrivacyNoticesSchema.openapi({
+      ...privacyNoticeKeyBounds,
+      description:
+        "The agent's privacy notice, keyed by language tag (at most 10): one line (`text`, 1 to 200 characters) and a link to the "
+        + "operator's policy (`url`, http or https, at most 500 characters). Chat surfaces show it before the visitor's first message, "
+        + "the first reply of an email conversation carries it, and a voice session start hands it to the call. `version` is derived "
+        + "from the language, line and link: the same notice keeps its version, a changed one gets a new one. Empty until the operator writes one.",
+    }),
+  );
   const ConversationAgentSchema = registry.register(
     "ConversationAgent",
     AgentSchema.extend({
@@ -200,6 +217,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       branding: z.object({
         hidePoweredBy: z.boolean(),
         privacyPolicyUrl: z.string().nullable(),
+        privacyNotice: AgentPrivacyNoticesSchema.optional(),
       }),
       retrievalEnabled: z.boolean(),
       sourceScope: AgentSourceScopeSchema,
@@ -270,7 +288,12 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       branding: z.object({
         hidePoweredBy: z.boolean().optional(),
         privacyPolicyUrl: z.string().max(2048).nullable().optional(),
-      }).optional(),
+        privacyNotice: agentPrivacyNoticesInputSchema.optional().openapi({
+          description: "Replaces the stored notices whole: name every language the agent keeps. A `version` sent along is ignored.",
+        }),
+      }).optional().openapi({
+        description: "Replaced whole: a field left out takes its default (`hidePoweredBy` false, no policy link, no privacy notice).",
+      }),
       retrievalEnabled: z.boolean().optional(),
       sourceScope: z.discriminatedUnion("mode", [
         z.object({
@@ -742,6 +765,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       branding: z.object({
         hidePoweredBy: z.boolean(),
         privacyPolicyUrl: z.string().nullable(),
+        privacyNotice: AgentPrivacyNoticesSchema.optional(),
       }).optional(),
       intakeActions: z.array(z.object({
         skillName: z.string(),
@@ -962,6 +986,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       branding: z.object({
         hidePoweredBy: z.boolean(),
         privacyPolicyUrl: z.string().nullable(),
+        privacyNotice: AgentPrivacyNoticesSchema.optional(),
       }),
       greetingInstruction: z.string(),
       assistantDefaultLocale: z.string().nullable(),
@@ -1198,6 +1223,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
 
   Object.assign(schemas, {
     AgentSchema,
+    AgentPrivacyNoticesSchema,
     AgentContactRequestDeliverySchema,
     AgentContactRequestDeliveryRequestSchema,
     ConversationAgentSurfaceSettingsSchema,

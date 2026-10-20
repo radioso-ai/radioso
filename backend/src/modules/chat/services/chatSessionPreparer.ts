@@ -52,7 +52,7 @@ import type {
   AgentService,
 } from "../../agents/public.js";
 import { applyAgentRevisionSnapshot } from "../../agents/public.js";
-import { DEFAULT_CONTACT_REQUEST_DELIVERY, defaultAgentBrandingSettings, defaultAgentVoiceSettings, isAgentRetrievalEnabled, unpublishedAgentPublicIdentity } from "../../agents/public.js";
+import { DEFAULT_CONTACT_REQUEST_DELIVERY, defaultAgentBrandingSettings, defaultAgentVoiceSettings, isAgentRetrievalEnabled, isPrivacyNoticeVersionOf, unpublishedAgentPublicIdentity } from "../../agents/public.js";
 import { defaultWebsiteEmbedSettings } from "../../settings/contracts/websiteEmbed.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
 import type { PageReadCapability } from "./pageRead/pageReadDecision.js";
@@ -288,6 +288,11 @@ export interface PrepareChatSessionInput {
   /** Client-claimed referrer of the host page (FR-013); persisted once alongside `pageContext.pageUrl`. */
   entryReferrer?: string | null;
   /**
+   * The privacy notice version the client showed before this first message (#1545). Recorded on
+   * the conversation it starts only when the agent's notices carry it now; ignored for a resumed one.
+   */
+  privacyNoticeVersion?: string | null;
+  /**
    * Unauthenticated, client-persisted visitor-grouping id from the verified public
    * chat session payload (spec 1277 decision 6) — never a credential; falls back to
    * `chatSessionId`/`anonymousSessionId` when a session carries none (API-channel and
@@ -512,6 +517,7 @@ export class ChatSessionPreparer {
         entryPageUrl: input.pageContext?.pageUrl ?? null,
         entryReferrer: input.entryReferrer ?? null,
         requestContext: input.requestContext ?? null,
+        privacyNoticeVersion: conversation ? null : this.acceptedPrivacyNoticeVersion(resolvedLiveAgent, input.privacyNoticeVersion),
         visitorId: newConversationVisitorId,
         ...(revisionResolved.revisionId ? { agentRevisionId: revisionResolved.revisionId } : {}),
         ...(trustedTestRunner ? { purpose: "operator_test" as const } : {}),
@@ -1399,6 +1405,24 @@ export class ChatSessionPreparer {
       },
     });
     return visitorId;
+  }
+
+  /**
+   * A reported notice version is kept only when the agent's live notices carry it: the client says
+   * what it showed, the agent says what exists. A stale page (the notice changed after it loaded)
+   * records none, which the counter shows.
+   */
+  private acceptedPrivacyNoticeVersion(
+    agent: Pick<AgentRecord, "branding">,
+    reported: string | null | undefined,
+  ): string | null {
+    if (!reported) return null;
+    const accepted = isPrivacyNoticeVersionOf(agent.branding.privacyNotice, reported);
+    this.metrics?.incrementCounter("privacy_notice_reports_total", {
+      help: "Privacy notice versions clients reported when a conversation started, by whether the agent's notices carry them.",
+      labels: { outcome: accepted ? "recorded" : "unknown_version" },
+    });
+    return accepted ? reported : null;
   }
 
   /** Spec 1277 Observability: provenance of a new conversation's request facts. */

@@ -582,6 +582,10 @@ export function ChatMessageThread({
     () => messages.findIndex((message) => message.role === 'assistant' && isAiAuthored(message)),
     [messages],
   )
+  // A privacy notice belongs before the first message. When the agent opened the thread, it rides
+  // the identity line on that message; when the visitor did, the whole block opens the thread
+  // instead, and the assistant's first reply carries no second one.
+  const identityOpensThread = Boolean(assistantIdentity?.notice) && firstAiAuthoredIndex !== 0
   const skillCatalogByName = useMemo(
     () => new Map(skillCatalog.map((skill) => [skill.name, skill])),
     [skillCatalog],
@@ -844,7 +848,7 @@ export function ChatMessageThread({
                 ) : (
                   <div className="flex w-full items-start">
                     <div className="min-w-0 flex-1 flex flex-col gap-1.5">
-                      {assistantIdentity && index === firstAiAuthoredIndex ? (
+                      {assistantIdentity && !identityOpensThread && index === firstAiAuthoredIndex ? (
                         <AssistantIdentityLine identity={assistantIdentity} theme={theme} />
                       ) : null}
                       {groupInfo?.isGroupStart && groupInfo.skill ? (
@@ -1171,6 +1175,7 @@ export function ChatMessageThread({
 
   return (
     <div ref={threadRef} className="mx-auto max-w-3xl space-y-6">
+      {assistantIdentity && identityOpensThread ? <AssistantIdentityLine identity={assistantIdentity} theme={theme} /> : null}
       {threadContent}
     </div>
   )

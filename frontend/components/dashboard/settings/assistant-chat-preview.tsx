@@ -10,6 +10,7 @@ import {
   PublicChatBubbleHeader,
 } from '@/components/chat/public-chat-bubble-view'
 import { buildAssistantIdentity } from '@/components/chat/assistant-identity'
+import { choosePrivacyNotice } from '@/lib/privacy-notice'
 import { ChatMessageThread, type ChatThreadMessage } from '@/components/dashboard/chat-message-thread'
 import { Button } from '@/components/ui/button'
 import type { AgentBrandingSettings, AnswerSegment, ChatSuggestion, Citation } from '@/lib/api'
@@ -234,7 +235,7 @@ export function ChatPreview({
           onAnswerFeedback={noopAnswerFeedback}
           assistantAvatarUrl={resolvedLogo}
           assistantAvatarLabel={displayName}
-          assistantIdentity={buildAssistantIdentity(copy, displayName)}
+          assistantIdentity={buildAssistantIdentity(copy, displayName, choosePrivacyNotice(branding?.privacyNotice, null))}
           assistantLinkUtmEnabled={assistantLinkUtmEnabled}
           analyticsEnabled={false}
           theme={embedTheme}

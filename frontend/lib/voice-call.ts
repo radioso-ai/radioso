@@ -1,13 +1,23 @@
 import type { VoiceVendorConversationReportOutcome } from './api-public-voice'
 import type { PublicVoiceSessionResponse } from './api-types'
-import { VoiceMicrophoneUnavailableError, type VoiceRuntime, type VoiceRuntimeLine, type VoiceRuntimeSession, type VoiceVendor } from './voice-runtime'
+import {
+  VoiceMicrophoneUnavailableError,
+  type VoiceCallPrivacyNotice,
+  type VoiceRuntime,
+  type VoiceRuntimeLine,
+  type VoiceRuntimeSession,
+  type VoiceVendor,
+} from './voice-runtime'
 import type { VoiceSessionEvent } from './voice-session'
 
 /**
  * What the page needs to open the session on the vendor, from the start's answer; `signedUrl` is a
  * bearer credential. `recordingNotice` is the agent's line telling the caller the call is recorded.
  */
-export type StartedVoiceSession = Pick<PublicVoiceSessionResponse, 'vendor' | 'signedUrl' | 'sessionKey' | 'locale' | 'recordingNotice'>
+export type StartedVoiceSession = Pick<PublicVoiceSessionResponse, 'vendor' | 'signedUrl' | 'sessionKey' | 'locale' | 'recordingNotice'> & {
+  /** The agent's privacy notice the panel showed before the call, which the call says and records. */
+  privacyNotice?: VoiceCallPrivacyNotice
+}
 
 /**
  * How a session start ended, as the visitor can act on it. `refused` covers every answer that is
@@ -130,7 +140,12 @@ export function runVoiceCall(dependencies: VoiceCallDependencies, observer: Voic
 
     try {
       const opened = await runtimes[start.session.vendor].open(
-        { signedUrl: start.session.signedUrl, sessionKey: start.session.sessionKey, locale: start.session.locale },
+        {
+          signedUrl: start.session.signedUrl,
+          sessionKey: start.session.sessionKey,
+          locale: start.session.locale,
+          ...(start.session.privacyNotice ? { privacyNotice: start.session.privacyNotice } : {}),
+        },
         {
           onConnecting: () => {
             if (stopped || connectTimer !== null) return

@@ -239,6 +239,18 @@ describe("VoiceTurnService", () => {
     expect(laterChat.requests[0]).not.toHaveProperty("visitorKey");
   });
 
+  it("hands chat the privacy notice version the page showed on the session's first turn only (#1545)", async () => {
+    const firstChat = fakeChat([{ type: "conversation", conversationId }, { type: "chunk", text: "Hi." }, done()]);
+    const first = new VoiceTurnService({ ...voiceOff, sessions: fakeSessions(null), chat: firstChat, logger: fakeLogger() });
+    await collect(first.runTurn(input({ privacyNoticeVersion: "en:0123456789abcdef" }), new AbortController().signal));
+    expect(firstChat.requests[0]).toMatchObject({ privacyNoticeVersion: "en:0123456789abcdef" });
+
+    const laterChat = fakeChat([{ type: "chunk", text: "Yes." }, done()]);
+    const later = new VoiceTurnService({ ...voiceOff, sessions: fakeSessions(conversationId), chat: laterChat, logger: fakeLogger() });
+    await collect(later.runTurn(input({ privacyNoticeVersion: "en:0123456789abcdef" }), new AbortController().signal));
+    expect(laterChat.requests[0]).not.toHaveProperty("privacyNoticeVersion");
+  });
+
   it("groups a started session's visitor by the public session when the page sent no visitor key, as the embed's chat does", async () => {
     const starts = { findStartedVisitor: vi.fn().mockResolvedValue({ publicSessionId: "77777777-7777-4777-8777-777777777777", visitorKey: null }) };
     const chat = fakeChat([{ type: "conversation", conversationId }, { type: "chunk", text: "Hi." }, done()]);

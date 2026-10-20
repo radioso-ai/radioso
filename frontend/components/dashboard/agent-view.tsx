@@ -30,6 +30,7 @@ import {
 } from '@/lib/agent-creation-contributions'
 import { useWorkspace } from '@/lib/workspace-context'
 import { useCopilotEntity } from '@/lib/copilot-context'
+import { choosePrivacyNotice } from '@/lib/privacy-notice'
 
 type AgentPageSaveState = {
   state: 'idle' | 'saved' | 'saving' | 'error'
@@ -518,6 +519,7 @@ export function AgentView({
             agentId={selectedAgentId}
             workspaceId={activeWorkspaceId ?? selectedAgent.workspaceId}
             assistantName={selectedAgent?.name}
+            privacyNotice={choosePrivacyNotice(selectedAgent?.branding?.privacyNotice, selectedAgent?.assistantDefaultLocale)}
             evalsHref={evalsHref}
             agentVersionsHref={agentVersionsHref}
             usageHref={usageHref}

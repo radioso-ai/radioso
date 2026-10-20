@@ -99,7 +99,9 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
 - `adapters/*` translate one wire to the domain port and back, and nothing
   else. `adapters/openaiCompletions/` is the OpenAI chat-completions wire;
   vendors that share it differ only by a dialect in `dialects.ts`, which is
-  data: where the session key, the session's locale and the turn's own
+  data: where the session key, the session's locale, the version of the
+  privacy notice the page showed (`privacyNoticeVersionFor`, which the
+  session's first turn hands to chat) and the turn's own
   language travel (a header, a body path, or a named tool's calls and results
   in the replayed `messages`, which `languageSwitches.ts` reads; the same tool
   is the one a switching reply calls, and the presenter renders that call), the default

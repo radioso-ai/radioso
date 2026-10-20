@@ -161,6 +161,24 @@ describe("ConversationRetentionSweep", () => {
     expect(second.removed.conversations).toBe(1);
   });
 
+  it("keeps giving a backlogged workspace batches across rounds, past more empty workspaces than the empty-check budget allows", async () => {
+    const empties = Array.from({ length: 5 }, (_, index) => policy(`ws-b-empty-${index}`));
+    const { erasure, calls } = createErasure({ "ws-a-backlog": 20 });
+    const { sweep } = createSweep({
+      policies: [policy("ws-a-backlog"), ...empties],
+      erasure,
+      budget: { conversationBatchSize: 2, maxConversationBatches: 4, maxEmptyChecks: 3 },
+    });
+
+    const result = await sweep.run();
+
+    // The empty-check budget only bounds the first round, so later rounds keep serving the one
+    // workspace a batch already found backlogged, up to the erasure-batch budget.
+    expect(calls.filter((call) => call.workspaceId === "ws-a-backlog")).toHaveLength(4);
+    expect(result.removed.conversations).toBe(8);
+    expect(result.drained).toBe(false);
+  });
+
   it("keeps a workspace in the rounds when its batch claimed a full one, even if the recheck erased fewer", async () => {
     const { erasure, calls } = createErasure({ "ws-a": 3 }, { revived: { "ws-a": 1 } });
     const { sweep } = createSweep({ policies: [policy("ws-a")], erasure, budget: { conversationBatchSize: 2 } });

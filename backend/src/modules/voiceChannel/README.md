@@ -846,5 +846,6 @@ the key, the vendor URL or any audio.
 - `cd backend && pnpm exec vitest run tests/unit/eval-suite/voice-behaviour.test.ts`
   (the conversation-quality suite's voice cases: bridge timing, the turn limit and the
   outcome derivation, driven through a real `VoiceTurnService` over a scripted chat
-  backend — `tests/fixtures/voice-eval/`; `pnpm run evals`/`evals:ci` run the same cases
-  nightly against the real brain, reporting first-speech latency)
+  backend — `tests/fixtures/voice-eval/`; `pnpm run evals`/`evals:ci` run every case
+  but the deterministic-only turn-limit case nightly against the real brain, gating on
+  behaviour and reporting first-speech latency without gating on it)

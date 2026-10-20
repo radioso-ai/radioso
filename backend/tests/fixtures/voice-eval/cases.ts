@@ -42,7 +42,10 @@ export const voiceEvalCases: ConversationQualityCase[] = [
       ],
     },
     assertions: [
-      { type: "voice_bridge_emitted", expected: false },
+      // The stall bridge (2.5 s) fires whenever the live planner is slow, so live this is a
+      // latency fact and gates nothing; only the deterministic half, which scripts the brain,
+      // holds the quick-reply lane to it.
+      { type: "voice_bridge_emitted", expected: false, latencyDependent: true },
       { type: "voice_turn_outcome", kind: "continue" },
     ],
   },
@@ -58,6 +61,9 @@ export const voiceEvalCases: ConversationQualityCase[] = [
         { type: "status", stage: "interpreting" },
         { type: "stall" },
       ],
+      // No live turn holds the planner open for 10 s on demand, so live this case would gate
+      // only its `continue` outcome, which any answer passes.
+      deterministicOnly: true,
     },
     assertions: [
       { type: "voice_turn_limit_reached", expected: true },

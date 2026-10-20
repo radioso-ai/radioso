@@ -157,20 +157,40 @@ export const scopeJudgeAssertions = (
       });
 
 /**
- * Drops `voice_turn_limit_reached` wherever it appears. The turn limit (`VOICE_BEHAVIOR.turnLimitMs`,
- * 10 s) exists for a stalled planner; the deterministic harness forces that with a chat backend that
- * never answers, which the live brain has no equivalent of — a real turn answers in a few seconds
- * however it is worded, so the assertion can only ever observe `false` here. Scoping it out of the
- * live score, the same way `scopeJudgeAssertions` scopes out `llm_judge`, keeps the deterministic
- * suite (which builds its own report from the unscoped case) asserting it for real.
+ * Whether a voice assertion gates a live run. Live, the brain's speed decides the turn limit
+ * (`VOICE_BEHAVIOR.turnLimitMs`, 10 s, exists for a stalled planner, and a real turn answers in a
+ * few seconds however it is worded) and any expectation marked `latencyDependent`, such as "no
+ * bridge" on a quick reply, which the 2.5 s stall bridge breaks whenever the planner is slow.
+ * Those are latency facts live and behaviour facts only where the brain is scripted, so the
+ * deterministic half, which scores the unscoped case, keeps asserting them.
  */
-export const scopeVoiceTurnLimitAssertions = (
+const gatesLiveVoiceRun = (assertion: ConversationQualityCase["assertions"][number]): boolean =>
+  assertion.type !== "voice_turn_limit_reached"
+  && !(assertion.type === "voice_bridge_emitted" && assertion.latencyDependent === true);
+
+/**
+ * What a live run drives of the voice cases, and gates each on: a `deterministicOnly` case is
+ * skipped, and every other keeps only the assertions `gatesLiveVoiceRun` lets through. A voice
+ * case left with nothing to gate would pass whatever the agent did, so it is refused before the
+ * run seeds anything. Text cases pass through untouched.
+ */
+export const scopeVoiceCasesForLiveRun = (
   cases: readonly ConversationQualityCase[],
 ): ConversationQualityCase[] =>
-  cases.map((evalCase) => ({
-    ...evalCase,
-    assertions: evalCase.assertions.filter((assertion) => assertion.type !== "voice_turn_limit_reached"),
-  }));
+  cases
+    .filter((evalCase) => evalCase.voiceTurn?.deterministicOnly !== true)
+    .map((evalCase) => {
+      if (!evalCase.voiceTurn) {
+        return evalCase;
+      }
+      const assertions = evalCase.assertions.filter(gatesLiveVoiceRun);
+      if (assertions.length === 0) {
+        throw new Error(
+          `Voice case "${evalCase.id}" gates nothing live once its latency-dependent assertions are dropped; give it a behaviour assertion or mark it voiceTurn.deterministicOnly.`,
+        );
+      }
+      return { ...evalCase, assertions };
+    });
 
 /**
  * The eval layer's LLM judge on the cheapest text model the configuration resolves: the
@@ -488,7 +508,8 @@ const main = async (): Promise<void> => {
     const target = await ensureTarget(deps, flags);
     flags.workspaceId = target.workspaceId;
     flags.agentId = target.agentId;
-    let cases = filterByTags(dataset, flags.tags);
+    // A live run never gates a voice case on latency, and skips a deterministic-only one.
+    let cases = scopeVoiceCasesForLiveRun(filterByTags(dataset, flags.tags));
     const runsVoiceCases = needsVoiceSettings(cases);
 
     console.log(`Seeding fixtures onto agent ${flags.agentId} in workspace ${flags.workspaceId}…`);
@@ -508,8 +529,6 @@ const main = async (): Promise<void> => {
     cases = remapIds(cases, documentIds, routineIds);
     // llm_judge assertions are graded only on the cases a --judge-tag opted in.
     cases = scopeJudgeAssertions(cases, flags.judgeTags);
-    // No live turn can be made to hold the planner open for voice's 10 s limit on demand.
-    cases = scopeVoiceTurnLimitAssertions(cases);
     const suiteJudge = flags.judgeTags.length > 0 ? createSuiteJudge(env, flags.judgeModel) : null;
     if (suiteJudge) {
       console.log(`Grading llm_judge assertions on cases tagged ${flags.judgeTags.join(", ")} with ${suiteJudge.model}.`);

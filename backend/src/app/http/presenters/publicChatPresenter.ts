@@ -257,7 +257,11 @@ export async function* stripPublicStreamCitationArtifacts(
     }
 
     if (event.type === "done") {
-      chunkSanitizer.flush();
+      // Text held behind a `[[` that never became anchor syntax reaches the visitor first.
+      const heldTail = chunkSanitizer.flush();
+      if (heldTail) {
+        yield { type: "chunk", text: heldTail };
+      }
       yield stripPublicChatCitationArtifacts(presentChatPayload(event), exposeCitations) as ChatStreamEvent;
       continue;
     }

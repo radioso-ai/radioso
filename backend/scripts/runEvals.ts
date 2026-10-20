@@ -62,7 +62,10 @@ import { conversationQualityCases } from "../tests/fixtures/conversation-quality
 import { conversationQualityCorpus } from "../tests/fixtures/conversation-quality/corpus.js";
 import { conversationQualityDirectives } from "../tests/fixtures/conversation-quality/directives.js";
 import { conversationQualityRoutines, CREATE_RETURN_TICKET_SKILL } from "../tests/fixtures/conversation-quality/routines.js";
-import { createReviewTurnRunnerPort, createWorkbenchReplayRunnerPort } from "./evalRunnerAdapter.js";
+import { VOICE_EVAL_AGENT_VOICE_SETTINGS, VOICE_EVAL_FALLBACK_LINE } from "../tests/fixtures/voice-eval/agent.js";
+import { voiceEvalCases } from "../tests/fixtures/voice-eval/cases.js";
+import { voiceEvalRoutines } from "../tests/fixtures/voice-eval/routines.js";
+import { createReviewTurnRunnerPort, createVoiceTurnRunnerPort, createWorkbenchReplayRunnerPort } from "./evalRunnerAdapter.js";
 
 const BASELINE_PATH = fileURLToPath(
   new URL("../tests/fixtures/conversation-quality/baseline.json", import.meta.url),
@@ -152,6 +155,22 @@ export const scopeJudgeAssertions = (
         ...evalCase,
         assertions: evalCase.assertions.filter((assertion) => assertion.type !== "llm_judge"),
       });
+
+/**
+ * Drops `voice_turn_limit_reached` wherever it appears. The turn limit (`VOICE_BEHAVIOR.turnLimitMs`,
+ * 10 s) exists for a stalled planner; the deterministic harness forces that with a chat backend that
+ * never answers, which the live brain has no equivalent of — a real turn answers in a few seconds
+ * however it is worded, so the assertion can only ever observe `false` here. Scoping it out of the
+ * live score, the same way `scopeJudgeAssertions` scopes out `llm_judge`, keeps the deterministic
+ * suite (which builds its own report from the unscoped case) asserting it for real.
+ */
+export const scopeVoiceTurnLimitAssertions = (
+  cases: readonly ConversationQualityCase[],
+): ConversationQualityCase[] =>
+  cases.map((evalCase) => ({
+    ...evalCase,
+    assertions: evalCase.assertions.filter((assertion) => assertion.type !== "voice_turn_limit_reached"),
+  }));
 
 /**
  * The eval layer's LLM judge on the cheapest text model the configuration resolves: the
@@ -290,6 +309,53 @@ const seedFixtures = async (
 export const needsPublishedAgent = (cases: readonly ConversationQualityCase[]): boolean =>
   cases.some((evalCase) => evalCase.executionMode === "review");
 
+/** Only a voice case drives the voice turn policy, so only a run that selects one turns voice on. */
+export const needsVoiceSettings = (cases: readonly ConversationQualityCase[]): boolean =>
+  cases.some((evalCase) => evalCase.voiceTurn !== undefined);
+
+/**
+ * Turns voice on for the seeded agent with the lines the voice cases need: a bridge line so a
+ * case that searches has one to speak, and the fallback line `evalRunnerAdapter.ts`'s
+ * `observeVoiceTurn` reads a turn's whole spoken text against to tell the turn limit apart from
+ * a real answer (see `VOICE_EVAL_FALLBACK_LINE`). No `runtime` is bound: a voice case drives the
+ * turn policy directly and starts no vendor session.
+ */
+const seedVoiceSettings = (deps: Deps, flags: Flags): Promise<unknown> =>
+  deps.agentService.update(flags.workspaceId, flags.agentId, { voice: VOICE_EVAL_AGENT_VOICE_SETTINGS });
+
+/**
+ * Seeds `voiceEvalRoutines` (just the callback hand-off routine today) the same idempotent way
+ * `seedFixtures` seeds the text suite's routines, but only while a voice case is selected: a
+ * text-only run never carries this extra "ask for a callback" trigger alongside
+ * `contactSupportRoutine`'s, so it cannot shift an already-recorded text case's routing.
+ */
+const seedVoiceRoutines = async (deps: Deps, flags: Flags): Promise<void> => {
+  for (const routine of voiceEvalRoutines) {
+    try {
+      await deps.routineDefinitionService.createDraft(flags.workspaceId, flags.agentId, {
+        name: routine.name,
+        enabled: routine.enabled,
+        activation: routine.activation,
+        slots: routine.slots,
+        steps: routine.steps,
+        transitions: routine.transitions,
+        terminals: routine.terminals,
+        completionExport: routine.completionExport,
+        exposure: routine.exposure,
+      });
+    } catch (error) {
+      // A repeat run against the same disposable agent collides on the (agent_id, name, version)
+      // uniqueness; the routine is already there, so there is nothing left to seed.
+      const existing = (await deps.routineDefinitionService.list(flags.workspaceId, flags.agentId)).some(
+        (candidate) => candidate.name === routine.name && candidate.enabled,
+      );
+      if (!existing) {
+        console.warn(`  seed: voice routine "${routine.name}" skipped — ${(error as Error).message}`);
+      }
+    }
+  }
+};
+
 /**
  * The skills the seeded routines dispatch. Publishing refuses a routine whose tool step names a
  * skill the agent lacks, so the agent holds these skills while it is published.
@@ -409,7 +475,7 @@ const main = async (): Promise<void> => {
     process.exit(2);
   }
 
-  const dataset = parseConversationQualityCases(conversationQualityCases);
+  const dataset = parseConversationQualityCases([...conversationQualityCases, ...voiceEvalCases]);
   const env = getEnv();
   if (flags.migrate) {
     console.log("Applying migrations…");
@@ -422,9 +488,16 @@ const main = async (): Promise<void> => {
     const target = await ensureTarget(deps, flags);
     flags.workspaceId = target.workspaceId;
     flags.agentId = target.agentId;
+    let cases = filterByTags(dataset, flags.tags);
+    const runsVoiceCases = needsVoiceSettings(cases);
+
     console.log(`Seeding fixtures onto agent ${flags.agentId} in workspace ${flags.workspaceId}…`);
     const { documentIds, routineIds } = await seedFixtures(deps, flags);
     await waitForDocumentsReady(deps, flags.workspaceId, documentIds);
+    if (runsVoiceCases) {
+      await seedVoiceSettings(deps, flags);
+      await seedVoiceRoutines(deps, flags);
+    }
 
     const agent = await deps.agentRepository.findByIdAndWorkspaceId(flags.agentId, flags.workspaceId);
     if (!agent) {
@@ -432,10 +505,11 @@ const main = async (): Promise<void> => {
     }
     const baselineAgentConfig = projectInternalAgentConfig(agent);
 
-    let cases = filterByTags(dataset, flags.tags);
     cases = remapIds(cases, documentIds, routineIds);
     // llm_judge assertions are graded only on the cases a --judge-tag opted in.
     cases = scopeJudgeAssertions(cases, flags.judgeTags);
+    // No live turn can be made to hold the planner open for voice's 10 s limit on demand.
+    cases = scopeVoiceTurnLimitAssertions(cases);
     const suiteJudge = flags.judgeTags.length > 0 ? createSuiteJudge(env, flags.judgeModel) : null;
     if (suiteJudge) {
       console.log(`Grading llm_judge assertions on cases tagged ${flags.judgeTags.join(", ")} with ${suiteJudge.model}.`);
@@ -446,17 +520,34 @@ const main = async (): Promise<void> => {
       agentId: flags.agentId,
       baselineAgentConfig,
     });
-    const reviewPort = needsPublishedAgent(cases)
+    // A voice case runs the published revision too: the voice turn port streams through the
+    // same chat answer path the completions route and a real session use, which answers for
+    // the agent as it is published, not the draft `WorkbenchReplayRunner` replays directly.
+    const agentRevisionId = needsPublishedAgent(cases) || runsVoiceCases
+      ? await publishSeededAgent(deps, flags)
+      : null;
+    const reviewPort = needsPublishedAgent(cases) && agentRevisionId
       ? createReviewTurnRunnerPort(
           { chat: deps.chatService, conversations: deps.conversationRepository, messages: deps.messageRepository },
-          {
-            workspaceId: flags.workspaceId,
-            agentId: flags.agentId,
-            agentRevisionId: await publishSeededAgent(deps, flags),
-          },
+          { workspaceId: flags.workspaceId, agentId: flags.agentId, agentRevisionId },
         )
       : {};
-    const port = { ...replayPort, ...reviewPort };
+    // A voice case drives the real voice turn policy over `deps.voiceTurns`, never the chat
+    // reply's content, so it has its own port rather than riding the replay runner's.
+    const voicePort = runsVoiceCases
+      ? createVoiceTurnRunnerPort(deps.voiceTurns, {
+          workspaceId: flags.workspaceId,
+          agentId: flags.agentId,
+          vendor: "generic",
+          fallbackLine: VOICE_EVAL_FALLBACK_LINE,
+        })
+      : null;
+    const port = {
+      ...replayPort,
+      ...reviewPort,
+      run: (evalCase: ConversationQualityCase) =>
+        evalCase.voiceTurn && voicePort ? voicePort.run(evalCase) : replayPort.run(evalCase),
+    };
 
     if (flags.samples > 1) {
       console.log(`Sampling each case ${flags.samples}× (pass threshold ${flags.passThreshold})…`);

@@ -59,6 +59,13 @@ the visitor row. The bookkeeping lives in
 `backend/src/db/repositories/conversationErasureRepository.ts`, beside the
 erasure that runs it, not in this module.
 
+**Data subject requests (#1542):** `WebVisitorIdentityFinder` (beside the
+repository) finds a visitor by the verified customer id the host set, exactly,
+and reaches their conversations and customer id; `VisitorRecordExporter` writes
+the export's `visitors` section. A visitor key alone names nobody an operator
+could search for, so a lookup finds verified visitors only; an anonymous
+visitor is reached by its id, from one of its conversations. The use case lives in `modules/privacy/`.
+
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/visitor-resolver.test.ts`

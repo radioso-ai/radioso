@@ -266,6 +266,8 @@ export interface OpenApiSchemaCatalog {
   MessageUsageResponseSchema: z.ZodTypeAny;
   InternalUsageResponseSchema: z.ZodTypeAny;
   IngestionSettingsSchema: z.ZodTypeAny;
+  PrivacySettingsSchema: z.ZodTypeAny;
+  UpdatePrivacySettingsRequestSchema: z.ZodTypeAny;
   DocumentTypeFieldSchema: z.ZodTypeAny;
   DocumentTypeDefinitionSchema: z.ZodTypeAny;
   RetiredDocumentTypeFieldSchema: z.ZodTypeAny;

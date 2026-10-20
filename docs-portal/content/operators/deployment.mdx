@@ -1,7 +1,7 @@
 ---
 title: "Deployment"
 description: "Production deployment expectations for Radioso and the standalone docs portal."
-last_updated: 2026-10-17
+last_updated: 2026-10-19
 ---
 
 import { Callout } from 'nextra/components'
@@ -189,6 +189,14 @@ Each replayed turn also counts against the same answer meter a live customer tur
 Ray conversations hold operator questions, configuration detail, and excerpts of customer conversations, so they expire on a schedule. A conversation is deleted 90 days after its last activity, along with its messages and proposals. Set `COPILOT_CONVERSATION_RETENTION_DAYS` to change the window, or `0` to keep conversations indefinitely; the Terraform variable is `copilot_conversation_retention_days`.
 
 The sweep runs in the document worker, so retention happens only where that process runs. Under the Cloud Run task runtime the trigger is a scheduled push to `POST /internal/tasks/copilot-retention/sweep`, which the bundled Terraform provisions as a daily Cloud Scheduler job. A deployment that runs neither the worker poll loop nor that schedule keeps Ray conversations forever, whatever the window says.
+
+## Conversation retention
+
+The conversation retention sweep runs in the document worker every 15 minutes and enforces each workspace's retention window and the fixed windows on summaries, routine state and raw inbound mail (see [Data retention](/operators/data-retention)). Under the Cloud Run task runtime the trigger is a scheduled push to `POST /internal/tasks/periodic-tasks/conversation-retention/run`; the bundled Terraform provisions the Cloud Scheduler job (override the cadence with `conversation_retention_schedule`) and alerts on its failures with the other scheduler jobs.
+
+The same Terraform pins how long deleted data outlives an erasure: seven Cloud SQL backups, and 30 days in the project's `_Default` log bucket. Before the first apply in a project, confirm that bucket is in `global` with `gcloud logging buckets describe _Default --location=global --project=<project>`.
+
+Point-in-time recovery is a per-stack choice, `db_point_in_time_recovery_enabled`, off by default; when on, it keeps 7 days of transaction logs. Turning it on restarts the Cloud SQL instance, so enable it per stack deliberately, in a quiet window, and never as a side effect of an unrelated apply.
 
 ## Slack inbound event retention
 

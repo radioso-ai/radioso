@@ -584,6 +584,35 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     );
   });
 
+  // #1575: Quality's unmet-directives signal reads this key off the assistant message.
+  it("persists the names of the directives the answer graded unmet, and only those, on assistant metadata", () => {
+    const build = (metadata: Record<string, unknown>) => buildTurnTraceForPresentation({
+      workspaceId: "workspace_1",
+      session: session(),
+      presentation: { ...presentation(), metadata },
+      requestReceivedAt: Date.now(),
+      answerStartedAt: Date.now(),
+      stream: false,
+      engineTrace: engineTrace(),
+    }).assistantMessage;
+
+    const unmet = build({
+      directiveAdherence: [
+        { directive: "prices-from-the-course-page", ruleId: "d1", satisfied: false, applicable: true, note: "quoted fees" },
+        { directive: "offer-form-on-partial", ruleId: "d2", satisfied: false, applicable: false, note: "answered" },
+        { directive: "be-brief", ruleId: "d3", satisfied: true, applicable: true, note: "short" },
+      ],
+      ungradedDirectives: ["represent-organization"],
+    });
+    const allMet = build({
+      directiveAdherence: [{ directive: "be-brief", ruleId: "d3", satisfied: true, applicable: true, note: "short" }],
+    });
+
+    expect(unmet.metadata?.unmetDirectives).toEqual(["prices-from-the-course-page"]);
+    expect(allMet.metadata).not.toHaveProperty("unmetDirectives");
+    expect(build({}).metadata).not.toHaveProperty("unmetDirectives");
+  });
+
   it("persists an explicit null summary when the summary-aware session had none", () => {
     const { assistantMessage } = buildTurnTraceForPresentation({
       workspaceId: "workspace_1",

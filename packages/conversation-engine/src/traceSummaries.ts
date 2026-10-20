@@ -46,6 +46,7 @@ export const composeOutputsFor = (
   options: { streamed: boolean },
 ): Record<string, unknown> => {
   const adherence = response.metadata?.directiveAdherence;
+  const ungradedDirectives = response.metadata?.ungradedDirectives;
   return {
     answerLength: response.answer.length,
     citationCount: Array.isArray(response.citations) ? response.citations.length : 0,
@@ -54,6 +55,9 @@ export const composeOutputsFor = (
     streamed: options.streamed,
     outcomes: outcomes.map(summarizeOutcomeForCompose),
     ...(adherence ? { adherence } : {}),
+    // Rules rendered into the answer prompt that the answer left ungraded (#1575),
+    // by directive name: authored config, like the matched directives themselves.
+    ...(ungradedDirectives?.length ? { ungradedDirectives } : {}),
     // A coverage verdict sink yielded this turn before any answer text was
     // released (#1260): the compose stage still ran, but produced nothing —
     // the post-evidence routine result is what the turn actually returns.
@@ -137,7 +141,7 @@ export const guidanceToSteering = (
 });
 
 export const composeAdherenceLinks = (response: RenderableTurn) =>
-  response.metadata?.directiveAdherence
+  response.metadata?.directiveAdherence || response.metadata?.ungradedDirectives?.length
     ? [{ from: "directives", to: "compose", kind: "adherence" }]
     : undefined;
 

@@ -1,5 +1,4 @@
 import type {
-  DirectiveAdherenceEntry,
   PendingRenderableTurn,
   RenderableTurn,
   RoutineGroundedAnswerInput,
@@ -8,6 +7,7 @@ import type {
 } from "@radioso/conversation-contract";
 
 import { CHAT_TURN_ROUTE } from "../../../../shared/domain/chatTurnRoute.js";
+import { directiveAdherenceMetadataOf } from "../../../../shared/domain/directiveAdherence.js";
 import { readRetrievalResult, type RetrievalPipelineResult } from "../../../retrieval/public.js";
 import type { AnswerSegment, ChatCitation } from "../../contracts/answerTypes.js";
 import type {
@@ -89,9 +89,7 @@ const toRenderableTurn = (presentation: ChatPresentedAnswer): RenderableTurn => 
     answerSegments: presentation.answerSegments,
     planningCitations: presentation.planningCitations,
     grounding: presentation.grounding,
-    ...(presentation.metadata?.directiveAdherence
-      ? { directiveAdherence: presentation.metadata.directiveAdherence as DirectiveAdherenceEntry[] }
-      : {}),
+    ...directiveAdherenceMetadataOf(presentation.metadata),
     effectiveRetrieval: presentation.effectiveRetrieval,
   },
 });

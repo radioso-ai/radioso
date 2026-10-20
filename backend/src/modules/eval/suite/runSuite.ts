@@ -46,6 +46,7 @@ export const runConversationQualitySuite = async (
       status: score.status,
       reason: score.reason,
       verdicts: score.verdicts,
+      ...(typeof output.voiceTurn?.firstSpeechMs === "number" ? { firstSpeechMs: output.voiceTurn.firstSpeechMs } : {}),
     });
   }
 

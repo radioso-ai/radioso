@@ -10,6 +10,7 @@ describe('settings tab metadata', () => {
   it('defines ordered section navigation for workspace settings tabs', () => {
     expect(settingsTabMetadata.workspace.sections.map((section) => section.id)).toEqual([
       'workspace-access',
+      'data-retention',
       'webhook-destinations',
     ])
 

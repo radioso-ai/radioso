@@ -29,6 +29,14 @@ composition calls them and assembles the result.
   drains, and the dead-letter retention sweep. Modules enqueue through the
   `BackgroundJobQueue` port and return handlers that `dependencies.ts` passes to
   `createRuntime`; see `backend/src/shared/background-jobs/README.md`.
+- `conversationErasure.ts` and `conversationRetention.ts`: every module's eraser
+  for conversation-derived rows no foreign key reaches, and every module's fixed
+  retention window (`ConversationDataRetentionRule`) over rows that outlive their
+  conversation's own window. The retention sweep is a built-in periodic task
+  (`conversation-retention`), prepended to the `registerPeriodicTask` entries in
+  `dependencies.ts`, so the poll worker's interval loop and the push worker's
+  `/internal/tasks/periodic-tasks/:taskId/run` route both run it. A module that
+  keeps a shorter-lived copy of conversation content registers its rule here.
 - `conversationLockOrder.ts`: the conversation lock protocol every unit of work
   touching a conversation's ownership, held replies or mailbox policy follows,
   and the bounded deadlock retry for the units that can still meet one. Read it

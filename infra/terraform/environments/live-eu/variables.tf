@@ -58,6 +58,12 @@ variable "worker_max_instances" {
   default     = 5
 }
 
+variable "db_point_in_time_recovery_enabled" {
+  description = "Whether Cloud SQL keeps 7 days of point-in-time recovery logs for this stack. Turning it on restarts the instance."
+  type        = bool
+  default     = false
+}
+
 variable "db_tier" {
   description = "Cloud SQL tier for EU live."
   type        = string

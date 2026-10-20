@@ -2035,6 +2035,8 @@ export interface Workspaces {
   anonymous_rate_limit: Generated<number>;
   assistant_default_locale: string | null;
   assistant_name: Generated<string>;
+  conversation_retention_days: number | null;
+  conversation_retention_swept_at: Timestamp | null;
   created_at: Generated<Timestamp>;
   default_agent_id: string | null;
   greeting_instruction: Generated<string>;

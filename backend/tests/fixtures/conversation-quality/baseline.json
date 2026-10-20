@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-19T10:09:19.870Z",
+  "generatedAt": "2026-10-19T13:33:20.806Z",
   "passThreshold": 1,
   "cases": {
     "clarification-ambiguous-plan": {
@@ -235,12 +235,42 @@
     "referent-course-behind-contact-form": {
       "status": "pass",
       "passRate": 1,
-      "samples": 3
+      "samples": 5
     },
     "referent-course-missing-from-corpus": {
       "status": "fail",
-      "passRate": 0.3333333333333333,
-      "samples": 3
+      "passRate": 0.6,
+      "samples": 5
+    },
+    "directive-withholds-figures-en": {
+      "status": "fail",
+      "passRate": 0.4,
+      "samples": 5
+    },
+    "directive-withholds-figures-it": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "voice-bridge-on-searching": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "voice-outcome-handoff": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "voice-quick-reply-no-bridge": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "voice-turn-limit-fires": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
     }
   }
 }

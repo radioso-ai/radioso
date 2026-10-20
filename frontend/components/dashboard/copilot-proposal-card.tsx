@@ -187,7 +187,7 @@ export const targetReference = (
   if (summary.targetType === 'ingestion_settings') {
     return { entity: { type: 'ingestion_settings' } }
   }
-  if (summary.targetType === 'workspace_setting') {
+  if (summary.targetType === 'workspace_setting' || summary.targetType === 'privacy_setting') {
     return { entity: { type: 'workspace_settings' } }
   }
   if (summary.targetType === 'directive') {

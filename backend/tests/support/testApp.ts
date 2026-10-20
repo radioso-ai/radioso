@@ -971,6 +971,8 @@ export const createTestDependencies = (overrides: {
   cutReplyStore?: ChatServiceOptions["cutReplyStore"];
   /** Plans each fresh turn in one model call; omitted means turns run the staged path without a planner. */
   turnPlanCoordinator?: ChatServiceOptions["turnPlanCoordinator"];
+  /** The voice turn policy's bridge and limit timing; omitted means production's `VOICE_BEHAVIOR`. */
+  voiceTurnTiming?: Parameters<typeof createVoiceChannelComposition>[0]["timing"];
   /** Observes the embed-config CDN invalidations; omitted means the deployment has no CDN to invalidate. */
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
   /** Composes the agent tool catalog over the test app's agent row and published-revision readers. */
@@ -3065,6 +3067,7 @@ export const createTestDependencies = (overrides: {
       auditService,
       metricsRegistry,
       logger,
+      timing: overrides.voiceTurnTiming,
     }),
     voiceSessionStarts,
     voiceSessionAvailability: voiceSessionStarts,

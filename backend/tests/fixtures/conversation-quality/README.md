@@ -129,12 +129,16 @@ The deterministic harness (`tests/unit/eval-suite/voice-behaviour.test.ts`, thro
 exactly one of them in `voiceTurn`, so none can be written that runs nowhere:
 
 - A case naming `voiceTurn.scriptedBrain` (`voice-bridge-on-searching`,
-  `voice-quick-reply-no-bridge`) runs on a fresh test app's own planner, retrieval, composer and
-  voice turn policy, on production timing, with only the model scripted: the brain of that name in
-  `tests/fixtures/voice-eval/scriptedBrains.ts`. The turn goes through the same
-  `seedVoiceSettings` and `createVoiceTurnRunnerPort` the live run uses. The thank-you's composer
-  takes a second, so a thank-you that leaves the planner's quick-reply lane bridges on its
-  composing phase and fails the case; the harness keeps that regression as a test of its own.
+  `voice-quick-reply-no-bridge`) runs on a fresh test composition (`createTestDependencies`, no
+  HTTP app) with its own planner, retrieval, composer and voice turn policy, and only the model
+  scripted: the brain of that name in `tests/fixtures/voice-eval/scriptedBrains.ts`. The agent is
+  registered the way the live run bootstraps one (`registerDisposableAgent`), published, and
+  given voice by the same `seedVoiceSettings`, and the turn goes through the live run's
+  `createVoiceTurnRunnerPort`. The brains run the voice policy on generous timing (the
+  composing-idle bridge at 5 seconds, the stall bridge and the limit at 30), so a loaded runner
+  never races a deadline and the case asserts what the chat turn reported. The thank-you's
+  composer takes 6 seconds, so a thank-you that leaves the planner's quick-reply lane bridges on
+  its composing phase and fails the case; the harness keeps that regression as a test of its own.
 - A case with `voiceTurn.chatEvents` (`voice-turn-limit-fires`, `voice-outcome-handoff`) plays
   that script as the turn's chat backend against a bare `VoiceTurnService` on shrunk timers, over
   the `generic` dialect's vendor tag: a turn that stalls until its limit, and one that closes on a

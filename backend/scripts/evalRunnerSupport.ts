@@ -4,6 +4,7 @@
  * live run gates and on what, the committed baseline file, the voice block a voice case needs, and
  * closing what the composition opened.
  */
+import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 
 import { closeDependencies, type ClosableDependencies } from "../src/app/server/closeDependencies.js";
@@ -15,6 +16,26 @@ import { VOICE_EVAL_LOCALE, voiceEvalVoiceLines } from "../tests/fixtures/voice-
 
 const isJsonObject = (value: unknown): value is Record<string, unknown> =>
   typeof value === "object" && value !== null && !Array.isArray(value);
+
+/** The account and agent calls `registerDisposableAgent` makes, narrowed so a test composition can serve them. */
+interface DisposableAgentPorts {
+  authService: { register(input: { email: string; password: string }): Promise<{ workspaceId: string }> };
+  agentService: { resolve(workspaceId: string): Promise<{ id: string }> };
+}
+
+/**
+ * Registers a throwaway account and materializes its workspace's default agent: the agent a run
+ * seeds when no `--workspace`/`--agent` names one, and the one the deterministic voice harness
+ * runs a scripted brain's case on.
+ */
+export const registerDisposableAgent = async (deps: DisposableAgentPorts): Promise<{ workspaceId: string; agentId: string }> => {
+  const registration = await deps.authService.register({
+    email: `eval-suite+${randomUUID()}@example.invalid`,
+    password: `Ev@l-${randomUUID()}`,
+  });
+  const agent = await deps.agentService.resolve(registration.workspaceId);
+  return { workspaceId: registration.workspaceId, agentId: agent.id };
+};
 
 /**
  * Reads the committed baseline. A missing file reads as an empty baseline, so the first recording

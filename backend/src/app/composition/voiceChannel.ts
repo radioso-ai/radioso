@@ -141,6 +141,8 @@ export const createVoiceChannelComposition = (deps: {
   auditService: Pick<AuditPort, "record">;
   metricsRegistry: MetricsRegistry | null;
   logger: AppLogger;
+  /** Overrides `VOICE_BEHAVIOR`'s turn timing; tests only. */
+  timing?: ConstructorParameters<typeof VoiceTurnService>[0]["timing"];
 }): VoiceTurnPort =>
   new VoiceTurnService({
     sessions: deps.sessions,
@@ -155,6 +157,7 @@ export const createVoiceChannelComposition = (deps: {
     notes: createVoiceTurnNotes({ replies: deps.replies, auditService: deps.auditService, logger: deps.logger }),
     metrics: deps.metricsRegistry,
     logger: deps.logger,
+    ...(deps.timing ? { timing: deps.timing } : {}),
   });
 
 /** A stored key the store cannot decrypt, as opposed to a store that cannot be read at all. */

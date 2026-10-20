@@ -32,7 +32,6 @@
  * `--judge-model` names another. Judging is opt-in per tag because each graded assertion is
  * one more model call per sample, and an ungated judge would make every nightly case pay it.
  */
-import { randomUUID } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -70,6 +69,7 @@ import {
   loadBaseline,
   needsPublishedAgent,
   needsVoiceSettings,
+  registerDisposableAgent,
   scopeCasesForLiveRun,
   seededRoutineSkillNames,
   seedVoiceSettings,
@@ -133,11 +133,9 @@ const ensureTarget = async (
   if (flags.workspaceId && flags.agentId) {
     return { workspaceId: flags.workspaceId, agentId: flags.agentId };
   }
-  const email = `eval-suite+${randomUUID()}@example.invalid`;
-  const registration = await deps.authService.register({ email, password: `Ev@l-${randomUUID()}` });
-  const agent = await deps.agentService.resolve(registration.workspaceId);
-  console.log(`Bootstrapped disposable workspace ${registration.workspaceId} / agent ${agent.id}`);
-  return { workspaceId: registration.workspaceId, agentId: agent.id };
+  const target = await registerDisposableAgent(deps);
+  console.log(`Bootstrapped disposable workspace ${target.workspaceId} / agent ${target.agentId}`);
+  return target;
 };
 
 /**

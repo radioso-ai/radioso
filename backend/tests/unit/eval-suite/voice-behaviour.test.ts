@@ -11,6 +11,11 @@ import { createDeterministicVoiceTurnPort } from "../../fixtures/voice-eval/dete
 import { voiceEvalBrains, voiceEvalBrainWithoutQuickReply } from "../../fixtures/voice-eval/scriptedBrains.js";
 
 const WORKSPACE_ID = "11111111-1111-4111-8111-111111111111";
+/**
+ * A thank-you the composer answers (the laneless brain, or a quick-reply-lane regression) waits out
+ * the scripted brains' 5 s composing-idle bridge first; this lets it fail on the bridge, not time out.
+ */
+const LANELESS_TURN_TIMEOUT_MS = 20_000;
 
 const runCase = async (evalCase: ConversationQualityCase, port = createDeterministicVoiceTurnPort()) => {
   const { reports } = await runConversationQualitySuite([evalCase], port, {
@@ -30,7 +35,7 @@ const caseNamed = (id: string): ConversationQualityCase => {
 /**
  * The deterministic half of the voice eval cases (#1528), driven through a real
  * `VoiceTurnService` — the same policy, outcome derivation and lines production runs — instead
- * of a real model call. The searching and quick-reply cases run on the test app's own planner,
+ * of a real model call. The searching and quick-reply cases run on a test composition's own planner,
  * retrieval and composer over a scripted model, so a turn that leaves the quick-reply lane fails;
  * the turn-limit and hand-off cases play a scripted chat backend. `tests/fixtures/voice-eval/`
  * holds the cases, the scripted models and the runner; `scripts/runEvals.ts` runs the cases a
@@ -45,7 +50,7 @@ describe("voice conversation-quality cases", () => {
   it("answers a thank-you with no bridge", async () => {
     const report = await runCase(caseNamed("voice-quick-reply-no-bridge"));
     expect(report).toMatchObject({ status: "pass" });
-  });
+  }, LANELESS_TURN_TIMEOUT_MS);
 
   it("falls back once the turn limit passes with nothing said", async () => {
     const report = await runCase(caseNamed("voice-turn-limit-fires"));
@@ -65,7 +70,7 @@ describe("voice conversation-quality cases", () => {
     expect(report).toMatchObject({ status: "fail" });
     expect(report?.verdicts.filter((verdict) => verdict.status !== "pass").map((verdict) => verdict.assertion))
       .toEqual([{ type: "voice_bridge_emitted", expected: false }]);
-  });
+  }, LANELESS_TURN_TIMEOUT_MS);
 
   it("drives each case from a scripted chat backend or a scripted model that exists", () => {
     const drivenBy = Object.fromEntries(voiceEvalCases.map((evalCase) => {

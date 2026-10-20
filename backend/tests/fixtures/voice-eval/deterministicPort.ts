@@ -1,5 +1,3 @@
-import { randomUUID } from "node:crypto";
-
 import type { ChatStreamEvent } from "../../../src/modules/chat/contracts/index.js";
 import {
   conversationQualityCaseTurnText,
@@ -14,8 +12,8 @@ import {
   type VoiceSessionStore,
 } from "../../../src/modules/voiceChannel/public.js";
 import { createVoiceTurnRunnerPort, observeVoiceTurn } from "../../../scripts/evalRunnerAdapter.js";
-import { seedVoiceSettings } from "../../../scripts/evalRunnerSupport.js";
-import { createTestApp, issueTestSession } from "../../support/testApp.js";
+import { registerDisposableAgent, seedVoiceSettings } from "../../../scripts/evalRunnerSupport.js";
+import { createTestDependencies } from "../../support/testApp.js";
 import { VOICE_EVAL_AGENT_PROFILE, VOICE_EVAL_FALLBACK_LINE } from "./agent.js";
 import { voiceEvalBrains, type VoiceEvalBrain } from "./scriptedBrains.js";
 
@@ -120,18 +118,20 @@ const runOnChatScript = async (
 };
 
 /**
- * Runs a case on a fresh test app over `brain`: a new workspace's default agent, voice turned on
- * by the live run's own `seedVoiceSettings`, and the turn driven through the app's composed
- * `voiceTurns` by the live run's own `createVoiceTurnRunnerPort`. Only the model is scripted; the
- * planner, retrieval, composer and voice turn policy are the app's own, on production timing.
+ * Runs a case on a fresh test composition over `brain`, without the HTTP app: a disposable
+ * agent registered the way the live run bootstraps one and published, voice turned on by the live run's own
+ * `seedVoiceSettings`, and the turn driven through the composition's `voiceTurns` by the live
+ * run's own `createVoiceTurnRunnerPort`. Only the model and the voice timing are scripted; the
+ * planner, retrieval, composer and voice turn policy are the composition's own.
  */
-const runOnTestApp = async (
+const runOnScriptedBrain = async (
   evalCase: ConversationQualityCase,
   brain: VoiceEvalBrain,
 ): Promise<ConversationQualityObservedOutput> => {
-  const { app, dependencies } = createTestApp(brain);
-  const { workspaceId } = await issueTestSession(app, `voice-eval-${randomUUID()}@example.com`);
-  const target = { workspaceId, agentId: (await dependencies.agentService.resolve(workspaceId)).id };
+  const { dependencies, publishedAgentRevisions } = createTestDependencies(brain);
+  const target = await registerDisposableAgent(dependencies);
+  // A voice turn answers for the published agent, as the live run publishes it before a voice case.
+  await publishedAgentRevisions.publish(await dependencies.agentService.resolve(target.workspaceId, target.agentId));
   await seedVoiceSettings({ agents: dependencies.agentRepository, agentSettings: dependencies.agentService }, target);
   const port = createVoiceTurnRunnerPort(dependencies.voiceTurns, {
     ...target,
@@ -143,7 +143,7 @@ const runOnTestApp = async (
 
 /**
  * The deterministic voice runner. A case with `voiceTurn.chatEvents` plays that script over a bare
- * `VoiceTurnService`; a case naming `voiceTurn.scriptedBrain` runs on the test app over that model
+ * `VoiceTurnService`; a case naming `voiceTurn.scriptedBrain` runs on a test composition over that model
  * in `brains` (`scriptedBrains.ts`'s, unless a test hands in its own), so a regression in the
  * planner's quick-reply lane or the retrieval phase fails the case.
  */
@@ -158,7 +158,7 @@ export const createDeterministicVoiceTurnPort = (
     const brainName = evalCase.voiceTurn?.scriptedBrain;
     const brain = brainName === undefined ? undefined : brains[brainName];
     if (brain) {
-      return runOnTestApp(evalCase, brain);
+      return runOnScriptedBrain(evalCase, brain);
     }
     throw new Error(
       `Case "${evalCase.id}" names no voiceTurn.chatEvents script and no scripted brain in scriptedBrains.ts${brainName ? ` called "${brainName}"` : ""}; it cannot run through the deterministic voice port.`,

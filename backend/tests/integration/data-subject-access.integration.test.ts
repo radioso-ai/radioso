@@ -25,6 +25,8 @@ const JANE_SLACK = "U0JANE";
 /** What the workspace's own workflow wrote about Jane's conversation, which her export leaves out. */
 const OPS_CHANNEL = "C0OPSINTERNAL";
 const TEAMMATE_USER_ID = "7d9a3f0e-1b2c-4d5e-8f90-a1b2c3d4e5f6";
+/** A value only a routine step's contact request carries, which no routine state keeps. */
+const ROUTINE_STEP_PHONE = "+372 5555 0101";
 
 interface Tenant {
   accountId: string;
@@ -199,7 +201,9 @@ describeIntegration("data subject lookup, export and erasure (Postgres)", () => 
       collected: { injury: "knee" },
       notice: { subject: "New booking", replyToSlot: "email" },
     });
-    await queueAction("contact.send", { message: "Please call me back", email: who.address, name: "Jane Doe", destinationRef: "ops-inbox" });
+    await queueAction("contact.send", { message: "Please call me back", email: who.address, name: "Jane Doe" });
+    // An authored routine's contact step queues every value the routine collected.
+    await queueAction("contact.send", { date: "2026-11-02", phone: ROUTINE_STEP_PHONE });
     // The workspace's own workflow on the same conversation.
     await queueAction("conversation.transfer_notice", { recipientUserId: TEAMMATE_USER_ID, transferredByUserId: TEAMMATE_USER_ID, ownershipVersion: 2 });
     await queueAction("slack.post", { kind: "operator_notification", channelId: OPS_CHANNEL, text: "New booking: knee injury", sourceId: webConversationId });
@@ -367,6 +371,12 @@ describeIntegration("data subject lookup, export and erasure (Postgres)", () => 
           routineId: null,
           values: { message: "Please call me back", email: JANE, name: "Jane Doe" },
         }),
+        expect.objectContaining({
+          conversationId: jane.webConversationId,
+          type: "contact.send",
+          routineId: null,
+          values: { date: "2026-11-02", phone: ROUTINE_STEP_PHONE },
+        }),
       ]);
       expect(sections.conversation_summaries).toEqual([
         expect.objectContaining({ conversationId: jane.webConversationId, summary: `Asked about booking with a knee injury (${JANE})` }),
@@ -396,12 +406,33 @@ describeIntegration("data subject lookup, export and erasure (Postgres)", () => 
     it("leaves the workspace's own workflow out: a transfer between teammates, an internal Slack post, authored notices", async () => {
       const document = await access.export({ workspaceId: tenant.workspaceId, identities: confirmedWebAndEmail(jane), actor: actor(tenant) });
 
-      expect(document.sections.routine_actions.map((action) => action.type)).toEqual(["completion.notify", "contact.send"]);
+      expect(document.sections.routine_actions.map((action) => action.type)).toEqual(["completion.notify", "contact.send", "contact.send"]);
       const exported = JSON.stringify(document);
       expect(exported).not.toContain(TEAMMATE_USER_ID);
       expect(exported).not.toContain(OPS_CHANNEL);
       expect(exported).not.toContain("New booking");
-      expect(exported).not.toContain("ops-inbox");
+    });
+
+    it("exports one identity past the cap in two pages of its conversations, and refuses a conversation it does not reach", async () => {
+      const capped = accessWithCap(1);
+      const email = [{ kind: "email_address" as const, key: JANE }];
+      await expect(capped.export({ workspaceId: tenant.workspaceId, identities: email, actor: actor(tenant) }))
+        .rejects.toMatchObject({ statusCode: 413, details: { conversationCount: 2, maxConversations: 1 } });
+
+      const listed = await capped.listConversations({ workspaceId: tenant.workspaceId, identities: email });
+      const pages = [];
+      for (const { id } of listed) {
+        pages.push(await capped.export({ workspaceId: tenant.workspaceId, identities: email, conversationIds: [id], actor: actor(tenant) }));
+      }
+
+      expect(pages.map((page) => page.sections.conversations.map((conversation) => conversation.id))).toEqual(listed.map(({ id }) => [id]));
+      expect(pages.flatMap((page) => page.sections.email_messages.map((message) => message.conversationId)).sort())
+        .toEqual([...jane.emailConversationIds].sort());
+      // Jane's web conversation is her visitor's, not her email identity's; John's is not hers at all.
+      for (const unreached of [jane.webConversationId, john.emailConversationIds[0]]) {
+        await expect(capped.export({ workspaceId: tenant.workspaceId, identities: email, conversationIds: [unreached], actor: actor(tenant) }))
+          .rejects.toMatchObject({ statusCode: 400, code: "data_subject_conversations_not_reached", details: { conversationIds: [unreached] } });
+      }
     });
 
     it("exports a request at the cap and refuses one conversation more with nothing read out or recorded", async () => {
@@ -487,6 +518,21 @@ describeIntegration("data subject lookup, export and erasure (Postgres)", () => 
       )).toEqual([]);
       expect(await access.lookup({ workspaceId: tenant.workspaceId, query: JANE, actor: actor(tenant) })).toEqual([]);
       expect(await access.lookup({ workspaceId: otherTenant.workspaceId, query: JANE, actor: actor(otherTenant) })).toHaveLength(2);
+    });
+
+    it("erases one page of the identities' conversations and leaves the rest and the visitor for later", async () => {
+      const identities = [{ kind: "web_visitor" as const, key: john.visitorId }, { kind: "email_address" as const, key: "john@example.com" }];
+      const [page, rest] = [john.emailConversationIds[0], john.emailConversationIds[1]];
+
+      await expect(access.erase({ workspaceId: tenant.workspaceId, identities, conversationIds: [jane.slackConversationId], actor: actor(tenant) }))
+        .rejects.toMatchObject({ statusCode: 400, code: "data_subject_conversations_not_reached" });
+      const receipt = await access.erase({ workspaceId: tenant.workspaceId, identities, conversationIds: [page], actor: actor(tenant) });
+
+      expect(receipt).toEqual({ visitorCount: 0, conversationCount: 1, messageCount: 2, complete: true });
+      const remaining = (await database.query<{ id: string }>("SELECT id FROM conversations WHERE workspace_id = $1", [tenant.workspaceId])).map((row) => row.id);
+      expect(remaining).not.toContain(page);
+      expect(remaining).toEqual(expect.arrayContaining([rest, john.webConversationId, jane.slackConversationId]));
+      expect(await database.query("SELECT id FROM visitors WHERE id = $1", [john.visitorId])).toHaveLength(1);
     });
   });
 });

@@ -20,7 +20,7 @@ export const DATA_SUBJECT_EXPORT_FORMAT_VERSION = 1;
  * erasure runs one transaction per conversation, both inside one request. Erasing a conversation
  * of 20 messages took 44 ms on a local Postgres, so 200 take about 9 s: a database twenty times
  * slower still answers well inside the 300 s request limit, and the export stays a few megabytes.
- * A larger request is split by identity.
+ * Identities that reach more are exported and erased a page of their conversations at a time.
  */
 export const DATA_SUBJECT_MAX_CONVERSATIONS = 200;
 
@@ -67,6 +67,18 @@ export interface DataSubjectErasureReceipt {
   complete: boolean;
 }
 
+/** What one export or erasure covers: everything the confirmed identities reach, or one page of it. */
+interface DataSubjectSelection {
+  workspaceId: string;
+  identities: readonly DataSubjectIdentity[];
+  /**
+   * One page of the identities' conversations, each one they reach, for identities that reach more
+   * than one request may. Without it the request covers every conversation they reach.
+   */
+  conversationIds?: readonly string[];
+  actor: ConversationErasureActor;
+}
+
 /**
  * A data subject request's operations, each over the identities an operator confirmed: find the
  * subject, review their conversations, export what is held about them, and erase it.
@@ -74,8 +86,8 @@ export interface DataSubjectErasureReceipt {
 export interface DataSubjectAccess {
   lookup(input: { workspaceId: string; query: string; actor: ConversationErasureActor }): Promise<DataSubjectIdentityCandidate[]>;
   listConversations(input: { workspaceId: string; identities: readonly DataSubjectIdentity[] }): Promise<DataSubjectConversation[]>;
-  export(input: { workspaceId: string; identities: readonly DataSubjectIdentity[]; actor: ConversationErasureActor }): Promise<DataSubjectExportDocument>;
-  erase(input: { workspaceId: string; identities: readonly DataSubjectIdentity[]; actor: ConversationErasureActor }): Promise<DataSubjectErasureReceipt>;
+  export(input: DataSubjectSelection): Promise<DataSubjectExportDocument>;
+  erase(input: DataSubjectSelection): Promise<DataSubjectErasureReceipt>;
 }
 
 /** One read of the subject's data: every module's finders and exporters, bound to one snapshot. */
@@ -96,7 +108,7 @@ interface DataSubjectAccessDependencies {
   now?: () => Date;
   /** {@link DATA_SUBJECT_MAX_CONVERSATIONS} in a deployment. */
   maxConversations?: number;
-  /** Logs why an erasure stopped, with ids and counts. */
+  /** Logs why an erasure stopped or went unrecorded, with ids and counts. */
   logger?: Pick<AppLogger, "warn">;
 }
 
@@ -116,6 +128,8 @@ interface ResolvedIdentities {
 }
 
 const isNotFound = (error: unknown): boolean => error instanceof AppError && error.statusCode === 404;
+
+const errorTypeOf = (error: unknown): string => (error instanceof Error ? error.name : typeof error);
 
 const mergeReaches = (reaches: readonly DataSubjectReach[]): DataSubjectReach => {
   const unique = (values: readonly string[]) => [...new Set(values)].sort();
@@ -178,14 +192,10 @@ export class DataSubjectAccessService implements DataSubjectAccess {
     return [...conversations].sort((left, right) => right.lastActivityAt.getTime() - left.lastActivityAt.getTime());
   }
 
-  async export(input: {
-    workspaceId: string;
-    identities: readonly DataSubjectIdentity[];
-    actor: ConversationErasureActor;
-  }): Promise<DataSubjectExportDocument> {
+  async export(input: DataSubjectSelection): Promise<DataSubjectExportDocument> {
     const { document, identities, conversationCount } = await this.deps.reads.run(async (scope) => {
-      const { reach, identities: resolved } = await this.resolve(scope, input.workspaceId, input.identities);
-      this.assertWithinCap(reach);
+      const resolved = await this.resolve(scope, input.workspaceId, input.identities);
+      const reach = this.select(resolved.reach, input.conversationIds);
       const sections: Record<string, readonly DataSubjectExportRecord[]> = {};
       for (const exporter of scope.exporters) {
         sections[exporter.section] = await exporter.export({ workspaceId: input.workspaceId, ...reach });
@@ -199,7 +209,7 @@ export class DataSubjectAccessService implements DataSubjectAccess {
           identities: input.identities.map(({ kind, key }) => ({ kind, key })),
           sections,
         } satisfies DataSubjectExportDocument,
-        identities: resolved,
+        identities: resolved.identities,
         conversationCount: reach.conversationIds.length,
       };
     });
@@ -216,15 +226,15 @@ export class DataSubjectAccessService implements DataSubjectAccess {
    * conversation the identities reach, each through the conversation erasure and its own audit
    * event, and records one event for the whole request. One already erased meanwhile is skipped.
    * Any other failure stops the erasure, which answers with what it erased so far and is safe to
-   * send again.
+   * send again. A page erases only the conversations it lists: a visitor's erasure takes every
+   * conversation of theirs, so the visitors go with the request that lists none.
    */
-  async erase(input: {
-    workspaceId: string;
-    identities: readonly DataSubjectIdentity[];
-    actor: ConversationErasureActor;
-  }): Promise<DataSubjectErasureReceipt> {
-    const { reach, identities } = await this.deps.reads.run((scope) => this.resolve(scope, input.workspaceId, input.identities));
-    this.assertWithinCap(reach);
+  async erase(input: DataSubjectSelection): Promise<DataSubjectErasureReceipt> {
+    const { reach, identities } = await this.deps.reads.run(async (scope) => {
+      const resolved = await this.resolve(scope, input.workspaceId, input.identities);
+      return { reach: this.select(resolved.reach, input.conversationIds), identities: resolved.identities };
+    });
+    const visitorIds = input.conversationIds === undefined ? reach.visitorIds : [];
     const receipt: DataSubjectErasureReceipt = { visitorCount: 0, conversationCount: 0, messageCount: 0, complete: false };
     const tally = async (erase: () => Promise<{ conversationCount: number; messageCount: number }>): Promise<boolean> => {
       try {
@@ -239,7 +249,7 @@ export class DataSubjectAccessService implements DataSubjectAccess {
     };
     let failure: unknown = null;
     try {
-      for (const visitorId of reach.visitorIds) {
+      for (const visitorId of visitorIds) {
         if (await tally(() => this.deps.erasure.eraseVisitor({ workspaceId: input.workspaceId, visitorId, actor: input.actor }))) {
           receipt.visitorCount += 1;
         }
@@ -257,24 +267,32 @@ export class DataSubjectAccessService implements DataSubjectAccess {
       ...receipt,
     });
     if (receipt.complete) {
-      await recorded;
+      // Each conversation and visitor erased has its own event, so the caller still gets the receipt.
+      await recorded.catch((error: unknown) => {
+        this.deps.logger?.warn({
+          workspaceId: input.workspaceId,
+          errorType: errorTypeOf(error),
+          conversationsReached: reach.conversationIds.length,
+          visitorCount: receipt.visitorCount,
+          conversationCount: receipt.conversationCount,
+          messageCount: receipt.messageCount,
+        }, "Data subject erasure finished but its audit event was not recorded");
+      });
       return receipt;
     }
     this.deps.logger?.warn({
       workspaceId: input.workspaceId,
-      errorType: failure instanceof Error ? failure.name : typeof failure,
+      errorType: errorTypeOf(failure),
       conversationsReached: reach.conversationIds.length,
       visitorCount: receipt.visitorCount,
       conversationCount: receipt.conversationCount,
     }, "Data subject erasure stopped before it finished");
     // The partial receipt still reaches the caller when the record cannot be written either.
     await recorded.catch(() => undefined);
-    throw new AppError(
-      500,
-      "data_subject_erasure_incomplete",
-      "The erasure stopped before it erased everything the identities reach. Send the same request again to erase the rest.",
-      { receipt },
-    );
+    const retry = input.conversationIds === undefined
+      ? "Send the same request again to erase the rest."
+      : "List the identities' conversations again and send the ones that remain.";
+    throw new AppError(500, "data_subject_erasure_incomplete", `The erasure stopped before it finished. ${retry}`, { receipt });
   }
 
   /** Each finder reaches the keys of its own kind; the subject's reach is all of theirs together. */
@@ -296,14 +314,38 @@ export class DataSubjectAccessService implements DataSubjectAccess {
     return { reach: mergeReaches(reaches), identities: records };
   }
 
-  /** Refuses a request too large to answer inside one request, before anything is read out or erased. */
-  private assertWithinCap(reach: DataSubjectReach): void {
-    const conversationCount = reach.conversationIds.length;
+  /**
+   * What one request covers: everything the identities reach, or the page of their conversations it
+   * lists. A page keeps the identities' own records, such as a visitor record, so each page of an
+   * export stands on its own. Refuses a listed conversation the identities do not reach, and a
+   * request too large to answer inside one request, before anything is read out or erased.
+   */
+  private select(reach: DataSubjectReach, conversationIds: readonly string[] | undefined): DataSubjectReach {
+    if (conversationIds === undefined) {
+      this.assertWithinCap(reach.conversationIds.length);
+      return reach;
+    }
+    const listed = [...new Set(conversationIds)].sort();
+    const reached = new Set(reach.conversationIds);
+    const unreached = listed.filter((id) => !reached.has(id));
+    if (unreached.length > 0) {
+      throw new AppError(
+        400,
+        "data_subject_conversations_not_reached",
+        `${unreached.length} of the listed conversations are not among the ones these identities reach.`,
+        { conversationIds: unreached },
+      );
+    }
+    this.assertWithinCap(listed.length);
+    return { ...reach, conversationIds: listed };
+  }
+
+  private assertWithinCap(conversationCount: number): void {
     if (conversationCount <= this.maxConversations) return;
     throw new AppError(
       413,
       "data_subject_request_too_large",
-      `These identities reach ${conversationCount} conversations; one request may reach at most ${this.maxConversations}. Split the request by identity.`,
+      `This request reaches ${conversationCount} conversations; one request may reach at most ${this.maxConversations}. List the conversations and send them at most ${this.maxConversations} at a time as conversationIds.`,
       { conversationCount, maxConversations: this.maxConversations },
     );
   }

@@ -2,7 +2,11 @@ import { Router, type Request, type RequestHandler, type Response } from "expres
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
-import type { DataSubjectConversation, DataSubjectIdentityCandidate } from "../../../modules/privacy/public.js";
+import {
+  DATA_SUBJECT_MAX_CONVERSATIONS,
+  type DataSubjectConversation,
+  type DataSubjectIdentityCandidate,
+} from "../../../modules/privacy/public.js";
 import { DATA_SUBJECT_IDENTITY_KINDS } from "../../../shared/domain/dataSubjectAccess.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { requireWorkspaceSession, type WorkspaceSessionDependencies } from "../middleware/requireWorkspaceSession.js";
@@ -26,6 +30,14 @@ export const dataSubjectIdentitySchema = z.object({
 export const dataSubjectIdentitiesRequestSchema = z.object({
   identities: z.array(dataSubjectIdentitySchema).min(1).max(50).describe("The identities the operator confirmed belong to the data subject."),
 }).strict();
+
+export const dataSubjectSelectionRequestSchema = dataSubjectIdentitiesRequestSchema.extend({
+  conversationIds: z.array(z.string().uuid()).min(1).max(DATA_SUBJECT_MAX_CONVERSATIONS).optional().describe(
+    `One page of the identities' conversations, from the conversation list, for identities that reach more than ${DATA_SUBJECT_MAX_CONVERSATIONS}. Every id must be one of theirs. Without it the request covers every conversation they reach.`,
+  ),
+}).strict();
+
+type DataSubjectSelectionRequest = z.infer<typeof dataSubjectSelectionRequestSchema>;
 
 const presentCandidate = (candidate: DataSubjectIdentityCandidate) => ({
   identity: candidate.identity,
@@ -52,6 +64,11 @@ const handle = (work: (req: Request, res: Response) => Promise<void>): RequestHa
 
 const workspaceOf = (res: Response): string => (res.locals as { workspaceId: string }).workspaceId;
 
+const selectionOf = (req: Request, res: Response) => {
+  const { identities, conversationIds } = req.body as DataSubjectSelectionRequest;
+  return { workspaceId: workspaceOf(res), identities, ...(conversationIds ? { conversationIds } : {}), actor: erasureActor(res) };
+};
+
 /**
  * A data subject request: find the person, review their conversations, export what is held about
  * them, and erase it. Every step is a POST, so the identifiers it carries stay out of URLs and
@@ -75,15 +92,13 @@ export const createPrivacyRoutes = (dependencies: PrivacyRouteDependencies): Rou
     res.status(200).json({ conversations: conversations.map(presentConversation) });
   }));
 
-  router.post("/data-subjects/export", workspaceSession, historyDelete, validateBody(dataSubjectIdentitiesRequestSchema), handle(async (req, res) => {
-    const { identities } = req.body as z.infer<typeof dataSubjectIdentitiesRequestSchema>;
-    const document = await access.export({ workspaceId: workspaceOf(res), identities, actor: erasureActor(res) });
+  router.post("/data-subjects/export", workspaceSession, historyDelete, validateBody(dataSubjectSelectionRequestSchema), handle(async (req, res) => {
+    const document = await access.export(selectionOf(req, res));
     res.set("Cache-Control", "no-store").status(200).json(document);
   }));
 
-  router.post("/data-subjects/erase", workspaceSession, historyDelete, validateBody(dataSubjectIdentitiesRequestSchema), handle(async (req, res) => {
-    const { identities } = req.body as z.infer<typeof dataSubjectIdentitiesRequestSchema>;
-    res.status(200).json(await access.erase({ workspaceId: workspaceOf(res), identities, actor: erasureActor(res) }));
+  router.post("/data-subjects/erase", workspaceSession, historyDelete, validateBody(dataSubjectSelectionRequestSchema), handle(async (req, res) => {
+    res.status(200).json(await access.erase(selectionOf(req, res)));
   }));
 
   return router;

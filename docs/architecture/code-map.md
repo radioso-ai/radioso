@@ -868,12 +868,14 @@ erase) takes the identities an operator confirmed. Lookup, export and erase
 each record one `data_subject.looked_up` / `.exported` / `.erased` audit event
 naming each identity kind by its record ids (a visitor id, email thread
 conversations, Slack link rows), never by a key, with counts. Export and erase
-refuse more than 200 conversations with `413`. Erasure runs the conversation
-erasure per visitor and per remaining conversation, each with its own audit
-event, and answers a partial run with a `500` carrying its receipt.
+refuse more than 200 conversations with `413`; a caller pages them with
+`conversationIds`, each one the identities reach (`400` otherwise). A page of
+an erasure erases only its conversations, never a visitor. Erasure runs the
+conversation erasure per visitor and per remaining conversation, each with its
+own audit event, and answers a partial run with a `500` carrying its receipt.
 `routine_actions` exports only the action types
 `modules/chat/services/actions/subjectActionValues.ts` projects to the
-person's own values.
+person's own values; a contact request exports its payload as queued.
 
 The ports live in `backend/src/shared/domain/dataSubjectAccess.ts`. Each module
 that keeps identities implements `DataSubjectIdentityFinder` (web visitors by

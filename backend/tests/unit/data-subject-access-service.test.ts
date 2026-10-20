@@ -74,7 +74,7 @@ const conversation = (id: string, channel: string, lastActivityAt: string): Data
   messageCount: 2,
 });
 
-const createHarness = (options: { maxConversations?: number } = {}) => {
+const createHarness = (options: { maxConversations?: number; auditFails?: boolean } = {}) => {
   const web = finder("web_visitor", {
     channel: "web",
     matches: { "cust-42": [match("visitor-1", "cust-42", 2, ["visitor-1"])] },
@@ -116,20 +116,28 @@ const createHarness = (options: { maxConversations?: number } = {}) => {
     eraseConversation: vi.fn<ConversationErasure["eraseConversation"]>(async () => ({ conversationCount: 1, messageCount: 3, rowsByOwner: {} })),
     eraseVisitor: vi.fn<ConversationErasure["eraseVisitor"]>(async () => ({ conversationCount: 2, messageCount: 5, rowsByOwner: {} })),
   };
+  const logger = { warn: vi.fn() };
   const service = new DataSubjectAccessService({
     reads,
     erasure,
-    audit: { record: async (event) => { audit.push(event); } },
+    audit: {
+      record: async (event) => {
+        if (options.auditFails) throw new Error("audit store unavailable");
+        audit.push(event);
+      },
+    },
     now: () => NOW,
+    logger,
     ...(options.maxConversations === undefined ? {} : { maxConversations: options.maxConversations }),
   });
-  return { service, web, email, slack, directory, exportScopes, exported, audit, erasure, runs: () => runs };
+  return { service, web, email, slack, directory, exportScopes, exported, audit, erasure, logger, runs: () => runs };
 };
 
 const confirmed = [
   { kind: "web_visitor" as const, key: "visitor-1" },
   { kind: "email_address" as const, key: ADDRESS },
 ];
+const visitorOnly = [confirmed[0]];
 
 describe("DataSubjectAccessService", () => {
   describe("lookup", () => {
@@ -261,8 +269,50 @@ describe("DataSubjectAccessService", () => {
         code: "data_subject_request_too_large",
         details: { conversationCount: 3, maxConversations: 2 },
       });
-      expect((refusal as AppError).message).toContain("by identity");
+      expect((refusal as AppError).message).toContain("conversationIds");
       expect(h.exported).toEqual([]);
+      expect(h.audit).toEqual([]);
+    });
+
+    it("exports one identity past the cap in pages of its conversations, each with the identity's own records", async () => {
+      const h = createHarness({ maxConversations: 1 });
+      await expect(h.service.export({ workspaceId: WORKSPACE, identities: visitorOnly, actor: ACTOR }))
+        .rejects.toMatchObject({ statusCode: 413, code: "data_subject_request_too_large" });
+
+      const pages = [];
+      for (const conversationIds of [["conv-web-2"], ["conv-web-1"]]) {
+        pages.push(await h.service.export({ workspaceId: WORKSPACE, identities: visitorOnly, conversationIds, actor: ACTOR }));
+      }
+
+      expect(pages.flatMap((page) => page.sections.conversations.map((record) => record.id))).toEqual(["conv-web-2", "conv-web-1"]);
+      expect(h.exportScopes).toEqual([
+        { workspaceId: WORKSPACE, conversationIds: ["conv-web-2"], visitorIds: ["visitor-1"], verifiedCustomerIds: ["cust-42"] },
+        { workspaceId: WORKSPACE, conversationIds: ["conv-web-1"], visitorIds: ["visitor-1"], verifiedCustomerIds: ["cust-42"] },
+      ]);
+      expect(h.audit.map((event) => event.metadata)).toEqual([
+        expect.objectContaining({ conversationCount: 1 }),
+        expect.objectContaining({ conversationCount: 1 }),
+      ]);
+    });
+
+    it("refuses a page listing a conversation the identities do not reach, before reading out or erasing anything", async () => {
+      const h = createHarness();
+      // conv-mail-1 is the email identity's, which this request does not name.
+      const conversationIds = ["conv-web-1", "conv-mail-1"];
+
+      for (const run of [
+        () => h.service.export({ workspaceId: WORKSPACE, identities: visitorOnly, conversationIds, actor: ACTOR }),
+        () => h.service.erase({ workspaceId: WORKSPACE, identities: visitorOnly, conversationIds, actor: ACTOR }),
+      ]) {
+        await expect(run()).rejects.toMatchObject({
+          statusCode: 400,
+          code: "data_subject_conversations_not_reached",
+          details: { conversationIds: ["conv-mail-1"] },
+        });
+      }
+      expect(h.exported).toEqual([]);
+      expect(h.erasure.eraseVisitor).not.toHaveBeenCalled();
+      expect(h.erasure.eraseConversation).not.toHaveBeenCalled();
       expect(h.audit).toEqual([]);
     });
   });
@@ -350,6 +400,45 @@ describe("DataSubjectAccessService", () => {
       expect(pastCap.erasure.eraseVisitor).not.toHaveBeenCalled();
       expect(pastCap.erasure.eraseConversation).not.toHaveBeenCalled();
       expect(pastCap.audit).toEqual([]);
+    });
+
+    it("erases only a page's listed conversations and no visitor, whose erasure would take all of theirs", async () => {
+      const h = createHarness({ maxConversations: 1 });
+
+      const receipt = await h.service.erase({ workspaceId: WORKSPACE, identities: confirmed, conversationIds: ["conv-web-2"], actor: ACTOR });
+
+      expect(h.erasure.eraseVisitor).not.toHaveBeenCalled();
+      expect(h.erasure.eraseConversation.mock.calls.map(([input]) => input.conversationId)).toEqual(["conv-web-2"]);
+      expect(receipt).toEqual({ visitorCount: 0, conversationCount: 1, messageCount: 3, complete: true });
+      expect(h.audit).toEqual([expect.objectContaining({
+        eventType: "data_subject.erased",
+        metadata: expect.objectContaining({ conversationsReached: 1, complete: true }),
+      })]);
+    });
+
+    it("tells a caller whose page stopped partway to list the conversations again", async () => {
+      const h = createHarness();
+      h.erasure.eraseConversation.mockRejectedValueOnce(new Error("deadlock"));
+
+      await expect(h.service.erase({ workspaceId: WORKSPACE, identities: confirmed, conversationIds: ["conv-web-1"], actor: ACTOR }))
+        .rejects.toMatchObject({ statusCode: 500, message: expect.stringContaining("List the identities' conversations again") });
+    });
+
+    it("answers a finished erasure with its receipt when its own audit event cannot be written, and logs ids and counts", async () => {
+      const h = createHarness({ auditFails: true });
+
+      const receipt = await h.service.erase({ workspaceId: WORKSPACE, identities: confirmed, actor: ACTOR });
+
+      expect(receipt).toEqual({ visitorCount: 1, conversationCount: 5, messageCount: 14, complete: true });
+      expect(h.logger.warn).toHaveBeenCalledWith({
+        workspaceId: WORKSPACE,
+        errorType: "Error",
+        conversationsReached: 3,
+        visitorCount: 1,
+        conversationCount: 5,
+        messageCount: 14,
+      }, expect.any(String));
+      expect(JSON.stringify(h.logger.warn.mock.calls)).not.toContain(ADDRESS);
     });
   });
 

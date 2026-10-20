@@ -46,6 +46,7 @@ export type DataSubjectExport = components["schemas"]["DataSubjectExport"];
 export type DataSubjectErasure = components["schemas"]["DataSubjectErasure"];
 export type DataSubjectLookupRequest = components["schemas"]["DataSubjectLookupRequest"];
 export type DataSubjectIdentitiesRequest = components["schemas"]["DataSubjectIdentitiesRequest"];
+export type DataSubjectSelectionRequest = components["schemas"]["DataSubjectSelectionRequest"];
 export interface DataSubjectLookupResponse {
   identities: DataSubjectIdentityCandidate[];
 }
@@ -397,8 +398,8 @@ export class GeneratedRadiosoClient {
     });
   }
 
-  /** Exports everything the confirmed identities reach as one versioned JSON document. */
-  exportDataSubject(body: DataSubjectIdentitiesRequest): Promise<DataSubjectExport> {
+  /** Exports everything the confirmed identities reach, or one page of their conversations, as one versioned JSON document. */
+  exportDataSubject(body: DataSubjectSelectionRequest): Promise<DataSubjectExport> {
     return requestJson(this.config, {
       method: "POST",
       path: "/api/v1/privacy/data-subjects/export",
@@ -406,8 +407,8 @@ export class GeneratedRadiosoClient {
     });
   }
 
-  /** Permanently erases the confirmed identities' visitors and conversations. */
-  eraseDataSubject(body: DataSubjectIdentitiesRequest): Promise<DataSubjectErasure> {
+  /** Permanently erases the confirmed identities' visitors and conversations, or one page of their conversations. */
+  eraseDataSubject(body: DataSubjectSelectionRequest): Promise<DataSubjectErasure> {
     return requestJson(this.config, {
       method: "POST",
       path: "/api/v1/privacy/data-subjects/erase",

@@ -214,6 +214,9 @@ the re-asked question.
 
 **Because an empty baseline can't gate, the runner fails loudly in run mode until you
 initialize it** — run `pnpm run evals:update-baseline` once against a known-good run first.
+A missing `baseline.json` reads as that empty baseline. A file that does not parse as a JSON
+object stops the run before it seeds anything, naming the file: restore it from git, because a
+recording run that read it as empty would write every other case's entry away.
 
 `--judge` (llm_judge grading) is not wired yet — it's a fast-follow (needs a judge seam).
 The runner rejects the flag and scores the deterministic layer only.

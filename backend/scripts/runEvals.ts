@@ -132,13 +132,36 @@ const ensureTarget = async (
   return { workspaceId: registration.workspaceId, agentId: agent.id };
 };
 
-const loadBaseline = (): BaselineFile => {
+const isMissingFile = (error: unknown): boolean =>
+  error instanceof Error && "code" in error && error.code === "ENOENT";
+
+/**
+ * Reads the committed baseline. A missing file reads as an empty baseline, so the first recording
+ * can create it and a run against it fails as uninitialized. A file that cannot be parsed throws,
+ * naming it: read as empty, it would gate nothing, and a tag-filtered `--update-baseline` would
+ * write every other case's entry away.
+ */
+export const loadBaseline = (baselinePath: string): BaselineFile => {
+  let text: string;
   try {
-    const parsed = JSON.parse(readFileSync(BASELINE_PATH, "utf8")) as Partial<BaselineFile>;
-    return { generatedAt: parsed.generatedAt, passThreshold: parsed.passThreshold, cases: parsed.cases ?? {} };
-  } catch {
-    return { cases: {} };
+    text = readFileSync(baselinePath, "utf8");
+  } catch (error) {
+    if (isMissingFile(error)) {
+      return { cases: {} };
+    }
+    throw error;
   }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    throw new Error(`The baseline at ${baselinePath} is not valid JSON; restore it from git before running.`, { cause: error });
+  }
+  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+    throw new Error(`The baseline at ${baselinePath} holds no JSON object; restore it from git before running.`);
+  }
+  const file = parsed as Partial<BaselineFile>;
+  return { generatedAt: file.generatedAt, passThreshold: file.passThreshold, cases: file.cases ?? {} };
 };
 
 /**
@@ -496,6 +519,8 @@ const main = async (): Promise<void> => {
   }
 
   const dataset = parseConversationQualityCases([...conversationQualityCases, ...voiceEvalCases]);
+  // Read before anything runs, so a damaged file stops the run before it seeds or samples.
+  const baseline = loadBaseline(BASELINE_PATH);
   const env = getEnv();
   if (flags.migrate) {
     console.log("Applying migrations…");
@@ -579,7 +604,6 @@ const main = async (): Promise<void> => {
     });
 
     const summary = summarizeRun(outcomes);
-    const baseline = loadBaseline();
     const diff = diffAgainstBaseline(outcomes, baseline, { passThreshold: flags.passThreshold });
     console.log(`\n${formatReport(reports, diff, summary)}\n`);
 

@@ -6,19 +6,21 @@
  */
 import { readFileSync } from "node:fs";
 
+import { closeDependencies, type ClosableDependencies } from "../src/app/server/closeDependencies.js";
 import type { AgentVoiceSettings } from "../src/modules/agents/public.js";
 import type { BaselineFile, ConversationQualityCase } from "../src/modules/eval/suite/index.js";
+import { isMissingFile } from "../src/shared/infra/fileErrors.js";
 import { CREATE_RETURN_TICKET_SKILL } from "../tests/fixtures/conversation-quality/routines.js";
-import { VOICE_EVAL_VOICE_SETTINGS } from "../tests/fixtures/voice-eval/agent.js";
+import { VOICE_EVAL_LOCALE, voiceEvalVoiceLines } from "../tests/fixtures/voice-eval/agent.js";
 
-const isMissingFile = (error: unknown): boolean =>
-  error instanceof Error && "code" in error && error.code === "ENOENT";
+const isJsonObject = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null && !Array.isArray(value);
 
 /**
  * Reads the committed baseline. A missing file reads as an empty baseline, so the first recording
- * can create it and a run against it fails as uninitialized. A file that cannot be parsed throws,
- * naming it: read as empty, it would gate nothing, and a tag-filtered `--update-baseline` would
- * write every other case's entry away.
+ * can create it and a run against it fails as uninitialized. A file that does not parse, or whose
+ * top level or `cases` is no JSON object, throws, naming it: read as empty, it would gate nothing,
+ * and a tag-filtered `--update-baseline` would write every other case's entry away.
  */
 export const loadBaseline = (baselinePath: string): BaselineFile => {
   let text: string;
@@ -36,10 +38,13 @@ export const loadBaseline = (baselinePath: string): BaselineFile => {
   } catch (error) {
     throw new Error(`The baseline at ${baselinePath} is not valid JSON; restore it from git before running.`, { cause: error });
   }
-  if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+  if (!isJsonObject(parsed)) {
     throw new Error(`The baseline at ${baselinePath} holds no JSON object; restore it from git before running.`);
   }
   const file = parsed as Partial<BaselineFile>;
+  if (file.cases !== undefined && !isJsonObject(file.cases)) {
+    throw new Error(`The baseline at ${baselinePath} holds \`cases\` that are no JSON object; restore it from git before running.`);
+  }
   return { generatedAt: file.generatedAt, passThreshold: file.passThreshold, cases: file.cases ?? {} };
 };
 
@@ -113,7 +118,9 @@ export const needsVoiceSettings = (cases: readonly ConversationQualityCase[]): b
 
 /** The agent reads and writes `seedVoiceSettings` makes, narrowed so a test can hand it fakes. */
 interface VoiceSettingsSeedPorts {
-  agents: { findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<{ voice: AgentVoiceSettings } | null> };
+  agents: {
+    findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<{ voice: AgentVoiceSettings; assistantDefaultLocale: string | null } | null>;
+  };
   agentSettings: { update(workspaceId: string, agentId: string, input: { voice: AgentVoiceSettings }): Promise<unknown> };
 }
 
@@ -121,10 +128,11 @@ interface VoiceSettingsSeedPorts {
  * Turns voice on for the seeded agent with the lines the voice cases need: a bridge line so a
  * case that searches has one to speak, and the fallback line `evalRunnerAdapter.ts`'s
  * `observeVoiceTurn` reads a turn's whole spoken text against to tell the turn limit apart from
- * a real answer (see `VOICE_EVAL_FALLBACK_LINE`). The block is written whole, so the lines go
- * over the agent's own: an agent `RADIOSO_EVAL_AGENT_ID` names keeps its runtime binding,
- * recording notice and language switching. No case starts a vendor session, so none needs a
- * runtime.
+ * a real answer (see `VOICE_EVAL_FALLBACK_LINE`). A case's call reports no language, so it speaks
+ * the agent's default language, else English: the lines go in both. The block is written whole,
+ * so they go over the agent's own: an agent `RADIOSO_EVAL_AGENT_ID` names keeps its runtime
+ * binding, recording notice, language switching and its lines in every other language. No case
+ * starts a vendor session, so none needs a runtime.
  */
 export const seedVoiceSettings = async (
   ports: VoiceSettingsSeedPorts,
@@ -134,8 +142,14 @@ export const seedVoiceSettings = async (
   if (!agent) {
     throw new Error(`Agent ${target.agentId} not found in workspace ${target.workspaceId}.`);
   }
+  const lines = voiceEvalVoiceLines([...new Set([VOICE_EVAL_LOCALE, agent.assistantDefaultLocale ?? VOICE_EVAL_LOCALE])]);
   await ports.agentSettings.update(target.workspaceId, target.agentId, {
-    voice: { ...agent.voice, ...VOICE_EVAL_VOICE_SETTINGS },
+    voice: {
+      ...agent.voice,
+      enabled: lines.enabled,
+      bridgeLines: { ...agent.voice.bridgeLines, ...lines.bridgeLines },
+      fallbackLine: { ...agent.voice.fallbackLine, ...lines.fallbackLine },
+    },
   });
 };
 
@@ -145,25 +159,16 @@ export const seedVoiceSettings = async (
  */
 export const seededRoutineSkillNames: readonly string[] = [CREATE_RETURN_TICKET_SKILL];
 
-/** What the composition holds open that a finished run must close, the database pool last. */
-interface EvalDependencyClosers {
-  closeApprovalResumeEffectJournal(): Promise<void>;
-  closeAbuseControlRepository?(): Promise<void>;
-  connectorDb: { close(): Promise<void> };
-}
-
 /**
- * Closes the approval journal's database, then the abuse-control repository, then ends the pool,
- * each even when one before it fails, so the process can exit once the run is done.
+ * Closes what the composition opened, as the API runtime does (`closeDependencies`), then ends the
+ * database pool, each even when a step before it fails, so the process exits once the run is done.
  */
-export const closeEvalDependencies = async (deps: EvalDependencyClosers): Promise<void> => {
+export const closeEvalDependencies = async (
+  deps: ClosableDependencies & { connectorDb: { close(): Promise<void> } },
+): Promise<void> => {
   try {
-    await deps.closeApprovalResumeEffectJournal();
+    await closeDependencies(deps);
   } finally {
-    try {
-      await deps.closeAbuseControlRepository?.();
-    } finally {
-      await deps.connectorDb.close();
-    }
+    await deps.connectorDb.close();
   }
 };

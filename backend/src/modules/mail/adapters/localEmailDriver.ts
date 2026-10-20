@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { parseRfcMessageId } from "../emailHeaderValues.js";
 import { EmailSendError } from "../emailSendErrors.js";
 import type { EmailDriver, EmailMessage, EmailSendResult, SentEmailLastEvent, SentEmailStatus } from "../emailService.js";
-import { hasFileErrorCode } from "./localSpool.js";
+import { hasFileErrorCode, isMissingFile } from "../../../shared/infra/fileErrors.js";
 import { isRecord } from "./resendApi.js";
 
 /**
@@ -85,7 +85,7 @@ export class LocalEmailDriver implements EmailDriver {
     try {
       names = await readdir(this.directory());
     } catch (error) {
-      if (hasFileErrorCode(error, "ENOENT")) return null;
+      if (isMissingFile(error)) return null;
       throw error;
     }
     for (const name of names.filter((candidate) => candidate.endsWith(".json"))) {
@@ -109,7 +109,7 @@ export class LocalEmailDriver implements EmailDriver {
     try {
       text = await readFile(this.pathOf(providerMessageId), "utf8");
     } catch (error) {
-      if (hasFileErrorCode(error, "ENOENT")) return null;
+      if (isMissingFile(error)) return null;
       throw error;
     }
     const parsed: unknown = JSON.parse(text);

@@ -117,7 +117,7 @@ The cases themselves live in `tests/fixtures/voice-eval/cases.ts`, not here, bec
 against a different agent configuration (voice turned on, with a bridge and a fallback line)
 than every other case in this directory. Whenever a run selects a voice case,
 `scripts/runEvals.ts` seeds that configuration onto the same disposable agent —
-`seedVoiceSettings` writes the voice cases' lines over the agent's own voice block — along with
+`seedVoiceSettings` writes the voice cases' lines into the agent's own voice block — along with
 `tests/fixtures/voice-eval/routines.ts`'s one callback hand-off routine. It combines
 `voiceEvalCases` with `conversationQualityCases` into one dataset, so a voice case's outcome sits
 in the same `baseline.json` as every other case, keyed by its own id. The routine is seeded only
@@ -178,9 +178,10 @@ re-record) only them, leaving every other case's entry untouched, with `--tag vo
 
 ```bash
 cd backend
-# One-time: point at a disposable agent. Any one works: the voice cases' lines go over its
-# voice block, which keeps its runtime binding, recording notice and language switching, the
-# callback routine is seeded onto it, and a repeat run reuses both idempotently.
+# One-time: point at a disposable agent. Any one works: the voice cases' lines go into its
+# voice block in English and in its default language (a case's call speaks the default), and
+# its runtime binding, recording notice, language switching and other languages' lines stay.
+# The callback routine is seeded onto it, and a repeat run reuses both idempotently.
 export RADIOSO_EVAL_WORKSPACE_ID=... RADIOSO_EVAL_AGENT_ID=...
 node --env-file=./.env.evals --import tsx ./scripts/runEvals.ts --tag voice --samples 5 --update-baseline
 ```
@@ -231,9 +232,11 @@ the re-asked question.
 
 **Because an empty baseline can't gate, the runner fails loudly in run mode until you
 initialize it** — run `pnpm run evals:update-baseline` once against a known-good run first.
-A missing `baseline.json` reads as that empty baseline. A file that does not parse as a JSON
-object stops the run before it seeds anything, naming the file: restore it from git, because a
-recording run that read it as empty would write every other case's entry away.
+A missing `baseline.json` reads as that empty baseline. A file that does not parse, or whose top
+level or `cases` is not a JSON object, stops the run before it seeds anything, naming the file:
+restore it from git, because a recording run that read it as empty would write every other
+case's entry away. When the run ends, it closes what the composition opened the way the API
+runtime does (`closeDependencies`), then ends the database pool.
 
 `--judge` (llm_judge grading) is not wired yet — it's a fast-follow (needs a judge seam).
 The runner rejects the flag and scores the deterministic layer only.

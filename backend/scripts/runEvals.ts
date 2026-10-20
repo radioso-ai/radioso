@@ -54,6 +54,7 @@ import {
   parseConversationQualityCases,
   runConversationQualitySuiteSampled,
   summarizeRun,
+  type BaselineFile,
   type ConversationQualityCase,
 } from "../src/modules/eval/suite/index.js";
 import { conversationQualityCases } from "../tests/fixtures/conversation-quality/cases.js";
@@ -130,13 +131,13 @@ const parseFlags = (argv: string[]): Flags => {
 const ensureTarget = async (
   deps: Deps,
   flags: Flags,
-): Promise<{ workspaceId: string; agentId: string }> => {
+): Promise<{ workspaceId: string; agentId: string; disposable: boolean }> => {
   if (flags.workspaceId && flags.agentId) {
-    return { workspaceId: flags.workspaceId, agentId: flags.agentId };
+    return { workspaceId: flags.workspaceId, agentId: flags.agentId, disposable: false };
   }
   const target = await registerDisposableAgent(deps);
   console.log(`Bootstrapped disposable workspace ${target.workspaceId} / agent ${target.agentId}`);
-  return target;
+  return { ...target, disposable: true };
 };
 
 /**
@@ -409,9 +410,130 @@ const waitForDocumentsReady = async (
   }
 };
 
-/** A failure to close the composition fails the run without hiding the run's own error. */
-const reportCloseFailure = (error: unknown): void => {
-  console.error("Closing the eval run's dependencies failed:", error);
+/** What `main` settles before it seeds: the target's settings, the baseline, and the scoped cases. */
+interface SeededSuiteRun {
+  env: Env;
+  baseline: BaselineFile;
+  cases: ConversationQualityCase[];
+  runsVoiceCases: boolean;
+}
+
+/**
+ * Seeds the fixtures onto the target agent (its voice block is already in place), publishes it
+ * when a case needs the published revision, runs the sampled suite, and records or gates on the
+ * baseline.
+ */
+const runSeededSuite = async (deps: Deps, flags: Flags, run: SeededSuiteRun): Promise<void> => {
+  console.log(`Seeding fixtures onto agent ${flags.agentId} in workspace ${flags.workspaceId}…`);
+  const { documentIds, routineIds } = await seedFixtures(deps, flags);
+  await waitForDocumentsReady(deps, flags.workspaceId, documentIds);
+  if (run.runsVoiceCases) {
+    await seedVoiceRoutines(deps, flags);
+  }
+
+  const agent = await deps.agentRepository.findByIdAndWorkspaceId(flags.agentId, flags.workspaceId);
+  if (!agent) {
+    throw new Error(`Agent ${flags.agentId} not found in workspace ${flags.workspaceId}.`);
+  }
+  const baselineAgentConfig = projectInternalAgentConfig(agent);
+
+  const cases = remapIds(run.cases, documentIds, routineIds);
+  const suiteJudge = flags.judgeTags.length > 0 ? createSuiteJudge(run.env, flags.judgeModel) : null;
+  if (suiteJudge) {
+    console.log(`Grading llm_judge assertions on cases tagged ${flags.judgeTags.join(", ")} with ${suiteJudge.model}.`);
+  }
+
+  const replayPort = createWorkbenchReplayRunnerPort(deps.workbenchReplayRunner, {
+    workspaceId: flags.workspaceId,
+    agentId: flags.agentId,
+    baselineAgentConfig,
+  });
+  // A voice case runs the published revision too: the voice turn port streams through the
+  // same chat answer path the completions route and a real session use, which answers for
+  // the agent as it is published, not the draft `WorkbenchReplayRunner` replays directly.
+  const agentRevisionId = needsPublishedAgent(cases) || run.runsVoiceCases
+    ? await publishSeededAgent(deps, flags)
+    : null;
+  const reviewPort = needsPublishedAgent(cases) && agentRevisionId
+    ? createReviewTurnRunnerPort(
+        { chat: deps.chatService, conversations: deps.conversationRepository, messages: deps.messageRepository },
+        { workspaceId: flags.workspaceId, agentId: flags.agentId, agentRevisionId },
+      )
+    : {};
+  // A voice case drives the real voice turn policy over `deps.voiceTurns`, never the chat
+  // reply's content, so it has its own port rather than riding the replay runner's.
+  const voicePort = run.runsVoiceCases
+    ? createVoiceTurnRunnerPort(deps.voiceTurns, {
+        workspaceId: flags.workspaceId,
+        agentId: flags.agentId,
+        vendor: "generic",
+        fallbackLine: VOICE_EVAL_FALLBACK_LINE,
+      })
+    : null;
+  const port = {
+    ...replayPort,
+    ...reviewPort,
+    run: (evalCase: ConversationQualityCase) =>
+      evalCase.voiceTurn && voicePort ? voicePort.run(evalCase) : replayPort.run(evalCase),
+  };
+
+  if (flags.samples > 1) {
+    console.log(`Sampling each case ${flags.samples}× (pass threshold ${flags.passThreshold})…`);
+  }
+  const { reports, outcomes } = await runConversationQualitySuiteSampled(cases, port, {
+    workspaceId: flags.workspaceId,
+    samples: flags.samples,
+    passThreshold: flags.passThreshold,
+    ...(suiteJudge ? { judge: suiteJudge.judge } : {}),
+  });
+
+  const summary = summarizeRun(outcomes);
+  const diff = diffAgainstBaseline(outcomes, run.baseline, { passThreshold: flags.passThreshold });
+  console.log(`\n${formatReport(reports, diff, summary)}\n`);
+
+  if (flags.updateBaseline) {
+    if (
+      flags.tags.length > 0 &&
+      run.baseline.passThreshold !== undefined &&
+      run.baseline.passThreshold !== flags.passThreshold
+    ) {
+      throw new Error(
+        "A filtered baseline update cannot change the pass threshold; re-record the full suite at the new threshold.",
+      );
+    }
+    const generatedAt = new Date().toISOString();
+    const updatedBaseline = flags.tags.length > 0
+      ? mergeBaselineFile(run.baseline, outcomes, generatedAt, flags.passThreshold)
+      : buildBaselineFile(outcomes, generatedAt, flags.passThreshold);
+    writeFileSync(
+      BASELINE_PATH,
+      `${JSON.stringify(updatedBaseline, null, 2)}\n`,
+    );
+    console.log(`Baseline updated: ${path.relative(process.cwd(), BASELINE_PATH)}`);
+    return;
+  }
+
+  // An uninitialized baseline can't gate — every case reads as "new" (informational),
+  // so a run where all 12 cases fail would still exit 0. Fail loudly instead until a
+  // baseline is recorded.
+  if (!isBaselineInitialized(run.baseline)) {
+    console.error(
+      "Baseline is uninitialized — regression gating is disabled. Run `pnpm run evals:update-baseline` after a known-good run to enable it.",
+    );
+    process.exitCode = 1;
+  }
+
+  if (hasBaselineGateFailures(diff)) {
+    console.error(
+      `${diff.regressions.length + diff.rateRegressions.length + diff.judgeRegressions.length + diff.underSampled.length + diff.newCases.length + (diff.thresholdMismatch ? 1 : 0)} baseline gate failure(s).`,
+    );
+    process.exitCode = 1;
+  }
+};
+
+/** A failure to clean up after the run fails it, without hiding the run's own error. */
+const reportCleanupFailure = (what: string) => (error: unknown): void => {
+  console.error(what, error);
   process.exitCode = 1;
 };
 
@@ -430,7 +552,7 @@ const main = async (): Promise<void> => {
   // --judge-tag opted in, a voice case is never gated on latency, and a deterministic-only one
   // does not run live.
   const baseline = loadBaseline(BASELINE_PATH);
-  let cases = scopeCasesForLiveRun(filterByTags(dataset, flags.tags), flags.judgeTags);
+  const cases = scopeCasesForLiveRun(filterByTags(dataset, flags.tags), flags.judgeTags);
   const runsVoiceCases = needsVoiceSettings(cases);
   const env = getEnv();
   if (flags.migrate) {
@@ -445,113 +567,17 @@ const main = async (): Promise<void> => {
     flags.workspaceId = target.workspaceId;
     flags.agentId = target.agentId;
 
-    console.log(`Seeding fixtures onto agent ${flags.agentId} in workspace ${flags.workspaceId}…`);
-    const { documentIds, routineIds } = await seedFixtures(deps, flags);
-    await waitForDocumentsReady(deps, flags.workspaceId, documentIds);
-    if (runsVoiceCases) {
-      await seedVoiceSettings({ agents: deps.agentRepository, agentSettings: deps.agentService }, flags);
-      await seedVoiceRoutines(deps, flags);
-    }
-
-    const agent = await deps.agentRepository.findByIdAndWorkspaceId(flags.agentId, flags.workspaceId);
-    if (!agent) {
-      throw new Error(`Agent ${flags.agentId} not found in workspace ${flags.workspaceId}.`);
-    }
-    const baselineAgentConfig = projectInternalAgentConfig(agent);
-
-    cases = remapIds(cases, documentIds, routineIds);
-    const suiteJudge = flags.judgeTags.length > 0 ? createSuiteJudge(env, flags.judgeModel) : null;
-    if (suiteJudge) {
-      console.log(`Grading llm_judge assertions on cases tagged ${flags.judgeTags.join(", ")} with ${suiteJudge.model}.`);
-    }
-
-    const replayPort = createWorkbenchReplayRunnerPort(deps.workbenchReplayRunner, {
-      workspaceId: flags.workspaceId,
-      agentId: flags.agentId,
-      baselineAgentConfig,
-    });
-    // A voice case runs the published revision too: the voice turn port streams through the
-    // same chat answer path the completions route and a real session use, which answers for
-    // the agent as it is published, not the draft `WorkbenchReplayRunner` replays directly.
-    const agentRevisionId = needsPublishedAgent(cases) || runsVoiceCases
-      ? await publishSeededAgent(deps, flags)
+    // Voice goes on first: an agent that cannot take the lines is refused before any document is
+    // ingested, and a named agent gets its own voice block back whatever the run does.
+    const voice = runsVoiceCases
+      ? await seedVoiceSettings({ agents: deps.agentRepository, agentSettings: deps.agentService }, target)
       : null;
-    const reviewPort = needsPublishedAgent(cases) && agentRevisionId
-      ? createReviewTurnRunnerPort(
-          { chat: deps.chatService, conversations: deps.conversationRepository, messages: deps.messageRepository },
-          { workspaceId: flags.workspaceId, agentId: flags.agentId, agentRevisionId },
-        )
-      : {};
-    // A voice case drives the real voice turn policy over `deps.voiceTurns`, never the chat
-    // reply's content, so it has its own port rather than riding the replay runner's.
-    const voicePort = runsVoiceCases
-      ? createVoiceTurnRunnerPort(deps.voiceTurns, {
-          workspaceId: flags.workspaceId,
-          agentId: flags.agentId,
-          vendor: "generic",
-          fallbackLine: VOICE_EVAL_FALLBACK_LINE,
-        })
-      : null;
-    const port = {
-      ...replayPort,
-      ...reviewPort,
-      run: (evalCase: ConversationQualityCase) =>
-        evalCase.voiceTurn && voicePort ? voicePort.run(evalCase) : replayPort.run(evalCase),
-    };
-
-    if (flags.samples > 1) {
-      console.log(`Sampling each case ${flags.samples}× (pass threshold ${flags.passThreshold})…`);
-    }
-    const { reports, outcomes } = await runConversationQualitySuiteSampled(cases, port, {
-      workspaceId: flags.workspaceId,
-      samples: flags.samples,
-      passThreshold: flags.passThreshold,
-      ...(suiteJudge ? { judge: suiteJudge.judge } : {}),
-    });
-
-    const summary = summarizeRun(outcomes);
-    const diff = diffAgainstBaseline(outcomes, baseline, { passThreshold: flags.passThreshold });
-    console.log(`\n${formatReport(reports, diff, summary)}\n`);
-
-    if (flags.updateBaseline) {
-      if (
-        flags.tags.length > 0 &&
-        baseline.passThreshold !== undefined &&
-        baseline.passThreshold !== flags.passThreshold
-      ) {
-        throw new Error(
-          "A filtered baseline update cannot change the pass threshold; re-record the full suite at the new threshold.",
-        );
-      }
-      const generatedAt = new Date().toISOString();
-      const updatedBaseline = flags.tags.length > 0
-        ? mergeBaselineFile(baseline, outcomes, generatedAt, flags.passThreshold)
-        : buildBaselineFile(outcomes, generatedAt, flags.passThreshold);
-      writeFileSync(
-        BASELINE_PATH,
-        `${JSON.stringify(updatedBaseline, null, 2)}\n`,
-      );
-      console.log(`Baseline updated: ${path.relative(process.cwd(), BASELINE_PATH)}`);
-      return;
-    }
-
-    // An uninitialized baseline can't gate — every case reads as "new" (informational),
-    // so a run where all 12 cases fail would still exit 0. Fail loudly instead until a
-    // baseline is recorded.
-    if (!isBaselineInitialized(baseline)) {
-      console.error(
-        "Baseline is uninitialized — regression gating is disabled. Run `pnpm run evals:update-baseline` after a known-good run to enable it.",
-      );
-      process.exitCode = 1;
-    }
-
-    if (hasBaselineGateFailures(diff)) {
-      console.error(
-        `${diff.regressions.length + diff.rateRegressions.length + diff.judgeRegressions.length + diff.underSampled.length + diff.newCases.length + (diff.thresholdMismatch ? 1 : 0)} baseline gate failure(s).`,
-      );
-      process.exitCode = 1;
-    }
-  }, () => closeEvalDependencies(deps), reportCloseFailure);
+    await runThenClose(
+      () => runSeededSuite(deps, flags, { env, baseline, cases, runsVoiceCases }),
+      async () => { await voice?.restore(); },
+      reportCleanupFailure("Restoring the agent's voice settings failed:"),
+    );
+  }, () => closeEvalDependencies(deps), reportCleanupFailure("Closing the eval run's dependencies failed:"));
 };
 
 const invokedDirectly = process.argv[1] === fileURLToPath(import.meta.url);

@@ -119,9 +119,9 @@ const runOnChatScript = async (
 
 /**
  * Runs a case on a fresh test composition over `brain`, without the HTTP app: a disposable
- * agent registered the way the live run bootstraps one and published, voice turned on by the live run's own
- * `seedVoiceSettings`, and the turn driven through the composition's `voiceTurns` by the live
- * run's own `createVoiceTurnRunnerPort`. Only the model and the voice timing are scripted; the
+ * agent registered the way the live run bootstraps one, voice turned on by the live run's own
+ * `seedVoiceSettings` and then published, and the turn driven through the composition's
+ * `voiceTurns` by the live run's own `createVoiceTurnRunnerPort`. Only the model and the voice timing are scripted; the
  * planner, retrieval, composer and voice turn policy are the composition's own.
  */
 const runOnScriptedBrain = async (
@@ -129,10 +129,11 @@ const runOnScriptedBrain = async (
   brain: VoiceEvalBrain,
 ): Promise<ConversationQualityObservedOutput> => {
   const { dependencies, publishedAgentRevisions } = createTestDependencies(brain);
-  const target = await registerDisposableAgent(dependencies);
-  // A voice turn answers for the published agent, as the live run publishes it before a voice case.
-  await publishedAgentRevisions.publish(await dependencies.agentService.resolve(target.workspaceId, target.agentId));
+  const target = { ...await registerDisposableAgent(dependencies), disposable: true };
+  // In the live run's order: voice on, then published, since a voice turn answers for the
+  // published agent.
   await seedVoiceSettings({ agents: dependencies.agentRepository, agentSettings: dependencies.agentService }, target);
+  await publishedAgentRevisions.publish(await dependencies.agentService.resolve(target.workspaceId, target.agentId));
   const port = createVoiceTurnRunnerPort(dependencies.voiceTurns, {
     ...target,
     vendor: "generic",

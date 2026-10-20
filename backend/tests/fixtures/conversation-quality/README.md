@@ -142,7 +142,10 @@ exactly one of them in `voiceTurn`, so none can be written that runs nowhere:
   composing-idle bridge at 5 seconds, the stall bridge and the limit at 30), so a loaded runner
   never races a deadline and the case asserts what the chat turn reported. The thank-you's
   composer takes 6 seconds, so a thank-you that leaves the planner's quick-reply lane bridges on
-  its composing phase and fails the case; the harness keeps that regression as a test of its own.
+  its composing phase and fails the case. The searching brain's planner routes the question to
+  retrieval, so a planner-routed retrieval that stops reporting `searching` fails its case. The
+  harness keeps both regressions as tests of their own: a laneless brain fails the thank-you on
+  its bridge, and a brain that answers directly fails the searching case on its bridge.
 - A case with `voiceTurn.chatEvents` (`voice-turn-limit-fires`, `voice-outcome-handoff`) plays
   that script as the turn's chat backend against a bare `VoiceTurnService` on shrunk timers, over
   the `generic` dialect's vendor tag: a turn that stalls until its limit, and one that closes on a

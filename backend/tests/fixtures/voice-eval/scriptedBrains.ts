@@ -44,41 +44,67 @@ const composerAfter = (delayMs: number, text: string): ChatGateway => {
   };
 };
 
-/** A planner that plans every turn as a direct answer: the planner's own quick reply, or the composer's. */
-const plannerAnswering = (quickReply?: { kind: "thanks"; text: string }): TurnPlanCoordinator => {
+const REFUND_ANSWER = "Partial refunds are available within 14 days of booking.";
+
+/** A well-formed retrieval rewrite, so a plan that routes to retrieval parses. */
+const RETRIEVAL_REWRITE = {
+  resolutionNote: null,
+  turnKind: "fresh_subject",
+  proposedActiveSubject: null,
+  relatedEntities: [],
+  rewrittenQuery: "cancellation policy partial refunds",
+  semanticQuery: "what the cancellation policy says about partial refunds",
+  lexicalQuery: "cancellation policy partial refund",
+  queryShape: "policy_answer",
+  temporalQueryMode: "none",
+  retrievalSubqueries: [],
+  unresolved: false,
+  confidence: 0.9,
+};
+
+/** What the scripted planner decides for every turn it plans. */
+type ScriptedPlan =
+  | { route: "retrieval" }
+  | { route: "direct"; quickReply?: { kind: "thanks"; text: string } };
+
+/** The planner's reply for `plan`, as the model writes it. */
+export const scriptedPlanText = (plan: ScriptedPlan): string => {
+  const quickReply = plan.route === "direct" ? plan.quickReply : undefined;
+  return JSON.stringify({
+    route: plan.route,
+    isIdentityQuestion: false,
+    intentTopic: null,
+    rewrite: plan.route === "retrieval" ? RETRIEVAL_REWRITE : null,
+    responseLanguage: "English",
+    responseLanguageTag: "en",
+    requestPresent: quickReply === undefined,
+    openQuestion: false,
+    quickReply: quickReply ? { ...quickReply, language: "en" } : { kind: "none", language: null, text: "" },
+  });
+};
+
+/** A planner that plans every turn the same: a retrieval, the composer's direct answer, or its own quick reply. */
+const plannerPlanning = (plan: ScriptedPlan): TurnPlanCoordinator => {
   const factory: TurnPlanGatewayFactory = {
-    create: async () => ({
-      complete: async () => ({
-        text: JSON.stringify({
-          route: "direct",
-          isIdentityQuestion: false,
-          intentTopic: null,
-          rewrite: null,
-          responseLanguage: "English",
-          responseLanguageTag: "en",
-          requestPresent: quickReply === undefined,
-          openQuestion: false,
-          quickReply: quickReply ? { ...quickReply, language: "en" } : { kind: "none", language: null, text: "" },
-        }),
-      }),
-    }),
+    create: async () => ({ complete: async () => ({ text: scriptedPlanText(plan) }) }),
   };
   return new TurnPlanCoordinator(new TurnPlanService(factory));
 };
 
 /** The scripted models a voice case's `voiceTurn.scriptedBrain` names. */
 export const voiceEvalBrains: Readonly<Record<string, VoiceEvalBrain>> = {
-  // No planner: the staged path routes the question to retrieval, which reports `searching`. The
-  // composer answers at once, so only that phase can bridge the turn.
+  // The planner routes the question to retrieval, which reports `searching`. The composer answers
+  // at once, so only that phase can bridge the turn.
   "searching-then-answer": {
-    chatGateway: composerAfter(0, "Partial refunds are available within 14 days of booking."),
+    chatGateway: composerAfter(0, REFUND_ANSWER),
+    turnPlanCoordinator: plannerPlanning({ route: "retrieval" }),
     voiceTurnTiming: SCRIPTED_BRAIN_TIMING,
   },
   // The planner's quick reply is the whole turn. The composer is slow, so a thank-you that left
   // the quick-reply lane would bridge on its composing phase and fail the case.
   "thanks-quick-reply": {
     chatGateway: composerAfter(SLOW_COMPOSER_MS, THANKS_REPLY),
-    turnPlanCoordinator: plannerAnswering({ kind: "thanks", text: THANKS_REPLY }),
+    turnPlanCoordinator: plannerPlanning({ route: "direct", quickReply: { kind: "thanks", text: THANKS_REPLY } }),
     voiceTurnTiming: SCRIPTED_BRAIN_TIMING,
   },
 };
@@ -86,6 +112,13 @@ export const voiceEvalBrains: Readonly<Record<string, VoiceEvalBrain>> = {
 /** The quick-reply case's model with the lane bypassed: the planner writes no quick reply, so the slow composer answers. */
 export const voiceEvalBrainWithoutQuickReply: VoiceEvalBrain = {
   chatGateway: composerAfter(SLOW_COMPOSER_MS, THANKS_REPLY),
-  turnPlanCoordinator: plannerAnswering(),
+  turnPlanCoordinator: plannerPlanning({ route: "direct" }),
+  voiceTurnTiming: SCRIPTED_BRAIN_TIMING,
+};
+
+/** The searching case's model with the search gone: the planner routes direct and the composer answers at once, so nothing bridges. */
+export const voiceEvalBrainAnsweringDirect: VoiceEvalBrain = {
+  chatGateway: composerAfter(0, REFUND_ANSWER),
+  turnPlanCoordinator: plannerPlanning({ route: "direct" }),
   voiceTurnTiming: SCRIPTED_BRAIN_TIMING,
 };

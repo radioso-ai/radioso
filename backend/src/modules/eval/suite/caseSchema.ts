@@ -89,26 +89,28 @@ export type VoiceEvalChatScriptEvent =
   | { type: "stall" };
 
 /**
- * What a voice case scripts for its deterministic half. The plain case shape (`query` plus
- * answer-content or trace assertions) has no way to express a phase timeline or a turn that
- * never answers — which is exactly the behaviour under test here (bridge timing, the turn limit)
- * — so this is the smallest addition that can say it, rather than a second case format or a
- * parallel voice suite.
+ * What a voice case scripts for its deterministic half: exactly one driver, so the half always has
+ * a way to run it. The plain case shape (`query` plus answer-content or trace assertions) has no
+ * way to express a phase timeline or a turn that never answers — which is exactly the behaviour
+ * under test here (bridge timing, the turn limit) — so this is the smallest addition that can say
+ * it, rather than a second case format or a parallel voice suite.
  */
-export interface VoiceEvalTurnScript {
-  /**
-   * The turn's chat backend, played over a bare voice turn service. A case names this or
-   * `scriptedBrain`, exactly one, so its deterministic half always has a way to run it.
-   */
-  chatEvents?: VoiceEvalChatScriptEvent[];
-  /**
-   * The scripted model the deterministic half runs the turn on, by its name in
-   * `tests/fixtures/voice-eval/scriptedBrains.ts`: the real planner, retrieval and composer with
-   * only the model scripted, which is how a quick-reply-lane or retrieval-phase regression fails
-   * the case.
-   */
-  scriptedBrain?: string;
-}
+export type VoiceEvalTurnScript =
+  | {
+      /** The turn's chat backend, played over a bare voice turn service. */
+      chatEvents: VoiceEvalChatScriptEvent[];
+      scriptedBrain?: never;
+    }
+  | {
+      /**
+       * The scripted model the deterministic half runs the turn on, by its name in
+       * `tests/fixtures/voice-eval/scriptedBrains.ts`: the real planner, retrieval and composer
+       * with only the model scripted, which is how a quick-reply-lane or retrieval-phase
+       * regression fails the case.
+       */
+      scriptedBrain: string;
+      chatEvents?: never;
+    };
 
 const answerMatchMode = z.enum(["substring", "regex"]);
 const metadataValue = z.union([z.string(), z.number(), z.boolean(), z.null()]);

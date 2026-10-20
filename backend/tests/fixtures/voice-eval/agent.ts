@@ -13,16 +13,22 @@ export const VOICE_EVAL_FALLBACK_LINE = "Still checking on that — thanks for w
 /** The one bridge line a voice eval case's turn may speak while it searches. */
 const VOICE_EVAL_BRIDGE_LINE = "One moment, let me look that up.";
 
-/** The agent's `voice` settings block every voice eval case runs against: on, with no bound vendor runtime (no case starts a session). */
-export const VOICE_EVAL_AGENT_VOICE_SETTINGS: AgentVoiceSettings = {
+/**
+ * What every voice eval case needs of the agent's `voice` block: voice on, the bridge line and the
+ * fallback line. `scripts/runEvals.ts`'s `seedVoiceSettings` writes it over the agent's own block,
+ * so its runtime binding, recording notice and language switching stay as the operator set them.
+ */
+export const VOICE_EVAL_VOICE_SETTINGS: Pick<AgentVoiceSettings, "enabled" | "bridgeLines" | "fallbackLine"> = {
   enabled: true,
   bridgeLines: { en: { acknowledge: [], check: [VOICE_EVAL_BRIDGE_LINE] } },
   fallbackLine: { en: VOICE_EVAL_FALLBACK_LINE },
-  runtime: null,
 };
 
-/** The voice profile the deterministic runner hands `VoiceTurnService` in place of a live agent read. */
+/**
+ * The voice profile the deterministic runner hands `VoiceTurnService` in place of a live agent
+ * read: the voice cases' lines with no bound vendor runtime, since no case starts a session.
+ */
 export const VOICE_EVAL_AGENT_PROFILE = {
-  voice: VOICE_EVAL_AGENT_VOICE_SETTINGS,
+  voice: { ...VOICE_EVAL_VOICE_SETTINGS, runtime: null } satisfies AgentVoiceSettings,
   defaultLocale: "en",
 };

@@ -116,8 +116,8 @@ is the one place that reads it, for both the deterministic and the live runner.
 
 The cases themselves live in `tests/fixtures/voice-eval/cases.ts`, not here, because they run
 against a different agent configuration (voice turned on, with a bridge and a fallback line, no
-corpus) than every other case in this directory. `scripts/runEvals.ts` seeds that configuration,
-and `tests/fixtures/voice-eval/routines.ts`'s one callback hand-off routine, onto the same
+corpus) than every other case in this directory. `scripts/runEvals.ts` seeds that configuration
+(`seedVoiceSettings` writes the voice cases' lines over the agent's own voice block), and `tests/fixtures/voice-eval/routines.ts`'s one callback hand-off routine, onto the same
 disposable agent whenever the run selects a voice case, and combines `voiceEvalCases` with
 `conversationQualityCases` into one dataset, so a voice case's outcome sits in the same
 `baseline.json` as every other case, keyed by its own id. The routine is seeded only then, so a
@@ -162,8 +162,9 @@ re-record) only them, leaving every other case's entry untouched, with `--tag vo
 
 ```bash
 cd backend
-# One-time: point at a disposable agent (any one works; voice settings and the callback
-# routine are seeded onto it fresh, and a repeat run reuses them idempotently).
+# One-time: point at a disposable agent. Any one works: the voice cases' lines go over its
+# voice block, which keeps its runtime binding, recording notice and language switching, the
+# callback routine is seeded onto it, and a repeat run reuses both idempotently.
 export RADIOSO_EVAL_WORKSPACE_ID=... RADIOSO_EVAL_AGENT_ID=...
 node --env-file=./.env.evals --import tsx ./scripts/runEvals.ts --tag voice --samples 5 --update-baseline
 ```

@@ -2,12 +2,19 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
+import type { AgentVoiceSettings } from "../../../src/modules/agents/public.js";
 import { parseConversationQualityCases, type ConversationQualityCase } from "../../../src/modules/eval/suite/index.js";
 import { conversationQualityCases } from "../../fixtures/conversation-quality/cases.js";
+import { VOICE_EVAL_VOICE_SETTINGS } from "../../fixtures/voice-eval/agent.js";
 import { voiceEvalCases } from "../../fixtures/voice-eval/cases.js";
-import { loadBaseline, scopeVoiceCasesForLiveRun } from "../../../scripts/runEvals.js";
+import {
+  closeEvalDependencies,
+  loadBaseline,
+  scopeVoiceCasesForLiveRun,
+  seedVoiceSettings,
+} from "../../../scripts/runEvals.js";
 
 const voiceCase = (overrides: Partial<ConversationQualityCase>): ConversationQualityCase => ({
   id: "voice-scope-case",
@@ -136,5 +143,69 @@ describe("live runner baseline file", () => {
     const baselinePath = baselineAt("[]");
 
     expect(() => loadBaseline(baselinePath)).toThrow(baselinePath);
+  });
+});
+
+describe("live runner agent preparation", () => {
+  const target = { workspaceId: "11111111-1111-4111-8111-111111111111", agentId: "22222222-2222-4222-8222-222222222222" };
+
+  it("writes the voice cases' lines over the agent's own voice block, keeping its runtime, recording notice and language switching", async () => {
+    const operatorVoice: AgentVoiceSettings = {
+      enabled: false,
+      bridgeLines: { it: { acknowledge: [], check: ["Un attimo, controllo subito."] } },
+      fallbackLine: { it: "Scusa, ci sto mettendo troppo." },
+      recordingNotice: { en: "This call is recorded." },
+      runtime: { vendor: "elevenlabs", agentId: "agent_operator_bound", region: "eu" },
+      languageSwitching: true,
+    };
+    const update = vi.fn(async () => undefined);
+
+    await seedVoiceSettings({
+      agents: { findByIdAndWorkspaceId: async () => ({ voice: operatorVoice }) },
+      agentSettings: { update },
+    }, target);
+
+    expect(update).toHaveBeenCalledExactlyOnceWith(target.workspaceId, target.agentId, {
+      voice: {
+        ...VOICE_EVAL_VOICE_SETTINGS,
+        recordingNotice: { en: "This call is recorded." },
+        runtime: { vendor: "elevenlabs", agentId: "agent_operator_bound", region: "eu" },
+        languageSwitching: true,
+      },
+    });
+  });
+
+  it("refuses an agent it cannot find rather than writing a voice block onto nothing", async () => {
+    const update = vi.fn(async () => undefined);
+
+    await expect(seedVoiceSettings({
+      agents: { findByIdAndWorkspaceId: async () => null },
+      agentSettings: { update },
+    }, target)).rejects.toThrow(target.agentId);
+    expect(update).not.toHaveBeenCalled();
+  });
+});
+
+describe("live runner shutdown", () => {
+  it("closes the approval journal and the abuse-control repository, then ends the pool", async () => {
+    const closed: string[] = [];
+
+    await closeEvalDependencies({
+      closeApprovalResumeEffectJournal: async () => { closed.push("approval journal"); },
+      closeAbuseControlRepository: async () => { closed.push("abuse control"); },
+      connectorDb: { close: async () => { closed.push("pool"); } },
+    });
+
+    expect(closed).toEqual(["approval journal", "abuse control", "pool"]);
+  });
+
+  it("still ends the pool when a closer before it fails, and reports that failure", async () => {
+    const close = vi.fn(async () => undefined);
+
+    await expect(closeEvalDependencies({
+      closeApprovalResumeEffectJournal: async () => { throw new Error("journal close failed"); },
+      connectorDb: { close },
+    })).rejects.toThrow("journal close failed");
+    expect(close).toHaveBeenCalledOnce();
   });
 });

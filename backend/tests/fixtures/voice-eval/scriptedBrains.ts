@@ -109,11 +109,18 @@ export const voiceEvalBrains: Readonly<Record<string, VoiceEvalBrain>> = {
   },
 };
 
-/** The quick-reply case's model with the lane bypassed: the planner writes no quick reply, so the slow composer answers. */
+/**
+ * The timing the lane-bypass brain runs on: the composing-idle bridge at 1 s, so the case fails in
+ * under three seconds. Its composer answers at 2.5 s, well past the bridge, so what fails the case
+ * is the bridge alone.
+ */
+const LANE_BYPASS_TIMING = { ...SCRIPTED_BRAIN_TIMING, bridgeAfterComposingIdleMs: 1_000 };
+
+/** The quick-reply case's model with the lane bypassed: the planner writes no quick reply, so a slow composer answers. */
 export const voiceEvalBrainWithoutQuickReply: VoiceEvalBrain = {
-  chatGateway: composerAfter(SLOW_COMPOSER_MS, THANKS_REPLY),
+  chatGateway: composerAfter(2_500, THANKS_REPLY),
   turnPlanCoordinator: plannerPlanning({ route: "direct" }),
-  voiceTurnTiming: SCRIPTED_BRAIN_TIMING,
+  voiceTurnTiming: LANE_BYPASS_TIMING,
 };
 
 /** The searching case's model with the search gone: the planner routes direct and the composer answers at once, so nothing bridges. */

@@ -83,6 +83,10 @@ const SECRET_REMEDIATION_PLACEHOLDER = "[re-enter secret]";
 
 export class ConnectorRegistry {
   private readonly plugins = new Map<string, ConnectorPlugin>();
+  /** The plugins `initializeAll` started; only these hold anything `shutdownAll` must release. */
+  private readonly initialized = new Set<string>();
+  /** The logger the plugins were started with, which their shutdown failures go to. */
+  private lifecycleLogger: ConnectorLogger | null = null;
   private readonly router: Router;
   private encryptionKey: string | undefined;
 
@@ -135,6 +139,7 @@ export class ConnectorRegistry {
     assertPublicUrl?: (url: string) => Promise<void>;
     fetchPublicUrl?: typeof fetch;
   }): Promise<void> {
+    this.lifecycleLogger = context.logger;
     for (const plugin of this.plugins.values()) {
       try {
         await plugin.initialize({
@@ -162,6 +167,7 @@ export class ConnectorRegistry {
           state: this.createPluginState(context.db, plugin.id),
           http: this.createHttpHost(plugin.id),
         } as Parameters<ConnectorPlugin["initialize"]>[0]);
+        this.initialized.add(plugin.id);
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         context.logger.error({ connectorId: plugin.id, err: message }, `Connector "${plugin.id}" failed to initialize`);
@@ -169,12 +175,23 @@ export class ConnectorRegistry {
     }
   }
 
+  /**
+   * Shuts down the plugins `initializeAll` started, each once; a runtime that never started them
+   * (the workers) leaves them alone. A plugin that fails to shut down is logged by its id and
+   * name only, since its error may carry connection details, and the rest still shut down.
+   */
   async shutdownAll(): Promise<void> {
     for (const plugin of this.plugins.values()) {
+      if (!this.initialized.delete(plugin.id)) {
+        continue;
+      }
       try {
         await plugin.shutdown();
       } catch {
-        // Best-effort shutdown — log and continue
+        this.lifecycleLogger?.error(
+          { connectorId: plugin.id, connectorName: plugin.name },
+          `Connector "${plugin.id}" failed to shut down`,
+        );
       }
     }
   }

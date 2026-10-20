@@ -18,9 +18,9 @@ import {
 
 const WORKSPACE_ID = "11111111-1111-4111-8111-111111111111";
 /**
- * A case on a test composition builds one per run, and a thank-you the composer answers (the
- * laneless brain, or a quick-reply-lane regression) waits out the scripted brains' 5 s
- * composing-idle bridge first; this lets either fail on its verdicts, not time out.
+ * A case on a test composition builds one per run, and a thank-you the composer answers waits out
+ * a composing-idle bridge first (a quick-reply-lane regression the generous brains' 5 s one); this
+ * lets either fail on its verdicts, not time out.
  */
 const COMPOSITION_TURN_TIMEOUT_MS = 20_000;
 

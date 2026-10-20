@@ -35,6 +35,17 @@ const createFakePlugin = (overrides: Partial<ConnectorPlugin> = {}): ConnectorPl
   ...(overrides.syncNow ? { syncNow: overrides.syncNow } : {}),
 });
 
+/** The context `initializeAll` needs for lifecycle tests: fakes for every port a plugin may touch. */
+const lifecycleContext = () => ({
+  db: {} as any,
+  logger: { info: () => {}, error: () => {}, warn: () => {} },
+  chat: { answer: async () => ({ conversationId: "conversation-1", answer: "ok" }) } as any,
+  ingestion: {
+    ingest: async () => ({ documentId: "doc-1", status: "queued" }),
+    deleteByExternalId: async () => false,
+  } as any,
+}) satisfies Pick<ConnectorContext, "db" | "logger" | "chat" | "ingestion">;
+
 describe("ConnectorRegistry", () => {
   it("registers a plugin and lists it", () => {
     const registry = new ConnectorRegistry();
@@ -103,6 +114,54 @@ describe("ConnectorRegistry", () => {
 
     await registry.shutdownAll();
     expect(events).toContain("shutdown-x");
+  });
+
+  it("shuts down only the plugins it initialized, so a runtime that never started them leaves them alone", async () => {
+    const events: string[] = [];
+    const registry = new ConnectorRegistry();
+    registry.register(createFakePlugin({ id: "x", shutdown: async () => { events.push("shutdown-x"); } }));
+
+    await registry.shutdownAll();
+
+    expect(events).toEqual([]);
+  });
+
+  it("does not shut down a plugin whose initialization failed, and shuts each one down once", async () => {
+    const events: string[] = [];
+    const registry = new ConnectorRegistry();
+    registry.register(createFakePlugin({
+      id: "fails",
+      initialize: async () => { throw new Error("boom"); },
+      shutdown: async () => { events.push("shutdown-fails"); },
+    }));
+    registry.register(createFakePlugin({ id: "succeeds", shutdown: async () => { events.push("shutdown-succeeds"); } }));
+
+    await registry.initializeAll(lifecycleContext());
+    await registry.shutdownAll();
+    await registry.shutdownAll();
+
+    expect(events).toEqual(["shutdown-succeeds"]);
+  });
+
+  it("logs a plugin that fails to shut down by its id and name, and shuts the rest down", async () => {
+    const events: string[] = [];
+    const error = vi.fn();
+    const registry = new ConnectorRegistry();
+    registry.register(createFakePlugin({
+      id: "stuck",
+      name: "Stuck Connector",
+      shutdown: async () => { throw new Error("socket still open: token=secret"); },
+    }));
+    registry.register(createFakePlugin({ id: "fine", shutdown: async () => { events.push("shutdown-fine"); } }));
+
+    await registry.initializeAll({ ...lifecycleContext(), logger: { info: () => {}, error, warn: () => {} } });
+    await registry.shutdownAll();
+
+    expect(events).toEqual(["shutdown-fine"]);
+    expect(error).toHaveBeenCalledExactlyOnceWith(
+      { connectorId: "stuck", connectorName: "Stuck Connector" },
+      expect.stringContaining("stuck"),
+    );
   });
 
   it("scopes plugin HTTP mounts under the connector id", async () => {

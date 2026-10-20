@@ -7,6 +7,7 @@ export {
 } from "./caseSchema.js";
 export {
   evaluateTraceAssertion,
+  isDeterministicOnlyAssertion,
 } from "./traceAssertions.js";
 export {
   scoreObservedOutput,

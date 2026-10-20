@@ -17,22 +17,25 @@ import {
   seedVoiceSettings,
 } from "../../../scripts/evalRunnerSupport.js";
 
-const voiceCase = (overrides: Partial<ConversationQualityCase>): ConversationQualityCase => ({
-  id: "voice-scope-case",
-  name: "A voice case",
-  tags: ["voice"],
-  query: "Hello there",
-  voiceTurn: { chatEvents: [{ type: "done" }] },
-  assertions: [],
-  ...overrides,
-});
+/** A voice case as a run reads it: parsed, so its assertions carry the scope their definitions give them. */
+const voiceCase = (overrides: Partial<ConversationQualityCase>): ConversationQualityCase =>
+  parseConversationQualityCases([{
+    id: "voice-scope-case",
+    name: "A voice case",
+    tags: ["voice"],
+    query: "Hello there",
+    voiceTurn: { chatEvents: [{ type: "done" }] },
+    assertions: [],
+    ...overrides,
+  }])[0];
 
 describe("live runner scope", () => {
-  it("never gates a live voice case on latency: drops \"no bridge\" and \"the limit fired\"", () => {
+  it("never gates a live voice case on latency: drops whether it bridged when it should not have, and the turn limit either way", () => {
     const [scoped] = scopeCasesForLiveRun([voiceCase({
       assertions: [
         { type: "voice_bridge_emitted", expected: false },
         { type: "voice_turn_limit_reached", expected: true },
+        { type: "voice_turn_limit_reached", expected: false },
         { type: "voice_turn_outcome", kind: "continue" },
       ],
     })], []);
@@ -40,27 +43,29 @@ describe("live runner scope", () => {
     expect(scoped?.assertions).toEqual([{ type: "voice_turn_outcome", kind: "continue" }]);
   });
 
-  it("keeps the voice expectations a slow brain cannot break: a bridge, and a turn that never reached its limit", () => {
+  it("gates a live voice case on a spoken bridge and on its outcome", () => {
     const [scoped] = scopeCasesForLiveRun([voiceCase({
       assertions: [
         { type: "voice_bridge_emitted", expected: true },
-        { type: "voice_turn_limit_reached", expected: false },
+        { type: "voice_turn_outcome", kind: "callback_requested" },
       ],
     })], []);
 
     expect(scoped?.assertions).toEqual([
       { type: "voice_bridge_emitted", expected: true },
-      { type: "voice_turn_limit_reached", expected: false },
+      { type: "voice_turn_outcome", kind: "callback_requested" },
     ]);
   });
 
-  it("skips a deterministic-only voice case", () => {
+  it("skips a case whose every assertion is deterministic-only", () => {
     const scoped = scopeCasesForLiveRun([
       voiceCase({ id: "runs-live", assertions: [{ type: "voice_turn_outcome", kind: "continue" }] }),
       voiceCase({
         id: "scripted-only",
-        voiceTurn: { chatEvents: [{ type: "stall" }], deterministicOnly: true },
-        assertions: [{ type: "voice_turn_limit_reached", expected: true }],
+        assertions: [
+          { type: "voice_bridge_emitted", expected: false },
+          { type: "voice_turn_outcome", kind: "continue", deterministicOnly: true },
+        ],
       }),
     ], []);
 
@@ -68,21 +73,22 @@ describe("live runner scope", () => {
   });
 
   it("refuses a live voice case left with nothing to gate", () => {
-    expect(() => scopeCasesForLiveRun([voiceCase({
-      id: "gates-nothing",
-      assertions: [{ type: "voice_bridge_emitted", expected: false }],
-    })], [])).toThrow(/"gates-nothing".*deterministicOnly/u);
+    expect(() => scopeCasesForLiveRun([voiceCase({ id: "gates-nothing" })], [])).toThrow(/"gates-nothing"/u);
   });
 
-  it("refuses a live voice case whose only gate is a judge the run does not grade, and keeps it when the run grades it", () => {
+  it("refuses a live voice case whose only live gate is a judge the run does not grade, and keeps it when the run grades it", () => {
     const judgedOnly = voiceCase({
       id: "judged-only",
       tags: ["voice", "voice-wording"],
-      assertions: [{ type: "llm_judge", expectedAnswer: "The reply thanks the caller." }],
+      assertions: [
+        { type: "voice_bridge_emitted", expected: false },
+        { type: "llm_judge", expectedAnswer: "The reply thanks the caller." },
+      ],
     });
 
     expect(() => scopeCasesForLiveRun([judgedOnly], [])).toThrow(/"judged-only"/u);
-    expect(scopeCasesForLiveRun([judgedOnly], ["voice-wording"])).toEqual([judgedOnly]);
+    expect(scopeCasesForLiveRun([judgedOnly], ["voice-wording"])[0]?.assertions)
+      .toEqual([{ type: "llm_judge", expectedAnswer: "The reply thanks the caller." }]);
   });
 
   it("scopes text cases by judge tag alone", () => {

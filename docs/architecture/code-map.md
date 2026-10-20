@@ -2320,8 +2320,8 @@ Primary paths:
   `AppDependencies.voiceTurns` (`evalRunnerAdapter.ts`'s
   `createVoiceTurnRunnerPort`/`observeVoiceTurn`), scores, and gates on the
   baseline; every selected case must have a committed baseline entry, and
-  `scopeCasesForLiveRun` keeps the voice expectations only latency decides and
-  deterministic-only voice cases out of the live gate
+  `scopeCasesForLiveRun` keeps deterministic-only voice assertions (the ones
+  only latency decides) and the cases made only of them out of the live gate
 - `.github/workflows/conversation-quality-evals.yml` — nightly live run,
   voice cases included
 

@@ -7,9 +7,10 @@ import type { ConversationQualityCase } from "../../../src/modules/eval/suite/in
  * runs a case with a `voiceTurn.chatEvents` script against a `VoiceTurnService` built with a tiny
  * timing override, and a case naming `voiceTurn.scriptedBrain` on a test composition's own chat
  * turn over that model in `scriptedBrains.ts`, on its generous timing. `scripts/runEvals.ts` runs
- * every case not marked `deterministicOnly` against the real brain, ignores the scripts, and seeds
- * `routines.ts`'s `voiceEvalCallbackRoutine` so `voice-outcome-handoff` has a real routine hand-off
- * to reach. See `tests/fixtures/conversation-quality/README.md`'s "Voice cases" section.
+ * every case with an assertion a live turn can check against the real brain, ignores the scripts,
+ * and seeds `routines.ts`'s `voiceEvalCallbackRoutine` so `voice-outcome-handoff` has a real
+ * routine hand-off to reach. See `tests/fixtures/conversation-quality/README.md`'s "Voice cases"
+ * section.
  */
 export const voiceEvalCases: ConversationQualityCase[] = [
   {
@@ -33,13 +34,14 @@ export const voiceEvalCases: ConversationQualityCase[] = [
       // The deterministic half runs this on a test composition's own planner and quick-reply lane
       // (scriptedBrains.ts), with a composer slow enough that a thank-you it answered would bridge.
       scriptedBrain: "thanks-quick-reply",
-      // Live, "no bridge" holds only while the planner beats the 2.5 s stall bridge, so this case
-      // would gate only its `continue` outcome, which any answer passes.
-      deterministicOnly: true,
     },
     assertions: [
+      // Deterministic-only by definition: live, "no bridge" holds only while the planner beats
+      // the 2.5 s stall bridge.
       { type: "voice_bridge_emitted", expected: false },
-      { type: "voice_turn_outcome", kind: "continue" },
+      // Beside the bridge it is out of scope live, `continue` alone is any answer's outcome, so
+      // the case runs in the deterministic half only.
+      { type: "voice_turn_outcome", kind: "continue", deterministicOnly: true },
     ],
   },
   {
@@ -54,13 +56,13 @@ export const voiceEvalCases: ConversationQualityCase[] = [
         { type: "status", stage: "interpreting" },
         { type: "stall" },
       ],
-      // No live turn holds the planner open for 10 s on demand, so live this case would gate
-      // only its `continue` outcome, which any answer passes.
-      deterministicOnly: true,
     },
     assertions: [
+      // Deterministic-only by definition: no live question stalls the planner for 10 s.
       { type: "voice_turn_limit_reached", expected: true },
-      { type: "voice_turn_outcome", kind: "continue" },
+      // `continue` after the fallback line is what this case checks; without the limit, it is
+      // any answer's outcome, so the case runs in the deterministic half only.
+      { type: "voice_turn_outcome", kind: "continue", deterministicOnly: true },
     ],
   },
   {

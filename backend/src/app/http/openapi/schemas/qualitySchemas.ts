@@ -153,7 +153,7 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
 
   const QualitySignalIdSchema = registry.register(
     "QualitySignalId",
-    z.enum(["negative_feedback", "grounding_gaps", "skill_failures"]),
+    z.enum(["negative_feedback", "grounding_gaps", "skill_failures", "unmet_directives"]),
   );
 
   const QualityStatsRangeSchema = registry.register("QualityStatsRange", z.enum(["7d", "30d"]));
@@ -228,6 +228,7 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
           negative_feedback: z.number().int().min(0),
           grounding_gaps: z.number().int().min(0),
           skill_failures: z.number().int().min(0),
+          unmet_directives: z.number().int().min(0),
         })
         .describe(
           "Turns still in an active triage state (`open` or `acknowledged`) per signal. All-time and independent of `range`.",

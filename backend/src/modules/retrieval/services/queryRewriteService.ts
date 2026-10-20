@@ -19,6 +19,7 @@ import type {
 } from "../domain/retrievalPipelineTypes.js";
 import { REWRITE_STATUS, REWRITE_TURN_KIND, type TemporalQueryMode } from "../domain/retrievalPipelineTypes.js";
 import { buildLexicalAlternativeSubqueries } from "../domain/lexicalQueryPlan.js";
+import { anchorRetrievalToSubject } from "../domain/referentialSubjectAnchor.js";
 import { RewriteEligibilityService } from "./rewritePolicyService.js";
 import { DEFAULT_RESPONSE_LANGUAGE_POLICY } from "./queryRewriteDefaults.js";
 import { truncateTriggerInstruction } from "./queryRewriteParser.js";
@@ -33,13 +34,20 @@ export {
   ModelTriggerAnalysisGateway,
   OpenAIQueryRewriteGateway,
   type QueryRewriteGateway,
-  type QueryRewriteGatewayFallbackResult,
   type QueryRewriteGatewayResult,
   type TriggerAnalysisGateway,
   type TriggerAnalysisGatewayInput,
 } from "./queryRewriteGateways.js";
 
 const TRIGGER_MATCH_ENACTMENT_THRESHOLD = RETRIEVAL_BEHAVIOR.hybrid.triggerMatchEnactmentThreshold;
+const MAX_REWRITE_LENGTH = 300;
+// Turns that point back at a subject named earlier. A fresh subject or an explicit
+// recenter names its subject in the turn itself, a comparison has no single subject,
+// and an ambiguous turn has none resolved.
+const REFERENTIAL_TURN_KINDS: ReadonlySet<RewriteTurnKind> = new Set([
+  REWRITE_TURN_KIND.REFERENTIAL_FOLLOWUP,
+  REWRITE_TURN_KIND.REFERENTIAL_RELATION,
+]);
 const resolveFallbackUsageContext = (
   input: { workspaceContext?: LlmCapabilityResolveInput; usageContext?: ModelCallUsageContext },
   operation: string,
@@ -111,7 +119,7 @@ export class QueryRewriteService {
     const hasConversationContext = input.contextWindow.selectedMessages.length > 0;
     const normalizedStructuredResult = this.normalizeStructuredResult(input.query, input.proposal);
 
-    const semanticQuery = this.selectSemanticQuery(
+    const selectedSemanticQuery = this.selectSemanticQuery(
       input.query,
       normalizedStructuredResult.semanticQuery ?? normalizedStructuredResult.rewrittenQuery,
       hasConversationContext,
@@ -121,14 +129,13 @@ export class QueryRewriteService {
       normalizedStructuredResult.lexicalQuery ?? normalizedStructuredResult.rewrittenQuery,
       hasConversationContext,
     );
-    const compatibilityRewrite = semanticQuery;
     const responseLanguagePolicy = normalizedStructuredResult.responseLanguagePolicy ?? DEFAULT_RESPONSE_LANGUAGE_POLICY;
     const lexicalRewriteAccepted = lexicalQuery !== input.query;
     const modelRetrievalSubqueries =
       normalizedStructuredResult.retrievalSubqueries ??
       (lexicalRewriteAccepted
         ? buildLexicalAlternativeSubqueries({
-            semanticQuery,
+            semanticQuery: selectedSemanticQuery,
             lexicalQuery,
             responseLanguagePolicy,
           })
@@ -138,7 +145,23 @@ export class QueryRewriteService {
       lexicalQuery,
       proposedActiveSubject: normalizedStructuredResult.proposedActiveSubject,
     });
-    const retrievalSubqueries = modelRetrievalSubqueries;
+    // The no-context guards above already decided this turn stands alone.
+    const referentialSubject = hasConversationContext
+      ? this.referentialSubject(normalizedStructuredResult, input.proposal)
+      : undefined;
+    const anchoring = referentialSubject
+      ? anchorRetrievalToSubject({
+          subject: referentialSubject,
+          semanticQuery: selectedSemanticQuery,
+          lexicalQuery: resolvedLexicalQuery,
+          retrievalSubqueries: modelRetrievalSubqueries,
+          responseLanguagePolicy,
+          labelFor: (text, position) => this.normalizeRetrievalSubqueryLabel(text) ?? `Subquery ${position}`,
+        })
+      : { semanticQuery: selectedSemanticQuery, retrievalSubqueries: modelRetrievalSubqueries, anchored: false };
+    const semanticQuery = anchoring.semanticQuery;
+    const compatibilityRewrite = semanticQuery;
+    const retrievalSubqueries = anchoring.retrievalSubqueries;
     const applied =
       semanticQuery !== input.query
       || resolvedLexicalQuery !== input.query
@@ -162,6 +185,7 @@ export class QueryRewriteService {
       semanticQuery,
       lexicalQuery: resolvedLexicalQuery,
       retrievalSubqueries: stripLexicalPlans(retrievalSubqueries),
+      ...(anchoring.anchored && referentialSubject ? { anchoredSubject: referentialSubject } : {}),
     };
     const eligibility = this.eligibilityService.evaluate({
       originalQuery: input.query,
@@ -340,8 +364,10 @@ export class QueryRewriteService {
       const semanticQuery = this.normalizeRewrite(result.semanticQuery ?? result.rewrittenQuery);
       const lexicalQuery = this.normalizeLexicalRewrite(result.lexicalQuery ?? result.rewrittenQuery);
       const responseLanguagePolicy = DEFAULT_RESPONSE_LANGUAGE_POLICY;
+      const resolutionNote = this.normalizeOptionalRewrite(result.resolutionNote);
 
       return {
+        ...(resolutionNote ? { resolutionNote } : {}),
         rewrittenQuery: this.normalizeRewrite(result.rewrittenQuery),
         semanticQuery,
         lexicalQuery,
@@ -516,12 +542,30 @@ export class QueryRewriteService {
     return subject;
   }
 
+  /**
+   * The subject a referential turn resolved to. A reference such as "the event" has no
+   * searchable term of its own, so retrieval needs the subject the interpreter resolved it
+   * to. It is read as free text from the proposal: the classifier label behind
+   * `proposedActiveSubject` rejects punctuation a course or product name can carry. An
+   * unresolved turn's subject is a guess and stays out.
+   */
+  private referentialSubject(
+    result: StructuredRewriteResult,
+    proposal?: QueryRewriteGatewayResultPort,
+  ): string | undefined {
+    if (!proposal || !("turnKind" in proposal) || !REFERENTIAL_TURN_KINDS.has(result.turnKind) || result.unresolved) {
+      return undefined;
+    }
+    const subject = this.normalizeOptionalRewrite(proposal.proposedActiveSubject);
+    return subject && subject.length <= MAX_REWRITE_LENGTH ? subject : undefined;
+  }
+
   private isUsableRewrite(originalQuery: string, rewrittenQuery: string): boolean {
     if (!rewrittenQuery || rewrittenQuery === originalQuery) {
       return false;
     }
 
-    if (rewrittenQuery.length > 300) {
+    if (rewrittenQuery.length > MAX_REWRITE_LENGTH) {
       return false;
     }
 

@@ -25,6 +25,7 @@ export type ClarificationMetricReason =
   | "priority"
   | "suppressed"
   | "page_capture"
+  | "all_senses_kept"
   | "label_fallback"
   | "compatible_facets"
   | "redundant_sources"
@@ -38,6 +39,7 @@ const METRIC_REASONS: ReadonlySet<ClarificationMetricReason> = new Set([
   "priority",
   "suppressed",
   "page_capture",
+  "all_senses_kept",
   "label_fallback",
   "compatible_facets",
   "redundant_sources",

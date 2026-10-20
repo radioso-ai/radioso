@@ -9,11 +9,14 @@ The ordered `claims` array must repeat every inline assertion group from `answer
 
 `suggestions` must be empty when disabled or the outcome is a decline.
 
-Return one `adherence` entry per rendered steering id, or an empty array with
-none: `rule`, `satisfied`, `applicable`, and a short operator-only `note`.
-`applicable` is false when the rule's own condition was not met this turn (an
-authored `when:` clause, or a coverage criteria); `satisfied` is then ignored.
-Never restate, quote, or summarize retrieved Result/document text in notes.
+Before `answer`, commit in `adherencePlan` to what each steering id requires
+here, with no commitment undoing another; the `answer` keeps every commitment.
+After it, return one `adherence` entry per steering id (empty with none):
+`rule`, `satisfied`, `applicable`, and a short operator-only `note`.
+`satisfied` is false when the answer breaks its commitment. `applicable` is
+false when the rule's own condition was not met this turn (a `when:` clause or
+coverage criteria); `satisfied` is then ignored. Never restate, quote, or
+summarize retrieved Result/document text in commitments or notes.
 
 Grounded example:
 {"coverage":"answered_sufficient_evidence","requestFocus":"the June workshop dates and registration","outcome":"answer","answer":"The advanced workshop runs in June[[1]]. Returning students can register online[[2]][[3]].","v":2,"claims":[[1],[2,3]],"suggestions":[],"grounding":"degraded"}

@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-10-18
+last_updated: 2026-10-19
 ---
 
 # Code Map
@@ -1561,7 +1561,8 @@ Related specs:
 Owns the operator's view of answer quality: which assistant turns are worth
 reviewing, the structured triage decision an operator assigns them, and the
 rates those turns aggregate to. Signal meaning is derived from skill-catalog
-metadata rather than outcome-name matching.
+metadata rather than outcome-name matching, and from the directive grades chat
+persists on the assistant message (`unmet_directives`).
 
 Should not own anything that influences a turn. Nothing here feeds retrieval,
 routing, or answer composition. Current triage and its append-only transition
@@ -2211,14 +2212,24 @@ express, such as empathy or refusal.
 
 Primary paths:
 
-- `backend/src/modules/eval/suite/` — case schema, trace assertions, scoring,
-  baseline diff, sampling reducer, report
+- `backend/src/modules/eval/suite/` — case schema, trace assertions (including
+  the voice-only `voice_bridge_emitted`, `voice_turn_limit_reached`,
+  `voice_turn_outcome`), scoring, baseline diff, sampling reducer, report
 - `backend/tests/fixtures/conversation-quality/` — the dataset (corpus, seed
   routines and directives, agent, cases, `baseline.json`) and its `README.md`
-- `backend/scripts/runEvals.ts` — headless CLI that seeds fixtures, drives turns
-  through `WorkbenchReplayRunner`, scores, and gates on the baseline; every selected
-  case must have a committed baseline entry
-- `.github/workflows/conversation-quality-evals.yml` — nightly live run
+- `backend/tests/fixtures/voice-eval/` — the voice cases (bridge timing, the
+  turn limit, the outcome derivation), the one seed routine a hand-off case
+  needs (`routines.ts`), and the deterministic runner that drives the cases
+  through a real `VoiceTurnService` over a scripted chat backend
+- `backend/scripts/runEvals.ts` and `scripts/evalRunnerAdapter.ts` — headless
+  CLI that seeds fixtures (voice settings and the voice-eval routine included,
+  when a voice case is selected; publishes the agent, as a review case does),
+  drives text turns through `WorkbenchReplayRunner` and voice turns through
+  `AppDependencies.voiceTurns` (`evalRunnerAdapter.ts`'s
+  `createVoiceTurnRunnerPort`/`observeVoiceTurn`), scores, and gates on the
+  baseline; every selected case must have a committed baseline entry
+- `.github/workflows/conversation-quality-evals.yml` — nightly live run,
+  voice cases included
 
 Full-assistant runs use the same conversation turn assembly as production chat
 when the Workbench runner and a full agent-config snapshot are available.
@@ -2239,9 +2250,10 @@ Useful searches:
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/eval-suite` — deterministic
-  harness (runs in normal CI)
+  harness (runs in normal CI), including `voice-behaviour.test.ts`
 - `cd backend && pnpm run evals:ci` — live sampled run (needs Postgres,
-  `OPENAI_API_KEY`, and a running document worker); nightly, not per-PR
+  `OPENAI_API_KEY`, and a running document worker); nightly, not per-PR; runs
+  the voice cases against the real brain too
 
 Related docs:
 

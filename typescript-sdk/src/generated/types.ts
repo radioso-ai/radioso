@@ -9290,7 +9290,7 @@ export interface components {
             verification: components["schemas"]["QualityVerification"] | null;
         };
         /** @enum {string} */
-        QualitySignalId: "negative_feedback" | "grounding_gaps" | "skill_failures";
+        QualitySignalId: "negative_feedback" | "grounding_gaps" | "skill_failures" | "unmet_directives";
         /** @enum {string} */
         QualityStatsRange: "7d" | "30d";
         QualityStatsMetric: {
@@ -9341,6 +9341,7 @@ export interface components {
                 negative_feedback: number;
                 grounding_gaps: number;
                 skill_failures: number;
+                unmet_directives: number;
             };
             /** @description Current-window terminal triage counts grouped by state and structured reason. Closures without one are grouped as `unspecified`. */
             resolutionBreakdown: {
@@ -27282,7 +27283,7 @@ export interface operations {
     listLowQualityTurns: {
         parameters: {
             query?: {
-                /** @description Comma-separated `QualitySignalId` values (`negative_feedback`, `grounding_gaps`, `skill_failures`), resolved server-side from the skill catalog. A turn matches if it carries any listed signal, and the result is layered on top of the other filters rather than replacing them. */
+                /** @description Comma-separated `QualitySignalId` values (`negative_feedback`, `grounding_gaps`, `skill_failures`, `unmet_directives`), resolved server-side. `unmet_directives` matches turns whose answer graded a directive that applied to the turn as not followed. A turn matches if it carries any listed signal, and the result is layered on top of the other filters rather than replacing them. */
                 signal?: string;
                 /** @description Comma-separated `grounded`, `degraded`, or `no_support` verdicts. A turn matches any listed verdict. */
                 groundingVerdict?: string;

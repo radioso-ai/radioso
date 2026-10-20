@@ -1,6 +1,7 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -12,6 +13,7 @@ import { voiceEvalCases } from "../../fixtures/voice-eval/cases.js";
 import {
   closeEvalDependencies,
   loadBaseline,
+  readRunBaseline,
   runThenClose,
   scopeCasesForLiveRun,
   scopeJudgeAssertions,
@@ -153,6 +155,13 @@ describe("live runner baseline file", () => {
     });
   });
 
+  it("reads the committed baseline.json as the shape the recorder writes", () => {
+    const committed = loadBaseline(fileURLToPath(new URL("../../fixtures/conversation-quality/baseline.json", import.meta.url)));
+
+    expect(Object.keys(committed.cases).length).toBeGreaterThan(0);
+    expect(committed.passThreshold).toBe(1);
+  });
+
   it("reads a missing baseline as an empty one, so a first recording can create it", () => {
     expect(loadBaseline(baselineAt())).toEqual({ cases: {} });
   });
@@ -177,6 +186,42 @@ describe("live runner baseline file", () => {
     const baselinePath = baselineAt(`{ "passThreshold": 1, "cases": ${cases} }`);
 
     expect(() => loadBaseline(baselinePath)).toThrow(baselinePath);
+  });
+
+  it.each([
+    ["an entry with a status no run writes", '{ "cases": { "greeting-en": "passed" } }', /greeting-en/u],
+    ["an entry whose pass rate is no fraction", '{ "cases": { "greeting-en": { "status": "pass", "passRate": 5 } } }', /passRate/u],
+    ["a pass threshold that is no number", '{ "passThreshold": "high", "cases": {} }', /passThreshold/u],
+    ["a recording time that is no string", '{ "generatedAt": 20261020, "cases": {} }', /generatedAt/u],
+  ])("throws on %s, naming the file and the field", (_shape, contents, field) => {
+    const baselinePath = baselineAt(contents);
+
+    expect(() => loadBaseline(baselinePath)).toThrow(baselinePath);
+    expect(() => loadBaseline(baselinePath)).toThrow(field);
+  });
+
+  it("throws on a baseline it cannot read, naming it", () => {
+    const baselinePath = baselineAt();
+    mkdirSync(baselinePath);
+
+    expect(() => loadBaseline(baselinePath)).toThrow(baselinePath);
+  });
+
+  it("refuses a damaged baseline for a gating run and for a tag-filtered recording, which both read it", () => {
+    const baselinePath = baselineAt("{ damaged");
+    const warn = vi.fn();
+
+    expect(() => readRunBaseline(baselinePath, { updateBaseline: false, tags: [] }, warn)).toThrow(baselinePath);
+    expect(() => readRunBaseline(baselinePath, { updateBaseline: true, tags: ["voice"] }, warn)).toThrow(baselinePath);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  it("lets a full recording, which rewrites the file whole, start from empty over a damaged baseline, with a warning", () => {
+    const baselinePath = baselineAt("{ damaged");
+    const warn = vi.fn();
+
+    expect(readRunBaseline(baselinePath, { updateBaseline: true, tags: [] }, warn)).toEqual({ cases: {} });
+    expect(warn).toHaveBeenCalledExactlyOnceWith(expect.stringContaining(baselinePath));
   });
 });
 

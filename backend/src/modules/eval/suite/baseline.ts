@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import type { EvalRunStatus } from "../domain/types.js";
 
 /**
@@ -33,6 +35,35 @@ export interface BaselineCaseRecord {
 
 /** A bare status is the single-sample form; suites that do not sample still write it. */
 export type BaselineCaseEntry = EvalRunStatus | BaselineCaseRecord;
+
+const evalRunStatusSchema = z.enum(["pass", "fail", "error", "recorded"]) satisfies z.ZodType<EvalRunStatus>;
+
+const baselineFileSchema = z.object({
+  generatedAt: z.string().optional(),
+  passThreshold: z.number().min(0).max(1).optional(),
+  cases: z.record(z.union([
+    evalRunStatusSchema,
+    z.object({
+      status: evalRunStatusSchema,
+      passRate: z.number().min(0).max(1).optional(),
+      samples: z.number().int().positive().optional(),
+    }),
+  ])).default({}),
+}) satisfies z.ZodType<BaselineFile, z.ZodTypeDef, unknown>;
+
+/**
+ * Reads a baseline file's parsed JSON as the shape the recorder writes. Anything else throws, with
+ * each field that does not fit named, so a damaged file is never taken for a smaller baseline.
+ */
+export const parseBaselineFile = (value: unknown): BaselineFile => {
+  const parsed = baselineFileSchema.safeParse(value);
+  if (!parsed.success) {
+    throw new Error(parsed.error.issues
+      .map((issue) => `${issue.path.length > 0 ? issue.path.join(".") : "the file"}: ${issue.message}`)
+      .join("; "));
+  }
+  return parsed.data;
+};
 
 const baselineCaseStatus = (entry: BaselineCaseEntry): EvalRunStatus =>
   typeof entry === "string" ? entry : entry.status;

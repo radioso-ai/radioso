@@ -67,9 +67,9 @@ import { voiceEvalRoutines } from "../tests/fixtures/voice-eval/routines.js";
 import { createReviewTurnRunnerPort, createVoiceTurnRunnerPort, createWorkbenchReplayRunnerPort } from "./evalRunnerAdapter.js";
 import {
   closeEvalDependencies,
-  loadBaseline,
   needsPublishedAgent,
   needsVoiceSettings,
+  readRunBaseline,
   registerDisposableAgent,
   runThenClose,
   scopeCasesForLiveRun,
@@ -547,11 +547,11 @@ const main = async (): Promise<void> => {
   }
 
   const dataset = parseConversationQualityCases([...conversationQualityCases, ...voiceEvalCases]);
-  // Read and scoped before the run opens a pool or registers an account, so a damaged baseline or
-  // a refused case stops it at no cost. llm_judge assertions are graded only on the cases a
+  // Read and scoped before the run opens a pool or registers an account, so a damaged baseline
+  // (one this run reads; a full recording rewrites it) or a refused case stops it at no cost. llm_judge assertions are graded only on the cases a
   // --judge-tag opted in, a voice case is never gated on latency, and a deterministic-only one
   // does not run live.
-  const baseline = loadBaseline(BASELINE_PATH);
+  const baseline = readRunBaseline(BASELINE_PATH, flags, (message) => console.warn(message));
   const cases = scopeCasesForLiveRun(filterByTags(dataset, flags.tags), flags.judgeTags);
   const runsVoiceCases = needsVoiceSettings(cases);
   const env = getEnv();

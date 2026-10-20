@@ -61,6 +61,7 @@ const agent = (): ConversationAgent => ({
   branding: {
     hidePoweredBy: false,
     privacyPolicyUrl: null,
+    privacyNotice: {},
   },
   greetingInstruction: "Greet briefly.",
   assistantDefaultLocale: "en-US",

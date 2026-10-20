@@ -89,6 +89,7 @@ describe("settings services", () => {
     branding: {
       hidePoweredBy: false,
       privacyPolicyUrl: null,
+      privacyNotice: {},
     },
     surfaceSettings: {
       authenticatedChat: {

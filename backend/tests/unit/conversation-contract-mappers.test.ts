@@ -50,6 +50,7 @@ const agent = (overrides: Partial<AgentRecord> = {}): AgentRecord => ({
   branding: {
     hidePoweredBy: false,
     privacyPolicyUrl: null,
+    privacyNotice: {},
   },
   greetingInstruction: "",
   assistantDefaultLocale: "en",

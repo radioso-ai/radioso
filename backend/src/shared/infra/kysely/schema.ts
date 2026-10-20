@@ -660,6 +660,7 @@ export interface Conversations {
   entry_page_url: string | null;
   entry_referrer: string | null;
   id: string;
+  privacy_notice_version: string | null;
   purpose: Generated<string>;
   request_context: Json | null;
   source_channel: string | null;

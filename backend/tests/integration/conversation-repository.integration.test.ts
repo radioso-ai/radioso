@@ -91,6 +91,19 @@ describeIntegration("ConversationRepository (Postgres)", () => {
     expect(await repository.findByIdAndWorkspaceId(conv.id, randomUUID())).toBeNull();
   });
 
+  it("stores the privacy notice version a conversation starts with, and records one later only where none is (#1545)", async () => {
+    const shown = await repository.create({ workspaceId, privacyNoticeVersion: "en:0123456789abcdef" });
+    expect((await repository.findByIdAndWorkspaceId(shown.id, workspaceId))?.privacyNoticeVersion).toBe("en:0123456789abcdef");
+    expect(await repository.recordPrivacyNoticeVersion(shown.id, workspaceId, "en:fedcba9876543210")).toBe(false);
+    expect((await repository.findByIdAndWorkspaceId(shown.id, workspaceId))?.privacyNoticeVersion).toBe("en:0123456789abcdef");
+
+    const unshown = await repository.create({ workspaceId });
+    expect(unshown.privacyNoticeVersion).toBeNull();
+    expect(await repository.recordPrivacyNoticeVersion(unshown.id, randomUUID(), "de:0123456789abcdef")).toBe(false);
+    expect(await repository.recordPrivacyNoticeVersion(unshown.id, workspaceId, "de:0123456789abcdef")).toBe(true);
+    expect((await repository.findByIdAndWorkspaceId(unshown.id, workspaceId))?.privacyNoticeVersion).toBe("de:0123456789abcdef");
+  });
+
   it("defaults conversations to production and preserves the private operator-test purpose", async () => {
     const production = await repository.create({ workspaceId });
     const operatorTest = await repository.create({

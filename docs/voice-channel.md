@@ -1,7 +1,7 @@
 ---
 title: "Voice Channel"
 description: "Let a voice runtime such as ElevenLabs Agents speak for a Radioso agent through an OpenAI-compatible chat-completions endpoint, with sessions Radioso starts on your vendor key, one conversation per voice session, authored lines that cover the wait in the language of each turn, a call that switches language with its caller, a teammate's Inbox replies spoken to the caller, and the call's recording in the Inbox."
-last_updated: 2026-10-18
+last_updated: 2026-10-19
 ---
 
 # Voice Channel
@@ -1274,6 +1274,32 @@ first, so a caller is always told when the agent has a notice at all. The
 agent does not speak it: the caller first hears ElevenLabs's own first
 message, so to have the call say it out loud, put the same words in the
 ElevenLabs agent's first message.
+
+### The privacy notice
+
+The agent's privacy notice (the line and policy link per language under the
+Web chat page's **Privacy notice** card, `branding.privacyNotice` on the
+agent) sits in the embed's panel before the visitor's first message, so a
+visitor who presses **Talk** has it in front of them. The embed also hands it
+to the call: the line as the `radioso_privacy_notice` dynamic variable, and
+its version as `privacy_notice_version` in the custom LLM extra body, beside
+`session_key` and `locale`. To have the call say the line before the
+greeting, start the ElevenLabs agent's first message with the variable:
+
+```text
+{{radioso_privacy_notice}} Hi, I'm Claudio. How can I help?
+```
+
+The embed sets the variable on every call it starts, empty when the agent has
+no notice, so a first message that names it always finds it. The session's
+first turn hands the version to
+the chat turn, which records it on the conversation the call starts when the
+agent's notices carry it; the conversation's **Visitor** panel shows it. A
+page with its own call controls reports the version the same way, in
+`elevenlabs_extra_body.privacy_notice_version`, or for the `generic` dialect
+in the `x-radioso-voice-privacy-notice-version` header or
+`metadata.privacy_notice_version`. A call no page started, such as one to a
+phone number, records no notice.
 
 ## Limits and failure modes
 

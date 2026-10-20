@@ -4,12 +4,13 @@ import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalida
 import type { Kysely } from "kysely";
 
 import { ActionRequestRepository } from "../../../db/repositories/actionRequestRepository.js";
+import { AgentRepository } from "../../../db/repositories/agentRepository.js";
 import { ConversationOwnershipRepository } from "../../../db/repositories/conversationOwnershipRepository.js";
 import { ConversationRepository } from "../../../db/repositories/conversationRepository.js";
 import { HeldReplyRepository } from "../../../db/repositories/heldReplyRepository.js";
 import { MessageRepository } from "../../../db/repositories/messageRepository.js";
 import type { AuditPort } from "../../../modules/audit/contracts/index.js";
-import { NoopActionDrainDispatcher, type ActionDrainDispatcherPort } from "../../../modules/chat/composition.js";
+import { NoopActionDrainDispatcher, replyLanguageTagOf, type ActionDrainDispatcherPort } from "../../../modules/chat/composition.js";
 import type { ConversationActivityRecorder } from "../../../modules/conversationActivity/contracts/index.js";
 import { bindDeliveryFailureRecorder, ConversationDeliveryFailureRepository } from "../../../modules/customerReplyDelivery/public.js";
 import {
@@ -26,7 +27,9 @@ import {
   SendReconciler,
   type DeliveryResolutionUnitOfWork,
   type EmailChannelDrainDispatcherPort,
+  type EmailFirstReplyNoticeScope,
   type EmailSendCommitmentUnitOfWork,
+  type EmailSendMessageReader,
   type EmailSendUnitOfWork,
 } from "../../../modules/emailChannel/public.js";
 import { HeldReplyService, type HeldReplyDispatchPort } from "../../../modules/handoff/public.js";
@@ -204,6 +207,46 @@ export const createPostgresEmailSendUnitOfWork = (deps: {
 });
 
 /**
+ * The agent's privacy notices a conversation's first reply reads (#1545), over the commitment's
+ * transaction. A conversation that recorded a notice, or whose agent has none, has none pending and
+ * is not locked. When one is pending, the conversation row is locked first, as the protocol's step
+ * 1, and read again, since a send that committed meanwhile may have carried it. Which language the
+ * reply carries is the send's decision.
+ */
+const firstReplyNoticeOver = (trx: Kysely<DB>): EmailFirstReplyNoticeScope => {
+  const conversations = new ConversationRepository(trx);
+  return {
+    pending: async ({ workspaceId, conversationId }) => {
+      const conversation = await conversations.findByIdAndWorkspaceId(conversationId, workspaceId);
+      if (!conversation?.agentId || conversation.privacyNoticeVersion) return null;
+      const agent = await new AgentRepository(trx).findByIdAndWorkspaceId(conversation.agentId, workspaceId);
+      if (!agent || Object.keys(agent.branding.privacyNotice).length === 0) return null;
+      await conversations.lockForUpdate(conversationId, workspaceId);
+      const locked = await conversations.findByIdAndWorkspaceId(conversationId, workspaceId);
+      return locked && !locked.privacyNoticeVersion
+        ? { notices: agent.branding.privacyNotice, defaultLocale: agent.assistantDefaultLocale }
+        : null;
+    },
+    record: async ({ workspaceId, conversationId, version }) => {
+      await conversations.recordPrivacyNoticeVersion(conversationId, workspaceId, version);
+    },
+  };
+};
+
+/** The message a send delivers, with the language tag a published agent reply keeps in its metadata. */
+const sendMessagesOver = (trx: Kysely<DB>): EmailSendMessageReader => {
+  const messages = new MessageRepository(trx);
+  return {
+    findByIdAndWorkspaceId: async (workspaceId, messageId) => {
+      const message = await messages.findByIdAndWorkspaceId(workspaceId, messageId);
+      return message
+        ? { id: message.id, conversationId: message.conversationId, content: message.content, source: message.source, replyLanguageTag: replyLanguageTagOf(message.metadata) }
+        : null;
+    },
+  };
+};
+
+/**
  * Binds a send's commitment — its authority check and its freeze — to one Postgres transaction.
  * The commitment takes its locks in the conversation lock protocol's order
  * (`conversationLockOrder.ts`); an automatic send's first two steps lock the conversation row, then
@@ -218,6 +261,7 @@ export const createPostgresEmailSendCommitmentUnitOfWork = (deps: {
   run: (work) => runTransactionWithDeadlockRetry(deps.db, (trx) => {
     const ownership = new ConversationOwnershipRepository(trx);
     return work({
+      firstReplyNotice: firstReplyNoticeOver(trx),
       conversations: {
         lockOwnership: async ({ workspaceId, conversationId }) => {
           await new ConversationRepository(trx).lockForUpdate(conversationId, workspaceId);
@@ -227,7 +271,7 @@ export const createPostgresEmailSendCommitmentUnitOfWork = (deps: {
       mailboxes: new EmailMailboxRepository(trx),
       domains: new EmailDomainRepository(trx),
       threads: new EmailThreadRepository(trx),
-      messages: new MessageRepository(trx),
+      messages: sendMessagesOver(trx),
       intents: new EmailSendIntentRepository(trx),
     });
   }, { unit: "email_send_commitment", logger: deps.logger }),

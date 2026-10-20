@@ -13,6 +13,7 @@ import {
   BASE_COPY_LOCALE,
   ChatWordingCard,
 } from '@/components/dashboard/settings/chat-wording-card'
+import { PrivacyNoticeCard } from '@/components/dashboard/settings/privacy-notice-card'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import {
   WebsiteEmbedSettingsController,
@@ -115,6 +116,11 @@ export function ChatChannelSection(props: ChatChannelSectionProps) {
           />
 
           <ChatFooterCard
+            branding={assistantBehaviorSettings.branding ?? null}
+            onBrandingChange={handleBrandingChange}
+          />
+
+          <PrivacyNoticeCard
             branding={assistantBehaviorSettings.branding ?? null}
             onBrandingChange={handleBrandingChange}
           />

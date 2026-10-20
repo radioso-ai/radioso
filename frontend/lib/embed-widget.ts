@@ -39,6 +39,8 @@ export interface WebsiteEmbedCopy {
   publicChatDisclaimerTemplate: string
   /** Chip shown beside the assistant's name so a visitor can tell it is not a person. */
   publicChatAiLabel: string
+  /** The link to the operator's policy at the end of the agent's privacy notice line. */
+  publicChatPrivacyNoticeLinkLabel: string
   publicChatRateLimitRetryTemplate: string
   publicChatMessageFailedMessage: string
   /** Shown in place of the generic failure copy when a turn fails because the
@@ -118,6 +120,7 @@ export const DEFAULT_WEBSITE_EMBED_COPY: WebsiteEmbedCopy = {
   publicChatOpenNewTabLabel: 'Open in new tab',
   publicChatDisclaimerTemplate: '{name} uses AI and can make mistakes.',
   publicChatAiLabel: 'AI',
+  publicChatPrivacyNoticeLinkLabel: 'Privacy policy',
   publicChatRateLimitRetryTemplate: 'Try again in {seconds}s.',
   publicChatMessageFailedMessage: 'Sorry, something went wrong. Please try again.',
   publicChatAgentUnavailableMessage: "This assistant isn't available right now. Please try again later.",
@@ -179,6 +182,7 @@ export const COPY_OVERRIDE_KEYS = [
   'publicChatOpenNewTabLabel',
   'publicChatDisclaimerTemplate',
   'publicChatAiLabel',
+  'publicChatPrivacyNoticeLinkLabel',
   'publicChatRateLimitRetryTemplate',
   'publicChatMessageFailedMessage',
   'publicChatAgentUnavailableMessage',

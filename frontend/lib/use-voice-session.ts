@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { reportVoiceVendorConversation, startPublicVoiceSession } from './api-public-voice'
 import { canAskForMicrophone, readMicrophoneSignals, runVoiceCall, type VoiceCall } from './voice-call'
-import { loadVoiceRuntimes, prepareVoiceRuntimes } from './voice-runtime'
+import { loadVoiceRuntimes, prepareVoiceRuntimes, type VoiceCallPrivacyNotice } from './voice-runtime'
 import {
   appendVoiceTranscriptLine,
   initialVoiceSessionState,
@@ -24,11 +24,14 @@ import {
 export function useVoiceSession({
   token,
   locale,
+  privacyNotice,
   precedingMessageIds,
   offered,
 }: {
   token: string
   locale?: string
+  /** The agent's privacy notice the panel shows; a call starts with it, and its conversation records it. */
+  privacyNotice?: VoiceCallPrivacyNotice | null
   precedingMessageIds: () => readonly string[]
   offered: boolean
 }) {
@@ -75,7 +78,9 @@ export function useVoiceSession({
         startSession: async () => {
           const start = await startPublicVoiceSession(token, { locale })
           if (start.kind === 'started' && callRef.current === call) setRecordingNotice(start.session.recordingNotice ?? null)
-          return start
+          return start.kind === 'started' && privacyNotice
+            ? { ...start, session: { ...start.session, privacyNotice: { text: privacyNotice.text, version: privacyNotice.version } } }
+            : start
         },
         loadRuntimes: loadVoiceRuntimes,
         after: lastSettledRef.current,
@@ -101,7 +106,7 @@ export function useVoiceSession({
     )
     callRef.current = call
     lastSettledRef.current = call.settled
-  }, [apply, locale, precedingMessageIds, token])
+  }, [apply, locale, precedingMessageIds, privacyNotice, token])
 
   useEffect(() => {
     if (offered) prepareVoiceRuntimes()

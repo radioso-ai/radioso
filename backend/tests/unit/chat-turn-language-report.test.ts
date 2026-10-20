@@ -53,6 +53,18 @@ describe("the turn's language report", () => {
     expect(seen[1]).toEqual({ atMs: 5, event: { type: "language", tag: "it" } });
   });
 
+  it("settles with no tag once a turn that never read its language ends, and keeps the tag of one that did (#1545)", async () => {
+    const unread = createTurnLanguageReport();
+    void unread.observe(lazyPromise(async () => "Italian"), plannedHandle({ responseLanguageTag: "it" }));
+    unread.close();
+    await expect(unread.tag).resolves.toBeUndefined();
+
+    const read = createTurnLanguageReport();
+    await read.observe(lazyPromise(async () => "Italian"), plannedHandle({ responseLanguage: "Italian", responseLanguageTag: "it" }));
+    read.close();
+    await expect(read.tag).resolves.toBe("it");
+  });
+
   it("reports nothing when the turn never reads its language, and no tag when the language came from elsewhere than the plan's tag", async () => {
     const unread = createTurnLanguageReport();
     void unread.observe(lazyPromise(async () => "Italian"), plannedHandle({ responseLanguageTag: "it" }));

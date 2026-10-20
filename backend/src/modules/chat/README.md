@@ -171,7 +171,10 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   directive firing memory advance the turn would have committed rides with the
   draft (`deferredDirectiveTransitionOf`); `reviewedDraftWriter` writes an
   unchanged publication's reply row and applies that advance once, so edited,
-  discarded, and superseded drafts never consume it. The preparer applies the
+  discarded, and superseded drafts never consume it. The draft's
+  `presentation.metadata.responseLanguageTag` carries the language the turn
+  answered in; `replyLanguageTagOf` (exported from `composition.ts`) reads it back
+  so the email channel picks the privacy notice in the reply's language. The preparer applies the
   answered message's `(created_at, id)` boundary in the history query, before the
   window's limit. Usage is reserved as a reply on the conversation's channel.
   The draft is `@radioso/conversation-contract`'s `ReplyDraft`, which a

@@ -6,7 +6,7 @@ import { AgentSkillSettingsRegistry, validateAgentInput } from "../../src/module
 describe("agent branding normalization", () => {
   it("defaults branding to false / null when input omits it", () => {
     const normalized = validateAgentInput({ name: "Agent" });
-    expect(normalized.branding).toEqual({ hidePoweredBy: false, privacyPolicyUrl: null });
+    expect(normalized.branding).toEqual({ hidePoweredBy: false, privacyPolicyUrl: null, privacyNotice: {} });
   });
 
   it("defaults citation display to enabled and round-trips an explicit value", () => {
@@ -17,7 +17,7 @@ describe("agent branding normalization", () => {
   it("preserves a valid https privacy policy URL", () => {
     const normalized = validateAgentInput({
       name: "Agent",
-      branding: { hidePoweredBy: true, privacyPolicyUrl: "https://example.com/privacy" },
+      branding: { hidePoweredBy: true, privacyPolicyUrl: "https://example.com/privacy", privacyNotice: {} },
     });
     expect(normalized.branding.hidePoweredBy).toBe(true);
     expect(normalized.branding.privacyPolicyUrl).toBe("https://example.com/privacy");
@@ -26,7 +26,7 @@ describe("agent branding normalization", () => {
   it("treats an empty privacy URL as null", () => {
     const normalized = validateAgentInput({
       name: "Agent",
-      branding: { hidePoweredBy: false, privacyPolicyUrl: "   " },
+      branding: { hidePoweredBy: false, privacyPolicyUrl: "   ", privacyNotice: {} },
     });
     expect(normalized.branding.privacyPolicyUrl).toBeNull();
   });
@@ -35,7 +35,7 @@ describe("agent branding normalization", () => {
     expect(() =>
       validateAgentInput({
         name: "Agent",
-        branding: { hidePoweredBy: false, privacyPolicyUrl: "javascript:alert(1)" },
+        branding: { hidePoweredBy: false, privacyPolicyUrl: "javascript:alert(1)", privacyNotice: {} },
       }),
     ).toThrow(/http or https/);
   });
@@ -44,7 +44,7 @@ describe("agent branding normalization", () => {
     expect(() =>
       validateAgentInput({
         name: "Agent",
-        branding: { hidePoweredBy: false, privacyPolicyUrl: "not a url" },
+        branding: { hidePoweredBy: false, privacyPolicyUrl: "not a url", privacyNotice: {} },
       }),
     ).toThrow(/valid URL/);
   });

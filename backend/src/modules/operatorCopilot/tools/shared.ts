@@ -142,7 +142,8 @@ export const agentSettingWholeBlockNote = "voice and mechanicsReplies replace th
   + "voice.runtime binds the agent to one vendor agent ({ vendor: \"elevenlabs\", agentId: the ElevenLabs agent id, region: the data residency region of the ElevenLabs account, \"us\" (the default), \"eu\", \"in\" or \"sg\" }) or to none (null), and a page can start voice sessions only while voice.enabled is true and a runtime is bound; "
   + "keep the stored runtime unless the operator asks to change it. Starting a session also needs the workspace's key for that vendor: the operator enters the vendor's API key in Settings, and you never ask for or write it. "
   + "voice.recordingNotice is the optional line per language the website embed shows a caller as a call starts, to say the call is recorded; it is part of the same whole block, so carry it over as stored: leaving it out removes every notice. "
-  + "voice.languageSwitching (default false) lets a call switch its voice to the caller's language; the vendor agent needs Detect language and the language presets. Carry it over as stored.";
+  + "voice.languageSwitching (default false) lets a call switch its voice to the caller's language; the vendor agent needs Detect language and the language presets. Carry it over as stored. "
+  + "branding (privacyNotice too) replaces whole.";
 
 export const scopedAgentDraftPublicationNote = "It drafts a proposal for operator review and changes nothing until the operator applies it. Applying a scoped authoring change saves a private agent draft. The current published revision and ongoing conversations are retained; use Review & Publish before new customer conversations use the change. Unversioned/live fields remain live.";
 export const copilotProposalOrigin = (context: { copilotConversationId?: string; operatorMcpInvocationId?: string }) => {

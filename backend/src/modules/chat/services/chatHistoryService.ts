@@ -355,6 +355,8 @@ export interface ChatConversationDetail {
   visitor?: ConversationVisitorProfile | null;
   /** Edge-observed request facts captured once at creation; IP included — dashboard-only (FR-040). */
   requestContext?: ConversationRequestContext | null;
+  /** The privacy notice version the visitor was shown before their first message (#1545); dashboard-only. */
+  privacyNoticeVersion?: string | null;
   /** See {@link ChatConversationSummary.title}. */
   title: string | null;
   createdAt: string;
@@ -1278,6 +1280,7 @@ export class ChatHistoryService {
             entryPageUrl: conversation.entryPageUrl,
             entryReferrer: conversation.entryReferrer ?? null,
             requestContext: conversation.requestContext ?? null,
+            privacyNoticeVersion: conversation.privacyNoticeVersion ?? null,
             visitor: visitorProfile
               ? {
                   id: visitorProfile.id,

@@ -46,6 +46,7 @@ import {
   type WebsiteEmbedThemeSettings,
 } from '@/lib/api'
 import type { WebsiteEmbedAnalyticsInput } from '@/lib/embed-analytics'
+import { choosePrivacyNotice, type ShownPrivacyNotice } from '@/lib/privacy-notice'
 
 export const deriveThemeOverridesFromModel = (theme?: WebsiteEmbedThemeSettings | null): WebsiteEmbedThemeOverrides | null => {
   if (!theme) {
@@ -139,6 +140,11 @@ interface AnonymousChatContextValue {
   trackAnalyticsEvent: (event: WebsiteEmbedAnalyticsInput) => void
   /** The visitor's language, as the greeting is asked for it; a voice call asks for the same. */
   visitorLocale?: string
+  /**
+   * The agent's privacy notice in the visitor's language, shown before their first message. The
+   * message that starts the conversation reports its version, which the conversation records.
+   */
+  privacyNotice: ShownPrivacyNotice | null
 }
 
 const AnonymousChatContext = createContext<AnonymousChatContextValue | null>(null)
@@ -346,6 +352,9 @@ export function AnonymousChatProvider({
   const [assistantTheme, setAssistantTheme] = useState<WebsiteEmbedThemeOverrides | null>(null)
   const [assistantCopyPacks, setAssistantCopyPacks] = useState<WebsiteEmbedCopyPacks>({})
   const [branding, setBranding] = useState<AgentBrandingSettings | null>(null)
+  // Read when a message starts the conversation; kept in a ref so the send path reports the notice
+  // shown at that moment without re-creating the send callback on every branding change.
+  const shownPrivacyNoticeRef = useRef<ShownPrivacyNotice | null>(null)
   const [intakeActions, setIntakeActions] = useState<PublicChatIntakeAction[]>([])
   const [conversationId, setConversationId] = useState<string | undefined>()
   const [bootstrapGreetingId, setBootstrapGreetingId] = useState<string | undefined>()
@@ -922,6 +931,9 @@ export function AnonymousChatProvider({
                 stream: true,
                 conversationId: resolvedConversationId,
                 bootstrapGreetingId: resolvedConversationId ? undefined : resolvedBootstrapGreetingId,
+                ...(!resolvedConversationId && shownPrivacyNoticeRef.current?.version
+                  ? { privacyNoticeVersion: shownPrivacyNoticeRef.current.version }
+                  : {}),
                 inputMetadata,
                 userExpectedLocale: resolveAnonymousChatBootstrapLocale({
                   localeOverride,
@@ -1224,6 +1236,13 @@ export function AnonymousChatProvider({
     () => resolveAnonymousChatBootstrapLocale({ localeOverride, pageContext }),
     [localeOverride, pageContext],
   )
+  const privacyNotice = useMemo(
+    () => choosePrivacyNotice(branding?.privacyNotice, visitorLocale),
+    [branding, visitorLocale],
+  )
+  useEffect(() => {
+    shownPrivacyNoticeRef.current = privacyNotice
+  }, [privacyNotice])
 
   const value = useMemo<AnonymousChatContextValue>(
     () => ({
@@ -1250,6 +1269,7 @@ export function AnonymousChatProvider({
       startNewChat,
       trackAnalyticsEvent,
       visitorLocale,
+      privacyNotice,
     }),
     [
       effectivePublicChatToken,
@@ -1275,6 +1295,7 @@ export function AnonymousChatProvider({
       startNewChat,
       trackAnalyticsEvent,
       visitorLocale,
+      privacyNotice,
     ],
   )
 

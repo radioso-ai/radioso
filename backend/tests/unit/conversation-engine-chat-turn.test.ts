@@ -119,6 +119,7 @@ const agent = (): AgentRecord => ({
   branding: {
     hidePoweredBy: false,
     privacyPolicyUrl: null,
+    privacyNotice: {},
   },
   greetingInstruction: "",
   assistantDefaultLocale: null,

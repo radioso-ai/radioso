@@ -58,6 +58,20 @@ describe('ElevenLabs voice runtime', () => {
     expect(options.customLlmExtraBody).toEqual({ session_key: 'session-key-1', locale: 'it' })
   })
 
+  it("hands the call the privacy notice the panel showed: its line to say, its version to record (#1545)", async () => {
+    const notice = { text: 'We use your messages to answer you.', version: 'en:0123456789abcdef' }
+    await elevenLabsVoiceRuntime.open({ signedUrl: 'wss://vendor.test', sessionKey: 'k', locale: 'en', privacyNotice: notice }, callbacks(), openSignal())
+
+    const options = startSession.mock.calls[0][0] as CapturedOptions & { dynamicVariables?: Record<string, string> }
+    expect(options.customLlmExtraBody).toEqual({ session_key: 'k', locale: 'en', privacy_notice_version: notice.version })
+    expect(options.dynamicVariables).toEqual({ radioso_privacy_notice: notice.text })
+
+    // With no notice the variable is still set, empty, so a first message that names it never meets a missing one.
+    await elevenLabsVoiceRuntime.open({ signedUrl: 'wss://vendor.test', sessionKey: 'k', locale: 'en' }, callbacks(), openSignal())
+    expect((startSession.mock.calls[1][0] as { dynamicVariables?: unknown }).dynamicVariables).toEqual({ radioso_privacy_notice: '' })
+    expect((startSession.mock.calls[1][0] as CapturedOptions).customLlmExtraBody).toEqual({ session_key: 'k', locale: 'en' })
+  })
+
   it("names the vendor's id for the call once the session is open, and none when the client has none", async () => {
     startSession.mockResolvedValueOnce({ endSession, getId: () => 'conv_01jx8k2m' })
     const named = await elevenLabsVoiceRuntime.open({ signedUrl: 'wss://vendor.test', sessionKey: 'k', locale: 'en' }, callbacks(), openSignal())

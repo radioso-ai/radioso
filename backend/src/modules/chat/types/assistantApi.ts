@@ -71,6 +71,8 @@ export interface AssistantChatRequest {
   requestContext?: ConversationRequestContext | null;
   /** FR-013 (spec 1277): client-claimed referrer of the host page, from pageContext.referrer; persisted once alongside entry_page_url. */
   entryReferrer?: string | null;
+  /** The privacy notice version the client showed before this first message (#1545); ignored for a resumed conversation. */
+  privacyNoticeVersion?: string | null;
   /** Unauthenticated visitor-grouping id from the verified public chat session payload (spec 1277 decision 6); never a credential. */
   visitorKey?: string | null;
   /**

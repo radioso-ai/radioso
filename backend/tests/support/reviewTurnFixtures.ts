@@ -96,6 +96,7 @@ export interface ReviewServiceHarnessOptions {
   agentSkillTurnSkillProvider?: ChatServiceOptions["agentSkillTurnSkillProvider"];
   directiveSteering?: ChatServiceOptions["directiveSteering"];
   directiveStateStore?: ChatServiceOptions["directiveStateStore"];
+  turnPlanCoordinator?: ChatServiceOptions["turnPlanCoordinator"];
 }
 
 /**
@@ -198,6 +199,7 @@ export const reviewServiceHarness = async (options: ReviewServiceHarnessOptions 
     ...(options.agentSkillTurnSkillProvider ? { agentSkillTurnSkillProvider: options.agentSkillTurnSkillProvider } : {}),
     ...(options.directiveSteering ? { directiveSteering: options.directiveSteering } : {}),
     ...(options.directiveStateStore ? { directiveStateStore: options.directiveStateStore } : {}),
+    ...(options.turnPlanCoordinator ? { turnPlanCoordinator: options.turnPlanCoordinator } : {}),
   });
   const review = (overrides: { maxMessages?: number; existingUserMessageId?: string } = {}) => service.review({
     workspaceId: REVIEW_WORKSPACE_ID,

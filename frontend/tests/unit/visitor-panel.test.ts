@@ -34,9 +34,11 @@ describe('buildVisitorPanelViewModel', () => {
       requestContext: requestContext(),
       entryPageUrl: 'https://example.com/pricing',
       entryReferrer: 'https://google.com/search',
+      privacyNoticeVersion: 'en:0123456789abcdef',
     })
 
     expect(viewModel).toMatchObject({
+      privacyNoticeVersion: 'en:0123456789abcdef',
       visitorId: 'visitor-1',
       firstSeenAt: '2026-05-01T00:00:00.000Z',
       conversationCount: 3,
@@ -66,6 +68,7 @@ describe('buildVisitorPanelViewModel', () => {
 
     expect(viewModel).toMatchObject({
       visitorId: 'visitor-1',
+      privacyNoticeVersion: null,
       country: null,
       browser: null,
       os: null,

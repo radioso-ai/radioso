@@ -341,7 +341,7 @@ const baseAgentRecord = (): AgentRecord => ({
   skillSettings: {},
   logo: null,
   theme: { brand: "#000000", brandText: "#ffffff", surface: "#ffffff", text: "#000000" },
-  branding: { hidePoweredBy: false, privacyPolicyUrl: null },
+  branding: { hidePoweredBy: false, privacyPolicyUrl: null, privacyNotice: {} },
   greetingInstruction: "",
   assistantDefaultLocale: null,
   proactiveGreetingEnabled: false,

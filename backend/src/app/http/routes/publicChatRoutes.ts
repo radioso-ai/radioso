@@ -709,6 +709,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
             : undefined,
           requestContext,
           entryReferrer: req.body.pageContext?.referrer ?? null,
+          privacyNoticeVersion: req.body.privacyNoticeVersion,
           visitorKey,
         };
 

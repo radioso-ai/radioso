@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, expect, it, vi } from "vitest";
 
 import { ActionRequestRepository } from "../../src/db/repositories/actionRequestRepository.js";
+import { normalizePrivacyNotices } from "../../src/modules/agents/public.js";
 import { EMAIL_SEND_ACTION_TYPE, emailSendKey } from "../../src/modules/emailChannel/public.js";
 import { ResendEmailDriver } from "../../src/modules/mail/public.js";
 import type { Database } from "../../src/shared/infra/database.js";
@@ -163,6 +164,85 @@ describeIntegration("email send idempotency (Postgres, User Story 3)", () => {
       "SELECT rfc_message_id, direction, origin FROM email_thread_messages WHERE message_id = $1",
       [messageId],
     )).toEqual([{ rfc_message_id: intent.suppliedRfcMessageId, direction: "outbound", origin: "radioso_generated" }]);
+  });
+
+  const NOTICE = { text: "We use your messages to answer you.", url: "https://example.com/privacy" };
+  const WITH_NOTICE = `${REPLY}\n\n${NOTICE.text}\n${NOTICE.url}`;
+
+  /** An operator-only mailbox bound to an agent with a privacy notice: its conversations carry it, and no turn runs. */
+  const conversationWithNotice = async () => {
+    const conversation = await openConversation({ withAgent: true });
+    await database.execute(
+      `UPDATE agents SET behavior_settings = jsonb_set(coalesce(behavior_settings, '{}'::jsonb), '{branding}', $2::jsonb) WHERE id = $1`,
+      [conversation.agentId, JSON.stringify({ hidePoweredBy: false, privacyPolicyUrl: null, privacyNotice: { en: NOTICE } })],
+    );
+    return conversation;
+  };
+
+  it("carries the agent's privacy notice below the conversation's first reply only, and records its version (#1545)", async () => {
+    const conversation = await conversationWithNotice();
+    const notice = NOTICE;
+    const version = normalizePrivacyNotices({ en: notice }).en.version;
+
+    const firstId = await replyFromInbox(database, api, conversation, REPLY);
+    expect(await workerNode().dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
+    const secondId = await replyFromInbox(database, api, conversation, "Anything else?");
+    expect(await workerNode().dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
+
+    const [first] = await providerAcceptsUnder(spool.dir, emailSendKey.message(firstId));
+    const [second] = await providerAcceptsUnder(spool.dir, emailSendKey.message(secondId));
+    expect(first?.message.text).toBe(`${REPLY}\n\n${notice.text}\n${notice.url}`);
+    expect(second?.message.text).toBe("Anything else?");
+    expect(await database.query("SELECT privacy_notice_version FROM conversations WHERE id = $1", [conversation.conversationId]))
+      .toEqual([{ privacy_notice_version: version }]);
+    // The Inbox shows the reply the teammate wrote; the notice rides the mail.
+    expect((await messagesOf(database, conversation.conversationId)).find((message) => message.id === firstId)?.content).toBe(REPLY);
+  });
+
+  it("resends an uncertain first reply with the privacy notice it carried, which the conversation already recorded (#1545)", async () => {
+    const conversation = await conversationWithNotice();
+    const messageId = await replyFromInbox(database, api, conversation, REPLY);
+    expect(await workerNode().dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
+    const original = await sendIntentOf(database, messageId);
+    // No evidence settles the send within a day: the reconciler's lookup makes it uncertain.
+    await makeReconcileDue(database, original.id);
+    expect(await workerNode().worker.drain({ maxJobs: 5, stage: "reconcile" })).toMatchObject({ reconciled: 1 });
+    const [failure] = (await api.decisions.list(conversation.workspaceId, { state: "open", limit: 10 })).items;
+    expect(failure).toMatchObject({ messageId, kind: "uncertain" });
+
+    await api.decisions.resolve(conversation.teammate, failure.id, "resend");
+    expect(await workerNode().dispatch()).toMatchObject({ completed: 1, deadLettered: 0 });
+
+    expect((await sendIntentsOf(database, messageId))[1]).toMatchObject({ trigger: "audited_resend", state: "accepted" });
+    const [sent] = await providerAcceptsUnder(spool.dir, emailSendKey.message(messageId));
+    const [resent] = await providerAcceptsUnder(spool.dir, emailSendKey.resend(messageId, 1));
+    expect(sent?.message.text).toBe(WITH_NOTICE);
+    expect(resent?.message.text).toBe(WITH_NOTICE);
+  });
+
+  it("puts the privacy notice on exactly one of two first replies a conversation sends at once (#1545)", async () => {
+    const conversation = await conversationWithNotice();
+    const messageIds = [
+      await replyFromInbox(database, api, conversation, REPLY),
+      await replyFromInbox(database, api, conversation, REPLY),
+    ];
+    // The first worker holds the conversation row from its notice check until its freeze commits.
+    const [holder, racer] = [workerNode(), workerNode()];
+    const freezing = holder.seams.pauseAt("commitment.freezeRequest", "before");
+    const holding = holder.dispatch();
+    await freezing.reached;
+    const racing = racer.dispatch();
+    // The second worker found no notice recorded yet, so it waits on the row the first one holds.
+    await expect.poll(async () => (await database.query<{ waiting: number }>(
+      "SELECT count(*)::int AS waiting FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock'",
+    ))[0]?.waiting, { timeout: 10_000 }).toBeGreaterThan(0);
+    freezing.release();
+
+    expect(await holding).toMatchObject({ completed: 1, deadLettered: 0 });
+    expect(await racing).toMatchObject({ completed: 1, deadLettered: 0 });
+    const texts = await Promise.all(messageIds.map(async (messageId) => (await providerAcceptsUnder(spool.dir, emailSendKey.message(messageId)))[0]?.message.text));
+    expect(texts.filter((text) => text === WITH_NOTICE)).toHaveLength(1);
+    expect(texts.filter((text) => text === REPLY)).toHaveLength(1);
   });
 
   it("rolls the reply back when its email.send action cannot be queued", async () => {

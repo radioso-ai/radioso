@@ -38,6 +38,7 @@ export interface OpenApiSchemaCatalog {
   AccountUserSchema: z.ZodTypeAny;
   AccountUsersResponseSchema: z.ZodTypeAny;
   AgentSourceScopeSchema: z.ZodTypeAny;
+  AgentPrivacyNoticesSchema: z.ZodTypeAny;
   AgentListResponseSchema: z.ZodTypeAny;
   AgentLogoSchema: z.ZodTypeAny;
   AgentAssistantLogoQuerySchema: RouteParameterSchema;

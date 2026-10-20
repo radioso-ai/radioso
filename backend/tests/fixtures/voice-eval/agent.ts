@@ -15,7 +15,7 @@ const VOICE_EVAL_BRIDGE_LINE = "One moment, let me look that up.";
 
 /**
  * What every voice eval case needs of the agent's `voice` block: voice on, the bridge line and the
- * fallback line. `scripts/runEvals.ts`'s `seedVoiceSettings` writes it over the agent's own block,
+ * fallback line. `scripts/evalRunnerSupport.ts`'s `seedVoiceSettings` writes it over the agent's own block,
  * so its runtime binding, recording notice and language switching stay as the operator set them.
  */
 export const VOICE_EVAL_VOICE_SETTINGS: Pick<AgentVoiceSettings, "enabled" | "bridgeLines" | "fallbackLine"> = {

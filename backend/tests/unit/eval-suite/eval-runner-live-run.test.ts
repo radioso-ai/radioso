@@ -14,7 +14,7 @@ import {
   loadBaseline,
   scopeVoiceCasesForLiveRun,
   seedVoiceSettings,
-} from "../../../scripts/runEvals.js";
+} from "../../../scripts/evalRunnerSupport.js";
 
 const voiceCase = (overrides: Partial<ConversationQualityCase>): ConversationQualityCase => ({
   id: "voice-scope-case",

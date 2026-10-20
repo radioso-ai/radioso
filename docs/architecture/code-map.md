@@ -2309,7 +2309,7 @@ Primary paths:
   turn limit, the outcome derivation), the one seed routine a hand-off case
   needs (`routines.ts`), the scripted models the searching and quick-reply
   cases run on (`scriptedBrains.ts`), and the deterministic runner that drives
-  those two through the test app's own planner and composer and the others
+  those two through a test composition's own planner and composer and the others
   through a real `VoiceTurnService` over a scripted chat backend
 - `backend/scripts/runEvals.ts`, `scripts/evalRunnerAdapter.ts` and
   `scripts/evalRunnerSupport.ts` (the live scope, the baseline file, agent

@@ -156,10 +156,11 @@ export interface LlmCapabilitySelection {
 
 /**
  * The only data-residency values a native `openai` call ever carries: `global` (OpenAI's
- * default endpoint), or an explicit US or EU data-residency endpoint for a platform-held key.
- * Never describes a workspace's own (BYOK) key, which always resolves as `global` regardless
- * of this setting. The single source for this list — `env.ts`'s zod enum reads it too, so an
- * allowed value can never drift between the two.
+ * default endpoint), or an explicit US or EU data-residency endpoint. Describes either a
+ * platform-held key's resolved `OPENAI_DATA_RESIDENCY` setting or a workspace's own (BYOK)
+ * credential's authored residency — the two are independent choices that happen to share one
+ * allowed-value list and one host mapping. The single source for this list — `env.ts`'s zod
+ * enum reads it too, so an allowed value can never drift between the two.
  */
 export const OPENAI_DATA_RESIDENCIES = ["global", "us", "eu"] as const;
 export type OpenAIDataResidency = (typeof OPENAI_DATA_RESIDENCIES)[number];
@@ -180,8 +181,9 @@ export interface LlmCapabilityConfig extends LlmProviderMetadata {
   apiKey: string;
   baseUrl?: string;
   /**
-   * Set only for `provider: "openai"`, and only when a platform OpenAI key resolved to a
-   * non-default residency. The client factory treats an unset value as `global`.
+   * Set only for `provider: "openai"`, and only when the key answering this call — platform or
+   * workspace (BYOK) — resolved to a non-default residency. The client factory treats an unset
+   * value as `global`.
    */
   openAIDataResidency?: OpenAIDataResidency;
   resolvedBy?: LlmCapabilityResolvedBy;

@@ -2023,6 +2023,7 @@ export interface WorkspaceProviderCredentials {
   ciphertext: string;
   created_at: Generated<Timestamp>;
   provider: string;
+  residency: Generated<string>;
   updated_at: Generated<Timestamp>;
   workspace_id: string;
 }

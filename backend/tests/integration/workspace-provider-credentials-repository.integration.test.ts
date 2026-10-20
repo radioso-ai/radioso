@@ -74,4 +74,46 @@ describeIntegration("WorkspaceProviderCredentialsRepository (Postgres)", () => {
       [workspaceId],
     )).rejects.toThrow(/workspace_provider_credentials_provider_check/);
   });
+
+  it("defaults residency to global and lets an upsert set it on a new row", async () => {
+    const defaulted = await repository.upsert({ workspaceId, provider: "openai", ciphertext: "res-1" });
+    expect(defaulted.residency).toBe("global");
+
+    await repository.remove(workspaceId, "openai");
+    const created = await repository.upsert({ workspaceId, provider: "openai", ciphertext: "res-2", residency: "eu" });
+    expect(created.residency).toBe("eu");
+    expect((await repository.findByWorkspaceAndProvider(workspaceId, "openai"))?.residency).toBe("eu");
+  });
+
+  it("keeps an existing residency when a key replace omits it, and lets an explicit value change it", async () => {
+    await repository.upsert({ workspaceId, provider: "openai", ciphertext: "res-3", residency: "us" });
+
+    const replaced = await repository.upsert({ workspaceId, provider: "openai", ciphertext: "res-4" });
+    expect(replaced.residency).toBe("us");
+    expect(replaced.ciphertext).toBe("res-4");
+
+    const changed = await repository.upsert({ workspaceId, provider: "openai", ciphertext: "res-5", residency: "eu" });
+    expect(changed.residency).toBe("eu");
+    expect(changed.ciphertext).toBe("res-5");
+  });
+
+  it("changes residency alone through updateResidency, leaving the key untouched", async () => {
+    await repository.upsert({ workspaceId, provider: "openai", ciphertext: "res-6", residency: "global" });
+
+    const updated = await repository.updateResidency(workspaceId, "openai", "us");
+    expect(updated).toMatchObject({ residency: "us", ciphertext: "res-6" });
+    expect((await repository.findByWorkspaceAndProvider(workspaceId, "openai"))?.residency).toBe("us");
+  });
+
+  it("returns null from updateResidency when no credential is stored for the provider", async () => {
+    await repository.remove(workspaceId, "openai");
+    expect(await repository.updateResidency(workspaceId, "openai", "eu")).toBeNull();
+  });
+
+  it("refuses a residency outside global, us, and eu", async () => {
+    await expect(database.query(
+      `INSERT INTO workspace_provider_credentials (workspace_id, provider, ciphertext, residency) VALUES ($1, 'claude', 'x', 'in')`,
+      [workspaceId],
+    )).rejects.toThrow(/workspace_provider_credentials_residency_check/);
+  });
 });

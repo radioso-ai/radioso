@@ -12,7 +12,7 @@ export const copilotNeverList = {
   access_grants: { reason: "Access grants change authorization and must not be managed by the copilot.", dashboardSubject: { type: "workspace_settings" } },
   machine_access: { reason: "Users, service accounts, and API credentials are identity and authorization administration that the copilot must not manage or inspect.", dashboardSubject: { type: "workspace_settings" } },
   secret_rotation: { reason: "Tokens and webhook secrets must never be rotated by the copilot.", dashboardSubject: { type: "workspace_settings" } },
-  provider_credential_writes: { reason: "Provider credentials are secrets and must never be written by the copilot.", dashboardSubject: { type: "workspace_settings" } },
+  provider_credential_writes: { reason: "Provider credentials, and any field stored alongside one such as a credential's chosen data residency, are secrets-adjacent workspace configuration the copilot must never write.", dashboardSubject: { type: "workspace_settings" } },
   embedding_model_switch_without_typed_confirmation: { reason: "Embedding-model changes require a typed operator confirmation outside the copilot.", dashboardSubject: { type: "workspace_settings" } },
   unattended_live_customer_reply: { reason: "The copilot must not send unattended replies into a live customer conversation.", dashboardSubject: { type: "conversation" } },
   live_conversation_ownership: { reason: "Taking over, handing back, or transferring a live conversation decides who is answerable to a customer, and stays with the operator.", dashboardSubject: { type: "conversation" } },

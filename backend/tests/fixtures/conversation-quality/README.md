@@ -80,6 +80,70 @@ A live review turn can ask the customer which sense they mean instead of answeri
 non-retrieval reply, so its facts carry no grounding or coverage verdict, and the `email` cases
 assert only `turn_persists_no_reply`.
 
+## Voice cases
+
+A case with `voiceTurn` drives `query` as a voice turn instead of a chat message: the real voice
+turn policy (`src/modules/voiceChannel/services/voiceTurnPolicy.ts`) decides the bridge, the
+turn limit and the outcome, over a scripted chat backend (`voiceTurn.chatEvents`) rather than the
+seeded agent's corpus, directives or routines, so a voice case takes only `query` and `voiceTurn`.
+The three voice-only trace assertions — `voice_bridge_emitted`, `voice_turn_limit_reached`,
+`voice_turn_outcome` — read a `VoiceTurnObservation` the runner builds from the turn's
+`VoiceTurnEvent` stream, never the reply's content; `evalRunnerAdapter.ts`'s `observeVoiceTurn`
+is the one place that reads it, for both the deterministic and the live runner.
+
+The cases themselves live in `tests/fixtures/voice-eval/cases.ts`, not here, because they run
+against a different agent configuration (voice turned on, with a bridge and a fallback line, no
+corpus) than every other case in this directory. `scripts/runEvals.ts` seeds that configuration,
+and `tests/fixtures/voice-eval/routines.ts`'s one callback hand-off routine, onto the same
+disposable agent whenever the run selects a voice case, and combines `voiceEvalCases` with
+`conversationQualityCases` into one dataset, so a voice case's outcome sits in the same
+`baseline.json` as every other case, keyed by its own id. The routine is seeded only then, so a
+text-only run never carries its "ask for a callback" trigger alongside `routines.ts`'s
+`contactSupportRoutine`. The deterministic harness
+(`tests/unit/eval-suite/voice-behaviour.test.ts`) plays each case's `chatEvents` script against a
+real `VoiceTurnService` instead of the live brain, over the `generic` dialect's vendor tag
+(`tests/fixtures/voice-eval/deterministicPort.ts`), so it never touches the routine.
+
+The turn limit has no event of its own on the `VoiceTurnEvent` stream the port returns — the
+policy reports it only to its metrics observer — so `observeVoiceTurn` reads it by comparing the
+turn's whole spoken text against the fixture's configured fallback line
+(`VOICE_EVAL_FALLBACK_LINE` in `tests/fixtures/voice-eval/agent.ts`). No ordinary question holds
+a live turn open for 10 seconds, so `runEvals.ts` scopes `voice_turn_limit_reached` out of what
+it scores (`scopeVoiceTurnLimitAssertions`, the same way `scopeJudgeAssertions` scopes
+`llm_judge`): the live run checks the case's outcome stays `continue` instead, and the
+deterministic harness — which drives the case through its own copy of the dataset, unscoped —
+keeps asserting the limit itself for real. A live run's first-speech latency, averaged per case
+over its samples, prints in the report (`[first speech 3105ms]`) but gates nothing: only the
+trace assertions above do.
+
+A voice case also needs the agent published, like a review case: the voice turn port streams
+through the same chat answer path a real session uses, which answers for the agent as it is
+published, not the draft `WorkbenchReplayRunner` replays directly for a live case.
+
+### Recording the voice baseline
+
+The four voice cases need their own baseline entries the first time they run, and again whenever
+a wording or routine change might shift their live behaviour. Record (or re-record) only them,
+leaving every other case's entry untouched, with `--tag voice`:
+
+```bash
+cd backend
+# One-time: point at a disposable agent (any one works; voice settings and the callback
+# routine are seeded onto it fresh, and a repeat run reuses them idempotently).
+export RADIOSO_EVAL_WORKSPACE_ID=... RADIOSO_EVAL_AGENT_ID=...
+node --env-file=./.env.evals --import tsx ./scripts/runEvals.ts --tag voice --samples 5 --update-baseline
+```
+
+Record only after a run at the same `--samples` comes back all green (`pnpm run evals -- --tag
+voice` first, with no `--update-baseline`): a case recorded while flaky or failing freezes that
+into the baseline the same way any other case would. `voice-outcome-handoff` is the one most
+likely to need this care — it depends on the live planner recognizing a callback request and
+extracting the slot `routines.ts`'s routine declares from one message, and an earlier wording
+that also named a topic the seeded corpus covers pulled some samples toward a retrieval answer
+instead (see the case's comment in `cases.ts`). If a wording change still does not clear
+`--samples 5` reliably, that is a real finding about the live planner, worth its own issue, not a
+reason to lower the sample count just for this case.
+
 ## Running it
 
 ```bash

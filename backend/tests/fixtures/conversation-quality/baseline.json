@@ -241,6 +241,26 @@
       "status": "fail",
       "passRate": 0.3333333333333333,
       "samples": 3
+    },
+    "voice-bridge-on-searching": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "voice-outcome-handoff": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "voice-quick-reply-no-bridge": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "voice-turn-limit-fires": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
     }
   }
 }

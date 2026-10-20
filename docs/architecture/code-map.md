@@ -2311,8 +2311,10 @@ Primary paths:
   cases run on (`scriptedBrains.ts`), and the deterministic runner that drives
   those two through the test app's own planner and composer and the others
   through a real `VoiceTurnService` over a scripted chat backend
-- `backend/scripts/runEvals.ts` and `scripts/evalRunnerAdapter.ts` — headless
-  CLI that seeds fixtures (voice settings and the voice-eval routine included,
+- `backend/scripts/runEvals.ts`, `scripts/evalRunnerAdapter.ts` and
+  `scripts/evalRunnerSupport.ts` (the live scope, the baseline file, agent
+  preparation and shutdown the runner, its tests and the deterministic harness
+  share) — headless CLI that seeds fixtures (voice settings and the voice-eval routine included,
   when a voice case is selected; publishes the agent, as a review case does),
   drives text turns through `WorkbenchReplayRunner` and voice turns through
   `AppDependencies.voiceTurns` (`evalRunnerAdapter.ts`'s

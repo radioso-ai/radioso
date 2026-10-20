@@ -14,7 +14,7 @@ import {
   type VoiceSessionStore,
 } from "../../../src/modules/voiceChannel/public.js";
 import { createVoiceTurnRunnerPort, observeVoiceTurn } from "../../../scripts/evalRunnerAdapter.js";
-import { seedVoiceSettings } from "../../../scripts/runEvals.js";
+import { seedVoiceSettings } from "../../../scripts/evalRunnerSupport.js";
 import { createTestApp, issueTestSession } from "../../support/testApp.js";
 import { VOICE_EVAL_AGENT_PROFILE, VOICE_EVAL_FALLBACK_LINE } from "./agent.js";
 import { voiceEvalBrains, type VoiceEvalBrain } from "./scriptedBrains.js";

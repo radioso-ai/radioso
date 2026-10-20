@@ -143,7 +143,7 @@ policy reports it only to its metrics observer — so `observeVoiceTurn` reads i
 turn's whole spoken text against the fixture's configured fallback line
 (`VOICE_EVAL_FALLBACK_LINE` in `tests/fixtures/voice-eval/agent.ts`).
 
-A live run gates a voice case on behaviour, never on latency. `runEvals.ts`'s
+A live run gates a voice case on behaviour, never on latency. `scripts/evalRunnerSupport.ts`'s
 `scopeVoiceCasesForLiveRun` decides what each case gates before anything is seeded, the same way
 `scopeJudgeAssertions` scopes `llm_judge`:
 

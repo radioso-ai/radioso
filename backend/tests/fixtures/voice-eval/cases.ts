@@ -4,11 +4,12 @@ import type { ConversationQualityCase } from "../../../src/modules/eval/suite/in
  * The committed voice cases: bridge timing, the turn limit and the outcome derivation, run
  * through the real voice turn policy (`modules/voiceChannel/services/voiceTurnPolicy.ts`) rather
  * than a plain chat reply. The deterministic harness (`tests/unit/eval-suite/voice-behaviour.test.ts`)
- * plays each case's `voiceTurn.chatEvents` script against a `VoiceTurnService` built with a tiny
- * timing override, over the stubbed `generic` dialect vendor tag; `scripts/runEvals.ts` runs the
- * same cases against the real brain on its production timing, ignores the script, and seeds
- * `routines.ts`'s `voiceEvalCallbackRoutine` so `voice-outcome-handoff` has a real routine hand-off
- * to reach. See `tests/fixtures/conversation-quality/README.md`'s "Voice cases" section.
+ * runs a case with a `voiceTurn.chatEvents` script against a `VoiceTurnService` built with a tiny
+ * timing override, and every other case on the test app's own chat turn over the scripted model
+ * `scriptedBrains.ts` gives it, on production timing. `scripts/runEvals.ts` runs every case not
+ * marked `deterministicOnly` against the real brain, ignores the scripts, and seeds `routines.ts`'s
+ * `voiceEvalCallbackRoutine` so `voice-outcome-handoff` has a real routine hand-off to reach. See
+ * `tests/fixtures/conversation-quality/README.md`'s "Voice cases" section.
  */
 export const voiceEvalCases: ConversationQualityCase[] = [
   {
@@ -16,14 +17,8 @@ export const voiceEvalCases: ConversationQualityCase[] = [
     name: "Bridges while the turn searches",
     tags: ["voice"],
     query: "Can you check what the cancellation policy says about partial refunds?",
-    voiceTurn: {
-      chatEvents: [
-        { type: "status", stage: "interpreting" },
-        { type: "status", stage: "searching" },
-        { type: "chunk", text: "Partial refunds are available within 14 days of booking." },
-        { type: "done" },
-      ],
-    },
+    // The deterministic half runs this on the test app's own retrieval (scriptedBrains.ts).
+    voiceTurn: {},
     assertions: [
       { type: "voice_bridge_emitted", expected: true },
       { type: "voice_turn_outcome", kind: "continue" },
@@ -34,13 +29,9 @@ export const voiceEvalCases: ConversationQualityCase[] = [
     name: "Answers a thank-you with no bridge",
     tags: ["voice"],
     query: "Great, thanks so much for your help!",
-    voiceTurn: {
-      chatEvents: [
-        { type: "status", stage: "interpreting" },
-        { type: "chunk", text: "You're very welcome!" },
-        { type: "done" },
-      ],
-    },
+    // The deterministic half runs this on the test app's own planner and its quick-reply lane
+    // (scriptedBrains.ts), with a composer slow enough that a thank-you it answered would bridge.
+    voiceTurn: {},
     assertions: [
       // The stall bridge (2.5 s) fires whenever the live planner is slow, so live this is a
       // latency fact and gates nothing; only the deterministic half, which scripts the brain,

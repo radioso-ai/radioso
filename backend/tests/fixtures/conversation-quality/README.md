@@ -107,25 +107,36 @@ assert only `turn_persists_no_reply`.
 
 A case with `voiceTurn` drives `query` as a voice turn instead of a chat message: the real voice
 turn policy (`src/modules/voiceChannel/services/voiceTurnPolicy.ts`) decides the bridge, the
-turn limit and the outcome, over a scripted chat backend (`voiceTurn.chatEvents`) rather than the
-seeded agent's corpus, directives or routines, so a voice case takes only `query` and `voiceTurn`.
-The three voice-only trace assertions — `voice_bridge_emitted`, `voice_turn_limit_reached`,
+turn limit and the outcome, and a voice case takes only `query` and `voiceTurn`. The three
+voice-only trace assertions — `voice_bridge_emitted`, `voice_turn_limit_reached`,
 `voice_turn_outcome` — read a `VoiceTurnObservation` the runner builds from the turn's
 `VoiceTurnEvent` stream, never the reply's content; `evalRunnerAdapter.ts`'s `observeVoiceTurn`
 is the one place that reads it, for both the deterministic and the live runner.
 
 The cases themselves live in `tests/fixtures/voice-eval/cases.ts`, not here, because they run
-against a different agent configuration (voice turned on, with a bridge and a fallback line, no
-corpus) than every other case in this directory. `scripts/runEvals.ts` seeds that configuration
-(`seedVoiceSettings` writes the voice cases' lines over the agent's own voice block), and `tests/fixtures/voice-eval/routines.ts`'s one callback hand-off routine, onto the same
-disposable agent whenever the run selects a voice case, and combines `voiceEvalCases` with
-`conversationQualityCases` into one dataset, so a voice case's outcome sits in the same
-`baseline.json` as every other case, keyed by its own id. The routine is seeded only then, so a
-text-only run never carries its "ask for a callback" trigger alongside `routines.ts`'s
-`contactSupportRoutine`. The deterministic harness
-(`tests/unit/eval-suite/voice-behaviour.test.ts`) plays each case's `chatEvents` script against a
-real `VoiceTurnService` instead of the live brain, over the `generic` dialect's vendor tag
-(`tests/fixtures/voice-eval/deterministicPort.ts`), so it never touches the routine.
+against a different agent configuration (voice turned on, with a bridge and a fallback line)
+than every other case in this directory. Whenever a run selects a voice case,
+`scripts/runEvals.ts` seeds that configuration onto the same disposable agent —
+`seedVoiceSettings` writes the voice cases' lines over the agent's own voice block — along with
+`tests/fixtures/voice-eval/routines.ts`'s one callback hand-off routine. It combines
+`voiceEvalCases` with `conversationQualityCases` into one dataset, so a voice case's outcome sits
+in the same `baseline.json` as every other case, keyed by its own id. The routine is seeded only
+for a voice run, so a text-only run never carries its "ask for a callback" trigger alongside
+`routines.ts`'s `contactSupportRoutine`.
+
+The deterministic harness (`tests/unit/eval-suite/voice-behaviour.test.ts`, through
+`tests/fixtures/voice-eval/deterministicPort.ts`) runs each case one of two ways:
+
+- `voice-bridge-on-searching` and `voice-quick-reply-no-bridge` run on a fresh test app's own
+  planner, retrieval, composer and voice turn policy, on production timing, with only the model
+  scripted (`tests/fixtures/voice-eval/scriptedBrains.ts`). The turn goes through the same
+  `seedVoiceSettings` and `createVoiceTurnRunnerPort` the live run uses. The thank-you's composer
+  takes a second, so a thank-you that leaves the planner's quick-reply lane bridges on its
+  composing phase and fails the case; the harness keeps that regression as a test of its own.
+- A case with `voiceTurn.chatEvents` (`voice-turn-limit-fires`, `voice-outcome-handoff`) plays
+  that script as the turn's chat backend against a bare `VoiceTurnService` on shrunk timers, over
+  the `generic` dialect's vendor tag: a turn that stalls until its limit, and one that closes on a
+  routine hand-off with a collected slot.
 
 The turn limit has no event of its own on the `VoiceTurnEvent` stream the port returns — the
 policy reports it only to its metrics observer — so `observeVoiceTurn` reads it by comparing the

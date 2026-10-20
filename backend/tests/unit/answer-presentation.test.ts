@@ -314,6 +314,9 @@ describe("answer presentation service", () => {
     ]);
   });
 
+  // A bracketed span (`[[abc]]`) is anchor syntax and goes; a `[[` that never closes is
+  // literal text and stays, brackets included, as the stream (which cannot know it never
+  // closes until the answer ends) also leaves it (#1517).
   it("drops invalid anchors and removes malformed placeholder syntax from the final answer", () => {
     const service = new AnswerPresentationService();
 
@@ -330,7 +333,7 @@ describe("answer presentation service", () => {
     });
 
     expect(result.answer).toBe(
-      "Author page: https://anandaedizioni.it/autore/narayani-anaya. Price: EUR 18,00. Broken  token and dangling  marker.",
+      "Author page: https://anandaedizioni.it/autore/narayani-anaya. Price: EUR 18,00. Broken  token and dangling [[ marker.",
     );
     expect(result.citations).toEqual([
       { documentId: "doc-1", chunkId: "chunk-1", title: "Narayani Anaya" },
@@ -341,7 +344,7 @@ describe("answer presentation service", () => {
         citationIndices: [0],
       },
       {
-        text: ". Price: EUR 18,00. Broken  token and dangling  marker.",
+        text: ". Price: EUR 18,00. Broken  token and dangling [[ marker.",
       },
     ]);
   });
@@ -394,8 +397,10 @@ describe("answer presentation service", () => {
       ]);
     });
 
-    it("leaves no stranded bracket when a bracket pair follows the marker", () => {
-      expect(present("Claim[?]]] next").answer).toBe("Claim next");
+    // A `]]` with no `[[` of its own is not anchor syntax, so it stays, as it always has in
+    // the stream (#1517): code such as `arr[i[j]]` keeps its brackets.
+    it("leaves a bracket pair that follows the marker as the stream leaves it", () => {
+      expect(present("Claim[?]]] next").answer).toBe("Claim]] next");
     });
 
     it("treats a bracket after the marker as it treats one after [[?]]", () => {

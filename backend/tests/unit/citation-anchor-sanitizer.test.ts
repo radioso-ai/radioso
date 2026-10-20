@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import { AnswerPresentationService } from "../../src/modules/chat/services/answerPresentationService.js";
 import { CitationAnchorSanitizer } from "../../src/modules/chat/services/citationAnchorSanitizer.js";
+import { CITATION_ANCHOR_MAX_LENGTH } from "../../src/modules/chat/services/citationAnchorSyntax.js";
 
 describe("citation anchor sanitizer", () => {
   it("never leaks sourced or unsourced anchors split at any boundary", () => {
@@ -279,12 +281,11 @@ describe("citation anchor sanitizer", () => {
       expect(stream("claim[[?]")).toBe("claim");
     });
 
-    // A literal `[[` that is never a citation anchor at all — the character right after
-    // it is not a digit or `?` — is confirmed dead the instant that character is read.
-    // It must never hold the rest of the sentence hostage: that held text is answer
-    // content, not part of any token, so the carry cap must release it instead of
-    // dropping everything before its last 32 characters, and the same holds at flush().
-    it("releases a `[[` that never becomes an anchor, and everything after it, instead of dropping text past the carry cap", () => {
+    // A literal `[[` whose text runs past the anchor-syntax bound without closing can never
+    // be anchor syntax, so the finished answer keeps it, brackets and all. The stream holds
+    // it only while it could still close within the bound, then releases the whole of it,
+    // `[[` included: no part of the sentence is lost, and the two paths agree.
+    it("releases a `[[` that never becomes an anchor, brackets included, once it outgrows the anchor bound", () => {
       const chunks = [
         "see [[",
         " this long ordinary sentence that keeps going and going well past thirty-two characters",
@@ -298,7 +299,7 @@ describe("citation anchor sanitizer", () => {
 
       expect(streamed).toBe(sanitizedWhole);
       expect(streamed).toBe(
-        "see  this long ordinary sentence that keeps going and going well past thirty-two characters end.",
+        "see [[ this long ordinary sentence that keeps going and going well past thirty-two characters end.",
       );
     });
 
@@ -317,5 +318,111 @@ describe("citation anchor sanitizer", () => {
         expect(stream(full.slice(0, split), full.slice(split)), `split at ${split}`).toBe(expected);
       }
     });
+  });
+
+  // The invariant behind #1517: however the provider happens to split an answer into
+  // chunks, the streamed text, joined, is exactly the finished answer the visitor is left
+  // with (`done.answer`, from the presentation service). Every 2-way and 3-way split, and
+  // one character per chunk, of a corpus of anchor-syntax shapes. Only the ends are
+  // trimmed: the presentation trims the answer, and the stream drops trailing whitespace.
+  describe("streams exactly the finished answer, however it is chunked", () => {
+    const presented = (text: string): string =>
+      new AnswerPresentationService().present({ answer: text, citations: [] }).answer.trim();
+    const stream = (chunks: string[]): string => {
+      const sanitizer = new CitationAnchorSanitizer();
+      return [...chunks.map((chunk) => sanitizer.push(chunk)), sanitizer.flush()].join("").trim();
+    };
+    const beyondBound = "this bracketed aside runs on well past the sixty-four character anchor bound";
+    // A span of exactly the bound, brackets included, and one a character longer.
+    const atBound = `[[${"a".repeat(CITATION_ANCHOR_MAX_LENGTH - 4)}]]`;
+    const overBound = `[[${"a".repeat(CITATION_ANCHOR_MAX_LENGTH - 3)}]]`;
+    const corpus: Array<{ text: string; finished: string }> = [
+      // The two round-2 review regressions: a bracketed span that is not a citation.
+      { text: "The topic [[12xyz]] was notable.", finished: "The topic  was notable." },
+      { text: "See [[Example Page]] for details.", finished: "See  for details." },
+      { text: "Read the guide [[Example Page]] .", finished: "Read the guide." },
+      // Complete anchors, sourced and unsourced, and a multi-digit result number.
+      { text: "Claim[[12]] holds.", finished: "Claim holds." },
+      { text: "Claim[[?]] holds.", finished: "Claim holds." },
+      { text: "Claim[[123]] holds.", finished: "Claim holds." },
+      { text: "Claim[?] holds.", finished: "Claim holds." },
+      { text: "A [[1, 3]] grouped claim.", finished: "A  grouped claim." },
+      // Under-closed anchors, mid-answer and as the very last thing streamed.
+      { text: "Claim[[1] holds.", finished: "Claim holds." },
+      { text: "Claim[[?] holds.", finished: "Claim holds." },
+      { text: "The answer ends on[[1]", finished: "The answer ends on" },
+      { text: "The answer ends on[[?]", finished: "The answer ends on" },
+      // An anchor the answer is cut short in.
+      { text: "The answer ends on [[", finished: "The answer ends on" },
+      { text: "The answer ends on [[12", finished: "The answer ends on" },
+      // A literal `[[` is text: past the bound, or never closing, it stays.
+      { text: `Up to the bound ${atBound} goes.`, finished: "Up to the bound  goes." },
+      { text: `Past the bound ${overBound} stays.`, finished: `Past the bound ${overBound} stays.` },
+      { text: `see [[${beyondBound}]] end.`, finished: `see [[${beyondBound}]] end.` },
+      { text: `see [[ ${beyondBound} end.`, finished: `see [[ ${beyondBound} end.` },
+      { text: "see [[Example Page for details.", finished: "see [[Example Page for details." },
+      { text: "Claim[[1]] and a [[ that never closes.", finished: "Claim and a [[ that never closes." },
+      // Nested and adjacent brackets.
+      { text: "Claim[[1]][[2]] holds.", finished: "Claim holds." },
+      { text: "Claim[[[1]] holds.", finished: "Claim[ holds." },
+      { text: "Use [[1, 2], [3, 4]] as the matrix.", finished: "Use [[1, 2], [3, 4]] as the matrix." },
+      // Anchors detached onto their own line before the closing punctuation.
+      { text: "It is a science\n\n[[1]]. Next.", finished: "It is a science. Next." },
+      { text: "It is a science\n\n[[1]][[2]]. Next.", finished: "It is a science. Next." },
+      { text: "It is a science\n\n[[?]]. Next.", finished: "It is a science. Next." },
+      { text: "It is a science\n\n[[1]]\uff09Next.", finished: "It is a science\uff09Next." },
+      { text: "First paragraph[[1]].\n\nSecond paragraph.", finished: "First paragraph.\n\nSecond paragraph." },
+      // Inline code: a `[[` there is literal like anywhere else, and a backtick ends a span.
+      { text: "Use `a[[b` in code[[1]].", finished: "Use `a[[b` in code." },
+      { text: "Match `[?]` and `[[x` literally[[1]].", finished: "Match `[?]` and `[[x` literally." },
+    ];
+
+    // Seeded, so a failure reproduces: generated strings dense in brackets, markers, digits,
+    // spaces, punctuation, and backticks, each streamed under several random chunkings.
+    // Line breaks stay out: the detached-anchor reflow is covered by the corpus above. Only
+    // whitespace may differ from the finished answer, where the presentation spaces the seam
+    // around an anchor its own way.
+    it("for generated bracket-dense text", () => {
+      let seed = 1517;
+      const random = (): number => {
+        seed = (seed + 0x6d2b79f5) >>> 0;
+        let value = Math.imul(seed ^ (seed >>> 15), seed | 1);
+        value ^= value + Math.imul(value ^ (value >>> 7), value | 61);
+        return ((value ^ (value >>> 14)) >>> 0) / 4294967296;
+      };
+      const pieces = ["[", "[[", "]", "]]", "?", "1", "12", "a", "b ", " ", ".", ",", "`", "[[1]]", "[?]", "[[?]", "[[12]"];
+      const withoutWhitespace = (text: string): string => text.replace(/\s+/g, "");
+      for (let sample = 0; sample < 2000; sample += 1) {
+        const text = Array.from({ length: 1 + Math.floor(random() * 16) }, () =>
+          pieces[Math.floor(random() * pieces.length)]).join("");
+        const whole = stream([text]);
+        expect(withoutWhitespace(whole), JSON.stringify(text)).toBe(withoutWhitespace(presented(text)));
+        for (let chunking = 0; chunking < 3; chunking += 1) {
+          const chunks: string[] = [];
+          for (let start = 0; start < text.length;) {
+            const end = start + 1 + Math.floor(random() * 4);
+            chunks.push(text.slice(start, end));
+            start = end;
+          }
+          expect(stream(chunks), JSON.stringify(chunks)).toBe(whole);
+        }
+      }
+    });
+
+    for (const { text, finished } of corpus) {
+      it(`for ${JSON.stringify(text)}`, () => {
+        expect(presented(text)).toBe(finished);
+        expect(stream([...text]), "one character per chunk").toBe(finished);
+        for (let first = 0; first <= text.length; first += 1) {
+          expect(stream([text.slice(0, first), text.slice(first)]), `split at ${first}`).toBe(finished);
+          for (let second = first + 1; second < text.length; second += 1) {
+            expect(
+              stream([text.slice(0, first), text.slice(first, second), text.slice(second)]),
+              `split at ${first} and ${second}`,
+            ).toBe(finished);
+          }
+        }
+      });
+    }
   });
 });

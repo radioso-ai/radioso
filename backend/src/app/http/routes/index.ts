@@ -22,6 +22,7 @@ import { createDocumentRoutes } from "./documentRoutes.js";
 import { createHistoryRoutes } from "./historyRoutes.js";
 import { createMetricsRoutes } from "./metricsRoutes.js";
 import { createObservabilityRoutes } from "./observabilityRoutes.js";
+import { createPrivacyRoutes } from "./privacyRoutes.js";
 import { createSettingsRoutes } from "./settingsRoutes.js";
 import { createSettingsCredentialsRoutes } from "./settingsCredentialsRoutes.js";
 import { createSettingsLlmModelsRoutes } from "./settingsLlmModelsRoutes.js";
@@ -107,6 +108,7 @@ export const createApiRouteMounts = (_dependencies: AppDependencies): readonly A
   { path: "/api/v1", createRouter: createHeldReplyRoutes },
   { path: "/api/v1/history", createRouter: createHistoryRoutes },
   { path: "/api/v1/observability", createRouter: createObservabilityRoutes },
+  { path: "/api/v1/privacy", createRouter: createPrivacyRoutes },
   { path: "/api/v1/retrieval", createRouter: createRetrievalRoutes },
   { path: "/api/v1/skills", createRouter: createSkillRoutes },
   { path: "/api/v1/settings", createRouter: createSettingsRoutes },

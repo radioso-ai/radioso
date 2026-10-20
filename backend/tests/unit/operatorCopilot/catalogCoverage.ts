@@ -191,6 +191,9 @@ const heldReplyDiscardIsAPersons = permanent(
 const erasureIsAPersons = permanent(
   "Permanent exclusion: erasing a conversation or a visitor destroys a data subject's records with no undo, and the audit event that answers their request names the person who decided it, so erasure stays with a person in the dashboard or an automated request pipeline over the API.",
 );
+const dataSubjectRequestIsAPersons = permanent(
+  "Permanent exclusion: finding, exporting and erasing one person's data answers their access, portability or erasure request. It is a human operator's audited action: a teammate confirms which identities are the person's, and the export hands their personal data to them, never to a model. It runs in the dashboard or an automated request pipeline over the API.",
+);
 const rawCustomerMail = permanent(
   "Permanent exclusion: raw customer mail and its headers are never model input; Ray reads an email conversation's facts through email_conversation_facts instead.",
 );
@@ -425,6 +428,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ...coverage(["releaseHeldReply"], neverListExclusion("unattended_live_customer_reply")),
   ...coverage(["discardHeldReply"], heldReplyDiscardIsAPersons),
   ...coverage(["deleteHistoryConversation", "deleteHistoryVisitor"], erasureIsAPersons),
+  ...coverage(["lookupDataSubject", "listDataSubjectConversations", "exportDataSubject", "eraseDataSubject"], dataSubjectRequestIsAPersons),
   ...coverage(["updateConnectorConfig", "enableConnector", "disableConnector"], connectorConfiguration),
   ...coverage(["syncConnector"], connectorManualSync),
   ...coverage(["deleteAgentRoutine"], routineStructuralEditing),

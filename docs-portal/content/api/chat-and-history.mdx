@@ -111,6 +111,8 @@ Use `GET /api/v1/history/visitors/{visitorId}/conversations` to page through a v
 
 Use `DELETE /api/v1/history/chat/{conversationId}` to permanently delete a conversation and everything derived from it, and `DELETE /api/v1/history/visitors/{visitorId}` to delete a visitor with every conversation they had. Both answer `204` with no body, need `workspace.history.delete` (owners, admins, and admin credentials), and record a content-free `conversation.erased` or `visitor.erased` audit event. [Deleting conversation data](/operators/deleting-conversation-data) lists what goes and what Radioso keeps.
 
+To answer one person's access or erasure request across the website, email and Slack, use the data subject routes under `/api/v1/privacy/data-subjects`: a lookup by verified customer id, email address or Slack member id, then a conversation list, a JSON export and an erasure over the identities you confirm. [Answering a data subject request](/operators/data-subject-requests) walks through them.
+
 ## Answer feedback
 
 Persisted assistant answers accept thumbs-up or thumbs-down feedback in the dashboard, public chat, and website embed. A thumbs-down request may include an optional `comment` of up to 2000 characters. Authenticated callers set and clear feedback on a message:
@@ -151,6 +153,10 @@ DELETE /api/v1/history/chat/{conversationId}
 GET  /api/v1/history/chat/{conversationId}/tail
 GET  /api/v1/history/visitors/{visitorId}/conversations
 DELETE /api/v1/history/visitors/{visitorId}
+POST /api/v1/privacy/data-subjects/lookup
+POST /api/v1/privacy/data-subjects/conversations
+POST /api/v1/privacy/data-subjects/export
+POST /api/v1/privacy/data-subjects/erase
 GET  /api/v1/conversations/{conversationId}/recording
 GET  /api/v1/history/search
 GET  /api/v1/history/search/{searchId}
@@ -160,7 +166,7 @@ GET  /api/v1/history/search/{searchId}
 
 - `400` usually means the request body is invalid.
 - `401` from agent chat means its REST-audience credential is missing, invalid, expired, or bound to a different agent.
-- `403` from a history `DELETE` means the caller lacks `workspace.history.delete`.
+- `403` from a history `DELETE` or a data subject route means the caller lacks `workspace.history.delete`.
 - `404` can mean the conversation id is not available in the current workspace context.
 - `204` is part of the route contract. Use the reference page for the exact no-body case.
 

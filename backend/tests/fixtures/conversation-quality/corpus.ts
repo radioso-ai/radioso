@@ -1,7 +1,8 @@
 /**
  * A small, self-contained corpus the conversation-quality suite grounds against. Facts
- * are concrete and quotable (a 30-day window, a $49 plan, "SOC 2 Type II") so cases can
- * assert on exact figures deterministically instead of relying only on a judge.
+ * are concrete and quotable (a 30-day window, a $49 plan, "SOC 2 Type II", a residential
+ * course's fees in euro) so cases can assert on exact figures deterministically instead of
+ * relying only on a judge.
  *
  * Document ids are fixed UUIDs so assertions can reference them by constant.
  */
@@ -18,6 +19,7 @@ export const GETTING_STARTED_DOC_ID = "22222222-2222-4222-8222-222222222204";
 export const BREATH_COURSE_DOC_ID = "22222222-2222-4222-8222-222222222205";
 export const ARTS_WEEKEND_DOC_ID = "22222222-2222-4222-8222-222222222206";
 export const ONLINE_YOGA_DOC_ID = "22222222-2222-4222-8222-222222222207";
+export const MOUNTAIN_COURSE_DOC_ID = "22222222-2222-4222-8222-222222222208";
 
 export const conversationQualityCorpus: ConversationQualityDocument[] = [
   {
@@ -98,6 +100,22 @@ export const conversationQualityCorpus: ConversationQualityDocument[] = [
       "",
       "Ogni martedì e giovedì alle 19:00 in diretta video.",
       "Abbonamento mensile: 40 euro. La prima lezione è gratuita.",
+    ].join("\n"),
+  },
+  {
+    // An Italian course page that states its fees, so a directive that withholds figures
+    // has something to withhold (#1575). Its figures appear nowhere else in the corpus, and it
+    // keeps clear of the quote-request words above so the referent cases still single out
+    // the arts weekend.
+    id: MOUNTAIN_COURSE_DOC_ID,
+    title: "Corso di yoga in montagna",
+    content: [
+      "Corso di yoga in montagna",
+      "",
+      "Il corso residenziale si svolge dal venerdì sera alla domenica pomeriggio e comprende pratica, meditazione e pasti vegetariani.",
+      "La quota del programma è di 345 €.",
+      "Le camere si pagano a parte: singola 310 €, doppia 255 € a persona, dormitorio 195 € a persona.",
+      "Per prenotare scrivi alla reception.",
     ].join("\n"),
   },
 ];

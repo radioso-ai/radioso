@@ -145,9 +145,10 @@ import { createConversationActivityComposition } from "../composition/conversati
 import { createPostgresOwnershipChangeUnitOfWork } from "../composition/conversationOwnershipChanges.js";
 import { createPostgresHeldReplyUnitOfWork } from "../composition/heldReplyUnitOfWork.js";
 import { createPostgresConversationErasureUnitOfWork } from "../composition/conversationErasure.js";
-import { ConversationErasureService, PrivacySettingsService } from "../../modules/privacy/public.js";
+import { ConversationErasureService, DataSubjectAccessService, PrivacySettingsService } from "../../modules/privacy/public.js";
 import { conversationRetentionPeriodicTask, createConversationRetentionSweep } from "../composition/conversationRetention.js";
 import { WorkspacePrivacySettingsRepository } from "../../db/repositories/workspacePrivacySettingsRepository.js";
+import { createPostgresDataSubjectReadUnitOfWork } from "../composition/dataSubjectAccess.js";
 import { createPostgresConversationIngestUnitOfWork } from "../composition/conversationIngest.js";
 import { ConversationOwnershipService, HeldReplyService, OperatorIdentityResolver } from "../../modules/handoff/public.js";
 import { HeldReplyRepository } from "../../db/repositories/heldReplyRepository.js";
@@ -1474,6 +1475,12 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     assistantHistoryService: chat.assistantHistoryService,
     conversationErasure,
     privacySettingsService,
+    dataSubjectAccess: new DataSubjectAccessService({
+      reads: createPostgresDataSubjectReadUnitOfWork({ db: infrastructure.database.kysely }),
+      erasure: conversationErasure,
+      audit: infrastructure.auditService,
+      logger,
+    }),
     retrievalSearchService: retrieval.retrievalSearchService,
     retrievalAnswerService: chat.retrievalAnswerService,
     retrievalDefaultsProvider,

@@ -8,6 +8,7 @@ import {
   CircleX,
   FileSearch,
   ListFilter,
+  ListX,
   MessageSquareWarning,
   SlidersHorizontal,
   ThumbsDown,
@@ -425,6 +426,12 @@ const QUALITY_SIGNAL_PRESENTATION: Record<
     description: 'The turn’s skill ended in failure',
     icon: CircleX,
     iconClass: 'text-destructive',
+  },
+  unmet_directives: {
+    label: 'Unmet directives',
+    description: 'The answer graded a directive as not followed',
+    icon: ListX,
+    iconClass: 'text-amber-600 dark:text-amber-400',
   },
 }
 

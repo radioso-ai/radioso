@@ -8,6 +8,7 @@ const meta = {
   'visitor-data': 'Visitor data',
   'deleting-conversation-data': 'Deleting conversation data',
   'data-retention': 'Data retention',
+  'data-subject-requests': 'Data subject requests',
   'human-takeover': 'Human takeover',
   copilot: 'Ray',
   'slack-channel': 'Slack channel',

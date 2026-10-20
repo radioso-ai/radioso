@@ -1,6 +1,6 @@
 import { AppError } from "../domain/errors.js";
 import { traceOperation } from "../observability/tracing/operations.js";
-import { NonRetryableBackgroundJobError } from "./jobKind.js";
+import { InvalidBackgroundJobPayloadError, NonRetryableBackgroundJobError } from "./jobKind.js";
 import type {
   BackgroundJobClaim,
   BackgroundJobClaimableKind,
@@ -410,8 +410,13 @@ export class BackgroundJobRuntime {
     if (!parked) {
       return this.record(claim, "superseded", startedAt);
     }
-    this.report("background_job.dead_lettered", { kind: claim.kind, attempt: claim.attempt, jobId: claim.id, lastError: summary });
-    return this.record(claim, "dead_lettered", startedAt, summary);
+    const isExpectedPermanent =
+      rawError instanceof NonRetryableBackgroundJobError &&
+      !(rawError instanceof InvalidBackgroundJobPayloadError);
+    if (!isExpectedPermanent) {
+      this.report("background_job.dead_lettered", { kind: claim.kind, attempt: claim.attempt, jobId: claim.id, lastError: summary });
+    }
+    return this.record(claim, "dead_lettered", startedAt, summary, { expectedPermanent: isExpectedPermanent });
   }
 
   /**
@@ -483,7 +488,13 @@ export class BackgroundJobRuntime {
     });
   }
 
-  private record(claim: BackgroundJobClaim, outcome: RunOutcome, startedAt: number, failure?: string): RunOutcome {
+  private record(
+    claim: BackgroundJobClaim,
+    outcome: RunOutcome,
+    startedAt: number,
+    failure?: string,
+    options?: { expectedPermanent?: boolean },
+  ): RunOutcome {
     const durationMs = Math.max(0, Date.now() - startedAt);
     this.options.metrics?.incrementCounter("background_jobs_total", {
       help: "Background job runs by kind and outcome.",
@@ -514,7 +525,11 @@ export class BackgroundJobRuntime {
             : "Background job completed; rerun queued",
       );
     } else if (outcome === "dead_lettered") {
-      this.options.logger.error(fields, "Background job dead-lettered");
+      if (options?.expectedPermanent) {
+        this.options.logger.warn(fields, "Background job dead-lettered");
+      } else {
+        this.options.logger.error(fields, "Background job dead-lettered");
+      }
     } else if (outcome === "retried") {
       this.options.logger.warn(fields, "Background job failed; retry scheduled");
     } else {

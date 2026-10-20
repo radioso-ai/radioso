@@ -66,6 +66,51 @@ test("workspace operator stores a Claude key and picks Claude as the chat model"
   await expect(page.locator('#model-chat')).toContainText("claude-sonnet-4-6");
 });
 
+test("workspace operator picks a residency before saving an OpenAI key, then changes it alone", async ({ page }) => {
+  const providerCredentialUpdates: Array<{ method: "PUT" | "DELETE"; provider: string; body?: unknown }> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { platformSettings: basePlatformSettings(), providerCredentialUpdates });
+
+  await page.goto(`/w/${workspaceKey}/settings?tab=providers`);
+  const openAiRow = page.locator("#provider-credentials li").filter({ has: page.getByText("OpenAI", { exact: true }) });
+
+  // No stored key yet: the residency choice lives in the key editor, not as a standalone control.
+  await expect(page.locator("#openai-residency")).toHaveCount(0);
+
+  // Picking EU while entering the key carries it into the save.
+  await openAiRow.getByRole("button", { name: "Set key" }).click();
+  await expect(openAiRow.locator("#openai-residency")).toContainText("Global");
+  await openAiRow.locator("#openai-residency").click();
+  await page.getByRole("option", { name: "EU" }).click();
+  await openAiRow.getByPlaceholder("OpenAI API key").fill("  sk-test-openai-123  ");
+  await openAiRow.getByRole("button", { name: "Save" }).click();
+
+  await expect.poll(() => providerCredentialUpdates.length).toBeGreaterThanOrEqual(1);
+  expect(providerCredentialUpdates.at(-1)).toMatchObject({
+    method: "PUT",
+    provider: "openai",
+    body: { apiKey: "sk-test-openai-123", residency: "eu" },
+  });
+  await expect(openAiRow.getByRole("button", { name: "Replace" })).toBeVisible();
+
+  // With the key already stored, the standalone residency control changes it alone, sending no apiKey.
+  const storedResidency = openAiRow.locator("#openai-residency");
+  await expect(storedResidency).toContainText("EU");
+  await storedResidency.click();
+  await page.getByRole("option", { name: "US" }).click();
+
+  await expect.poll(() => providerCredentialUpdates.length).toBeGreaterThanOrEqual(2);
+  expect(providerCredentialUpdates.at(-1)).toEqual({
+    method: "PUT",
+    provider: "openai",
+    body: { residency: "us" },
+  });
+
+  await page.reload();
+  await expect(page.locator("#openai-residency")).toContainText("US");
+});
+
 test("workspace operator stores the ElevenLabs key voice sessions start with, finds it configured after a reload, and removes it", async ({ page }) => {
   const providerCredentialUpdates: Array<{ method: "PUT" | "DELETE"; provider: string; body?: unknown }> = [];
 

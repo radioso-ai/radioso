@@ -62,7 +62,7 @@ describe("settings credentials contract", () => {
     await request(app).delete("/api/v1/settings/credentials/elevenlabs").set(adminSessionHeaders(session)).expect(204);
     const cleared = await request(app).get("/api/v1/settings/credentials").set(adminSessionHeaders(session)).expect(200);
 
-    expect(configured.body.credentials).toEqual([{ provider: "elevenlabs", updatedAt: expect.any(String) }]);
+    expect(configured.body.credentials).toEqual([{ provider: "elevenlabs", residency: "global", updatedAt: expect.any(String) }]);
     // A voice vendor key has no deployment fallback, so the model providers' availability map leaves it out.
     expect(Object.keys(configured.body.envProviderAvailability)).toEqual(["openai", "openai-compatible", "gemini", "claude"]);
     expect(cleared.body.credentials).toEqual([]);
@@ -127,6 +127,79 @@ describe("settings credentials contract", () => {
     const response = await request(app)
       .delete("/api/v1/settings/credentials/bogus")
       .set(adminSessionHeaders(session));
+
+    expect(response.status).toBe(400);
+  });
+
+  it("stores the chosen residency alongside a new openai key, and audits it", async () => {
+    const { app, repositories } = createTestApp();
+    const session = await issueTestSession(app, "creds-residency-set@example.com");
+
+    await request(app)
+      .put("/api/v1/settings/credentials/openai")
+      .set(adminSessionHeaders(session))
+      .send({ apiKey: "sk-test-secret-1234567890", residency: "eu" })
+      .expect(204);
+
+    const list = await request(app).get("/api/v1/settings/credentials").set(adminSessionHeaders(session)).expect(200);
+    expect(list.body.credentials).toEqual([{ provider: "openai", residency: "eu", updatedAt: expect.any(String) }]);
+
+    const event = repositories.auditEventRepository.items.find((e) => e.eventType === "workspace_provider_credentials.set");
+    expect(event?.metadata).toMatchObject({ provider: "openai", residency: "eu" });
+  });
+
+  it("changes a stored openai credential's residency alone, without re-sending the key", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "creds-residency-change@example.com");
+
+    await request(app)
+      .put("/api/v1/settings/credentials/openai")
+      .set(adminSessionHeaders(session))
+      .send({ apiKey: "sk-test-secret-1234567890" })
+      .expect(204);
+
+    await request(app)
+      .put("/api/v1/settings/credentials/openai")
+      .set(adminSessionHeaders(session))
+      .send({ residency: "us" })
+      .expect(204);
+
+    const list = await request(app).get("/api/v1/settings/credentials").set(adminSessionHeaders(session)).expect(200);
+    expect(list.body.credentials).toEqual([{ provider: "openai", residency: "us", updatedAt: expect.any(String) }]);
+  });
+
+  it("reports 404 when changing residency with no credential stored yet", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "creds-residency-missing@example.com");
+
+    const response = await request(app)
+      .put("/api/v1/settings/credentials/openai")
+      .set(adminSessionHeaders(session))
+      .send({ residency: "us" });
+
+    expect(response.status).toBe(404);
+  });
+
+  it("rejects a residency on a provider other than openai", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "creds-residency-wrong-provider@example.com");
+
+    const response = await request(app)
+      .put("/api/v1/settings/credentials/claude")
+      .set(adminSessionHeaders(session))
+      .send({ apiKey: "claude-key", residency: "eu" });
+
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects a body with neither apiKey nor residency", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "creds-residency-empty-body@example.com");
+
+    const response = await request(app)
+      .put("/api/v1/settings/credentials/openai")
+      .set(adminSessionHeaders(session))
+      .send({});
 
     expect(response.status).toBe(400);
   });

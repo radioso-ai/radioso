@@ -13,6 +13,7 @@ import {
   providerNames,
   setProviderCredentialSchema,
 } from "../../routes/settingsCredentialsRoutes.js";
+import { OPENAI_DATA_RESIDENCIES } from "../../../../shared/infra/llm/providerTypes.js";
 import {
   updateWorkspaceLlmModelsSchema,
   workspaceLlmProviderNames,
@@ -313,6 +314,8 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
     "WorkspaceProviderCredentialSummary",
     z.object({
       provider: z.enum(providerNames),
+      // Meaningful only for the "openai" row; every other provider's row reports "global".
+      residency: z.enum(OPENAI_DATA_RESIDENCIES),
       updatedAt: z.string().datetime(),
     }),
   );

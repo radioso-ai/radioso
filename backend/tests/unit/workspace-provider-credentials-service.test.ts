@@ -31,7 +31,7 @@ const createRepository = (): WorkspaceProviderCredentialsRepositoryPort & {
     async listByWorkspace(workspaceId): Promise<WorkspaceProviderCredentialSummary[]> {
       return [...rows.values()]
         .filter((r) => r.workspaceId === workspaceId)
-        .map((r) => ({ workspaceId: r.workspaceId, provider: r.provider, updatedAt: r.updatedAt }));
+        .map((r) => ({ workspaceId: r.workspaceId, provider: r.provider, residency: r.residency, updatedAt: r.updatedAt }));
     },
     async upsert(input) {
       const existing = rows.get(`${input.workspaceId}:${input.provider}`);
@@ -39,10 +39,19 @@ const createRepository = (): WorkspaceProviderCredentialsRepositoryPort & {
         workspaceId: input.workspaceId,
         provider: input.provider,
         ciphertext: input.ciphertext,
+        residency: input.residency ?? existing?.residency ?? "global",
         createdAt: existing?.createdAt ?? new Date(),
         updatedAt: new Date(),
       };
       rows.set(`${input.workspaceId}:${input.provider}`, record);
+      return record;
+    },
+    async updateResidency(workspaceId, provider, residency) {
+      const key = `${workspaceId}:${provider}`;
+      const existing = rows.get(key);
+      if (!existing) return null;
+      const record: WorkspaceProviderCredentialRecord = { ...existing, residency, updatedAt: new Date() };
+      rows.set(key, record);
       return record;
     },
     async remove(workspaceId, provider) {
@@ -317,6 +326,7 @@ describe("WorkspaceProviderCredentialsService", () => {
         workspaceId: WORKSPACE_ID,
         provider: "claude",
         ciphertext: "opaque",
+        residency: "global",
         createdAt: new Date(),
         updatedAt: new Date(),
       });
@@ -392,6 +402,129 @@ describe("WorkspaceProviderCredentialsService", () => {
       // Sanity: encryption helper round-trips with the same key.
       const enc = encryptField("hi", TEST_KEY, { keyName: "CONNECTOR_ENCRYPTION_KEY" });
       expect(decryptField(enc, TEST_KEY)).toBe("hi");
+    });
+  });
+
+  describe("data residency", () => {
+    let repo: ReturnType<typeof createRepository>;
+    let audit: ReturnType<typeof createAudit>;
+    let service: WorkspaceProviderCredentialsService;
+
+    beforeEach(() => {
+      repo = createRepository();
+      audit = createAudit();
+      service = new WorkspaceProviderCredentialsService(repo, audit, configWithKey);
+    });
+
+    it("defaults a new openai credential's residency to global", async () => {
+      await service.setApiKey({
+        workspaceId: WORKSPACE_ID,
+        provider: "openai",
+        apiKey: "sk-test",
+        actor: { accountId: "acc-1" },
+      });
+
+      await expect(service.getOpenAIResidency(WORKSPACE_ID)).resolves.toBe("global");
+    });
+
+    it("stores the operator-authored residency alongside a new openai credential", async () => {
+      await service.setApiKey({
+        workspaceId: WORKSPACE_ID,
+        provider: "openai",
+        apiKey: "sk-test",
+        residency: "eu",
+        actor: { accountId: "acc-1" },
+      });
+
+      await expect(service.getOpenAIResidency(WORKSPACE_ID)).resolves.toBe("eu");
+    });
+
+    it("keeps the stored residency when replacing the key without naming one", async () => {
+      await service.setApiKey({
+        workspaceId: WORKSPACE_ID,
+        provider: "openai",
+        apiKey: "sk-first",
+        residency: "us",
+        actor: { accountId: "acc-1" },
+      });
+      await service.setApiKey({
+        workspaceId: WORKSPACE_ID,
+        provider: "openai",
+        apiKey: "sk-second",
+        actor: { accountId: "acc-1" },
+      });
+
+      await expect(service.getOpenAIResidency(WORKSPACE_ID)).resolves.toBe("us");
+      await expect(service.getApiKey(WORKSPACE_ID, "openai")).resolves.toBe("sk-second");
+    });
+
+    it("changes residency alone, leaving the stored key unchanged", async () => {
+      await service.setApiKey({
+        workspaceId: WORKSPACE_ID,
+        provider: "openai",
+        apiKey: "sk-unchanged",
+        actor: { accountId: "acc-1" },
+      });
+
+      await service.setResidency({ workspaceId: WORKSPACE_ID, provider: "openai", residency: "eu", actor: { accountId: "acc-1" } });
+
+      await expect(service.getOpenAIResidency(WORKSPACE_ID)).resolves.toBe("eu");
+      await expect(service.getApiKey(WORKSPACE_ID, "openai")).resolves.toBe("sk-unchanged");
+    });
+
+    it("reports no stored credential to change residency on", async () => {
+      await expect(
+        service.setResidency({ workspaceId: WORKSPACE_ID, provider: "openai", residency: "eu", actor: { accountId: "acc-1" } }),
+      ).rejects.toMatchObject({ statusCode: 404 });
+    });
+
+    it("rejects a residency on a provider other than openai", async () => {
+      await expect(
+        service.setApiKey({
+          workspaceId: WORKSPACE_ID,
+          provider: "claude",
+          apiKey: "claude-key",
+          residency: "eu",
+          actor: { accountId: "acc-1" },
+        }),
+      ).rejects.toThrow(/openai/i);
+
+      await expect(
+        service.setResidency({ workspaceId: WORKSPACE_ID, provider: "claude", residency: "eu", actor: { accountId: "acc-1" } }),
+      ).rejects.toThrow(/openai/i);
+    });
+
+    it("defaults to global for a workspace with no openai credential at all", async () => {
+      await expect(service.getOpenAIResidency("ws-without-any-credential")).resolves.toBe("global");
+    });
+
+    it("records the chosen residency on the audit event, and omits it when unset", async () => {
+      await service.setApiKey({
+        workspaceId: WORKSPACE_ID,
+        provider: "openai",
+        apiKey: "sk-test",
+        residency: "us",
+        actor: { accountId: "acc-1" },
+      });
+      await service.setResidency({ workspaceId: WORKSPACE_ID, provider: "openai", residency: "eu", actor: { accountId: "acc-1" } });
+
+      const residencyEvents = audit.events.filter((e) => e.eventType === "workspace_provider_credentials.set" && e.eventStatus === "success");
+      expect(residencyEvents.map((e) => e.metadata?.residency)).toEqual(["us", "eu"]);
+    });
+
+    it("changes residency without needing the master key", async () => {
+      const writerService = new WorkspaceProviderCredentialsService(repo, createAudit(), configWithKey);
+      await writerService.setApiKey({
+        workspaceId: WORKSPACE_ID,
+        provider: "openai",
+        apiKey: "sk-test",
+        actor: { accountId: "acc-1" },
+      });
+
+      const noKeyService = new WorkspaceProviderCredentialsService(repo, createAudit(), configMissingKey);
+      await noKeyService.setResidency({ workspaceId: WORKSPACE_ID, provider: "openai", residency: "eu", actor: { accountId: "acc-1" } });
+
+      await expect(noKeyService.getOpenAIResidency(WORKSPACE_ID)).resolves.toBe("eu");
     });
   });
 

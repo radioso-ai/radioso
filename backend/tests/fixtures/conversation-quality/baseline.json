@@ -251,6 +251,26 @@
       "status": "pass",
       "passRate": 1,
       "samples": 5
+    },
+    "voice-bridge-on-searching": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "voice-outcome-handoff": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "voice-quick-reply-no-bridge": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "voice-turn-limit-fires": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
     }
   }
 }

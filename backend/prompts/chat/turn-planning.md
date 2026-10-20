@@ -15,6 +15,7 @@ If route is retrieval, provide rewrite fields exactly as instructed below.
 Grounding: preserve intent, proper nouns, technical terms, and ambiguity.
 USER messages are authoritative. ASSISTANT messages are context only; concrete titles, names, or identifiers from the immediately preceding assistant turn may be copied when needed.
 Resolve references only when supported by conversation context. Do not replace concrete referents with abstract descriptions of prior turns.
+A reference that points back instead of naming its subject (a pronoun, a demonstrative, or a definite description such as "the event" or "that course", in any language) resolves to the most recent concrete subject in play. When the immediately preceding assistant turn is about one concrete subject, that is the referent. When that turn names no subject (for example, it only asks for contact details or confirms a step), look further back: the referent is the most recent concrete subject the USER named or chose, in the most specific form the user gave it across turns (a proper name over a category or a date range). Copy it into rewrittenQuery, semanticQuery, and proposedActiveSubject, and make it the lexicalQuery. When no single concrete subject fits, set unresolved true rather than leaving the reference generic.
 Never output vague placeholders ("continue the current topic", "the previous topic", "go ahead with that").
 Continuation-only follow-ups ("tell me more", "go on", "continue") -> anchor to the main topic of the immediately preceding USER turn.
 If the user accepts or chooses a concrete option proposed by the assistant, resolve the rewrite from that offered material.
@@ -41,7 +42,8 @@ queryShape: use the semantic definitions below. Apply them by meaning in every l
 Do not use policy_answer merely because the assistant has a behavioral directive about the topic. Classify the user's requested answer, not the instructions for how to answer it.
 After resolving a follow-up to a concrete subject, use the specialized shape that fits the resolved request. For example, a follow-up asking for one discrete attribute remains definition_lookup; use follow_up_grounding only when no specialized shape applies.
 temporalQueryMode: use "listing" only for an anchorless event/date query that asks for a list or ordering of dated events without naming a specific topic; use "topic_refinement" for a named event/topic temporal question; otherwise use "none". This is your structured judgment and must not rely on backend keyword rules.
-resolutionNote: when the latest message depends on something from the conversation (an ordinal or position in a list you offered, an accepted offer, a continuation, a correction), name in one short clause the concrete item it resolves to and how, before you resolve the query fields; otherwise null. Apply this by meaning in every language; do not rely on English ordinal or acceptance words.
+resolutionNote: when the latest message depends on something from the conversation (an ordinal or position in a list you offered, an accepted offer, a continuation, a correction, a reference back to a subject named earlier), name in one short clause the concrete item it resolves to and how, before you resolve the query fields; otherwise null. Apply this by meaning in every language; do not rely on English ordinal or acceptance words.
+proposedActiveSubject: the one concrete subject the request is about once references are resolved, in the form the conversation gives it; null only when the request concerns no concrete subject. relatedEntities: other concrete entities the request involves besides that subject. A resolved referent belongs in proposedActiveSubject, not only in relatedEntities.
 confidence: certainty in subject resolution and turn interpretation, not answer confidence.
 
 Response Language Rules
@@ -51,6 +53,7 @@ If there is no explicit language instruction, use the language of the latest use
 If the latest user message is short, neutral, or language-ambiguous, preserve the most recent explicit language instruction from the conversation when one exists.
 Return a concise human-readable language label such as "English", "Spanish", or "Estonian".
 If there is no user message or no reliable language can be determined, use null.
+responseLanguageTag is the BCP 47 tag of that same language, language subtag first, such as en, es, et or pt-BR; it is null exactly when responseLanguage is null.
 
 Semantic rewrite guidance:
 {{semantic_rewrite_instructions}}

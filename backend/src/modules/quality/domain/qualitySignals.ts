@@ -91,7 +91,14 @@ export const resolveGroundedOutcomeTuples = (
 export type QualitySignalPredicate =
   | { kind: "feedback"; values: readonly QualityFeedbackValue[] }
   | { kind: "actions"; actions: readonly QualityActionFilter[] }
-  | { kind: "skillStatuses"; statuses: readonly QualitySkillStatus[] };
+  | { kind: "skillStatuses"; statuses: readonly QualitySkillStatus[] }
+  /**
+   * The answer graded at least one directive as applying to the turn and not
+   * satisfied. The grade is the answering model's own, so this lists turns worth a
+   * look; it is no proof of a breach, and a turn missing from it is no proof of
+   * compliance.
+   */
+  | { kind: "unmetDirectives" };
 
 /**
  * The single definition of what each operator signal means. Both the windowed rate and
@@ -109,5 +116,7 @@ export const resolveQualitySignalPredicate = (
       return { kind: "actions", actions: tuples.gaps };
     case "skill_failures":
       return { kind: "skillStatuses", statuses: SKILL_FAILURE_STATUSES };
+    case "unmet_directives":
+      return { kind: "unmetDirectives" };
   }
 };

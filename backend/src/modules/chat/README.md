@@ -136,15 +136,19 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   turn still holds into `{ state: "spoken", spokenAt }`, `skipped` or back to
   `pending`. Each is one conditional UPDATE that resolves the ids it changed,
   so two turns never hold one reply; a claim older than
-  `VOICE_BEHAVIOR.operatorReplyClaimExpiryMs` counts as pending. Times are the database clock in the tail cursor's
-  format. `MessageRecord.speech` reads it back on human-authored replies as
+  `VOICE_BEHAVIOR.operatorReplyClaimExpiryMs` counts as pending. Times are the database clock at
+  millisecond precision (the tail cursor's `markedAt` watermark shares this format; the cursor's
+  own `createdAt` key carries the database's full microsecond precision instead, so a quiet poll
+  never re-matches the row it came from — #1518). `MessageRecord.speech` reads it back on human-authored replies as
   readers see it (a claim is still `pending`), and history puts it on the
   reply as `speech` beside `interruption`; the dashboard tail re-delivers a
   reply once it is spoken or skipped. Ray's `conversation_transcript` carries
   the state as one word. Tests:
-  `tests/integration/message-repository.integration.test.ts` (needs the
+  `tests/integration/message-repository.integration.test.ts` and
+  `tests/integration/message-repository-tail.test.ts` (both need the
   disposable integration database), `tests/unit/message-source.test.ts`,
-  `tests/unit/chat-history-service.test.ts`.
+  `tests/unit/chat-history-service.test.ts`,
+  `tests/unit/message-repository-tail-cursor.test.ts`.
 - `composition.ts`: chat module wiring used by application composition.
 - `services/conversationIngestService.ts` (`ConversationIngestPort` in `contracts/`):
   records a customer message without running a turn, for a channel that decides
@@ -208,7 +212,12 @@ imports from `services/`.
   selection, dispatch, streaming composition, final event append, and trace
   assembly. Chat still owns Radioso presentation, suggestions, persistence, billing,
   and HTTP stream events, and never pushes retrieval-specific policy into the
-  reusable engine.
+  reusable engine. A request that sets `reportResponseLanguage` (the voice
+  channel's) also gets one `language` event once the turn has read its response
+  language, ahead of the answer's first chunk: `services/turnLanguageReport.ts`
+  observes the lazy response-language promise without starting it and reports
+  the plan's `responseLanguageTag` as soon as the first consumer reads it; the
+  HTTP presenters drop the event.
 - Grounded retrieval answers: `groundedAnswerEnvelope.ts` defines the v2 JSON
   schema and retains the older sentinel parser for compatibility. First-party
   OpenAI and Gemini use native JSON-schema output; Claude uses an equivalent forced
@@ -219,11 +228,18 @@ imports from `services/`.
   visible streaming text. The envelope stays capability-neutral: a caller may merge
   a strict schema extension into the response format and the reader buffers any
   fields it does not interpret as opaque `extras` (like suggestions, never in
-  visible text). Directive adherence rides that seam — the shared
-  `shared/domain/directiveAdherence.ts` probe owns the attestation schema fragment
-  and resolves the raw `extras` back to directive display names, so the envelope
-  never learns directive vocabulary and any composer can carry it. Resolved
-  attestation appears only on the operator-facing compose trace output.
+  visible text). An extension's `beforeAnswer` fields land between the verdict
+  head and `answer`, so the model writes them first. Directive adherence rides
+  that seam — the shared `shared/domain/directiveAdherence.ts` probe owns the
+  schema fragment (an `adherencePlan` commitment per rule before `answer`, an
+  `adherence` grade per rule after it) and resolves the raw `extras` back to
+  directive display names, so the envelope never learns directive vocabulary and
+  any composer can carry it. Resolved commitments and grades, and the rules left
+  ungraded, appear on the operator-facing compose trace output; the
+  `chat_directive_adherence_verdicts_total` counter counts rules per verdict.
+  `chatTurnLifecycle.ts` writes the directives graded applicable and unsatisfied
+  to the assistant message's `unmetDirectives` metadata, which Quality's
+  `unmet_directives` signal reads.
   `groundingAssertions.ts` structurally computes
   `grounded | degraded | no_support`, and `retrievalTurnSkill.ts` performs one
   semantic answer generation on compliant paths.
@@ -684,7 +700,10 @@ imports from `services/`.
   `behaviorConfig.turnPlanning`, the lazy memoized `session.turnPlan` handle,
   and the four plan-aware adapters). On eligible fresh turns the one plan
   replaces the staged routine-activation, turn-interpretation,
-  response-language, and directive-match calls; a bypassed or invalid plan
+  response-language, and directive-match calls; the plan's response language
+  comes as a label for the composers and as `responseLanguageTag` (BCP 47,
+  dropped when malformed, never failing the plan) for a host that names the
+  language structurally; a bypassed or invalid plan
   sends every consumer back to its staged call, all-or-nothing. This is standard
   behavior with no rollout configuration. The chat builder (`builders/chat.ts`)
   wires the same coordinator into `ChatService` and

@@ -4,6 +4,7 @@ import {
   GeneratedRadiosoClient,
   type ChatCreateRequest,
   type ChatStreamRequest,
+  type DataSubjectIdentity,
   type DocumentOperationResponse,
   type SourceReprocessResponse,
   type WorkspaceIngestionReprocessResponse,
@@ -46,6 +47,16 @@ export type {
   HistoryItemsResponse,
   VisitorConversationsQuery,
   VisitorConversationsResponse,
+  DataSubjectConversation,
+  DataSubjectConversationsResponse,
+  DataSubjectErasure,
+  DataSubjectExport,
+  DataSubjectIdentitiesRequest,
+  DataSubjectIdentity,
+  DataSubjectIdentityCandidate,
+  DataSubjectLookupRequest,
+  DataSubjectLookupResponse,
+  DataSubjectSelectionRequest,
   DocumentCreateRequest,
   DocumentDetails,
   DocumentListResponse,
@@ -306,6 +317,14 @@ export const createRadiosoClient = (options: RadiosoClientOptions) => {
         query?: Parameters<GeneratedRadiosoClient["listVisitorConversations"]>[1],
       ) => generated.listVisitorConversations(visitorId, query),
       deleteVisitor: (visitorId: string) => generated.deleteHistoryVisitor(visitorId),
+    },
+    privacy: {
+      lookupDataSubject: (query: string) => generated.lookupDataSubject({ query }),
+      listDataSubjectConversations: (identities: DataSubjectIdentity[]) => generated.listDataSubjectConversations({ identities }),
+      exportDataSubject: (identities: DataSubjectIdentity[], conversationIds?: string[]) =>
+        generated.exportDataSubject({ identities, ...(conversationIds ? { conversationIds } : {}) }),
+      eraseDataSubject: (identities: DataSubjectIdentity[], conversationIds?: string[]) =>
+        generated.eraseDataSubject({ identities, ...(conversationIds ? { conversationIds } : {}) }),
     },
     chat: {
       create: (body: ChatCreateRequest) => {

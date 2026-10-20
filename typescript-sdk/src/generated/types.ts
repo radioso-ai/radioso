@@ -3345,6 +3345,86 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/privacy/data-subjects/lookup": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Find a data subject's identities
+         * @description Returns every identity whose verified customer id, email address or Slack member id is exactly the query, each with its channel and conversation count. Identities are never merged: the caller confirms which belong to the subject and passes those to the other operations. Records one `data_subject.looked_up` audit event with identity references and counts.
+         */
+        post: operations["lookupDataSubject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/privacy/data-subjects/conversations": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * List the conversations of a data subject's identities
+         * @description The conversations the confirmed identities reach, latest activity first, each once.
+         */
+        post: operations["listDataSubjectConversations"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/privacy/data-subjects/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Export a data subject's data
+         * @description One machine-readable JSON document holding everything the confirmed identities reach, read from one consistent snapshot. With `conversationIds`, the document holds those conversations and the identities' own records, such as their visitor records and customer-scoped values, so identities that reach more than 200 conversations export in pages. Records one `data_subject.exported` audit event with identity references and counts per section, never content.
+         */
+        post: operations["exportDataSubject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/privacy/data-subjects/erase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Permanently erase a data subject's data
+         * @description Erases each web visitor among the confirmed identities as `DELETE /api/v1/history/visitors/{visitorId}` does, then every other conversation the identities reach as `DELETE /api/v1/history/chat/{conversationId}` does, each with its own audit event, and records one `data_subject.erased` audit event for the request with identity records and totals. One already erased is skipped. With `conversationIds`, erases only those conversations and no visitor, because a visitor's erasure takes all of their conversations; once the identities reach at most 200, a request without the list erases the rest and the visitors. There is no undo.
+         */
+        post: operations["eraseDataSubject"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/conversations/recently-closed": {
         parameters: {
             query?: never;
@@ -5533,7 +5613,7 @@ export interface components {
                 url: string;
             };
         };
-        /** @description How the agent sounds on the voice channel. `bridgeLines`, `fallbackLine` and the optional `recordingNotice` are keyed by language tag (at most 10 each); each style holds at most 5 lines of 1 to 200 characters, and each notice is one line of 1 to 200 characters. The website embed shows the `recordingNotice` for the session's language as a call starts. `runtime` binds the agent to one vendor agent (the vendor's own agent id, 1 to 128 letters, digits, underscores and hyphens), which a voice session start opens, in the data residency region of the vendor account (`region`, which picks the vendor host); null binds none. An update replaces the block whole. */
+        /** @description How the agent sounds on the voice channel. `bridgeLines`, `fallbackLine` and the optional `recordingNotice` are keyed by language tag (at most 10 each); each style holds at most 5 lines of 1 to 200 characters, and each notice is one line of 1 to 200 characters. The website embed shows the `recordingNotice` for the session's language as a call starts. `runtime` binds the agent to one vendor agent (the vendor's own agent id, 1 to 128 letters, digits, underscores and hyphens), which a voice session start opens, in the data residency region of the vendor account (`region`, which picks the vendor host); null binds none. `languageSwitching` lets the agent switch the call's language, and with it the runtime's voice and transcription, when the caller changes language mid-call; off (absent) unless the operator turns it on, and only on a runtime that offers the switch. An update replaces the block whole. */
         AgentVoiceSettings: {
             enabled: boolean;
             bridgeLines: {
@@ -5555,8 +5635,9 @@ export interface components {
                 /** @enum {string} */
                 region: "us" | "eu" | "in" | "sg";
             } | null;
+            languageSwitching?: boolean;
         };
-        /** @description The `voice` block as an update sends it: `AgentVoiceSettings`, except that `runtime` may be left out, which binds the agent to no vendor agent, and `runtime.region` may be left out for the vendor's default region, `us`. A key either object does not name is refused. The update replaces the block whole. */
+        /** @description The `voice` block as an update sends it: `AgentVoiceSettings`, except that `runtime` may be left out, which binds the agent to no vendor agent, and `runtime.region` may be left out for the vendor's default region, `us`. `languageSwitching` may be left out, which turns it off. A key either object does not name is refused. The update replaces the block whole. */
         AgentVoiceSettingsUpdate: {
             enabled: boolean;
             bridgeLines: {
@@ -5578,6 +5659,7 @@ export interface components {
                 /** @enum {string} */
                 region?: "us" | "eu" | "in" | "sg";
             } | null;
+            languageSwitching?: boolean;
         };
         /** @description What the agent says, word for word, to a greeting, thanks, farewell, or acknowledgement, keyed by language tag (at most 10). Each locale entry holds every mechanic, each with at most 5 lines of 1 to 200 characters. When a turn is one of these mechanics and the agent has a line for it in the turn's language, the reply is an authored line, rotated per conversation. An update replaces the block whole. */
         AgentMechanicsReplies: {
@@ -9208,7 +9290,7 @@ export interface components {
             verification: components["schemas"]["QualityVerification"] | null;
         };
         /** @enum {string} */
-        QualitySignalId: "negative_feedback" | "grounding_gaps" | "skill_failures";
+        QualitySignalId: "negative_feedback" | "grounding_gaps" | "skill_failures" | "unmet_directives";
         /** @enum {string} */
         QualityStatsRange: "7d" | "30d";
         QualityStatsMetric: {
@@ -9259,6 +9341,7 @@ export interface components {
                 negative_feedback: number;
                 grounding_gaps: number;
                 skill_failures: number;
+                unmet_directives: number;
             };
             /** @description Current-window terminal triage counts grouped by state and structured reason. Closures without one are grouped as `unspecified`. */
             resolutionBreakdown: {
@@ -10087,6 +10170,87 @@ export interface components {
         };
         EnableEmailDirectReceivingRequest: {
             confirmation: string;
+        };
+        /** @description One identity a data subject is known by on one channel. `web_visitor`: a visitor record, keyed by its id. `email_address`: an email sender, keyed by the lowercased address. `slack_user`: a Slack member, keyed by the Slack workspace id and the member id. */
+        DataSubjectIdentity: {
+            /** @enum {string} */
+            kind: "web_visitor" | "email_address" | "slack_user";
+            /** @description The identity's key, as the lookup returned it. */
+            key: string;
+        };
+        DataSubjectIdentityCandidate: {
+            identity: components["schemas"]["DataSubjectIdentity"];
+            /** @description The conversation channel the identity is on: `web`, `email` or `slack`. */
+            channel: string;
+            /** @description How the channel knows the person: a verified customer id, an address, or a Slack member id. */
+            label: string;
+            conversationCount: number;
+            /** Format: date-time */
+            firstSeenAt: string | null;
+            /** Format: date-time */
+            lastSeenAt: string | null;
+        };
+        DataSubjectConversation: {
+            /** Format: uuid */
+            id: string;
+            channel: string | null;
+            title: string | null;
+            /** Format: date-time */
+            startedAt: string;
+            /** Format: date-time */
+            lastActivityAt: string;
+            messageCount: number;
+        };
+        DataSubjectExport: {
+            /** @enum {string} */
+            format: "radioso.data_subject_export";
+            /**
+             * @description The format's version. A change to the document's shape is a new version.
+             * @enum {number}
+             */
+            formatVersion: 1;
+            /** Format: date-time */
+            exportedAt: string;
+            /** Format: uuid */
+            workspaceId: string;
+            identities: components["schemas"]["DataSubjectIdentity"][];
+            /** @description Every section, keyed by name, each a list of records: `conversations` (each with its `messages`), `visitors`, `routine_values`, `routine_actions`, `conversation_summaries`, `context_values`, `email_messages`, `answer_feedback`. A section with nothing for the subject is an empty list. */
+            sections: {
+                [key: string]: {
+                    [key: string]: unknown;
+                }[];
+            };
+        };
+        DataSubjectErasure: {
+            visitorCount: number;
+            conversationCount: number;
+            messageCount: number;
+            /** @description False only in the `details.receipt` of a `500`: the erasure stopped partway. */
+            complete: boolean;
+        };
+        DataSubjectLookupRequest: {
+            /** @description A verified customer id, an email address, or a Slack member id. Matched exactly: an address without regard to case, the others as stored. */
+            query: string;
+        };
+        DataSubjectIdentitiesRequest: {
+            /** @description The identities the operator confirmed belong to the data subject. */
+            identities: {
+                /** @enum {string} */
+                kind: "web_visitor" | "email_address" | "slack_user";
+                /** @description The identity's key, as the lookup returned it. */
+                key: string;
+            }[];
+        };
+        DataSubjectSelectionRequest: {
+            /** @description The identities the operator confirmed belong to the data subject. */
+            identities: {
+                /** @enum {string} */
+                kind: "web_visitor" | "email_address" | "slack_user";
+                /** @description The identity's key, as the lookup returned it. */
+                key: string;
+            }[];
+            /** @description One page of the identities' conversations, from the conversation list, for identities that reach more than 200. Every id must be one of theirs. Without it the request covers every conversation they reach. */
+            conversationIds?: string[];
         };
         DeliveryFailure: {
             /** Format: uuid */
@@ -25533,6 +25697,241 @@ export interface operations {
             };
         };
     };
+    lookupDataSubject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DataSubjectLookupRequest"];
+            };
+        };
+        responses: {
+            /** @description Candidate identities */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        identities: components["schemas"]["DataSubjectIdentityCandidate"][];
+                    };
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.history.delete */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listDataSubjectConversations: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DataSubjectIdentitiesRequest"];
+            };
+        };
+        responses: {
+            /** @description The subject's conversations */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        conversations: components["schemas"]["DataSubjectConversation"][];
+                    };
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.history.delete */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    exportDataSubject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DataSubjectSelectionRequest"];
+            };
+        };
+        responses: {
+            /** @description The export */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataSubjectExport"];
+                };
+            };
+            /** @description Request validation failed, or `data_subject_conversations_not_reached`: `conversationIds` lists a conversation the identities do not reach. `details.conversationIds` names each one. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.history.delete */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `data_subject_request_too_large`: the identities reach more than 200 conversations. `details` carries `conversationCount` and `maxConversations`; list the conversations and send them at most 200 at a time as `conversationIds`. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    eraseDataSubject: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DataSubjectSelectionRequest"];
+            };
+        };
+        responses: {
+            /** @description What was erased */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DataSubjectErasure"];
+                };
+            };
+            /** @description Request validation failed, or `data_subject_conversations_not_reached`: `conversationIds` lists a conversation the identities do not reach. `details.conversationIds` names each one. */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller lacks workspace.history.delete */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `data_subject_request_too_large`: the identities reach more than 200 conversations. `details` carries `conversationCount` and `maxConversations`; list the conversations and send them at most 200 at a time as `conversationIds`. */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `data_subject_erasure_incomplete`: the erasure stopped partway. `details.receipt` is a `DataSubjectErasure` with what it erased and `complete: false`. Send the same request again to erase the rest; a request with `conversationIds` lists the conversations again and sends the ones that remain. */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     listRecentlyClosedInboxItems: {
         parameters: {
             query?: {
@@ -26884,7 +27283,7 @@ export interface operations {
     listLowQualityTurns: {
         parameters: {
             query?: {
-                /** @description Comma-separated `QualitySignalId` values (`negative_feedback`, `grounding_gaps`, `skill_failures`), resolved server-side from the skill catalog. A turn matches if it carries any listed signal, and the result is layered on top of the other filters rather than replacing them. */
+                /** @description Comma-separated `QualitySignalId` values (`negative_feedback`, `grounding_gaps`, `skill_failures`, `unmet_directives`), resolved server-side. `unmet_directives` matches turns whose answer graded a directive that applied to the turn as not followed. A turn matches if it carries any listed signal, and the result is layered on top of the other filters rather than replacing them. */
                 signal?: string;
                 /** @description Comma-separated `grounded`, `degraded`, or `no_support` verdicts. A turn matches any listed verdict. */
                 groundingVerdict?: string;

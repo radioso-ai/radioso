@@ -1,10 +1,10 @@
 name: Conversation Quality Evals
 
-# Runs the live conversation-quality suite (real model + retrieval + routines) against a
-# throwaway workspace and gates on regressions vs the committed baseline. This is NOT a
-# per-PR gate: it needs provider credentials, spends tokens, and is nondeterministic, so
-# it runs nightly (and on demand). The deterministic harness logic is covered separately
-# by tests/unit/eval-suite in the normal CI job.
+# Runs the live conversation-quality suite (real model + retrieval + routines + voice turn
+# policy) against a throwaway workspace and gates on regressions vs the committed baseline.
+# This is NOT a per-PR gate: it needs provider credentials, spends tokens, and is
+# nondeterministic, so it runs nightly (and on demand). The deterministic harness logic is
+# covered separately by tests/unit/eval-suite in the normal CI job.
 #
 # Requires the OPENAI_API_KEY secret on the `staging` environment, which the job names below. Sampling (--samples 5) matches how the
 # baseline is recorded, so run-to-run LLM variance does not produce false regressions.

@@ -46,6 +46,7 @@ export const composeOutputsFor = (
   options: { streamed: boolean },
 ): Record<string, unknown> => {
   const adherence = response.metadata?.directiveAdherence;
+  const ungradedDirectives = response.metadata?.ungradedDirectives;
   return {
     answerLength: response.answer.length,
     citationCount: Array.isArray(response.citations) ? response.citations.length : 0,
@@ -54,6 +55,9 @@ export const composeOutputsFor = (
     streamed: options.streamed,
     outcomes: outcomes.map(summarizeOutcomeForCompose),
     ...(adherence ? { adherence } : {}),
+    // Rules rendered into the answer prompt that the answer left ungraded (#1575),
+    // by directive name: authored config, like the matched directives themselves.
+    ...(ungradedDirectives?.length ? { ungradedDirectives } : {}),
     // A coverage verdict sink yielded this turn before any answer text was
     // released (#1260): the compose stage still ran, but produced nothing —
     // the post-evidence routine result is what the turn actually returns.
@@ -100,6 +104,11 @@ const summarizeRewriteProposal = (value: unknown): Record<string, unknown> | und
     ...(typeof proposal.queryShape === "string" ? { queryShape: proposal.queryShape } : {}),
     ...(typeof proposal.temporalQueryMode === "string" ? { temporalQueryMode: proposal.temporalQueryMode } : {}),
     ...(typeof proposal.turnKind === "string" ? { turnKind: proposal.turnKind } : {}),
+    // Whether a subject was resolved, not which: the retrieval trace records its text.
+    ...("proposedActiveSubject" in proposal
+      ? { hasProposedActiveSubject: typeof proposal.proposedActiveSubject === "string" && proposal.proposedActiveSubject.length > 0 }
+      : {}),
+    ...(Array.isArray(proposal.relatedEntities) ? { relatedEntityCount: proposal.relatedEntities.length } : {}),
     ...(typeof proposal.unresolved === "boolean" ? { unresolved: proposal.unresolved } : {}),
     ...(typeof proposal.confidence === "number" ? { confidence: proposal.confidence } : {}),
     ...(Array.isArray(proposal.retrievalSubqueries)
@@ -132,7 +141,7 @@ export const guidanceToSteering = (
 });
 
 export const composeAdherenceLinks = (response: RenderableTurn) =>
-  response.metadata?.directiveAdherence
+  response.metadata?.directiveAdherence || response.metadata?.ungradedDirectives?.length
     ? [{ from: "directives", to: "compose", kind: "adherence" }]
     : undefined;
 

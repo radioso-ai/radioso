@@ -68,6 +68,8 @@ export interface DirectiveAdherenceDetail {
    * turns keep reading as honored/not-honored rather than turning neutral.
    */
   applicable?: boolean
+  /** What the answer committed the directive requires, written before the answer (#1575). */
+  commitment?: string
   note: string
 }
 
@@ -77,10 +79,12 @@ export const readDirectiveAdherence = (value: unknown): DirectiveAdherenceDetail
     const directive = asString(entry.directive)
     const ruleId = asString(entry.ruleId)
     const note = asString(entry.note)
+    const commitment = asString(entry.commitment)
     if (!directive || !ruleId || !note || typeof entry.satisfied !== 'boolean') return []
     return [{
       directive,
       ruleId,
+      ...(commitment ? { commitment } : {}),
       satisfied: entry.satisfied,
       ...(typeof entry.applicable === 'boolean' ? { applicable: entry.applicable } : {}),
       note,
@@ -764,6 +768,7 @@ function ComposeStageDetail({
   const streamed = typeof outputs.streamed === 'boolean' ? outputs.streamed : undefined
   const outcomes = (asArray(outputs.outcomes).filter(isRecord) as ComposeOutcomeSummary[]) ?? []
   const adherence = readDirectiveAdherence(outputs.adherence)
+  const ungradedDirectives = asStringArray(outputs.ungradedDirectives)
   return (
     <div className="space-y-4">
       <StageHeader stage={stage} />
@@ -811,11 +816,21 @@ function ComposeStageDetail({
                       <span className="text-xs text-muted-foreground">(condition not met)</span>
                     ) : null}
                   </div>
+                  {entry.commitment ? (
+                    <p className="mt-1 text-xs text-foreground">
+                      <span className="font-medium">Committed to:</span> {entry.commitment}
+                    </p>
+                  ) : null}
                   <p className="mt-1 text-xs text-muted-foreground">{entry.note}</p>
                 </li>
               )
             })}
           </ul>
+        </Section>
+      ) : null}
+      {ungradedDirectives.length > 0 ? (
+        <Section label={`Not graded (${ungradedDirectives.length})`}>
+          <p className="text-xs text-foreground">{ungradedDirectives.join(', ')}</p>
         </Section>
       ) : null}
       {outcomes.length > 0 ? (

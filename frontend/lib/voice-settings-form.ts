@@ -61,6 +61,8 @@ export interface VoiceLanguageLines {
 export interface VoiceSettingsForm {
   enabled: boolean
   runtime: VoiceRuntimeForm
+  /** Lets the agent switch the call's voice and transcription when the caller's language changes mid-call. */
+  languageSwitching: boolean
   languages: VoiceLanguageLines[]
 }
 
@@ -87,6 +89,7 @@ export const voiceSettingsFormFromAgent = (voice: AgentVoiceSettings, mechanicsR
   return {
     enabled: voice.enabled,
     runtime: voice.runtime ? { ...voice.runtime } : { vendor: voiceVendorNames[0], agentId: '', region: VOICE_RUNTIME_REGIONS[0] },
+    languageSwitching: voice.languageSwitching ?? false,
     languages: locales.map((locale) => ({
       locale,
       bridgeLines: linesOf(VOICE_BRIDGE_STYLES, voice.bridgeLines[locale]),
@@ -111,7 +114,7 @@ const authoredLinesOf = <Kind extends string>(kinds: readonly Kind[], source: Re
 export const voiceSettingsUpdateFromForm = (form: VoiceSettingsForm): { voice: AgentVoiceSettings; mechanicsReplies: AgentMechanicsReplies } => {
   const agentId = form.runtime.agentId.trim()
   const runtime = agentId ? { vendor: form.runtime.vendor, agentId, region: form.runtime.region } : null
-  const voice: AgentVoiceSettings = { enabled: form.enabled, bridgeLines: {}, fallbackLine: {}, runtime }
+  const voice: AgentVoiceSettings = { enabled: form.enabled, bridgeLines: {}, fallbackLine: {}, runtime, languageSwitching: form.languageSwitching }
   const recordingNotice: Record<string, string> = {}
   const mechanicsReplies: AgentMechanicsReplies = {}
   for (const language of form.languages) {
@@ -142,6 +145,7 @@ export const voiceSettingsFormAfterSave = (form: VoiceSettingsForm, voice: Agent
   return {
     enabled: saved.enabled,
     runtime: saved.runtime,
+    languageSwitching: saved.languageSwitching,
     languages: [...kept, ...saved.languages.filter((language) => !keptLocales.has(language.locale))],
   }
 }

@@ -26,6 +26,7 @@ const voice: AgentVoiceSettings = {
   },
   recordingNotice: { it: 'Questa chiamata viene registrata.' },
   runtime: { vendor: 'elevenlabs', agentId: 'agent_01jxk2v9qbe8n7r6t5w4', region: 'eu' },
+  languageSwitching: false,
 }
 const unbound = { vendor: 'elevenlabs', agentId: '', region: 'us' } as const
 const mechanicsReplies: AgentMechanicsReplies = {
@@ -62,6 +63,7 @@ describe('voice settings form', () => {
     const update = voiceSettingsUpdateFromForm({
       enabled: false,
       runtime: unbound,
+      languageSwitching: false,
       languages: [
         {
           locale: 'en',
@@ -81,6 +83,7 @@ describe('voice settings form', () => {
         bridgeLines: { en: { acknowledge: [], check: ['Let me check that for you, it only takes a moment.'] } },
         fallbackLine: { it: 'Scusa, ci sto mettendo troppo.' },
         runtime: null,
+        languageSwitching: false,
       },
       mechanicsReplies: { en: { greeting: ['Hi!'], thanks: [], farewell: [], acknowledgement: [] } },
     })
@@ -90,6 +93,7 @@ describe('voice settings form', () => {
     const noticed = voiceSettingsUpdateFromForm({
       enabled: true,
       runtime: unbound,
+      languageSwitching: false,
       languages: [
         { ...emptyVoiceLanguageLines('en'), recordingNotice: '  This call is recorded.  ' },
         { ...emptyVoiceLanguageLines('it'), recordingNotice: '   ' },
@@ -97,13 +101,18 @@ describe('voice settings form', () => {
     })
     expect(noticed.voice.recordingNotice).toEqual({ en: 'This call is recorded.' })
 
-    const silent = voiceSettingsUpdateFromForm({ enabled: true, runtime: unbound, languages: [emptyVoiceLanguageLines('en')] })
+    const silent = voiceSettingsUpdateFromForm({ enabled: true, runtime: unbound, languageSwitching: false, languages: [emptyVoiceLanguageLines('en')] })
     expect(silent.voice).not.toHaveProperty('recordingNotice')
   })
 
-  it('reads an agent with nothing authored as voice off and no languages', () => {
+  it('reads an agent with nothing authored as voice off, language switching off, and no languages', () => {
     expect(voiceSettingsFormFromAgent({ enabled: false, bridgeLines: {}, fallbackLine: {}, runtime: null }, {}))
-      .toEqual({ enabled: false, runtime: unbound, languages: [] })
+      .toEqual({ enabled: false, runtime: unbound, languageSwitching: false, languages: [] })
+  })
+
+  it('reads the agent switching the call\'s language into the form, and writes it back', () => {
+    expect(voiceSettingsFormFromAgent({ ...voice, languageSwitching: true }, {}).languageSwitching).toBe(true)
+    expect(voiceSettingsUpdateFromForm({ enabled: true, runtime: unbound, languageSwitching: true, languages: [] }).voice.languageSwitching).toBe(true)
   })
 
   it('writes every bridge style and every reply kind the form knows', () => {
@@ -111,7 +120,7 @@ describe('voice settings form', () => {
     for (const style of VOICE_BRIDGE_STYLES) language.bridgeLines[style] = [`A ${style} line.`]
     for (const kind of MECHANICS_REPLY_KINDS) language.mechanicsReplies[kind] = [`A ${kind} line.`]
 
-    const update = voiceSettingsUpdateFromForm({ enabled: true, runtime: unbound, languages: [language] })
+    const update = voiceSettingsUpdateFromForm({ enabled: true, runtime: unbound, languageSwitching: false, languages: [language] })
 
     expect(Object.keys(update.voice.bridgeLines.en).sort()).toEqual([...VOICE_BRIDGE_STYLES].sort())
     expect(Object.keys(update.mechanicsReplies.en).sort()).toEqual([...MECHANICS_REPLY_KINDS].sort())
@@ -121,6 +130,7 @@ describe('voice settings form', () => {
     const form = {
       enabled: true,
       runtime: unbound,
+      languageSwitching: false,
       languages: [
         { ...emptyVoiceLanguageLines('en'), bridgeLines: { check: ['  Let me check that for you, it only takes a moment. ', ''], acknowledge: [] } },
         emptyVoiceLanguageLines('it'),
@@ -137,7 +147,7 @@ describe('voice settings form', () => {
   })
 
   it('takes enabled and every line from the server after a save, adding any language only the server has', () => {
-    const after = voiceSettingsFormAfterSave({ enabled: true, runtime: unbound, languages: [emptyVoiceLanguageLines('it')] }, voice, mechanicsReplies)
+    const after = voiceSettingsFormAfterSave({ enabled: true, runtime: unbound, languageSwitching: false, languages: [emptyVoiceLanguageLines('it')] }, voice, mechanicsReplies)
 
     expect(after.enabled).toBe(true)
     expect(after.runtime).toEqual(voice.runtime)

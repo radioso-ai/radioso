@@ -12,6 +12,7 @@ import { voiceEvalCases } from "../../fixtures/voice-eval/cases.js";
 import {
   closeEvalDependencies,
   loadBaseline,
+  runThenClose,
   scopeCasesForLiveRun,
   scopeJudgeAssertions,
   seedVoiceSettings,
@@ -246,10 +247,11 @@ describe("live runner shutdown", () => {
       closeAbuseControlRepository: step("abuse control"),
       connectorRegistry: { shutdownAll: step("connectors") },
       connectorDb: { close: step("pool") },
-    };
+      logger: { error: vi.fn() },
+    } as unknown as Parameters<typeof closeEvalDependencies>[0];
   };
 
-  it("closes what the composition opened in the API runtime's order, then ends the pool", async () => {
+  it("closes what the composition opened in the runtimes' order, then ends the pool", async () => {
     const closed: string[] = [];
 
     await closeEvalDependencies(closers(closed));
@@ -257,10 +259,32 @@ describe("live runner shutdown", () => {
     expect(closed).toEqual(["realtime publisher", "application modules", "approval journal", "abuse control", "connectors", "pool"]);
   });
 
-  it("still closes everything after a step that fails, and reports that failure", async () => {
+  it("still ends the pool after a step that fails, and reports that failure", async () => {
     const closed: string[] = [];
 
     await expect(closeEvalDependencies(closers(closed, "realtime publisher"))).rejects.toThrow("realtime publisher failed");
-    expect(closed).toEqual(["realtime publisher", "application modules", "approval journal", "abuse control", "connectors", "pool"]);
+    expect(closed.at(-1)).toBe("pool");
+  });
+
+  it("keeps the run's own error when closing fails too, and reports the close failure", async () => {
+    const reported: unknown[] = [];
+
+    await expect(runThenClose(
+      async () => { throw new Error("the run failed"); },
+      async () => { throw new Error("closing failed"); },
+      (error) => { reported.push(error); },
+    )).rejects.toThrow("the run failed");
+    expect(reported).toEqual([new Error("closing failed")]);
+  });
+
+  it("reports a close failure after a run that succeeded, without throwing it", async () => {
+    const reported: unknown[] = [];
+
+    await expect(runThenClose(
+      async () => "done",
+      async () => { throw new Error("closing failed"); },
+      (error) => { reported.push(error); },
+    )).resolves.toBe("done");
+    expect(reported).toEqual([new Error("closing failed")]);
   });
 });

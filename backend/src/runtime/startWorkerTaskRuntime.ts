@@ -5,6 +5,7 @@ import type { Env } from "../app/config/env.js";
 import type { AppDependencies } from "../app/server/types.js";
 import type { ApplicationModule } from "../app/composition/index.js";
 import { createWorkerTaskApp } from "../app/worker/createWorkerTaskApp.js";
+import { closeDependencies } from "../app/server/closeDependencies.js";
 import { buildDependencies } from "../app/server/dependencies.js";
 import { ensureNoPendingMigrations, type MigrationTimeoutOptions } from "../db/runMigrations.js";
 import { createLogger, type AppLogger } from "../shared/observability/logger.js";
@@ -76,13 +77,9 @@ export const startWorkerTaskRuntime = async (options: StartWorkerTaskRuntimeOpti
         });
       } finally {
         try {
-          await dependencies.realtimePublisherLifecycle.shutdown();
+          await closeDependencies(dependencies);
         } finally {
-          try {
-            await dependencies.applicationModules.shutdownAll();
-          } finally {
-            await stopRuntimeTracing();
-          }
+          await stopRuntimeTracing();
         }
       }
     },

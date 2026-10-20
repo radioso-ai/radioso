@@ -70,6 +70,7 @@ import {
   needsPublishedAgent,
   needsVoiceSettings,
   registerDisposableAgent,
+  runThenClose,
   scopeCasesForLiveRun,
   seededRoutineSkillNames,
   seedVoiceSettings,
@@ -408,6 +409,12 @@ const waitForDocumentsReady = async (
   }
 };
 
+/** A failure to close the composition fails the run without hiding the run's own error. */
+const reportCloseFailure = (error: unknown): void => {
+  console.error("Closing the eval run's dependencies failed:", error);
+  process.exitCode = 1;
+};
+
 const main = async (): Promise<void> => {
   const flags = parseFlags(process.argv.slice(2));
   if (flags.judge) {
@@ -433,7 +440,7 @@ const main = async (): Promise<void> => {
   // The routine skills' destination is a loopback address, which a default stack refuses.
   const deps = buildDependencies({ ...env, WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK: true });
 
-  try {
+  await runThenClose(async () => {
     const target = await ensureTarget(deps, flags);
     flags.workspaceId = target.workspaceId;
     flags.agentId = target.agentId;
@@ -544,9 +551,7 @@ const main = async (): Promise<void> => {
       );
       process.exitCode = 1;
     }
-  } finally {
-    await closeEvalDependencies(deps);
-  }
+  }, () => closeEvalDependencies(deps), reportCloseFailure);
 };
 
 const invokedDirectly = process.argv[1] === fileURLToPath(import.meta.url);

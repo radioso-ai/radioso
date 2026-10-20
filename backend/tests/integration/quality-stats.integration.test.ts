@@ -86,12 +86,13 @@ describeIfDatabase("quality stats integration", () => {
     skillStatus?: string | null;
     totalLatencyMs?: number | null;
     source?: string | null;
+    metadata?: Record<string, unknown>;
   }) => {
     const messageId = randomUUID();
     await database.query(
       `INSERT INTO messages
-         (id, conversation_id, workspace_id, role, content, skill_name, skill_outcome, skill_status, total_latency_ms, source, created_at)
-       VALUES ($1, $2, $3, 'assistant', 'Answer', $4, $5, $6, $7, $8, $9)`,
+         (id, conversation_id, workspace_id, role, content, skill_name, skill_outcome, skill_status, total_latency_ms, source, created_at, metadata_json)
+       VALUES ($1, $2, $3, 'assistant', 'Answer', $4, $5, $6, $7, $8, $9, $10::jsonb)`,
       [
         messageId,
         input.conversationId,
@@ -102,6 +103,7 @@ describeIfDatabase("quality stats integration", () => {
         input.totalLatencyMs ?? null,
         input.source ?? null,
         input.createdAt,
+        JSON.stringify(input.metadata ?? {}),
       ],
     );
     return messageId;
@@ -200,6 +202,7 @@ describeIfDatabase("quality stats integration", () => {
       negative_feedback: 0,
       grounding_gaps: 0,
       skill_failures: 0,
+      unmet_directives: 0,
     });
   });
 
@@ -394,6 +397,7 @@ describeIfDatabase("quality stats integration", () => {
       negative_feedback: 1,
       grounding_gaps: 1,
       skill_failures: 1,
+      unmet_directives: 0,
     });
     expect([oldGap, oldFailure, oldDownVoted]).toHaveLength(3);
 
@@ -475,5 +479,39 @@ describeIfDatabase("quality stats integration", () => {
     expect(page.items.map((item) => item.assistantMessageId)).toEqual([gap]);
     expect(page.total).toBe(1);
     expect((await service.getQualityStats(workspaceId, { range: "7d" })).backlog.grounding_gaps).toBe(1);
+  });
+
+  // #1575: an answer that graded itself as breaking a directive is a turn worth reviewing.
+  it("lists and counts the turns whose answer graded a directive unmet, and no other turn", async () => {
+    const { workspaceId, agentId } = await seedWorkspace("UnmetDirective");
+    const conversationId = await seedConversation(workspaceId, agentId, "embed");
+
+    const unmet = await seedTurn({
+      conversationId,
+      workspaceId,
+      createdAt: daysAgo(1),
+      metadata: { unmetDirectives: ["prices-from-the-course-page"] },
+    });
+    await seedTurn({ conversationId, workspaceId, createdAt: daysAgo(1), metadata: { unmetDirectives: [] } });
+    await seedTurn({ conversationId, workspaceId, createdAt: daysAgo(1), metadata: { unmetDirectives: "not-a-list" } });
+    await seedTurn({ conversationId, workspaceId, createdAt: daysAgo(1) });
+
+    const service = createService();
+    const page = await service.listLowQualityTurns(workspaceId, {
+      limit: 25,
+      signals: ["unmet_directives"],
+    });
+
+    expect(page.items.map((item) => item.assistantMessageId)).toEqual([unmet]);
+    expect(page.total).toBe(1);
+    expect((await service.getQualityStats(workspaceId, { range: "7d" })).backlog.unmet_directives).toBe(1);
+
+    await service.setTriageState(workspaceId, {
+      assistantMessageId: unmet,
+      state: "dismissed",
+      expectedVersion: 0,
+      resolution: { reason: "expected_behavior", note: null },
+    });
+    expect((await service.getQualityStats(workspaceId, { range: "7d" })).backlog.unmet_directives).toBe(0);
   });
 });

@@ -50,7 +50,10 @@ snapshot, assertion, or run state; those remain behind
 
 The definition of a quality signal is a **domain concern, not a client
 concern**. `domain/qualitySignals.ts` resolves each `QualitySignalId` to a
-predicate from structured skill-catalog metadata. It knows what a signal means;
+predicate from structured skill-catalog metadata, or, for `unmet_directives`,
+from the `unmetDirectives` names chat writes to the assistant message when the
+answer graded a directive that applied as not followed (the key comes from
+`shared/domain/directiveAdherence.ts`). It knows what a signal means;
 it does not know SQL. The query layer decides how a predicate becomes a
 statement. Signal meaning is never expressed as keyword or outcome-name
 matching, so it stays correct across locales and as skills evolve.

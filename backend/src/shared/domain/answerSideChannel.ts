@@ -1,9 +1,19 @@
 import type { SteeringRule } from "@radioso/conversation-contract";
 
-/** A strict-schema fragment (extra `properties` + `required`) merged into an answer schema. */
-export interface AnswerSchemaExtension {
+/** Strict-schema fields: extra `properties`, and the names among them that are `required`. */
+interface AnswerSchemaFields {
   properties: Record<string, unknown>;
   required: readonly string[];
+}
+
+/**
+ * A strict-schema fragment merged into an answer schema. Providers write keys in schema
+ * order, so where a field sits decides what the model has already written when it fills
+ * it: `properties` follow the answer, so they report on it; `beforeAnswer` fields precede
+ * it, so the answer is written after them and can be held to them.
+ */
+export interface AnswerSchemaExtension extends AnswerSchemaFields {
+  beforeAnswer?: AnswerSchemaFields;
 }
 
 /**

@@ -1,5 +1,6 @@
 import { OPERATOR_TEST_SOURCE_CHANNELS } from "../../shared/domain/conversationSource.js";
 import { HUMAN_AUTHORED_MESSAGE_SOURCES } from "../../shared/domain/messageAuthorship.js";
+import { UNMET_DIRECTIVES_METADATA_KEY } from "../../shared/domain/directiveAdherence.js";
 import type { QualityActionFilter, QualityFeedbackValue } from "./contracts/index.js";
 import type { QualitySignalPredicate } from "./domain/qualitySignals.js";
 
@@ -224,6 +225,17 @@ export const buildSkillStatusPredicate = (
   params: unknown[],
 ): string => `m.skill_status = ANY(${bindParam(params, [...statuses])}::text[])`;
 
+/**
+ * Whether the turn's answer named at least one directive it graded unmet: a non-empty
+ * array under the key. A scalar test on the row. Neither operand raises on another
+ * shape, so their evaluation order does not matter; the type test is needed because
+ * `-> 0` on a scalar returns the scalar itself.
+ */
+const buildUnmetDirectivePredicate = (params: unknown[]): string => {
+  const unmet = `m.metadata_json -> ${bindParam(params, UNMET_DIRECTIVES_METADATA_KEY)}::text`;
+  return `(jsonb_typeof(${unmet}) = 'array' AND (${unmet} -> 0) IS NOT NULL)`;
+};
+
 /** Turns a signal's domain meaning into SQL over the shared turn population. */
 export const buildSignalPredicate = (
   predicate: QualitySignalPredicate,
@@ -236,6 +248,8 @@ export const buildSignalPredicate = (
       return buildActionTuplePredicate(predicate.actions, params);
     case "skillStatuses":
       return buildSkillStatusPredicate(predicate.statuses, params);
+    case "unmetDirectives":
+      return buildUnmetDirectivePredicate(params);
   }
 };
 

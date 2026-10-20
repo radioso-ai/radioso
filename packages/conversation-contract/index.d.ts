@@ -664,6 +664,11 @@ export interface RenderableTurn {
   suggestions?: unknown[];
   metadata?: Record<string, unknown> & {
     directiveAdherence?: DirectiveAdherenceEntry[];
+    /**
+     * Directive names of the rules rendered into the answer prompt that the answer
+     * returned no adherence grade for (#1575).
+     */
+    ungradedDirectives?: string[];
   };
   /**
    * Set when a coverage verdict sink yielded this turn before any answer text
@@ -688,6 +693,11 @@ export interface PendingRenderableTurn {
 export interface DirectiveAdherenceEntry {
   directive: string;
   ruleId: string;
+  /**
+   * What the answer committed this rule requires of it, written before the answer
+   * itself (#1575). Absent when it committed nothing for the rule.
+   */
+  commitment?: string;
   satisfied: boolean;
   /**
    * Whether the rule's own condition (an authored `when:` clause, or a

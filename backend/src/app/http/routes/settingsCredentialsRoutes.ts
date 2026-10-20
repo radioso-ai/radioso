@@ -7,15 +7,25 @@ import { requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { validateBody } from "../middleware/validate.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
 import { VOICE_VENDORS } from "../../../shared/domain/voiceVendor.js";
-import type { LlmProviderName } from "../../../shared/infra/llm/providerTypes.js";
+import { OPENAI_DATA_RESIDENCIES, type LlmProviderName } from "../../../shared/infra/llm/providerTypes.js";
 
 const modelProviderNames = ["openai", "openai-compatible", "gemini", "claude"] as const satisfies readonly LlmProviderName[];
 /** Model providers, then voice vendors: one workspace credential store holds both kinds of key. */
 export const providerNames = [...modelProviderNames, ...VOICE_VENDORS] as const;
 type ProviderNameInput = (typeof providerNames)[number];
 
+/**
+ * `apiKey` and `residency` are each optional so that changing an OpenAI credential's residency
+ * alone — without re-entering the key — reaches the service through this same request shape;
+ * the refine below requires at least one. `residency` only applies to the `openai` provider;
+ * `WorkspaceProviderCredentialsService` rejects it for any other provider, since this schema
+ * validates the body shape only and has no path param to compare against yet.
+ */
 export const setProviderCredentialSchema = z.object({
-  apiKey: z.string().min(1).max(4096),
+  apiKey: z.string().min(1).max(4096).optional(),
+  residency: z.enum(OPENAI_DATA_RESIDENCIES).optional(),
+}).refine((input) => input.apiKey !== undefined || input.residency !== undefined, {
+  message: "apiKey or residency is required",
 });
 
 type CredentialsRouteDependencies = WorkspaceSessionDependencies &
@@ -55,6 +65,7 @@ export const createSettingsCredentialsRoutes = (
         encryptionConfigured: dependencies.workspaceProviderCredentialsService.isEncryptionConfigured(),
         credentials: configured.map((entry) => ({
           provider: entry.provider,
+          residency: entry.residency,
           updatedAt: entry.updatedAt.toISOString(),
         })),
         envProviderAvailability: computeEnvProviderAvailability(dependencies.env),
@@ -73,12 +84,24 @@ export const createSettingsCredentialsRoutes = (
       try {
         const { workspaceId, accountId } = res.locals as { workspaceId: string; accountId: string };
         const provider = parseProviderParam(req.params.provider);
-        await dependencies.workspaceProviderCredentialsService.setApiKey({
-          workspaceId,
-          provider,
-          apiKey: req.body.apiKey,
-          actor: { accountId },
-        });
+        const { apiKey, residency } = req.body as { apiKey?: string; residency?: (typeof OPENAI_DATA_RESIDENCIES)[number] };
+        if (apiKey !== undefined) {
+          await dependencies.workspaceProviderCredentialsService.setApiKey({
+            workspaceId,
+            provider,
+            apiKey,
+            residency,
+            actor: { accountId },
+          });
+        } else {
+          // The refine on setProviderCredentialSchema guarantees residency is set here.
+          await dependencies.workspaceProviderCredentialsService.setResidency({
+            workspaceId,
+            provider,
+            residency: residency!,
+            actor: { accountId },
+          });
+        }
         res.status(204).end();
       } catch (error) {
         next(error);

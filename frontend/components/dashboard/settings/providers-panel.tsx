@@ -52,6 +52,7 @@ import {
   llmCapabilityNames,
   llmProviderNames,
   llmProvidersApi,
+  openAiDataResidencies,
   providerDisplayName,
   voiceVendorNames,
   type CredentialProviderName,
@@ -60,6 +61,7 @@ import {
   type LlmCapabilityName,
   type LlmCapabilityPreference,
   type LlmProviderName,
+  type OpenAiDataResidency,
   type ProviderCredentialSummary,
   type LlmManagedModel,
   type WorkspaceLlmModels,
@@ -135,6 +137,12 @@ const providerVisual: Record<
     monogram: 'OC',
     tone: 'bg-slate-500/10 text-slate-600 ring-slate-500/30 dark:text-slate-300',
   },
+}
+
+const residencyDisplayName: Record<OpenAiDataResidency, string> = {
+  global: 'Global',
+  us: 'US',
+  eu: 'EU',
 }
 
 const capabilityVisual: Record<
@@ -386,6 +394,12 @@ function CredentialRow({
 }) {
   const [draft, setDraft] = useState('')
   const [busy, setBusy] = useState(false)
+  const isOpenAi = provider === 'openai'
+  // Scoped to this editing session: the row remounts (fresh key, fresh draft) each time
+  // editing starts, so this always initializes from the stored residency (or the default,
+  // for a first save) and is submitted together with the key on Save.
+  const [editingResidency, setEditingResidency] = useState<OpenAiDataResidency>(configured?.residency ?? 'global')
+  const [residencyBusy, setResidencyBusy] = useState(false)
 
   const canSubmit = draft.trim().length > 0
 
@@ -395,7 +409,7 @@ function CredentialRow({
     setBusy(true)
     emitSaveState({ state: 'saving' })
     try {
-      await llmProvidersApi.setCredential(provider, apiKey)
+      await llmProvidersApi.setCredential(provider, { apiKey, ...(isOpenAi ? { residency: editingResidency } : {}) })
       await onChange()
       emitSaveState({ state: 'saved' })
       setDraft('')
@@ -404,6 +418,23 @@ function CredentialRow({
       emitSaveState({ state: 'error', message: getApiErrorMessage(err, 'Failed to save credential.') })
     } finally {
       setBusy(false)
+    }
+  }
+
+  // Already configured: changes residency alone, immediately, reading and showing the
+  // server's own value (`configured.residency`) rather than a local draft — a failed write
+  // then shows correctly as unchanged once this reloads.
+  const handleResidencyChange = async (next: string) => {
+    setResidencyBusy(true)
+    emitSaveState({ state: 'saving' })
+    try {
+      await llmProvidersApi.setCredential(provider, { residency: next as OpenAiDataResidency })
+      await onChange()
+      emitSaveState({ state: 'saved' })
+    } catch (err) {
+      emitSaveState({ state: 'error', message: getApiErrorMessage(err, 'Failed to save data residency.') })
+    } finally {
+      setResidencyBusy(false)
     }
   }
 
@@ -466,8 +497,41 @@ function CredentialRow({
           )}
         </div>
       </div>
+      {isOpenAi && configured && !editing ? (
+        <div className="flex shrink-0 items-center gap-2">
+          <Label htmlFor={`${provider}-residency`} className="text-xs text-muted-foreground">
+            Residency
+          </Label>
+          <Select value={configured.residency} onValueChange={handleResidencyChange} disabled={disabled || residencyBusy}>
+            <SelectTrigger id={`${provider}-residency`} className="w-24">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {openAiDataResidencies.map((residency) => (
+                <SelectItem key={residency} value={residency}>
+                  {residencyDisplayName[residency]}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      ) : null}
       {editing ? (
         <div className="flex w-full min-w-0 items-center gap-2 sm:flex-1 sm:justify-end">
+          {isOpenAi ? (
+            <Select value={editingResidency} onValueChange={(next) => setEditingResidency(next as OpenAiDataResidency)} disabled={busy}>
+              <SelectTrigger id={`${provider}-residency`} className="w-24 shrink-0">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {openAiDataResidencies.map((residency) => (
+                  <SelectItem key={residency} value={residency}>
+                    {residencyDisplayName[residency]}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          ) : null}
           <Input
             type="password"
             value={draft}

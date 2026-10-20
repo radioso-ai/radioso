@@ -4165,7 +4165,9 @@ CREATE TABLE public.workspace_provider_credentials (
     ciphertext text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT workspace_provider_credentials_provider_check CHECK ((provider = ANY (ARRAY['openai'::text, 'openai-compatible'::text, 'gemini'::text, 'claude'::text, 'elevenlabs'::text])))
+    residency text DEFAULT 'global'::text NOT NULL,
+    CONSTRAINT workspace_provider_credentials_provider_check CHECK ((provider = ANY (ARRAY['openai'::text, 'openai-compatible'::text, 'gemini'::text, 'claude'::text, 'elevenlabs'::text]))),
+    CONSTRAINT workspace_provider_credentials_residency_check CHECK ((residency = ANY (ARRAY['global'::text, 'us'::text, 'eu'::text])))
 );
 
 

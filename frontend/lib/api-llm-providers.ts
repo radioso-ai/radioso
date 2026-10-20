@@ -4,6 +4,10 @@ import type { AgentVoiceSettings } from './api-types'
 export const llmProviderNames = ['openai', 'openai-compatible', 'gemini', 'claude'] as const
 export type LlmProviderName = (typeof llmProviderNames)[number]
 
+/** Where an OpenAI credential's calls run. Meaningful only for the `openai` provider. */
+export const openAiDataResidencies = ['global', 'us', 'eu'] as const
+export type OpenAiDataResidency = (typeof openAiDataResidencies)[number]
+
 /** The voice runtimes the API names, from the generated contract. */
 export type VoiceVendorName = NonNullable<AgentVoiceSettings['runtime']>['vendor']
 /** Every vendor the contract names, and only those: a vendor added to the API fails this list's type until it is here. */
@@ -36,6 +40,8 @@ export interface WorkspaceLlmModels extends WorkspaceLlmPreferences {
 
 export interface ProviderCredentialSummary {
   provider: CredentialProviderName
+  /** The stored row's residency; `global` for every provider but `openai`. */
+  residency: OpenAiDataResidency
   updatedAt: string
 }
 
@@ -61,10 +67,17 @@ export const llmProvidersApi = {
     return request<ProviderCredentialsList>('/settings/credentials', { method: 'GET' }, sessionOnly)
   },
 
-  async setCredential(provider: CredentialProviderName, apiKey: string): Promise<void> {
+  /**
+   * `apiKey` and `residency` are each optional so that changing an OpenAI credential's
+   * residency alone reaches the same endpoint without re-entering the key.
+   */
+  async setCredential(
+    provider: CredentialProviderName,
+    input: { apiKey?: string; residency?: OpenAiDataResidency },
+  ): Promise<void> {
     await request<void>(
       `/settings/credentials/${encodeURIComponent(provider)}`,
-      { method: 'PUT', body: JSON.stringify({ apiKey }) },
+      { method: 'PUT', body: JSON.stringify(input) },
       sessionOnly,
     )
   },

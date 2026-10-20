@@ -7,6 +7,7 @@ const meta = {
   'context-variables': 'Context variables',
   'visitor-data': 'Visitor data',
   'deleting-conversation-data': 'Deleting conversation data',
+  'data-subject-requests': 'Data subject requests',
   'human-takeover': 'Human takeover',
   copilot: 'Ray',
   'slack-channel': 'Slack channel',

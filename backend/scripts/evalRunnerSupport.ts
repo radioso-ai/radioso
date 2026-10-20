@@ -162,12 +162,14 @@ interface SeededVoiceSettings {
  * `observeVoiceTurn` reads a turn's whole spoken text against to tell the turn limit apart from
  * a real answer (see `VOICE_EVAL_FALLBACK_LINE`). A case's call reports no language, so it speaks
  * the agent's default language, else English: the lines go in both, merged into the agent's own
- * lines, and the rest of its block (runtime binding, recording notice, language switching) stays.
+ * lines, and its recording notice and language switching stay.
  *
- * The merged block is checked as a write is before anything is written, so an agent that cannot
- * take the lines (one with lines in the most languages a block holds) is refused by name. Turning
- * voice on makes a named agent with a runtime callable, so `restore` writes its own block back
- * once the run is done; a disposable agent's block stays as the run left it.
+ * The run binds no vendor runtime: the voice turn port never starts a vendor session, and a
+ * session start needs one, so an agent the run turns voice on for is never callable, even when a
+ * restore fails. `restore` writes a named agent's own block back, runtime binding included, once
+ * the run is done; a disposable agent's block stays as the run left it. The merged block is
+ * checked as a write is before anything is written, so an agent that cannot take the lines (one
+ * with lines in the most languages a block holds) is refused by name.
  */
 export const seedVoiceSettings = async (
   ports: VoiceSettingsSeedPorts,
@@ -182,6 +184,7 @@ export const seedVoiceSettings = async (
   const seeded: AgentVoiceSettings = {
     ...ownVoice,
     enabled: lines.enabled,
+    runtime: null,
     bridgeLines: { ...ownVoice.bridgeLines, ...lines.bridgeLines },
     fallbackLine: { ...ownVoice.fallbackLine, ...lines.fallbackLine },
   };
@@ -198,6 +201,29 @@ export const seedVoiceSettings = async (
       }
     },
   };
+};
+
+/**
+ * Refuses a run that would publish over the revision a named agent serves. Publishing the seeded
+ * routines, directives and corpus makes them the agent's live behaviour, and the runner has no
+ * clean way to put the previous revision back, so a named agent with a published revision is
+ * refused unless the run is told to accept that (`--allow-named-agent-republish`). A disposable
+ * agent, an agent with nothing published, and a run that publishes nothing go on.
+ */
+export const assertNamedAgentMayBePublished = async (
+  ports: { revisions: { state(workspaceId: string, agentId: string): Promise<{ publishedRevision: { id: string } | null }> } },
+  target: { workspaceId: string; agentId: string; disposable: boolean },
+  run: { publishes: boolean; allowRepublish: boolean },
+): Promise<void> => {
+  if (target.disposable || !run.publishes || run.allowRepublish) {
+    return;
+  }
+  const { publishedRevision } = await ports.revisions.state(target.workspaceId, target.agentId);
+  if (publishedRevision) {
+    throw new Error(
+      `Agent ${target.agentId} serves published revision ${publishedRevision.id}, and this run would publish the seeded fixtures over it; point the run at a disposable agent, or pass --allow-named-agent-republish to accept that.`,
+    );
+  }
 };
 
 /**

@@ -19,9 +19,11 @@
  *     model output — the whole point is a genuine quality signal.
  *   - A running document worker (or run this against the dev stack) so ingested corpus
  *     documents get chunked + embedded before retrieval.
- *   - RADIOSO_EVAL_WORKSPACE_ID / RADIOSO_EVAL_AGENT_ID pointing at a disposable agent to
- *     seed. The suite mutates that agent's directives and routines, and publishes it when the
- *     run includes review cases.
+ *   - Optionally RADIOSO_EVAL_WORKSPACE_ID / RADIOSO_EVAL_AGENT_ID (or --workspace/--agent)
+ *     naming an agent to seed; otherwise the run registers a disposable one. A named agent gets
+ *     the corpus ingested into its workspace and the seeded directives and routines on its draft,
+ *     and is published when the run includes review or voice cases. A run that would publish over
+ *     a named agent's live revision is refused unless --allow-named-agent-republish is passed.
  *   - A non-production NODE_ENV when the run includes review cases: publishing needs the skills
  *     the seeded routines dispatch, which the runner adds as webhook skills on a loopback
  *     destination for the length of the publication only.
@@ -66,6 +68,7 @@ import { voiceEvalCases } from "../tests/fixtures/voice-eval/cases.js";
 import { voiceEvalRoutines } from "../tests/fixtures/voice-eval/routines.js";
 import { createReviewTurnRunnerPort, createVoiceTurnRunnerPort, createWorkbenchReplayRunnerPort } from "./evalRunnerAdapter.js";
 import {
+  assertNamedAgentMayBePublished,
   closeEvalDependencies,
   needsPublishedAgent,
   needsVoiceSettings,
@@ -92,6 +95,7 @@ interface Flags {
   samples: number;
   passThreshold: number;
   migrate: boolean;
+  allowNamedAgentRepublish: boolean;
 }
 
 const parseFlags = (argv: string[]): Flags => {
@@ -105,12 +109,14 @@ const parseFlags = (argv: string[]): Flags => {
     samples: 1,
     passThreshold: 1,
     migrate: false,
+    allowNamedAgentRepublish: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--update-baseline") flags.updateBaseline = true;
     else if (arg === "--judge") flags.judge = true;
     else if (arg === "--migrate") flags.migrate = true;
+    else if (arg === "--allow-named-agent-republish") flags.allowNamedAgentRepublish = true;
     else if (arg === "--tag") flags.tags.push(argv[++index] ?? "");
     else if (arg === "--judge-tag") flags.judgeTags.push(argv[++index] ?? "");
     else if (arg === "--judge-model") flags.judgeModel = argv[++index] || undefined;
@@ -566,6 +572,10 @@ const main = async (): Promise<void> => {
     const target = await ensureTarget(deps, flags);
     flags.workspaceId = target.workspaceId;
     flags.agentId = target.agentId;
+    await assertNamedAgentMayBePublished({ revisions: deps.agentRevisionService }, target, {
+      publishes: needsPublishedAgent(cases) || runsVoiceCases,
+      allowRepublish: flags.allowNamedAgentRepublish,
+    });
 
     // Voice goes on first: an agent that cannot take the lines is refused before any document is
     // ingested, and a named agent gets its own voice block back whatever the run does.

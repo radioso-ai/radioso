@@ -11,6 +11,7 @@ import { conversationQualityCases } from "../../fixtures/conversation-quality/ca
 import { VOICE_EVAL_BRIDGE_LINES, VOICE_EVAL_FALLBACK_LINE } from "../../fixtures/voice-eval/agent.js";
 import { voiceEvalCases } from "../../fixtures/voice-eval/cases.js";
 import {
+  assertNamedAgentMayBePublished,
   closeEvalDependencies,
   loadBaseline,
   readRunBaseline,
@@ -245,17 +246,29 @@ describe("live runner agent preparation", () => {
     return { update, seeded };
   };
 
-  it("writes the voice cases' lines over the agent's own voice block, keeping its runtime, recording notice, language switching and other lines", async () => {
+  it("writes the voice cases' lines over the agent's own voice block, keeping its recording notice, language switching and other lines, with no vendor runtime bound", async () => {
     const { update } = await seedOnto({ voice: operatorVoice, assistantDefaultLocale: null });
 
     expect(update).toHaveBeenCalledExactlyOnceWith(named.workspaceId, named.agentId, {
       voice: {
         ...operatorVoice,
         enabled: true,
+        runtime: null,
         bridgeLines: { ...operatorVoice.bridgeLines, en: evalLines.bridge },
         fallbackLine: { ...operatorVoice.fallbackLine, en: evalLines.fallback },
       },
     });
+  });
+
+  it("never binds a named agent's vendor runtime while voice is on for the run, so no caller can reach it, and binds it again after", async () => {
+    const { update, seeded } = await seedOnto({ voice: operatorVoice, assistantDefaultLocale: null });
+    const duringRun = (update.mock.calls[0] as unknown as [string, string, { voice: AgentVoiceSettings }])[2].voice;
+
+    expect(duringRun).toMatchObject({ enabled: true, runtime: null });
+
+    await seeded.restore();
+
+    expect(update).toHaveBeenLastCalledWith(named.workspaceId, named.agentId, { voice: operatorVoice });
   });
 
   it("writes the lines in the agent's default language too, which a call with no language of its own speaks in", async () => {
@@ -310,6 +323,29 @@ describe("live runner agent preparation", () => {
       agentSettings: { update },
     }, named)).rejects.toThrow(named.agentId);
     expect(update).not.toHaveBeenCalled();
+  });
+});
+
+describe("live runner named-agent guard", () => {
+  const target = { workspaceId: "11111111-1111-4111-8111-111111111111", agentId: "22222222-2222-4222-8222-222222222222" };
+  const revisions = (publishedRevision: { id: string } | null) => ({ state: vi.fn(async () => ({ publishedRevision })) });
+  const publishing = { publishes: true, allowRepublish: false };
+
+  it("refuses, naming the agent and the flag, a publishing run against a named agent that already serves a published revision", async () => {
+    await expect(assertNamedAgentMayBePublished(
+      { revisions: revisions({ id: "rev-live" }) },
+      { ...target, disposable: false },
+      publishing,
+    )).rejects.toThrow(new RegExp(`${target.agentId}.*rev-live.*--allow-named-agent-republish`, "u"));
+  });
+
+  it.each([
+    ["the flag accepts the republish", { ...target, disposable: false }, { publishes: true, allowRepublish: true }, { id: "rev-live" }],
+    ["the agent serves no published revision yet", { ...target, disposable: false }, publishing, null],
+    ["the run publishes nothing", { ...target, disposable: false }, { publishes: false, allowRepublish: false }, { id: "rev-live" }],
+    ["the agent is the run's own disposable one", { ...target, disposable: true }, publishing, { id: "rev-live" }],
+  ])("lets the run go on when %s", async (_why, runTarget, run, publishedRevision) => {
+    await expect(assertNamedAgentMayBePublished({ revisions: revisions(publishedRevision) }, runTarget, run)).resolves.toBeUndefined();
   });
 });
 

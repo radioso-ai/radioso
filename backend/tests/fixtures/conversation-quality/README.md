@@ -120,9 +120,10 @@ than every other case in this directory. Whenever a run selects a voice case,
 `tests/fixtures/voice-eval/routines.ts`'s one callback hand-off routine. `seedVoiceSettings`
 writes the voice cases' lines into the agent's own voice block before any document is seeded,
 after checking the merged block as a write is checked, so an agent that cannot take them (one
-with lines in the ten languages a block holds) refuses the run by its id. Turning voice on makes
-an agent with a runtime binding callable, so a named agent (`RADIOSO_EVAL_AGENT_ID`) gets its
-own block back once the run is done; a disposable one keeps the run's. The runner combines
+with lines in the ten languages a block holds) refuses the run by its id. The run binds no
+vendor runtime, so no caller can reach the agent while voice is on, and a named agent
+(`RADIOSO_EVAL_AGENT_ID`) gets its own block back once the run is done; a disposable one keeps
+the run's. See "What a run changes on a named agent" below for the rest. The runner combines
 `voiceEvalCases` with `conversationQualityCases` into one dataset, so a voice case's outcome sits
 in the same `baseline.json` as every other case, keyed by its own id. The routine is seeded only
 for a voice run, so a text-only run never carries its "ask for a callback" trigger alongside
@@ -192,13 +193,11 @@ re-record) only them, leaving every other case's entry untouched, with `--tag vo
 
 ```bash
 cd backend
-# One-time: point at a disposable agent. Any one works: the voice cases' lines go into its
-# voice block in English and in its default language (a case's call speaks the default), and
-# its runtime binding, recording notice, language switching and other languages' lines stay.
-# The run puts the agent's own voice block back when it finishes. The callback routine is
-# seeded onto it, and a repeat run reuses it idempotently.
+# Point at an agent kept for evals (see "What a run changes on a named agent" below), or leave
+# RADIOSO_EVAL_* unset for a disposable one. A repeat run against the same agent publishes over
+# the revision the previous run published, so it needs --allow-named-agent-republish.
 export RADIOSO_EVAL_WORKSPACE_ID=... RADIOSO_EVAL_AGENT_ID=...
-node --env-file=./.env.evals --import tsx ./scripts/runEvals.ts --tag voice --samples 5 --update-baseline
+node --env-file=./.env.evals --import tsx ./scripts/runEvals.ts --tag voice --samples 5 --update-baseline --allow-named-agent-republish
 ```
 
 Record only after a run at the same `--samples` comes back all green (`pnpm run evals -- --tag
@@ -215,12 +214,32 @@ reason to lower the sample count just for this case.
 
 ```bash
 cd backend
-# Point at a disposable agent to seed + run against; a document worker must be running.
+# A document worker must be running. Leave RADIOSO_EVAL_* unset and the run registers a
+# disposable account and agent; set them to run against an agent kept for evals.
 export RADIOSO_EVAL_WORKSPACE_ID=... RADIOSO_EVAL_AGENT_ID=...
 pnpm run evals:update-baseline # FIRST: record current behaviour into baseline.json (5 samples)
 pnpm run evals                 # thereafter: run + gate against the baseline (5 samples)
 pnpm run evals -- --tag routine # only cases carrying a tag (repeatable)
 ```
+
+### What a run changes on a named agent
+
+A run against the agent `RADIOSO_EVAL_AGENT_ID` names leaves it changed, so name only an agent
+kept for evals:
+
+- The seeded corpus is ingested into its workspace, where every agent's retrieval finds it.
+- The seeded directives and routines (the voice callback routine too, on a voice run) stay on
+  its draft.
+- A run with review or voice cases publishes that draft, so the seeded behaviour becomes what
+  the agent serves. When the agent already serves a published revision, the run refuses before
+  it changes anything, unless `--allow-named-agent-republish` accepts the republish; the
+  previous revision stays in its history but is no longer the live one.
+- Its voice block is the one change the run takes back. While the run goes, voice is on with
+  the voice cases' lines and no vendor runtime, so no caller can reach the agent; when the run
+  ends, its own block, runtime binding included, is written back.
+
+A disposable agent (no `RADIOSO_EVAL_*`) keeps all of it, which is what the nightly workflow
+uses.
 
 `baseline.json` must cover every case selected for a normal run. The runner fails when a
 case is missing, rather than treating it as an informational addition, so add a case and

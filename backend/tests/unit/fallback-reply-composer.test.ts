@@ -182,6 +182,41 @@ describe("grounded miss response composer", () => {
     });
   });
 
+  // #1517: the model sometimes drops the closing `]`, leaving a one-bracket-short anchor
+  // (`[[?]`, `[[12]`) instead of the complete `[[?]]`/`[[12]]`. The decline composer had
+  // no cleanup at all for this shape, so it reached the visitor verbatim.
+  describe("under-closed citation anchor marker", () => {
+    const composeReply = async (reply: string): Promise<string> => {
+      const composer = new ModelFallbackReplyComposer(pipeline({
+        metadata: { capability: "chat", provider: "openai", model: "test-model" },
+        async complete() {
+          return textResult(JSON.stringify({ reply, declineReason: "content_gap" }));
+        },
+        stream() {
+          return streamResult([""]);
+        },
+      }));
+      return (await composer.composeNoContext({ query: "Anything", usageContext })).text;
+    };
+
+    it("removes an under-closed `?` marker from the decline text", async () => {
+      await expect(composeReply("That's outside what I can help with[[?], but I can help with our courses."))
+        .resolves.toBe("That's outside what I can help with, but I can help with our courses.");
+    });
+
+    it("removes an under-closed digit marker from the decline text", async () => {
+      await expect(composeReply("That's outside what I can help with[[1], but I can help with our courses."))
+        .resolves.toBe("That's outside what I can help with, but I can help with our courses.");
+    });
+
+    it("never leaks a stray bracket or question mark where the marker used to be", async () => {
+      const reply = await composeReply("That's outside what I can help with[[?], but I can help with our courses.");
+
+      expect(reply).not.toContain("[[?");
+      expect(reply).not.toContain("?]");
+    });
+  });
+
   it("classifies an in-remit decline as a content gap", async () => {
     const composer = new ModelFallbackReplyComposer(pipeline({
       metadata: { capability: "chat", provider: "openai", model: "test-model" },

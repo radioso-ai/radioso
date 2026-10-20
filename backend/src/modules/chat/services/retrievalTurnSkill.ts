@@ -574,6 +574,10 @@ export class RetrievalAnswerComposer {
     if (signal?.aborted) {
       throw signal.reason ?? new Error("chat_turn_aborted");
     }
+    const heldTail = leadingWhitespace.push(citationSanitizer.flush());
+    if (heldTail) {
+      yield heldTail;
+    }
     const finalized = reader.finalize();
     const fullAnswer = finalized.fullAnswer.trim();
     if (!fullAnswer) {
@@ -1030,6 +1034,13 @@ export class RetrievalAnswerComposer {
         };
       }
 
+      // Text the sanitizer still holds behind a `[[` that never became anchor syntax.
+      const heldTail = leadingWhitespace.push(citationSanitizer.flush());
+      if (heldTail) {
+        streamedAnswer += heldTail;
+        yield heldTail;
+        hasStreamedAnswer = true;
+      }
       const finalized = reader.finalize();
       // The cap governs in-flight streaming only. On natural completion without
       // opening or bounding, the computed #860 verdict and draft suppression below

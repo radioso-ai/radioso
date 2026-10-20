@@ -55,16 +55,16 @@ const plannerAnswering = (quickReply?: { kind: "thanks"; text: string }): TurnPl
   return new TurnPlanCoordinator(new TurnPlanService(factory));
 };
 
-/** The scripted model each case that runs on the test app's chat turn plays, by case id. */
+/** The scripted models a voice case's `voiceTurn.scriptedBrain` names. */
 export const voiceEvalBrains: Readonly<Record<string, VoiceEvalBrain>> = {
   // No planner: the staged path routes the question to retrieval, which reports `searching`. The
   // composer answers at once, so only that phase can bridge the turn.
-  "voice-bridge-on-searching": {
+  "searching-then-answer": {
     chatGateway: composerAfter(0, "Partial refunds are available within 14 days of booking."),
   },
   // The planner's quick reply is the whole turn. The composer is slow, so a thank-you that left
   // the quick-reply lane would bridge on its composing phase and fail the case.
-  "voice-quick-reply-no-bridge": {
+  "thanks-quick-reply": {
     chatGateway: composerAfter(SLOW_COMPOSER_MS, THANKS_REPLY),
     turnPlanCoordinator: plannerAnswering({ kind: "thanks", text: THANKS_REPLY }),
   },

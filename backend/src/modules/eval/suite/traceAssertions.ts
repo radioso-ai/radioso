@@ -47,13 +47,8 @@ export type SuiteTraceAssertion =
    * an assertion on the answer itself.
    */
   | { type: "turn_directive_committed"; directive: string }
-  /**
-   * Whether the voice turn policy spoke a bridge line before the turn's own speech.
-   * `latencyDependent` marks an expectation only the brain's speed decides: "no bridge" holds
-   * only while the planner answers inside the stall bridge (`VOICE_BEHAVIOR.bridgeAfterMs`), so
-   * a live run does not gate on it and the deterministic half, which scripts the brain, does.
-   */
-  | { type: "voice_bridge_emitted"; expected: boolean; latencyDependent?: boolean }
+  /** Whether the voice turn policy spoke a bridge line before the turn's own speech. */
+  | { type: "voice_bridge_emitted"; expected: boolean }
   /** Whether the voice turn policy's limit ended the turn with the fallback line. */
   | { type: "voice_turn_limit_reached"; expected: boolean }
   /** The outcome the voice turn closed with, the kind the runtime received. */

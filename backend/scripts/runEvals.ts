@@ -70,8 +70,7 @@ import {
   loadBaseline,
   needsPublishedAgent,
   needsVoiceSettings,
-  scopeJudgeAssertions,
-  scopeVoiceCasesForLiveRun,
+  scopeCasesForLiveRun,
   seededRoutineSkillNames,
   seedVoiceSettings,
 } from "./evalRunnerSupport.js";
@@ -435,8 +434,9 @@ const main = async (): Promise<void> => {
     const target = await ensureTarget(deps, flags);
     flags.workspaceId = target.workspaceId;
     flags.agentId = target.agentId;
-    // A live run never gates a voice case on latency, and skips a deterministic-only one.
-    let cases = scopeVoiceCasesForLiveRun(filterByTags(dataset, flags.tags));
+    // llm_judge assertions are graded only on the cases a --judge-tag opted in, a voice case is
+    // never gated on latency, and a deterministic-only one does not run live.
+    let cases = scopeCasesForLiveRun(filterByTags(dataset, flags.tags), flags.judgeTags);
     const runsVoiceCases = needsVoiceSettings(cases);
 
     console.log(`Seeding fixtures onto agent ${flags.agentId} in workspace ${flags.workspaceId}…`);
@@ -454,8 +454,6 @@ const main = async (): Promise<void> => {
     const baselineAgentConfig = projectInternalAgentConfig(agent);
 
     cases = remapIds(cases, documentIds, routineIds);
-    // llm_judge assertions are graded only on the cases a --judge-tag opted in.
-    cases = scopeJudgeAssertions(cases, flags.judgeTags);
     const suiteJudge = flags.judgeTags.length > 0 ? createSuiteJudge(env, flags.judgeModel) : null;
     if (suiteJudge) {
       console.log(`Grading llm_judge assertions on cases tagged ${flags.judgeTags.join(", ")} with ${suiteJudge.model}.`);

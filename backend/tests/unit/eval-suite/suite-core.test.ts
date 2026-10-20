@@ -1212,6 +1212,21 @@ describe("seed fixtures", () => {
     }
   });
 
+  it("accepts a voice case its deterministic half drives one way, and rejects one it would drive no way or two", () => {
+    const voice = { id: "voice", name: "voice", query: "Hello", assertions: [] };
+    const chatEvents = [{ type: "done" }];
+
+    expect(parseConversationQualityCases([{ ...voice, voiceTurn: { chatEvents, deterministicOnly: true } }])[0]?.voiceTurn)
+      .toEqual({ chatEvents, deterministicOnly: true });
+    expect(parseConversationQualityCases([{ ...voice, voiceTurn: { scriptedBrain: "thanks-quick-reply", deterministicOnly: true } }])[0]?.voiceTurn)
+      .toEqual({ scriptedBrain: "thanks-quick-reply", deterministicOnly: true });
+    // A deterministic-only case that names neither would run nowhere: the live run skips it too.
+    expect(() => parseConversationQualityCases([{ ...voice, voiceTurn: { deterministicOnly: true } }])).toThrow(/chatEvents.*scriptedBrain/u);
+    expect(() => parseConversationQualityCases([{ ...voice, voiceTurn: {} }])).toThrow(/chatEvents.*scriptedBrain/u);
+    expect(() => parseConversationQualityCases([{ ...voice, voiceTurn: { chatEvents, scriptedBrain: "thanks-quick-reply" } }]))
+      .toThrow(/chatEvents.*scriptedBrain/u);
+  });
+
   it("rejects a dataset with duplicate case ids", () => {
     expect(() =>
       parseConversationQualityCases([

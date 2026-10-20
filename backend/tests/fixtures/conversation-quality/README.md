@@ -149,7 +149,9 @@ exactly one of them in `voiceTurn`, so none can be written that runs nowhere:
   its composing phase and fails the case. The searching brain's planner routes the question to
   retrieval, so a planner-routed retrieval that stops reporting `searching` fails its case. The
   harness keeps both regressions as tests of their own: a laneless brain fails the thank-you on
-  its bridge, and a brain that answers directly fails the searching case on its bridge.
+  its bridge (on a 1-second composing-idle bridge with a composer at 2.5 seconds, so it fails in
+  under three seconds), and a brain that answers directly fails the searching case on its
+  bridge.
 - A case with `voiceTurn.chatEvents` (`voice-turn-limit-fires`, `voice-outcome-handoff`) plays
   that script as the turn's chat backend against a bare `VoiceTurnService` on shrunk timers, over
   the `generic` dialect's vendor tag: a turn that stalls until its limit, and one that closes on a

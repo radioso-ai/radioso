@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
 
 import { MetricsRegistry } from "../../src/shared/observability/metrics/metricsRegistry.js";
-import { recordClarificationDecision } from "../../src/modules/chat/services/clarification/clarificationMetrics.js";
+import {
+  clarificationDecisionMetric,
+  recordClarificationDecision,
+} from "../../src/modules/chat/services/clarification/clarificationMetrics.js";
 
 describe("clarification metrics", () => {
   it("records surface, decision, and a bounded reason label", () => {
@@ -49,6 +52,15 @@ describe("clarification metrics", () => {
     expect(rendered).toContain(
       'radioso_clarification_decisions_total{decision="offer_ignored",surface="retrieval_sense"} 1',
     );
+  });
+
+  it("tells a suppressed ask that kept every sense from one scoped to the leading sense", () => {
+    expect(clarificationDecisionMetric("suppressed", "all_senses_kept")).toEqual({
+      decision: "suppressed",
+      reason: "all_senses_kept",
+    });
+    expect(clarificationDecisionMetric("suppressed", undefined)).toEqual({ decision: "suppressed", reason: "suppressed" });
+    expect(clarificationDecisionMetric("suppressed", "page_capture")).toEqual({ decision: "suppressed", reason: "page_capture" });
   });
 
   it("keeps ask-rate derivable and free of content", () => {

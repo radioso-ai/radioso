@@ -749,11 +749,30 @@ describe("DefaultConversationEngine", () => {
     expect(result.trace.links).toContainEqual({ from: "directives", to: "compose", kind: "adherence" });
   });
 
+  it("records the directives the answer left ungraded on the compose stage, even with no grade at all", async () => {
+    const input = createInput({
+      composer: {
+        compose: vi.fn(async () => ({
+          answer: "Your order ships tomorrow.",
+          metadata: { ungradedDirectives: ["be-brief", "cite-sources"] },
+        })),
+      },
+    });
+
+    const result = await new DefaultConversationEngine().processTurn(input);
+    const outputs = result.trace.stages.find((stage) => stage.kind === "compose")?.outputs ?? {};
+
+    expect(outputs).toMatchObject({ ungradedDirectives: ["be-brief", "cite-sources"] });
+    expect(outputs).not.toHaveProperty("adherence");
+    expect(result.trace.links).toContainEqual({ from: "directives", to: "compose", kind: "adherence" });
+  });
+
   it("omits compose adherence and its link when the renderer did not report it", async () => {
     const result = await new DefaultConversationEngine().processTurn(createInput());
     const outputs = result.trace.stages.find((stage) => stage.kind === "compose")?.outputs ?? {};
 
     expect(outputs).not.toHaveProperty("adherence");
+    expect(outputs).not.toHaveProperty("ungradedDirectives");
     expect(result.trace.links).toBeUndefined();
   });
 
@@ -888,6 +907,8 @@ describe("DefaultConversationEngine", () => {
                 },
               ],
               turnKind: "fresh_subject",
+              proposedActiveSubject: "private subject",
+              relatedEntities: ["private entity"],
               unresolved: false,
               confidence: 0.9,
             },
@@ -917,6 +938,8 @@ describe("DefaultConversationEngine", () => {
           queryShape: "general_grounding",
           temporalQueryMode: "none",
           turnKind: "fresh_subject",
+          hasProposedActiveSubject: true,
+          relatedEntityCount: 1,
           unresolved: false,
           confidence: 0.9,
           retrievalSubqueryCount: 1,

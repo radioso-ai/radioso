@@ -12,15 +12,13 @@ import type { AppDependencies } from "../src/app/server/types.js";
 import { agentVoiceSettingsInputSchema, type AgentVoiceSettings } from "../src/modules/agents/public.js";
 import {
   isDeterministicOnlyAssertion,
+  parseBaselineFile,
   type BaselineFile,
   type ConversationQualityCase,
 } from "../src/modules/eval/suite/index.js";
 import { isMissingFile } from "../src/shared/infra/fileErrors.js";
 import { CREATE_RETURN_TICKET_SKILL } from "../tests/fixtures/conversation-quality/routines.js";
 import { VOICE_EVAL_LOCALE, voiceEvalVoiceLines } from "../tests/fixtures/voice-eval/agent.js";
-
-const isJsonObject = (value: unknown): value is Record<string, unknown> =>
-  typeof value === "object" && value !== null && !Array.isArray(value);
 
 /** The account and agent calls `registerDisposableAgent` makes, narrowed so a test composition can serve them. */
 interface DisposableAgentPorts {
@@ -44,9 +42,10 @@ export const registerDisposableAgent = async (deps: DisposableAgentPorts): Promi
 
 /**
  * Reads the committed baseline. A missing file reads as an empty baseline, so the first recording
- * can create it and a run against it fails as uninitialized. A file that does not parse, or whose
- * top level or `cases` is no JSON object, throws, naming it: read as empty, it would gate nothing,
- * and a tag-filtered `--update-baseline` would write every other case's entry away.
+ * can create it and a run against it fails as uninitialized. A file that cannot be read, does not
+ * parse, or does not fit the shape the recorder writes (`parseBaselineFile`) throws, naming it:
+ * read as empty, it would gate nothing, and a tag-filtered `--update-baseline` would write every
+ * other case's entry away.
  */
 export const loadBaseline = (baselinePath: string): BaselineFile => {
   let text: string;
@@ -56,22 +55,38 @@ export const loadBaseline = (baselinePath: string): BaselineFile => {
     if (isMissingFile(error)) {
       return { cases: {} };
     }
-    throw error;
+    throw new Error(`The baseline at ${baselinePath} cannot be read: ${(error as Error).message}`, { cause: error });
   }
-  let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    return parseBaselineFile(JSON.parse(text));
   } catch (error) {
-    throw new Error(`The baseline at ${baselinePath} is not valid JSON; restore it from git before running.`, { cause: error });
+    throw new Error(
+      `The baseline at ${baselinePath} is no baseline file (${(error as Error).message}); restore it from git before running.`,
+      { cause: error },
+    );
   }
-  if (!isJsonObject(parsed)) {
-    throw new Error(`The baseline at ${baselinePath} holds no JSON object; restore it from git before running.`);
+};
+
+/**
+ * The baseline a run compares against. A gating run and a tag-filtered recording both read it,
+ * the second to merge into it, so a file `loadBaseline` refuses stops them. A full recording
+ * rewrites the file whole, so over a file it cannot read it warns and compares against an empty
+ * baseline instead.
+ */
+export const readRunBaseline = (
+  baselinePath: string,
+  run: { updateBaseline: boolean; tags: readonly string[] },
+  warn: (message: string) => void,
+): BaselineFile => {
+  if (!run.updateBaseline || run.tags.length > 0) {
+    return loadBaseline(baselinePath);
   }
-  const file = parsed as Partial<BaselineFile>;
-  if (file.cases !== undefined && !isJsonObject(file.cases)) {
-    throw new Error(`The baseline at ${baselinePath} holds \`cases\` that are no JSON object; restore it from git before running.`);
+  try {
+    return loadBaseline(baselinePath);
+  } catch (error) {
+    warn(`${(error as Error).message} A full recording rewrites it, so this run compares against an empty baseline.`);
+    return { cases: {} };
   }
-  return { generatedAt: file.generatedAt, passThreshold: file.passThreshold, cases: file.cases ?? {} };
 };
 
 /**

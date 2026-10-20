@@ -247,10 +247,13 @@ the re-asked question.
 
 **Because an empty baseline can't gate, the runner fails loudly in run mode until you
 initialize it** — run `pnpm run evals:update-baseline` once against a known-good run first.
-A missing `baseline.json` reads as that empty baseline. A file that does not parse, or whose top
-level or `cases` is not a JSON object, stops the run before it seeds anything, naming the file:
-restore it from git, because a recording run that read it as empty would write every other
-case's entry away. When the run ends, it closes what the composition opened the way every
+A missing `baseline.json` reads as that empty baseline. A file that cannot be read, does not
+parse, or does not fit the shape the recorder writes (each entry's status, pass rate and sample
+count, the pass threshold, the recording time) stops a gating run or a tag-filtered recording
+before it opens anything, naming the file and the field: restore it from git, because a
+recording that read it as empty would write every other case's entry away. A full
+`--update-baseline` without `--tag` rewrites the file whole, so over a damaged file it warns and
+compares against an empty baseline. When the run ends, it closes what the composition opened the way every
 runtime does (`closeDependencies`), then ends the database pool. Each step runs even after one
 fails; a failure is logged and fails the run, and the run's own error, when it has one, is the
 one it exits with.

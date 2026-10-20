@@ -138,9 +138,9 @@ exactly one of them in `voiceTurn`, so none can be written that runs nowhere:
   scripted: the brain of that name in `tests/fixtures/voice-eval/scriptedBrains.ts`. The agent is
   registered the way the live run bootstraps one (`registerDisposableAgent`), given voice by the
   same `seedVoiceSettings` and then published, in the live run's order, and the turn goes through
-  the live run's `createVoiceTurnRunnerPort`. The brains run the voice policy on generous timing (the
-  composing-idle bridge at 5 seconds, the stall bridge and the limit at 30), so a loaded runner
-  never races a deadline and the case asserts what the chat turn reported. The thank-you's
+  the live run's `createVoiceTurnRunnerPort`. The brains run the voice policy on generous timing
+  (the composing-idle bridge at 5 seconds, the stall bridge and the limit at 30), so a loaded
+  runner never races a deadline and the case asserts what the chat turn reported. The thank-you's
   composer takes 6 seconds, so a thank-you that leaves the planner's quick-reply lane bridges on
   its composing phase and fails the case. The searching brain's planner routes the question to
   retrieval, so a planner-routed retrieval that stops reporting `searching` fails its case. The
@@ -156,7 +156,7 @@ policy reports it only to its metrics observer — so `observeVoiceTurn` reads i
 turn's whole spoken text against the fixture's configured fallback line
 (`VOICE_EVAL_FALLBACK_LINE` in `tests/fixtures/voice-eval/agent.ts`).
 
-A live run gates a voice case on behaviour, never on latency. Each voice assertion carries a
+A live run gates a voice case on behaviour, never on latency. A voice assertion can carry a
 `deterministicOnly` flag, and two carry it by definition: `parseConversationQualityCases` marks
 `voice_bridge_emitted` with `expected: false`, since the 2.5-second stall bridge and the 400 ms
 composing-idle bridge fire whenever the live planner or composer is slow, and
@@ -253,13 +253,15 @@ count, the pass threshold, the recording time) stops a gating run or a tag-filte
 before it opens anything, naming the file and the field: restore it from git, because a
 recording that read it as empty would write every other case's entry away. A full
 `--update-baseline` without `--tag` rewrites the file whole, so over a damaged file it warns and
-compares against an empty baseline. When the run ends, it closes what the composition opened the way every
-runtime does (`closeDependencies`), then ends the database pool. Each step runs even after one
-fails; a failure is logged and fails the run, and the run's own error, when it has one, is the
-one it exits with.
+compares against an empty baseline.
 
-`--judge` (llm_judge grading) is not wired yet — it's a fast-follow (needs a judge seam).
-The runner rejects the flag and scores the deterministic layer only.
+When the run ends, a named agent gets its own voice block back, then the run closes what the
+composition opened the way every runtime does (`closeDependencies`) and ends the database pool.
+Each step runs even after one fails; a failure is logged and fails the run, and the run's own
+error, when it has one, is the one it exits with.
+
+The runner refuses `--judge`, which would grade every case: name the tags to grade with
+`--judge-tag` instead.
 
 ## Sampling — making the baseline gate-worthy
 

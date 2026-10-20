@@ -124,6 +124,10 @@ const declarations: readonly PolicyDeclaration[] = [
   // pipeline erases over the API with an admin credential.
   ...["/chat/:conversationId", "/visitors/:visitorId"]
     .map((path) => allow("DELETE", `/api/v1/history${path}`, "workspace.history.delete")),
+  // A data subject request's lookup and export carry the same weight as its erasure, and a request
+  // pipeline runs them over the API with an admin credential too.
+  ...["/lookup", "/conversations", "/export", "/erase"]
+    .map((path) => allow("POST", `/api/v1/privacy/data-subjects${path}`, "workspace.history.delete")),
 
   ...["", "/sources", "/sources/:sourceId/documents", "/search/history", "/search/history/:searchId", "/:documentId", "/:documentId/chunks", "/:documentId/chunks/:chunkId"]
     .map((path) => allow("GET", `/api/v1/document${path}`, "workspace.documents.read")),

@@ -251,6 +251,7 @@ import { TelemetryService } from "../../src/shared/observability/telemetry/telem
 import type { AppDependencies } from "../../src/app/server/types.js";
 import type { RealtimeRolloutPolicy } from "../../src/modules/realtime/domain/realtimeRolloutPolicy.js";
 import { badRequest, conflict, notFound } from "../../src/shared/domain/errors.js";
+import { DATA_SUBJECT_EXPORT_FORMAT, DATA_SUBJECT_EXPORT_FORMAT_VERSION } from "../../src/modules/privacy/public.js";
 import { apiPrincipalRouteInventory } from "../../src/app/http/apiPrincipalRoutePolicy.js";
 import { requestSourceDigestPort } from "../../src/app/http/middleware/requestSource.js";
 import type {
@@ -958,6 +959,8 @@ export const createTestDependencies = (overrides: {
   deliveryFailures?: AppDependencies["deliveryFailures"];
   /** Conversation and visitor erasure; omitted means every erasure is refused as not found. */
   conversationErasure?: AppDependencies["conversationErasure"];
+  /** Data subject lookup, export and erasure; omitted means a workspace where a lookup finds nobody. */
+  dataSubjectAccess?: AppDependencies["dataSubjectAccess"];
   /** Held replies and the decisions on them; omitted means a workspace with none. */
   heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;
   /** The `fetch` voice vendor session starters call; omitted means every vendor call fails as unreachable. */
@@ -3074,6 +3077,20 @@ export const createTestDependencies = (overrides: {
       eraseVisitor: async () => { throw notFound("Visitor not found"); },
     },
     privacySettingsService,
+    dataSubjectAccess: overrides.dataSubjectAccess ?? {
+      // The Postgres reads are covered by tests/integration/data-subject-access.integration.test.ts.
+      lookup: async () => [],
+      listConversations: async () => [],
+      export: async ({ workspaceId, identities }) => ({
+        format: DATA_SUBJECT_EXPORT_FORMAT,
+        formatVersion: DATA_SUBJECT_EXPORT_FORMAT_VERSION,
+        exportedAt: new Date().toISOString(),
+        workspaceId,
+        identities,
+        sections: {},
+      }),
+      erase: async () => ({ visitorCount: 0, conversationCount: 0, messageCount: 0, complete: true }),
+    },
     retrievalSearchService,
     retrievalAnswerService,
     retrievalDefaultsProvider,
@@ -3191,6 +3208,7 @@ export const createTestApp = (overrides: {
   emailChannel?: AppDependencies["emailChannel"];
   deliveryFailures?: AppDependencies["deliveryFailures"];
   conversationErasure?: AppDependencies["conversationErasure"];
+  dataSubjectAccess?: AppDependencies["dataSubjectAccess"];
   heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;
   voiceVendorFetch?: typeof globalThis.fetch;
   handoffWaitingMessageGenerator?: ChatServiceOptions["handoffWaitingMessageGenerator"];

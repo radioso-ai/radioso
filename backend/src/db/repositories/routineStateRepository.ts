@@ -1,7 +1,14 @@
 import type { ConversationRoutineStore, RoutineState } from "@radioso/conversation-contract";
 
 import type { ConversationDataRetentionRule } from "../../shared/domain/conversationDataRetention.js";
-import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import {
+  exportJson,
+  exportTimestamp,
+  type DataSubjectDataExporter,
+  type DataSubjectExportRecord,
+  type DataSubjectExportScope,
+} from "../../shared/domain/dataSubjectAccess.js";
+import { anyOf, currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 interface RoutineStateRow {
@@ -193,5 +200,36 @@ export class RoutineStateRetention implements ConversationDataRetentionRule {
         .skipLocked())
       .executeTakeFirst();
     return Number(deleted.numDeletedRows);
+  }
+}
+
+/**
+ * The export's `routine_values` section: what the routine a conversation last ran collected, kept
+ * on its routine state until another routine replaces it, expired or not.
+ */
+export class RoutineValueExporter implements DataSubjectDataExporter {
+  readonly section = "routine_values";
+
+  constructor(private readonly db: Db) {}
+
+  async export(scope: DataSubjectExportScope): Promise<DataSubjectExportRecord[]> {
+    if (scope.conversationIds.length === 0) return [];
+    const rows = await this.db
+      .selectFrom("routine_states as r")
+      .innerJoin("conversations as c", "c.id", "r.session_id")
+      .select(["r.session_id", "r.routine_id", "r.status", "r.variables", "r.created_at", "r.updated_at"])
+      .where("c.workspace_id", "=", scope.workspaceId)
+      .where((eb) => anyOf(eb.ref("r.session_id"), scope.conversationIds, "uuid[]"))
+      .orderBy("r.created_at")
+      .orderBy("r.session_id")
+      .execute();
+    return rows.map((row) => ({
+      conversationId: row.session_id,
+      routineId: row.routine_id,
+      status: row.status,
+      values: exportJson(row.variables),
+      startedAt: exportTimestamp(row.created_at),
+      updatedAt: exportTimestamp(row.updated_at),
+    }));
   }
 }

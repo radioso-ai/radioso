@@ -14,7 +14,10 @@ import { DIRECT_REPLY_CONFIG, createDirectTurnSkill } from "./directTurnSkill.js
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { CONTEXT_VARIABLES_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
-import { createDirectiveAdherenceSideChannel } from "../../../shared/domain/directiveAdherence.js";
+import {
+  createDirectiveAdherenceSideChannel,
+  type DirectiveAdherenceTally,
+} from "../../../shared/domain/directiveAdherence.js";
 
 export interface ChatTurnRuntimeDependencies {
   chatGateway: ChatGateway;
@@ -40,6 +43,33 @@ export interface ChatTurnRuntime {
   turnSkills: TurnSkill[];
   metrics?: Pick<MetricsRegistry, "incrementCounter" | "observeHistogram"> | null;
 }
+
+const DIRECTIVE_ADHERENCE_VERDICT_LABELS: Record<keyof DirectiveAdherenceTally, string> = {
+  satisfied: "satisfied",
+  unsatisfied: "unsatisfied",
+  notApplicable: "not_applicable",
+  ungraded: "ungraded",
+};
+
+/**
+ * One count per rendered directive rule per grounded answer, by the answer's own
+ * verdict: `ungraded` is a rule the answer was shown and returned no grade for
+ * (#1575). The verdict is the only label, so the series stays four wide.
+ */
+const recordDirectiveAdherenceTally = (
+  metrics: ChatTurnRuntimeDependencies["metrics"],
+  tally: DirectiveAdherenceTally,
+): void => {
+  for (const [key, verdict] of Object.entries(DIRECTIVE_ADHERENCE_VERDICT_LABELS) as Array<[keyof DirectiveAdherenceTally, string]>) {
+    if (tally[key] > 0) {
+      metrics?.incrementCounter("chat_directive_adherence_verdicts_total", {
+        help: "Directive rules rendered into grounded answers, by the answer's own adherence verdict",
+        labels: { verdict },
+        value: tally[key],
+      });
+    }
+  }
+};
 
 /**
  * Assembles the chat module's turn runtime. Composition supplies the external
@@ -69,7 +99,12 @@ export const buildChatTurnRuntime = (
         deps.metrics,
         // Directive adherence is wired in here, at composition — the composer only
         // sees the capability-neutral side-channel port, never the directive domain.
-        { forSteeringRules: (rules) => createDirectiveAdherenceSideChannel(rules, deps.logger) },
+        {
+          forSteeringRules: (rules) => createDirectiveAdherenceSideChannel(rules, {
+            ...(deps.logger ? { logger: deps.logger } : {}),
+            onTally: (tally) => recordDirectiveAdherenceTally(deps.metrics, tally),
+          }),
+        },
       ),
     ),
     createDirectTurnSkill(

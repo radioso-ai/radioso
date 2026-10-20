@@ -15,6 +15,7 @@ vi.mock('@/lib/api', () => ({
     'negative_feedback',
     'grounding_gaps',
     'skill_failures',
+    'unmet_directives',
   ],
   qualityApi: { listTurns: vi.fn() },
 }))

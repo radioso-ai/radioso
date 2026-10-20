@@ -83,6 +83,40 @@ new directive with that built-in already selected in **Replaces**. Use the
 shortcut when you need to author a replacement for a built-in, then finish the
 name, condition, instruction, and priority yourself.
 
+## Keep something out of the answer
+
+A directive can withhold part of what a visitor asks for. Say your course pages
+list prices that change every season, and you'd rather the agent never quote
+one. An **Always** directive such as “Leave every price and fee out of the
+answer, even when the documents state them. Point the visitor to the course page
+and to reception for current prices.” keeps the figures out, while the agent
+still answers the rest of the question from your documents: the dates, what the
+course includes, how to book.
+
+The built-in rule for representing the organization (priority 80) asks the agent
+to state supported facts directly. The two work together: your rule decides what
+the answer leaves out, and the built-in decides how the agent states what it does
+say. If a withheld detail still reaches a reply, give your directive a priority
+above 80.
+
+## Check that a reply followed it
+
+Before the agent writes an answer from your documents, it commits, for each
+directive in play, to what that directive requires of this answer — “leave out
+every fee; point to the course page and reception”. It writes the answer against
+those commitments, then grades the finished answer on each one. Choose **Flow**
+on the reply and open its compose stage: each directive shows its commitment,
+its grade, and the agent's note. A directive the answer was given but returned
+no grade for is listed under **Not graded**. The same record is in the
+`turn_trace` and `test_chat_turn_trace` tools on the operator MCP server.
+
+A reply that graded one of its directives as not followed is listed under the
+**Unmet directives** chip in **Quality → Review**, so you can find it without
+opening every conversation. The chip is opt-in: those replies stay out of the
+default queue and the Inbox count until you choose it. The grade is the agent's own judgment of its answer:
+use it to find replies worth reading, and read the reply before you trust the
+verdict either way. The reply itself is sent as written.
+
 ## Directives on a routine turn
 
 While a [routine](/guides/authoring-routines) is running, the current step
@@ -175,6 +209,10 @@ with.
 - A contextual rule matched but did not shape the answer: inspect the turn
   trace for a count or token-limit reason, then narrow its **Situation** or
   raise its **Priority** relative to the other contextual rules.
+- A rule that keeps something out of the answer was broken anyway: open the
+  reply's **Flow** and read the rule's commitment and grade. When the commitment
+  was right and the answer still broke it, raise the rule's **Priority** above
+  the built-in rules it competes with (80 for representing the organization).
 - An answer-coverage rule did not run: open Turn diagnostics and check whether
   coverage was assessed. Older turns and failed assessments have no semantic
   verdict to match.

@@ -3396,7 +3396,7 @@ export interface paths {
         put?: never;
         /**
          * Export a data subject's data
-         * @description One machine-readable JSON document holding everything the confirmed identities reach, read from one consistent snapshot. Records one `data_subject.exported` audit event with identity references and counts per section, never content.
+         * @description One machine-readable JSON document holding everything the confirmed identities reach, read from one consistent snapshot. With `conversationIds`, the document holds those conversations and the identities' own records, such as their visitor records and customer-scoped values, so identities that reach more than 200 conversations export in pages. Records one `data_subject.exported` audit event with identity references and counts per section, never content.
          */
         post: operations["exportDataSubject"];
         delete?: never;
@@ -3416,7 +3416,7 @@ export interface paths {
         put?: never;
         /**
          * Permanently erase a data subject's data
-         * @description Erases each web visitor among the confirmed identities as `DELETE /api/v1/history/visitors/{visitorId}` does, then every other conversation the identities reach as `DELETE /api/v1/history/chat/{conversationId}` does, each with its own audit event, and records one `data_subject.erased` audit event for the request with identity records and totals. One already erased is skipped. There is no undo.
+         * @description Erases each web visitor among the confirmed identities as `DELETE /api/v1/history/visitors/{visitorId}` does, then every other conversation the identities reach as `DELETE /api/v1/history/chat/{conversationId}` does, each with its own audit event, and records one `data_subject.erased` audit event for the request with identity records and totals. One already erased is skipped. With `conversationIds`, erases only those conversations and no visitor, because a visitor's erasure takes all of their conversations; once the identities reach at most 200, a request without the list erases the rest and the visitors. There is no undo.
          */
         post: operations["eraseDataSubject"];
         delete?: never;
@@ -10239,6 +10239,17 @@ export interface components {
                 /** @description The identity's key, as the lookup returned it. */
                 key: string;
             }[];
+        };
+        DataSubjectSelectionRequest: {
+            /** @description The identities the operator confirmed belong to the data subject. */
+            identities: {
+                /** @enum {string} */
+                kind: "web_visitor" | "email_address" | "slack_user";
+                /** @description The identity's key, as the lookup returned it. */
+                key: string;
+            }[];
+            /** @description One page of the identities' conversations, from the conversation list, for identities that reach more than 200. Every id must be one of theirs. Without it the request covers every conversation they reach. */
+            conversationIds?: string[];
         };
         DeliveryFailure: {
             /** Format: uuid */
@@ -25800,7 +25811,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["DataSubjectIdentitiesRequest"];
+                "application/json": components["schemas"]["DataSubjectSelectionRequest"];
             };
         };
         responses: {
@@ -25813,7 +25824,7 @@ export interface operations {
                     "application/json": components["schemas"]["DataSubjectExport"];
                 };
             };
-            /** @description Request validation failed */
+            /** @description Request validation failed, or `data_subject_conversations_not_reached`: `conversationIds` lists a conversation the identities do not reach. `details.conversationIds` names each one. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -25840,7 +25851,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description `data_subject_request_too_large`: the identities reach more than 200 conversations. `details` carries `conversationCount` and `maxConversations`; split the request by identity. */
+            /** @description `data_subject_request_too_large`: the identities reach more than 200 conversations. `details` carries `conversationCount` and `maxConversations`; list the conversations and send them at most 200 at a time as `conversationIds`. */
             413: {
                 headers: {
                     [name: string]: unknown;
@@ -25860,7 +25871,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["DataSubjectIdentitiesRequest"];
+                "application/json": components["schemas"]["DataSubjectSelectionRequest"];
             };
         };
         responses: {
@@ -25873,7 +25884,7 @@ export interface operations {
                     "application/json": components["schemas"]["DataSubjectErasure"];
                 };
             };
-            /** @description Request validation failed */
+            /** @description Request validation failed, or `data_subject_conversations_not_reached`: `conversationIds` lists a conversation the identities do not reach. `details.conversationIds` names each one. */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -25900,7 +25911,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description `data_subject_request_too_large`: the identities reach more than 200 conversations. `details` carries `conversationCount` and `maxConversations`; split the request by identity. */
+            /** @description `data_subject_request_too_large`: the identities reach more than 200 conversations. `details` carries `conversationCount` and `maxConversations`; list the conversations and send them at most 200 at a time as `conversationIds`. */
             413: {
                 headers: {
                     [name: string]: unknown;
@@ -25909,7 +25920,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description `data_subject_erasure_incomplete`: the erasure stopped partway. `details.receipt` is a `DataSubjectErasure` with what it erased and `complete: false`; send the same request again to erase the rest. */
+            /** @description `data_subject_erasure_incomplete`: the erasure stopped partway. `details.receipt` is a `DataSubjectErasure` with what it erased and `complete: false`. Send the same request again to erase the rest; a request with `conversationIds` lists the conversations again and sends the ones that remain. */
             500: {
                 headers: {
                     [name: string]: unknown;

@@ -114,9 +114,41 @@ describe("data subject request contract", () => {
     expect(h.access.listConversations).not.toHaveBeenCalled();
   });
 
-  it("refuses an export or erasure past the cap with 413 and says to split it by identity", async () => {
+  it("takes one page of the identities' conversations for an export or an erasure, and no more than one request may reach", async () => {
     const h = await harness();
-    const tooLarge = new AppError(413, "data_subject_request_too_large", "These identities reach 501 conversations; one request may reach at most 500. Split the request by identity.", {
+    const conversationIds = [randomUUID(), randomUUID()];
+
+    await post(h, "export", { identities: IDENTITIES, conversationIds }).expect(200);
+    await post(h, "erase", { identities: IDENTITIES, conversationIds }).expect(200);
+    const actor = { accountId: h.session.accountId, userId: h.session.userId };
+    expect(h.access.export).toHaveBeenCalledWith({ workspaceId: h.session.workspaceId, identities: IDENTITIES, conversationIds, actor });
+    expect(h.access.erase).toHaveBeenCalledWith({ workspaceId: h.session.workspaceId, identities: IDENTITIES, conversationIds, actor });
+
+    for (const refused of [[], ["conv-1"], Array.from({ length: 201 }, () => randomUUID())]) {
+      await post(h, "export", { identities: IDENTITIES, conversationIds: refused }).expect(400);
+      await post(h, "erase", { identities: IDENTITIES, conversationIds: refused }).expect(400);
+    }
+    // The conversation list is what a caller pages through, so it takes no page of its own.
+    await post(h, "conversations", { identities: IDENTITIES, conversationIds }).expect(400);
+    expect(h.access.export).toHaveBeenCalledTimes(1);
+    expect(h.access.erase).toHaveBeenCalledTimes(1);
+  });
+
+  it("answers a page listing a conversation the identities do not reach with 400 naming it", async () => {
+    const h = await harness();
+    const unreached = randomUUID();
+    h.access.export.mockRejectedValueOnce(new AppError(400, "data_subject_conversations_not_reached", "1 of the listed conversations are not among the ones these identities reach.", {
+      conversationIds: [unreached],
+    }));
+
+    const response = await post(h, "export", { identities: IDENTITIES, conversationIds: [unreached] }).expect(400);
+
+    expect(response.body.error).toMatchObject({ code: "data_subject_conversations_not_reached", details: { conversationIds: [unreached] } });
+  });
+
+  it("refuses an export or erasure past the cap with 413 and says to page it with conversationIds", async () => {
+    const h = await harness();
+    const tooLarge = new AppError(413, "data_subject_request_too_large", "This request reaches 501 conversations; one request may reach at most 500. List the conversations and send them at most 500 at a time as conversationIds.", {
       conversationCount: 501,
       maxConversations: 500,
     });
@@ -127,7 +159,7 @@ describe("data subject request contract", () => {
       const response = await post(h, route, { identities: IDENTITIES }).expect(413);
       expect(response.body.error).toMatchObject({
         code: "data_subject_request_too_large",
-        message: expect.stringContaining("Split the request by identity"),
+        message: expect.stringContaining("conversationIds"),
         details: { conversationCount: 501, maxConversations: 500 },
       });
     }

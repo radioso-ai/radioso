@@ -56,6 +56,7 @@ export type {
   DataSubjectIdentityCandidate,
   DataSubjectLookupRequest,
   DataSubjectLookupResponse,
+  DataSubjectSelectionRequest,
   DocumentCreateRequest,
   DocumentDetails,
   DocumentListResponse,
@@ -320,8 +321,10 @@ export const createRadiosoClient = (options: RadiosoClientOptions) => {
     privacy: {
       lookupDataSubject: (query: string) => generated.lookupDataSubject({ query }),
       listDataSubjectConversations: (identities: DataSubjectIdentity[]) => generated.listDataSubjectConversations({ identities }),
-      exportDataSubject: (identities: DataSubjectIdentity[]) => generated.exportDataSubject({ identities }),
-      eraseDataSubject: (identities: DataSubjectIdentity[]) => generated.eraseDataSubject({ identities }),
+      exportDataSubject: (identities: DataSubjectIdentity[], conversationIds?: string[]) =>
+        generated.exportDataSubject({ identities, ...(conversationIds ? { conversationIds } : {}) }),
+      eraseDataSubject: (identities: DataSubjectIdentity[], conversationIds?: string[]) =>
+        generated.eraseDataSubject({ identities, ...(conversationIds ? { conversationIds } : {}) }),
     },
     chat: {
       create: (body: ChatCreateRequest) => {

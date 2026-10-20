@@ -1,7 +1,7 @@
 ---
 title: "Answering a data subject request"
 description: "How to find one person's conversations across the website, email and Slack, export what Radioso holds about them as JSON, and erase it."
-last_updated: 2026-10-19
+last_updated: 2026-10-20
 ---
 
 # Answering a data subject request
@@ -148,13 +148,25 @@ Each section is a list of records, and every section is present even when it hol
 | `conversations` | Each conversation with its channel, title, the page it started on, the request facts observed when it opened (IP address, country, user agent), the channel's own ids (mailbox, Slack workspace and thread), and every message in order. |
 | `visitors` | Each website visitor record: the verified customer id, the visitor key the browser kept, first and last seen, and the country, language and user agent last observed. |
 | `routine_values` | What the routine a conversation last ran collected, such as a booking's date or a phone number. |
-| `routine_actions` | What routines handed on about the person: a contact request's message, address and name, and the values a routine's ending sent to your team or to a webhook. |
+| `routine_actions` | What routines handed on about the person: each contact request as it was queued, with every value the routine had collected by then, and the values a routine's ending sent to your team or to a webhook. |
 | `conversation_summaries` | The rolling summary the agent keeps of a long conversation. |
 | `context_values` | Values your site or a skill stored for the person's chat sessions and under their verified customer id. |
 | `email_messages` | Each mail of their email conversations: direction, subject, sender address and display name, Cc, and attachment names, types and sizes. The mail's text is the conversation's message. |
 | `answer_feedback` | The ratings and comments the person left on answers. |
 
-One request exports at most 200 conversations, which keeps it well inside the request time limit. A request whose identities reach more answers `413` with `data_subject_request_too_large`, saying how many conversations it reached; split the request by identity and export them in smaller groups. One identity that reaches more than 200 conversations on its own is more than one request can export.
+One request exports at most 200 conversations, which keeps it well inside the request time limit. A request whose identities reach more answers `413` with `data_subject_request_too_large`, saying how many conversations it reached. Export those identities in pages instead: take the ids from the conversation list and send at most 200 of them at a time as `conversationIds`, alongside the same identities:
+
+```http
+POST /api/v1/privacy/data-subjects/export
+Content-Type: application/json
+
+{
+  "identities": [ ... ],
+  "conversationIds": ["b8f1d6a2-6c2e-4a0f-9a8e-3f9e2d1c7b55", "..."]
+}
+```
+
+Each page holds its conversations and everything derived from them, plus the identities' own records: their website visitor records and the context values stored under their verified customer id. Every page is a whole export document, so send the person all of them. A conversation the identities do not reach answers `400` with `data_subject_conversations_not_reached`, and `details.conversationIds` names each one; nothing is exported until every listed id is theirs.
 
 The export reads one consistent snapshot, so a message that arrives while it runs is either in it with everything derived from it, or not in it at all. `formatVersion` changes whenever the document's shape changes, so whatever reads the file can tell which shape it has.
 
@@ -184,9 +196,9 @@ Radioso erases each website visitor among the identities exactly as `DELETE /api
 
 Export first, then erase. The same confirmed identities reach the same conversations, so the file you send covers exactly what the erasure removes.
 
-An erasure reaches at most 200 conversations, like an export, and refuses a larger request with `413` before it erases anything. Erase the identities in smaller groups. One identity that reaches more than 200 conversations on its own is erased conversation by conversation with `DELETE /api/v1/history/chat/{conversationId}`, or as a visitor with `DELETE /api/v1/history/visitors/{visitorId}`.
+An erasure reaches at most 200 conversations, like an export, and refuses a larger request with `413` before it erases anything. Erase those identities in pages the same way, with `conversationIds`. A page erases only the conversations it lists and leaves every visitor record, because erasing a visitor takes all of their conversations at once. Once the identities reach 200 conversations or fewer, send the request without `conversationIds`: it erases what is left, visitors included.
 
-An erasure that stops partway answers `500` with `data_subject_erasure_incomplete`, and its `details.receipt` says what it erased before it stopped, with `complete: false`. Send the same request again; it erases what is left. A conversation that starts after the erasure read the list stays, so look the person up once more when you're done.
+An erasure that stops partway answers `500` with `data_subject_erasure_incomplete`, and its `details.receipt` says what it erased before it stopped, with `complete: false`. Send the same request again; it erases what is left. For a page, list the conversations again and send the ones that remain, since a conversation already erased is no longer one the identities reach. A conversation that starts after the erasure read the list stays, so look the person up once more when you're done.
 
 ## Who can run a request
 
@@ -203,8 +215,9 @@ An erasure also records a `conversation.erased` or `visitor.erased` event for ea
 ## Common failure modes
 
 - **`403`**: the caller lacks `workspace.history.delete`: a member session, or a member credential.
-- **`400`**: the query is empty or longer than 320 characters, an identity kind is not `web_visitor`, `email_address` or `slack_user`, or a request names more than 50 identities.
-- **`413`**: the identities reach more than 200 conversations. Send them in smaller groups.
+- **`400`**: the query is empty or longer than 320 characters, an identity kind is not `web_visitor`, `email_address` or `slack_user`, a request names more than 50 identities, or `conversationIds` lists more than 200 ids.
+- **`400` with `data_subject_conversations_not_reached`**: `conversationIds` lists a conversation the identities do not reach, such as one of an identity you left out, or one an earlier page already erased. `details.conversationIds` names each one.
+- **`413`**: the identities reach more than 200 conversations. Send them in pages with `conversationIds`.
 - **`500` with `data_subject_erasure_incomplete`**: the erasure stopped partway; `details.receipt` says what it erased. Send the same request again.
 - **No email identity for an address you know wrote in**: the mail never became a conversation. Mail from automated senders, bounces and spam stays in the email channel's event log for 30 days and goes on its own.
 - **The website visitor but no email identity, or the other way round**: your site verifies the person by an id that is not the address they mail from. Look up each identifier.

@@ -26,18 +26,14 @@ const routineEndingValues = (payload: Payload): SubjectActionValues => ({
 
 /**
  * The action types whose payload carries what the person said or gave, each reduced to just that:
- * a contact request's message, address and name; the slot values a routine's ending handed to the
- * team; the slot values a routine sent to a webhook. Every other type carries the workspace's own
- * workflow (a transfer between teammates, an internal Slack post, an approval) or only ids.
+ * a contact request as it was queued, since an authored routine's contact step carries every value
+ * the routine collected and no producer adds the workspace's delivery settings to it; the slot
+ * values a routine's ending handed to the team; the slot values a routine sent to a webhook. Every
+ * other type carries the workspace's own workflow (a transfer between teammates, an internal Slack
+ * post, an approval) or only ids.
  */
 const PROJECTIONS: Readonly<Record<string, (payload: Payload) => SubjectActionValues>> = {
-  [CONTACT_SEND_ACTION_TYPE]: (payload) => ({
-    routineId: null,
-    values: Object.fromEntries(["message", "email", "name"].flatMap((field) => {
-      const value = textOf(payload, field);
-      return value === null ? [] : [[field, value]];
-    })),
-  }),
+  [CONTACT_SEND_ACTION_TYPE]: (payload) => ({ routineId: null, values: valuesOf(payload) }),
   [HANDOFF_NOTIFY_ACTION_TYPE]: routineEndingValues,
   [COMPLETION_NOTIFY_ACTION_TYPE]: routineEndingValues,
   [WEBHOOK_SEND_ACTION_TYPE]: (payload) => ({

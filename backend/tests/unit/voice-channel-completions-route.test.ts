@@ -385,14 +385,14 @@ describe("voice completions route", () => {
     expect(inputs[3]).not.toHaveProperty("languageReport");
   });
 
-  it("answers the runtime's follow-up to a tool call with an empty completion and runs no turn", async () => {
+  it("answers the runtime's follow-up to another tool's call with an empty completion and runs no turn", async () => {
     const dependencies = createDependencies();
     const app = createApp(dependencies);
     const followUp = elevenlabsBody({
       messages: [
-        { role: "user", content: "Parla italiano?" },
-        { role: "assistant", content: null, tool_calls: [{ id: "call_lang", type: "function", function: { name: "language_detection", arguments: "{\"language\":\"it\"}" } }] },
-        { role: "tool", tool_call_id: "call_lang", content: "{\"status\":\"success\"}" },
+        { role: "user", content: "Bye" },
+        { role: "assistant", content: null, tool_calls: [{ id: "call_end", type: "function", function: { name: "end_call", arguments: "{}" } }] },
+        { role: "tool", tool_call_id: "call_end", content: "ok" },
       ],
     });
 
@@ -412,6 +412,167 @@ describe("voice completions route", () => {
       { event: "voice.tool_followup_ignored", dialect: "elevenlabs", agentId },
       "Voice tool result follow-up answered with an empty completion",
     );
+  });
+
+  describe("a switch of the call's language", () => {
+    /** `language_detection` as ElevenLabs offers it in `tools` (observed 2026-10-18). */
+    const languageDetection = { type: "function", function: { name: "language_detection", parameters: { type: "object", properties: { reason: { type: "string" }, language: { type: "string" } } } } };
+    /** The vendor's follow-up after Radioso asked for switch `switch-1`, replayed as the probe saw it. */
+    const followUpBody = (result: string) => elevenlabsBody({
+      tools: [languageDetection],
+      messages: [
+        { role: "system", content: "You are a helpful agent." },
+        { role: "user", content: "A che ora aprite?" },
+        { role: "assistant", content: null, tool_calls: [{ id: "fc_switch-1", type: "function", function: { name: "language_detection", arguments: "{\"reason\":\"response_language\",\"language\":\"it\"}" } }] },
+        { role: "tool", tool_call_id: "fc_switch-1", content: result },
+      ],
+    });
+
+    const choices = (body: string) => dataFrames(body).map((frame) => (frame === "[DONE]" ? frame : (JSON.parse(frame) as { choices: unknown[] }).choices[0]));
+
+    it("passes on the runtime's offer of the switch, with the languages it refused, and no offer without the tool", async () => {
+      const dependencies = createDependencies();
+      const app = createApp(dependencies);
+
+      await request(app).post(completionsPath()).set("Authorization", "Bearer voice-secret").send(elevenlabsBody({ tools: [languageDetection] })).expect(200);
+      await request(app).post(completionsPath()).set("Authorization", "Bearer voice-secret").send(elevenlabsBody({
+        tools: [languageDetection],
+        messages: [
+          { role: "user", content: "Hi" },
+          { role: "assistant", content: null, tool_calls: [{ id: "fc_switch-0", type: "function", function: { name: "language_detection", arguments: "{\"reason\":\"response_language\",\"language\":\"it\"}" } }] },
+          { role: "tool", tool_call_id: "fc_switch-0", content: "Invalid language. Keep speaking English." },
+          { role: "user", content: "A che ora aprite?" },
+        ],
+      })).expect(200);
+      await request(app).post(completionsPath()).set("Authorization", "Bearer voice-secret").send(elevenlabsBody()).expect(200);
+
+      const inputs = vi.mocked(dependencies.voiceTurns.runTurn).mock.calls.map(([turn]) => turn);
+      expect(inputs[0]).toMatchObject({ languageSwitchOffer: { refused: [] } });
+      expect(inputs[1]).toMatchObject({ languageSwitchOffer: { refused: ["it"] }, languageReport: "blocked" });
+      expect(inputs[2]).not.toHaveProperty("languageSwitchOffer");
+    });
+
+    it("streams a switch as the tool call alone, ended with tool_calls, and names the outcome continue", async () => {
+      const switching: VoiceTurnEvent[] = [
+        { type: "conversation", conversationId },
+        { type: "switchLanguage", switchId: "switch-1", language: "it", reason: "response_language" },
+        { type: "outcome", outcome: { kind: "continue" } },
+      ];
+      const dependencies = createDependencies({ voiceTurns: voiceTurns(switching) });
+
+      const response = await request(createApp(dependencies)).post(completionsPath()).set("Authorization", "Bearer voice-secret")
+        .send(elevenlabsBody({ tools: [languageDetection] })).expect(200);
+
+      expect(dataFrames(response.text).map((frame) => (frame === "[DONE]" ? frame : JSON.parse(frame).choices[0]))).toEqual([
+        {
+          index: 0,
+          delta: { role: "assistant", tool_calls: [{ index: 0, id: "switch-1", type: "function", function: { name: "language_detection", arguments: "{\"reason\":\"response_language\",\"language\":\"it\"}" } }] },
+          finish_reason: null,
+        },
+        { index: 0, delta: {}, finish_reason: "tool_calls" },
+        "[DONE]",
+      ]);
+      expect(response.text).not.toContain("content");
+    });
+
+    describe("decided by the real turn, on the real wire", () => {
+      /** A turn whose chat names its language `atMs` in, with voice and switching on and no bridge lines. */
+      const switchingTurns = (atMs: number, timing: { languageSwitchDecisionMs?: number } = {}) => new VoiceTurnService({
+        sessions: { findConversationId: async () => conversationId, bind: async (_session, id) => id },
+        chat: {
+          streamTurn: () => (async function* (): AsyncGenerator<ChatStreamEvent> {
+            yield { type: "conversation", conversationId };
+            await new Promise((resolve) => setTimeout(resolve, atMs));
+            yield { type: "language", tag: "it" };
+            yield { type: "chunk", text: "Apriamo alle nove." };
+            yield { type: "done", conversationId, assistantMessageId: "66666666-6666-4666-8666-666666666666", answer: "Apriamo alle nove.", activitySummary: { stages: [] }, activityTrace: { events: [] }, route: { type: "direct", reason: "social_only" } } as unknown as ChatStreamEvent;
+          })(),
+        },
+        agents: {
+          findVoiceProfile: async () => ({
+            voice: { ...defaultAgentVoiceSettings(), enabled: true, languageSwitching: true },
+            defaultLocale: "en",
+          }),
+        },
+        routines: { isRoutineActive: async () => false },
+        ownership: { isHumanOwned: async () => false },
+        operatorReplies: noOperatorReplies,
+        logger: { info: vi.fn(), warn: vi.fn() },
+        timing,
+      });
+
+      it("switches on a language that comes 2.6 s in, after the keep-alive, since nothing was spoken", async () => {
+        const response = await request(createApp(createDependencies({ voiceTurns: switchingTurns(2_600) })))
+          .post(completionsPath()).set("Authorization", "Bearer voice-secret")
+          .send(elevenlabsBody({ tools: [languageDetection] })).expect(200);
+
+        const frames = choices(response.text);
+        // The keep-alive opened the reply at 2.5 s; the tool call follows it, and nothing is said.
+        expect(frames[0]).toEqual({ index: 0, delta: { role: "assistant", content: "" }, finish_reason: null });
+        expect(frames[1]).toEqual({ index: 0, delta: { content: " \u200B" }, finish_reason: null });
+        expect(frames.slice(2)).toEqual([
+          {
+            index: 0,
+            delta: { tool_calls: [{ index: 0, id: expect.any(String), type: "function", function: { name: "language_detection", arguments: "{\"reason\":\"response_language\",\"language\":\"it\"}" } }] },
+            finish_reason: null,
+          },
+          { index: 0, delta: {}, finish_reason: "tool_calls" },
+          "[DONE]",
+        ]);
+      }, 10_000);
+
+      it("answers in the call's voice when the language comes after the switch's deadline", async () => {
+        const response = await request(createApp(createDependencies({ voiceTurns: switchingTurns(1_200, { languageSwitchDecisionMs: 1_000 }) })))
+          .post(completionsPath()).set("Authorization", "Bearer voice-secret")
+          .send(elevenlabsBody({ tools: [languageDetection] })).expect(200);
+
+        expect(response.text).not.toContain("tool_calls");
+        expect(choices(response.text)).toContainEqual({ index: 0, delta: { role: "assistant", content: "Apriamo alle nove." }, finish_reason: null });
+      }, 10_000);
+    });
+
+    it("answers a result whose call is not in the history with an empty completion, as another tool's follow-up", async () => {
+      const dependencies = createDependencies();
+
+      const response = await request(createApp(dependencies)).post(completionsPath()).set("Authorization", "Bearer voice-secret")
+        .send(elevenlabsBody({
+          tools: [languageDetection],
+          messages: [
+            { role: "user", content: "A che ora aprite?" },
+            { role: "tool", tool_call_id: "fc_switch-1", content: JSON.stringify({ result_type: "language_detection_success", status: "success", language: "it" }) },
+          ],
+        }))
+        .expect(200);
+
+      expect(choices(response.text)).toEqual([
+        { index: 0, delta: { role: "assistant", content: "" }, finish_reason: null },
+        { index: 0, delta: {}, finish_reason: "stop" },
+        "[DONE]",
+      ]);
+      expect(dependencies.voiceTurns.runTurn).not.toHaveBeenCalled();
+    });
+
+    it("hands the runtime's follow-up to the turn as the switch's result, under the id Radioso gave it, and admits no new turn", async () => {
+      const dependencies = createDependencies();
+      const app = createApp(dependencies);
+
+      await request(app).post(completionsPath()).set("Authorization", "Bearer voice-secret")
+        .send(followUpBody(JSON.stringify({ result_type: "language_detection_success", status: "success", reason: "response_language", language: "it" })))
+        .expect(200);
+      await request(app).post(completionsPath()).set("Authorization", "Bearer voice-secret")
+        .send(followUpBody("Invalid language. Keep speaking English."))
+        .expect(200);
+
+      const inputs = vi.mocked(dependencies.voiceTurns.runTurn).mock.calls.map(([turn]) => turn);
+      expect(inputs[0]).toMatchObject({
+        utterance: "A che ora aprite?",
+        languageSwitchResult: { switchId: "switch-1", confirmed: true },
+        // A switch Radioso asked for is no news for chat.
+        turnLanguage: { tag: "it", source: "vendor_detected", isNew: false },
+      });
+      expect(inputs[1]).toMatchObject({ utterance: "A che ora aprite?", languageSwitchResult: { switchId: "switch-1", confirmed: false }, languageReport: "blocked" });
+      expect(dependencies.accessGrantService.recordAgentChannelChatSucceeded).not.toHaveBeenCalled();
+    });
   });
 
   it("reads the generic dialect's session key from its header", async () => {

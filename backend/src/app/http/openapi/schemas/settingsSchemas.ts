@@ -6,6 +6,7 @@ import {
   documentedUpdateDocumentTypeCatalogSchema,
   updateGeneralSettingsSchema,
   updatePlatformSettingsSchema,
+  updatePrivacySettingsSchema,
   updateSettingsSchema,
 } from "../../routes/settingsRouteSchemas.js";
 import {
@@ -497,8 +498,31 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
     documentedUpdateDocumentTypeCatalogSchema,
   );
 
+  const PrivacySettingsSchema = registry.register(
+    "PrivacySettings",
+    z.object({
+      conversationRetentionDays: z.number().int().nullable().openapi({
+        description:
+          "Days a conversation is kept after its last update or message; the retention sweep then erases it with every record derived from it, as deleting it does. Null keeps conversations until someone deletes them, which is the default.",
+        example: 365,
+      }),
+    }),
+  );
+
+  const UpdatePrivacySettingsRequestSchema = registry.register(
+    "UpdatePrivacySettingsRequest",
+    updatePrivacySettingsSchema.extend({
+      conversationRetentionDays: updatePrivacySettingsSchema.shape.conversationRetentionDays.openapi({
+        description: "Whole days from 7 to 3650, or null to keep conversations until they are deleted.",
+        example: 365,
+      }),
+    }),
+  );
+
   Object.assign(schemas, {
     RetrievalDefaultsResponseSchema,
+    PrivacySettingsSchema,
+    UpdatePrivacySettingsRequestSchema,
     IngestionSettingsSchema,
     DocumentTypeFieldSchema,
     DocumentTypeDefinitionSchema,

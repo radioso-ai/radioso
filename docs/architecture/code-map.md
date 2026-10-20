@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-10-18
+last_updated: 2026-10-19
 ---
 
 # Code Map
@@ -394,9 +394,12 @@ Voice enters the chat path as `sourceChannel: "voice"` with a `voice` channel
 context and the `latest_input_wins` supersession mode, which the chat turn
 registry and lifecycle implement (`chat/contracts/interruption.ts`), hands
 chat a `deliveredReply` reader (`DeliveredReplyReader`, same file) through which
-chat keeps the heard part of a reply cut off mid-stream, and reads the
-`handoff` report (`ChatTurnHandoff`) chat puts on a hand-off turn's `done`
-event; the chat turn is otherwise unchanged. A teammate's Inbox reply on a call
+chat keeps the heard part of a reply cut off mid-stream, asks for the turn's
+response language as a `language` stream event (`reportResponseLanguage`, the
+planner's `responseLanguageTag`) so a turn can switch an ElevenLabs call's
+language before it speaks, and reads the `handoff` report (`ChatTurnHandoff`)
+chat puts on a hand-off turn's `done` event; the chat turn is otherwise
+unchanged. A teammate's Inbox reply on a call
 is stored as pending speech and spoken once, on the caller's next turn, through
 chat's `OperatorReplySpeechClaims` port (`chat/contracts/operatorReplySpeech.ts`);
 `voiceChannel/services/operatorReplySpeaker.ts` claims, speaks and settles a
@@ -411,13 +414,13 @@ Public surfaces and key files:
 - `backend/src/modules/voiceChannel/domain.ts` — `VoiceTurnPort`, `VoiceTurnInput`, `VoiceTurnEvent`, `VoiceTurnOutcome`; `VoiceSessionStartPort`, `VoiceSessionStarter`, `VoiceVendorCredentialReader`
 - `backend/src/modules/voiceChannel/services/voiceSessionStartService.ts` and `adapters/elevenlabs/sessionStarter.ts` — the session start and the ElevenLabs signed-URL client; `backend/src/app/http/routes/publicVoiceSessionRoute.ts` mounts it at `POST /api/v1/public/chat/:token/voice/sessions` behind `middleware/publicVoiceSessionRateLimiter.ts`, and `frontend/app/api/public/chat/[token]/voice/sessions/route.ts` relays it cross-origin; started sessions wait for their first turn in `voice_sessions` (migration `227_voice_session_starts.sql`)
 - `backend/src/shared/domain/voiceVendor.ts` — `VOICE_VENDORS`, shared by the `voice.runtime` binding, the workspace credential store (`settingsCredentialsRoutes.ts`, migration `226_workspace_provider_credentials_voice_vendors.sql`) and the starters
-- `backend/src/modules/voiceChannel/services/voiceTurnService.ts` and the pure `speechSegmenter.ts`, `speechText.ts`, `voiceTurnPolicy.ts` (bridge and turn limit, `VOICE_BEHAVIOR`), `voiceTurnOutcome.ts` (outcome from chat's `done` event) and `voiceLines.ts` (the turn's language and its lines); `voiceSessionMemory.ts` (in-process per-session memory: newest request, last bridge, replayable exchange)
+- `backend/src/modules/voiceChannel/services/voiceTurnService.ts` and the pure `speechSegmenter.ts`, `speechText.ts`, `voiceTurnPolicy.ts` (bridge and turn limit, `VOICE_BEHAVIOR`), `voiceTurnOutcome.ts` (outcome from chat's `done` event) and `voiceLines.ts` (the turn's language and its lines); `voiceSessionMemory.ts` (in-process per-session memory: newest request, last bridge, replayable exchange); `languageSwitchFollowUp.ts` (a turn's switch of the call's language and the runtime's follow-up after it), `switchedTurns.ts` (the switched turn, held with its running reply) and `voiceTurnRecord.ts` (the turn record, speech helpers and the switch's pairing)
 - `backend/src/modules/agents/voiceSettings.ts` — the agent's `voice` block on `GET`/`PUT /api/v1/agents/:agentId`, read by the voice services as types from `agents/public.ts`
 - `frontend/components/dashboard/settings/voice-channel-card.tsx` (with `locale-lines-editor.tsx` and `frontend/lib/voice-settings-form.ts`) — the Voice card on the agent's Channels → API page, which saves the `voice` and `mechanicsReplies` blocks together, `runtime` included; the ElevenLabs key is the **Voice runtime keys** card in `providers-panel.tsx`
 - `frontend/lib/use-voice-session.ts` with the pure `voice-session.ts` (call states, transcript lines), `voice-call.ts` (the vendor client, then the start, then the vendor's session and its microphone prompt, with `VOICE_CALL_BEHAVIOR.connectTimeoutMs`), `api-public-voice.ts` (the session start through the relay) and `voice-runtime.ts` (the vendor port; `voice-runtime-elevenlabs.ts` loads `@elevenlabs/client` when a call starts, or when Talk is offered on iOS) — the website embed's Talk button, shown when the embed config's `voice.available` (`VoiceSessionAvailabilityPort`) is true; `frontend/components/chat/voice-call-controls.tsx` draws it, and `frontend/app/voice-worklets/[name]/route.ts` serves the client's audio worklets from the app host. The operator's switch is `surfaceSettings.websiteEmbed.voiceCallsOffered`, edited by `frontend/components/dashboard/settings/website-voice-calls-setting.tsx` (readiness from `voiceCallReadiness` on `GET /api/v1/agents/:agentId`, hint text from `frontend/lib/voice-call-readiness.ts`)
 - `backend/src/modules/voiceChannel/persistence/voiceSessionRepository.ts` (`voice_sessions`, migration `214_voice_sessions.sql`; the recording's region and vendor conversation id, migration `230_voice_session_recordings.sql`)
 - `backend/src/modules/voiceChannel/services/voiceRecordingService.ts`, `voiceRecordingErasureService.ts` and `adapters/elevenlabs/recordingSource.ts` — a call's recording, kept by the vendor: the embed's report (`POST /api/v1/public/chat/:token/voice/sessions/:sessionKey/vendor-conversation`, relayed by `frontend/app/api/public/chat/[token]/voice/sessions/[sessionKey]/vendor-conversation/route.ts`), `recording.available` on the history detail (`historyRoutes.ts`), playback at `GET /api/v1/conversations/:conversationId/recording` (`conversationRecordingRoutes.ts`), and deletion with the conversation, visitor, workspace or organization through `VendorHeldConversationDataEraser` in `shared/domain/conversationDataErasure.ts` (`persistence/voiceSessionEraser.ts` is the `voice-channel` eraser); the Inbox's Listen is `frontend/components/dashboard/inbox/conversation-recording.tsx`
-- `backend/src/modules/voiceChannel/adapters/openaiCompletions/` — dialects as data, request schema, SSE presenter, route
+- `backend/src/modules/voiceChannel/adapters/openaiCompletions/` — dialects as data, request schema, SSE presenter (the `language_detection` tool call of a switching turn), route (the switch's follow-up), `languageSwitches.ts` (the vendor's switch calls and results in the replayed history)
 - `backend/src/app/composition/voiceChannel.ts` and `backend/src/app/http/routes/agentVoiceRoute.ts` (mounted beside the REST agent channel)
 - `backend/src/modules/voiceChannel/README.md`
 
@@ -854,6 +857,106 @@ Focused checks:
 Related docs:
 
 - [Deleting conversation data](../../docs-portal/content/operators/deleting-conversation-data.mdx)
+
+## Conversation Retention
+
+Owns how long conversation data is kept (#1541). A workspace's privacy settings
+hold a conversation retention window in days (`workspaces.conversation_retention_days`,
+7 to 3650, null keeps conversations until deleted); `PrivacySettingsService`
+validates and audits a change (`workspace.privacy_settings.updated`), and setting
+it takes `workspace.history.delete` as well as `workspace.settings.manage`.
+`ConversationRetentionSweep` enforces it: for each workspace with a window it
+erases conversations with no update and no message since the window through
+`ConversationErasureService.eraseInactiveConversations`, the same erasers and
+cascade as a requested erasure, one bounded batch per workspace per round, each
+batch one transaction and one `conversation.retention.enforced` audit event. A
+check that claims nothing spends its own budget, and each run starts with the
+workspaces reached longest ago (`conversation_retention_swept_at`). Then
+it runs each module's `ConversationDataRetentionRule`
+(`backend/src/shared/domain/conversationDataRetention.ts`), a fixed window over
+rows whose conversation lives on: expired summaries, expired or 90-day-abandoned
+routine states, and inbound mail's raw MIME after 30 days. Claims lock with
+`SKIP LOCKED`, so two runs at once remove each row once. It knows the erasure
+port, the policy list and the rules, and nothing about tables.
+
+The sweep is a built-in periodic task (`conversation-retention`, every 15
+minutes): the poll worker's interval loop, and on Cloud Run the
+`/internal/tasks/periodic-tasks/:taskId/run` route a Cloud Scheduler job calls.
+Each run logs `conversation_retention_swept` with counts per table and per
+eraser owner, increments `radioso_retention_rows_removed_total{table}`,
+`radioso_retention_rows_erased_total{owner}` and `radioso_retention_sweeps_total{outcome}`,
+and runs inside a `privacy.retention_sweep` span. Terraform pins the windows that
+outlast it: seven Cloud SQL backups, 30 days in the project's `_Default` log
+bucket, and seven days of point-in-time recovery logs where a stack turns
+recovery on (`db_point_in_time_recovery_enabled`, off by default, because turning
+it on restarts the instance).
+
+Public surfaces and key files:
+
+- `backend/src/modules/privacy/conversationRetention.ts` (the sweep and its ports)
+- `backend/src/modules/privacy/privacySettings.ts` (the setting, its range and audit)
+- `backend/src/app/composition/conversationRetention.ts` (rule list, sweep, periodic task)
+- `backend/src/db/repositories/workspacePrivacySettingsRepository.ts` (setting store and policy list)
+- `backend/src/app/http/routes/settingsRoutes.ts` (`GET`/`PUT /api/v1/settings/privacy`)
+- `backend/src/modules/operatorCopilot/tools/privacySettingProposals.ts` (`propose_privacy_setting`)
+- `frontend/components/dashboard/settings/conversation-retention-card.tsx` (Settings → Workspace → Conversation retention)
+- `infra/terraform/database.tf`, `infra/terraform/logging.tf`, `infra/terraform/scheduler.tf` (`conversation_retention`)
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/conversation-retention-sweep.test.ts tests/unit/privacy-settings-service.test.ts tests/unit/operatorCopilot/copilot-privacy-setting-proposals.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/conversation-retention.integration.test.ts --no-file-parallelism`
+- `cd frontend && pnpm exec vitest run tests/unit/conversation-retention.test.ts`
+
+Related docs:
+
+- [Data retention](../../docs-portal/content/operators/data-retention.mdx)
+
+## Data Subject Requests
+
+Owns finding one person across channels and exporting or erasing what Radioso
+holds about them (#1542). `DataSubjectAccessService` (`modules/privacy/`) asks
+every identity finder for a search's matches and returns them as candidate
+identities without merging any; every later step (conversation list, export,
+erase) takes the identities an operator confirmed. Lookup, export and erase
+each record one `data_subject.looked_up` / `.exported` / `.erased` audit event
+naming each identity kind by its record ids (a visitor id, email thread
+conversations, Slack link rows), never by a key, with counts. Export and erase
+refuse more than 200 conversations with `413`; a caller pages them with
+`conversationIds`, each one the identities reach (`400` otherwise). A page of
+an erasure erases only its conversations, never a visitor. Erasure runs the
+conversation erasure per visitor and per remaining conversation, each with its
+own audit event, and answers a partial run with a `500` carrying its receipt.
+`routine_actions` exports only the action types
+`modules/chat/services/actions/subjectActionValues.ts` projects to the
+person's own values; a contact request exports its payload as queued.
+
+The ports live in `backend/src/shared/domain/dataSubjectAccess.ts`. Each module
+that keeps identities implements `DataSubjectIdentityFinder` (web visitors by
+verified customer id in `db/repositories/visitorRepository.ts`, email senders in
+`modules/emailChannel/persistence/emailDataSubjectAccess.ts`, Slack thread
+starters in `modules/connectors/plugins/slack/slackPersistence.ts`); each module
+that keeps data about the subject implements `DataSubjectDataExporter` for its
+export section. Composition binds both to one read-only, repeatable-read
+transaction. A table that names a conversation, session, visitor or message
+needs an export section or a stated reason in the schema contract test.
+
+Public surfaces and key files:
+
+- `backend/src/modules/privacy/dataSubjectAccess.ts` (use case, export format version)
+- `backend/src/shared/domain/dataSubjectAccess.ts` (finder and exporter ports)
+- `backend/src/app/composition/dataSubjectAccess.ts` (finder and exporter lists, read unit of work)
+- `backend/src/db/repositories/dataSubjectConversationRepository.ts` (conversation directory, `conversations` and `answer_feedback` sections)
+- `backend/src/app/http/routes/privacyRoutes.ts` (`POST /api/v1/privacy/data-subjects/{lookup,conversations,export,erase}`; `workspace.history.delete`)
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/data-subject-access-service.test.ts tests/contract/privacy-data-subjects.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/data-subject-access.integration.test.ts tests/integration/data-subject-export-coverage.integration.test.ts --no-file-parallelism`
+
+Related docs:
+
+- [Answering a data subject request](../../docs-portal/content/operators/data-subject-requests.mdx)
 
 ## Agent Revisions
 
@@ -1512,7 +1615,8 @@ Related specs:
 Owns the operator's view of answer quality: which assistant turns are worth
 reviewing, the structured triage decision an operator assigns them, and the
 rates those turns aggregate to. Signal meaning is derived from skill-catalog
-metadata rather than outcome-name matching.
+metadata rather than outcome-name matching, and from the directive grades chat
+persists on the assistant message (`unmet_directives`).
 
 Should not own anything that influences a turn. Nothing here feeds retrieval,
 routing, or answer composition. Current triage and its append-only transition
@@ -2162,14 +2266,24 @@ express, such as empathy or refusal.
 
 Primary paths:
 
-- `backend/src/modules/eval/suite/` — case schema, trace assertions, scoring,
-  baseline diff, sampling reducer, report
+- `backend/src/modules/eval/suite/` — case schema, trace assertions (including
+  the voice-only `voice_bridge_emitted`, `voice_turn_limit_reached`,
+  `voice_turn_outcome`), scoring, baseline diff, sampling reducer, report
 - `backend/tests/fixtures/conversation-quality/` — the dataset (corpus, seed
   routines and directives, agent, cases, `baseline.json`) and its `README.md`
-- `backend/scripts/runEvals.ts` — headless CLI that seeds fixtures, drives turns
-  through `WorkbenchReplayRunner`, scores, and gates on the baseline; every selected
-  case must have a committed baseline entry
-- `.github/workflows/conversation-quality-evals.yml` — nightly live run
+- `backend/tests/fixtures/voice-eval/` — the voice cases (bridge timing, the
+  turn limit, the outcome derivation), the one seed routine a hand-off case
+  needs (`routines.ts`), and the deterministic runner that drives the cases
+  through a real `VoiceTurnService` over a scripted chat backend
+- `backend/scripts/runEvals.ts` and `scripts/evalRunnerAdapter.ts` — headless
+  CLI that seeds fixtures (voice settings and the voice-eval routine included,
+  when a voice case is selected; publishes the agent, as a review case does),
+  drives text turns through `WorkbenchReplayRunner` and voice turns through
+  `AppDependencies.voiceTurns` (`evalRunnerAdapter.ts`'s
+  `createVoiceTurnRunnerPort`/`observeVoiceTurn`), scores, and gates on the
+  baseline; every selected case must have a committed baseline entry
+- `.github/workflows/conversation-quality-evals.yml` — nightly live run,
+  voice cases included
 
 Full-assistant runs use the same conversation turn assembly as production chat
 when the Workbench runner and a full agent-config snapshot are available.
@@ -2190,9 +2304,10 @@ Useful searches:
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/eval-suite` — deterministic
-  harness (runs in normal CI)
+  harness (runs in normal CI), including `voice-behaviour.test.ts`
 - `cd backend && pnpm run evals:ci` — live sampled run (needs Postgres,
-  `OPENAI_API_KEY`, and a running document worker); nightly, not per-PR
+  `OPENAI_API_KEY`, and a running document worker); nightly, not per-PR; runs
+  the voice cases against the real brain too
 
 Related docs:
 

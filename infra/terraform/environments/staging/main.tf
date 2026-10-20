@@ -84,8 +84,9 @@ module "radioso" {
   worker_min_instances   = 0
   worker_max_instances   = var.worker_max_instances
 
-  db_tier                = var.db_tier
-  db_deletion_protection = false
+  db_tier                           = var.db_tier
+  db_deletion_protection            = false
+  db_point_in_time_recovery_enabled = var.db_point_in_time_recovery_enabled
 
   worker_task_queue_name                    = "radioso-${var.environment}-document-processing"
   worker_crawl_task_queue_name              = "radioso-${var.environment}-website-crawls"

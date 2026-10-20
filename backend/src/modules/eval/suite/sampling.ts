@@ -148,8 +148,12 @@ export const runConversationQualitySuiteSampled = async (
 
   for (const evalCase of cases) {
     const sampleScores: SampleScore[] = [];
+    const firstSpeechSamples: number[] = [];
     for (let index = 0; index < samples; index += 1) {
       const output = await observeCase(runner, evalCase);
+      if (typeof output.voiceTurn?.firstSpeechMs === "number") {
+        firstSpeechSamples.push(output.voiceTurn.firstSpeechMs);
+      }
       const score = await scoreObservedOutput(evalCase.assertions, output, {
         workspaceId: options.workspaceId,
         question: conversationQualityCaseTurnText(evalCase),
@@ -164,6 +168,9 @@ export const runConversationQualitySuiteSampled = async (
     if (judgeRate !== undefined) {
       judgeRates.set(evalCase.id, judgeRate);
     }
+    const averageFirstSpeechMs = firstSpeechSamples.length === 0
+      ? undefined
+      : Math.round(firstSpeechSamples.reduce((total, ms) => total + ms, 0) / firstSpeechSamples.length);
     reports.push({
       caseId: evalCase.id,
       name: evalCase.name,
@@ -174,6 +181,7 @@ export const runConversationQualitySuiteSampled = async (
       passCount: reduced.passCount,
       passRate: reduced.passRate,
       flaky: reduced.flaky,
+      ...(averageFirstSpeechMs === undefined ? {} : { firstSpeechMs: averageFirstSpeechMs }),
     });
   }
 

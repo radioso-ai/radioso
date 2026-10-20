@@ -3,7 +3,14 @@ import type {
   ConversationSummaryStore,
 } from "../../modules/chat/contracts/conversationSummary.js";
 import { CHAT_BEHAVIOR } from "../../shared/domain/behaviorConfig.js";
-import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { ConversationDataRetentionRule } from "../../shared/domain/conversationDataRetention.js";
+import {
+  exportTimestamp,
+  type DataSubjectDataExporter,
+  type DataSubjectExportRecord,
+  type DataSubjectExportScope,
+} from "../../shared/domain/dataSubjectAccess.js";
+import { anyOf, currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 interface ConversationSummaryRow {
@@ -74,7 +81,7 @@ export class ConversationSummaryRepository implements ConversationSummaryStore {
           // Watermark guard: never let an older, lower-coverage regeneration
           // overwrite a newer summary that already covers more messages. An
           // expired row no longer holds a meaningful watermark (load() hides it
-          // and nothing sweeps it), so it must never block a fresh save.
+          // until the retention sweep deletes it), so it must never block a fresh save.
           .where((eb) =>
             eb.or([
               eb(
@@ -87,5 +94,55 @@ export class ConversationSummaryRepository implements ConversationSummaryStore {
           ),
       )
       .execute();
+  }
+}
+
+/**
+ * Deletes summaries past their expiry. `load` already hides one, but a hidden summary is still a
+ * copy of the conversation, so it goes rather than waiting for its conversation to.
+ */
+export class ConversationSummaryRetention implements ConversationDataRetentionRule {
+  readonly table = "conversation_summaries";
+
+  constructor(private readonly db: Db) {}
+
+  async enforce(input: { now: Date; limit: number }): Promise<number> {
+    const deleted = await this.db
+      .deleteFrom("conversation_summaries")
+      .where("session_id", "in", (eb) => eb
+        .selectFrom("conversation_summaries")
+        .select("session_id")
+        .where("expires_at", "<=", input.now)
+        .limit(input.limit)
+        .forUpdate()
+        .skipLocked())
+      .executeTakeFirst();
+    return Number(deleted.numDeletedRows);
+  }
+}
+
+/** The export's `conversation_summaries` section: the rolling summary kept for each conversation. */
+export class ConversationSummaryExporter implements DataSubjectDataExporter {
+  readonly section = "conversation_summaries";
+
+  constructor(private readonly db: Db) {}
+
+  async export(scope: DataSubjectExportScope): Promise<DataSubjectExportRecord[]> {
+    if (scope.conversationIds.length === 0) return [];
+    const rows = await this.db
+      .selectFrom("conversation_summaries as s")
+      .innerJoin("conversations as c", "c.id", "s.session_id")
+      .select(["s.session_id", "s.summary", "s.covered_message_count", "s.covered_through", "s.updated_at"])
+      .where("c.workspace_id", "=", scope.workspaceId)
+      .where((eb) => anyOf(eb.ref("s.session_id"), scope.conversationIds, "uuid[]"))
+      .orderBy("s.session_id")
+      .execute();
+    return rows.map((row) => ({
+      conversationId: row.session_id,
+      summary: row.summary,
+      coveredMessageCount: row.covered_message_count,
+      coveredThrough: exportTimestamp(row.covered_through),
+      updatedAt: exportTimestamp(row.updated_at),
+    }));
   }
 }

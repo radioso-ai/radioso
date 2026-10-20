@@ -1,12 +1,11 @@
 import {
-  QUALITY_SIGNAL_IDS,
   qualityApi,
   type LowQualityTurn,
   type LowQualityTurnsPage,
 } from '@/lib/api'
-import { ACTIVE_TRIAGE_STATES } from '@/lib/quality-signals'
+import { ACTIVE_TRIAGE_STATES, DEFAULT_QUALITY_SIGNAL_IDS } from '@/lib/quality-signals'
 
-export const QUALITY_INBOX_SOURCE_LIMIT = 25
+const QUALITY_INBOX_SOURCE_LIMIT = 25
 
 type QualityInboxSourceName =
   | 'commentedFeedback'
@@ -86,7 +85,7 @@ export const loadQualityInboxSourceAttempts = async (
     options.includeReviewSummary === false
       ? Promise.resolve({ status: 'skipped' })
       : attempt(listTurns({
-          signal: [...QUALITY_SIGNAL_IDS],
+          signal: [...DEFAULT_QUALITY_SIGNAL_IDS],
           triageStates: activeTriageStates,
           limit: 1,
         }))
@@ -142,7 +141,7 @@ export const reduceQualityInboxSnapshot = (
   reviewQueue: reduceSource(previous.reviewQueue, attempts.reviewQueue),
 })
 
-export interface QualityInboxPresentation {
+interface QualityInboxPresentation {
   turns: LowQualityTurn[]
   reviewCount: number | null
   commentedFeedbackCount: number | null

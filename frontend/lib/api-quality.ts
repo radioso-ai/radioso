@@ -60,6 +60,7 @@ export const QUALITY_SIGNAL_IDS = [
   'negative_feedback',
   'grounding_gaps',
   'skill_failures',
+  'unmet_directives',
 ] as const
 
 export type QualitySignalId = (typeof QUALITY_SIGNAL_IDS)[number]

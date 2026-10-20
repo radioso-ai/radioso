@@ -88,6 +88,20 @@ export const listedLanguagesDirective = baseDirective({
   action: "Answer only in English or Italian. When the customer writes in any other language, reply in English and say that you can help in English or Italian.",
 });
 
+/**
+ * Not seeded on the agent. The withheld-figures cases (#1575) add it through
+ * `agentConfigOverride`: an always-on rule that keeps every price out of the answer even
+ * when the Results state them. Its priority sits below the built-in
+ * `represent-organization` (80), whose "state supported facts directly" the answer must
+ * not read as a reason to quote them, and above the seeded `pricing-precision`.
+ */
+export const pricesFromTheCoursePageDirective = baseDirective({
+  name: "prices-from-the-course-page",
+  condition: { kind: "always" },
+  priority: 75,
+  action: "Leave every price, fee, and cost figure out of the answer, even when the documents state them. Point the visitor to the course's own page and to reception for current prices.",
+});
+
 export const conversationQualityDirectives: AuthoredDirective[] = [
   pricingPrecisionDirective,
   refundEmpathyDirective,

@@ -76,6 +76,11 @@ import {
   type TurnExecutionMode,
 } from "../../../shared/domain/turnExecutionMode.js";
 import type { SuppressedSkillEffect } from "../../../shared/domain/suppressedSkillEffect.js";
+import {
+  directiveAdherenceMetadataOf,
+  UNMET_DIRECTIVES_METADATA_KEY,
+  unmetDirectiveNames,
+} from "../../../shared/domain/directiveAdherence.js";
 import type { ReviewTurnFactsSource } from "../types/chatReview.js";
 import { CONTACT_SEND_ACTION_TYPE } from "./routines/contactRoutine.js";
 import {
@@ -480,6 +485,11 @@ export const buildTurnTraceForPresentation = (
       })
     : undefined;
   const directiveFirings = input.session.directiveStateStore?.capturedFiringNames() ?? [];
+  // The answer's own "this directive applied and I broke it" grades, by directive name:
+  // Quality's unmet-directives signal reads this key (#1575).
+  const unmetDirectives = unmetDirectiveNames(
+    directiveAdherenceMetadataOf(input.presentation.metadata).directiveAdherence ?? [],
+  );
   // The conversation spine is the root span; retrieval rides as a typed leaf on
   // its dispatch stage, while redacted host variables and the content-free page
   // diagnostic ride on gather. Engine always runs the assistant turn, so
@@ -555,6 +565,7 @@ export const buildTurnTraceForPresentation = (
       groundingProtocolVersion: input.presentation.groundingSummary?.protocolVersion,
       groundingDiagnostics: input.presentation.groundingDiagnostics,
       ...(directiveFirings.length > 0 ? { directiveFirings } : {}),
+      ...(unmetDirectives.length > 0 ? { [UNMET_DIRECTIVES_METADATA_KEY]: unmetDirectives } : {}),
     },
   };
   const successInput: AssistantTurnSuccessInput = {

@@ -1,7 +1,7 @@
 ---
 title: "Settings Docs"
 description: "Index and structure for the workspace control copy files that power the frontend dashboard ingestion and retrieval settings UI."
-last_updated: 2026-07-27
+last_updated: 2026-10-19
 ---
 
 # Settings Docs
@@ -11,7 +11,7 @@ Workspace settings copy for the frontend settings UI. The repo holds two identic
 ## Structure
 
 - `ingestion/`: copy for ingestion-stage controls
-- `general/`: source copy for assistant identity and startup behavior fields; the settings registry does not import these files
+- `general/`: source copy for assistant identity, startup behavior, and the workspace's conversation retention window; the settings registry does not import these files
 - `retrieval/`: copy for retrieval-stage and retrieval-owned answer evidence controls
 - one setting per file
 

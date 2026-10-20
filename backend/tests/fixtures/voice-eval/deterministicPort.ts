@@ -152,17 +152,17 @@ export const createDeterministicVoiceTurnPort = (
   brains: Readonly<Record<string, VoiceEvalBrain>> = voiceEvalBrains,
 ): ConversationQualityRunnerPort => ({
   async run(evalCase) {
-    const chatEvents = evalCase.voiceTurn?.chatEvents;
-    if (chatEvents) {
-      return runOnChatScript(evalCase, chatEvents);
+    const { voiceTurn } = evalCase;
+    if (!voiceTurn) {
+      throw new Error(`Case "${evalCase.id}" is no voice case; it cannot run through the deterministic voice port.`);
     }
-    const brainName = evalCase.voiceTurn?.scriptedBrain;
-    const brain = brainName === undefined ? undefined : brains[brainName];
-    if (brain) {
-      return runOnScriptedBrain(evalCase, brain);
+    if (voiceTurn.chatEvents) {
+      return runOnChatScript(evalCase, voiceTurn.chatEvents);
     }
-    throw new Error(
-      `Case "${evalCase.id}" names no voiceTurn.chatEvents script and no scripted brain in scriptedBrains.ts${brainName ? ` called "${brainName}"` : ""}; it cannot run through the deterministic voice port.`,
-    );
+    const brain = brains[voiceTurn.scriptedBrain];
+    if (!brain) {
+      throw new Error(`Case "${evalCase.id}" names the scripted brain "${voiceTurn.scriptedBrain}", which scriptedBrains.ts does not hold.`);
+    }
+    return runOnScriptedBrain(evalCase, brain);
   },
 });

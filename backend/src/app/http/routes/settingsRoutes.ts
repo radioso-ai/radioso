@@ -18,6 +18,7 @@ import {
   updateGeneralSettingsSchema,
   updateIngestionSettingsSchema,
   updatePlatformSettingsSchema,
+  updatePrivacySettingsSchema,
 } from "./settingsRouteSchemas.js";
 import {
   anonymousChatTokenRotationPatch,
@@ -45,6 +46,7 @@ type SettingsRouteDependencies = WorkspaceSessionDependencies & Pick<
   | "agentSurfaceExtensions"
   | "documentStorage"
   | "retrievalDefaultsProvider"
+  | "privacySettingsService"
   | "logger"
 >;
 
@@ -126,6 +128,40 @@ export const createSettingsRoutes = (dependencies: SettingsRouteDependencies): R
       next(error);
     }
   });
+
+  router.get("/privacy", workspaceSession, settingsRead, async (_req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      res.status(200).json(await dependencies.privacySettingsService.get(workspaceId));
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  // A shorter window erases conversations nobody deleted one by one, so setting it takes the
+  // permission that deleting a conversation takes, on top of managing settings.
+  router.put(
+    "/privacy",
+    workspaceSession,
+    requireWorkspacePermission(dependencies, "workspace.settings.manage"),
+    requireWorkspacePermission(dependencies, "workspace.history.delete"),
+    validateBody(updatePrivacySettingsSchema),
+    async (req, res, next) => {
+      try {
+        const { workspaceId, userId, authPrincipal } = res.locals as {
+          workspaceId: string;
+          userId?: string;
+          authPrincipal?: { type: string; userId?: unknown };
+        };
+        const actorUserId = userId
+          ?? (authPrincipal?.type === "personal_api_credential" && typeof authPrincipal.userId === "string" ? authPrincipal.userId : null);
+        const settings = await dependencies.privacySettingsService.update(workspaceId, req.body, { userId: actorUserId });
+        res.status(200).json(settings);
+      } catch (error) {
+        next(error);
+      }
+    },
+  );
 
   router.get("/document-types", workspaceSession, settingsRead, async (_req, res, next) => {
     try {

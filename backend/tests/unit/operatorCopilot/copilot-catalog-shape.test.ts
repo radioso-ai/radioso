@@ -25,6 +25,7 @@ import { evalCopilotPrimitives } from "../../../src/modules/eval/public.js";
 import { productDocsCopilotPrimitives } from "../../../src/modules/productDocs/public.js";
 import { retrievalCopilotPrimitives } from "../../../src/modules/retrieval/public.js";
 import { routineCopilotPrimitives } from "../../../src/modules/routines/public.js";
+import { privacyCopilotPrimitives } from "../../../src/modules/privacy/public.js";
 import { settingsCopilotPrimitives } from "../../../src/modules/settings/public.js";
 import { websiteCrawlerCopilotPrimitives } from "../../../src/modules/websiteCrawler/public.js";
 import { copilotResolvableToolPermissions, copilotToolPermissions } from "../../../src/modules/operatorCopilot/routes.js";
@@ -56,6 +57,7 @@ const ownerExportedPrimitiveIds = new Set([
   ...productDocsCopilotPrimitives,
   ...retrievalCopilotPrimitives,
   ...routineCopilotPrimitives,
+  ...privacyCopilotPrimitives,
   ...settingsCopilotPrimitives,
   ...websiteCrawlerCopilotPrimitives,
 ]);

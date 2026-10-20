@@ -3,6 +3,7 @@ import type {
   ConversationSummaryStore,
 } from "../../modules/chat/contracts/conversationSummary.js";
 import { CHAT_BEHAVIOR } from "../../shared/domain/behaviorConfig.js";
+import type { ConversationDataRetentionRule } from "../../shared/domain/conversationDataRetention.js";
 import {
   exportTimestamp,
   type DataSubjectDataExporter,
@@ -80,7 +81,7 @@ export class ConversationSummaryRepository implements ConversationSummaryStore {
           // Watermark guard: never let an older, lower-coverage regeneration
           // overwrite a newer summary that already covers more messages. An
           // expired row no longer holds a meaningful watermark (load() hides it
-          // and nothing sweeps it), so it must never block a fresh save.
+          // until the retention sweep deletes it), so it must never block a fresh save.
           .where((eb) =>
             eb.or([
               eb(
@@ -93,6 +94,30 @@ export class ConversationSummaryRepository implements ConversationSummaryStore {
           ),
       )
       .execute();
+  }
+}
+
+/**
+ * Deletes summaries past their expiry. `load` already hides one, but a hidden summary is still a
+ * copy of the conversation, so it goes rather than waiting for its conversation to.
+ */
+export class ConversationSummaryRetention implements ConversationDataRetentionRule {
+  readonly table = "conversation_summaries";
+
+  constructor(private readonly db: Db) {}
+
+  async enforce(input: { now: Date; limit: number }): Promise<number> {
+    const deleted = await this.db
+      .deleteFrom("conversation_summaries")
+      .where("session_id", "in", (eb) => eb
+        .selectFrom("conversation_summaries")
+        .select("session_id")
+        .where("expires_at", "<=", input.now)
+        .limit(input.limit)
+        .forUpdate()
+        .skipLocked())
+      .executeTakeFirst();
+    return Number(deleted.numDeletedRows);
   }
 }
 

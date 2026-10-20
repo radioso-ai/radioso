@@ -220,10 +220,12 @@ const declarations: readonly PolicyDeclaration[] = [
   allow("PATCH", "/api/v1/evals/cases/:id", "workspace.retrieval.query"),
   allow("DELETE", "/api/v1/evals/cases/:id", "workspace.retrieval.query"),
 
-  ...["/retrieval-defaults", "/ingestion", "/ingestion/embedding-coverage", "/document-types"]
+  ...["/retrieval-defaults", "/ingestion", "/ingestion/embedding-coverage", "/document-types", "/privacy"]
     .map((path) => allow("GET", `/api/v1/settings${path}`, "workspace.settings.read")),
   ...["/ingestion", "/document-types"]
     .map((path) => allow("PUT", `/api/v1/settings${path}`, "workspace.settings.manage")),
+  // The route also requires workspace.settings.manage; deleting history is the stronger of the two.
+  allow("PUT", "/api/v1/settings/privacy", "workspace.history.delete"),
   allow("POST", "/api/v1/settings/ingestion/embedding-model/cancel", "workspace.settings.manage"),
   allow("POST", "/api/v1/settings/ingestion/reprocess", "workspace.documents.manage"),
   sessionOnly("GET", "/api/v1/settings", "workspace.settings.read"),

@@ -123,6 +123,7 @@ import { createDocumentReviewedOperationAdapter } from "../../modules/operatorCo
 import { DocumentReviewedOperationService } from "../../modules/documents/composition.js";
 import { createIngestionSettingsCopilotProposalAdapter } from "../../modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
 import { createWorkspaceSettingCopilotProposalAdapter } from "../../modules/operatorCopilot/workspaceSettingProposalAdapter.js";
+import { createPrivacySettingCopilotProposalAdapter } from "../../modules/operatorCopilot/privacySettingProposalAdapter.js";
 import { createWebsiteCrawlCopilotProposalAdapter } from "../../modules/operatorCopilot/websiteCrawlProposalAdapter.js";
 import { createAgentCopilotProposalAdapter } from "../../modules/operatorCopilot/agentProposalAdapter.js";
 import { WebsiteAnalysisProbeService } from "../../modules/operatorCopilot/services/websiteAnalysisProbeService.js";
@@ -144,8 +145,10 @@ import { createConversationActivityComposition } from "../composition/conversati
 import { createPostgresOwnershipChangeUnitOfWork } from "../composition/conversationOwnershipChanges.js";
 import { createPostgresHeldReplyUnitOfWork } from "../composition/heldReplyUnitOfWork.js";
 import { createPostgresConversationErasureUnitOfWork } from "../composition/conversationErasure.js";
+import { ConversationErasureService, DataSubjectAccessService, PrivacySettingsService } from "../../modules/privacy/public.js";
+import { conversationRetentionPeriodicTask, createConversationRetentionSweep } from "../composition/conversationRetention.js";
+import { WorkspacePrivacySettingsRepository } from "../../db/repositories/workspacePrivacySettingsRepository.js";
 import { createPostgresDataSubjectReadUnitOfWork } from "../composition/dataSubjectAccess.js";
-import { ConversationErasureService, DataSubjectAccessService } from "../../modules/privacy/public.js";
 import { createPostgresConversationIngestUnitOfWork } from "../composition/conversationIngest.js";
 import { ConversationOwnershipService, HeldReplyService, OperatorIdentityResolver } from "../../modules/handoff/public.js";
 import { HeldReplyRepository } from "../../db/repositories/heldReplyRepository.js";
@@ -775,6 +778,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     listDirectiveTags: async ({ workspaceId, agentId }) => (await authoredDirectiveService.list(workspaceId, agentId)).map((directive) => directive.tags),
     buildStepScopeTag: scopeTag.step,
   });
+  const privacySettingsService = new PrivacySettingsService({
+    store: new WorkspacePrivacySettingsRepository(infrastructure.database.kysely),
+    audit: infrastructure.auditService,
+  });
   const copilotProposalAdapters = [
     createDirectiveCopilotProposalAdapter({ authoredDirectiveService, directiveAuthorService, agentService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely) }),
     createAgentSettingCopilotProposalAdapter({ agentService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely) }),
@@ -822,6 +829,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     }),
     createIngestionSettingsCopilotProposalAdapter({ ingestionSettings: settings.ingestionSettingsService, reviewedReceipt: createReviewedReceiptSettlement(infrastructure.database.kysely) }),
     createWorkspaceSettingCopilotProposalAdapter({ workspaceSetting: createCopilotWorkspaceSettingPort(platformSettingsService) }),
+    createPrivacySettingCopilotProposalAdapter({ privacySettings: privacySettingsService }),
     createWebsiteCrawlCopilotProposalAdapter({
       websiteCrawl: { assertCrawlUrlAllowed: assertPublicWebsiteUrl, normalizeCrawlUrl: normalizeBaseUrl, enqueue: documents.websiteCrawlJobService.enqueue.bind(documents.websiteCrawlJobService) },
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository: repositories.workspaceRepository }),
@@ -1104,6 +1112,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
         const { settings, agentId } = await platformSettingsService.getVersionedForWorkspace(workspaceId);
         return { ...settings, agentId };
       },
+      getPrivacySettings: (workspaceId) => privacySettingsService.get(workspaceId),
     },
     proposalRepository: repositories.copilotRepository,
     proposalRecovery: repositories.copilotRepository,
@@ -1256,18 +1265,37 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   // task route both call — so neither caller duplicates this wiring.
   const noticeMail = createNoticeMailAdapter(infrastructure.mailService, { appBaseUrl: env.APP_BASE_URL });
   const accountAdministrators = createAccountAdministratorDirectory(repositories.accountMembershipRepository);
-  const periodicTaskEntries = composition.periodicTaskRegistrations.map((registration) => ({
-    id: registration.id,
-    intervalMs: registration.intervalMs,
-    handle: registration.create({
-      database: infrastructure.database,
+  const conversationErasure = new ConversationErasureService({
+    unitOfWork: createPostgresConversationErasureUnitOfWork({
+      db: infrastructure.database.kysely,
       logger,
-      audit: infrastructure.auditService,
-      noticeMail,
-      accountAdministrators,
-      appBaseUrl: env.APP_BASE_URL ?? null,
+      // Call recordings the voice vendor keeps: read and locked in the erasure's transaction.
+      vendorHeldData: (trx) => voiceRecordings.erasureIn(trx),
     }),
-  }));
+    invalidation: realtimePublisherComposition.publisher,
+    auditLog: infrastructure.auditService,
+  });
+  const periodicTaskEntries = [
+    // Built in: every deployment enforces the retention its workspaces set, through the erasure.
+    conversationRetentionPeriodicTask(createConversationRetentionSweep({
+      db: infrastructure.database.kysely,
+      erasure: conversationErasure,
+      logger,
+      metrics: infrastructure.metricsRegistry,
+    })),
+    ...composition.periodicTaskRegistrations.map((registration) => ({
+      id: registration.id,
+      intervalMs: registration.intervalMs,
+      handle: registration.create({
+        database: infrastructure.database,
+        logger,
+        audit: infrastructure.auditService,
+        noticeMail,
+        accountAdministrators,
+        appBaseUrl: env.APP_BASE_URL ?? null,
+      }),
+    })),
+  ];
   // The poll worker's interval loop wraps each handle in a `PeriodicTaskRunner`; the push
   // worker's task route looks the same handle up by id instead (`periodicTaskHandlesById`
   // below), so a registration is built exactly once regardless of which runtime drives it.
@@ -1315,16 +1343,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     fetch: (url, init) => globalThis.fetch(url, init),
     metricsRegistry: infrastructure.metricsRegistry,
     logger,
-  });
-  const conversationErasure = new ConversationErasureService({
-    unitOfWork: createPostgresConversationErasureUnitOfWork({
-      db: infrastructure.database.kysely,
-      logger,
-      // Call recordings the voice vendor keeps: read and locked in the erasure's transaction.
-      vendorHeldData: (trx) => voiceRecordings.erasureIn(trx),
-    }),
-    invalidation: realtimePublisherComposition.publisher,
-    auditLog: infrastructure.auditService,
   });
 
   return {
@@ -1456,6 +1474,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     voiceRecordings: voiceRecordings.recordings,
     assistantHistoryService: chat.assistantHistoryService,
     conversationErasure,
+    privacySettingsService,
     dataSubjectAccess: new DataSubjectAccessService({
       reads: createPostgresDataSubjectReadUnitOfWork({ db: infrastructure.database.kysely }),
       erasure: conversationErasure,

@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { CONVERSATION_RETENTION_DAYS_RANGE } from "../../../modules/privacy/public.js";
 import { chunkingStrategyIds } from "../../../modules/retrieval/public.js";
 import { documentTypeFieldValueTypes } from "../../../modules/documentTypes/contracts/documentTypeCatalog.js";
 import {
@@ -170,3 +171,13 @@ export const documentedUpdateDocumentTypeCatalogSchema = updateDocumentTypeCatal
   types: z.array(documentedOperatorDocumentTypeSchema).optional(),
   disabledBuiltInTypeKeys: z.array(z.string()).optional(),
 });
+
+/** Days a conversation is kept after its last activity; null keeps conversations until they are deleted. */
+const conversationRetentionDaysSchema = z.number().int()
+  .min(CONVERSATION_RETENTION_DAYS_RANGE.min)
+  .max(CONVERSATION_RETENTION_DAYS_RANGE.max)
+  .nullable();
+
+export const updatePrivacySettingsSchema = z.object({
+  conversationRetentionDays: conversationRetentionDaysSchema,
+}).strict();

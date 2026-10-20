@@ -12,6 +12,7 @@ import { AssistantProfileSection } from '@/components/dashboard/settings/assista
 import { AssistantRoutinesSection } from '@/components/dashboard/settings/assistant-routines-section'
 import { ChatChannelSection } from '@/components/dashboard/settings/chat-channel-section'
 import { ConnectorSetupDialog } from '@/components/dashboard/documents/connector-setup-dialog'
+import { ConversationRetentionCard } from '@/components/dashboard/settings/conversation-retention-card'
 import { EmailChannelCard } from '@/components/dashboard/settings/email-channel-card'
 import { McpChannelCard } from '@/components/dashboard/settings/mcp-channel-card'
 import { SlackChannelCard } from '@/components/dashboard/settings/slack-channel-card'
@@ -900,6 +901,8 @@ export function WorkspaceAssistantChannelsTab({
                 {renameError ? <p className="text-sm text-destructive">{renameError}</p> : null}
               </div>
             </SettingsCard>
+
+            <ConversationRetentionCard id="data-retention" />
 
             <WebhookDestinationsPanel onSaveStateChange={onSaveStateChange} />
 

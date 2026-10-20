@@ -39,6 +39,7 @@ export const operationPermissionRequirements: Readonly<Record<string, readonly A
   deleteDocument: ["workspace.documents.manage"],
   updateIngestionSettings: ["workspace.settings.manage"],
   updatePlatformSettings: ["workspace.settings.manage"],
+  updatePrivacySettings: ["workspace.settings.manage", "workspace.history.delete"],
   crawlWebsiteDocuments: ["workspace.documents.manage"],
   getEmailChannel: ["workspace.settings.read"],
   getEmailMailbox: ["workspace.settings.read"],

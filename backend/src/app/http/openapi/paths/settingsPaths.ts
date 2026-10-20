@@ -302,6 +302,41 @@ export const registerSettingsPaths = (
 
   registry.registerPath({
     method: "get",
+    path: "/api/v1/settings/privacy",
+    tags: ["Settings"],
+    summary: "Read the workspace's privacy settings",
+    operationId: "getPrivacySettings",
+    description: "How long the workspace keeps conversations. Requires workspace.settings.read.",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    responses: {
+      200: { description: "The workspace's privacy settings", content: { "application/json": { schema: schemas.PrivacySettingsSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      403: { description: "Caller lacks workspace.settings.read", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "put",
+    path: "/api/v1/settings/privacy",
+    tags: ["Settings"],
+    summary: "Set how long the workspace keeps conversations",
+    operationId: "updatePrivacySettings",
+    description:
+      "Sets the conversation retention window. A conversation with no update and no message for that many days is erased by a sweep that runs every 15 minutes, with every record derived from it, as `DELETE /api/v1/history/chat/{conversationId}` erases one; each batch records one `conversation.retention.enforced` audit event with counts only. Null, the default, keeps conversations until someone deletes them. Requires workspace.settings.manage and workspace.history.delete. There is no undo for what the sweep erases.",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      body: { required: true, content: { "application/json": { schema: schemas.UpdatePrivacySettingsRequestSchema } } },
+    },
+    responses: {
+      200: { description: "The saved privacy settings", content: { "application/json": { schema: schemas.PrivacySettingsSchema } } },
+      400: { description: "Request validation failed: the window is not whole days from 7 to 3650, or null", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      403: { description: "Caller lacks workspace.settings.manage or workspace.history.delete", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
     path: "/api/v1/settings/document-types",
     tags: ["Settings"],
     summary: "Read the workspace document type catalog used by metadata extraction",

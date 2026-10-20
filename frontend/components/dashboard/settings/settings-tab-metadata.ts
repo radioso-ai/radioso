@@ -25,6 +25,11 @@ export const settingsTabMetadata: Record<SettingsTab, SettingsTabDescriptor> = {
         summary: 'Organization label, workspace naming, and destructive actions.',
       },
       {
+        id: 'data-retention',
+        label: 'Data retention',
+        summary: 'How long conversations are kept.',
+      },
+      {
         id: 'webhook-destinations',
         label: 'Webhook destinations',
         summary: 'Reusable signed endpoints that routines can export completion data to.',

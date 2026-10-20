@@ -16,6 +16,8 @@ import {
 } from "../../src/modules/chat/services/groundedAnswerEnvelope.js";
 import {
   createDirectiveAdherenceSideChannel,
+  directiveAdherenceMetadataOf,
+  unmetDirectiveNames,
   type DirectiveAdherenceTally,
 } from "../../src/shared/domain/directiveAdherence.js";
 import { RetrievalAnswerComposer } from "../../src/modules/chat/services/retrievalTurnSkill.js";
@@ -616,6 +618,54 @@ describe("retrieval answer envelope v2", () => {
       }],
       ungradedDirectives: ["Be concise"],
     });
+  });
+
+  // #1575 round 2: adherence resolution moved into the branch that ships a streamed
+  // answer (not just the non-streaming path above). A streamed grounded answer that
+  // ships must carry the same commitment, ungraded rule, and unmet grade, tallied once.
+  it("carries a streamed answer's directive commitment, ungraded rule, and unmet grade into trace metadata, tallied once", async () => {
+    const session = baseSession();
+    session.directiveSteering = {
+      rules: [
+        { id: "d1", directiveName: "prices-from-the-course-page", action: "Leave out every figure.", source: "directive", lifespan: "response" },
+        { id: "d2", directiveName: "Be concise", action: "Keep the response concise.", source: "directive", lifespan: "response" },
+      ],
+      matches: [],
+      omissions: [],
+    };
+    const { composer, adherenceTallies } = buildComposer(JSON.stringify({
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "the workshop fee",
+      outcome: "answer",
+      adherencePlan: [
+        { rule: "d1", commitment: "leave out every figure; point to the course page" },
+        { rule: "d2", commitment: "two sentences" },
+      ],
+      answer: "The fees are on the workshop page[[1]].",
+      v: 2,
+      claims: [[1]],
+      suggestions: [],
+      grounding: "degraded",
+      // d1 is graded unsatisfied; d2 is rendered but returns no grade at all.
+      adherence: [{ rule: "d1", satisfied: false, applicable: true, note: "quoted a figure anyway" }],
+    }));
+
+    const { result } = await drain(
+      composer.streamAnswer(session, "How much is the workshop?", undefined, undefined),
+    );
+
+    const adherence = directiveAdherenceMetadataOf(result.finalPresentation.metadata);
+    expect(adherence.directiveAdherence).toEqual([{
+      directive: "prices-from-the-course-page",
+      ruleId: "d1",
+      commitment: "leave out every figure; point to the course page",
+      satisfied: false,
+      applicable: true,
+      note: "quoted a figure anyway",
+    }]);
+    expect(adherence.ungradedDirectives).toEqual(["Be concise"]);
+    expect(unmetDirectiveNames(adherence.directiveAdherence ?? [])).toEqual(["prices-from-the-course-page"]);
+    expect(adherenceTallies()).toHaveLength(1);
   });
 
   it("lets retrieval evidence answer even when turn planning marks the request outside scope", async () => {

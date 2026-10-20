@@ -11,6 +11,7 @@ import type { ChatResponse, ChatReviewResult } from "../../src/modules/chat/cont
 import { AnswerCoverageHeadRecorder } from "../../src/modules/chat/services/answerCoverageHeadRecorder.js";
 import { ChatService, type ChatServiceOptions } from "../../src/modules/chat/services/chatService.js";
 import { buildChatTurnRuntime } from "../../src/modules/chat/services/chatTurnRuntime.js";
+import { createRouteScopedDirectiveSteering } from "../../src/modules/chat/services/routeScopedDirectiveSteering.js";
 import { MissingFallbackReplyComposer } from "../../src/modules/chat/services/fallbackReplyComposer.js";
 import type { RetrievalTurnPort } from "../../src/modules/chat/services/retrievalTurnDispatch.js";
 import { publishedDraftReply } from "../../src/modules/chat/services/reviewDraft.js";
@@ -21,7 +22,10 @@ import {
   type ConversationQualityObservedOutput,
   type ConversationQualityRunnerPort,
 } from "../../src/modules/eval/suite/index.js";
+import type { Directive } from "../../src/modules/directives/public.js";
 import type { RetrievalPipelineRequest, RetrievalPipelineResult } from "../../src/modules/retrieval/public.js";
+import { DefaultAllowCapabilityPolicy } from "../../src/shared/domain/capabilityPolicy.js";
+import { MetricsRegistry } from "../../src/shared/observability/metrics/metricsRegistry.js";
 import { CQ_AGENT_ID, CQ_WORKSPACE_ID } from "../fixtures/conversation-quality/index.js";
 import { conversationQualityCorpus, REFUND_POLICY_DOC_ID } from "../fixtures/conversation-quality/corpus.js";
 import {
@@ -32,56 +36,60 @@ import {
   publishedRevisionResolverFixture,
 } from "./fakes.js";
 
-const refundPolicy = conversationQualityCorpus.find((document) => document.id === REFUND_POLICY_DOC_ID)!;
-
-/** Retrieval that always finds the seed refund policy, so every turn is a grounded retrieval turn. */
-const refundPolicyRetrieval = (): RetrievalTurnPort => ({
-  async interpret(request) {
-    return {
-      request,
-      traceStartedAtMs: Date.now(),
-      context: { result: {} as never, startedAt: Date.now(), durationMs: 0 },
-      interpretation: { startedAt: Date.now(), durationMs: 0 },
-    };
-  },
-  async dispatch(input) {
-    const request: RetrievalPipelineRequest = input.interpreted.request;
-    return {
-      rewrittenQuery: request.query,
-      contexts: [{
-        chunkId: "chunk-refund-policy",
-        documentId: REFUND_POLICY_DOC_ID,
-        title: refundPolicy.title,
-        content: refundPolicy.content,
-        promptPosition: 0,
-        similarity: 0.8,
-        fusedScore: 0.8,
-        semanticScore: 0.8,
-        lexicalScore: 0.8,
-        lexicalRankScore: 0.3,
-        metadata: {},
-      }],
-      systemPrompt: "system",
-      prompt: "prompt",
-      citations: [],
-      responseIdentity: request.responseIdentity ?? null,
-      responseSettings: {
-        citationDisplayEnabled: true,
-        suggestedQuestionsEnabled: false,
-        suggestedQuestionsCount: 0,
-        responseLanguagePolicy: "match_user_question",
-      },
-      diagnostics: {
-        execution: { surface: "assistant", path: "assistant_retrieval", retrievalInvoked: true },
-        rewriteStatus: "skipped",
-        rerankStatus: "skipped",
-        finalContextCount: 1,
-        retrievalSkipped: false,
-      },
-      trace: { traceId: "cq-retrieval", startedAt: new Date().toISOString(), stages: [], links: [] },
-    } as unknown as RetrievalPipelineResult;
-  },
-});
+/** Retrieval that always finds one seed document, so every turn is a grounded retrieval turn. */
+const singleDocumentRetrieval = (documentId: string): RetrievalTurnPort => {
+  const document = conversationQualityCorpus.find((candidate) => candidate.id === documentId);
+  if (!document) {
+    throw new Error(`No conversation-quality document ${documentId}`);
+  }
+  return {
+    async interpret(request) {
+      return {
+        request,
+        traceStartedAtMs: Date.now(),
+        context: { result: {} as never, startedAt: Date.now(), durationMs: 0 },
+        interpretation: { startedAt: Date.now(), durationMs: 0 },
+      };
+    },
+    async dispatch(input) {
+      const request: RetrievalPipelineRequest = input.interpreted.request;
+      return {
+        rewrittenQuery: request.query,
+        contexts: [{
+          chunkId: `chunk-${document.id}`,
+          documentId: document.id,
+          title: document.title,
+          content: document.content,
+          promptPosition: 0,
+          similarity: 0.8,
+          fusedScore: 0.8,
+          semanticScore: 0.8,
+          lexicalScore: 0.8,
+          lexicalRankScore: 0.3,
+          metadata: {},
+        }],
+        systemPrompt: "system",
+        prompt: "prompt",
+        citations: [],
+        responseIdentity: request.responseIdentity ?? null,
+        responseSettings: {
+          citationDisplayEnabled: true,
+          suggestedQuestionsEnabled: false,
+          suggestedQuestionsCount: 0,
+          responseLanguagePolicy: "match_user_question",
+        },
+        diagnostics: {
+          execution: { surface: "assistant", path: "assistant_retrieval", retrievalInvoked: true },
+          rewriteStatus: "skipped",
+          rerankStatus: "skipped",
+          finalContextCount: 1,
+          retrievalSkipped: false,
+        },
+        trace: { traceId: "cq-retrieval", startedAt: new Date().toISOString(), stages: [], links: [] },
+      } as unknown as RetrievalPipelineResult;
+    },
+  };
+};
 
 /**
  * Coverage persistence for the head recorder. Wired so the review facts carry the turn's
@@ -167,6 +175,10 @@ const observedOutputFromReviewResult = (
 export interface ConversationQualityChatHarnessOptions {
   /** The model's raw reply to the answer call: a canonical answer envelope for a grounded turn. */
   reply: string;
+  /** The seed document every turn retrieves; the refund policy when absent. */
+  retrievedDocumentId?: string;
+  /** Directives registered for every turn, as composition registers the built-ins; none when absent. */
+  directives?: Directive[];
 }
 
 /**
@@ -179,6 +191,7 @@ export interface ConversationQualityChatHarnessOptions {
 export const conversationQualityChatHarness = (options: ConversationQualityChatHarnessOptions) => {
   const conversationRepository = new InMemoryConversationRepository();
   const messageRepository = new InMemoryMessageRepository();
+  const metrics = new MetricsRegistry();
   const chatGateway: ChatServiceOptions["chatGateway"] = {
     answer: vi.fn(async () => options.reply),
     async *streamAnswer() {
@@ -196,13 +209,22 @@ export const conversationQualityChatHarness = (options: ConversationQualityChatH
   const service = new ChatService({
     conversationRepository,
     messageRepository,
-    retrievalTurn: refundPolicyRetrieval(),
+    retrievalTurn: singleDocumentRetrieval(options.retrievedDocumentId ?? REFUND_POLICY_DOC_ID),
+    ...(options.directives
+      ? {
+          directiveSteering: createRouteScopedDirectiveSteering({
+            capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+            registrations: options.directives.map((directive) => ({ directive })),
+          }),
+        }
+      : {}),
     chatGateway,
     auditService: createAuditService(),
     turnRuntime: buildChatTurnRuntime({
       chatGateway,
       fallbackReplyComposer: new MissingFallbackReplyComposer(),
       skillOutcomeCapabilities: { supportsGroundedAnswer: () => true },
+      metrics,
     }),
     agentRevisionRuntimeResolver: publishedRevisionResolverFixture(),
     turnRouter: { classify: async () => ({ route: "retrieval", framing: { isIdentityQuestion: false } }) },
@@ -263,24 +285,32 @@ export const conversationQualityChatHarness = (options: ConversationQualityChatH
     },
   };
 
-  return { service, port, chatGateway, routineStore, routineProvider, messageRepository };
+  return { service, port, chatGateway, routineStore, routineProvider, messageRepository, metrics };
 };
 
-/** The canonical (non-streaming) answer envelope a grounded turn's model call returns. */
+/**
+ * The canonical (non-streaming) answer envelope a grounded turn's model call returns, in
+ * schema order: the verdict head, the commitments to the directive rules, the answer, its
+ * claims, and the grades.
+ */
 export const canonicalAnswerEnvelope = (input: {
   coverage: string;
   requestFocus: string;
   outcome: "answer" | "no_support";
+  adherencePlan?: Array<{ rule: string; commitment: string }>;
   answer: string;
   claims: number[][];
   grounding: "grounded" | "degraded";
+  adherence?: Array<{ rule: string; satisfied: boolean; applicable: boolean; note: string }>;
 }): string => JSON.stringify({
   coverage: input.coverage,
   requestFocus: input.requestFocus,
   outcome: input.outcome,
+  adherencePlan: input.adherencePlan ?? [],
   answer: input.answer,
   v: 2,
   claims: input.claims,
   suggestions: [],
   grounding: input.grounding,
+  adherence: input.adherence ?? [],
 });

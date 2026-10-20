@@ -12,11 +12,11 @@ repo-committed regression suite you run from the CLI.
 
 | File | What it is |
 |------|------------|
-| `corpus.ts` | 7 seed documents with quotable facts (30-day refund, $49 Pro plan, SOC 2 Type II, and two residential courses priced differently) |
+| `corpus.ts` | 8 seed documents with quotable facts (30-day refund, $49 Pro plan, SOC 2 Type II, two residential courses priced differently, and a mountain yoga course whose page lists its fees in euro) |
 | `routines.ts` | 2 seed `RoutineDefinition`s: `contact-support`, `book-demo` |
-| `directives.ts` | 4 seed `AuthoredDirective`s: pricing-precision, refund-empathy, security-precision, maximally-helpful; plus `contact-form-only`, which only the `routine-step-outranks-always-on-handoff-directive` case adds, and `listed-languages`, which only the `quick-reply-unlisted-language-standing-directive` case adds, both through `agentConfigOverride` |
+| `directives.ts` | 4 seed `AuthoredDirective`s: pricing-precision, refund-empathy, security-precision, maximally-helpful; plus `contact-form-only`, which only the `routine-step-outranks-always-on-handoff-directive` case adds, `listed-languages`, which only the `quick-reply-unlisted-language-standing-directive` case adds, and `prices-from-the-course-page`, which only the two `directive-withholds-figures-*` cases add, all through `agentConfigOverride` |
 | `agent.ts` | the single seed agent (retrieval on, directives attached) all cases run against |
-| `cases.ts` | the 48 seed cases |
+| `cases.ts` | the 50 seed cases |
 | `baseline.json` | committed per-case verdicts; the run diffs against this and fails on regression |
 
 ## Assertion vocabulary
@@ -26,8 +26,8 @@ Two layers (see `src/modules/eval/suite/`):
 - **Deterministic (no LLM, gate every run):** `turn_route`, `turn_uses_skill`,
   `turn_activates_routine`, `routine_step_reached`, `routine_yielded`, `turn_asks_clarification`,
   `turn_grounding_verdict`, `turn_answer_coverage`, `turn_persists_no_reply`, `turn_reply_source`,
-  plus the product `retrieval_*`, `answer_cites_document`, `answer_contains` /
-  `answer_does_not_contain`.
+  `turn_directive_committed`, plus the product `retrieval_*`, `answer_cites_document`,
+  `answer_contains` / `answer_does_not_contain`.
 - **Semantic (LLM judge, paid/non-deterministic):** `llm_judge` — reserved for empathy,
   refusal, precision, and the quick-reply "no factual proposition" checks. The live runner
   drops them unless a case carries a tag passed with `--judge-tag`; those are graded on the
@@ -56,6 +56,29 @@ Run only these cases with:
 
 ```bash
 pnpm run evals -- --tag quick-reply
+```
+
+## Withheld-figures cases
+
+The `directive-withholds`-tagged cases add an always-on directive that keeps every price out
+of the answer, ask for a price the Results state, and assert the fixture's figures are absent.
+The Italian case asks what a residential course costs, and its page lists the fee and three
+room rates. A test in `tests/unit/eval-suite/suite-core.test.ts` drives the Italian case through
+the chat pipeline with scripted replies and checks `turn_directive_committed`: that the answer
+wrote a commitment to the directive before writing the answer, read from the compose stage.
+The live cases leave that check out, since a withholding answer can carry no citation and be
+replaced by a focused decline, which records no commitment.
+
+`directive-withholds-figures-en` is informational. It asks for the Pro plan price, which the
+seeded `pricing-precision` directive asks to quote exactly, and the answer still quotes it in
+some samples while the built-in `represent-organization` reads as "state the price". Its
+recorded rate is too low for the gate to flag a drop, so read its rate in the report rather
+than relying on the gate, until the `represent-organization` follow-up lands.
+
+Run only these cases with:
+
+```bash
+pnpm run evals -- --tag directive-withholds
 ```
 
 ## Review cases

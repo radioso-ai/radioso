@@ -146,6 +146,11 @@ describe("resolveQualitySignalPredicate", () => {
     expect(SKILL_FAILURE_STATUSES).toEqual(["failed"]);
   });
 
+  // #1575: the answer graded itself as breaking a directive that applied to the turn.
+  it("resolves unmet directives to the answer's own unsatisfied grade", () => {
+    expect(resolveQualitySignalPredicate("unmet_directives", tuples)).toEqual({ kind: "unmetDirectives" });
+  });
+
   it("resolves grounding gaps to an empty tuple set when the catalog marks nothing ungrounded", () => {
     const empty = resolveGroundedOutcomeTuples([skill("retrieval.answer", [outcome("grounded", true)])]);
     expect(resolveQualitySignalPredicate("grounding_gaps", empty)).toEqual({ kind: "actions", actions: [] });

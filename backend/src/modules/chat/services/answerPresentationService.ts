@@ -1,5 +1,6 @@
 import { findCitationAnchorGroups, stripResidualCitationSyntax } from "./citationAnchorParser.js";
-import { STRANDABLE_PUNCTUATION } from "./citationTextNormalization.js";
+import { stripCitationAnchorSyntax } from "./citationAnchorSyntax.js";
+import { removeDetachedPunctuationSpacing, STRANDABLE_PUNCTUATION } from "./citationTextNormalization.js";
 import { canonicalizeUnsourcedMarkers } from "./unsourcedMarkerCanonicalization.js";
 import { findMarkdownSplitBoundaries } from "../../../shared/text/markdownSplitBoundary.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
@@ -181,13 +182,17 @@ export class AnswerPresentationService {
       const remainderStart = Math.max(splitOffset, lastAbsorbedGroup.end);
 
       // Text between the anchors and the safe boundary belongs to the claim being closed,
-      // so it joins this segment rather than opening the next one.
-      let anchoredSpan = answer.slice(lastIndex, anchorGroup.start);
+      // so it joins this segment rather than opening the next one. Each piece between two
+      // anchors strips on its own, as one pass over the whole answer reads it: pieces from
+      // either side of an anchor never fuse into new anchor syntax.
+      const stripPiece = (start: number, end: number): string =>
+        stripCitationAnchorSyntax(answer.slice(start, end), { endsAnswer: false });
+      let anchoredSpan = stripPiece(lastIndex, anchorGroup.start);
       for (const [position, group] of absorbedGroups.entries()) {
         const nextStart = absorbedGroups[position + 1]?.start ?? remainderStart;
-        anchoredSpan += answer.slice(group.end, Math.max(group.end, nextStart));
+        anchoredSpan += stripPiece(group.end, Math.max(group.end, nextStart));
       }
-      currentText += stripResidualCitationSyntax(anchoredSpan);
+      currentText += removeDetachedPunctuationSpacing(anchoredSpan);
 
       if (relocatedPast) {
         this.metrics?.incrementCounter("chat_citation_anchor_split_relocations_total", {

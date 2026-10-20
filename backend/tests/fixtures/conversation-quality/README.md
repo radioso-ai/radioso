@@ -116,9 +116,13 @@ is the one place that reads it, for both the deterministic and the live runner.
 The cases themselves live in `tests/fixtures/voice-eval/cases.ts`, not here, because they run
 against a different agent configuration (voice turned on, with a bridge and a fallback line)
 than every other case in this directory. Whenever a run selects a voice case,
-`scripts/runEvals.ts` seeds that configuration onto the same disposable agent —
-`seedVoiceSettings` writes the voice cases' lines into the agent's own voice block — along with
-`tests/fixtures/voice-eval/routines.ts`'s one callback hand-off routine. It combines
+`scripts/runEvals.ts` seeds that configuration onto the same agent, along with
+`tests/fixtures/voice-eval/routines.ts`'s one callback hand-off routine. `seedVoiceSettings`
+writes the voice cases' lines into the agent's own voice block before any document is seeded,
+after checking the merged block as a write is checked, so an agent that cannot take them (one
+with lines in the ten languages a block holds) refuses the run by its id. Turning voice on makes
+an agent with a runtime binding callable, so a named agent (`RADIOSO_EVAL_AGENT_ID`) gets its
+own block back once the run is done; a disposable one keeps the run's. The runner combines
 `voiceEvalCases` with `conversationQualityCases` into one dataset, so a voice case's outcome sits
 in the same `baseline.json` as every other case, keyed by its own id. The routine is seeded only
 for a voice run, so a text-only run never carries its "ask for a callback" trigger alongside
@@ -132,9 +136,9 @@ exactly one of them in `voiceTurn`, so none can be written that runs nowhere:
   `voice-quick-reply-no-bridge`) runs on a fresh test composition (`createTestDependencies`, no
   HTTP app) with its own planner, retrieval, composer and voice turn policy, and only the model
   scripted: the brain of that name in `tests/fixtures/voice-eval/scriptedBrains.ts`. The agent is
-  registered the way the live run bootstraps one (`registerDisposableAgent`), published, and
-  given voice by the same `seedVoiceSettings`, and the turn goes through the live run's
-  `createVoiceTurnRunnerPort`. The brains run the voice policy on generous timing (the
+  registered the way the live run bootstraps one (`registerDisposableAgent`), given voice by the
+  same `seedVoiceSettings` and then published, in the live run's order, and the turn goes through
+  the live run's `createVoiceTurnRunnerPort`. The brains run the voice policy on generous timing (the
   composing-idle bridge at 5 seconds, the stall bridge and the limit at 30), so a loaded runner
   never races a deadline and the case asserts what the chat turn reported. The thank-you's
   composer takes 6 seconds, so a thank-you that leaves the planner's quick-reply lane bridges on
@@ -188,7 +192,8 @@ cd backend
 # One-time: point at a disposable agent. Any one works: the voice cases' lines go into its
 # voice block in English and in its default language (a case's call speaks the default), and
 # its runtime binding, recording notice, language switching and other languages' lines stay.
-# The callback routine is seeded onto it, and a repeat run reuses both idempotently.
+# The run puts the agent's own voice block back when it finishes. The callback routine is
+# seeded onto it, and a repeat run reuses it idempotently.
 export RADIOSO_EVAL_WORKSPACE_ID=... RADIOSO_EVAL_AGENT_ID=...
 node --env-file=./.env.evals --import tsx ./scripts/runEvals.ts --tag voice --samples 5 --update-baseline
 ```

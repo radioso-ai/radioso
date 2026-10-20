@@ -9,7 +9,7 @@ import { readFileSync } from "node:fs";
 
 import { closeInOrder, dependencyCloseSteps, type ClosableDependencies } from "../src/app/server/closeDependencies.js";
 import type { AppDependencies } from "../src/app/server/types.js";
-import type { AgentVoiceSettings } from "../src/modules/agents/public.js";
+import { agentVoiceSettingsInputSchema, type AgentVoiceSettings } from "../src/modules/agents/public.js";
 import {
   isDeterministicOnlyAssertion,
   type BaselineFile,
@@ -136,33 +136,53 @@ interface VoiceSettingsSeedPorts {
   agentSettings: { update(workspaceId: string, agentId: string, input: { voice: AgentVoiceSettings }): Promise<unknown> };
 }
 
+/** A seeded voice block, and how to put the agent's own back. */
+interface SeededVoiceSettings {
+  restore(): Promise<void>;
+}
+
 /**
  * Turns voice on for the seeded agent with the lines the voice cases need: a bridge line so a
  * case that searches has one to speak, and the fallback line `evalRunnerAdapter.ts`'s
  * `observeVoiceTurn` reads a turn's whole spoken text against to tell the turn limit apart from
  * a real answer (see `VOICE_EVAL_FALLBACK_LINE`). A case's call reports no language, so it speaks
- * the agent's default language, else English: the lines go in both. The block is written whole,
- * so they go over the agent's own: an agent `RADIOSO_EVAL_AGENT_ID` names keeps its runtime
- * binding, recording notice, language switching and its lines in every other language. No case
- * starts a vendor session, so none needs a runtime.
+ * the agent's default language, else English: the lines go in both, merged into the agent's own
+ * lines, and the rest of its block (runtime binding, recording notice, language switching) stays.
+ *
+ * The merged block is checked as a write is before anything is written, so an agent that cannot
+ * take the lines (one with lines in the most languages a block holds) is refused by name. Turning
+ * voice on makes a named agent with a runtime callable, so `restore` writes its own block back
+ * once the run is done; a disposable agent's block stays as the run left it.
  */
 export const seedVoiceSettings = async (
   ports: VoiceSettingsSeedPorts,
-  target: { workspaceId: string; agentId: string },
-): Promise<void> => {
+  target: { workspaceId: string; agentId: string; disposable: boolean },
+): Promise<SeededVoiceSettings> => {
   const agent = await ports.agents.findByIdAndWorkspaceId(target.agentId, target.workspaceId);
   if (!agent) {
     throw new Error(`Agent ${target.agentId} not found in workspace ${target.workspaceId}.`);
   }
+  const ownVoice = agent.voice;
   const lines = voiceEvalVoiceLines([...new Set([VOICE_EVAL_LOCALE, agent.assistantDefaultLocale ?? VOICE_EVAL_LOCALE])]);
-  await ports.agentSettings.update(target.workspaceId, target.agentId, {
-    voice: {
-      ...agent.voice,
-      enabled: lines.enabled,
-      bridgeLines: { ...agent.voice.bridgeLines, ...lines.bridgeLines },
-      fallbackLine: { ...agent.voice.fallbackLine, ...lines.fallbackLine },
+  const seeded: AgentVoiceSettings = {
+    ...ownVoice,
+    enabled: lines.enabled,
+    bridgeLines: { ...ownVoice.bridgeLines, ...lines.bridgeLines },
+    fallbackLine: { ...ownVoice.fallbackLine, ...lines.fallbackLine },
+  };
+  const check = agentVoiceSettingsInputSchema.safeParse(seeded);
+  if (!check.success) {
+    const problems = check.error.issues.map((issue) => `${issue.path.join(".")}: ${issue.message}`).join("; ");
+    throw new Error(`Agent ${target.agentId} cannot take the voice cases' lines (${problems}); point the run at another agent.`);
+  }
+  await ports.agentSettings.update(target.workspaceId, target.agentId, { voice: seeded });
+  return {
+    restore: async () => {
+      if (!target.disposable) {
+        await ports.agentSettings.update(target.workspaceId, target.agentId, { voice: ownVoice });
+      }
     },
-  });
+  };
 };
 
 /**

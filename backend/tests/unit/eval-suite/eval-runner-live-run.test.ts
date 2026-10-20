@@ -181,7 +181,7 @@ describe("live runner baseline file", () => {
 });
 
 describe("live runner agent preparation", () => {
-  const target = { workspaceId: "11111111-1111-4111-8111-111111111111", agentId: "22222222-2222-4222-8222-222222222222" };
+  const named = { workspaceId: "11111111-1111-4111-8111-111111111111", agentId: "22222222-2222-4222-8222-222222222222", disposable: false };
   const evalLines = { bridge: VOICE_EVAL_BRIDGE_LINES, fallback: VOICE_EVAL_FALLBACK_LINE };
   const operatorVoice: AgentVoiceSettings = {
     enabled: false,
@@ -191,16 +191,19 @@ describe("live runner agent preparation", () => {
     runtime: { vendor: "elevenlabs", agentId: "agent_operator_bound", region: "eu" },
     languageSwitching: true,
   };
-  const seedOnto = async (agent: { voice: AgentVoiceSettings; assistantDefaultLocale: string | null }) => {
+  const seedOnto = async (
+    agent: { voice: AgentVoiceSettings; assistantDefaultLocale: string | null },
+    target: { workspaceId: string; agentId: string; disposable: boolean } = named,
+  ) => {
     const update = vi.fn(async () => undefined);
-    await seedVoiceSettings({ agents: { findByIdAndWorkspaceId: async () => agent }, agentSettings: { update } }, target);
-    return update;
+    const seeded = await seedVoiceSettings({ agents: { findByIdAndWorkspaceId: async () => agent }, agentSettings: { update } }, target);
+    return { update, seeded };
   };
 
   it("writes the voice cases' lines over the agent's own voice block, keeping its runtime, recording notice, language switching and other lines", async () => {
-    const update = await seedOnto({ voice: operatorVoice, assistantDefaultLocale: null });
+    const { update } = await seedOnto({ voice: operatorVoice, assistantDefaultLocale: null });
 
-    expect(update).toHaveBeenCalledExactlyOnceWith(target.workspaceId, target.agentId, {
+    expect(update).toHaveBeenCalledExactlyOnceWith(named.workspaceId, named.agentId, {
       voice: {
         ...operatorVoice,
         enabled: true,
@@ -211,14 +214,47 @@ describe("live runner agent preparation", () => {
   });
 
   it("writes the lines in the agent's default language too, which a call with no language of its own speaks in", async () => {
-    const update = await seedOnto({ voice: operatorVoice, assistantDefaultLocale: "it-IT" });
+    const { update } = await seedOnto({ voice: operatorVoice, assistantDefaultLocale: "it-IT" });
 
-    expect(update).toHaveBeenCalledExactlyOnceWith(target.workspaceId, target.agentId, {
+    expect(update).toHaveBeenCalledExactlyOnceWith(named.workspaceId, named.agentId, {
       voice: expect.objectContaining({
         bridgeLines: { ...operatorVoice.bridgeLines, en: evalLines.bridge, "it-IT": evalLines.bridge },
         fallbackLine: { ...operatorVoice.fallbackLine, en: evalLines.fallback, "it-IT": evalLines.fallback },
       }),
     });
+  });
+
+  it("puts a named agent's voice block back as it was once the run is done", async () => {
+    const { update, seeded } = await seedOnto({ voice: operatorVoice, assistantDefaultLocale: null });
+
+    await seeded.restore();
+
+    expect(update).toHaveBeenCalledTimes(2);
+    expect(update).toHaveBeenLastCalledWith(named.workspaceId, named.agentId, { voice: operatorVoice });
+  });
+
+  it("leaves a disposable agent's voice block as the run left it", async () => {
+    const { update, seeded } = await seedOnto({ voice: operatorVoice, assistantDefaultLocale: null }, { ...named, disposable: true });
+
+    await seeded.restore();
+
+    expect(update).toHaveBeenCalledOnce();
+  });
+
+  it("refuses, naming the agent, a voice block that cannot take the lines, before writing anything", async () => {
+    const tenLanguages = ["de", "fr", "es", "it", "pt", "nl", "sv", "da", "fi", "pl"];
+    const crowded: AgentVoiceSettings = {
+      ...operatorVoice,
+      bridgeLines: Object.fromEntries(tenLanguages.map((tag) => [tag, { acknowledge: [], check: ["Un momento."] }])),
+      fallbackLine: Object.fromEntries(tenLanguages.map((tag) => [tag, "Un momento, per favore."])),
+    };
+    const update = vi.fn(async () => undefined);
+
+    await expect(seedVoiceSettings({
+      agents: { findByIdAndWorkspaceId: async () => ({ voice: crowded, assistantDefaultLocale: null }) },
+      agentSettings: { update },
+    }, named)).rejects.toThrow(new RegExp(`${named.agentId}.*10 locales`, "u"));
+    expect(update).not.toHaveBeenCalled();
   });
 
   it("refuses an agent it cannot find rather than writing a voice block onto nothing", async () => {
@@ -227,7 +263,7 @@ describe("live runner agent preparation", () => {
     await expect(seedVoiceSettings({
       agents: { findByIdAndWorkspaceId: async () => null },
       agentSettings: { update },
-    }, target)).rejects.toThrow(target.agentId);
+    }, named)).rejects.toThrow(named.agentId);
     expect(update).not.toHaveBeenCalled();
   });
 });

@@ -1,7 +1,7 @@
 import { PLAN_CATALOG } from "@radioso/plan-catalog";
 
 import type { ApplicationDatabaseMigrator } from "../radiosoModuleTypes.js";
-import { profileSeedFromPlan } from "./planCatalogSeed.js";
+import { SUPERSEDED_PROFILE_COLUMNS, SUPERSEDED_PROFILE_SEEDS, profileSeedFromPlan, seedValueForColumn } from "./planCatalogSeed.js";
 
 // NOTE: the durable usage-event ledger (usage_events / embedding_usage_items /
 // usage_daily_rollups) is now owned by OSS (backend migration
@@ -270,8 +270,8 @@ export const usageLimitMigrator: ApplicationDatabaseMigrator = {
       ON CONFLICT (key) DO NOTHING
     `);
 
-    // One profile per @radioso/plan-catalog plan (comet/satellite/planet). `DO NOTHING`
-    // on conflict so a console edit to a seeded profile is never reverted by a later boot.
+    // One profile per @radioso/plan-catalog plan. `DO NOTHING` on conflict so a console edit
+    // to a seeded profile is never reverted by a later boot.
     for (const plan of PLAN_CATALOG.plans) {
       const seed = profileSeedFromPlan(plan, PLAN_CATALOG.repliesPerConversation);
       await database.query(
@@ -300,6 +300,21 @@ export const usageLimitMigrator: ApplicationDatabaseMigrator = {
           seed.repliesPerConversation,
         ],
       );
+      // The insert above never touches an existing profile, so a catalog change to one of these
+      // caps reaches existing profiles only here, and only where a profile still holds a value an
+      // earlier catalog seeded. The column names come from a fixed list, never from input.
+      for (const column of SUPERSEDED_PROFILE_COLUMNS) {
+        const superseded = SUPERSEDED_PROFILE_SEEDS[column][plan.id] ?? [];
+        if (superseded.length === 0) continue;
+        await database.query(
+          `
+          UPDATE ee_usage_limit_profiles
+          SET ${column} = $2, updated_at = NOW()
+          WHERE key = $1 AND ${column} = ANY($3::bigint[])
+          `,
+          [seed.key, seedValueForColumn(seed, column), superseded],
+        );
+      }
     }
   },
 };

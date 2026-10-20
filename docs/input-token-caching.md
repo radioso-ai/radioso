@@ -1,7 +1,7 @@
 ---
 title: "Input Token Caching"
 description: "How Radioso makes stable model input eligible for provider token caching and how to evaluate the result."
-last_updated: 2026-10-12
+last_updated: 2026-10-19
 ---
 
 # Input Token Caching
@@ -16,7 +16,7 @@ The eligible prefix holds standing instructions and the agent's own configuratio
 - **Grounded answers.** The agent's base instructions come first, followed by the coverage verdict, coverage guidance, and output envelope rules. Turn steering, an alternative-interpretation offer, the follow-up question rules, and a routine lead-back follow. The base instructions include the response language and the current UTC date, so this prefix is shared by turns that answer in the same language on the same day.
 - **Agent tool steps.** The agent's instructions, protocol, and tool catalog form the prefix of every step. The transcript follows.
 
-Response schemas are part of what a provider compares. The turn planner represents each routine candidate by a position (`r1`, `r2`, …) rather than its real id, up to the bound on routine candidates a single call accepts, so the schema is the same whatever candidates the embedding prefilter returned this turn or what order it returned them in. It still changes between a turn that has routine candidates and one that has none, between a turn that has directive candidates and one that has none, and between a channel that advertises page-read and one that doesn't. Directive names stay a sorted enum of this turn's candidate names — stable turn to turn because that candidate set comes from the agent's configuration, not the query. A grounded answer's directive-adherence attestation is a plain id string present on every turn, whether or not this turn renders any attestable rule; resolving it drops an id the model invented or one not actually rendered this turn.
+Response schemas are part of what a provider compares. The turn planner represents each routine candidate by a position (`r1`, `r2`, …) rather than its real id, up to the bound on routine candidates a single call accepts, so the schema is the same whatever candidates the embedding prefilter returned this turn or what order it returned them in. It still changes between a turn that has routine candidates and one that has none, between a turn that has directive candidates and one that has none, and between a channel that advertises page-read and one that doesn't. Directive names stay a sorted enum of this turn's candidate names — stable turn to turn because that candidate set comes from the agent's configuration, not the query. A grounded answer's directive-adherence fields, the commitment it writes before `answer` and the attestation after, key each rule by a plain id string and are present on every turn, whether or not this turn renders any attestable rule; resolving them drops an id the model invented or one not actually rendered this turn.
 
 A change to the standing instructions, directive conditions, tool catalog, response schema, provider, model, or API mode produces a different prefix, and the next request starts a fresh cache entry.
 

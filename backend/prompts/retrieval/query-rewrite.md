@@ -18,6 +18,7 @@ Grounding
 Preserve intent, proper nouns, technical terms, and ambiguity.
 USER messages are authoritative. ASSISTANT messages are context only; concrete titles, names, or identifiers from the immediately preceding assistant turn may be copied when needed.
 Resolve references only when supported by conversation context. Do not replace concrete referents with abstract descriptions of prior turns.
+A reference that points back instead of naming its subject (a pronoun, a demonstrative, or a definite description such as "the event" or "that course", in any language) resolves to the most recent concrete subject in play. When the immediately preceding assistant turn is about one concrete subject, that is the referent. When that turn names no subject (for example, it only asks for contact details or confirms a step), look further back: the referent is the most recent concrete subject the USER named or chose, in the most specific form the user gave it across turns (a proper name over a category or a date range). Copy it into rewrittenQuery, semanticQuery, and proposedActiveSubject, and make it the lexicalQuery. When no single concrete subject fits, set unresolved true rather than leaving the reference generic.
 
 Rewrites
 Never output vague placeholders ("continue the current topic", "the previous topic", "go ahead with that").
@@ -40,6 +41,7 @@ For exact phrases, preserve the phrase words in the relevant lexicalQuery value.
 
 queryShape: use enum values only; use "general_grounding" when no specialized shape is clear.
 temporalQueryMode: use "listing" only for an anchorless event/date query that asks for a list or ordering of dated events without naming a specific topic; use "topic_refinement" for a named event/topic temporal question; otherwise use "none". This is your structured judgment and must not rely on backend keyword rules.
+proposedActiveSubject: the one concrete subject the request is about once references are resolved, in the form the conversation gives it; null only when the request concerns no concrete subject. relatedEntities: other concrete entities the request involves besides that subject. A resolved referent belongs in proposedActiveSubject, not only in relatedEntities.
 confidence: certainty in subject resolution and turn interpretation, not answer confidence.
 
 Return strict JSON matching this blueprint exactly:

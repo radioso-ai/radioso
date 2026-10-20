@@ -1,6 +1,13 @@
 import { isLocaleTag } from "../../../../shared/domain/locale.js";
-import type { VoiceTransport } from "../../domain.js";
-import { readLanguageSwitch, type LanguageSwitchTool, type TurnLanguageReading } from "./languageSwitches.js";
+import type { VoiceLanguageSwitchOffer, VoiceLanguageSwitchResult, VoiceTransport } from "../../domain.js";
+import {
+  offersLanguageSwitch,
+  readLanguageSwitch,
+  refusedSwitchLanguages,
+  switchFollowUpOf,
+  type LanguageSwitchTool,
+  type TurnLanguageReading,
+} from "./languageSwitches.js";
 import type { CompletionsMessage } from "./requestSchema.js";
 
 /** Where one value travels on a request: a header, or a path into the JSON body. */
@@ -67,12 +74,21 @@ const COMPLETIONS_DIALECTS = new Map<string, CompletionsDialect>([
     // The `language_detection` system tool switches the call's voice and transcription to the
     // language its `language` argument names (an ISO 639-1 code such as "it"), as an OpenAI tool
     // call: https://elevenlabs.io/docs/eleven-agents/customization/tools/system-tools/language-detection
-    // Its result follows the conversation API's system tool result: `is_error`, and the
-    // `LanguageDetectionToolResultModel` with `status: "success"`
-    // (https://elevenlabs.io/docs/api-reference/conversations/get). Unverified on the custom-LLM
-    // wire: Radioso calls no tools, so no live request has carried one.
+    // Observed 2026-10-18 (live probe, an agent with the tool and an `it` preset): every request
+    // offers it in `tools`. A reply that is only the call (`finish_reason: "tool_calls"`, no
+    // content: content beside it is spoken twice) is run, and about 550 ms later the vendor asks
+    // again with the call replayed under its id prefixed `fc_`, then its result as the newest
+    // message: JSON `{"result_type":"language_detection_success","status":"success",…}`, or plain
+    // text for a language outside the presets ("Invalid language. Keep speaking English."). What
+    // that follow-up streams is what the caller hears; the user message is not asked again.
     turnLocaleFrom: [{
-      languageSwitch: { tool: "language_detection", argument: "language", result: { field: "status", success: "success", errorFlag: "is_error" } },
+      languageSwitch: {
+        tool: "language_detection",
+        argument: "language",
+        reasonArgument: "reason",
+        replayedCallIdPrefix: "fc_",
+        result: { field: "status", success: "success", errorFlag: "is_error" },
+      },
     }],
     transportDefault: "web",
     // Observed 2026-10-13: ElevenLabs hands a sentence to speech once its terminator is followed by
@@ -175,4 +191,42 @@ export const turnLanguageFor = (
     }
   }
   return {};
+};
+
+/** The dialect's tool that switches the call's language, when its runtime has one. */
+const languageSwitchToolOf = (dialect: CompletionsDialect): LanguageSwitchTool | undefined => {
+  for (const source of dialect.turnLocaleFrom) {
+    if ("languageSwitch" in source) {
+      return source.languageSwitch;
+    }
+  }
+  return undefined;
+};
+
+/** How a reply calls the dialect's switching tool, when its runtime has one. */
+export const languageSwitchRenderingFor = (dialect: CompletionsDialect): Pick<LanguageSwitchTool, "tool" | "argument" | "reasonArgument"> | undefined => {
+  const tool = languageSwitchToolOf(dialect);
+  return tool ? { tool: tool.tool, argument: tool.argument, reasonArgument: tool.reasonArgument } : undefined;
+};
+
+/**
+ * The runtime's offer to switch the call's language on this request: its `tools` carry the
+ * dialect's switching tool. With the languages it refused earlier in the call.
+ */
+export const languageSwitchOfferFor = (
+  dialect: CompletionsDialect,
+  request: { tools?: readonly unknown[] | null; messages: readonly CompletionsMessage[] },
+): VoiceLanguageSwitchOffer | undefined => {
+  const tool = languageSwitchToolOf(dialect);
+  return tool && offersLanguageSwitch(request.tools, tool) ? { refused: refusedSwitchLanguages(request.messages, tool) } : undefined;
+};
+
+/** The request is the runtime's follow-up after a switch a reply asked for: which, and whether it switched. */
+export const languageSwitchResultFor = (
+  dialect: CompletionsDialect,
+  request: { messages: readonly CompletionsMessage[] },
+): VoiceLanguageSwitchResult | null => {
+  const tool = languageSwitchToolOf(dialect);
+  const followUp = tool ? switchFollowUpOf(request.messages, tool) : null;
+  return followUp ? { switchId: followUp.callId, confirmed: followUp.confirmed } : null;
 };

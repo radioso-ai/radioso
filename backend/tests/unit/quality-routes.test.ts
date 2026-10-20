@@ -51,6 +51,7 @@ const DEFAULT_STATS: QualityStats = {
     negative_feedback: 3,
     grounding_gaps: 7,
     skill_failures: 0,
+    unmet_directives: 2,
   },
   resolutionBreakdown: [],
 };
@@ -523,12 +524,12 @@ describe("quality routes", () => {
 
     const response = await request(app)
       .get("/api/v1/quality/turns")
-      .query({ signal: "negative_feedback,grounding_gaps, skill_failures" })
+      .query({ signal: "negative_feedback,grounding_gaps, skill_failures,unmet_directives" })
       .set("Authorization", "Bearer valid-token");
 
     expect(response.status).toBe(200);
     expect(service.calls[0]?.input).toEqual({
-      signals: ["negative_feedback", "grounding_gaps", "skill_failures"],
+      signals: ["negative_feedback", "grounding_gaps", "skill_failures", "unmet_directives"],
       limit: 25,
     });
   });

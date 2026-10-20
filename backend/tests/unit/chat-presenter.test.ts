@@ -89,6 +89,23 @@ describe("chat presenter", () => {
     expect(writes.join("")).not.toContain("label");
   });
 
+  it("keeps the turn's language report off the HTTP stream", async () => {
+    const { response, writes } = createMockResponse();
+    const events: ChatStreamEvent[] = [
+      { type: "conversation", conversationId: "conversation-1" },
+      { type: "language", tag: "it" },
+      { type: "chunk", text: "Ciao." },
+    ];
+
+    await sendChatSse(response as never, (async function* () {
+      yield* events;
+    })());
+
+    expect(writes.join("")).toBe(
+      'event: conversation\ndata: {"conversationId":"conversation-1"}\n\nevent: chunk\ndata: {"text":"Ciao."}\n\n',
+    );
+  });
+
   it("writes a terminal cancelled event without assistant copy", async () => {
     const { response, writes } = createMockResponse();
     const cancelled: ChatStreamEvent = {

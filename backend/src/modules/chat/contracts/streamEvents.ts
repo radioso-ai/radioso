@@ -33,6 +33,15 @@ export interface SkillStreamPayload {
 export type ChatStreamEvent =
   | { type: "status"; stage: ChatStatusStage }
   | { type: "conversation"; conversationId: string }
+  /**
+   * The turn has read the language it answers in, before the answer's first chunk: `tag` is that
+   * language's BCP 47 tag (`it`, `pt-BR`) when the turn's plan gives one, and absent when the
+   * language came from elsewhere or carries no tag. At most one per turn, and none on a turn that
+   * never reads a language (a teammate owns the conversation). Only on a turn whose request asks
+   * for it (`reportResponseLanguage`), for a channel that acts on the language before the answer
+   * (voice); the HTTP stream presenters drop it.
+   */
+  | { type: "language"; tag?: string }
   | { type: "chunk"; text: string }
   | {
       type: "cancelled";

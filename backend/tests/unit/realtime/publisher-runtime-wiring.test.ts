@@ -15,13 +15,33 @@ const producerRuntimePaths = [
   "runtime/startCrawlerWorkerTaskRuntime.ts",
 ] as const;
 
+/** The API runtime shuts its composition down through `closeDependencies`, which the eval runner shares. */
+const sharedShutdownRuntimePath = "runtime/startApiRuntime.ts";
+
 describe("realtime publisher production runtime wiring", () => {
   it.each(producerRuntimePaths)("uses the canonical publisher composition in %s", async (runtimePath) => {
     const source = await readFile(sourcePath(runtimePath), "utf8");
 
     expect(source).toContain('from "../app/server/dependencies.js"');
     expect(source).toMatch(/\bbuildDependencies(?:\(options\.env|\)\(options\.env)/u);
-    expect(source).toContain("dependencies.realtimePublisherLifecycle.shutdown()");
+  });
+
+  it.each(producerRuntimePaths.filter((runtimePath) => runtimePath !== sharedShutdownRuntimePath))(
+    "shuts the canonical publisher lifecycle down in %s",
+    async (runtimePath) => {
+      const source = await readFile(sourcePath(runtimePath), "utf8");
+
+      expect(source).toContain("dependencies.realtimePublisherLifecycle.shutdown()");
+    },
+  );
+
+  it(`shuts the canonical publisher lifecycle down through closeDependencies in ${sharedShutdownRuntimePath}`, async () => {
+    const runtime = await readFile(sourcePath(sharedShutdownRuntimePath), "utf8");
+    const closer = await readFile(sourcePath("app/server/closeDependencies.ts"), "utf8");
+
+    expect(runtime).toContain('from "../app/server/closeDependencies.js"');
+    expect(runtime).toContain("closeDependencies(dependencies)");
+    expect(closer).toContain("dependencies.realtimePublisherLifecycle.shutdown()");
   });
 
   it("keeps the standalone realtime gateway subscriber-only", async () => {

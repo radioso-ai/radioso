@@ -1,11 +1,13 @@
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import { parseConversationQualityCases, type ConversationQualityCase } from "../../../src/modules/eval/suite/index.js";
 import { conversationQualityCases } from "../../fixtures/conversation-quality/cases.js";
 import { voiceEvalCases } from "../../fixtures/voice-eval/cases.js";
-import { scopeVoiceCasesForLiveRun } from "../../../scripts/runEvals.js";
+import { loadBaseline, scopeVoiceCasesForLiveRun } from "../../../scripts/runEvals.js";
 
 const voiceCase = (overrides: Partial<ConversationQualityCase>): ConversationQualityCase => ({
   id: "voice-scope-case",
@@ -86,5 +88,53 @@ describe("live runner voice scope", () => {
     expect(recordedVoiceCases.sort()).toEqual(
       scopeVoiceCasesForLiveRun(parseConversationQualityCases(voiceEvalCases)).map((evalCase) => evalCase.id).sort(),
     );
+  });
+});
+
+describe("live runner baseline file", () => {
+  let directory: string | undefined;
+  const baselineAt = (contents?: string): string => {
+    directory = mkdtempSync(path.join(tmpdir(), "cq-baseline-"));
+    const baselinePath = path.join(directory, "baseline.json");
+    if (contents !== undefined) {
+      writeFileSync(baselinePath, contents);
+    }
+    return baselinePath;
+  };
+  afterEach(() => {
+    if (directory) {
+      rmSync(directory, { recursive: true, force: true });
+      directory = undefined;
+    }
+  });
+
+  it("reads a committed baseline", () => {
+    const baselinePath = baselineAt(JSON.stringify({
+      generatedAt: "2026-10-20T00:00:00.000Z",
+      passThreshold: 1,
+      cases: { "greeting-en": { status: "pass", passRate: 1, samples: 5 } },
+    }));
+
+    expect(loadBaseline(baselinePath)).toEqual({
+      generatedAt: "2026-10-20T00:00:00.000Z",
+      passThreshold: 1,
+      cases: { "greeting-en": { status: "pass", passRate: 1, samples: 5 } },
+    });
+  });
+
+  it("reads a missing baseline as an empty one, so a first recording can create it", () => {
+    expect(loadBaseline(baselineAt())).toEqual({ cases: {} });
+  });
+
+  it("throws on a damaged baseline, naming it, so a recording run never writes every other case away", () => {
+    const baselinePath = baselineAt('{ "cases": { "greeting-en": ');
+
+    expect(() => loadBaseline(baselinePath)).toThrow(baselinePath);
+  });
+
+  it("throws on a baseline that holds no JSON object", () => {
+    const baselinePath = baselineAt("[]");
+
+    expect(() => loadBaseline(baselinePath)).toThrow(baselinePath);
   });
 });

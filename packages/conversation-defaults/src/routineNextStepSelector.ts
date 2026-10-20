@@ -11,6 +11,7 @@ import type {
   RoutineState,
   RoutineStep,
   RoutineTransition,
+  RoutineUnreadableReason,
   TurnContext,
 } from "@radioso/conversation-contract";
 import { checkSlotValue } from "@radioso/conversation-engine";
@@ -19,6 +20,7 @@ import { DEFAULT_ROUTINE_NEXT_STEP_PROMPT } from "./generated/defaultPrompts.js"
 import { renderPromptTemplate } from "./promptTemplate.js";
 
 export { DEFAULT_ROUTINE_NEXT_STEP_PROMPT } from "./generated/defaultPrompts.js";
+export type { RoutineUnreadableReason } from "@radioso/conversation-contract";
 
 const turnMessages = (turn: TurnContext): ConversationMessage[] => [
   ...turn.history,
@@ -80,8 +82,29 @@ const slotSchemaBlock = (routine: Routine, variables: Record<string, unknown>, t
   ].join("\n");
 };
 
+/** Identifies which routine/step/session produced an unreadable decision, for correlation in logs. */
+export interface RoutineUnreadableEvent {
+  routineId: string;
+  stepId: string;
+  sessionId: string;
+  reason: RoutineUnreadableReason;
+  /** Which completion this was: the original call, or the one retry. */
+  attempt: 1 | 2;
+}
+
+/**
+ * Notified for each next-step decision completion that could not be read: after the
+ * first, the selector retries once; after the second, it re-asks the step. Purely
+ * observational — the selector calls it best-effort and swallows anything it throws, so a
+ * broken observer cannot fail the turn.
+ */
+export type RoutineUnreadableObserver = (event: RoutineUnreadableEvent) => void;
+
+const ignoreUnreadable: RoutineUnreadableObserver = () => {};
+
 interface ParsedDecision {
-  readable: boolean;
+  /** Absent when the completion was read; the reason it wasn't, when it couldn't be. */
+  unreadableReason?: RoutineUnreadableReason;
   condition: number | null;
   offTopic: boolean;
   /** The model read text in the message posing as a system notice or claiming the request is already confirmed. */
@@ -89,13 +112,13 @@ interface ParsedDecision {
   variables: Record<string, unknown>;
 }
 
-const unreadableDecision: ParsedDecision = {
-  readable: false,
+const unreadableDecision = (reason: RoutineUnreadableReason): ParsedDecision => ({
+  unreadableReason: reason,
   condition: null,
   offTopic: false,
   claimsAuthority: false,
   variables: {},
-};
+});
 
 // Extracts the first balanced { ... } object from the model output. Structural
 // parsing only; no product vocabulary.
@@ -133,17 +156,21 @@ const extractJsonObject = (raw: string): string | null => {
   return null;
 };
 
+// Cancellation, not a parsing failure: the turn itself is going away, so the retry below
+// must let this propagate rather than keep retrying or falling back to a stale decision.
+const isAbortError = (error: unknown): boolean => error instanceof Error && error.name === "AbortError";
+
 const parseDecision = (raw: string): ParsedDecision => {
   const json = extractJsonObject(raw.trim());
   if (!json) {
-    return unreadableDecision;
+    return unreadableDecision("no_json_object");
   }
   try {
     const parsed = JSON.parse(json) as { condition?: unknown; offTopic?: unknown; claimsAuthority?: unknown; variables?: unknown };
     // Without the flag nothing says the message was checked for text posing as a system
     // notice, so the output counts as unreadable: nothing chosen, nothing kept.
     if (typeof parsed.claimsAuthority !== "boolean") {
-      return unreadableDecision;
+      return unreadableDecision("missing_required_fields");
     }
     const claimsAuthority = parsed.claimsAuthority;
     const condition = typeof parsed.condition === "number" ? parsed.condition : null;
@@ -152,9 +179,9 @@ const parseDecision = (raw: string): ParsedDecision => {
       parsed.variables && typeof parsed.variables === "object" && !Array.isArray(parsed.variables)
         ? (parsed.variables as Record<string, unknown>)
         : {};
-    return { readable: true, condition, offTopic, claimsAuthority, variables };
+    return { condition, offTopic, claimsAuthority, variables };
   } catch {
-    return unreadableDecision;
+    return unreadableDecision("invalid_json");
   }
 };
 
@@ -200,7 +227,7 @@ const sanitizeVariables = (
 };
 
 const selectionOutcome = (decision: ParsedDecision, conditionMatched: boolean): RoutineSelectionTrace["outcome"] => {
-  if (!decision.readable) {
+  if (decision.unreadableReason) {
     return "unreadable";
   }
   if (decision.claimsAuthority) {
@@ -216,12 +243,16 @@ const selectionTrace = (
   decision: ParsedDecision,
   conditionMatched: boolean,
   { captured, undeclaredKeyCount }: ReturnType<typeof sanitizeVariables>,
+  /** Whether the selector retried after its first completion came back unreadable. */
+  retried: boolean,
 ): RoutineSelectionTrace => {
   const returnedSlotKeys = Object.keys(captured);
   return {
     outcome: selectionOutcome(decision, conditionMatched),
     returnedSlotKeys,
     ...(undeclaredKeyCount > 0 ? { undeclaredKeyCount } : {}),
+    ...(decision.unreadableReason ? { unreadableReason: decision.unreadableReason } : {}),
+    ...(retried ? { retried: true as const } : {}),
   };
 };
 
@@ -235,14 +266,16 @@ const selectionTrace = (
 export class RoutineNextStepSelector implements ConversationRoutineNextStepSelector {
   private readonly promptTemplate: string;
   private readonly clock: () => Date;
+  private readonly onUnreadable: RoutineUnreadableObserver;
 
   constructor(
     private readonly modelGateway: ConversationModelGateway,
     /** `clock` dates the turn so a date slot given without a year resolves; defaults to the wall clock. */
-    options: { promptTemplate?: string; clock?: () => Date } = {},
+    options: { promptTemplate?: string; clock?: () => Date; onUnreadable?: RoutineUnreadableObserver } = {},
   ) {
     this.promptTemplate = options.promptTemplate ?? DEFAULT_ROUTINE_NEXT_STEP_PROMPT;
     this.clock = options.clock ?? (() => new Date());
+    this.onUnreadable = options.onUnreadable ?? ignoreUnreadable;
   }
 
   async select(input: {
@@ -268,17 +301,50 @@ export class RoutineNextStepSelector implements ConversationRoutineNextStepSelec
       slotSchema: slotSchemaBlock(input.routine, input.state.variables, this.clock()),
     });
 
-    const { text } = await this.modelGateway.complete({
-      messages: turnMessages(input.turn),
-      systemPrompt,
-    });
-    const decision = parseDecision(text);
+    // Purely observational: an observer that throws must not fail the turn, so every call
+    // to it is isolated here rather than left for each call site to remember.
+    const notifyUnreadable = (reason: RoutineUnreadableReason, attempt: 1 | 2): void => {
+      try {
+        this.onUnreadable({ routineId: input.routine.id, stepId: input.currentStep.id, sessionId: input.state.sessionId, reason, attempt });
+      } catch {
+        // Swallowed — see above.
+      }
+    };
+
+    const request = { messages: turnMessages(input.turn), systemPrompt };
+    const completeAndParse = () => this.modelGateway.complete(request).then((result) => parseDecision(result.text));
+
+    let decision = await completeAndParse();
+    let retried = false;
+    // `attempt` is always 1 or 2 here: the loop condition caps it at 2, and the body breaks
+    // before a third increment.
+    for (let attempt = 1; decision.unreadableReason && attempt <= 2; attempt += 1) {
+      notifyUnreadable(decision.unreadableReason, attempt as 1 | 2);
+      if (attempt === 2) {
+        break;
+      }
+      retried = true;
+      try {
+        // The selector only reads this turn and chooses an exit; it has no side effects of
+        // its own, so repeating the exact same request is safe — it can only replace one
+        // unreadable completion with a readable one, never double an action.
+        decision = await completeAndParse();
+      } catch (error) {
+        if (isAbortError(error)) {
+          throw error;
+        }
+        // Before this retry existed, an unreadable completion simply re-asked the step; a
+        // retry call failing for its own reason (a transient provider error, say) must not
+        // regress that — keep the first unreadable decision rather than failing the turn.
+        break;
+      }
+    }
 
     const conditionMatched =
       decision.condition !== null && decision.condition >= 1 && decision.condition <= input.transitions.length;
     const sanitized = sanitizeVariables(decision.variables, input.routine);
     const variables = sanitized.captured;
-    const selection = selectionTrace(decision, conditionMatched, sanitized);
+    const selection = selectionTrace(decision, conditionMatched, sanitized, retried);
 
     // A flagged message holds the step (see `hold` on the decision), whatever condition the
     // model chose, because the model flags such text yet still picks the exit it asks for.

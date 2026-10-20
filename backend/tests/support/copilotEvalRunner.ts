@@ -26,6 +26,8 @@ import { ProductDocsService } from "../../src/modules/productDocs/public.js";
 import { enrichCopilotToolCatalog } from "../../src/modules/operatorCopilot/catalog.js";
 import { OperatorCopilotService } from "../../src/modules/operatorCopilot/public.js";
 import { copilotProposalTargetTypes } from "../../src/modules/operatorCopilot/contracts.js";
+import { createPrivacySettingCopilotProposalAdapter } from "../../src/modules/operatorCopilot/privacySettingProposalAdapter.js";
+import { PrivacySettingsService } from "../../src/modules/privacy/public.js";
 import type {
   CopilotProposal,
   CopilotProposalDraft,
@@ -495,6 +497,7 @@ callerKind: "human" as const,
       }),
       listLlmModels: async () => [],
       getManagedLlmModels: async () => ({ chat: null, rewrite: null, rerank: null }),
+      getPrivacySettings: async () => ({ conversationRetentionDays: null }),
       getProviderCredentialHealth: async () => ({
         encryptionConfigured: false,
         credentials: [],
@@ -628,7 +631,7 @@ callerKind: "human" as const,
         updatedAt: evalDate(REFERENCE_NOW),
       }),
     },
-    proposalAdapters: copilotProposalTargetTypes.map((targetType) => ({
+    proposalAdapters: [...copilotProposalTargetTypes.filter((targetType) => targetType !== "privacy_setting").map((targetType) => ({
       targetType,
       draft: async (_workspaceId: string, _targetRef: unknown, input: unknown) => {
         const intent = typeof input === "string"
@@ -658,6 +661,17 @@ callerKind: "human" as const,
       readVersionToken: async () => "v1",
       applyIfVersionMatches: async () => ({ outcome: "applied" as const, appliedRef: null }),
     })),
+    // The real adapter over privacy settings that keep conversations until deleted, so a drafted
+    // window is validated, merged and stated the way production drafts it.
+    createPrivacySettingCopilotProposalAdapter({
+      privacySettings: new PrivacySettingsService({
+        store: {
+          read: async () => ({ accountId: "eval-account", settings: { conversationRetentionDays: null } }),
+          write: async () => ({ status: "written" as const, accountId: "eval-account", previous: { conversationRetentionDays: null } }),
+        },
+        audit: { record: async () => undefined },
+      }),
+    })],
     workspaceRouteKeyResolver: copilotEvalWorkspaceRouteKeyResolver,
     auditService: { record: async () => {} },
   };

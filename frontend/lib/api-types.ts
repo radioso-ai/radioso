@@ -215,6 +215,7 @@ export type RetrievalMetadataRuleOperator = RetrievalMetadataRule['operator']
 export type RetrievalMetadataCondition = NonNullable<RetrievalMetadataRule['conditions']>[number]
 
 export type IngestionSettings = ApiSchemas['IngestionSettings']
+export type PrivacySettings = ApiSchemas['PrivacySettings']
 export type DocumentTypeCatalog = ApiSchemas['DocumentTypeCatalog']
 export type DocumentTypeDefinition = ApiSchemas['DocumentTypeDefinition']
 export type DocumentTypeField = ApiSchemas['DocumentTypeField']

@@ -13,6 +13,7 @@ import {
 } from "./usageLimitService.js";
 import { UsageLimitAccountNotFoundError, UsageLimitExceededError } from "./errors.js";
 import { usageLimitMigrator } from "./usageLimitMigrator.js";
+import { SUPERSEDED_PROFILE_SEEDS } from "./planCatalogSeed.js";
 import type { UsageLimitDatabasePort, UsageLimitReservation } from "../radiosoModuleTypes.js";
 
 const tenths = (conversations: number): number => conversations * TENTHS_PER_CONVERSATION;
@@ -656,6 +657,39 @@ describeIfDatabase("EE usage limit service integration", () => {
     const profiles = await service.listProfiles();
     const reread = profiles.find((candidate) => candidate.key === "satellite");
     expect(reread?.monthlyConversationLimit).toBe(42);
+  });
+
+  it("moves a seeded profile still at superseded caps to the catalog values and leaves an edited one", async () => {
+    const service = new EnterpriseUsageLimitService(database);
+    const comet = PLAN_CATALOG.plans.find((plan) => plan.id === "comet")!;
+    const satellite = PLAN_CATALOG.plans.find((plan) => plan.id === "satellite")!;
+    const upsertWithCaps = (plan: typeof comet, caps: { storedDocumentLimit: number; monthlyIndexedByteLimit: number }) =>
+      service.upsertProfile({
+        key: plan.id,
+        displayName: plan.name,
+        monthlyAnswerLimit: null,
+        storedDocumentLimit: caps.storedDocumentLimit,
+        storedIndexedByteLimit: plan.storedBytes,
+        monthlyIndexedByteLimit: caps.monthlyIndexedByteLimit,
+        monthlyConversationLimit: plan.monthlyConversations,
+        repliesPerConversation: PLAN_CATALOG.repliesPerConversation,
+      });
+    await upsertWithCaps(comet, {
+      storedDocumentLimit: SUPERSEDED_PROFILE_SEEDS.stored_document_limit.comet![0],
+      monthlyIndexedByteLimit: SUPERSEDED_PROFILE_SEEDS.monthly_indexed_byte_limit.comet![0],
+    });
+    await upsertWithCaps(satellite, { storedDocumentLimit: 4_321, monthlyIndexedByteLimit: 12_345_678 });
+
+    await usageLimitMigrator.migrate(database);
+
+    const profiles = await service.listProfiles();
+    const cometProfile = profiles.find((candidate) => candidate.key === "comet");
+    const satelliteProfile = profiles.find((candidate) => candidate.key === "satellite");
+    expect(cometProfile?.storedDocumentLimit).toBe(comet.documents);
+    expect(cometProfile?.monthlyIndexedByteLimit).toBe(comet.monthlyIndexedBytes);
+    expect(satelliteProfile?.storedDocumentLimit).toBe(4_321);
+    expect(satelliteProfile?.monthlyIndexedByteLimit).toBe(12_345_678);
+    await upsertWithCaps(satellite, { storedDocumentLimit: satellite.documents, monthlyIndexedByteLimit: satellite.monthlyIndexedBytes });
   });
 
   it("does not report a monthly-answers cap when the profile meters conversations", async () => {

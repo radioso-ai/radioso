@@ -4,8 +4,23 @@ import {
   buildClarificationStageDetail,
   buildRoutineRunTrace,
   directiveAdherenceStatus,
+  readDirectiveAdherence,
 } from '@/components/dashboard/spine-stage-detail'
 import type { ConversationTraceStage } from '@/lib/api'
+
+// #1575: the answer commits to each directive before it writes; the trace carries that commitment.
+describe('readDirectiveAdherence', () => {
+  it('keeps the commitment an answer made before writing, and reads an entry without one as before', () => {
+    expect(readDirectiveAdherence([
+      { directive: 'prices', ruleId: 'd1', commitment: 'leave out every figure', satisfied: true, applicable: true, note: 'no figures' },
+      { directive: 'be-brief', ruleId: 'd2', commitment: '', satisfied: true, note: 'short' },
+      { directive: 'malformed', ruleId: 'd3', note: 'no satisfied flag' },
+    ])).toEqual([
+      { directive: 'prices', ruleId: 'd1', commitment: 'leave out every figure', satisfied: true, applicable: true, note: 'no figures' },
+      { directive: 'be-brief', ruleId: 'd2', satisfied: true, note: 'short' },
+    ])
+  })
+})
 
 describe('directiveAdherenceStatus', () => {
   it('reports not-applicable when the rule condition never held, regardless of satisfied', () => {

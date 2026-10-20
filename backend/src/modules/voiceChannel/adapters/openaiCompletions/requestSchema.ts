@@ -79,15 +79,19 @@ export const utteranceOf = (request: CompletionsRequest): string | null => {
   return utterance.length > 0 ? utterance : null;
 };
 
+/** Text with nothing to hear: whitespace and zero-width spaces, such as a dialect's keep-alive deltas. */
+const SILENT_TEXT = /^[\s\u200B]*$/u;
+
 /**
- * A replayed tool exchange rather than something said: a tool's result, or an assistant message
- * that only calls tools.
+ * A replayed message that says nothing: a tool's result, an assistant message that only calls
+ * tools, or one that holds only keep-alive whitespace (ElevenLabs replays a reply that sent its
+ * keep-alive before a tool call as such a message; probe, 2026-10-18).
  */
 const isToolExchange = (message: CompletionsMessage): boolean =>
   message.role === "tool"
-  || (message.role === "assistant" && Array.isArray(message.tool_calls) && message.tool_calls.length > 0 && textOf(message.content).trim().length === 0);
+  || (message.role === "assistant" && SILENT_TEXT.test(textOf(message.content)));
 
-/** The message said right before the newest user message, past any tool exchange replayed between them. */
+/** The message said right before the newest user message, past any tool exchange or keep-alive replayed between them. */
 const previousSaid = (messages: readonly CompletionsMessage[]): CompletionsMessage | undefined => {
   for (let index = lastUserIndex(messages) - 1; index >= 0; index -= 1) {
     const message = messages[index];

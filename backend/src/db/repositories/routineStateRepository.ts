@@ -1,6 +1,14 @@
 import type { ConversationRoutineStore, RoutineState } from "@radioso/conversation-contract";
 
-import { currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import type { ConversationDataRetentionRule } from "../../shared/domain/conversationDataRetention.js";
+import {
+  exportJson,
+  exportTimestamp,
+  type DataSubjectDataExporter,
+  type DataSubjectExportRecord,
+  type DataSubjectExportScope,
+} from "../../shared/domain/dataSubjectAccess.js";
+import { anyOf, currentTimestamp, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
 interface RoutineStateRow {
@@ -147,5 +155,81 @@ export class RoutineStateRepository implements ConversationRoutineStore {
 
   async clear(input: { sessionId: string }): Promise<void> {
     await this.db.deleteFrom("routine_states").where("session_id", "=", input.sessionId).execute();
+  }
+}
+
+/** Days a routine state with no expiry, one waiting on a decision, survives without an update. */
+const ABANDONED_ROUTINE_STATE_DAYS = 90;
+const DAY_MS = 24 * 60 * 60 * 1_000;
+
+/**
+ * Deletes routine states nothing will resume: those past their expiry, which `loadActive` and
+ * `loadCompleted` already hide, and a suspended one left {@link ABANDONED_ROUTINE_STATE_DAYS} days
+ * without an update while its conversation saw no update and no message either. A state carries the
+ * values the routine collected, so neither waits for its conversation to go.
+ */
+export class RoutineStateRetention implements ConversationDataRetentionRule {
+  readonly table = "routine_states";
+
+  constructor(private readonly db: Db) {}
+
+  async enforce(input: { now: Date; limit: number }): Promise<number> {
+    const abandonedBefore = new Date(input.now.getTime() - ABANDONED_ROUTINE_STATE_DAYS * DAY_MS);
+    const deleted = await this.db
+      .deleteFrom("routine_states")
+      .where("session_id", "in", (eb) => eb
+        .selectFrom("routine_states as state")
+        .select("state.session_id")
+        .where(({ and, or, not, exists, selectFrom, eb: cmp }) => or([
+          and([cmp("state.expires_at", "is not", null), cmp("state.expires_at", "<=", input.now)]),
+          and([
+            cmp("state.expires_at", "is", null),
+            cmp("state.updated_at", "<", abandonedBefore),
+            not(exists(selectFrom("conversations as conversation")
+              .select("conversation.id")
+              .whereRef("conversation.id", "=", "state.session_id")
+              .where("conversation.updated_at", ">=", abandonedBefore))),
+            not(exists(selectFrom("messages as message")
+              .select("message.id")
+              .whereRef("message.conversation_id", "=", "state.session_id")
+              .where("message.created_at", ">=", abandonedBefore))),
+          ]),
+        ]))
+        .limit(input.limit)
+        .forUpdate()
+        .skipLocked())
+      .executeTakeFirst();
+    return Number(deleted.numDeletedRows);
+  }
+}
+
+/**
+ * The export's `routine_values` section: what the routine a conversation last ran collected, kept
+ * on its routine state until another routine replaces it, expired or not.
+ */
+export class RoutineValueExporter implements DataSubjectDataExporter {
+  readonly section = "routine_values";
+
+  constructor(private readonly db: Db) {}
+
+  async export(scope: DataSubjectExportScope): Promise<DataSubjectExportRecord[]> {
+    if (scope.conversationIds.length === 0) return [];
+    const rows = await this.db
+      .selectFrom("routine_states as r")
+      .innerJoin("conversations as c", "c.id", "r.session_id")
+      .select(["r.session_id", "r.routine_id", "r.status", "r.variables", "r.created_at", "r.updated_at"])
+      .where("c.workspace_id", "=", scope.workspaceId)
+      .where((eb) => anyOf(eb.ref("r.session_id"), scope.conversationIds, "uuid[]"))
+      .orderBy("r.created_at")
+      .orderBy("r.session_id")
+      .execute();
+    return rows.map((row) => ({
+      conversationId: row.session_id,
+      routineId: row.routine_id,
+      status: row.status,
+      values: exportJson(row.variables),
+      startedAt: exportTimestamp(row.created_at),
+      updatedAt: exportTimestamp(row.updated_at),
+    }));
   }
 }

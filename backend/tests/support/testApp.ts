@@ -236,6 +236,8 @@ import { createAgentGreetingCopilotProposalAdapter, createAgentSettingCopilotPro
 import { createDocumentCopilotProposalAdapter } from "../../src/modules/operatorCopilot/documentProposalAdapter.js";
 import { createIngestionSettingsCopilotProposalAdapter } from "../../src/modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
 import { createWorkspaceSettingCopilotProposalAdapter } from "../../src/modules/operatorCopilot/workspaceSettingProposalAdapter.js";
+import { createPrivacySettingCopilotProposalAdapter } from "../../src/modules/operatorCopilot/privacySettingProposalAdapter.js";
+import { PrivacySettingsService, type PrivacySettings } from "../../src/modules/privacy/public.js";
 import { createWebsiteCrawlCopilotProposalAdapter } from "../../src/modules/operatorCopilot/websiteCrawlProposalAdapter.js";
 import type { CopilotHeldReplyQueuePort } from "../../src/modules/operatorCopilot/tools/escalationSources.js";
 import { assertPublicWebsiteUrl, normalizeBaseUrl } from "../../src/modules/websiteCrawler/public.js";
@@ -249,6 +251,7 @@ import { TelemetryService } from "../../src/shared/observability/telemetry/telem
 import type { AppDependencies } from "../../src/app/server/types.js";
 import type { RealtimeRolloutPolicy } from "../../src/modules/realtime/domain/realtimeRolloutPolicy.js";
 import { badRequest, conflict, notFound } from "../../src/shared/domain/errors.js";
+import { DATA_SUBJECT_EXPORT_FORMAT, DATA_SUBJECT_EXPORT_FORMAT_VERSION } from "../../src/modules/privacy/public.js";
 import { apiPrincipalRouteInventory } from "../../src/app/http/apiPrincipalRoutePolicy.js";
 import { requestSourceDigestPort } from "../../src/app/http/middleware/requestSource.js";
 import type {
@@ -956,6 +959,8 @@ export const createTestDependencies = (overrides: {
   deliveryFailures?: AppDependencies["deliveryFailures"];
   /** Conversation and visitor erasure; omitted means every erasure is refused as not found. */
   conversationErasure?: AppDependencies["conversationErasure"];
+  /** Data subject lookup, export and erasure; omitted means a workspace where a lookup finds nobody. */
+  dataSubjectAccess?: AppDependencies["dataSubjectAccess"];
   /** Held replies and the decisions on them; omitted means a workspace with none. */
   heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;
   /** The `fetch` voice vendor session starters call; omitted means every vendor call fails as unreachable. */
@@ -964,6 +969,8 @@ export const createTestDependencies = (overrides: {
   handoffWaitingMessageGenerator?: ChatServiceOptions["handoffWaitingMessageGenerator"];
   /** Keeps the heard part of a reply cut off mid-stream; omitted means the in-memory store over the test repositories. */
   cutReplyStore?: ChatServiceOptions["cutReplyStore"];
+  /** Plans each fresh turn in one model call; omitted means turns run the staged path without a planner. */
+  turnPlanCoordinator?: ChatServiceOptions["turnPlanCoordinator"];
   /** Observes the embed-config CDN invalidations; omitted means the deployment has no CDN to invalidate. */
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
   /** Composes the agent tool catalog over the test app's agent row and published-revision readers. */
@@ -1020,6 +1027,28 @@ export const createTestDependencies = (overrides: {
   accountMembershipRepository.setUserRepository(userRepository);
   const workspaceRepository = new InMemoryWorkspaceRepository();
   const workspaceGrantRepository = new InMemoryWorkspaceGrantRepository();
+  // The in-memory app keeps privacy settings beside its workspaces; the Postgres store and the
+  // sweep it feeds are covered by tests/integration/conversation-retention.integration.test.ts.
+  const privacySettingsByWorkspace = new Map<string, PrivacySettings>();
+  const privacySettingsService = new PrivacySettingsService({
+    store: {
+      async read(workspaceId) {
+        const workspace = await workspaceRepository.findById(workspaceId);
+        return workspace
+          ? { accountId: workspace.accountId, settings: privacySettingsByWorkspace.get(workspaceId) ?? { conversationRetentionDays: null } }
+          : null;
+      },
+      async write({ workspaceId, settings, expected }) {
+        const workspace = await workspaceRepository.findById(workspaceId);
+        if (!workspace) return { status: "not_found" };
+        const previous = privacySettingsByWorkspace.get(workspaceId) ?? { conversationRetentionDays: null };
+        if (expected && expected.conversationRetentionDays !== previous.conversationRetentionDays) return { status: "changed" };
+        privacySettingsByWorkspace.set(workspaceId, { ...settings });
+        return { status: "written", accountId: workspace.accountId, previous };
+      },
+    },
+    audit: auditService,
+  });
   const accountAccessService = new AccountAccessService(
     accountMembershipRepository,
     auditService,
@@ -2192,6 +2221,7 @@ export const createTestDependencies = (overrides: {
     conversationOwnershipReader: conversationOwnershipRepository,
     // Mirror production wiring: a reply cut off mid-stream keeps the part its listener heard.
     cutReplyStore: overrides.cutReplyStore ?? new InMemoryCutReplyStore(messageRepository, conversationRepository, auditEventRepository),
+    ...(overrides.turnPlanCoordinator ? { turnPlanCoordinator: overrides.turnPlanCoordinator } : {}),
     logger,
   });
   const chatBootstrapService = new ChatBootstrapService(
@@ -2472,6 +2502,7 @@ export const createTestDependencies = (overrides: {
     }),
     createIngestionSettingsCopilotProposalAdapter({ ingestionSettings: ingestionSettingsService }),
     createWorkspaceSettingCopilotProposalAdapter({ workspaceSetting: createCopilotWorkspaceSettingPort(platformSettingsService) }),
+    createPrivacySettingCopilotProposalAdapter({ privacySettings: privacySettingsService }),
     createAgentCopilotProposalAdapter({
       agentCreation: { createFromWizard: (input) => agentWizardService.createAgentFromWizard(input) },
       workspaceAccount: createCopilotWorkspaceAccountResolver({ workspaceRepository }),
@@ -2635,6 +2666,7 @@ export const createTestDependencies = (overrides: {
           },
         };
       },
+      getPrivacySettings: (workspaceId) => privacySettingsService.get(workspaceId),
       async getGeneralSettings(workspaceId) {
         const { settings, agentId } = await platformSettingsService.getVersionedForWorkspace(workspaceId);
         return { ...settings, agentId };
@@ -3044,6 +3076,21 @@ export const createTestDependencies = (overrides: {
       eraseConversation: async () => { throw notFound("Conversation not found"); },
       eraseVisitor: async () => { throw notFound("Visitor not found"); },
     },
+    privacySettingsService,
+    dataSubjectAccess: overrides.dataSubjectAccess ?? {
+      // The Postgres reads are covered by tests/integration/data-subject-access.integration.test.ts.
+      lookup: async () => [],
+      listConversations: async () => [],
+      export: async ({ workspaceId, identities }) => ({
+        format: DATA_SUBJECT_EXPORT_FORMAT,
+        formatVersion: DATA_SUBJECT_EXPORT_FORMAT_VERSION,
+        exportedAt: new Date().toISOString(),
+        workspaceId,
+        identities,
+        sections: {},
+      }),
+      erase: async () => ({ visitorCount: 0, conversationCount: 0, messageCount: 0, complete: true }),
+    },
     retrievalSearchService,
     retrievalAnswerService,
     retrievalDefaultsProvider,
@@ -3161,10 +3208,12 @@ export const createTestApp = (overrides: {
   emailChannel?: AppDependencies["emailChannel"];
   deliveryFailures?: AppDependencies["deliveryFailures"];
   conversationErasure?: AppDependencies["conversationErasure"];
+  dataSubjectAccess?: AppDependencies["dataSubjectAccess"];
   heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;
   voiceVendorFetch?: typeof globalThis.fetch;
   handoffWaitingMessageGenerator?: ChatServiceOptions["handoffWaitingMessageGenerator"];
   cutReplyStore?: ChatServiceOptions["cutReplyStore"];
+  turnPlanCoordinator?: ChatServiceOptions["turnPlanCoordinator"];
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
 } = {}) => {
   const {

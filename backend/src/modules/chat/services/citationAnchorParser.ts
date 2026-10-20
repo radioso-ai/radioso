@@ -1,20 +1,15 @@
+import { findCitationAnchors, stripCitationAnchorSyntax } from "./citationAnchorSyntax.js";
 import { removeDetachedPunctuationSpacing } from "./citationTextNormalization.js";
 
-export interface CitationAnchorGroup {
+interface CitationAnchorGroup {
   start: number;
   end: number;
   resultNumbers: number[];
   explicitlyUnsourced: boolean;
 }
 
-const ANCHOR_PATTERN = /\[\[(\d+|\?)\]\]/g;
-
 export const findCitationAnchorGroups = (answer: string): CitationAnchorGroup[] => {
-  const matches = [...answer.matchAll(ANCHOR_PATTERN)].map((match) => ({
-    start: match.index ?? 0,
-    end: (match.index ?? 0) + match[0].length,
-    resultNumber: match[1] === "?" ? null : Number(match[1]),
-  }));
+  const matches = findCitationAnchors(answer);
 
   const groups: CitationAnchorGroup[] = [];
 
@@ -49,8 +44,10 @@ export const findCitationAnchorGroups = (answer: string): CitationAnchorGroup[] 
   return groups;
 };
 
+/**
+ * Removes the anchor syntax left in `text` (see `citationAnchorSyntax.ts`) and the spacing it
+ * stranded before punctuation. `text` runs to the end of the answer, so a trailing `[[12` is
+ * an anchor cut short and goes too.
+ */
 export const stripResidualCitationSyntax = (text: string): string =>
-  removeDetachedPunctuationSpacing(text
-    .replace(/\[\[[^\]]*\]\]/g, "")
-    .replace(/\[\[[^\s.,;:!?)]*/g, "")
-    .replace(/\]\]/g, ""));
+  removeDetachedPunctuationSpacing(stripCitationAnchorSyntax(text, { endsAnswer: true }));

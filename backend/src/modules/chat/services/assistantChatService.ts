@@ -112,6 +112,7 @@ export class AssistantChatService {
       sourceOrigin: input.sourceOrigin ?? input.sourceContext?.sourceOrigin ?? null,
       supersession: input.supersession,
       deliveredReply: input.deliveredReply,
+      ...(input.reportResponseLanguage ? { reportResponseLanguage: true } : {}),
       signal: input.signal,
     });
   }

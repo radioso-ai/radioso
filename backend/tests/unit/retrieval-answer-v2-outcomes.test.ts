@@ -14,7 +14,12 @@ import {
   buildGroundedAnswerResponseFormat,
   SUGGESTIONS_SENTINEL,
 } from "../../src/modules/chat/services/groundedAnswerEnvelope.js";
-import { createDirectiveAdherenceSideChannel } from "../../src/shared/domain/directiveAdherence.js";
+import {
+  createDirectiveAdherenceSideChannel,
+  directiveAdherenceMetadataOf,
+  unmetDirectiveNames,
+  type DirectiveAdherenceTally,
+} from "../../src/shared/domain/directiveAdherence.js";
 import { RetrievalAnswerComposer } from "../../src/modules/chat/services/retrievalTurnSkill.js";
 import { buildAnswerCoverageAssessmentFromHead } from "../../src/modules/chat/services/answerCoverageFromHead.js";
 import {
@@ -98,6 +103,7 @@ const buildComposer = (
   let fallbackWorkspaceContext: unknown;
   const attemptKeys: string[] = [];
   const metricWrites: Array<{ name: string; labels?: Record<string, string> }> = [];
+  const adherenceTallies: DirectiveAdherenceTally[] = [];
   const responseFormats: unknown[] = [];
   const answerInputs: ChatGatewayInput[] = [];
   const streamInputs: ChatGatewayInput[] = [];
@@ -137,7 +143,12 @@ const buildComposer = (
       incrementCounter(name, options) {
         metricWrites.push({ name, labels: options.labels });
       },
-    }, { forSteeringRules: (rules) => createDirectiveAdherenceSideChannel(rules) }),
+    }, {
+      forSteeringRules: (rules) => createDirectiveAdherenceSideChannel(rules, {
+        onTally: (tally) => adherenceTallies.push(tally),
+      }),
+    }),
+    adherenceTallies: () => adherenceTallies,
     counts: () => ({ answerCalls, streamCalls, fallbackCalls }),
     fallbackWorkspaceContext: () => fallbackWorkspaceContext,
     attemptKeys,
@@ -214,6 +225,25 @@ describe("retrieval answer decline classification", () => {
     );
 
     expect(result.finalPresentation.skillOutcome).toBe("out_of_scope");
+  });
+
+  // #1575: a decline composed without the grounded envelope carried no plan or grades, so it
+  // reports no rule as ungraded and counts nothing.
+  it("reports no adherence for a streamed zero-context decline composed without an envelope", async () => {
+    const { composer, adherenceTallies } = buildComposer("unused", { text: "I can't confirm that.", declineReason: "content_gap" });
+    const session = zeroContextSession();
+    session.directiveSteering = {
+      rules: [{ id: "d1", directiveName: "represent-organization", action: "Speak as the organization.", source: "directive", lifespan: "response" }],
+      matches: [],
+      omissions: [],
+    };
+
+    const { result } = await drain(composer.streamAnswer(session, "Refund policy?", undefined, undefined));
+
+    expect(result.finalPresentation.answer).toBe("I can't confirm that.");
+    expect(result.finalPresentation.metadata ?? {}).not.toHaveProperty("ungradedDirectives");
+    expect(result.finalPresentation.metadata ?? {}).not.toHaveProperty("directiveAdherence");
+    expect(adherenceTallies()).toEqual([]);
   });
 
   it("tags an out-of-scope envelope decline with the out_of_scope outcome", async () => {
@@ -541,6 +571,101 @@ describe("retrieval answer envelope v2", () => {
         createDirectiveAdherenceSideChannel(session.directiveSteering?.rules ?? []).schemaExtension(),
       ),
     ]);
+  });
+
+  // #1575: the model commits to what each rendered rule requires before it writes the
+  // answer, so the schema the gateway receives must put that commitment ahead of `answer`.
+  it("asks for each rule's commitment ahead of the answer and carries it, with the ungraded rules, into trace metadata", async () => {
+    const session = baseSession();
+    session.directiveSteering = {
+      rules: [
+        { id: "d1", directiveName: "prices-from-the-course-page", action: "Leave out every figure.", source: "directive", lifespan: "response" },
+        { id: "d2", directiveName: "Be concise", action: "Keep the response concise.", source: "directive", lifespan: "response" },
+      ],
+      matches: [],
+      omissions: [],
+    };
+    const { composer, responseFormats } = buildComposer(JSON.stringify({
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "the workshop fee",
+      outcome: "answer",
+      adherencePlan: [
+        { rule: "d1", commitment: "leave out every figure; point to the course page" },
+        { rule: "d2", commitment: "two sentences" },
+      ],
+      answer: "The fees are on the workshop page[[1]].",
+      v: 2,
+      claims: [[1]],
+      suggestions: [],
+      grounding: "degraded",
+      adherence: [{ rule: "d1", satisfied: true, applicable: true, note: "no figures" }],
+    }));
+
+    const presented = await composer.composeAnswer(session, "How much is the workshop?", undefined, undefined);
+
+    const [format] = responseFormats() as Array<{ schema: { properties: Record<string, unknown> } }>;
+    const keys = Object.keys(format?.schema.properties ?? {});
+    expect(keys.indexOf("adherencePlan")).toBeGreaterThan(keys.indexOf("outcome"));
+    expect(keys.indexOf("adherencePlan")).toBeLessThan(keys.indexOf("answer"));
+    expect(presented.metadata).toMatchObject({
+      directiveAdherence: [{
+        directive: "prices-from-the-course-page",
+        ruleId: "d1",
+        commitment: "leave out every figure; point to the course page",
+        satisfied: true,
+        applicable: true,
+        note: "no figures",
+      }],
+      ungradedDirectives: ["Be concise"],
+    });
+  });
+
+  // #1575 round 2: adherence resolution moved into the branch that ships a streamed
+  // answer (not just the non-streaming path above). A streamed grounded answer that
+  // ships must carry the same commitment, ungraded rule, and unmet grade, tallied once.
+  it("carries a streamed answer's directive commitment, ungraded rule, and unmet grade into trace metadata, tallied once", async () => {
+    const session = baseSession();
+    session.directiveSteering = {
+      rules: [
+        { id: "d1", directiveName: "prices-from-the-course-page", action: "Leave out every figure.", source: "directive", lifespan: "response" },
+        { id: "d2", directiveName: "Be concise", action: "Keep the response concise.", source: "directive", lifespan: "response" },
+      ],
+      matches: [],
+      omissions: [],
+    };
+    const { composer, adherenceTallies } = buildComposer(JSON.stringify({
+      coverage: "answered_sufficient_evidence",
+      requestFocus: "the workshop fee",
+      outcome: "answer",
+      adherencePlan: [
+        { rule: "d1", commitment: "leave out every figure; point to the course page" },
+        { rule: "d2", commitment: "two sentences" },
+      ],
+      answer: "The fees are on the workshop page[[1]].",
+      v: 2,
+      claims: [[1]],
+      suggestions: [],
+      grounding: "degraded",
+      // d1 is graded unsatisfied; d2 is rendered but returns no grade at all.
+      adherence: [{ rule: "d1", satisfied: false, applicable: true, note: "quoted a figure anyway" }],
+    }));
+
+    const { result } = await drain(
+      composer.streamAnswer(session, "How much is the workshop?", undefined, undefined),
+    );
+
+    const adherence = directiveAdherenceMetadataOf(result.finalPresentation.metadata);
+    expect(adherence.directiveAdherence).toEqual([{
+      directive: "prices-from-the-course-page",
+      ruleId: "d1",
+      commitment: "leave out every figure; point to the course page",
+      satisfied: false,
+      applicable: true,
+      note: "quoted a figure anyway",
+    }]);
+    expect(adherence.ungradedDirectives).toEqual(["Be concise"]);
+    expect(unmetDirectiveNames(adherence.directiveAdherence ?? [])).toEqual(["prices-from-the-course-page"]);
+    expect(adherenceTallies()).toHaveLength(1);
   });
 
   it("lets retrieval evidence answer even when turn planning marks the request outside scope", async () => {
@@ -941,6 +1066,33 @@ describe("a decline the grounded answer commits without text", () => {
       });
     },
   );
+
+  // #1575: the draft's plan and grades describe a draft that never ships, so a streamed
+  // blank decline carries no adherence and counts nothing.
+  it("drops the replaced draft's adherence from a streamed blank decline", async () => {
+    const draft = JSON.parse(blankEnvelope("no_support")) as Record<string, unknown>;
+    const { composer, adherenceTallies } = buildComposer(JSON.stringify({
+      ...draft,
+      adherencePlan: [{ rule: "d1", commitment: "leave out every figure" }],
+      adherence: [{ rule: "d1", satisfied: true, applicable: true, note: "no figures" }],
+    }));
+    const session = baseSession();
+    session.directiveSteering = {
+      rules: [
+        { id: "d1", directiveName: "prices-from-the-course-page", action: "Leave out every figure.", source: "directive", lifespan: "response" },
+        { id: "d2", directiveName: "represent-organization", action: "Speak as the organization.", source: "directive", lifespan: "response" },
+      ],
+      matches: [],
+      omissions: [],
+    };
+
+    const { result } = await drain(composer.streamAnswer(session, "How much does it cost?", undefined, undefined));
+
+    expect(result.finalPresentation.answer).toBe("FOCUSED GROUNDED MISS");
+    expect(result.finalPresentation.metadata ?? {}).not.toHaveProperty("directiveAdherence");
+    expect(result.finalPresentation.metadata ?? {}).not.toHaveProperty("ungradedDirectives");
+    expect(adherenceTallies()).toEqual([]);
+  });
 
   it.each(committedDeclines)(
     "streams the focused decline for a $outcome commitment with an empty answer",

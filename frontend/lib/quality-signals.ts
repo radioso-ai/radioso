@@ -10,10 +10,23 @@ import { QUALITY_SIGNAL_IDS, type QualitySignalId, type QualityTriageState } fro
  */
 export const ACTIVE_TRIAGE_STATES: readonly QualityTriageState[] = ['open', 'acknowledged']
 
+/**
+ * Signals an operator asks for by its chip or filter, kept out of the default queue and the
+ * Inbox count. `unmet_directives` is the answer's own grade of itself (#1575), so it stays
+ * opt-in until the directive-adherence verdict counter shows how often turns grade
+ * themselves unsatisfied.
+ */
+const OPT_IN_QUALITY_SIGNAL_IDS: ReadonlySet<QualitySignalId> = new Set(['unmet_directives'])
+
+/** The signals the review queue and the Inbox count ask for when no chip is selected. */
+export const DEFAULT_QUALITY_SIGNAL_IDS: readonly QualitySignalId[] = QUALITY_SIGNAL_IDS.filter(
+  (id) => !OPT_IN_QUALITY_SIGNAL_IDS.has(id),
+)
+
 export const isTerminalQualityTriageState = (state: QualityTriageState): boolean =>
   state === 'resolved' || state === 'dismissed'
 
-export interface QueueScopeInput {
+interface QueueScopeInput {
   /** The operator asked for every answer, signal or not. */
   showAll: boolean
   /** The chip currently selected, if any. */
@@ -22,7 +35,7 @@ export interface QueueScopeInput {
   triageStates: readonly QualityTriageState[]
 }
 
-export interface QueueScope {
+interface QueueScope {
   signals?: QualitySignalId[]
   triageStates?: QualityTriageState[]
 }
@@ -31,7 +44,7 @@ export interface QueueScope {
  * What the queue asks the server for.
  *
  * The queue is a triage queue, so by default it asks for the population the chips count:
- * answers carrying any quality signal, still in an active triage state. Without that
+ * answers carrying any default quality signal, still in an active triage state. Without that
  * default the table returns every assistant turn, and the chip counts describe nothing
  * the operator can see in it.
  *
@@ -47,7 +60,7 @@ export const resolveQueueScope = ({ showAll, signal, triageStates }: QueueScopeI
   }
 
   return {
-    signals: signal ? [signal] : [...QUALITY_SIGNAL_IDS],
+    signals: signal ? [signal] : [...DEFAULT_QUALITY_SIGNAL_IDS],
     triageStates: explicitTriage ?? [...ACTIVE_TRIAGE_STATES],
   }
 }

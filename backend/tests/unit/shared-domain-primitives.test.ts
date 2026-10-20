@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { normalizeLocaleTag } from "../../src/shared/domain/locale.js";
+import { localeTagOf, normalizeLocaleTag } from "../../src/shared/domain/locale.js";
 import {
   defaultWebsiteEmbedTheme,
   isAllowedWebsiteEmbedOrigin,
@@ -8,6 +8,14 @@ import {
 } from "../../src/shared/domain/websiteEmbed.js";
 
 describe("shared domain primitives", () => {
+  it("reads an outside value as a language tag, trimmed, or as none", () => {
+    expect(localeTagOf(" pt-BR ")).toBe("pt-BR");
+    expect(localeTagOf("it")).toBe("it");
+    for (const value of [7, null, undefined, "", "Italian", { tag: "it" }]) {
+      expect(localeTagOf(value)).toBeUndefined();
+    }
+  });
+
   it("normalizes optional locale tags without depending on settings internals", () => {
     expect(normalizeLocaleTag(undefined)).toBeNull();
     expect(normalizeLocaleTag(" en-US ")).toBe("en-US");

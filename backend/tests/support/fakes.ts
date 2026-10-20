@@ -184,7 +184,7 @@ import type {
   MessageRepositoryPort,
 } from "../../src/db/repositories/messageRepository.js";
 import type { MessageSource } from "@radioso/conversation-contract";
-import { deriveMessageSourceFromRole } from "../../src/db/repositories/messageRepository.js";
+import { deriveMessageSourceFromRole, ISO_INSTANT_PATTERN } from "../../src/db/repositories/messageRepository.js";
 import type { OperatorReplyClaim, PendingOperatorReply, ReplyInterruption } from "../../src/modules/chat/contracts/index.js";
 import { VOICE_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 import { isHumanAuthoredMessageSource } from "../../src/shared/domain/messageAuthorship.js";
@@ -219,7 +219,7 @@ import {
   type OperatorDocumentTypeDefinition,
   type RetiredDocumentTypeFieldIdentity,
 } from "../../src/modules/documentTypes/contracts/documentTypeCatalog.js";
-import { decodeCursorWithKeys, encodeCursor } from "../../src/shared/domain/cursorPagination.js";
+import { CursorPaginationError, decodeCursorWithKeys, encodeCursor } from "../../src/shared/domain/cursorPagination.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 
 interface InMemoryConnectorConfigRecord {
@@ -4858,9 +4858,14 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     return [...(this.items.get(conversationId) ?? [])].filter((message) => message.workspaceId === workspaceId);
   }
 
-  async listRecentByConversationId(workspaceId: string, conversationId: string, limit: number): Promise<MessageRecord[]> {
+  async listRecentByConversationId(
+    workspaceId: string,
+    conversationId: string,
+    limit: number,
+    options: { roles?: readonly MessageRecord["role"][] } = {},
+  ): Promise<MessageRecord[]> {
     return [...(this.items.get(conversationId) ?? [])]
-      .filter((message) => message.workspaceId === workspaceId)
+      .filter((message) => message.workspaceId === workspaceId && (!options.roles || options.roles.includes(message.role)))
       .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
       .slice(-limit);
   }
@@ -4897,13 +4902,22 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
       return timeDiff !== 0 ? timeDiff : right.id.localeCompare(left.id);
     });
     const cursor = input.cursor ? decodeCursorWithKeys(input.cursor, ["createdAt", "id"]) : null;
-    const startIndex = cursor
-      ? latestFirst.findIndex(
-          (item) => item.createdAt.toISOString() === cursor.keys.createdAt && item.id === cursor.keys.id,
-        ) + 1
-      : (input.offset ?? 0);
-    const slice = latestFirst.slice(Math.max(0, startIndex), Math.max(0, startIndex) + input.limit);
-    const hasMore = Math.max(0, startIndex) + input.limit < latestFirst.length;
+    // Mirrors the real repository: the boundary is resolved by the cursor's id, scoped to this
+    // conversation, not by matching its createdAt text. A boundary id no longer in the
+    // conversation (an erased message, or another conversation's id) has no match here, so the
+    // window is empty rather than silently restarting from the newest page.
+    let startIndex: number;
+    if (cursor) {
+      const boundaryIndex = latestFirst.findIndex((item) => item.id === cursor.keys.id);
+      if (boundaryIndex === -1) {
+        return { messages: [], total: messages.length, nextCursor: null, hasMore: false };
+      }
+      startIndex = boundaryIndex + 1;
+    } else {
+      startIndex = input.offset ?? 0;
+    }
+    const slice = latestFirst.slice(startIndex, startIndex + input.limit);
+    const hasMore = startIndex + input.limit < latestFirst.length;
     const oldestFetched = slice.at(-1);
 
     return {
@@ -4922,7 +4936,7 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
   async listSinceByConversationId(
     workspaceId: string,
     conversationId: string,
-    input: { sinceCreatedAt?: Date; sinceId?: string; limit: number },
+    input: { sinceCreatedAt?: string; sinceId?: string; limit: number },
   ): Promise<{ messages: MessageRecord[]; latestCursor: string | null }> {
     const messages = [...(this.items.get(conversationId) ?? [])]
       .filter((message) => message.workspaceId === workspaceId)
@@ -4947,10 +4961,21 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
       };
     }
 
+    // Mirrors MessageRepository.preciseTimestamptz: a caller-supplied cursor is format-checked
+    // before use, so a malformed one answers the cursor's own 400 rather than reaching a cast
+    // error on the real repository (#1518 follow-up).
+    if (!ISO_INSTANT_PATTERN.test(input.sinceCreatedAt)) {
+      throw new CursorPaginationError("Cursor createdAt is not a valid timestamp");
+    }
+
+    // The in-memory store only ever creates millisecond-precision `Date`s, so comparing the
+    // cursor's text by parsing it back to a `Date` (unlike the real, Postgres-backed repository)
+    // loses nothing here.
+    const sinceCreatedAtMs = new Date(input.sinceCreatedAt).getTime();
     const newer = messages
       .filter((message) =>
-        message.createdAt.getTime() > input.sinceCreatedAt!.getTime() ||
-        (message.createdAt.getTime() === input.sinceCreatedAt!.getTime() && message.id > input.sinceId!)
+        message.createdAt.getTime() > sinceCreatedAtMs ||
+        (message.createdAt.getTime() === sinceCreatedAtMs && message.id > input.sinceId!)
       )
       .slice(0, input.limit);
 

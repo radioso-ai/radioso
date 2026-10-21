@@ -2,7 +2,7 @@ import type { MessageRecord } from "../../../db/repositories/messageRepository.j
 import type { ResolvedSkillRun, SkillDiagnostic } from "../../skills/public.js";
 import type { AppliedConstraint, ParsedQueryInterpretation } from "./queryConstraintTypes.js";
 import type { RetrievedChunk } from "./vectorSearch.js";
-import type { RequestedDateRange } from "./temporal/requestedDateRange.js";
+import type { RequestedDateRange, RequestedDateRangeDropReason } from "./temporal/requestedDateRange.js";
 
 export interface ConversationContextWindow {
   selectedMessages: MessageRecord[];
@@ -70,6 +70,8 @@ export interface StructuredRewriteResult {
    * when the question names no date or period, or when the model's range was unusable.
    */
   requestedDateRange?: RequestedDateRange;
+  /** Why the model's range was set aside; absent when it was kept or the model returned none. */
+  requestedDateRangeDropReason?: RequestedDateRangeDropReason;
   retrievalSubqueries?: RetrievalSubquery[];
   turnKind: RewriteTurnKind;
   proposedActiveSubject?: string;

@@ -95,7 +95,7 @@ export const retrieveCapability: SkillCapabilityDescriptor<"retrieve", "retrieve
       key: "rerankTopK",
       label: "Rerank top K",
       type: "number",
-      help: `How many top candidates go on to the answer, reordered by the reranker when it's on. Values below ${RETRIEVAL_BEHAVIOR.finalContextTopK} act as ${RETRIEVAL_BEHAVIOR.finalContextTopK}; max ${RETRIEVAL_BEHAVIOR.rerank.candidateLimit}. The answer uses up to ${RETRIEVAL_BEHAVIOR.finalContextTopK} of them, at most ${RETRIEVAL_BEHAVIOR.promptContextMaxPerDocument} per document, each cut to ${RETRIEVAL_BEHAVIOR.promptContextMaxCharsPerContext} characters. For a list of events in a period the question names, ${RETRIEVAL_BEHAVIOR.temporal.dateRangeListingContextTopK} replaces ${RETRIEVAL_BEHAVIOR.finalContextTopK}.`,
+      help: `How many top candidates go on to the answer, reordered by the reranker when it's on. Values below ${RETRIEVAL_BEHAVIOR.finalContextTopK} act as ${RETRIEVAL_BEHAVIOR.finalContextTopK}; max ${RETRIEVAL_BEHAVIOR.rerank.candidateLimit}. The answer uses up to ${RETRIEVAL_BEHAVIOR.finalContextTopK} of them, at most ${RETRIEVAL_BEHAVIOR.promptContextMaxPerDocument} per document, each cut to ${RETRIEVAL_BEHAVIOR.promptContextMaxCharsPerContext} characters. If temporal structured lookup finds more than ${RETRIEVAL_BEHAVIOR.finalContextTopK} passages in the period a listing question names, the answer holds up to ${RETRIEVAL_BEHAVIOR.temporal.dateRangeListingContextTopK} of them.`,
       defaultValue: retrieveSettingsDefaults.rerankTopK,
       dependsOnKey: "rerankEnabled",
       min: 1,

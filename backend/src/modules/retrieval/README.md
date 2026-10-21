@@ -105,8 +105,9 @@ imports from `services/` or `infra/`.
 - Context and prompt shape: `contextSelectionStage.ts`,
   `promptAssemblyStage.ts`, `promptBuilder.ts`. `domain/answerCandidatePool.ts`
   holds the answer's passage target (`answerContextTopK`: `finalContextTopK`,
-  or `temporal.dateRangeListingContextTopK` for a list of events in a requested
-  date range) and the one answer-candidate pool size formula (raised by
+  or, for a listing whose requested-range lookup found passages, one per passage
+  found, clamped between `finalContextTopK` and
+  `temporal.dateRangeListingContextTopK`) and the one answer-candidate pool size formula (raised by
   `rerankTopK`, floored by that target and capped by
   `RETRIEVAL_BEHAVIOR.rerank.candidateLimit`); `promptContextSelectorService.ts`
   then caps the final prompt at that many passages,

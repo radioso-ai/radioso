@@ -1,7 +1,7 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
-import { type Clock, formatIsoDateUtc, systemClock } from "../../../shared/domain/clock.js";
+import { type Clock, formatPromptDateUtc, systemClock } from "../../../shared/domain/clock.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import type { RetrievalMetadataRule } from "../../settings/contracts/retrieval.js";
@@ -86,7 +86,7 @@ export class ModelQueryRewriteGateway implements QueryRewriteGateway {
         semanticRewriteInstructions: input.semanticRewriteInstructions,
         lexicalRewriteInstructions: input.lexicalRewriteInstructions,
         query: input.query,
-        today: formatIsoDateUtc(this.clock()),
+        today: formatPromptDateUtc(this.clock()),
       }),
       reasoningEffort: RETRIEVAL_BEHAVIOR.queryInterpretation.reasoningEffort,
     });
@@ -127,7 +127,7 @@ export class OpenAIQueryRewriteGateway implements QueryRewriteGateway {
             semanticRewriteInstructions: input.semanticRewriteInstructions,
             lexicalRewriteInstructions: input.lexicalRewriteInstructions,
             query: input.query,
-            today: formatIsoDateUtc(this.clock()),
+            today: formatPromptDateUtc(this.clock()),
           }),
         },
       ],

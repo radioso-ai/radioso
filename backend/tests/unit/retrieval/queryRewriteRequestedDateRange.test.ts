@@ -5,6 +5,7 @@ import { parseStructuredRewrite } from "../../../src/modules/retrieval/services/
 import { QueryRewriteService } from "../../../src/modules/retrieval/services/queryRewriteService.js";
 import type { StructuredRewriteResult } from "../../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
 import type { ModelInferencePipeline } from "../../../src/shared/infra/llm/modelInferencePipeline.js";
+import { loadPromptTemplate } from "../../../src/shared/infra/prompts/promptLoader.js";
 
 const listingRewrite = (requestedDateRange: unknown) => JSON.stringify({
   rewrittenQuery: "events in the week of 7 December 2026",
@@ -27,16 +28,27 @@ describe("parseStructuredRewrite requested date range", () => {
     expect(result.temporalQueryMode).toBe("listing");
   });
 
-  it("has no range when the model returns null", () => {
-    expect(parseStructuredRewrite(listingRewrite(null)).requestedDateRange).toBeUndefined();
+  it("has no range, and nothing dropped, when the model returns null", () => {
+    const result = parseStructuredRewrite(listingRewrite(null));
+
+    expect(result.requestedDateRange).toBeUndefined();
+    expect(result.requestedDateRangeDropReason).toBeUndefined();
   });
 
   it("drops an unusable range and keeps the rest of the rewrite", () => {
     const result = parseStructuredRewrite(listingRewrite({ dateFrom: "2026-12-13", dateTo: "2026-12-07" }));
 
     expect(result.requestedDateRange).toBeUndefined();
+    expect(result.requestedDateRangeDropReason).toBe("invalid");
     expect(result.temporalQueryMode).toBe("listing");
     expect(result.lexicalQuery).toBe("events December 2026");
+  });
+
+  it("records a runaway range as dropped for being too long", () => {
+    const result = parseStructuredRewrite(listingRewrite({ dateFrom: "2026-01-01", dateTo: "2028-12-31" }));
+
+    expect(result.requestedDateRange).toBeUndefined();
+    expect(result.requestedDateRangeDropReason).toBe("too_long");
   });
 });
 
@@ -75,6 +87,19 @@ describe("QueryRewriteService requested date range", () => {
     });
 
     expect(rewritten.structuredResult?.requestedDateRange).toBeUndefined();
+    expect(rewritten.structuredResult?.requestedDateRangeDropReason).toBe("invalid");
+  });
+
+  it("keeps the reason the proposal's own parse dropped its range for", () => {
+    const rewritten = new QueryRewriteService().rewriteFromProposal({
+      query: "Che corsi ci sono a marzo 2027?",
+      contextWindow: emptyContextWindow,
+      enabled: true,
+      proposal: { ...proposal(), requestedDateRangeDropReason: "too_long" },
+    });
+
+    expect(rewritten.structuredResult?.requestedDateRange).toBeUndefined();
+    expect(rewritten.structuredResult?.requestedDateRangeDropReason).toBe("too_long");
   });
 });
 
@@ -100,8 +125,29 @@ describe("ModelQueryRewriteGateway date context", () => {
       },
     });
 
-    expect(prompts[0]).toContain("Today's date: 2026-10-21");
+    expect(prompts[0]).toContain("Today's date: 2026-10-21 (Wednesday)");
     expect(prompts[0]).toContain("requestedDateRange");
     expect(result.requestedDateRange).toEqual({ dateFrom: "2026-12-07", dateTo: "2026-12-13" });
+  });
+});
+
+describe("requested date range prompt rule", () => {
+  const rewritePrompts = ["retrieval/query-rewrite.md", "chat/turn-interpretation.md", "chat/turn-planning.md"];
+  const rangeRule = (template: string) =>
+    template.split("\n").find((line) => line.startsWith("requestedDateRange:"));
+
+  it("gives every rewrite prompt the same date resolution rule", () => {
+    const rules = rewritePrompts.map((path) => rangeRule(loadPromptTemplate(path)));
+
+    expect(rules[0]).toBeDefined();
+    expect(new Set(rules).size).toBe(1);
+  });
+
+  it("resolves a period that contains today to the current one and a question about the past to the last one", () => {
+    const rule = rangeRule(loadPromptTemplate("retrieval/query-rewrite.md")) ?? "";
+
+    expect(rule).toContain("contains today");
+    expect(rule).toContain("most recent past occurrence");
+    expect(rule).not.toContain("is its next occurrence from today unless");
   });
 });

@@ -5,7 +5,7 @@ import type {
   TriggerAnalysisResult,
 } from "../domain/retrievalPipelineTypes.js";
 import { REWRITE_TURN_KIND } from "../domain/retrievalPipelineTypes.js";
-import { parseRequestedDateRange } from "../domain/temporal/requestedDateRange.js";
+import { readRequestedDateRange, requestedDateRangeFields } from "../domain/temporal/requestedDateRange.js";
 import { DEFAULT_RESPONSE_LANGUAGE_POLICY } from "./queryRewriteDefaults.js";
 
 export const truncateTriggerInstruction = (value: string): string => value.trim().replace(/\s+/g, " ").slice(0, 160);
@@ -23,7 +23,7 @@ export const parseStructuredRewrite = (raw: string): StructuredRewriteResult => 
     parsed.temporalQueryMode === "listing" || parsed.temporalQueryMode === "topic_refinement"
       ? parsed.temporalQueryMode
       : "none";
-  const requestedDateRange = parseRequestedDateRange(parsed.requestedDateRange);
+  const requestedDateRange = requestedDateRangeFields(readRequestedDateRange(parsed.requestedDateRange));
   const parsedSubqueries = Array.isArray(parsed.retrievalSubqueries)
     ? parsed.retrievalSubqueries
         .filter((entry) => Boolean(entry) && typeof entry === "object")
@@ -75,7 +75,7 @@ export const parseStructuredRewrite = (raw: string): StructuredRewriteResult => 
         ? parsed.queryShape
         : undefined,
     temporalQueryMode,
-    ...(requestedDateRange ? { requestedDateRange } : {}),
+    ...requestedDateRange,
     retrievalSubqueries: parsedSubqueries,
     turnKind:
       typeof parsed.turnKind === "string" ? (parsed.turnKind) : REWRITE_TURN_KIND.AMBIGUOUS,

@@ -16,3 +16,18 @@ export const formatIsoDateUtc = (now: Date): string => {
   const day = String(now.getUTCDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 };
+
+// English weekday names: model input for the prompt's date line, not product copy.
+const UTC_WEEKDAYS = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"] as const;
+
+/**
+ * Today's UTC date with its weekday, `2026-10-21 (Wednesday)`, for prompts that resolve a
+ * period a question names. "This weekend" or "next Friday" is weekday arithmetic, and a
+ * planner decoding straight into JSON at low reasoning effort should not have to derive the
+ * weekday from the ISO date first.
+ */
+export const formatPromptDateUtc = (now: Date): string =>
+  `${formatIsoDateUtc(now)} (${UTC_WEEKDAYS[now.getUTCDay()]})`;
+
+/** As long as the longest date `formatPromptDateUtc` renders, for prompt size estimates. */
+export const PROMPT_DATE_BUDGET_STAND_IN = "0000-00-00 (Wednesday)";

@@ -3,10 +3,12 @@ import { describe, expect, it } from "vitest";
 import {
   buildTurnInterpretationPrompt,
   LlmConversationTurnInterpreter,
+  ModelTurnInterpretationGateway,
   parseTurnInterpretation,
   type TurnInterpretationGateway,
 } from "../../src/modules/chat/services/conversationTurnInterpreter.js";
 import type { PageReadCapability } from "../../src/modules/chat/services/pageRead/pageReadDecision.js";
+import type { ModelInferencePipeline } from "../../src/shared/infra/llm/modelInferencePipeline.js";
 
 const pageReadCapability: PageReadCapability = {
   available: true,
@@ -173,10 +175,33 @@ describe("ConversationTurnInterpreter", () => {
   });
 
   it("dates the staged interpretation so the rewrite can resolve a named period", () => {
-    const prompt = buildTurnInterpretationPrompt({ context: "", query: "Che corsi ci sono a marzo?", today: "2026-10-21" });
+    const prompt = buildTurnInterpretationPrompt({ context: "", query: "Che corsi ci sono a marzo?", today: "2026-10-21 (Wednesday)" });
 
-    expect(prompt).toContain("Today's date: 2026-10-21");
+    expect(prompt).toContain("Today's date: 2026-10-21 (Wednesday)");
     expect(prompt).toContain('"requestedDateRange":{"dateFrom":"YYYY-MM-DD","dateTo":"YYYY-MM-DD"}|null');
+  });
+
+  it("dates the staged gateway's prompt with its clock's UTC day and weekday", async () => {
+    const prompts: string[] = [];
+    const inference = {
+      async complete(request: { prompt: string }) {
+        prompts.push(request.prompt);
+        return { text: directInterpretation() };
+      },
+    } as unknown as ModelInferencePipeline;
+
+    await new ModelTurnInterpretationGateway(inference, () => new Date("2026-10-21T23:30:00.000Z")).interpret({
+      query: "What's on this weekend?",
+      contextMessages: [],
+      usageContext: {
+        workspaceId: "workspace-1",
+        surface: "assistant",
+        operation: "turn_interpretation",
+        attemptKey: "turn_interpretation",
+      },
+    });
+
+    expect(prompts[0]).toContain("Today's date: 2026-10-21 (Wednesday)");
   });
 
   it("carries a staged rewrite's requested date range into the proposal", () => {

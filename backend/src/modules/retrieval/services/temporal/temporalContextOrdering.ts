@@ -34,15 +34,14 @@ export const orderTemporalPromptContexts = (input: {
   const indexed = input.contexts.map((context, index) => ({
     context,
     index,
-    dateFrom: normalizeIsoDate(context.metadata?.dateFrom),
-    dateTo: normalizeIsoDate(context.metadata?.dateTo) ?? normalizeIsoDate(context.metadata?.dateFrom),
+    ...contextDateSpan(context.metadata),
   }));
   const dated = indexed.filter((entry) => entry.dateFrom);
   const undated = indexed.filter((entry) => !entry.dateFrom);
 
   if (input.dateRange) {
     return {
-      orderedContexts: orderAroundDateRange(dated, undated, input.dateRange),
+      orderedContexts: orderAroundDateRange(dated, undated, input.dateRange, input.today),
       applied: true,
       today: input.today,
       dateRange: input.dateRange,
@@ -74,22 +73,36 @@ export const orderTemporalPromptContexts = (input: {
 const isPastEvent = (dateTo: string | undefined, today: string): boolean =>
   Boolean(dateTo && dateTo < today);
 
-// A question that names a range is answered by the events in it, so they lead, soonest
-// first, whether the range is ahead or behind today. Undated context follows, then events
-// after the range, then events before it, nearest first.
+// The upcoming order with the requested range pulled to the front. A question that names a
+// range is answered by the events in it, so they lead, soonest first, whether the range is
+// ahead of or behind today. Other ongoing and upcoming events follow, soonest first, ahead of
+// undated context: a topic question asked about the wrong period ("is the retreat in March?"
+// when it is in April) must keep the real date through the passage cut. Past events outside
+// the range come last, most recent first.
 const orderAroundDateRange = (
   dated: DatedContextEntry[],
   undated: DatedContextEntry[],
   range: RequestedDateRange,
+  today: string,
 ): RerankedCandidate[] => {
-  const at = (position: "within" | "before" | "after") =>
-    dated.filter((entry) => positionInDateRange(entry, range) === position);
+  const inRange = dated.filter((entry) => positionInDateRange(entry, range) === "within");
+  const outside = dated.filter((entry) => positionInDateRange(entry, range) !== "within");
   return [
-    ...at("within").sort(compareDatedContexts),
+    ...inRange.sort(compareDatedContexts),
+    ...outside.filter((entry) => !isPastEvent(entry.dateTo, today)).sort(compareDatedContexts),
     ...undated,
-    ...at("after").sort(compareDatedContexts),
-    ...at("before").sort(comparePastDatedContexts),
+    ...outside.filter((entry) => isPastEvent(entry.dateTo, today)).sort(comparePastDatedContexts),
   ].map((entry) => entry.context);
+};
+
+// A context's date span from its metadata. One date is that single day, matching how the
+// structured lookup and `positionInDateRange` read a chunk, and an inverted pair spans its
+// two dates. A context with neither date is undated.
+const contextDateSpan = (metadata: Record<string, unknown> | undefined): { dateFrom?: string; dateTo?: string } => {
+  const dates = [normalizeIsoDate(metadata?.dateFrom), normalizeIsoDate(metadata?.dateTo)]
+    .filter((date): date is string => date !== undefined)
+    .sort();
+  return dates.length === 0 ? {} : { dateFrom: dates[0], dateTo: dates[dates.length - 1] };
 };
 
 const shouldApplyTemporalOrdering = (input: {

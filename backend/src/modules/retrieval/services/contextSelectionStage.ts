@@ -15,13 +15,13 @@ export class ContextSelectionStageService implements ContextSelectionStageContra
   ) {}
 
   async execute(input: CandidatePreparationStageResult) {
-    // A listing whose structured lookup found events in the requested range answers from
-    // those events, so its prompt and the pool feeding it may hold a busy week of them.
-    const contextTopK = answerContextTopK({
-      dateRangeListing: input.temporalQueryMode === "listing"
-        && input.temporalDateRange !== undefined
-        && (input.temporalContexts?.length ?? 0) > 0,
-    });
+    // A listing whose structured lookup found passages in the requested range answers from
+    // them, so its prompt and the pool feeding it are sized to how many it found.
+    const contextTopK = answerContextTopK(
+      input.temporalQueryMode === "listing" && input.temporalDateRange !== undefined
+        ? { requestedRangePassageCount: input.temporalContexts?.length ?? 0 }
+        : {},
+    );
     const clauses = getContextSelectionClauses(input.shapeSelection?.resolvedRun);
     const rerankEnabled = clauses.ranking.rerankMode === "disabled"
       ? false

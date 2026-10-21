@@ -286,6 +286,7 @@ export class ActivityTraceAssembler {
           relatedEntities: prompt.rewrittenQuery.structuredResult?.relatedEntities ?? [],
           temporalQueryMode,
           requestedDateRange: prompt.rewrittenQuery.structuredResult?.requestedDateRange ?? null,
+          requestedDateRangeDropReason: prompt.rewrittenQuery.structuredResult?.requestedDateRangeDropReason ?? null,
           rewriteEligible: prompt.rewrittenQuery.retrievalEligible,
           rewriteRan: diagnostics.rewriteRan ?? false,
         },

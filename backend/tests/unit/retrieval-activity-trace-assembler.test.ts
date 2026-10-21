@@ -352,7 +352,7 @@ describe("activity trace assembler", () => {
     const interpretation = trace.stages.find((stage) => stage.kind === "query_interpretation");
     const temporal = trace.stages.find((stage) => stage.kind === "temporal_retrieval");
 
-    expect(interpretation?.outputs).toMatchObject({ requestedDateRange: week });
+    expect(interpretation?.outputs).toMatchObject({ requestedDateRange: week, requestedDateRangeDropReason: null });
     expect(temporal?.inputs).toEqual({ dateRange: week });
     expect(temporal?.metrics).toMatchObject({ dateRangeDays: 7 });
   });
@@ -368,5 +368,25 @@ describe("activity trace assembler", () => {
     expect(interpretation?.outputs).toMatchObject({ requestedDateRange: null });
     expect(temporal?.inputs).toEqual({ dateRange: null });
     expect(temporal?.metrics).not.toHaveProperty("dateRangeDays");
+  });
+
+  it("records why the rewrite dropped a requested date range, without the dates", () => {
+    const input = baseInput();
+    input.prompt.rewrittenQuery.structuredResult = {
+      rewrittenQuery: "events this year and next",
+      queryShape: "event_date_lookup",
+      temporalQueryMode: "listing",
+      requestedDateRangeDropReason: "too_long",
+      turnKind: "fresh_subject",
+      relatedEntities: [],
+      unresolved: false,
+      confidence: 0.9,
+    };
+    input.prompt.temporalQueryMode = "listing";
+
+    const trace = new ActivityTraceAssembler().assemble(input);
+    const interpretation = trace.stages.find((stage) => stage.kind === "query_interpretation");
+
+    expect(interpretation?.outputs).toMatchObject({ requestedDateRange: null, requestedDateRangeDropReason: "too_long" });
   });
 });

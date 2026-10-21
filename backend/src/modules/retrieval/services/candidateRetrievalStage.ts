@@ -14,7 +14,7 @@ import type {
 } from "../domain/temporal/temporalCandidateRetrieval.js";
 import type { RequestedDateRange } from "../domain/temporal/requestedDateRange.js";
 import type { TemporalQueryMode } from "../domain/retrievalPipelineTypes.js";
-import { answerCandidatePoolSize, answerContextTopK } from "../domain/answerCandidatePool.js";
+import { dateRangeLookupDepth } from "../domain/answerCandidatePool.js";
 import { normalizeVectorMetadataFilter, type VectorMetadataFilter } from "../domain/vectorFilter.js";
 import {
   DEGRADABLE_RETRIEVAL_CHANNELS,
@@ -312,8 +312,6 @@ const resolveSemanticAvailability = (input: {
 };
 
 // Without a requested range the lookup keeps its upcoming-from-today depth, `vectorTopK`.
-// A requested range fetches as many chunks as a date listing's answer pool can use: in a
-// listing the lookup's chunks lead the pool, so any chunk past it would never be read.
 const temporalLookupScope = (input: {
   dateRange: RequestedDateRange | undefined;
   today: string;
@@ -322,7 +320,7 @@ const temporalLookupScope = (input: {
   input.dateRange
     ? {
         window: { kind: "requested_range", range: input.dateRange },
-        topK: answerCandidatePoolSize(input.settings.rerankTopK, answerContextTopK({ dateRangeListing: true })),
+        topK: dateRangeLookupDepth(input.settings.rerankTopK),
       }
     : {
         window: { kind: "upcoming", today: input.today },

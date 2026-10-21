@@ -1,8 +1,9 @@
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
-import { type Clock, formatIsoDateUtc, systemClock } from "../../../shared/domain/clock.js";
+import { type Clock, formatPromptDateUtc, systemClock } from "../../../shared/domain/clock.js";
 import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import type { FinalPromptContext, ResponseLanguagePolicy } from "../domain/retrievalPipelineTypes.js";
+import type { RequestedDateRange } from "../domain/temporal/requestedDateRange.js";
 import { resolveContextSourceUrl } from "./contextSourceUrl.js";
 import { renderMetadataPromptText } from "./searchTextRenderer.js";
 import { SharedAnswerInstructionBuilder } from "./sharedAnswerInstructionBuilder.js";
@@ -24,6 +25,8 @@ export class PromptBuilder {
     retrievalQuery?: string;
     history: MessageRecord[];
     contexts: FinalPromptContext[];
+    /** The period the question asks about, when the rewrite resolved one. */
+    requestedDateRange?: RequestedDateRange;
     settings: {
       responseIdentity?: ResponseIdentity | null;
       customInstruction?: string;
@@ -68,7 +71,7 @@ export class PromptBuilder {
           : "",
         conversation_mode_instruction_block: "",
         response_language_instruction: answerInstructionBlocks.responseLanguageInstruction,
-        today: formatIsoDateUtc(this.clock()),
+        today: formatPromptDateUtc(this.clock()),
         // The grounded answer prompt answers or declines inline; it carries only the
         // compact guard-case essentials. The full decline ruleset stays scoped to the
         // dedicated focused-miss path (#863 split-by-turn-type).
@@ -80,6 +83,15 @@ export class PromptBuilder {
         original_query: input.query,
         query: input.query,
         retrieval_query: input.retrievalQuery ?? input.query,
+        // Per-turn, so it renders in the request and leaves the standing instructions, and
+        // their reusable prefix, unchanged.
+        requested_period_section: input.requestedDateRange
+          ? `${renderPromptTemplate("retrieval/answer-requested-period.md", {
+              period: formatRequestedPeriod(input.requestedDateRange),
+            })}
+
+`
+          : "",
       }),
       citations: input.contexts.map((context) => ({
         documentId: context.documentId,
@@ -89,3 +101,9 @@ export class PromptBuilder {
     };
   }
 }
+
+// "2026-10-24 (Saturday) to 2026-10-25 (Sunday)", or the one day for a single-day period.
+const formatRequestedPeriod = (range: RequestedDateRange): string => {
+  const day = (date: string) => formatPromptDateUtc(new Date(`${date}T00:00:00.000Z`));
+  return range.dateFrom === range.dateTo ? day(range.dateFrom) : `${day(range.dateFrom)} to ${day(range.dateTo)}`;
+};

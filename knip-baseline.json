@@ -381,7 +381,6 @@
   "types|backend/src/modules/retrieval/services/agenticTools/fetchChunkTool.ts|FetchChunkToolDeps",
   "types|backend/src/modules/retrieval/services/agenticTools/finalizeTool.ts|FinalizeToolDeps",
   "types|backend/src/modules/retrieval/services/agenticTools/lexicalSearchTool.ts|LexicalSearchToolDeps",
-  "types|backend/src/modules/retrieval/services/agenticTools/rerankTool.ts|RerankToolDeps",
   "types|backend/src/modules/retrieval/services/agenticTools/rewriteQueryTool.ts|RewriteQueryToolDeps",
   "types|backend/src/modules/retrieval/services/agenticTools/semanticSearchTool.ts|SemanticSearchToolDeps",
   "types|backend/src/modules/retrieval/services/metadataRuleFieldReferenceService.ts|WorkspaceSkillConfigSource",

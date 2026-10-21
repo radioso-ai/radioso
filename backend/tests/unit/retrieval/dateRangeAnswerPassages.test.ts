@@ -281,4 +281,11 @@ describe("date range answers under the production retrieval settings", () => {
     expect(result.contexts).toHaveLength(5);
     expect(result.contexts.every((context) => context.metadata?.language === "it")).toBe(true);
   });
+
+  it("hands the answer the period the question asks about", async () => {
+    const { result } = await runJanuaryTurn({ rangeCount: 3, semanticHits: [] });
+
+    expect(result.prompt).toContain("Requested period:\n2027-01-01 (Friday) to 2027-01-31 (Sunday)");
+    expect(result.systemPrompt).not.toContain("Requested period");
+  });
 });

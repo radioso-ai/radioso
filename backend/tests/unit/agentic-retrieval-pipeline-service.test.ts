@@ -339,6 +339,46 @@ describe("AgenticRetrievalPipelineService", () => {
     expect(result.responseSettings.responseLanguage).toBe("English");
   });
 
+  it("hands the answer the period the rewrite resolved", async () => {
+    const detState: StubDeterministicState = { interpretCalls: 0, runWithoutRetrievalCalls: 0, lastRunWithoutRetrievalInput: null };
+    const calls: Array<Parameters<PromptBuilder["build"]>[0]> = [];
+    const promptBuilder = {
+      build(input: Parameters<PromptBuilder["build"]>[0]) {
+        calls.push(input);
+        return { systemPrompt: "system", prompt: "prompt", citations: [] };
+      },
+    } as unknown as PromptBuilder;
+    const deterministic = stubDeterministic(detState);
+    deterministic.interpret = async (request: RetrievalPipelineRequest) => {
+      const interpretation = buildInterpretation(request);
+      interpretation.interpretation.result.rewrittenQuery.structuredResult = {
+        rewrittenQuery: request.query,
+        requestedDateRange: { dateFrom: "2026-10-24", dateTo: "2026-10-25" },
+        turnKind: "fresh_subject",
+        relatedEntities: [],
+        unresolved: false,
+        confidence: 0.9,
+      };
+      return interpretation;
+    };
+    const service = new AgenticRetrievalPipelineService({
+      deterministic,
+      runner: stubRunner({
+        selectedChunks: [stubChunk("c1")],
+        rationale: null,
+        trace: emptyTrace(),
+        terminatedReason: "completed",
+        stepsTaken: 1,
+      }),
+      promptBuilder,
+      systemPrompt: "sp",
+    });
+
+    await service.run(buildRequest({}));
+
+    expect(calls[0]?.requestedDateRange).toEqual({ dateFrom: "2026-10-24", dateTo: "2026-10-25" });
+  });
+
   it("passes caller-supplied agentic tool factories into the runner", async () => {
     const agenticToolFactories = [() => []];
     const observed: { input?: { agenticToolFactories?: unknown } } = {};

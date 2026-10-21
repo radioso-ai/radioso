@@ -11,7 +11,7 @@ import {
   markReasoningEffortUnsupported,
 } from "../../../shared/infra/llm/samplingParamSupport.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
-import { type Clock, formatIsoDateUtc, systemClock } from "../../../shared/domain/clock.js";
+import { type Clock, formatPromptDateUtc, systemClock } from "../../../shared/domain/clock.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { recordModelCallTrace } from "../../../shared/observability/tracing/modelCallTraceContext.js";
@@ -21,7 +21,7 @@ import { getCandidateFusedScore } from "./candidateScoring.js";
 export interface RerankGatewayInput {
   query: string;
   contexts: RetrievedCandidate[];
-  /** Reference date (UTC `YYYY-MM-DD`) the model uses to judge event recency. */
+  /** Today's UTC date line from `formatPromptDateUtc`, the model's reference for event recency. */
   today: string;
   workspaceContext?: LlmCapabilityResolveInput;
   usageContext?: ModelCallUsageContext;
@@ -349,7 +349,7 @@ export class RerankService {
     }
 
     try {
-      const today = formatIsoDateUtc(this.clock());
+      const today = formatPromptDateUtc(this.clock());
       const rerankBatches = chunkContexts(input.contexts, RETRIEVAL_BEHAVIOR.rerank.maxBatchSize);
       const batchScores = await Promise.all(
         rerankBatches.map((contexts, batchIndex) =>

@@ -110,6 +110,13 @@ describe("ModelDocumentEnrichmentGateway", () => {
     expect((notJson as Error).message).not.toContain("event");
   });
 
+  it("treats a reply cut off at the output limit as truncated even when what arrived parses", async () => {
+    // A forced schema tool call cut off at max_tokens can arrive as a complete-looking `{}`.
+    const { pipeline } = scriptedPipeline([{ text: "{}", stopReason: "output_limit" }]);
+
+    expect(await reasonOf(new ModelDocumentEnrichmentGateway(pipeline).generate(request()))).toBe("truncated");
+  });
+
   it("retries with less deliberation, and the same output cap, after a reply cut off at the limit", async () => {
     const { pipeline, requests } = scriptedPipeline([{ text: VALID_REPLY }, { text: VALID_REPLY }]);
     const gateway = new ModelDocumentEnrichmentGateway(pipeline);
@@ -186,6 +193,19 @@ describe("enrichment through the model gateway", () => {
 
     expect(requests).toHaveLength(2);
     expect(result).toMatchObject({ status: "applied", attemptCount: 2 });
+  });
+
+  it("never applies an empty envelope cut off at the limit, so earlier extracted dates are not cleared", async () => {
+    const { pipeline, requests } = scriptedPipeline([
+      { text: "{}", stopReason: "output_limit" },
+      { text: "{}", stopReason: "output_limit" },
+    ]);
+
+    const result = await enrich(pipeline);
+
+    expect(requests.map((entry) => entry.reasoningEffort)).toEqual(["low", "minimal"]);
+    expect(result).toMatchObject({ status: "failed", attemptCount: 2 });
+    expect(result.provenance.failureReason).toBe("invalid_output: truncated");
   });
 
   it("asks again after a reply that does not match the schema, then fails", async () => {

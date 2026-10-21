@@ -24,13 +24,15 @@ const stripJsonFence = (value: string): string =>
 
 /** Reads the reply as JSON, naming what went wrong without repeating any of it. */
 const readReply = (result: TextGenerationResult): unknown => {
+  // Checked before parsing: a forced schema tool call cut off at the limit can
+  // arrive as a complete-looking `{}`, which would pass as an empty envelope.
+  if (result.stopReason === "output_limit") {
+    throw new EnrichmentReplyUnreadableError("truncated");
+  }
   const text = stripJsonFence(result.text);
   try {
     return JSON.parse(text) as unknown;
   } catch {
-    if (result.stopReason === "output_limit") {
-      throw new EnrichmentReplyUnreadableError("truncated");
-    }
     throw new EnrichmentReplyUnreadableError(text ? "not_json" : "empty");
   }
 };

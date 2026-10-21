@@ -10,6 +10,11 @@ export interface DocumentEnrichmentStrategyInput<TChunk extends EnrichableChunk 
   documentMetadata: Record<string, unknown>;
   chunks: TChunk[];
   facts: TemporalFact[];
+  /**
+   * Facts the run dropped before placing these: invalid, or quoting text the
+   * document does not contain. Omitted means unknown, and is read as "some".
+   */
+  droppedFactCount?: number;
 }
 
 export interface DocumentEnrichmentStrategyResult<TChunk extends EnrichableChunk = EnrichableChunk> {
@@ -60,10 +65,21 @@ const sharedRange = (facts: TemporalFact[]): DateRange | null => {
  * document-wide when every fact names it — the document is about one dated
  * event, wherever the date is stated — or else when every fact quoted from
  * the title names it.
+ *
+ * Only a complete reading spreads a range: no fact dropped, and every fact
+ * resolved to a date. An uncovered chunk may otherwise hold exactly the date
+ * the run lost, and stamping it with a survivor's date would be wrong.
  */
-const eventChunkPatches = (chunks: EnrichableChunk[], facts: TemporalFact[]): ChunkMetadataPatch[] => {
+const eventChunkPatches = (
+  chunks: EnrichableChunk[],
+  facts: TemporalFact[],
+  droppedFactCount: number | undefined,
+): ChunkMetadataPatch[] => {
   const patches = buildChunkMetadataPatches(chunks, facts);
-  const documentWide = sharedRange(facts) ?? sharedRange(facts.filter((fact) => fact.sourceRange === null));
+  const complete = droppedFactCount === 0 && facts.every((fact) => Boolean(fact.dateFrom));
+  const documentWide = complete
+    ? sharedRange(facts) ?? sharedRange(facts.filter((fact) => fact.sourceRange === null))
+    : null;
   if (!documentWide) {
     return patches;
   }
@@ -80,7 +96,7 @@ const eventStrategy: DocumentEnrichmentStrategy = {
   shape: "event",
   apply(input) {
     const eventFacts = input.facts.filter((fact) => fact.kind === "event_date");
-    const patches = eventChunkPatches(input.chunks, eventFacts);
+    const patches = eventChunkPatches(input.chunks, eventFacts, input.droppedFactCount);
     const patchedChunks = applyMetadataPatches(input.chunks, patches);
     // Extracted tags belong in the document's flat metadata too, so operators
     // can see and edit them like any hand-written tag. The document carries the

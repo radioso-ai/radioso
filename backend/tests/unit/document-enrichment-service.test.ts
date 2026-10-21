@@ -124,6 +124,37 @@ describe("DocumentEnrichmentService", () => {
     expect(result.documentMetadata).toMatchObject({ dateFrom: "2026-07-17", dateTo: "2026-07-19" });
   });
 
+  it("keeps the one placed date of a five-course list on its own chunk when the other quotes cannot be placed", async () => {
+    const courses = ["Yoga: 7 dicembre", "Meditazione: 8 dicembre", "Ayurveda: 9 dicembre", "Hatha: 10 dicembre", "Kirtan: 11 dicembre"];
+    const markdownContent = courses.join("\n\n");
+    let offset = 0;
+    const chunks = courses.map((course, chunkIndex) => {
+      const chunk = { chunkIndex, startOffset: offset, endOffset: offset + course.length, metadata: {} };
+      offset += course.length + 2;
+      return chunk;
+    });
+    const { gateway } = scriptedGateway([{
+      output: eventOutput([
+        workshopFact({ quote: "Yoga il 7/12", dateFrom: "2026-12-07", dateTo: null }),
+        workshopFact({ quote: "Meditazione l'8/12", dateFrom: "2026-12-08", dateTo: null }),
+        workshopFact({ quote: "Ayurveda: 9 dicembre", dateFrom: "2026-12-09", dateTo: null }),
+        workshopFact({ quote: "Hatha: 10 dicembre", dateFrom: "2026-02-30", dateTo: null }),
+        workshopFact({ quote: "Kirtan l'11/12", dateFrom: "2026-12-11", dateTo: null }),
+      ]),
+    }]);
+
+    const result = await serviceWith(gateway).enrich({ ...workshopInput({ markdownContent }), chunks });
+
+    expect(result.provenance).toMatchObject({ factCount: 1, droppedFactCount: 4 });
+    expect(result.chunks.map((chunk) => (chunk.metadata as Record<string, unknown>).dateFrom ?? null)).toEqual([
+      null,
+      null,
+      "2026-12-09",
+      null,
+      null,
+    ]);
+  });
+
   it("drops an invalid fact instead of failing the document", async () => {
     const { gateway } = scriptedGateway([{
       output: eventOutput([

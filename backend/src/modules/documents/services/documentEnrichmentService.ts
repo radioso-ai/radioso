@@ -172,6 +172,7 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
           documentMetadata: applied.documentMetadata,
           chunks: applied.chunks,
           facts: located.facts,
+          droppedFactCount,
         },
         {
           sourceMetadata: input.source?.documentMetadata,

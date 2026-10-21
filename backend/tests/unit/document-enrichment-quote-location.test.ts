@@ -102,6 +102,56 @@ describe("locating extracted facts from quoted text", () => {
     expect(rangeText(body, located.facts[2]?.sourceRange)).toBe("Mercoledì** 9 dicembre");
   });
 
+  it("keeps offsets exact after emoji and other characters outside the Basic Multilingual Plane", () => {
+    const bodies = [
+      "🎉🎉 **Sabato 12 dicembre**",
+      `${"📍 Sede: Roma\n".repeat(5)}Lunedì 7 dicembre`,
+      `${"📅".repeat(30)} Lunedì 7 dicembre`,
+      "🎉 𝐂𝐨𝐫𝐬𝐨 di yoga — Lunedì 7 dicembre",
+    ];
+    for (const body of bodies) {
+      const quote = body.includes("Sabato") ? "Sabato 12 dicembre" : "Lunedì 7 dicembre";
+
+      const located = locateQuotedFacts({ facts: [fact(quote)], body, title: "Corso" });
+
+      expect(located.facts[0]?.sourceRange).toEqual({ start: body.indexOf(quote), end: body.indexOf(quote) + quote.length });
+    }
+  });
+
+  it("places a quote that itself carries an emoji, and decomposed accents after an emoji", () => {
+    const body = "Programma\n\n📅 12 dicembre — 🎉 Mercoledì 9 dicembre";
+
+    const located = locateQuotedFacts({
+      facts: [fact("📅 12 dicembre"), fact("🎉 Mercoledì 9 dicembre", "2026-12-09")],
+      body,
+      title: "Programma",
+    });
+
+    expect(rangeText(body, located.facts[0]?.sourceRange)).toBe("📅 12 dicembre");
+    expect(rangeText(body, located.facts[1]?.sourceRange)).toBe("🎉 Mercoledì 9 dicembre");
+  });
+
+  it("matches whole numbers and words only, falling back to the next occurrence", () => {
+    const body = "Corso A: 21 dicembre 2026\n\nCorso B: 1 dicembre 2026";
+
+    const located = locateQuotedFacts({
+      facts: [fact("1 dicembre", "2026-12-01"), fact("orso", "2026-12-01"), fact("3 March", "2027-03-03")],
+      body,
+      title: "Corsi — 13 March",
+    });
+
+    expect(located.facts[0]?.sourceRange?.start).toBe(body.indexOf("Corso B: 1 dicembre") + "Corso B: ".length);
+    expect(located.unplacedCount).toBe(2);
+  });
+
+  it("needs no word boundary next to scripts written without spaces", () => {
+    const body = "講座は2026年12月7日に開催します。";
+
+    const located = locateQuotedFacts({ facts: [fact("12月7日", "2026-12-07")], body, title: "講座" });
+
+    expect(rangeText(body, located.facts[0]?.sourceRange)).toBe("12月7日");
+  });
+
   it("matches a quote that spans a line break as a single space", () => {
     const body = "Arrivo lunedì 2 agosto\n2027 dopo le 15:00.";
 

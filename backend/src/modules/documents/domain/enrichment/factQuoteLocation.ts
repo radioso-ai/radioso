@@ -54,21 +54,52 @@ const foldText = (value: string): FoldedText => {
         folded.ends.push(index);
         pendingSpaceAt = null;
       }
-      for (const part of replacement) {
-        folded.text += part;
+      // One entry per UTF-16 unit, so an index into `text` is an index into
+      // `starts` and `ends` past emoji and other surrogate pairs too.
+      for (let unit = 0; unit < replacement.length; unit += 1) {
         folded.starts.push(index);
         folded.ends.push(end);
       }
+      folded.text += replacement;
     }
     index = end;
   }
   return folded;
 };
 
+const WORD_CHARACTER = /[\p{L}\p{N}]/u;
+// Scripts written without spaces between words: any character may border a quote.
+const UNSPACED_SCRIPT = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
+
+/** True when two adjacent characters belong to one word or number, as "2" and "1" in "21". */
+const joinsWord = (left: string | undefined, right: string | undefined): boolean =>
+  left !== undefined
+  && right !== undefined
+  && WORD_CHARACTER.test(left)
+  && WORD_CHARACTER.test(right)
+  && !UNSPACED_SCRIPT.test(left)
+  && !UNSPACED_SCRIPT.test(right);
+
+const lastCodePoint = (value: string): string | undefined => [...value].at(-1);
+const firstCodePoint = (value: string): string | undefined => [...value][0];
+
+/**
+ * Occurrences of the needle that start and end on word boundaries, so "1
+ * dicembre" never matches inside "21 dicembre", as spans of the original text.
+ */
 const occurrencesOf = (haystack: FoldedText, needle: string): Array<{ start: number; end: number }> => {
   const ranges: Array<{ start: number; end: number }> = [];
+  const [first, last] = [firstCodePoint(needle), lastCodePoint(needle)];
   for (let at = haystack.text.indexOf(needle); at !== -1; at = haystack.text.indexOf(needle, at + 1)) {
-    ranges.push({ start: haystack.starts[at] ?? 0, end: haystack.ends[at + needle.length - 1] ?? 0 });
+    const after = at + needle.length;
+    const before = lastCodePoint(haystack.text.slice(Math.max(0, at - 2), at));
+    const next = firstCodePoint(haystack.text.slice(after, after + 2));
+    const start = haystack.starts[at];
+    const end = haystack.ends[after - 1];
+    if (joinsWord(before, first) || joinsWord(last, next) || start === undefined || end === undefined) {
+      continue;
+    }
+    ranges.push({ start, end });
   }
   return ranges;
 };
@@ -84,9 +115,10 @@ const toTemporalFact = (fact: QuotedTemporalFact, sourceRange: TemporalFact["sou
 /**
  * Places each quoted fact in the document body, in the offsets chunks use.
  *
- * - A quote found in the body takes the span it matched. Facts arrive in
- *   document order, so a quote that repeats resolves to its first occurrence
- *   after the previous placed fact, or to its first occurrence when none follows.
+ * - A quote found in the body takes the span it matched. Only whole words and
+ *   numbers match. Facts arrive in document order, so a quote that repeats
+ *   resolves to its first occurrence after the previous placed fact, or to its
+ *   first occurrence when none follows.
  * - A quote found only in the title dates the document as a whole: it is kept
  *   with no range and sits on no particular chunk.
  * - A quote found in neither is dropped and counted. The representation's
@@ -110,7 +142,7 @@ export const locateQuotedFacts = (input: {
     if (placed) {
       facts.push(toTemporalFact(fact, placed));
       cursor = placed.end;
-    } else if (quote && title.text.includes(quote)) {
+    } else if (quote && occurrencesOf(title, quote).length > 0) {
       facts.push(toTemporalFact(fact, null));
     } else {
       unplacedCount += 1;

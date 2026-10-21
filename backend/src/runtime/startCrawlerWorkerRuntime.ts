@@ -1,3 +1,4 @@
+import { closeDependencies } from "../app/server/closeDependencies.js";
 import { buildDependencies } from "../app/server/dependencies.js";
 import type { Env } from "../app/config/env.js";
 import type { ApplicationModule } from "../app/composition/index.js";
@@ -55,13 +56,9 @@ export const startCrawlerWorkerRuntime = async (
         await dependencies.websiteCrawlWorker.stop();
       } finally {
         try {
-          await dependencies.realtimePublisherLifecycle.shutdown();
+          await closeDependencies(dependencies);
         } finally {
-          try {
-            await dependencies.applicationModules.shutdownAll();
-          } finally {
-            await stopRuntimeTracing();
-          }
+          await stopRuntimeTracing();
         }
       }
     },

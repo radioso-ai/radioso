@@ -1212,6 +1212,58 @@ describe("seed fixtures", () => {
     }
   });
 
+  it("accepts a voice case its deterministic half drives one way, and rejects one it would drive no way or two", () => {
+    const voice = { id: "voice", name: "voice", query: "Hello", assertions: [] };
+    const chatEvents = [{ type: "done" }];
+
+    expect(parseConversationQualityCases([{ ...voice, voiceTurn: { chatEvents } }])[0]?.voiceTurn).toEqual({ chatEvents });
+    expect(parseConversationQualityCases([{ ...voice, voiceTurn: { scriptedBrain: "thanks-quick-reply" } }])[0]?.voiceTurn)
+      .toEqual({ scriptedBrain: "thanks-quick-reply" });
+    // A case that names neither would run nowhere once a live run skips it.
+    expect(() => parseConversationQualityCases([{ ...voice, voiceTurn: {} }])).toThrow(/chatEvents.*scriptedBrain/u);
+    expect(() => parseConversationQualityCases([{ ...voice, voiceTurn: { chatEvents, scriptedBrain: "thanks-quick-reply" } }]))
+      .toThrow(/chatEvents.*scriptedBrain/u);
+  });
+
+  it("marks the voice expectations only the brain's speed decides as deterministic-only, by their definition", () => {
+    const [parsed] = parseConversationQualityCases([{
+      id: "voice",
+      name: "voice",
+      query: "Hello",
+      voiceTurn: { chatEvents: [{ type: "done" }] },
+      assertions: [
+        { type: "voice_bridge_emitted", expected: false },
+        { type: "voice_bridge_emitted", expected: true },
+        { type: "voice_turn_limit_reached", expected: true },
+        { type: "voice_turn_limit_reached", expected: false },
+        { type: "voice_turn_outcome", kind: "continue" },
+        { type: "voice_turn_outcome", kind: "continue", deterministicOnly: true },
+      ],
+    }]);
+
+    expect(parsed?.assertions).toEqual([
+      { type: "voice_bridge_emitted", expected: false, deterministicOnly: true },
+      { type: "voice_bridge_emitted", expected: true },
+      { type: "voice_turn_limit_reached", expected: true, deterministicOnly: true },
+      { type: "voice_turn_limit_reached", expected: false, deterministicOnly: true },
+      { type: "voice_turn_outcome", kind: "continue" },
+      { type: "voice_turn_outcome", kind: "continue", deterministicOnly: true },
+    ]);
+  });
+
+  it.each([
+    ["no bridge", { type: "voice_bridge_emitted", expected: false, deterministicOnly: false }],
+    ["the turn limit", { type: "voice_turn_limit_reached", expected: false, deterministicOnly: false }],
+  ])("refuses a case that marks %s live-gated, which only the brain's speed decides live", (_what, assertion) => {
+    expect(() => parseConversationQualityCases([{
+      id: "voice",
+      name: "voice",
+      query: "Hello",
+      voiceTurn: { chatEvents: [{ type: "done" }] },
+      assertions: [assertion],
+    }])).toThrow(/deterministicOnly/u);
+  });
+
   it("rejects a dataset with duplicate case ids", () => {
     expect(() =>
       parseConversationQualityCases([

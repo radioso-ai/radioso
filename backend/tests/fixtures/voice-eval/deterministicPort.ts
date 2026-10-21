@@ -1,6 +1,8 @@
 import type { ChatStreamEvent } from "../../../src/modules/chat/contracts/index.js";
 import {
   conversationQualityCaseTurnText,
+  type ConversationQualityCase,
+  type ConversationQualityObservedOutput,
   type ConversationQualityRunnerPort,
   type VoiceEvalChatScriptEvent,
 } from "../../../src/modules/eval/suite/index.js";
@@ -9,8 +11,11 @@ import {
   type VoiceChatTurnRequest,
   type VoiceSessionStore,
 } from "../../../src/modules/voiceChannel/public.js";
-import { observeVoiceTurn } from "../../../scripts/evalRunnerAdapter.js";
+import { createVoiceTurnRunnerPort, observeVoiceTurn } from "../../../scripts/evalRunnerAdapter.js";
+import { registerDisposableAgent, seedVoiceSettings } from "../../../scripts/evalRunnerSupport.js";
+import { createTestDependencies } from "../../support/testApp.js";
 import { VOICE_EVAL_AGENT_PROFILE, VOICE_EVAL_FALLBACK_LINE } from "./agent.js";
+import { voiceEvalBrains, type VoiceEvalBrain } from "./scriptedBrains.js";
 
 const WORKSPACE_ID = "11111111-1111-4111-8111-111111111111";
 const AGENT_ID = "22222222-2222-4222-8222-222222222222";
@@ -83,34 +88,81 @@ const scriptedChat = (chatEvents: readonly VoiceEvalChatScriptEvent[]) => ({
 });
 
 /**
- * The deterministic voice runner: a fresh, real `VoiceTurnService` per case (the same policy,
- * outcome derivation and lines production runs), over the scripted chat backend above, a
- * voice-enabled agent profile, and no bound conversation, routine or teammate replies — a
- * session's first turn, which is all a voice eval case needs.
+ * Plays a case's chat script: a fresh, real `VoiceTurnService` (the same policy, outcome
+ * derivation and lines production runs) over the scripted chat backend above, a voice-enabled
+ * agent profile, and no bound conversation, routine or teammate replies — a session's first turn.
  */
-export const createDeterministicVoiceTurnPort = (): ConversationQualityRunnerPort => ({
+const runOnChatScript = async (
+  evalCase: ConversationQualityCase,
+  chatEvents: readonly VoiceEvalChatScriptEvent[],
+): Promise<ConversationQualityObservedOutput> => {
+  const service = new VoiceTurnService({
+    sessions: fakeSessions(),
+    chat: scriptedChat(chatEvents),
+    agents: { findVoiceProfile: async () => VOICE_EVAL_AGENT_PROFILE },
+    routines: { isRoutineActive: async () => false },
+    ownership: { isHumanOwned: async () => false },
+    operatorReplies: noOperatorReplies,
+    logger: noopLogger,
+    timing: VOICE_EVAL_TIMING,
+  });
+  const input = {
+    session: { workspaceId: WORKSPACE_ID, agentId: AGENT_ID, vendor: "generic", sessionKey: `voice-eval-${evalCase.id}` },
+    transport: "web" as const,
+    utterance: conversationQualityCaseTurnText(evalCase),
+    streamsSpeech: true,
+  };
+  const events = service.runTurn(input, new AbortController().signal);
+  const voiceTurn = await observeVoiceTurn(events, VOICE_EVAL_FALLBACK_LINE);
+  return { retrievedChunks: [], voiceTurn };
+};
+
+/**
+ * Runs a case on a fresh test composition over `brain`, without the HTTP app: a disposable
+ * agent registered the way the live run bootstraps one, voice turned on by the live run's own
+ * `seedVoiceSettings` and then published, and the turn driven through the composition's
+ * `voiceTurns` by the live run's own `createVoiceTurnRunnerPort`. Only the model and the voice timing are scripted; the
+ * planner, retrieval, composer and voice turn policy are the composition's own.
+ */
+const runOnScriptedBrain = async (
+  evalCase: ConversationQualityCase,
+  brain: VoiceEvalBrain,
+): Promise<ConversationQualityObservedOutput> => {
+  const { dependencies, publishedAgentRevisions } = createTestDependencies(brain);
+  const target = { ...await registerDisposableAgent(dependencies), disposable: true };
+  // In the live run's order: voice on, then published, since a voice turn answers for the
+  // published agent.
+  await seedVoiceSettings({ agents: dependencies.agentRepository, agentSettings: dependencies.agentService }, target);
+  await publishedAgentRevisions.publish(await dependencies.agentService.resolve(target.workspaceId, target.agentId));
+  const port = createVoiceTurnRunnerPort(dependencies.voiceTurns, {
+    ...target,
+    vendor: "generic",
+    fallbackLine: VOICE_EVAL_FALLBACK_LINE,
+  });
+  return port.run(evalCase);
+};
+
+/**
+ * The deterministic voice runner. A case with `voiceTurn.chatEvents` plays that script over a bare
+ * `VoiceTurnService`; a case naming `voiceTurn.scriptedBrain` runs on a test composition over that model
+ * in `brains` (`scriptedBrains.ts`'s, unless a test hands in its own), so a regression in the
+ * planner's quick-reply lane or the retrieval phase fails the case.
+ */
+export const createDeterministicVoiceTurnPort = (
+  brains: Readonly<Record<string, VoiceEvalBrain>> = voiceEvalBrains,
+): ConversationQualityRunnerPort => ({
   async run(evalCase) {
-    if (!evalCase.voiceTurn) {
-      throw new Error(`Case "${evalCase.id}" carries no voiceTurn script; it cannot run through the deterministic voice port.`);
+    const { voiceTurn } = evalCase;
+    if (!voiceTurn) {
+      throw new Error(`Case "${evalCase.id}" is no voice case; it cannot run through the deterministic voice port.`);
     }
-    const service = new VoiceTurnService({
-      sessions: fakeSessions(),
-      chat: scriptedChat(evalCase.voiceTurn.chatEvents),
-      agents: { findVoiceProfile: async () => VOICE_EVAL_AGENT_PROFILE },
-      routines: { isRoutineActive: async () => false },
-      ownership: { isHumanOwned: async () => false },
-      operatorReplies: noOperatorReplies,
-      logger: noopLogger,
-      timing: VOICE_EVAL_TIMING,
-    });
-    const input = {
-      session: { workspaceId: WORKSPACE_ID, agentId: AGENT_ID, vendor: "generic", sessionKey: `voice-eval-${evalCase.id}` },
-      transport: "web" as const,
-      utterance: conversationQualityCaseTurnText(evalCase),
-      streamsSpeech: true,
-    };
-    const events = service.runTurn(input, new AbortController().signal);
-    const voiceTurn = await observeVoiceTurn(events, VOICE_EVAL_FALLBACK_LINE);
-    return { retrievedChunks: [], voiceTurn };
+    if (voiceTurn.chatEvents) {
+      return runOnChatScript(evalCase, voiceTurn.chatEvents);
+    }
+    const brain = brains[voiceTurn.scriptedBrain];
+    if (!brain) {
+      throw new Error(`Case "${evalCase.id}" names the scripted brain "${voiceTurn.scriptedBrain}", which scriptedBrains.ts does not hold.`);
+    }
+    return runOnScriptedBrain(evalCase, brain);
   },
 });

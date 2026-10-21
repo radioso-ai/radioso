@@ -1,3 +1,4 @@
+import { closeDependencies } from "../app/server/closeDependencies.js";
 import { buildDependencies } from "../app/server/dependencies.js";
 import type { Env } from "../app/config/env.js";
 import type { ApplicationModule } from "../app/composition/index.js";
@@ -98,21 +99,9 @@ export const startWorkerRuntime = async (options: StartWorkerRuntimeOptions): Pr
         await dependencies.vectorIndexReconciler?.stop();
       } finally {
         try {
-          await dependencies.realtimePublisherLifecycle.shutdown();
+          await closeDependencies(dependencies);
         } finally {
-          try {
-            try {
-              await dependencies.applicationModules.shutdownAll();
-            } finally {
-              try {
-                await dependencies.closeApprovalResumeEffectJournal();
-              } finally {
-                await dependencies.closeAbuseControlRepository?.();
-              }
-            }
-          } finally {
-            await stopRuntimeTracing();
-          }
+          await stopRuntimeTracing();
         }
       }
     },

@@ -47,12 +47,41 @@ export type SuiteTraceAssertion =
    * an assertion on the answer itself.
    */
   | { type: "turn_directive_committed"; directive: string }
-  /** Whether the voice turn policy spoke a bridge line before the turn's own speech. */
-  | { type: "voice_bridge_emitted"; expected: boolean }
-  /** Whether the voice turn policy's limit ended the turn with the fallback line. */
-  | { type: "voice_turn_limit_reached"; expected: boolean }
-  /** The outcome the voice turn closed with, the kind the runtime received. */
-  | { type: "voice_turn_outcome"; kind: "continue" | "callback_requested" };
+  /**
+   * Whether the voice turn policy spoke a bridge line before the turn's own speech. A voice
+   * assertion's `deterministicOnly` keeps it out of a live run's gate: see
+   * {@link withDefinedVoiceScope} for the ones that carry it by definition.
+   */
+  | { type: "voice_bridge_emitted"; expected: boolean; deterministicOnly?: boolean }
+  /** Whether the voice turn policy's limit ended the turn with the fallback line. Always deterministic-only. */
+  | { type: "voice_turn_limit_reached"; expected: boolean; deterministicOnly?: boolean }
+  /**
+   * The outcome the voice turn closed with, the kind the runtime received. It gates a live run
+   * unless the case marks it `deterministicOnly`, as one does whose outcome only means something
+   * beside an expectation a live run cannot check.
+   */
+  | { type: "voice_turn_outcome"; kind: "continue" | "callback_requested"; deterministicOnly?: boolean };
+
+/**
+ * Marks the voice expectations only the brain's speed decides as deterministic-only. "No bridge"
+ * holds live only while the planner answers inside the stall bridge (`VOICE_BEHAVIOR.bridgeAfterMs`,
+ * 2.5 s) and the composer inside the composing-idle bridge (400 ms). The turn limit
+ * (`turnLimitMs`, 10 s) fires live on any slow but healthy turn and on no question on demand, so
+ * neither "it fired" nor "it did not" is a behaviour fact there. The deterministic half scripts the
+ * brain, so it asserts both for real.
+ */
+export const withDefinedVoiceScope = <Assertion extends { type: string }>(assertion: Assertion): Assertion =>
+  isDeterministicOnlyByDefinition(assertion) ? { ...assertion, deterministicOnly: true } : assertion;
+
+/** Whether an assertion is deterministic-only by its definition, whatever the case says (see {@link withDefinedVoiceScope}). */
+export const isDeterministicOnlyByDefinition = (assertion: { type: string }): boolean => {
+  const voice = assertion as { type: string; expected?: boolean };
+  return voice.type === "voice_turn_limit_reached" || (voice.type === "voice_bridge_emitted" && voice.expected === false);
+};
+
+/** Whether an assertion stays out of a live run's gate, by its definition or its case's marking. */
+export const isDeterministicOnlyAssertion = (assertion: { type: string }): boolean =>
+  "deterministicOnly" in assertion && assertion.deterministicOnly === true;
 
 const TRACE_ASSERTION_TYPES = new Set<string>([
   "turn_route",

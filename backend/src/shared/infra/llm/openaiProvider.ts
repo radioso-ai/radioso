@@ -19,6 +19,7 @@ import {
   type TextGenerationClient,
   type TextGenerationRequest,
   type TextGenerationResult,
+  type TextGenerationStopReason,
   type TextGenerationStreamResult,
 } from "./providerTypes.js";
 import { normalizeCacheAccounting, reusableInputBoundaryMatchesSystemPrompt } from "./inputTokenCaching.js";
@@ -343,6 +344,19 @@ const completionText = (response: OpenAIChatCompletionResponse): string =>
 const isCapExhaustedEmptyCompletion = (response: OpenAIChatCompletionResponse): boolean =>
   response.choices[0]?.finish_reason === "length" && !completionText(response).trim();
 
+const completionStopReason = (
+  response: OpenAIChatCompletionResponse,
+): { stopReason?: TextGenerationStopReason } => {
+  const finishReason = response.choices[0]?.finish_reason;
+  if (!finishReason) {
+    return {};
+  }
+  if (finishReason === "length") {
+    return { stopReason: "output_limit" };
+  }
+  return { stopReason: finishReason === "stop" ? "completed" : "other" };
+};
+
 const readCompletionStream = async function* (
   stream: AsyncIterable<OpenAIChatCompletionChunk>,
 ): AsyncGenerator<string, OpenAIStreamReadResult, void> {
@@ -504,6 +518,7 @@ export class OpenAITextGenerationClient implements TextGenerationClient {
     return {
       text: completionText(response),
       usage,
+      ...completionStopReason(response),
     };
   }
 

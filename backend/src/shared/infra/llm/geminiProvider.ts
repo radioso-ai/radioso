@@ -8,6 +8,7 @@ import {
   type TextGenerationClient,
   type TextGenerationRequest,
   type TextGenerationResult,
+  type TextGenerationStopReason,
   type TextGenerationStreamResult,
 } from "./providerTypes.js";
 import { readProviderErrorBody } from "./providerErrors.js";
@@ -67,6 +68,17 @@ const buildGenerateBody = (config: LlmCapabilityConfig, input: {
 const extractGeminiText = (payload: unknown): string => {
   const candidate = (payload as { candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }> })?.candidates?.[0];
   return candidate?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
+};
+
+const extractGeminiStopReason = (payload: unknown): { stopReason?: TextGenerationStopReason } => {
+  const finishReason = (payload as { candidates?: Array<{ finishReason?: unknown }> })?.candidates?.[0]?.finishReason;
+  if (typeof finishReason !== "string" || !finishReason) {
+    return {};
+  }
+  if (finishReason === "MAX_TOKENS") {
+    return { stopReason: "output_limit" };
+  }
+  return { stopReason: finishReason === "STOP" ? "completed" : "other" };
 };
 
 interface GeminiUsageMetadata {
@@ -129,6 +141,7 @@ export class GeminiTextGenerationClient implements TextGenerationClient {
     return {
       text: extractGeminiText(payload),
       usage: extractGeminiUsage(payload),
+      ...extractGeminiStopReason(payload),
     };
   }
 

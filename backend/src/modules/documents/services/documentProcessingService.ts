@@ -49,6 +49,7 @@ import type {
 } from "../contracts/documentContracts.js";
 import type {
   DocumentEnrichmentStagePort,
+  DocumentEnrichmentStageResult,
 } from "./documentEnrichmentService.js";
 import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
 import type { MaterializedDocumentContent } from "./documentSourceContentService.js";
@@ -122,6 +123,38 @@ const compactTraceAttributes = (attributes: TraceAttributes): TraceAttributes =>
 const toEnrichmentProvenance = (value: unknown): DocumentEnrichmentProvenance | null =>
   isDocumentEnrichmentProvenance(value) ? value : null;
 
+/**
+ * What an enrichment run did, for its completion log, audit event, and trace
+ * span alike. Counts and named reasons only — never document text or model
+ * output.
+ */
+const enrichmentRunOutcome = (result: DocumentEnrichmentStageResult) => ({
+  status: result.status,
+  factCount: result.factCount,
+  // Facts the model returned that were invalid or quoted text the document does not contain.
+  droppedFactCount: result.droppedFactCount,
+  appliedChunkCount: result.appliedChunkCount,
+  // Tags the run left alone because the operator, a connector, or the source
+  // set them, dates included: the reason a successful run can date no chunk.
+  // A failed run carries the previous run's field counts, not its own.
+  skippedCollisionCount: result.status === "applied" ? result.provenance.fieldCounts?.skippedCollision ?? 0 : 0,
+  // Model requests, distinct from the job's own attempt count.
+  modelAttemptCount: result.modelAttemptCount,
+  failureReason: result.provenance.failureReason ?? null,
+  ...(result.firstAttemptFailureReason ? { firstAttemptFailureReason: result.firstAttemptFailureReason } : {}),
+});
+
+const enrichmentTraceInput = (result: DocumentEnrichmentStageResult) => {
+  const outcome = enrichmentRunOutcome(result);
+  return {
+    enrichmentStatus: outcome.status,
+    enrichmentFactCount: outcome.factCount,
+    enrichmentDroppedFactCount: outcome.droppedFactCount,
+    enrichmentAppliedChunkCount: outcome.appliedChunkCount,
+    enrichmentModelAttemptCount: outcome.modelAttemptCount,
+  };
+};
+
 export const buildDocumentProcessingTraceAttributes = (
   job: Pick<DocumentProcessingJobRecord, "id" | "workspaceId" | "documentId" | "documentRevision" | "attemptCount" | "status" | "kind">,
   input: {
@@ -131,7 +164,9 @@ export const buildDocumentProcessingTraceAttributes = (
     enrichmentStatus?: string;
     enrichmentShape?: string;
     enrichmentFactCount?: number;
+    enrichmentDroppedFactCount?: number;
     enrichmentAppliedChunkCount?: number;
+    enrichmentModelAttemptCount?: number;
   } = {},
 ): TraceAttributes => compactTraceAttributes({
   "radioso.workspace_id": job.workspaceId,
@@ -148,7 +183,9 @@ export const buildDocumentProcessingTraceAttributes = (
   "document.enrichment.status": input.enrichmentStatus,
   "document.enrichment.shape": input.enrichmentShape,
   "document.enrichment.fact_count": input.enrichmentFactCount,
+  "document.enrichment.dropped_fact_count": input.enrichmentDroppedFactCount,
   "document.enrichment.applied_chunk_count": input.enrichmentAppliedChunkCount,
+  "document.enrichment.model_attempt_count": input.enrichmentModelAttemptCount,
 });
 
 export class DocumentProcessingService {
@@ -495,9 +532,7 @@ export class DocumentProcessingService {
           }),
           (enrichment) => buildDocumentProcessingTraceAttributes(job, {
             stage: "enrichment",
-            enrichmentStatus: enrichment.status,
-            enrichmentFactCount: enrichment.factCount,
-            enrichmentAppliedChunkCount: enrichment.appliedChunkCount,
+            ...enrichmentTraceInput(enrichment),
           }),
         );
 
@@ -529,21 +564,15 @@ export class DocumentProcessingService {
           return "stale";
         }
 
-        // Tags the run left alone because the operator, a connector, or the
-        // source set them, dates included: the reason a successful run can date
-        // no chunk. A failed run carries the previous run's counts, not its own.
-        const skippedCollisionCount =
-          result.status === "applied" ? result.provenance.fieldCounts?.skippedCollision ?? 0 : 0;
+        const { status, ...outcome } = enrichmentRunOutcome(result);
         this.logger?.info(
           {
             role: "worker",
             workspaceId: job.workspaceId,
             documentId: document.id,
             revision: job.documentRevision,
-            enrichmentStatus: result.status,
-            factCount: result.factCount,
-            appliedChunkCount: result.appliedChunkCount,
-            skippedCollisionCount,
+            enrichmentStatus: status,
+            ...outcome,
             enrichmentDurationMs: Math.max(0, Date.now() - startedAt),
           },
           "Document enrichment completed",
@@ -551,14 +580,12 @@ export class DocumentProcessingService {
         await this.auditService.record({
           workspaceId: job.workspaceId,
           eventType: "document.enrichment",
-          eventStatus: result.status === "applied" ? "success" : "failure",
+          eventStatus: status === "applied" ? "success" : "failure",
           metadata: {
             documentId: document.id,
             revision: job.documentRevision,
-            status: result.status,
-            factCount: result.factCount,
-            appliedChunkCount: result.appliedChunkCount,
-            skippedCollisionCount,
+            status,
+            ...outcome,
           },
         });
 

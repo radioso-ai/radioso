@@ -1,0 +1,162 @@
+import type { QuotedTemporalFact, TemporalFact } from "./documentEnrichmentContract.js";
+
+/**
+ * Text folded for matching, with each folded character's span in the original.
+ * Folding is orthographic only — it never encodes vocabulary — so a quote
+ * matches whatever the language, as long as the model copied it.
+ */
+interface FoldedText {
+  text: string;
+  starts: number[];
+  ends: number[];
+}
+
+const COMBINING_MARK = /\p{M}/u;
+const WHITESPACE = /\s/u;
+const DASH = /[\p{Pd}−]/u;
+const SINGLE_QUOTES = new Set(["‘", "’", "‚", "‛", "′"]);
+const DOUBLE_QUOTES = new Set(["“", "”", "„", "‟", "″", "«", "»"]);
+// Markdown emphasis and code markers: a model quoting rendered text drops them.
+const IGNORED = new Set(["*", "_", "`"]);
+// Invisible format characters — soft hyphens, zero-width spaces, word joiners,
+// byte-order marks — never reach a quote the model copied from rendered text.
+const FORMAT_CHARACTER = /\p{Cf}/u;
+
+const foldCharacter = (character: string): string => {
+  if (DASH.test(character)) {
+    return "-";
+  }
+  if (SINGLE_QUOTES.has(character)) {
+    return "'";
+  }
+  if (DOUBLE_QUOTES.has(character)) {
+    return "\"";
+  }
+  // Lowercase, then decompose and drop accents: "È", "è", and "è" all fold to "e".
+  return [...character.toLowerCase().normalize("NFKD")].filter((part) => !COMBINING_MARK.test(part)).join("");
+};
+
+/**
+ * Case, accents, dash and quote styles, whitespace runs, emphasis markers, and
+ * invisible format characters do not affect a match. Characters folded out
+ * leave no entry, so every entry still points into the original text.
+ */
+const foldText = (value: string): FoldedText => {
+  const folded: FoldedText = { text: "", starts: [], ends: [] };
+  let pendingSpaceAt: number | null = null;
+  for (let index = 0; index < value.length;) {
+    const character = String.fromCodePoint(value.codePointAt(index) ?? 0);
+    const end = index + character.length;
+    if (WHITESPACE.test(character)) {
+      pendingSpaceAt ??= folded.text.length > 0 ? index : null;
+    } else if (!IGNORED.has(character) && !FORMAT_CHARACTER.test(character)) {
+      const replacement = foldCharacter(character);
+      if (replacement.length === 0 && folded.ends.length > 0) {
+        // A combining mark belongs to the character before it.
+        folded.ends[folded.ends.length - 1] = end;
+      }
+      if (replacement.length > 0 && pendingSpaceAt !== null) {
+        folded.text += " ";
+        folded.starts.push(pendingSpaceAt);
+        folded.ends.push(index);
+        pendingSpaceAt = null;
+      }
+      // One entry per UTF-16 unit, so an index into `text` is an index into
+      // `starts` and `ends` past emoji and other surrogate pairs too.
+      for (let unit = 0; unit < replacement.length; unit += 1) {
+        folded.starts.push(index);
+        folded.ends.push(end);
+      }
+      folded.text += replacement;
+    }
+    index = end;
+  }
+  return folded;
+};
+
+const WORD_CHARACTER = /[\p{L}\p{N}]/u;
+// Scripts where a quote may border a letter: those written without spaces
+// between words, and Hangul, whose particles attach to the noun before them
+// ("12월 7일에").
+const BOUNDARY_FREE_SCRIPT = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}\p{Script=Hangul}]/u;
+
+/** True when two adjacent characters belong to one word or number, as "2" and "1" in "21". */
+const joinsWord = (left: string | undefined, right: string | undefined): boolean =>
+  left !== undefined
+  && right !== undefined
+  && WORD_CHARACTER.test(left)
+  && WORD_CHARACTER.test(right)
+  && !BOUNDARY_FREE_SCRIPT.test(left)
+  && !BOUNDARY_FREE_SCRIPT.test(right);
+
+const lastCodePoint = (value: string): string | undefined => [...value].at(-1);
+const firstCodePoint = (value: string): string | undefined => [...value][0];
+
+/**
+ * Occurrences of the needle that start and end on word boundaries, so "1
+ * dicembre" never matches inside "21 dicembre", as spans of the original text.
+ */
+const occurrencesOf = (haystack: FoldedText, needle: string): Array<{ start: number; end: number }> => {
+  const ranges: Array<{ start: number; end: number }> = [];
+  const [first, last] = [firstCodePoint(needle), lastCodePoint(needle)];
+  for (let at = haystack.text.indexOf(needle); at !== -1; at = haystack.text.indexOf(needle, at + 1)) {
+    const after = at + needle.length;
+    const before = lastCodePoint(haystack.text.slice(Math.max(0, at - 2), at));
+    const next = firstCodePoint(haystack.text.slice(after, after + 2));
+    const start = haystack.starts[at];
+    const end = haystack.ends[after - 1];
+    if (joinsWord(before, first) || joinsWord(last, next) || start === undefined || end === undefined) {
+      continue;
+    }
+    ranges.push({ start, end });
+  }
+  return ranges;
+};
+
+const toTemporalFact = (fact: QuotedTemporalFact, sourceRange: TemporalFact["sourceRange"]): TemporalFact => ({
+  kind: fact.kind,
+  ...(fact.dateFrom ? { dateFrom: fact.dateFrom } : {}),
+  ...(fact.dateTo ? { dateTo: fact.dateTo } : {}),
+  ...(fact.unresolvedText ? { unresolvedText: fact.unresolvedText } : {}),
+  sourceRange,
+});
+
+/**
+ * Places each quoted fact in the document body, in the offsets chunks use.
+ *
+ * - A quote found in the body takes the span it matched. Only whole words and
+ *   numbers match. Facts arrive in document order, so a quote that repeats
+ *   resolves to its first occurrence after the previous placed fact, or to its
+ *   first occurrence when none follows.
+ * - A quote found only in the title dates the document as a whole: it is kept
+ *   with no range and sits on no particular chunk.
+ * - A quote found in neither is dropped and counted. The representation's
+ *   created-at line is not document text, so a quote from it is dropped too.
+ */
+export const locateQuotedFacts = (input: {
+  facts: readonly QuotedTemporalFact[];
+  body: string;
+  title: string;
+}): { facts: TemporalFact[]; unplacedCount: number } => {
+  const body = foldText(input.body);
+  const title = foldText(input.title);
+  const facts: TemporalFact[] = [];
+  let unplacedCount = 0;
+  let cursor = 0;
+
+  for (const fact of input.facts) {
+    const quote = foldText(fact.quote).text;
+    const occurrences = quote ? occurrencesOf(body, quote) : [];
+    const placed = occurrences.find((range) => range.start >= cursor) ?? occurrences[0];
+    if (placed) {
+      facts.push(toTemporalFact(fact, placed));
+      cursor = placed.end;
+    } else if (quote && occurrencesOf(title, quote).length > 0) {
+      facts.push(toTemporalFact(fact, null));
+    } else {
+      unplacedCount += 1;
+    }
+  }
+
+  return { facts, unplacedCount };
+};

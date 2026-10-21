@@ -104,13 +104,12 @@ imports from `services/` or `infra/`.
   `rerankService.ts`.
 - Context and prompt shape: `contextSelectionStage.ts`,
   `promptAssemblyStage.ts`, `promptBuilder.ts`. `domain/answerCandidatePool.ts`
-  holds the answer's passage target (`answerContextTopK`: `finalContextTopK`,
-  or, for a listing whose requested-range lookup found passages, one per passage
-  found, clamped between `finalContextTopK` and
-  `temporal.dateRangeListingContextTopK`) and the one answer-candidate pool size formula (raised by
-  `rerankTopK`, floored by that target and capped by
+  holds the one answer-candidate pool size formula (raised by `rerankTopK`,
+  floored by the answer's passage target, `finalContextTopK` or
+  `temporal.dateRangeListingContextTopK` for a range answer, and capped by
   `RETRIEVAL_BEHAVIOR.rerank.candidateLimit`); `promptContextSelectorService.ts`
-  then caps the final prompt at that many passages,
+  then caps the final prompt at `finalContextTopK` passages (a range answer's
+  quotas allow up to `temporal.dateRangeListingContextTopK`),
   `promptContextMaxPerDocument` per document, each at most
   `promptContextMaxCharsPerContext` characters. `vectorTopK` sets fetch depth
   before candidate preparation filters, boosts, and merges; the pool size
@@ -122,9 +121,13 @@ imports from `services/` or `infra/`.
   any question with a requested range gets the range, ranked by similarity to
   the question's embedding (an exact sort in `infra/temporalCandidateRepository.ts`),
   and a listing question without one gets upcoming events from today.
-  `services/temporal/` merges, boosts, and orders by the same range, and
-  `dateRangePassageReservation.ts` keeps the best candidates outside the range
-  in the answer (`temporal.dateRangeReservedOutsidePassages`). Integration coverage lives in
+  `candidatePreparationStage.ts` holds range candidates to the document scope
+  and metadata rules and keeps them apart from the ranked list;
+  `services/temporal/rangeAnswerComposer.ts` is the one place that composes a
+  range answer's pool and the selector's quotas (the reserve outside the range,
+  `temporal.dateRangeReservedOutsidePassages`, then the range, then a fill to
+  `finalContextTopK`), and `PromptContextSelectorService.selectInStages` applies
+  them. `services/temporal/` boosts and orders by the same range. Integration coverage lives in
   `tests/integration/retrieval-temporal-candidates.integration.test.ts`.
 - Diagnostics: `retrievalActivityTraceAssembler.ts`,
   `retrievalPipelineActivityTraceBuilder.ts`,

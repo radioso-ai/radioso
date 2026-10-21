@@ -277,4 +277,21 @@ describe("temporal context ordering", () => {
     expect(result.applied).toBe(true);
     expect(result.orderedContexts.map((context) => context.chunkId)).toEqual(["in-range", "undated"]);
   });
+
+  it("orders a past chunk dated only by its end date with the past events when no range was requested", () => {
+    const result = orderTemporalPromptContexts({
+      contexts: [
+        candidate({ chunkId: "past-end-date-only", rank: 0, dateTo: "2026-09-01" }),
+        candidate({ chunkId: "undated", rank: 1 }),
+        candidate({ chunkId: "upcoming", rank: 2, dateFrom: "2026-11-04", dateTo: "2026-11-04" }),
+      ],
+      enabled: true,
+      queryShape: "event_date_lookup",
+      temporalQueryMode: "listing",
+      today: "2026-10-21",
+    });
+
+    expect(result.datedContextCount).toBe(2);
+    expect(result.orderedContexts.map((context) => context.chunkId)).toEqual(["upcoming", "undated", "past-end-date-only"]);
+  });
 });

@@ -295,7 +295,8 @@ describeIntegration("PgTemporalCandidateRepository (Postgres)", () => {
     });
 
     afterAll(async () => {
-      await database.query("DELETE FROM embedding_spaces WHERE id = $1", [space.id]).catch(() => undefined);
+      await database.query("DELETE FROM chunk_embeddings WHERE embedding_space_id = $1", [space.id]);
+      await database.query("DELETE FROM embedding_spaces WHERE id = $1", [space.id]);
     });
 
     // A one-chunk course document dated `date`, embedded in `space` with `vector` unless
@@ -305,24 +306,28 @@ describeIntegration("PgTemporalCandidateRepository (Postgres)", () => {
       title: string;
       date: string;
       vector?: number[];
+      // One vector per chunk, in chunk order, in place of `vector` for every chunk.
+      chunkVectors?: number[][];
       chunkCount?: number;
       embeddedRevision?: number;
     }): Promise<string[]> => {
       const chunkIds = await insertReadyDocumentWithChunks({
         workspaceId: input.workspaceId,
         title: input.title,
-        chunkCount: input.chunkCount ?? 1,
+        chunkCount: input.chunkVectors?.length ?? input.chunkCount ?? 1,
         metadata: { dateFrom: input.date, dateTo: input.date },
       });
-      if (input.vector) {
-        for (const chunkId of chunkIds) {
-          await database.query(
-            `INSERT INTO chunk_embeddings
-               (workspace_id, chunk_id, embedding_space_id, document_revision, canonical_version, dimensions, embedding, content_hash)
-             VALUES ($1, $2, $3, $4, 1, 3, $5::vector, 'hash')`,
-            [input.workspaceId, chunkId, space.id, input.embeddedRevision ?? 1, `[${input.vector.join(",")}]`],
-          );
+      for (const [index, chunkId] of chunkIds.entries()) {
+        const vector = input.chunkVectors?.[index] ?? input.vector;
+        if (!vector) {
+          continue;
         }
+        await database.query(
+          `INSERT INTO chunk_embeddings
+             (workspace_id, chunk_id, embedding_space_id, document_revision, canonical_version, dimensions, embedding, content_hash)
+           VALUES ($1, $2, $3, $4, 1, 3, $5::vector, 'hash')`,
+          [input.workspaceId, chunkId, space.id, input.embeddedRevision ?? 1, `[${vector.join(",")}]`],
+        );
       }
       return chunkIds;
     };
@@ -368,6 +373,49 @@ describeIntegration("PgTemporalCandidateRepository (Postgres)", () => {
       });
 
       expect(candidates.map((candidate) => candidate.chunkId)).toEqual([kriya0, hatha0, kriya1]);
+    });
+
+    it("leads each event with its passage closest to the question, whatever its position in the document", async () => {
+      const workspace = await createWorkspace("Similarity Tier Workspace");
+      // The course's Kriya details sit in its fourth chunk, behind three general chunks.
+      const [, , , kriyaDetails] = await course({
+        workspaceId: workspace,
+        title: "Weekend Course",
+        date: "2026-12-12",
+        chunkVectors: [hatha, hatha, hatha, kriya],
+      });
+      const [otherCourse] = await course({ workspaceId: workspace, title: "Other Course", date: "2026-12-08", vector: hatha });
+
+      const candidates = await repository.findInWindow({
+        workspaceId: workspace,
+        window: { kind: "requested_range", range: week, similarTo: { space, queryVector: kriya } },
+        topK: 2,
+      });
+
+      expect(candidates.map((candidate) => candidate.chunkId)).toEqual([kriyaDetails, otherCourse]);
+      expect(candidates[0]?.content).toBe("Weekend Course part 3");
+      expect(candidates[0]?.title).toBe("Weekend Course");
+    });
+
+    it("keeps a requested range to the request's document scope", async () => {
+      const workspace = await createWorkspace("Similarity Scope Workspace");
+      const [inScope] = await course({ workspaceId: workspace, title: "In Scope", date: "2026-12-09", vector: hatha });
+      await course({ workspaceId: workspace, title: "Out Of Scope", date: "2026-12-09", vector: kriya });
+      const [scopedDocument] = await database.query<{ document_id: string }>(
+        "SELECT document_id FROM chunks WHERE id = $1",
+        [inScope],
+      );
+
+      for (const similarTo of [{ space, queryVector: kriya }, undefined]) {
+        const candidates = await repository.findInWindow({
+          workspaceId: workspace,
+          window: { kind: "requested_range", range: week, ...(similarTo ? { similarTo } : {}) },
+          topK: 10,
+          documentIds: [scopedDocument.document_id],
+        });
+
+        expect(candidates.map((candidate) => candidate.chunkId)).toEqual([inScope]);
+      }
     });
 
     it("puts passages with no current embedding after embedded ones, in date order", async () => {

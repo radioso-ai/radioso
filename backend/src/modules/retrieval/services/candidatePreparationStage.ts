@@ -2,7 +2,11 @@ import { type Clock, formatIsoDateUtc, systemClock } from "../../../shared/domai
 import { CandidatePreparationService } from "./candidatePreparationService.js";
 import { buildAppliedConstraintForRule, MetadataRuleScoringService } from "./metadataRuleScoringService.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
-import { mergeTemporalCandidates, temporalCandidatePlacement } from "./temporal/temporalCandidateMergeService.js";
+import {
+  mergeTemporalCandidates,
+  temporalCandidatePlacement,
+  toTemporalCandidate,
+} from "./temporal/temporalCandidateMergeService.js";
 import { applyUpcomingEventBoost } from "./temporal/upcomingBoostService.js";
 import type {
   CandidatePreparationStage as CandidatePreparationStageContract,
@@ -10,6 +14,8 @@ import type {
   CandidateRetrievalStageResult,
 } from "./retrievalPipelineStages.js";
 import type { RetrievedCandidate, TriggerBackoffDecision } from "../domain/retrievalPipelineTypes.js";
+import type { RetrievedChunk } from "../domain/vectorSearch.js";
+import type { RetrievalMetadataRule } from "../../settings/contracts/retrieval.js";
 import { getContextSelectionClauses } from "./retrievalShapeResolver.js";
 import { getCandidateFusedScore, hasUsefulCandidateEvidence } from "./candidateScoring.js";
 
@@ -130,14 +136,20 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
       dateRange: input.temporalDateRange,
     });
     const orderedCandidates = this.applyResolvedCandidateOrdering(input, boostedCandidates);
+    // Temporal candidates meet the same document scope and metadata rules as every ranked
+    // candidate before they are merged or composed. The rules are applied here, not in the
+    // lookup query: which match_turn rules hold is decided by trigger analysis and backoff,
+    // after the lookup has already run.
+    const temporalCandidates = this.scopeTemporalCandidates(input.temporalContexts ?? [], {
+      documentScope,
+      metadataRules: [...alwaysOnRules, ...matchedTriggerBoostRules, ...retainedHardFilterRules],
+    });
+    const requestedRangeLookup = input.temporalLookupRanking !== undefined;
     const temporallyMergedCandidates = mergeTemporalCandidates({
       placement: (input.settings.temporalStructuredLookupEnabled ?? true)
-        ? temporalCandidatePlacement({
-            mode: input.temporalQueryMode ?? "none",
-            requestedRangeLookup: input.temporalLookupRanking !== undefined,
-          })
+        ? temporalCandidatePlacement({ mode: input.temporalQueryMode ?? "none", requestedRangeLookup })
         : "none",
-      temporalCandidates: input.temporalContexts ?? [],
+      temporalCandidates,
       rankedCandidates: orderedCandidates,
     });
     const mergedCandidates = temporallyMergedCandidates.slice(0, RETRIEVAL_BEHAVIOR.hybrid.mergedCandidateCap);
@@ -148,6 +160,7 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
       normalizedCandidates,
       mergedCandidates,
       scoredCandidates: mergedCandidates,
+      ...(requestedRangeLookup ? { rangeCandidates: temporalCandidates.map(toTemporalCandidate) } : {}),
       appliedConstraints: triggerBackoffApplied
         ? [...selectedCandidates.appliedRules, ...relaxedConstraints]
         : selectedCandidates.appliedRules,
@@ -159,6 +172,27 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
         restoredCandidateCount: triggerBackoffApplied ? usefulCandidateCount(selectedCandidates.candidates) : undefined,
       },
     };
+  }
+
+  private scopeTemporalCandidates(
+    temporalContexts: RetrievedChunk[],
+    scope: { documentScope?: string[]; metadataRules: RetrievalMetadataRule[] },
+  ): RetrievedChunk[] {
+    const scopedDocuments = scope.documentScope && scope.documentScope.length > 0
+      ? new Set(scope.documentScope)
+      : undefined;
+    const inScope = scopedDocuments
+      ? temporalContexts.filter((chunk) => scopedDocuments.has(chunk.documentId))
+      : temporalContexts;
+    if (scope.metadataRules.length === 0) {
+      return inScope;
+    }
+    const passing = new Set(
+      this.metadataRuleScoringService
+        .apply({ candidates: inScope.map(toTemporalCandidate), metadataRules: scope.metadataRules })
+        .candidates.map((candidate) => candidate.chunkId),
+    );
+    return inScope.filter((chunk) => passing.has(chunk.chunkId));
   }
 
   private applyResolvedCandidateOrdering(

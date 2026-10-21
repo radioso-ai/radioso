@@ -521,6 +521,22 @@ describe("retrieval pipeline stages", () => {
       expect(result.temporalLookupRanking).toBeUndefined();
     });
 
+    it.each(["too_long", "invalid"] as const)(
+      "runs no upcoming fallback for a listing question whose range was dropped as %s",
+      async (requestedDateRangeDropReason) => {
+        const { stage, calls } = recordingStage();
+
+        const result = await stage.execute({
+          ...baseCandidateRetrievalInput(),
+          rewrittenQuery: temporalRewrite({ requestedDateRange: undefined, requestedDateRangeDropReason }),
+        });
+
+        expect(calls).toEqual([]);
+        expect(result.temporalQueryMode).toBe("none");
+        expect(result.temporalLookupRanking).toBeUndefined();
+      },
+    );
+
     it("runs no lookup for a topic question that names no period", async () => {
       const { stage, calls } = recordingStage();
 

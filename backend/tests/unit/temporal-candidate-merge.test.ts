@@ -79,9 +79,9 @@ describe("mergeTemporalCandidates", () => {
 });
 
 describe("temporalCandidatePlacement", () => {
-  it("leads with a requested range's candidates however the rewrite labelled the question", () => {
+  it("only annotates the ranked list with a requested range's candidates, which the answer composes separately", () => {
     for (const mode of ["listing", "topic_refinement", "none"] as const) {
-      expect(temporalCandidatePlacement({ mode, requestedRangeLookup: true })).toBe("lead");
+      expect(temporalCandidatePlacement({ mode, requestedRangeLookup: true })).toBe("annotate");
     }
   });
 

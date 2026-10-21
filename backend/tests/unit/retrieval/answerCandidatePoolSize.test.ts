@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   answerCandidatePoolSize,
-  answerContextTopK,
   dateRangeLookupDepth,
 } from "../../../src/modules/retrieval/domain/answerCandidatePool.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../src/shared/domain/behaviorConfig.js";
@@ -24,30 +23,13 @@ describe("answerCandidatePoolSize", () => {
   });
 });
 
-describe("answerContextTopK", () => {
-  it("holds the final context target for an ordinary answer", () => {
-    expect(answerContextTopK({})).toBe(finalContextTopK);
-  });
-
-  it("holds the final context target when a requested range found only a few event passages", () => {
-    expect(answerContextTopK({ requestedRangePassageCount: 2 })).toBe(finalContextTopK);
-    expect(answerContextTopK({ requestedRangePassageCount: finalContextTopK })).toBe(finalContextTopK);
-  });
-
-  it("holds one passage per event passage a requested range found, between the two limits", () => {
-    expect(answerContextTopK({ requestedRangePassageCount: 16 })).toBe(16);
-  });
-
-  it("holds at most the date listing limit however many event passages the range found", () => {
-    expect(answerContextTopK({ requestedRangePassageCount: 45 })).toBe(dateRangeListingContextTopK);
-    expect(dateRangeListingContextTopK).toBeGreaterThan(finalContextTopK);
-  });
-
+describe("date listing passage limit", () => {
   it("fits a date listing's passages in the prompt token budget even at full passage size", () => {
     // The prompt selector estimates a passage at one token per four characters.
     const fullPassageTokens = Math.ceil(RETRIEVAL_BEHAVIOR.promptContextMaxCharsPerContext / 4);
     expect(dateRangeListingContextTopK * fullPassageTokens)
       .toBeLessThanOrEqual(RETRIEVAL_BEHAVIOR.promptContextTokenBudget);
+    expect(dateRangeListingContextTopK).toBeGreaterThan(finalContextTopK);
   });
 });
 

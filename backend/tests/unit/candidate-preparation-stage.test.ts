@@ -809,4 +809,101 @@ describe("candidate preparation stage", () => {
     });
     expect(result.scoredCandidates).toHaveLength(1);
   });
+
+  it("does not boost a candidate whose date is not a calendar date", async () => {
+    const stage = new CandidatePreparationStageService(
+      new CandidatePreparationService(),
+      new MetadataRuleScoringService(),
+      () => new Date("2026-10-21T12:00:00.000Z"),
+    );
+
+    const result = await stage.execute({
+      ...buildInput([semanticChunk(1, { chunkId: "bad-date", metadata: { dateFrom: "2026-13-40" } })]),
+      settings: { ...buildInput([]).settings, metadataRules: [] },
+      temporalQueryMode: "listing",
+    });
+
+    expect(result.scoredCandidates[0]?.attributeMatchScore).toBe(0);
+  });
+
+  describe("temporal candidates", () => {
+    const italianOnlyRule = {
+      id: "italian-only",
+      field: "language",
+      valueType: "string" as const,
+      operator: "equals" as const,
+      value: "it",
+      effect: "filter" as const,
+      enabled: true,
+      triggerMode: "match_turn" as const,
+      triggerInstruction: "Enact when the visitor writes in Italian.",
+    };
+    const italianTurn = (input: ReturnType<typeof buildInput>): ReturnType<typeof buildInput> => ({
+      ...input,
+      settings: { ...input.settings, metadataRules: [italianOnlyRule] },
+      triggerAnalysis: {
+        status: "applied",
+        consideredRules: [{
+          ruleId: "italian-only",
+          matched: true,
+          matchStrength: 0.95,
+          reason: "The visitor writes in Italian.",
+          triggerInstructionPreview: "Enact when the visitor writes in Italian.",
+        }],
+        matchedRuleIds: ["italian-only"],
+        unmatchedRuleIds: [],
+        matchCount: 1,
+        matcherVersion: "test",
+      },
+    });
+    const dated = (id: string, language: string): RetrievedChunk =>
+      semanticChunk(0, {
+        chunkId: id,
+        documentId: `doc-${id}`,
+        metadata: { dateFrom: "2026-12-09", dateTo: "2026-12-09", language },
+      });
+    const stage = () => new CandidatePreparationStageService(
+      new CandidatePreparationService(),
+      new MetadataRuleScoringService(),
+      () => new Date("2026-10-21T12:00:00.000Z"),
+    );
+
+    it("keeps a requested range's candidates apart from the ranked list, through the turn's filter rules", async () => {
+      const italianSemantic = [1, 2, 3, 4].map((index) =>
+        semanticChunk(index, { metadata: { language: "it" }, similarity: 0.8 }));
+
+      const result = await stage().execute({
+        ...italianTurn(buildInput(italianSemantic)),
+        temporalQueryMode: "topic_refinement",
+        temporalDateRange: { dateFrom: "2026-12-07", dateTo: "2026-12-13" },
+        temporalLookupRanking: "similarity",
+        temporalContexts: [dated("range-en", "en"), dated("range-it", "it")],
+      });
+
+      expect(result.rangeCandidates?.map((candidate) => candidate.chunkId)).toEqual(["range-it"]);
+      expect(result.scoredCandidates.map((candidate) => candidate.chunkId)).not.toContain("range-it");
+    });
+
+    it("keeps temporal candidates inside the request's document scope", async () => {
+      const base = buildInput([semanticChunk(1), semanticChunk(2)]);
+      const scoped = { ...base, request: { ...base.request, documentScope: ["doc-1", "doc-range-in-scope"] } };
+
+      const range = await stage().execute({
+        ...scoped,
+        temporalQueryMode: "none",
+        temporalDateRange: { dateFrom: "2026-12-07", dateTo: "2026-12-13" },
+        temporalLookupRanking: "date",
+        temporalContexts: [dated("range-in-scope", "it"), dated("range-out-of-scope", "it")],
+      });
+      const upcoming = await stage().execute({
+        ...scoped,
+        temporalQueryMode: "listing",
+        temporalContexts: [dated("range-in-scope", "it"), dated("range-out-of-scope", "it")],
+      });
+
+      expect(range.rangeCandidates?.map((candidate) => candidate.chunkId)).toEqual(["range-in-scope"]);
+      expect(upcoming.scoredCandidates.map((candidate) => candidate.chunkId)).not.toContain("range-out-of-scope");
+      expect(upcoming.scoredCandidates.map((candidate) => candidate.chunkId)).toContain("range-in-scope");
+    });
+  });
 });

@@ -7452,12 +7452,12 @@ export interface components {
             anchorDate?: string | null;
             /** @enum {string|null} */
             anchorSource?: "source_last_sync" | "document_created_at" | null;
-            /** @description Dated facts the run placed in the document: in its body, or in its title. */
+            /** @description Temporal facts from the model's reply that the run placed by their quoted text, in the body or the title. Includes facts whose relative date stayed unresolved, and facts on a document whose matched type writes no dates; only `event` and `article` turn facts into `dateFrom` and `dateTo`. */
             factCount?: number;
-            /** @description Dated facts the model returned that the run dropped: invalid ones, and ones quoting text that is in neither the body nor the title. A dropped fact never fails the run. */
+            /** @description Temporal facts from the model's reply that the run could not use: invalid ones, ones quoting text that is in neither the body nor the title, and a facts payload that is not a list, which counts as one. Facts with neither a date nor unresolved text are ignored and not counted. Dropping some facts never fails the run; a reply for `event` or `article` whose every fact is dropped fails as `invalid_output: no_usable_facts`. */
             droppedFactCount?: number;
             appliedChunkCount?: number;
-            /** @description Content-free reason a run failed, such as `invalid_output: truncated` (the reply was cut off at the output limit), `invalid_output: not_json`, `invalid_output: empty`, `provider_error`, or `catalog_over_budget`. */
+            /** @description Content-free reason a run failed. `invalid_output: truncated`: the reply was cut off at the output limit. `invalid_output: not_json` or `invalid_output: empty`: the reply was not JSON. `invalid_output: no_usable_facts`: a dated reply whose facts were all dropped. `invalid_output: <paths>`: the reply did not match the expected shape at these comma-separated field paths, such as `invalid_output: root`. `provider_error`: the model call itself failed. `catalog_over_budget`: the catalog renders past its prompt budget. */
             failureReason?: string | null;
             /** @description The document type catalog entry that matched. Equals `shape` for built-in entries; an operator-defined key otherwise. */
             matchedTypeKey?: string | null;

@@ -40,6 +40,7 @@ describe("document enrichment strategies", () => {
         { kind: "event_date", dateFrom: "2026-07-03", dateTo: "2026-07-03", sourceRange: { start: 0, end: 10 } },
         { kind: "event_date", dateFrom: "2026-07-05", sourceRange: { start: 20, end: 30 } },
       ],
+      droppedFactCount: 0,
     });
 
     expect(result.documentMetadata).toEqual({
@@ -63,6 +64,7 @@ describe("document enrichment strategies", () => {
         { kind: "event_date", dateFrom: "2026-12-07", sourceRange: { start: 2, end: 12 } },
         { kind: "event_date", dateFrom: "2026-12-11", sourceRange: { start: 42, end: 52 } },
       ],
+      droppedFactCount: 0,
     });
 
     expect(result.chunks.map((chunk) => chunk.metadata?.dateFrom ?? null)).toEqual(["2026-12-07", null, "2026-12-11"]);
@@ -115,16 +117,6 @@ describe("document enrichment strategies", () => {
 
   const fiveCourseChunks = (): ReturnType<typeof threeChunks> =>
     [0, 1, 2, 3, 4].map((index) => ({ chunkIndex: index, startOffset: index * 20, endOffset: index * 20 + 20, metadata: {} }));
-
-  it("dates only the chunks each fact is quoted from when the caller does not say whether facts were dropped", () => {
-    const result = createDefaultDocumentEnrichmentStrategyRegistry().get("event").apply({
-      documentMetadata: {},
-      chunks: threeChunks(),
-      facts: [{ kind: "event_date", dateFrom: "2026-12-12", sourceRange: { start: 22, end: 30 } }],
-    });
-
-    expect(result.chunks.map((chunk) => chunk.metadata.dateFrom ?? null)).toEqual([null, "2026-12-12", null]);
-  });
 
   it("dates only the surviving fact's chunk when the run dropped other facts", () => {
     const result = createDefaultDocumentEnrichmentStrategyRegistry().get("event").apply({
@@ -201,10 +193,11 @@ describe("document enrichment strategies", () => {
           sourceRange: { start: 0, end: 20 },
         },
       ],
+      droppedFactCount: 0,
     });
 
     expect(article.documentMetadata).toMatchObject({ dateFrom: "2026-06-01", dateTo: "2026-06-01" });
-    expect(registry.get("profile").apply({ documentMetadata: {}, chunks: [], facts: [] }).documentMetadata).toEqual({});
-    expect(registry.get("generic").apply({ documentMetadata: {}, chunks: [], facts: [] }).documentMetadata).toEqual({});
+    expect(registry.get("profile").apply({ documentMetadata: {}, chunks: [], facts: [], droppedFactCount: 0 }).documentMetadata).toEqual({});
+    expect(registry.get("generic").apply({ documentMetadata: {}, chunks: [], facts: [], droppedFactCount: 0 }).documentMetadata).toEqual({});
   });
 });

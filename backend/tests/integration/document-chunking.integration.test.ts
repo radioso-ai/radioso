@@ -201,8 +201,10 @@ Chunking behavior.`,
               : chunk;
           }),
           factCount: 1,
+          droppedFactCount: 0,
           appliedChunkCount: 1,
-          attemptCount: 1,
+          modelAttemptCount: 1,
+          firstAttemptFailureReason: null,
         };
       },
     };

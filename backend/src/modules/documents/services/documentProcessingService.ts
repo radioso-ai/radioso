@@ -124,22 +124,36 @@ const toEnrichmentProvenance = (value: unknown): DocumentEnrichmentProvenance | 
   isDocumentEnrichmentProvenance(value) ? value : null;
 
 /**
- * What an enrichment run did, for its completion log and audit event. Counts
- * and named reasons only — never document text or model output.
+ * What an enrichment run did, for its completion log, audit event, and trace
+ * span alike. Counts and named reasons only — never document text or model
+ * output.
  */
 const enrichmentRunOutcome = (result: DocumentEnrichmentStageResult) => ({
   status: result.status,
   factCount: result.factCount,
   // Facts the model returned that were invalid or quoted text the document does not contain.
-  droppedFactCount: result.provenance.droppedFactCount ?? 0,
+  droppedFactCount: result.droppedFactCount,
   appliedChunkCount: result.appliedChunkCount,
   // Tags the run left alone because the operator, a connector, or the source
   // set them, dates included: the reason a successful run can date no chunk.
   // A failed run carries the previous run's field counts, not its own.
   skippedCollisionCount: result.status === "applied" ? result.provenance.fieldCounts?.skippedCollision ?? 0 : 0,
-  attemptCount: result.attemptCount,
+  // Model requests, distinct from the job's own attempt count.
+  modelAttemptCount: result.modelAttemptCount,
   failureReason: result.provenance.failureReason ?? null,
+  ...(result.firstAttemptFailureReason ? { firstAttemptFailureReason: result.firstAttemptFailureReason } : {}),
 });
+
+const enrichmentTraceInput = (result: DocumentEnrichmentStageResult) => {
+  const outcome = enrichmentRunOutcome(result);
+  return {
+    enrichmentStatus: outcome.status,
+    enrichmentFactCount: outcome.factCount,
+    enrichmentDroppedFactCount: outcome.droppedFactCount,
+    enrichmentAppliedChunkCount: outcome.appliedChunkCount,
+    enrichmentModelAttemptCount: outcome.modelAttemptCount,
+  };
+};
 
 export const buildDocumentProcessingTraceAttributes = (
   job: Pick<DocumentProcessingJobRecord, "id" | "workspaceId" | "documentId" | "documentRevision" | "attemptCount" | "status" | "kind">,
@@ -152,7 +166,7 @@ export const buildDocumentProcessingTraceAttributes = (
     enrichmentFactCount?: number;
     enrichmentDroppedFactCount?: number;
     enrichmentAppliedChunkCount?: number;
-    enrichmentAttemptCount?: number;
+    enrichmentModelAttemptCount?: number;
   } = {},
 ): TraceAttributes => compactTraceAttributes({
   "radioso.workspace_id": job.workspaceId,
@@ -171,7 +185,7 @@ export const buildDocumentProcessingTraceAttributes = (
   "document.enrichment.fact_count": input.enrichmentFactCount,
   "document.enrichment.dropped_fact_count": input.enrichmentDroppedFactCount,
   "document.enrichment.applied_chunk_count": input.enrichmentAppliedChunkCount,
-  "document.enrichment.attempt_count": input.enrichmentAttemptCount,
+  "document.enrichment.model_attempt_count": input.enrichmentModelAttemptCount,
 });
 
 export class DocumentProcessingService {
@@ -518,11 +532,7 @@ export class DocumentProcessingService {
           }),
           (enrichment) => buildDocumentProcessingTraceAttributes(job, {
             stage: "enrichment",
-            enrichmentStatus: enrichment.status,
-            enrichmentFactCount: enrichment.factCount,
-            enrichmentDroppedFactCount: enrichment.provenance.droppedFactCount ?? 0,
-            enrichmentAppliedChunkCount: enrichment.appliedChunkCount,
-            enrichmentAttemptCount: enrichment.attemptCount,
+            ...enrichmentTraceInput(enrichment),
           }),
         );
 

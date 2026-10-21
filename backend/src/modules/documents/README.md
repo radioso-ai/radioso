@@ -61,8 +61,9 @@ imports from `services/` or `infra/`.
   Processing and enrichment services call into it; they never decide tag
   ownership themselves.
 - `services/documentEnrichmentService.ts`: one extraction run — the output
-  schema, the single retry on an unreadable reply or a transient provider
-  error, and applying what the reply holds. It asks the model through the
+  schema, the single retry on a reply it cannot use (unreadable, cut off, or a
+  dated reply with every fact dropped), and applying what the reply holds.
+  Provider errors are left to the adapters' own transport retries. It asks the model through the
   `domain/enrichment/enrichmentGateway.ts` port; the adapter that implements it
   over the inference pipeline is `infra/modelDocumentEnrichmentGateway.ts`.
 - `domain/enrichment/factQuoteLocation.ts`: places each extracted date by the

@@ -138,6 +138,7 @@ describe("temporal tags under ownership", () => {
       documentMetadata: { dateFrom: "2026-03-01", dateTo: "2026-03-07" },
       chunks,
       facts,
+      droppedFactCount: 0,
     });
 
     expect(result.documentMetadata).toEqual({ dateFrom: "2026-03-01", dateTo: "2026-03-07" });
@@ -152,6 +153,7 @@ describe("temporal tags under ownership", () => {
       documentMetadata: { dateFrom: "2026-03-01" },
       chunks,
       facts,
+      droppedFactCount: 0,
     });
 
     expect(result.documentMetadata).toEqual({ dateFrom: "2026-03-01" });
@@ -163,6 +165,7 @@ describe("temporal tags under ownership", () => {
       documentMetadata: { audience: "staff" },
       chunks: chunks.map((chunk) => ({ ...chunk, metadata: {} })),
       facts,
+      droppedFactCount: 0,
     });
 
     expect(result.documentMetadata).toEqual({ audience: "staff", dateFrom: "2026-03-02", dateTo: "2026-03-05" });
@@ -175,7 +178,7 @@ describe("temporal tags under ownership", () => {
     const sourceDated = chunks.map((chunk) => ({ ...chunk, metadata: { region: "eu", ...OPERATOR_SPAN } }));
     const result = applyTemporalTagsWithOwnership(
       eventStrategy,
-      { documentMetadata: { audience: "staff" }, chunks: sourceDated, facts },
+      { documentMetadata: { audience: "staff" }, chunks: sourceDated, facts, droppedFactCount: 0 },
       { sourceMetadata: { region: "eu", ...OPERATOR_SPAN } },
     );
 
@@ -188,7 +191,7 @@ describe("temporal tags under ownership", () => {
   it("reads empty dates as absent", () => {
     const result = applyTemporalTagsWithOwnership(
       eventStrategy,
-      { documentMetadata: { dateFrom: "", dateTo: null }, chunks, facts },
+      { documentMetadata: { dateFrom: "", dateTo: null }, chunks, facts, droppedFactCount: 0 },
       { sourceMetadata: { dateFrom: "  " } },
     );
 
@@ -198,7 +201,7 @@ describe("temporal tags under ownership", () => {
 
   it("keeps an empty date the operator wrote when the run reads none", () => {
     const documentMetadata = { dateFrom: "", audience: "staff" };
-    const result = applyTemporalTagsWithOwnership(eventStrategy, { documentMetadata, chunks, facts: [] });
+    const result = applyTemporalTagsWithOwnership(eventStrategy, { documentMetadata, chunks, facts: [], droppedFactCount: 0 });
 
     expect(result.documentMetadata).toBe(documentMetadata);
     expect(result.generatedKeys).toEqual([]);
@@ -211,14 +214,16 @@ describe("temporal tags under ownership", () => {
       {
         documentMetadata: publishDay,
         chunks: chunks.map((chunk) => ({ ...chunk, metadata: { dateFrom: "2026-01-10" } })),
-        facts: facts.slice(1),
+        // Two events, both on the second chunk: no single range spreads to the first.
+        facts: [...facts.slice(1), { kind: "event_date" as const, dateFrom: "2026-03-06", sourceRange: { start: 32, end: 36 } }],
+        droppedFactCount: 0,
       },
       { documentDatesAreSyncDefaults: true },
     );
 
-    expect(result.documentMetadata).toEqual({ published_at: "2026-01-10T08:00:00", dateFrom: "2026-03-05", dateTo: "2026-03-05" });
+    expect(result.documentMetadata).toEqual({ published_at: "2026-01-10T08:00:00", dateFrom: "2026-03-05", dateTo: "2026-03-06" });
     // The publish day comes off the chunk no event covers.
-    expect(result.chunks.map((chunk) => chunk.metadata)).toEqual([{}, { dateFrom: "2026-03-05", dateTo: "2026-03-05" }]);
+    expect(result.chunks.map((chunk) => chunk.metadata)).toEqual([{}, { dateFrom: "2026-03-05", dateTo: "2026-03-06" }]);
     expect(result.generatedKeys).toEqual(["dateFrom", "dateTo"]);
     expect(result.skippedCollision).toBe(0);
   });
@@ -227,7 +232,7 @@ describe("temporal tags under ownership", () => {
     const publishDay = { dateFrom: "2026-01-10" };
     const result = applyTemporalTagsWithOwnership(
       eventStrategy,
-      { documentMetadata: publishDay, chunks, facts: [] },
+      { documentMetadata: publishDay, chunks, facts: [], droppedFactCount: 0 },
       { documentDatesAreSyncDefaults: true },
     );
 
@@ -238,7 +243,7 @@ describe("temporal tags under ownership", () => {
   it("still defers to source tag dates on a syncing source", () => {
     const result = applyTemporalTagsWithOwnership(
       eventStrategy,
-      { documentMetadata: { dateFrom: "2026-01-10" }, chunks, facts },
+      { documentMetadata: { dateFrom: "2026-01-10" }, chunks, facts, droppedFactCount: 0 },
       { documentDatesAreSyncDefaults: true, sourceMetadata: OPERATOR_SPAN },
     );
 
@@ -251,6 +256,7 @@ describe("temporal tags under ownership", () => {
       documentMetadata: { dateFrom: "2026-03-01" },
       chunks,
       facts: [],
+      droppedFactCount: 0,
     });
 
     expect(result.generatedKeys).toEqual([]);

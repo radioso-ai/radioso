@@ -1,6 +1,4 @@
-import { AppError } from "../../../shared/domain/errors.js";
 import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
-import { isPermanentProviderFailure } from "../../../shared/infra/llm/providerErrors.js";
 import type { ReasoningEffort, TextGenerationResult } from "../../../shared/infra/llm/providerTypes.js";
 import {
   EnrichmentProviderError,
@@ -9,11 +7,22 @@ import {
   type DocumentEnrichmentRequest,
 } from "../domain/enrichment/enrichmentGateway.js";
 
-const MAX_OUTPUT_TOKENS = 2_000;
-const REASONING_EFFORT: ReasoningEffort = "low";
-// A reply cut off at the cap spent it deliberating; the retry deliberates less
-// within the same cap rather than buying more output.
-const REASONING_EFFORT_AFTER_TRUNCATION: ReasoningEffort = "minimal";
+const FIRST_ATTEMPT: { maxOutputTokens: number; reasoningEffort: ReasoningEffort } = {
+  maxOutputTokens: 2_000,
+  reasoningEffort: "low",
+};
+
+/**
+ * A reply cut off at the cap gets one retry with twice the room, and less
+ * deliberation where the provider honours a reasoning effort. Doubling is what
+ * lets the retry succeed on every provider, not only those with a reasoning
+ * dial. It costs only the tokens the reply uses: a cap is a ceiling, and quoted
+ * facts keep a typical reply far below the first one.
+ */
+const TRUNCATION_RETRY: { maxOutputTokens: number; reasoningEffort: ReasoningEffort } = {
+  maxOutputTokens: 4_000,
+  reasoningEffort: "minimal",
+};
 
 const stripJsonFence = (value: string): string =>
   value
@@ -37,11 +46,6 @@ const readReply = (result: TextGenerationResult): unknown => {
   }
 };
 
-// Local refusals (the input budget, a misconfigured provider) are AppErrors and
-// fail the same way every time; so do the provider's own permanent rejections.
-const isRetryableTransportFailure = (error: unknown): boolean =>
-  !(error instanceof AppError) && !isPermanentProviderFailure(error);
-
 export class ModelDocumentEnrichmentGateway implements DocumentEnrichmentGateway {
   constructor(private readonly pipeline: ModelInferencePipeline) {}
 
@@ -53,8 +57,7 @@ export class ModelDocumentEnrichmentGateway implements DocumentEnrichmentGateway
         prompt: request.documentRepresentation,
         systemPrompt: request.prompt,
         temperature: 0,
-        reasoningEffort: request.retry?.after === "truncated" ? REASONING_EFFORT_AFTER_TRUNCATION : REASONING_EFFORT,
-        maxOutputTokens: MAX_OUTPUT_TOKENS,
+        ...(request.retry?.after === "truncated" ? TRUNCATION_RETRY : FIRST_ATTEMPT),
         responseFormat: {
           type: "json_schema",
           name: "document_enrichment",
@@ -71,7 +74,9 @@ export class ModelDocumentEnrichmentGateway implements DocumentEnrichmentGateway
         },
       });
     } catch (error) {
-      throw new EnrichmentProviderError({ retryable: isRetryableTransportFailure(error), cause: error });
+      // Transient transport failures were the adapter's to retry; what reaches
+      // here is final for this run.
+      throw new EnrichmentProviderError({ cause: error });
     }
 
     return { model: this.pipeline.metadata.model, output: readReply(result) };

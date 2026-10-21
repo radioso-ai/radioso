@@ -18,6 +18,9 @@ const SINGLE_QUOTES = new Set(["‘", "’", "‚", "‛", "′"]);
 const DOUBLE_QUOTES = new Set(["“", "”", "„", "‟", "″", "«", "»"]);
 // Markdown emphasis and code markers: a model quoting rendered text drops them.
 const IGNORED = new Set(["*", "_", "`"]);
+// Invisible format characters — soft hyphens, zero-width spaces, word joiners,
+// byte-order marks — never reach a quote the model copied from rendered text.
+const FORMAT_CHARACTER = /\p{Cf}/u;
 
 const foldCharacter = (character: string): string => {
   if (DASH.test(character)) {
@@ -33,7 +36,11 @@ const foldCharacter = (character: string): string => {
   return [...character.toLowerCase().normalize("NFKD")].filter((part) => !COMBINING_MARK.test(part)).join("");
 };
 
-/** Case, accents, dash and quote styles, whitespace runs, and emphasis markers do not affect a match. */
+/**
+ * Case, accents, dash and quote styles, whitespace runs, emphasis markers, and
+ * invisible format characters do not affect a match. Characters folded out
+ * leave no entry, so every entry still points into the original text.
+ */
 const foldText = (value: string): FoldedText => {
   const folded: FoldedText = { text: "", starts: [], ends: [] };
   let pendingSpaceAt: number | null = null;
@@ -42,7 +49,7 @@ const foldText = (value: string): FoldedText => {
     const end = index + character.length;
     if (WHITESPACE.test(character)) {
       pendingSpaceAt ??= folded.text.length > 0 ? index : null;
-    } else if (!IGNORED.has(character)) {
+    } else if (!IGNORED.has(character) && !FORMAT_CHARACTER.test(character)) {
       const replacement = foldCharacter(character);
       if (replacement.length === 0 && folded.ends.length > 0) {
         // A combining mark belongs to the character before it.
@@ -68,8 +75,10 @@ const foldText = (value: string): FoldedText => {
 };
 
 const WORD_CHARACTER = /[\p{L}\p{N}]/u;
-// Scripts written without spaces between words: any character may border a quote.
-const UNSPACED_SCRIPT = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}]/u;
+// Scripts where a quote may border a letter: those written without spaces
+// between words, and Hangul, whose particles attach to the noun before them
+// ("12월 7일에").
+const BOUNDARY_FREE_SCRIPT = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Thai}\p{Script=Lao}\p{Script=Khmer}\p{Script=Myanmar}\p{Script=Hangul}]/u;
 
 /** True when two adjacent characters belong to one word or number, as "2" and "1" in "21". */
 const joinsWord = (left: string | undefined, right: string | undefined): boolean =>
@@ -77,8 +86,8 @@ const joinsWord = (left: string | undefined, right: string | undefined): boolean
   && right !== undefined
   && WORD_CHARACTER.test(left)
   && WORD_CHARACTER.test(right)
-  && !UNSPACED_SCRIPT.test(left)
-  && !UNSPACED_SCRIPT.test(right);
+  && !BOUNDARY_FREE_SCRIPT.test(left)
+  && !BOUNDARY_FREE_SCRIPT.test(right);
 
 const lastCodePoint = (value: string): string | undefined => [...value].at(-1);
 const firstCodePoint = (value: string): string | undefined => [...value][0];

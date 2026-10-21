@@ -3,8 +3,11 @@
  * go wrong with a reply, never which provider answers or how.
  */
 
-/** What made the previous reply unusable, passed on the single retry. */
-export type EnrichmentRetryCause = "truncated" | "unreadable" | "provider_error";
+/**
+ * What made the previous reply unusable, passed on the single retry. A reply
+ * cut off at the output limit needs more room; any other is asked again as is.
+ */
+export type EnrichmentRetryCause = "truncated" | "unreadable";
 
 export interface DocumentEnrichmentRequest {
   workspaceId: string;
@@ -34,13 +37,14 @@ export class EnrichmentReplyUnreadableError extends Error {
   }
 }
 
-/** The request never produced a reply. `retryable` is false when a retry cannot change that. */
+/**
+ * The request never produced a reply. Transient transport failures are the
+ * adapter's to retry, so by the time this is raised a retry here would only
+ * stack on top of the adapter's own.
+ */
 export class EnrichmentProviderError extends Error {
-  readonly retryable: boolean;
-
-  constructor(input: { retryable: boolean; cause?: unknown }) {
+  constructor(input: { cause?: unknown } = {}) {
     super("enrichment_provider_error", { cause: input.cause });
     this.name = "EnrichmentProviderError";
-    this.retryable = input.retryable;
   }
 }

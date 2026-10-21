@@ -38,23 +38,51 @@ describe("document enrichment contract", () => {
         fact({ quote: "" }),
         fact({ quote: undefined }),
         fact({ kind: "deadline" }),
-        fact({ dateFrom: null, unresolvedText: null }),
         "not a fact",
         fact({ dateFrom: null, dateTo: null, unresolvedText: "next Saturday" }),
         fact(),
       ],
     });
 
-    expect(parsed.invalidFactCount).toBe(7);
+    expect(parsed.invalidFactCount).toBe(6);
     expect(parsed.facts).toEqual([
       { kind: "event_date", quote: "17-19 July 2026", unresolvedText: "next Saturday" },
       { kind: "event_date", quote: "17-19 July 2026", dateFrom: "2026-07-17", dateTo: "2026-07-19" },
     ]);
   });
 
-  it("rejects output that is not an envelope, or whose facts are not a list", () => {
+  it("ignores a fact with neither a date nor unresolved text without counting it", () => {
+    const parsed = parseDocumentEnrichmentOutput({
+      type: "event",
+      confidence: 0.8,
+      facts: [fact({ dateFrom: null, dateTo: null, unresolvedText: null }), fact({ dateFrom: "", unresolvedText: "" }), fact()],
+    });
+
+    expect(parsed.facts).toHaveLength(1);
+    expect(parsed.invalidFactCount).toBe(0);
+  });
+
+  it("rejects output that is not an envelope", () => {
     expect(() => parseDocumentEnrichmentOutput(["event"])).toThrow();
-    expect(() => parseDocumentEnrichmentOutput({ type: "event", confidence: 0.8, facts: "17 July" })).toThrow();
+    expect(() => parseDocumentEnrichmentOutput("event")).toThrow();
+  });
+
+  it("reads facts sent as a JSON-encoded list", () => {
+    const parsed = parseDocumentEnrichmentOutput({ type: "event", confidence: 0.8, facts: JSON.stringify([fact()]) });
+
+    expect(parsed.facts).toHaveLength(1);
+    expect(parsed.invalidFactCount).toBe(0);
+  });
+
+  it("counts facts it cannot read as a list as one dropped fact instead of rejecting the reply", () => {
+    for (const facts of ["17 July", "{\"kind\":\"event_date\"}", { kind: "event_date" }, 3]) {
+      const parsed = parseDocumentEnrichmentOutput({ type: "event", confidence: 0.8, facts });
+
+      expect(parsed).toMatchObject({ facts: [], invalidFactCount: 1 });
+    }
+    for (const facts of [null, undefined, ""]) {
+      expect(parseDocumentEnrichmentOutput({ type: "event", confidence: 0.8, facts })).toMatchObject({ facts: [], invalidFactCount: 0 });
+    }
   });
 
   it("normalizes unknown or low-confidence shapes to generic", () => {

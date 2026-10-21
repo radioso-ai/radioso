@@ -170,6 +170,21 @@ describeIntegration("DocumentRepository (Postgres)", () => {
     });
   });
 
+  it("round-trips the count of dates a run dropped", async () => {
+    const created = await repository.create({ ...baseCreateInput(), status: "ready" });
+    await repository.updateMetadataForRevision({
+      documentId: created.id,
+      workspaceId,
+      revision: created.revision,
+      metadata: {},
+      enrichment: { status: "applied", shape: "event", factCount: 6, droppedFactCount: 2 },
+    });
+
+    const byId = await repository.findByIdAndWorkspaceId(created.id, workspaceId);
+
+    expect(byId?.enrichment).toMatchObject({ factCount: 6, droppedFactCount: 2 });
+  });
+
   it("createAndQueue defaults metadata to {} and source kind to inline_text", async () => {
     const document = await repository.createAndQueue({
       workspaceId,

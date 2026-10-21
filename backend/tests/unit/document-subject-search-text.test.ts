@@ -263,6 +263,7 @@ describe("document subject search text", () => {
           ),
           factCount: 1,
           appliedChunkCount: 1,
+          attemptCount: 1,
         };
       },
     };

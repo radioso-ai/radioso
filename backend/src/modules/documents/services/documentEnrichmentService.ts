@@ -1,7 +1,6 @@
 import { ZodError } from "zod";
 
 import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
-import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import type { EnabledDocumentTypesSnapshot } from "../../documentTypes/public.js";
 import {
   parseDocumentEnrichmentOutput,
@@ -9,8 +8,16 @@ import {
   type DocumentEnrichmentOutput,
   type DocumentEnrichmentProvenance,
   type EnrichmentAnchorSource,
-  type TemporalFact,
 } from "../domain/enrichment/documentEnrichmentContract.js";
+import {
+  EnrichmentProviderError,
+  EnrichmentReplyUnreadableError,
+  type DocumentEnrichmentGateway,
+  type DocumentEnrichmentRequest,
+  type EnrichmentRetryCause,
+} from "../domain/enrichment/enrichmentGateway.js";
+import { buildDocumentEnrichmentOutputSchema } from "../domain/enrichment/enrichmentOutputSchema.js";
+import { locateQuotedFacts } from "../domain/enrichment/factQuoteLocation.js";
 import {
   createDefaultDocumentEnrichmentStrategyRegistry,
   type DocumentEnrichmentStrategyRegistry,
@@ -34,16 +41,6 @@ import {
   stripLegacyProvenanceTag,
 } from "../domain/enrichment/generatedTagOwnership.js";
 import type { EnrichableChunk } from "../domain/enrichment/chunkMetadataPatches.js";
-
-export interface DocumentEnrichmentGateway {
-  generate(input: {
-    workspaceId: string;
-    documentId: string;
-    documentRevision: number;
-    prompt: string;
-    documentRepresentation: string;
-  }): Promise<{ model: string; output: unknown }>;
-}
 
 export interface DocumentEnrichmentStageInput<TChunk extends EnrichableChunk = EnrichableChunk> {
   document: {
@@ -89,6 +86,8 @@ export interface DocumentEnrichmentStageResult<TChunk extends EnrichableChunk = 
   chunks: TChunk[];
   factCount: number;
   appliedChunkCount: number;
+  /** Model requests the run made: 0 when it failed before asking, 2 after a retry. */
+  attemptCount: number;
 }
 
 export interface DocumentEnrichmentStagePort {
@@ -97,37 +96,7 @@ export interface DocumentEnrichmentStagePort {
   ): Promise<DocumentEnrichmentStageResult<TChunk>>;
 }
 
-export class ModelDocumentEnrichmentGateway implements DocumentEnrichmentGateway {
-  constructor(private readonly pipeline: ModelInferencePipeline) {}
-
-  async generate(input: {
-    workspaceId: string;
-    documentId: string;
-    documentRevision: number;
-    prompt: string;
-    documentRepresentation: string;
-  }): Promise<{ model: string; output: unknown }> {
-    const result = await this.pipeline.complete({
-      prompt: input.documentRepresentation,
-      systemPrompt: input.prompt,
-      temperature: 0,
-      reasoningEffort: "low",
-      maxOutputTokens: 2_000,
-      operation: {
-        workspaceId: input.workspaceId,
-        requestId: input.documentId,
-        surface: "documents",
-        operation: "document_enrichment",
-        attemptKey: `document-enrichment:${input.documentId}:${input.documentRevision}`,
-      },
-    });
-
-    return {
-      model: this.pipeline.metadata.model,
-      output: JSON.parse(stripJsonFence(result.text)) as unknown,
-    };
-  }
-}
+type EnrichmentRequestInput = Omit<DocumentEnrichmentRequest, "retry">;
 
 export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
   private readonly prompt: string;
@@ -149,24 +118,26 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
     input: DocumentEnrichmentStageInput<TChunk>,
   ): Promise<DocumentEnrichmentStageResult<TChunk>> {
     const catalog = input.catalog ?? defaultEnabledDocumentTypes();
+    const attempts = { count: 0 };
 
     try {
       const prompt = buildDocumentEnrichmentPrompt({ template: this.prompt, types: catalog.types });
       const representation = buildBoundedDocumentRepresentation(input.document);
-      const gatewayResult = await this.deps.gateway.generate({
+      const gatewayResult = await this.requestOutput({
         workspaceId: input.document.workspaceId,
         documentId: input.document.id,
         documentRevision: input.document.revision,
         prompt,
         documentRepresentation: representation.text,
+        outputSchema: buildDocumentEnrichmentOutputSchema(catalog.types),
+      }, attempts);
+      const parsed = gatewayResult.output;
+      const located = locateQuotedFacts({
+        facts: parsed.facts,
+        body: representation.body,
+        title: input.document.title,
       });
-      const parsed = validateOutputForDocument(
-        normalizeRepresentationRanges(
-          parseDocumentEnrichmentOutput(gatewayResult.output),
-          representation.bodyOffset,
-        ),
-        representation.bodyLength,
-      );
+      const droppedFactCount = parsed.invalidFactCount + located.unplacedCount;
       const shape = normalizeDocumentShape(parsed.shape, parsed.confidence);
       const matched = resolveMatchedDocumentType({
         types: catalog.types,
@@ -200,7 +171,7 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
         {
           documentMetadata: applied.documentMetadata,
           chunks: applied.chunks,
-          facts: parsed.facts,
+          facts: located.facts,
         },
         {
           sourceMetadata: input.source?.documentMetadata,
@@ -224,7 +195,8 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
         enrichedAt: this.now().toISOString(),
         anchorDate: input.anchor.date,
         anchorSource: input.anchor.source,
-        factCount: parsed.facts.length,
+        factCount: located.facts.length,
+        droppedFactCount,
         appliedChunkCount,
         matchedTypeKey: matched.key,
         catalogRevision: catalog.revision,
@@ -238,8 +210,9 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
         documentMetadata: strategyResult.documentMetadata,
         provenance,
         chunks: strategyResult.chunks,
-        factCount: parsed.facts.length,
+        factCount: located.facts.length,
         appliedChunkCount,
+        attemptCount: attempts.count,
       };
     } catch (error) {
       // A failed run touches nothing but its own failure fields: tags, the
@@ -261,10 +234,51 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
         chunks: input.chunks,
         factCount: 0,
         appliedChunkCount: 0,
+        attemptCount: attempts.count,
       };
     }
   }
+
+  /** One request, and one more when the reply is unreadable or the provider may yet answer. */
+  private async requestOutput(
+    request: EnrichmentRequestInput,
+    attempts: { count: number },
+  ): Promise<{ model: string; output: DocumentEnrichmentOutput }> {
+    try {
+      return await this.readOutput(request, attempts);
+    } catch (error) {
+      const after = retryCauseOf(error);
+      if (!after) {
+        throw error;
+      }
+      return this.readOutput({ ...request, retry: { after } }, attempts);
+    }
+  }
+
+  private async readOutput(
+    request: DocumentEnrichmentRequest,
+    attempts: { count: number },
+  ): Promise<{ model: string; output: DocumentEnrichmentOutput }> {
+    attempts.count += 1;
+    const reply = await this.deps.gateway.generate(request);
+    return { model: reply.model, output: parseDocumentEnrichmentOutput(reply.output) };
+  }
 }
+
+// A reply that does not match the envelope schema is as unreadable as one that
+// is not JSON: the next sample may well be readable.
+const retryCauseOf = (error: unknown): EnrichmentRetryCause | null => {
+  if (error instanceof EnrichmentReplyUnreadableError) {
+    return error.reason === "truncated" ? "truncated" : "unreadable";
+  }
+  if (error instanceof ZodError) {
+    return "unreadable";
+  }
+  if (error instanceof EnrichmentProviderError && error.retryable) {
+    return "provider_error";
+  }
+  return null;
+};
 
 const preservedProvenanceFields = (
   previous: DocumentEnrichmentProvenance | null | undefined,
@@ -283,18 +297,15 @@ const preservedProvenanceFields = (
       }
     : {};
 
-// Failure reasons stay content-free: zod issue paths and error names only,
+// Failure reasons stay content-free: zod issue paths and named reasons only,
 // never model output or document text.
 const describeEnrichmentFailure = (error: unknown): string => {
   if (error instanceof ZodError) {
     const paths = [...new Set(error.issues.map((issue) => issue.path.join(".") || "root"))].slice(0, 5);
     return `invalid_output: ${paths.join(", ")}`;
   }
-  if (error instanceof SyntaxError) {
-    return "invalid_output: not_json";
-  }
-  if (error instanceof Error && error.message === "enrichment_fact_range_out_of_bounds") {
-    return "invalid_output: fact_range_out_of_bounds";
+  if (error instanceof EnrichmentReplyUnreadableError) {
+    return `invalid_output: ${error.reason}`;
   }
   if (error instanceof Error && error.message === ENRICHMENT_CATALOG_OVER_BUDGET) {
     return "catalog_over_budget";
@@ -302,20 +313,13 @@ const describeEnrichmentFailure = (error: unknown): string => {
   return "provider_error";
 };
 
-const stripJsonFence = (value: string): string =>
-  value
-    .trim()
-    .replace(/^```(?:json)?/i, "")
-    .replace(/```$/i, "")
-    .trim();
-
 const MAX_DOCUMENT_REPRESENTATION_CHARS = 48_000;
 
 const buildBoundedDocumentRepresentation = (document: {
   title: string;
   markdownContent: string;
   createdAt: Date;
-}): { text: string; bodyOffset: number; bodyLength: number } => {
+}): { text: string; body: string } => {
   const body = document.markdownContent.slice(0, MAX_DOCUMENT_REPRESENTATION_CHARS);
   const prefix = [
     `Title: ${document.title}`,
@@ -323,42 +327,7 @@ const buildBoundedDocumentRepresentation = (document: {
     "",
     "",
   ].join("\n");
-  return {
-    text: `${prefix}${body}`,
-    bodyOffset: prefix.length,
-    bodyLength: body.length,
-  };
-};
-
-const normalizeRepresentationRanges = (
-  output: DocumentEnrichmentOutput,
-  bodyOffset: number,
-): DocumentEnrichmentOutput => ({
-  ...output,
-  facts: output.facts.map((fact) => ({
-    ...fact,
-    sourceRange: toBodySourceRange(fact.sourceRange, bodyOffset),
-  })),
-});
-
-const toBodySourceRange = (
-  sourceRange: TemporalFact["sourceRange"],
-  bodyOffset: number,
-): TemporalFact["sourceRange"] => ({
-  start: sourceRange.start - bodyOffset,
-  end: sourceRange.end - bodyOffset,
-});
-
-const validateOutputForDocument = (
-  output: DocumentEnrichmentOutput,
-  documentLength: number,
-): DocumentEnrichmentOutput => {
-  for (const fact of output.facts) {
-    if (fact.sourceRange.start < 0 || fact.sourceRange.end > documentLength) {
-      throw new Error("enrichment_fact_range_out_of_bounds");
-    }
-  }
-  return output;
+  return { text: `${prefix}${body}`, body };
 };
 
 const buildProvenance = (input: DocumentEnrichmentProvenance): DocumentEnrichmentProvenance => ({
@@ -369,6 +338,7 @@ const buildProvenance = (input: DocumentEnrichmentProvenance): DocumentEnrichmen
   anchorDate: input.anchorDate ?? null,
   anchorSource: input.anchorSource ?? null,
   factCount: input.factCount ?? 0,
+  droppedFactCount: input.droppedFactCount ?? 0,
   appliedChunkCount: input.appliedChunkCount ?? 0,
   failureReason: input.failureReason ?? null,
   matchedTypeKey: input.matchedTypeKey ?? null,

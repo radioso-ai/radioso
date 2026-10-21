@@ -60,6 +60,14 @@ imports from `services/` or `infra/`.
   publishes.
   Processing and enrichment services call into it; they never decide tag
   ownership themselves.
+- `services/documentEnrichmentService.ts`: one extraction run — the output
+  schema, the single retry on an unreadable reply or a transient provider
+  error, and applying what the reply holds. It asks the model through the
+  `domain/enrichment/enrichmentGateway.ts` port; the adapter that implements it
+  over the inference pipeline is `infra/modelDocumentEnrichmentGateway.ts`.
+- `domain/enrichment/factQuoteLocation.ts`: places each extracted date by the
+  text the model quoted, in the body offsets chunks use. A date that cannot be
+  placed is dropped and counted, never fatal.
 - `services/embeddingProfileJobService.ts`: resumable, generation-fenced
   embedding-only work that cannot mutate document or canonical chunk state.
 - `services/documentProcessingWorker.ts`: worker runtime behavior.
@@ -89,6 +97,8 @@ Focused starting points:
 - `cd backend && pnpm test -- tests/unit/document-source-recrawl-service.test.ts`
 - `cd backend && pnpm exec vitest run tests/unit/document-date-ownership.test.ts tests/unit/document-generated-tag-ownership.test.ts`
   for tag ownership across PUT, reprocess, failed runs, and manual edits.
+- `cd backend && pnpm exec vitest run tests/unit/document-enrichment-service.test.ts tests/unit/document-enrichment-gateway.test.ts tests/unit/document-enrichment-quote-location.test.ts`
+  for extraction retries, reply reading, and placing dates by their quotes.
 - `cd backend && pnpm run test:integration` for processing and import flows.
 
 Use contract tests when document API response shape changes.

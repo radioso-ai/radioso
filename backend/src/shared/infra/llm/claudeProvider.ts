@@ -5,6 +5,7 @@ import {
   type TextGenerationClient,
   type TextGenerationRequest,
   type TextGenerationResult,
+  type TextGenerationStopReason,
   type TextGenerationStreamResult,
 } from "./providerTypes.js";
 import { readProviderErrorBody } from "./providerErrors.js";
@@ -79,6 +80,19 @@ const extractClaudeText = (payload: unknown): string => {
     .join("");
 };
 
+// A forced schema tool call is how a structured reply ends, so it counts as completed.
+const CLAUDE_COMPLETED_STOP_REASONS: ReadonlySet<string> = new Set(["end_turn", "stop_sequence", "tool_use"]);
+
+const claudeStopReason = (stopReason: unknown): { stopReason?: TextGenerationStopReason } => {
+  if (typeof stopReason !== "string" || !stopReason) {
+    return {};
+  }
+  if (stopReason === "max_tokens") {
+    return { stopReason: "output_limit" };
+  }
+  return { stopReason: CLAUDE_COMPLETED_STOP_REASONS.has(stopReason) ? "completed" : "other" };
+};
+
 interface ClaudeUsagePayload {
   input_tokens?: number;
   output_tokens?: number;
@@ -144,10 +158,11 @@ export class ClaudeTextGenerationClient implements TextGenerationClient {
     if (!response.ok) {
       throw await readProviderErrorBody("Claude", "messages", response);
     }
-    const payload = (await response.json()) as { id?: string; usage?: ClaudeUsagePayload };
+    const payload = (await response.json()) as { id?: string; usage?: ClaudeUsagePayload; stop_reason?: unknown };
     return {
       text: extractClaudeText(payload),
       usage: buildClaudeUsage({ usage: payload.usage, requestId: payload.id }),
+      ...claudeStopReason(payload.stop_reason),
     };
   }
 

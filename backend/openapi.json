@@ -11645,7 +11645,13 @@
           },
           "factCount": {
             "type": "integer",
-            "minimum": 0
+            "minimum": 0,
+            "description": "Dated facts the run placed in the document: in its body, or in its title."
+          },
+          "droppedFactCount": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Dated facts the model returned that the run dropped: invalid ones, and ones quoting text that is in neither the body nor the title. A dropped fact never fails the run."
           },
           "appliedChunkCount": {
             "type": "integer",
@@ -11655,7 +11661,8 @@
             "type": [
               "string",
               "null"
-            ]
+            ],
+            "description": "Content-free reason a run failed, such as `invalid_output: truncated` (the reply was cut off at the output limit), `invalid_output: not_json`, `invalid_output: empty`, `provider_error`, or `catalog_over_budget`."
           },
           "matchedTypeKey": {
             "type": [

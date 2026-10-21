@@ -1,200 +1,279 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { createDefaultDocumentEnrichmentStrategyRegistry } from "../../src/modules/documents/domain/enrichment/enrichmentStrategies.js";
 import {
-  DocumentEnrichmentService,
-  ModelDocumentEnrichmentGateway,
-} from "../../src/modules/documents/services/documentEnrichmentService.js";
-import type { ModelInferencePipeline } from "../../src/shared/infra/llm/modelInferencePipeline.js";
+  EnrichmentProviderError,
+  EnrichmentReplyUnreadableError,
+  type DocumentEnrichmentGateway,
+  type DocumentEnrichmentRequest,
+} from "../../src/modules/documents/domain/enrichment/enrichmentGateway.js";
+import { createDefaultDocumentEnrichmentStrategyRegistry } from "../../src/modules/documents/domain/enrichment/enrichmentStrategies.js";
+import { DocumentEnrichmentService } from "../../src/modules/documents/services/documentEnrichmentService.js";
+
+type Reply = { output: unknown } | { error: unknown };
+
+/** A gateway that answers each request with the next scripted reply and records what it was asked. */
+const scriptedGateway = (replies: Reply[]) => {
+  const requests: DocumentEnrichmentRequest[] = [];
+  const gateway: DocumentEnrichmentGateway = {
+    async generate(request) {
+      requests.push(request);
+      const reply = replies[requests.length - 1];
+      if (!reply) {
+        throw new Error("unscripted request");
+      }
+      if ("error" in reply) {
+        throw reply.error;
+      }
+      return { model: "gpt-5.4-mini", output: reply.output };
+    },
+  };
+  return { gateway, requests };
+};
+
+const serviceWith = (gateway: DocumentEnrichmentGateway) =>
+  new DocumentEnrichmentService({
+    gateway,
+    strategyRegistry: createDefaultDocumentEnrichmentStrategyRegistry(),
+    now: () => new Date("2026-07-02T12:00:00.000Z"),
+  });
+
+const WORKSHOP = "Summer workshop\n\nDates: July 17-19, 2026.";
+
+const workshopInput = (overrides: { title?: string; markdownContent?: string } = {}) => {
+  const markdownContent = overrides.markdownContent ?? WORKSHOP;
+  return {
+    document: {
+      id: "doc-1",
+      workspaceId: "workspace-1",
+      revision: 7,
+      title: overrides.title ?? "Summer workshop",
+      markdownContent,
+      metadata: {},
+      createdAt: new Date("2026-07-01T00:00:00.000Z"),
+    },
+    chunks: [
+      { chunkIndex: 0, startOffset: 0, endOffset: 15, metadata: {} },
+      { chunkIndex: 1, startOffset: 17, endOffset: markdownContent.length, metadata: {} },
+    ],
+    anchor: { source: "document_created_at" as const, date: "2026-07-01" },
+  };
+};
+
+const workshopFact = (overrides: Record<string, unknown> = {}) => ({
+  kind: "event_date",
+  quote: "July 17-19, 2026",
+  dateFrom: "2026-07-17",
+  dateTo: "2026-07-19",
+  unresolvedText: null,
+  ...overrides,
+});
+
+const eventOutput = (facts: unknown[]) => ({ type: "event", confidence: 0.91, facts });
 
 describe("DocumentEnrichmentService", () => {
-  it("makes exactly one structured model call and returns metadata patches", async () => {
-    const generate = vi.fn().mockImplementation(({ documentRepresentation }: { documentRepresentation: string }) => {
-      const bodyStart = documentRepresentation.indexOf("Summer workshop\n\nDates");
-      return Promise.resolve({
-        model: "gpt-5.2",
-        output: {
-          shape: "event",
-          confidence: 0.91,
-          facts: [
-            {
-              id: "workshop",
-              kind: "event_date",
-              label: "workshop",
-              dateFrom: "2026-07-17",
-              dateTo: "2026-07-19",
-              sourceRange: { start: bodyStart, end: bodyStart + 41 },
-            },
-          ],
-        },
-      });
-    });
+  it("makes one schema-constrained request and dates the chunks its quoted facts sit in", async () => {
+    const { gateway, requests } = scriptedGateway([{ output: eventOutput([workshopFact()]) }]);
 
-    const service = new DocumentEnrichmentService({
-      gateway: { generate },
-      strategyRegistry: createDefaultDocumentEnrichmentStrategyRegistry(),
-      now: () => new Date("2026-07-02T12:00:00.000Z"),
-    });
+    const result = await serviceWith(gateway).enrich(workshopInput());
 
-    const result = await service.enrich({
-      document: {
-        id: "doc-1",
-        workspaceId: "workspace-1",
-        revision: 7,
-        title: "Summer workshop",
-        markdownContent: "Summer workshop\n\nDates: July 17-19, 2026.",
-        metadata: {},
-        createdAt: new Date("2026-07-01T00:00:00.000Z"),
-      },
-      chunks: [
-        {
-          chunkIndex: 0,
-          content: "Summer workshop\n\nDates: July 17-19, 2026.",
-          startOffset: 0,
-          endOffset: 43,
-          metadata: {},
-        },
-      ],
-      anchor: { source: "document_created_at", date: "2026-07-01" },
-    });
-
-    expect(generate).toHaveBeenCalledOnce();
-    expect(generate).toHaveBeenCalledWith(expect.objectContaining({
-      documentId: "doc-1",
-      documentRevision: 7,
-    }));
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({ documentId: "doc-1", documentRevision: 7 });
+    expect(requests[0]?.retry).toBeUndefined();
+    expect(requests[0]?.outputSchema).toMatchObject({ type: "object", additionalProperties: false });
     expect(result.status).toBe("applied");
-    expect(result.provenance).toMatchObject({ shape: "event", status: "applied", model: "gpt-5.2" });
-    expect(result.documentMetadata).not.toHaveProperty("enrichment");
-    expect(result.chunks[0]?.metadata).toMatchObject({ dateFrom: "2026-07-17", dateTo: "2026-07-19" });
+    expect(result.attemptCount).toBe(1);
+    expect(result.provenance).toMatchObject({ shape: "event", status: "applied", model: "gpt-5.4-mini", droppedFactCount: 0 });
+    expect(result.documentMetadata).toMatchObject({ dateFrom: "2026-07-17", dateTo: "2026-07-19" });
+    expect(result.chunks.map((chunk) => chunk.metadata)).toEqual([
+      expect.objectContaining({ dateFrom: "2026-07-17", dateTo: "2026-07-19" }),
+      expect.objectContaining({ dateFrom: "2026-07-17", dateTo: "2026-07-19" }),
+    ]);
   });
 
-  it("fails open with safe provenance when model output is invalid", async () => {
-    const service = new DocumentEnrichmentService({
-      gateway: {
-        generate: vi.fn().mockResolvedValue({
-          model: "gpt-5.2",
-          output: {
-            shape: "event",
-            confidence: 0.8,
-            facts: [
-              {
-                id: "f1",
-                kind: "event_date",
-                label: "out of bounds",
-                dateFrom: "2026-08-10",
-                sourceRange: { start: 10, end: 9999 },
-              },
-            ],
-          },
-        }),
-      },
-      strategyRegistry: createDefaultDocumentEnrichmentStrategyRegistry(),
-      now: () => new Date("2026-07-02T12:00:00.000Z"),
-    });
+  it("dates only the chunk each fact is quoted from when a document carries several dates", async () => {
+    const markdownContent = "Yoga: 7 December 2026\n\nKirtan: 11 December 2026";
+    const { gateway } = scriptedGateway([{
+      output: eventOutput([
+        workshopFact({ quote: "Yoga: 7 December 2026", dateFrom: "2026-12-07", dateTo: null }),
+        workshopFact({ quote: "Kirtan: 11 December 2026", dateFrom: "2026-12-11", dateTo: null }),
+      ]),
+    }]);
 
-    const result = await service.enrich({
-      document: {
-        id: "doc-1",
-        workspaceId: "workspace-1",
-        revision: 2,
-        title: "Bad",
-        markdownContent: "Bad",
-        metadata: {},
-        createdAt: new Date("2026-07-01T00:00:00.000Z"),
-      },
-      chunks: [],
-      anchor: { source: "document_created_at", date: "2026-07-01" },
-    });
-
-    expect(result.status).toBe("failed");
-    expect(result.provenance).toMatchObject({ status: "failed" });
-    expect(String(result.provenance.failureReason)).toContain("invalid_output");
-    expect(result.documentMetadata).not.toHaveProperty("enrichment");
-  });
-
-  it("tolerates fenced JSON, null optional fields, and degenerate facts from the model", async () => {
-    const service = new DocumentEnrichmentService({
-      gateway: {
-        generate: vi.fn().mockImplementation(({ documentRepresentation }: { documentRepresentation: string }) => {
-          const bodyStart = documentRepresentation.indexOf("Corso residenziale");
-          return Promise.resolve({
-            model: "gpt-5.2",
-            output: {
-              shape: "event",
-              confidence: 0.9,
-              facts: [
-                {
-                  id: "f1",
-                  kind: "event_date",
-                  label: "Corso residenziale",
-                  dateFrom: "2026-07-03",
-                  dateTo: null,
-                  unresolvedText: "",
-                  anchorDate: null,
-                  sourceRange: { start: bodyStart, end: bodyStart + 20 },
-                },
-                {
-                  id: "f2",
-                  kind: "event_date",
-                  label: "empty",
-                  dateFrom: null,
-                  unresolvedText: null,
-                  sourceRange: { start: bodyStart, end: bodyStart + 5 },
-                },
-              ],
-            },
-          });
-        }),
-      },
-      strategyRegistry: createDefaultDocumentEnrichmentStrategyRegistry(),
-      now: () => new Date("2026-07-02T12:00:00.000Z"),
-    });
-
-    const result = await service.enrich({
-      document: {
-        id: "doc-1",
-        workspaceId: "workspace-1",
-        revision: 3,
-        title: "Corso",
-        markdownContent: "Corso residenziale dal 03/07/2026 al 05/07/2026.",
-        metadata: {},
-        createdAt: new Date("2026-07-01T00:00:00.000Z"),
-      },
+    const result = await serviceWith(gateway).enrich({
+      ...workshopInput({ markdownContent }),
       chunks: [
-        { chunkIndex: 0, startOffset: 0, endOffset: 48, metadata: {} },
+        { chunkIndex: 0, startOffset: 0, endOffset: 22, metadata: {} },
+        { chunkIndex: 1, startOffset: 24, endOffset: markdownContent.length, metadata: {} },
       ],
-      anchor: { source: "document_created_at", date: "2026-07-01" },
     });
+
+    expect(result.chunks.map((chunk) => (chunk.metadata as Record<string, unknown>).dateFrom)).toEqual(["2026-12-07", "2026-12-11"]);
+    expect(result.documentMetadata).toMatchObject({ dateFrom: "2026-12-07", dateTo: "2026-12-11" });
+  });
+
+  it("drops a fact whose quote is not in the document and applies the rest", async () => {
+    const { gateway } = scriptedGateway([{
+      output: eventOutput([workshopFact(), workshopFact({ quote: "August 3, 2026", dateFrom: "2026-08-03" })]),
+    }]);
+
+    const result = await serviceWith(gateway).enrich(workshopInput());
 
     expect(result.status).toBe("applied");
     expect(result.factCount).toBe(1);
-    expect(result.chunks[0]?.metadata).toMatchObject({ dateFrom: "2026-07-03" });
+    expect(result.provenance).toMatchObject({ factCount: 1, droppedFactCount: 1, failureReason: null });
+    expect(result.documentMetadata).toMatchObject({ dateFrom: "2026-07-17", dateTo: "2026-07-19" });
   });
 
-  it("scopes model usage idempotency to the document revision", async () => {
-    const complete = vi.fn().mockResolvedValue({
-      text: JSON.stringify({ shape: "generic", confidence: 1, facts: [] }),
-    });
-    const gateway = new ModelDocumentEnrichmentGateway({
-      metadata: { provider: "openai", model: "gpt-5.2" },
-      complete,
-      stream: vi.fn(),
-    } as unknown as ModelInferencePipeline);
+  it("drops an invalid fact instead of failing the document", async () => {
+    const { gateway } = scriptedGateway([{
+      output: eventOutput([
+        workshopFact({ quote: "Summer workshop", dateFrom: "2026-02-31" }),
+        workshopFact({ quote: "Dates", dateFrom: "2026-07-20", dateTo: "2026-07-19" }),
+        workshopFact({ quote: "Dates", dateFrom: null, unresolvedText: null }),
+        workshopFact(),
+      ]),
+    }]);
 
-    await gateway.generate({
-      workspaceId: "workspace-1",
-      documentId: "doc-1",
-      documentRevision: 11,
-      prompt: "Extract metadata",
-      documentRepresentation: "Title: Example\n\nBody",
-    });
+    const result = await serviceWith(gateway).enrich(workshopInput());
 
-    expect(complete).toHaveBeenCalledWith(expect.objectContaining({
-      operation: expect.objectContaining({
-        requestId: "doc-1",
-        attemptKey: "document-enrichment:doc-1:11",
-      }),
+    expect(result.status).toBe("applied");
+    expect(result.provenance).toMatchObject({ factCount: 1, droppedFactCount: 3 });
+    expect(result.documentMetadata).toMatchObject({ dateFrom: "2026-07-17", dateTo: "2026-07-19" });
+  });
+
+  it("dates the whole document from a date quoted only in its title", async () => {
+    const { gateway } = scriptedGateway([{
+      output: eventOutput([workshopFact({ quote: "17–19 luglio 2026" })]),
+    }]);
+
+    const result = await serviceWith(gateway).enrich(workshopInput({
+      title: "Corso estivo — 17–19 luglio 2026",
+      markdownContent: "Corso estivo\n\nTre giorni di pratica all'aperto.",
     }));
+
+    expect(result.status).toBe("applied");
+    expect(result.provenance).toMatchObject({ factCount: 1, droppedFactCount: 0 });
+    expect(result.documentMetadata).toMatchObject({ dateFrom: "2026-07-17", dateTo: "2026-07-19" });
+    for (const chunk of result.chunks) {
+      expect(chunk.metadata).toMatchObject({ dateFrom: "2026-07-17", dateTo: "2026-07-19" });
+    }
+  });
+
+  it("does not place a fact quoted from the created-at line of the representation", async () => {
+    const { gateway } = scriptedGateway([{
+      output: { type: "article", confidence: 0.9, facts: [workshopFact({ kind: "article_date", quote: "2026-07-01T00:00:00.000Z", dateFrom: "2026-07-01", dateTo: null })] },
+    }]);
+
+    const result = await serviceWith(gateway).enrich(workshopInput());
+
+    expect(result.provenance).toMatchObject({ status: "applied", factCount: 0, droppedFactCount: 1 });
+    expect(result.documentMetadata).not.toHaveProperty("dateFrom");
+  });
+
+  it("asks once more after an unreadable reply and applies the second", async () => {
+    const { gateway, requests } = scriptedGateway([
+      { error: new EnrichmentReplyUnreadableError("empty") },
+      { output: eventOutput([workshopFact()]) },
+    ]);
+
+    const result = await serviceWith(gateway).enrich(workshopInput());
+
+    expect(requests).toHaveLength(2);
+    expect(requests[1]?.retry).toEqual({ after: "unreadable" });
+    expect(result.status).toBe("applied");
+    expect(result.attemptCount).toBe(2);
+  });
+
+  it("tells the retry that the first reply was cut off at the output limit", async () => {
+    const { gateway, requests } = scriptedGateway([
+      { error: new EnrichmentReplyUnreadableError("truncated") },
+      { output: eventOutput([workshopFact()]) },
+    ]);
+
+    await serviceWith(gateway).enrich(workshopInput());
+
+    expect(requests[1]?.retry).toEqual({ after: "truncated" });
+  });
+
+  it("retries a reply that does not match the output schema, then fails with a content-free reason", async () => {
+    const { gateway, requests } = scriptedGateway([
+      { output: ["not", "an", "object"] },
+      { output: { type: "event", confidence: 0.9, facts: "Dates: July 17-19, 2026." } },
+    ]);
+
+    const result = await serviceWith(gateway).enrich(workshopInput());
+
+    expect(requests).toHaveLength(2);
+    expect(result.status).toBe("failed");
+    expect(result.attemptCount).toBe(2);
+    expect(result.provenance.failureReason).toBe("invalid_output: facts");
+    expect(result.provenance.failureReason).not.toContain("July");
+  });
+
+  it("stops after one retry when every reply is unreadable", async () => {
+    const { gateway, requests } = scriptedGateway([
+      { error: new EnrichmentReplyUnreadableError("truncated") },
+      { error: new EnrichmentReplyUnreadableError("truncated") },
+      { output: eventOutput([workshopFact()]) },
+    ]);
+
+    const result = await serviceWith(gateway).enrich(workshopInput());
+
+    expect(requests).toHaveLength(2);
+    expect(result.status).toBe("failed");
+    expect(result.provenance.failureReason).toBe("invalid_output: truncated");
+    expect(result.documentMetadata).toEqual({});
+  });
+
+  it("retries a transient provider error once", async () => {
+    const { gateway, requests } = scriptedGateway([
+      { error: new EnrichmentProviderError({ retryable: true }) },
+      { output: eventOutput([workshopFact()]) },
+    ]);
+
+    const result = await serviceWith(gateway).enrich(workshopInput());
+
+    expect(requests[1]?.retry).toEqual({ after: "provider_error" });
+    expect(result.status).toBe("applied");
+  });
+
+  it("fails at once on a provider error that will not change on retry", async () => {
+    const { gateway, requests } = scriptedGateway([
+      { error: new EnrichmentProviderError({ retryable: false }) },
+      { output: eventOutput([workshopFact()]) },
+    ]);
+
+    const result = await serviceWith(gateway).enrich(workshopInput());
+
+    expect(requests).toHaveLength(1);
+    expect(result.status).toBe("failed");
+    expect(result.attemptCount).toBe(1);
+    expect(result.provenance.failureReason).toBe("provider_error");
+  });
+
+  it("makes no request when the catalog renders past its prompt budget", async () => {
+    const generate = vi.fn();
+    const service = serviceWith({ generate });
+
+    const result = await service.enrich({
+      ...workshopInput(),
+      catalog: {
+        revision: "9",
+        types: [{
+          key: "oversized",
+          label: "Oversized",
+          description: "d".repeat(13_000),
+          enabled: true,
+          origin: "operator",
+          payload: "fields",
+          disableable: true,
+          fields: [],
+        }],
+      },
+    });
+
+    expect(generate).not.toHaveBeenCalled();
+    expect(result.attemptCount).toBe(0);
+    expect(result.provenance.failureReason).toBe("catalog_over_budget");
   });
 });

@@ -18,14 +18,12 @@ When a question names a date or a period, the query rewrite resolves it against 
 
 ### Structured Lookup
 
-When temporal structured lookup is enabled, a question that lists events without naming a topic fetches dated chunks directly, alongside text search:
+When temporal structured lookup is enabled, the lookup fetches dated chunks directly, alongside text search:
 
-- With a requested range, it fetches the events whose dates overlap the range, including a multi-day event that starts before it or ends after it. Every event's first passage comes ahead of any event's second one, so a busy week lists as many events as fit.
-- Without one, it fetches ongoing and upcoming events, soonest first.
+- A question that names a date or period fetches the chunks whose dates overlap it, whatever else it asks: "What's on the week of 7 December?" and "Are there Kriya courses in November?" both do. A multi-day event that starts before the period or ends after it counts. Within the period, the passages closest in meaning to the question come first, so in the second question the Kriya courses lead the other November courses. Every event's first passage comes ahead of any event's second one, so a busy week lists as many events as fit. When the question can't be embedded, the period's passages come soonest first.
+- A question that asks what's coming up without naming a period or a topic fetches ongoing and upcoming events, soonest first.
 
-An answer that lists the events in a requested range holds one passage per passage the lookup found there, never fewer than the usual 12 and never more than 20, inside the same prompt size budget. That covers a busy week; for a longer period with more events than that, the answer draws on the earliest 20.
-
-A question about a topic in a period, such as "meditation courses in December", runs the normal topic search. The range then decides which of those results rank higher and come first.
+The lookup reads up to 40 passages for a period, enough for a busy week. The answer then holds one passage per passage found, never fewer than the usual 12 and never more than 20, inside the same prompt size budget, so the 20 closest to the question reach it.
 
 ### Upcoming Boost
 

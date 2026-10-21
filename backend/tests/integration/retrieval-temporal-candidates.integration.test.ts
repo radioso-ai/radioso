@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
+import { buildChunkEmbeddingDistanceExpression } from "../../src/modules/retrieval/infra/chunkEmbeddingVectorIndex.js";
 import { PgTemporalCandidateRepository } from "../../src/modules/retrieval/infra/temporalCandidateRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
@@ -276,5 +277,165 @@ describeIntegration("PgTemporalCandidateRepository (Postgres)", () => {
       tuesday1,
       monday2,
     ]);
+  });
+
+  describe("requested range ordered by similarity to the question", () => {
+    const space = { id: randomUUID(), dimensions: 3, distanceMetric: "cosine" as const };
+    const week = { dateFrom: "2026-12-07", dateTo: "2026-12-13" };
+    const kriya = [1, 0, 0];
+    const hatha = [0, 1, 0];
+
+    beforeAll(async () => {
+      await database.query(
+        `INSERT INTO embedding_spaces
+           (id, identity_fingerprint, endpoint_scope_fingerprint, provider, model, dimensions, distance_metric, normalization, status)
+         VALUES ($1, $2, $3, 'openai', 'text-embedding-3-small', 3, 'cosine', 'none', 'active')`,
+        [space.id, `temporal-fp-${space.id}`, `temporal-scope-${space.id}`],
+      );
+    });
+
+    afterAll(async () => {
+      await database.query("DELETE FROM embedding_spaces WHERE id = $1", [space.id]).catch(() => undefined);
+    });
+
+    // A one-chunk course document dated `date`, embedded in `space` with `vector` unless
+    // it is left unembedded, or embedded for an earlier document revision.
+    const course = async (input: {
+      workspaceId: string;
+      title: string;
+      date: string;
+      vector?: number[];
+      chunkCount?: number;
+      embeddedRevision?: number;
+    }): Promise<string[]> => {
+      const chunkIds = await insertReadyDocumentWithChunks({
+        workspaceId: input.workspaceId,
+        title: input.title,
+        chunkCount: input.chunkCount ?? 1,
+        metadata: { dateFrom: input.date, dateTo: input.date },
+      });
+      if (input.vector) {
+        for (const chunkId of chunkIds) {
+          await database.query(
+            `INSERT INTO chunk_embeddings
+               (workspace_id, chunk_id, embedding_space_id, document_revision, canonical_version, dimensions, embedding, content_hash)
+             VALUES ($1, $2, $3, $4, 1, 3, $5::vector, 'hash')`,
+            [input.workspaceId, chunkId, space.id, input.embeddedRevision ?? 1, `[${input.vector.join(",")}]`],
+          );
+        }
+      }
+      return chunkIds;
+    };
+
+    it("fills a busy range's depth with the passages closest to the question, not the earliest", async () => {
+      const workspace = await createWorkspace("Similarity Range Workspace");
+      // Off-topic courses come first by date; on-topic ones come later in the week.
+      const [hathaMonday] = await course({ workspaceId: workspace, title: "Hatha Monday", date: "2026-12-07", vector: hatha });
+      const [hathaTuesday] = await course({ workspaceId: workspace, title: "Hatha Tuesday", date: "2026-12-08", vector: hatha });
+      const [kriyaFriday] = await course({ workspaceId: workspace, title: "Kriya Friday", date: "2026-12-11", vector: [0.9, 0.1, 0] });
+      const [kriyaSaturday] = await course({ workspaceId: workspace, title: "Kriya Saturday", date: "2026-12-12", vector: kriya });
+      // A perfect match outside the range never qualifies.
+      await course({ workspaceId: workspace, title: "Kriya Next Month", date: "2027-01-15", vector: kriya });
+
+      const closest = await repository.findInWindow({
+        workspaceId: workspace,
+        window: { kind: "requested_range", range: week, similarTo: { space, queryVector: kriya } },
+        topK: 2,
+      });
+      const all = await repository.findInWindow({
+        workspaceId: workspace,
+        window: { kind: "requested_range", range: week, similarTo: { space, queryVector: kriya } },
+        topK: 10,
+      });
+
+      expect(closest.map((candidate) => candidate.chunkId)).toEqual([kriyaSaturday, kriyaFriday]);
+      // The date filter is the relevance gate: off-topic passages in the range still come back,
+      // below the on-topic ones, with no similarity threshold.
+      expect(all.map((candidate) => candidate.chunkId)).toEqual([kriyaSaturday, kriyaFriday, hathaMonday, hathaTuesday]);
+      expect(all[0]?.similarity).toBeCloseTo(1, 5);
+      expect(all[2]?.similarity).toBeCloseTo(0, 5);
+    });
+
+    it("keeps breadth first: every event's first passage ahead of a closer second passage", async () => {
+      const workspace = await createWorkspace("Similarity Breadth Workspace");
+      const [kriya0, kriya1] = await course({ workspaceId: workspace, title: "Kriya Course", date: "2026-12-09", vector: kriya, chunkCount: 2 });
+      const [hatha0] = await course({ workspaceId: workspace, title: "Hatha Course", date: "2026-12-10", vector: hatha });
+
+      const candidates = await repository.findInWindow({
+        workspaceId: workspace,
+        window: { kind: "requested_range", range: week, similarTo: { space, queryVector: kriya } },
+        topK: 3,
+      });
+
+      expect(candidates.map((candidate) => candidate.chunkId)).toEqual([kriya0, hatha0, kriya1]);
+    });
+
+    it("puts passages with no current embedding after embedded ones, in date order", async () => {
+      const workspace = await createWorkspace("Similarity Unembedded Workspace");
+      const [unembeddedEarly] = await course({ workspaceId: workspace, title: "Unembedded Early", date: "2026-12-07" });
+      const [staleRevision] = await course({ workspaceId: workspace, title: "Stale Revision", date: "2026-12-08", vector: kriya, embeddedRevision: 2 });
+      const [embeddedLate] = await course({ workspaceId: workspace, title: "Embedded Late", date: "2026-12-12", vector: hatha });
+
+      const candidates = await repository.findInWindow({
+        workspaceId: workspace,
+        window: { kind: "requested_range", range: week, similarTo: { space, queryVector: kriya } },
+        topK: 10,
+      });
+
+      expect(candidates.map((candidate) => candidate.chunkId)).toEqual([embeddedLate, unembeddedEarly, staleRevision]);
+      expect(candidates[1]?.similarity).toBe(0);
+    });
+
+    it("orders a requested range by date when the question has no embedding", async () => {
+      const workspace = await createWorkspace("Similarity Fallback Workspace");
+      const [hathaMonday] = await course({ workspaceId: workspace, title: "Hatha Monday", date: "2026-12-07", vector: hatha });
+      const [kriyaSaturday] = await course({ workspaceId: workspace, title: "Kriya Saturday", date: "2026-12-12", vector: kriya });
+
+      const candidates = await repository.findInWindow({
+        workspaceId: workspace,
+        window: { kind: "requested_range", range: week },
+        topK: 10,
+      });
+
+      expect(candidates.map((candidate) => candidate.chunkId)).toEqual([hathaMonday, kriyaSaturday]);
+    });
+
+    it("sorts the whole date-filtered set exactly even when an HNSW index would return off-range neighbours", async () => {
+      const workspace = await createWorkspace("Similarity Exact Sort Workspace");
+      // Many closer neighbours outside the range: an index scan that post-filters by date
+      // would run out of its search breadth before reaching the in-range passages.
+      for (let index = 0; index < 60; index += 1) {
+        await course({ workspaceId: workspace, title: `Off Range ${index}`, date: "2027-02-01", vector: kriya });
+      }
+      const inRange: string[] = [];
+      for (let index = 0; index < 5; index += 1) {
+        const [chunkId] = await course({ workspaceId: workspace, title: `In Range ${index}`, date: "2026-12-09", vector: [0, 1, index / 10] });
+        inRange.push(chunkId);
+      }
+      // The same per-width HNSW expression index the vector adapter builds, under a name
+      // this test owns so it can drop it again.
+      const indexName = `temporal_exact_sort_${randomUUID().replaceAll("-", "")}`;
+      const { operand } = buildChunkEmbeddingDistanceExpression(space.dimensions, "$1");
+      await database.query(
+        `CREATE INDEX ${indexName} ON chunk_embeddings USING hnsw ((${operand}) vector_cosine_ops) WHERE dimensions = ${space.dimensions}`,
+      );
+      await database.query("ANALYZE chunk_embeddings");
+      // One pooled connection, so the session setting reaches the repository's query: the
+      // planner then takes any index it can use.
+      const indexPreferring = new Database(integrationDatabaseUrl, { poolMax: 1 });
+      try {
+        await indexPreferring.query("SET enable_seqscan = off");
+        const candidates = await new PgTemporalCandidateRepository(indexPreferring).findInWindow({
+          workspaceId: workspace,
+          window: { kind: "requested_range", range: week, similarTo: { space, queryVector: kriya } },
+          topK: 10,
+        });
+
+        expect(new Set(candidates.map((candidate) => candidate.chunkId))).toEqual(new Set(inRange));
+      } finally {
+        await indexPreferring.close().catch(() => undefined);
+        await database.query(`DROP INDEX IF EXISTS ${indexName}`);
+      }
+    });
   });
 });

@@ -95,7 +95,10 @@ search.
 Temporal event lookup is a retrieval-owned PostgreSQL read path over canonical
 chunk metadata. Document metadata and ingestion enrichment supply `dateFrom` and
 `dateTo` on chunk metadata, and stored date columns serve both lookups: upcoming
-events from today, and events overlapping a date range the question names.
+events from today, and events overlapping a date range the question names. The
+range lookup ranks its chunks by canonical `chunk_embeddings` distance to the
+question, as an exact sort over the range's chunks behind a materialized CTE, so
+no per-width HNSW index can post-filter it.
 Retrieval consumes those fields only as metadata; it does not import ingestion
 enrichment contracts.
 

@@ -345,15 +345,16 @@ describe("activity trace assembler", () => {
       unresolved: false,
       confidence: 0.9,
     };
-    input.prompt.temporalQueryMode = "listing";
+    input.prompt.temporalQueryMode = "none";
     input.prompt.temporalDateRange = week;
+    input.prompt.temporalLookupRanking = "similarity";
 
     const trace = new ActivityTraceAssembler().assemble(input);
     const interpretation = trace.stages.find((stage) => stage.kind === "query_interpretation");
     const temporal = trace.stages.find((stage) => stage.kind === "temporal_retrieval");
 
     expect(interpretation?.outputs).toMatchObject({ requestedDateRange: week, requestedDateRangeDropReason: null });
-    expect(temporal?.inputs).toEqual({ dateRange: week });
+    expect(temporal?.inputs).toEqual({ dateRange: week, lookupRanking: "similarity" });
     expect(temporal?.metrics).toMatchObject({ dateRangeDays: 7 });
   });
 
@@ -366,7 +367,7 @@ describe("activity trace assembler", () => {
     const temporal = trace.stages.find((stage) => stage.kind === "temporal_retrieval");
 
     expect(interpretation?.outputs).toMatchObject({ requestedDateRange: null });
-    expect(temporal?.inputs).toEqual({ dateRange: null });
+    expect(temporal?.inputs).toEqual({ dateRange: null, lookupRanking: null });
     expect(temporal?.metrics).not.toHaveProperty("dateRangeDays");
   });
 

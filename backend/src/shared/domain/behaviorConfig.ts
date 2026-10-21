@@ -268,6 +268,12 @@ export const RETRIEVAL_BEHAVIOR = {
     // `promptContextMaxCharsPerContext` characters each, 20 passages stay inside
     // `promptContextTokenBudget`.
     dateRangeListingContextTopK: 20,
+    // Passages a requested-range lookup fetches, most similar to the question first. A busy
+    // week runs to about 30 dated passages in one language, and a corpus with a twin per
+    // language doubles that; similarity puts the question's own language first, so 40
+    // holds a busy week in that language with room to spare. The answer still keeps only
+    // the top `dateRangeListingContextTopK` of them.
+    dateRangeLookupDepth: 40,
   },
   hybrid: {
     lexicalTopK: 20,

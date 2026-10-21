@@ -2,7 +2,7 @@ import { type Clock, formatIsoDateUtc, systemClock } from "../../../shared/domai
 import { CandidatePreparationService } from "./candidatePreparationService.js";
 import { buildAppliedConstraintForRule, MetadataRuleScoringService } from "./metadataRuleScoringService.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
-import { mergeTemporalCandidates } from "./temporal/temporalCandidateMergeService.js";
+import { mergeTemporalCandidates, temporalCandidatePlacement } from "./temporal/temporalCandidateMergeService.js";
 import { applyUpcomingEventBoost } from "./temporal/upcomingBoostService.js";
 import type {
   CandidatePreparationStage as CandidatePreparationStageContract,
@@ -124,13 +124,19 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
       .map((rule) => buildAppliedConstraintForRule(rule, "relaxed"));
     const boostedCandidates = applyUpcomingEventBoost({
       candidates: selectedCandidates.candidates,
-      enabled: (input.settings.temporalBoostUpcomingEnabled ?? true) && (input.temporalQueryMode ?? "none") !== "none",
+      enabled: (input.settings.temporalBoostUpcomingEnabled ?? true)
+        && ((input.temporalQueryMode ?? "none") !== "none" || input.temporalDateRange !== undefined),
       today: formatIsoDateUtc(this.clock()),
       dateRange: input.temporalDateRange,
     });
     const orderedCandidates = this.applyResolvedCandidateOrdering(input, boostedCandidates);
     const temporallyMergedCandidates = mergeTemporalCandidates({
-      mode: (input.settings.temporalStructuredLookupEnabled ?? true) ? (input.temporalQueryMode ?? "none") : "none",
+      placement: (input.settings.temporalStructuredLookupEnabled ?? true)
+        ? temporalCandidatePlacement({
+            mode: input.temporalQueryMode ?? "none",
+            requestedRangeLookup: input.temporalLookupRanking !== undefined,
+          })
+        : "none",
       temporalCandidates: input.temporalContexts ?? [],
       rankedCandidates: orderedCandidates,
     });

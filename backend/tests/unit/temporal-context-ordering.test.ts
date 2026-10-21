@@ -260,4 +260,21 @@ describe("temporal context ordering", () => {
 
     expect(result.orderedContexts.map((context) => context.chunkId)).toEqual(["inverted", "later"]);
   });
+
+  it("orders around a requested range whatever shape or temporal mode the rewrite gave the question", () => {
+    const result = orderTemporalPromptContexts({
+      contexts: [
+        candidate({ chunkId: "undated", rank: 0 }),
+        candidate({ chunkId: "in-range", rank: 1, dateFrom: "2026-12-09", dateTo: "2026-12-09" }),
+      ],
+      enabled: true,
+      queryShape: "general_grounding",
+      temporalQueryMode: "none",
+      today: "2026-10-21",
+      dateRange: { dateFrom: "2026-12-07", dateTo: "2026-12-13" },
+    });
+
+    expect(result.applied).toBe(true);
+    expect(result.orderedContexts.map((context) => context.chunkId)).toEqual(["in-range", "undated"]);
+  });
 });

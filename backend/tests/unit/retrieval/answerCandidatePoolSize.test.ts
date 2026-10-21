@@ -52,9 +52,10 @@ describe("answerContextTopK", () => {
 });
 
 describe("dateRangeLookupDepth", () => {
-  it("fetches as many range passages as the largest date listing pool can hold", () => {
-    expect(dateRangeLookupDepth(5)).toBe(dateRangeListingContextTopK);
-    expect(dateRangeLookupDepth(40)).toBe(40);
+  it("fetches a busy week of range passages, and never fewer than a raised answer pool can use", () => {
+    expect(RETRIEVAL_BEHAVIOR.temporal.dateRangeLookupDepth).toBe(40);
+    expect(dateRangeLookupDepth(5)).toBe(40);
+    expect(dateRangeLookupDepth(45)).toBe(45);
     expect(dateRangeLookupDepth(80)).toBe(RETRIEVAL_BEHAVIOR.rerank.candidateLimit);
   });
 });

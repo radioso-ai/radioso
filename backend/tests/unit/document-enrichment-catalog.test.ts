@@ -253,24 +253,13 @@ describe("schema-driven enrichment", () => {
   it("keeps built-in temporal behavior when no operator type matches", async () => {
     const service = new DocumentEnrichmentService({
       gateway: {
-        generate: vi.fn().mockImplementation(({ documentRepresentation }: { documentRepresentation: string }) => {
-          const bodyStart = documentRepresentation.indexOf("Desk lamp\n\nA warm");
-          return Promise.resolve({
-            model: "gpt-5.2",
-            output: {
-              type: "article",
-              confidence: 0.9,
-              facts: [
-                {
-                  id: "published",
-                  kind: "article_date",
-                  label: "published",
-                  dateFrom: "2026-08-02",
-                  sourceRange: { start: bodyStart, end: bodyStart + 9 },
-                },
-              ],
-            },
-          });
+        generate: vi.fn().mockResolvedValue({
+          model: "gpt-5.2",
+          output: {
+            type: "article",
+            confidence: 0.9,
+            facts: [{ kind: "article_date", quote: "Desk lamp", dateFrom: "2026-08-02", dateTo: null, unresolvedText: null }],
+          },
         }),
       },
       strategyRegistry: createDefaultDocumentEnrichmentStrategyRegistry(),
@@ -289,25 +278,21 @@ describe("disabled built-in types", () => {
   const eventServiceWith = () =>
     new DocumentEnrichmentService({
       gateway: {
-        generate: vi.fn().mockImplementation(({ documentRepresentation }: { documentRepresentation: string }) => {
-          const bodyStart = documentRepresentation.indexOf("Desk lamp\n\nA warm");
-          return Promise.resolve({
-            model: "gpt-5.2",
-            output: {
-              type: "event",
-              confidence: 0.95,
-              facts: [
-                {
-                  id: "sale",
-                  kind: "event_date",
-                  label: "sale",
-                  dateFrom: "2026-09-17",
-                  dateTo: "2026-09-19",
-                  sourceRange: { start: bodyStart, end: bodyStart + 40 },
-                },
-              ],
-            },
-          });
+        generate: vi.fn().mockResolvedValue({
+          model: "gpt-5.2",
+          output: {
+            type: "event",
+            confidence: 0.95,
+            facts: [
+              {
+                kind: "event_date",
+                quote: "A warm LED desk lamp priced at 19.99 EUR",
+                dateFrom: "2026-09-17",
+                dateTo: "2026-09-19",
+                unresolvedText: null,
+              },
+            ],
+          },
         }),
       },
       strategyRegistry: createDefaultDocumentEnrichmentStrategyRegistry(),

@@ -156,6 +156,23 @@ describe("ClaudeTextGenerationClient.complete", () => {
     expect(result.usage).toBeUndefined();
   });
 
+  it("reports a reply cut off at max_tokens, and a forced schema tool call as completed", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({ content: [{ type: "text", text: "{\"a\":" }], stop_reason: "max_tokens" }))
+      .mockResolvedValueOnce(jsonResponse({ content: [{ type: "tool_use", input: { answer: "ok" } }], stop_reason: "tool_use" }))
+      .mockResolvedValueOnce(jsonResponse({ content: [{ type: "text", text: "Hi" }], stop_reason: "end_turn" }))
+      .mockResolvedValueOnce(jsonResponse({ content: [{ type: "text", text: "Hi" }], stop_reason: "refusal" }))
+      .mockResolvedValueOnce(jsonResponse({ content: [{ type: "text", text: "Hi" }] }));
+    const client = new ClaudeTextGenerationClient(chatConfig);
+
+    const stopReasons = [];
+    for (let call = 0; call < 5; call += 1) {
+      stopReasons.push((await client.complete({ prompt: "Hi" })).stopReason);
+    }
+
+    expect(stopReasons).toEqual(["output_limit", "completed", "completed", "other", undefined]);
+  });
+
   it("puts a supported model's exact stable prefix in a native checkpointed system block", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse({ content: [{ type: "text", text: "Hi" }] }),

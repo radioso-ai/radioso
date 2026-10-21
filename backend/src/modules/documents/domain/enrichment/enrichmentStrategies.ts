@@ -1,6 +1,7 @@
 import {
   applyMetadataPatches,
   buildChunkMetadataPatches,
+  type ChunkMetadataPatch,
   type EnrichableChunk,
 } from "./chunkMetadataPatches.js";
 import type { DocumentShape, TemporalFact } from "./documentEnrichmentContract.js";
@@ -38,11 +39,48 @@ class StaticDocumentEnrichmentStrategyRegistry implements DocumentEnrichmentStra
   }
 }
 
+type DateRange = { dateFrom: string; dateTo: string };
+
+/** The one date range every given fact names, if they name exactly one. */
+const sharedRange = (facts: TemporalFact[]): DateRange | null => {
+  const ranges = new Map<string, DateRange>();
+  for (const fact of facts) {
+    if (fact.dateFrom) {
+      const range = { dateFrom: fact.dateFrom, dateTo: fact.dateTo ?? fact.dateFrom };
+      ranges.set(`${range.dateFrom}/${range.dateTo}`, range);
+    }
+  }
+  return ranges.size === 1 ? [...ranges.values()][0] ?? null : null;
+};
+
+/**
+ * A fact carries the span of the text that states its date, which is shorter
+ * than the text about the event, so each fact dates the chunks it was quoted
+ * from, and a document-wide range dates every other chunk. The range is
+ * document-wide when every fact names it — the document is about one dated
+ * event, wherever the date is stated — or else when every fact quoted from
+ * the title names it.
+ */
+const eventChunkPatches = (chunks: EnrichableChunk[], facts: TemporalFact[]): ChunkMetadataPatch[] => {
+  const patches = buildChunkMetadataPatches(chunks, facts);
+  const documentWide = sharedRange(facts) ?? sharedRange(facts.filter((fact) => fact.sourceRange === null));
+  if (!documentWide) {
+    return patches;
+  }
+  const dated = new Set(patches.map((patch) => patch.chunkIndex));
+  return [
+    ...patches,
+    ...chunks
+      .filter((chunk) => !dated.has(chunk.chunkIndex))
+      .map((chunk) => ({ chunkIndex: chunk.chunkIndex, metadata: { ...documentWide } })),
+  ];
+};
+
 const eventStrategy: DocumentEnrichmentStrategy = {
   shape: "event",
   apply(input) {
     const eventFacts = input.facts.filter((fact) => fact.kind === "event_date");
-    const patches = buildChunkMetadataPatches(input.chunks, eventFacts);
+    const patches = eventChunkPatches(input.chunks, eventFacts);
     const patchedChunks = applyMetadataPatches(input.chunks, patches);
     // Extracted tags belong in the document's flat metadata too, so operators
     // can see and edit them like any hand-written tag. The document carries the

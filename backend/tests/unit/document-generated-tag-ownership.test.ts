@@ -127,8 +127,8 @@ describe("temporal tags under ownership", () => {
     { chunkIndex: 1, startOffset: 20, endOffset: 40, metadata: { dateFrom: "2026-03-01", dateTo: "2026-03-07" } },
   ];
   const facts = [
-    { id: "a", kind: "event_date" as const, label: "a", dateFrom: "2026-03-02", dateTo: "2026-03-02", sourceRange: { start: 0, end: 10 } },
-    { id: "b", kind: "event_date" as const, label: "b", dateFrom: "2026-03-05", sourceRange: { start: 25, end: 30 } },
+    { kind: "event_date" as const, dateFrom: "2026-03-02", dateTo: "2026-03-02", sourceRange: { start: 0, end: 10 } },
+    { kind: "event_date" as const, dateFrom: "2026-03-05", sourceRange: { start: 25, end: 30 } },
   ];
   const eventStrategy: DocumentEnrichmentStrategy = createDefaultDocumentEnrichmentStrategyRegistry().get("event");
   const OPERATOR_SPAN = { dateFrom: "2026-03-01", dateTo: "2026-03-07" };

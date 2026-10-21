@@ -12,7 +12,7 @@ export interface ChunkMetadataPatch {
   metadata: Record<string, unknown>;
 }
 
-export const rangesOverlap = (
+const rangesOverlap = (
   left: { start: number; end: number },
   right: { start: number; end: number },
 ): boolean => left.start < right.end && right.start < left.end;
@@ -25,7 +25,8 @@ export const buildChunkMetadataPatches = (
 
   for (const chunk of chunks) {
     for (const fact of facts) {
-      if (!fact.dateFrom || !rangesOverlap(fact.sourceRange, { start: chunk.startOffset, end: chunk.endOffset })) {
+      // A fact with no range was quoted from the title and sits on no chunk.
+      if (!fact.dateFrom || !fact.sourceRange || !rangesOverlap(fact.sourceRange, { start: chunk.startOffset, end: chunk.endOffset })) {
         continue;
       }
       patches.push({

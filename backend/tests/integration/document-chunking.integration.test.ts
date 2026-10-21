@@ -202,6 +202,7 @@ Chunking behavior.`,
           }),
           factCount: 1,
           appliedChunkCount: 1,
+          attemptCount: 1,
         };
       },
     };

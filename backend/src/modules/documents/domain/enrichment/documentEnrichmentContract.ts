@@ -26,6 +26,12 @@ export interface DocumentEnrichmentProvenance {
   anchorDate?: string | null;
   anchorSource?: EnrichmentAnchorSource | null;
   factCount?: number;
+  /**
+   * Facts the model returned that the run did not use: invalid ones, and ones
+   * whose quoted text is in neither the body nor the title. Dropping a fact
+   * never fails the run.
+   */
+  droppedFactCount?: number;
   appliedChunkCount?: number;
   failureReason?: string | null;
   /** The catalog type that matched. Equals `shape` for built-in entries. */
@@ -71,52 +77,49 @@ const isoDateSchema = z
   .regex(/^\d{4}-\d{2}-\d{2}$/)
   .refine(isValidIsoCalendarDate, { message: "must be a valid ISO calendar date" });
 
-const sourceRangeSchema = z.object({
-  start: z.coerce.number().int().min(0),
-  end: z.coerce.number().int().min(1),
-}).refine((range) => range.start < range.end, {
-  message: "sourceRange.start must be less than sourceRange.end",
-});
-
 // Models routinely emit `null` for fields they were told are optional, and an
 // empty string where they had nothing to say. Both mean "absent" here; date
 // values themselves stay strictly validated.
 const absentToUndefined = (value: unknown): unknown => (value === null || value === "" ? undefined : value);
 
-const baseTemporalFactShape = {
-  id: z.string().min(1),
-  label: z.string().min(1),
+export const temporalFactKinds = ["event_date", "article_date"] as const;
+
+// The model locates a fact by quoting the text that states it; code finds the
+// quote in the document. Models cannot count characters reliably, so a fact
+// never carries offsets of its own.
+const quotedTemporalFactSchema = z.object({
+  kind: z.enum(temporalFactKinds),
+  quote: z.string().trim().min(1),
   dateFrom: z.preprocess(absentToUndefined, isoDateSchema.optional()),
   dateTo: z.preprocess(absentToUndefined, isoDateSchema.optional()),
   unresolvedText: z.preprocess(absentToUndefined, z.string().min(1).optional()),
-  sourceRange: sourceRangeSchema,
-  anchorSource: z.preprocess(absentToUndefined, z.enum(enrichmentAnchorSources).optional()),
-  anchorDate: z.preprocess(absentToUndefined, isoDateSchema.optional()),
-};
-
-const withTemporalFactRules = <T extends z.AnyZodObject>(schema: T) => schema.refine((fact) => fact.dateFrom || fact.unresolvedText, {
+}).refine((fact) => fact.dateFrom || fact.unresolvedText, {
   message: "temporal fact requires a resolved date or unresolved text",
 }).refine((fact) => !fact.dateFrom || !fact.dateTo || fact.dateFrom <= fact.dateTo, {
   message: "dateFrom must be before or equal to dateTo",
 });
 
-const temporalFactSchema = z.union([
-  withTemporalFactRules(z.object({ kind: z.literal("event_date"), ...baseTemporalFactShape })),
-  withTemporalFactRules(z.object({ kind: z.literal("article_date"), ...baseTemporalFactShape })),
-]);
-
-// Explicit boundary type: zod's inference degrades through the preprocess
-// wrappers above, and downstream strategies should not depend on it anyway.
-export interface TemporalFact {
-  kind: "event_date" | "article_date";
-  id: string;
-  label: string;
+/** A temporal fact as the model states it: dated, and tied to the text it quotes. */
+export interface QuotedTemporalFact {
+  kind: (typeof temporalFactKinds)[number];
+  quote: string;
   dateFrom?: string;
   dateTo?: string;
   unresolvedText?: string;
-  sourceRange: { start: number; end: number };
-  anchorSource?: EnrichmentAnchorSource;
-  anchorDate?: string;
+}
+
+/**
+ * A temporal fact placed in the document. `sourceRange` is the span of the
+ * body, in the same offsets chunks use, that the fact was quoted from; `null`
+ * means it was quoted from the title, so it dates the document as a whole and
+ * sits on no particular chunk.
+ */
+export interface TemporalFact {
+  kind: (typeof temporalFactKinds)[number];
+  dateFrom?: string;
+  dateTo?: string;
+  unresolvedText?: string;
+  sourceRange: { start: number; end: number } | null;
 }
 
 /**
@@ -134,7 +137,7 @@ const withEnvelopeAliases = (value: unknown): unknown => {
   return { ...raw, shape: raw.shape ?? raw.type, typeKey: declared };
 };
 
-export const documentEnrichmentOutputSchema = z.preprocess(withEnvelopeAliases, z.object({
+const documentEnrichmentEnvelopeSchema = z.preprocess(withEnvelopeAliases, z.object({
   // Unknown shape labels degrade to generic (no extraction) instead of failing
   // the whole run; confidence clamps into range with a low default.
   shape: z.preprocess(
@@ -145,40 +148,46 @@ export const documentEnrichmentOutputSchema = z.preprocess(withEnvelopeAliases, 
     (value) => (typeof value === "number" && Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0.5),
     z.number().min(0).max(1),
   ),
-  facts: z.preprocess(
-    // A degenerate fact (no resolved date and no unresolved text) is the model
-    // saying "nothing here" badly — drop it rather than reject the document.
-    (value) =>
-      Array.isArray(value)
-        ? value.filter(
-            (fact) =>
-              Boolean(fact) &&
-              typeof fact === "object" &&
-              (Boolean((fact as { dateFrom?: unknown }).dateFrom) ||
-                Boolean((fact as { unresolvedText?: unknown }).unresolvedText)),
-          )
-        : value ?? [],
-    z.array(temporalFactSchema).default([]),
-  ),
+  // Kept as raw entries and validated one at a time below: one bad fact must
+  // cost only itself, never the document.
+  facts: z.preprocess((value) => value ?? [], z.array(z.unknown())),
   typeKey: z.preprocess((value) => (typeof value === "string" ? value : ""), z.string()),
   // Kept as raw entries: every drop is counted in stage 2, so rejecting a
   // malformed entry here would fail a document that should merely lose a tag.
   fields: z.preprocess((value) => (Array.isArray(value) ? value : []), z.array(z.unknown()).default([])),
 }));
 
-// Explicit boundary type for the same reason as TemporalFact; the schema
-// guarantees this shape at parse time.
+// Explicit boundary type: zod's inference degrades through the preprocess
+// wrappers above. The schema guarantees this shape at parse time.
 export interface DocumentEnrichmentOutput {
   shape: DocumentShape;
   confidence: number;
-  facts: TemporalFact[];
+  facts: QuotedTemporalFact[];
+  /** Facts the model returned that failed validation and were dropped. */
+  invalidFactCount: number;
   /** The raw type key from the envelope; "" when the model named none. */
   typeKey: string;
   fields: unknown[];
 }
 
-export const parseDocumentEnrichmentOutput = (value: unknown): DocumentEnrichmentOutput =>
-  documentEnrichmentOutputSchema.parse(value) as unknown as DocumentEnrichmentOutput;
+/**
+ * Parses the model's reply. Throws (a `ZodError`) only when the reply is not
+ * an enrichment envelope at all; a fact that fails validation is dropped and
+ * counted instead, so it never fails the run.
+ */
+export const parseDocumentEnrichmentOutput = (value: unknown): DocumentEnrichmentOutput => {
+  const envelope = documentEnrichmentEnvelopeSchema.parse(value) as unknown as Omit<DocumentEnrichmentOutput, "facts" | "invalidFactCount"> & {
+    facts: unknown[];
+  };
+  const facts: QuotedTemporalFact[] = [];
+  for (const candidate of envelope.facts) {
+    const parsed = quotedTemporalFactSchema.safeParse(candidate);
+    if (parsed.success) {
+      facts.push(parsed.data);
+    }
+  }
+  return { ...envelope, facts, invalidFactCount: envelope.facts.length - facts.length };
+};
 
 export const MIN_DOCUMENT_TYPE_CONFIDENCE = 0.5;
 

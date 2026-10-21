@@ -7457,8 +7457,12 @@ export interface components {
             anchorDate?: string | null;
             /** @enum {string|null} */
             anchorSource?: "source_last_sync" | "document_created_at" | null;
+            /** @description Dated facts the run placed in the document: in its body, or in its title. */
             factCount?: number;
+            /** @description Dated facts the model returned that the run dropped: invalid ones, and ones quoting text that is in neither the body nor the title. A dropped fact never fails the run. */
+            droppedFactCount?: number;
             appliedChunkCount?: number;
+            /** @description Content-free reason a run failed, such as `invalid_output: truncated` (the reply was cut off at the output limit), `invalid_output: not_json`, `invalid_output: empty`, `provider_error`, or `catalog_over_budget`. */
             failureReason?: string | null;
             /** @description The document type catalog entry that matched. Equals `shape` for built-in entries; an operator-defined key otherwise. */
             matchedTypeKey?: string | null;

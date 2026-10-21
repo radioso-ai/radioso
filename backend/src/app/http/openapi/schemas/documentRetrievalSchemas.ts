@@ -128,9 +128,18 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       enrichedAt: z.string().datetime().nullable().optional(),
       anchorDate: z.string().nullable().optional(),
       anchorSource: z.enum(["source_last_sync", "document_created_at"]).nullable().optional(),
-      factCount: z.number().int().min(0).optional(),
+      factCount: z.number().int().min(0).optional().openapi({
+        description: "Dated facts the run placed in the document: in its body, or in its title.",
+      }),
+      droppedFactCount: z.number().int().min(0).optional().openapi({
+        description:
+          "Dated facts the model returned that the run dropped: invalid ones, and ones quoting text that is in neither the body nor the title. A dropped fact never fails the run.",
+      }),
       appliedChunkCount: z.number().int().min(0).optional(),
-      failureReason: z.string().nullable().optional(),
+      failureReason: z.string().nullable().optional().openapi({
+        description:
+          "Content-free reason a run failed, such as `invalid_output: truncated` (the reply was cut off at the output limit), `invalid_output: not_json`, `invalid_output: empty`, `provider_error`, or `catalog_over_budget`.",
+      }),
       matchedTypeKey: z.string().nullable().optional().openapi({
         description:
           "The document type catalog entry that matched. Equals `shape` for built-in entries; an operator-defined key otherwise.",

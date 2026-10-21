@@ -56,13 +56,13 @@ A catalog edit applies to processing that happens after it. **Reprocess source**
 
 ### What It Adds
 
-For event content, extraction writes the overall event span (`dateFrom` and `dateTo`) into the document's metadata — where you can see and edit it like any other tag — and attaches precise date tags to the parts of the document that describe each dated event, even when the date appears in a different paragraph than the event itself. For articles, it writes the publication date into document metadata the same way.
+For event content, extraction writes the overall event span (`dateFrom` and `dateTo`) into the document's metadata — where you can see and edit it like any other tag — and attaches date tags to the passages that state each date. The model quotes the words that state each date, and Radioso finds those words in the document, so a weekly course list gets each course's date on that course's passage. A document whose dates all name one range is about one event, and every passage carries it. A date stated only in the title covers the passages no other date does. For articles, extraction writes the publication date into document metadata the same way.
 
 Fields from your own types are document-level values: each one is written to the document and copied to every one of its chunks, so a filter on `category` matches the whole document. Per-passage date attribution stays specific to the built-in `Event` type.
 
 Documents that match no type are classified `Generic` and get no fields. Profiles and reference pages are classified too, and Radioso does not invent dates when the document does not support them.
 
-If the model returns something that does not fit — a value that is not a number where a number was declared, a key you never declared, the same key twice — that entry is dropped on its own and counted, and the rest of the document's tags are still applied. The document's provenance records which type matched, which catalog revision the run used, which keys it generated, and how many entries were dropped. It never records document content.
+If the model returns something that does not fit — a value that is not a number where a number was declared, a key you never declared, the same key twice, a date quoting words the document does not contain — that entry is dropped on its own and counted, and the rest of the document's tags are still applied. The document's provenance records which type matched, which catalog revision the run used, which keys it generated, and how many fields and dates were dropped. It never records document content.
 
 ### Who Owns a Tag
 
@@ -86,6 +86,6 @@ A reprocess request can also force extraction on or off for that run only, and t
 
 ### Operational Behavior
 
-Extraction adds model cost, so enable it where the extracted tags earn their keep in retrieval. Because it runs after indexing, it does not add latency to when a document becomes searchable. If extraction fails, the document stays searchable with its existing tags and records safe provenance for operators — a failed extraction never takes a document out of service.
+Extraction adds model cost, so enable it where the extracted tags earn their keep in retrieval. Because it runs after indexing, it does not add latency to when a document becomes searchable. When a reply comes back empty, cut off, or out of shape, or the provider fails in a way that might clear, extraction asks once more before giving up, and both calls are metered. If extraction fails, the document stays searchable with its existing tags and records safe provenance for operators — a failed extraction never takes a document out of service.
 
 Deleting a field or turning off a type that an agent's metadata rules reference does not block the save. Rules pointing at keys that stop being generated simply stop matching, the same as any absent tag.

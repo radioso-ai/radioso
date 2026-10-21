@@ -1,10 +1,8 @@
 import { describe, expect, it } from "vitest";
 
+import type { DocumentEnrichmentGateway } from "../../src/modules/documents/domain/enrichment/enrichmentGateway.js";
 import { createDefaultDocumentEnrichmentStrategyRegistry } from "../../src/modules/documents/domain/enrichment/enrichmentStrategies.js";
-import {
-  DocumentEnrichmentService,
-  type DocumentEnrichmentGateway,
-} from "../../src/modules/documents/services/documentEnrichmentService.js";
+import { DocumentEnrichmentService } from "../../src/modules/documents/services/documentEnrichmentService.js";
 import { DocumentIngestionService } from "../../src/modules/documents/services/documentIngestionService.js";
 import { DocumentProcessingService } from "../../src/modules/documents/services/documentProcessingService.js";
 import type { ChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/chunkingStrategy.js";
@@ -62,9 +60,9 @@ const paragraphChunking: ChunkingStrategy = {
   },
 };
 
-// The model cites each event by the representation offsets of its quote.
+// The model quotes the text that dates each event; the run finds the quote in the body.
 const scriptedGateway = (script: { next: ModelReply }): DocumentEnrichmentGateway => ({
-  async generate({ documentRepresentation }) {
+  async generate() {
     const reply = script.next;
     if (reply.kind === "failure") {
       throw new Error("provider unavailable");
@@ -74,17 +72,13 @@ const scriptedGateway = (script: { next: ModelReply }): DocumentEnrichmentGatewa
       output: {
         type: "event",
         confidence: 0.92,
-        facts: reply.events.map((event, index) => {
-          const start = documentRepresentation.indexOf(event.quote);
-          return {
-            id: `week-${index + 1}`,
-            kind: "event_date",
-            label: event.quote,
-            dateFrom: event.dateFrom,
-            dateTo: event.dateTo,
-            sourceRange: { start, end: start + event.quote.length },
-          };
-        }),
+        facts: reply.events.map((event) => ({
+          kind: "event_date",
+          quote: event.quote,
+          dateFrom: event.dateFrom,
+          dateTo: event.dateTo,
+          unresolvedText: null,
+        })),
       },
     };
   },

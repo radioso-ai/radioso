@@ -33,12 +33,18 @@ export interface DocumentEnrichmentProvenance {
   /** The catalog revision the run resolved at execution time. */
   catalogRevision?: string | null;
   /**
-   * The exact metadata keys this run generated. Extraction owns these and
-   * nothing else; the next run removes them before writing its own.
-   * Built-in `dateFrom`/`dateTo` are deliberately excluded — they keep their
-   * shipped replace-on-every-run semantics.
+   * The exact metadata keys this run generated, built-in `dateFrom`/`dateTo`
+   * included. Extraction owns these and nothing else; the next successful run
+   * removes them before writing its own.
    */
   generatedKeys?: string[];
+  /**
+   * `true` on every provenance a run or a relinquishing write produces:
+   * `generatedKeys` then records ownership of `dateFrom`/`dateTo` as well.
+   * Provenance without it never listed the dates, so their ownership is
+   * inferred from the run it describes (see `resolveExtractionOwnedKeys`).
+   */
+  dateOwnershipRecorded?: boolean;
   fieldCounts?: DocumentEnrichmentFieldCounts | null;
   /**
    * Content-free note about a classification fallback on an otherwise
@@ -94,7 +100,7 @@ const withTemporalFactRules = <T extends z.AnyZodObject>(schema: T) => schema.re
   message: "dateFrom must be before or equal to dateTo",
 });
 
-export const temporalFactSchema = z.union([
+const temporalFactSchema = z.union([
   withTemporalFactRules(z.object({ kind: z.literal("event_date"), ...baseTemporalFactShape })),
   withTemporalFactRules(z.object({ kind: z.literal("article_date"), ...baseTemporalFactShape })),
 ]);

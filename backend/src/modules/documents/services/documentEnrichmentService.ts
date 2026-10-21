@@ -27,7 +27,11 @@ import {
   applyExtractedFields,
   validateExtractedFields,
 } from "../domain/enrichment/extractedFields.js";
-import { stripBuiltInTemporalTags } from "../domain/enrichment/generatedTagOwnership.js";
+import {
+  applyTemporalTagsWithOwnership,
+  resolveExtractionOwnedKeys,
+  stripLegacyProvenanceTag,
+} from "../domain/enrichment/generatedTagOwnership.js";
 import type { EnrichableChunk } from "../domain/enrichment/chunkMetadataPatches.js";
 
 export interface DocumentEnrichmentGateway {
@@ -137,7 +141,6 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
     input: DocumentEnrichmentStageInput<TChunk>,
   ): Promise<DocumentEnrichmentStageResult<TChunk>> {
     const catalog = input.catalog ?? defaultEnabledDocumentTypes();
-    const previousGeneratedKeys = input.previousProvenance?.generatedKeys ?? [];
 
     try {
       const prompt = buildDocumentEnrichmentPrompt({ template: this.prompt, types: catalog.types });
@@ -169,20 +172,21 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
       const declaredFields = matched.type?.payload === "fields" ? matched.type.fields : [];
       const validated = validateExtractedFields({ entries: parsed.fields, declaredFields });
 
-      // Cleanup is atomic with success: the previous run's keys come off here,
-      // and what remains under a generated key's name is manually owned.
+      // Cleanup is atomic with success: every key the previous run owned —
+      // dates included — comes off here, and what remains under a generated
+      // key's name is manually owned.
       const applied = applyExtractedFields({
-        documentMetadata: stripBuiltInTemporalTags(input.document.metadata, Boolean(input.previousProvenance)),
+        documentMetadata: stripLegacyProvenanceTag(input.document.metadata, Boolean(input.previousProvenance)),
         chunks: input.chunks,
         fields: validated.fields,
-        previousGeneratedKeys,
+        previousGeneratedKeys: resolveExtractionOwnedKeys(input.previousProvenance),
       });
 
       // Temporal strategies run only when the catalog matched that built-in;
       // a fallback (disabled or unknown type) must not write date tags even if
       // the model volunteered facts.
       const strategyShape = matched.type?.payload === "facts" ? normalizeDocumentShape(matched.key, parsed.confidence) : "generic";
-      const strategyResult = this.strategyRegistry.get(strategyShape).apply({
+      const strategyResult = applyTemporalTagsWithOwnership(this.strategyRegistry.get(strategyShape), {
         documentMetadata: applied.documentMetadata,
         chunks: applied.chunks,
         facts: parsed.facts,
@@ -191,7 +195,7 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
       const fieldCounts = {
         applied: applied.generatedKeys.length,
         ...validated.counts,
-        skippedCollision: applied.skippedCollision,
+        skippedCollision: applied.skippedCollision + strategyResult.skippedCollision,
       };
       const reportsFields =
         declaredFields.length > 0 || Object.values(fieldCounts).some((count) => count > 0);
@@ -208,7 +212,7 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
         appliedChunkCount,
         matchedTypeKey: matched.key,
         catalogRevision: catalog.revision,
-        generatedKeys: applied.generatedKeys,
+        generatedKeys: [...applied.generatedKeys, ...strategyResult.generatedKeys],
         fieldCounts: reportsFields ? fieldCounts : null,
         classificationNote: matched.note,
       });
@@ -223,8 +227,8 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
       };
     } catch (error) {
       // A failed run touches nothing but its own failure fields: tags, the
-      // generated-key set, and the last successful run's catalog revision all
-      // survive for the next attempt to clean up.
+      // keys extraction owns, and the last successful run's catalog revision
+      // all survive for the next attempt to clean up.
       return {
         status: "failed",
         documentMetadata: input.document.metadata,
@@ -255,7 +259,9 @@ const preservedProvenanceFields = (
         model: previous.model,
         matchedTypeKey: previous.matchedTypeKey,
         catalogRevision: previous.catalogRevision,
-        generatedKeys: previous.generatedKeys,
+        // Recorded explicitly: the failure's own status would otherwise hide
+        // date ownership that the previous run's provenance only implied.
+        generatedKeys: resolveExtractionOwnedKeys(previous),
         fieldCounts: previous.fieldCounts,
         classificationNote: previous.classificationNote,
       }
@@ -352,6 +358,7 @@ const buildProvenance = (input: DocumentEnrichmentProvenance): DocumentEnrichmen
   matchedTypeKey: input.matchedTypeKey ?? null,
   catalogRevision: input.catalogRevision ?? null,
   generatedKeys: input.generatedKeys ?? [],
+  dateOwnershipRecorded: true,
   fieldCounts: input.fieldCounts ?? null,
   classificationNote: input.classificationNote ?? null,
 });

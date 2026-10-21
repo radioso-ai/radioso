@@ -146,6 +146,30 @@ describeIntegration("DocumentRepository (Postgres)", () => {
     expect(page.documents.find((entry) => entry.id === created.id)?.enrichment).toEqual(byId?.enrichment);
   });
 
+  it("round-trips recorded date ownership with the generated keys", async () => {
+    const created = await repository.create({ ...baseCreateInput(), status: "ready" });
+    await repository.updateMetadataForRevision({
+      documentId: created.id,
+      workspaceId,
+      revision: created.revision,
+      metadata: { dateFrom: "2026-03-02", dateTo: "2026-03-06" },
+      enrichment: {
+        status: "applied",
+        shape: "event",
+        matchedTypeKey: "event",
+        generatedKeys: ["dateFrom", "dateTo"],
+        dateOwnershipRecorded: true,
+      },
+    });
+
+    const byId = await repository.findByIdAndWorkspaceId(created.id, workspaceId);
+
+    expect(byId?.enrichment).toMatchObject({
+      generatedKeys: ["dateFrom", "dateTo"],
+      dateOwnershipRecorded: true,
+    });
+  });
+
   it("createAndQueue defaults metadata to {} and source kind to inline_text", async () => {
     const document = await repository.createAndQueue({
       workspaceId,

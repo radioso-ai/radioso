@@ -140,7 +140,11 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       }),
       generatedKeys: z.array(z.string()).optional().openapi({
         description:
-          "The metadata keys this run generated. Extraction owns exactly these keys and replaces them on the next successful run; every other key is manually or connector owned.",
+          "The metadata keys this run generated, `dateFrom` and `dateTo` included when the run wrote them. Extraction owns exactly these keys and replaces them on the next successful run; every other key is manually or connector owned, and extraction never removes or overwrites it.",
+      }),
+      dateOwnershipRecorded: z.boolean().optional().openapi({
+        description:
+          "`true` when `generatedKeys` is the complete record of what extraction owns, `dateFrom` and `dateTo` included. When it is absent, extraction owns those two keys only if this provenance records an applied `event` or `article` run that dated at least one chunk.",
       }),
       fieldCounts: z
         .object({
@@ -153,7 +157,10 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
         })
         .nullable()
         .optional()
-        .openapi({ description: "Content-free tallies of what the run did with the model's field payload." }),
+        .openapi({
+          description:
+            "Content-free tallies of what the run did with the model's field payload. `skippedCollision` also counts the dates a run left alone because the operator or a connector set them.",
+        }),
       classificationNote: z.string().nullable().optional().openapi({
         description: "Content-free note about a classification fallback on an otherwise successful run.",
       }),

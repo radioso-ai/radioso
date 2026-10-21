@@ -31,7 +31,7 @@ import {
   parseDocumentSourceEnrichmentOverride,
   resolveDocumentEnrichmentEnablement,
 } from "../domain/enrichment/enrichmentEnablement.js";
-import { stripGeneratedEnrichmentTags } from "../domain/enrichment/generatedTagOwnership.js";
+import { prepareRevisionTags } from "../domain/enrichment/generatedTagOwnership.js";
 import {
   isDocumentEnrichmentProvenance,
   type DocumentEnrichmentProvenance,
@@ -54,23 +54,23 @@ import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./doc
 import type { MaterializedDocumentContent } from "./documentSourceContentService.js";
 import type { DocumentSourceRepositoryPort } from "../../../db/repositories/documentSourceRepository.js";
 
-export interface IngestionSettingsReaderPort {
+interface IngestionSettingsReaderPort {
   getForWorkspace(workspaceId: string): Promise<IngestionSettingsRecord>;
   promotePendingEmbeddingModelIfReady?(workspaceId: string): Promise<IngestionSettingsRecord | null>;
 }
 
-export interface ChunkingStrategyRegistryPort {
+interface ChunkingStrategyRegistryPort {
   get(strategyId: ChunkingStrategyId): ChunkingStrategy;
 }
 
-export type DocumentProcessingOutcome = "completed" | "stale" | "deleted";
+type DocumentProcessingOutcome = "completed" | "stale" | "deleted";
 
 // The processing service only needs to create the follow-up enrich job; it never
 // claims or fails jobs (the worker owns that lifecycle). ensureEnrichJob is
 // idempotent so a vectorize retry cannot double-insert.
-export type EnrichJobEnqueuePort = Pick<DocumentProcessingJobRepositoryPort, "ensureEnrichJob">;
+type EnrichJobEnqueuePort = Pick<DocumentProcessingJobRepositoryPort, "ensureEnrichJob">;
 
-export interface DocumentSourceContentServicePort {
+interface DocumentSourceContentServicePort {
   materialize(document: {
     id: string;
     workspaceId: string;
@@ -121,16 +121,6 @@ const compactTraceAttributes = (attributes: TraceAttributes): TraceAttributes =>
 /** `documents.enrichment` is untyped JSONB; read it back through the domain guard. */
 const toEnrichmentProvenance = (value: unknown): DocumentEnrichmentProvenance | null =>
   isDocumentEnrichmentProvenance(value) ? value : null;
-
-/**
- * Clears the tags a previous extraction run produced. Stale-tag removal is
- * driven by the generated-key set recorded in provenance, so a deleted catalog
- * field stops leaving orphaned tags behind.
- */
-export const stripStaleEnrichmentMetadata = (
-  metadata: Record<string, unknown>,
-  previousEnrichment: unknown,
-): Record<string, unknown> => stripGeneratedEnrichmentTags(metadata, toEnrichmentProvenance(previousEnrichment));
 
 export const buildDocumentProcessingTraceAttributes = (
   job: Pick<DocumentProcessingJobRecord, "id" | "workspaceId" | "documentId" | "documentRevision" | "attemptCount" | "status" | "kind">,
@@ -256,25 +246,30 @@ export class DocumentProcessingService {
         chunkCount: result.length,
       }));
       const chunkingDurationMs = Math.max(0, Date.now() - chunkingStartedAt);
-      // Enrichment (LLM metadata extraction) is no longer folded into this
-      // vectorize path — it runs afterward as a lower-priority enrich job so the
-      // document becomes queryable as soon as its embeddings are published. A
-      // fresh vectorization starts from clean base metadata (any prior extracted
-      // dates/provenance are stripped and re-derived by the follow-up enrich job).
-      const hadPriorEnrichment = Boolean(documentWithContent.enrichment);
-      const baseDocumentMetadata = stripStaleEnrichmentMetadata(
-        documentWithContent.metadata ?? {},
-        documentWithContent.enrichment,
-      );
+      const source = await this.findDocumentSource(documentWithContent.sourceId ?? null, job.workspaceId);
+      // Metadata extraction runs after this vectorize pass, as a lower-priority
+      // enrich job, so the document is queryable as soon as its embeddings are
+      // published. Whether that job will run decides what happens to the tags
+      // extraction owns on this revision.
+      const enrichmentEnabled = this.resolveEnrichmentEnabled(job, {
+        sourceId: documentWithContent.sourceId ?? null,
+        source,
+        settings,
+      });
+      const revisionTags = prepareRevisionTags({
+        metadata: documentWithContent.metadata ?? {},
+        provenance: toEnrichmentProvenance(documentWithContent.enrichment),
+        extractionEnabled: enrichmentEnabled,
+      });
+      const baseDocumentMetadata = revisionTags.metadata;
       // Source-level tags are a chunk-projection concern only: they are merged
       // into the chunk metadata below and never written back to
       // documents.metadata, so a source retag never rewrites its documents.
-      const source = await this.findDocumentSource(documentWithContent.sourceId ?? null, job.workspaceId);
       const chunkMetadata = mergeDocumentMetadataForChunks(
         parseSourceDocumentMetadata(source?.config),
         baseDocumentMetadata,
       );
-      if (hadPriorEnrichment) {
+      if (revisionTags.clearProvenance) {
         const updatedDocument = await this.documentRepository.updateMetadataForRevision({
           documentId: documentWithContent.id,
           workspaceId: job.workspaceId,
@@ -378,14 +373,8 @@ export class DocumentProcessingService {
       }
       this.publishDocumentStatusChanged(job.workspaceId);
 
-      // The document is now queryable. Decide whether metadata extraction should
-      // follow; the enrich job itself is enqueued last (see below).
-      const enrichmentEnabled = this.resolveEnrichmentEnabled(job, {
-        sourceId: documentWithContent.sourceId ?? null,
-        source,
-        settings,
-      });
-
+      // The document is now queryable. The enrich job, when extraction is
+      // enabled, is enqueued last (see below).
       await traceActiveSpan("document.processing.audit", buildDocumentProcessingTraceAttributes(job, {
         stage: "audit",
         outcome: "completed",
@@ -537,6 +526,9 @@ export class DocumentProcessingService {
           return "stale";
         }
 
+        // Tags the run left alone because the operator or a connector set them,
+        // operator dates included: the reason a successful run can date no chunk.
+        const skippedCollisionCount = result.provenance.fieldCounts?.skippedCollision ?? 0;
         this.logger?.info(
           {
             role: "worker",
@@ -546,6 +538,7 @@ export class DocumentProcessingService {
             enrichmentStatus: result.status,
             factCount: result.factCount,
             appliedChunkCount: result.appliedChunkCount,
+            skippedCollisionCount,
             enrichmentDurationMs: Math.max(0, Date.now() - startedAt),
           },
           "Document enrichment completed",
@@ -560,6 +553,7 @@ export class DocumentProcessingService {
             status: result.status,
             factCount: result.factCount,
             appliedChunkCount: result.appliedChunkCount,
+            skippedCollisionCount,
           },
         });
 

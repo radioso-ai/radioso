@@ -1,7 +1,7 @@
 ---
 title: "Metadata Extraction"
 description: "How metadata extraction classifies documents against your document type catalog and writes the fields you define as structured tags."
-last_updated: 2026-08-21
+last_updated: 2026-10-21
 ---
 
 # Metadata Extraction
@@ -70,9 +70,9 @@ Extraction owns exactly the tags it generated, and nothing else. A tag you typed
 
 Editing a generated tag by hand hands you ownership of it permanently. From that point extraction leaves the key alone — it neither overwrites nor removes it — so a hand-corrected price stays corrected through every later run.
 
-A successful run replaces the previous run's generated tags in one step: the old keys come off, the new ones go on. That is how a field you delete from a type disappears from your documents on their next reprocess. A run that fails leaves every existing tag standing and records only the failure, so a bad model call never costs you the tags you already had.
+A successful run replaces the previous run's generated tags in one step: the old keys come off, the new ones go on. That is how a field you delete from a type disappears from your documents on their next reprocess. A run that fails leaves every existing tag standing and records only the failure, so a bad model call never costs you the tags you already had. A document that processes again with extraction off loses its generated tags, because nothing will refresh them against the new content; the tags you or a connector wrote stay.
 
-The built-in `dateFrom` and `dateTo` tags work differently: every run with extraction enabled rewrites them from the document's content. To manage dates fully by hand, turn extraction off for the document or source and edit the metadata directly — manually set date tags flow into retrieval exactly like extracted ones after a reprocess.
+The built-in `dateFrom` and `dateTo` tags follow the same rule, as a pair. Dates you type, send through the API, or get from a connector stay on the document and on every passage through each reprocess and every run, whatever the model reads, and the run counts them as collisions. Dates extraction wrote are extraction's to refresh; change either one by hand and both become yours.
 
 ### Control Levels
 

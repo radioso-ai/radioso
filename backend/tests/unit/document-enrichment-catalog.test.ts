@@ -258,7 +258,7 @@ describe("schema-driven enrichment", () => {
 
     expect(result.documentMetadata).toMatchObject({ dateFrom: "2026-08-02", dateTo: "2026-08-02" });
     expect(result.provenance).toMatchObject({ shape: "article", matchedTypeKey: "article" });
-    expect(result.provenance.generatedKeys).toEqual([]);
+    expect(result.provenance.generatedKeys).toEqual(["dateFrom", "dateTo"]);
   });
 });
 

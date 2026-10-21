@@ -262,7 +262,10 @@ describe("document subject search text", () => {
               : chunk,
           ),
           factCount: 1,
+          droppedFactCount: 0,
           appliedChunkCount: 1,
+          modelAttemptCount: 1,
+          firstAttemptFailureReason: null,
         };
       },
     };

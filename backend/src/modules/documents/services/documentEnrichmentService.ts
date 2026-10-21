@@ -1,7 +1,6 @@
 import { ZodError } from "zod";
 
 import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
-import type { ModelInferencePipeline } from "../../../shared/infra/llm/modelInferencePipeline.js";
 import type { EnabledDocumentTypesSnapshot } from "../../documentTypes/public.js";
 import {
   parseDocumentEnrichmentOutput,
@@ -11,6 +10,14 @@ import {
   type EnrichmentAnchorSource,
   type TemporalFact,
 } from "../domain/enrichment/documentEnrichmentContract.js";
+import {
+  EnrichmentReplyUnreadableError,
+  type DocumentEnrichmentGateway,
+  type DocumentEnrichmentRequest,
+  type EnrichmentRetryCause,
+} from "../domain/enrichment/enrichmentGateway.js";
+import { buildDocumentEnrichmentOutputSchema } from "../domain/enrichment/enrichmentOutputSchema.js";
+import { locateQuotedFacts } from "../domain/enrichment/factQuoteLocation.js";
 import {
   createDefaultDocumentEnrichmentStrategyRegistry,
   type DocumentEnrichmentStrategyRegistry,
@@ -34,16 +41,6 @@ import {
   stripLegacyProvenanceTag,
 } from "../domain/enrichment/generatedTagOwnership.js";
 import type { EnrichableChunk } from "../domain/enrichment/chunkMetadataPatches.js";
-
-export interface DocumentEnrichmentGateway {
-  generate(input: {
-    workspaceId: string;
-    documentId: string;
-    documentRevision: number;
-    prompt: string;
-    documentRepresentation: string;
-  }): Promise<{ model: string; output: unknown }>;
-}
 
 export interface DocumentEnrichmentStageInput<TChunk extends EnrichableChunk = EnrichableChunk> {
   document: {
@@ -88,7 +85,13 @@ export interface DocumentEnrichmentStageResult<TChunk extends EnrichableChunk = 
   provenance: DocumentEnrichmentProvenance;
   chunks: TChunk[];
   factCount: number;
+  /** Facts the reply carried that the run could not use: invalid, or quoting text the document lacks. */
+  droppedFactCount: number;
   appliedChunkCount: number;
+  /** Model requests the run made: 0 when it failed before asking, 2 after a retry. */
+  modelAttemptCount: number;
+  /** Content-free reason the first request's reply was unusable, when the run asked again. */
+  firstAttemptFailureReason: string | null;
 }
 
 export interface DocumentEnrichmentStagePort {
@@ -97,35 +100,32 @@ export interface DocumentEnrichmentStagePort {
   ): Promise<DocumentEnrichmentStageResult<TChunk>>;
 }
 
-export class ModelDocumentEnrichmentGateway implements DocumentEnrichmentGateway {
-  constructor(private readonly pipeline: ModelInferencePipeline) {}
+type EnrichmentRequestInput = Omit<DocumentEnrichmentRequest, "retry">;
 
-  async generate(input: {
-    workspaceId: string;
-    documentId: string;
-    documentRevision: number;
-    prompt: string;
-    documentRepresentation: string;
-  }): Promise<{ model: string; output: unknown }> {
-    const result = await this.pipeline.complete({
-      prompt: input.documentRepresentation,
-      systemPrompt: input.prompt,
-      temperature: 0,
-      reasoningEffort: "low",
-      maxOutputTokens: 2_000,
-      operation: {
-        workspaceId: input.workspaceId,
-        requestId: input.documentId,
-        surface: "documents",
-        operation: "document_enrichment",
-        attemptKey: `document-enrichment:${input.documentId}:${input.documentRevision}`,
-      },
-    });
+/** The model requests one run made, and why the first was unusable when there was a second. */
+interface ModelAttempts {
+  count: number;
+  firstFailureReason: string | null;
+}
 
-    return {
-      model: this.pipeline.metadata.model,
-      output: JSON.parse(stripJsonFence(result.text)) as unknown,
-    };
+/** A reply read and placed against the document: what the run applies. */
+interface UsableReply {
+  model: string;
+  parsed: DocumentEnrichmentOutput;
+  facts: TemporalFact[];
+  droppedFactCount: number;
+  matched: ReturnType<typeof resolveMatchedDocumentType>;
+}
+
+/**
+ * A reply for a dated type whose every fact was invalid or unplaceable.
+ * Applying it would remove the previous run's dates and write none, so it is
+ * as unusable as a reply that is not JSON. Content-free by construction.
+ */
+class NoUsableFactsError extends Error {
+  constructor() {
+    super("enrichment_no_usable_facts");
+    this.name = "NoUsableFactsError";
   }
 }
 
@@ -149,30 +149,27 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
     input: DocumentEnrichmentStageInput<TChunk>,
   ): Promise<DocumentEnrichmentStageResult<TChunk>> {
     const catalog = input.catalog ?? defaultEnabledDocumentTypes();
+    const attempts: ModelAttempts = { count: 0, firstFailureReason: null };
 
     try {
       const prompt = buildDocumentEnrichmentPrompt({ template: this.prompt, types: catalog.types });
       const representation = buildBoundedDocumentRepresentation(input.document);
-      const gatewayResult = await this.deps.gateway.generate({
+      const reply = await this.requestUsableReply({
         workspaceId: input.document.workspaceId,
         documentId: input.document.id,
         documentRevision: input.document.revision,
         prompt,
         documentRepresentation: representation.text,
-      });
-      const parsed = validateOutputForDocument(
-        normalizeRepresentationRanges(
-          parseDocumentEnrichmentOutput(gatewayResult.output),
-          representation.bodyOffset,
-        ),
-        representation.bodyLength,
-      );
-      const shape = normalizeDocumentShape(parsed.shape, parsed.confidence);
-      const matched = resolveMatchedDocumentType({
+        outputSchema: buildDocumentEnrichmentOutputSchema(catalog.types),
+      }, attempts, (model, output) => readUsableReply({
+        model,
+        output,
         types: catalog.types,
-        typeKey: parsed.typeKey,
-        confidence: parsed.confidence,
-      });
+        body: representation.body,
+        title: input.document.title,
+      }));
+      const { parsed, matched, droppedFactCount } = reply;
+      const shape = normalizeDocumentShape(parsed.shape, parsed.confidence);
 
       // Stage 2 runs against the matched type's declarations only; a
       // classification-only or built-in type declares no `fields` payload, so
@@ -200,7 +197,8 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
         {
           documentMetadata: applied.documentMetadata,
           chunks: applied.chunks,
-          facts: parsed.facts,
+          facts: reply.facts,
+          droppedFactCount,
         },
         {
           sourceMetadata: input.source?.documentMetadata,
@@ -220,11 +218,12 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
       const provenance = buildProvenance({
         status: "applied",
         shape,
-        model: gatewayResult.model,
+        model: reply.model,
         enrichedAt: this.now().toISOString(),
         anchorDate: input.anchor.date,
         anchorSource: input.anchor.source,
-        factCount: parsed.facts.length,
+        factCount: reply.facts.length,
+        droppedFactCount,
         appliedChunkCount,
         matchedTypeKey: matched.key,
         catalogRevision: catalog.revision,
@@ -238,8 +237,11 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
         documentMetadata: strategyResult.documentMetadata,
         provenance,
         chunks: strategyResult.chunks,
-        factCount: parsed.facts.length,
+        factCount: reply.facts.length,
+        droppedFactCount,
         appliedChunkCount,
+        modelAttemptCount: attempts.count,
+        firstAttemptFailureReason: attempts.firstFailureReason,
       };
     } catch (error) {
       // A failed run touches nothing but its own failure fields: tags, the
@@ -260,11 +262,78 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
         }),
         chunks: input.chunks,
         factCount: 0,
+        droppedFactCount: 0,
         appliedChunkCount: 0,
+        modelAttemptCount: attempts.count,
+        firstAttemptFailureReason: attempts.firstFailureReason,
       };
     }
   }
+
+  /**
+   * One request, and one more when its reply cannot be used. Provider errors
+   * are not asked again here: the adapters retry transient ones themselves.
+   */
+  private async requestUsableReply(
+    request: EnrichmentRequestInput,
+    attempts: ModelAttempts,
+    read: (model: string, output: unknown) => UsableReply,
+  ): Promise<UsableReply> {
+    try {
+      return await this.ask(request, attempts, read);
+    } catch (error) {
+      const after = retryCauseOf(error);
+      if (!after) {
+        throw error;
+      }
+      attempts.firstFailureReason = describeEnrichmentFailure(error);
+      return this.ask({ ...request, retry: { after } }, attempts, read);
+    }
+  }
+
+  private async ask(
+    request: DocumentEnrichmentRequest,
+    attempts: ModelAttempts,
+    read: (model: string, output: unknown) => UsableReply,
+  ): Promise<UsableReply> {
+    attempts.count += 1;
+    const reply = await this.deps.gateway.generate(request);
+    return read(reply.model, reply.output);
+  }
 }
+
+/** Parses a reply and places its facts; throws when the reply is unusable. */
+const readUsableReply = (input: {
+  model: string;
+  output: unknown;
+  types: EnabledDocumentTypesSnapshot["types"];
+  body: string;
+  title: string;
+}): UsableReply => {
+  const parsed = parseDocumentEnrichmentOutput(input.output);
+  const located = locateQuotedFacts({ facts: parsed.facts, body: input.body, title: input.title });
+  const matched = resolveMatchedDocumentType({ types: input.types, typeKey: parsed.typeKey, confidence: parsed.confidence });
+  const droppedFactCount = parsed.invalidFactCount + located.unplacedCount;
+  // Only a dated type writes dates, so only its facts can cost the document
+  // anything; a stray fact on any other type is dropped and counted.
+  if (matched.type?.payload === "facts" && droppedFactCount > 0 && located.facts.length === 0) {
+    throw new NoUsableFactsError();
+  }
+  return { model: input.model, parsed, facts: located.facts, droppedFactCount, matched };
+};
+
+// A reply that does not match the envelope schema, or whose facts are all
+// unusable, is as unreadable as one that is not JSON: the next sample may well
+// be readable.
+const retryCauseOf = (error: unknown): EnrichmentRetryCause | null => {
+  if (error instanceof EnrichmentReplyUnreadableError) {
+    return error.reason === "truncated" ? "truncated" : "unreadable";
+  }
+  if (error instanceof ZodError || error instanceof NoUsableFactsError) {
+    return "unreadable";
+  }
+  return null;
+};
 
 const preservedProvenanceFields = (
   previous: DocumentEnrichmentProvenance | null | undefined,
@@ -283,18 +352,18 @@ const preservedProvenanceFields = (
       }
     : {};
 
-// Failure reasons stay content-free: zod issue paths and error names only,
+// Failure reasons stay content-free: zod issue paths and named reasons only,
 // never model output or document text.
 const describeEnrichmentFailure = (error: unknown): string => {
   if (error instanceof ZodError) {
     const paths = [...new Set(error.issues.map((issue) => issue.path.join(".") || "root"))].slice(0, 5);
     return `invalid_output: ${paths.join(", ")}`;
   }
-  if (error instanceof SyntaxError) {
-    return "invalid_output: not_json";
+  if (error instanceof EnrichmentReplyUnreadableError) {
+    return `invalid_output: ${error.reason}`;
   }
-  if (error instanceof Error && error.message === "enrichment_fact_range_out_of_bounds") {
-    return "invalid_output: fact_range_out_of_bounds";
+  if (error instanceof NoUsableFactsError) {
+    return "invalid_output: no_usable_facts";
   }
   if (error instanceof Error && error.message === ENRICHMENT_CATALOG_OVER_BUDGET) {
     return "catalog_over_budget";
@@ -302,20 +371,13 @@ const describeEnrichmentFailure = (error: unknown): string => {
   return "provider_error";
 };
 
-const stripJsonFence = (value: string): string =>
-  value
-    .trim()
-    .replace(/^```(?:json)?/i, "")
-    .replace(/```$/i, "")
-    .trim();
-
 const MAX_DOCUMENT_REPRESENTATION_CHARS = 48_000;
 
 const buildBoundedDocumentRepresentation = (document: {
   title: string;
   markdownContent: string;
   createdAt: Date;
-}): { text: string; bodyOffset: number; bodyLength: number } => {
+}): { text: string; body: string } => {
   const body = document.markdownContent.slice(0, MAX_DOCUMENT_REPRESENTATION_CHARS);
   const prefix = [
     `Title: ${document.title}`,
@@ -323,42 +385,7 @@ const buildBoundedDocumentRepresentation = (document: {
     "",
     "",
   ].join("\n");
-  return {
-    text: `${prefix}${body}`,
-    bodyOffset: prefix.length,
-    bodyLength: body.length,
-  };
-};
-
-const normalizeRepresentationRanges = (
-  output: DocumentEnrichmentOutput,
-  bodyOffset: number,
-): DocumentEnrichmentOutput => ({
-  ...output,
-  facts: output.facts.map((fact) => ({
-    ...fact,
-    sourceRange: toBodySourceRange(fact.sourceRange, bodyOffset),
-  })),
-});
-
-const toBodySourceRange = (
-  sourceRange: TemporalFact["sourceRange"],
-  bodyOffset: number,
-): TemporalFact["sourceRange"] => ({
-  start: sourceRange.start - bodyOffset,
-  end: sourceRange.end - bodyOffset,
-});
-
-const validateOutputForDocument = (
-  output: DocumentEnrichmentOutput,
-  documentLength: number,
-): DocumentEnrichmentOutput => {
-  for (const fact of output.facts) {
-    if (fact.sourceRange.start < 0 || fact.sourceRange.end > documentLength) {
-      throw new Error("enrichment_fact_range_out_of_bounds");
-    }
-  }
-  return output;
+  return { text: `${prefix}${body}`, body };
 };
 
 const buildProvenance = (input: DocumentEnrichmentProvenance): DocumentEnrichmentProvenance => ({
@@ -369,6 +396,7 @@ const buildProvenance = (input: DocumentEnrichmentProvenance): DocumentEnrichmen
   anchorDate: input.anchorDate ?? null,
   anchorSource: input.anchorSource ?? null,
   factCount: input.factCount ?? 0,
+  droppedFactCount: input.droppedFactCount ?? 0,
   appliedChunkCount: input.appliedChunkCount ?? 0,
   failureReason: input.failureReason ?? null,
   matchedTypeKey: input.matchedTypeKey ?? null,

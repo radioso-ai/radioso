@@ -1,0 +1,190 @@
+import { describe, expect, it } from "vitest";
+
+import { locateQuotedFacts } from "../../src/modules/documents/domain/enrichment/factQuoteLocation.js";
+
+const fact = (quote: string, dateFrom = "2026-12-12") => ({ kind: "event_date" as const, quote, dateFrom });
+
+const rangeText = (body: string, range: { start: number; end: number } | null | undefined) =>
+  range ? body.slice(range.start, range.end) : null;
+
+describe("locating extracted facts from quoted text", () => {
+  it("places a quote found once at its offsets in the body", () => {
+    const body = "Hatha Yoga intensivo\n\nDate: dal 12 al 14 dicembre 2026.";
+
+    const located = locateQuotedFacts({ facts: [fact("dal 12 al 14 dicembre 2026")], body, title: "Hatha Yoga" });
+
+    expect(located.unplacedCount).toBe(0);
+    expect(located.facts).toHaveLength(1);
+    expect(rangeText(body, located.facts[0]?.sourceRange)).toBe("dal 12 al 14 dicembre 2026");
+    expect(located.facts[0]).toMatchObject({ kind: "event_date", dateFrom: "2026-12-12" });
+  });
+
+  it("resolves a repeated quote in document order", () => {
+    const body = "### Yoga\nSabato 12 dicembre\n\n### Kirtan\nSabato 12 dicembre\n\n### Mantra\nDomenica 13 dicembre";
+    const second = body.indexOf("Sabato 12 dicembre", body.indexOf("Kirtan"));
+
+    const located = locateQuotedFacts({
+      facts: [fact("Sabato 12 dicembre"), fact("Sabato 12 dicembre"), fact("Domenica 13 dicembre", "2026-12-13")],
+      body,
+      title: "Settimana",
+    });
+
+    expect(located.facts.map((entry) => entry.sourceRange?.start)).toEqual([
+      body.indexOf("Sabato 12 dicembre"),
+      second,
+      body.indexOf("Domenica 13 dicembre"),
+    ]);
+  });
+
+  it("falls back to the first occurrence when a quote appears only before the previous fact", () => {
+    const body = "Open day: 3 March.\n\nWorkshop: 10 March.";
+
+    const located = locateQuotedFacts({
+      facts: [fact("Workshop: 10 March", "2027-03-10"), fact("Open day: 3 March", "2027-03-03")],
+      body,
+      title: "Spring",
+    });
+
+    expect(rangeText(body, located.facts[1]?.sourceRange)).toBe("Open day: 3 March");
+  });
+
+  it("keeps a date quoted only from the title as a document-wide fact with no chunk range", () => {
+    const located = locateQuotedFacts({
+      facts: [fact("12–14 dicembre 2026")],
+      body: "Un fine settimana di pratica per tutti i livelli.",
+      title: "Hatha Yoga intensivo — 12–14 dicembre 2026",
+    });
+
+    expect(located.unplacedCount).toBe(0);
+    expect(located.facts).toEqual([expect.objectContaining({ dateFrom: "2026-12-12", sourceRange: null })]);
+  });
+
+  it("prefers the body when the title and the body both carry the quote", () => {
+    const body = "Date: 12 dicembre 2026.";
+
+    const located = locateQuotedFacts({ facts: [fact("12 dicembre 2026")], body, title: "Corso — 12 dicembre 2026" });
+
+    expect(rangeText(body, located.facts[0]?.sourceRange)).toBe("12 dicembre 2026");
+  });
+
+  it("drops a quote found nowhere, and an empty one, and counts them", () => {
+    const located = locateQuotedFacts({
+      facts: [fact("15 gennaio 2027"), fact("   "), fact("12 dicembre")],
+      body: "Sabato 12 dicembre, ore 10.",
+      title: "Corso",
+    });
+
+    expect(located.unplacedCount).toBe(2);
+    expect(located.facts).toHaveLength(1);
+  });
+
+  it("maps Italian text with accents and em-dashes to exact body offsets", () => {
+    const body = "# Settimana\n\n### Meditazione guidata\nMartedì 8 dicembre 2026 — ore 19:00\nCon Luca, più tè.";
+
+    const located = locateQuotedFacts({ facts: [fact("Martedì 8 dicembre 2026 — ore 19:00", "2026-12-08")], body, title: "Settimana" });
+
+    expect(rangeText(body, located.facts[0]?.sourceRange)).toBe("Martedì 8 dicembre 2026 — ore 19:00");
+  });
+
+  it("matches a quote whose whitespace, dashes, apostrophes, accents, case, or emphasis differ from the body", () => {
+    const body = "Ayurveda:  alimentazione dell’inverno\n\n**Mercoledì** 9 dicembre 2026, 20:30–22:00";
+    const decomposed = "Mercoledì 9 dicembre 2026, 20:30-22:00";
+
+    const located = locateQuotedFacts({
+      facts: [fact("alimentazione dell'inverno", "2026-12-09"), fact(decomposed, "2026-12-09"), fact("MERCOLEDÌ 9 DICEMBRE", "2026-12-09")],
+      body,
+      title: "Ayurveda",
+    });
+
+    expect(located.unplacedCount).toBe(0);
+    expect(rangeText(body, located.facts[0]?.sourceRange)).toBe("alimentazione dell’inverno");
+    expect(rangeText(body, located.facts[1]?.sourceRange)).toBe("Mercoledì** 9 dicembre 2026, 20:30–22:00");
+    expect(rangeText(body, located.facts[2]?.sourceRange)).toBe("Mercoledì** 9 dicembre");
+  });
+
+  it("keeps offsets exact after emoji and other characters outside the Basic Multilingual Plane", () => {
+    const bodies = [
+      "🎉🎉 **Sabato 12 dicembre**",
+      `${"📍 Sede: Roma\n".repeat(5)}Lunedì 7 dicembre`,
+      `${"📅".repeat(30)} Lunedì 7 dicembre`,
+      "🎉 𝐂𝐨𝐫𝐬𝐨 di yoga — Lunedì 7 dicembre",
+    ];
+    for (const body of bodies) {
+      const quote = body.includes("Sabato") ? "Sabato 12 dicembre" : "Lunedì 7 dicembre";
+
+      const located = locateQuotedFacts({ facts: [fact(quote)], body, title: "Corso" });
+
+      expect(located.facts[0]?.sourceRange).toEqual({ start: body.indexOf(quote), end: body.indexOf(quote) + quote.length });
+    }
+  });
+
+  it("places a quote that itself carries an emoji, and decomposed accents after an emoji", () => {
+    const body = "Programma\n\n📅 12 dicembre — 🎉 Mercoledì 9 dicembre";
+
+    const located = locateQuotedFacts({
+      facts: [fact("📅 12 dicembre"), fact("🎉 Mercoledì 9 dicembre", "2026-12-09")],
+      body,
+      title: "Programma",
+    });
+
+    expect(rangeText(body, located.facts[0]?.sourceRange)).toBe("📅 12 dicembre");
+    expect(rangeText(body, located.facts[1]?.sourceRange)).toBe("🎉 Mercoledì 9 dicembre");
+  });
+
+  it("matches whole numbers and words only, falling back to the next occurrence", () => {
+    const body = "Corso A: 21 dicembre 2026\n\nCorso B: 1 dicembre 2026";
+
+    const located = locateQuotedFacts({
+      facts: [fact("1 dicembre", "2026-12-01"), fact("orso", "2026-12-01"), fact("3 March", "2027-03-03")],
+      body,
+      title: "Corsi — 13 March",
+    });
+
+    expect(located.facts[0]?.sourceRange?.start).toBe(body.indexOf("Corso B: 1 dicembre") + "Corso B: ".length);
+    expect(located.unplacedCount).toBe(2);
+  });
+
+  it("needs no word boundary next to scripts written without spaces", () => {
+    const body = "講座は2026年12月7日に開催します。";
+
+    const located = locateQuotedFacts({ facts: [fact("12月7日", "2026-12-07")], body, title: "講座" });
+
+    expect(rangeText(body, located.facts[0]?.sourceRange)).toBe("12月7日");
+  });
+
+  it("lets a Korean particle follow a quoted date", () => {
+    const body = "강좌는 2026년 12월 7일에 열립니다.";
+
+    const located = locateQuotedFacts({ facts: [fact("12월 7일", "2026-12-07")], body, title: "강좌" });
+
+    expect(rangeText(body, located.facts[0]?.sourceRange)).toBe("12월 7일");
+  });
+
+  it("still matches whole numbers next to Korean text", () => {
+    const located = locateQuotedFacts({ facts: [fact("2월 7일", "2026-02-07")], body: "12월 7일에 열립니다.", title: "강좌" });
+
+    expect(located.unplacedCount).toBe(1);
+  });
+
+  it("matches through invisible format characters, keeping offsets in the original text", () => {
+    const body = "﻿Programma\n\nSabato 12 dicem­bre​ 2026 — Lune⁠dì 14 dicembre";
+
+    const located = locateQuotedFacts({
+      facts: [fact("Sabato 12 dicembre 2026"), fact("Lunedì 14 dicembre", "2026-12-14"), fact("Programma", "2026-12-12")],
+      body,
+      title: "Corso",
+    });
+
+    expect(rangeText(body, located.facts[0]?.sourceRange)).toBe("Sabato 12 dicem­bre​ 2026");
+    expect(rangeText(body, located.facts[1]?.sourceRange)).toBe("Lune⁠dì 14 dicembre");
+    expect(located.facts[2]?.sourceRange).toEqual({ start: 1, end: 10 });
+  });
+
+  it("matches a quote that spans a line break as a single space", () => {
+    const body = "Arrivo lunedì 2 agosto\n2027 dopo le 15:00.";
+
+    const located = locateQuotedFacts({ facts: [fact("lunedì 2 agosto 2027", "2027-08-02")], body, title: "Ritiro" });
+
+    expect(rangeText(body, located.facts[0]?.sourceRange)).toBe("lunedì 2 agosto\n2027");
+  });
+});

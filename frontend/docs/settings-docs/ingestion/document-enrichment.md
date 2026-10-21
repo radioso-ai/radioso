@@ -66,13 +66,15 @@ If the model returns something that does not fit — a value that is not a numbe
 
 ### Who Owns a Tag
 
-Extraction owns exactly the tags it generated, and nothing else. A tag you typed by hand, or one a connector supplied, wins: extraction skips it and counts the collision instead of overwriting your value.
+Extraction owns exactly the tags it generated, and nothing else. A tag you typed by hand, one a connector supplied, or one a source's document tags set wins: extraction skips it and counts the collision instead of overwriting the value. A tag left empty counts as unset, so extraction can fill it in.
 
 Editing a generated tag by hand hands you ownership of it permanently. From that point extraction leaves the key alone — it neither overwrites nor removes it — so a hand-corrected price stays corrected through every later run.
 
 A successful run replaces the previous run's generated tags in one step: the old keys come off, the new ones go on. That is how a field you delete from a type disappears from your documents on their next reprocess. A run that fails leaves every existing tag on the document standing and records only the failure, so a bad model call never costs you the tags you already had. When the content changed, the document's new passages wait for a run that succeeds before they carry generated tags again. A document that processes again with extraction off loses its generated tags, because nothing will refresh them against the new content; the tags you or a connector wrote stay.
 
-The built-in `dateFrom` and `dateTo` tags follow the same rule, as a pair. Dates you type, send through the API, get from a connector, or set in a source's document tags stay on every passage through each reprocess and every run, whatever the model reads, and the run counts them as collisions. An empty date counts as no date. Dates extraction wrote are extraction's to refresh; change either one by hand and both become yours.
+The built-in `dateFrom` and `dateTo` tags follow the same rule, as a pair. Dates you type, send through the API, or set in a source's document tags stay on every passage through each reprocess and every run, whatever the model reads, and the run counts each date it would have written as a collision. Dates extraction wrote are extraction's to refresh; change either one by hand and both become yours.
+
+Dates a connector syncs are defaults: WordPress writes each post's publish day as `dateFrom`, and a run that reads the event's own dates replaces it. The publish day stays when extraction is off, fails, or reads no dates. A date you edit by hand on a synced document lasts until the connector's next sync or the next run that reads dates.
 
 ### Control Levels
 

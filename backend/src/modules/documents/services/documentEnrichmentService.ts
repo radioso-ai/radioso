@@ -30,6 +30,7 @@ import {
 import {
   applyTemporalTagsWithOwnership,
   resolveExtractionOwnedKeys,
+  sourceSyncsDocumentDates,
   stripLegacyProvenanceTag,
 } from "../domain/enrichment/generatedTagOwnership.js";
 import type { EnrichableChunk } from "../domain/enrichment/chunkMetadataPatches.js";
@@ -71,10 +72,12 @@ export interface DocumentEnrichmentStageInput<TChunk extends EnrichableChunk = E
    */
   previousProvenance?: DocumentEnrichmentProvenance | null;
   /**
-   * Tags the document's source stamps on every chunk. Extraction never removes
-   * or overwrites them; dates among them keep the run from writing any date.
+   * The document's source: its kind and the tags it stamps on every chunk.
+   * Extraction never removes or overwrites those tags, and dates among them
+   * keep the run from writing any date. The kind decides whether dates on the
+   * document itself are a syncing connector's defaults the run may replace.
    */
-  sourceMetadata?: Record<string, unknown>;
+  source?: { kind: string; documentMetadata: Record<string, unknown> } | null;
 }
 
 export interface DocumentEnrichmentStageResult<TChunk extends EnrichableChunk = EnrichableChunk> {
@@ -185,7 +188,7 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
         chunks: input.chunks,
         fields: validated.fields,
         previousGeneratedKeys: resolveExtractionOwnedKeys(input.previousProvenance),
-        sourceMetadata: input.sourceMetadata,
+        sourceMetadata: input.source?.documentMetadata,
       });
 
       // Temporal strategies run only when the catalog matched that built-in;
@@ -199,7 +202,10 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
           chunks: applied.chunks,
           facts: parsed.facts,
         },
-        input.sourceMetadata,
+        {
+          sourceMetadata: input.source?.documentMetadata,
+          documentDatesAreSyncDefaults: sourceSyncsDocumentDates(input.source?.kind),
+        },
       );
 
       const fieldCounts = {

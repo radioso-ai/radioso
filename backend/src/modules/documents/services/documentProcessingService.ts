@@ -268,12 +268,12 @@ export class DocumentProcessingService {
         parseSourceDocumentMetadata(source?.config),
         revisionTags.projectedMetadata,
       );
-      if (revisionTags.clearProvenance) {
+      if (revisionTags.clearedDocument) {
         const updatedDocument = await this.documentRepository.updateMetadataForRevision({
           documentId: documentWithContent.id,
           workspaceId: job.workspaceId,
           revision: job.documentRevision,
-          metadata: revisionTags.documentMetadata,
+          metadata: revisionTags.clearedDocument.metadata,
           enrichment: null,
         });
         if (!updatedDocument) {
@@ -489,7 +489,9 @@ export class DocumentProcessingService {
             },
             catalog,
             previousProvenance,
-            sourceMetadata: parseSourceDocumentMetadata(source?.config),
+            source: source
+              ? { kind: source.kind, documentMetadata: parseSourceDocumentMetadata(source.config) }
+              : null,
           }),
           (enrichment) => buildDocumentProcessingTraceAttributes(job, {
             stage: "enrichment",
@@ -574,7 +576,7 @@ export class DocumentProcessingService {
   private async findDocumentSource(
     sourceId: string | null,
     workspaceId: string,
-  ): Promise<{ config: Record<string, unknown> } | null> {
+  ): Promise<{ kind: string; config: Record<string, unknown> } | null> {
     if (!sourceId || !this.documentSourceRepository) {
       return null;
     }

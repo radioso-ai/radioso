@@ -27,7 +27,6 @@
   "exports|backend/src/modules/directives/composition.ts|createDirectiveSteering",
   "exports|backend/src/modules/directives/directiveLifecycle.ts|directiveHasTrackedLifecycle",
   "exports|backend/src/modules/directives/directiveLifecycle.ts|lifecycleSuppressedDirectives",
-  "exports|backend/src/modules/documentTypes/domain/builtInDocumentTypes.ts|reservedDocumentTypeFieldKeys",
   "exports|backend/src/modules/documentTypes/domain/documentTypeCatalogValidation.ts|DOCUMENT_TYPE_KEY_PATTERN",
   "exports|backend/src/modules/documents/domain/documentMetadata.ts|MAX_DOCUMENT_METADATA_BYTES",
   "exports|backend/src/modules/documents/domain/enrichment/chunkMetadataPatches.ts|rangesOverlap",

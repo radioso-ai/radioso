@@ -140,7 +140,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       }),
       generatedKeys: z.array(z.string()).optional().openapi({
         description:
-          "The metadata keys extraction owns on this document: the keys its runs generated, `dateFrom` and `dateTo` included, less any a manual edit took over. The next successful run replaces exactly these; every other key is manually or connector owned, and extraction never removes or overwrites it.",
+          "The metadata keys extraction owns on this document: the keys its runs generated, `dateFrom` and `dateTo` included, less any a manual edit took over. The next successful run replaces exactly these. Every other key belongs to the operator, the connector, or the source's document tags, and extraction leaves it alone — except dates a connector writes on a document it syncs, which a run that reads dates replaces.",
       }),
       fieldCounts: z
         .object({
@@ -155,7 +155,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
         .optional()
         .openapi({
           description:
-            "Content-free tallies of what the run did with the model's field payload. `skippedCollision` also counts the dates a run left alone because the document or its source already carried them.",
+            "Content-free tallies of what the run did with the model's field payload. `skippedCollision` counts every field and date the run left alone because the document or its source's document tags already set it.",
         }),
       classificationNote: z.string().nullable().optional().openapi({
         description: "Content-free note about a classification fallback on an otherwise successful run.",

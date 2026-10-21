@@ -44,6 +44,7 @@ const enrichInput = (overrides: {
   chunkMetadata?: Record<string, unknown>;
   catalog?: EnabledDocumentTypesSnapshot;
   previousProvenance?: DocumentEnrichmentProvenance | null;
+  source?: { kind: string; documentMetadata: Record<string, unknown> };
 } = {}) => ({
   document: {
     id: "doc-1",
@@ -66,6 +67,7 @@ const enrichInput = (overrides: {
   anchor: { source: "document_created_at" as const, date: "2026-08-01" },
   catalog: overrides.catalog ?? catalog(),
   previousProvenance: overrides.previousProvenance ?? null,
+  source: overrides.source ?? null,
 });
 
 describe("schema-driven enrichment", () => {
@@ -98,6 +100,27 @@ describe("schema-driven enrichment", () => {
       droppedOverCap: 0,
       skippedCollision: 0,
     });
+  });
+
+  it("leaves a tag the source stamps on every chunk standing and counts the collision", async () => {
+    const service = serviceWith({
+      type: "product",
+      confidence: 0.94,
+      fields: [
+        { key: "productName", value: "Desk lamp" },
+        { key: "category", value: "lighting" },
+      ],
+    });
+
+    const result = await service.enrich(enrichInput({
+      chunkMetadata: { category: "furniture" },
+      source: { kind: "website", documentMetadata: { category: "furniture" } },
+    }));
+
+    expect(result.documentMetadata).toEqual({ productName: "Desk lamp" });
+    expect(result.chunks[0]?.metadata).toEqual({ category: "furniture", productName: "Desk lamp" });
+    expect(result.provenance.generatedKeys).toEqual(["productName"]);
+    expect(result.provenance.fieldCounts?.skippedCollision).toBe(1);
   });
 
   it("counts per-entry drops without failing the document", async () => {

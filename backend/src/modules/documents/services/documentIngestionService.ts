@@ -76,10 +76,13 @@ export type {
  * Builds the optional `enrichment` field of a document write: present only when
  * the manual metadata changed or removed a key extraction generated, so the
  * write relinquishes ownership of that key in the same statement.
+ * `contentChanged` says whether the same write replaces the content extraction
+ * reads, title included.
  */
 const relinquishedEnrichment = (
   existing: { enrichment?: DocumentEnrichmentProvenance | null; metadata?: Record<string, unknown> | null },
   nextMetadata: Record<string, unknown> | undefined,
+  contentChanged: boolean,
 ): { enrichment?: Record<string, unknown> } => {
   if (nextMetadata === undefined) {
     return {};
@@ -88,6 +91,7 @@ const relinquishedEnrichment = (
     previousProvenance: existing.enrichment,
     previousMetadata: existing.metadata ?? {},
     nextMetadata,
+    contentChanged,
   });
   return relinquished ? { enrichment: relinquished as unknown as Record<string, unknown> } : {};
 };
@@ -383,7 +387,11 @@ export class DocumentIngestionService implements DocumentInventoryPort {
         markdownContent: indexedContent.markdownContent,
         ...(await this.resolveSourceForInput(input.workspaceId, input.source)),
         metadata: input.metadata,
-        ...relinquishedEnrichment(existing, input.metadata),
+        ...relinquishedEnrichment(
+          existing,
+          input.metadata,
+          existing.title !== input.title || existing.markdownContent !== indexedContent.markdownContent,
+        ),
         externalDocumentId: input.externalDocumentId,
         sourceKind: "inline_text",
         sourceFilename: null,
@@ -498,7 +506,7 @@ export class DocumentIngestionService implements DocumentInventoryPort {
         documentId: input.documentId,
         workspaceId: input.workspaceId,
         ...(metadata !== undefined
-          ? { metadata, ...relinquishedEnrichment(existing, metadata) }
+          ? { metadata, ...relinquishedEnrichment(existing, metadata, false) }
           : {}),
         ...(eligibility ?? {}),
         ...(input.expectedUpdatedAt !== undefined ? { expectedUpdatedAt: input.expectedUpdatedAt } : {}),

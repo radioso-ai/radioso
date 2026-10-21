@@ -165,16 +165,18 @@ const buildCalendarWorkspace = (options: { workspaceExtractionEnabled?: boolean 
   };
 
   const createSourcedDocument = async (input: {
-    sourceDocumentMetadata: Record<string, unknown>;
+    sourceKind?: "website" | "connector";
+    sourceDocumentMetadata?: Record<string, unknown>;
+    metadata?: Record<string, unknown>;
     override?: "on" | "off";
     reply?: ModelReply;
   }): Promise<{ documentId: string; sourceId: string }> => {
     const source = await sourceRepository.upsertByExternalId({
       workspaceId: WORKSPACE_ID,
-      kind: "website",
+      kind: input.sourceKind ?? "website",
       name: "Retreat calendar",
       externalId: "retreat-calendar",
-      config: { documentMetadata: input.sourceDocumentMetadata },
+      config: { documentMetadata: input.sourceDocumentMetadata ?? {} },
     });
     model.next = input.reply ?? FAILS;
     const document = await documentRepository.createAndQueue(
@@ -184,6 +186,7 @@ const buildCalendarWorkspace = (options: { workspaceExtractionEnabled?: boolean 
         sourceContent: MARCH_PROGRAMME,
         markdownContent: MARCH_PROGRAMME,
         sourceId: source.id,
+        metadata: input.metadata,
       },
       input.override ? { documentEnrichmentOverride: input.override } : null,
     );
@@ -286,11 +289,8 @@ const expectUndatedChunks = (workspace: CalendarWorkspace, documentId: string): 
   }
 };
 
-/**
- * Extracted dates: the document carries the overall span, each retreat's chunk
- * carries that retreat's dates, and none of it was folded into the embedded text.
- */
-const expectExtractedEventDates = (workspace: CalendarWorkspace, documentId: string, events: ExtractedEvent[]): void => {
+/** The document carries the overall span and each retreat's chunk carries that retreat's dates. */
+const expectEventDatesOnChunks = (workspace: CalendarWorkspace, documentId: string, events: ExtractedEvent[]): void => {
   const [first, second] = events;
   expect(workspace.documentOf(documentId)?.metadata).toMatchObject({ dateFrom: first.dateFrom, dateTo: second.dateTo });
   const [intro, weekOne, weekTwo] = workspace.chunksOf(documentId);
@@ -298,9 +298,14 @@ const expectExtractedEventDates = (workspace: CalendarWorkspace, documentId: str
   expect(intro?.metadata.dateFrom || null).toBeNull();
   expect(weekOne?.metadata).toMatchObject({ dateFrom: first.dateFrom, dateTo: first.dateTo });
   expect(weekTwo?.metadata).toMatchObject({ dateFrom: second.dateFrom, dateTo: second.dateTo });
-  for (const chunk of [intro, weekOne, weekTwo]) {
-    expect(chunk?.searchText).not.toContain("Date from:");
-    expect(chunk?.searchText).not.toContain("Month label:");
+};
+
+/** Extracted dates, none of which was folded into the embedded text. */
+const expectExtractedEventDates = (workspace: CalendarWorkspace, documentId: string, events: ExtractedEvent[]): void => {
+  expectEventDatesOnChunks(workspace, documentId, events);
+  for (const chunk of workspace.chunksOf(documentId)) {
+    expect(chunk.searchText).not.toContain("Date from:");
+    expect(chunk.searchText).not.toContain("Month label:");
   }
 };
 
@@ -369,7 +374,7 @@ describe("operator-written event dates", () => {
     expectOperatorDates(workspace, documentId, OPERATOR_DATES);
   });
 
-  it("become the operator's again once sent back over an applied run that never tracked date ownership", async () => {
+  it("become the operator's again once a metadata save sends them back over an applied run that never tracked date ownership", async () => {
     const workspace = buildCalendarWorkspace();
     const documentId = await workspace.createDocument({ metadata: OPERATOR_DATES });
     // The run read the same span and wrote it over the operator's dates.
@@ -398,6 +403,86 @@ describe("operator-written event dates", () => {
 
     expectExtractedEventDates(workspace, documentId, MARCH_EVENTS);
     expect(workspace.documentOf(documentId)?.enrichment).toMatchObject({ generatedKeys: ["dateFrom", "dateTo"] });
+  });
+});
+
+describe("API dates on a document filed under a website source", () => {
+  it("win over the per-event dates a successful run reads", async () => {
+    const workspace = buildCalendarWorkspace();
+    const { documentId } = await workspace.createSourcedDocument({
+      sourceKind: "website",
+      metadata: OPERATOR_DATES,
+      override: "on",
+      reply: reads(MAY_EVENTS),
+    });
+
+    expectOperatorDates(workspace, documentId, OPERATOR_DATES);
+    expect(workspace.documentOf(documentId)?.enrichment?.fieldCounts?.skippedCollision).toBe(2);
+  });
+});
+
+describe("a connector's publish day", () => {
+  // WordPress writes the post's publish day as `dateFrom` on every sync.
+  const PUBLISHED = { source: "wordpress", published_at: "2026-01-10T08:00:00", dateFrom: "2026-01-10" };
+
+  const expectPublishDayEverywhere = (workspace: CalendarWorkspace, documentId: string): void => {
+    expect(workspace.documentOf(documentId)?.metadata).toEqual(PUBLISHED);
+    const chunks = workspace.chunksOf(documentId);
+    expect(chunks).toHaveLength(3);
+    for (const chunk of chunks) {
+      expect(chunk.metadata).toMatchObject({ dateFrom: "2026-01-10" });
+      expect(chunk.metadata).not.toHaveProperty("dateTo");
+      expect(chunk.searchText).toContain("Date from: 2026-01-10");
+    }
+  };
+
+  it("gives way to the event dates a successful run reads", async () => {
+    const workspace = buildCalendarWorkspace();
+    const { documentId } = await workspace.createSourcedDocument({
+      sourceKind: "connector",
+      metadata: PUBLISHED,
+      override: "on",
+      reply: reads(MAY_EVENTS),
+    });
+
+    expectEventDatesOnChunks(workspace, documentId, MAY_EVENTS);
+    expect(workspace.documentOf(documentId)?.metadata).toMatchObject({ published_at: "2026-01-10T08:00:00" });
+    expect(workspace.documentOf(documentId)?.enrichment).toMatchObject({
+      status: "applied",
+      generatedKeys: ["dateFrom", "dateTo"],
+    });
+    expect(workspace.documentOf(documentId)?.enrichment?.fieldCounts?.skippedCollision ?? 0).toBe(0);
+  });
+
+  it("stays when extraction does not run", async () => {
+    const workspace = buildCalendarWorkspace();
+    const { documentId } = await workspace.createSourcedDocument({ sourceKind: "connector", metadata: PUBLISHED });
+
+    expectPublishDayEverywhere(workspace, documentId);
+  });
+
+  it("stays when the run fails", async () => {
+    const workspace = buildCalendarWorkspace();
+    const { documentId } = await workspace.createSourcedDocument({
+      sourceKind: "connector",
+      metadata: PUBLISHED,
+      override: "on",
+      reply: FAILS,
+    });
+
+    expectPublishDayEverywhere(workspace, documentId);
+  });
+
+  it("stays when the run reads no dates", async () => {
+    const workspace = buildCalendarWorkspace();
+    const { documentId } = await workspace.createSourcedDocument({
+      sourceKind: "connector",
+      metadata: PUBLISHED,
+      override: "on",
+      reply: reads([]),
+    });
+
+    expectPublishDayEverywhere(workspace, documentId);
   });
 });
 
@@ -520,6 +605,21 @@ describe("extraction-written event dates", () => {
     await workspace.reprocess(documentId);
     expect(workspace.documentOf(documentId)?.metadata).not.toHaveProperty("dateFrom");
     expectUndatedChunks(workspace, documentId);
+  });
+
+  it("re-derive under provenance that never tracked date ownership when a content edit echoes them", async () => {
+    const workspace = buildCalendarWorkspace();
+    const documentId = await workspace.createDocument({});
+    const echoed = { dateFrom: "2026-03-02", dateTo: "2026-03-13" };
+    workspace.setStoredState(documentId, {
+      metadata: echoed,
+      enrichment: { status: "applied", shape: "event", factCount: 2, appliedChunkCount: 2 },
+    });
+
+    // The dashboard saves the whole form: new content, and the dates it showed.
+    await workspace.put(documentId, { content: MAY_PROGRAMME, metadata: echoed, override: "on", reply: reads(MAY_EVENTS) });
+
+    expectExtractedEventDates(workspace, documentId, MAY_EVENTS);
   });
 
   it("become the operator's when a manual edit changes either one", async () => {

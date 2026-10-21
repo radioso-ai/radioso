@@ -3,6 +3,7 @@ import type {
   DocumentTypeFieldValueType,
 } from "../../../documentTypes/contracts/documentTypeCatalog.js";
 import type { EnrichableChunk } from "./chunkMetadataPatches.js";
+import { holdsValue, omitKeys, pickKeys } from "./metadataTags.js";
 
 type ExtractedFieldValue = string | number | boolean;
 
@@ -171,22 +172,14 @@ export const validateExtractedFields = (input: {
   return { fields, counts };
 };
 
-const omitKeys = (
-  metadata: Record<string, unknown>,
-  keys: ReadonlySet<string>,
-): Record<string, unknown> => {
-  if (keys.size === 0) {
-    return metadata;
-  }
-  return Object.fromEntries(Object.entries(metadata).filter(([key]) => !keys.has(key)));
-};
-
 /**
  * Applies validated fields under the ownership rule: extraction owns exactly
  * the keys it generated for this document. The previous run's keys are removed
- * first, so a key still present afterwards is manually authored or
- * connector-supplied and is left alone. On chunks, a removed key falls back to
- * the value the document's source stamps under it, the layer beneath the
+ * first, so a key still set afterwards — on the document, or in the source
+ * tags stamped on every chunk — is manually authored, connector-supplied, or
+ * source-owned, and is left alone and counted as a collision. A key set to
+ * `null` or a blank string counts as unset. On chunks, a removed key falls
+ * back to the value the source tags stamp under it, the layer beneath the
  * document's own tags in the chunk projection.
  */
 export const applyExtractedFields = <TChunk extends EnrichableChunk>(input: {
@@ -208,7 +201,7 @@ export const applyExtractedFields = <TChunk extends EnrichableChunk>(input: {
   const generated: Record<string, ExtractedFieldValue> = {};
   let skippedCollision = 0;
   for (const field of input.fields) {
-    if (Object.prototype.hasOwnProperty.call(base, field.key)) {
+    if (holdsValue(base, field.key) || holdsValue(input.sourceMetadata, field.key)) {
       skippedCollision += 1;
       continue;
     }
@@ -226,9 +219,7 @@ export const applyExtractedFields = <TChunk extends EnrichableChunk>(input: {
     };
   }
 
-  const sourceFallback = Object.fromEntries(
-    Object.entries(input.sourceMetadata ?? {}).filter(([key]) => owned.has(key)),
-  );
+  const sourceFallback = pickKeys(input.sourceMetadata, owned);
   // Document-level scalars propagate to every chunk, the same model the
   // built-in article shape uses.
   const chunks = input.chunks.map((chunk) => ({

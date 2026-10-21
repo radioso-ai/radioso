@@ -7464,9 +7464,9 @@ export interface components {
             matchedTypeKey?: string | null;
             /** @description The catalog revision this run resolved at execution time. */
             catalogRevision?: string | null;
-            /** @description The metadata keys extraction owns on this document: the keys its runs generated, `dateFrom` and `dateTo` included, less any a manual edit took over. The next successful run replaces exactly these; every other key is manually or connector owned, and extraction never removes or overwrites it. */
+            /** @description The metadata keys extraction owns on this document: the keys its runs generated, `dateFrom` and `dateTo` included, less any a manual edit took over. The next successful run replaces exactly these. Every other key belongs to the operator, the connector, or the source's document tags, and extraction leaves it alone — except dates a connector writes on a document it syncs, which a run that reads dates replaces. */
             generatedKeys?: string[];
-            /** @description Content-free tallies of what the run did with the model's field payload. `skippedCollision` also counts the dates a run left alone because the document or its source already carried them. */
+            /** @description Content-free tallies of what the run did with the model's field payload. `skippedCollision` counts every field and date the run left alone because the document or its source's document tags already set it. */
             fieldCounts?: {
                 applied: number;
                 droppedInvalid: number;

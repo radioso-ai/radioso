@@ -1,5 +1,9 @@
 export * from "./contracts/documentTypeCatalog.js";
-export { GENERIC_DOCUMENT_TYPE_KEY } from "./domain/builtInDocumentTypes.js";
+export {
+  builtInDateFieldKeys,
+  datedDocumentTypeKeys,
+  GENERIC_DOCUMENT_TYPE_KEY,
+} from "./domain/builtInDocumentTypes.js";
 export {
   DOCUMENT_TYPE_CATALOG_PROMPT_BUDGET,
   renderDocumentTypeCatalogSection,

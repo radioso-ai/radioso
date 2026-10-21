@@ -53,6 +53,13 @@ imports from `services/` or `infra/`.
   resolves its persisted crawl configuration, and queues the recrawl shared by
   HTTP and operator-copilot callers.
 - `services/documentProcessingService.ts`: processing orchestration.
+- `domain/enrichment/generatedTagOwnership.ts`: who owns a metadata tag —
+  extraction or the operator, built-in `dateFrom`/`dateTo` included — what a
+  new revision projects onto its chunks, what an enrichment run and a manual
+  metadata write may do to a tag, and the provenance the document API
+  publishes.
+  Processing and enrichment services call into it; they never decide tag
+  ownership themselves.
 - `services/embeddingProfileJobService.ts`: resumable, generation-fenced
   embedding-only work that cannot mutate document or canonical chunk state.
 - `services/documentProcessingWorker.ts`: worker runtime behavior.
@@ -80,6 +87,8 @@ Focused starting points:
 - `cd backend && pnpm test -- tests/unit/documents/embeddingProfileJobService.test.ts`
 - `cd backend && pnpm test -- tests/unit/document-import-service.test.ts`
 - `cd backend && pnpm test -- tests/unit/document-source-recrawl-service.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/document-date-ownership.test.ts tests/unit/document-generated-tag-ownership.test.ts`
+  for tag ownership across PUT, reprocess, failed runs, and manual edits.
 - `cd backend && pnpm run test:integration` for processing and import flows.
 
 Use contract tests when document API response shape changes.

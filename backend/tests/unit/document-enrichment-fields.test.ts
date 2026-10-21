@@ -209,6 +209,35 @@ describe("extracted field ownership", () => {
     expect(result.skippedCollision).toBe(1);
   });
 
+  it("skips a key the source stamps on every chunk and counts the collision", () => {
+    const result = applyExtractedFields({
+      documentMetadata: {},
+      chunks: [chunk(0, { venue: "Assisi" })],
+      fields: [{ key: "venue", value: "Rome" }, { key: "price", value: 10 }],
+      previousGeneratedKeys: [],
+      sourceMetadata: { venue: "Assisi" },
+    });
+
+    expect(result.documentMetadata).toEqual({ price: 10 });
+    expect(result.chunks[0]?.metadata).toEqual({ venue: "Assisi", price: 10 });
+    expect(result.generatedKeys).toEqual(["price"]);
+    expect(result.skippedCollision).toBe(1);
+  });
+
+  it("fills a key whose existing value is empty", () => {
+    const result = applyExtractedFields({
+      documentMetadata: { price: null, category: "  " },
+      chunks: [chunk(0, { price: null, category: "  ", venue: "" })],
+      fields: [{ key: "price", value: 10 }, { key: "category", value: "lighting" }, { key: "venue", value: "Rome" }],
+      previousGeneratedKeys: [],
+      sourceMetadata: { venue: "" },
+    });
+
+    expect(result.documentMetadata).toEqual({ price: 10, category: "lighting", venue: "Rome" });
+    expect(result.generatedKeys).toEqual(["price", "category", "venue"]);
+    expect(result.skippedCollision).toBe(0);
+  });
+
   it("replaces a key it generated on the previous run", () => {
     const result = applyExtractedFields({
       documentMetadata: { price: 99 },
@@ -246,6 +275,21 @@ describe("extracted field ownership", () => {
     expect(result.documentMetadata).toEqual({ source: "manual" });
     expect(result.chunks[0]?.metadata).toEqual({});
     expect(result.generatedKeys).toEqual([]);
+  });
+
+  it("hands a cleared key back to the value the source stamps on every chunk", () => {
+    const result = applyExtractedFields({
+      documentMetadata: { dateFrom: "2026-03-02", dateTo: "2026-03-06", price: 99 },
+      chunks: [chunk(0, { region: "eu", dateFrom: "2026-05-04", price: 99 })],
+      fields: [{ key: "price", value: 10 }],
+      previousGeneratedKeys: ["dateFrom", "dateTo", "price"],
+      sourceMetadata: { region: "eu", dateFrom: "2026-03-01", price: 5 },
+    });
+
+    // The source owns `price` now, so the extracted value yields to it.
+    expect(result.documentMetadata).toEqual({});
+    expect(result.chunks[0]?.metadata).toEqual({ region: "eu", dateFrom: "2026-03-01", price: 5 });
+    expect(result.skippedCollision).toBe(1);
   });
 
   it("leaves documents and chunks untouched when there is nothing to write or clean", () => {

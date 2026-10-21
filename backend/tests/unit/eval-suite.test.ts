@@ -102,6 +102,8 @@ describe("event retrieval eval fixtures", () => {
     expect(eventRetrievalEvalCases.map((evalCase) => evalCase.id)).toEqual([
       "event-date-cross-paragraph",
       "event-next-events-listing",
+      "event-requested-month-listing",
+      "event-requested-month-listing-it",
       "event-actuality-sort",
     ]);
     expect(eventRetrievalEvalCases[0]?.assertions).toEqual(

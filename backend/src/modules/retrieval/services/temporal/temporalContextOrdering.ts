@@ -3,11 +3,14 @@ import type {
   RetrievalQueryShape,
   TemporalQueryMode,
 } from "../../domain/retrievalPipelineTypes.js";
+import { positionInDateRange, type RequestedDateRange } from "../../domain/temporal/requestedDateRange.js";
 
-export interface TemporalPromptContextOrderingResult {
+interface TemporalPromptContextOrderingResult {
   orderedContexts: RerankedCandidate[];
   applied: boolean;
   today: string;
+  /** The requested range the order led with, when the question named one. */
+  dateRange?: RequestedDateRange;
   datedContextCount: number;
 }
 
@@ -17,6 +20,7 @@ export const orderTemporalPromptContexts = (input: {
   queryShape?: RetrievalQueryShape;
   temporalQueryMode?: TemporalQueryMode;
   today: string;
+  dateRange?: RequestedDateRange;
 }): TemporalPromptContextOrderingResult => {
   if (!shouldApplyTemporalOrdering(input)) {
     return {
@@ -36,12 +40,22 @@ export const orderTemporalPromptContexts = (input: {
   const dated = indexed.filter((entry) => entry.dateFrom);
   const undated = indexed.filter((entry) => !entry.dateFrom);
 
+  if (input.dateRange) {
+    return {
+      orderedContexts: orderAroundDateRange(dated, undated, input.dateRange),
+      applied: true,
+      today: input.today,
+      dateRange: input.dateRange,
+      datedContextCount: dated.length,
+    };
+  }
+
   // An event is "past" only once its end date has elapsed, so a multi-day event that is
   // still ongoing today counts as upcoming. Past events are demoted below upcoming and
   // undated context (not dropped here) so recency-appropriate results win the final top-K
   // selection; when the context set exceeds the selector's top-K / token budget the
-  // demoted past events are the first to be trimmed. This ordering assumes upcoming intent
-  // and does not yet special-case queries that explicitly ask about a past period.
+  // demoted past events are the first to be trimmed. This order assumes upcoming intent; a
+  // question that names a period, past or future, is ordered around that range above.
   const upcoming = dated.filter((entry) => !isPastEvent(entry.dateTo, input.today));
   const past = dated.filter((entry) => isPastEvent(entry.dateTo, input.today));
 
@@ -59,6 +73,24 @@ export const orderTemporalPromptContexts = (input: {
 
 const isPastEvent = (dateTo: string | undefined, today: string): boolean =>
   Boolean(dateTo && dateTo < today);
+
+// A question that names a range is answered by the events in it, so they lead, soonest
+// first, whether the range is ahead or behind today. Undated context follows, then events
+// after the range, then events before it, nearest first.
+const orderAroundDateRange = (
+  dated: DatedContextEntry[],
+  undated: DatedContextEntry[],
+  range: RequestedDateRange,
+): RerankedCandidate[] => {
+  const at = (position: "within" | "before" | "after") =>
+    dated.filter((entry) => positionInDateRange(entry, range) === position);
+  return [
+    ...at("within").sort(compareDatedContexts),
+    ...undated,
+    ...at("after").sort(compareDatedContexts),
+    ...at("before").sort(comparePastDatedContexts),
+  ].map((entry) => entry.context);
+};
 
 const shouldApplyTemporalOrdering = (input: {
   enabled: boolean;

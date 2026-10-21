@@ -17,6 +17,7 @@ describe("rolling conversation summary injection (#866)", () => {
         context: "USER: hello",
         conversationSummary: SUMMARY,
         query: "and then?",
+        today: "2026-10-21",
       });
       expect(prompt).toContain(SUMMARY_MARKER);
       expect(prompt).toContain(SUMMARY);
@@ -26,6 +27,7 @@ describe("rolling conversation summary injection (#866)", () => {
       const prompt = buildTurnInterpretationPrompt({
         context: "USER: hello",
         query: "and then?",
+        today: "2026-10-21",
       });
       expect(prompt).not.toContain(SUMMARY_MARKER);
     });

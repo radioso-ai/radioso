@@ -5,6 +5,7 @@ import type {
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import { CHAT_BEHAVIOR, RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { type Clock, formatIsoDateUtc, systemClock } from "../../../shared/domain/clock.js";
 import type {
   ModelCallUsageAttribution,
   ModelCallUsageContext,
@@ -57,7 +58,7 @@ export interface TurnInterpretationContextSettings {
   skillSettingsResolver?: SkillSettingsResolver;
 }
 
-export interface ResolvedTurnInterpretationContext {
+interface ResolvedTurnInterpretationContext {
   semanticRewriteInstructions?: string;
   lexicalRewriteInstructions?: string;
   conversationSummary?: string;
@@ -129,6 +130,8 @@ export const buildTurnInterpretationPrompt = (input: {
   conversationSummary?: string;
   pageReadCapability?: PageReadCapability | null;
   query: string;
+  /** Today's UTC date, `YYYY-MM-DD`, so the rewrite can resolve a period the question names. */
+  today: string;
 }): string => {
   const pageReadCapability = input.pageReadCapability ?? null;
   return renderPromptTemplate("chat/turn-interpretation.md", {
@@ -151,6 +154,7 @@ export const buildTurnInterpretationPrompt = (input: {
       ? ',"pageRead":{"required":false,"operation":"metadata|lookup|summarize|transform|null","resolvedRequest":"string|null"}'
       : "",
     query: input.query,
+    today: input.today,
   });
 };
 
@@ -182,7 +186,10 @@ export const parseTurnInterpretation = (
 };
 
 export class ModelTurnInterpretationGateway implements TurnInterpretationGateway {
-  constructor(private readonly inference: ModelInferencePipeline) {}
+  constructor(
+    private readonly inference: ModelInferencePipeline,
+    private readonly clock: Clock = systemClock,
+  ) {}
 
   async interpret(input: TurnInterpretationGatewayInput): Promise<TurnInterpretationGatewayResult> {
     const { text } = await this.inference.complete({
@@ -194,6 +201,7 @@ export class ModelTurnInterpretationGateway implements TurnInterpretationGateway
         conversationSummary: input.conversationSummary,
         pageReadCapability: input.pageReadCapability,
         query: input.query,
+        today: formatIsoDateUtc(this.clock()),
       }),
       reasoningEffort: RETRIEVAL_BEHAVIOR.queryInterpretation.reasoningEffort,
       maxOutputTokens: CHAT_BEHAVIOR.intentRouting.maxOutputTokens + 768,

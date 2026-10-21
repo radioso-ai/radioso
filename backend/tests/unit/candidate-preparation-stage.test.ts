@@ -283,6 +283,40 @@ describe("candidate preparation stage", () => {
     expect(unboosted.scoredCandidates[0]?.attributeMatchScore).toBe(0);
   });
 
+  it("boosts the events in a requested range instead of every upcoming event", async () => {
+    const stage = new CandidatePreparationStageService(
+      new CandidatePreparationService(),
+      new MetadataRuleScoringService(),
+      () => new Date("2026-10-21T12:00:00.000Z"),
+    );
+    const inRange = semanticChunk(1, {
+      chunkId: "december-retreat",
+      similarity: 0.4,
+      metadata: { dateFrom: "2026-12-08", dateTo: "2026-12-10" },
+    });
+    const soonerUpcoming = semanticChunk(2, {
+      chunkId: "november-class",
+      similarity: 0.4,
+      metadata: { dateFrom: "2026-11-04", dateTo: "2026-11-04" },
+    });
+
+    const result = await stage.execute({
+      ...buildInput([inRange, soonerUpcoming]),
+      settings: {
+        ...buildInput([]).settings,
+        metadataRules: [],
+        temporalBoostUpcomingEnabled: true,
+      },
+      temporalQueryMode: "topic_refinement",
+      temporalDateRange: { dateFrom: "2026-12-07", dateTo: "2026-12-13" },
+    });
+
+    const scoreOf = (chunkId: string) =>
+      result.scoredCandidates.find((candidate) => candidate.chunkId === chunkId)?.attributeMatchScore;
+    expect(scoreOf("december-retreat")).toBeGreaterThan(0);
+    expect(scoreOf("november-class")).toBe(0);
+  });
+
   it("enacts only matched trigger rules and records backoff for empty hard filters", async () => {
     const stage = new CandidatePreparationStageService(
       new CandidatePreparationService(),

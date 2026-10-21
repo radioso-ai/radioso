@@ -126,6 +126,7 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
       candidates: selectedCandidates.candidates,
       enabled: (input.settings.temporalBoostUpcomingEnabled ?? true) && (input.temporalQueryMode ?? "none") !== "none",
       today: formatIsoDateUtc(this.clock()),
+      dateRange: input.temporalDateRange,
     });
     const orderedCandidates = this.applyResolvedCandidateOrdering(input, boostedCandidates);
     const temporallyMergedCandidates = mergeTemporalCandidates({

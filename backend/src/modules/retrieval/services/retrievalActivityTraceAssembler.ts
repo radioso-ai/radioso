@@ -11,6 +11,7 @@ import type { PromptAssemblyStageResult } from "./retrievalPipelineStages.js";
 import { presentParsedQuery } from "./activitySummaryPresenter.js";
 import { getContextSelectionClauses, summarizeResolvedSteps } from "./retrievalShapeResolver.js";
 import { getCandidateFusedScore, hasUsefulCandidateEvidence } from "./candidateScoring.js";
+import { requestedDateRangeDays } from "../domain/temporal/requestedDateRange.js";
 
 interface StageTiming {
   startedAt: string;
@@ -200,11 +201,15 @@ export class ActivityTraceAssembler {
     const temporalContexts = prompt.temporalContexts ?? [];
     const temporalQueryMode = prompt.temporalQueryMode ?? "none";
     const temporalStructuredLookupEnabled = prompt.temporalStructuredLookupEnabled ?? true;
+    const temporalDateRange = prompt.temporalDateRange;
     const temporalStage = temporalQueryMode !== "none" || temporalContexts.length > 0
       ? buildStage("temporal", "temporal_retrieval", "Temporal retrieval", temporalStructuredLookupEnabled ? "applied" : "skipped", timings.semanticRetrieval, {
           settings: {
             temporalStructuredLookupEnabled,
             temporalQueryMode,
+          },
+          inputs: {
+            dateRange: temporalDateRange ?? null,
           },
           outputs: {
             candidateCount: temporalContexts.length,
@@ -212,6 +217,7 @@ export class ActivityTraceAssembler {
           },
           metrics: {
             candidateCount: temporalContexts.length,
+            ...(temporalDateRange ? { dateRangeDays: requestedDateRangeDays(temporalDateRange) } : {}),
           },
         })
       : undefined;
@@ -279,6 +285,7 @@ export class ActivityTraceAssembler {
           anchoredSubject: prompt.rewrittenQuery.structuredResult?.anchoredSubject ?? null,
           relatedEntities: prompt.rewrittenQuery.structuredResult?.relatedEntities ?? [],
           temporalQueryMode,
+          requestedDateRange: prompt.rewrittenQuery.structuredResult?.requestedDateRange ?? null,
           rewriteEligible: prompt.rewrittenQuery.retrievalEligible,
           rewriteRan: diagnostics.rewriteRan ?? false,
         },

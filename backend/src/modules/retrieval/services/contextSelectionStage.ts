@@ -1,7 +1,6 @@
 import { RerankService } from "./rerankService.js";
 import { PromptContextSelectorService } from "./promptContextSelectorService.js";
-import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
-import { answerCandidatePoolSize } from "../domain/answerCandidatePool.js";
+import { answerCandidatePoolSize, answerContextTopK } from "../domain/answerCandidatePool.js";
 import { type Clock, formatIsoDateUtc, systemClock } from "../../../shared/domain/clock.js";
 import type { CandidatePreparationStageResult, ContextSelectionStage as ContextSelectionStageContract } from "./retrievalPipelineStages.js";
 import { getContextSelectionClauses } from "./retrievalShapeResolver.js";
@@ -16,12 +15,18 @@ export class ContextSelectionStageService implements ContextSelectionStageContra
   ) {}
 
   async execute(input: CandidatePreparationStageResult) {
-    const finalContextTopK = RETRIEVAL_BEHAVIOR.finalContextTopK;
+    // A listing whose structured lookup found events in the requested range answers from
+    // those events, so its prompt and the pool feeding it may hold a busy week of them.
+    const contextTopK = answerContextTopK({
+      dateRangeListing: input.temporalQueryMode === "listing"
+        && input.temporalDateRange !== undefined
+        && (input.temporalContexts?.length ?? 0) > 0,
+    });
     const clauses = getContextSelectionClauses(input.shapeSelection?.resolvedRun);
     const rerankEnabled = clauses.ranking.rerankMode === "disabled"
       ? false
       : input.settings.rerankEnabled;
-    const rerankCandidateCount = answerCandidatePoolSize(input.settings.rerankTopK);
+    const rerankCandidateCount = answerCandidatePoolSize(input.settings.rerankTopK, contextTopK);
     const rerankCandidates = input.scoredCandidates.slice(0, rerankCandidateCount);
     const reranked = !rerankEnabled && clauses.ranking.lexicalBias === "preferred"
       ? {
@@ -42,10 +47,11 @@ export class ContextSelectionStageService implements ContextSelectionStageContra
       queryShape: input.rewrittenQuery?.structuredResult?.queryShape ?? input.shapeSelection?.queryShape,
       temporalQueryMode: input.temporalQueryMode ?? input.rewrittenQuery?.structuredResult?.temporalQueryMode,
       today: formatIsoDateUtc(this.clock()),
+      dateRange: input.temporalDateRange,
     });
     const contexts = this.promptContextSelectorService.select({
       contexts: temporalOrdering.orderedContexts,
-      topK: finalContextTopK,
+      topK: contextTopK,
     });
 
     return {

@@ -38,12 +38,13 @@ const usageContext = {
 
 describe("scope-neutral interpretation prompt contract", () => {
   it("leaves support decisions to retrieval in staged and fused interpretation", () => {
-    const stagedPrompt = buildTurnInterpretationPrompt({ context: "", query: "sqrt(5)" });
+    const stagedPrompt = buildTurnInterpretationPrompt({ context: "", query: "sqrt(5)", today: "2026-10-21" });
     const fusedRequest = buildTurnPlanningPrompt({
         query: "sqrt(5)",
         history: [],
         routineCandidates: [{ routineId: "book-call", title: "Book a call", triggerSummary: "wants a call", priority: 0 }],
         directiveCandidates: [{ name: "refund-tone", condition: "when the customer asks for a refund" }],
+        today: "2026-10-21",
     });
     const fusedPrompt = `${fusedRequest.systemPrompt}\n\n${fusedRequest.prompt}`;
 

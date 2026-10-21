@@ -2,6 +2,7 @@ import type { MessageRecord } from "../../../db/repositories/messageRepository.j
 import type { ResolvedSkillRun, SkillDiagnostic } from "../../skills/public.js";
 import type { AppliedConstraint, ParsedQueryInterpretation } from "./queryConstraintTypes.js";
 import type { RetrievedChunk } from "./vectorSearch.js";
+import type { RequestedDateRange } from "./temporal/requestedDateRange.js";
 
 export interface ConversationContextWindow {
   selectedMessages: MessageRecord[];
@@ -64,6 +65,11 @@ export interface StructuredRewriteResult {
   responseLanguagePolicy?: ResponseLanguagePolicy;
   queryShape?: RetrievalQueryShape;
   temporalQueryMode?: TemporalQueryMode;
+  /**
+   * The dates the question asks about, resolved by the model against today's date. Absent
+   * when the question names no date or period, or when the model's range was unusable.
+   */
+  requestedDateRange?: RequestedDateRange;
   retrievalSubqueries?: RetrievalSubquery[];
   turnKind: RewriteTurnKind;
   proposedActiveSubject?: string;
@@ -312,6 +318,7 @@ export interface RetrievalExecutionDiagnostics {
   lexicalCandidateCount?: number;
   temporalCandidateCount?: number;
   temporalQueryMode?: TemporalQueryMode;
+  temporalDateRange?: RequestedDateRange;
   temporalStructuredLookupEnabled?: boolean;
   temporalDeterministicSortEnabled?: boolean;
   temporalDeterministicSortApplied?: boolean;

@@ -169,6 +169,42 @@ describe("parseTurnPlan", () => {
     expect(plan?.rewriteProposal).not.toHaveProperty("resolutionNote");
   });
 
+  const rewriteWithRange = (requestedDateRange: unknown) => ({
+    rewrite: {
+      rewrittenQuery: "events in the week of 7 December",
+      semanticQuery: "events in the week of 7 December",
+      lexicalQuery: "events December",
+      queryShape: "event_date_lookup",
+      temporalQueryMode: "listing",
+      requestedDateRange,
+      retrievalSubqueries: [],
+      turnKind: "fresh_subject",
+      proposedActiveSubject: null,
+      relatedEntities: [],
+      unresolved: false,
+      confidence: 0.9,
+    },
+  });
+
+  it("carries the requested date range into rewriteProposal", () => {
+    const plan = parseTurnPlan(validPlanJson(rewriteWithRange({ dateFrom: "2026-12-07", dateTo: "2026-12-13" })), candidates);
+    expect(plan?.rewriteProposal?.requestedDateRange).toEqual({ dateFrom: "2026-12-07", dateTo: "2026-12-13" });
+  });
+
+  it("keeps the plan and drops a requested date range that is not a usable range", () => {
+    for (const unusable of [{ dateFrom: "soon" }, { dateFrom: "2026-12-13", dateTo: "2026-12-07" }, "next week"]) {
+      const plan = parseTurnPlan(validPlanJson(rewriteWithRange(unusable)), candidates);
+      expect(plan?.route).toBe("retrieval");
+      expect(plan?.rewriteProposal?.temporalQueryMode).toBe("listing");
+      expect(plan?.rewriteProposal).not.toHaveProperty("requestedDateRange");
+    }
+  });
+
+  it("parses a rewrite without a requested date range (schema-less fallback contract)", () => {
+    const plan = parseTurnPlan(validPlanJson(), candidates);
+    expect(plan?.rewriteProposal).not.toHaveProperty("requestedDateRange");
+  });
+
   it("tolerates code-fenced JSON", () => {
     const plan = parseTurnPlan("```json\n" + validPlanJson() + "\n```", candidates);
     expect(plan?.route).toBe("retrieval");
@@ -570,12 +606,27 @@ describe("buildTurnPlanResponseFormat", () => {
       "lexicalQuery",
       "queryShape",
       "temporalQueryMode",
+      "requestedDateRange",
       "retrievalSubqueries",
       "unresolved",
       "confidence",
     ];
     expect(Object.keys(rewrite.properties)).toEqual(expectedOrder);
     expect(rewrite.required).toEqual(expectedOrder);
+  });
+
+  it("asks for the requested date range as a strict nullable pair of ISO dates", () => {
+    const format = buildTurnPlanResponseFormat({ routineIds: [], directiveNames: [] });
+    const rewrite = schemaProperty(format, "rewrite") as { properties: Record<string, Record<string, unknown>> };
+    expect(rewrite.properties.requestedDateRange).toMatchObject({
+      type: ["object", "null"],
+      additionalProperties: false,
+      required: ["dateFrom", "dateTo"],
+      properties: {
+        dateFrom: { type: "string" },
+        dateTo: { type: "string" },
+      },
+    });
   });
 
   it("describes resolutionNote as a nullable string derivation scratch field", () => {
@@ -624,6 +675,7 @@ describe("buildTurnPlanningPrompt", () => {
     conversationSummary: "The buyer previously discussed annual billing.",
     routineCandidates: [],
     directiveCandidates: [],
+    today: "2026-10-21",
     ...overrides,
   });
   // Role-agnostic view of everything the planner reads, for content assertions.
@@ -710,6 +762,14 @@ describe("buildTurnPlanningPrompt", () => {
     ]) {
       expect(stable).not.toContain(volatile);
     }
+  });
+
+  it("dates the visitor's request and keeps the date out of the reusable system prompt", () => {
+    const prompt = buildTurnPlanningPrompt(promptInput({ today: "2026-10-21" }));
+
+    expect(prompt.prompt).toContain("Today's date: 2026-10-21");
+    expect(prompt.systemPrompt).not.toContain("2026-10-21");
+    expect(prompt.reusableInputBoundary?.stableSystemPrefix).toContain("requestedDateRange");
   });
 
   it("keeps visitor-supplied and conversation data in the request, out of the system prompt", () => {
@@ -857,7 +917,7 @@ describe("buildTurnPlanningPrompt", () => {
   it("orders the fallback rewrite shape resolutionNote-first, matching the provider schema", () => {
     const prompt = rendered(promptInput());
     expect(prompt).toContain(
-      '"rewrite":{"resolutionNote":"string|null","turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","temporalQueryMode":"none|listing|topic_refinement","retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null"}],"unresolved":false,"confidence":0.95}',
+      '"rewrite":{"resolutionNote":"string|null","turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","temporalQueryMode":"none|listing|topic_refinement","requestedDateRange":{"dateFrom":"YYYY-MM-DD","dateTo":"YYYY-MM-DD"}|null,"retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null"}],"unresolved":false,"confidence":0.95}',
     );
     expect(prompt).toContain("resolutionNote");
   });
@@ -900,6 +960,13 @@ describe("TurnPlanService", () => {
     expect(gatewayFactory.create).toHaveBeenCalledTimes(1);
     expect(client.complete).toHaveBeenCalledTimes(1);
     expect(plan?.route).toBe("retrieval");
+  });
+
+  it("dates the planner request with the service clock's UTC day", async () => {
+    const client = { complete: vi.fn(async (_request: { prompt: string }) => ({ text: validPlanJson() })) };
+    await new TurnPlanService(factory(client), { clock: () => new Date("2026-10-21T23:30:00.000Z") }).plan(request());
+
+    expect(client.complete.mock.calls[0]?.[0].prompt).toContain("Today's date: 2026-10-21");
   });
 
   it("sends standing rules as a reusable system prefix and the visitor's turn as the request", async () => {
@@ -1258,6 +1325,7 @@ describe("quick reply", () => {
       history,
       routineCandidates: [],
       directiveCandidates: [{ name: "refund-tone", condition: "when the customer asks for a refund" }],
+      today: "2026-10-21",
       ...overrides,
     });
 

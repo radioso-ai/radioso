@@ -259,6 +259,16 @@ export const RETRIEVAL_BEHAVIOR = {
   // searches a single turn issues; branches beyond the cap contribute lexical-only
   // (their contexts are pooled downstream regardless). Lexical fan-out is unaffected.
   maxSemanticBranches: 2,
+  temporal: {
+    // The longest date range a question may request: a whole leap year. A longer range
+    // is dropped, and the turn falls back to its upcoming-from-today handling.
+    requestedDateRangeMaxDays: 366,
+    // Passages an answer may hold when it lists the events in a requested date range,
+    // in place of `finalContextTopK`, so a busy week reaches the answer. At most
+    // `promptContextMaxCharsPerContext` characters each, 20 passages stay inside
+    // `promptContextTokenBudget`.
+    dateRangeListingContextTopK: 20,
+  },
   hybrid: {
     lexicalTopK: 20,
     // Absolute ts_rank_cd evidence floor; query-relative lexicalScore cannot satisfy quality gates.

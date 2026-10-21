@@ -1,7 +1,7 @@
 ---
 title: "Vector Search Indexing"
 description: "Design for isolating vector storage behind adapters while keeping PostgreSQL as the canonical source, with a future backend evaluation path."
-last_updated: 2026-08-28
+last_updated: 2026-10-21
 ---
 
 # Vector Search Indexing
@@ -93,10 +93,11 @@ source and metadata filter handling consistent between vector and lexical
 search.
 
 Temporal event lookup is a retrieval-owned PostgreSQL read path over canonical
-chunk metadata. Ingestion enrichment may add `dateFrom` and `dateTo` to chunk
-metadata, and stored date columns make upcoming-event lookup and ordering
-indexable. Retrieval consumes those fields only as metadata; it does not import
-ingestion enrichment contracts.
+chunk metadata. Document metadata and ingestion enrichment supply `dateFrom` and
+`dateTo` on chunk metadata, and stored date columns serve both lookups: upcoming
+events from today, and events overlapping a date range the question names.
+Retrieval consumes those fields only as metadata; it does not import ingestion
+enrichment contracts.
 
 A future external vector backend should not replace these contracts by leaking
 backend-specific query details into document processing or retrieval pipeline

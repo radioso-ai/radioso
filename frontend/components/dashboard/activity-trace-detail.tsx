@@ -181,6 +181,15 @@ const asBoolean = (value: unknown): boolean | undefined => (typeof value === 'bo
 
 const asString = (value: unknown): string | undefined => (typeof value === 'string' && value.trim() ? value : undefined)
 
+// A requested date range as the trace records it: `{ dateFrom, dateTo }` in ISO dates.
+const formatDateRange = (value: unknown): string | undefined => {
+  const range = asRecord(value)
+  const dateFrom = asString(range.dateFrom)
+  const dateTo = asString(range.dateTo)
+  if (!dateFrom || !dateTo) return undefined
+  return dateFrom === dateTo ? dateFrom : `${dateFrom} – ${dateTo}`
+}
+
 const joinHumanList = (values: string[]): string => {
   if (values.length <= 1) return values[0] ?? ''
   if (values.length === 2) return `${values[0]} and ${values[1]}`
@@ -400,6 +409,7 @@ function SpecializedStageOverview({ stage }: { stage: ActivityStage }) {
               { label: 'Rewrite ran', value: outputs.rewriteRan as boolean | undefined },
               { label: 'Continuity decision', value: outputs.continuityDecision as string | undefined },
               { label: 'Temporal query mode', value: outputs.temporalQueryMode as string | undefined },
+              { label: 'Requested dates', value: formatDateRange(outputs.requestedDateRange) },
               { label: 'Rewrite confidence', value: metrics.rewriteConfidence as number | undefined },
             ]}
           />
@@ -534,6 +544,7 @@ function SpecializedStageOverview({ stage }: { stage: ActivityStage }) {
             rows={[
               { label: 'Structured lookup', value: settings.temporalStructuredLookupEnabled as boolean | undefined },
               { label: 'Temporal mode', value: settings.temporalQueryMode as string | undefined },
+              { label: 'Requested dates', value: formatDateRange(inputs.dateRange) },
               { label: 'Candidate count', value: metrics.candidateCount as number | undefined },
             ]}
           />

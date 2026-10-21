@@ -331,4 +331,42 @@ describe("activity trace assembler", () => {
       anchoredSubject: null,
     });
   });
+
+  it("records the requested date range on the interpretation and temporal stages", () => {
+    const input = baseInput();
+    const week = { dateFrom: "2026-12-07", dateTo: "2026-12-13" };
+    input.prompt.rewrittenQuery.structuredResult = {
+      rewrittenQuery: "events in the week of 7 December",
+      queryShape: "event_date_lookup",
+      temporalQueryMode: "listing",
+      requestedDateRange: week,
+      turnKind: "fresh_subject",
+      relatedEntities: [],
+      unresolved: false,
+      confidence: 0.9,
+    };
+    input.prompt.temporalQueryMode = "listing";
+    input.prompt.temporalDateRange = week;
+
+    const trace = new ActivityTraceAssembler().assemble(input);
+    const interpretation = trace.stages.find((stage) => stage.kind === "query_interpretation");
+    const temporal = trace.stages.find((stage) => stage.kind === "temporal_retrieval");
+
+    expect(interpretation?.outputs).toMatchObject({ requestedDateRange: week });
+    expect(temporal?.inputs).toEqual({ dateRange: week });
+    expect(temporal?.metrics).toMatchObject({ dateRangeDays: 7 });
+  });
+
+  it("records an upcoming lookup's temporal stage without a date range", () => {
+    const input = baseInput();
+    input.prompt.temporalQueryMode = "listing";
+
+    const trace = new ActivityTraceAssembler().assemble(input);
+    const interpretation = trace.stages.find((stage) => stage.kind === "query_interpretation");
+    const temporal = trace.stages.find((stage) => stage.kind === "temporal_retrieval");
+
+    expect(interpretation?.outputs).toMatchObject({ requestedDateRange: null });
+    expect(temporal?.inputs).toEqual({ dateRange: null });
+    expect(temporal?.metrics).not.toHaveProperty("dateRangeDays");
+  });
 });

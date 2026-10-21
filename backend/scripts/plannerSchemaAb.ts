@@ -33,6 +33,7 @@ import type {
   ReasoningEffort,
 } from "../src/shared/infra/llm/providerTypes.js";
 import { CHAT_BEHAVIOR } from "../src/shared/domain/behaviorConfig.js";
+import { formatIsoDateUtc } from "../src/shared/domain/clock.js";
 
 type SchemaOrder = "legacy" | "production";
 
@@ -351,6 +352,7 @@ const main = async () => {
           history: toHistory(abCase.history),
           routineCandidates: [],
           directiveCandidates: [],
+          today: formatIsoDateUtc(new Date()),
         });
         for (let i = 0; i < opts.samples; i += 1) {
           tasks.push(async () => {

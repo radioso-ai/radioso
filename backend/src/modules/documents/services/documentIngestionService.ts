@@ -37,7 +37,10 @@ import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./doc
 import { sanitizeInlineDocumentContent } from "./inlineDocumentContentSanitizer.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../domain/sourceConstants.js";
 import { resolveRetrievalEligibility } from "../domain/retrievalEligibility.js";
-import { relinquishGeneratedKeys } from "../domain/enrichment/generatedTagOwnership.js";
+import {
+  publishEnrichmentProvenance,
+  relinquishGeneratedKeys,
+} from "../domain/enrichment/generatedTagOwnership.js";
 import type { DocumentEnrichmentProvenance } from "../domain/enrichment/documentEnrichmentContract.js";
 import type {
   DocumentDetails,
@@ -73,10 +76,13 @@ export type {
  * Builds the optional `enrichment` field of a document write: present only when
  * the manual metadata changed or removed a key extraction generated, so the
  * write relinquishes ownership of that key in the same statement.
+ * `contentChanged` says whether the same write replaces the content extraction
+ * reads, title included.
  */
 const relinquishedEnrichment = (
   existing: { enrichment?: DocumentEnrichmentProvenance | null; metadata?: Record<string, unknown> | null },
   nextMetadata: Record<string, unknown> | undefined,
+  contentChanged: boolean,
 ): { enrichment?: Record<string, unknown> } => {
   if (nextMetadata === undefined) {
     return {};
@@ -85,6 +91,7 @@ const relinquishedEnrichment = (
     previousProvenance: existing.enrichment,
     previousMetadata: existing.metadata ?? {},
     nextMetadata,
+    contentChanged,
   });
   return relinquished ? { enrichment: relinquished as unknown as Record<string, unknown> } : {};
 };
@@ -380,7 +387,11 @@ export class DocumentIngestionService implements DocumentInventoryPort {
         markdownContent: indexedContent.markdownContent,
         ...(await this.resolveSourceForInput(input.workspaceId, input.source)),
         metadata: input.metadata,
-        ...relinquishedEnrichment(existing, input.metadata),
+        ...relinquishedEnrichment(
+          existing,
+          input.metadata,
+          existing.title !== input.title || existing.markdownContent !== indexedContent.markdownContent,
+        ),
         externalDocumentId: input.externalDocumentId,
         sourceKind: "inline_text",
         sourceFilename: null,
@@ -495,7 +506,7 @@ export class DocumentIngestionService implements DocumentInventoryPort {
         documentId: input.documentId,
         workspaceId: input.workspaceId,
         ...(metadata !== undefined
-          ? { metadata, ...relinquishedEnrichment(existing, metadata) }
+          ? { metadata, ...relinquishedEnrichment(existing, metadata, false) }
           : {}),
         ...(eligibility ?? {}),
         ...(input.expectedUpdatedAt !== undefined ? { expectedUpdatedAt: input.expectedUpdatedAt } : {}),
@@ -855,7 +866,7 @@ export class DocumentIngestionService implements DocumentInventoryPort {
       sourceMimeType: document.sourceMimeType ?? null,
       contentSize: document.contentSize ?? document.contentSizeBytes ?? null,
       contentSizeBytes: document.contentSizeBytes ?? null,
-      enrichment: document.enrichment ?? null,
+      enrichment: publishEnrichmentProvenance(document.enrichment),
       retrievalEnabled: document.retrievalEnabled,
       retrievalExpiresAt: document.retrievalExpiresAt,
     };

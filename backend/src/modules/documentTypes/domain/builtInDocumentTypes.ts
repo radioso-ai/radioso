@@ -98,8 +98,16 @@ export const builtInDocumentTypeKeys: readonly string[] = builtInDocumentTypes.m
 
 export const isBuiltInDocumentTypeKey = (key: string): boolean => builtInDocumentTypeKeys.includes(key);
 
+/** The date keys the built-in dated types write, start before end. */
+export const builtInDateFieldKeys: readonly string[] = temporalFields.map((field) => field.key);
+
+/** Built-in types whose runs carry temporal facts and write the built-in date keys. */
+export const datedDocumentTypeKeys: readonly string[] = builtInDocumentTypes
+  .filter((type) => type.payload === "facts")
+  .map((type) => type.key);
+
 /** Keys the built-in strategies write; reserved against operator field declarations. */
-export const reservedDocumentTypeFieldKeys: readonly string[] = [
+const reservedDocumentTypeFieldKeys: readonly string[] = [
   ...new Set(builtInDocumentTypes.flatMap((type) => type.fields.map((field) => field.key))),
 ];
 

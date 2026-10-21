@@ -40,6 +40,8 @@ Search text is rendered from a fixed slice of the merged map: the `dateFrom`–`
 
 The merge is computed on each vectorize pass, so a source whose tags change stamps them onto its already-indexed documents the next time those documents process. Reprocessing the source queues exactly that for every eligible document under it.
 
+After chunking and before the chunk projection, the pass settles the tags extraction owns, using the same enablement the enrich job will run under. The projection always leaves extraction-owned keys out: they describe the previous revision's content, and the enrich patch rewrites chunk metadata but not the search text or vectors built here. When extraction runs on the new revision, the document itself keeps those keys and their provenance until the enrich run succeeds and replaces them, so a failed run leaves the document's extracted tags in place while its new chunks carry none of them. When extraction does not run, the extraction-owned keys and the provenance are cleared from the document too, because nothing will refresh them against the new content. Operator, connector, and source tags reach the chunks in every case.
+
 Chunks are then published for the specific document revision so stale work does not overwrite newer content.
 
 ### Mark the document ready for retrieval
@@ -56,9 +58,9 @@ The catalog holds the built-in entries — `event`, `article`, `profile`, `refer
 
 The model returns a classification envelope plus one payload: temporal facts for the built-in dated types, or an ordered array of `{ key, value }` pairs for an operator-defined type. Validation runs in two stages. The envelope resolves against the enabled catalog, and an unknown type key falls back to `generic` with no fields. Each field entry is then judged on its own: undeclared keys, values that fail their declared value type, duplicate keys after the first, and entries past the per-value and total size caps are each dropped and counted. No single drop fails the document.
 
-Event dates are written to the document metadata and patched onto the overlapping chunks as `dateFrom` and `dateTo`; article publication dates attach at document level. Operator-defined fields are document-level scalars copied to every chunk in the same patch, so a metadata rule on one of them matches the whole document. Per-chunk source-range attribution stays specific to `event`.
+Event dates are written to the document metadata and patched onto the overlapping chunks as `dateFrom` and `dateTo`; article publication dates attach at document level. Operator-defined fields are document-level scalars copied to every chunk in the same patch, so a metadata rule on one of them matches the whole document. Per-chunk source-range attribution stays specific to `event`. A document that already carries dates of its own, or whose source stamps dates on its chunks, keeps those on every chunk instead, as [Who owns an extracted tag](#who-owns-an-extracted-tag) describes.
 
-Patching chunk metadata recomputes the stored `date_from` and `date_to` columns that temporal retrieval reads. The patch merges over the metadata a chunk already carries, so source and document tags stay in place beside the extracted values. No re-embedding is needed, because those columns are structured and not part of the vector.
+Patching chunk metadata recomputes the stored `date_from` and `date_to` columns that temporal retrieval reads. The patch merges over the metadata a chunk already carries, so source and document tags stay in place beside the extracted values, and a key extraction gives up falls back to the value the source stamps under it. No re-embedding is needed, because those columns are structured and not part of the vector.
 
 </Steps>
 
@@ -66,11 +68,15 @@ Patching chunk metadata recomputes the stored `date_from` and `date_to` columns 
 
 Extraction owns exactly the keys it generated for a document. Provenance in `documents.enrichment` records that set alongside the matched type key, the catalog revision, and content-free counts of applied, dropped, and collision-skipped fields. That recorded set — not a hard-coded key list — drives stale-tag cleanup, so a field removed from a type stops leaving orphaned tags behind.
 
-A key already on the document that is not in the generated set is manually authored or connector-supplied. Extraction skips it and counts the collision. A manual metadata write that changes or removes a generated key drops that key from the set in the same statement, handing ownership to the operator for good.
+A key already set on the document that is not in the generated set is manually authored or connector-supplied, and a key the source's document tags set is the source's. Extraction skips either one and counts the collision; a `null` or blank value counts as unset, so extraction may fill it in. A manual metadata write that changes or removes a generated key drops that key from the set in the same statement, handing ownership to the operator for good.
 
 Tag replacement is atomic with success: only after validation succeeds does a run remove the previous generated keys, write the new ones, and replace provenance in a single persisted update. A run that fails records its failure fields and leaves existing tags, the prior generated-key set, and the last successful run's catalog revision intact. The document stays searchable throughout; a failed enrich job never changes its ready status.
 
-The built-in `dateFrom` and `dateTo` keys sit outside the generated-key set and keep their own rule: every run with extraction enabled replaces or clears whatever those two keys hold, including values an operator authored.
+The built-in `dateFrom` and `dateTo` keys follow the same rule, as a pair. A run that writes them records both in the generated-key set. When the document already carries either one — written by an operator or an API client — or its source's document tags carry one, the run writes no date to the document or to any chunk, counts each date it would have written as a collision, and the chunks keep those dates from the projection. A `null` or empty value counts as no date. A manual write that changes or removes either extracted date hands both to the operator.
+
+Dates on a document a connector syncs are the connector's defaults: WordPress, for one, writes each post's publish day as `dateFrom`. A run that reads dates replaces them on the document and on every chunk, and the dates it writes become extraction's; a run that fails or reads no dates leaves them standing. The connector rewrites a synced document's metadata on its next sync anyway, so a hand edit to those dates lasts until that sync or until a run reads dates.
+
+The document API publishes the keys extraction owns as `generatedKeys`, dates included.
 
 ## Why revisions matter
 

@@ -1375,7 +1375,7 @@ describe("document ingestion", () => {
     expect(chunks![0].metadata).toEqual({ sourceUrl: "https://example.com" });
   });
 
-  it("uses source enrichment override during processing and clears stale enrichment metadata when disabled", async () => {
+  it("uses source enrichment override during processing and clears extracted metadata when disabled", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
     documentRepository.setJobRepository(jobRepository);
@@ -1412,10 +1412,16 @@ describe("document ingestion", () => {
       sourceStorageGeneration: null,
       sourceSizeBytes: null,
     });
-    // Prior extraction provenance lives in the enrichment column (post-migration-120).
+    // Prior extraction provenance lives in the enrichment column (post-migration-120)
+    // and records that the run wrote the dates.
     documentRepository.items.set(document.id, {
       ...documentRepository.items.get(document.id)!,
-      enrichment: { status: "applied" } as never,
+      enrichment: {
+        status: "applied",
+        shape: "event",
+        generatedKeys: ["dateFrom", "dateTo"],
+        dateOwnershipRecorded: true,
+      },
     });
     const stage = {
       enrich: vi.fn().mockResolvedValue({
@@ -1467,8 +1473,11 @@ describe("document ingestion", () => {
     });
     expect(await service.process(firstJob)).toBe("completed");
     expect(stage.enrich).not.toHaveBeenCalled();
-    // Vectorization clears prior stale extracted metadata and provenance.
+    // Extraction runs on this revision, so the extracted dates stay until the
+    // run replaces them: a failed run must still find them.
     expect((await documentRepository.findByIdAndWorkspaceId(document.id, "workspace-1"))?.metadata).toEqual({
+      dateFrom: "2026-07-17",
+      dateTo: "2026-07-17",
       sourceUrl: "https://events.example/event",
     });
     const firstEnrichJob = [...jobRepository.items.values()].find(

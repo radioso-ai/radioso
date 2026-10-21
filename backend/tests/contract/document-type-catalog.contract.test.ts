@@ -254,6 +254,8 @@ describe("document type catalog contract", () => {
     // The extended enrichment provenance is public API too.
     expect(spec).toContain("matchedTypeKey:");
     expect(spec).toContain("generatedKeys:");
+    // Date ownership travels in generatedKeys; the stored marker stays internal.
+    expect(spec).not.toContain("dateOwnershipRecorded");
   });
 });
 

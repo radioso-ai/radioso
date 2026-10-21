@@ -13,21 +13,27 @@ export class PromptContextSelectorService {
     contexts: RerankedCandidate[];
     topK: number;
   }): FinalPromptContext[] {
+    return this.selectInStages([{ contexts: input.contexts, until: input.topK }]);
+  }
+
+  /**
+   * Selects from each stage's contexts in turn until the whole selection reaches that stage's
+   * `until`. The stages share one token budget, one count per document, and one duplicate
+   * check, so a caller can set aside room for one group of contexts before another fills the
+   * rest. Within a stage, each document's first passage is taken before any second one.
+   */
+  selectInStages(stages: ReadonlyArray<{ contexts: RerankedCandidate[]; until: number }>): FinalPromptContext[] {
     const selected: FinalPromptContext[] = [];
     const selectedChunkIds = new Set<string>();
     const seenNormalizedContents = new Set<string>();
     const documentCounts = new Map<string, number>();
     let consumed = 0;
 
-    if (input.topK <= 0) {
-      return selected;
-    }
-
     const trySelect = (
       context: RerankedCandidate,
       options: { allowSiblingContext: boolean; allowLowInformation: boolean },
     ): boolean => {
-      if (selected.length >= input.topK || selectedChunkIds.has(context.chunkId)) {
+      if (selectedChunkIds.has(context.chunkId)) {
         return false;
       }
 
@@ -75,25 +81,18 @@ export class PromptContextSelectorService {
       return true;
     };
 
-    for (const context of input.contexts) {
-      trySelect(context, { allowSiblingContext: false, allowLowInformation: false });
-      if (selected.length >= input.topK) {
-        return selected;
-      }
-    }
-
-    for (const context of input.contexts) {
-      trySelect(context, { allowSiblingContext: true, allowLowInformation: false });
-      if (selected.length >= input.topK) {
-        return selected;
-      }
-    }
-
-    if (selected.length < input.topK) {
-      for (const context of input.contexts) {
-        trySelect(context, { allowSiblingContext: true, allowLowInformation: true });
-        if (selected.length >= input.topK) {
-          return selected;
+    const passes = [
+      { allowSiblingContext: false, allowLowInformation: false },
+      { allowSiblingContext: true, allowLowInformation: false },
+      { allowSiblingContext: true, allowLowInformation: true },
+    ];
+    for (const stage of stages) {
+      for (const pass of passes) {
+        for (const context of stage.contexts) {
+          if (selected.length >= stage.until) {
+            break;
+          }
+          trySelect(context, pass);
         }
       }
     }

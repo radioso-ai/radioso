@@ -8,8 +8,14 @@ import type { ChunkCandidateHydratorPort } from "../infra/chunkCandidateHydrator
 import type { VectorCandidateSearchPort } from "../domain/vectorAdapter.js";
 import type { RetrievalSourceFilter } from "../domain/retrievalSourceFilter.js";
 import type { RetrievedChunk } from "../domain/vectorSearch.js";
-import type { TemporalCandidateRetrievalPort } from "../domain/temporal/temporalCandidateRetrieval.js";
+import type {
+  TemporalCandidateRetrievalInput,
+  TemporalCandidateRetrievalPort,
+  TemporalSimilarityQuery,
+} from "../domain/temporal/temporalCandidateRetrieval.js";
+import type { RequestedDateRange } from "../domain/temporal/requestedDateRange.js";
 import type { TemporalQueryMode } from "../domain/retrievalPipelineTypes.js";
+import { dateRangeLookupDepth } from "../domain/answerCandidatePool.js";
 import { normalizeVectorMetadataFilter, type VectorMetadataFilter } from "../domain/vectorFilter.js";
 import {
   DEGRADABLE_RETRIEVAL_CHANNELS,
@@ -104,6 +110,40 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
           : undefined,
       ] as const),
     );
+    // The temporal lookup runs alongside the semantic and lexical searches. A requested date
+    // range runs it whatever the rewrite labelled the question: the range is only returned for
+    // a question that names a date or period, so it is the signal, and ranking by the question's
+    // embedding keeps a topic question's events ahead within the range.
+    const activeEmbedding = embeddingBySemanticQuery.get(input.activeRetrievalSubqueries[0]?.semanticQuery ?? "") ?? [];
+    const temporalQueryMode = resolveTemporalQueryMode(input);
+    const temporalDateRange = input.rewrittenQuery.structuredResult?.requestedDateRange;
+    const temporalStructuredLookupEnabled = input.settings.temporalStructuredLookupEnabled ?? true;
+    const temporalLookup = temporalStructuredLookupEnabled && this.temporalCandidateRetrieval
+      ? planTemporalLookup({
+          mode: temporalQueryMode,
+          dateRange: temporalDateRange,
+          today: formatIsoDateUtc(retrievalNow),
+          settings: input.settings,
+          similarTo: embeddingResult && activeEmbedding.length === embeddingResult.space.dimensions
+            ? { space: embeddingResult.space, queryVector: activeEmbedding }
+            : undefined,
+        })
+      : null;
+    const temporalLookupRanking = temporalLookup?.window.kind === "requested_range"
+      ? (temporalLookup.window.similarTo ? "similarity" as const : "date" as const)
+      : undefined;
+    const temporalSearch = temporalLookup && this.temporalCandidateRetrieval
+      ? this.temporalCandidateRetrieval.findInWindow({
+          workspaceId: input.request.workspaceId,
+          ...temporalLookup,
+          metadataFilter,
+          sourceFilter,
+          ...(input.request.documentScope?.length ? { documentIds: input.request.documentScope } : {}),
+        }).catch((): RetrievedChunk[] => {
+          degradedChannels.add("temporal");
+          return [];
+        })
+      : Promise.resolve<RetrievedChunk[]>([]);
     const retrievalBranches = await Promise.all(
       input.activeRetrievalSubqueries.map(async (subquery) => {
         // A branch outside the semantic cap (searchedSemanticQueries) is lexical-only
@@ -166,24 +206,11 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
       : embeddingResult
         ? "vector_search_unavailable" as const
         : "query_embedding_unavailable" as const;
-    const temporalQueryMode = resolveTemporalQueryMode(input);
-    const temporalStructuredLookupEnabled = input.settings.temporalStructuredLookupEnabled ?? true;
-    const temporalContexts = temporalStructuredLookupEnabled && temporalQueryMode === "listing" && this.temporalCandidateRetrieval
-      ? await this.temporalCandidateRetrieval.findUpcoming({
-          workspaceId: input.request.workspaceId,
-          today: formatIsoDateUtc(retrievalNow),
-          topK: input.settings.vectorTopK,
-          metadataFilter,
-          sourceFilter,
-        }).catch(() => {
-          degradedChannels.add("temporal");
-          return [];
-        })
-      : [];
+    const temporalContexts = await temporalSearch;
 
     return {
       ...input,
-      activeEmbedding: embeddingBySemanticQuery.get(input.activeRetrievalSubqueries[0]?.semanticQuery ?? "") ?? [],
+      activeEmbedding,
       activeEmbeddingDurationMs,
       semanticRetrievalStartedAtMs: semanticTiming.startedAtMs,
       semanticRetrievalDurationMs: semanticTiming.durationMs(),
@@ -194,6 +221,8 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
       lexicalContexts,
       temporalContexts,
       temporalQueryMode,
+      ...(temporalDateRange ? { temporalDateRange } : {}),
+      ...(temporalLookupRanking ? { temporalLookupRanking } : {}),
       temporalStructuredLookupEnabled,
       retrievalBranches: retrievalBranches.map(({ fallbackApplied: _fallbackApplied, ...branch }) => branch),
       vectorFallbackApplied: retrievalBranches.some((branch) => branch.fallbackApplied),
@@ -299,9 +328,38 @@ const resolveSemanticAvailability = (input: {
     : "unavailable";
 };
 
+// A requested range is looked up as deep as a busy week, ranked by similarity to the question
+// when it has an embedding. Without one, a listing question looks up upcoming events at the
+// fetch depth it always had, `vectorTopK`; any other question runs no lookup.
+const planTemporalLookup = (input: {
+  mode: TemporalQueryMode;
+  dateRange: RequestedDateRange | undefined;
+  today: string;
+  settings: QueryInterpretationStageResult["settings"];
+  similarTo: TemporalSimilarityQuery | undefined;
+}): Pick<TemporalCandidateRetrievalInput, "window" | "topK"> | null => {
+  if (input.dateRange) {
+    return {
+      window: {
+        kind: "requested_range",
+        range: input.dateRange,
+        ...(input.similarTo ? { similarTo: input.similarTo } : {}),
+      },
+      topK: dateRangeLookupDepth(input.settings.rerankTopK),
+    };
+  }
+  if (input.mode === "listing") {
+    return { window: { kind: "upcoming", today: input.today }, topK: input.settings.vectorTopK };
+  }
+  return null;
+};
+
+// A question whose named period the rewrite could not turn into a usable range gets no
+// temporal mode: the upcoming lookup, boost, and soonest-first order all assume a question about
+// what is coming up, which a question naming a past or a multi-year period is not.
 const resolveTemporalQueryMode = (input: QueryInterpretationStageResult): TemporalQueryMode => {
   const structured = input.rewrittenQuery.structuredResult;
-  if (structured?.queryShape !== "event_date_lookup") {
+  if (structured?.queryShape !== "event_date_lookup" || structured.requestedDateRangeDropReason) {
     return "none";
   }
   return structured.temporalQueryMode ?? "none";

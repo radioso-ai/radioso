@@ -78,6 +78,9 @@ export class AgenticRetrievalPipelineService implements RetrievalPipelinePort {
       retrievalQuery: agentQuery,
       history: input.request.history,
       contexts,
+      ...(rewrittenQuery.structuredResult?.requestedDateRange
+        ? { requestedDateRange: rewrittenQuery.structuredResult.requestedDateRange }
+        : {}),
       settings: {
         responseIdentity: input.request.responseIdentity,
         customInstruction: responseBehavior?.customInstruction ?? settings.customInstruction,

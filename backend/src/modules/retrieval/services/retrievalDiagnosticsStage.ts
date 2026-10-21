@@ -16,6 +16,7 @@ export class RetrievalDiagnosticsStageService implements RetrievalDiagnosticsSta
       lexicalCandidateCount: input.lexicalContexts.length,
       temporalCandidateCount: input.temporalContexts?.length ?? 0,
       temporalQueryMode: input.temporalQueryMode ?? "none",
+      temporalDateRange: input.temporalDateRange,
       temporalStructuredLookupEnabled: input.temporalStructuredLookupEnabled ?? true,
       temporalDeterministicSortEnabled: input.temporalDeterministicSortEnabled ?? true,
       temporalDeterministicSortApplied: input.temporalDeterministicSortApplied ?? false,

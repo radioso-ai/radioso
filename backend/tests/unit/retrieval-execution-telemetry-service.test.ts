@@ -5,6 +5,7 @@ import { RetrievalExecutionTelemetryService } from "../../src/modules/retrieval/
 import { createLogger } from "../../src/shared/observability/logger.js";
 import { buildTelemetrySinks } from "../../src/shared/observability/telemetry/buildTelemetrySinks.js";
 import { TelemetryService } from "../../src/shared/observability/telemetry/telemetryService.js";
+import type { TelemetryEvent } from "../../src/shared/observability/telemetry/telemetrySink.js";
 
 describe("retrieval execution telemetry service", () => {
   it("returns diagnostics and emits retrieval metrics", async () => {
@@ -114,6 +115,46 @@ describe("retrieval execution telemetry service", () => {
     const metrics = metricsRegistry?.renderPrometheus() ?? "";
     expect(metrics).toContain('execution_surface="retrieval"');
     expect(metrics).toContain('execution_path="retrieval_answer"');
+  });
+
+  it("records whether a date range was requested or dropped, without the dates", async () => {
+    const events: TelemetryEvent[] = [];
+    const telemetryService = new TelemetryService({
+      enabled: true,
+      environment: "test",
+      logger: createLogger("silent"),
+      service: "radioso-api",
+      sinks: [{ async emit(event) { events.push(event); } }],
+      version: "test",
+    });
+    const service = new RetrievalExecutionTelemetryService(telemetryService);
+    const base = {
+      workspaceId: "workspace-1",
+      rewriteStatus: "applied" as const,
+      rerankStatus: "skipped" as const,
+      originalCandidateCount: 0,
+      rewrittenCandidateCount: 2,
+      normalizedCandidateCount: 2,
+      finalContextCount: 2,
+      candidateFallbackApplied: false,
+      temporalQueryMode: "listing" as const,
+    };
+    const rewriteProposal = {
+      rewrittenQuery: "events next week",
+      turnKind: "fresh_subject" as const,
+      relatedEntities: [],
+      unresolved: false,
+      confidence: 0.9,
+    };
+
+    await service.create({ ...base, temporalDateRange: { dateFrom: "2026-10-26", dateTo: "2026-11-01" }, rewriteProposal });
+    await service.create({ ...base, rewriteProposal: { ...rewriteProposal, requestedDateRangeDropReason: "too_long" } });
+
+    expect(events.map((event) => event.metadata)).toEqual([
+      expect.objectContaining({ temporalDateRangeRequested: true, temporalDateRangeDropReason: "none" }),
+      expect.objectContaining({ temporalDateRangeRequested: false, temporalDateRangeDropReason: "too_long" }),
+    ]);
+    expect(JSON.stringify(events)).not.toContain("2026-10-26");
   });
 
   it("emits retrieval shape tags without raw query or document content", async () => {

@@ -19,6 +19,7 @@ export class PromptAssemblyStageService implements PromptAssemblyStageContract {
         responseLanguage: input.request.responseLanguage,
       },
       contexts: input.contexts,
+      ...(input.temporalDateRange ? { requestedDateRange: input.temporalDateRange } : {}),
     });
 
     return {

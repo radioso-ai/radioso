@@ -167,6 +167,30 @@ describe("grounded answer prompt contract", () => {
     expect(result.conversationContextPrompt).toContain("untrusted data");
   });
 
+  it("keeps the reusable prefix the same whether or not the question names a period", () => {
+    const answerPrompt = (requestedDateRange?: { dateFrom: string; dateTo: string }) =>
+      new PromptBuilder(undefined, () => new Date("2026-10-21T08:00:00.000Z")).build({
+        query: "What's on this weekend?",
+        history: [],
+        contexts: [],
+        settings: {},
+        ...(requestedDateRange ? { requestedDateRange } : {}),
+      });
+    const grounded = (baseSystemPrompt: string) => composeGroundedAnswerSystemPrompt({
+      baseSystemPrompt,
+      suggestedQuestionsEnabled: false,
+      suggestedQuestionsCount: 0,
+      hasRetrievedContexts: true,
+      conversationIntentSnapshot,
+    });
+    const plain = answerPrompt();
+    const ranged = answerPrompt({ dateFrom: "2026-10-24", dateTo: "2026-10-25" });
+
+    expect(ranged.prompt).toContain("Requested period:");
+    expect(grounded(ranged.systemPrompt).reusableInputBoundary?.stableSystemPrefix)
+      .toBe(grounded(plain.systemPrompt).reusableInputBoundary?.stableSystemPrefix);
+  });
+
   it("marks only the contiguous stable system prefix reusable", () => {
     const result = composeGroundedAnswerSystemPrompt({
       baseSystemPrompt: "OPERATOR INSTRUCTIONS",

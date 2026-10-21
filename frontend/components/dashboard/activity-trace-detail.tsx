@@ -410,6 +410,7 @@ function SpecializedStageOverview({ stage }: { stage: ActivityStage }) {
               { label: 'Continuity decision', value: outputs.continuityDecision as string | undefined },
               { label: 'Temporal query mode', value: outputs.temporalQueryMode as string | undefined },
               { label: 'Requested dates', value: formatDateRange(outputs.requestedDateRange) },
+              { label: 'Requested dates dropped', value: formatLabel(outputs.requestedDateRangeDropReason) },
               { label: 'Rewrite confidence', value: metrics.rewriteConfidence as number | undefined },
             ]}
           />

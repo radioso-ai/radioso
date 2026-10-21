@@ -1,15 +1,18 @@
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 
 /**
- * How many passages one answer prompt holds: `finalContextTopK`, or, for a listing question
- * whose structured lookup found events in a requested date range, the larger
- * `temporal.dateRangeListingContextTopK`, so a busy week reaches the answer. The prompt token
- * budget bounds both.
+ * How many passages one answer prompt holds. An ordinary answer holds `finalContextTopK`. A
+ * listing question whose structured lookup found passages in its requested date range holds one
+ * per passage found, never fewer than `finalContextTopK` and never more than
+ * `temporal.dateRangeListingContextTopK`: a busy week reaches the answer, and a day with two
+ * events does not pull in eighteen passages from other dates. The prompt token budget bounds
+ * every case.
  */
-export const answerContextTopK = (answer: { dateRangeListing: boolean }): number =>
-  answer.dateRangeListing
-    ? RETRIEVAL_BEHAVIOR.temporal.dateRangeListingContextTopK
-    : RETRIEVAL_BEHAVIOR.finalContextTopK;
+export const answerContextTopK = (answer: { requestedRangePassageCount?: number }): number =>
+  Math.min(
+    Math.max(answer.requestedRangePassageCount ?? 0, RETRIEVAL_BEHAVIOR.finalContextTopK),
+    RETRIEVAL_BEHAVIOR.temporal.dateRangeListingContextTopK,
+  );
 
 /**
  * How many fused candidates stay in play for the answer: at least enough to fill the answer's
@@ -26,3 +29,10 @@ export const answerCandidatePoolSize = (
     Math.max(rerankTopK, contextTopK),
     RETRIEVAL_BEHAVIOR.rerank.candidateLimit,
   );
+
+/**
+ * How many passages a requested-range lookup fetches: as many as the largest date listing pool
+ * can use. The lookup's passages lead a listing's pool, so any passage past it is never read.
+ */
+export const dateRangeLookupDepth = (rerankTopK: number): number =>
+  answerCandidatePoolSize(rerankTopK, RETRIEVAL_BEHAVIOR.temporal.dateRangeListingContextTopK);

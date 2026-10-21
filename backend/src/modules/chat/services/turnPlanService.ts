@@ -8,7 +8,12 @@ import { z } from "zod";
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
-import { type Clock, formatIsoDateUtc, systemClock } from "../../../shared/domain/clock.js";
+import {
+  type Clock,
+  formatPromptDateUtc,
+  PROMPT_DATE_BUDGET_STAND_IN,
+  systemClock,
+} from "../../../shared/domain/clock.js";
 import { isLocaleTag, localeTagOf } from "../../../shared/domain/locale.js";
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import { normalizeLlmClassifierLanguageLabel } from "../../../shared/domain/llmClassifierFields.js";
@@ -321,8 +326,9 @@ interface TurnPlanningPrompt {
 
 /**
  * Canonical prompt renderer shared by execution and the eligibility budget. `today` is the
- * UTC date, `YYYY-MM-DD`, the rewrite resolves a named period against; it renders in the
- * request, so the reusable system prefix stays the same from day to day.
+ * UTC date line `formatPromptDateUtc` renders, which the rewrite resolves a named period
+ * against; it renders in the request, so the reusable system prefix stays the same from day
+ * to day.
  */
 export const buildTurnPlanningPrompt = (input: TurnPlanningPromptInput & { today: string }): TurnPlanningPrompt => {
   const hasRoutineCandidates = input.routineCandidates.length > 0;
@@ -407,11 +413,8 @@ export const buildTurnPlanningPrompt = (input: TurnPlanningPromptInput & { today
   };
 };
 
-// Every ISO date renders as ten characters, so the budget estimate can stand in any date.
-const BUDGET_ESTIMATE_DATE = "0000-00-00";
-
 export const estimateTurnPlanningPromptTokens = (input: TurnPlanningPromptInput): number => {
-  const prompt = buildTurnPlanningPrompt({ ...input, today: BUDGET_ESTIMATE_DATE });
+  const prompt = buildTurnPlanningPrompt({ ...input, today: PROMPT_DATE_BUDGET_STAND_IN });
   return Math.ceil((prompt.systemPrompt.length + prompt.prompt.length) / 4);
 };
 
@@ -1018,7 +1021,7 @@ export class TurnPlanService {
       const directiveNames = request.directiveCandidates.map((candidate) => candidate.name);
       const { systemPrompt, reusableInputBoundary, prompt } = buildTurnPlanningPrompt({
         ...request,
-        today: formatIsoDateUtc((this.options.clock ?? systemClock)()),
+        today: formatPromptDateUtc((this.options.clock ?? systemClock)()),
       });
       const { text } = await client.complete({
         systemPrompt,

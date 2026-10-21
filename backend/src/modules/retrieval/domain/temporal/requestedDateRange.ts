@@ -27,26 +27,50 @@ const isIsoCalendarDate = (value: unknown): value is string => {
   return !Number.isNaN(parsed) && new Date(parsed).toISOString().slice(0, 10) === value;
 };
 
+/** The structured rewrite fields a reading fills: the kept range, or why the model's range was dropped. */
+export const requestedDateRangeFields = (reading: RequestedDateRangeReading): {
+  requestedDateRange?: RequestedDateRange;
+  requestedDateRangeDropReason?: RequestedDateRangeDropReason;
+} => ({
+  ...(reading.range ? { requestedDateRange: reading.range } : {}),
+  ...(!reading.range && reading.dropReason ? { requestedDateRangeDropReason: reading.dropReason } : {}),
+});
+
 /** The number of calendar days a range covers, counting both ends. */
 export const requestedDateRangeDays = (range: RequestedDateRange): number =>
   Math.round((epochMs(range.dateTo) - epochMs(range.dateFrom)) / DAY_MS) + 1;
+
+/** Why a model-returned range was set aside. Content-free, so traces and telemetry may carry it. */
+export type RequestedDateRangeDropReason = "invalid" | "too_long";
+
+/** A model-returned range read: the range kept, the reason it was dropped, or neither for none. */
+interface RequestedDateRangeReading {
+  range?: RequestedDateRange;
+  dropReason?: RequestedDateRangeDropReason;
+}
 
 /**
  * Reads a model-returned range, or drops it. A range is kept only when both ends are real
  * ISO calendar dates, the start is not after the end, and it spans at most
  * `RETRIEVAL_BEHAVIOR.temporal.requestedDateRangeMaxDays` days. A malformed or runaway range
- * leaves the turn on its ordinary temporal handling instead of failing it.
+ * leaves the turn on its ordinary temporal handling instead of failing it; `null` or an absent
+ * value is no range at all.
  */
-export const parseRequestedDateRange = (value: unknown): RequestedDateRange | undefined => {
-  if (!value || typeof value !== "object") {
-    return undefined;
+export const readRequestedDateRange = (value: unknown): RequestedDateRangeReading => {
+  if (value === null || value === undefined) {
+    return {};
+  }
+  if (typeof value !== "object") {
+    return { dropReason: "invalid" };
   }
   const { dateFrom, dateTo } = value as { dateFrom?: unknown; dateTo?: unknown };
   if (!isIsoCalendarDate(dateFrom) || !isIsoCalendarDate(dateTo) || dateFrom > dateTo) {
-    return undefined;
+    return { dropReason: "invalid" };
   }
   const range = { dateFrom, dateTo };
-  return requestedDateRangeDays(range) <= RETRIEVAL_BEHAVIOR.temporal.requestedDateRangeMaxDays ? range : undefined;
+  return requestedDateRangeDays(range) <= RETRIEVAL_BEHAVIOR.temporal.requestedDateRangeMaxDays
+    ? { range }
+    : { dropReason: "too_long" };
 };
 
 /**

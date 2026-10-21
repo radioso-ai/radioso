@@ -1,37 +1,39 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  parseRequestedDateRange,
   positionInDateRange,
+  readRequestedDateRange,
   requestedDateRangeDays,
 } from "../../../src/modules/retrieval/domain/temporal/requestedDateRange.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../src/shared/domain/behaviorConfig.js";
 
-describe("parseRequestedDateRange", () => {
+describe("readRequestedDateRange", () => {
   it("keeps an inclusive ISO range", () => {
-    expect(parseRequestedDateRange({ dateFrom: "2026-12-07", dateTo: "2026-12-13" })).toEqual({
-      dateFrom: "2026-12-07",
-      dateTo: "2026-12-13",
+    expect(readRequestedDateRange({ dateFrom: "2026-12-07", dateTo: "2026-12-13" })).toEqual({
+      range: { dateFrom: "2026-12-07", dateTo: "2026-12-13" },
     });
   });
 
   it("keeps a single day", () => {
-    expect(parseRequestedDateRange({ dateFrom: "2027-03-01", dateTo: "2027-03-01" })).toEqual({
-      dateFrom: "2027-03-01",
-      dateTo: "2027-03-01",
+    expect(readRequestedDateRange({ dateFrom: "2027-03-01", dateTo: "2027-03-01" })).toEqual({
+      range: { dateFrom: "2027-03-01", dateTo: "2027-03-01" },
     });
   });
 
   it("keeps a whole leap year, the longest range a question needs", () => {
-    expect(parseRequestedDateRange({ dateFrom: "2028-01-01", dateTo: "2028-12-31" })).toEqual({
-      dateFrom: "2028-01-01",
-      dateTo: "2028-12-31",
+    expect(readRequestedDateRange({ dateFrom: "2028-01-01", dateTo: "2028-12-31" })).toEqual({
+      range: { dateFrom: "2028-01-01", dateTo: "2028-12-31" },
     });
   });
 
   it.each([
     ["no range", null],
     ["a missing range", undefined],
+  ])("reads %s as no range, with nothing dropped", (_label, value) => {
+    expect(readRequestedDateRange(value)).toEqual({});
+  });
+
+  it.each([
     ["a string", "2026-12-07/2026-12-13"],
     ["a missing end", { dateFrom: "2026-12-07" }],
     ["a missing start", { dateTo: "2026-12-13" }],
@@ -39,9 +41,12 @@ describe("parseRequestedDateRange", () => {
     ["a timestamp instead of a date", { dateFrom: "2026-12-07T00:00:00Z", dateTo: "2026-12-13" }],
     ["an impossible calendar date", { dateFrom: "2026-02-30", dateTo: "2026-03-02" }],
     ["a start after the end", { dateFrom: "2026-12-13", dateTo: "2026-12-07" }],
-    ["a range longer than the maximum span", { dateFrom: "2026-01-01", dateTo: "2027-01-02" }],
-  ])("drops %s", (_label, value) => {
-    expect(parseRequestedDateRange(value)).toBeUndefined();
+  ])("drops %s as invalid", (_label, value) => {
+    expect(readRequestedDateRange(value)).toEqual({ dropReason: "invalid" });
+  });
+
+  it("drops a range longer than the maximum span as too long", () => {
+    expect(readRequestedDateRange({ dateFrom: "2026-01-01", dateTo: "2027-01-02" })).toEqual({ dropReason: "too_long" });
   });
 
   it("bounds the span by the configured maximum", () => {

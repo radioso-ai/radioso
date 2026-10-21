@@ -24,7 +24,7 @@ export const buildQueryRewritePrompt = (input: {
   semanticRewriteInstructions?: string;
   lexicalRewriteInstructions?: string;
   query: string;
-  /** Today's UTC date, `YYYY-MM-DD`, so the rewrite can resolve a period the question names. */
+  /** Today's UTC date line from `formatPromptDateUtc`, so the rewrite can resolve a period the question names. */
   today: string;
 }): string =>
   renderPromptTemplate("retrieval/query-rewrite.md", {

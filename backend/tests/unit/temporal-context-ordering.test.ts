@@ -148,7 +148,7 @@ describe("temporal context ordering", () => {
     });
   });
 
-  it("leads with the events in a requested range, ahead of sooner events outside it", () => {
+  it("leads with the events in a requested range, then other upcoming events, then undated, then past events", () => {
     const result = orderTemporalPromptContexts({
       contexts: [
         candidate({ chunkId: "next-week", rank: 0, dateFrom: "2026-10-28", dateTo: "2026-10-28" }),
@@ -175,9 +175,9 @@ describe("temporal context ordering", () => {
       "crosses-range-start",
       "in-range-early",
       "in-range-late",
-      "undated",
-      "after-range",
       "next-week",
+      "after-range",
+      "undated",
       "past",
     ]);
   });
@@ -196,5 +196,68 @@ describe("temporal context ordering", () => {
     });
 
     expect(result.orderedContexts.map((context) => context.chunkId)).toEqual(["last-week", "upcoming"]);
+  });
+
+  it("keeps an upcoming event just after the range ahead of undated context for a topic question", () => {
+    // "Is the yoga retreat in March?" when it is in April: the April date must survive the cut.
+    const result = orderTemporalPromptContexts({
+      contexts: [
+        candidate({ chunkId: "undated-yoga", rank: 0 }),
+        candidate({ chunkId: "april-retreat", rank: 1, dateFrom: "2027-04-10", dateTo: "2027-04-12" }),
+      ],
+      enabled: true,
+      queryShape: "event_date_lookup",
+      temporalQueryMode: "topic_refinement",
+      today: "2026-10-21",
+      dateRange: { dateFrom: "2027-03-01", dateTo: "2027-03-31" },
+    });
+
+    expect(result.orderedContexts.map((context) => context.chunkId)).toEqual(["april-retreat", "undated-yoga"]);
+  });
+
+  it("orders a context dated only by its end date as that single day", () => {
+    const inRange = orderTemporalPromptContexts({
+      contexts: [
+        candidate({ chunkId: "undated", rank: 0 }),
+        candidate({ chunkId: "end-date-only", rank: 1, dateTo: "2026-12-09" }),
+        candidate({ chunkId: "in-range", rank: 2, dateFrom: "2026-12-10", dateTo: "2026-12-10" }),
+      ],
+      enabled: true,
+      queryShape: "event_date_lookup",
+      temporalQueryMode: "listing",
+      today: "2026-10-21",
+      dateRange: { dateFrom: "2026-12-07", dateTo: "2026-12-13" },
+    });
+    const upcoming = orderTemporalPromptContexts({
+      contexts: [
+        candidate({ chunkId: "undated", rank: 0 }),
+        candidate({ chunkId: "past-end-date-only", rank: 1, dateTo: "2026-09-01" }),
+        candidate({ chunkId: "end-date-only", rank: 2, dateTo: "2026-11-04" }),
+      ],
+      enabled: true,
+      queryShape: "event_date_lookup",
+      temporalQueryMode: "listing",
+      today: "2026-10-21",
+    });
+
+    expect(inRange.orderedContexts.map((context) => context.chunkId)).toEqual(["end-date-only", "in-range", "undated"]);
+    expect(inRange.datedContextCount).toBe(2);
+    expect(upcoming.orderedContexts.map((context) => context.chunkId)).toEqual(["end-date-only", "undated", "past-end-date-only"]);
+  });
+
+  it("orders an inverted date pair by the span between its two dates", () => {
+    const result = orderTemporalPromptContexts({
+      contexts: [
+        candidate({ chunkId: "later", rank: 0, dateFrom: "2026-12-11", dateTo: "2026-12-11" }),
+        candidate({ chunkId: "inverted", rank: 1, dateFrom: "2026-12-10", dateTo: "2026-12-05" }),
+      ],
+      enabled: true,
+      queryShape: "event_date_lookup",
+      temporalQueryMode: "listing",
+      today: "2026-10-21",
+      dateRange: { dateFrom: "2026-12-07", dateTo: "2026-12-13" },
+    });
+
+    expect(result.orderedContexts.map((context) => context.chunkId)).toEqual(["inverted", "later"]);
   });
 });

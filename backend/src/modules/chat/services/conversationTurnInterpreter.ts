@@ -5,7 +5,7 @@ import type {
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import { CHAT_BEHAVIOR, RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
-import { type Clock, formatIsoDateUtc, systemClock } from "../../../shared/domain/clock.js";
+import { type Clock, formatPromptDateUtc, systemClock } from "../../../shared/domain/clock.js";
 import type {
   ModelCallUsageAttribution,
   ModelCallUsageContext,
@@ -130,7 +130,7 @@ export const buildTurnInterpretationPrompt = (input: {
   conversationSummary?: string;
   pageReadCapability?: PageReadCapability | null;
   query: string;
-  /** Today's UTC date, `YYYY-MM-DD`, so the rewrite can resolve a period the question names. */
+  /** Today's UTC date line from `formatPromptDateUtc`, so the rewrite can resolve a period the question names. */
   today: string;
 }): string => {
   const pageReadCapability = input.pageReadCapability ?? null;
@@ -201,7 +201,7 @@ export class ModelTurnInterpretationGateway implements TurnInterpretationGateway
         conversationSummary: input.conversationSummary,
         pageReadCapability: input.pageReadCapability,
         query: input.query,
-        today: formatIsoDateUtc(this.clock()),
+        today: formatPromptDateUtc(this.clock()),
       }),
       reasoningEffort: RETRIEVAL_BEHAVIOR.queryInterpretation.reasoningEffort,
       maxOutputTokens: CHAT_BEHAVIOR.intentRouting.maxOutputTokens + 768,

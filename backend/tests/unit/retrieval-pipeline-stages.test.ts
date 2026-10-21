@@ -17,6 +17,7 @@ import { RerankService } from "../../src/modules/retrieval/services/rerankServic
 import { PromptContextSelectorService } from "../../src/modules/retrieval/services/promptContextSelectorService.js";
 import type { TemporalCandidateRetrievalPort } from "../../src/modules/retrieval/domain/temporal/temporalCandidateRetrieval.js";
 import type { RetrievedChunk } from "../../src/modules/retrieval/domain/vectorSearch.js";
+import { RETRIEVAL_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 import {
   buildCandidatePreparationTraceAttributes,
   buildCandidateRetrievalTraceAttributes,
@@ -467,7 +468,13 @@ describe("retrieval pipeline stages", () => {
       expect(result.temporalDateRange).toEqual(week);
     });
 
-    it("brings every event of a busy requested week into the answer, ahead of sooner events the search found", async () => {
+    // Runs a listing question for `range` through retrieval, preparation, and context
+    // selection over `inRangeCount` courses in December plus 15 sooner November courses
+    // that the semantic search ranks above every December course.
+    const answerContextsForRange = async (input: {
+      range: { dateFrom: string; dateTo: string };
+      inRangeCount: number;
+    }) => {
       const clock = () => new Date("2026-10-21T12:00:00.000Z");
       const course = (id: string, date: string, similarity: number): RetrievedChunk => ({
         chunkId: `chunk-${id}`,
@@ -481,23 +488,25 @@ describe("retrieval pipeline stages", () => {
         endOffset: 80,
         metadata: { dateFrom: date, dateTo: date },
       });
-      // More courses in the requested week than an ordinary answer's passage limit.
-      const weekCourses = Array.from({ length: 16 }, (_value, index) =>
-        course(`week-${index + 1}`, `2026-12-${String(7 + (index % 7)).padStart(2, "0")}`, 0));
-      // Sooner upcoming courses that the semantic search ranks above every week course.
+      const rangeDays = Math.round(
+        (Date.parse(`${input.range.dateTo}T00:00:00Z`) - Date.parse(`${input.range.dateFrom}T00:00:00Z`)) / 86_400_000,
+      ) + 1;
+      const firstDay = Number(input.range.dateFrom.slice(8, 10));
+      const inRangeCourses = Array.from({ length: input.inRangeCount }, (_value, index) =>
+        course(`december-${index + 1}`, `2026-12-${String(firstDay + (index % rangeDays)).padStart(2, "0")}`, 0));
       const novemberCourses = Array.from({ length: 15 }, (_value, index) =>
         course(`november-${index + 1}`, `2026-11-${String(2 + index).padStart(2, "0")}`, 0.9 - index / 100));
-      const corpus = [...weekCourses, ...novemberCourses];
+      const corpus = [...inRangeCourses, ...novemberCourses];
       const dateOf = (chunk: RetrievedChunk) => String(chunk.metadata?.dateFrom);
       const temporal: TemporalCandidateRetrievalPort = {
-        async findInWindow(input) {
-          const window = input.window;
+        async findInWindow(lookup) {
+          const window = lookup.window;
           return corpus
             .filter((chunk) => window.kind === "requested_range"
               ? dateOf(chunk) >= window.range.dateFrom && dateOf(chunk) <= window.range.dateTo
               : dateOf(chunk) >= window.today)
             .sort((left, right) => dateOf(left).localeCompare(dateOf(right)))
-            .slice(0, input.topK);
+            .slice(0, lookup.topK);
         },
       };
       const retrieval = new CandidateRetrievalStageService(
@@ -525,15 +534,41 @@ describe("retrieval pipeline stages", () => {
 
       const retrieved = await retrieval.execute({
         ...baseCandidateRetrievalInput(),
-        rewrittenQuery: temporalRewrite({}),
+        rewrittenQuery: temporalRewrite({ requestedDateRange: input.range }),
       });
       const selected = await selection.execute(await preparation.execute(retrieved));
-      const leadingDocuments = selected.contexts.slice(0, weekCourses.length);
+      return { contexts: selected.contexts, inRangeCourses };
+    };
 
-      expect(new Set(leadingDocuments.map((context) => context.documentId)))
-        .toEqual(new Set(weekCourses.map((chunk) => chunk.documentId)));
-      const leadingDates = leadingDocuments.map((context) => String(context.metadata?.dateFrom));
-      expect(leadingDates).toEqual([...leadingDates].sort());
+    it("brings every event of a busy requested week into the answer, ahead of sooner events the search found", async () => {
+      const { contexts, inRangeCourses } = await answerContextsForRange({ range: week, inRangeCount: 16 });
+
+      expect(contexts).toHaveLength(16);
+      expect(new Set(contexts.map((context) => context.documentId)))
+        .toEqual(new Set(inRangeCourses.map((chunk) => chunk.documentId)));
+      const dates = contexts.map((context) => String(context.metadata?.dateFrom));
+      expect(dates).toEqual([...dates].sort());
+    });
+
+    it("keeps an ordinary answer size when the requested day has only a couple of events", async () => {
+      const { contexts, inRangeCourses } = await answerContextsForRange({
+        range: { dateFrom: "2026-12-07", dateTo: "2026-12-07" },
+        inRangeCount: 2,
+      });
+
+      expect(contexts).toHaveLength(RETRIEVAL_BEHAVIOR.finalContextTopK);
+      expect(contexts.slice(0, 2).map((context) => context.documentId))
+        .toEqual(inRangeCourses.map((chunk) => chunk.documentId));
+    });
+
+    it("holds at most the date listing limit when a requested range has more events than fit", async () => {
+      const { contexts } = await answerContextsForRange({
+        range: { dateFrom: "2026-12-01", dateTo: "2026-12-31" },
+        inRangeCount: 30,
+      });
+
+      expect(contexts).toHaveLength(RETRIEVAL_BEHAVIOR.temporal.dateRangeListingContextTopK);
+      expect(contexts.every((context) => context.documentId.startsWith("doc-december-"))).toBe(true);
     });
 
     it("ignores a range on a question that is not an event date lookup", async () => {

@@ -197,6 +197,7 @@ describe("parseTurnPlan", () => {
       expect(plan?.route).toBe("retrieval");
       expect(plan?.rewriteProposal?.temporalQueryMode).toBe("listing");
       expect(plan?.rewriteProposal).not.toHaveProperty("requestedDateRange");
+      expect(plan?.rewriteProposal?.requestedDateRangeDropReason).toBe("invalid");
     }
   });
 
@@ -675,7 +676,7 @@ describe("buildTurnPlanningPrompt", () => {
     conversationSummary: "The buyer previously discussed annual billing.",
     routineCandidates: [],
     directiveCandidates: [],
-    today: "2026-10-21",
+    today: "2026-10-21 (Wednesday)",
     ...overrides,
   });
   // Role-agnostic view of everything the planner reads, for content assertions.
@@ -765,9 +766,9 @@ describe("buildTurnPlanningPrompt", () => {
   });
 
   it("dates the visitor's request and keeps the date out of the reusable system prompt", () => {
-    const prompt = buildTurnPlanningPrompt(promptInput({ today: "2026-10-21" }));
+    const prompt = buildTurnPlanningPrompt(promptInput({ today: "2026-10-21 (Wednesday)" }));
 
-    expect(prompt.prompt).toContain("Today's date: 2026-10-21");
+    expect(prompt.prompt).toContain("Today's date: 2026-10-21 (Wednesday)");
     expect(prompt.systemPrompt).not.toContain("2026-10-21");
     expect(prompt.reusableInputBoundary?.stableSystemPrefix).toContain("requestedDateRange");
   });
@@ -966,7 +967,7 @@ describe("TurnPlanService", () => {
     const client = { complete: vi.fn(async (_request: { prompt: string }) => ({ text: validPlanJson() })) };
     await new TurnPlanService(factory(client), { clock: () => new Date("2026-10-21T23:30:00.000Z") }).plan(request());
 
-    expect(client.complete.mock.calls[0]?.[0].prompt).toContain("Today's date: 2026-10-21");
+    expect(client.complete.mock.calls[0]?.[0].prompt).toContain("Today's date: 2026-10-21 (Wednesday)");
   });
 
   it("sends standing rules as a reusable system prefix and the visitor's turn as the request", async () => {

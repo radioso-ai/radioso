@@ -23,7 +23,7 @@ When temporal structured lookup is enabled, a question that lists events without
 - With a requested range, it fetches the events whose dates overlap the range, including a multi-day event that starts before it or ends after it. Every event's first passage comes ahead of any event's second one, so a busy week lists as many events as fit.
 - Without one, it fetches ongoing and upcoming events, soonest first.
 
-An answer that lists the events in a requested range holds up to 20 passages instead of the usual 12, inside the same prompt size budget. That covers a busy week; for a longer period with more events than that, the answer draws on the earliest 20.
+An answer that lists the events in a requested range holds one passage per passage the lookup found there, never fewer than the usual 12 and never more than 20, inside the same prompt size budget. That covers a busy week; for a longer period with more events than that, the answer draws on the earliest 20.
 
 A question about a topic in a period, such as "meditation courses in December", runs the normal topic search. The range then decides which of those results rank higher and come first.
 
@@ -33,7 +33,7 @@ Upcoming event boost gives more weight to the events a question is about: those 
 
 ### Deterministic Sort
 
-Deterministic temporal sort orders the selected event evidence by date before prompt assembly. Events in the requested range come first, soonest first, then undated evidence, then events outside the range. Without a requested range, upcoming events lead and past events come last. Disable it only when you want model-driven ordering instead.
+Deterministic temporal sort orders the selected event evidence by date before prompt assembly. Events in the requested range come first, soonest first, then other ongoing and upcoming events, then undated evidence, then past events. Without a requested range, upcoming events lead and past events come last. Disable it only when you want model-driven ordering instead.
 
 ### Requirements
 

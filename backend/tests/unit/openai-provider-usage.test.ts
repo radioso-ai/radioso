@@ -215,6 +215,32 @@ describe("OpenAITextGenerationClient.complete", () => {
     expect(result.text).toBe("Hello");
     expect(result.usage).toBeUndefined();
   });
+
+  it("reports a reply cut off at the output limit, and says nothing when the provider gives no reason", async () => {
+    createMock
+      .mockResolvedValueOnce({ choices: [{ finish_reason: "length", message: { content: "{\"type\":" } }] })
+      .mockResolvedValueOnce({ choices: [{ finish_reason: "stop", message: { content: "{}" } }] })
+      .mockResolvedValueOnce({ choices: [{ finish_reason: "content_filter", message: { content: "" } }] })
+      .mockResolvedValueOnce({ choices: [{ message: { content: "{}" } }] });
+    const client = new OpenAITextGenerationClient(chatConfig);
+
+    const stopReasons = [];
+    for (let call = 0; call < 4; call += 1) {
+      stopReasons.push((await client.complete({ prompt: "Hi" })).stopReason);
+    }
+
+    expect(stopReasons).toEqual(["output_limit", "completed", "other", undefined]);
+  });
+
+  it("reports the stop reason of the low-reasoning retry, not of the capped first reply", async () => {
+    createMock
+      .mockResolvedValueOnce({ choices: [{ finish_reason: "length", message: { content: "" } }] })
+      .mockResolvedValueOnce({ choices: [{ finish_reason: "stop", message: { content: "Hello" } }] });
+
+    const result = await new OpenAITextGenerationClient(chatConfig).complete({ prompt: "Hi", reasoningEffort: "medium" });
+
+    expect(result.stopReason).toBe("completed");
+  });
 });
 
 describe("OpenAITextGenerationClient.stream", () => {

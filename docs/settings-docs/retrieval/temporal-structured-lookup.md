@@ -14,7 +14,7 @@ Use event dates on documents to retrieve, boost, and order dated events.
 
 Temporal retrieval reads the `dateFrom` and `dateTo` dates on a document's chunks, whether you set them in the document's metadata or metadata extraction found them. It answers questions such as "What are the next events?", "What's on the week of 7 December?", or "Che corsi ci sono a marzo 2027?".
 
-When a question names a date or a period, the query rewrite resolves it against today's date (UTC) into an inclusive date range: "the week of 7 December", asked in October 2026, becomes `2026-12-07` to `2026-12-13`. The model resolves the period in whatever language the question uses. A range longer than a year, or one that isn't a real calendar range, is set aside: the question is then answered by text search alone, with no date lookup and no upcoming-events ordering, since it asked about a period rather than about what's coming up.
+When a question names a date or a period, the query rewrite resolves it against today's date (UTC) into an inclusive date range: "the week of 7 December", asked in October 2026, becomes `2026-12-07` to `2026-12-13`. The model resolves the period in whatever language the question uses, with today's weekday in hand for questions like "this weekend". The answer is told the same period and answers for it: passages dated outside it are background, mentioned only when nothing in the period matches or the visitor asks about other dates. A range longer than a year, or one that isn't a real calendar range, is set aside: the question is then answered by text search alone, with no date lookup and no upcoming-events ordering, since it asked about a period rather than about what's coming up.
 
 ### Structured Lookup
 

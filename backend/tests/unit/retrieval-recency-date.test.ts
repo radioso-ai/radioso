@@ -71,7 +71,7 @@ describe("rerank recency date", () => {
       topK: 5,
     });
 
-    expect(captured?.today).toBe("2026-06-02");
+    expect(captured?.today).toBe("2026-06-02 (Tuesday)");
   });
 
   it("ModelRerankGateway renders today into the rerank prompt", async () => {

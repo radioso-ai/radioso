@@ -9,6 +9,41 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.20.0] - 2026-10-21
+
+### Added
+
+- **retrieval:** answer date questions from the requested date range ([#1594](https://github.com/radioso-ai/radioso/pull/1594))
+- **privacy:** show an operator privacy notice before the first message ([#1587](https://github.com/radioso-ai/radioso/pull/1587))
+- **llm:** a data-residency choice for a workspace's own OpenAI key ([#1582](https://github.com/radioso-ai/radioso/pull/1582))
+- **privacy:** workspace conversation retention with one sweep ([#1585](https://github.com/radioso-ai/radioso/pull/1585))
+- **privacy:** look up and export one person's data across channels ([#1584](https://github.com/radioso-ai/radioso/pull/1584))
+
+### Fixed
+
+- **documents:** make metadata extraction tolerate miscounted ranges and unreadable replies ([#1593](https://github.com/radioso-ai/radioso/pull/1593))
+- **documents:** keep operator-written event dates through re-indexing and failed extraction ([#1592](https://github.com/radioso-ai/radioso/pull/1592))
+- **chat:** keep text around an under-closed citation anchor ([#1580](https://github.com/radioso-ai/radioso/pull/1580))
+- **chat:** stop the history tail re-delivering its newest message ([#1581](https://github.com/radioso-ai/radioso/pull/1581))
+- **directives:** commit to each directive before writing the answer ([#1588](https://github.com/radioso-ai/radioso/pull/1588))
+- **worker:** don't send error reports for expected permanent job failures ([#1559](https://github.com/radioso-ai/radioso/pull/1559))
+
+### Internal
+
+- **voice:** harden the voice evals' live gate and deterministic coverage ([#1589](https://github.com/radioso-ai/radioso/pull/1589))
+- **voice:** eval cases for bridge timing, interruption and outcomes ([#1583](https://github.com/radioso-ai/radioso/pull/1583))
+
+### Database migrations
+
+This release adds 4 migrations. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `236_copilot_proposal_privacy_setting_target.sql`
+- `236_workspace_conversation_retention.sql`
+- `237_workspace_provider_credential_residency.sql`
+- `238_conversation_privacy_notice_version.sql`
+
+[1.20.0]: https://github.com/radioso-ai/radioso/compare/v1.19.0...v1.20.0
+
 ## [1.19.0] - 2026-10-19
 
 ### Added

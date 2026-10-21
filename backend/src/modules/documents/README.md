@@ -54,8 +54,10 @@ imports from `services/` or `infra/`.
   HTTP and operator-copilot callers.
 - `services/documentProcessingService.ts`: processing orchestration.
 - `domain/enrichment/generatedTagOwnership.ts`: who owns a metadata tag —
-  extraction or the operator, built-in `dateFrom`/`dateTo` included — and what
-  a new revision, an enrichment run, and a manual metadata write may do to it.
+  extraction or the operator, built-in `dateFrom`/`dateTo` included — what a
+  new revision projects onto its chunks, what an enrichment run and a manual
+  metadata write may do to a tag, and the provenance the document API
+  publishes.
   Processing and enrichment services call into it; they never decide tag
   ownership themselves.
 - `services/embeddingProfileJobService.ts`: resumable, generation-fenced

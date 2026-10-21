@@ -70,6 +70,11 @@ export interface DocumentEnrichmentStageInput<TChunk extends EnrichableChunk = E
    * run preserves.
    */
   previousProvenance?: DocumentEnrichmentProvenance | null;
+  /**
+   * Tags the document's source stamps on every chunk. Extraction never removes
+   * or overwrites them; dates among them keep the run from writing any date.
+   */
+  sourceMetadata?: Record<string, unknown>;
 }
 
 export interface DocumentEnrichmentStageResult<TChunk extends EnrichableChunk = EnrichableChunk> {
@@ -180,17 +185,22 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
         chunks: input.chunks,
         fields: validated.fields,
         previousGeneratedKeys: resolveExtractionOwnedKeys(input.previousProvenance),
+        sourceMetadata: input.sourceMetadata,
       });
 
       // Temporal strategies run only when the catalog matched that built-in;
       // a fallback (disabled or unknown type) must not write date tags even if
       // the model volunteered facts.
       const strategyShape = matched.type?.payload === "facts" ? normalizeDocumentShape(matched.key, parsed.confidence) : "generic";
-      const strategyResult = applyTemporalTagsWithOwnership(this.strategyRegistry.get(strategyShape), {
-        documentMetadata: applied.documentMetadata,
-        chunks: applied.chunks,
-        facts: parsed.facts,
-      });
+      const strategyResult = applyTemporalTagsWithOwnership(
+        this.strategyRegistry.get(strategyShape),
+        {
+          documentMetadata: applied.documentMetadata,
+          chunks: applied.chunks,
+          facts: parsed.facts,
+        },
+        input.sourceMetadata,
+      );
 
       const fieldCounts = {
         applied: applied.generatedKeys.length,

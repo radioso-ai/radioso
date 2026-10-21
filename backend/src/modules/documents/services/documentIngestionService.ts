@@ -37,7 +37,10 @@ import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./doc
 import { sanitizeInlineDocumentContent } from "./inlineDocumentContentSanitizer.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../domain/sourceConstants.js";
 import { resolveRetrievalEligibility } from "../domain/retrievalEligibility.js";
-import { relinquishGeneratedKeys } from "../domain/enrichment/generatedTagOwnership.js";
+import {
+  publishEnrichmentProvenance,
+  relinquishGeneratedKeys,
+} from "../domain/enrichment/generatedTagOwnership.js";
 import type { DocumentEnrichmentProvenance } from "../domain/enrichment/documentEnrichmentContract.js";
 import type {
   DocumentDetails,
@@ -855,7 +858,7 @@ export class DocumentIngestionService implements DocumentInventoryPort {
       sourceMimeType: document.sourceMimeType ?? null,
       contentSize: document.contentSize ?? document.contentSizeBytes ?? null,
       contentSizeBytes: document.contentSizeBytes ?? null,
-      enrichment: document.enrichment ?? null,
+      enrichment: publishEnrichmentProvenance(document.enrichment),
       retrievalEnabled: document.retrievalEnabled,
       retrievalExpiresAt: document.retrievalExpiresAt,
     };

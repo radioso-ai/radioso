@@ -4,14 +4,14 @@ import type {
 } from "../../../documentTypes/contracts/documentTypeCatalog.js";
 import type { EnrichableChunk } from "./chunkMetadataPatches.js";
 
-export type ExtractedFieldValue = string | number | boolean;
+type ExtractedFieldValue = string | number | boolean;
 
-export interface ExtractedField {
+interface ExtractedField {
   readonly key: string;
   readonly value: ExtractedFieldValue;
 }
 
-export interface ExtractedFieldDropCounts {
+interface ExtractedFieldDropCounts {
   droppedInvalid: number;
   droppedUndeclared: number;
   droppedDuplicate: number;
@@ -185,13 +185,16 @@ const omitKeys = (
  * Applies validated fields under the ownership rule: extraction owns exactly
  * the keys it generated for this document. The previous run's keys are removed
  * first, so a key still present afterwards is manually authored or
- * connector-supplied and is left alone.
+ * connector-supplied and is left alone. On chunks, a removed key falls back to
+ * the value the document's source stamps under it, the layer beneath the
+ * document's own tags in the chunk projection.
  */
 export const applyExtractedFields = <TChunk extends EnrichableChunk>(input: {
   documentMetadata: Record<string, unknown>;
   chunks: TChunk[];
   fields: readonly ExtractedField[];
   previousGeneratedKeys: readonly string[];
+  sourceMetadata?: Record<string, unknown>;
 }): {
   documentMetadata: Record<string, unknown>;
   chunks: TChunk[];
@@ -223,11 +226,14 @@ export const applyExtractedFields = <TChunk extends EnrichableChunk>(input: {
     };
   }
 
+  const sourceFallback = Object.fromEntries(
+    Object.entries(input.sourceMetadata ?? {}).filter(([key]) => owned.has(key)),
+  );
   // Document-level scalars propagate to every chunk, the same model the
   // built-in article shape uses.
   const chunks = input.chunks.map((chunk) => ({
     ...chunk,
-    metadata: { ...omitKeys(chunk.metadata ?? {}, owned), ...generated },
+    metadata: { ...omitKeys(chunk.metadata ?? {}, owned), ...sourceFallback, ...generated },
   }));
 
   return {

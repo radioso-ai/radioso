@@ -6,6 +6,7 @@ import { createDefaultDocumentEnrichmentStrategyRegistry } from "../../src/modul
 import {
   applyTemporalTagsWithOwnership,
   prepareRevisionTags,
+  publishEnrichmentProvenance,
   relinquishGeneratedKeys,
   resolveExtractionOwnedKeys,
   stripLegacyProvenanceTag,
@@ -65,14 +66,14 @@ describe("extraction-owned keys", () => {
 describe("tags on a new revision", () => {
   const metadata = { price: 10, dateFrom: "2026-01-01", dateTo: "2026-01-02", colour: "red" };
 
-  it("keeps every tag and the provenance when extraction runs on the revision", () => {
+  it("keeps every tag on the document but projects only operator tags onto chunks when extraction runs", () => {
     const result = prepareRevisionTags({
       metadata,
       provenance: provenance(["price", "dateFrom", "dateTo"]),
       extractionEnabled: true,
     });
 
-    expect(result).toEqual({ metadata, clearProvenance: false });
+    expect(result).toEqual({ documentMetadata: metadata, projectedMetadata: { colour: "red" }, clearProvenance: false });
   });
 
   it("clears only extraction-owned tags when extraction will not run on the revision", () => {
@@ -80,27 +81,30 @@ describe("tags on a new revision", () => {
       metadata,
       provenance: provenance(["price", "dateFrom", "dateTo"]),
       extractionEnabled: false,
-    })).toEqual({ metadata: { colour: "red" }, clearProvenance: true });
+    })).toEqual({ documentMetadata: { colour: "red" }, projectedMetadata: { colour: "red" }, clearProvenance: true });
 
+    const operatorDates = { dateFrom: "2026-01-01", dateTo: "2026-01-02", colour: "red" };
     expect(prepareRevisionTags({
       metadata,
       provenance: provenance(["price"]),
       extractionEnabled: false,
-    })).toEqual({ metadata: { dateFrom: "2026-01-01", dateTo: "2026-01-02", colour: "red" }, clearProvenance: true });
+    })).toEqual({ documentMetadata: operatorDates, projectedMetadata: operatorDates, clearProvenance: true });
   });
 
   it("keeps operator-written dates under unmarked provenance of a failed run", () => {
+    const dates = { dateFrom: "2026-01-01", dateTo: "2026-01-02" };
     expect(prepareRevisionTags({
-      metadata: { dateFrom: "2026-01-01", dateTo: "2026-01-02" },
+      metadata: dates,
       provenance: unmarkedEventRun({ status: "failed", appliedChunkCount: 0 }),
-      extractionEnabled: false,
-    })).toEqual({ metadata: { dateFrom: "2026-01-01", dateTo: "2026-01-02" }, clearProvenance: true });
+      extractionEnabled: true,
+    })).toEqual({ documentMetadata: dates, projectedMetadata: dates, clearProvenance: false });
   });
 
   it("leaves a never-enriched document untouched", () => {
     const result = prepareRevisionTags({ metadata, provenance: null, extractionEnabled: false });
 
-    expect(result.metadata).toBe(metadata);
+    expect(result.documentMetadata).toBe(metadata);
+    expect(result.projectedMetadata).toBe(metadata);
     expect(result.clearProvenance).toBe(false);
   });
 });
@@ -127,6 +131,7 @@ describe("temporal tags under ownership", () => {
     { id: "b", kind: "event_date" as const, label: "b", dateFrom: "2026-03-05", sourceRange: { start: 25, end: 30 } },
   ];
   const eventStrategy: DocumentEnrichmentStrategy = createDefaultDocumentEnrichmentStrategyRegistry().get("event");
+  const OPERATOR_SPAN = { dateFrom: "2026-03-01", dateTo: "2026-03-07" };
 
   it("writes no date anywhere when the operator dated the document, and counts the collision", () => {
     const result = applyTemporalTagsWithOwnership(eventStrategy, {
@@ -164,6 +169,39 @@ describe("temporal tags under ownership", () => {
     expect(result.chunks[1]?.metadata).toEqual({ dateFrom: "2026-03-05", dateTo: "2026-03-05" });
     expect(result.generatedKeys).toEqual(["dateFrom", "dateTo"]);
     expect(result.skippedCollision).toBe(0);
+  });
+
+  it("treats dates the source stamps on every chunk as the operator's", () => {
+    const sourceDated = chunks.map((chunk) => ({ ...chunk, metadata: { region: "eu", ...OPERATOR_SPAN } }));
+    const result = applyTemporalTagsWithOwnership(
+      eventStrategy,
+      { documentMetadata: { audience: "staff" }, chunks: sourceDated, facts },
+      { region: "eu", ...OPERATOR_SPAN },
+    );
+
+    expect(result.documentMetadata).toEqual({ audience: "staff" });
+    expect(result.chunks).toEqual(sourceDated);
+    expect(result.generatedKeys).toEqual([]);
+    expect(result.skippedCollision).toBe(2);
+  });
+
+  it("reads empty dates as absent", () => {
+    const result = applyTemporalTagsWithOwnership(
+      eventStrategy,
+      { documentMetadata: { dateFrom: "", dateTo: null }, chunks, facts },
+      { dateFrom: "  " },
+    );
+
+    expect(result.documentMetadata).toEqual({ dateFrom: "2026-03-02", dateTo: "2026-03-05" });
+    expect(result.generatedKeys).toEqual(["dateFrom", "dateTo"]);
+  });
+
+  it("keeps an empty date the operator wrote when the run reads none", () => {
+    const documentMetadata = { dateFrom: "", audience: "staff" };
+    const result = applyTemporalTagsWithOwnership(eventStrategy, { documentMetadata, chunks, facts: [] });
+
+    expect(result.documentMetadata).toBe(documentMetadata);
+    expect(result.generatedKeys).toEqual([]);
   });
 
   it("records nothing when the strategy found no resolved date", () => {
@@ -243,6 +281,68 @@ describe("manual edit relinquishment", () => {
       previousMetadata: { dateFrom: "2026-03-01", dateTo: "2026-03-07" },
       nextMetadata: { dateFrom: "2026-03-01", dateTo: "2026-03-07", colour: "red" },
     });
-    expect(unchangedDates).toBeUndefined();
+    expect(unchangedDates).toMatchObject({ generatedKeys: [], dateOwnershipRecorded: true });
+
+    const otherTagOnly = relinquishGeneratedKeys({
+      previousProvenance: unmarkedEventRun(),
+      previousMetadata: { dateFrom: "2026-03-01", dateTo: "2026-03-07" },
+      nextMetadata: { colour: "red", dateFrom: null },
+    });
+    expect(otherTagOnly).toMatchObject({ generatedKeys: [] });
+  });
+
+  it("hands unmarked dates to the operator when a write supplies either one, whatever its value", () => {
+    const result = relinquishGeneratedKeys({
+      previousProvenance: unmarkedEventRun({ generatedKeys: ["price"] }),
+      previousMetadata: { price: 10, dateFrom: "2026-03-01", dateTo: "2026-03-07" },
+      nextMetadata: { price: 10, dateFrom: "2026-03-01", dateTo: "2026-03-07" },
+    });
+
+    expect(result?.generatedKeys).toEqual(["price"]);
+  });
+
+  it("keeps marked date ownership when a write sends the same dates back", () => {
+    const result = relinquishGeneratedKeys({
+      previousProvenance: provenance(["dateFrom", "dateTo"]),
+      previousMetadata: { dateFrom: "2026-03-01", dateTo: "2026-03-07" },
+      nextMetadata: { dateFrom: "2026-03-01", dateTo: "2026-03-07", colour: "red" },
+    });
+
+    expect(result).toBeUndefined();
+  });
+
+  it("leaves unmarked provenance alone when it owns no dates to hand over", () => {
+    const result = relinquishGeneratedKeys({
+      previousProvenance: unmarkedEventRun({ shape: "generic", generatedKeys: ["price"] }),
+      previousMetadata: { price: 10 },
+      nextMetadata: { price: 10, dateFrom: "2026-03-01", dateTo: "2026-03-07" },
+    });
+
+    expect(result).toBeUndefined();
+  });
+});
+
+describe("published provenance", () => {
+  it("lists the keys extraction owns and keeps the ownership marker internal", () => {
+    expect(publishEnrichmentProvenance(provenance(["price", "dateFrom", "dateTo"]))).toEqual({
+      status: "applied",
+      matchedTypeKey: "product",
+      catalogRevision: "3",
+      generatedKeys: ["price", "dateFrom", "dateTo"],
+    });
+  });
+
+  it("publishes the dates unmarked provenance implies extraction owns", () => {
+    expect(publishEnrichmentProvenance(unmarkedEventRun())).toEqual({
+      ...unmarkedEventRun(),
+      generatedKeys: ["dateFrom", "dateTo"],
+    });
+  });
+
+  it("publishes provenance that owns nothing exactly as stored", () => {
+    const stored: DocumentEnrichmentProvenance = { status: "failed", failureReason: "provider_error" };
+
+    expect(publishEnrichmentProvenance(stored)).toEqual(stored);
+    expect(publishEnrichmentProvenance(null)).toBeNull();
   });
 });

@@ -261,20 +261,19 @@ export class DocumentProcessingService {
         provenance: toEnrichmentProvenance(documentWithContent.enrichment),
         extractionEnabled: enrichmentEnabled,
       });
-      const baseDocumentMetadata = revisionTags.metadata;
       // Source-level tags are a chunk-projection concern only: they are merged
       // into the chunk metadata below and never written back to
       // documents.metadata, so a source retag never rewrites its documents.
       const chunkMetadata = mergeDocumentMetadataForChunks(
         parseSourceDocumentMetadata(source?.config),
-        baseDocumentMetadata,
+        revisionTags.projectedMetadata,
       );
       if (revisionTags.clearProvenance) {
         const updatedDocument = await this.documentRepository.updateMetadataForRevision({
           documentId: documentWithContent.id,
           workspaceId: job.workspaceId,
           revision: job.documentRevision,
-          metadata: baseDocumentMetadata,
+          metadata: revisionTags.documentMetadata,
           enrichment: null,
         });
         if (!updatedDocument) {
@@ -467,6 +466,7 @@ export class DocumentProcessingService {
         // job that runs after a catalog edit sees the new catalog.
         const catalog = await this.documentTypeCatalogReader?.listEnabledTypes(job.workspaceId);
         const previousProvenance = toEnrichmentProvenance(document.enrichment);
+        const source = await this.findDocumentSource(document.sourceId ?? null, job.workspaceId);
         const result = await traceActiveSpan(
           "document.processing.enrichment",
           buildDocumentProcessingTraceAttributes(job, { stage: "enrichment" }),
@@ -489,6 +489,7 @@ export class DocumentProcessingService {
             },
             catalog,
             previousProvenance,
+            sourceMetadata: parseSourceDocumentMetadata(source?.config),
           }),
           (enrichment) => buildDocumentProcessingTraceAttributes(job, {
             stage: "enrichment",
@@ -526,9 +527,11 @@ export class DocumentProcessingService {
           return "stale";
         }
 
-        // Tags the run left alone because the operator or a connector set them,
-        // operator dates included: the reason a successful run can date no chunk.
-        const skippedCollisionCount = result.provenance.fieldCounts?.skippedCollision ?? 0;
+        // Tags the run left alone because the operator, a connector, or the
+        // source set them, dates included: the reason a successful run can date
+        // no chunk. A failed run carries the previous run's counts, not its own.
+        const skippedCollisionCount =
+          result.status === "applied" ? result.provenance.fieldCounts?.skippedCollision ?? 0 : 0;
         this.logger?.info(
           {
             role: "worker",
@@ -566,8 +569,8 @@ export class DocumentProcessingService {
     );
   }
 
-  // Fetches the document's source row once per job. Both source-level concerns
-  // — document tags and the enrichment override — read from it.
+  // Fetches the document's source row once per job. Its document tags and its
+  // enrichment override both read from it.
   private async findDocumentSource(
     sourceId: string | null,
     workspaceId: string,

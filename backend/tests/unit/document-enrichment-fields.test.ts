@@ -248,6 +248,20 @@ describe("extracted field ownership", () => {
     expect(result.generatedKeys).toEqual([]);
   });
 
+  it("hands a cleared key back to the value the source stamps on every chunk", () => {
+    const result = applyExtractedFields({
+      documentMetadata: { dateFrom: "2026-03-02", dateTo: "2026-03-06", price: 99 },
+      chunks: [chunk(0, { region: "eu", dateFrom: "2026-05-04", price: 99 })],
+      fields: [{ key: "price", value: 10 }],
+      previousGeneratedKeys: ["dateFrom", "dateTo", "price"],
+      sourceMetadata: { region: "eu", dateFrom: "2026-03-01", price: 5 },
+    });
+
+    expect(result.documentMetadata).toEqual({ price: 10 });
+    // The document's own tag still wins a key it shares with the source.
+    expect(result.chunks[0]?.metadata).toEqual({ region: "eu", dateFrom: "2026-03-01", price: 10 });
+  });
+
   it("leaves documents and chunks untouched when there is nothing to write or clean", () => {
     const chunks = [chunk(0, { source: "manual" })];
 

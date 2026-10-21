@@ -70,9 +70,9 @@ Extraction owns exactly the tags it generated, and nothing else. A tag you typed
 
 Editing a generated tag by hand hands you ownership of it permanently. From that point extraction leaves the key alone — it neither overwrites nor removes it — so a hand-corrected price stays corrected through every later run.
 
-A successful run replaces the previous run's generated tags in one step: the old keys come off, the new ones go on. That is how a field you delete from a type disappears from your documents on their next reprocess. A run that fails leaves every existing tag standing and records only the failure, so a bad model call never costs you the tags you already had. A document that processes again with extraction off loses its generated tags, because nothing will refresh them against the new content; the tags you or a connector wrote stay.
+A successful run replaces the previous run's generated tags in one step: the old keys come off, the new ones go on. That is how a field you delete from a type disappears from your documents on their next reprocess. A run that fails leaves every existing tag on the document standing and records only the failure, so a bad model call never costs you the tags you already had. When the content changed, the document's new passages wait for a run that succeeds before they carry generated tags again. A document that processes again with extraction off loses its generated tags, because nothing will refresh them against the new content; the tags you or a connector wrote stay.
 
-The built-in `dateFrom` and `dateTo` tags follow the same rule, as a pair. Dates you type, send through the API, or get from a connector stay on the document and on every passage through each reprocess and every run, whatever the model reads, and the run counts them as collisions. Dates extraction wrote are extraction's to refresh; change either one by hand and both become yours.
+The built-in `dateFrom` and `dateTo` tags follow the same rule, as a pair. Dates you type, send through the API, get from a connector, or set in a source's document tags stay on every passage through each reprocess and every run, whatever the model reads, and the run counts them as collisions. An empty date counts as no date. Dates extraction wrote are extraction's to refresh; change either one by hand and both become yours.
 
 ### Control Levels
 

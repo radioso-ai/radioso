@@ -12,9 +12,9 @@ export interface DocumentEnrichmentStrategyInput<TChunk extends EnrichableChunk 
   facts: TemporalFact[];
   /**
    * Facts the run dropped before placing these: invalid, or quoting text the
-   * document does not contain. Omitted means unknown, and is read as "some".
+   * document does not contain. A date spreads past its own chunks only when 0.
    */
-  droppedFactCount?: number;
+  droppedFactCount: number;
 }
 
 export interface DocumentEnrichmentStrategyResult<TChunk extends EnrichableChunk = EnrichableChunk> {
@@ -73,7 +73,7 @@ const sharedRange = (facts: TemporalFact[]): DateRange | null => {
 const eventChunkPatches = (
   chunks: EnrichableChunk[],
   facts: TemporalFact[],
-  droppedFactCount: number | undefined,
+  droppedFactCount: number,
 ): ChunkMetadataPatch[] => {
   const patches = buildChunkMetadataPatches(chunks, facts);
   const complete = droppedFactCount === 0 && facts.every((fact) => Boolean(fact.dateFrom));

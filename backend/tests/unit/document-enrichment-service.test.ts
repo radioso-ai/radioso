@@ -81,7 +81,7 @@ describe("DocumentEnrichmentService", () => {
     expect(requests[0]?.retry).toBeUndefined();
     expect(requests[0]?.outputSchema).toMatchObject({ type: "object", additionalProperties: false });
     expect(result.status).toBe("applied");
-    expect(result.attemptCount).toBe(1);
+    expect(result).toMatchObject({ modelAttemptCount: 1, droppedFactCount: 0, firstAttemptFailureReason: null });
     expect(result.provenance).toMatchObject({ shape: "event", status: "applied", model: "gpt-5.4-mini", droppedFactCount: 0 });
     expect(result.documentMetadata).toMatchObject({ dateFrom: "2026-07-17", dateTo: "2026-07-19" });
     expect(result.chunks.map((chunk) => chunk.metadata)).toEqual([
@@ -119,7 +119,7 @@ describe("DocumentEnrichmentService", () => {
     const result = await serviceWith(gateway).enrich(workshopInput());
 
     expect(result.status).toBe("applied");
-    expect(result.factCount).toBe(1);
+    expect(result).toMatchObject({ factCount: 1, droppedFactCount: 1 });
     expect(result.provenance).toMatchObject({ factCount: 1, droppedFactCount: 1, failureReason: null });
     expect(result.documentMetadata).toMatchObject({ dateFrom: "2026-07-17", dateTo: "2026-07-19" });
   });
@@ -160,6 +160,7 @@ describe("DocumentEnrichmentService", () => {
       output: eventOutput([
         workshopFact({ quote: "Summer workshop", dateFrom: "2026-02-31" }),
         workshopFact({ quote: "Dates", dateFrom: "2026-07-20", dateTo: "2026-07-19" }),
+        // Neither a date nor unresolved text: the model saying "nothing here", ignored uncounted.
         workshopFact({ quote: "Dates", dateFrom: null, unresolvedText: null }),
         workshopFact(),
       ]),
@@ -168,7 +169,7 @@ describe("DocumentEnrichmentService", () => {
     const result = await serviceWith(gateway).enrich(workshopInput());
 
     expect(result.status).toBe("applied");
-    expect(result.provenance).toMatchObject({ factCount: 1, droppedFactCount: 3 });
+    expect(result.provenance).toMatchObject({ factCount: 1, droppedFactCount: 2 });
     expect(result.documentMetadata).toMatchObject({ dateFrom: "2026-07-17", dateTo: "2026-07-19" });
   });
 
@@ -191,14 +192,75 @@ describe("DocumentEnrichmentService", () => {
   });
 
   it("does not place a fact quoted from the created-at line of the representation", async () => {
-    const { gateway } = scriptedGateway([{
+    const createdAtQuote = {
       output: { type: "article", confidence: 0.9, facts: [workshopFact({ kind: "article_date", quote: "2026-07-01T00:00:00.000Z", dateFrom: "2026-07-01", dateTo: null })] },
-    }]);
+    };
+    const { gateway } = scriptedGateway([createdAtQuote, createdAtQuote]);
 
     const result = await serviceWith(gateway).enrich(workshopInput());
 
-    expect(result.provenance).toMatchObject({ status: "applied", factCount: 0, droppedFactCount: 1 });
+    expect(result.provenance).toMatchObject({ status: "failed", failureReason: "invalid_output: no_usable_facts" });
     expect(result.documentMetadata).not.toHaveProperty("dateFrom");
+  });
+
+  const previouslyDated = () => ({
+    ...workshopInput(),
+    document: { ...workshopInput().document, metadata: { dateFrom: "2026-07-17", dateTo: "2026-07-19", audience: "staff" } },
+    previousProvenance: {
+      status: "applied" as const,
+      shape: "event" as const,
+      matchedTypeKey: "event",
+      generatedKeys: ["dateFrom", "dateTo"],
+      dateOwnershipRecorded: true,
+    },
+  });
+
+  it("asks again when a dated reply has facts but none it can use, then fails without touching tags", async () => {
+    const unplaceable = { output: eventOutput([workshopFact({ quote: "August 3, 2026" }), workshopFact({ dateFrom: "2026-02-30" })]) };
+    const { gateway, requests } = scriptedGateway([unplaceable, unplaceable]);
+
+    const result = await serviceWith(gateway).enrich(previouslyDated());
+
+    expect(requests.map((request) => request.retry)).toEqual([undefined, { after: "unreadable" }]);
+    expect(result).toMatchObject({ status: "failed", modelAttemptCount: 2, firstAttemptFailureReason: "invalid_output: no_usable_facts" });
+    expect(result.provenance.failureReason).toBe("invalid_output: no_usable_facts");
+    expect(result.documentMetadata).toEqual({ dateFrom: "2026-07-17", dateTo: "2026-07-19", audience: "staff" });
+    expect(result.provenance.generatedKeys).toEqual(["dateFrom", "dateTo"]);
+  });
+
+  it("applies the retry when it brings a fact it can use", async () => {
+    const { gateway } = scriptedGateway([
+      { output: eventOutput([workshopFact({ quote: "August 3, 2026" })]) },
+      { output: eventOutput([workshopFact()]) },
+    ]);
+
+    const result = await serviceWith(gateway).enrich(previouslyDated());
+
+    expect(result).toMatchObject({ status: "applied", modelAttemptCount: 2, droppedFactCount: 0 });
+    expect(result.firstAttemptFailureReason).toBe("invalid_output: no_usable_facts");
+  });
+
+  it("asks again when the facts are prose instead of a list", async () => {
+    const { gateway, requests } = scriptedGateway([
+      { output: { type: "event", confidence: 0.9, facts: "Dates: July 17-19, 2026." } },
+      { output: eventOutput([workshopFact()]) },
+    ]);
+
+    const result = await serviceWith(gateway).enrich(workshopInput());
+
+    expect(requests).toHaveLength(2);
+    expect(result).toMatchObject({ status: "applied", firstAttemptFailureReason: "invalid_output: no_usable_facts" });
+  });
+
+  it("applies a reply for a type that writes no dates even when its stray facts cannot be placed", async () => {
+    const { gateway, requests } = scriptedGateway([
+      { output: { type: "profile", confidence: 0.9, facts: [workshopFact({ quote: "August 3, 2026" })] } },
+    ]);
+
+    const result = await serviceWith(gateway).enrich(workshopInput());
+
+    expect(requests).toHaveLength(1);
+    expect(result).toMatchObject({ status: "applied", droppedFactCount: 1 });
   });
 
   it("asks once more after an unreadable reply and applies the second", async () => {
@@ -212,7 +274,7 @@ describe("DocumentEnrichmentService", () => {
     expect(requests).toHaveLength(2);
     expect(requests[1]?.retry).toEqual({ after: "unreadable" });
     expect(result.status).toBe("applied");
-    expect(result.attemptCount).toBe(2);
+    expect(result).toMatchObject({ modelAttemptCount: 2, firstAttemptFailureReason: "invalid_output: empty" });
   });
 
   it("tells the retry that the first reply was cut off at the output limit", async () => {
@@ -229,15 +291,15 @@ describe("DocumentEnrichmentService", () => {
   it("retries a reply that does not match the output schema, then fails with a content-free reason", async () => {
     const { gateway, requests } = scriptedGateway([
       { output: ["not", "an", "object"] },
-      { output: { type: "event", confidence: 0.9, facts: "Dates: July 17-19, 2026." } },
+      { output: "Dates: July 17-19, 2026." },
     ]);
 
     const result = await serviceWith(gateway).enrich(workshopInput());
 
     expect(requests).toHaveLength(2);
     expect(result.status).toBe("failed");
-    expect(result.attemptCount).toBe(2);
-    expect(result.provenance.failureReason).toBe("invalid_output: facts");
+    expect(result).toMatchObject({ modelAttemptCount: 2, firstAttemptFailureReason: "invalid_output: root" });
+    expect(result.provenance.failureReason).toBe("invalid_output: root");
     expect(result.provenance.failureReason).not.toContain("July");
   });
 
@@ -256,29 +318,16 @@ describe("DocumentEnrichmentService", () => {
     expect(result.documentMetadata).toEqual({});
   });
 
-  it("retries a transient provider error once", async () => {
+  it("leaves provider errors to the adapter's own retries and fails without asking again", async () => {
     const { gateway, requests } = scriptedGateway([
-      { error: new EnrichmentProviderError({ retryable: true }) },
-      { output: eventOutput([workshopFact()]) },
-    ]);
-
-    const result = await serviceWith(gateway).enrich(workshopInput());
-
-    expect(requests[1]?.retry).toEqual({ after: "provider_error" });
-    expect(result.status).toBe("applied");
-  });
-
-  it("fails at once on a provider error that will not change on retry", async () => {
-    const { gateway, requests } = scriptedGateway([
-      { error: new EnrichmentProviderError({ retryable: false }) },
+      { error: new EnrichmentProviderError({ cause: new Error("503") }) },
       { output: eventOutput([workshopFact()]) },
     ]);
 
     const result = await serviceWith(gateway).enrich(workshopInput());
 
     expect(requests).toHaveLength(1);
-    expect(result.status).toBe("failed");
-    expect(result.attemptCount).toBe(1);
+    expect(result).toMatchObject({ status: "failed", modelAttemptCount: 1, firstAttemptFailureReason: null });
     expect(result.provenance.failureReason).toBe("provider_error");
   });
 
@@ -304,7 +353,7 @@ describe("DocumentEnrichmentService", () => {
     });
 
     expect(generate).not.toHaveBeenCalled();
-    expect(result.attemptCount).toBe(0);
+    expect(result.modelAttemptCount).toBe(0);
     expect(result.provenance.failureReason).toBe("catalog_over_budget");
   });
 });

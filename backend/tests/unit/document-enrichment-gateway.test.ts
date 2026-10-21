@@ -117,7 +117,7 @@ describe("ModelDocumentEnrichmentGateway", () => {
     expect(await reasonOf(new ModelDocumentEnrichmentGateway(pipeline).generate(request()))).toBe("truncated");
   });
 
-  it("retries with less deliberation, and the same output cap, after a reply cut off at the limit", async () => {
+  it("retries a reply cut off at the limit with twice the output cap and less deliberation, and repeats any other", async () => {
     const { pipeline, requests } = scriptedPipeline([{ text: VALID_REPLY }, { text: VALID_REPLY }]);
     const gateway = new ModelDocumentEnrichmentGateway(pipeline);
 
@@ -126,16 +126,17 @@ describe("ModelDocumentEnrichmentGateway", () => {
 
     expect(requests[0]).toMatchObject({
       reasoningEffort: "minimal",
-      maxOutputTokens: 2_000,
+      maxOutputTokens: 4_000,
       operation: expect.objectContaining({ attemptKey: "document-enrichment:doc-1:11:retry" }),
     });
     expect(requests[1]).toMatchObject({
       reasoningEffort: "low",
+      maxOutputTokens: 2_000,
       operation: expect.objectContaining({ attemptKey: "document-enrichment:doc-1:11:retry" }),
     });
   });
 
-  it("marks transport failures retryable only when a retry can change the outcome", async () => {
+  it("reports every transport failure as a content-free provider error", async () => {
     const { pipeline } = scriptedPipeline([
       { error: new ProviderHttpError({ provider: "OpenAI", operation: "chat", status: 429 }) },
       { error: new ProviderHttpError({ provider: "OpenAI", operation: "chat", status: 503 }) },
@@ -146,14 +147,11 @@ describe("ModelDocumentEnrichmentGateway", () => {
     ]);
     const gateway = new ModelDocumentEnrichmentGateway(pipeline);
 
-    const retryable: boolean[] = [];
     for (let index = 0; index < 6; index += 1) {
       const error = await gateway.generate(request()).catch((caught: unknown) => caught);
       expect(error).toBeInstanceOf(EnrichmentProviderError);
-      retryable.push((error as EnrichmentProviderError).retryable);
+      expect((error as Error).message).toBe("enrichment_provider_error");
     }
-
-    expect(retryable).toEqual([true, true, true, false, false, false]);
   });
 });
 
@@ -192,7 +190,7 @@ describe("enrichment through the model gateway", () => {
     const result = await enrich(pipeline);
 
     expect(requests).toHaveLength(2);
-    expect(result).toMatchObject({ status: "applied", attemptCount: 2 });
+    expect(result).toMatchObject({ status: "applied", modelAttemptCount: 2, firstAttemptFailureReason: "invalid_output: empty" });
   });
 
   it("never applies an empty envelope cut off at the limit, so earlier extracted dates are not cleared", async () => {
@@ -203,8 +201,8 @@ describe("enrichment through the model gateway", () => {
 
     const result = await enrich(pipeline);
 
-    expect(requests.map((entry) => entry.reasoningEffort)).toEqual(["low", "minimal"]);
-    expect(result).toMatchObject({ status: "failed", attemptCount: 2 });
+    expect(requests.map((entry) => [entry.reasoningEffort, entry.maxOutputTokens])).toEqual([["low", 2_000], ["minimal", 4_000]]);
+    expect(result).toMatchObject({ status: "failed", modelAttemptCount: 2, firstAttemptFailureReason: "invalid_output: truncated" });
     expect(result.provenance.failureReason).toBe("invalid_output: truncated");
   });
 

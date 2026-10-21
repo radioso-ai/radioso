@@ -129,16 +129,17 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       anchorDate: z.string().nullable().optional(),
       anchorSource: z.enum(["source_last_sync", "document_created_at"]).nullable().optional(),
       factCount: z.number().int().min(0).optional().openapi({
-        description: "Dated facts the run placed in the document: in its body, or in its title.",
+        description:
+          "Temporal facts from the model's reply that the run placed by their quoted text, in the body or the title. Includes facts whose relative date stayed unresolved, and facts on a document whose matched type writes no dates; only `event` and `article` turn facts into `dateFrom` and `dateTo`.",
       }),
       droppedFactCount: z.number().int().min(0).optional().openapi({
         description:
-          "Dated facts the model returned that the run dropped: invalid ones, and ones quoting text that is in neither the body nor the title. A dropped fact never fails the run.",
+          "Temporal facts from the model's reply that the run could not use: invalid ones, ones quoting text that is in neither the body nor the title, and a facts payload that is not a list, which counts as one. Facts with neither a date nor unresolved text are ignored and not counted. Dropping some facts never fails the run; a reply for `event` or `article` whose every fact is dropped fails as `invalid_output: no_usable_facts`.",
       }),
       appliedChunkCount: z.number().int().min(0).optional(),
       failureReason: z.string().nullable().optional().openapi({
         description:
-          "Content-free reason a run failed, such as `invalid_output: truncated` (the reply was cut off at the output limit), `invalid_output: not_json`, `invalid_output: empty`, `provider_error`, or `catalog_over_budget`.",
+          "Content-free reason a run failed. `invalid_output: truncated`: the reply was cut off at the output limit. `invalid_output: not_json` or `invalid_output: empty`: the reply was not JSON. `invalid_output: no_usable_facts`: a dated reply whose facts were all dropped. `invalid_output: <paths>`: the reply did not match the expected shape at these comma-separated field paths, such as `invalid_output: root`. `provider_error`: the model call itself failed. `catalog_over_budget`: the catalog renders past its prompt budget.",
       }),
       matchedTypeKey: z.string().nullable().optional().openapi({
         description:

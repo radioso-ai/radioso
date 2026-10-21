@@ -152,6 +152,34 @@ describe("locating extracted facts from quoted text", () => {
     expect(rangeText(body, located.facts[0]?.sourceRange)).toBe("12月7日");
   });
 
+  it("lets a Korean particle follow a quoted date", () => {
+    const body = "강좌는 2026년 12월 7일에 열립니다.";
+
+    const located = locateQuotedFacts({ facts: [fact("12월 7일", "2026-12-07")], body, title: "강좌" });
+
+    expect(rangeText(body, located.facts[0]?.sourceRange)).toBe("12월 7일");
+  });
+
+  it("still matches whole numbers next to Korean text", () => {
+    const located = locateQuotedFacts({ facts: [fact("2월 7일", "2026-02-07")], body: "12월 7일에 열립니다.", title: "강좌" });
+
+    expect(located.unplacedCount).toBe(1);
+  });
+
+  it("matches through invisible format characters, keeping offsets in the original text", () => {
+    const body = "﻿Programma\n\nSabato 12 dicem­bre​ 2026 — Lune⁠dì 14 dicembre";
+
+    const located = locateQuotedFacts({
+      facts: [fact("Sabato 12 dicembre 2026"), fact("Lunedì 14 dicembre", "2026-12-14"), fact("Programma", "2026-12-12")],
+      body,
+      title: "Corso",
+    });
+
+    expect(rangeText(body, located.facts[0]?.sourceRange)).toBe("Sabato 12 dicem­bre​ 2026");
+    expect(rangeText(body, located.facts[1]?.sourceRange)).toBe("Lune⁠dì 14 dicembre");
+    expect(located.facts[2]?.sourceRange).toEqual({ start: 1, end: 10 });
+  });
+
   it("matches a quote that spans a line break as a single space", () => {
     const body = "Arrivo lunedì 2 agosto\n2027 dopo le 15:00.";
 

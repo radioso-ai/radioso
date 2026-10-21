@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { holdsValue } from "./metadataTags.js";
+
 export const documentShapes = ["event", "article", "profile", "reference", "generic"] as const;
 export type DocumentShape = (typeof documentShapes)[number];
 
@@ -148,9 +150,9 @@ const documentEnrichmentEnvelopeSchema = z.preprocess(withEnvelopeAliases, z.obj
     (value) => (typeof value === "number" && Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0.5),
     z.number().min(0).max(1),
   ),
-  // Kept as raw entries and validated one at a time below: one bad fact must
-  // cost only itself, never the document.
-  facts: z.preprocess((value) => value ?? [], z.array(z.unknown())),
+  // Read and validated one at a time below: one bad fact, or a facts payload
+  // that is not a list, costs only the facts, never the document.
+  facts: z.unknown(),
   typeKey: z.preprocess((value) => (typeof value === "string" ? value : ""), z.string()),
   // Kept as raw entries: every drop is counted in stage 2, so rejecting a
   // malformed entry here would fail a document that should merely lose a tag.
@@ -163,7 +165,10 @@ export interface DocumentEnrichmentOutput {
   shape: DocumentShape;
   confidence: number;
   facts: QuotedTemporalFact[];
-  /** Facts the model returned that failed validation and were dropped. */
+  /**
+   * Facts the model returned that failed validation and were dropped; a facts
+   * payload that is not a list counts as one.
+   */
   invalidFactCount: number;
   /** The raw type key from the envelope; "" when the model named none. */
   typeKey: string;
@@ -175,18 +180,55 @@ export interface DocumentEnrichmentOutput {
  * an enrichment envelope at all; a fact that fails validation is dropped and
  * counted instead, so it never fails the run.
  */
+/**
+ * The reply's facts as a list. Absent or empty means none; a JSON-encoded list
+ * is read as the list; anything else is a payload that could not be read.
+ */
+const readFactList = (value: unknown): { entries: unknown[]; unreadable: boolean } => {
+  if (value === undefined || value === null || value === "") {
+    return { entries: [], unreadable: false };
+  }
+  if (Array.isArray(value)) {
+    return { entries: value, unreadable: false };
+  }
+  if (typeof value === "string") {
+    try {
+      const decoded: unknown = JSON.parse(value);
+      if (Array.isArray(decoded)) {
+        return { entries: decoded, unreadable: false };
+      }
+    } catch {
+      // Prose rather than a list: unreadable, like any other non-list.
+    }
+  }
+  return { entries: [], unreadable: true };
+};
+
+// Neither a date nor unresolved text is the model saying "nothing here"
+// badly: ignored, and not counted as a dropped fact.
+const isDegenerateFact = (value: unknown): boolean => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return false;
+  }
+  const fact = value as Record<string, unknown>;
+  return !holdsValue(fact, "dateFrom") && !holdsValue(fact, "unresolvedText");
+};
+
 export const parseDocumentEnrichmentOutput = (value: unknown): DocumentEnrichmentOutput => {
   const envelope = documentEnrichmentEnvelopeSchema.parse(value) as unknown as Omit<DocumentEnrichmentOutput, "facts" | "invalidFactCount"> & {
-    facts: unknown[];
+    facts: unknown;
   };
+  const list = readFactList(envelope.facts);
+  const candidates = list.entries.filter((candidate) => !isDegenerateFact(candidate));
   const facts: QuotedTemporalFact[] = [];
-  for (const candidate of envelope.facts) {
+  for (const candidate of candidates) {
     const parsed = quotedTemporalFactSchema.safeParse(candidate);
     if (parsed.success) {
       facts.push(parsed.data);
     }
   }
-  return { ...envelope, facts, invalidFactCount: envelope.facts.length - facts.length };
+  const invalidFactCount = candidates.length - facts.length + (list.unreadable ? 1 : 0);
+  return { ...envelope, facts, invalidFactCount };
 };
 
 export const MIN_DOCUMENT_TYPE_CONFIDENCE = 0.5;

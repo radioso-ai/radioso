@@ -283,7 +283,7 @@ describe("candidate preparation stage", () => {
     expect(unboosted.scoredCandidates[0]?.attributeMatchScore).toBe(0);
   });
 
-  it("boosts the events in a requested range instead of every upcoming event", async () => {
+  it("boosts the events in a requested range instead of every upcoming event, whatever the temporal mode", async () => {
     const stage = new CandidatePreparationStageService(
       new CandidatePreparationService(),
       new MetadataRuleScoringService(),
@@ -307,7 +307,7 @@ describe("candidate preparation stage", () => {
         metadataRules: [],
         temporalBoostUpcomingEnabled: true,
       },
-      temporalQueryMode: "topic_refinement",
+      temporalQueryMode: "none",
       temporalDateRange: { dateFrom: "2026-12-07", dateTo: "2026-12-13" },
     });
 

@@ -202,7 +202,7 @@ export class ActivityTraceAssembler {
     const temporalQueryMode = prompt.temporalQueryMode ?? "none";
     const temporalStructuredLookupEnabled = prompt.temporalStructuredLookupEnabled ?? true;
     const temporalDateRange = prompt.temporalDateRange;
-    const temporalStage = temporalQueryMode !== "none" || temporalContexts.length > 0
+    const temporalStage = temporalQueryMode !== "none" || temporalContexts.length > 0 || temporalDateRange !== undefined
       ? buildStage("temporal", "temporal_retrieval", "Temporal retrieval", temporalStructuredLookupEnabled ? "applied" : "skipped", timings.semanticRetrieval, {
           settings: {
             temporalStructuredLookupEnabled,
@@ -210,6 +210,7 @@ export class ActivityTraceAssembler {
           },
           inputs: {
             dateRange: temporalDateRange ?? null,
+            lookupRanking: prompt.temporalLookupRanking ?? null,
           },
           outputs: {
             candidateCount: temporalContexts.length,

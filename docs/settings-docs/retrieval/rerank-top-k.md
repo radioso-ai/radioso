@@ -23,7 +23,7 @@ This setting determines the size of the shortlist that reranking evaluates.
 
 So this setting does not directly set the number of citations in the final answer. It controls how much retrieved evidence reranking gets to judge before the final prompt is assembled.
 
-The system never keeps fewer than 12 candidates (the final context target), and never more than 50: a value below 12 acts as 12, and a value above 50 is capped at 50. This prevents a very low rerank value from accidentally limiting broad answers to only a few sources. Whatever this setting is set to, the answer itself still only ever uses up to 12 passages, at most 2 per document, each cut to 900 characters — `Rerank Top K` controls the shortlist reranking judges, not how much of it survives into the prompt. One case raises both limits: when temporal structured lookup finds more than 12 passages in the period a listing question names, such as a busy week of events, the shortlist and the answer hold one per passage found, up to 20.
+The system never keeps fewer than 12 candidates (the final context target), and never more than 50: a value below 12 acts as 12, and a value above 50 is capped at 50. This prevents a very low rerank value from accidentally limiting broad answers to only a few sources. Whatever this setting is set to, the answer itself still only ever uses up to 12 passages, at most 2 per document, each cut to 900 characters — `Rerank Top K` controls the shortlist reranking judges, not how much of it survives into the prompt. One case raises both limits: when temporal structured lookup finds more than 12 passages in the period a question names, such as a busy week of events, the shortlist and the answer hold one per passage found, up to 20.
 
 ### Lower Values
 

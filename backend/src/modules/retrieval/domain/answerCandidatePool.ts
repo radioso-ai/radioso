@@ -31,8 +31,11 @@ export const answerCandidatePoolSize = (
   );
 
 /**
- * How many passages a requested-range lookup fetches: as many as the largest date listing pool
- * can use. The lookup's passages lead a listing's pool, so any passage past it is never read.
+ * How many passages a requested-range lookup fetches: `temporal.dateRangeLookupDepth`, or more
+ * when an operator-raised rerank top K gives the answer pool room for more.
  */
 export const dateRangeLookupDepth = (rerankTopK: number): number =>
-  answerCandidatePoolSize(rerankTopK, RETRIEVAL_BEHAVIOR.temporal.dateRangeListingContextTopK);
+  Math.max(
+    RETRIEVAL_BEHAVIOR.temporal.dateRangeLookupDepth,
+    answerCandidatePoolSize(rerankTopK, RETRIEVAL_BEHAVIOR.temporal.dateRangeListingContextTopK),
+  );

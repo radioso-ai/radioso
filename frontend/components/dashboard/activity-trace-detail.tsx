@@ -546,6 +546,7 @@ function SpecializedStageOverview({ stage }: { stage: ActivityStage }) {
               { label: 'Structured lookup', value: settings.temporalStructuredLookupEnabled as boolean | undefined },
               { label: 'Temporal mode', value: settings.temporalQueryMode as string | undefined },
               { label: 'Requested dates', value: formatDateRange(inputs.dateRange) },
+              { label: 'Ranked by', value: asString(inputs.lookupRanking) },
               { label: 'Candidate count', value: metrics.candidateCount as number | undefined },
             ]}
           />

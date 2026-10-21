@@ -106,6 +106,9 @@ export type SemanticRetrievalFailureReason =
 // three-valued availability; these channels are simply present or absent.
 export type DegradableRetrievalChannel = "lexical" | "temporal";
 
+// `similarity` when the question's embedding ranked the range's chunks, `date` without one.
+export type TemporalLookupRanking = "similarity" | "date";
+
 export const DEGRADABLE_RETRIEVAL_CHANNELS: readonly DegradableRetrievalChannel[] = [
   "lexical",
   "temporal",
@@ -126,10 +129,12 @@ export interface CandidateRetrievalStageResult extends QueryInterpretationStageR
   temporalContexts?: RetrievedChunk[];
   temporalQueryMode?: TemporalQueryMode;
   /**
-   * The validated range a temporal question asks about. Present only when the turn has a
-   * temporal mode: a listing question looks it up, and both modes rank and order by it.
+   * The validated range the question names, whatever the rewrite labelled it. The structured
+   * lookup reads it, and boosting and prompt ordering rank by it.
    */
   temporalDateRange?: RequestedDateRange;
+  /** How the range lookup ordered its chunks; present only when a range lookup ran. */
+  temporalLookupRanking?: TemporalLookupRanking;
   temporalStructuredLookupEnabled?: boolean;
   retrievalBranches: RetrievalBranchResult[];
   vectorFallbackApplied: boolean;
@@ -248,6 +253,7 @@ type TraceCandidateRetrievalInput = TraceQueryInterpretationInput & {
   temporalContexts?: Array<unknown>;
   temporalQueryMode?: TemporalQueryMode;
   temporalDateRange?: RequestedDateRange;
+  temporalLookupRanking?: TemporalLookupRanking;
   temporalStructuredLookupEnabled?: boolean;
   retrievalBranches?: Array<unknown>;
   activeRetrievalSubqueries?: Array<unknown>;
@@ -371,6 +377,7 @@ export const buildCandidateRetrievalTraceAttributes = (result: TraceCandidateRet
     "retrieval.temporal.date_range.days": result.temporalDateRange
       ? requestedDateRangeDays(result.temporalDateRange)
       : undefined,
+    "retrieval.temporal.lookup_ranking": result.temporalLookupRanking,
     "retrieval.branch.count": boundedTraceCount(result.retrievalBranches?.length),
     "retrieval.subquery.count": boundedTraceCount(result.activeRetrievalSubqueries?.length),
     "retrieval.vector_fallback.applied": result.vectorFallbackApplied,

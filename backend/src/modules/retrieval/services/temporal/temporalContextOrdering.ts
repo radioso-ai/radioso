@@ -105,14 +105,18 @@ const contextDateSpan = (metadata: Record<string, unknown> | undefined): { dateF
   return dates.length === 0 ? {} : { dateFrom: dates[0], dateTo: dates[dates.length - 1] };
 };
 
+// A requested range orders the prompt whatever the rewrite labelled the question; without one,
+// only an event date lookup with a temporal mode is ordered by date.
 const shouldApplyTemporalOrdering = (input: {
   enabled: boolean;
   queryShape?: RetrievalQueryShape;
   temporalQueryMode?: TemporalQueryMode;
+  dateRange?: RequestedDateRange;
 }): boolean =>
-  input.enabled &&
-  input.queryShape === "event_date_lookup" &&
-  (input.temporalQueryMode ?? "none") !== "none";
+  input.enabled && (
+    input.dateRange !== undefined
+    || (input.queryShape === "event_date_lookup" && (input.temporalQueryMode ?? "none") !== "none")
+  );
 
 const normalizeIsoDate = (value: unknown): string | undefined => {
   if (typeof value !== "string") {

@@ -396,12 +396,13 @@ describe("retrieval pipeline stages", () => {
         ...overrides,
       },
     });
+    const questionVector = [0.1, 0.2, 0.3];
     const recordingStage = () => {
       const calls: Parameters<TemporalCandidateRetrievalPort["findInWindow"]>[0][] = [];
       const stage = new CandidateRetrievalStageService(
         {
           async embedQueries() {
-            return { space: embeddingSpace, vectors: [[0.1, 0.2]] };
+            return { space: embeddingSpace, vectors: [questionVector] };
           },
         },
         { async search() { return []; } },
@@ -418,7 +419,7 @@ describe("retrieval pipeline stages", () => {
       return { stage, calls };
     };
 
-    it("looks up the events overlapping the range a listing question names, as deep as a date listing's answer pool", async () => {
+    it("looks up the events overlapping the range a question names, ranked by similarity to it, as deep as a busy week", async () => {
       const { stage, calls } = recordingStage();
 
       const result = await stage.execute({
@@ -429,17 +430,23 @@ describe("retrieval pipeline stages", () => {
       expect(calls).toEqual([
         {
           workspaceId: "workspace-1",
-          window: { kind: "requested_range", range: week },
-          topK: 20,
+          window: {
+            kind: "requested_range",
+            range: week,
+            similarTo: { space: embeddingSpace, queryVector: questionVector },
+          },
+          topK: RETRIEVAL_BEHAVIOR.temporal.dateRangeLookupDepth,
           metadataFilter: undefined,
           sourceFilter: undefined,
         },
       ]);
       expect(result.temporalDateRange).toEqual(week);
+      expect(result.temporalLookupRanking).toBe("similarity");
       expect(buildCandidateRetrievalTraceAttributes(result)).toMatchObject({
         "retrieval.temporal.mode": "listing",
         "retrieval.temporal.date_range.requested": true,
         "retrieval.temporal.date_range.days": 7,
+        "retrieval.temporal.lookup_ranking": "similarity",
       });
     });
 
@@ -448,24 +455,81 @@ describe("retrieval pipeline stages", () => {
 
       await stage.execute({
         ...baseCandidateRetrievalInput(),
-        settings: { ...baseCandidateRetrievalInput().settings, rerankTopK: 40 },
+        settings: { ...baseCandidateRetrievalInput().settings, rerankTopK: 45 },
         rewrittenQuery: temporalRewrite({}),
       });
 
-      expect(calls[0]?.topK).toBe(40);
+      expect(calls[0]?.topK).toBe(45);
     });
 
-    it("keeps a topic question's range for ranking without running the structured lookup", async () => {
+    it.each([
+      ["a topic question about an event's dates", { temporalQueryMode: "topic_refinement" }],
+      ["a question with no temporal mode", { temporalQueryMode: "none" }],
+      ["a question of another shape", { queryShape: "general_grounding", temporalQueryMode: "none" }],
+    ])("runs the range lookup for %s", async (_label, overrides) => {
       const { stage, calls } = recordingStage();
+
+      const result = await stage.execute({
+        ...baseCandidateRetrievalInput(),
+        rewrittenQuery: temporalRewrite(overrides),
+      });
+
+      expect(calls).toEqual([
+        expect.objectContaining({
+          window: expect.objectContaining({ kind: "requested_range", range: week }),
+        }),
+      ]);
+      expect(result.temporalDateRange).toEqual(week);
+    });
+
+    it("orders the range lookup by date when the question has no embedding", async () => {
+      const calls: Parameters<TemporalCandidateRetrievalPort["findInWindow"]>[0][] = [];
+      const stage = new CandidateRetrievalStageService(
+        { async embedQueries() { throw new Error("embedding provider down"); } },
+        { async search() { return []; } },
+        { async search() { return []; } },
+        emptyChunkHydrator,
+        {
+          async findInWindow(input) {
+            calls.push(input);
+            return [];
+          },
+        },
+        () => new Date("2026-10-21T12:00:00.000Z"),
+      );
 
       const result = await stage.execute({
         ...baseCandidateRetrievalInput(),
         rewrittenQuery: temporalRewrite({ temporalQueryMode: "topic_refinement" }),
       });
 
+      expect(calls[0]?.window).toEqual({ kind: "requested_range", range: week });
+      expect(result.temporalLookupRanking).toBe("date");
+    });
+
+    it("runs no range lookup when structured lookup is off, and keeps the range for ranking", async () => {
+      const { stage, calls } = recordingStage();
+
+      const result = await stage.execute({
+        ...baseCandidateRetrievalInput(),
+        settings: { ...baseCandidateRetrievalInput().settings, temporalStructuredLookupEnabled: false },
+        rewrittenQuery: temporalRewrite({}),
+      });
+
       expect(calls).toEqual([]);
-      expect(result.temporalQueryMode).toBe("topic_refinement");
       expect(result.temporalDateRange).toEqual(week);
+      expect(result.temporalLookupRanking).toBeUndefined();
+    });
+
+    it("runs no lookup for a topic question that names no period", async () => {
+      const { stage, calls } = recordingStage();
+
+      await stage.execute({
+        ...baseCandidateRetrievalInput(),
+        rewrittenQuery: temporalRewrite({ temporalQueryMode: "topic_refinement", requestedDateRange: undefined }),
+      });
+
+      expect(calls).toEqual([]);
     });
 
     // Runs a listing question for `range` through retrieval, preparation, and context
@@ -474,6 +538,7 @@ describe("retrieval pipeline stages", () => {
     const answerContextsForRange = async (input: {
       range: { dateFrom: string; dateTo: string };
       inRangeCount: number;
+      rewrite?: Record<string, unknown>;
     }) => {
       const clock = () => new Date("2026-10-21T12:00:00.000Z");
       const course = (id: string, date: string, similarity: number): RetrievedChunk => ({
@@ -534,7 +599,7 @@ describe("retrieval pipeline stages", () => {
 
       const retrieved = await retrieval.execute({
         ...baseCandidateRetrievalInput(),
-        rewrittenQuery: temporalRewrite({ requestedDateRange: input.range }),
+        rewrittenQuery: temporalRewrite({ ...input.rewrite, requestedDateRange: input.range }),
       });
       const selected = await selection.execute(await preparation.execute(retrieved));
       return { contexts: selected.contexts, inRangeCourses };
@@ -542,6 +607,19 @@ describe("retrieval pipeline stages", () => {
 
     it("brings every event of a busy requested week into the answer, ahead of sooner events the search found", async () => {
       const { contexts, inRangeCourses } = await answerContextsForRange({ range: week, inRangeCount: 16 });
+
+      expect(contexts).toHaveLength(16);
+      expect(new Set(contexts.map((context) => context.documentId)))
+        .toEqual(new Set(inRangeCourses.map((chunk) => chunk.documentId)));
+      const dates = contexts.map((context) => String(context.metadata?.dateFrom));
+      expect(dates).toEqual([...dates].sort());
+    });
+
+    it.each([
+      ["a topic question", { temporalQueryMode: "topic_refinement" }],
+      ["a question with no temporal label", { queryShape: "general_grounding", temporalQueryMode: "none" }],
+    ])("brings a busy requested week into the answer for %s too", async (_label, rewrite) => {
+      const { contexts, inRangeCourses } = await answerContextsForRange({ range: week, inRangeCount: 16, rewrite });
 
       expect(contexts).toHaveLength(16);
       expect(new Set(contexts.map((context) => context.documentId)))
@@ -571,21 +649,6 @@ describe("retrieval pipeline stages", () => {
       expect(contexts.every((context) => context.documentId.startsWith("doc-december-"))).toBe(true);
     });
 
-    it("ignores a range on a question that is not an event date lookup", async () => {
-      const { stage, calls } = recordingStage();
-
-      const result = await stage.execute({
-        ...baseCandidateRetrievalInput(),
-        rewrittenQuery: temporalRewrite({ queryShape: "policy_answer" }),
-      });
-
-      expect(calls).toEqual([]);
-      expect(result.temporalQueryMode).toBe("none");
-      expect(result.temporalDateRange).toBeUndefined();
-      expect(buildCandidateRetrievalTraceAttributes(result)).toMatchObject({
-        "retrieval.temporal.date_range.requested": false,
-      });
-    });
   });
 
   it("keeps absent documentScope behavior identical", async () => {

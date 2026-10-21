@@ -118,10 +118,11 @@ imports from `services/` or `infra/`.
 - Date questions: the rewrite returns `temporalQueryMode` and an optional
   `requestedDateRange` (`domain/temporal/requestedDateRange.ts` validates it and
   places dated items against it). `candidateRetrievalStage.ts` runs the
-  structured lookup for listing questions through
-  `domain/temporal/temporalCandidateRetrieval.ts` (upcoming from today, or the
-  requested range); `services/temporal/` boosts, merges, and orders by the same
-  range. Integration coverage lives in
+  structured lookup through `domain/temporal/temporalCandidateRetrieval.ts`:
+  any question with a requested range gets the range, ranked by similarity to
+  the question's embedding (an exact sort in `infra/temporalCandidateRepository.ts`),
+  and a listing question without one gets upcoming events from today.
+  `services/temporal/` merges, boosts, and orders by the same range. Integration coverage lives in
   `tests/integration/retrieval-temporal-candidates.integration.test.ts`.
 - Diagnostics: `retrievalActivityTraceAssembler.ts`,
   `retrievalPipelineActivityTraceBuilder.ts`,

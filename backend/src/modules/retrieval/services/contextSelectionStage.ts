@@ -15,10 +15,10 @@ export class ContextSelectionStageService implements ContextSelectionStageContra
   ) {}
 
   async execute(input: CandidatePreparationStageResult) {
-    // A listing whose structured lookup found passages in the requested range answers from
-    // them, so its prompt and the pool feeding it are sized to how many it found.
+    // A question whose range lookup found passages in the period it names answers from them,
+    // so its prompt and the pool feeding it are sized to how many the lookup found.
     const contextTopK = answerContextTopK(
-      input.temporalQueryMode === "listing" && input.temporalDateRange !== undefined
+      input.temporalLookupRanking !== undefined
         ? { requestedRangePassageCount: input.temporalContexts?.length ?? 0 }
         : {},
     );

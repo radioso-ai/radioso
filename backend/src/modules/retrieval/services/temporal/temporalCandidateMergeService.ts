@@ -9,12 +9,34 @@ import { clampNormalizedScore } from "../candidateScoring.js";
 
 const TEMPORAL_SOURCE: RetrievalSource = "temporal";
 
-export const mergeTemporalCandidates = (input: {
+/**
+ * Where structured temporal candidates go among the ranked ones: `lead` puts them first, in
+ * the lookup's order, adding the ones search missed; `annotate` only marks ranked candidates
+ * the lookup also found.
+ */
+type TemporalCandidatePlacement = "lead" | "annotate" | "none";
+
+/**
+ * A requested range's candidates lead whatever the rewrite labelled the question: they are the
+ * passages dated in the period it names, closest to the question first. Without a range, an
+ * upcoming listing's candidates lead and a topic question's only annotate.
+ */
+export const temporalCandidatePlacement = (input: {
   mode: TemporalQueryMode;
+  requestedRangeLookup: boolean;
+}): TemporalCandidatePlacement => {
+  if (input.requestedRangeLookup || input.mode === "listing") {
+    return "lead";
+  }
+  return input.mode === "topic_refinement" ? "annotate" : "none";
+};
+
+export const mergeTemporalCandidates = (input: {
+  placement: TemporalCandidatePlacement;
   temporalCandidates: RetrievedChunk[];
   rankedCandidates: RetrievedCandidate[];
 }): RetrievedCandidate[] => {
-  if (input.mode === "none" || input.temporalCandidates.length === 0) {
+  if (input.placement === "none" || input.temporalCandidates.length === 0) {
     return input.rankedCandidates;
   }
 
@@ -28,12 +50,12 @@ export const mergeTemporalCandidates = (input: {
       continue;
     }
 
-    if (input.mode === "listing") {
+    if (input.placement === "lead") {
       byChunkId.set(temporalCandidate.chunkId, toTemporalCandidate(temporalCandidate));
     }
   }
 
-  if (input.mode === "topic_refinement") {
+  if (input.placement === "annotate") {
     return input.rankedCandidates.map((candidate) =>
       temporalCandidateIds.has(candidate.chunkId) ? byChunkId.get(candidate.chunkId) ?? candidate : candidate,
     );

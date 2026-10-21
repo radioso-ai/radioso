@@ -9,6 +9,7 @@ import { renderRoutineInvocation } from "../../routines/public.js";
 import type { TurnExecutionMode } from "../../../shared/domain/turnExecutionMode.js";
 import type { EvalRunRoutineStartState } from "../domain/types.js";
 import type { SuiteAssertion } from "./scoring.js";
+import { isDeterministicOnlyByDefinition, withDefinedVoiceScope } from "./traceAssertions.js";
 
 /**
  * A conversation-quality case is a committed, version-controlled unit of expected
@@ -88,14 +89,28 @@ export type VoiceEvalChatScriptEvent =
   | { type: "stall" };
 
 /**
- * A voice case's scripted chat backend. The plain case shape (`query` plus answer-content or
- * trace assertions) has no way to express a phase timeline or a turn that never answers — which
- * is exactly the behaviour under test here (bridge timing, the turn limit) — so this is the
- * smallest addition that can say it, rather than a second case format or a parallel voice suite.
+ * What a voice case scripts for its deterministic half: exactly one driver, so the half always has
+ * a way to run it. The plain case shape (`query` plus answer-content or trace assertions) has no
+ * way to express a phase timeline or a turn that never answers — which is exactly the behaviour
+ * under test here (bridge timing, the turn limit) — so this is the smallest addition that can say
+ * it, rather than a second case format or a parallel voice suite.
  */
-export interface VoiceEvalTurnScript {
-  chatEvents: VoiceEvalChatScriptEvent[];
-}
+export type VoiceEvalTurnScript =
+  | {
+      /** The turn's chat backend, played over a bare voice turn service. */
+      chatEvents: VoiceEvalChatScriptEvent[];
+      scriptedBrain?: never;
+    }
+  | {
+      /**
+       * The scripted model the deterministic half runs the turn on, by its name in
+       * `tests/fixtures/voice-eval/scriptedBrains.ts`: the real planner, retrieval and composer
+       * with only the model scripted, which is how a quick-reply-lane or retrieval-phase
+       * regression fails the case.
+       */
+      scriptedBrain: string;
+      chatEvents?: never;
+    };
 
 const answerMatchMode = z.enum(["substring", "regex"]);
 const metadataValue = z.union([z.string(), z.number(), z.boolean(), z.null()]);
@@ -144,9 +159,13 @@ const suiteAssertionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("turn_persists_no_reply") }),
   z.object({ type: z.literal("turn_reply_source"), source: z.enum(["turn_planning", "composer"]) }),
   z.object({ type: z.literal("turn_directive_committed"), directive: z.string().min(1) }),
-  z.object({ type: z.literal("voice_bridge_emitted"), expected: z.boolean() }),
-  z.object({ type: z.literal("voice_turn_limit_reached"), expected: z.boolean() }),
-  z.object({ type: z.literal("voice_turn_outcome"), kind: z.enum(["continue", "callback_requested"]) }),
+  z.object({ type: z.literal("voice_bridge_emitted"), expected: z.boolean(), deterministicOnly: z.boolean().optional() }),
+  z.object({ type: z.literal("voice_turn_limit_reached"), expected: z.boolean(), deterministicOnly: z.boolean().optional() }),
+  z.object({
+    type: z.literal("voice_turn_outcome"),
+    kind: z.enum(["continue", "callback_requested"]),
+    deterministicOnly: z.boolean().optional(),
+  }),
 ]);
 
 const voiceEvalChatScriptEventSchema = z.discriminatedUnion("type", [
@@ -163,8 +182,12 @@ const voiceEvalChatScriptEventSchema = z.discriminatedUnion("type", [
 ]);
 
 const voiceEvalTurnScriptSchema = z.object({
-  chatEvents: z.array(voiceEvalChatScriptEventSchema).min(1),
-});
+  chatEvents: z.array(voiceEvalChatScriptEventSchema).min(1).optional(),
+  scriptedBrain: z.string().min(1).optional(),
+}).refine(
+  (value) => (value.chatEvents === undefined) !== (value.scriptedBrain === undefined),
+  { message: "a voice case names exactly one of chatEvents or scriptedBrain, so its deterministic half can run it" },
+);
 
 /** Turn inputs a review turn has no way to take: it answers a recorded message with its history. */
 const REVIEW_UNSUPPORTED_INPUTS = [
@@ -221,7 +244,17 @@ const conversationQualityCaseSchema = z.object({
 ).refine(
   (value) => value.voiceTurn === undefined || VOICE_UNSUPPORTED_INPUTS.every((input) => value[input] === undefined),
   { message: `a voice case takes only query and voiceTurn, not ${VOICE_UNSUPPORTED_INPUTS.join(", ")}`, path: ["voiceTurn"] },
-);
+).superRefine((value, context) => {
+  value.assertions.forEach((assertion, index) => {
+    if ("deterministicOnly" in assertion && assertion.deterministicOnly === false && isDeterministicOnlyByDefinition(assertion)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["assertions", index, "deterministicOnly"],
+        message: `${assertion.type} is deterministicOnly by definition: only the brain's speed decides it in a live run, so a live run cannot gate on it; drop deterministicOnly: false`,
+      });
+    }
+  });
+});
 
 /**
  * The text the case's turn runs on: the query, or a tool call rendered exactly as the
@@ -245,5 +278,5 @@ export const parseConversationQualityCases = (input: unknown): ConversationQuali
     }
     seen.add(item.id);
   }
-  return parsed as ConversationQualityCase[];
+  return parsed.map((item) => ({ ...item, assertions: item.assertions.map(withDefinedVoiceScope) })) as ConversationQualityCase[];
 };

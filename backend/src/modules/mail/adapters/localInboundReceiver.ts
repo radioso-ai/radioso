@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
+import { isMissingFile } from "../../../shared/infra/fileErrors.js";
 import {
   InboundFetchError,
   type InboundEmailMessage,
@@ -53,8 +54,7 @@ export class LocalInboundEmailReceiver implements InboundEmailReceiver {
     try {
       return await readFile(join(this.options.spoolDir, `${id}.eml`));
     } catch (error) {
-      const missing = error instanceof Error && "code" in error && error.code === "ENOENT";
-      throw missing ? new InboundFetchError(false, "message_not_found") : new InboundFetchError(true, "spool_unreadable");
+      throw isMissingFile(error) ? new InboundFetchError(false, "message_not_found") : new InboundFetchError(true, "spool_unreadable");
     }
   }
 }

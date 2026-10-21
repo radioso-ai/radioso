@@ -21,7 +21,20 @@ describe("realtime publisher production runtime wiring", () => {
 
     expect(source).toContain('from "../app/server/dependencies.js"');
     expect(source).toMatch(/\bbuildDependencies(?:\(options\.env|\)\(options\.env)/u);
-    expect(source).toContain("dependencies.realtimePublisherLifecycle.shutdown()");
+  });
+
+  it.each(producerRuntimePaths)("shuts the composition down through closeDependencies in %s", async (runtimePath) => {
+    const source = await readFile(sourcePath(runtimePath), "utf8");
+
+    expect(source).toContain('from "../app/server/closeDependencies.js"');
+    expect(source).toContain("closeDependencies(dependencies)");
+    expect(source).not.toContain("realtimePublisherLifecycle.shutdown()");
+  });
+
+  it("shuts the canonical publisher lifecycle down in closeDependencies", async () => {
+    const closer = await readFile(sourcePath("app/server/closeDependencies.ts"), "utf8");
+
+    expect(closer).toContain("dependencies.realtimePublisherLifecycle.shutdown()");
   });
 
   it("keeps the standalone realtime gateway subscriber-only", async () => {

@@ -1,6 +1,7 @@
 import type { Express } from "express";
 import type { Server } from "node:http";
 
+import { closeDependencies } from "../app/server/closeDependencies.js";
 import { createApp } from "../app/server/createApp.js";
 import { buildDependencies } from "../app/server/dependencies.js";
 import type { Env } from "../app/config/env.js";
@@ -115,25 +116,9 @@ export const startApiRuntime = async (options: StartApiRuntimeOptions): Promise<
         });
       } finally {
         try {
-          await dependencies.realtimePublisherLifecycle.shutdown();
+          await closeDependencies(dependencies);
         } finally {
-          try {
-            try {
-              await dependencies.applicationModules.shutdownAll();
-            } finally {
-              try {
-                await dependencies.closeApprovalResumeEffectJournal();
-              } finally {
-                await dependencies.closeAbuseControlRepository?.();
-              }
-            }
-          } finally {
-            try {
-              await dependencies.connectorRegistry.shutdownAll();
-            } finally {
-              await stopRuntimeTracing();
-            }
-          }
+          await stopRuntimeTracing();
         }
       }
     },

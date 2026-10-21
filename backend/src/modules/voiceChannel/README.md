@@ -845,6 +845,9 @@ the key, the vendor URL or any audio.
   (needs the disposable integration database; see the code map)
 - `cd backend && pnpm exec vitest run tests/unit/eval-suite/voice-behaviour.test.ts`
   (the conversation-quality suite's voice cases: bridge timing, the turn limit and the
-  outcome derivation, driven through a real `VoiceTurnService` over a scripted chat
-  backend — `tests/fixtures/voice-eval/`; `pnpm run evals`/`evals:ci` run the same cases
-  nightly against the real brain, reporting first-speech latency)
+  outcome derivation, driven through a real `VoiceTurnService` — the searching and
+  quick-reply cases on a test composition's own planner and composer over a scripted model, the
+  others over a scripted chat backend — `tests/fixtures/voice-eval/`; `pnpm run
+  evals`/`evals:ci` run the searching and hand-off cases nightly against the real brain,
+  gating on behaviour and reporting first-speech latency without gating on it; the
+  turn-limit and quick-reply cases are deterministic-only)

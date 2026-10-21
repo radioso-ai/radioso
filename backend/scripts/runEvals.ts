@@ -19,9 +19,11 @@
  *     model output — the whole point is a genuine quality signal.
  *   - A running document worker (or run this against the dev stack) so ingested corpus
  *     documents get chunked + embedded before retrieval.
- *   - RADIOSO_EVAL_WORKSPACE_ID / RADIOSO_EVAL_AGENT_ID pointing at a disposable agent to
- *     seed. The suite mutates that agent's directives and routines, and publishes it when the
- *     run includes review cases.
+ *   - Optionally RADIOSO_EVAL_WORKSPACE_ID / RADIOSO_EVAL_AGENT_ID (or --workspace/--agent)
+ *     naming an agent to seed; otherwise the run registers a disposable one. A named agent gets
+ *     the corpus ingested into its workspace and the seeded directives and routines on its draft,
+ *     and is published when the run includes review or voice cases. A run that would publish over
+ *     a named agent's live revision is refused unless --allow-named-agent-republish is passed.
  *   - A non-production NODE_ENV when the run includes review cases: publishing needs the skills
  *     the seeded routines dispatch, which the runner adds as webhook skills on a loopback
  *     destination for the length of the publication only.
@@ -32,8 +34,7 @@
  * `--judge-model` names another. Judging is opt-in per tag because each graded assertion is
  * one more model call per sample, and an ungated judge would make every nightly case pay it.
  */
-import { randomUUID } from "node:crypto";
-import { readFileSync, writeFileSync } from "node:fs";
+import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -61,11 +62,23 @@ import {
 import { conversationQualityCases } from "../tests/fixtures/conversation-quality/cases.js";
 import { conversationQualityCorpus } from "../tests/fixtures/conversation-quality/corpus.js";
 import { conversationQualityDirectives } from "../tests/fixtures/conversation-quality/directives.js";
-import { conversationQualityRoutines, CREATE_RETURN_TICKET_SKILL } from "../tests/fixtures/conversation-quality/routines.js";
-import { VOICE_EVAL_AGENT_VOICE_SETTINGS, VOICE_EVAL_FALLBACK_LINE } from "../tests/fixtures/voice-eval/agent.js";
+import { conversationQualityRoutines } from "../tests/fixtures/conversation-quality/routines.js";
+import { VOICE_EVAL_FALLBACK_LINE } from "../tests/fixtures/voice-eval/agent.js";
 import { voiceEvalCases } from "../tests/fixtures/voice-eval/cases.js";
 import { voiceEvalRoutines } from "../tests/fixtures/voice-eval/routines.js";
 import { createReviewTurnRunnerPort, createVoiceTurnRunnerPort, createWorkbenchReplayRunnerPort } from "./evalRunnerAdapter.js";
+import {
+  assertNamedAgentMayBePublished,
+  closeEvalDependencies,
+  needsPublishedAgent,
+  needsVoiceSettings,
+  readRunBaseline,
+  registerDisposableAgent,
+  runThenClose,
+  scopeCasesForLiveRun,
+  seededRoutineSkillNames,
+  seedVoiceSettings,
+} from "./evalRunnerSupport.js";
 
 const BASELINE_PATH = fileURLToPath(
   new URL("../tests/fixtures/conversation-quality/baseline.json", import.meta.url),
@@ -82,6 +95,7 @@ interface Flags {
   samples: number;
   passThreshold: number;
   migrate: boolean;
+  allowNamedAgentRepublish: boolean;
 }
 
 const parseFlags = (argv: string[]): Flags => {
@@ -95,12 +109,14 @@ const parseFlags = (argv: string[]): Flags => {
     samples: 1,
     passThreshold: 1,
     migrate: false,
+    allowNamedAgentRepublish: false,
   };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     if (arg === "--update-baseline") flags.updateBaseline = true;
     else if (arg === "--judge") flags.judge = true;
     else if (arg === "--migrate") flags.migrate = true;
+    else if (arg === "--allow-named-agent-republish") flags.allowNamedAgentRepublish = true;
     else if (arg === "--tag") flags.tags.push(argv[++index] ?? "");
     else if (arg === "--judge-tag") flags.judgeTags.push(argv[++index] ?? "");
     else if (arg === "--judge-model") flags.judgeModel = argv[++index] || undefined;
@@ -121,56 +137,14 @@ const parseFlags = (argv: string[]): Flags => {
 const ensureTarget = async (
   deps: Deps,
   flags: Flags,
-): Promise<{ workspaceId: string; agentId: string }> => {
+): Promise<{ workspaceId: string; agentId: string; disposable: boolean }> => {
   if (flags.workspaceId && flags.agentId) {
-    return { workspaceId: flags.workspaceId, agentId: flags.agentId };
+    return { workspaceId: flags.workspaceId, agentId: flags.agentId, disposable: false };
   }
-  const email = `eval-suite+${randomUUID()}@example.invalid`;
-  const registration = await deps.authService.register({ email, password: `Ev@l-${randomUUID()}` });
-  const agent = await deps.agentService.resolve(registration.workspaceId);
-  console.log(`Bootstrapped disposable workspace ${registration.workspaceId} / agent ${agent.id}`);
-  return { workspaceId: registration.workspaceId, agentId: agent.id };
+  const target = await registerDisposableAgent(deps);
+  console.log(`Bootstrapped disposable workspace ${target.workspaceId} / agent ${target.agentId}`);
+  return { ...target, disposable: true };
 };
-
-const loadBaseline = (): BaselineFile => {
-  try {
-    const parsed = JSON.parse(readFileSync(BASELINE_PATH, "utf8")) as Partial<BaselineFile>;
-    return { generatedAt: parsed.generatedAt, passThreshold: parsed.passThreshold, cases: parsed.cases ?? {} };
-  } catch {
-    return { cases: {} };
-  }
-};
-
-/**
- * Keeps `llm_judge` assertions only on cases carrying one of `judgeTags`, so a run grades
- * exactly the cases it opted in and the rest score their deterministic layer.
- */
-export const scopeJudgeAssertions = (
-  cases: readonly ConversationQualityCase[],
-  judgeTags: readonly string[],
-): ConversationQualityCase[] =>
-  cases.map((evalCase) => (evalCase.tags ?? []).some((tag) => judgeTags.includes(tag))
-    ? evalCase
-    : {
-        ...evalCase,
-        assertions: evalCase.assertions.filter((assertion) => assertion.type !== "llm_judge"),
-      });
-
-/**
- * Drops `voice_turn_limit_reached` wherever it appears. The turn limit (`VOICE_BEHAVIOR.turnLimitMs`,
- * 10 s) exists for a stalled planner; the deterministic harness forces that with a chat backend that
- * never answers, which the live brain has no equivalent of — a real turn answers in a few seconds
- * however it is worded, so the assertion can only ever observe `false` here. Scoping it out of the
- * live score, the same way `scopeJudgeAssertions` scopes out `llm_judge`, keeps the deterministic
- * suite (which builds its own report from the unscoped case) asserting it for real.
- */
-export const scopeVoiceTurnLimitAssertions = (
-  cases: readonly ConversationQualityCase[],
-): ConversationQualityCase[] =>
-  cases.map((evalCase) => ({
-    ...evalCase,
-    assertions: evalCase.assertions.filter((assertion) => assertion.type !== "voice_turn_limit_reached"),
-  }));
 
 /**
  * The eval layer's LLM judge on the cheapest text model the configuration resolves: the
@@ -305,24 +279,6 @@ const seedFixtures = async (
   return { documentIds, routineIds };
 };
 
-/** Only a review case runs the published revision, so only a run that selects one publishes the agent. */
-export const needsPublishedAgent = (cases: readonly ConversationQualityCase[]): boolean =>
-  cases.some((evalCase) => evalCase.executionMode === "review");
-
-/** Only a voice case drives the voice turn policy, so only a run that selects one turns voice on. */
-export const needsVoiceSettings = (cases: readonly ConversationQualityCase[]): boolean =>
-  cases.some((evalCase) => evalCase.voiceTurn !== undefined);
-
-/**
- * Turns voice on for the seeded agent with the lines the voice cases need: a bridge line so a
- * case that searches has one to speak, and the fallback line `evalRunnerAdapter.ts`'s
- * `observeVoiceTurn` reads a turn's whole spoken text against to tell the turn limit apart from
- * a real answer (see `VOICE_EVAL_FALLBACK_LINE`). No `runtime` is bound: a voice case drives the
- * turn policy directly and starts no vendor session.
- */
-const seedVoiceSettings = (deps: Deps, flags: Flags): Promise<unknown> =>
-  deps.agentService.update(flags.workspaceId, flags.agentId, { voice: VOICE_EVAL_AGENT_VOICE_SETTINGS });
-
 /**
  * Seeds `voiceEvalRoutines` (just the callback hand-off routine today) the same idempotent way
  * `seedFixtures` seeds the text suite's routines, but only while a voice case is selected: a
@@ -355,12 +311,6 @@ const seedVoiceRoutines = async (deps: Deps, flags: Flags): Promise<void> => {
     }
   }
 };
-
-/**
- * The skills the seeded routines dispatch. Publishing refuses a routine whose tool step names a
- * skill the agent lacks, so the agent holds these skills while it is published.
- */
-export const seededRoutineSkillNames: readonly string[] = [CREATE_RETURN_TICKET_SKILL];
 
 const ROUTINE_SKILL_DESTINATION = {
   name: "Conversation-quality evals (publication only)",
@@ -466,6 +416,133 @@ const waitForDocumentsReady = async (
   }
 };
 
+/** What `main` settles before it seeds: the target's settings, the baseline, and the scoped cases. */
+interface SeededSuiteRun {
+  env: Env;
+  baseline: BaselineFile;
+  cases: ConversationQualityCase[];
+  runsVoiceCases: boolean;
+}
+
+/**
+ * Seeds the fixtures onto the target agent (its voice block is already in place), publishes it
+ * when a case needs the published revision, runs the sampled suite, and records or gates on the
+ * baseline.
+ */
+const runSeededSuite = async (deps: Deps, flags: Flags, run: SeededSuiteRun): Promise<void> => {
+  console.log(`Seeding fixtures onto agent ${flags.agentId} in workspace ${flags.workspaceId}…`);
+  const { documentIds, routineIds } = await seedFixtures(deps, flags);
+  await waitForDocumentsReady(deps, flags.workspaceId, documentIds);
+  if (run.runsVoiceCases) {
+    await seedVoiceRoutines(deps, flags);
+  }
+
+  const agent = await deps.agentRepository.findByIdAndWorkspaceId(flags.agentId, flags.workspaceId);
+  if (!agent) {
+    throw new Error(`Agent ${flags.agentId} not found in workspace ${flags.workspaceId}.`);
+  }
+  const baselineAgentConfig = projectInternalAgentConfig(agent);
+
+  const cases = remapIds(run.cases, documentIds, routineIds);
+  const suiteJudge = flags.judgeTags.length > 0 ? createSuiteJudge(run.env, flags.judgeModel) : null;
+  if (suiteJudge) {
+    console.log(`Grading llm_judge assertions on cases tagged ${flags.judgeTags.join(", ")} with ${suiteJudge.model}.`);
+  }
+
+  const replayPort = createWorkbenchReplayRunnerPort(deps.workbenchReplayRunner, {
+    workspaceId: flags.workspaceId,
+    agentId: flags.agentId,
+    baselineAgentConfig,
+  });
+  // A voice case runs the published revision too: the voice turn port streams through the
+  // same chat answer path the completions route and a real session use, which answers for
+  // the agent as it is published, not the draft `WorkbenchReplayRunner` replays directly.
+  const agentRevisionId = needsPublishedAgent(cases) || run.runsVoiceCases
+    ? await publishSeededAgent(deps, flags)
+    : null;
+  const reviewPort = needsPublishedAgent(cases) && agentRevisionId
+    ? createReviewTurnRunnerPort(
+        { chat: deps.chatService, conversations: deps.conversationRepository, messages: deps.messageRepository },
+        { workspaceId: flags.workspaceId, agentId: flags.agentId, agentRevisionId },
+      )
+    : {};
+  // A voice case drives the real voice turn policy over `deps.voiceTurns`, never the chat
+  // reply's content, so it has its own port rather than riding the replay runner's.
+  const voicePort = run.runsVoiceCases
+    ? createVoiceTurnRunnerPort(deps.voiceTurns, {
+        workspaceId: flags.workspaceId,
+        agentId: flags.agentId,
+        vendor: "generic",
+        fallbackLine: VOICE_EVAL_FALLBACK_LINE,
+      })
+    : null;
+  const port = {
+    ...replayPort,
+    ...reviewPort,
+    run: (evalCase: ConversationQualityCase) =>
+      evalCase.voiceTurn && voicePort ? voicePort.run(evalCase) : replayPort.run(evalCase),
+  };
+
+  if (flags.samples > 1) {
+    console.log(`Sampling each case ${flags.samples}× (pass threshold ${flags.passThreshold})…`);
+  }
+  const { reports, outcomes } = await runConversationQualitySuiteSampled(cases, port, {
+    workspaceId: flags.workspaceId,
+    samples: flags.samples,
+    passThreshold: flags.passThreshold,
+    ...(suiteJudge ? { judge: suiteJudge.judge } : {}),
+  });
+
+  const summary = summarizeRun(outcomes);
+  const diff = diffAgainstBaseline(outcomes, run.baseline, { passThreshold: flags.passThreshold });
+  console.log(`\n${formatReport(reports, diff, summary)}\n`);
+
+  if (flags.updateBaseline) {
+    if (
+      flags.tags.length > 0 &&
+      run.baseline.passThreshold !== undefined &&
+      run.baseline.passThreshold !== flags.passThreshold
+    ) {
+      throw new Error(
+        "A filtered baseline update cannot change the pass threshold; re-record the full suite at the new threshold.",
+      );
+    }
+    const generatedAt = new Date().toISOString();
+    const updatedBaseline = flags.tags.length > 0
+      ? mergeBaselineFile(run.baseline, outcomes, generatedAt, flags.passThreshold)
+      : buildBaselineFile(outcomes, generatedAt, flags.passThreshold);
+    writeFileSync(
+      BASELINE_PATH,
+      `${JSON.stringify(updatedBaseline, null, 2)}\n`,
+    );
+    console.log(`Baseline updated: ${path.relative(process.cwd(), BASELINE_PATH)}`);
+    return;
+  }
+
+  // An uninitialized baseline can't gate — every case reads as "new" (informational),
+  // so a run where all 12 cases fail would still exit 0. Fail loudly instead until a
+  // baseline is recorded.
+  if (!isBaselineInitialized(run.baseline)) {
+    console.error(
+      "Baseline is uninitialized — regression gating is disabled. Run `pnpm run evals:update-baseline` after a known-good run to enable it.",
+    );
+    process.exitCode = 1;
+  }
+
+  if (hasBaselineGateFailures(diff)) {
+    console.error(
+      `${diff.regressions.length + diff.rateRegressions.length + diff.judgeRegressions.length + diff.underSampled.length + diff.newCases.length + (diff.thresholdMismatch ? 1 : 0)} baseline gate failure(s).`,
+    );
+    process.exitCode = 1;
+  }
+};
+
+/** A failure to clean up after the run fails it, without hiding the run's own error. */
+const reportCleanupFailure = (what: string) => (error: unknown): void => {
+  console.error(what, error);
+  process.exitCode = 1;
+};
+
 const main = async (): Promise<void> => {
   const flags = parseFlags(process.argv.slice(2));
   if (flags.judge) {
@@ -476,6 +553,13 @@ const main = async (): Promise<void> => {
   }
 
   const dataset = parseConversationQualityCases([...conversationQualityCases, ...voiceEvalCases]);
+  // Read and scoped before the run opens a pool or registers an account, so a damaged baseline
+  // (one this run reads; a full recording rewrites it) or a refused case stops it at no cost. llm_judge assertions are graded only on the cases a
+  // --judge-tag opted in, a voice case is never gated on latency, and a deterministic-only one
+  // does not run live.
+  const baseline = readRunBaseline(BASELINE_PATH, flags, (message) => console.warn(message));
+  const cases = scopeCasesForLiveRun(filterByTags(dataset, flags.tags), flags.judgeTags);
+  const runsVoiceCases = needsVoiceSettings(cases);
   const env = getEnv();
   if (flags.migrate) {
     console.log("Applying migrations…");
@@ -484,130 +568,26 @@ const main = async (): Promise<void> => {
   // The routine skills' destination is a loopback address, which a default stack refuses.
   const deps = buildDependencies({ ...env, WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK: true });
 
-  try {
+  await runThenClose(async () => {
     const target = await ensureTarget(deps, flags);
     flags.workspaceId = target.workspaceId;
     flags.agentId = target.agentId;
-    let cases = filterByTags(dataset, flags.tags);
-    const runsVoiceCases = needsVoiceSettings(cases);
-
-    console.log(`Seeding fixtures onto agent ${flags.agentId} in workspace ${flags.workspaceId}…`);
-    const { documentIds, routineIds } = await seedFixtures(deps, flags);
-    await waitForDocumentsReady(deps, flags.workspaceId, documentIds);
-    if (runsVoiceCases) {
-      await seedVoiceSettings(deps, flags);
-      await seedVoiceRoutines(deps, flags);
-    }
-
-    const agent = await deps.agentRepository.findByIdAndWorkspaceId(flags.agentId, flags.workspaceId);
-    if (!agent) {
-      throw new Error(`Agent ${flags.agentId} not found in workspace ${flags.workspaceId}.`);
-    }
-    const baselineAgentConfig = projectInternalAgentConfig(agent);
-
-    cases = remapIds(cases, documentIds, routineIds);
-    // llm_judge assertions are graded only on the cases a --judge-tag opted in.
-    cases = scopeJudgeAssertions(cases, flags.judgeTags);
-    // No live turn can be made to hold the planner open for voice's 10 s limit on demand.
-    cases = scopeVoiceTurnLimitAssertions(cases);
-    const suiteJudge = flags.judgeTags.length > 0 ? createSuiteJudge(env, flags.judgeModel) : null;
-    if (suiteJudge) {
-      console.log(`Grading llm_judge assertions on cases tagged ${flags.judgeTags.join(", ")} with ${suiteJudge.model}.`);
-    }
-
-    const replayPort = createWorkbenchReplayRunnerPort(deps.workbenchReplayRunner, {
-      workspaceId: flags.workspaceId,
-      agentId: flags.agentId,
-      baselineAgentConfig,
-    });
-    // A voice case runs the published revision too: the voice turn port streams through the
-    // same chat answer path the completions route and a real session use, which answers for
-    // the agent as it is published, not the draft `WorkbenchReplayRunner` replays directly.
-    const agentRevisionId = needsPublishedAgent(cases) || runsVoiceCases
-      ? await publishSeededAgent(deps, flags)
-      : null;
-    const reviewPort = needsPublishedAgent(cases) && agentRevisionId
-      ? createReviewTurnRunnerPort(
-          { chat: deps.chatService, conversations: deps.conversationRepository, messages: deps.messageRepository },
-          { workspaceId: flags.workspaceId, agentId: flags.agentId, agentRevisionId },
-        )
-      : {};
-    // A voice case drives the real voice turn policy over `deps.voiceTurns`, never the chat
-    // reply's content, so it has its own port rather than riding the replay runner's.
-    const voicePort = runsVoiceCases
-      ? createVoiceTurnRunnerPort(deps.voiceTurns, {
-          workspaceId: flags.workspaceId,
-          agentId: flags.agentId,
-          vendor: "generic",
-          fallbackLine: VOICE_EVAL_FALLBACK_LINE,
-        })
-      : null;
-    const port = {
-      ...replayPort,
-      ...reviewPort,
-      run: (evalCase: ConversationQualityCase) =>
-        evalCase.voiceTurn && voicePort ? voicePort.run(evalCase) : replayPort.run(evalCase),
-    };
-
-    if (flags.samples > 1) {
-      console.log(`Sampling each case ${flags.samples}× (pass threshold ${flags.passThreshold})…`);
-    }
-    const { reports, outcomes } = await runConversationQualitySuiteSampled(cases, port, {
-      workspaceId: flags.workspaceId,
-      samples: flags.samples,
-      passThreshold: flags.passThreshold,
-      ...(suiteJudge ? { judge: suiteJudge.judge } : {}),
+    await assertNamedAgentMayBePublished({ revisions: deps.agentRevisionService }, target, {
+      publishes: needsPublishedAgent(cases) || runsVoiceCases,
+      allowRepublish: flags.allowNamedAgentRepublish,
     });
 
-    const summary = summarizeRun(outcomes);
-    const baseline = loadBaseline();
-    const diff = diffAgainstBaseline(outcomes, baseline, { passThreshold: flags.passThreshold });
-    console.log(`\n${formatReport(reports, diff, summary)}\n`);
-
-    if (flags.updateBaseline) {
-      if (
-        flags.tags.length > 0 &&
-        baseline.passThreshold !== undefined &&
-        baseline.passThreshold !== flags.passThreshold
-      ) {
-        throw new Error(
-          "A filtered baseline update cannot change the pass threshold; re-record the full suite at the new threshold.",
-        );
-      }
-      const generatedAt = new Date().toISOString();
-      const updatedBaseline = flags.tags.length > 0
-        ? mergeBaselineFile(baseline, outcomes, generatedAt, flags.passThreshold)
-        : buildBaselineFile(outcomes, generatedAt, flags.passThreshold);
-      writeFileSync(
-        BASELINE_PATH,
-        `${JSON.stringify(updatedBaseline, null, 2)}\n`,
-      );
-      console.log(`Baseline updated: ${path.relative(process.cwd(), BASELINE_PATH)}`);
-      return;
-    }
-
-    // An uninitialized baseline can't gate — every case reads as "new" (informational),
-    // so a run where all 12 cases fail would still exit 0. Fail loudly instead until a
-    // baseline is recorded.
-    if (!isBaselineInitialized(baseline)) {
-      console.error(
-        "Baseline is uninitialized — regression gating is disabled. Run `pnpm run evals:update-baseline` after a known-good run to enable it.",
-      );
-      process.exitCode = 1;
-    }
-
-    if (hasBaselineGateFailures(diff)) {
-      console.error(
-        `${diff.regressions.length + diff.rateRegressions.length + diff.judgeRegressions.length + diff.underSampled.length + diff.newCases.length + (diff.thresholdMismatch ? 1 : 0)} baseline gate failure(s).`,
-      );
-      process.exitCode = 1;
-    }
-  } finally {
-    const shutdown = (deps as { shutdown?: () => Promise<void> }).shutdown;
-    if (shutdown) {
-      await shutdown.call(deps);
-    }
-  }
+    // Voice goes on first: an agent that cannot take the lines is refused before any document is
+    // ingested, and a named agent gets its own voice block back whatever the run does.
+    const voice = runsVoiceCases
+      ? await seedVoiceSettings({ agents: deps.agentRepository, agentSettings: deps.agentService }, target)
+      : null;
+    await runThenClose(
+      () => runSeededSuite(deps, flags, { env, baseline, cases, runsVoiceCases }),
+      async () => { await voice?.restore(); },
+      reportCleanupFailure("Restoring the agent's voice settings failed:"),
+    );
+  }, () => closeEvalDependencies(deps), reportCleanupFailure("Closing the eval run's dependencies failed:"));
 };
 
 const invokedDirectly = process.argv[1] === fileURLToPath(import.meta.url);

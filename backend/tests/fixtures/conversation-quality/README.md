@@ -33,8 +33,11 @@ Two layers (see `src/modules/eval/suite/`):
   drops them unless a case carries a tag passed with `--judge-tag`; those are graded on the
   cheapest text model the configuration resolves (the rerank tier, or `--judge-model`).
   `evals`, `evals:ci`, `evals:update-baseline`, and the nightly workflow all pass
-  `--judge-tag quick-reply`, so the quick-reply judge assertions gate every run and the
-  baseline is recorded the way the gate runs.
+  `--judge-tag quick-reply --judge-tag unavailable`, so the quick-reply judge assertions and the
+  judge of `page-read-metadata-only-summary-unavailable` (its only assertion: no deterministic
+  check can tell an invented page summary from a real one) gate every run, and the baseline is
+  recorded the way the gate runs. A run refuses any case left with nothing to gate, so a
+  filtered run that selects a judge-only case must grade its tag too.
 
 ## Quick-reply cases
 
@@ -107,37 +110,82 @@ assert only `turn_persists_no_reply`.
 
 A case with `voiceTurn` drives `query` as a voice turn instead of a chat message: the real voice
 turn policy (`src/modules/voiceChannel/services/voiceTurnPolicy.ts`) decides the bridge, the
-turn limit and the outcome, over a scripted chat backend (`voiceTurn.chatEvents`) rather than the
-seeded agent's corpus, directives or routines, so a voice case takes only `query` and `voiceTurn`.
-The three voice-only trace assertions — `voice_bridge_emitted`, `voice_turn_limit_reached`,
+turn limit and the outcome, and a voice case takes only `query` and `voiceTurn`. The three
+voice-only trace assertions — `voice_bridge_emitted`, `voice_turn_limit_reached`,
 `voice_turn_outcome` — read a `VoiceTurnObservation` the runner builds from the turn's
 `VoiceTurnEvent` stream, never the reply's content; `evalRunnerAdapter.ts`'s `observeVoiceTurn`
 is the one place that reads it, for both the deterministic and the live runner.
 
 The cases themselves live in `tests/fixtures/voice-eval/cases.ts`, not here, because they run
-against a different agent configuration (voice turned on, with a bridge and a fallback line, no
-corpus) than every other case in this directory. `scripts/runEvals.ts` seeds that configuration,
-and `tests/fixtures/voice-eval/routines.ts`'s one callback hand-off routine, onto the same
-disposable agent whenever the run selects a voice case, and combines `voiceEvalCases` with
-`conversationQualityCases` into one dataset, so a voice case's outcome sits in the same
-`baseline.json` as every other case, keyed by its own id. The routine is seeded only then, so a
-text-only run never carries its "ask for a callback" trigger alongside `routines.ts`'s
-`contactSupportRoutine`. The deterministic harness
-(`tests/unit/eval-suite/voice-behaviour.test.ts`) plays each case's `chatEvents` script against a
-real `VoiceTurnService` instead of the live brain, over the `generic` dialect's vendor tag
-(`tests/fixtures/voice-eval/deterministicPort.ts`), so it never touches the routine.
+against a different agent configuration (voice turned on, with a bridge and a fallback line)
+than every other case in this directory. Whenever a run selects a voice case,
+`scripts/runEvals.ts` seeds that configuration onto the same agent, along with
+`tests/fixtures/voice-eval/routines.ts`'s one callback hand-off routine. `seedVoiceSettings`
+writes the voice cases' lines into the agent's own voice block before any document is seeded,
+after checking the merged block as a write is checked, so an agent that cannot take them (one
+with lines in the ten languages a block holds) refuses the run by its id. The run binds no
+vendor runtime, so no caller can reach the agent while voice is on, and a named agent
+(`RADIOSO_EVAL_AGENT_ID`) gets its own block back once the run is done; a disposable one keeps
+the run's. See "What a run changes on a named agent" below for the rest. The runner combines
+`voiceEvalCases` with `conversationQualityCases` into one dataset, so a voice case's outcome sits
+in the same `baseline.json` as every other case, keyed by its own id. The routine is seeded only
+for a voice run, so a text-only run never carries its "ask for a callback" trigger alongside
+`routines.ts`'s `contactSupportRoutine`.
+
+The deterministic harness (`tests/unit/eval-suite/voice-behaviour.test.ts`, through
+`tests/fixtures/voice-eval/deterministicPort.ts`) runs each case one of two ways, and a case names
+exactly one of them in `voiceTurn`, so none can be written that runs nowhere:
+
+- A case naming `voiceTurn.scriptedBrain` (`voice-bridge-on-searching`,
+  `voice-quick-reply-no-bridge`) runs on a fresh test composition (`createTestDependencies`, no
+  HTTP app) with its own planner, retrieval, composer and voice turn policy, and only the model
+  scripted: the brain of that name in `tests/fixtures/voice-eval/scriptedBrains.ts`. The agent is
+  registered the way the live run bootstraps one (`registerDisposableAgent`), given voice by the
+  same `seedVoiceSettings` and then published, in the live run's order, and the turn goes through
+  the live run's `createVoiceTurnRunnerPort`. The brains run the voice policy on generous timing
+  (the composing-idle bridge at 5 seconds, the stall bridge and the limit at 30), so a loaded
+  runner never races a deadline and the case asserts what the chat turn reported. The thank-you's
+  composer takes 6 seconds, so a thank-you that leaves the planner's quick-reply lane bridges on
+  its composing phase and fails the case. The searching brain's planner routes the question to
+  retrieval, so a planner-routed retrieval that stops reporting `searching` fails its case. The
+  harness keeps both regressions as tests of their own: a laneless brain fails the thank-you on
+  its bridge (on a 1-second composing-idle bridge with a composer at 2.5 seconds, so it fails in
+  under three seconds), and a brain that answers directly fails the searching case on its
+  bridge.
+- A case with `voiceTurn.chatEvents` (`voice-turn-limit-fires`, `voice-outcome-handoff`) plays
+  that script as the turn's chat backend against a bare `VoiceTurnService` on shrunk timers, over
+  the `generic` dialect's vendor tag: a turn that stalls until its limit, and one that closes on a
+  routine hand-off with a collected slot.
 
 The turn limit has no event of its own on the `VoiceTurnEvent` stream the port returns — the
 policy reports it only to its metrics observer — so `observeVoiceTurn` reads it by comparing the
 turn's whole spoken text against the fixture's configured fallback line
-(`VOICE_EVAL_FALLBACK_LINE` in `tests/fixtures/voice-eval/agent.ts`). No ordinary question holds
-a live turn open for 10 seconds, so `runEvals.ts` scopes `voice_turn_limit_reached` out of what
-it scores (`scopeVoiceTurnLimitAssertions`, the same way `scopeJudgeAssertions` scopes
-`llm_judge`): the live run checks the case's outcome stays `continue` instead, and the
-deterministic harness — which drives the case through its own copy of the dataset, unscoped —
-keeps asserting the limit itself for real. A live run's first-speech latency, averaged per case
-over its samples, prints in the report (`[first speech 3105ms]`) but gates nothing: only the
-trace assertions above do.
+(`VOICE_EVAL_FALLBACK_LINE` in `tests/fixtures/voice-eval/agent.ts`).
+
+A live run gates a voice case on behaviour, never on latency. A voice assertion can carry a
+`deterministicOnly` flag, and two carry it by definition (a case that marks either
+`deterministicOnly: false` fails to parse, saying why): `parseConversationQualityCases` marks
+`voice_bridge_emitted` with `expected: false`, since the 2.5-second stall bridge and the 400 ms
+composing-idle bridge fire whenever the live planner or composer is slow, and
+`voice_turn_limit_reached` whatever it expects, since a slow but healthy live turn speaks the
+fallback line at 10 seconds and no live question stalls the planner on demand. A case can also
+mark an assertion itself, as the turn-limit and quick-reply cases do with their `continue`
+outcomes, which say nothing once the expectation beside them is out of scope.
+
+`scripts/evalRunnerSupport.ts`'s `scopeCasesForLiveRun` reads those flags. The runner calls it
+right after it reads the baseline, before it opens a database pool or registers an account, so a
+refused run costs nothing:
+
+- It skips a case whose every assertion is deterministic-only. `voice-turn-limit-fires` and
+  `voice-quick-reply-no-bridge` are both, so neither has a `baseline.json` entry.
+- It scopes `llm_judge` to the cases a `--judge-tag` opts in (`scopeJudgeAssertions`) and drops
+  every other case's deterministic-only assertions. A spoken bridge and the outcome still gate.
+- It refuses, with the case's id, any case left with nothing to gate, text or voice, once the
+  judges the run does not grade are dropped, since that case would pass whatever the agent did.
+
+The deterministic harness scores its own unscoped copy of the dataset, so it keeps asserting the
+limit and the quick-reply lane's "no bridge" for real. A live run's first-speech latency, averaged
+per case over its samples, prints in the report (`[first speech 3105ms]`) but gates nothing.
 
 A voice case also needs the agent published, like a review case: the voice turn port streams
 through the same chat answer path a real session uses, which answers for the agent as it is
@@ -145,16 +193,17 @@ published, not the draft `WorkbenchReplayRunner` replays directly for a live cas
 
 ### Recording the voice baseline
 
-The four voice cases need their own baseline entries the first time they run, and again whenever
-a wording or routine change might shift their live behaviour. Record (or re-record) only them,
-leaving every other case's entry untouched, with `--tag voice`:
+The voice cases a live run drives need their own baseline entries the first time they run, and
+again whenever a wording or routine change might shift their live behaviour. Record (or
+re-record) only them, leaving every other case's entry untouched, with `--tag voice`:
 
 ```bash
 cd backend
-# One-time: point at a disposable agent (any one works; voice settings and the callback
-# routine are seeded onto it fresh, and a repeat run reuses them idempotently).
+# Point at an agent kept for evals (see "What a run changes on a named agent" below), or leave
+# RADIOSO_EVAL_* unset for a disposable one. A repeat run against the same agent publishes over
+# the revision the previous run published, so it needs --allow-named-agent-republish.
 export RADIOSO_EVAL_WORKSPACE_ID=... RADIOSO_EVAL_AGENT_ID=...
-node --env-file=./.env.evals --import tsx ./scripts/runEvals.ts --tag voice --samples 5 --update-baseline
+node --env-file=./.env.evals --import tsx ./scripts/runEvals.ts --tag voice --samples 5 --update-baseline --allow-named-agent-republish
 ```
 
 Record only after a run at the same `--samples` comes back all green (`pnpm run evals -- --tag
@@ -171,12 +220,32 @@ reason to lower the sample count just for this case.
 
 ```bash
 cd backend
-# Point at a disposable agent to seed + run against; a document worker must be running.
+# A document worker must be running. Leave RADIOSO_EVAL_* unset and the run registers a
+# disposable account and agent; set them to run against an agent kept for evals.
 export RADIOSO_EVAL_WORKSPACE_ID=... RADIOSO_EVAL_AGENT_ID=...
 pnpm run evals:update-baseline # FIRST: record current behaviour into baseline.json (5 samples)
 pnpm run evals                 # thereafter: run + gate against the baseline (5 samples)
 pnpm run evals -- --tag routine # only cases carrying a tag (repeatable)
 ```
+
+### What a run changes on a named agent
+
+A run against the agent `RADIOSO_EVAL_AGENT_ID` names leaves it changed, so name only an agent
+kept for evals:
+
+- The seeded corpus is ingested into its workspace, where every agent's retrieval finds it.
+- The seeded directives and routines (the voice callback routine too, on a voice run) stay on
+  its draft.
+- A run with review or voice cases publishes that draft, so the seeded behaviour becomes what
+  the agent serves. When the agent already serves a published revision, the run refuses before
+  it changes anything, unless `--allow-named-agent-republish` accepts the republish; the
+  previous revision stays in its history but is no longer the live one.
+- Its voice block is the one change the run takes back. While the run goes, voice is on with
+  the voice cases' lines and no vendor runtime, so no caller can reach the agent; when the run
+  ends, its own block, runtime binding included, is written back.
+
+A disposable agent (no `RADIOSO_EVAL_*`) keeps all of it, which is what the nightly workflow
+uses.
 
 `baseline.json` must cover every case selected for a normal run. The runner fails when a
 case is missing, rather than treating it as an informational addition, so add a case and
@@ -203,9 +272,22 @@ the re-asked question.
 
 **Because an empty baseline can't gate, the runner fails loudly in run mode until you
 initialize it** — run `pnpm run evals:update-baseline` once against a known-good run first.
+A missing `baseline.json` reads as that empty baseline. A file that cannot be read, does not
+parse, or does not fit the shape the recorder writes (each entry's status, pass rate and sample
+count, the pass threshold, the recording time, and no field besides) stops a gating run or a
+tag-filtered recording
+before it opens anything, naming the file and the field: restore it from git, because a
+recording that read it as empty would write every other case's entry away. A full
+`--update-baseline` without `--tag` rewrites the file whole, so over a damaged file it warns and
+compares against an empty baseline; a file it cannot read at all stops it too.
 
-`--judge` (llm_judge grading) is not wired yet — it's a fast-follow (needs a judge seam).
-The runner rejects the flag and scores the deterministic layer only.
+When the run ends, a named agent gets its own voice block back, then the run closes what the
+composition opened the way every runtime does (`closeDependencies`) and ends the database pool.
+Each step runs even after one fails; a failure is logged and fails the run, and the run's own
+error, when it has one, is the one it exits with.
+
+The runner refuses `--judge`, which would grade every case: name the tags to grade with
+`--judge-tag` instead.
 
 ## Sampling — making the baseline gate-worthy
 

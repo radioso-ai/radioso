@@ -12,7 +12,7 @@ import { conversationQualityCases } from "../../fixtures/conversation-quality/ca
 import { conversationQualityRoutines } from "../../fixtures/conversation-quality/routines.js";
 import { CQ_AGENT_ID, CQ_WORKSPACE_ID, conversationQualityAgentConfig } from "../../fixtures/conversation-quality/index.js";
 import { createReviewTurnRunnerPort, createWorkbenchReplayRunnerPort } from "../../../scripts/evalRunnerAdapter.js";
-import { needsPublishedAgent, scopeJudgeAssertions, seededRoutineSkillNames } from "../../../scripts/runEvals.js";
+import { needsPublishedAgent, scopeJudgeAssertions, seededRoutineSkillNames } from "../../../scripts/evalRunnerSupport.js";
 import { InMemoryConversationRepository, InMemoryMessageRepository } from "../../support/fakes.js";
 
 // The live conversation-quality runner (scripts/runEvals.ts) drives review cases through

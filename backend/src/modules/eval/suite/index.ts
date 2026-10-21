@@ -7,6 +7,7 @@ export {
 } from "./caseSchema.js";
 export {
   evaluateTraceAssertion,
+  isDeterministicOnlyAssertion,
 } from "./traceAssertions.js";
 export {
   scoreObservedOutput,
@@ -17,6 +18,7 @@ export {
   hasBaselineGateFailures,
   isBaselineInitialized,
   mergeBaselineFile,
+  parseBaselineFile,
   type BaselineCaseEntry,
   type BaselineFile,
   type CaseOutcome,

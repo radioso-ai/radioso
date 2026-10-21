@@ -164,6 +164,22 @@ describe("GeminiTextGenerationClient.complete", () => {
     expect(result.usage).toBeUndefined();
   });
 
+  it("reports a reply cut off at maxOutputTokens", async () => {
+    vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(jsonResponse({ candidates: [{ content: { parts: [{ text: "{\"a\":" }] }, finishReason: "MAX_TOKENS" }] }))
+      .mockResolvedValueOnce(jsonResponse({ candidates: [{ content: { parts: [{ text: "{}" }] }, finishReason: "STOP" }] }))
+      .mockResolvedValueOnce(jsonResponse({ candidates: [{ content: { parts: [] }, finishReason: "SAFETY" }] }))
+      .mockResolvedValueOnce(jsonResponse({ candidates: [{ content: { parts: [{ text: "{}" }] } }] }));
+    const client = new GeminiTextGenerationClient(chatConfig);
+
+    const stopReasons = [];
+    for (let call = 0; call < 4; call += 1) {
+      stopReasons.push((await client.complete({ prompt: "Hi" })).stopReason);
+    }
+
+    expect(stopReasons).toEqual(["output_limit", "completed", "other", undefined]);
+  });
+
   it("renders a supported implicit-cache request ordinarily and preserves the exact system prompt", async () => {
     const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
       jsonResponse({ candidates: [{ content: { parts: [{ text: "Hi" }] } }] }),

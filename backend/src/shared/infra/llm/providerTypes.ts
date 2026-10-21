@@ -93,9 +93,19 @@ export interface ProviderUsage {
   quality: UsageQuality;
 }
 
+/**
+ * Why the provider stopped generating, normalized across SDKs. `output_limit`
+ * means the reply was cut off at `maxOutputTokens`; `completed` means the model
+ * finished on its own (a forced schema tool call included); `other` covers any
+ * other reason the provider gives, such as a content filter.
+ */
+export type TextGenerationStopReason = "completed" | "output_limit" | "other";
+
 export interface TextGenerationResult {
   text: string;
   usage?: ProviderUsage;
+  /** Omitted when the provider gives no reason; never inferred. */
+  stopReason?: TextGenerationStopReason;
 }
 
 /**

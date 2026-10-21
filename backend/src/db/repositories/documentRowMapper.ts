@@ -144,6 +144,8 @@ const mapDocumentEnrichment = (
     anchorDate: typeof record.anchorDate === "string" ? record.anchorDate : null,
     anchorSource,
     factCount: typeof record.factCount === "number" ? record.factCount : 0,
+    // Absent on provenance written before facts were placed by their quotes.
+    ...(typeof record.droppedFactCount === "number" ? { droppedFactCount: record.droppedFactCount } : {}),
     appliedChunkCount: typeof record.appliedChunkCount === "number" ? record.appliedChunkCount : 0,
     failureReason: typeof record.failureReason === "string" ? record.failureReason : null,
     // The catalog-driven fields are surfaced only when the stored row actually

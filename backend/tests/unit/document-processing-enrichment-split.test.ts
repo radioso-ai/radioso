@@ -109,7 +109,10 @@ const alwaysAppliesFirstChunkDate: DocumentEnrichmentStagePort = {
           : chunk,
       ),
       factCount: 1,
+      droppedFactCount: 0,
       appliedChunkCount: 1,
+      modelAttemptCount: 1,
+      firstAttemptFailureReason: null,
     };
   },
 };
@@ -347,6 +350,75 @@ describe("document processing enrichment split", () => {
     expect(documentRepository.items.get(document.id)?.status).toBe("ready");
     expect(publisher.enqueue).toHaveBeenCalledOnce();
     expect(publisher.enqueue).toHaveBeenCalledWith("workspace-1", ["document.status_changed"]);
+  });
+
+  it("reports dropped facts, model attempts, and the failure reason without content", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const chunkRepository = new InMemoryChunkRepository(documentRepository);
+    const auditService = createAuditService();
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    const truncatedTwice: DocumentEnrichmentStagePort = {
+      async enrich({ document, chunks }) {
+        return {
+          status: "failed",
+          documentMetadata: document.metadata,
+          provenance: {
+            status: "failed" as const,
+            factCount: 0,
+            appliedChunkCount: 0,
+            droppedFactCount: 0,
+            failureReason: "invalid_output: truncated",
+          },
+          chunks,
+          factCount: 0,
+          droppedFactCount: 3,
+          appliedChunkCount: 0,
+          modelAttemptCount: 2,
+          firstAttemptFailureReason: "invalid_output: no_usable_facts",
+        };
+      },
+    };
+    const document = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Summer Workshop",
+      sourceContent: "Summer workshop introduction.\n\nThe event runs on 2026-07-17.",
+      markdownContent: "Summer workshop introduction.\n\nThe event runs on 2026-07-17.",
+      status: "queued",
+    });
+    const service = new DocumentProcessingService(
+      documentRepository,
+      chunkRepository,
+      buildEmbeddingService([]),
+      auditService,
+      settingsReader(true),
+      new ChunkingStrategyRegistry([singleChunkStrategy()]),
+      undefined,
+      logger as unknown as ConstructorParameters<typeof DocumentProcessingService>[7],
+      truncatedTwice,
+      undefined,
+      jobRepository,
+    );
+    await service.process(buildVectorizeJob(document.id, document.revision));
+
+    await service.processEnrichment(buildEnrichJob(document.id, document.revision));
+
+    // The stage result is the one source: provenance counts do not leak in.
+    const counts = {
+      modelAttemptCount: 2,
+      droppedFactCount: 3,
+      failureReason: "invalid_output: truncated",
+      firstAttemptFailureReason: "invalid_output: no_usable_facts",
+    };
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ enrichmentStatus: "failed", ...counts }),
+      "Document enrichment completed",
+    );
+    const audit = auditService.events.find((event) => event.eventType === "document.enrichment");
+    expect(audit?.metadata).toMatchObject({ status: "failed", ...counts });
+    expect(audit?.metadata).not.toHaveProperty("attemptCount");
+    expect(JSON.stringify(audit?.metadata)).not.toContain("2026-07-17");
   });
 
   it("skips a stale-revision enrich job without error", async () => {

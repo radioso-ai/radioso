@@ -58,78 +58,6 @@ const coerceByteCount = (value: number | string | null | undefined): number | nu
 const coerceTimestamp = (value: Date | string | null | undefined): Date | null =>
   value === null || value === undefined ? null : new Date(value);
 
-export const documentSelect = `
-  id,
-  workspace_id,
-  title,
-  source_content,
-  markdown_content,
-  source_id,
-  (
-    SELECT jsonb_build_object(
-      'id', s.id,
-      'kind', s.kind,
-      'name', s.name,
-      'externalId', s.external_id
-    )
-    FROM document_sources s
-    WHERE s.id = documents.source_id
-  ) AS source,
-  external_document_id,
-  status,
-  revision,
-  failure_reason,
-  created_at,
-  updated_at,
-  retrieval_enabled,
-  retrieval_expires_at,
-  metadata,
-  source_kind,
-  source_filename,
-  source_mime_type,
-  source_storage_bucket,
-  source_storage_object,
-  source_storage_generation,
-  source_size_bytes,
-  content_size_bytes,
-  content_hash
-`;
-
-export const documentSummarySelect = `
-  id,
-  workspace_id,
-  title,
-  status,
-  failure_reason,
-  created_at,
-  updated_at,
-  retrieval_enabled,
-  retrieval_expires_at,
-  metadata,
-  source_id,
-  (
-    SELECT jsonb_build_object(
-      'id', s.id,
-      'kind', s.kind,
-      'name', s.name,
-      'externalId', s.external_id
-    )
-    FROM document_sources s
-    WHERE s.id = documents.source_id
-  ) AS source,
-  external_document_id,
-  source_kind,
-  source_filename,
-  source_mime_type,
-  source_storage_bucket,
-  source_storage_object,
-  source_storage_generation,
-  source_size_bytes,
-  content_size_bytes,
-  content_hash,
-  COALESCE(content_size_bytes, source_size_bytes, OCTET_LENGTH(source_content)) AS content_size
-`;
-
 export const mapDocument = (row: DocumentRow): DocumentRecord => ({
   id: row.id,
   workspaceId: row.workspace_id,
@@ -235,6 +163,9 @@ const mapDocumentEnrichment = (
             ? record.generatedKeys.filter((key): key is string => typeof key === "string")
             : [],
         }),
+    // Absent on provenance that predates it; ownership of the dates is then
+    // inferred from the run, so the mapper must not invent a value.
+    ...(record.dateOwnershipRecorded === true ? { dateOwnershipRecorded: true } : {}),
     ...(record.fieldCounts === undefined
       ? {}
       : { fieldCounts: mapDocumentEnrichmentFieldCounts(record.fieldCounts) }),

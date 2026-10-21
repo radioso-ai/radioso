@@ -299,7 +299,9 @@ Chunking behavior.`,
         dateTo: "2026-08-10",
       },
     });
-    // Prior extraction is recorded in the dedicated provenance column.
+    // Prior extraction is recorded in the dedicated provenance column. This
+    // provenance predates recorded date ownership; an applied event run that
+    // dated a chunk is what marks the dates as extraction-written.
     await documentRepository.updateMetadataForRevision({
       documentId: document.id,
       workspaceId: "workspace-clear-enrichment",
@@ -309,7 +311,7 @@ Chunking behavior.`,
         dateFrom: "2026-08-10",
         dateTo: "2026-08-10",
       },
-      enrichment: { status: "applied" },
+      enrichment: { status: "applied", shape: "event", factCount: 1, appliedChunkCount: 1 },
     });
     const service = new DocumentProcessingService(
       documentRepository,

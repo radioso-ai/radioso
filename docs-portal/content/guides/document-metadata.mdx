@@ -97,7 +97,7 @@ flowchart TB
   confident -->|yes| fields["Fields for the matched type"]
   fields --> checked{"Per entry: declared · typed · unique"}
   checked -->|no| dropped["Dropped and counted<br/>in fieldCounts"]
-  checked -->|yes| owned{"Key already set by hand<br/>or by a connector?"}
+  checked -->|yes| owned{"Key already set by hand,<br/>by a connector, or by the source?"}
   owned -->|yes| kept["Left alone<br/>counted as a collision"]
   owned -->|no| written["Written to the document<br/>and every chunk"]
 ```
@@ -131,7 +131,13 @@ The catalog is deliberately hard to break in ways that would quietly re-point a 
 
 **Deleted keys are retired, not forgotten.** Delete `price` and the key is tombstoned: it can only ever come back as a number. The deletion dialog says so, and warns that the tag drops off each document on its next reprocess.
 
-**Manual edits win and stick.** Extraction owns exactly the keys it generated for a document and nothing else. A tag you typed by hand, or one a connector supplied, is skipped and counted as a collision rather than overwritten. Edit a generated tag by hand and ownership transfers to you permanently — from then on extraction neither overwrites nor removes that key, so a hand-corrected price stays corrected through every later run. The built-in `dateFrom` and `dateTo` are the exception: every run with extraction enabled rewrites them from the document's content. To own dates by hand, turn extraction off for that document or source and edit the tags directly.
+**Manual edits win and stick.** Extraction owns exactly the keys it generated for a document and nothing else. A tag you typed by hand, one a connector supplied, or one your source's **Document tags** set is skipped and counted as a collision rather than overwritten. A tag left empty or `null` counts as unset, so extraction can fill it in. Edit a generated tag by hand and ownership transfers to you permanently — from then on extraction neither overwrites nor removes that key, so a hand-corrected price stays corrected through every later run.
+
+**Dates follow the same rule, as a pair.** Load a course calendar through the API with `dateFrom: "2026-03-02"` and `dateTo: "2026-03-06"` on each course, and those exact dates stay on the document and on every chunk through a PUT that sends them again, a reprocess, and every extraction run, whatever the model reads — the run counts each date it would have written as a collision. Dates in a source's **Document tags** get the same protection on every chunk of that source. Dates extraction wrote are extraction's: the next successful run refreshes them from the content. Change either one by hand and both become yours. An empty or `null` date counts as no date, so extraction fills it in.
+
+**A connector's dates are defaults.** WordPress writes each post's publish day as `dateFrom`. With extraction on, an event post published on 10 January that announces retreats on 4–8 May gets the event's dates instead, on the document and on the chunk describing each retreat. The publish day stays when extraction is off, when the run fails, and when the run reads no dates. The connector rewrites a synced post's metadata on its next sync, so a date you edit by hand on one lasts until that sync or until a run reads dates from the post.
+
+**Extracted tags wait for the run that replaces them.** When a document processes again with extraction on, the document keeps its extracted tags until the run succeeds and swaps them for new ones, so a run that fails leaves the previous tags standing on the document. Its new chunks start without them, though — they described the old content — and get the new values when the run succeeds. When the document processes with extraction off, the extracted tags come off the document as well, because nothing will refresh them. Tags you, a connector, or the source wrote stay on the document and its chunks either way.
 
 **Concurrent edits fail loudly.** Each save carries the revision it was based on. If someone else saved while you were editing, yours is rejected with "Someone else saved this catalog while you were editing", the latest version loads in place, and you reapply your change. Nobody's edit disappears.
 
@@ -148,7 +154,9 @@ Extraction is one of three ways a tag reaches a document, and they compose:
 ## Common failure modes
 
 - **Everything classifies as `generic`.** The description is too thin or too abstract for the model to match a page against. Rewrite it as a sentence describing what such a page contains, and check the pages you expect to match actually look like that description.
-- **A field is missing on documents that clearly have the value.** Check `fieldCounts` on the document. `droppedInvalid` points at the instruction — the value came back in a form that will not read as the declared type. `skippedCollision` means the key was already set by hand or by a connector, and extraction left it alone on purpose.
+- **A field is missing on documents that clearly have the value.** Check `fieldCounts` on the document. `droppedInvalid` points at the instruction — the value came back in a form that will not read as the declared type. `skippedCollision` means the key was already set by hand, by a connector, or by the source's **Document tags**, and extraction left it alone on purpose.
+- **Every chunk of an event document carries the same dates.** The document's own metadata holds `dateFrom` or `dateTo` set by hand or through the API — or its source's **Document tags** do — so extraction leaves the dates alone and `skippedCollision` counts them. Chunks then carry those dates rather than one date per event. Remove the dates and reprocess with extraction on to let the run date each chunk.
+- **A document shows dates its chunks lack.** Its content changed, extraction ran on the new revision, and the run failed. The document keeps the previous run's dates; the new chunks wait for a run that succeeds. **Run metadata extraction** retries it.
 - **A rule stopped matching after a catalog edit.** Deleting a field or disabling a type removes the tag from documents on their next reprocess. Point the rule at a live field, or restore the field and reprocess.
 - **Tags never appear at all.** Confirm extraction resolved to on for that document's source, and that the document finished processing. The enrich job runs behind indexing, so a document is searchable for a while before its tags land.
 

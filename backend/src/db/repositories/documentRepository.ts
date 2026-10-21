@@ -41,8 +41,7 @@ interface QueuedDocumentRow {
 }
 
 /**
- * Correlated `source` summary subquery shared by the full and summary projections. Mirrors
- * the raw `documentSelect`/`documentSummarySelect` subquery exactly: a single-row
+ * Correlated `source` summary subquery shared by the full and summary projections: a single-row
  * `jsonb_build_object` from `document_sources` keyed on `documents.source_id`. Built as a
  * `sql` fragment because the column list is a fixed projection the Kysely builder can't
  * model more concisely than the SQL itself.

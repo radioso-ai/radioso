@@ -11,6 +11,8 @@ Semantic rewrite guidance:
 Lexical rewrite guidance:
 {{lexical_rewrite_instructions}}
 
+Today's date: {{today}}
+
 Latest user question:
 {{query}}
 
@@ -55,13 +57,14 @@ queryShape: use the semantic definitions below. Apply them by meaning in every l
 - general_grounding: a grounded answer that does not fit a specialized shape. Use default_hybrid only when the default retrieval strategy itself is the intended shape.
 Do not use policy_answer merely because the assistant has a behavioral directive about the topic. Classify the user's requested answer, not the instructions for how to answer it.
 After resolving a follow-up to a concrete subject, use the specialized shape that fits the resolved request. For example, a follow-up asking for one discrete attribute remains definition_lookup; use follow_up_grounding only when no specialized shape applies.
-temporalQueryMode: use "listing" only for an anchorless event/date query that asks for a list or ordering of dated events without naming a specific topic; use "topic_refinement" for a named event/topic temporal question; otherwise use "none". This is your structured judgment and must not rely on backend keyword rules.
+temporalQueryMode: use "listing" only for an event/date query that asks for a list or ordering of dated events without naming a specific topic; a date or period the question names is not a topic. Use "topic_refinement" for a named event/topic temporal question; otherwise use "none". This is your structured judgment and must not rely on backend keyword rules.
+requestedDateRange: when the question asks about a particular date or period (a day, a weekend, a week, a month, a season, a year, or a period relative to today such as next week), resolve it against today's date and the conversation into the inclusive calendar dates it covers, as {"dateFrom":"YYYY-MM-DD","dateTo":"YYYY-MM-DD"}; a single day has the same dateFrom and dateTo. When the question or the conversation does not fix the year: a period that contains today is the current one; a question about the past means the period's most recent past occurrence; otherwise use its next occurrence from today. Use null when the question names no date or period, including an open question about what is coming up. Resolve dates by meaning in every language.
 resolutionNote: when the latest message depends on something from the conversation (an ordinal or position in a list the assistant offered, an accepted offer, a continuation, a correction, a reference back to a subject named earlier), name in one short clause the concrete item it resolves to and how, before you resolve the query fields; otherwise null. Apply this by meaning in every language; do not rely on English ordinal or acceptance words.
 proposedActiveSubject: the one concrete subject the request is about once references are resolved, in the form the conversation gives it; null only when the request concerns no concrete subject. relatedEntities: other concrete entities the request involves besides that subject. A resolved referent belongs in proposedActiveSubject, not only in relatedEntities.
 confidence: certainty in subject resolution and turn interpretation, not answer confidence.
 {{page_read_section}}
 
 Return strict JSON matching this blueprint exactly:
-{"route":"retrieval|direct","isIdentityQuestion":false,"intentTopic":"string|null","inScopeRequest":"string|null","outsideScopeRequest":"string|null","rewrite":{"resolutionNote":"string|null","turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","temporalQueryMode":"none|listing|topic_refinement","retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null"}],"unresolved":false,"confidence":0.95}{{page_read_output_field}}}
+{"route":"retrieval|direct","isIdentityQuestion":false,"intentTopic":"string|null","inScopeRequest":"string|null","outsideScopeRequest":"string|null","rewrite":{"resolutionNote":"string|null","turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","temporalQueryMode":"none|listing|topic_refinement","requestedDateRange":{"dateFrom":"YYYY-MM-DD","dateTo":"YYYY-MM-DD"}|null,"retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null"}],"unresolved":false,"confidence":0.95}{{page_read_output_field}}}
 
 Return strict JSON matching the blueprint, with the rewrite fields in the blueprint's order: resolve what the message refers to before writing the queries. Do not wrap in markdown fences.

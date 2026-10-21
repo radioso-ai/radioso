@@ -217,7 +217,7 @@ describe("retrieval semantic degradation", () => {
       { search: vi.fn().mockResolvedValue([lexicalChunk]) },
       { hydrate: vi.fn().mockResolvedValue([]) },
       {
-        findUpcoming: vi.fn().mockRejectedValue(
+        findInWindow: vi.fn().mockRejectedValue(
           new Error("canceling statement due to statement timeout"),
         ),
       },

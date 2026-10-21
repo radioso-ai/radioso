@@ -445,6 +445,23 @@ describe("rerank tool", () => {
     });
   });
 
+  it("dates the rerank with today's weekday", async () => {
+    const registry = new InMemoryChunkRegistry();
+    registry.record([fromRetrievedChunk(chunk({ chunkId: "a", similarity: 0.5 }))]);
+    const calls: Array<Parameters<RerankGateway["rerank"]>[0]> = [];
+    const gateway: RerankGateway = {
+      async rerank(input) {
+        calls.push(input);
+        return [];
+      },
+    };
+    const tool = createRerankTool({ rerankGateway: gateway, registry, clock: () => new Date("2026-10-21T08:00:00.000Z") });
+
+    await tool.invoke({ query: "events this weekend", chunkIds: ["a"] }, toolCtx);
+
+    expect(calls[0]?.today).toBe("2026-10-21 (Wednesday)");
+  });
+
   it("falls back to registered similarity when the gateway omits a chunkId", async () => {
     const registry = new InMemoryChunkRegistry();
     registry.record([fromRetrievedChunk(chunk({ chunkId: "only", similarity: 0.4 }))]);

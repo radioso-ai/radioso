@@ -63,3 +63,41 @@ describe("PromptBuilder context metadata", () => {
     expect(result.prompt).not.toContain("not-a-date");
   });
 });
+
+describe("PromptBuilder dates", () => {
+  const wednesday = () => new Date("2026-10-21T23:30:00.000Z");
+  const build = (requestedDateRange?: { dateFrom: string; dateTo: string }) =>
+    new PromptBuilder(undefined, wednesday).build({
+      query: "What's on this weekend?",
+      history: [],
+      contexts: [wordpressContext({})],
+      settings: {},
+      ...(requestedDateRange ? { requestedDateRange } : {}),
+    });
+
+  it("dates the answer with today's weekday, so it can count days the way the rewrite did", () => {
+    expect(build().systemPrompt).toContain("The current date is 2026-10-21 (Wednesday).");
+  });
+
+  it("tells the answer the period the question asks about, in the request rather than the standing instructions", () => {
+    const result = build({ dateFrom: "2026-10-24", dateTo: "2026-10-25" });
+
+    expect(result.prompt).toContain("Requested period:\n2026-10-24 (Saturday) to 2026-10-25 (Sunday)");
+    expect(result.systemPrompt).not.toContain("2026-10-24");
+    expect(result.systemPrompt).not.toContain("Requested period");
+  });
+
+  it("names a single requested day once", () => {
+    expect(build({ dateFrom: "2026-10-24", dateTo: "2026-10-24" }).prompt)
+      .toContain("Requested period:\n2026-10-24 (Saturday)\n");
+  });
+
+  it("adds nothing to the request when the question names no period", () => {
+    const withoutRange = build();
+    const withRange = build({ dateFrom: "2026-10-24", dateTo: "2026-10-25" });
+
+    expect(withoutRange.prompt).not.toContain("Requested period");
+    expect(withoutRange.systemPrompt).toBe(withRange.systemPrompt);
+    expect(withoutRange.prompt).toContain("Answer request:\nWhat's on this weekend?\n\nStandalone retrieval query:");
+  });
+});

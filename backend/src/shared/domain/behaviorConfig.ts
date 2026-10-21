@@ -259,6 +259,29 @@ export const RETRIEVAL_BEHAVIOR = {
   // searches a single turn issues; branches beyond the cap contribute lexical-only
   // (their contexts are pooled downstream regardless). Lexical fan-out is unaffected.
   maxSemanticBranches: 2,
+  temporal: {
+    // The longest date range a question may request: a whole leap year. A longer range
+    // is dropped, and the turn falls back to its upcoming-from-today handling.
+    requestedDateRangeMaxDays: 366,
+    // Passages an answer may hold when it lists the events in a requested date range,
+    // in place of `finalContextTopK`, so a busy week reaches the answer. At most
+    // `promptContextMaxCharsPerContext` characters each, 20 passages stay inside
+    // `promptContextTokenBudget`.
+    dateRangeListingContextTopK: 20,
+    // Passages a requested-range lookup fetches, most similar to the question first. A busy
+    // week runs to about 30 dated passages in one language, and a corpus with a twin per
+    // language doubles that; similarity puts the question's own language first, so 40
+    // holds a busy week in that language with room to spare. The answer still keeps only
+    // the top `dateRangeListingContextTopK` of them.
+    dateRangeLookupDepth: 40,
+    // Passages a requested-range answer keeps for the best matches outside the range, ahead
+    // of the range's own passages, so a question that names a period without asking for its
+    // events ("what do I bring to a course in December?") still reads the page that answers
+    // it. Four fits the top two such documents at `promptContextMaxPerDocument` passages
+    // each, and the reserve is added to the range's passages up to the listing limit, so a
+    // busy period still gives its events 16 of the 20.
+    dateRangeReservedOutsidePassages: 4,
+  },
   hybrid: {
     lexicalTopK: 20,
     // Absolute ts_rank_cd evidence floor; query-relative lexicalScore cannot satisfy quality gates.

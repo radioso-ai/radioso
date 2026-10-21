@@ -19,6 +19,7 @@ import type {
 import type { AppliedConstraint, ParsedQueryInterpretation } from "../domain/queryConstraintTypes.js";
 import type { RetrievalSourceFilter, RetrievalSourceScope } from "../domain/retrievalSourceFilter.js";
 import type { RetrievedChunk } from "../domain/vectorSearch.js";
+import { type RequestedDateRange, requestedDateRangeDays } from "../domain/temporal/requestedDateRange.js";
 import type { PromptBuildResult } from "./promptBuilder.js";
 
 export interface RetrievalPipelineRequest {
@@ -105,6 +106,9 @@ export type SemanticRetrievalFailureReason =
 // three-valued availability; these channels are simply present or absent.
 export type DegradableRetrievalChannel = "lexical" | "temporal";
 
+// `similarity` when the question's embedding ranked the range's chunks, `date` without one.
+export type TemporalLookupRanking = "similarity" | "date";
+
 export const DEGRADABLE_RETRIEVAL_CHANNELS: readonly DegradableRetrievalChannel[] = [
   "lexical",
   "temporal",
@@ -124,6 +128,13 @@ export interface CandidateRetrievalStageResult extends QueryInterpretationStageR
   lexicalContexts: RetrievedChunk[];
   temporalContexts?: RetrievedChunk[];
   temporalQueryMode?: TemporalQueryMode;
+  /**
+   * The validated range the question names, whatever the rewrite labelled it. The structured
+   * lookup reads it, and boosting and prompt ordering rank by it.
+   */
+  temporalDateRange?: RequestedDateRange;
+  /** How the range lookup ordered its chunks; present only when a range lookup ran. */
+  temporalLookupRanking?: TemporalLookupRanking;
   temporalStructuredLookupEnabled?: boolean;
   retrievalBranches: RetrievalBranchResult[];
   vectorFallbackApplied: boolean;
@@ -136,6 +147,12 @@ export interface CandidatePreparationStageResult extends CandidateRetrievalStage
   normalizedCandidates: import("../domain/retrievalPipelineTypes.js").RetrievedCandidate[];
   mergedCandidates: import("../domain/retrievalPipelineTypes.js").RetrievedCandidate[];
   scoredCandidates: import("../domain/retrievalPipelineTypes.js").RetrievedCandidate[];
+  /**
+   * A range lookup's candidates within the request's document scope and metadata rules, in the
+   * lookup's order. Present only when a range lookup ran; they stay out of the ranked lists,
+   * and context selection composes the answer from both.
+   */
+  rangeCandidates?: import("../domain/retrievalPipelineTypes.js").RetrievedCandidate[];
   appliedConstraints: AppliedConstraint[];
   candidateFallbackApplied: boolean;
   triggerBackoff: TriggerBackoffDecision;
@@ -241,6 +258,8 @@ type TraceCandidateRetrievalInput = TraceQueryInterpretationInput & {
   lexicalContexts?: Array<unknown>;
   temporalContexts?: Array<unknown>;
   temporalQueryMode?: TemporalQueryMode;
+  temporalDateRange?: RequestedDateRange;
+  temporalLookupRanking?: TemporalLookupRanking;
   temporalStructuredLookupEnabled?: boolean;
   retrievalBranches?: Array<unknown>;
   activeRetrievalSubqueries?: Array<unknown>;
@@ -360,6 +379,11 @@ export const buildCandidateRetrievalTraceAttributes = (result: TraceCandidateRet
     "retrieval.candidates.temporal.count": boundedTraceCount(result.temporalContexts?.length),
     "retrieval.temporal.mode": result.temporalQueryMode,
     "retrieval.temporal.structured_lookup.enabled": result.temporalStructuredLookupEnabled,
+    "retrieval.temporal.date_range.requested": result.temporalDateRange !== undefined,
+    "retrieval.temporal.date_range.days": result.temporalDateRange
+      ? requestedDateRangeDays(result.temporalDateRange)
+      : undefined,
+    "retrieval.temporal.lookup_ranking": result.temporalLookupRanking,
     "retrieval.branch.count": boundedTraceCount(result.retrievalBranches?.length),
     "retrieval.subquery.count": boundedTraceCount(result.activeRetrievalSubqueries?.length),
     "retrieval.vector_fallback.applied": result.vectorFallbackApplied,

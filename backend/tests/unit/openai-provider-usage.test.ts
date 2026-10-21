@@ -446,6 +446,7 @@ describe("OpenAITextGenerationClient prompt cache routing", () => {
         { routineId: "cancel-order", title: "Cancel an order", triggerSummary: "wants to cancel", priority: 0 },
       ],
       directiveCandidates: [],
+      today: "2026-10-21",
     });
     const turnOneFormat = buildTurnPlanResponseFormat({
       routineIds: ["book-call", "cancel-order"],
@@ -458,6 +459,8 @@ describe("OpenAITextGenerationClient prompt cache routing", () => {
         { routineId: "refund-policy", title: "Refund policy", triggerSummary: "asks about refunds", priority: 0 },
       ],
       directiveCandidates: [],
+      // A different day than turn one: the date renders in the request, so the cache key holds.
+      today: "2026-10-22",
     });
     const turnTwoFormat = buildTurnPlanResponseFormat({ routineIds: ["refund-policy"], directiveNames: [] });
 

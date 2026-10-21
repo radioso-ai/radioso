@@ -7,7 +7,7 @@ Original latest user question:
 Answer request:
 {{query}}
 
-Standalone retrieval query:
+{{requested_period_section}}Standalone retrieval query:
 {{retrieval_query}}
 
 Website Excerpts:

@@ -20,6 +20,7 @@ import type {
 import { REWRITE_STATUS, REWRITE_TURN_KIND, type TemporalQueryMode } from "../domain/retrievalPipelineTypes.js";
 import { buildLexicalAlternativeSubqueries } from "../domain/lexicalQueryPlan.js";
 import { anchorRetrievalToSubject } from "../domain/referentialSubjectAnchor.js";
+import { readRequestedDateRange, requestedDateRangeFields } from "../domain/temporal/requestedDateRange.js";
 import { RewriteEligibilityService } from "./rewritePolicyService.js";
 import { DEFAULT_RESPONSE_LANGUAGE_POLICY } from "./queryRewriteDefaults.js";
 import { truncateTriggerInstruction } from "./queryRewriteParser.js";
@@ -374,6 +375,7 @@ export class QueryRewriteService {
         responseLanguagePolicy,
         queryShape: this.normalizeQueryShape(result.queryShape),
         temporalQueryMode: this.normalizeTemporalQueryMode(result.temporalQueryMode),
+        ...this.normalizeRequestedDateRange(result),
         retrievalSubqueries: this.normalizeRetrievalSubqueries(result.retrievalSubqueries),
         turnKind: this.normalizeTurnKind(result.turnKind),
         proposedActiveSubject: this.normalizeClassifierLabel(result.proposedActiveSubject),
@@ -407,6 +409,19 @@ export class QueryRewriteService {
       default:
         return "none";
     }
+  }
+
+  // A proposal can arrive from a caller other than the rewrite parser, so the range is
+  // re-read here rather than trusted. A range the proposal's own parse already dropped keeps
+  // that parse's reason.
+  private normalizeRequestedDateRange(
+    proposal: StructuredRewriteResult,
+  ): Pick<StructuredRewriteResult, "requestedDateRange" | "requestedDateRangeDropReason"> {
+    const reading = readRequestedDateRange(proposal.requestedDateRange);
+    return requestedDateRangeFields({
+      ...reading,
+      dropReason: reading.dropReason ?? proposal.requestedDateRangeDropReason,
+    });
   }
 
   private normalizeTurnKind(turnKind?: string): RewriteTurnKind {

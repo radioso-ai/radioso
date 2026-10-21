@@ -9,6 +9,8 @@ Semantic rewrite guidance:
 Lexical rewrite guidance:
 {{lexical_rewrite_instructions}}
 
+Today's date: {{today}}
+
 Latest user question:
 {{query}}
 
@@ -40,11 +42,12 @@ When you resolve a concrete proposedActiveSubject, make the relevant lexicalQuer
 For exact phrases, preserve the phrase words in the relevant lexicalQuery value.
 
 queryShape: use enum values only; use "general_grounding" when no specialized shape is clear.
-temporalQueryMode: use "listing" only for an anchorless event/date query that asks for a list or ordering of dated events without naming a specific topic; use "topic_refinement" for a named event/topic temporal question; otherwise use "none". This is your structured judgment and must not rely on backend keyword rules.
+temporalQueryMode: use "listing" only for an event/date query that asks for a list or ordering of dated events without naming a specific topic; a date or period the question names is not a topic. Use "topic_refinement" for a named event/topic temporal question; otherwise use "none". This is your structured judgment and must not rely on backend keyword rules.
+requestedDateRange: when the question asks about a particular date or period (a day, a weekend, a week, a month, a season, a year, or a period relative to today such as next week), resolve it against today's date and the conversation into the inclusive calendar dates it covers, as {"dateFrom":"YYYY-MM-DD","dateTo":"YYYY-MM-DD"}; a single day has the same dateFrom and dateTo. When the question or the conversation does not fix the year: a period that contains today is the current one; a question about the past means the period's most recent past occurrence; otherwise use its next occurrence from today. Use null when the question names no date or period, including an open question about what is coming up. Resolve dates by meaning in every language.
 proposedActiveSubject: the one concrete subject the request is about once references are resolved, in the form the conversation gives it; null only when the request concerns no concrete subject. relatedEntities: other concrete entities the request involves besides that subject. A resolved referent belongs in proposedActiveSubject, not only in relatedEntities.
 confidence: certainty in subject resolution and turn interpretation, not answer confidence.
 
 Return strict JSON matching this blueprint exactly:
-{"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","temporalQueryMode":"none|listing|topic_refinement","retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null"}],"turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"unresolved":false,"confidence":0.95}
+{"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","temporalQueryMode":"none|listing|topic_refinement","requestedDateRange":{"dateFrom":"YYYY-MM-DD","dateTo":"YYYY-MM-DD"}|null,"retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null"}],"turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"unresolved":false,"confidence":0.95}
 
 Return strict JSON matching the blueprint. Do not wrap in markdown fences.

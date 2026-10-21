@@ -16,6 +16,8 @@ import { ContextSelectionStageService } from "../../src/modules/retrieval/servic
 import { RerankService } from "../../src/modules/retrieval/services/rerankService.js";
 import { PromptContextSelectorService } from "../../src/modules/retrieval/services/promptContextSelectorService.js";
 import type { TemporalCandidateRetrievalPort } from "../../src/modules/retrieval/domain/temporal/temporalCandidateRetrieval.js";
+import type { RetrievedChunk } from "../../src/modules/retrieval/domain/vectorSearch.js";
+import { RETRIEVAL_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 import {
   buildCandidatePreparationTraceAttributes,
   buildCandidateRetrievalTraceAttributes,
@@ -261,7 +263,7 @@ describe("retrieval pipeline stages", () => {
   });
 
   it("requests temporal candidates for event listing rewrites when structured lookup is enabled", async () => {
-    const temporalCalls: Parameters<TemporalCandidateRetrievalPort["findUpcoming"]>[0][] = [];
+    const temporalCalls: Parameters<TemporalCandidateRetrievalPort["findInWindow"]>[0][] = [];
     const temporalCandidate = {
       chunkId: "future-retreat",
       documentId: "doc-future-retreat",
@@ -284,7 +286,7 @@ describe("retrieval pipeline stages", () => {
       { async search() { return []; } },
       emptyChunkHydrator,
       {
-        async findUpcoming(input) {
+        async findInWindow(input) {
           temporalCalls.push(input);
           return [temporalCandidate];
         },
@@ -311,14 +313,16 @@ describe("retrieval pipeline stages", () => {
     });
 
     expect(temporalCalls).toEqual([
-      expect.objectContaining({
+      {
         workspaceId: "workspace-1",
-        today: "2026-07-02",
+        window: { kind: "upcoming", today: "2026-07-02" },
+        topK: 20,
         metadataFilter: undefined,
         sourceFilter: undefined,
-      }),
+      },
     ]);
     expect(result.temporalContexts).toEqual([temporalCandidate]);
+    expect(result.temporalDateRange).toBeUndefined();
     expect(buildCandidateRetrievalTraceAttributes(result)).toMatchObject({
       "retrieval.temporal.mode": "listing",
       "retrieval.temporal.structured_lookup.enabled": true,
@@ -338,7 +342,7 @@ describe("retrieval pipeline stages", () => {
       { async search() { return []; } },
       emptyChunkHydrator,
       {
-        async findUpcoming() {
+        async findInWindow() {
           temporalCalls += 1;
           return [];
         },
@@ -372,6 +376,305 @@ describe("retrieval pipeline stages", () => {
       "retrieval.temporal.structured_lookup.enabled": false,
       "retrieval.candidates.temporal.count": 0,
     });
+  });
+
+  describe("requested date range", () => {
+    const week = { dateFrom: "2026-12-07", dateTo: "2026-12-13" };
+    const temporalRewrite = (overrides: Record<string, unknown>) => ({
+      ...baseCandidateRetrievalInput().rewrittenQuery,
+      structuredResult: {
+        rewrittenQuery: "events in the week of 7 December",
+        semanticQuery: "events in the week of 7 December",
+        lexicalQuery: "events December",
+        queryShape: "event_date_lookup" as const,
+        temporalQueryMode: "listing" as const,
+        requestedDateRange: week,
+        turnKind: "fresh_subject" as const,
+        relatedEntities: [],
+        unresolved: false,
+        confidence: 0.9,
+        ...overrides,
+      },
+    });
+    const questionVector = [0.1, 0.2, 0.3];
+    const recordingStage = () => {
+      const calls: Parameters<TemporalCandidateRetrievalPort["findInWindow"]>[0][] = [];
+      const stage = new CandidateRetrievalStageService(
+        {
+          async embedQueries() {
+            return { space: embeddingSpace, vectors: [questionVector] };
+          },
+        },
+        { async search() { return []; } },
+        { async search() { return []; } },
+        emptyChunkHydrator,
+        {
+          async findInWindow(input) {
+            calls.push(input);
+            return [];
+          },
+        },
+        () => new Date("2026-10-21T12:00:00.000Z"),
+      );
+      return { stage, calls };
+    };
+
+    it("looks up the events overlapping the range a question names, ranked by similarity to it, as deep as a busy week", async () => {
+      const { stage, calls } = recordingStage();
+
+      const result = await stage.execute({
+        ...baseCandidateRetrievalInput(),
+        rewrittenQuery: temporalRewrite({}),
+      });
+
+      expect(calls).toEqual([
+        {
+          workspaceId: "workspace-1",
+          window: {
+            kind: "requested_range",
+            range: week,
+            similarTo: { space: embeddingSpace, queryVector: questionVector },
+          },
+          topK: RETRIEVAL_BEHAVIOR.temporal.dateRangeLookupDepth,
+          metadataFilter: undefined,
+          sourceFilter: undefined,
+        },
+      ]);
+      expect(result.temporalDateRange).toEqual(week);
+      expect(result.temporalLookupRanking).toBe("similarity");
+      expect(buildCandidateRetrievalTraceAttributes(result)).toMatchObject({
+        "retrieval.temporal.mode": "listing",
+        "retrieval.temporal.date_range.requested": true,
+        "retrieval.temporal.date_range.days": 7,
+        "retrieval.temporal.lookup_ranking": "similarity",
+      });
+    });
+
+    it("fetches as deep as an operator-raised answer pool", async () => {
+      const { stage, calls } = recordingStage();
+
+      await stage.execute({
+        ...baseCandidateRetrievalInput(),
+        settings: { ...baseCandidateRetrievalInput().settings, rerankTopK: 45 },
+        rewrittenQuery: temporalRewrite({}),
+      });
+
+      expect(calls[0]?.topK).toBe(45);
+    });
+
+    it.each([
+      ["a topic question about an event's dates", { temporalQueryMode: "topic_refinement" }],
+      ["a question with no temporal mode", { temporalQueryMode: "none" }],
+      ["a question of another shape", { queryShape: "general_grounding", temporalQueryMode: "none" }],
+    ])("runs the range lookup for %s", async (_label, overrides) => {
+      const { stage, calls } = recordingStage();
+
+      const result = await stage.execute({
+        ...baseCandidateRetrievalInput(),
+        rewrittenQuery: temporalRewrite(overrides),
+      });
+
+      expect(calls).toEqual([
+        expect.objectContaining({
+          window: expect.objectContaining({ kind: "requested_range", range: week }),
+        }),
+      ]);
+      expect(result.temporalDateRange).toEqual(week);
+    });
+
+    it("orders the range lookup by date when the question has no embedding", async () => {
+      const calls: Parameters<TemporalCandidateRetrievalPort["findInWindow"]>[0][] = [];
+      const stage = new CandidateRetrievalStageService(
+        { async embedQueries() { throw new Error("embedding provider down"); } },
+        { async search() { return []; } },
+        { async search() { return []; } },
+        emptyChunkHydrator,
+        {
+          async findInWindow(input) {
+            calls.push(input);
+            return [];
+          },
+        },
+        () => new Date("2026-10-21T12:00:00.000Z"),
+      );
+
+      const result = await stage.execute({
+        ...baseCandidateRetrievalInput(),
+        rewrittenQuery: temporalRewrite({ temporalQueryMode: "topic_refinement" }),
+      });
+
+      expect(calls[0]?.window).toEqual({ kind: "requested_range", range: week });
+      expect(result.temporalLookupRanking).toBe("date");
+    });
+
+    it("runs no range lookup when structured lookup is off, and keeps the range for ranking", async () => {
+      const { stage, calls } = recordingStage();
+
+      const result = await stage.execute({
+        ...baseCandidateRetrievalInput(),
+        settings: { ...baseCandidateRetrievalInput().settings, temporalStructuredLookupEnabled: false },
+        rewrittenQuery: temporalRewrite({}),
+      });
+
+      expect(calls).toEqual([]);
+      expect(result.temporalDateRange).toEqual(week);
+      expect(result.temporalLookupRanking).toBeUndefined();
+    });
+
+    it.each(["too_long", "invalid"] as const)(
+      "runs no upcoming fallback for a listing question whose range was dropped as %s",
+      async (requestedDateRangeDropReason) => {
+        const { stage, calls } = recordingStage();
+
+        const result = await stage.execute({
+          ...baseCandidateRetrievalInput(),
+          rewrittenQuery: temporalRewrite({ requestedDateRange: undefined, requestedDateRangeDropReason }),
+        });
+
+        expect(calls).toEqual([]);
+        expect(result.temporalQueryMode).toBe("none");
+        expect(result.temporalLookupRanking).toBeUndefined();
+      },
+    );
+
+    it("runs no lookup for a topic question that names no period", async () => {
+      const { stage, calls } = recordingStage();
+
+      await stage.execute({
+        ...baseCandidateRetrievalInput(),
+        rewrittenQuery: temporalRewrite({ temporalQueryMode: "topic_refinement", requestedDateRange: undefined }),
+      });
+
+      expect(calls).toEqual([]);
+    });
+
+    // Runs a listing question for `range` through retrieval, preparation, and context
+    // selection over `inRangeCount` courses in December plus 15 sooner November courses
+    // that the semantic search ranks above every December course.
+    const answerContextsForRange = async (input: {
+      range: { dateFrom: string; dateTo: string };
+      inRangeCount: number;
+      rewrite?: Record<string, unknown>;
+    }) => {
+      const clock = () => new Date("2026-10-21T12:00:00.000Z");
+      const course = (id: string, date: string, similarity: number): RetrievedChunk => ({
+        chunkId: `chunk-${id}`,
+        documentId: `doc-${id}`,
+        title: `Course ${id}`,
+        content: `Course ${id} meets on ${date}. Bring a mat and arrive ten minutes early.`,
+        searchText: `Course ${id} ${date}`,
+        similarity,
+        chunkIndex: 0,
+        startOffset: 0,
+        endOffset: 80,
+        metadata: { dateFrom: date, dateTo: date },
+      });
+      const rangeDays = Math.round(
+        (Date.parse(`${input.range.dateTo}T00:00:00Z`) - Date.parse(`${input.range.dateFrom}T00:00:00Z`)) / 86_400_000,
+      ) + 1;
+      const firstDay = Number(input.range.dateFrom.slice(8, 10));
+      const inRangeCourses = Array.from({ length: input.inRangeCount }, (_value, index) =>
+        course(`december-${index + 1}`, `2026-12-${String(firstDay + (index % rangeDays)).padStart(2, "0")}`, 0));
+      const novemberCourses = Array.from({ length: 15 }, (_value, index) =>
+        course(`november-${index + 1}`, `2026-11-${String(2 + index).padStart(2, "0")}`, 0.9 - index / 100));
+      const corpus = [...inRangeCourses, ...novemberCourses];
+      const dateOf = (chunk: RetrievedChunk) => String(chunk.metadata?.dateFrom);
+      const temporal: TemporalCandidateRetrievalPort = {
+        async findInWindow(lookup) {
+          const window = lookup.window;
+          return corpus
+            .filter((chunk) => window.kind === "requested_range"
+              ? dateOf(chunk) >= window.range.dateFrom && dateOf(chunk) <= window.range.dateTo
+              : dateOf(chunk) >= window.today)
+            .sort((left, right) => dateOf(left).localeCompare(dateOf(right)))
+            .slice(0, lookup.topK);
+        },
+      };
+      const retrieval = new CandidateRetrievalStageService(
+        {
+          async embedQueries() {
+            return { space: embeddingSpace, vectors: [[0.1, 0.2]] };
+          },
+        },
+        { async search() { return []; } },
+        { async search() { return []; } },
+        { async hydrate() { return novemberCourses; } },
+        temporal,
+        clock,
+      );
+      const preparation = new CandidatePreparationStageService(
+        new CandidatePreparationService(),
+        new MetadataRuleScoringService(),
+        clock,
+      );
+      const selection = new ContextSelectionStageService(
+        new RerankService(undefined, undefined, clock),
+        new PromptContextSelectorService(),
+        clock,
+      );
+
+      const retrieved = await retrieval.execute({
+        ...baseCandidateRetrievalInput(),
+        rewrittenQuery: temporalRewrite({ ...input.rewrite, requestedDateRange: input.range }),
+      });
+      const selected = await selection.execute(await preparation.execute(retrieved));
+      return { contexts: selected.contexts, inRangeCourses };
+    };
+
+    it("brings every event of a busy requested week into the answer, ahead of the best matches outside it", async () => {
+      const { contexts, inRangeCourses } = await answerContextsForRange({ range: week, inRangeCount: 16 });
+
+      // Every week course, soonest first, then the reserved best matches from outside the week.
+      const reserved = RETRIEVAL_BEHAVIOR.temporal.dateRangeReservedOutsidePassages;
+      expect(contexts).toHaveLength(16 + reserved);
+      const leading = contexts.slice(0, 16);
+      expect(new Set(leading.map((context) => context.documentId)))
+        .toEqual(new Set(inRangeCourses.map((chunk) => chunk.documentId)));
+      const dates = leading.map((context) => String(context.metadata?.dateFrom));
+      expect(dates).toEqual([...dates].sort());
+      expect(contexts.slice(16).every((context) => context.documentId.startsWith("doc-november-"))).toBe(true);
+    });
+
+    it.each([
+      ["a topic question", { temporalQueryMode: "topic_refinement" }],
+      ["a question with no temporal label", { queryShape: "general_grounding", temporalQueryMode: "none" }],
+    ])("brings a busy requested week into the answer for %s too", async (_label, rewrite) => {
+      const { contexts, inRangeCourses } = await answerContextsForRange({ range: week, inRangeCount: 16, rewrite });
+
+      // Every week course, soonest first, then the reserved best matches from outside the week.
+      const reserved = RETRIEVAL_BEHAVIOR.temporal.dateRangeReservedOutsidePassages;
+      expect(contexts).toHaveLength(16 + reserved);
+      const leading = contexts.slice(0, 16);
+      expect(new Set(leading.map((context) => context.documentId)))
+        .toEqual(new Set(inRangeCourses.map((chunk) => chunk.documentId)));
+      const dates = leading.map((context) => String(context.metadata?.dateFrom));
+      expect(dates).toEqual([...dates].sort());
+      expect(contexts.slice(16).every((context) => context.documentId.startsWith("doc-november-"))).toBe(true);
+    });
+
+    it("keeps an ordinary answer size when the requested day has only a couple of events", async () => {
+      const { contexts, inRangeCourses } = await answerContextsForRange({
+        range: { dateFrom: "2026-12-07", dateTo: "2026-12-07" },
+        inRangeCount: 2,
+      });
+
+      expect(contexts).toHaveLength(RETRIEVAL_BEHAVIOR.finalContextTopK);
+      expect(contexts.slice(0, 2).map((context) => context.documentId))
+        .toEqual(inRangeCourses.map((chunk) => chunk.documentId));
+    });
+
+    it("holds at most the date listing limit when a requested range has more events than fit", async () => {
+      const { contexts } = await answerContextsForRange({
+        range: { dateFrom: "2026-12-01", dateTo: "2026-12-31" },
+        inRangeCount: 30,
+      });
+
+      const { dateRangeListingContextTopK, dateRangeReservedOutsidePassages } = RETRIEVAL_BEHAVIOR.temporal;
+      expect(contexts).toHaveLength(dateRangeListingContextTopK);
+      expect(contexts.filter((context) => context.documentId.startsWith("doc-december-")))
+        .toHaveLength(dateRangeListingContextTopK - dateRangeReservedOutsidePassages);
+    });
+
   });
 
   it("keeps absent documentScope behavior identical", async () => {

@@ -105,13 +105,30 @@ imports from `services/` or `infra/`.
 - Context and prompt shape: `contextSelectionStage.ts`,
   `promptAssemblyStage.ts`, `promptBuilder.ts`. `domain/answerCandidatePool.ts`
   holds the one answer-candidate pool size formula (raised by `rerankTopK`,
-  floored and capped by `RETRIEVAL_BEHAVIOR.finalContextTopK` and
+  floored by the answer's passage target, `finalContextTopK` or
+  `temporal.dateRangeListingContextTopK` for a range answer, and capped by
   `RETRIEVAL_BEHAVIOR.rerank.candidateLimit`); `promptContextSelectorService.ts`
-  then caps the final prompt at `finalContextTopK` passages,
+  then caps the final prompt at `finalContextTopK` passages (a range answer's
+  quotas allow up to `temporal.dateRangeListingContextTopK`),
   `promptContextMaxPerDocument` per document, each at most
   `promptContextMaxCharsPerContext` characters. `vectorTopK` sets fetch depth
   before candidate preparation filters, boosts, and merges; the pool size
   bounds what reaches the answer.
+- Date questions: the rewrite returns `temporalQueryMode` and an optional
+  `requestedDateRange` (`domain/temporal/requestedDateRange.ts` validates it and
+  places dated items against it). `candidateRetrievalStage.ts` runs the
+  structured lookup through `domain/temporal/temporalCandidateRetrieval.ts`:
+  any question with a requested range gets the range, ranked by similarity to
+  the question's embedding (an exact sort in `infra/temporalCandidateRepository.ts`),
+  and a listing question without one gets upcoming events from today.
+  `candidatePreparationStage.ts` holds range candidates to the document scope
+  and metadata rules and keeps them apart from the ranked list;
+  `services/temporal/rangeAnswerComposer.ts` is the one place that composes a
+  range answer's pool and the selector's quotas (the reserve outside the range,
+  `temporal.dateRangeReservedOutsidePassages`, then the range, then a fill to
+  `finalContextTopK`), and `PromptContextSelectorService.selectInStages` applies
+  them. `services/temporal/` boosts and orders by the same range. Integration coverage lives in
+  `tests/integration/retrieval-temporal-candidates.integration.test.ts`.
 - Diagnostics: `retrievalActivityTraceAssembler.ts`,
   `retrievalPipelineActivityTraceBuilder.ts`,
   `retrievalDiagnosticsStage.ts`.

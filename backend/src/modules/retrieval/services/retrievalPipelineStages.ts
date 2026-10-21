@@ -147,6 +147,12 @@ export interface CandidatePreparationStageResult extends CandidateRetrievalStage
   normalizedCandidates: import("../domain/retrievalPipelineTypes.js").RetrievedCandidate[];
   mergedCandidates: import("../domain/retrievalPipelineTypes.js").RetrievedCandidate[];
   scoredCandidates: import("../domain/retrievalPipelineTypes.js").RetrievedCandidate[];
+  /**
+   * A range lookup's candidates within the request's document scope and metadata rules, in the
+   * lookup's order. Present only when a range lookup ran; they stay out of the ranked lists,
+   * and context selection composes the answer from both.
+   */
+  rangeCandidates?: import("../domain/retrievalPipelineTypes.js").RetrievedCandidate[];
   appliedConstraints: AppliedConstraint[];
   candidateFallbackApplied: boolean;
   triggerBackoff: TriggerBackoffDecision;

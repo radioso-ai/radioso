@@ -138,6 +138,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
           ...temporalLookup,
           metadataFilter,
           sourceFilter,
+          ...(input.request.documentScope?.length ? { documentIds: input.request.documentScope } : {}),
         }).catch((): RetrievedChunk[] => {
           degradedChannels.add("temporal");
           return [];
@@ -353,9 +354,12 @@ const planTemporalLookup = (input: {
   return null;
 };
 
+// A question whose named period the rewrite could not turn into a usable range gets no
+// temporal mode: the upcoming lookup, boost, and soonest-first order all assume a question about
+// what is coming up, which a question naming a past or a multi-year period is not.
 const resolveTemporalQueryMode = (input: QueryInterpretationStageResult): TemporalQueryMode => {
   const structured = input.rewrittenQuery.structuredResult;
-  if (structured?.queryShape !== "event_date_lookup") {
+  if (structured?.queryShape !== "event_date_lookup" || structured.requestedDateRangeDropReason) {
     return "none";
   }
   return structured.temporalQueryMode ?? "none";

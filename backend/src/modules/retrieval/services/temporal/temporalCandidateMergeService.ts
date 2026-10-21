@@ -17,18 +17,18 @@ const TEMPORAL_SOURCE: RetrievalSource = "temporal";
 type TemporalCandidatePlacement = "lead" | "annotate" | "none";
 
 /**
- * A requested range's candidates lead whatever the rewrite labelled the question: they are the
- * passages dated in the period it names, closest to the question first. Without a range, an
- * upcoming listing's candidates lead and a topic question's only annotate.
+ * A requested range's candidates only annotate the ranked list: the range answer composes them
+ * with the ranked candidates itself (`rangeAnswerComposer.ts`). Without a range, an upcoming
+ * listing's candidates lead and a topic question's only annotate.
  */
 export const temporalCandidatePlacement = (input: {
   mode: TemporalQueryMode;
   requestedRangeLookup: boolean;
 }): TemporalCandidatePlacement => {
-  if (input.requestedRangeLookup || input.mode === "listing") {
-    return "lead";
+  if (input.requestedRangeLookup || input.mode === "topic_refinement") {
+    return "annotate";
   }
-  return input.mode === "topic_refinement" ? "annotate" : "none";
+  return input.mode === "listing" ? "lead" : "none";
 };
 
 export const mergeTemporalCandidates = (input: {
@@ -79,7 +79,7 @@ const addTemporalSource = (candidate: RetrievedCandidate): RetrievedCandidate =>
     : [...candidate.retrievalSources, TEMPORAL_SOURCE],
 });
 
-const toTemporalCandidate = (chunk: RetrievedChunk): RetrievedCandidate => {
+export const toTemporalCandidate = (chunk: RetrievedChunk): RetrievedCandidate => {
   const fusedScore = clampNormalizedScore(chunk.similarity);
   return {
     ...chunk,

@@ -1,5 +1,9 @@
 import type { RetrievedCandidate } from "../../domain/retrievalPipelineTypes.js";
-import { positionInDateRange, type RequestedDateRange } from "../../domain/temporal/requestedDateRange.js";
+import {
+  datesFromMetadata,
+  positionInDateRange,
+  type RequestedDateRange,
+} from "../../domain/temporal/requestedDateRange.js";
 import { applyBoundedCandidateBoost, getCandidateFusedScore } from "../candidateScoring.js";
 
 const UPCOMING_EVENT_BOOST = 0.08;
@@ -19,7 +23,7 @@ export const applyUpcomingEventBoost = (input: {
   }
   const dateRange = input.dateRange;
   const isInFocus = dateRange
-    ? (metadata: Record<string, unknown> | undefined) => positionInDateRange(metadataDates(metadata), dateRange) === "within"
+    ? (metadata: Record<string, unknown> | undefined) => positionInDateRange(datesFromMetadata(metadata), dateRange) === "within"
     : (metadata: Record<string, unknown> | undefined) => isOngoingOrUpcoming(metadata, input.today);
 
   return input.candidates.map((candidate) => {
@@ -38,12 +42,7 @@ export const applyUpcomingEventBoost = (input: {
   });
 };
 
-const metadataDates = (metadata: Record<string, unknown> | undefined): { dateFrom?: string; dateTo?: string } => ({
-  ...(typeof metadata?.dateFrom === "string" ? { dateFrom: metadata.dateFrom.slice(0, 10) } : {}),
-  ...(typeof metadata?.dateTo === "string" ? { dateTo: metadata.dateTo.slice(0, 10) } : {}),
-});
-
 const isOngoingOrUpcoming = (metadata: Record<string, unknown> | undefined, today: string): boolean => {
-  const { dateFrom, dateTo } = metadataDates(metadata);
+  const { dateFrom, dateTo } = datesFromMetadata(metadata);
   return Boolean((dateFrom && dateFrom >= today) || (dateTo && dateTo >= today));
 };

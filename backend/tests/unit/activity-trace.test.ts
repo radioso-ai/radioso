@@ -121,7 +121,7 @@ describe("activity trace presenter", () => {
     });
   });
 
-  it("lists every passage an answer can hold, and bounds longer lists to that many", () => {
+  it("lists every passage an answer can hold, and keeps other lists to twelve", () => {
     const refs = (count: number) => Array.from({ length: count }, (_value, index) => ({ chunkId: `chunk-${index}` }));
     const trace: ActivityTrace = {
       traceId: "trace-lists",
@@ -132,7 +132,11 @@ describe("activity trace presenter", () => {
           kind: "context_selection",
           label: "Context selection",
           status: "applied",
-          outputs: { finalContexts: refs(maxAnswerContextPassages) },
+          outputs: {
+            finalContexts: refs(maxAnswerContextPassages),
+            finalContextTitles: refs(maxAnswerContextPassages).map((ref) => ref.chunkId),
+            topCandidates: refs(15),
+          },
         },
         {
           stageId: "temporal",
@@ -148,7 +152,9 @@ describe("activity trace presenter", () => {
     const presented = new ActivityTracePresenter().present(trace, {});
 
     expect(presented.stages[0]?.outputs?.finalContexts).toHaveLength(maxAnswerContextPassages);
-    expect(presented.stages[1]?.outputs?.chunks).toHaveLength(maxAnswerContextPassages);
+    expect(presented.stages[0]?.outputs?.finalContextTitles).toHaveLength(maxAnswerContextPassages);
+    expect(presented.stages[0]?.outputs?.topCandidates).toHaveLength(12);
+    expect(presented.stages[1]?.outputs?.chunks).toHaveLength(12);
     expect(maxAnswerContextPassages).toBe(RETRIEVAL_BEHAVIOR.temporal.dateRangeListingContextTopK);
   });
 });

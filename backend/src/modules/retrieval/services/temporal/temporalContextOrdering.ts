@@ -3,10 +3,14 @@ import type {
   RetrievalQueryShape,
   TemporalQueryMode,
 } from "../../domain/retrievalPipelineTypes.js";
-import { positionInDateRange, type RequestedDateRange } from "../../domain/temporal/requestedDateRange.js";
+import {
+  datesFromMetadata,
+  positionInDateRange,
+  type RequestedDateRange,
+} from "../../domain/temporal/requestedDateRange.js";
 
-interface TemporalPromptContextOrderingResult {
-  orderedContexts: RerankedCandidate[];
+interface TemporalPromptContextOrderingResult<T extends RerankedCandidate> {
+  orderedContexts: T[];
   applied: boolean;
   today: string;
   /** The requested range the order led with, when the question named one. */
@@ -14,14 +18,14 @@ interface TemporalPromptContextOrderingResult {
   datedContextCount: number;
 }
 
-export const orderTemporalPromptContexts = (input: {
-  contexts: RerankedCandidate[];
+export const orderTemporalPromptContexts = <T extends RerankedCandidate>(input: {
+  contexts: T[];
   enabled: boolean;
   queryShape?: RetrievalQueryShape;
   temporalQueryMode?: TemporalQueryMode;
   today: string;
   dateRange?: RequestedDateRange;
-}): TemporalPromptContextOrderingResult => {
+}): TemporalPromptContextOrderingResult<T> => {
   if (!shouldApplyTemporalOrdering(input)) {
     return {
       orderedContexts: input.contexts,
@@ -79,12 +83,12 @@ const isPastEvent = (dateTo: string | undefined, today: string): boolean =>
 // undated context: a topic question asked about the wrong period ("is the retreat in March?"
 // when it is in April) must keep the real date through the passage cut. Past events outside
 // the range come last, most recent first.
-const orderAroundDateRange = (
-  dated: DatedContextEntry[],
-  undated: DatedContextEntry[],
+const orderAroundDateRange = <T extends RerankedCandidate>(
+  dated: Array<DatedContextEntry<T>>,
+  undated: Array<DatedContextEntry<T>>,
   range: RequestedDateRange,
   today: string,
-): RerankedCandidate[] => {
+): T[] => {
   const inRange = dated.filter((entry) => positionInDateRange(entry, range) === "within");
   const outside = dated.filter((entry) => positionInDateRange(entry, range) !== "within");
   return [
@@ -99,7 +103,8 @@ const orderAroundDateRange = (
 // structured lookup and `positionInDateRange` read a chunk, and an inverted pair spans its
 // two dates. A context with neither date is undated.
 const contextDateSpan = (metadata: Record<string, unknown> | undefined): { dateFrom?: string; dateTo?: string } => {
-  const dates = [normalizeIsoDate(metadata?.dateFrom), normalizeIsoDate(metadata?.dateTo)]
+  const { dateFrom, dateTo } = datesFromMetadata(metadata);
+  const dates = [dateFrom, dateTo]
     .filter((date): date is string => date !== undefined)
     .sort();
   return dates.length === 0 ? {} : { dateFrom: dates[0], dateTo: dates[dates.length - 1] };
@@ -118,22 +123,10 @@ const shouldApplyTemporalOrdering = (input: {
     || (input.queryShape === "event_date_lookup" && (input.temporalQueryMode ?? "none") !== "none")
   );
 
-const normalizeIsoDate = (value: unknown): string | undefined => {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const date = value.slice(0, 10);
-  const parsed = Date.parse(`${date}T00:00:00.000Z`);
-  if (Number.isNaN(parsed)) {
-    return undefined;
-  }
-  return new Date(parsed).toISOString().slice(0, 10) === date ? date : undefined;
-};
-
-interface DatedContextEntry {
+interface DatedContextEntry<T extends RerankedCandidate = RerankedCandidate> {
   dateFrom?: string;
   dateTo?: string;
-  context: RerankedCandidate;
+  context: T;
   index: number;
 }
 

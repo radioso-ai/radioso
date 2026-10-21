@@ -63,8 +63,16 @@ const januaryCourse = (index: number, similarity = 0.5): RetrievedChunk => {
 // Runs one turn through the real pipeline: the rewrite names January 2027 with the labels the
 // live corpus showed (no temporal mode, general shape), the range lookup returns `rangeCount`
 // January courses, and semantic search returns `semanticHits`.
-const runJanuaryTurn = async (input: { rangeCount: number; semanticHits: RetrievedChunk[] }) => {
-  const rangeCourses = Array.from({ length: input.rangeCount }, (_value, index) => januaryCourse(index));
+const runJanuaryTurn = async (input: {
+  rangeCount?: number;
+  rangeCourses?: RetrievedChunk[];
+  semanticHits: RetrievedChunk[];
+  settings?: Record<string, unknown>;
+  documentScope?: string[];
+}) => {
+  const rangeCourses = input.rangeCourses
+    ?? Array.from({ length: input.rangeCount ?? 0 }, (_value, index) => januaryCourse(index));
+  const settings = { ...productionSettings, ...input.settings };
   const temporal: TemporalCandidateRetrievalPort = {
     async findInWindow(lookup) {
       return rangeCourses.slice(0, lookup.topK);
@@ -84,7 +92,7 @@ const runJanuaryTurn = async (input: { rangeCount: number; semanticHits: Retriev
     confidence: 0.9,
   };
   const service = new RetrievalPipelineService(
-    { getDefaults: () => productionSettings } as never,
+    { getDefaults: () => settings } as never,
     { async embedQueries() { return { space, vectors: [[1, 0, 0]] }; } },
     {
       async search() {
@@ -121,6 +129,7 @@ const runJanuaryTurn = async (input: { rangeCount: number; semanticHits: Retriev
     workspaceId: "workspace-1",
     query: "Which courses are there in January 2027?",
     history: [],
+    ...(input.documentScope ? { documentScope: input.documentScope } : {}),
     precomputedRewriteProposal: proposal,
   });
   const result = await service.runInterpreted(interpretation);
@@ -170,5 +179,106 @@ describe("date range answers under the production retrieval settings", () => {
 
     expect(result.contexts).toHaveLength(cap);
     expect(result.contexts.every((context) => context.title.startsWith("January course"))).toBe(true);
+  });
+
+  it("keeps the reserve however high the rerank top K raises the lookup's depth", async () => {
+    const outOfRange = Array.from({ length: 6 }, (_value, index) =>
+      passage(`venue-${index + 1}`, { title: `Venue page ${index + 1}`, similarity: 0.6 - index / 100 }));
+    const { result } = await runJanuaryTurn({
+      rangeCount: 60,
+      semanticHits: outOfRange,
+      settings: { rerankTopK: 50 },
+    });
+
+    expect(result.contexts.filter((context) => context.title.startsWith("Venue page"))).toHaveLength(reserved);
+    expect(result.contexts).toHaveLength(cap);
+  });
+
+  it("selects the range's most relevant passages and orders only those by date", async () => {
+    // The lookup ranks course 1 closest; dates run backwards from the 28th, so the most
+    // relevant sixteen are not the earliest sixteen.
+    const rangeCourses = Array.from({ length: 40 }, (_value, index) => {
+      const date = `2027-01-${String(28 - (index % 28)).padStart(2, "0")}`;
+      return passage(`january-${index + 1}`, {
+        title: `January course ${index + 1}`,
+        metadata: { dateFrom: date, dateTo: date },
+      });
+    });
+    const { result } = await runJanuaryTurn({ rangeCourses, semanticHits: [], settings: { rerankTopK: 50 } });
+
+    const january = result.contexts.filter((context) => context.title.startsWith("January course"));
+    expect(new Set(january.map((context) => context.title)))
+      .toEqual(new Set(Array.from({ length: cap }, (_value, index) => `January course ${index + 1}`)));
+    const dates = january.map((context) => String(context.metadata?.dateFrom));
+    expect(dates).toEqual([...dates].sort());
+    expect(result.contexts.map((context) => context.promptPosition)).toEqual(result.contexts.map((_context, index) => index));
+  });
+
+  it("gives the range only the passages the prompt can keep, two per event", async () => {
+    // Six events with three passages each, and plenty of other candidates.
+    const rangeCourses = Array.from({ length: 18 }, (_value, index) => {
+      const event = Math.floor(index / 3);
+      const date = `2027-01-${String(10 + event).padStart(2, "0")}`;
+      return {
+        ...passage(`event-${event}-part-${index % 3}`, { title: `January event ${event}`, metadata: { dateFrom: date, dateTo: date } }),
+        documentId: `doc-event-${event}`,
+        content: `January event ${event}, part ${index % 3}: the schedule, the teacher, and what to bring.`,
+        chunkIndex: index % 3,
+      };
+    });
+    const others = Array.from({ length: 20 }, (_value, index) =>
+      passage(`other-${index}`, { title: `Other page ${index}`, similarity: 0.6 - index / 100 }));
+    const { result } = await runJanuaryTurn({ rangeCourses, semanticHits: others, settings: { rerankTopK: 50 } });
+
+    expect(result.contexts.filter((context) => context.title.startsWith("January event"))).toHaveLength(12);
+    expect(result.contexts.filter((context) => context.title.startsWith("Other page"))).toHaveLength(reserved);
+  });
+
+  it("answers in the ordinary order when the range lookup found nothing", async () => {
+    const hits = Array.from({ length: 14 }, (_value, index) =>
+      passage(`page-${index}`, { title: `Page ${index}`, similarity: 0.9 - index / 100 }));
+    const { result } = await runJanuaryTurn({ rangeCount: 0, semanticHits: hits });
+
+    expect(result.contexts.map((context) => context.title))
+      .toEqual(Array.from({ length: RETRIEVAL_BEHAVIOR.finalContextTopK }, (_value, index) => `Page ${index}`));
+  });
+
+  it("keeps range passages to the request's document scope", async () => {
+    const { result } = await runJanuaryTurn({
+      rangeCount: 10,
+      semanticHits: [],
+      documentScope: ["doc-january-2", "doc-january-5"],
+    });
+
+    expect(result.contexts.map((context) => context.documentId).sort()).toEqual(["doc-january-2", "doc-january-5"]);
+  });
+
+  it("applies the agent's metadata filter rules to range passages", async () => {
+    const rangeCourses = Array.from({ length: 10 }, (_value, index) => {
+      const date = `2027-01-${String(10 + index).padStart(2, "0")}`;
+      return passage(`january-${index}`, {
+        title: `January course ${index}`,
+        metadata: { dateFrom: date, dateTo: date, language: index % 2 === 0 ? "it" : "en" },
+      });
+    });
+    const { result } = await runJanuaryTurn({
+      rangeCourses,
+      semanticHits: [],
+      settings: {
+        metadataRules: [{
+          id: "italian-only",
+          field: "language",
+          valueType: "string",
+          operator: "equals",
+          value: "it",
+          effect: "filter",
+          enabled: true,
+          triggerMode: "always_on",
+        }],
+      },
+    });
+
+    expect(result.contexts).toHaveLength(5);
+    expect(result.contexts.every((context) => context.metadata?.language === "it")).toBe(true);
   });
 });

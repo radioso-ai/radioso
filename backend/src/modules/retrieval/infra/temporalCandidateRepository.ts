@@ -45,12 +45,14 @@ export class PgTemporalCandidateRepository implements TemporalCandidateRetrieval
     return rows.map((row) => toRetrievedChunk(row, 0));
   }
 
-  // The range's chunks are collected first, behind a MATERIALIZED barrier, and only then
-  // scored against the question. Ordering by distance over that set is an exact sort: no
-  // per-width HNSW index can serve it, so an index scan cannot post-filter by date and run
-  // out of neighbours before it reaches the range. The distance is full precision on the
-  // typeless column, and a chunk with no embedding in the space for its document's current
-  // revision scores no distance and follows the scored chunks in date order.
+  // The range's chunks are collected first, as ids, dates, and revisions only, behind a
+  // MATERIALIZED barrier, and only then scored against the question. Ordering by distance over
+  // that set is an exact sort: no per-width HNSW index can serve it, so an index scan cannot
+  // post-filter by date and run out of neighbours before it reaches the range. The distance is
+  // full precision on the typeless column, and a chunk with no embedding in the space for its
+  // document's current revision scores no distance and follows the scored chunks in date
+  // order. Each document's chunks are tiered by their own closeness to the question, so an
+  // event's most relevant chunk leads it. Content is read for the returned rows alone.
   private async findInRangeBySimilarity(
     input: TemporalCandidateRetrievalInput,
     similarTo: TemporalSimilarityQuery,
@@ -60,7 +62,9 @@ export class PgTemporalCandidateRepository implements TemporalCandidateRetrieval
     const rows = await this.database.kysely
       .with((cte) => cte("window_chunks").materialized(), (db) =>
         selectWindowChunks(db, input).select([
-          ...CHUNK_COLUMNS,
+          "c.id as chunk_id",
+          "c.document_id",
+          "c.chunk_index",
           "c.date_from",
           "c.date_to",
           "d.revision as document_revision",
@@ -75,22 +79,41 @@ export class PgTemporalCandidateRepository implements TemporalCandidateRetrieval
               .on("ce.workspace_id", "=", input.workspaceId)
               .on("ce.embedding_space_id", "=", similarTo.space.id)
               .on("ce.dimensions", "=", similarTo.space.dimensions))
-          .selectAll("w")
           .select([
+            "w.chunk_id",
+            "w.document_id",
+            "w.chunk_index",
+            "w.date_from",
+            "w.date_to",
             sql<number | null>`${pgVectorCosineDistance(sql.ref("ce.embedding"), queryVector)}`.as("distance"),
-            sql<string>`row_number() OVER (PARTITION BY w.document_id ORDER BY w.chunk_index, w.chunk_id)`
-              .as("document_position"),
           ]))
-      .selectFrom("scored_chunks")
-      .selectAll()
-      .orderBy("document_position", "asc")
-      .orderBy(sql`distance ASC NULLS LAST`)
-      .orderBy(sql`COALESCE(date_from, date_to)`, "asc")
-      .orderBy(sql`date_to ASC NULLS LAST`)
-      .orderBy("document_id", "asc")
-      .orderBy("chunk_index", "asc")
-      .orderBy("chunk_id", "asc")
-      .limit(input.topK)
+      .with("ranked_chunks", (db) =>
+        db
+          .selectFrom("scored_chunks")
+          .selectAll()
+          .select(sql<string>`row_number() OVER (
+            PARTITION BY document_id ORDER BY distance ASC NULLS LAST, chunk_index, chunk_id
+          )`.as("document_tier")))
+      .with("top_chunks", (db) =>
+        db
+          .selectFrom("ranked_chunks")
+          .select([
+            "chunk_id",
+            "document_id",
+            "distance",
+            sql<string>`row_number() OVER (
+              ORDER BY document_tier, distance ASC NULLS LAST, COALESCE(date_from, date_to),
+                date_to ASC NULLS LAST, document_id, chunk_index, chunk_id
+            )`.as("position"),
+          ])
+          .orderBy("position", "asc")
+          .limit(input.topK))
+      .selectFrom("top_chunks as t")
+      .innerJoin("chunks as c", "c.id", "t.chunk_id")
+      .innerJoin("documents as d", "d.id", "t.document_id")
+      .where("c.workspace_id", "=", input.workspaceId)
+      .select([...CHUNK_COLUMNS, "t.distance"])
+      .orderBy("t.position", "asc")
       .execute();
 
     return rows.map((row) =>
@@ -123,6 +146,9 @@ const selectWindowChunks = (db: QueryCreator<DB>, input: TemporalCandidateRetrie
   const sourceCondition = compileSourceCondition(input.sourceFilter);
   if (sourceCondition) {
     query = query.where(sourceCondition);
+  }
+  if (input.documentIds && input.documentIds.length > 0) {
+    query = query.where("c.document_id", "in", [...input.documentIds]);
   }
   const metadataFilter = normalizeVectorMetadataFilter(input.metadataFilter);
   if (metadataFilter) {

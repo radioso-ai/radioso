@@ -410,6 +410,7 @@ export class ActivityTraceAssembler {
           scoredCount: prompt.scoredCandidates.length,
           usefulCandidateCount: prompt.scoredCandidates.filter(hasUsefulCandidateEvidence).length,
           temporalCandidateCount: temporalContexts.length,
+          rangeCandidateCount: prompt.rangeCandidates?.length ?? 0,
         },
         reason: prompt.candidateFallbackApplied ? "Candidate fallback relaxed the prepared candidate pool." : undefined,
       }),

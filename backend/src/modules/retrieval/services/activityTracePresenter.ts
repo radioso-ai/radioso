@@ -4,6 +4,7 @@ import type {
   ActivityStageStatus,
   ActivitySummary,
 } from "../domain/retrievalPipelineTypes.js";
+import { maxAnswerContextPassages } from "../domain/answerCandidatePool.js";
 
 interface AnswerOutcomeInput {
   answer: string;
@@ -28,13 +29,18 @@ const ALLOWED_STATUSES = new Set<ActivityStageStatus>([
   "failed",
 ]);
 
+// A stage's lists are kept to the most passages an answer can hold, so the passages an answer
+// read are always listed in full. Longer lists, such as a 40-passage range lookup, are cut to
+// that many; their stage metrics keep the full counts.
+const TRACE_LIST_LIMIT = maxAnswerContextPassages;
+
 const summarizeValue = (value: unknown): unknown => {
   if (typeof value === "string") {
     return value.length > 240 ? `${value.slice(0, 237)}...` : value;
   }
 
   if (Array.isArray(value)) {
-    return value.slice(0, 12).map((item) => summarizeValue(item));
+    return value.slice(0, TRACE_LIST_LIMIT).map((item) => summarizeValue(item));
   }
 
   if (value && typeof value === "object") {

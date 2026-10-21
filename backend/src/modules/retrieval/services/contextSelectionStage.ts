@@ -6,6 +6,8 @@ import type { CandidatePreparationStageResult, ContextSelectionStage as ContextS
 import { getContextSelectionClauses } from "./retrievalShapeResolver.js";
 import type { RerankedCandidate, RetrievedCandidate } from "../domain/retrievalPipelineTypes.js";
 import { orderTemporalPromptContexts } from "./temporal/temporalContextOrdering.js";
+import { placeReservedPassages, reserveOutsideRangeCandidates } from "./temporal/dateRangePassageReservation.js";
+import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 
 export class ContextSelectionStageService implements ContextSelectionStageContract {
   constructor(
@@ -16,18 +18,20 @@ export class ContextSelectionStageService implements ContextSelectionStageContra
 
   async execute(input: CandidatePreparationStageResult) {
     // A question whose range lookup found passages in the period it names answers from them,
-    // so its prompt and the pool feeding it are sized to how many the lookup found.
+    // with a reserve kept for the best matches outside the range, so its prompt and the pool
+    // feeding it are sized to both.
+    const rangeAnswer = planRangeAnswer(input);
     const contextTopK = answerContextTopK(
-      input.temporalLookupRanking !== undefined
-        ? { requestedRangePassageCount: input.temporalContexts?.length ?? 0 }
-        : {},
+      rangeAnswer ? { requestedRangePassageCount: rangeAnswer.passageCount } : {},
     );
     const clauses = getContextSelectionClauses(input.shapeSelection?.resolvedRun);
     const rerankEnabled = clauses.ranking.rerankMode === "disabled"
       ? false
       : input.settings.rerankEnabled;
     const rerankCandidateCount = answerCandidatePoolSize(input.settings.rerankTopK, contextTopK);
-    const rerankCandidates = input.scoredCandidates.slice(0, rerankCandidateCount);
+    const rerankCandidates = rangeAnswer
+      ? rangeAnswer.reservation.poolOf(rerankCandidateCount)
+      : input.scoredCandidates.slice(0, rerankCandidateCount);
     const reranked = !rerankEnabled && clauses.ranking.lexicalBias === "preferred"
       ? {
           contexts: this.keepPreparedOrder(rerankCandidates, rerankCandidateCount),
@@ -50,7 +54,11 @@ export class ContextSelectionStageService implements ContextSelectionStageContra
       dateRange: input.temporalDateRange,
     });
     const contexts = this.promptContextSelectorService.select({
-      contexts: temporalOrdering.orderedContexts,
+      contexts: placeReservedPassages({
+        contexts: temporalOrdering.orderedContexts,
+        reservedChunkIds: rangeAnswer?.reservation.reservedChunkIds ?? new Set<string>(),
+        contextTopK,
+      }),
       topK: contextTopK,
     });
 
@@ -74,3 +82,19 @@ export class ContextSelectionStageService implements ContextSelectionStageContra
     }));
   }
 }
+
+// Present only when a range lookup ran: the range's passages plus the reserve for the best
+// candidates outside the range, which the answer should read.
+const planRangeAnswer = (input: CandidatePreparationStageResult) => {
+  if (input.temporalLookupRanking === undefined || input.temporalDateRange === undefined) {
+    return undefined;
+  }
+  const rangePassages = input.temporalContexts ?? [];
+  const reservation = reserveOutsideRangeCandidates({
+    candidates: input.scoredCandidates,
+    rangeChunkIds: new Set(rangePassages.map((passage) => passage.chunkId)),
+    range: input.temporalDateRange,
+    reservedCount: RETRIEVAL_BEHAVIOR.temporal.dateRangeReservedOutsidePassages,
+  });
+  return { reservation, passageCount: rangePassages.length + reservation.reservedChunkIds.size };
+};

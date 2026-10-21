@@ -23,7 +23,7 @@ When temporal structured lookup is enabled, the lookup fetches dated chunks dire
 - A question that names a date or period fetches the chunks whose dates overlap it, whatever else it asks: "What's on the week of 7 December?" and "Are there Kriya courses in November?" both do. A multi-day event that starts before the period or ends after it counts. Within the period, the passages closest in meaning to the question come first, so in the second question the Kriya courses lead the other November courses. Every event's first passage comes ahead of any event's second one, so a busy week lists as many events as fit. When the question can't be embedded, the period's passages come soonest first.
 - A question that asks what's coming up without naming a period or a topic fetches ongoing and upcoming events, soonest first.
 
-The lookup reads up to 40 passages for a period, enough for a busy week. The answer then holds one passage per passage found, never fewer than the usual 12 and never more than 20, inside the same prompt size budget, so the 20 closest to the question reach it.
+The lookup reads up to 40 passages for a period, enough for a busy week. The answer always keeps the four best matches from outside the period, so "What do I need to bring to a residential course in December?" still reads your packing-list page, when search ranks it among those four, alongside December's course cards. The period's passages take the rest: the answer holds one passage per passage found plus those four, never fewer than the usual 12 and never more than 20, inside the same prompt size budget. For a busy period, the 16 passages closest to the question reach the answer.
 
 ### Upcoming Boost
 

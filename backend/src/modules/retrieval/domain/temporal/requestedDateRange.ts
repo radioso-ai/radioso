@@ -73,6 +73,19 @@ export const readRequestedDateRange = (value: unknown): RequestedDateRangeReadin
     : { dropReason: "too_long" };
 };
 
+/** The ISO calendar dates in a chunk's `dateFrom`/`dateTo` metadata; any other value is absent. */
+export const datesFromMetadata = (
+  metadata: Record<string, unknown> | undefined,
+): { dateFrom?: string; dateTo?: string } => {
+  const isoDate = (value: unknown): string | undefined => {
+    const date = typeof value === "string" ? value.slice(0, 10) : undefined;
+    return isIsoCalendarDate(date) ? date : undefined;
+  };
+  const dateFrom = isoDate(metadata?.dateFrom);
+  const dateTo = isoDate(metadata?.dateTo);
+  return { ...(dateFrom ? { dateFrom } : {}), ...(dateTo ? { dateTo } : {}) };
+};
+
 /**
  * Places an item dated by ISO `dateFrom`/`dateTo` against a range. An item with one date is
  * that single day, and an inverted pair is read as the span between its two dates, matching

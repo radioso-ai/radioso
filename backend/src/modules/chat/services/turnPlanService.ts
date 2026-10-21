@@ -8,6 +8,7 @@ import { z } from "zod";
 
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import { CHAT_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { type Clock, formatIsoDateUtc, systemClock } from "../../../shared/domain/clock.js";
 import { isLocaleTag, localeTagOf } from "../../../shared/domain/locale.js";
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import { normalizeLlmClassifierLanguageLabel } from "../../../shared/domain/llmClassifierFields.js";
@@ -301,7 +302,7 @@ const turnPlanOutputShapeBlock = (input: {
       ? "requestPresent, openQuestion, and quickReply are always present and always last, in that order; quickReply is kind none with an empty text unless the Quick Reply Rules allow a reply.\n"
       : "") +
     "Shape:\n" +
-    `{"route":"retrieval|direct","isIdentityQuestion":false,"intentTopic":"string|null","rewrite":{"resolutionNote":"string|null","turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","temporalQueryMode":"none|listing|topic_refinement","retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null"}],"unresolved":false,"confidence":0.95},"responseLanguage":"string|null","responseLanguageTag":"string|null"${optionalFields.length > 0 ? `,${optionalFields.join(",")}` : ""}}`;
+    `{"route":"retrieval|direct","isIdentityQuestion":false,"intentTopic":"string|null","rewrite":{"resolutionNote":"string|null","turnKind":"fresh_subject|referential_followup|referential_relation|explicit_recenter|comparative|ambiguous","proposedActiveSubject":"string|null","relatedEntities":["string"],"rewrittenQuery":"string","semanticQuery":"string","lexicalQuery":"string","queryShape":"definition_lookup|event_date_lookup|policy_answer|exploratory_summary|follow_up_grounding|default_hybrid|general_grounding","temporalQueryMode":"none|listing|topic_refinement","requestedDateRange":{"dateFrom":"YYYY-MM-DD","dateTo":"YYYY-MM-DD"}|null,"retrievalSubqueries":[{"label":"string","semanticQuery":"string","lexicalQuery":"string","reason":"string|null"}],"unresolved":false,"confidence":0.95},"responseLanguage":"string|null","responseLanguageTag":"string|null"${optionalFields.length > 0 ? `,${optionalFields.join(",")}` : ""}}`;
 };
 
 /**
@@ -318,8 +319,12 @@ interface TurnPlanningPrompt {
   prompt: string;
 }
 
-/** Canonical prompt renderer shared by execution and the eligibility budget. */
-export const buildTurnPlanningPrompt = (input: TurnPlanningPromptInput): TurnPlanningPrompt => {
+/**
+ * Canonical prompt renderer shared by execution and the eligibility budget. `today` is the
+ * UTC date, `YYYY-MM-DD`, the rewrite resolves a named period against; it renders in the
+ * request, so the reusable system prefix stays the same from day to day.
+ */
+export const buildTurnPlanningPrompt = (input: TurnPlanningPromptInput & { today: string }): TurnPlanningPrompt => {
   const hasRoutineCandidates = input.routineCandidates.length > 0;
   const hasDirectiveCandidates = input.directiveCandidates.length > 0;
   const hasVisitorContext = Object.keys(input.visitorContext ?? {}).length > 0;
@@ -397,12 +402,16 @@ export const buildTurnPlanningPrompt = (input: TurnPlanningPromptInput): TurnPla
       context_section: formatConversationContext(input.history) || "No prior context",
       conversation_summary_section: renderConversationSummarySection(input.conversationSummary),
       query: input.query,
+      today: input.today,
     }),
   };
 };
 
+// Every ISO date renders as ten characters, so the budget estimate can stand in any date.
+const BUDGET_ESTIMATE_DATE = "0000-00-00";
+
 export const estimateTurnPlanningPromptTokens = (input: TurnPlanningPromptInput): number => {
-  const prompt = buildTurnPlanningPrompt(input);
+  const prompt = buildTurnPlanningPrompt({ ...input, today: BUDGET_ESTIMATE_DATE });
   return Math.ceil((prompt.systemPrompt.length + prompt.prompt.length) / 4);
 };
 
@@ -447,6 +456,9 @@ const rewriteSchema = z.object({
   lexicalQuery: z.string(),
   queryShape: z.enum(QUERY_SHAPE_VALUES),
   temporalQueryMode: z.enum(TEMPORAL_QUERY_MODE_VALUES),
+  // Read on its own by `parseStructuredRewrite`, which drops an unusable range: a bad
+  // date range must never cost the turn its plan. Optional for the schema-less fallback.
+  requestedDateRange: z.unknown().optional(),
   retrievalSubqueries: z.array(z.object({
     label: z.string(),
     semanticQuery: z.string(),
@@ -566,6 +578,7 @@ const rewriteJsonSchema = {
     "lexicalQuery",
     "queryShape",
     "temporalQueryMode",
+    "requestedDateRange",
     "retrievalSubqueries",
     "unresolved",
     "confidence",
@@ -584,6 +597,15 @@ const rewriteJsonSchema = {
     lexicalQuery: { type: "string" },
     queryShape: { type: "string", enum: [...QUERY_SHAPE_VALUES] },
     temporalQueryMode: { type: "string", enum: [...TEMPORAL_QUERY_MODE_VALUES] },
+    requestedDateRange: {
+      type: ["object", "null"],
+      additionalProperties: false,
+      required: ["dateFrom", "dateTo"],
+      properties: {
+        dateFrom: { type: "string" },
+        dateTo: { type: "string" },
+      },
+    },
     retrievalSubqueries: {
       type: "array",
       items: {
@@ -980,6 +1002,7 @@ export class TurnPlanService {
       reasoningEffort?: TextGenerationRequest["reasoningEffort"];
       maxOutputTokens?: number;
       timeoutMs?: number;
+      clock?: Clock;
     } = {},
   ) {}
 
@@ -993,7 +1016,10 @@ export class TurnPlanService {
       });
       const routineIds = request.routineCandidates.map((candidate) => candidate.routineId);
       const directiveNames = request.directiveCandidates.map((candidate) => candidate.name);
-      const { systemPrompt, reusableInputBoundary, prompt } = buildTurnPlanningPrompt(request);
+      const { systemPrompt, reusableInputBoundary, prompt } = buildTurnPlanningPrompt({
+        ...request,
+        today: formatIsoDateUtc((this.options.clock ?? systemClock)()),
+      });
       const { text } = await client.complete({
         systemPrompt,
         ...(reusableInputBoundary ? { reusableInputBoundary } : {}),

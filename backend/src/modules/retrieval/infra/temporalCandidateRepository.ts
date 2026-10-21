@@ -6,6 +6,7 @@ import type { RetrievedChunk } from "../domain/vectorSearch.js";
 import type {
   TemporalCandidateRetrievalInput,
   TemporalCandidateRetrievalPort,
+  TemporalLookupWindow,
 } from "../domain/temporal/temporalCandidateRetrieval.js";
 import { normalizeVectorMetadataFilter } from "../domain/vectorFilter.js";
 import { retrievableDocumentWhere } from "./documentRetrievalEligibility.js";
@@ -15,7 +16,7 @@ type ChunkDocumentJoin = DB & { c: DB["chunks"]; d: DB["documents"] };
 export class PgTemporalCandidateRepository implements TemporalCandidateRetrievalPort {
   constructor(private readonly database: Database) {}
 
-  async findUpcoming(input: TemporalCandidateRetrievalInput): Promise<RetrievedChunk[]> {
+  async findInWindow(input: TemporalCandidateRetrievalInput): Promise<RetrievedChunk[]> {
     let query = this.database.kysely
       .selectFrom("chunks as c")
       .innerJoin("documents as d", "d.id", "c.document_id")
@@ -32,12 +33,14 @@ export class PgTemporalCandidateRepository implements TemporalCandidateRetrieval
       ])
       .where("c.workspace_id", "=", input.workspaceId)
       .where(retrievableDocumentWhere("d"))
-      .where((eb) =>
-        eb.or([
-          eb("c.date_from", ">=", sql<Date>`${input.today}::date`),
-          eb("c.date_to", ">=", sql<Date>`${input.today}::date`),
-        ]),
-      )
+      .where(compileWindowCondition(input.window));
+
+    if (input.window.kind === "requested_range") {
+      // Breadth first: every event's first chunk ranks ahead of any event's second chunk,
+      // so a busy range fills the limit with distinct events before their detail chunks.
+      query = query.orderBy(sql`row_number() OVER (PARTITION BY c.document_id ORDER BY c.chunk_index, c.id)`);
+    }
+    query = query
       .orderBy(sql`COALESCE(c.date_from, c.date_to)`, "asc")
       .orderBy(sql`c.date_to ASC NULLS LAST`)
       .orderBy("c.document_id", "asc")
@@ -71,6 +74,22 @@ export class PgTemporalCandidateRepository implements TemporalCandidateRetrieval
     }));
   }
 }
+
+const compileWindowCondition = (window: TemporalLookupWindow) =>
+  (eb: ExpressionBuilder<ChunkDocumentJoin, "c" | "d">): ExpressionWrapper<ChunkDocumentJoin, "c" | "d", SqlBool> => {
+    if (window.kind === "upcoming") {
+      return eb.or([
+        eb("c.date_from", ">=", sql<Date>`${window.today}::date`),
+        eb("c.date_to", ">=", sql<Date>`${window.today}::date`),
+      ]);
+    }
+    // GREATEST and LEAST skip NULLs, so a chunk with only one date is that single day,
+    // and an inverted pair still spans its two dates. An undated chunk never matches.
+    return eb.and([
+      eb(eb.fn<Date>("greatest", ["c.date_from", "c.date_to"]), ">=", sql<Date>`${window.range.dateFrom}::date`),
+      eb(eb.fn<Date>("least", ["c.date_from", "c.date_to"]), "<=", sql<Date>`${window.range.dateTo}::date`),
+    ]);
+  };
 
 const compileSourceCondition = (
   sourceFilter: TemporalCandidateRetrievalInput["sourceFilter"],

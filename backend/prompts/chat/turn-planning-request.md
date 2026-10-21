@@ -3,5 +3,7 @@
 
 {{conversation_summary_section}}
 
+Today's date: {{today}}
+
 Latest user question:
 {{query}}

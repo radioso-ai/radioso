@@ -104,14 +104,24 @@ imports from `services/` or `infra/`.
   `rerankService.ts`.
 - Context and prompt shape: `contextSelectionStage.ts`,
   `promptAssemblyStage.ts`, `promptBuilder.ts`. `domain/answerCandidatePool.ts`
-  holds the one answer-candidate pool size formula (raised by `rerankTopK`,
-  floored and capped by `RETRIEVAL_BEHAVIOR.finalContextTopK` and
+  holds the answer's passage target (`answerContextTopK`: `finalContextTopK`,
+  or `temporal.dateRangeListingContextTopK` for a list of events in a requested
+  date range) and the one answer-candidate pool size formula (raised by
+  `rerankTopK`, floored by that target and capped by
   `RETRIEVAL_BEHAVIOR.rerank.candidateLimit`); `promptContextSelectorService.ts`
-  then caps the final prompt at `finalContextTopK` passages,
+  then caps the final prompt at that many passages,
   `promptContextMaxPerDocument` per document, each at most
   `promptContextMaxCharsPerContext` characters. `vectorTopK` sets fetch depth
   before candidate preparation filters, boosts, and merges; the pool size
   bounds what reaches the answer.
+- Date questions: the rewrite returns `temporalQueryMode` and an optional
+  `requestedDateRange` (`domain/temporal/requestedDateRange.ts` validates it and
+  places dated items against it). `candidateRetrievalStage.ts` runs the
+  structured lookup for listing questions through
+  `domain/temporal/temporalCandidateRetrieval.ts` (upcoming from today, or the
+  requested range); `services/temporal/` boosts, merges, and orders by the same
+  range. Integration coverage lives in
+  `tests/integration/retrieval-temporal-candidates.integration.test.ts`.
 - Diagnostics: `retrievalActivityTraceAssembler.ts`,
   `retrievalPipelineActivityTraceBuilder.ts`,
   `retrievalDiagnosticsStage.ts`.

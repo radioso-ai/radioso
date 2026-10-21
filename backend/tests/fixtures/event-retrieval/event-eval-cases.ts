@@ -47,6 +47,30 @@ export const eventRetrievalEvalCases: EventRetrievalEvalCaseDefinition[] = [
     ],
   },
   {
+    id: "event-requested-month-listing",
+    name: "Events in a named month",
+    query: "What's on in September 2026?",
+    assertions: [
+      {
+        type: "retrieval_top_k_includes_document",
+        documentId: "11111111-1111-4111-8111-111111111103",
+        k: 1,
+      },
+    ],
+  },
+  {
+    id: "event-requested-month-listing-it",
+    name: "Events in a named month, asked in Italian",
+    query: "Cosa c'è a settembre 2026?",
+    assertions: [
+      {
+        type: "retrieval_top_k_includes_document",
+        documentId: "11111111-1111-4111-8111-111111111103",
+        k: 1,
+      },
+    ],
+  },
+  {
     id: "event-actuality-sort",
     name: "Sort events by actuality",
     query: "Sort events by actuality.",

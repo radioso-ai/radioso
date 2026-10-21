@@ -160,6 +160,7 @@ describe("ConversationTurnInterpreter", () => {
       semanticRewriteInstructions: "Semantic custom guidance.",
       lexicalRewriteInstructions: "Lexical custom guidance.",
       query: "the first one",
+      today: "2026-10-21",
     });
 
     expect(prompt).not.toContain("Configured response instructions:");
@@ -169,6 +170,35 @@ describe("ConversationTurnInterpreter", () => {
     expect(prompt).toContain("Lexical custom guidance.");
     expect(prompt).toContain('"route":"retrieval|direct"');
     expect(prompt).toContain('"rewrite"');
+  });
+
+  it("dates the staged interpretation so the rewrite can resolve a named period", () => {
+    const prompt = buildTurnInterpretationPrompt({ context: "", query: "Che corsi ci sono a marzo?", today: "2026-10-21" });
+
+    expect(prompt).toContain("Today's date: 2026-10-21");
+    expect(prompt).toContain('"requestedDateRange":{"dateFrom":"YYYY-MM-DD","dateTo":"YYYY-MM-DD"}|null');
+  });
+
+  it("carries a staged rewrite's requested date range into the proposal", () => {
+    const parsed = parseTurnInterpretation(directInterpretation({
+      route: "retrieval",
+      rewrite: {
+        rewrittenQuery: "corsi a marzo 2027",
+        semanticQuery: "corsi a marzo 2027",
+        lexicalQuery: "corsi marzo",
+        queryShape: "event_date_lookup",
+        temporalQueryMode: "listing",
+        requestedDateRange: { dateFrom: "2027-03-01", dateTo: "2027-03-31" },
+        retrievalSubqueries: [],
+        turnKind: "fresh_subject",
+        proposedActiveSubject: null,
+        relatedEntities: [],
+        unresolved: false,
+        confidence: 0.9,
+      },
+    }));
+
+    expect(parsed.rewrite?.requestedDateRange).toEqual({ dateFrom: "2027-03-01", dateTo: "2027-03-31" });
   });
 
   it("keeps pageRead absent without a capability and still parses existing output", () => {
@@ -227,6 +257,7 @@ describe("ConversationTurnInterpreter", () => {
     const base = {
       context: "",
       query: "What is on this page?",
+      today: "2026-10-21",
     };
     expect(buildTurnInterpretationPrompt(base)).not.toContain("Page Read Classification");
     expect(buildTurnInterpretationPrompt(base)).not.toContain('"pageRead"');

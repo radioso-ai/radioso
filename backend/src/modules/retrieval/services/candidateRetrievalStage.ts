@@ -8,8 +8,13 @@ import type { ChunkCandidateHydratorPort } from "../infra/chunkCandidateHydrator
 import type { VectorCandidateSearchPort } from "../domain/vectorAdapter.js";
 import type { RetrievalSourceFilter } from "../domain/retrievalSourceFilter.js";
 import type { RetrievedChunk } from "../domain/vectorSearch.js";
-import type { TemporalCandidateRetrievalPort } from "../domain/temporal/temporalCandidateRetrieval.js";
+import type {
+  TemporalCandidateRetrievalInput,
+  TemporalCandidateRetrievalPort,
+} from "../domain/temporal/temporalCandidateRetrieval.js";
+import type { RequestedDateRange } from "../domain/temporal/requestedDateRange.js";
 import type { TemporalQueryMode } from "../domain/retrievalPipelineTypes.js";
+import { answerCandidatePoolSize, answerContextTopK } from "../domain/answerCandidatePool.js";
 import { normalizeVectorMetadataFilter, type VectorMetadataFilter } from "../domain/vectorFilter.js";
 import {
   DEGRADABLE_RETRIEVAL_CHANNELS,
@@ -167,12 +172,18 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
         ? "vector_search_unavailable" as const
         : "query_embedding_unavailable" as const;
     const temporalQueryMode = resolveTemporalQueryMode(input);
+    const temporalDateRange = temporalQueryMode === "none"
+      ? undefined
+      : input.rewrittenQuery.structuredResult?.requestedDateRange;
     const temporalStructuredLookupEnabled = input.settings.temporalStructuredLookupEnabled ?? true;
     const temporalContexts = temporalStructuredLookupEnabled && temporalQueryMode === "listing" && this.temporalCandidateRetrieval
-      ? await this.temporalCandidateRetrieval.findUpcoming({
+      ? await this.temporalCandidateRetrieval.findInWindow({
           workspaceId: input.request.workspaceId,
-          today: formatIsoDateUtc(retrievalNow),
-          topK: input.settings.vectorTopK,
+          ...temporalLookupScope({
+            dateRange: temporalDateRange,
+            today: formatIsoDateUtc(retrievalNow),
+            settings: input.settings,
+          }),
           metadataFilter,
           sourceFilter,
         }).catch(() => {
@@ -194,6 +205,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
       lexicalContexts,
       temporalContexts,
       temporalQueryMode,
+      ...(temporalDateRange ? { temporalDateRange } : {}),
       temporalStructuredLookupEnabled,
       retrievalBranches: retrievalBranches.map(({ fallbackApplied: _fallbackApplied, ...branch }) => branch),
       vectorFallbackApplied: retrievalBranches.some((branch) => branch.fallbackApplied),
@@ -298,6 +310,24 @@ const resolveSemanticAvailability = (input: {
     ? "degraded"
     : "unavailable";
 };
+
+// Without a requested range the lookup keeps its upcoming-from-today depth, `vectorTopK`.
+// A requested range fetches as many chunks as a date listing's answer pool can use: in a
+// listing the lookup's chunks lead the pool, so any chunk past it would never be read.
+const temporalLookupScope = (input: {
+  dateRange: RequestedDateRange | undefined;
+  today: string;
+  settings: QueryInterpretationStageResult["settings"];
+}): Pick<TemporalCandidateRetrievalInput, "window" | "topK"> =>
+  input.dateRange
+    ? {
+        window: { kind: "requested_range", range: input.dateRange },
+        topK: answerCandidatePoolSize(input.settings.rerankTopK, answerContextTopK({ dateRangeListing: true })),
+      }
+    : {
+        window: { kind: "upcoming", today: input.today },
+        topK: input.settings.vectorTopK,
+      };
 
 const resolveTemporalQueryMode = (input: QueryInterpretationStageResult): TemporalQueryMode => {
   const structured = input.rewrittenQuery.structuredResult;

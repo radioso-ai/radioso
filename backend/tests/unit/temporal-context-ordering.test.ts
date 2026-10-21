@@ -147,4 +147,54 @@ describe("temporal context ordering", () => {
       orderedContexts: contexts,
     });
   });
+
+  it("leads with the events in a requested range, ahead of sooner events outside it", () => {
+    const result = orderTemporalPromptContexts({
+      contexts: [
+        candidate({ chunkId: "next-week", rank: 0, dateFrom: "2026-10-28", dateTo: "2026-10-28" }),
+        candidate({ chunkId: "undated", rank: 1 }),
+        candidate({ chunkId: "in-range-late", rank: 2, dateFrom: "2026-12-12", dateTo: "2026-12-13" }),
+        candidate({ chunkId: "after-range", rank: 3, dateFrom: "2027-01-10", dateTo: "2027-01-10" }),
+        candidate({ chunkId: "past", rank: 4, dateFrom: "2026-09-01", dateTo: "2026-09-01" }),
+        candidate({ chunkId: "crosses-range-start", rank: 5, dateFrom: "2026-12-05", dateTo: "2026-12-08" }),
+        candidate({ chunkId: "in-range-early", rank: 6, dateFrom: "2026-12-07", dateTo: "2026-12-07" }),
+      ],
+      enabled: true,
+      queryShape: "event_date_lookup",
+      temporalQueryMode: "listing",
+      today: "2026-10-21",
+      dateRange: { dateFrom: "2026-12-07", dateTo: "2026-12-13" },
+    });
+
+    expect(result).toMatchObject({
+      applied: true,
+      dateRange: { dateFrom: "2026-12-07", dateTo: "2026-12-13" },
+      datedContextCount: 6,
+    });
+    expect(result.orderedContexts.map((context) => context.chunkId)).toEqual([
+      "crosses-range-start",
+      "in-range-early",
+      "in-range-late",
+      "undated",
+      "after-range",
+      "next-week",
+      "past",
+    ]);
+  });
+
+  it("leads with a requested range in the past when the question asks about one", () => {
+    const result = orderTemporalPromptContexts({
+      contexts: [
+        candidate({ chunkId: "upcoming", rank: 0, dateFrom: "2026-11-02", dateTo: "2026-11-02" }),
+        candidate({ chunkId: "last-week", rank: 1, dateFrom: "2026-10-14", dateTo: "2026-10-14" }),
+      ],
+      enabled: true,
+      queryShape: "event_date_lookup",
+      temporalQueryMode: "topic_refinement",
+      today: "2026-10-21",
+      dateRange: { dateFrom: "2026-10-12", dateTo: "2026-10-18" },
+    });
+
+    expect(result.orderedContexts.map((context) => context.chunkId)).toEqual(["last-week", "upcoming"]);
+  });
 });

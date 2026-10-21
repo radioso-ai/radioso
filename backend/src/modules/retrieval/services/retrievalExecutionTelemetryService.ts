@@ -11,6 +11,7 @@ import type {
   TemporalQueryMode,
 } from "../domain/retrievalPipelineTypes.js";
 import type { AppliedConstraint, ParsedQueryInterpretation } from "../domain/queryConstraintTypes.js";
+import type { RequestedDateRange } from "../domain/temporal/requestedDateRange.js";
 import type { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
 import { traceOperation } from "../../../shared/observability/tracing/operations.js";
 import { buildRetrievalAnswerSkillDiagnostic } from "./retrievalShapeResolver.js";
@@ -52,6 +53,7 @@ export class RetrievalExecutionTelemetryService {
     lexicalCandidateCount?: number;
     temporalCandidateCount?: number;
     temporalQueryMode?: TemporalQueryMode;
+    temporalDateRange?: RequestedDateRange;
     temporalStructuredLookupEnabled?: boolean;
     temporalDeterministicSortEnabled?: boolean;
     temporalDeterministicSortApplied?: boolean;
@@ -138,6 +140,7 @@ export class RetrievalExecutionTelemetryService {
           triggerMatchCount: input.triggerAnalysis?.matchCount ?? 0,
           triggerBackoffApplied: input.triggerBackoff?.applied ?? false,
           temporalQueryMode: input.temporalQueryMode,
+          temporalDateRangeRequested: input.temporalDateRange !== undefined,
           temporalStructuredLookupEnabled: input.temporalStructuredLookupEnabled ?? false,
           temporalDeterministicSortEnabled: input.temporalDeterministicSortEnabled ?? false,
           temporalDeterministicSortApplied: input.temporalDeterministicSortApplied ?? false,
@@ -198,6 +201,7 @@ const buildRetrievalTelemetryTraceAttributes = (
   "retrieval.candidates.lexical.count": boundedTraceCount(input.lexicalCandidateCount),
   "retrieval.candidates.temporal.count": boundedTraceCount(input.temporalCandidateCount),
   "retrieval.temporal.mode": input.temporalQueryMode,
+  "retrieval.temporal.date_range.requested": input.temporalDateRange !== undefined,
   "retrieval.temporal.structured_lookup.enabled": input.temporalStructuredLookupEnabled,
   "retrieval.temporal.deterministic_sort.enabled": input.temporalDeterministicSortEnabled,
   "retrieval.temporal.deterministic_sort.applied": input.temporalDeterministicSortApplied,

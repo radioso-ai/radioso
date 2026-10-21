@@ -24,6 +24,8 @@ export const buildQueryRewritePrompt = (input: {
   semanticRewriteInstructions?: string;
   lexicalRewriteInstructions?: string;
   query: string;
+  /** Today's UTC date, `YYYY-MM-DD`, so the rewrite can resolve a period the question names. */
+  today: string;
 }): string =>
   renderPromptTemplate("retrieval/query-rewrite.md", {
     context_section: input.context || "No prior context",
@@ -32,6 +34,7 @@ export const buildQueryRewritePrompt = (input: {
     lexical_rewrite_instructions:
       input.lexicalRewriteInstructions ?? "Use the system default lexical rewrite behavior.",
     query: input.query,
+    today: input.today,
   });
 
 export const buildTriggerAnalysisPrompt = (input: {

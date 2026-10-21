@@ -19,6 +19,7 @@ import type {
 import type { AppliedConstraint, ParsedQueryInterpretation } from "../domain/queryConstraintTypes.js";
 import type { RetrievalSourceFilter, RetrievalSourceScope } from "../domain/retrievalSourceFilter.js";
 import type { RetrievedChunk } from "../domain/vectorSearch.js";
+import { type RequestedDateRange, requestedDateRangeDays } from "../domain/temporal/requestedDateRange.js";
 import type { PromptBuildResult } from "./promptBuilder.js";
 
 export interface RetrievalPipelineRequest {
@@ -124,6 +125,11 @@ export interface CandidateRetrievalStageResult extends QueryInterpretationStageR
   lexicalContexts: RetrievedChunk[];
   temporalContexts?: RetrievedChunk[];
   temporalQueryMode?: TemporalQueryMode;
+  /**
+   * The validated range a temporal question asks about. Present only when the turn has a
+   * temporal mode: a listing question looks it up, and both modes rank and order by it.
+   */
+  temporalDateRange?: RequestedDateRange;
   temporalStructuredLookupEnabled?: boolean;
   retrievalBranches: RetrievalBranchResult[];
   vectorFallbackApplied: boolean;
@@ -241,6 +247,7 @@ type TraceCandidateRetrievalInput = TraceQueryInterpretationInput & {
   lexicalContexts?: Array<unknown>;
   temporalContexts?: Array<unknown>;
   temporalQueryMode?: TemporalQueryMode;
+  temporalDateRange?: RequestedDateRange;
   temporalStructuredLookupEnabled?: boolean;
   retrievalBranches?: Array<unknown>;
   activeRetrievalSubqueries?: Array<unknown>;
@@ -360,6 +367,10 @@ export const buildCandidateRetrievalTraceAttributes = (result: TraceCandidateRet
     "retrieval.candidates.temporal.count": boundedTraceCount(result.temporalContexts?.length),
     "retrieval.temporal.mode": result.temporalQueryMode,
     "retrieval.temporal.structured_lookup.enabled": result.temporalStructuredLookupEnabled,
+    "retrieval.temporal.date_range.requested": result.temporalDateRange !== undefined,
+    "retrieval.temporal.date_range.days": result.temporalDateRange
+      ? requestedDateRangeDays(result.temporalDateRange)
+      : undefined,
     "retrieval.branch.count": boundedTraceCount(result.retrievalBranches?.length),
     "retrieval.subquery.count": boundedTraceCount(result.activeRetrievalSubqueries?.length),
     "retrieval.vector_fallback.applied": result.vectorFallbackApplied,

@@ -122,7 +122,9 @@ imports from `services/` or `infra/`.
   any question with a requested range gets the range, ranked by similarity to
   the question's embedding (an exact sort in `infra/temporalCandidateRepository.ts`),
   and a listing question without one gets upcoming events from today.
-  `services/temporal/` merges, boosts, and orders by the same range. Integration coverage lives in
+  `services/temporal/` merges, boosts, and orders by the same range, and
+  `dateRangePassageReservation.ts` keeps the best candidates outside the range
+  in the answer (`temporal.dateRangeReservedOutsidePassages`). Integration coverage lives in
   `tests/integration/retrieval-temporal-candidates.integration.test.ts`.
 - Diagnostics: `retrievalActivityTraceAssembler.ts`,
   `retrievalPipelineActivityTraceBuilder.ts`,

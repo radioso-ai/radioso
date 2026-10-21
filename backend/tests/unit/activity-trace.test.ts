@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { ActivityTracePresenter } from "../../src/modules/retrieval/services/activityTracePresenter.js";
 import type { ActivityTrace } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
+import { maxAnswerContextPassages } from "../../src/modules/retrieval/domain/answerCandidatePool.js";
+import { RETRIEVAL_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 
 describe("activity trace presenter", () => {
   it("appends an answer stage and summary to a trace", () => {
@@ -117,5 +119,36 @@ describe("activity trace presenter", () => {
       path: "retrieval_answer",
       retrievalInvoked: true,
     });
+  });
+
+  it("lists every passage an answer can hold, and bounds longer lists to that many", () => {
+    const refs = (count: number) => Array.from({ length: count }, (_value, index) => ({ chunkId: `chunk-${index}` }));
+    const trace: ActivityTrace = {
+      traceId: "trace-lists",
+      startedAt: "2026-10-21T00:00:00.000Z",
+      stages: [
+        {
+          stageId: "selection",
+          kind: "context_selection",
+          label: "Context selection",
+          status: "applied",
+          outputs: { finalContexts: refs(maxAnswerContextPassages) },
+        },
+        {
+          stageId: "temporal",
+          kind: "temporal_retrieval",
+          label: "Temporal retrieval",
+          status: "applied",
+          outputs: { chunks: refs(40) },
+        },
+      ],
+      links: [],
+    };
+
+    const presented = new ActivityTracePresenter().present(trace, {});
+
+    expect(presented.stages[0]?.outputs?.finalContexts).toHaveLength(maxAnswerContextPassages);
+    expect(presented.stages[1]?.outputs?.chunks).toHaveLength(maxAnswerContextPassages);
+    expect(maxAnswerContextPassages).toBe(RETRIEVAL_BEHAVIOR.temporal.dateRangeListingContextTopK);
   });
 });

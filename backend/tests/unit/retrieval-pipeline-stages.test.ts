@@ -605,14 +605,18 @@ describe("retrieval pipeline stages", () => {
       return { contexts: selected.contexts, inRangeCourses };
     };
 
-    it("brings every event of a busy requested week into the answer, ahead of sooner events the search found", async () => {
+    it("brings every event of a busy requested week into the answer, ahead of the best matches outside it", async () => {
       const { contexts, inRangeCourses } = await answerContextsForRange({ range: week, inRangeCount: 16 });
 
-      expect(contexts).toHaveLength(16);
-      expect(new Set(contexts.map((context) => context.documentId)))
+      // Every week course, soonest first, then the reserved best matches from outside the week.
+      const reserved = RETRIEVAL_BEHAVIOR.temporal.dateRangeReservedOutsidePassages;
+      expect(contexts).toHaveLength(16 + reserved);
+      const leading = contexts.slice(0, 16);
+      expect(new Set(leading.map((context) => context.documentId)))
         .toEqual(new Set(inRangeCourses.map((chunk) => chunk.documentId)));
-      const dates = contexts.map((context) => String(context.metadata?.dateFrom));
+      const dates = leading.map((context) => String(context.metadata?.dateFrom));
       expect(dates).toEqual([...dates].sort());
+      expect(contexts.slice(16).every((context) => context.documentId.startsWith("doc-november-"))).toBe(true);
     });
 
     it.each([
@@ -621,11 +625,15 @@ describe("retrieval pipeline stages", () => {
     ])("brings a busy requested week into the answer for %s too", async (_label, rewrite) => {
       const { contexts, inRangeCourses } = await answerContextsForRange({ range: week, inRangeCount: 16, rewrite });
 
-      expect(contexts).toHaveLength(16);
-      expect(new Set(contexts.map((context) => context.documentId)))
+      // Every week course, soonest first, then the reserved best matches from outside the week.
+      const reserved = RETRIEVAL_BEHAVIOR.temporal.dateRangeReservedOutsidePassages;
+      expect(contexts).toHaveLength(16 + reserved);
+      const leading = contexts.slice(0, 16);
+      expect(new Set(leading.map((context) => context.documentId)))
         .toEqual(new Set(inRangeCourses.map((chunk) => chunk.documentId)));
-      const dates = contexts.map((context) => String(context.metadata?.dateFrom));
+      const dates = leading.map((context) => String(context.metadata?.dateFrom));
       expect(dates).toEqual([...dates].sort());
+      expect(contexts.slice(16).every((context) => context.documentId.startsWith("doc-november-"))).toBe(true);
     });
 
     it("keeps an ordinary answer size when the requested day has only a couple of events", async () => {
@@ -645,8 +653,10 @@ describe("retrieval pipeline stages", () => {
         inRangeCount: 30,
       });
 
-      expect(contexts).toHaveLength(RETRIEVAL_BEHAVIOR.temporal.dateRangeListingContextTopK);
-      expect(contexts.every((context) => context.documentId.startsWith("doc-december-"))).toBe(true);
+      const { dateRangeListingContextTopK, dateRangeReservedOutsidePassages } = RETRIEVAL_BEHAVIOR.temporal;
+      expect(contexts).toHaveLength(dateRangeListingContextTopK);
+      expect(contexts.filter((context) => context.documentId.startsWith("doc-december-")))
+        .toHaveLength(dateRangeListingContextTopK - dateRangeReservedOutsidePassages);
     });
 
   });

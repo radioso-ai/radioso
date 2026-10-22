@@ -28,8 +28,9 @@ terraform plan
 terraform apply
 ```
 
-Applying needs a principal with project IAM administration, service account administration, and
-workload identity pool administration in the target project, such as a project owner.
+Applying needs a project owner, or a principal holding Project IAM Admin, Role Administrator,
+Service Account Admin, Workload Identity Pool Admin, Service Usage Admin, and Storage Admin on the
+state bucket.
 
 Every plan also reads the live project and service-account policies. Two `check` blocks warn when
 a CI identity holds a project role, or trusts a workload identity principal, that this module
@@ -37,7 +38,12 @@ doesn't declare, so a grant made by hand shows up in the next plan. Remove it, o
 
 `live` and `live-eu` share the `radioso-494120` project. `live` owns the project's APIs and its
 `_Default` log bucket; `live-eu` sets `manage_project_services = false` and runs on its own pool,
-`github-actions-live-eu`.
+`github-actions-live-eu`. Image pushes are scoped to each environment's repository, and a
+deployed revision can only run as that environment's accounts. The other project-wide roles, such
+as `run.developer`, `run.admin`, and `secretmanager.admin`, reach both environments' resources.
+
+The Terraform identity's object access to the state bucket covers this root's prefix too. Editing
+foundation state grants nothing: the next plan refreshes against the live policies.
 
 ## CI identities
 
@@ -94,11 +100,13 @@ can't create.
 | `roles/firebasehosting.admin` | Releases the docs portal to Firebase Hosting |
 | `roles/serviceusage.apiKeysViewer` | `firebase-tools` reads the web app config, API key included, during a Hosting deploy |
 
-## Adding a role
+## Changing a role
 
 Add it to the identity's entry in `ci_identities`, or to `terraform_project_roles`, with the
 resource or command that needs it. Apply the foundation for each environment before merging the
-change that depends on it, so the workflow never runs ahead of its grant.
+change that depends on it, so the workflow never runs ahead of its grant. Removing a role that an
+environment root adopted also removes its entry from that root's `import` block, or the plan
+fails on an import target with no configuration.
 
 ## A new environment
 

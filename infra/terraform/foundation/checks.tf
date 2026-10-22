@@ -14,16 +14,15 @@ data "google_service_account_iam_policy" "ci" {
 }
 
 locals {
-  # A conditional grant is compared with its condition, so an unconditioned copy of a scoped
-  # grant still counts as undeclared.
   declared_ci_project_grants = {
     for identity in keys(local.ci_identities) : google_service_account.ci[identity].member => toset(concat(
       [for grant in values(local.ci_project_roles) : grant.role if grant.identity == identity],
       identity == "terraform" ? [google_project_iam_custom_role.terraform_logging.name] : [],
-      identity == "deploy" ? ["${google_project_iam_member.deploy_artifact_push.role} if ${google_project_iam_member.deploy_artifact_push.condition[0].expression}"] : [],
     ))
   }
 
+  # A conditional grant is compared with its condition, so a hand-made conditional copy of a
+  # declared role still counts as undeclared.
   observed_project_grants = flatten([
     for binding in try(jsondecode(data.google_project_iam_policy.current.policy_data).bindings, []) : [
       for member in binding.members : {

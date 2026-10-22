@@ -90,6 +90,8 @@ locals {
         project_roles = local.terraform_project_roles
         acts_as       = keys(local.runtime_service_accounts)
       }
+      # Push access comes from the routine root, which grants it on the environment's image
+      # repository: live and live-eu share a project.
       deploy = {
         account_id    = "${local.resource_name_prefix}-deploy"
         display_name  = "Radioso ${var.environment} GitHub Actions image deploy"
@@ -124,8 +126,6 @@ locals {
 
   github_actions_pool_principal = "principalSet://iam.googleapis.com/projects/${var.project_number}/locations/global/workloadIdentityPools/${google_iam_workload_identity_pool.github_actions.workload_identity_pool_id}"
   github_workflow_ref_prefix    = "${var.github_repository_owner}/${var.github_repository_name}/.github/workflows"
-
-  artifact_repository_name = "projects/${var.project_id}/locations/${var.region}/repositories/${local.resource_name_prefix}"
 }
 
 resource "google_project_service" "required_apis" {
@@ -176,20 +176,6 @@ resource "google_project_iam_member" "terraform_logging" {
   project = var.project_id
   role    = google_project_iam_custom_role.terraform_logging.name
   member  = google_service_account.ci["terraform"].member
-}
-
-# Image pushes reach this environment's repository only: live and live-eu share a project, and
-# a project-wide grant would let either deploy overwrite the other's images.
-resource "google_project_iam_member" "deploy_artifact_push" {
-  project = var.project_id
-  role    = "roles/artifactregistry.writer"
-  member  = google_service_account.ci["deploy"].member
-
-  condition {
-    title       = "${local.resource_name_prefix} image repository"
-    description = "Only the ${local.resource_name_prefix} Artifact Registry repository."
-    expression  = "resource.name == \"${local.artifact_repository_name}\" || resource.name.startsWith(\"${local.artifact_repository_name}/\")"
-  }
 }
 
 resource "google_storage_bucket_iam_member" "terraform_state_access" {

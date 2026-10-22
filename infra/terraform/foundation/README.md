@@ -65,7 +65,7 @@ The `ci_service_account_emails` output lists the accounts for an environment.
 
 | Grant | Why |
 | --- | --- |
-| `roles/artifactregistry.admin` | The environment's image repository and its cleanup policies |
+| `roles/artifactregistry.admin` | The environment's image repository, its cleanup policies, and the deploy identity's push grant on it |
 | `roles/cloudscheduler.admin` | Scheduler jobs |
 | `roles/cloudsql.admin` | The Cloud SQL instance, database, and user |
 | `roles/cloudtasks.queueAdmin` | Task queues |
@@ -89,7 +89,7 @@ can't create.
 
 | Grant | Why |
 | --- | --- |
-| `roles/artifactregistry.writer`, conditioned on the `radioso-<env>` repository | Pushes the backend and frontend images to this environment's repository only |
+| `roles/artifactregistry.writer` on the `radioso-<env>` repository | Pushes the backend and frontend images. The routine root grants it alongside the repository it owns, so it reaches this environment's repository only |
 | `roles/run.developer` | Updates the Cloud Run services to the new images |
 | `roles/iam.serviceAccountUser` on the backend, frontend, and worker accounts | Deploying revisions that run as those accounts |
 

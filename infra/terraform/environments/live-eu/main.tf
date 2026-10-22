@@ -30,14 +30,7 @@ provider "google-beta" {
 
 # The identity plane (CI and runtime service accounts, the GitHub workload identity pool, and
 # their IAM) has its own root in ../../foundation/environments/live-eu, applied by a person rather
-# than this workflow's identity (#1596). This state forgets it without destroying anything.
-removed {
-  from = module.foundation
-
-  lifecycle {
-    destroy = false
-  }
-}
+# than this workflow's identity (#1596).
 
 module "radioso" {
   source = "../.."

@@ -19,12 +19,12 @@ variable "environment" {
 }
 
 variable "region" {
-  description = "Default region for foundation resources."
+  description = "Region of the environment's runtime resources, including its Artifact Registry repository."
   type        = string
 }
 
 variable "terraform_state_bucket_name" {
-  description = "Existing GCS bucket that stores this environment's Terraform state."
+  description = "Existing GCS bucket that stores this environment's routine Terraform state."
   type        = string
 }
 
@@ -52,13 +52,14 @@ variable "github_actions_workload_identity_provider_id" {
   default     = "github-actions"
 }
 
-variable "runtime_deployer_project_roles" {
-  description = "Project-scoped roles retained by routine Terraform after foundation administration is removed."
-  type        = set(string)
-}
-
 variable "manage_project_services" {
-  description = "Whether this stack owns the project-wide Google API enablement resources. Disable for additional regional stacks in a project whose primary Terraform state already manages APIs."
+  description = "Whether this environment's stacks own the project-wide API enablement and the _Default log bucket. Disable for an additional regional environment in a project whose primary environment already owns them."
   type        = bool
   default     = true
+}
+
+variable "docs_deployer_enabled" {
+  description = "Whether this environment hosts the docs portal on Firebase Hosting, which adds the docs deploy identity."
+  type        = bool
+  default     = false
 }

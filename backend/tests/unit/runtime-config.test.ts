@@ -807,7 +807,14 @@ describe("runtime configuration", () => {
     expect(computeTf).toContain('ignore_changes = [');
     expect(computeTf).toContain('client_version,');
     expect(computeTf).toContain('template[0].containers[0].image,');
-    expect(terraformFoundation).toContain('resource "google_project_iam_member" "runtime_deployer_role"');
+    expect(terraformFoundation).toContain('resource "google_project_iam_member" "ci_project_role"');
+    // The CI identities never administer project IAM, service accounts, or the pool they authenticate through.
+    expect(terraformFoundation).not.toContain("roles/resourcemanager.projectIamAdmin");
+    expect(terraformFoundation).not.toContain("roles/iam.serviceAccountAdmin");
+    expect(terraformFoundation).not.toContain("roles/iam.workloadIdentityPoolAdmin");
+    expect(terraformFoundation).toContain('"attribute.job_workflow_ref" = "assertion.job_workflow_ref"');
+    expect(terraformFoundation).toContain("/attribute.job_workflow_ref/${local.github_workflow_ref_prefix}/${each.value.workflow}@refs/heads/main");
+    expect(terraformFoundation).not.toContain("attribute.repository/");
     expect(terraformFoundation).toContain('resource "google_project_service" "required_apis"');
     expect(terraformFoundation).toContain('"cloudresourcemanager.googleapis.com"');
     expect(terraformFoundation).toContain('"iam.googleapis.com"');
@@ -815,7 +822,7 @@ describe("runtime configuration", () => {
     expect(terraformFoundation).toContain('"sts.googleapis.com"');
     expect(terraformFoundation).toContain('"serviceusage.googleapis.com"');
     expect(terraformFoundation).toContain("depends_on = [google_project_service.required_apis]");
-    expect(terraformFoundation).toContain('resource "google_service_account_iam_member" "runtime_deployer_act_as"');
+    expect(terraformFoundation).toContain('resource "google_service_account_iam_member" "ci_act_as"');
     expect(terraformFoundation).toContain('resource "google_service_account_iam_member" "runtime_worker_task_act_as"');
     expect(terraformFoundation).toContain('resource "google_iam_workload_identity_pool_provider" "github_actions"');
     expect(terraformFoundation).toContain('https://token.actions.githubusercontent.com');
@@ -941,7 +948,7 @@ describe("runtime configuration", () => {
     const liveEuEnv = await readFile(new URL("../../../infra/terraform/environments/live-eu/main.tf", import.meta.url), "utf8");
     const liveEuEnvVariables = await readFile(new URL("../../../infra/terraform/environments/live-eu/variables.tf", import.meta.url), "utf8");
     const liveEuBackend = await readFile(new URL("../../../infra/terraform/environments/live-eu/backend.hcl", import.meta.url), "utf8");
-    const foundationTfvarsExample = await readFile(new URL("../../../infra/terraform/foundation/terraform.tfvars.example", import.meta.url), "utf8");
+    const liveEuFoundation = await readFile(new URL("../../../infra/terraform/foundation/environments/live-eu/main.tf", import.meta.url), "utf8");
 
     expect(terraformVariables).toContain('contains(["staging", "live", "live-eu"], var.environment)');
     expect(terraformVariables).toContain('variable "manage_project_services"');
@@ -952,8 +959,11 @@ describe("runtime configuration", () => {
 
     expect(liveEuEnv).toContain("manage_project_services = false");
     expect(liveEuEnv).toMatch(/secret_replication_locations\s+= \[var\.region\]/);
-    expect(foundationTfvarsExample).toMatch(/github_actions_workload_identity_pool_id\s+= "github-actions-live-eu"/);
-    expect(foundationTfvarsExample).toMatch(/github_actions_workload_identity_provider_id\s+= "github-actions-live-eu"/);
+    expect(liveEuEnv).not.toMatch(/^module "foundation"/m);
+    expect(liveEuFoundation).toMatch(/pool_id\s+= "github-actions-live-eu"/);
+    expect(liveEuFoundation).toMatch(/github_actions_workload_identity_pool_id\s+= local\.pool_id/);
+    expect(liveEuFoundation).toMatch(/github_actions_workload_identity_provider_id\s+= local\.pool_id/);
+    expect(liveEuFoundation).toContain("manage_project_services = false");
     expect(liveEuEnv).toMatch(/worker_task_queue_name\s+= "radioso-\$\{var\.environment\}-document-processing"/);
     expect(liveEuEnvVariables).toMatch(/default\s+= "live-eu"/);
     expect(liveEuEnvVariables).toMatch(/default\s+= "europe-west1"/);

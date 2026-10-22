@@ -1,128 +1,124 @@
 # Terraform foundation
 
-This root owns deployment identity and trust boundaries that routine Terraform
-must only consume:
+This module owns each environment's identity plane:
 
-- the GitHub Actions deployer service account;
-- the four application service accounts;
-- GitHub OIDC workload identity pool, provider, and impersonation grant;
-- deployer access to the environment Terraform-state bucket; and
-- service-account and Cloud Tasks IAM required by the runtime services.
+- the CI identities GitHub Actions impersonates, one per workflow, with their project roles;
+- the four application service accounts and the IAM the runtime services need between them;
+- the GitHub OIDC workload identity pool and provider, and which workflow may impersonate which
+  identity; and
+- the Terraform identity's access to the routine Terraform state bucket.
 
-It deliberately does not own application secrets, document storage, Cloud SQL,
-Cloud Run, or VPC resources. Those remain in the routine runtime stack until a
-later least-privilege phase.
+The routine runtime roots in `../environments/` consume these identities through `data` sources
+and manage nothing above resource-level IAM, so the identity that applies them holds no project
+IAM administration.
 
 ## Operating model
 
-Run this root only with a human/bootstrap GCP principal. Do not add it to the
-routine GitHub deployment workflow: that workflow assumes the identity and OIDC
-trust this root establishes. Give it a separate remote backend prefix, as shown
-in `backend.hcl.example`.
-
-Create an environment-specific `terraform.tfvars` from
-`terraform.tfvars.example`, and a local `backend.hcl` from
-`backend.hcl.example`. Set `project_number` to the project's numeric ID. Neither
-file should contain secret values.
-
-The foundation owns the IAM, IAM Credentials, Security Token Service, and Cloud
-Resource Manager APIs that its identity resources require. One bootstrap
-exception remains: before this root can use Terraform to manage APIs, a human
-principal with `serviceusage.services.enable` must enable the Service Usage API:
+Each environment has its own foundation root in `environments/<env>/`, with its state under the
+`radioso/foundation/<env>` prefix of that environment's state bucket. A person applies it with
+their own Google credentials; no workflow does. The Terraform workflow can't apply its own
+foundation, because changing the identity it runs as is exactly the privilege this split takes
+away from it.
 
 ```sh
-gcloud services enable serviceusage.googleapis.com --project PROJECT_ID
+cd infra/terraform/foundation/environments/staging
+export GOOGLE_OAUTH_ACCESS_TOKEN="$(gcloud auth print-access-token)"
+terraform init -backend-config=backend.hcl
+terraform plan
+terraform apply
 ```
 
-The foundation then keeps that API enabled along with its identity prerequisites.
+Applying needs a project owner, or a principal holding Project IAM Admin, Role Administrator,
+Service Account Admin, Workload Identity Pool Admin, Service Usage Admin, and Storage Admin on the
+state bucket.
 
-## One-time migration from the existing runtime state
+Every plan also reads the live project and service-account policies. Two `check` blocks warn when
+a CI identity holds a project role, or trusts a workload identity principal, that this module
+doesn't declare, so a grant made by hand shows up in the next plan. Remove it, or declare it here.
 
-This change preserves every existing resource ID. It is a state transfer, not a
-resource recreation. Perform this procedure for each environment in a scheduled
-maintenance window using a human principal with the existing foundation-level
-permissions.
+`live` and `live-eu` share the `radioso-494120` project. `live` owns the project's APIs and its
+`_Default` log bucket; `live-eu` sets `manage_project_services = false` and runs on its own pool,
+`github-actions-live-eu`. Image pushes are scoped to each environment's repository, and a
+deployed revision can only run as that environment's accounts. The other project-wide roles, such
+as `run.developer`, `run.admin`, and `secretmanager.admin`, reach both environments' resources.
 
-1. Back up the routine environment state with `terraform state pull` before any
-   changes. Initialise this root against its new backend, then import the
-   existing foundation APIs and identity resources into the foundation state.
-2. Import the current GitHub deployer service account, all four runtime service
-   accounts, its state-bucket binding, retained project-role bindings, the four
-   deployer `ServiceAccountUser` bindings, the two Cloud Tasks enqueuer
-   bindings, the two worker-to-task `ServiceAccountUser` bindings, the workload
-   identity pool and provider, and the workload-identity impersonation binding.
-   Do not import the three temporary administration roles listed in step 5.
-3. Update the routine root to this configuration only after the imports
-   succeed. Before any routine plan or apply, remove the matching addresses from
-   the old routine state with `terraform state rm`; do not run the old
-   configuration while it still owns them.
-4. Run plans in both roots. Neither plan may create or destroy identities,
-   bindings, or OIDC resources. The
-   GitHub environment variables retain their current values because the service
-   account and provider names do not change.
-5. After both plans are clean and a routine deployment succeeds, remove
-   `roles/resourcemanager.projectIamAdmin`, `roles/iam.serviceAccountAdmin`, and
-   `roles/iam.workloadIdentityPoolAdmin` from the routine deployer. Do this as a
-   separate reviewed change, never before the verified transfer.
+The Terraform identity's object access to the state bucket covers this root's prefix too. Editing
+foundation state grants nothing: the next plan refreshes against the live policies.
 
-## State-address map
+## CI identities
 
-For an established environment, import these foundation addresses first, then
-remove the corresponding legacy addresses from the runtime state. Replace the
-role iteration keys with the exact role strings in that environment's
-`terraform.tfvars`.
+Each identity trusts one workflow file. The workload identity provider maps the OIDC token's
+`job_workflow_ref` claim, and each identity's `roles/iam.workloadIdentityUser` grant names one
+file on `refs/heads/main`. For a reusable workflow the claim names the called file, so every
+caller of `_deploy-cloud-run.yml` deploys as the deploy identity. Renaming a workflow file means
+updating `ci_identities` in `main.tf` and applying the foundation before the renamed file runs.
 
-| Foundation address | Legacy runtime address |
+| Identity | Account | Workflow | GitHub environment variable |
+| --- | --- | --- | --- |
+| Terraform | `radioso-<env>-gha` | `terraform.yml` | `GCP_TERRAFORM_SERVICE_ACCOUNT` |
+| Image deploy | `radioso-<env>-deploy` | `_deploy-cloud-run.yml` | `GCP_DEPLOY_SERVICE_ACCOUNT` |
+| Docs deploy (live only) | `radioso-live-docs` | `deploy-docs.yml` | `GCP_DOCS_DEPLOY_SERVICE_ACCOUNT` |
+
+The `ci_service_account_emails` output lists the accounts for an environment.
+
+### Terraform identity
+
+| Grant | Why |
 | --- | --- |
-| `google_project_service.required_apis["API"]` | `module.radioso.google_project_service.apis["API"]` for existing staging/live API state; none for live-eu |
-| `google_service_account.github_actions_deployer` | `module.radioso.google_service_account.github_actions_deployer` |
-| `google_service_account.runtime["backend"]` | `module.radioso.google_service_account.backend` |
-| `google_service_account.runtime["frontend"]` | `module.radioso.google_service_account.frontend` |
-| `google_service_account.runtime["worker"]` | `module.radioso.google_service_account.worker` |
-| `google_service_account.runtime["worker_task"]` | `module.radioso.google_service_account.worker_task_invoker` |
-| `google_project_iam_member.runtime_deployer_role["ROLE"]` | `module.radioso.google_project_iam_member.github_actions_*` |
-| `google_service_account_iam_member.runtime_deployer_act_as["SERVICE"]` | `module.radioso.google_service_account_iam_member.github_actions_*_act_as` |
-| `google_project_iam_member.runtime_cloud_tasks_enqueuer["backend" or "worker"]` | `module.radioso.google_project_iam_member.*_cloud_tasks_enqueuer` |
-| `google_service_account_iam_member.runtime_worker_task_act_as["backend" or "worker"]` | `module.radioso.google_service_account_iam_member.*_worker_task_act_as` |
-| `google_iam_workload_identity_pool.github_actions` | `module.radioso.google_iam_workload_identity_pool.github_actions` |
-| `google_iam_workload_identity_pool_provider.github_actions` | `module.radioso.google_iam_workload_identity_pool_provider.github_actions` |
-| `google_service_account_iam_member.github_actions_workload_identity_user` | `module.radioso.google_service_account_iam_member.github_actions_workload_identity_user` |
+| `roles/artifactregistry.admin` | The environment's image repository and its cleanup policies |
+| `roles/cloudscheduler.admin` | Scheduler jobs |
+| `roles/cloudsql.admin` | The Cloud SQL instance, database, and user |
+| `roles/cloudtasks.queueAdmin` | Task queues |
+| `roles/compute.networkAdmin` | VPC, subnet, private services range, and service networking peering |
+| `roles/iam.serviceAccountViewer` | Reads the runtime service accounts the root attaches to services |
+| `roles/monitoring.alertPolicyEditor`, `roles/monitoring.notificationChannelEditor`, `roles/monitoring.uptimeCheckConfigEditor` | Alerting, which an environment turns on from GitHub values alone (see `docs/monitoring-google-cloud.md`) |
+| `roles/run.admin` | Cloud Run services and their invoker bindings |
+| `roles/secretmanager.admin` | Secrets, their versions, and accessor bindings |
+| `roles/storage.admin` | The documents bucket and its bindings |
+| `roles/serviceusage.serviceUsageAdmin` | Project API enablement, where `manage_project_services` is on |
+| Custom `radioso_<env>_terraform_logging` | Log-based metrics, plus `_Default` log bucket settings where `manage_project_services` is on. Not `roles/logging.configWriter`, whose sink permissions could route every log line out of the project |
+| `roles/iam.serviceAccountUser` on the four runtime accounts | Attaching them to Cloud Run services and scheduler jobs |
+| `roles/storage.objectAdmin` on the state bucket | Routine Terraform state |
 
-The state-bucket IAM grant was applied outside the old Terraform state. Import
-it only into `google_storage_bucket_iam_member.runtime_deployer_state_access`;
-there is no legacy address to remove.
+The routine roots can also put a load balancer and CDN in front of the frontend
+(`frontend_cdn_domain`). Turning that on is a code change, and that change also adds
+`roles/compute.loadBalancerAdmin` here for the managed certificate, which `compute.networkAdmin`
+can't create.
 
-Examples of the import identifiers, with `PROJECT_ID`, `PROJECT_NUMBER`,
-`GHA_EMAIL`, `STATE_BUCKET`, `POOL_ID`, and `PROVIDER_ID` substituted:
+### Image deploy identity
 
-```sh
-terraform import google_service_account.github_actions_deployer \
-  "projects/PROJECT_ID/serviceAccounts/GHA_EMAIL"
-terraform import 'google_project_service.required_apis["iam.googleapis.com"]' \
-  "PROJECT_ID/iam.googleapis.com"
-terraform import 'google_service_account.runtime["backend"]' \
-  "projects/PROJECT_ID/serviceAccounts/radioso-ENVIRONMENT-backend@PROJECT_ID.iam.gserviceaccount.com"
-terraform import google_storage_bucket_iam_member.runtime_deployer_state_access \
-  "STATE_BUCKET roles/storage.objectAdmin serviceAccount:GHA_EMAIL"
-terraform import google_iam_workload_identity_pool.github_actions \
-  "projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID"
-terraform import google_iam_workload_identity_pool_provider.github_actions \
-  "projects/PROJECT_NUMBER/locations/global/workloadIdentityPools/POOL_ID/providers/PROVIDER_ID"
-```
+| Grant | Why |
+| --- | --- |
+| `roles/artifactregistry.writer`, conditioned on the `radioso-<env>` repository | Pushes the backend and frontend images to this environment's repository only |
+| `roles/run.developer` | Updates the Cloud Run services to the new images |
+| `roles/iam.serviceAccountUser` on the backend, frontend, and worker accounts | Deploying revisions that run as those accounts |
 
-For each retained project role and each service-account policy binding, use the
-following provider import shapes:
+### Docs deploy identity
 
-```sh
-terraform import 'google_project_iam_member.runtime_deployer_role["ROLE"]' \
-  "PROJECT_ID ROLE serviceAccount:GHA_EMAIL"
-terraform import 'google_service_account_iam_member.runtime_deployer_act_as["backend"]' \
-  "projects/PROJECT_ID/serviceAccounts/radioso-ENVIRONMENT-backend@PROJECT_ID.iam.gserviceaccount.com roles/iam.serviceAccountUser serviceAccount:GHA_EMAIL"
-terraform import 'google_project_iam_member.runtime_cloud_tasks_enqueuer["backend"]' \
-  "PROJECT_ID roles/cloudtasks.enqueuer serviceAccount:radioso-ENVIRONMENT-backend@PROJECT_ID.iam.gserviceaccount.com"
-terraform import 'google_service_account_iam_member.runtime_worker_task_act_as["backend"]' \
-  "projects/PROJECT_ID/serviceAccounts/radioso-ENVIRONMENT-worker-task@PROJECT_ID.iam.gserviceaccount.com roles/iam.serviceAccountUser serviceAccount:radioso-ENVIRONMENT-backend@PROJECT_ID.iam.gserviceaccount.com"
-```
+| Grant | Why |
+| --- | --- |
+| `roles/firebasehosting.admin` | Releases the docs portal to Firebase Hosting |
+| `roles/serviceusage.apiKeysViewer` | `firebase-tools` reads the web app config, API key included, during a Hosting deploy |
 
-Record the exact executed imports and state removals in the change record before
-carrying this out in an environment.
+## Changing a role
+
+Add it to the identity's entry in `ci_identities`, or to `terraform_project_roles`, with the
+resource or command that needs it. Apply the foundation for each environment before merging the
+change that depends on it, so the workflow never runs ahead of its grant. Removing a role that an
+environment root adopted also removes its entry from that root's `import` block, or the plan
+fails on an import target with no configuration.
+
+## A new environment
+
+1. Create the Terraform state bucket with `../bootstrap`.
+2. A person with the Service Usage API permission enables it once, so Terraform can manage the
+   rest of the APIs:
+
+   ```sh
+   gcloud services enable serviceusage.googleapis.com --project PROJECT_ID
+   ```
+
+3. Copy an existing `environments/<env>/` root, drop its `import` blocks, set the project, region,
+   pool, and state bucket, and apply it.
+4. Set the GitHub environment variables in the table above from the `ci_service_account_emails`
+   output, and `GCP_WORKLOAD_IDENTITY_PROVIDER` from `github_actions_workload_identity_provider`.

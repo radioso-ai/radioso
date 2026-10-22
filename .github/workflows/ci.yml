@@ -825,7 +825,7 @@ jobs:
       - name: Terraform validate
         run: |
           set -euo pipefail
-          for root in environments/staging environments/live environments/live-eu foundation bootstrap; do
+          for root in environments/staging environments/live environments/live-eu foundation/environments/staging foundation/environments/live foundation/environments/live-eu bootstrap; do
             echo "::group::infra/terraform/${root}"
             terraform -chdir="infra/terraform/${root}" init -backend=false -input=false -lockfile=readonly
             terraform -chdir="infra/terraform/${root}" validate

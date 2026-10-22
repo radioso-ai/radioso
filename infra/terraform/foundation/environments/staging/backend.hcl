@@ -1,3 +1,2 @@
-# Use a distinct prefix from the routine runtime state.
 bucket = "radioso-staging-terraform-state"
 prefix = "radioso/foundation/staging"

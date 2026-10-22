@@ -45,9 +45,11 @@ module "radioso" {
   frontend_image  = var.frontend_image
   radioso_edition = var.radioso_edition
 
-  backend_min_instances  = 0
+  # Web Summit demo (9-12 Nov 2026): a warm backend and frontend so the first
+  # voice turn and the embed load pay no cold start. Revert to 0 after the event.
+  backend_min_instances  = 1
   backend_max_instances  = var.backend_max_instances
-  frontend_min_instances = 0
+  frontend_min_instances = 1
   frontend_max_instances = var.frontend_max_instances
   worker_min_instances   = 0
   worker_max_instances   = var.worker_max_instances

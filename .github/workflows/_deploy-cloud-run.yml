@@ -155,6 +155,8 @@ jobs:
 
           echo "Shipping ${version} (${commit}) to ${GITHUB_ENVIRONMENT}."
 
+      # The foundation (infra/terraform/foundation) lets only this reusable workflow, called on
+      # main, impersonate the deploy identity. Renaming the file needs a foundation change first.
       - id: auth
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
         with:

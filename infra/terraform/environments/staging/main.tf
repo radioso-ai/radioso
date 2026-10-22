@@ -1,5 +1,5 @@
 terraform {
-  required_version = ">= 1.5"
+  required_version = ">= 1.7"
 
   required_providers {
     google = {
@@ -33,36 +33,15 @@ import {
   id = "projects/radioso-staging/secrets/radioso-staging-posthog-api-key"
 }
 
-# Foundation owns this project's identity plane: the GitHub Actions workload
-# identity pool, the deployer account, and the four runtime service accounts the
-# radioso module consumes through `data` sources. It was split out of that module
-# in #1001 but never wired into a root config, which left those resources recorded
-# under `module.radioso` with no configuration behind them — so Terraform planned
-# to delete them, including the pool GitHub Actions authenticates through. The
-# #1082 apply adopted them here via `moved` blocks; those have served their
-# purpose and are gone.
-data "google_project" "this" {
-  project_id = var.project_id
-}
+# The identity plane (CI and runtime service accounts, the GitHub workload identity pool, and
+# their IAM) has its own root in ../../foundation/environments/staging, applied by a person rather
+# than this workflow's identity (#1596). This state forgets it without destroying anything.
+removed {
+  from = module.foundation
 
-module "foundation" {
-  source = "../../foundation"
-
-  project_id     = var.project_id
-  project_number = data.google_project.this.number
-  environment    = var.environment
-  region         = var.region
-
-  # Must match the bucket in backend.hcl; the deployer needs object access to it.
-  terraform_state_bucket_name = "radioso-staging-terraform-state"
-
-  # The project-scoped roles the deployer already holds, read back from state so
-  # adoption is a no-op rather than a re-grant.
-  runtime_deployer_project_roles = [
-    "roles/artifactregistry.writer",
-    "roles/cloudscheduler.admin",
-    "roles/run.admin",
-  ]
+  lifecycle {
+    destroy = false
+  }
 }
 
 module "radioso" {

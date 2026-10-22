@@ -29,14 +29,14 @@ jobs:
       cancel-in-progress: false
     env:
       FIREBASE_PROJECT: ${{ vars.GCP_PROJECT_ID }}
-      GCP_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DEPLOY_SERVICE_ACCOUNT }}
+      GCP_DOCS_DEPLOY_SERVICE_ACCOUNT: ${{ vars.GCP_DOCS_DEPLOY_SERVICE_ACCOUNT }}
       GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
       GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
 
     steps:
       - name: Require configured GitHub environment variables
         run: |
-          for key in GCP_DEPLOY_SERVICE_ACCOUNT GCP_PROJECT_ID GCP_WORKLOAD_IDENTITY_PROVIDER; do
+          for key in GCP_DOCS_DEPLOY_SERVICE_ACCOUNT GCP_PROJECT_ID GCP_WORKLOAD_IDENTITY_PROVIDER; do
             if [ -z "${!key}" ]; then
               echo "Missing required GitHub environment variable: $key" >&2
               exit 1
@@ -64,11 +64,13 @@ jobs:
           RADIOSO_APP_URL: https://app.radioso.ai
         run: pnpm run build
 
+      # The foundation (infra/terraform/foundation) lets only this file, run on main, impersonate
+      # the docs deploy identity. Renaming the file needs a foundation change first.
       - id: auth
         uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093
         with:
           workload_identity_provider: ${{ env.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ env.GCP_DEPLOY_SERVICE_ACCOUNT }}
+          service_account: ${{ env.GCP_DOCS_DEPLOY_SERVICE_ACCOUNT }}
 
       - name: Deploy to Firebase Hosting
         run: pnpm dlx firebase-tools@15.30.2 deploy --only hosting --project "${FIREBASE_PROJECT}" --non-interactive

@@ -100,6 +100,14 @@ export const cutOffAt = (claim: VoiceTurnClaim): number | null => {
 export const supersededBeforeOutcome = (claim: VoiceTurnClaim): boolean => lostBeforeOutcome(claim, claim.supersededAt);
 
 /**
+ * Whether the runtime closed the turn's request before the outcome reached it, however the chat
+ * turn behind it ended: a runtime that timed out, or a caller who hung up mid-turn. A request the
+ * session's newer one had already overtaken was given up for the newer utterance instead.
+ */
+export const streamAbandoned = (claim: VoiceTurnClaim): boolean =>
+  claim.hungUpAt !== null && (claim.supersededAt === null || claim.hungUpAt < claim.supersededAt);
+
+/**
  * What this process remembers of each voice session between its requests: which request is the
  * newest (it supersedes the ones before it), when a superseded turn last spoke a bridge line, and
  * the last exchange a re-request may replay or report as interrupted. In-process only: requests of

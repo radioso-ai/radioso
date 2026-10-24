@@ -6,16 +6,21 @@ import {
   buildQualityResolutionBreakdownQuery,
   buildQualityStatsBacklogQuery,
   buildQualityStatsDailyQuery,
+  buildQualityVoiceActivityQuery,
+  buildQualityVoiceStatsQuery,
   mergeQualityStatsBuckets,
   resolveQualityStatsWindows,
   sumQualityStatsRows,
   summarizeQualityStatsWindow,
   toQualityStatsWindow,
+  toQualityVoiceStats,
 } from "../../src/modules/quality/statsQuery.js";
 import {
   RESOLVED_LATENCY_EXPRESSION,
+  buildConversationTurnFilters,
   buildEffectiveOpenPredicate,
   buildEffectiveTriageStateExpression,
+  buildTurnPopulationFilters,
 } from "../../src/modules/quality/turnPopulationSql.js";
 
 const WORKSPACE_ID = "11111111-1111-1111-1111-111111111111";
@@ -506,5 +511,128 @@ describe("buildQualityResolutionBreakdownQuery", () => {
     expect(query.text).toContain("c.source_channel IS NULL OR c.source_channel NOT IN");
     expect(query.params).toContain(AGENT_ID);
     expect(query.params).toContain("embed");
+  });
+});
+
+describe("the two turn populations", () => {
+  const scope = { workspaceId: WORKSPACE_ID, agentId: AGENT_ID, channel: "voice" };
+
+  it("makes the AI-quality population the conversation's agent turns with whole answers only, over the same params", () => {
+    const conversationParams: unknown[] = [];
+    const populationParams: unknown[] = [];
+    const conversationTurns = buildConversationTurnFilters(scope, conversationParams);
+    const population = buildTurnPopulationFilters(scope, populationParams);
+
+    expect(population).toEqual([
+      ...conversationTurns,
+      "COALESCE(m.metadata_json -> 'interruption' ->> 'partial', 'false') <> 'true'",
+    ]);
+    expect(populationParams).toEqual(conversationParams);
+  });
+});
+
+describe("buildQualityVoiceStatsQuery", () => {
+  const windows = resolveQualityStatsWindows("7d", new Date("2026-07-28T13:45:00.000Z"));
+  const query = buildQualityVoiceStatsQuery({ workspaceId: WORKSPACE_ID, agentId: AGENT_ID, window: windows.current });
+
+  it("selects the voice channel's turns of the request's agent in the current window, from the shared population", () => {
+    expect(query.params[0]).toBe(WORKSPACE_ID);
+    expect(query.text).toContain("m.role = 'assistant'");
+    expect(query.text).toContain("m.source IS NULL OR m.source NOT IN");
+    expect(query.text).toMatch(/c\.source_channel = \$\d+/);
+    expect(query.params).toContain("voice");
+    expect(query.params).toContain(AGENT_ID);
+    expect(query.params).toContain(windows.current.from.toISOString());
+    expect(query.params).toContain(windows.current.to.toISOString());
+    expect(query.params).not.toContain(windows.previous.from.toISOString());
+  });
+
+  it("keeps the heard part of a reply cut off mid-stream, which the AI-quality population leaves out", () => {
+    const daily = buildQualityStatsDailyQuery({ workspaceId: WORKSPACE_ID, window: windows.current, tuples: TUPLES });
+    const heardPartFilter = "COALESCE(m.metadata_json -> 'interruption' ->> 'partial', 'false') <> 'true'";
+
+    expect(daily.text).toContain(heardPartFilter);
+    expect(query.text).not.toContain(heardPartFilter);
+  });
+
+  it("counts calls as distinct conversations and takes the median first speech over turns that recorded a number", () => {
+    expect(query.text).toContain("COUNT(DISTINCT m.conversation_id)");
+    expect(query.text).toContain("percentile_cont(0.5) WITHIN GROUP");
+    // A malformed value reads as none instead of failing the cast for the whole response.
+    expect(query.text).toContain("jsonb_typeof(");
+    expect(query.params).toEqual(expect.arrayContaining(["firstSpeechMs", "turnLimitReached", "outcome", "callback_requested"]));
+    // A call that asked for a callback counts once, however many of its turns asked.
+    expect(query.text).toContain("COUNT(DISTINCT m.conversation_id) FILTER (WHERE");
+    expect(query.params).not.toContain("continue");
+  });
+
+  it("binds every placeholder it references", () => {
+    const referenced = [...query.text.matchAll(/\$(\d+)/g)].map((match) => Number(match[1]));
+    expect(Math.max(...referenced)).toBe(query.params.length);
+    expect(new Set(referenced).size).toBe(query.params.length);
+  });
+
+  it("names no agent when the request names none", () => {
+    const unscoped = buildQualityVoiceStatsQuery({ workspaceId: WORKSPACE_ID, window: windows.current });
+
+    expect(unscoped.text).not.toContain("c.agent_id =");
+  });
+});
+
+describe("buildQualityVoiceActivityQuery", () => {
+  const windows = resolveQualityStatsWindows("7d", new Date("2026-07-28T13:45:00.000Z"));
+  const query = buildQualityVoiceActivityQuery({ workspaceId: WORKSPACE_ID, agentId: AGENT_ID, window: windows.current });
+
+  it("asks only whether the voice statement's population has a turn, over the same filters and window", () => {
+    const voiceStatement = buildQualityVoiceStatsQuery({ workspaceId: WORKSPACE_ID, agentId: AGENT_ID, window: windows.current });
+    // The statement's own WHERE, after any `FILTER (WHERE ...)` in its projection.
+    const where = (text: string) => text.slice(text.lastIndexOf("\n       WHERE ") + "\n       WHERE ".length).split(/\n\s*AND /u).map((line) => line.trim());
+
+    expect(query.text).toMatch(/^SELECT EXISTS \(/u);
+    expect(query.text).not.toContain("COUNT(");
+    expect(where(query.text.replace(/\s*\) AS has_voice_activity$/u, ""))).toEqual(where(voiceStatement.text));
+    expect(voiceStatement.params.slice(0, query.params.length)).toEqual(query.params);
+    expect(query.params).toEqual(expect.arrayContaining([WORKSPACE_ID, "voice", AGENT_ID, windows.current.from.toISOString(), windows.current.to.toISOString()]));
+  });
+
+  it("binds every placeholder it references, and names no agent when the request names none", () => {
+    const referenced = [...query.text.matchAll(/\$(\d+)/g)].map((match) => Number(match[1]));
+    expect(Math.max(...referenced)).toBe(query.params.length);
+    expect(new Set(referenced).size).toBe(query.params.length);
+
+    const unscoped = buildQualityVoiceActivityQuery({ workspaceId: WORKSPACE_ID, window: windows.current });
+    expect(unscoped.text).not.toContain("c.agent_id =");
+    expect(unscoped.params).not.toContain(AGENT_ID);
+  });
+});
+
+describe("toQualityVoiceStats", () => {
+  const row = {
+    call_count: "3",
+    turn_count: "7",
+    first_speech_median_ms: 2_499.6,
+    turn_limit_count: "1",
+    interruption_count: "2",
+    callback_call_count: "1",
+  };
+
+  it("coerces int8-as-text counts and rounds the median to whole milliseconds", () => {
+    expect(toQualityVoiceStats(row)).toEqual({
+      calls: 3,
+      turns: 7,
+      firstSpeechMedianMs: 2_500,
+      turnLimitTurns: 1,
+      interruptions: 2,
+      callbackCalls: 1,
+    });
+  });
+
+  it("reports no median when no turn recorded its first speech", () => {
+    expect(toQualityVoiceStats({ ...row, first_speech_median_ms: null })?.firstSpeechMedianMs).toBeNull();
+  });
+
+  it("reports no voice block for a period without voice turns", () => {
+    expect(toQualityVoiceStats(undefined)).toBeNull();
+    expect(toQualityVoiceStats({ ...row, call_count: "0", turn_count: "0", first_speech_median_ms: null })).toBeNull();
   });
 });

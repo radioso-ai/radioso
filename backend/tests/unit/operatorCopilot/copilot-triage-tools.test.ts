@@ -80,7 +80,7 @@ const dependencies = (overrides: Partial<WorkspaceTriageCopilotToolDependencies>
     listConversations: vi.fn(async () => ({ conversations: [], total: 0 })),
   },
   qualitySignalsService: {
-    getQualityStats: vi.fn(async () => ({ backlog: {} })),
+    getQualityStats: vi.fn(async () => ({ backlog: {}, voice: null })),
     listLowQualityTurns: vi.fn(async () => ({ items: [], total: 0 })),
   },
   documentStatusService: {
@@ -132,7 +132,7 @@ describe("workspace_triage", () => {
         })),
       },
       qualitySignalsService: {
-        getQualityStats: vi.fn(async () => ({ backlog: { grounding_gaps: 4, negative_feedback: 9 } })),
+        getQualityStats: vi.fn(async () => ({ backlog: { grounding_gaps: 4, negative_feedback: 9 }, voice: null })),
         listLowQualityTurns: vi.fn(async () => ({ items: [qualityTurn()], total: 1 })),
       },
     }));
@@ -259,7 +259,7 @@ describe("workspace_triage", () => {
         ]),
       },
       qualitySignalsService: {
-        getQualityStats: vi.fn(async () => ({ backlog: {} })),
+        getQualityStats: vi.fn(async () => ({ backlog: {}, voice: null })),
         listLowQualityTurns: vi.fn(async () => ({ items: [qualityTurn()], total: 1 })),
       },
     }));
@@ -337,7 +337,7 @@ describe("workspace_triage", () => {
   });
 
   it("narrows every agent-scoped source to the requested agent and keeps the shared knowledge base", async () => {
-    const getQualityStats = vi.fn(async () => ({ backlog: {} }));
+    const getQualityStats = vi.fn(async () => ({ backlog: {}, voice: null }));
     const listLowQualityTurns = vi.fn(async () => ({ items: [], total: 0 }));
     const deps = dependencies({
       qualitySignalsService: { getQualityStats, listLowQualityTurns },
@@ -412,7 +412,7 @@ describe("workspace_triage", () => {
   it("counts an aggregate line as listed without counting it as a matched row", async () => {
     const result = await digest(dependencies({
       qualitySignalsService: {
-        getQualityStats: vi.fn(async () => ({ backlog: { grounding_gaps: 12 } })),
+        getQualityStats: vi.fn(async () => ({ backlog: { grounding_gaps: 12 }, voice: null })),
         listLowQualityTurns: vi.fn(async () => ({ items: [], total: 0 })),
       },
     }));
@@ -422,7 +422,7 @@ describe("workspace_triage", () => {
   });
 
   it("answers for the whole workspace even when one agent is on screen", async () => {
-    const getQualityStats = vi.fn(async () => ({ backlog: {} }));
+    const getQualityStats = vi.fn(async () => ({ backlog: {}, voice: null }));
     const listPending = vi.fn(async () => [
       { handle: "decision-handle-other", conversationId: "conversation-other", agentId: "agent-2", reason: "Other agent", createdAt: new Date("2026-08-26T06:00:00.000Z") },
     ]);

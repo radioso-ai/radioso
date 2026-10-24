@@ -454,6 +454,18 @@ variable "monitoring_scheduler_failure_threshold" {
   default     = 0
 }
 
+variable "monitoring_voice_turn_limit_threshold" {
+  description = "Voice turns on the backend service that hit the turn limit in fifteen minutes that trigger the voice turn health alert."
+  type        = number
+  default     = 5
+}
+
+variable "monitoring_voice_abandoned_turn_threshold" {
+  description = "Voice turns on the backend service whose request the voice runtime closed before the outcome reached it, in fifteen minutes, that trigger the voice turn health alert."
+  type        = number
+  default     = 5
+}
+
 variable "container_health_probes_enabled" {
   description = "Whether the backend and MCP Cloud Run services probe their health routes for startup and liveness."
   type        = bool

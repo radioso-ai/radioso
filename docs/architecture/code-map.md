@@ -1663,7 +1663,11 @@ event in the transition's transaction, through the conversation activity port.
 population, defined in `turnPopulationSql.ts`. It excludes operator-test channels
 and human-authored takeover replies, so a signal's count always matches the rows
 behind it. This is distinct from the offline eval suite below, which measures
-conversation behavior rather than triaging production turns.
+conversation behavior rather than triaging production turns. The stats' `voice`
+block (`buildQualityVoiceStatsQuery` in `statsQuery.ts`) counts the window's
+calls from the facts the voice channel keeps on each reply
+(`chat/contracts/voiceTurnFacts.ts`); the Quality page shows it as the Voice
+card (`frontend/components/dashboard/quality/quality-voice-section.tsx`).
 
 Public surfaces and contracts:
 
@@ -1689,6 +1693,7 @@ Related docs:
 
 - `docs/human-takeover.md` (the Inbox and the operator console)
 - `docs/quality-eval-learning-loop.md` (structured closure and Eval verification)
+- `docs/voice-channel.md#call-numbers-on-the-quality-page` (the Voice card)
 
 ## Conversation Activity
 

@@ -53,8 +53,11 @@ export interface VoiceTurnRecord {
   conversationId: string | null;
   speechPieceCount: number;
   result: VoiceTurnResult;
-  /** Present when the agent's voice policy ran. */
-  policy?: { bridged: boolean; turnLimitReached: boolean; fallbackSpoken: boolean };
+  /**
+   * Present when the agent's voice policy ran; `firstSpeechMs` once its first speech left, the
+   * reply's or the fallback line's, timed from the start of the turn it speaks for.
+   */
+  policy?: { bridged: boolean; turnLimitReached: boolean; fallbackSpoken: boolean; firstSpeechMs?: number };
   /** The language the turn's lines were picked in, once the turn runs with them. */
   language?: VoiceTurnLanguage;
   /** Chat reported progress, so it stored the turn's user message. */

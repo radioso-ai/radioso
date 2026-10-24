@@ -12991,6 +12991,42 @@ components:
         - grounded
         - negativeFeedback
         - skillFailures
+    QualityVoiceStats:
+      type: object
+      properties:
+        calls:
+          type: integer
+          minimum: 0
+          description: Voice conversations with at least one answered turn in the window.
+        turns:
+          type: integer
+          minimum: 0
+          description: The agent's turns on those calls, a reply the caller cut off mid-stream included and a teammate's reply not.
+        firstSpeechMedianMs:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+          description: Median time from a turn's start to its first speech (the reply's or the fallback line's; a bridge line does not count), over turns that recorded one. Null when none did.
+        turnLimitTurns:
+          type: integer
+          minimum: 0
+          description: Turns that reached the voice turn limit before they spoke.
+        interruptions:
+          type: integer
+          minimum: 0
+          description: Turns whose reply the caller spoke over, cut off mid-stream or after it finished.
+        callbackCalls:
+          type: integer
+          minimum: 0
+          description: Calls in which a turn's outcome asked for a callback, counted once per call. At most `calls`.
+      required:
+        - calls
+        - turns
+        - firstSpeechMedianMs
+        - turnLimitTurns
+        - interruptions
+        - callbackCalls
     QualityStats:
       type: object
       properties:
@@ -13060,6 +13096,12 @@ components:
               - reason
               - count
           description: Current-window terminal triage counts grouped by state and structured reason. Closures without one are grouped as `unspecified`.
+        voice:
+          anyOf:
+            - $ref: "#/components/schemas/QualityVoiceStats"
+            - type: "null"
+            - type: "null"
+          description: The current window's voice calls, for the request's agent. Null when the window has no voice turns, or `channel` names another channel.
       required:
         - range
         - filters
@@ -13068,6 +13110,7 @@ components:
         - buckets
         - backlog
         - resolutionBreakdown
+        - voice
     SetQualityTriageRequest:
       type: object
       properties:

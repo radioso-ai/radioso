@@ -385,6 +385,41 @@ interface QualityVoiceStatsQueryInput {
   window: QualityStatsPeriod;
 }
 
+/**
+ * Whether the window holds any voice activity for the request's agent: one of the workspace's
+ * voice conversations with a message in the window. The voice statement scans the window's turns,
+ * so the stats ask this first and skip that scan for a workspace without calls. A superset of the
+ * voice statement's population, so a false answer never hides a call.
+ */
+export const buildQualityVoiceActivityQuery = (input: QualityVoiceStatsQueryInput): SqlQuery => {
+  const params: unknown[] = [];
+  const filters = [
+    `c.workspace_id = ${bindParam(params, input.workspaceId)}`,
+    `c.source_channel = ${bindParam(params, VOICE_SOURCE_CHANNEL)}`,
+  ];
+  if (input.agentId) {
+    filters.push(`c.agent_id = ${bindParam(params, input.agentId)}`);
+  }
+  const from = bindParam(params, input.window.from.toISOString());
+  const to = bindParam(params, input.window.to.toISOString());
+  return {
+    text: `SELECT EXISTS (
+         SELECT 1
+         FROM conversations c
+         WHERE ${filters.join("\n           AND ")}
+           AND EXISTS (
+             SELECT 1
+             FROM messages m
+             WHERE m.workspace_id = c.workspace_id
+               AND m.conversation_id = c.id
+               AND m.created_at >= ${from}::timestamptz
+               AND m.created_at < ${to}::timestamptz
+           )
+       ) AS has_voice_activity`,
+    params,
+  };
+};
+
 /** The voice numbers' one row, counts as text to dodge int8-as-string. */
 export interface QualityVoiceStatsRow {
   call_count: string | number;

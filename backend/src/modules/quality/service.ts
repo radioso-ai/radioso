@@ -38,6 +38,7 @@ import {
   buildQualityResolutionBreakdownQuery,
   buildQualityStatsBacklogQuery,
   buildQualityStatsDailyQuery,
+  buildQualityVoiceActivityQuery,
   buildQualityVoiceStatsQuery,
   mergeQualityStatsBuckets,
   resolveQualityStatsWindows,
@@ -469,12 +470,9 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
     // `backlog` stays a separate statement and is deliberately NOT made consistent with the
     // windowed numbers: it answers a different question — all-time active triage, with no
     // date bound at all — so there is no shared total for it to agree with. The voice numbers
-    // are a statement of their own for the same reason: a population of calls, not of
-    // AI-quality turns, and none at all on a request pinned to another channel.
-    const voiceQuery = input.channel && input.channel !== VOICE_SOURCE_CHANNEL
-      ? null
-      : buildQualityVoiceStatsQuery({ workspaceId, agentId: input.agentId, window: windows.current });
-    const [dailyRows, backlogRows, resolutionRows, voiceRows] = await Promise.all([
+    // are a read of their own for the same reason: a population of calls, not of AI-quality
+    // turns (`loadVoiceStats`).
+    const [dailyRows, backlogRows, resolutionRows, voice] = await Promise.all([
       this.runStatsQuery<QualityStatsAggregateRow>(
         buildQualityStatsDailyQuery({ ...scope, window: windows.span }),
       ),
@@ -487,7 +485,7 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
           window: windows.current,
         }),
       ),
-      voiceQuery ? this.runStatsQuery<QualityVoiceStatsRow>(voiceQuery) : Promise.resolve([]),
+      this.loadVoiceStats(workspaceId, input, windows.current),
     ]);
 
     const backlogRow = backlogRows[0];
@@ -512,8 +510,31 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
         reason: row.reason as QualityStats["resolutionBreakdown"][number]["reason"],
         count: Number(row.count),
       })),
-      voice: toQualityVoiceStats(voiceRows[0]),
+      voice,
     };
+  }
+
+  /**
+   * The current window's voice numbers: none on a request pinned to another channel, and none
+   * without voice activity in the window, which one cheap existence check answers before the
+   * voice statement scans the window's turns. Distinct calls and a median do not add up across
+   * days, so the numbers cannot ride on the daily statement's buckets.
+   */
+  private async loadVoiceStats(
+    workspaceId: string,
+    input: QualityStatsInput,
+    window: { from: Date; to: Date },
+  ): Promise<QualityStats["voice"]> {
+    if (input.channel && input.channel !== VOICE_SOURCE_CHANNEL) {
+      return null;
+    }
+    const scope = { workspaceId, agentId: input.agentId, window };
+    const [activity] = await this.runStatsQuery<{ has_voice_activity: boolean }>(buildQualityVoiceActivityQuery(scope));
+    if (!activity?.has_voice_activity) {
+      return null;
+    }
+    const [row] = await this.runStatsQuery<QualityVoiceStatsRow>(buildQualityVoiceStatsQuery(scope));
+    return toQualityVoiceStats(row);
   }
 
   private async runStatsQuery<Row>(query: SqlQuery): Promise<Row[]> {

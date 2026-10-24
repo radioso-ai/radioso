@@ -6,6 +6,7 @@ import {
   buildQualityResolutionBreakdownQuery,
   buildQualityStatsBacklogQuery,
   buildQualityStatsDailyQuery,
+  buildQualityVoiceActivityQuery,
   buildQualityVoiceStatsQuery,
   mergeQualityStatsBuckets,
   resolveQualityStatsWindows,
@@ -572,6 +573,35 @@ describe("buildQualityVoiceStatsQuery", () => {
     const unscoped = buildQualityVoiceStatsQuery({ workspaceId: WORKSPACE_ID, window: windows.current });
 
     expect(unscoped.text).not.toContain("c.agent_id =");
+  });
+});
+
+describe("buildQualityVoiceActivityQuery", () => {
+  const windows = resolveQualityStatsWindows("7d", new Date("2026-07-28T13:45:00.000Z"));
+  const query = buildQualityVoiceActivityQuery({ workspaceId: WORKSPACE_ID, agentId: AGENT_ID, window: windows.current });
+
+  it("asks only whether one of the workspace's voice conversations holds a message in the current window", () => {
+    expect(query.text).toMatch(/^SELECT EXISTS \(/u);
+    expect(query.text).toContain("FROM conversations c");
+    expect(query.text).toContain("FROM messages m");
+    expect(query.text).not.toContain("COUNT(");
+    expect(query.params).toEqual([
+      WORKSPACE_ID,
+      "voice",
+      AGENT_ID,
+      windows.current.from.toISOString(),
+      windows.current.to.toISOString(),
+    ]);
+  });
+
+  it("binds every placeholder it references, and names no agent when the request names none", () => {
+    const referenced = [...query.text.matchAll(/\$(\d+)/g)].map((match) => Number(match[1]));
+    expect(Math.max(...referenced)).toBe(query.params.length);
+    expect(new Set(referenced).size).toBe(query.params.length);
+
+    const unscoped = buildQualityVoiceActivityQuery({ workspaceId: WORKSPACE_ID, window: windows.current });
+    expect(unscoped.text).not.toContain("c.agent_id =");
+    expect(unscoped.params).not.toContain(AGENT_ID);
   });
 });
 

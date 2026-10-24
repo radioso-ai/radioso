@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { Database } from "../../src/shared/infra/database.js";
 import { QualityTurnsService } from "../../src/modules/quality/service.js";
@@ -352,14 +352,26 @@ describeIfDatabase("quality stats integration", () => {
       expect((await service.getQualityStats(workspaceId, { range: "7d", channel: "embed" })).voice).toBeNull();
     });
 
-    it("reports no voice block for a period without voice turns", async () => {
+    it("reports no voice block for a period without voice turns, without scanning for voice numbers", async () => {
       const { workspaceId, agentId } = await seedWorkspace("NoVoice");
       const chat = await seedConversation(workspaceId, agentId, "embed");
       const lastMonthsCall = await seedConversation(workspaceId, agentId, "voice");
       await seedTurn({ conversationId: chat, workspaceId, createdAt: daysAgo(1) });
       await seedTurn({ conversationId: lastMonthsCall, workspaceId, createdAt: daysAgo(9), metadata: facts(1_000, "continue") });
+      const textOnly = await seedWorkspace("TextOnly");
+      await seedTurn({ conversationId: await seedConversation(textOnly.workspaceId, textOnly.agentId, "embed"), workspaceId: textOnly.workspaceId, createdAt: daysAgo(1) });
+      const statements = vi.spyOn(database.kysely, "executeQuery");
 
-      expect((await createService().getQualityStats(workspaceId, { range: "7d" })).voice).toBeNull();
+      try {
+        expect((await createService().getQualityStats(workspaceId, { range: "7d" })).voice).toBeNull();
+        expect((await createService().getQualityStats(textOnly.workspaceId, { range: "7d" })).voice).toBeNull();
+
+        // Only the cheap check for voice activity ran; the voice statement never did.
+        const voiceStatements = statements.mock.calls.filter(([query]) => "sql" in query && query.sql.includes("percentile_cont"));
+        expect(voiceStatements).toEqual([]);
+      } finally {
+        statements.mockRestore();
+      }
     });
   });
 

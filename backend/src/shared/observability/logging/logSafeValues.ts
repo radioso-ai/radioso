@@ -28,9 +28,10 @@ const isErrorSummary = (value: string): boolean => ERROR_SUMMARY_PATTERN.test(va
 // may fill, never passes. Lines past the length cap are dropped before any pattern runs.
 const FRAME_MAX_LENGTH = 1024;
 const FRAME_NAME = String.raw`(?:async |new )?(?:get |set )?[\p{L}\p{N}_$.<>#\[\]]+(?: \[as [\p{L}\p{N}_$.<>#]+\])?`;
-const FRAME_FILE = String.raw`(?=[^\s()]*[/\\])[^\s()]+:\d+:\d+`;
+// A path, or a `node:` core module, with no query string or fragment that could carry text.
+const FRAME_FILE = String.raw`(?=[^\s()?#]*[/\\]|node:)[^\s()?#]+:\d+:\d+`;
 const V8_FRAME_PATTERN = new RegExp(
-  String.raw`^\s*at (?:${FRAME_NAME} \((?:${FRAME_FILE}|<anonymous>|native|index \d+)\)|(?:async )?${FRAME_FILE})$`,
+  String.raw`^\s*at (?:${FRAME_NAME} \((?:${FRAME_FILE}|<anonymous>|native|index \d+)\)|(?:async )?${FRAME_FILE}|<anonymous>)$`,
   "u",
 );
 const BROWSER_FRAME_PATTERN = new RegExp(String.raw`^(?:async\*)?[\p{L}\p{N}_$.<>#/]*@${FRAME_FILE}$`, "u");
@@ -47,8 +48,8 @@ interface LogSafeMetadataKeys {
   errorSummary?: ReadonlySet<string>;
 }
 
-// pino-http's request counter, which reaches metadata through the request audit context.
-const isRequestCounter = (key: string, value: string): boolean => key === "requestId" && /^\d{1,20}$/u.test(value);
+// pino-http's request counter, which reaches correlation and metadata as a `requestId`.
+export const isRequestCounter = (value: string): boolean => /^\d{1,20}$/u.test(value);
 
 const isLogSafe = (key: string, value: unknown, keys: LogSafeMetadataKeys): value is LogSafeValue => {
   if (typeof value === "boolean") return true;
@@ -56,7 +57,7 @@ const isLogSafe = (key: string, value: unknown, keys: LogSafeMetadataKeys): valu
   if (typeof value !== "string") return false;
   return (
     isUuid(value) ||
-    isRequestCounter(key, value) ||
+    (key === "requestId" && isRequestCounter(value)) ||
     (keys.coded.has(key) && isCode(value)) ||
     (keys.errorSummary?.has(key) === true && isErrorSummary(value))
   );

@@ -61,7 +61,7 @@ An erasure reaches what Radioso stores. It cannot reach back into a backup, so a
 | Point-in-time recovery logs, where recovery is on | 7 days |
 | Application and request logs | 30 days |
 
-Radioso's request and error lines carry ids, counts and outcomes: a request line names the method, path and status, and an error report's line names the error's type, class and stack frames. Text a person types, such as an inbox search, travels in request bodies, which no log records. Cloud Run's own request log also records each request's URL, client IP address and user agent. Point-in-time recovery is enabled per stack deliberately, because turning it on restarts the database. A self-hosted deployment sets its own backup and log retention; the sweep itself runs in every deployment's worker ([Deployment](/operators/deployment#conversation-retention)).
+Radioso's request and error lines carry ids, counts and outcomes: a request line names the method, path and status, and an error report's line names the error's type, class and stack frames. The inbox search, which usually carries a visitor's words, travels in a request body, which no log records. Cloud Run's own request log also records each request's URL, client IP address and user agent. Point-in-time recovery is enabled per stack deliberately, because turning it on restarts the database. A self-hosted deployment sets its own backup and log retention; the sweep itself runs in every deployment's worker ([Deployment](/operators/deployment#conversation-retention)).
 
 ## Common failure modes
 

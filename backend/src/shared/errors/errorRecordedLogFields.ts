@@ -19,21 +19,26 @@ interface ErrorRecordedLogFields {
 // (backgroundJobRuntime.ts). Each value must still be a code.
 const CODED_FIELDS = new Set(["event", "action", "notification", "source", "kind"]);
 
-// A background job's error summary, its class and code (backgroundJobRuntime.ts).
-const ERROR_SUMMARY_FIELDS = new Set(["errorClass", "lastError"]);
+// A background job's error summaries, each a class and code (backgroundJobRuntime.ts).
+const ERROR_SUMMARY_FIELDS = new Set(["errorClass", "lastError", "hookError"]);
 
-const stackFrames = (stack: string | undefined): string | undefined => {
-  const frames = (stack ?? "").split("\n").filter(isStackFrame);
+const stackFrames = (stack: unknown): string | undefined => {
+  const frames = (typeof stack === "string" ? stack : "").split("\n").filter(isStackFrame);
   return frames.length > 0 ? frames.join("\n") : undefined;
 };
 
 export const errorRecordedLogFields = (event: ErrorEvent): ErrorRecordedLogFields => {
-  const metadata = logSafeMetadata(event.metadata, { coded: CODED_FIELDS, errorSummary: ERROR_SUMMARY_FIELDS });
+  // A frontend report's React component stack keeps its frames, like the error's own stack.
+  const componentStack = stackFrames(event.metadata?.componentStack);
+  const metadata = {
+    ...logSafeMetadata(event.metadata, { coded: CODED_FIELDS, errorSummary: ERROR_SUMMARY_FIELDS }),
+    ...(componentStack ? { componentStack } : {}),
+  };
   const stack = stackFrames(event.stack);
 
   return {
     error: extractErrorLogFields(event),
-    ...(metadata ? { metadata } : {}),
+    ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
     ...(stack ? { stack } : {}),
   };
 };

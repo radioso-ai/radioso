@@ -716,6 +716,17 @@ variable "openai_data_residency" {
   }
 }
 
+variable "azure_openai_endpoint" {
+  description = "Azure OpenAI resource endpoint the platform-held openai_api_key (then an Azure key) calls instead of OpenAI's own host. Empty (default) keeps the key on OpenAI. Only takes effect when openai_data_residency is global; never applies to a workspace's own OpenAI key."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.azure_openai_endpoint == "" || can(regex("^https://[A-Za-z0-9.-]+\\.(openai\\.azure\\.com|services\\.ai\\.azure\\.com)(/.*)?$", var.azure_openai_endpoint))
+    error_message = "azure_openai_endpoint must be empty or an https URL whose host ends in openai.azure.com or services.ai.azure.com."
+  }
+}
+
 variable "session_ttl_hours" {
   description = "Session TTL in hours"
   type        = number

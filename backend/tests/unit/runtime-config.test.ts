@@ -667,6 +667,79 @@ describe("runtime configuration", () => {
     }
   });
 
+  it("normalizes AZURE_OPENAI_ENDPOINT and rejects a non-Azure host", () => {
+    expect(getEnv({ ...baseEnv, AZURE_OPENAI_ENDPOINT: "" }).AZURE_OPENAI_ENDPOINT).toBeUndefined();
+    expect(getEnv({ ...baseEnv, AZURE_OPENAI_ENDPOINT: "https://radioso-eu-1.openai.azure.com" }).AZURE_OPENAI_ENDPOINT).toBe(
+      "https://radioso-eu-1.openai.azure.com/openai/v1",
+    );
+    expect(
+      getEnv({ ...baseEnv, AZURE_OPENAI_ENDPOINT: "https://radioso-eu-1.openai.azure.com/openai/v1/" })
+        .AZURE_OPENAI_ENDPOINT,
+    ).toBe("https://radioso-eu-1.openai.azure.com/openai/v1");
+    expect(() => getEnv({ ...baseEnv, AZURE_OPENAI_ENDPOINT: "https://attacker.example/v1" })).toThrow();
+  });
+
+  it("refuses startup when AZURE_OPENAI_ENDPOINT is combined with a non-global OPENAI_DATA_RESIDENCY", () => {
+    expect(() =>
+      getEnv({
+        ...baseEnv,
+        AZURE_OPENAI_ENDPOINT: "https://radioso-eu-1.openai.azure.com",
+        OPENAI_DATA_RESIDENCY: "eu",
+      }),
+    ).toThrow();
+    expect(() =>
+      getEnv({ ...baseEnv, AZURE_OPENAI_ENDPOINT: "https://radioso-eu-1.openai.azure.com", OPENAI_DATA_RESIDENCY: "global" }),
+    ).not.toThrow();
+  });
+
+  it("leaves AZURE_OPENAI_ENDPOINT empty in the example environment", async () => {
+    const example = await readFile(new URL("../../../.env.example", import.meta.url), "utf8");
+    expect(example).toMatch(/^AZURE_OPENAI_ENDPOINT=$/m);
+  });
+
+  it("wires AZURE_OPENAI_ENDPOINT into every service that gets OPENAI_API_KEY", async () => {
+    const terraformVariables = await readFile(new URL("../../../infra/terraform/variables.tf", import.meta.url), "utf8");
+    const computeTf = await readFile(new URL("../../../infra/terraform/compute.tf", import.meta.url), "utf8");
+    const terraformWorkflow = await readFile(new URL("../../../.github/workflows/terraform.yml", import.meta.url), "utf8");
+
+    expect(terraformVariables).toMatch(/variable "azure_openai_endpoint" \{[\s\S]*?default\s+= ""[\s\S]*?\n\}/);
+
+    expect((computeTf.match(/name\s+= "AZURE_OPENAI_ENDPOINT"\s*\n\s*value = var\.azure_openai_endpoint/g) ?? []))
+      .toHaveLength(3);
+
+    expect(terraformWorkflow).toContain("AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}");
+    expect(terraformWorkflow).toContain('if [ -n "${AZURE_OPENAI_ENDPOINT}" ]; then');
+    expect(terraformWorkflow).toContain("TF_VAR_azure_openai_endpoint=${AZURE_OPENAI_ENDPOINT}");
+
+    for (const environment of ["staging", "live", "live-eu"]) {
+      const wrapperVariables = await readFile(
+        new URL(`../../../infra/terraform/environments/${environment}/variables.tf`, import.meta.url),
+        "utf8",
+      );
+      const wrapperMain = await readFile(
+        new URL(`../../../infra/terraform/environments/${environment}/main.tf`, import.meta.url),
+        "utf8",
+      );
+      expect(wrapperVariables, `${environment} does not declare azure_openai_endpoint`).toContain(
+        'variable "azure_openai_endpoint"',
+      );
+      expect(wrapperMain, `${environment} does not pass azure_openai_endpoint to the root module`).toMatch(
+        /azure_openai_endpoint\s+= var\.azure_openai_endpoint/,
+      );
+    }
+  });
+
+  it("wires OPENAI_RERANK_MODEL as a per-environment GitHub variable, so live-eu can switch it without a code change", async () => {
+    // live-eu's own default (environments/live-eu/variables.tf) is gpt-5.4-nano, which has no EU
+    // Data Zone quota on Azure; switching the rerank model to gpt-5.4-mini for the Azure cutover
+    // must be a GitHub Environment variable change, not a Terraform default edit.
+    const terraformWorkflow = await readFile(new URL("../../../.github/workflows/terraform.yml", import.meta.url), "utf8");
+
+    expect(terraformWorkflow).toContain("OPENAI_RERANK_MODEL: ${{ vars.OPENAI_RERANK_MODEL }}");
+    expect(terraformWorkflow).toContain('if [ -n "${OPENAI_RERANK_MODEL}" ]; then');
+    expect(terraformWorkflow).toContain("TF_VAR_openai_rerank_model=${OPENAI_RERANK_MODEL}");
+  });
+
   it("pins environment-aware observability identity and cloud runtime URLs for the Cloud Run API and worker services", async () => {
     const computeTf = await readFile(new URL("../../../infra/terraform/compute.tf", import.meta.url), "utf8");
     const terraformFoundation = await readFile(new URL("../../../infra/terraform/foundation/main.tf", import.meta.url), "utf8");

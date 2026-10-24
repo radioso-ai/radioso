@@ -91,6 +91,19 @@ is the failure this module exists to prevent. Both exclusions are NULL-safe;
 that is load-bearing, since `NOT IN` yields NULL rather than TRUE for a NULL
 column and would silently drop real turns.
 
+The stats' `voice` block counts the current window's calls over a population
+of its own: the shared population pinned to the voice channel, keeping the heard
+part of a reply cut off mid-stream (`buildTurnPopulationFilters` with
+`includeHeardParts`), because a turn the caller heard belongs to the call even
+when it is no whole answer. A call is a voice conversation with at least one
+such turn. Timing, turn limit and outcome come from the facts the voice channel
+keeps on each stored reply, read by the field names of chat's
+`contracts/voiceTurnFacts.ts` under `metadata_json.voice`; a value of another
+JSON type reads as none, so a malformed block never fails the response.
+Quality counts the facts and never interprets voice policy. The block is its
+own statement (`buildQualityVoiceStatsQuery`), null without voice turns or on a
+request pinned to another channel, and the request's agent applies.
+
 Rates are reported with the population they are measured over, and report `null`
 rather than a number when that population is empty. Backlog counts are all-time
 and ignore the health window, so an untriaged turn never disappears because it

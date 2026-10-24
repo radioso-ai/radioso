@@ -63,12 +63,14 @@ export interface QualityCopilotToolDependencies {
   readonly qualitySignalsService: CopilotQualitySignalsPort;
 }
 
+const qualitySignalsDescription = "Read workspace quality and needs-attention signals. The summary's `voice` block, when the period had calls, gives the calls, the median time to the first words of a reply, the turns that hit the time limit, the interruptions and the outcomes; it is null without calls.";
+
 export const createQualityCopilotTools = (deps: QualityCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {
     name: "quality_signals", shape: "read", verificationCost: () => 0, uiLabel: "Reading quality signals", contributingModule: "quality", dashboardSubject: { type: "quality_turn" }, requiredPermissions: ["workspace.quality.read"],
-    description: "Read workspace quality and needs-attention signals.",
+    description: qualitySignalsDescription,
     inputSchema: optionalAgentInput, outputSchema: z.object({ summary: unknownRecord, needsAttention: z.array(unknownRecord) }),
-    createTool: (context) => ({ name: "quality_signals", description: "Read workspace quality and needs-attention signals.", inputSchema: optionalAgentInput, outputSchema: z.object({ summary: unknownRecord, needsAttention: z.array(unknownRecord) }), invoke: async ({ agentId }) => {
+    createTool: (context) => ({ name: "quality_signals", description: qualitySignalsDescription, inputSchema: optionalAgentInput, outputSchema: z.object({ summary: unknownRecord, needsAttention: z.array(unknownRecord) }), invoke: async ({ agentId }) => {
       const resolvedAgentId = agentId ?? context.pageContext.agentId ?? undefined;
       const [summary, needsAttention] = await Promise.all([
         deps.qualitySignalsService.getQualityStats(context.workspaceId, { range: "30d", ...(resolvedAgentId ? { agentId: resolvedAgentId } : {}) }),

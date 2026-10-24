@@ -5,6 +5,7 @@ import {
 } from "@radioso/workspace-invalidation-contract";
 
 import { systemClock, type Clock } from "../../shared/domain/clock.js";
+import { VOICE_SOURCE_CHANNEL } from "../../shared/domain/conversationSource.js";
 import { normalizeNullableText } from "../../shared/domain/nullableText.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type { ConversationActivityRecorder } from "../conversationActivity/contracts/index.js";
@@ -37,12 +38,15 @@ import {
   buildQualityResolutionBreakdownQuery,
   buildQualityStatsBacklogQuery,
   buildQualityStatsDailyQuery,
+  buildQualityVoiceStatsQuery,
   mergeQualityStatsBuckets,
   resolveQualityStatsWindows,
   summarizeQualityStatsWindow,
+  toQualityVoiceStats,
   type QualityBacklogRow,
   type QualityResolutionBreakdownRow,
   type QualityStatsAggregateRow,
+  type QualityVoiceStatsRow,
 } from "./statsQuery.js";
 import {
   RESOLVED_LATENCY_EXPRESSION,
@@ -464,8 +468,13 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
     //
     // `backlog` stays a separate statement and is deliberately NOT made consistent with the
     // windowed numbers: it answers a different question — all-time active triage, with no
-    // date bound at all — so there is no shared total for it to agree with.
-    const [dailyRows, backlogRows, resolutionRows] = await Promise.all([
+    // date bound at all — so there is no shared total for it to agree with. The voice numbers
+    // are a statement of their own for the same reason: a population of calls, not of
+    // AI-quality turns, and none at all on a request pinned to another channel.
+    const voiceQuery = input.channel && input.channel !== VOICE_SOURCE_CHANNEL
+      ? null
+      : buildQualityVoiceStatsQuery({ workspaceId, agentId: input.agentId, window: windows.current });
+    const [dailyRows, backlogRows, resolutionRows, voiceRows] = await Promise.all([
       this.runStatsQuery<QualityStatsAggregateRow>(
         buildQualityStatsDailyQuery({ ...scope, window: windows.span }),
       ),
@@ -478,6 +487,7 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
           window: windows.current,
         }),
       ),
+      voiceQuery ? this.runStatsQuery<QualityVoiceStatsRow>(voiceQuery) : Promise.resolve([]),
     ]);
 
     const backlogRow = backlogRows[0];
@@ -502,6 +512,7 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
         reason: row.reason as QualityStats["resolutionBreakdown"][number]["reason"],
         count: Number(row.count),
       })),
+      voice: toQualityVoiceStats(voiceRows[0]),
     };
   }
 

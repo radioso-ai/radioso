@@ -1,9 +1,12 @@
+import { VOICE_TURN_FACTS_METADATA_KEY, type VoiceTurnFacts } from "../chat/contracts/index.js";
+import { VOICE_SOURCE_CHANNEL } from "../../shared/domain/conversationSource.js";
 import type {
   QualitySignalId,
   QualityStatsBucket,
   QualityStatsMetric,
   QualityStatsRange,
   QualityStatsWindow,
+  QualityVoiceStats,
 } from "./contracts/index.js";
 import { QUALITY_SIGNAL_IDS } from "./contracts/index.js";
 import {
@@ -372,5 +375,85 @@ export const buildQualityResolutionBreakdownQuery = (
        GROUP BY tr.state, tr.resolution_reason
        ORDER BY tr.state, reason`,
     params,
+  };
+};
+
+export interface QualityVoiceStatsQueryInput {
+  workspaceId: string;
+  agentId?: string;
+  window: QualityStatsPeriod;
+}
+
+/** The voice numbers' one row, counts as text to dodge int8-as-string. */
+export interface QualityVoiceStatsRow {
+  call_count: string | number;
+  turn_count: string | number;
+  first_speech_median_ms: string | number | null;
+  turn_limit_count: string | number;
+  interruption_count: string | number;
+  continue_count: string | number;
+  callback_requested_count: string | number;
+}
+
+type VoiceTurnOutcome = NonNullable<VoiceTurnFacts["outcome"]>;
+
+/**
+ * The window's voice numbers in one scan of the shared turn population, pinned to the voice
+ * channel and keeping the heard part of a reply cut off mid-stream. The facts are read by the
+ * chat contract's field names under `metadata_json.voice`; a value of another JSON type reads as
+ * none rather than failing a cast for the whole response. A statement of its own: it answers a
+ * different population than the windowed AI-quality numbers, so there is no total to agree with.
+ */
+export const buildQualityVoiceStatsQuery = (input: QualityVoiceStatsQueryInput): SqlQuery => {
+  const params: unknown[] = [];
+  const filters = buildTurnPopulationFilters(
+    { workspaceId: input.workspaceId, agentId: input.agentId, channel: VOICE_SOURCE_CHANNEL },
+    params,
+    { includeHeardParts: true },
+  );
+  filters.push(`m.created_at >= ${bindParam(params, input.window.from.toISOString())}::timestamptz`);
+  filters.push(`m.created_at < ${bindParam(params, input.window.to.toISOString())}::timestamptz`);
+
+  const facts = `(m.metadata_json -> ${bindParam(params, VOICE_TURN_FACTS_METADATA_KEY)}::text)`;
+  const fact = (field: keyof VoiceTurnFacts): string => `(${facts} -> ${bindParam(params, field)}::text)`;
+  const firstSpeech = fact("firstSpeechMs");
+  const turnLimit = fact("turnLimitReached");
+  const outcome = fact("outcome");
+  const outcomeIs = (kind: VoiceTurnOutcome): string => `${outcome} = to_jsonb(${bindParam(params, kind)}::text)`;
+
+  return {
+    text: `SELECT
+         COUNT(DISTINCT m.conversation_id)::text AS call_count,
+         COUNT(*)::text AS turn_count,
+         percentile_cont(0.5) WITHIN GROUP (ORDER BY
+           CASE WHEN jsonb_typeof(${firstSpeech}) = 'number' THEN (${firstSpeech})::text::double precision END
+         ) AS first_speech_median_ms,
+         COUNT(*) FILTER (WHERE ${turnLimit} = 'true'::jsonb)::text AS turn_limit_count,
+         COUNT(*) FILTER (WHERE jsonb_typeof(m.metadata_json -> 'interruption') = 'object')::text AS interruption_count,
+         COUNT(*) FILTER (WHERE ${outcomeIs("continue")})::text AS continue_count,
+         COUNT(*) FILTER (WHERE ${outcomeIs("callback_requested")})::text AS callback_requested_count
+       ${TURN_POPULATION_SOURCE}
+       WHERE ${filters.join("\n         AND ")}`,
+    params,
+  };
+};
+
+/** The voice numbers from their row; null when the window holds no voice turn. */
+export const toQualityVoiceStats = (row: QualityVoiceStatsRow | undefined): QualityVoiceStats | null => {
+  const turns = toNumber(row?.turn_count);
+  if (!row || turns === 0) {
+    return null;
+  }
+  const median = row.first_speech_median_ms === null ? null : Number(row.first_speech_median_ms);
+  return {
+    calls: toNumber(row.call_count),
+    turns,
+    firstSpeechMedianMs: median === null || !Number.isFinite(median) ? null : Math.round(median),
+    turnLimitTurns: toNumber(row.turn_limit_count),
+    interruptions: toNumber(row.interruption_count),
+    outcomes: {
+      continue: toNumber(row.continue_count),
+      callbackRequested: toNumber(row.callback_requested_count),
+    },
   };
 };

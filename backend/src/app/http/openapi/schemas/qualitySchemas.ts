@@ -205,6 +205,48 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
     }),
   );
 
+  const QualityVoiceStatsSchema = registry.register(
+    "QualityVoiceStats",
+    z.object({
+      calls: z
+        .number()
+        .int()
+        .min(0)
+        .describe("Voice conversations with at least one answered turn in the window."),
+      turns: z
+        .number()
+        .int()
+        .min(0)
+        .describe(
+          "The agent's turns on those calls, a reply the caller cut off mid-stream included and a teammate's reply not.",
+        ),
+      firstSpeechMedianMs: z
+        .number()
+        .int()
+        .min(0)
+        .nullable()
+        .describe(
+          "Median time from a turn's start to its first speech (the reply's or the fallback line's; a bridge line does not count), over turns that recorded one. Null when none did.",
+        ),
+      turnLimitTurns: z
+        .number()
+        .int()
+        .min(0)
+        .describe("Turns that reached the voice turn limit before they spoke."),
+      interruptions: z
+        .number()
+        .int()
+        .min(0)
+        .describe("Turns whose reply the caller spoke over, cut off mid-stream or after it finished."),
+      outcomes: z
+        .object({
+          continue: z.number().int().min(0),
+          callbackRequested: z.number().int().min(0),
+        })
+        .describe("Turns by the outcome the voice runtime received: the call went on, or the caller asked for a callback."),
+    }),
+  );
+
   const QualityStatsSchema = registry.register(
     "QualityStats",
     z.object({
@@ -239,6 +281,9 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
         count: z.number().int().min(0),
       })).describe(
         "Current-window terminal triage counts grouped by state and structured reason. Closures without one are grouped as `unspecified`.",
+      ),
+      voice: z.union([QualityVoiceStatsSchema, z.null()]).describe(
+        "The current window's voice calls, for the request's agent. Null when the window has no voice turns, or `channel` names another channel.",
       ),
     }),
   );

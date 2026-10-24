@@ -137,10 +137,15 @@ export interface TurnPopulationScope {
 /**
  * The predicate that defines which turns are AI-quality turns at all. Everything else a
  * quality query adds is a filter layered on top of this.
+ *
+ * `includeHeardParts` keeps the heard part of a voice reply cut off mid-stream: no whole
+ * answer, so never an AI-quality turn, but a turn the caller heard, which the voice call
+ * numbers count.
  */
 export const buildTurnPopulationFilters = (
   scope: TurnPopulationScope,
   params: unknown[],
+  options: { includeHeardParts?: boolean } = {},
 ): string[] => {
   const filters = [
     `m.workspace_id = ${bindParam(params, scope.workspaceId)}`,
@@ -169,7 +174,9 @@ export const buildTurnPopulationFilters = (
   // The heard part of a voice reply cut off mid-stream is no whole answer: it is stored without
   // a skill outcome, grounding or retrieved chunks, so it is no AI-quality turn. A reply stored
   // whole and marked interrupted later still is one.
-  filters.push(`COALESCE(m.metadata_json -> 'interruption' ->> 'partial', 'false') <> 'true'`);
+  if (!options.includeHeardParts) {
+    filters.push(`COALESCE(m.metadata_json -> 'interruption' ->> 'partial', 'false') <> 'true'`);
+  }
 
   if (scope.agentId) {
     filters.push(`c.agent_id = ${bindParam(params, scope.agentId)}`);

@@ -40,7 +40,8 @@ describe("copilot analytics readers", () => {
       latestRun: { startedAt: "2026-08-20T10:00:00.000Z", completedAt: "2026-08-20T10:01:00.000Z" },
       oversized: "x".repeat(1_000),
     } as CopilotEvalCaseSummary]);
-    const getQualityStats = vi.fn(async () => ({ backlog: { grounding_gaps: 1 } }));
+    const voice = { calls: 4, turns: 21, firstSpeechMedianMs: 2_100, turnLimitTurns: 1, interruptions: 3, outcomes: { continue: 20, callbackRequested: 1 } };
+    const getQualityStats = vi.fn(async () => ({ backlog: { grounding_gaps: 1 }, voice }));
     const listLowQualityTurns = vi.fn(async (): Promise<{ items: CopilotQualityTurn[]; total: number }> => ({ items: [qualityTurn], total: 1 }));
     const read = vi.fn(async () => ({ kind: "completed" as const, report: { themes: [{ title: "Checkout questions" }] } }));
     const refreshStatus = vi.fn(async () => ({ pending: true }));
@@ -67,7 +68,7 @@ describe("copilot analytics readers", () => {
     expect(refreshStatus).toHaveBeenCalledWith({ accountId: "account-1", userId: "operator-1", workspaceId: "workspace-1" });
     expect(JSON.stringify(evalResult).length).toBeGreaterThan(0);
     expect(JSON.stringify(evalResult)).not.toContain("x".repeat(1_000));
-    expect(qualityResult).toMatchObject({ summary: { backlog: { grounding_gaps: 1 } } });
+    expect(qualityResult).toMatchObject({ summary: { backlog: { grounding_gaps: 1 }, voice } });
     expect(audienceResult).toMatchObject({ result: { kind: "completed" }, preparation: { pending: true } });
   });
 });

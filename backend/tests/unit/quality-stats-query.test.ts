@@ -6,11 +6,13 @@ import {
   buildQualityResolutionBreakdownQuery,
   buildQualityStatsBacklogQuery,
   buildQualityStatsDailyQuery,
+  buildQualityVoiceStatsQuery,
   mergeQualityStatsBuckets,
   resolveQualityStatsWindows,
   sumQualityStatsRows,
   summarizeQualityStatsWindow,
   toQualityStatsWindow,
+  toQualityVoiceStats,
 } from "../../src/modules/quality/statsQuery.js";
 import {
   RESOLVED_LATENCY_EXPRESSION,
@@ -506,5 +508,82 @@ describe("buildQualityResolutionBreakdownQuery", () => {
     expect(query.text).toContain("c.source_channel IS NULL OR c.source_channel NOT IN");
     expect(query.params).toContain(AGENT_ID);
     expect(query.params).toContain("embed");
+  });
+});
+
+describe("buildQualityVoiceStatsQuery", () => {
+  const windows = resolveQualityStatsWindows("7d", new Date("2026-07-28T13:45:00.000Z"));
+  const query = buildQualityVoiceStatsQuery({ workspaceId: WORKSPACE_ID, agentId: AGENT_ID, window: windows.current });
+
+  it("selects the voice channel's turns of the request's agent in the current window, from the shared population", () => {
+    expect(query.params[0]).toBe(WORKSPACE_ID);
+    expect(query.text).toContain("m.role = 'assistant'");
+    expect(query.text).toContain("m.source IS NULL OR m.source NOT IN");
+    expect(query.text).toMatch(/c\.source_channel = \$\d+/);
+    expect(query.params).toContain("voice");
+    expect(query.params).toContain(AGENT_ID);
+    expect(query.params).toContain(windows.current.from.toISOString());
+    expect(query.params).toContain(windows.current.to.toISOString());
+    expect(query.params).not.toContain(windows.previous.from.toISOString());
+  });
+
+  it("keeps the heard part of a reply cut off mid-stream, which the AI-quality population leaves out", () => {
+    const daily = buildQualityStatsDailyQuery({ workspaceId: WORKSPACE_ID, window: windows.current, tuples: TUPLES });
+    const heardPartFilter = "COALESCE(m.metadata_json -> 'interruption' ->> 'partial', 'false') <> 'true'";
+
+    expect(daily.text).toContain(heardPartFilter);
+    expect(query.text).not.toContain(heardPartFilter);
+  });
+
+  it("counts calls as distinct conversations and takes the median first speech over turns that recorded a number", () => {
+    expect(query.text).toContain("COUNT(DISTINCT m.conversation_id)");
+    expect(query.text).toContain("percentile_cont(0.5) WITHIN GROUP");
+    // A malformed value reads as none instead of failing the cast for the whole response.
+    expect(query.text).toContain("jsonb_typeof(");
+    expect(query.params).toEqual(expect.arrayContaining(["firstSpeechMs", "turnLimitReached", "outcome", "continue", "callback_requested"]));
+  });
+
+  it("binds every placeholder it references", () => {
+    const referenced = [...query.text.matchAll(/\$(\d+)/g)].map((match) => Number(match[1]));
+    expect(Math.max(...referenced)).toBe(query.params.length);
+    expect(new Set(referenced).size).toBe(query.params.length);
+  });
+
+  it("names no agent when the request names none", () => {
+    const unscoped = buildQualityVoiceStatsQuery({ workspaceId: WORKSPACE_ID, window: windows.current });
+
+    expect(unscoped.text).not.toContain("c.agent_id =");
+  });
+});
+
+describe("toQualityVoiceStats", () => {
+  const row = {
+    call_count: "3",
+    turn_count: "7",
+    first_speech_median_ms: 2_499.6,
+    turn_limit_count: "1",
+    interruption_count: "2",
+    continue_count: "4",
+    callback_requested_count: "1",
+  };
+
+  it("coerces int8-as-text counts and rounds the median to whole milliseconds", () => {
+    expect(toQualityVoiceStats(row)).toEqual({
+      calls: 3,
+      turns: 7,
+      firstSpeechMedianMs: 2_500,
+      turnLimitTurns: 1,
+      interruptions: 2,
+      outcomes: { continue: 4, callbackRequested: 1 },
+    });
+  });
+
+  it("reports no median when no turn recorded its first speech", () => {
+    expect(toQualityVoiceStats({ ...row, first_speech_median_ms: null })?.firstSpeechMedianMs).toBeNull();
+  });
+
+  it("reports no voice block for a period without voice turns", () => {
+    expect(toQualityVoiceStats(undefined)).toBeNull();
+    expect(toQualityVoiceStats({ ...row, call_count: "0", turn_count: "0", first_speech_median_ms: null })).toBeNull();
   });
 });

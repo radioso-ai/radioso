@@ -85,6 +85,8 @@ gcloud logging read \
   --project radioso-494120 --limit 5 --freshness 1h
 ```
 
+`live-eu` stores its entries in its own `europe-west1` bucket (`infra/terraform/foundation/logging.tf`), so read them with `--bucket radioso-live-eu-logs --location europe-west1 --view _AllLogs` added. The log-based metric counts entries whatever bucket stores them.
+
 Entries with real stack traces mean the metric is counting. Nothing returned while you know errors are happening means the running revision predates the logger's severity mapping — redeploy the backend.
 
 To sanity-check a threshold, open **Monitoring → Metrics Explorer**, chart the metric named in the policy, and look at a week of history.

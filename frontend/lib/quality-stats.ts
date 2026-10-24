@@ -305,12 +305,16 @@ export const formatVoiceFirstSpeech = (medianMs: number | null): string =>
 export const formatVoiceTurnLimit = (turnLimitTurns: number, turns: number): string =>
   `${formatCount(turnLimitTurns)} of ${formatCount(turns)}`
 
-/** Interruptions per call, one decimal; exactly "0 per call" when there are none. */
+/**
+ * Interruptions per call, one decimal; exactly "0 per call" when there are none, and "<0.1 per call"
+ * when some are too few to show at one decimal, so they never read as zero.
+ */
 export const formatVoiceInterruptionRate = (interruptions: number, calls: number): string => {
   if (interruptions === 0 || calls <= 0) {
     return '0 per call'
   }
-  return `${(interruptions / calls).toFixed(1)} per call`
+  const rate = (interruptions / calls).toFixed(1)
+  return rate === '0.0' ? '<0.1 per call' : `${rate} per call`
 }
 
 /** "<calls that asked> of <calls> calls". */

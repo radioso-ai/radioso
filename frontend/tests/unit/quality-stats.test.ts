@@ -229,6 +229,11 @@ describe('voice stats formatting', () => {
     expect(formatVoiceInterruptionRate(0, 42)).toBe('0 per call')
   })
 
+  it('says "<0.1 per call" when a few interruptions round to zero, and "0.1 per call" once they reach it', () => {
+    expect(formatVoiceInterruptionRate(1, 30)).toBe('<0.1 per call')
+    expect(formatVoiceInterruptionRate(3, 30)).toBe('0.1 per call')
+  })
+
   it('does not divide by zero when there are no calls', () => {
     expect(formatVoiceInterruptionRate(0, 0)).toBe('0 per call')
   })

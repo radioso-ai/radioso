@@ -1,6 +1,6 @@
 ---
 title: "Data Residency"
-description: "Where each outside service Radioso calls processes data, and which setting controls its region."
+description: "Where each outside service Radioso calls processes data, where each stack stores its logs, and which setting controls the region."
 last_updated: 2026-10-24
 ---
 
@@ -54,6 +54,22 @@ Lettermint is the email channel's other provider (`EMAIL_CHANNEL_PROVIDER=letter
 PostHog product analytics and PostHog error reporting (`PRODUCT_ANALYTICS_SINKS` or `ERROR_SINKS` including `posthog`, an Enterprise Edition sink) send to `POSTHOG_HOST`. Point it at PostHog's EU ingestion host (`https://eu.i.posthog.com`) to keep that data in the EU, or its US host to keep it in the US.
 
 OTEL log export is a separate mechanism with its own setting, `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`; it doesn't read `POSTHOG_HOST`. As a Terraform convenience, the Terraform module defaults `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` to `<posthog_host>/i/v1/logs` when OTEL logs are enabled and no explicit endpoint is set, but a deployment that sets `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` directly controls its own region independently of `POSTHOG_HOST`.
+
+## Google Cloud Logging
+
+On Radioso Cloud, every request and application log line goes to Google Cloud Logging in the stack's project, and the stack decides where it's stored. The EU stack keeps its entries in a log bucket in `europe-west1` (Belgium). The US stack keeps its entries in the project's `_Default` bucket, whose location is `global`. Both keep them for 30 days.
+
+Two kinds of entry stay in `global` on every stack. Google's admin-activity audit entries, which record which identity changed which resource, go to the project's `_Required` bucket for 400 days; Google fixes that bucket's location and retention. Entries about project-wide resources that have no region, such as a service account minting a deploy token, stay in `_Default`. Neither kind carries conversation content.
+
+A deployment on the bundled Terraform stores its logs in its project's `_Default` bucket until you route them. To keep an environment's entries in its own region, set `regional_log_bucket_enabled = true` in its foundation root (`infra/terraform/foundation/environments/<env>/main.tf`) and apply it. That creates a `radioso-<env>-logs` bucket in the environment's region with 30-day retention, a sink that routes every entry about a resource in that region and about the environment's Cloud SQL instance to it, and an exclusion that keeps those entries out of `_Default`. Entries written before the apply stay in `_Default` until its retention removes them.
+
+Read the regional bucket by naming its view:
+
+```bash
+gcloud logging read 'resource.type="cloud_run_revision" AND severity>=ERROR' \
+  --project=<project> --bucket=radioso-<env>-logs --location=<region> --view=_AllLogs \
+  --limit=5 --freshness=1h
+```
 
 ## Slack and Stripe
 

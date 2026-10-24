@@ -1210,7 +1210,7 @@ describe("VoiceTurnService", () => {
         expect(events.at(-1)).toEqual({ type: "outcome", outcome: { kind: "continue" } });
         expect(logger.info).toHaveBeenCalledWith(expect.objectContaining({ result: "completed" }), "Voice turn finished");
         expect(logger.warn).toHaveBeenCalledWith(
-          { agentId, vendor: "elevenlabs", conversationId, errorClass: "Error" },
+          { agentId, vendor: "elevenlabs", conversationId, errorClass: "Error", note: "turn_facts" },
           "Voice turn note could not be recorded",
         );
       });
@@ -1570,20 +1570,20 @@ describe("VoiceTurnService", () => {
         const turns = service(supersedingChat([answered("We open at nine."), answered("We open at nine.")]), { notes, logger });
         const noteWarnings = () => logger.warn.mock.calls
           .filter(([, message]) => message === "Voice turn note could not be recorded")
-          .map(([fields]) => (fields as { errorClass?: string }).errorClass);
+          .map(([fields]) => `${(fields as { note?: string }).note}:${(fields as { errorClass?: string }).errorClass}`);
 
         await hungUpAnswer(turns);
         await start(turns, input({ utterance }));
         await vi.advanceTimersByTimeAsync(0);
-        expect(noteWarnings()).toEqual(["Error"]);
+        expect(noteWarnings()).toEqual(["reply_replayed:Error"]);
 
         // The replay settled with its outcome delivered, so the next identical request runs a new turn.
         await hungUpAnswer(turns);
         await start(turns, input({ utterance }));
         await vi.advanceTimersByTimeAsync(4_999);
-        expect(noteWarnings()).toEqual(["Error"]);
+        expect(noteWarnings()).toEqual(["reply_replayed:Error"]);
         await vi.advanceTimersByTimeAsync(1);
-        expect(noteWarnings()).toEqual(["Error", "VoiceTurnNoteTimeoutError"]);
+        expect(noteWarnings()).toEqual(["reply_replayed:Error", "reply_replayed:VoiceTurnNoteTimeoutError"]);
       });
 
       it("runs a new turn when the earlier reply reached the runtime whole", async () => {
@@ -1703,7 +1703,7 @@ describe("VoiceTurnService", () => {
 
         expect(notes.replyInterrupted).toHaveBeenCalledTimes(2);
         expect(logger.warn).toHaveBeenCalledWith(
-          expect.objectContaining({ conversationId, errorClass: "Error" }),
+          expect.objectContaining({ conversationId, errorClass: "Error", note: "reply_interrupted" }),
           "Voice turn note could not be recorded",
         );
         // Counted and logged once, for the note that was recorded.

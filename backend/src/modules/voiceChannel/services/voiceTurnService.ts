@@ -582,7 +582,7 @@ export class VoiceTurnService implements VoiceTurnPort {
       conversationId: exchange.conversationId,
       assistantMessageId: exchange.reply.messageId,
     };
-    withinNoteTimeout(notes.replyReplayed(note)).catch((error: unknown) => this.warnNoteFailed(input, note.conversationId, error));
+    withinNoteTimeout(notes.replyReplayed(note)).catch((error: unknown) => this.warnNoteFailed(input, "reply_replayed", note.conversationId, error));
   }
 
   /**
@@ -645,7 +645,7 @@ export class VoiceTurnService implements VoiceTurnPort {
     }
     withinNoteTimeout(notes.replyInterrupted({ workspaceId: input.session.workspaceId, ...interruption })).then(recorded, (error: unknown) => {
       reservation.failed();
-      this.warnNoteFailed(input, interruption.conversationId, error);
+      this.warnNoteFailed(input, "reply_interrupted", interruption.conversationId, error);
     });
   }
 
@@ -674,15 +674,17 @@ export class VoiceTurnService implements VoiceTurnPort {
       return;
     }
     withinNoteTimeout(notes.turnFacts({ workspaceId: input.session.workspaceId, conversationId, ...kept }))
-      .catch((error: unknown) => this.warnNoteFailed(input, conversationId, error));
+      .catch((error: unknown) => this.warnNoteFailed(input, "turn_facts", conversationId, error));
   }
 
-  private warnNoteFailed(input: VoiceTurnInput, conversationId: string, error: unknown): void {
+  /** Names the note that failed (the teammate replies' audit warns the same way from the speaker). */
+  private warnNoteFailed(input: VoiceTurnInput, note: "reply_interrupted" | "reply_replayed" | "turn_facts", conversationId: string, error: unknown): void {
     this.dependencies.logger.warn({
       agentId: input.session.agentId,
       vendor: input.session.vendor,
       conversationId,
       errorClass: errorClassOf(error),
+      note,
     }, "Voice turn note could not be recorded");
   }
 

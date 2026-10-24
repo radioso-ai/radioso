@@ -774,7 +774,8 @@ that does not match what reached the runtime logs `Voice reply reported heard
 does not match what reached the runtime; the stored part follows what reached
 it` at warn with `agentId`, `vendor`, `conversationId`,
 `reachedCharacterCount` and `reportedCharacterCount`; a note that fails to record, or takes longer than 5 s, logs `Voice
-turn note could not be recorded` at warn, and an interrupted reply the
+turn note could not be recorded` at warn with `note` naming which
+(`reply_interrupted`, `reply_replayed`, `operator_reply_spoken`, `turn_facts`), and an interrupted reply the
 conversation no longer holds logs `Voice reply to mark interrupted was not
 found` at warn (workspace, conversation and message ids) and writes no audit
 event; a turn's facts whose reply the conversation no longer holds log `Voice

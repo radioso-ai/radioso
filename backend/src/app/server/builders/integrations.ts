@@ -31,6 +31,7 @@ import {
   customerEmailOauthProviderIds,
 } from "../../../modules/customerEmail/public.js";
 import { resolveLlmConfig } from "../../../shared/infra/llm/providerConfig.js";
+import { platformOpenAIEndpointLogFields } from "../../../shared/infra/llm/providerTypes.js";
 import { LlmProviderRegistry } from "../../../shared/infra/llm/providerRegistry.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
 import { AgentSkillRepository } from "../../../modules/agentSkills/public.js";
@@ -157,12 +158,13 @@ export const buildLlmRegistry = (
     metrics: options.metricsRegistry,
   });
   logger.info({ llmProviders: llmRegistry.describe() }, "Resolved LLM providers");
-  // Content-free: a region code only, never a key or URL. Only when a platform OpenAI key is
-  // configured — a deployment running entirely on workspace (BYOK) OpenAI keys has no platform
-  // residency to report. The LLM builder does not read email-channel config, so this is OpenAI
-  // only; see the email channel's own composition for its region.
-  if (config.openAIPlatformResidency) {
-    logger.info({ openai: config.openAIPlatformResidency.residency }, "Resolved provider residency");
+  // Content-free: a region code (or "azure" plus the Azure resource host) only, never a key or
+  // full URL. Only when a platform OpenAI key is configured — a deployment running entirely on
+  // workspace (BYOK) OpenAI keys has no platform endpoint to report. The LLM builder does not
+  // read email-channel config, so this is OpenAI only; see the email channel's own composition
+  // for its region.
+  if (config.openAIPlatformEndpoint) {
+    logger.info(platformOpenAIEndpointLogFields(config.openAIPlatformEndpoint), "Resolved provider residency");
   }
   return llmRegistry;
 };

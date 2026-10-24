@@ -79,4 +79,57 @@ describe("native openai host enforcement", () => {
 
     expect(requests).toEqual(["https://eu.api.openai.com/v1/chat/completions"]);
   });
+
+  it("reaches exactly the configured Azure OpenAI endpoint when openAIAzureBaseUrl is set", async () => {
+    const requests = requestsTo();
+    const config: LlmCapabilityConfig = {
+      ...configFor(),
+      openAIAzureBaseUrl: "https://radioso-eu-1.openai.azure.com/openai/v1",
+    };
+
+    await new OpenAITextGenerationClient(config).complete({ prompt: "hi" });
+
+    expect(requests).toEqual(["https://radioso-eu-1.openai.azure.com/openai/v1/chat/completions"]);
+  });
+
+  it("ignores OPENAI_BASE_URL when openAIAzureBaseUrl is set", async () => {
+    vi.stubEnv("OPENAI_BASE_URL", "https://attacker.example/v1");
+    const requests = requestsTo();
+    const config: LlmCapabilityConfig = {
+      ...configFor(),
+      openAIAzureBaseUrl: "https://radioso-eu-1.openai.azure.com/openai/v1",
+    };
+
+    await new OpenAITextGenerationClient(config).complete({ prompt: "hi" });
+
+    expect(requests).toEqual(["https://radioso-eu-1.openai.azure.com/openai/v1/chat/completions"]);
+  });
+
+  it("never passes config.baseUrl through for a native openai client when openAIAzureBaseUrl is also set", async () => {
+    const requests = requestsTo();
+    const config: LlmCapabilityConfig = {
+      ...configFor(),
+      openAIAzureBaseUrl: "https://radioso-eu-1.openai.azure.com/openai/v1",
+      baseUrl: "https://attacker.example/v1",
+    };
+
+    await new OpenAITextGenerationClient(config).complete({ prompt: "hi" });
+
+    expect(requests).toEqual(["https://radioso-eu-1.openai.azure.com/openai/v1/chat/completions"]);
+  });
+
+  it("prefers openAIAzureBaseUrl over openAIDataResidency when both are somehow set", async () => {
+    // Defense in depth: resolveLlmConfig and env.ts both refuse to produce this combination, but
+    // the client factory's own precedence must still be unambiguous if a config were ever built
+    // by hand with both fields set.
+    const requests = requestsTo();
+    const config: LlmCapabilityConfig = {
+      ...configFor("eu"),
+      openAIAzureBaseUrl: "https://radioso-eu-1.openai.azure.com/openai/v1",
+    };
+
+    await new OpenAITextGenerationClient(config).complete({ prompt: "hi" });
+
+    expect(requests).toEqual(["https://radioso-eu-1.openai.azure.com/openai/v1/chat/completions"]);
+  });
 });

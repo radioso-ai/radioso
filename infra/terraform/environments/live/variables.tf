@@ -281,6 +281,12 @@ variable "openai_data_residency" {
   default     = "global"
 }
 
+variable "azure_openai_endpoint" {
+  description = "Azure OpenAI resource endpoint the platform-held openai_api_key (then an Azure key) calls instead of OpenAI's own host. Empty (default) keeps the key on OpenAI."
+  type        = string
+  default     = ""
+}
+
 variable "session_ttl_hours" {
   description = "Session TTL in hours."
   type        = number

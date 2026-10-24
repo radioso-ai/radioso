@@ -83,19 +83,53 @@ describe("embedding provider binding resolution", () => {
     expect(first).not.toContain("secret");
   });
 
-  it("distinguishes native openai's data-residency endpoints, without shifting the default (global) scope", () => {
+  it("keeps one persisted scope across every native openai endpoint — global, regional residency, and Azure", () => {
+    // CRITICAL: every one of these endpoints serves identical OpenAI model weights (verified
+    // empirically 2026-10-24 for text-embedding-3-small: Azure EU Data Zone vs. OpenAI global,
+    // cosine 1.000000, max |diff| 1.2e-4, EN+IT). A persisted embedding space's fingerprint must
+    // never depend on which of these endpoints answered it, or flipping OPENAI_DATA_RESIDENCY or
+    // AZURE_OPENAI_ENDPOINT after a workspace has already ingested documents would strand every
+    // persisted space with no resolvable binding.
     const global = endpointScopeFingerprint(openai);
     const globalExplicit = endpointScopeFingerprint({ ...openai, openAIDataResidency: "global" });
     const eu = endpointScopeFingerprint({ ...openai, openAIDataResidency: "eu" });
     const us = endpointScopeFingerprint({ ...openai, openAIDataResidency: "us" });
+    const azure = endpointScopeFingerprint({
+      ...openai,
+      openAIAzureBaseUrl: "https://radioso-eu-1.openai.azure.com/openai/v1",
+    });
+    const otherAzureResource = endpointScopeFingerprint({
+      ...openai,
+      openAIAzureBaseUrl: "https://radioso-eu-2.openai.azure.com/openai/v1",
+    });
 
-    // Pinned to the exact pre-data-residency value: an unset residency and an explicit
-    // "global" one both match it, so no deployment that predates this setting sees its
-    // persisted embedding spaces' fingerprint change underneath it.
+    // Pinned to the exact pre-data-residency value: a deployment that predates residency or
+    // Azure never sees its persisted embedding spaces' fingerprint change underneath it.
     expect(global).toBe("de82d5077cc230354de650bce4c29d57c8a74e2ea95b6de9c193a649e328845d");
     expect(globalExplicit).toBe(global);
-    expect(eu).not.toBe(global);
-    expect(us).not.toBe(global);
-    expect(eu).not.toBe(us);
+    expect(eu).toBe(global);
+    expect(us).toBe(global);
+    expect(azure).toBe(global);
+    expect(otherAzureResource).toBe(global);
+  });
+
+  it("resolves a space persisted under the global fingerprint when OPENAI_DATA_RESIDENCY or AZURE_OPENAI_ENDPOINT changes", () => {
+    const persistedFingerprint = endpointScopeFingerprint(openai);
+    const platformEu: LlmCapabilityConfig = { ...openai, openAIDataResidency: "eu" };
+    const platformAzure: LlmCapabilityConfig = {
+      ...openai,
+      openAIAzureBaseUrl: "https://radioso-eu-1.openai.azure.com/openai/v1",
+    };
+
+    expect(
+      resolveEmbeddingProviderBinding("text-embedding-3-small", platformEu, [platformEu], {
+        endpointScopeFingerprint: persistedFingerprint,
+      }),
+    ).toBe(platformEu);
+    expect(
+      resolveEmbeddingProviderBinding("text-embedding-3-small", platformAzure, [platformAzure], {
+        endpointScopeFingerprint: persistedFingerprint,
+      }),
+    ).toBe(platformAzure);
   });
 });

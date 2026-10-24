@@ -53,3 +53,54 @@ describe("TextGenerationClientCache", () => {
     expect(k1Again).toBe(first);
   });
 });
+
+describe("TextGenerationClientCache native openai endpoint identity", () => {
+  const openaiConfig = (overrides: Partial<LlmCapabilityConfig> = {}): LlmCapabilityConfig => ({
+    capability: "chat",
+    provider: "openai",
+    model: "gpt-5.4-mini",
+    apiKey: "sk-shared",
+    ...overrides,
+  });
+
+  it("never shares a client between a platform-Azure config and a BYOK-global config, even with the same apiKey", () => {
+    const cache = new TextGenerationClientCache();
+    const azure = cache.getOrCreate(
+      openaiConfig({ openAIAzureBaseUrl: "https://radioso-eu-1.openai.azure.com/openai/v1" }),
+    );
+    const global = cache.getOrCreate(openaiConfig());
+
+    expect(azure).not.toBe(global);
+    expect(cache.size).toBe(2);
+  });
+
+  it("never shares a client between two distinct Azure resources", () => {
+    const cache = new TextGenerationClientCache();
+    const first = cache.getOrCreate(
+      openaiConfig({ openAIAzureBaseUrl: "https://radioso-eu-1.openai.azure.com/openai/v1" }),
+    );
+    const second = cache.getOrCreate(
+      openaiConfig({ openAIAzureBaseUrl: "https://radioso-eu-2.openai.azure.com/openai/v1" }),
+    );
+
+    expect(first).not.toBe(second);
+  });
+
+  it("never shares a client between platform-EU residency and BYOK-global residency", () => {
+    const cache = new TextGenerationClientCache();
+    const eu = cache.getOrCreate(openaiConfig({ openAIDataResidency: "eu" }));
+    const global = cache.getOrCreate(openaiConfig());
+
+    expect(eu).not.toBe(global);
+  });
+
+  it("reuses the same client for two identical Azure configs", () => {
+    const cache = new TextGenerationClientCache();
+    const azureConfig = openaiConfig({ openAIAzureBaseUrl: "https://radioso-eu-1.openai.azure.com/openai/v1" });
+    const a = cache.getOrCreate(azureConfig);
+    const b = cache.getOrCreate({ ...azureConfig });
+
+    expect(a).toBe(b);
+    expect(cache.size).toBe(1);
+  });
+});

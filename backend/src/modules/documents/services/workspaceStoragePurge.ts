@@ -1,11 +1,12 @@
 import { z } from "zod";
 
 import type { AuditPort } from "../../audit/contracts/index.js";
-import type {
-  DocumentStorageDeleteInput,
-  DocumentStorageInventoryPort,
-  DocumentStorageOwnersPort,
-  DocumentStoragePort,
+import {
+  isCanonicalWorkspaceId,
+  type DocumentStorageDeleteInput,
+  type DocumentStorageInventoryPort,
+  type DocumentStorageOwnersPort,
+  type DocumentStoragePort,
 } from "../contracts/storage.js";
 import {
   backgroundJobHandler,
@@ -26,12 +27,22 @@ const PURGE_BATCHES_PER_RUN = 10;
 /** Deletes in flight at once within a batch. */
 const DELETE_CONCURRENCY = 10;
 
-const workspaceIdSchema = z.string().uuid();
+/** A prefix written to more recently than this is in use somewhere, and an orphan sweep keeps it. */
+export const RECENT_OBJECT_WINDOW_MS = 24 * 60 * 60 * 1_000;
+
+/**
+ * Who asked for the purge. A workspace deletion and an operator naming one workspace purge whatever
+ * the files' age; a purge the orphan sweep queued keeps a prefix written to in the last 24 hours,
+ * checked again when it runs, because the operator reviewed the sweep's report some time before.
+ */
+const purgeOrigins = ["workspace_deletion", "orphan_sweep", "operator"] as const;
+type WorkspaceStoragePurgeOrigin = (typeof purgeOrigins)[number];
 
 /**
  * Deletes every object document storage holds for a workspace the database no longer has. The
- * payload names the workspace and nothing else: the store finds its objects by the workspace id,
- * so no object path, which an older layout built from the filename, is ever stored with the job.
+ * payload names the workspace and who asked, and nothing else: the store finds its objects by the
+ * workspace id, so no object path, which an older layout built from the filename, is ever stored
+ * with the job. Only a canonical lowercase id is accepted.
  *
  * Level-triggered: a run deletes a bounded number of batches and, when objects remain, asks for
  * one more run of the same job. A failed delete fails the run, which retries over about a day
@@ -39,7 +50,10 @@ const workspaceIdSchema = z.string().uuid();
  */
 export const WORKSPACE_STORAGE_PURGE_JOB = defineBackgroundJob({
   kind: "documents.workspace_storage_purge",
-  payload: z.object({ workspaceId: workspaceIdSchema }),
+  payload: z.object({
+    workspaceId: z.string().refine(isCanonicalWorkspaceId, "a canonical lowercase workspace id"),
+    origin: z.enum(purgeOrigins),
+  }),
   onDuplicateKey: "rerun",
   maxAttempts: 8,
   timeoutSeconds: 120,
@@ -47,9 +61,15 @@ export const WORKSPACE_STORAGE_PURGE_JOB = defineBackgroundJob({
   retryDelaysSeconds: [60, 300, 900, 3_600, 10_800, 21_600, 43_200],
 });
 
-/** Keyed by workspace, so a deletion, a sweep, and a rerun of one workspace share one waiting job. */
-export const workspaceStoragePurgeRequest = (workspaceId: string): BackgroundJobRequest =>
-  backgroundJobRequest(WORKSPACE_STORAGE_PURGE_JOB, { workspaceId }, { idempotencyKey: workspaceId });
+/**
+ * Keyed by origin and workspace, so the payload is the key's, as a rerun needs: a rerun of one
+ * workspace's purge folds into the waiting job of the same origin.
+ */
+export const workspaceStoragePurgeRequest = (
+  workspaceId: string,
+  origin: WorkspaceStoragePurgeOrigin,
+): BackgroundJobRequest =>
+  backgroundJobRequest(WORKSPACE_STORAGE_PURGE_JOB, { workspaceId, origin }, { idempotencyKey: `${origin}:${workspaceId}` });
 
 /**
  * Hands the stored files of workspaces about to be deleted to the worker, inside the transaction
@@ -59,7 +79,7 @@ export const workspaceStoragePurgeRequest = (workspaceId: string): BackgroundJob
 export const handOffWorkspaceStoragePurges = (queue: Pick<BackgroundJobQueue, "enqueueInTransaction">) =>
   async (transaction: Db, workspaceIds: readonly string[]): Promise<void> => {
     for (const workspaceId of workspaceIds) {
-      await queue.enqueueInTransaction(transaction, workspaceStoragePurgeRequest(workspaceId));
+      await queue.enqueueInTransaction(transaction, workspaceStoragePurgeRequest(workspaceId, "workspace_deletion"));
     }
   };
 
@@ -72,11 +92,13 @@ class WorkspaceStoragePurgeIncompleteError extends Error {
 }
 
 interface WorkspaceStoragePurgeDependencies {
-  storage: Pick<DocumentStoragePort, "delete"> & Pick<DocumentStorageInventoryPort, "listWorkspaceObjects">;
+  storage: Pick<DocumentStoragePort, "delete">
+    & Pick<DocumentStorageInventoryPort, "listWorkspaceObjects" | "summarizeWorkspaceObjects">;
   owners: Pick<DocumentStorageOwnersPort, "existingWorkspaceIds">;
   queue: Pick<BackgroundJobQueue, "enqueue">;
   audit: Pick<AuditPort, "record">;
   logger: Pick<AppLogger, "info" | "warn" | "error">;
+  now?: () => Date;
   batchSize?: number;
   batchesPerRun?: number;
 }
@@ -131,23 +153,36 @@ const runPurgePass = async (
 };
 
 const WORKSPACE_EXISTS = { skipped: "workspace_exists" } as const;
+const RECENTLY_WRITTEN = { skipped: "recently_written" } as const;
+
+const writtenToRecently = async (deps: WorkspaceStoragePurgeDependencies, workspaceId: string): Promise<boolean> => {
+  const { newestObjectAt } = await deps.storage.summarizeWorkspaceObjects({ workspaceId });
+  const now = (deps.now ?? (() => new Date()))().getTime();
+  return newestObjectAt !== null && newestObjectAt.getTime() > now - RECENT_OBJECT_WINDOW_MS;
+};
 
 /**
  * Runs one purge pass for a deleted workspace. A workspace that still exists keeps its files: the
- * job only ever empties the store of a workspace the database no longer has.
+ * job only ever empties the store of a workspace the database no longer has. A purge the orphan
+ * sweep queued also keeps a prefix written to in the last 24 hours, checked on every run.
  */
 export const workspaceStoragePurgeHandler = (
   deps: WorkspaceStoragePurgeDependencies,
 ): BackgroundJobHandlerRegistration =>
-  backgroundJobHandler(WORKSPACE_STORAGE_PURGE_JOB, async ({ workspaceId }, { signal }) => {
+  backgroundJobHandler(WORKSPACE_STORAGE_PURGE_JOB, async ({ workspaceId, origin }, { signal }) => {
     if ((await deps.owners.existingWorkspaceIds([workspaceId])).has(workspaceId)) {
-      deps.logger.warn({ workspaceId }, "Stored files kept: their workspace still exists");
+      deps.logger.warn({ workspaceId, origin }, "Stored files kept: their workspace still exists");
       return WORKSPACE_EXISTS;
+    }
+    if (origin === "orphan_sweep" && await writtenToRecently(deps, workspaceId)) {
+      deps.logger.warn({ workspaceId, origin }, "Stored files kept: written to in the last 24 hours");
+      return RECENTLY_WRITTEN;
     }
 
     const pass = await runPurgePass(deps, workspaceId, signal);
     const fields = {
       workspaceId,
+      origin,
       deletedObjectCount: pass.deleted,
       failedObjectCount: pass.failed,
       objectsRemain: pass.more,
@@ -158,16 +193,17 @@ export const workspaceStoragePurgeHandler = (
     } else {
       deps.logger.info(fields, "Deleted workspace's stored files deleted");
     }
-    if (pass.deleted > 0) await recordDeletion(deps, workspaceId, pass.deleted);
+    if (pass.deleted > 0) await recordDeletion(deps, workspaceId, origin, pass.deleted);
 
     if (pass.failed > 0) throw new WorkspaceStoragePurgeIncompleteError();
-    if (pass.more) await deps.queue.enqueue(workspaceStoragePurgeRequest(workspaceId));
+    if (pass.more) await deps.queue.enqueue(workspaceStoragePurgeRequest(workspaceId, origin));
   });
 
 /** The files are already gone, so a failed audit write is logged with the count rather than retried. */
 const recordDeletion = async (
   deps: Pick<WorkspaceStoragePurgeDependencies, "audit" | "logger">,
   workspaceId: string,
+  origin: WorkspaceStoragePurgeOrigin,
   deletedObjectCount: number,
 ): Promise<void> => {
   await deps.audit.record({
@@ -175,7 +211,7 @@ const recordDeletion = async (
     workspaceId: null,
     eventType: "workspace.stored_files.deleted",
     eventStatus: "success",
-    metadata: { deletedWorkspaceId: workspaceId, deletedObjectCount, principalType: "system" },
+    metadata: { deletedWorkspaceId: workspaceId, deletedObjectCount, origin, principalType: "system" },
   }).catch((error: unknown) => {
     deps.logger.error(
       { workspaceId, deletedObjectCount, errorClass: errorClassOf(error) },

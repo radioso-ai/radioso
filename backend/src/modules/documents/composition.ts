@@ -12,13 +12,9 @@ export {
 export { GcsDocumentStorage } from "./infra/gcsDocumentStorage.js";
 export { LocalDocumentStorage } from "./infra/localDocumentStorage.js";
 export {
-  ORPHANED_WORKSPACE_STORAGE_SWEEP_JOB,
-  isCanonicalWorkspaceId,
-  orphanedWorkspaceStorageSweepHandler,
-  orphanedWorkspaceStorageSweepRequest,
   reportOrphanedWorkspaceStorage,
   type OrphanedWorkspaceStorageReport,
-} from "./services/orphanedWorkspaceStorageSweep.js";
+} from "./services/orphanedWorkspaceStorageReport.js";
 export {
   WORKSPACE_STORAGE_PURGE_JOB,
   handOffWorkspaceStoragePurges,

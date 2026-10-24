@@ -1,5 +1,6 @@
 import { Storage } from "@google-cloud/storage";
 import {
+  WORKSPACE_STORAGE_ROOT,
   workspaceStoragePrefix,
   type DocumentStorageAdapter,
   type DocumentStorageDeleteInput,
@@ -10,7 +11,7 @@ import {
   type StoredDocumentObject,
 } from "../contracts/storage.js";
 
-const WORKSPACES_PREFIX = "workspaces/";
+const WORKSPACES_PREFIX = `${WORKSPACE_STORAGE_ROOT}/`;
 
 /** The "directories" a delimited listing returned, from the client's untyped API response. */
 const listedPrefixes = (apiResponse: unknown): string[] => {

@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { LocalDocumentStorage } from "../../src/modules/documents/infra/localDocumentStorage.js";
 
@@ -137,5 +137,26 @@ describe("LocalDocumentStorage", () => {
 
     expect((await upload(storage, "workspace-1", "document-1")).objectPath.startsWith("workspaces/workspace-1/")).toBe(true);
     await expect(upload(storage, "..", "document-1")).rejects.toThrow();
+  });
+
+  it("leaves out of a summary a file deleted between the listing and its stat", async () => {
+    const { storage } = await createStorage();
+    const kept = await upload(storage, "workspace-1", "document-a");
+    const vanishing = await upload(storage, "workspace-1", "document-b");
+    const stat = fs.stat.bind(fs);
+    const spy = vi.spyOn(fs, "stat").mockImplementation(async (target, ...rest) => {
+      if (String(target).endsWith(vanishing.objectPath)) {
+        throw Object.assign(new Error("gone"), { code: "ENOENT" });
+      }
+      return stat(target, ...rest);
+    });
+    try {
+      const summary = await storage.summarizeWorkspaceObjects({ workspaceId: "workspace-1" });
+      expect(summary.objectCount).toBe(1);
+      expect(summary.newestObjectAt).not.toBeNull();
+    } finally {
+      spy.mockRestore();
+    }
+    expect(kept.objectPath).toBeTruthy();
   });
 });

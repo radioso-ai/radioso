@@ -2,6 +2,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 
 import {
+  WORKSPACE_STORAGE_ROOT,
   workspaceStoragePrefix,
   type DocumentStorageAdapter,
   type DocumentStorageDeleteInput,
@@ -13,10 +14,19 @@ import {
 } from "../contracts/storage.js";
 
 const LOCAL_STORAGE_BUCKET = "local";
-const WORKSPACES_DIRECTORY = "workspaces";
 
 const errorCode = (error: unknown): unknown =>
   error && typeof error === "object" && "code" in error ? error.code : undefined;
+
+/** When a file was last written, or null when it no longer exists. */
+const modifiedAt = async (filePath: string): Promise<number | null> => {
+  try {
+    return (await fs.stat(filePath)).mtimeMs;
+  } catch (error) {
+    if (errorCode(error) === "ENOENT") return null;
+    throw error;
+  }
+};
 
 /** A directory's entries, or none when the directory does not exist. */
 const readDirectory = async (directory: string, options: { recursive: boolean }) => {
@@ -100,11 +110,15 @@ export class LocalDocumentStorage implements DocumentStorageAdapter {
   async summarizeWorkspaceObjects(input: { workspaceId: string }): Promise<DocumentStorageWorkspaceSummary> {
     const objectPaths = await this.workspaceObjectPaths(input.workspaceId);
     let newest: number | null = null;
+    let objectCount = 0;
     for (const objectPath of objectPaths) {
-      const { mtimeMs } = await fs.stat(ensureWithinRoot(this.rootPath, objectPath));
+      const mtimeMs = await modifiedAt(ensureWithinRoot(this.rootPath, objectPath));
+      // Deleted between the listing and its stat: no longer part of the workspace.
+      if (mtimeMs === null) continue;
+      objectCount += 1;
       newest = newest === null ? mtimeMs : Math.max(newest, mtimeMs);
     }
-    return { objectCount: objectPaths.length, newestObjectAt: newest === null ? null : new Date(newest) };
+    return { objectCount, newestObjectAt: newest === null ? null : new Date(newest) };
   }
 
   private async workspaceObjectPaths(workspaceId: string): Promise<string[]> {
@@ -118,7 +132,7 @@ export class LocalDocumentStorage implements DocumentStorageAdapter {
 
   /** The cursor is the last workspace id of the previous page; directories list in name order. */
   async listStoredWorkspaces(input: { cursor: string | null; limit: number }): Promise<DocumentStorageWorkspacePage> {
-    const entries = await readDirectory(ensureWithinRoot(this.rootPath, WORKSPACES_DIRECTORY), { recursive: false });
+    const entries = await readDirectory(ensureWithinRoot(this.rootPath, WORKSPACE_STORAGE_ROOT), { recursive: false });
     const remaining = entries
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)

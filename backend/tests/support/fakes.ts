@@ -205,6 +205,7 @@ import type {
 import { AuditService } from "../../src/modules/audit/services/auditService.js";
 import { requestAuditMetadata } from "../../src/modules/audit/requestAuditContext.js";
 import {
+  WORKSPACE_STORAGE_ROOT,
   workspaceStoragePrefix,
   type DocumentStorageAdapter,
   type DocumentStorageDeleteInput,
@@ -3619,7 +3620,7 @@ const collectMetadataPaths = (
 };
 
 export class InMemoryDocumentStorage implements DocumentStorageAdapter {
-  /** An object with no `writtenAt` was written long ago. */
+  /** An object with no `writtenAt` counts as written now, as the port treats an unknown write time. */
   readonly objects = new Map<string, { buffer: Buffer; generation: string; sizeBytes: number; writtenAt?: Date }>();
   deleteFailures = new Set<string>();
 
@@ -3676,7 +3677,7 @@ export class InMemoryDocumentStorage implements DocumentStorageAdapter {
     const prefix = workspaceStoragePrefix(input.workspaceId);
     const written = [...this.objects.entries()]
       .filter(([objectPath]) => objectPath.startsWith(prefix))
-      .map(([, object]) => object.writtenAt?.getTime() ?? 0);
+      .map(([, object]) => object.writtenAt?.getTime() ?? Date.now());
     return {
       objectCount: written.length,
       newestObjectAt: written.length === 0 ? null : new Date(Math.max(...written)),
@@ -3684,7 +3685,7 @@ export class InMemoryDocumentStorage implements DocumentStorageAdapter {
   }
 
   async listWorkspaceObjects(input: { workspaceId: string; limit: number }): Promise<DocumentStorageDeleteInput[]> {
-    const prefix = `workspaces/${input.workspaceId}/`;
+    const prefix = workspaceStoragePrefix(input.workspaceId);
     return [...this.objects.keys()]
       .filter((objectPath) => objectPath.startsWith(prefix))
       .sort()
@@ -3694,7 +3695,7 @@ export class InMemoryDocumentStorage implements DocumentStorageAdapter {
 
   async listStoredWorkspaces(input: { cursor: string | null; limit: number }) {
     const workspaceIds = [...new Set([...this.objects.keys()]
-      .filter((objectPath) => objectPath.startsWith("workspaces/"))
+      .filter((objectPath) => objectPath.startsWith(`${WORKSPACE_STORAGE_ROOT}/`))
       .map((objectPath) => objectPath.split("/")[1])
       .filter((workspaceId): workspaceId is string => Boolean(workspaceId)))]
       .sort()

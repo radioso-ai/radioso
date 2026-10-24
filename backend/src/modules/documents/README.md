@@ -96,32 +96,35 @@ Composition wires a `DocumentStorageAdapter`: the object port and the inventory
 together, in the GCS and local adapters alike.
 
 - `services/workspaceStoragePurge.ts`: the `documents.workspace_storage_purge`
-  background job. A workspace or organization deletion enqueues one per
-  workspace inside its own transaction (`handOffWorkspaceStoragePurges`, wired
-  by `app/composition/workspaceDeletion.ts`), so the hand-off commits with the
+  background job, keyed `<origin>:<workspaceId>`. A workspace or organization
+  deletion enqueues one per workspace inside its own transaction
+  (`handOffWorkspaceStoragePurges`, origin `workspace_deletion`, wired by
+  `app/composition/workspaceDeletion.ts`), so the hand-off commits with the
   deletion. A run deletes up to ten batches of 100 objects, asks for a rerun
   when more remain, retries failed deletes over about a day, and records a
   `workspace.stored_files.deleted` audit event with the count. It keeps the
-  files of a workspace that still exists.
-- `services/orphanedWorkspaceStorageSweep.ts`: the
-  `documents.orphaned_workspace_storage_sweep` job and its dry-run report. An
-  operator queues it with `node ./dist/src/workspaceStorageSweep.js --apply`
-  (`pnpm run storage:sweep-orphans --apply` from a checkout; the entrypoint is
-  `src/workspaceStorageSweep.ts`, its logic `src/app/cli/workspaceStorageSweepCommand.ts`)
-  after a dry run; nothing queues it on its own. It pages through the workspaces the store holds and queues a purge for
-  each canonical lowercase workspace id that `DocumentStorageOwnersPort` says
-  is gone and whose newest object is more than a day old. Its ownership check
-  proves only that the store holds some of this database's files: a store
-  shared with another deployment passes it, and that deployment's workspaces
-  read as orphaned, which is why the sweep is a manual step and each
-  deployment needs its own bucket or folder.
+  files of a workspace that still exists, and, for origin `orphan_sweep`, of a
+  prefix written to in the last 24 hours, checked when it runs. Its payload
+  accepts only a canonical lowercase workspace id.
+- `services/orphanedWorkspaceStorageReport.ts`: what an orphan sweep would
+  queue, read from the whole store. The operator command
+  (`src/workspaceStorageSweep.ts`, logic in
+  `src/app/cli/workspaceStorageSweepCommand.ts`) prints it as a dry run, and with
+  `--apply --expect-orphans <n>` scans again, refuses a different count, and
+  queues one `orphan_sweep` purge per workspace in the report it printed;
+  nothing queues purges on its own. The report counts only canonical lowercase
+  workspace ids absent from the database whose newest object is more than a day
+  old. Its ownership check proves only that the store holds some of this
+  database's files: a store shared with another deployment passes it, and that
+  deployment's workspaces read as orphaned, which is why the step is manual and
+  each deployment needs its own bucket or folder.
 
-Both jobs reach only the store composition is configured with
+Purges reach only the store composition is configured with
 (`DOCUMENT_STORAGE_BUCKET` or `DOCUMENT_STORAGE_LOCAL_PATH`). Upload paths and
-listings derive from `workspaceStoragePrefix`, so the layout the inventory
-relies on is decided in one place.
+listings derive from `WORKSPACE_STORAGE_ROOT` and `workspaceStoragePrefix`, so
+the layout the inventory relies on is decided in one place.
 
-The payloads carry workspace ids and page cursors only. An object path never
+Purge payloads carry a workspace id and an origin only. An object path never
 goes into a job, a log line, or an audit event, because paths written before
 storage dropped filenames carry them.
 

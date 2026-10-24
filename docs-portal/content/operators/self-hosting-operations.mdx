@@ -196,7 +196,7 @@ LIMIT 20;
 
 The worker deletes a workspace's files from the store this deployment is configured with: the `DOCUMENT_STORAGE_BUCKET` bucket, or the `DOCUMENT_STORAGE_LOCAL_PATH` folder. Files a workspace left in a bucket the deployment used before stay there. Give each deployment its own bucket or folder. Two deployments sharing one store cannot tell each other's workspaces from deleted ones, and the cleanup below would delete the other deployment's files.
 
-Storage can still hold files whose workspace this database no longer has, such as those of workspaces deleted on an earlier release. The `workspaceStorageSweep` command finds them and queues the same file deletion a workspace deletion does. It runs only when you run it, and it needs what the worker has: the backend environment (`DATABASE_URL`, `DOCUMENT_STORAGE_DRIVER`, `DOCUMENT_STORAGE_BUCKET` or `DOCUMENT_STORAGE_LOCAL_PATH`, and the rest of the worker's settings), a connection to the database, and a storage identity that may list objects.
+Storage can still hold files whose workspace this database no longer has, such as those of workspaces deleted on an earlier release. The `workspaceStorageSweep` command finds them and, once you confirm the count, queues one purge per workspace: the same file deletion a workspace deletion does. It runs only when you run it, and it needs what the worker has: the backend environment (`DATABASE_URL`, `DOCUMENT_STORAGE_DRIVER`, `DOCUMENT_STORAGE_BUCKET` or `DOCUMENT_STORAGE_LOCAL_PATH`, and the rest of the worker's settings), a connection to the database, and a storage identity that may list objects.
 
 - **Container deployments** run it in the backend image, with the worker's environment and identity: `node ./dist/src/workspaceStorageSweep.js`.
 - **Cloud Run, as the Terraform under `infra/terraform` sets it up**, runs it as a one-off Cloud Run job on the backend image. Give the job the worker's service account, which holds `roles/storage.objectAdmin` on the documents bucket, the worker's environment and secrets, and the backend's VPC connector, because Cloud SQL has only a private address. Pass the arguments below as the job's arguments.
@@ -218,10 +218,10 @@ Orphaned workspaces: 9 (1730 objects)
 Kept, workspace exists in this database: 203
 Kept, an object written in the last 24 hours: 0
 Kept, not a canonical workspace id: 0
-Dry run: nothing was queued. Re-run with --apply to queue the sweep.
+Dry run: nothing was queued. To queue these purges, run again with --apply --expect-orphans 9.
 ```
 
-It reads storage, counts, and changes nothing. A workspace whose newest file is less than a day old is kept, and so is anything under `workspaces/` that is not a lowercase workspace UUID.
+It reads storage, counts, and changes nothing. A workspace whose newest file is less than a day old is kept, and so is anything under `workspaces/` that is not a lowercase workspace UUID. Note the orphaned workspace count: applying needs it.
 
 ### Compare the count with this database's deletions
 
@@ -246,20 +246,20 @@ An empty answer or `0` means deletions are final. With local storage, back up th
 ### Apply
 
 ```bash
-node ./dist/src/workspaceStorageSweep.js --apply
+node ./dist/src/workspaceStorageSweep.js --apply --expect-orphans 9
 ```
 
-The script prints the same counts and queues the sweep, unless the storage check did not pass. The worker then queues one purge per orphaned workspace, and each purge records its `workspace.stored_files.deleted` audit event.
+The command reads the store again and prints the same report. It queues nothing, and exits `1`, when the storage check did not pass or the orphan count is no longer the one you passed: run the dry run again and review it. Otherwise it queues one purge for each workspace in the report it just printed, and records a `workspace.stored_files.sweep_queued` audit event with the counts. Each purge checks again, when the worker runs it, that the workspace is still absent and its newest file still more than a day old, and keeps the files otherwise. Each purge that deletes records its `workspace.stored_files.deleted` audit event.
 </Steps>
 
-A purge that failed for good stays in `background_jobs` for 14 days as a dead `documents.workspace_storage_purge` job keyed by the deleted workspace's id; the `workspace.deleted` audit event carries the same id as `deletedWorkspaceId`. Queue it again for that one workspace, dry run first:
+A purge that failed for good stays in `background_jobs` for 14 days as a dead `documents.workspace_storage_purge` job, keyed by what queued it and the workspace id: `workspace_deletion:<id>`, `orphan_sweep:<id>` or `operator:<id>`. The `workspace.deleted` audit event carries the same id as `deletedWorkspaceId`. Queue it again for that one workspace, dry run first:
 
 ```bash
 node ./dist/src/workspaceStorageSweep.js --workspace <workspace id>
 node ./dist/src/workspaceStorageSweep.js --workspace <workspace id> --apply
 ```
 
-The script refuses a workspace that exists in this database.
+The command refuses a workspace that exists in this database. A purge you queue this way deletes whatever the files' age, and records a `workspace.stored_files.purge_queued` audit event.
 
 ## Worker incidents
 

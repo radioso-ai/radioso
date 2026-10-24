@@ -47,6 +47,7 @@ export type {
   DocumentStorageOwnersPort,
   DocumentStoragePort,
 } from "./storage.js";
+export { isCanonicalWorkspaceId } from "./storage.js";
 export { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../domain/sourceConstants.js";
 export {
   describeDocumentReviewedOperationPlan,

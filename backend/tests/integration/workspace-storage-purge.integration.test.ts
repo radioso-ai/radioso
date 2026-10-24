@@ -17,10 +17,12 @@ import { AuditService } from "../../src/modules/audit/composition.js";
 import {
   LocalDocumentStorage,
   WORKSPACE_STORAGE_PURGE_JOB,
-  orphanedWorkspaceStorageSweepHandler,
-  orphanedWorkspaceStorageSweepRequest,
   workspaceStoragePurgeHandler,
 } from "../../src/modules/documents/composition.js";
+import {
+  parseWorkspaceStorageSweepArgs,
+  runWorkspaceStorageSweepCommand,
+} from "../../src/app/cli/workspaceStorageSweepCommand.js";
 import type { DocumentStorageAdapter } from "../../src/modules/documents/contracts/index.js";
 import {
   BackgroundJobRuntime,
@@ -93,7 +95,6 @@ describeIntegration("workspace stored-file deletion (Postgres)", () => {
       store: jobs,
       handlers: [
         workspaceStoragePurgeHandler({ storage: workerStorage, owners, queue, audit, logger }),
-        orphanedWorkspaceStorageSweepHandler({ storage: workerStorage, owners, queue, logger }),
       ],
       logger,
     });
@@ -246,7 +247,7 @@ describeIntegration("workspace stored-file deletion (Postgres)", () => {
     }
   });
 
-  it("the sweep purges the files of workspaces this database no longer has, and keeps every live one", async () => {
+  it("the sweep script queues purges for the files of workspaces this database no longer has, and keeps every live one", async () => {
     const { workspaceIds: [live] } = await seedAccount(1);
     await uploadDocument(live);
     const orphaned = randomUUID();
@@ -255,16 +256,30 @@ describeIntegration("workspace stored-file deletion (Postgres)", () => {
     const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1_000);
     await fs.utimes(path.join(root, left.objectPath), twoDaysAgo, twoDaysAgo);
 
-    await new DefaultBackgroundJobQueue({
-      writer: new BackgroundJobRepository(database.kysely),
-      wake: new NoopBackgroundJobWake(),
-      logger: quietLogger(),
-    }).enqueue(orphanedWorkspaceStorageSweepRequest(null));
-    // The sweep queues one purge per orphaned workspace; the next drain runs them.
-    await worker.drain({ maxJobs: 10 });
+    const auditEvents = new AuditEventRepository(database.kysely);
+    const lines: string[] = [];
+    const sweep = (argv: string[]) => runWorkspaceStorageSweepCommand(parseWorkspaceStorageSweepArgs(argv), {
+      storage,
+      owners,
+      queue: new DefaultBackgroundJobQueue({
+        writer: new BackgroundJobRepository(database.kysely),
+        wake: new NoopBackgroundJobWake(),
+        logger: quietLogger(),
+      }),
+      audit: { record: async (event) => { await auditEvents.create(event); } },
+      print: (line) => lines.push(line),
+    });
+
+    // Every other workspace this file left files for still exists, so the one orphan is the count.
+    expect(await sweep([])).toEqual({ exitCode: 0 });
+    expect(lines.join("\n")).toMatch(/Orphaned workspaces: 1 \(1 objects\)/);
+    expect(await sweep(["--apply", "--expect-orphans", "1"])).toEqual({ exitCode: 0 });
     await worker.drain({ maxJobs: 10 });
 
     expect(await storedObjects(orphaned)).toEqual([]);
+    expect(await database.query(
+      "SELECT metadata_json FROM audit_events WHERE event_type = 'workspace.stored_files.sweep_queued'",
+    )).toEqual([{ metadata_json: expect.objectContaining({ origin: "cli", queuedPurgeCount: 1 }) }]);
     expect(await storedObjects(live)).toHaveLength(1);
     expect(await deletionAudits(orphaned)).toEqual([
       expect.objectContaining({ metadata_json: expect.objectContaining({ deletedObjectCount: 1 }) }),

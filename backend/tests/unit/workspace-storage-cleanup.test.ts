@@ -3,12 +3,10 @@ import { randomUUID } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 
 import {
-  ORPHANED_WORKSPACE_STORAGE_SWEEP_JOB,
   WORKSPACE_STORAGE_PURGE_JOB,
   handOffWorkspaceStoragePurges,
-  orphanedWorkspaceStorageSweepHandler,
-  orphanedWorkspaceStorageSweepRequest,
   workspaceStoragePurgeHandler,
+  workspaceStoragePurgeRequest,
 } from "../../src/modules/documents/composition.js";
 import type { AuditEventInput } from "../../src/modules/audit/contracts/index.js";
 import {
@@ -49,7 +47,6 @@ const createOwners = (input: { existing?: string[]; withUploadedFiles?: string[]
 const setup = (options: {
   owners?: ReturnType<typeof createOwners>;
   purge?: { batchSize?: number; batchesPerRun?: number };
-  sweep?: { pageSize?: number; pagesPerRun?: number };
 } = {}) => {
   const clock = createClock();
   const jobs = new InMemoryBackgroundJobStore(clock);
@@ -62,8 +59,7 @@ const setup = (options: {
   const runtime = new BackgroundJobRuntime({
     store: jobs,
     handlers: [
-      workspaceStoragePurgeHandler({ storage, owners, queue, audit, logger, ...options.purge }),
-      orphanedWorkspaceStorageSweepHandler({ storage, owners, queue, logger, now: clock.now, ...options.sweep }),
+      workspaceStoragePurgeHandler({ storage, owners, queue, audit, logger, now: clock.now, ...options.purge }),
     ],
     logger,
     now: clock.now,
@@ -132,9 +128,10 @@ describe("deleting a workspace's stored files", () => {
     seedObjects(harness.storage, second, 4);
 
     await handOffWorkspaceStoragePurges(harness.queue)(DELETION_TRANSACTION, [first, second]);
-    expect([...harness.jobs.rows.values()].map((row) => [row.kind, row.idempotencyKey]).sort()).toEqual(
-      [[WORKSPACE_STORAGE_PURGE_JOB.kind, first], [WORKSPACE_STORAGE_PURGE_JOB.kind, second]].sort(),
-    );
+    expect([...harness.jobs.rows.values()].map((row) => [row.kind, row.idempotencyKey]).sort()).toEqual([
+      [WORKSPACE_STORAGE_PURGE_JOB.kind, `workspace_deletion:${first}`],
+      [WORKSPACE_STORAGE_PURGE_JOB.kind, `workspace_deletion:${second}`],
+    ].sort());
     await harness.drainUntilIdle();
 
     expect(objectsOf(harness.storage, first)).toEqual([]);
@@ -216,113 +213,58 @@ describe("deleting a workspace's stored files", () => {
   });
 });
 
-describe("the one-time sweep for files a deleted workspace left behind", () => {
-  it("purges every workspace the store holds files for that the database no longer has", async () => {
-    const live = randomUUID();
-    const goneA = randomUUID();
-    const goneB = randomUUID();
-    const owners = createOwners({ existing: [live], withUploadedFiles: [live] });
-    // One workspace per page and per run, so the sweep continues itself across jobs.
-    const harness = setup({ owners, sweep: { pageSize: 1, pagesPerRun: 1 } });
-    seedObjects(harness.storage, live, 2);
-    seedObjects(harness.storage, goneA, 3);
-    seedObjects(harness.storage, goneB, 1);
-    // Not a workspace id: nothing this database could own, so the sweep leaves it alone.
-    harness.storage.put("workspaces/not-a-workspace/documents/leftover");
+describe("a purge's origin", () => {
+  const hoursAgo = (harness: ReturnType<typeof setup>, hours: number) =>
+    new Date(harness.clock.now().getTime() - hours * 60 * 60 * 1_000);
 
-    await harness.queue.enqueue(orphanedWorkspaceStorageSweepRequest(null));
+  it("deletes a just-deleted workspace's files whatever their age", async () => {
+    const workspaceId = randomUUID();
+    const harness = setup();
+    harness.storage.put(`workspaces/${workspaceId}/documents/${randomUUID()}`, { writtenAt: hoursAgo(harness, 0) });
+
+    await handOffWorkspaceStoragePurges(harness.queue)(DELETION_TRANSACTION, [workspaceId]);
     await harness.drainUntilIdle();
 
-    expect(objectsOf(harness.storage, live)).toHaveLength(2);
-    expect(objectsOf(harness.storage, goneA)).toEqual([]);
-    expect(objectsOf(harness.storage, goneB)).toEqual([]);
-    expect(objectsOf(harness.storage, "not-a-workspace")).toHaveLength(1);
-    expect(harness.audits.map((event) => [event.metadata?.deletedWorkspaceId, event.metadata?.deletedObjectCount]).sort())
-      .toEqual([[goneA, 3], [goneB, 1]].sort());
-    expect(harness.jobs.rows.size).toBe(0);
+    expect(objectsOf(harness.storage, workspaceId)).toEqual([]);
   });
 
-  it("deletes nothing when the store holds none of this database's files", async () => {
-    const live = randomUUID();
-    const unknown = randomUUID();
-    // The database has uploaded files for `live`, but this store has none of them: it is another database's.
-    const harness = setup({ owners: createOwners({ existing: [live], withUploadedFiles: [live] }) });
-    seedObjects(harness.storage, unknown, 2);
-
-    await harness.queue.enqueue(orphanedWorkspaceStorageSweepRequest(null));
-    await harness.drainUntilIdle();
-
-    expect(objectsOf(harness.storage, unknown)).toHaveLength(2);
-    expect(harness.audits).toEqual([]);
-    expect(harness.logger.warn).toHaveBeenCalledWith(expect.any(Object), expect.stringMatching(/sweep/i));
-  });
-
-  it("deletes nothing when the database records no uploaded file to check the store against, and says so plainly", async () => {
-    const unknown = randomUUID();
-    const harness = setup({ owners: createOwners() });
-    seedObjects(harness.storage, unknown, 2);
-
-    await harness.queue.enqueue(orphanedWorkspaceStorageSweepRequest(null));
-    await harness.drainUntilIdle();
-
-    expect(objectsOf(harness.storage, unknown)).toHaveLength(2);
-    expect(harness.audits).toEqual([]);
-    // Nothing to compare against is not a mismatch: no warning that the store is another database's.
-    expect(harness.logger.info).toHaveBeenCalledWith(expect.any(Object), expect.stringMatching(/no uploaded file/i));
-    expect(harness.logger.warn).not.toHaveBeenCalled();
-  });
-
-  it("leaves a workspace's files alone while its newest object is less than a day old", async () => {
-    const live = randomUUID();
+  it("re-checks an orphan-sweep purge when it runs, and keeps a prefix written to since the operator's report", async () => {
     const settled = randomUUID();
-    const fresh = randomUUID();
-    const harness = setup({ owners: createOwners({ existing: [live], withUploadedFiles: [live] }) });
-    seedObjects(harness.storage, live, 1);
+    const reused = randomUUID();
+    const harness = setup();
     seedObjects(harness.storage, settled, 2);
-    seedObjects(harness.storage, fresh, 2);
-    // Another database's workspace that is in use writes new files; one written two hours ago keeps the prefix.
-    harness.storage.put(`workspaces/${fresh}/documents/${randomUUID()}`, {
-      writtenAt: new Date(harness.clock.now().getTime() - 2 * 60 * 60 * 1_000),
-    });
+    seedObjects(harness.storage, reused, 2);
 
-    await harness.queue.enqueue(orphanedWorkspaceStorageSweepRequest(null));
+    await harness.queue.enqueue(workspaceStoragePurgeRequest(settled, "orphan_sweep"));
+    await harness.queue.enqueue(workspaceStoragePurgeRequest(reused, "orphan_sweep"));
+    // Between the report and the run, something writes to one of them: it is in use somewhere.
+    harness.storage.put(`workspaces/${reused}/documents/${randomUUID()}`, { writtenAt: hoursAgo(harness, 2) });
     await harness.drainUntilIdle();
 
     expect(objectsOf(harness.storage, settled)).toEqual([]);
-    expect(objectsOf(harness.storage, fresh)).toHaveLength(3);
-    expect(harness.logger.info).toHaveBeenCalledWith(
-      expect.objectContaining({ orphanedWorkspaceCount: 1, recentObjectCount: 1, liveWorkspaceCount: 1 }),
-      expect.any(String),
-    );
+    expect(objectsOf(harness.storage, reused)).toHaveLength(3);
+    expect(harness.audits.map((event) => event.metadata?.deletedWorkspaceId)).toEqual([settled]);
+    expect(harness.logger.warn).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: reused }), expect.any(String));
   });
 
-  it("only considers canonical lowercase workspace ids, and counts what it skipped", async () => {
-    const live = randomUUID();
-    const orphaned = randomUUID();
-    const harness = setup({ owners: createOwners({ existing: [live], withUploadedFiles: [live] }) });
-    seedObjects(harness.storage, live, 1);
-    seedObjects(harness.storage, orphaned.toUpperCase(), 2);
-    harness.storage.put("workspaces/not-a-workspace/documents/leftover");
+  it("purges for an operator without the 24-hour wait, under a key of its own", async () => {
+    const workspaceId = randomUUID();
+    const harness = setup();
+    harness.storage.put(`workspaces/${workspaceId}/documents/${randomUUID()}`, { writtenAt: hoursAgo(harness, 1) });
 
-    await harness.queue.enqueue(orphanedWorkspaceStorageSweepRequest(null));
+    await harness.queue.enqueue(workspaceStoragePurgeRequest(workspaceId, "operator"));
+    expect([...harness.jobs.rows.values()].map((row) => row.idempotencyKey)).toEqual([`operator:${workspaceId}`]);
     await harness.drainUntilIdle();
 
-    expect(objectsOf(harness.storage, orphaned.toUpperCase())).toHaveLength(2);
-    expect(objectsOf(harness.storage, "not-a-workspace")).toHaveLength(1);
-    expect(harness.audits).toEqual([]);
-    expect(harness.logger.info).toHaveBeenCalledWith(
-      expect.objectContaining({ orphanedWorkspaceCount: 0, nonCanonicalPrefixCount: 2 }),
-      expect.any(String),
-    );
+    expect(objectsOf(harness.storage, workspaceId)).toEqual([]);
   });
 
-  it("is keyed so a repeated start while one sweep waits queues no second sweep", async () => {
-    const harness = setup();
+  it("accepts only a canonical lowercase workspace id", () => {
+    const workspaceId = randomUUID();
 
-    await harness.queue.enqueue(orphanedWorkspaceStorageSweepRequest(null));
-    await harness.queue.enqueue(orphanedWorkspaceStorageSweepRequest(null));
-
-    expect([...harness.jobs.rows.values()].filter((row) => row.kind === ORPHANED_WORKSPACE_STORAGE_SWEEP_JOB.kind))
-      .toHaveLength(1);
+    expect(() => workspaceStoragePurgeRequest(workspaceId.toUpperCase(), "orphan_sweep")).toThrow();
+    expect(() => workspaceStoragePurgeRequest("not-a-workspace", "operator")).toThrow();
+    expect(workspaceStoragePurgeRequest(workspaceId, "workspace_deletion").payload)
+      .toEqual({ workspaceId, origin: "workspace_deletion" });
   });
 });

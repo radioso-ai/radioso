@@ -122,7 +122,6 @@ import { createDocumentCopilotProposalAdapter } from "../../modules/operatorCopi
 import { createDocumentReviewedOperationAdapter } from "../../modules/operatorCopilot/documentReviewedOperationAdapter.js";
 import {
   DocumentReviewedOperationService,
-  orphanedWorkspaceStorageSweepHandler,
   workspaceStoragePurgeHandler,
 } from "../../modules/documents/composition.js";
 import { createIngestionSettingsCopilotProposalAdapter } from "../../modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
@@ -1337,18 +1336,17 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     starterPrompts: chat.agentStarterPromptReader,
     conversationLinks,
   });
-  // A deleted workspace's stored files, handed off by its deletion or found by the one-time sweep.
-  const workspaceStorageCleanup = {
-    storage: documents.documentStorage,
-    owners: repositories.documentStorageOwnerRepository,
-    queue: backgroundJobs.queue,
-    logger,
-  };
   const backgroundJobRuntime = backgroundJobs.createRuntime([
     ...chat.backgroundJobHandlers,
     ...slackInboundJobs.backgroundJobHandlers,
-    workspaceStoragePurgeHandler({ ...workspaceStorageCleanup, audit: infrastructure.auditService }),
-    orphanedWorkspaceStorageSweepHandler(workspaceStorageCleanup),
+    // A deleted workspace's stored files: handed off by its deletion, or queued by an operator.
+    workspaceStoragePurgeHandler({
+      storage: documents.documentStorage,
+      owners: repositories.documentStorageOwnerRepository,
+      queue: backgroundJobs.queue,
+      audit: infrastructure.auditService,
+      logger,
+    }),
   ]);
   refreshEmbedConfigsOnVoiceVendorKeyChange({ credentials: workspaceProviderCredentialsService, embedConfigs: agentService });
   // One service starts sessions and tells the website embed whether to offer them, by the same gate.

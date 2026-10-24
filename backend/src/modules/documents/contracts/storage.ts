@@ -82,9 +82,21 @@ export interface DocumentStorageOwnersPort {
  */
 const STORAGE_WORKSPACE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 
+/** The top-level folder every workspace's objects sit under. */
+export const WORKSPACE_STORAGE_ROOT = "workspaces";
+
 export const workspaceStoragePrefix = (workspaceId: string): string => {
   if (!STORAGE_WORKSPACE_SEGMENT.test(workspaceId)) {
     throw new Error("Document storage needs a workspace id that is a single path segment");
   }
-  return `workspaces/${workspaceId}/`;
+  return `${WORKSPACE_STORAGE_ROOT}/${workspaceId}/`;
 };
+
+/**
+ * The only form a workspace id takes in a storage path: Postgres prints UUIDs in lowercase. Removing
+ * stored files accepts nothing else, because a case-insensitive filesystem would resolve another
+ * spelling to a live workspace's folder.
+ */
+const CANONICAL_WORKSPACE_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;
+
+export const isCanonicalWorkspaceId = (value: string): boolean => CANONICAL_WORKSPACE_ID.test(value);

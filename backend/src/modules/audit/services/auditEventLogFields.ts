@@ -1,10 +1,8 @@
-import { isCode, isUuid } from "../../../shared/observability/logging/logSafeValues.js";
+import { logSafeMetadata, type LogSafeValue } from "../../../shared/observability/logging/logSafeValues.js";
 import type { AuditEventInput } from "../contracts/index.js";
 
-type LoggableValue = string | number | boolean;
-
 type AuditEventLogFields = Pick<AuditEventInput, "accountId" | "workspaceId" | "eventType" | "eventStatus"> & {
-  metadata?: Record<string, LoggableValue>;
+  metadata?: Record<string, LogSafeValue>;
 };
 
 // The audit_event line lands in Cloud Logging, which conversation erasure cannot reach, so it
@@ -16,26 +14,14 @@ type AuditEventLogFields = Pick<AuditEventInput, "accountId" | "workspaceId" | "
 // Each value must still be a code, so a sentence under a same-named key never reaches the line.
 const CODED_FIELDS = new Set(["principalKind", "role", "stage", "workflow", "executionClass", "executionMode", "surface"]);
 
-// pino-http's request counter, merged in from the request audit context.
-const isRequestId = (key: string, value: string): boolean => key === "requestId" && /^\d+$/u.test(value);
-
-const isLoggable = (key: string, value: unknown): value is LoggableValue => {
-  if (typeof value === "boolean") return true;
-  if (typeof value === "number") return Number.isFinite(value);
-  if (typeof value !== "string") return false;
-  return isUuid(value) || isRequestId(key, value) || (CODED_FIELDS.has(key) && isCode(value));
-};
-
 export const auditEventLogFields = (event: AuditEventInput): AuditEventLogFields => {
-  const metadata = Object.fromEntries(
-    Object.entries(event.metadata ?? {}).filter((entry): entry is [string, LoggableValue] => isLoggable(...entry)),
-  );
+  const metadata = logSafeMetadata(event.metadata, { coded: CODED_FIELDS });
 
   return {
     accountId: event.accountId,
     workspaceId: event.workspaceId,
     eventType: event.eventType,
     eventStatus: event.eventStatus,
-    ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
+    ...(metadata ? { metadata } : {}),
   };
 };

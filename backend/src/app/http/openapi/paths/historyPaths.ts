@@ -8,51 +8,101 @@ export const registerHistoryPaths = (
   schemas: OpenApiSchemas,
   security: OpenApiSecurity,
 ) => {
+  const historyItemsResponses = {
+    200: {
+      description: "Merged history items",
+      content: {
+        "application/json": {
+          schema: schemas.HistoryItemsResponseSchema,
+        },
+      },
+    },
+    401: {
+      description: "Authentication required",
+      content: {
+        "application/json": {
+          schema: schemas.ErrorResponseSchema,
+        },
+      },
+    },
+  };
+
+  // A factory, not a shared object: the YAML writer turns a reused enum array into an anchor.
+  const historyItemsFilters = () => ({
+    limit: z.number().int().min(1).max(100).optional(),
+    offset: z.number().int().min(0).optional(),
+    sourceScope: z.enum(["end_user", "operator_test", "all"]).optional().openapi({
+      description:
+        "Which conversation sources to include. Defaults to end_user, which excludes operator-driven dashboard test chat and workbench replay conversations.",
+    }),
+    agentId: z.string().uuid().optional().openapi({
+      description: "Narrows to conversations handled by this agent. Narrows results to chat rows only.",
+    }),
+    sourceOrigin: z.string().min(1).max(2048).optional().openapi({
+      description: "Exact match on the conversation's site origin. Narrows results to chat rows only.",
+    }),
+    outcome: z.enum(["in_progress", "completed", "handed_off"]).optional().openapi({
+      description:
+        "Narrows to conversations in this outcome bucket: handed_off (a human_owned ownership record exists), in_progress (no such record and updated within the last 10 minutes), or completed (no such record and updated more than 10 minutes ago). Narrows results to chat rows only.",
+    }),
+    callerKind: z.enum(["human", "agent"]).optional().openapi({
+      description: "Narrows to conversations whose caller was a person or another AI agent. Narrows results to chat rows only: a contact request has no conversation behind it and so no caller.",
+    }),
+  });
+
   registry.registerPath({
     method: "get",
     path: "/api/v1/history",
     tags: ["History"],
     summary: "List merged chat and document search history",
+    description: "To search by text, use `POST /api/v1/history/query`, which takes the same filters plus `q` in its body.",
     operationId: "listHistory",
     security: [{ [security.bearerAuthScheme.name]: [] }],
     request: {
-      query: z.object({
-        limit: z.number().int().min(1).max(100).optional(),
-        offset: z.number().int().min(0).optional(),
-        sourceScope: z.enum(["end_user", "operator_test", "all"]).optional().openapi({
-          description:
-            "Which conversation sources to include. Defaults to end_user, which excludes operator-driven dashboard test chat and workbench replay conversations.",
-        }),
-        q: z.string().min(1).max(200).optional().openapi({
-          description:
-            "Case-insensitive substring search over a conversation's generated title or its first user message. Narrows results to chat rows only (search and contact rows carry neither).",
-        }),
-        agentId: z.string().uuid().optional().openapi({
-          description: "Narrows to conversations handled by this agent. Narrows results to chat rows only.",
-        }),
-        sourceOrigin: z.string().min(1).max(2048).optional().openapi({
-          description: "Exact match on the conversation's site origin. Narrows results to chat rows only.",
-        }),
-        outcome: z.enum(["in_progress", "completed", "handed_off"]).optional().openapi({
-          description:
-            "Narrows to conversations in this outcome bucket: handed_off (a human_owned ownership record exists), in_progress (no such record and updated within the last 10 minutes), or completed (no such record and updated more than 10 minutes ago). Narrows results to chat rows only.",
-        }),
-        callerKind: z.enum(["human", "agent"]).optional().openapi({
-          description: "Narrows to conversations whose caller was a person or another AI agent. Narrows results to chat rows only: a contact request has no conversation behind it and so no caller.",
-        }),
-      }),
+      query: z.object(historyItemsFilters()),
     },
     responses: {
-      200: {
-        description: "Merged history items",
+      ...historyItemsResponses,
+      400: {
+        description: "Invalid query, including a `q` text search, which belongs in the body of `POST /api/v1/history/query`",
         content: {
           "application/json": {
-            schema: schemas.HistoryItemsResponseSchema,
+            schema: schemas.ErrorResponseSchema,
           },
         },
       },
-      401: {
-        description: "Authentication required",
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/history/query",
+    tags: ["History"],
+    summary: "Search merged chat and document search history",
+    description:
+      "Lists the same merged history as `GET /api/v1/history`, with a text search. The search text travels in the body because a URL's query string is recorded in request logs.",
+    operationId: "queryHistory",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: {
+      body: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: z.object({
+              ...historyItemsFilters(),
+              q: z.string().min(1).max(200).optional().openapi({
+                description:
+                  "Case-insensitive substring search over a conversation's generated title or its first user message. Narrows results to chat rows only (search and contact rows carry neither).",
+              }),
+            }).strict(),
+          },
+        },
+      },
+    },
+    responses: {
+      ...historyItemsResponses,
+      400: {
+        description: "Invalid request body",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,

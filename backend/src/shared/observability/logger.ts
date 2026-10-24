@@ -1,15 +1,12 @@
 import type { RequestHandler } from "express";
-import { EDGE_FACTS_HEADERS } from "@radioso/edge-proof";
 import pino from "pino";
 import { pinoHttp } from "pino-http";
 import type { ProductAnalyticsEvent } from "../analytics/productAnalyticsTypes.js";
 import type { ErrorEvent } from "../errors/errorTypes.js";
 import { toCloudLoggingSeverity } from "./logging/cloudSeverity.js";
-import { isClassName, isUuid } from "./logging/logSafeValues.js";
+import { isClassName, isRequestCounter, isUuid } from "./logging/logSafeValues.js";
 import { emitPinoLogRecordForOpenTelemetry } from "./logging/index.js";
 import type { CorrelationFields } from "./telemetry/correlation.js";
-import { redactedValue, shouldRedactKey } from "./telemetry/redactionPolicy.js";
-import { WORKER_TASK_AUTH_HEADER_LOWERCASE } from "../infra/workerTaskAuth.js";
 
 const loggerOptions = (level: string): pino.LoggerOptions => ({
   level,
@@ -54,14 +51,28 @@ interface RetrievalLogFields {
 const routePath = (route: unknown): string | undefined =>
   typeof route === "string" ? route.replace(/[?#].*$/su, "") : undefined;
 
+const uuidOf = (value: unknown): string | undefined => (typeof value === "string" && isUuid(value) ? value : undefined);
+
+// Correlation reaches here from request headers as well as the server, so each field must hold the
+// shape its name promises: a client's `x-workspace-id` is whatever the client sent.
 export const extractCorrelationLogFields = (correlation?: CorrelationFields): Record<string, string> | undefined => {
   if (!correlation) {
     return undefined;
   }
 
   const fields = Object.fromEntries(
-    Object.entries({ ...correlation, route: routePath(correlation.route) })
-      .filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0),
+    Object.entries({
+      requestId: typeof correlation.requestId === "string" && isRequestCounter(correlation.requestId)
+        ? correlation.requestId
+        : uuidOf(correlation.requestId),
+      workspaceId: uuidOf(correlation.workspaceId),
+      accountId: uuidOf(correlation.accountId),
+      conversationId: uuidOf(correlation.conversationId),
+      jobId: uuidOf(correlation.jobId),
+      documentId: uuidOf(correlation.documentId),
+      route: routePath(correlation.route),
+      method: typeof correlation.method === "string" && /^[A-Z]{1,16}$/u.test(correlation.method) ? correlation.method : undefined,
+    }).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0),
   );
 
   return Object.keys(fields).length > 0 ? fields : undefined;
@@ -154,46 +165,39 @@ export const extractRetrievalLogFields = (metadata?: Record<string, unknown>): R
   };
 };
 
-const httpCredentialHeaderNames = ["cookie", "authorization", "x-radioso-public-session", "set-cookie"].filter(shouldRedactKey);
-const httpRequestCredentialHeaderNames = httpCredentialHeaderNames.filter((headerName) => headerName !== "set-cookie");
-const httpResponseCredentialHeaderNames = httpCredentialHeaderNames.filter((headerName) => headerName === "set-cookie");
-const httpRequestClientAddressHeaderNames = [
-  "x-forwarded-for",
-  "forwarded",
-  "x-real-ip",
-  "cf-connecting-ip",
-  "true-client-ip",
-  "x-client-ip",
-  "x-cluster-client-ip",
-  "fastly-client-ip",
-  "x-envoy-external-address",
-];
-const httpHeaderRedactPath = (target: "req" | "res", headerName: string): string =>
-  `${target}.headers["${headerName}"]`;
+// The request line names the request by method, path and trace and the response by status. A
+// query string or header can carry words a person typed, and the line lands in Cloud Logging, out
+// of reach of conversation erasure. pino-http's own `requestId` and `responseTime` sit beside these.
+const TRACE_ID_PATTERN = /^[0-9a-f]{32}$/u;
 
-const httpLoggerRedactPaths = [
-  ...httpRequestCredentialHeaderNames.map((headerName) => httpHeaderRedactPath("req", headerName)),
-  ...httpRequestClientAddressHeaderNames.map((headerName) => httpHeaderRedactPath("req", headerName)),
-  httpHeaderRedactPath("req", WORKER_TASK_AUTH_HEADER_LOWERCASE),
-  httpHeaderRedactPath("req", "x-workspace-id"),
-  // The frontend's signed edge facts carry the visitor's forwarded-for chain,
-  // user agent, and geo headers, and ride on every relayed request.
-  httpHeaderRedactPath("req", EDGE_FACTS_HEADERS.facts),
-  httpHeaderRedactPath("req", EDGE_FACTS_HEADERS.signature),
-  ...httpResponseCredentialHeaderNames.map((headerName) => httpHeaderRedactPath("res", headerName)),
-  // Anonymous-session id response headers set in app/http/middleware/resolveAnonymousSession.ts.
-  // They carry the same raw session id as set-cookie but are not classified as sensitive by
-  // shouldRedactKey, so they must be redacted explicitly here (mirrors the set-cookie/session-id leak).
-  httpHeaderRedactPath("res", "x-radioso-anonymous-session"),
-  httpHeaderRedactPath("res", "x-radioso-public-session-id"),
-];
+// Cloud Run sends `x-cloud-trace-context: TRACE_ID/SPAN_ID;o=1`; the trace id joins this line to
+// Cloud Run's request log and to Cloud Trace.
+const traceIdOf = (headers: unknown): string | undefined => {
+  const header = typeof headers === "object" && headers !== null ? (headers as Record<string, unknown>)["x-cloud-trace-context"] : undefined;
+  const traceId = typeof header === "string" ? header.split("/")[0] : undefined;
+  return traceId && TRACE_ID_PATTERN.test(traceId) ? traceId : undefined;
+};
+
+const requestLogFields = (req: { id?: unknown; method?: unknown; url?: unknown; headers?: unknown }) => {
+  const traceId = traceIdOf(req.headers);
+  return { id: req.id, method: req.method, url: routePath(req.url), ...(traceId ? { traceId } : {}) };
+};
+
+const responseLogFields = (res: { statusCode?: unknown }) => ({ statusCode: res.statusCode });
+
+// A failed request's error is named by its class; its message stays with the error report.
+const requestErrorLogFields = (err: { type?: unknown; name?: unknown }) => {
+  const type = typeof err.type === "string" ? err.type : err.name;
+  return { type: typeof type === "string" && isClassName(type) ? type : "Error" };
+};
 
 export const createHttpLogger = (logger: AppLogger): RequestHandler =>
   pinoHttp({
     logger,
-    redact: {
-      paths: httpLoggerRedactPaths,
-      censor: redactedValue(),
+    serializers: {
+      req: requestLogFields,
+      res: responseLogFields,
+      err: requestErrorLogFields,
     },
     customProps: (req: { id?: string | number }) => ({
       requestId: req.id,

@@ -100,7 +100,6 @@
   "exports|backend/src/shared/infra/http/publicUrlFetch.ts|createPublicUrlFetch",
   "exports|backend/src/shared/infra/http/publicUrlFetch.ts|resolvePublicAddresses",
   "exports|backend/src/shared/observability/configuredSinks.ts|findInvalidConfiguredSinks",
-  "exports|backend/src/shared/observability/telemetry/redactionPolicy.ts|redactValue",
   "exports|backend/src/shared/observability/telemetry/telemetrySink.ts|NoopTelemetrySink",
   "exports|docs-portal/components/docs/docs-shell.tsx|MAIN_CONTENT_ID",
   "exports|ee/packages/backend-module/src/staffConsole/staffGuards.ts|canSatisfyStaffRole",

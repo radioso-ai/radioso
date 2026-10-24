@@ -1,6 +1,7 @@
-import { extractErrorLogFields, type AppLogger } from "../observability/logger.js";
+import type { AppLogger } from "../observability/logger.js";
 import { createRequestCorrelation, type CorrelationFields, type RequestCorrelationSource } from "../observability/telemetry/correlation.js";
 import { redactRecord } from "../observability/telemetry/redactionPolicy.js";
+import { errorRecordedLogFields } from "./errorRecordedLogFields.js";
 import type { ErrorEvent, ErrorRequestContext, ErrorSeverity } from "./errorTypes.js";
 import type { ErrorSink } from "./errorSink.js";
 
@@ -84,14 +85,7 @@ export class ErrorReportingService {
       tags: input.tags,
     };
 
-    this.options.logger[errorEvent.severity](
-      {
-        error: extractErrorLogFields(errorEvent),
-        metadata: errorEvent.metadata,
-        stack: errorEvent.stack,
-      },
-      "error_recorded",
-    );
+    this.options.logger[errorEvent.severity](errorRecordedLogFields(errorEvent), "error_recorded");
 
     await Promise.all((this.options.sinks ?? []).map(async (sink) => {
       try {

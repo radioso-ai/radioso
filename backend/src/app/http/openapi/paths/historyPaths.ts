@@ -61,7 +61,17 @@ export const registerHistoryPaths = (
     request: {
       query: z.object(historyItemsFilters()),
     },
-    responses: historyItemsResponses,
+    responses: {
+      ...historyItemsResponses,
+      400: {
+        description: "Invalid query, including a `q` text search, which belongs in the body of `POST /api/v1/history/query`",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
   });
 
   registry.registerPath({

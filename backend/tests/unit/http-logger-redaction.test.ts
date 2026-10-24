@@ -79,4 +79,37 @@ describe("HTTP request log line", () => {
     expect(requestLog?.req).toEqual({ id: "req-redaction-test", method: "GET", url: "/health" });
     expect(requestLog?.res).toEqual({ statusCode: 200 });
   });
+
+  it("carries the request's trace id so a line joins Cloud Run's request log", async () => {
+    const { logger, lines } = createCapturedLogger();
+    const app = express();
+    app.use(createHttpLogger(logger));
+    app.get("/health", (_req, res) => {
+      res.status(200).end();
+    });
+
+    await request(app).get("/health").set("x-cloud-trace-context", "105445aa7843bc8bf206b12000100000/1;o=1").expect(200);
+    await request(app).get("/health").set("x-cloud-trace-context", `${visitorWords}/1;o=1`).expect(200);
+
+    const requestLogs = lines.join("").trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(requestLogs[0]?.req).toMatchObject({ traceId: "105445aa7843bc8bf206b12000100000" });
+    expect(requestLogs[1]?.req).not.toHaveProperty("traceId");
+    expect(lines.join("")).not.toContain(visitorWords);
+  });
+
+  it("names a failed request's error by its class alone", async () => {
+    const { logger, lines } = createCapturedLogger();
+    const app = express();
+    app.use(createHttpLogger(logger));
+    app.get("/boom", (_req, res) => {
+      (res as { err?: Error }).err = new TypeError(`Could not book "${visitorWords}"`);
+      res.status(500).end();
+    });
+
+    await request(app).get("/boom").expect(500);
+
+    const requestLog = JSON.parse(lines.join("").trim().split("\n").at(-1) ?? "{}") as Record<string, unknown>;
+    expect(lines.join("")).not.toContain(visitorWords);
+    expect(requestLog.err).toEqual({ type: "TypeError" });
+  });
 });

@@ -41,8 +41,43 @@ describe("error_recorded log line", () => {
 
     expect(raw()).not.toContain(visitorWords);
     expect(line().error).toMatchObject({ errorType: "chat.turn.failed", severity: "error", errorClass: "TypeError" });
-    expect(stackLines(line()).length).toBeGreaterThan(0);
+    expect(stackLines(line())[0]).toContain("error-recorded-log-line.test.ts");
     expect(stackLines(line()).every((frame) => frame.trimStart().startsWith("at "))).toBe(true);
+  });
+
+  it("keeps the frames of private methods, accessors, symbols and non-ASCII names", async () => {
+    const { service, line } = captureErrorLog();
+    const frames = [
+      "    at #transformResult (file:///app/node_modules/kysely/dist/esm/query-executor.js:12:5)",
+      "    at get value (/app/dist/modules/chat/slot.js:4:9)",
+      "    at Array.[Symbol.iterator] (<anonymous>)",
+      "    at prüfeEingabe (/app/dist/modules/routines/validate.js:7:3)",
+      "    at async Promise.all (index 0)",
+      "    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)",
+      "    at C:\\app\\dist\\index.js:1:2",
+      "async*render@/_next/static/chunks/app.js:3:4",
+    ];
+
+    await service.report({ errorType: "chat.turn.failed", stack: ["Error: failed", ...frames].join("\n") });
+
+    expect(stackLines(line())).toEqual(frames);
+  });
+
+  it("drops message lines that only resemble a frame", async () => {
+    const { service, line } = captureErrorLog();
+
+    await service.report({
+      errorType: "chat.turn.failed",
+      stack: [
+        "Error: booking failed",
+        "    at 10:30:00",
+        "    at home (see:1:2)",
+        `    at ${"a/".repeat(20_000)}:1:2`,
+        "    at handler (/app/dist/index.js:1:2)",
+      ].join("\n"),
+    });
+
+    expect(stackLines(line())).toEqual(["    at handler (/app/dist/index.js:1:2)"]);
   });
 
   it("drops each line of a multi-line message, even one indented like a frame", async () => {
@@ -101,6 +136,37 @@ describe("error_recorded log line", () => {
 
     expect(raw()).not.toContain(visitorWords);
     expect(line().metadata).toEqual({ notification: "visitor_push", messageId, attempt: 2, retried: true });
+  });
+
+  it("keeps a dead-lettered job's kind and error summary", async () => {
+    const { service, line } = captureErrorLog();
+    const jobId = randomUUID();
+
+    await service.report({
+      errorType: "background_job.dead_lettered",
+      metadata: { kind: "document.process", attempt: 5, jobId, lastError: "AppError [document_not_found]" },
+    });
+    await service.report({
+      errorType: "background_job.poll_failed",
+      metadata: { errorClass: `TypeError: ${visitorWords}`, lastError: visitorWords, kind: visitorWords },
+    });
+
+    expect(line().metadata).toEqual({ kind: "document.process", attempt: 5, jobId, lastError: "AppError [document_not_found]" });
+  });
+
+  it("drops correlation values that are not ids", async () => {
+    const { service, line, raw } = captureErrorLog();
+    const conversationId = randomUUID();
+
+    await service.report({
+      errorType: "http.request.unhandled",
+      error: new Error("boom"),
+      correlation: { requestId: "17", workspaceId: visitorWords, conversationId, accountId: "not an id", method: "GET", route: "/api/v1/history" },
+    });
+
+    expect(raw()).not.toContain(visitorWords);
+    expect(raw()).not.toContain("not an id");
+    expect(line().error).toMatchObject({ requestId: "17", conversationId, method: "GET", route: "/api/v1/history" });
   });
 
   it("logs nothing of a thrown non-error value", async () => {

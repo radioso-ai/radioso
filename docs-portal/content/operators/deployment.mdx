@@ -291,6 +291,19 @@ Each row names the original routine pin and why Radioso could not bind that conv
 those conversations out of service until the pin has been investigated and the operator has a
 safe recovery path for that exact routine state.
 
+## Database connection encryption
+
+The backend, document worker and crawler worker connect to Postgres over TLS: Terraform sets `PGSSLMODE=no-verify` on all three services, and the Node.js Postgres driver reads it whenever `DATABASE_URL` carries no TLS settings of its own. Whether Cloud SQL also refuses unencrypted connections is a per-stack switch, `db_require_encrypted_connections`, and it starts off.
+
+To turn it on for a stack:
+
+1. Apply Terraform for the stack, so every service runs a revision with `PGSSLMODE`. Any image works, because the driver reads the variable itself.
+2. Run the check in [Encryption](/operators/encryption#check-that-database-connections-are-encrypted) against the stack's database. Every application name should show all of its sessions encrypted.
+3. Set `db_require_encrypted_connections = true` for the stack and apply. The instance updates in place; plan it for a quiet window in case Cloud SQL restarts it.
+4. Run the check again.
+
+A one-off `psql` session needs nothing extra: `psql` tries TLS first by default.
+
 ## Conversation erasure keys
 
 The `228_conversation_erasure_*` migrations give each table that names a conversation a cascading key, one table per migration, and add the indexes the cascade and the erasers look rows up by. Each one waits at most three seconds for its table's lock; a deploy that hits that rolls back whole, and running it again is safe. `229_conversation_erasure_links_validate` then removes rows whose conversation is already gone and validates the keys without blocking reads or writes.

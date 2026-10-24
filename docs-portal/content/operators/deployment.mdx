@@ -196,7 +196,7 @@ The sweep runs in the document worker, so retention happens only where that proc
 
 The conversation retention sweep runs in the document worker every 15 minutes and enforces each workspace's retention window and the fixed windows on summaries, routine state and raw inbound mail (see [Data retention](/operators/data-retention)). Under the Cloud Run task runtime the trigger is a scheduled push to `POST /internal/tasks/periodic-tasks/conversation-retention/run`; the bundled Terraform provisions the Cloud Scheduler job (override the cadence with `conversation_retention_schedule`) and alerts on its failures with the other scheduler jobs.
 
-The same Terraform pins how long deleted data outlives an erasure: seven Cloud SQL backups, and 30 days in the project's `_Default` log bucket. Before the first apply in a project, confirm that bucket is in `global` with `gcloud logging buckets describe _Default --location=global --project=<project>`.
+The same Terraform pins how long deleted data outlives an erasure: seven Cloud SQL backups, and 30 days of logs, in the project's `_Default` log bucket or, where an environment's foundation root sets `regional_log_bucket_enabled`, in that environment's regional bucket (see [Data residency](/operators/data-residency#google-cloud-logging)). Before the first apply in a project, confirm `_Default` is in `global` with `gcloud logging buckets describe _Default --location=global --project=<project>`.
 
 Point-in-time recovery is a per-stack choice, `db_point_in_time_recovery_enabled`, off by default; when on, it keeps 7 days of transaction logs. Turning it on restarts the Cloud SQL instance, so enable it per stack deliberately, in a quiet window, and never as a side effect of an unrelated apply.
 
@@ -290,6 +290,19 @@ ORDER BY created_at, conversation_id;
 Each row names the original routine pin and why Radioso could not bind that conversation. Keep
 those conversations out of service until the pin has been investigated and the operator has a
 safe recovery path for that exact routine state.
+
+## Database connection encryption
+
+The backend, document worker and crawler worker connect to Postgres over TLS: Terraform sets `PGSSLMODE=no-verify` on all three services, and the Node.js Postgres driver reads it whenever `DATABASE_URL` carries no TLS settings of its own. Whether Cloud SQL also refuses unencrypted connections is a per-stack switch, `db_require_encrypted_connections`, and it starts off.
+
+To turn it on for a stack:
+
+1. Apply Terraform for the stack, so every service runs a revision with `PGSSLMODE`. Any image works, because the driver reads the variable itself.
+2. Run the check in [Encryption](/operators/encryption#check-that-database-connections-are-encrypted) against the stack's database. Every application name should show all of its sessions encrypted.
+3. Set `db_require_encrypted_connections = true` for the stack and apply. The instance updates in place; plan it for a quiet window in case Cloud SQL restarts it.
+4. Run the check again.
+
+A one-off `psql` session needs nothing extra: `psql` tries TLS first by default.
 
 ## Conversation erasure keys
 

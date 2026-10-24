@@ -50,6 +50,10 @@ module "foundation" {
   # _Default log bucket.
   manage_project_services = false
 
+  # live-eu is the EU stack, so its log entries stay in europe-west1 rather than in the
+  # project's global _Default bucket, which live's entries keep using.
+  regional_log_bucket_enabled = true
+
   # Named apart from live's pool so the two coexist in one project.
   github_actions_workload_identity_pool_id     = local.pool_id
   github_actions_workload_identity_provider_id = local.pool_id

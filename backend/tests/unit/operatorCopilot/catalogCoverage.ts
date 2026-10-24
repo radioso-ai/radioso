@@ -143,6 +143,9 @@ const accountWideUsageAnalytics = deferred(
 const duplicateSettingsWritePath = permanent(
   "Permanent exclusion: this writes flat the same assistant and channel fields updatePlatformSettings writes grouped, through the same service. propose_workspace_setting applies through that one path, and exposing the second shape would let two cards mean the same change while each one's version check saw only its own draft.",
 );
+const historyTextSearch = deferred(
+  "queryHistory is the merged history list with a text search over conversation titles and first visitor messages, carried in a request body so the search stays out of request logs. conversation_history_search lists recent conversations by limit alone; nobody has reviewed whether Ray should search conversations by a visitor's words.",
+);
 const workspaceModelSelection = deferred(
   "Deferred to its own proposal shape: chat, rewrite, and rerank preferences are per-capability rows rather than the one assistant-and-channel surface propose_workspace_setting replaces, and a model whose provider holds no credential would break every answer, so the draft has to refuse one before an operator can apply it. The embedding-model switch stays behind its own never-list entry.",
 );
@@ -382,6 +385,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ], webhookDestinationConfiguration),
   ...coverage(["deleteWebhookDestination"], webhookDestinationRemoval),
   ...coverage(["updateGeneralSettings"], duplicateSettingsWritePath),
+  ...coverage(["queryHistory"], historyTextSearch),
   ...coverage(["updateWorkspaceLlmModels"], workspaceModelSelection),
   ...coverage(["reprocessWorkspaceIngestion"], workspaceWideReprocess),
   ...coverage(["uploadAssistantLogo", "deleteAssistantLogo", "getAgentAssistantLogo"], brandAssetIsOperatorSupplied),

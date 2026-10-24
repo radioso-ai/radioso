@@ -120,6 +120,12 @@ variable "db_point_in_time_recovery_enabled" {
   default     = false
 }
 
+variable "db_require_encrypted_connections" {
+  description = "Whether Cloud SQL refuses connections that are not encrypted with TLS. Turn it on only after the stack's runtimes connect with PGSSLMODE set."
+  type        = bool
+  default     = false
+}
+
 variable "db_deletion_protection" {
   description = "Enable deletion protection on Cloud SQL instance (disable for dev/staging)"
   type        = bool

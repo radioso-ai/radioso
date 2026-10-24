@@ -211,11 +211,13 @@ We keep personal data only as long as needed for the purposes above:
 - **Account data** — for the life of the account, then deleted or anonymized
   within **30 days** after closure.
 - **Ingested content and conversations (Cloud)** — for as long as the workspace
-  keeps them, or until you delete them; deletions propagate to derived chunks and
-  vectors. Backups are purged within **35 days** on our standard backup cycle.
-- **Operational logs** — up to **90 days**.
+  keeps them, until you delete them, or until the workspace's retention window
+  erases them; deletions propagate to every derived copy. Deleted data stays in
+  database backups until they age out, after at most **7 days**.
+- **Operational logs** — **30 days**.
 - **Audit and security events** — up to **12 months**, because they support
-  security investigations and abuse detection.
+  security investigations and abuse detection. [Owner: true only once #1609
+  ships; today audit events have no expiry.]
 - **Billing and accounting records** — retained for **7 years**, as required by
   Estonian accounting law.
 

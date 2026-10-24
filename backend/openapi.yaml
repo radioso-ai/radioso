@@ -33325,6 +33325,12 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/HistoryItemsResponse"
+        "400":
+          description: Invalid query, including a `q` text search, which belongs in the body of `POST /api/v1/history/query`
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
         "401":
           description: Authentication required
           content:

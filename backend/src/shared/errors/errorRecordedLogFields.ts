@@ -1,12 +1,10 @@
 import { extractErrorLogFields } from "../observability/logger.js";
-import { isCode, isStackFrame, isUuid } from "../observability/logging/logSafeValues.js";
+import { isStackFrame, logSafeMetadata, type LogSafeValue } from "../observability/logging/logSafeValues.js";
 import type { ErrorEvent } from "./errorTypes.js";
-
-type LoggableValue = string | number | boolean;
 
 interface ErrorRecordedLogFields {
   error?: Record<string, string>;
-  metadata?: Record<string, LoggableValue>;
+  metadata?: Record<string, LogSafeValue>;
   stack?: string;
 }
 
@@ -17,15 +15,12 @@ interface ErrorRecordedLogFields {
 
 // Metadata keys whose values the reporting code picks from a closed set: an action outbox event
 // (actionDrainAfterCommit.ts), an ownership action and notification (committedOwnershipAudit.ts),
-// and a frontend report's source (observabilityRoutes.ts). Each value must still be a code.
-const CODED_FIELDS = new Set(["event", "action", "notification", "source"]);
+// a frontend report's source (observabilityRoutes.ts), and a background job's kind
+// (backgroundJobRuntime.ts). Each value must still be a code.
+const CODED_FIELDS = new Set(["event", "action", "notification", "source", "kind"]);
 
-const isLoggable = (key: string, value: unknown): value is LoggableValue => {
-  if (typeof value === "boolean") return true;
-  if (typeof value === "number") return Number.isFinite(value);
-  if (typeof value !== "string") return false;
-  return isUuid(value) || (CODED_FIELDS.has(key) && isCode(value));
-};
+// A background job's error summary, its class and code (backgroundJobRuntime.ts).
+const ERROR_SUMMARY_FIELDS = new Set(["errorClass", "lastError"]);
 
 const stackFrames = (stack: string | undefined): string | undefined => {
   const frames = (stack ?? "").split("\n").filter(isStackFrame);
@@ -33,14 +28,12 @@ const stackFrames = (stack: string | undefined): string | undefined => {
 };
 
 export const errorRecordedLogFields = (event: ErrorEvent): ErrorRecordedLogFields => {
-  const metadata = Object.fromEntries(
-    Object.entries(event.metadata ?? {}).filter((entry): entry is [string, LoggableValue] => isLoggable(...entry)),
-  );
+  const metadata = logSafeMetadata(event.metadata, { coded: CODED_FIELDS, errorSummary: ERROR_SUMMARY_FIELDS });
   const stack = stackFrames(event.stack);
 
   return {
     error: extractErrorLogFields(event),
-    ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
+    ...(metadata ? { metadata } : {}),
     ...(stack ? { stack } : {}),
   };
 };

@@ -25438,6 +25438,15 @@ export interface operations {
                     "application/json": components["schemas"]["HistoryItemsResponse"];
                 };
             };
+            /** @description Invalid query, including a `q` text search, which belongs in the body of `POST /api/v1/history/query` */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Authentication required */
             401: {
                 headers: {

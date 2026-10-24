@@ -51,6 +51,21 @@ const speakerOver = (store: ReturnType<typeof claimStore>, overrides: { claimTur
 };
 
 describe("operator reply speaker", () => {
+  it("warns which note failed, ids only, when the spoken replies cannot be audited", async () => {
+    const store = claimStore([fourWorks]);
+    const { speaker, logger, audit } = speakerOver(store);
+    audit.mockRejectedValue(new Error("audit store unavailable"));
+    await speaker.claim(conversationId);
+
+    await speaker.settle(2);
+
+    expect(store.speech.get(fourWorks.messageId)).toEqual({ state: "spoken" });
+    expect(logger.warn).toHaveBeenCalledWith(
+      { agentId: session.agentId, vendor: "elevenlabs", conversationId, errorClass: "Error", note: "operator_reply_spoken" },
+      "Voice turn note could not be recorded",
+    );
+  });
+
   it("claims the pending replies in one write and speaks those with words as pieces that are never the last", async () => {
     const store = claimStore([wordless, fourWorks]);
     const { speaker } = speakerOver(store);

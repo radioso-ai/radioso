@@ -9391,6 +9391,20 @@ export interface components {
             negativeFeedback: components["schemas"]["QualityStatsMetric"];
             skillFailures: components["schemas"]["QualityStatsMetric"];
         };
+        QualityVoiceStats: {
+            /** @description Voice conversations with at least one answered turn in the window. */
+            calls: number;
+            /** @description The agent's turns on those calls, a reply the caller cut off mid-stream included and a teammate's reply not. */
+            turns: number;
+            /** @description Median time from a turn's start to its first speech (the reply's or the fallback line's; a bridge line does not count), over turns that recorded one. Null when none did. */
+            firstSpeechMedianMs: number | null;
+            /** @description Turns that reached the voice turn limit before they spoke. */
+            turnLimitTurns: number;
+            /** @description Turns whose reply the caller spoke over, cut off mid-stream or after it finished. */
+            interruptions: number;
+            /** @description Calls in which a turn's outcome asked for a callback, counted once per call. At most `calls`. */
+            callbackCalls: number;
+        };
         QualityStats: {
             range: components["schemas"]["QualityStatsRange"];
             filters: {
@@ -9416,6 +9430,8 @@ export interface components {
                 reason: components["schemas"]["QualityResolutionReason"] | "unspecified";
                 count: number;
             }[];
+            /** @description The current window's voice calls, for the request's agent. Null when the window has no voice turns, or `channel` names another channel. */
+            voice: components["schemas"]["QualityVoiceStats"] | null;
         };
         SetQualityTriageRequest: {
             state: components["schemas"]["QualityTriageState"];

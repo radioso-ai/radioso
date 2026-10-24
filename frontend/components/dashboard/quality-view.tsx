@@ -104,7 +104,9 @@ import {
   useDashboardQueryPolicy,
 } from '@/components/providers/dashboard-query-provider'
 import { resolveQueueScope } from '@/lib/quality-signals'
+import { formatDuration } from '@/lib/quality-stats'
 import { QualityHealthRow } from '@/components/dashboard/quality/quality-health-row'
+import { QualityVoiceSection } from '@/components/dashboard/quality/quality-voice-section'
 import {
   CloseReviewPopover,
   REASON_LABELS,
@@ -259,17 +261,6 @@ const dateFormatter = new Intl.DateTimeFormat(undefined, {
 const formatTimestamp = (iso: string) => {
   const date = new Date(iso)
   return Number.isNaN(date.getTime()) ? iso : dateFormatter.format(date)
-}
-
-const formatDuration = (durationMs: number | null): string => {
-  if (durationMs === null) {
-    return '—'
-  }
-  if (durationMs < 1000) {
-    return `${durationMs} ms`
-  }
-  const seconds = durationMs / 1000
-  return `${seconds >= 10 ? Math.round(seconds) : seconds.toFixed(1)} s`
 }
 
 const formatPageSummary = ({
@@ -1519,6 +1510,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
           isRefreshing={isStatsFetching}
           error={statsError}
         />
+        {stats?.voice ? <QualityVoiceSection voice={stats.voice} /> : null}
         <ResolutionBreakdown stats={stats} onSelect={applyResolutionBreakdown} />
       </div>
 

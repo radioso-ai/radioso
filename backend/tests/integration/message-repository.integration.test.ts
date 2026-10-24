@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { MessageRepository } from "../../src/db/repositories/messageRepository.js";
+import type { VoiceTurnFacts } from "../../src/modules/chat/contracts/index.js";
 import { VOICE_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../src/shared/domain/cursorPagination.js";
 import { Database } from "../../src/shared/infra/database.js";
@@ -194,6 +195,70 @@ describeIntegration("MessageRepository (Postgres)", () => {
     expect((await repository.findByIdAndWorkspaceId(workspaceId, question.id))?.metadata).not.toHaveProperty("interruption");
     expect((await repository.findByIdAndWorkspaceId(workspaceId, otherReply.id))?.metadata).not.toHaveProperty("interruption");
     expect((await repository.findByIdAndWorkspaceId(workspaceId, otherReply.id))?.interruption).toBeUndefined();
+  });
+
+  describe("a voice turn's facts on its stored reply", () => {
+    const facts: VoiceTurnFacts = { firstSpeechMs: 2_140, bridged: true, turnLimitReached: false, outcome: "continue" };
+    const record = (messageId: string, recorded: Partial<VoiceTurnFacts> = {}, conversation = conversationId, workspace = workspaceId) =>
+      repository.recordVoiceTurnFacts({ workspaceId: workspace, conversationId: conversation, messageId, ...facts, ...recorded });
+    const storedFacts = async (messageId: string) => (await repository.findByIdAndWorkspaceId(workspaceId, messageId))?.metadata?.voice;
+
+    it("keeps the facts under `voice` with when they were recorded, beside the reply's other metadata", async () => {
+      const suggestions = [{ kind: "question", label: "Opening hours?" }];
+      const reply = await repository.create({ conversationId, workspaceId, role: "assistant", content: "We open at nine.", metadata: { suggestions } });
+
+      await expect(record(reply.id)).resolves.toBe(true);
+
+      const reloaded = await repository.findByIdAndWorkspaceId(workspaceId, reply.id);
+      expect(reloaded?.content).toBe("We open at nine.");
+      expect(reloaded?.metadata).toEqual({ suggestions, voice: { ...facts, recordedAt: expect.any(String) } });
+    });
+
+    it("keeps the first facts whole when the reply's facts are recorded again, with the same facts or others", async () => {
+      const reply = await repository.create({ conversationId, workspaceId, role: "assistant", content: "We open at nine." });
+
+      await expect(record(reply.id)).resolves.toBe(true);
+      const first = await storedFacts(reply.id);
+      await expect(record(reply.id)).resolves.toBe(true);
+      await expect(record(reply.id, { firstSpeechMs: null, turnLimitReached: true, outcome: "callback_requested" })).resolves.toBe(true);
+
+      expect(await storedFacts(reply.id)).toEqual(first);
+    });
+
+    it("records facts on a reply whose metadata holds a null voice block, and keeps an interruption marker beside them", async () => {
+      const reply = await repository.create({ conversationId, workspaceId, role: "assistant", content: "We open at nine.", metadata: { voice: null } });
+      await repository.markReplyInterrupted({ workspaceId, conversationId, messageId: reply.id, heardCharacterCount: 7, spokenCharacterCount: 16 });
+
+      await expect(record(reply.id, { firstSpeechMs: null, bridged: false, outcome: null })).resolves.toBe(true);
+
+      const reloaded = await repository.findByIdAndWorkspaceId(workspaceId, reply.id);
+      expect(reloaded?.metadata?.voice).toEqual({ firstSpeechMs: null, bridged: false, turnLimitReached: false, outcome: null, recordedAt: expect.any(String) });
+      expect(reloaded?.interruption).toEqual({ heardCharacterCount: 7, spokenCharacterCount: 16, partial: false });
+    });
+
+    it("stores the closed fields only, whatever else the facts carry", async () => {
+      const reply = await repository.create({ conversationId, workspaceId, role: "assistant", content: "We open at nine." });
+
+      await expect(repository.recordVoiceTurnFacts({ workspaceId, conversationId, messageId: reply.id, ...facts, transcript: "When do you open?" } as never))
+        .resolves.toBe(true);
+
+      expect(await storedFacts(reply.id)).toEqual({ ...facts, recordedAt: expect.any(String) });
+    });
+
+    it("leaves a message alone that is not an assistant reply of the conversation", async () => {
+      const otherConversationId = randomUUID();
+      await database.query(`INSERT INTO conversations (id, workspace_id) VALUES ($1,$2)`, [otherConversationId, workspaceId]);
+      const question = await repository.create({ conversationId, workspaceId, role: "user", content: "When do you open?" });
+      const otherReply = await repository.create({ conversationId: otherConversationId, workspaceId, role: "assistant", content: "At nine." });
+
+      await expect(record(question.id)).resolves.toBe(false);
+      await expect(record(otherReply.id)).resolves.toBe(false);
+      await expect(record(otherReply.id, {}, otherConversationId, randomUUID())).resolves.toBe(false);
+      await expect(record(randomUUID())).resolves.toBe(false);
+
+      expect(await storedFacts(question.id)).toBeUndefined();
+      expect((await repository.findByIdAndWorkspaceId(workspaceId, otherReply.id))?.metadata).not.toHaveProperty("voice");
+    });
   });
 
   describe("tail re-delivery of marked replies", () => {

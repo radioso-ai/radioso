@@ -121,6 +121,8 @@ module "radioso" {
   monitoring_cloudsql_disk_threshold        = var.monitoring_cloudsql_disk_threshold
   monitoring_queue_depth_threshold          = var.monitoring_queue_depth_threshold
   monitoring_scheduler_failure_threshold    = var.monitoring_scheduler_failure_threshold
+  monitoring_voice_turn_limit_threshold     = var.monitoring_voice_turn_limit_threshold
+  monitoring_voice_abandoned_turn_threshold = var.monitoring_voice_abandoned_turn_threshold
   container_health_probes_enabled           = var.container_health_probes_enabled
   ops_event_webhook_url                     = var.ops_event_webhook_url
   ops_event_webhook_secret                  = var.ops_event_webhook_secret

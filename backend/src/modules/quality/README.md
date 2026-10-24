@@ -91,6 +91,33 @@ is the failure this module exists to prevent. Both exclusions are NULL-safe;
 that is load-bearing, since `NOT IN` yields NULL rather than TRUE for a NULL
 column and would silently drop real turns.
 
+`turnPopulationSql.ts` names two populations. `buildConversationTurnFilters`
+holds the agent's turns in real conversations: the workspace scope, the
+conversation join, the agent and channel filters, and both exclusions above.
+`buildTurnPopulationFilters`, the AI-quality population every signal and rate
+reads, is those turns with whole answers only: it leaves out the heard part of
+a voice reply cut off mid-stream.
+
+The stats' `voice` block counts the current window's calls over the conversation
+turns pinned to the voice channel, because a turn the caller heard belongs to
+the call even when it is no whole answer. A call is a voice conversation with at least one
+such turn. Those turns are the ones that stored a reply: a voice turn that hit
+the turn limit and stored none (a switch's follow-up on another instance, a
+reply that failed after the limit) is counted by the voice turn health alert
+and `voice_turn_limit_total`, but not here, so the alert can read higher than
+`turnLimitTurns`. Timing, turn limit and outcome come from the facts the voice channel
+keeps on each stored reply, read by the field names of chat's
+`contracts/voiceTurnFacts.ts` under `metadata_json.voice`; a value of another
+JSON type reads as none, so a malformed block never fails the response.
+Quality counts the facts and never interprets voice policy. The block is its
+own statement (`buildQualityVoiceStatsQuery`), null without voice turns or on a
+request pinned to another channel, and the request's agent applies. It runs only
+after `buildQualityVoiceActivityQuery`, an `EXISTS` over the same filters
+(`buildVoiceTurnWindowFilters`), finds a voice turn in the window, so a
+workspace without calls pays one existence check instead of the voice
+aggregate over the window's turns. It cannot ride on the daily statement: distinct
+calls and a median do not add up across day buckets.
+
 Rates are reported with the population they are measured over, and report `null`
 rather than a number when that population is empty. Backlog counts are all-time
 and ignore the health window, so an untriaged turn never disappears because it

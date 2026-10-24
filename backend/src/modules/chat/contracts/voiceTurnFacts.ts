@@ -10,7 +10,9 @@ export const VOICE_TURN_FACTS_METADATA_KEY = "voice";
 /**
  * How the voice turn that stored a reply went for its caller, as the voice channel measured it.
  * `firstSpeechMs`: from the start of the turn to its first speech, the reply's or the fallback
- * line's (a bridge line does not count), null when the turn spoke neither; `bridged`: a bridge
+ * line's (a bridge line does not count); null when the turn spoke neither, when the voice runtime
+ * did not stream the response (it hears the speech only with the outcome), or when the channel
+ * cannot time the caller's wait; `bridged`: a bridge
  * line was spoken before it; `turnLimitReached`: the turn reached the turn limit before it spoke;
  * `outcome`: what the voice runtime was told to do next, null when the turn ended without one.
  * Timings and closed values only, never what was said.

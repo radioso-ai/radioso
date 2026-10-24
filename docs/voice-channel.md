@@ -1132,7 +1132,10 @@ call.
 
 The card shows only for a period with voice turns, and not when the page is
 filtered to another channel. "First words" reads "—" when no turn measured it:
-a turn measures it when the agent's voice settings are on.
+a turn measures it when the agent's voice settings are on and the runtime
+streams the response. A request sent with `stream: false` gets its speech only
+with the outcome, so its turns count everywhere else on the card but keep no
+first-words time.
 
 Each turn keeps these facts with the reply it stored (`messages.metadata_json.voice`):
 `firstSpeechMs`, `bridged`, `turnLimitReached`, `outcome` and `recordedAt`.

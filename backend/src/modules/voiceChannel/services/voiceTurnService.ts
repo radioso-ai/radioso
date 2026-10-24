@@ -229,12 +229,18 @@ const reachedSpeechOf = (record: VoiceTurnRecord): ReachedSpeech => ({
 });
 
 /**
+ * When the caller first heard the turn, from its start: the policy's first speech, timed from the
+ * switched turn's start on a follow-up that speaks a switched turn's answer. Unknown (null) on a
+ * follow-up that holds no switched turn here, which can time only its own request, and on a
+ * response that is not streamed, whose speech reaches the runtime only with the outcome.
+ */
+const firstSpeechMsOf = (record: VoiceTurnRecord): number | null =>
+  record.languageSwitch === "unheld" || !record.streamsSpeech ? null : record.policy?.firstSpeechMs ?? null;
+
+/**
  * The facts the turn keeps on the reply it spoke of its own, with that reply's id; null when it
  * stored none. A replay speaks an earlier turn's reply, which keeps that turn's facts, and a turn
- * that switched the call's language speaks nothing: its follow-up keeps the facts of its answer,
- * timed from the switched turn's start. A follow-up that holds no switched turn here can time only
- * its own request, so the caller's wait since the switched turn started is unknown: its facts
- * carry no first-speech time.
+ * that switched the call's language speaks nothing: its follow-up keeps the facts of its answer.
  */
 const turnFactsOf = (record: VoiceTurnRecord): { assistantMessageId: string; facts: VoiceTurnFacts } | null => {
   const assistantMessageId = chatTurnOf(record).reply?.messageId;
@@ -245,7 +251,7 @@ const turnFactsOf = (record: VoiceTurnRecord): { assistantMessageId: string; fac
   return {
     assistantMessageId,
     facts: {
-      firstSpeechMs: record.languageSwitch === "unheld" ? null : record.policy?.firstSpeechMs ?? null,
+      firstSpeechMs: firstSpeechMsOf(record),
       bridged: record.policy?.bridged ?? false,
       turnLimitReached: record.policy?.turnLimitReached ?? false,
       outcome: outcome?.kind ?? null,

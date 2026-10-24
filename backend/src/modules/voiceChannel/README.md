@@ -718,8 +718,9 @@ helpers and the shared chat message limit from `app/http`
 - **A turn's facts live on the reply it stored.** Once a turn has ended and
   its record is final, the service notes the facts of the reply it stored and
   spoke (`turnFacts`): `firstSpeechMs` (the reply's or the fallback line's first
-  speech, timed from the turn's start; null when the voice policy did not run
-  or nothing was spoken), `bridged`, `turnLimitReached` and `outcome`
+  speech, timed from the turn's start; null when the voice policy did not run,
+  nothing was spoken, or the response is not streamed, whose speech the
+  runtime gets only with the outcome), `bridged`, `turnLimitReached` and `outcome`
   (`continue`, `callback_requested`). Composition keeps them through chat's
   `VoiceTurnFactsRecorder` (`chat/contracts/voiceTurnFacts.ts`) as
   `messages.metadata_json.voice`, with `recordedAt`; the first facts on a reply

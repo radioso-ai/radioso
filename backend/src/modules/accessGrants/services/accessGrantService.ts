@@ -44,7 +44,7 @@ export type AccessGrantLifecycleActor = {
   id: string;
 };
 
-export interface AccessGrantIssueInput {
+interface AccessGrantIssueInput {
   agentId: string;
   workspaceId: string;
   accountId?: string | null;
@@ -57,7 +57,7 @@ export interface AccessGrantIssueInput {
   expiresAt?: Date | null;
 }
 
-export interface PublicLaunchMigrationInput {
+interface PublicLaunchMigrationInput {
   agentId: string;
   workspaceId: string;
   label?: string | null;
@@ -74,8 +74,8 @@ export class AccessGrantService {
       if (input.channel !== "mcp-converse" && input.channel !== "agent-api") {
         throw badRequest("Agent channel credentials require an MCP or REST audience.");
       }
-      if (!input.expiresAt || input.expiresAt.getTime() <= Date.now()) {
-        throw badRequest("Agent channel credentials require a future expiry.");
+      if (input.expiresAt && input.expiresAt.getTime() <= Date.now()) {
+        throw badRequest("Agent channel credential expiry must be in the future.");
       }
     }
     const token = generateApiToken();
@@ -436,6 +436,8 @@ export class AccessGrantService {
         actor: input.actor ?? null,
         audience: accessGrantAudience(input.grant.channel),
         label: input.grant.label,
+        // Null marks a credential that never expires, so the audit trail can find them.
+        expiresAt: input.grant.expiresAt ? input.grant.expiresAt.toISOString() : null,
         reason: input.reason ?? null,
         auditCorrelationId: randomUUID(),
         ...requestAuditMetadata(eventType),

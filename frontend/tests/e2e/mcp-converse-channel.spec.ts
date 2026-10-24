@@ -85,7 +85,7 @@ test("operator connects an MCP client, rotates it, and revokes it", async ({ pag
   const connectDialog = page.getByRole("dialog", { name: "Connect a client" });
   await connectDialog.getByRole("radio", { name: "Claude Code" }).check();
   await expect(connectDialog.getByLabel("Label")).toHaveValue("Claude Code");
-  await expect(connectDialog.getByLabel("Expires")).not.toHaveValue("");
+  await expect(connectDialog.getByLabel("Expires")).toHaveValue("never");
   await connectDialog.getByRole("button", { name: "Create credential & get config" }).click();
 
   // The mock issues tokens at index credentials.length + 1; one client is seeded above.
@@ -95,16 +95,17 @@ test("operator connects an MCP client, rotates it, and revokes it", async ({ pag
   await expect(configDialog.getByText(`Bearer ${issuedSecret}`)).toBeVisible();
 
   await expect.poll(() => credentialRequests.some((request) => {
-    const body = request.body as { audience?: string; label?: string; expiresAt?: string } | undefined;
+    const body = request.body as { audience?: string; label?: string; expiresAt?: string | null } | undefined;
     return request.method === "POST"
       && request.path === `/agents/${defaultAgentId}/channel-credentials`
       && body?.audience === "mcp"
       && body.label === "Claude Code"
-      && Boolean(body.expiresAt);
+      && body.expiresAt === null;
   })).toBe(true);
 
   await acknowledgeAndFinish(page, "Finish connecting — Claude Code");
   await expect(page.getByText(issuedSecret)).toHaveCount(0);
+  await expect(card.getByText(/Never expires/)).toBeVisible();
 
   await openRowMenu(page, "Acme pilot");
   await page.getByRole("menuitem", { name: "Rotate" }).click();
@@ -142,7 +143,7 @@ test("operator connects an MCP client, rotates it, and revokes it", async ({ pag
   await expect(card.getByText("Claude Code", { exact: true })).toBeVisible();
   await openRowMenu(page, 'Claude Code');
   await page.getByRole('menuitem', { name: 'Details', exact: true }).click();
-  await expect(page.getByRole('dialog')).toBeVisible();
+  await expect(page.getByRole('dialog', { name: 'Claude Code' }).getByText('Never expires')).toBeVisible();
 });
 
 test('Skills manages MCP connections in a panel without leaving the page', async ({ page }) => {
@@ -325,7 +326,8 @@ test("operator creates a role-free Agent API credential against the canonical en
   await expect(card.getByLabel("Role")).toHaveCount(0);
 
   await card.getByLabel("Credential label").fill("Production chat client");
-  await expect(card.getByLabel("Expires")).not.toHaveValue("");
+  await card.getByLabel("Expires").selectOption("On a date");
+  await expect(card.getByLabel("Expiry date")).not.toHaveValue("");
   await card.getByRole("button", { name: "Create credential" }).click();
 
   const issuedSecret = "radioso_rest_2_plaintext";
@@ -337,7 +339,7 @@ test("operator creates a role-free Agent API credential against the canonical en
   await expect(page.getByText(issuedSecret)).toHaveCount(0);
 
   await expect.poll(() => credentialRequests.some((request) => {
-    const body = request.body as { audience?: string; label?: string; expiresAt?: string } | undefined;
+    const body = request.body as { audience?: string; label?: string; expiresAt?: string | null } | undefined;
     return request.method === "POST"
       && request.path === `/agents/${defaultAgentId}/channel-credentials`
       && body?.audience === "rest"

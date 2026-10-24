@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { Plus } from 'lucide-react'
 
-import { defaultExpiryDate, expiryInputToIso } from '@/components/dashboard/settings/api-access-dialogs'
+import { CredentialExpiryField, credentialExpiryRequest, initialCredentialExpiry } from '@/components/dashboard/settings/credential-expiry-field'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
@@ -30,20 +30,20 @@ export function McpConnectClientDialog({
   error: string | null
   isSubmitting: boolean
   onOpenChange: (open: boolean) => void
-  onSubmit: (input: { setup: McpClientSetup; label: string; expiresAt: string }) => void
+  onSubmit: (input: { setup: McpClientSetup; label: string; expiresAt: string | null }) => void
 }) {
   const [clientId, setClientId] = useState<McpClientId>(DEFAULT_MCP_CLIENT_ID)
   const [label, setLabel] = useState(() => getMcpClientSetup(DEFAULT_MCP_CLIENT_ID).name)
   const [isLabelEdited, setIsLabelEdited] = useState(false)
-  const [expiry, setExpiry] = useState(() => defaultExpiryDate(90))
-  const expiresAt = expiryInputToIso(expiry)
+  const [expiry, setExpiry] = useState(initialCredentialExpiry)
+  const expiryRequest = credentialExpiryRequest(expiry)
 
   const pickClient = (nextClientId: McpClientId) => {
     setClientId(nextClientId)
     if (!isLabelEdited) setLabel(getMcpClientSetup(nextClientId).name)
   }
 
-  const submitDisabled = isSubmitting || !label.trim() || !expiresAt
+  const submitDisabled = isSubmitting || !label.trim() || !expiryRequest.valid
 
   return (
     <Dialog open onOpenChange={onOpenChange}>
@@ -56,8 +56,8 @@ export function McpConnectClientDialog({
           className="space-y-4"
           onSubmit={(event) => {
             event.preventDefault()
-            if (submitDisabled || !expiresAt) return
-            onSubmit({ setup: getMcpClientSetup(clientId), label: label.trim(), expiresAt })
+            if (submitDisabled || !expiryRequest.valid) return
+            onSubmit({ setup: getMcpClientSetup(clientId), label: label.trim(), expiresAt: expiryRequest.expiresAt })
           }}
         >
           <fieldset className="space-y-1.5">
@@ -98,7 +98,7 @@ export function McpConnectClientDialog({
 
           <div className="space-y-1.5 sm:max-w-[12rem]">
             <Label htmlFor="mcp-connect-expiry">Expires</Label>
-            <Input id="mcp-connect-expiry" type="date" value={expiry} onChange={(event) => setExpiry(event.target.value)} />
+            <CredentialExpiryField id="mcp-connect-expiry" value={expiry} onChange={setExpiry} />
           </div>
 
           {error ? <p role="alert" className="text-sm text-destructive">{error}</p> : null}

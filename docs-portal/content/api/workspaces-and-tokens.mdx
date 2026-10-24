@@ -1,7 +1,7 @@
 ---
 title: "Personal tokens and service accounts"
 description: "Create role-bounded credentials for people and durable service identities for unattended API clients."
-last_updated: 2026-09-24
+last_updated: 2026-10-25
 ---
 
 # Personal tokens and service accounts
@@ -83,7 +83,7 @@ Immediate rotation is intended for a credential you must invalidate at once. It 
 
 Personal tokens and service-account credentials authenticate eligible workspace REST routes. They do not authenticate the MCP server or `POST /api/v1/agents/{agentId}/chat`.
 
-Create a separate agent credential from the agent's **Channels → MCP** or **Channels → API** card. Each credential has one audience, an expiry, and one agent. Its secret is returned once and stored as a hash. A signed-in user with permission to manage that agent can issue, rotate, or revoke it; the agent credential itself cannot manage credentials.
+Create a separate agent credential from the agent's **Channels → MCP** or **Channels → API** card. Each credential has one audience and one agent, plus an expiry date when you set one. Its secret is returned once and stored as a hash. A signed-in user with permission to manage that agent can issue, rotate, or revoke it; the agent credential itself cannot manage credentials.
 
 ## Common failure modes
 

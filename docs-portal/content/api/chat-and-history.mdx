@@ -10,7 +10,7 @@ Use the agent chat endpoint when an API client needs to converse with one config
 
 ## How it works
 
-1. Open the agent's **Channels → API** card and create a REST credential with a label and expiry.
+1. Open the agent's **Channels → API** card and create a REST credential with a label. Add an expiry date if you want it to stop working on its own; otherwise it lasts until you rotate or revoke it.
 2. Copy the one-time secret before closing the result. Radioso stores only its hash.
 3. Send the secret to `POST /api/v1/agents/{agentId}/chat` and choose whether the response should stream.
 4. Reuse `conversationId` when you want continuity across turns.

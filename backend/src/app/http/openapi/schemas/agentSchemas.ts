@@ -398,7 +398,9 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       prefix: z.string(),
       status: z.enum(["active", "expired", "revoked", "disabled"]),
       createdAt: z.string().datetime(),
-      expiresAt: z.string().datetime(),
+      expiresAt: z.string().datetime().nullable().openapi({
+        description: "When the credential stops working. `null` means it never expires: it works until it is rotated or revoked.",
+      }),
       lastUsedAt: z.string().datetime().nullable(),
       revokedAt: z.string().datetime().nullable(),
     }),
@@ -406,7 +408,12 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
 
   const AgentChannelCredentialIssueRequestSchema = registry.register(
     "AgentChannelCredentialIssueRequest",
-    agentChannelCredentialIssueSchema,
+    agentChannelCredentialIssueSchema.extend({
+      expiresAt: agentChannelCredentialIssueSchema.shape.expiresAt.openapi({
+        description: "A future instant when the credential stops working. Omit it, or send `null`, for a credential that never expires: "
+          + "it works until it is rotated or revoked.",
+      }),
+    }),
   );
 
   const AgentChannelCredentialIssueResponseSchema = registry.register(

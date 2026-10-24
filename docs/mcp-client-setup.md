@@ -1,7 +1,7 @@
 ---
 title: "MCP Client Setup"
 description: "Connect an MCP client either to one Radioso agent or to Ray's governed operator tools."
-last_updated: 2026-10-18
+last_updated: 2026-10-24
 ---
 
 # MCP Client Setup
@@ -23,7 +23,7 @@ An MCP-audience agent credential authorizes exactly one agent, and its reach end
 
 ### Mint an MCP credential
 
-Open the agent's **Channels → MCP** card and create a credential with a label and expiry. Any signed-in user with permission to manage that agent can do this; the credential itself carries no workspace role. The plaintext secret is returned once and only its hash is retained, so store it before leaving the result.
+Open the agent's **Channels → MCP** card and create a credential with a label. It keeps working until you rotate or revoke it; pick an expiry date as well if you want it to stop on its own. Any signed-in user with permission to manage that agent can do this; the credential itself carries no workspace role. The plaintext secret is returned once and only its hash is retained, so store it before leaving the result.
 
 ```http
 POST /api/v1/agents/{agentId}/channel-credentials
@@ -35,9 +35,11 @@ Content-Type: application/json
 {
   "audience": "mcp",
   "label": "Cursor on my laptop",
-  "expiresAt": "<future ISO-8601 timestamp>"
+  "expiresAt": "2027-01-31T00:00:00.000Z"
 }
 ```
+
+`expiresAt` is optional. Leave it out, or send `null`, for a credential with no expiry date; a date you send has to be in the future.
 
 The response includes the secret once:
 
@@ -49,7 +51,7 @@ The response includes the secret once:
     "label": "Cursor on my laptop",
     "prefix": "radioso_...",
     "status": "active",
-    "expiresAt": "..."
+    "expiresAt": "2027-01-31T00:00:00.000Z"
   },
   "secret": "radioso_..."
 }

@@ -3,11 +3,13 @@
 import { useState } from 'react'
 import { Info, KeyRound, MoreHorizontal, RefreshCw, Trash2 } from 'lucide-react'
 
-import { CREDENTIAL_EXPIRY_HINT, defaultExpiryDate, expiryInputToIso } from '@/components/dashboard/settings/api-access-dialogs'
+import { CREDENTIAL_EXPIRY_HINT } from '@/components/dashboard/settings/api-access-dialogs'
+import { CredentialExpiryField, credentialExpiryRequest, initialCredentialExpiry } from '@/components/dashboard/settings/credential-expiry-field'
 import {
   CredentialDetailsDialog,
   CredentialIssuedDialog,
   RevokeConfirmDialog,
+  credentialExpiryFact,
   formatCredentialDate,
 } from '@/components/dashboard/settings/credential-dialogs'
 import { Badge } from '@/components/ui/badge'
@@ -43,7 +45,7 @@ const statusBadgeLabel = (status: AgentChannelCredential['status']) =>
 /** Quiet row meta: identity, when it stops working, and whether anything ever used it. */
 const credentialMeta = (credential: AgentChannelCredential): string => [
   credential.prefix,
-  `Expires ${formatCredentialDate(credential.expiresAt)}`,
+  credentialExpiryFact(credential.expiresAt),
   `Last used ${formatCredentialDate(credential.lastUsedAt)}`,
 ].join(' · ')
 
@@ -216,11 +218,11 @@ function IssueCredentialForm({
 }: {
   audience: AgentChannelCredentialAudience
   isCreating: boolean
-  onIssue: (input: { label: string; expiresAt: string }) => void
+  onIssue: (input: { label: string; expiresAt: string | null }) => void
 }) {
   const [label, setLabel] = useState('')
-  const [expiry, setExpiry] = useState(() => defaultExpiryDate(90))
-  const expiresAt = expiryInputToIso(expiry)
+  const [expiry, setExpiry] = useState(initialCredentialExpiry)
+  const expiryRequest = credentialExpiryRequest(expiry)
 
   return (
     <div className="grid gap-x-3 gap-y-1.5 md:grid-cols-[minmax(0,1fr)_11rem_auto]">
@@ -233,22 +235,20 @@ function IssueCredentialForm({
         placeholder="Production chat client"
       />
       <Label htmlFor={`${audience}-credential-expiry`} className="mt-2 md:col-start-2 md:row-start-1 md:mt-0">Expires</Label>
-      <Input
-        id={`${audience}-credential-expiry`}
-        className="md:col-start-2 md:row-start-2"
-        type="date"
-        value={expiry}
-        onChange={(event) => setExpiry(event.target.value)}
-      />
-      <p className="text-xs text-muted-foreground md:col-start-2 md:row-start-3">{CREDENTIAL_EXPIRY_HINT}</p>
+      <div className="md:col-start-2 md:row-start-2">
+        <CredentialExpiryField id={`${audience}-credential-expiry`} value={expiry} onChange={setExpiry} />
+      </div>
+      {expiry.mode === 'date' ? (
+        <p className="text-xs text-muted-foreground md:col-start-2 md:row-start-3">{CREDENTIAL_EXPIRY_HINT}</p>
+      ) : null}
       <Button
         type="button"
-        className="mt-2 justify-self-start md:col-start-3 md:row-start-2 md:mt-0"
-        disabled={!label.trim() || !expiresAt}
+        className="mt-2 justify-self-start self-start md:col-start-3 md:row-start-2 md:mt-0"
+        disabled={!label.trim() || !expiryRequest.valid}
         loading={isCreating} icon={<KeyRound />}
         onClick={() => {
-          if (!expiresAt) return
-          onIssue({ label: label.trim(), expiresAt })
+          if (!expiryRequest.valid) return
+          onIssue({ label: label.trim(), expiresAt: expiryRequest.expiresAt })
         }}
       >
         Create credential
@@ -258,7 +258,7 @@ function IssueCredentialForm({
 }
 
 /**
- * Agent API credentials: a label and an expiry, then the one-time secret. MCP renders
+ * Agent API credentials: a label and an optional expiry, then the one-time secret. MCP renders
  * its own connect flow over the same engine, because a connection there is a credential
  * plus the client configuration that consumes it.
  */

@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button'
 import { CopyValueField } from '@/components/ui/copy-value-field'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Spinner } from '@/components/ui/spinner'
+import { cn } from '@/lib/utils'
 
 /** One date style for every credential surface: "Sep 11, 2026". */
 export const formatCredentialDate = (value: string | null | undefined): string => {
@@ -40,6 +41,7 @@ export function CredentialIssuedDialog({
   copyAriaLabel = 'Copy credential secret',
   discardLabel = 'Discard — revokes credential',
   additionalContent,
+  className,
   error,
   onDiscard,
   onDone,
@@ -51,6 +53,7 @@ export function CredentialIssuedDialog({
   copyAriaLabel?: string
   discardLabel?: string
   additionalContent?: ReactNode
+  className?: string
   error?: string | null
   onDiscard?: () => void | Promise<void>
   onDone: () => void
@@ -74,6 +77,7 @@ export function CredentialIssuedDialog({
   return (
     <Dialog open>
       <DialogContent
+        className={cn('max-h-[90vh] overflow-y-auto', className)}
         showCloseButton={false}
         {...describedBy}
         onEscapeKeyDown={(event) => event.preventDefault()}
@@ -85,7 +89,8 @@ export function CredentialIssuedDialog({
           {description ? <DialogDescription>{description}</DialogDescription> : null}
         </DialogHeader>
         <CopyValueField value={secret} ariaLabel={copyAriaLabel} className="w-full" />
-        {additionalContent}
+        {/* A grid item sizes to its widest line unless allowed to shrink; long config lines scroll instead. */}
+        {additionalContent ? <div className="min-w-0">{additionalContent}</div> : null}
         <label className="flex items-start gap-2 rounded-lg border border-border bg-muted/40 p-3 text-sm">
           <input
             type="checkbox"
@@ -167,13 +172,17 @@ interface CredentialDetails {
   revokedAt?: string | null
 }
 
-/** Only the facts a record actually carries: an absent date is omitted, never rendered as "Never". */
+/** A `null` expiry is a credential that never expires; authentication reads it the same way. */
+export const credentialExpiryFact = (expiresAt: string | null): string =>
+  expiresAt ? `Expires ${formatCredentialDate(expiresAt)}` : 'Never expires'
+
+/** Only the facts a record actually carries: a record without an expiry field shows no expiry line. */
 const credentialDetailFacts = (details: CredentialDetails): string[] => {
   const facts = [details.prefix]
   facts.push(details.createdByName
     ? `Created by ${details.createdByName} · ${formatCredentialDate(details.createdAt)}`
     : `Created ${formatCredentialDate(details.createdAt)}`)
-  if (details.expiresAt) facts.push(`Expires ${formatCredentialDate(details.expiresAt)}`)
+  if (details.expiresAt !== undefined) facts.push(credentialExpiryFact(details.expiresAt))
   facts.push(`Last used ${formatCredentialDate(details.lastUsedAt)}`)
   if (details.revokedAt) facts.push(`Revoked ${formatCredentialDate(details.revokedAt)}`)
   return facts

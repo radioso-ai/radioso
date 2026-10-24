@@ -32,18 +32,26 @@ export const chatApi = {
     outcome?: 'in_progress' | 'completed' | 'handed_off'
     callerKind?: 'human' | 'agent'
   }, signal?: AbortSignal): Promise<HistoryItemsResponse> {
-    const response = await request<HistoryItemsApiResponse>(withQuery('/history', {
+    const filters = {
       limit: input?.limit,
       offset: input?.offset,
-      q: input?.q,
       agentId: input?.agentId,
       sourceOrigin: input?.sourceOrigin,
       outcome: input?.outcome,
       callerKind: input?.callerKind,
-    }), {
-      method: 'GET',
-      ...(signal ? { signal } : {}),
-    }, { withSession: true })
+    }
+    // A text search travels in the request body: request logs record a URL's query string, and
+    // operators type visitors' words into this search.
+    const response = input?.q
+      ? await request<HistoryItemsApiResponse>('/history/query', {
+        method: 'POST',
+        body: JSON.stringify({ ...filters, q: input.q }),
+        ...(signal ? { signal } : {}),
+      }, { withSession: true })
+      : await request<HistoryItemsApiResponse>(withQuery('/history', filters), {
+        method: 'GET',
+        ...(signal ? { signal } : {}),
+      }, { withSession: true })
 
     return normalizeHistoryItemsResponse(response)
   },

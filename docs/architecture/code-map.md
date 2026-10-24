@@ -922,7 +922,8 @@ eraser owner, increments `radioso_retention_rows_removed_total{table}`,
 `radioso_retention_rows_erased_total{owner}` and `radioso_retention_sweeps_total{outcome}`,
 and runs inside a `privacy.retention_sweep` span. Terraform pins the windows that
 outlast it: seven Cloud SQL backups, 30 days in the project's `_Default` log
-bucket, and seven days of point-in-time recovery logs where a stack turns
+bucket (or an environment's regional log bucket, `infra/terraform/foundation/logging.tf`),
+and seven days of point-in-time recovery logs where a stack turns
 recovery on (`db_point_in_time_recovery_enabled`, off by default, because turning
 it on restarts the instance).
 

@@ -5364,11 +5364,14 @@ export class InMemoryHistoryItemsRepository implements HistoryItemsRepositoryPor
 
   async listPageByWorkspaceId(
     workspaceId: string,
-    input: { limit: number; offset?: number; sourceScope?: ConversationSourceScope; agentId?: string | null } = { limit: 50, offset: 0 },
+    input: { limit: number; offset?: number; sourceScope?: ConversationSourceScope; agentId?: string | null; q?: string } = { limit: 50, offset: 0 },
   ): Promise<{ items: HistoryItemsSourceRecord[]; total: number; hasMore: boolean }> {
     const offset = input.offset ?? 0;
+    // Matches the title only; the Postgres repository also matches the first user message.
+    const search = input.q?.toLowerCase();
     const conversations: HistoryItemsSourceRecord[] = [...this.conversationRepository.items.values()]
       .filter((conversation) => conversation.workspaceId === workspaceId && (!input.agentId || conversation.agentId === input.agentId))
+      .filter((conversation) => !search || (conversation.title ?? "").toLowerCase().includes(search))
       .map((conversation) => ({
         kind: "chat" as const,
         id: conversation.id,

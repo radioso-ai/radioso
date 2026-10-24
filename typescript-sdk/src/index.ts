@@ -43,6 +43,7 @@ export type {
   AgentSettingsRequest,
   ChatConversationDetail,
   ChatHistoryListQuery,
+  HistoryQueryRequest,
   ChatHistoryListResponse,
   HistoryItemsResponse,
   VisitorConversationsQuery,
@@ -303,6 +304,7 @@ export const createRadiosoClient = (options: RadiosoClientOptions) => {
     },
     history: {
       list: (query?: Parameters<GeneratedRadiosoClient["listHistory"]>[0]) => generated.listHistory(query),
+      query: (body: Parameters<GeneratedRadiosoClient["queryHistory"]>[0]) => generated.queryHistory(body),
       listChats: (query?: Parameters<GeneratedRadiosoClient["listChatHistory"]>[0]) => generated.listChatHistory(query),
       listSearches: (query?: Parameters<GeneratedRadiosoClient["listHistorySearches"]>[0]) =>
         generated.listHistorySearches(query),

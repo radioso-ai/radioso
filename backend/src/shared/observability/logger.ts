@@ -5,6 +5,7 @@ import { pinoHttp } from "pino-http";
 import type { ProductAnalyticsEvent } from "../analytics/productAnalyticsTypes.js";
 import type { ErrorEvent } from "../errors/errorTypes.js";
 import { toCloudLoggingSeverity } from "./logging/cloudSeverity.js";
+import { isClassName, isUuid } from "./logging/logSafeValues.js";
 import { emitPinoLogRecordForOpenTelemetry } from "./logging/index.js";
 import type { CorrelationFields } from "./telemetry/correlation.js";
 import { redactedValue, shouldRedactKey } from "./telemetry/redactionPolicy.js";
@@ -43,12 +44,15 @@ interface RetrievalLogFields {
   lexicalCandidateCount: number;
   normalizedCandidateCount: number;
   finalContextCount: number;
-  parsedSemanticQuery?: string;
-  parsedLexicalQuery?: string;
   appliedConstraintCount: number;
   candidateFallbackApplied: boolean;
   fallbackApplied: boolean;
 }
+
+// A route reaches a log line as its path alone: the query string can carry search text a person typed.
+// The error and correlation fields arrive as unknown metadata, so a non-string route is dropped, not dereferenced.
+const routePath = (route: unknown): string | undefined =>
+  typeof route === "string" ? route.replace(/[?#].*$/su, "") : undefined;
 
 export const extractCorrelationLogFields = (correlation?: CorrelationFields): Record<string, string> | undefined => {
   if (!correlation) {
@@ -56,7 +60,8 @@ export const extractCorrelationLogFields = (correlation?: CorrelationFields): Re
   }
 
   const fields = Object.fromEntries(
-    Object.entries(correlation).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0),
+    Object.entries({ ...correlation, route: routePath(correlation.route) })
+      .filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0),
   );
 
   return Object.keys(fields).length > 0 ? fields : undefined;
@@ -77,9 +82,10 @@ export const extractErrorLogFields = (error?: unknown): Record<string, string> |
     Object.entries({
       errorType: fields.errorType,
       severity: fields.severity,
-      errorClass: fields.errorClass,
+      // A frontend report names its own error class, so only a class-name shape passes.
+      errorClass: typeof fields.errorClass === "string" && isClassName(fields.errorClass) ? fields.errorClass : undefined,
       method: fields.requestContext?.method,
-      route: fields.requestContext?.route,
+      route: routePath(fields.requestContext?.route),
       ...correlation,
     }).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0),
   );
@@ -101,7 +107,8 @@ export const extractProductAnalyticsLogFields = (
       accountId: analytics.accountId,
       actorType: analytics.actorType,
       subjectType: analytics.subjectType,
-      subjectId: analytics.subjectId,
+      // The frontend analytics route accepts any subject id string; only an id shape passes.
+      subjectId: typeof analytics.subjectId === "string" && isUuid(analytics.subjectId) ? analytics.subjectId : undefined,
       source: analytics.source,
     }).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0),
   );
@@ -131,20 +138,6 @@ export const extractRetrievalLogFields = (metadata?: Record<string, unknown>): R
 
   const lexicalCandidateCount =
     typeof fields.lexicalCandidateCount === "number" ? fields.lexicalCandidateCount : 0;
-  const parsedSemanticQuery =
-    fields.parsedQuery &&
-    typeof fields.parsedQuery === "object" &&
-    "semanticQuery" in fields.parsedQuery &&
-    typeof fields.parsedQuery.semanticQuery === "string"
-      ? fields.parsedQuery.semanticQuery
-      : undefined;
-  const parsedLexicalQuery =
-    fields.parsedQuery &&
-    typeof fields.parsedQuery === "object" &&
-    "lexicalQuery" in fields.parsedQuery &&
-    typeof fields.parsedQuery.lexicalQuery === "string"
-      ? fields.parsedQuery.lexicalQuery
-      : undefined;
   const appliedConstraintCount = Array.isArray(fields.appliedConstraints) ? fields.appliedConstraints.length : 0;
 
   return {
@@ -155,8 +148,6 @@ export const extractRetrievalLogFields = (metadata?: Record<string, unknown>): R
     lexicalCandidateCount,
     normalizedCandidateCount: fields.normalizedCandidateCount,
     finalContextCount: fields.finalContextCount,
-    parsedSemanticQuery,
-    parsedLexicalQuery,
     appliedConstraintCount,
     candidateFallbackApplied: fields.candidateFallbackApplied,
     fallbackApplied: fields.fallbackApplied,

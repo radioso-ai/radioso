@@ -1072,6 +1072,7 @@ export const createTestDependencies = (overrides: {
   const passwordResetTokenRepository = new InMemoryPasswordResetTokenRepository();
   const federatedIdentityRepository = new InMemoryFederatedIdentityRepository();
   userRepository.setFederatedIdentityRepository(federatedIdentityRepository);
+  sessionRepository.setUserRepository(userRepository);
   const authFunnelRepository = new InMemoryAuthFunnelRepository({
     emailVerificationTokens: emailVerificationTokenRepository,
     users: userRepository,

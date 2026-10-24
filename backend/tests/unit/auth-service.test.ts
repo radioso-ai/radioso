@@ -198,7 +198,8 @@ class RecordingOrganizationCreationReservation implements OrganizationCreationRe
 const createAuthService = (options: {
   accountRepository?: AccountRepositoryPort;
   userRepository?: InMemoryUserRepository;
-  sessionRepository?: SessionRepositoryPort;
+  /** Also records the sessions the in-memory funnel's guarded writes let through. */
+  sessionRepository?: SessionRepositoryPort & Pick<WorkingSessionRepository, "create" | "revokeAllForUser">;
   federatedIdentityRepository?: InMemoryFederatedIdentityRepository;
   workspaceService?: WorkspaceService;
   accountInvitationRepository?: InMemoryAccountInvitationRepository;
@@ -345,6 +346,7 @@ describe("AuthService rollback", () => {
     await expect(
       authService.createOrganization({
         userId: "user-1",
+        credentialGeneration: 0,
         organizationName: "Rollback Org",
       }),
     ).rejects.toThrow("session create failed");
@@ -431,6 +433,7 @@ describe("AuthService rollback", () => {
       authService.acceptInvitationAsUser({
         invitationToken,
         userId: invitee.id,
+        credentialGeneration: 0,
       }),
     ).rejects.toThrow("mark email verified failed");
 
@@ -500,6 +503,7 @@ describe("AuthService rollback", () => {
 
     const { accountId } = await orgAuthService.createOrganization({
       userId: "user-1",
+      credentialGeneration: 0,
       organizationName: "Hook Org",
     });
 
@@ -522,6 +526,7 @@ describe("AuthService rollback", () => {
 
     await orgAuthService.createOrganization({
       userId: "user-1",
+      credentialGeneration: 0,
       organizationName: "Guard Org",
     });
 
@@ -548,6 +553,7 @@ describe("AuthService rollback", () => {
 
     await expect(orgAuthService.createOrganization({
       userId: "user-1",
+      credentialGeneration: 0,
       organizationName: "Release Org",
     })).rejects.toThrow("session create failed");
 
@@ -573,6 +579,7 @@ describe("AuthService rollback", () => {
 
     await expect(orgAuthService.createOrganization({
       userId: "user-1",
+      credentialGeneration: 0,
       organizationName: "Never Persisted",
     })).rejects.toThrow("account create failed");
 
@@ -774,6 +781,7 @@ describe("AuthService rollback", () => {
 
     await expect(authService.createOrganization({
       userId: "user-1",
+      credentialGeneration: 0,
       organizationName: "Rollback Fault Org",
     })).rejects.toThrow("session create failed");
 
@@ -808,6 +816,7 @@ describe("AuthService rollback", () => {
 
     await expect(authService.createOrganization({
       userId: "user-1",
+      credentialGeneration: 0,
       organizationName: "Release Fault Org",
     })).rejects.toThrow("session create failed");
 
@@ -843,6 +852,7 @@ describe("AuthService rollback", () => {
 
     await expect(orgAuthService.createOrganization({
       userId: "user-1",
+      credentialGeneration: 0,
       organizationName: "Blocked Org",
     })).rejects.toMatchObject({ statusCode: 429, code: "rate_limit_exceeded" });
 
@@ -927,6 +937,7 @@ describe("AuthService rollback", () => {
 
     const { accountId } = await orgAuthService.createOrganization({
       userId: "user-1",
+      credentialGeneration: 0,
       organizationName: "Deleted Org",
     });
     await orgAuthService.deleteOrganization({ accountId, userId: "user-1" });
@@ -946,7 +957,7 @@ describe("AuthService rollback", () => {
       sessionRepository: new WorkingSessionRepository(),
       personalCredentialTermination: { endAccount: async ({ accountId }) => { ended.push(accountId); } },
     });
-    const { accountId } = await orgAuthService.createOrganization({ userId: "user-1", organizationName: "Deleted Org" });
+    const { accountId } = await orgAuthService.createOrganization({ userId: "user-1", credentialGeneration: 0, organizationName: "Deleted Org" });
 
     await orgAuthService.deleteOrganization({ accountId, userId: "user-1" });
 
@@ -968,7 +979,7 @@ describe("AuthService rollback", () => {
       workspaceService,
       personalCredentialTermination: { endAccount: async () => { steps.push("delete"); } },
     });
-    const { accountId } = await orgAuthService.createOrganization({ userId: "user-1", organizationName: "Deleted Org" });
+    const { accountId } = await orgAuthService.createOrganization({ userId: "user-1", credentialGeneration: 0, organizationName: "Deleted Org" });
 
     await orgAuthService.deleteOrganization({ accountId, userId: "user-1" });
 
@@ -985,7 +996,7 @@ describe("AuthService rollback", () => {
       sessionRepository: new WorkingSessionRepository(),
       personalCredentialLifecycle: { deleteAccount: async (input) => { deleted.push(input); return true; } },
     });
-    const { accountId } = await orgAuthService.createOrganization({ userId: "user-1", organizationName: "Deleted Org" });
+    const { accountId } = await orgAuthService.createOrganization({ userId: "user-1", credentialGeneration: 0, organizationName: "Deleted Org" });
 
     await orgAuthService.deleteOrganization({ accountId, userId: "user-1" });
 
@@ -1706,7 +1717,7 @@ describe("AuthService credential generation", () => {
     const { userId, accountId } = await registerVerifiedUser(context, "raced-switch@example.com");
     resetBeforeSessionWrite(context, userId);
 
-    await expect(context.authService.switchAccount({ userId, targetAccountId: accountId }))
+    await expect(context.authService.switchAccount({ userId, credentialGeneration: 0, targetAccountId: accountId }))
       .rejects.toMatchObject({ statusCode: 401 });
 
     expect(context.sessionRepository.createdForUsers).toEqual([]);

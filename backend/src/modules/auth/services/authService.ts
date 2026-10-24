@@ -72,6 +72,14 @@ export interface SessionRecord {
   revokedAt: Date | null;
 }
 
+/**
+ * A live session with the credential generation its user held, read in the
+ * statement that found the session live. A request the session authorises
+ * writes any new session under that generation.
+ */
+export interface ActiveSession extends SessionRecord {
+  userCredentialGeneration: number;
+}
 
 /** A signed-in principal plus the account and workspace the session lands on. */
 interface AuthenticatedAccountSession {
@@ -132,9 +140,9 @@ export interface AccountRepositoryPort {
   deleteById(id: string): Promise<boolean>;
 }
 
+/** Sessions are written by `AuthFunnelRepositoryPort.createSessionForCredential`. */
 export interface SessionRepositoryPort {
-  create(params: { userId: string; accountId: string; sessionTokenHash: string; expiresAt: Date }): Promise<SessionRecord>;
-  findActiveByTokenHash(sessionTokenHash: string, now: Date): Promise<SessionRecord | null>;
+  findActiveByTokenHash(sessionTokenHash: string, now: Date): Promise<ActiveSession | null>;
   touch(sessionId: string, lastSeenAt: Date): Promise<void>;
   revokeAllForUser(userId: string, revokedAt: Date): Promise<number>;
 }
@@ -282,7 +290,11 @@ export class AuthService {
       });
       await this.dependencies.onAccountCreated?.({ accountId: core.account.id });
       const sessionCookie = autoVerifyEmail
-        ? await this.createNewUserSessionCookie(core.userId, core.account.id)
+        ? await this.requireSessionCookieForCredential(
+          await this.credentialOfCreatedUser(core.userId),
+          core.account.id,
+          "registration",
+        )
         : undefined;
       await organizationCreationReservation.commit({ accountId: core.account.id });
       await this.trackRegistration({
@@ -349,6 +361,8 @@ export class AuthService {
 
   async createOrganization(input: {
     userId: string;
+    /** The generation the authorising session was live under. */
+    credentialGeneration: number;
     organizationName: string;
   }): Promise<AuthenticatedAccountSession> {
     const user = await this.dependencies.userRepository.findById(input.userId);
@@ -382,7 +396,7 @@ export class AuthService {
       });
       await this.dependencies.onAccountCreated?.({ accountId: core.account.id });
       const sessionCookie = await this.requireSessionCookieForCredential(
-        credentialOf(user),
+        { userId: user.id, generation: input.credentialGeneration },
         core.account.id,
         "organization_create",
       );
@@ -688,11 +702,7 @@ export class AuthService {
     const membership = await this.resolveFederatedLoginAccount(existing.id);
     const workspace = await runFederatedLoginStage({ reason: "workspace_unavailable" }, () =>
       this.dependencies.workspaceService.resolveLoginWorkspace(membership.accountId));
-    const sessionCookie = await runFederatedLoginStage({ reason: "session_write_failed" }, async () => {
-      const issued = await this.createSessionCookieForCredential(credential, membership.accountId);
-      if (!issued) throw this.refuseSupersededFederatedLogin(credential, membership.accountId);
-      return issued;
-    });
+    const sessionCookie = await this.issueFederatedSessionCookie(credential, membership.accountId);
     const account = await runFederatedLoginStage({ reason: "account_lookup_failed" }, () =>
       this.dependencies.accountRepository.findById(membership.accountId));
 
@@ -750,6 +760,14 @@ export class AuthService {
   private refuseSupersededFederatedLogin(credential: CredentialGeneration, accountId?: string): unknown {
     logCredentialSuperseded(this.dependencies.logger, { flow: "federated_login", userId: credential.userId, accountId });
     return failFederatedLoginStage({ reason: "credential_superseded" }, unauthorized());
+  }
+
+  private async issueFederatedSessionCookie(credential: CredentialGeneration, accountId: string): Promise<string> {
+    return runFederatedLoginStage({ reason: "session_write_failed" }, async () => {
+      const issued = await this.createSessionCookieForCredential(credential, accountId);
+      if (!issued) throw this.refuseSupersededFederatedLogin(credential, accountId);
+      return issued;
+    });
   }
 
   /**
@@ -820,8 +838,9 @@ export class AuthService {
         email: input.email,
       });
       await this.dependencies.onAccountCreated?.({ accountId: provisioned.account.id });
-      const sessionCookie = await runFederatedLoginStage({ reason: "session_write_failed" }, () =>
-        this.createNewUserSessionCookie(provisioned.userId, provisioned.account.id));
+      const credential = await runFederatedLoginStage({ reason: "session_write_failed" }, () =>
+        this.credentialOfCreatedUser(provisioned.userId));
+      const sessionCookie = await this.issueFederatedSessionCookie(credential, provisioned.account.id);
       await organizationCreationReservation.commit({ accountId: provisioned.account.id });
       await this.trackRegistration({
         accountId: provisioned.account.id,
@@ -1052,6 +1071,8 @@ export class AuthService {
   async acceptInvitationAsUser(input: {
     invitationToken: string;
     userId: string;
+    /** The generation the authorising session was live under. */
+    credentialGeneration: number;
   }): Promise<AuthenticatedAccountSession> {
     const invitation = await this.dependencies.accountInvitationService.getInvitation(input.invitationToken);
     const user = await this.dependencies.userRepository.findById(input.userId);
@@ -1067,7 +1088,7 @@ export class AuthService {
 
     return this.completeInvitationAcceptance({
       invitationToken: input.invitationToken,
-      credential: credentialOf(user),
+      credential: { userId: user.id, generation: input.credentialGeneration },
       displayName: user.displayName,
       email,
       createdUserId: null,
@@ -1150,6 +1171,8 @@ export class AuthService {
 
   async switchAccount(input: {
     userId: string;
+    /** The generation the authorising session was live under. */
+    credentialGeneration: number;
     targetAccountId: string;
     preferredWorkspaceId?: string | null;
   }): Promise<AuthenticatedAccountSession> {
@@ -1167,7 +1190,7 @@ export class AuthService {
       input.preferredWorkspaceId,
     );
     const sessionCookie = await this.requireSessionCookieForCredential(
-      credentialOf(user),
+      { userId: user.id, generation: input.credentialGeneration },
       membership.accountId,
       "account_switch",
     );
@@ -1275,7 +1298,13 @@ export class AuthService {
     };
   }
 
-  async authenticateSession(sessionToken: string): Promise<{ userId: string; accountId: string; sessionId: string }> {
+  async authenticateSession(sessionToken: string): Promise<{
+    userId: string;
+    accountId: string;
+    sessionId: string;
+    /** Presented by any session this one authorises, so a reset after this check supersedes it. */
+    credentialGeneration: number;
+  }> {
     const tokenHash = sha256(sessionToken);
     const session = await this.dependencies.sessionRepository.findActiveByTokenHash(tokenHash, new Date());
 
@@ -1284,7 +1313,12 @@ export class AuthService {
     }
 
     await this.dependencies.sessionRepository.touch(session.id, new Date());
-    return { userId: session.userId, accountId: session.accountId, sessionId: session.id };
+    return {
+      userId: session.userId,
+      accountId: session.accountId,
+      sessionId: session.id,
+      credentialGeneration: session.userCredentialGeneration,
+    };
   }
 
   async authenticateApiToken(token: string): Promise<{
@@ -1317,7 +1351,7 @@ export class AuthService {
       accountId,
       sessionId: randomUUID(),
       sessionTokenHash: sha256(sessionToken),
-      sessionExpiresAt: this.sessionExpiresAt(),
+      sessionExpiresAt: new Date(Date.now() + this.dependencies.env.SESSION_TTL_HOURS * 60 * 60 * 1000),
     });
     return written ? serializeSessionCookie(sessionToken, this.dependencies.env) : null;
   }
@@ -1334,21 +1368,14 @@ export class AuthService {
     throw unauthorized();
   }
 
-  /** Issues a session to a user this request created, whose credentials nothing can have replaced. */
-  private async createNewUserSessionCookie(userId: string, accountId: string): Promise<string> {
-    const sessionToken = generateSessionToken();
-    await this.dependencies.sessionRepository.create({
-      userId,
-      accountId,
-      sessionTokenHash: sha256(sessionToken),
-      expiresAt: this.sessionExpiresAt(),
-    });
-
-    return serializeSessionCookie(sessionToken, this.dependencies.env);
-  }
-
-  private sessionExpiresAt(): Date {
-    return new Date(Date.now() + this.dependencies.env.SESSION_TTL_HOURS * 60 * 60 * 1000);
+  /**
+   * The credential of a user this request created. The provisioner hands back
+   * only the id, so the generation is read back before the first session.
+   */
+  private async credentialOfCreatedUser(userId: string): Promise<CredentialGeneration> {
+    const user = await this.dependencies.userRepository.findById(userId);
+    if (!user) throw unauthorized("User not found");
+    return credentialOf(user);
   }
 
   /**

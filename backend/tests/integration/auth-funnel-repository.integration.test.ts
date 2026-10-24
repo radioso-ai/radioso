@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { sql } from "kysely";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { AuthFunnelRepository } from "../../src/db/repositories/authFunnelRepository.js";
@@ -541,17 +542,22 @@ describeIntegration("AuthFunnelRepository (Postgres)", () => {
     return counts;
   };
 
-  /** Resolves once a statement inserting into `table` is queued behind a row lock. */
-  const waitForInsertBlockedOnLock = async (table: "sessions" | "user_federated_identities"): Promise<void> => {
-    for (let attempt = 0; attempt < 1_000; attempt += 1) {
+  /** Resolves once a statement inserting into `table` is waiting on the given backend's locks. */
+  const waitForInsertBlockedBy = async (
+    blockerPid: number,
+    table: "sessions" | "user_federated_identities",
+  ): Promise<void> => {
+    const deadline = Date.now() + 10_000;
+    while (Date.now() < deadline) {
       const [row] = await database.query<{ waiting: number }>(
         `SELECT COUNT(*)::int AS waiting FROM pg_stat_activity
-         WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE $1`,
-        [`insert into "${table}"%`],
+         WHERE pg_blocking_pids(pid) @> ARRAY[$1::int] AND query LIKE $2`,
+        [blockerPid, `insert into "${table}"%`],
       );
       if ((row?.waiting ?? 0) > 0) return;
+      await new Promise((resolve) => setTimeout(resolve, 10));
     }
-    throw new Error(`No insert into ${table} ever waited on the user lock`);
+    throw new Error(`No insert into ${table} waited on backend ${blockerPid} within 10s`);
   };
 
   it("advances the credential generation on password reset and writes nothing at the generation it replaced", async () => {
@@ -597,6 +603,8 @@ describeIntegration("AuthFunnelRepository (Postgres)", () => {
     // Stands in for a password reset that has locked the user, advanced the generation and
     // revoked sessions and links, but not committed: the writes must wait for it, then see it.
     await database.kysely.transaction().execute(async (transaction) => {
+      const { rows: [backend] } = await sql<{ pid: number }>`SELECT pg_backend_pid() AS pid`.execute(transaction);
+      if (!backend) throw new Error("The reset transaction has no backend pid");
       await transaction.selectFrom("users").select("id").where("id", "=", racedUserId).forUpdate().execute();
       await transaction.updateTable("users")
         .set((expression) => ({ credential_generation: expression("credential_generation", "+", 1) }))
@@ -607,9 +615,9 @@ describeIntegration("AuthFunnelRepository (Postgres)", () => {
         .execute();
       await transaction.deleteFrom("user_federated_identities").where("user_id", "=", racedUserId).execute();
       const session = writes.session();
-      await waitForInsertBlockedOnLock("sessions");
+      await waitForInsertBlockedBy(backend.pid, "sessions");
       const link = writes.link();
-      await waitForInsertBlockedOnLock("user_federated_identities");
+      await waitForInsertBlockedBy(backend.pid, "user_federated_identities");
       queued = Promise.all([session, link]);
     });
 

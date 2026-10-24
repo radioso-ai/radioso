@@ -70,6 +70,7 @@ const createHarness = async (options: { verified?: boolean; displayName?: string
   const accountAccessService = new AccountAccessService(accountMembershipRepository, auditService);
   const workspaceService = new WorkspaceService(new InMemoryWorkspaceRepository(), auditService);
   const sessionRepository = new InMemorySessionRepository();
+  sessionRepository.setUserRepository(userRepository);
   const federatedIdentityRepository = new InMemoryFederatedIdentityRepository();
   const passwordResetTokenRepository = new InMemoryPasswordResetTokenRepository();
   const emailVerificationTokenRepository = new InMemoryEmailVerificationTokenRepository();

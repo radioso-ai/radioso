@@ -340,10 +340,11 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
     async (req, res, next) => {
       try {
         const params = invitationTokenParamsSchema.parse(req.params);
-        const { userId } = res.locals as { userId: string };
+        const { userId, credentialGeneration } = res.locals as { userId: string; credentialGeneration: number };
         const result = await dependencies.authService.acceptInvitationAsUser({
           invitationToken: params.invitationToken,
           userId,
+          credentialGeneration,
         });
         res.setHeader("Set-Cookie", result.sessionCookie);
         res.status(200).json({

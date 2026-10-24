@@ -211,6 +211,35 @@ describeIntegration("credential generation (Postgres)", () => {
     });
   });
 
+  it("refuses an account switch from a session whose check a reset overtook", async () => {
+    const { authService, passwordResetService } = createServices();
+    const { userId, accountId, email } = await provisionUser("raced-switch");
+    const login = await authService.login({ email, password: "theoldpassword" });
+    const sessionToken = login.sessionCookie.split(";")[0]?.split("=")[1] ?? "";
+
+    // The order the session middleware and the switch handler run in, with a
+    // reset committing between them.
+    const session = await authService.authenticateSession(sessionToken);
+    const reset = await passwordResetService.confirmReset({
+      token: await issueResetToken(userId),
+      password: "thenewpassword",
+    });
+    const outcome = await settle(authService.switchAccount({
+      userId: session.userId,
+      credentialGeneration: session.credentialGeneration,
+      targetAccountId: accountId,
+    }));
+
+    expect(session.credentialGeneration).toBe(0);
+    expect(outcome).toMatchObject({ ok: false, error: { statusCode: 401 } });
+    const state = await credentialState(userId);
+    expect(state.sessions).toEqual(expect.arrayContaining([
+      { session_token_hash: sessionHashFromCookie(login.sessionCookie), revoked: true },
+      { session_token_hash: sessionHashFromCookie(reset.sessionCookie), revoked: false },
+    ]));
+    expect(state.sessions).toHaveLength(2);
+  });
+
   it("signs ordinary password and Google sign-ins in with one session each", async () => {
     const { authService } = createServices();
     const { userId, email } = await provisionUser("ordinary-sign-in");

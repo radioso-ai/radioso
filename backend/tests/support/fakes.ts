@@ -51,6 +51,7 @@ import type {
 import type {
   AccountRecord,
   AccountRepositoryPort,
+  ActiveSession,
   FederatedIdentityRecord,
   FederatedIdentityRepositoryPort,
   SessionRecord,
@@ -585,8 +586,20 @@ export class InMemoryAccessGrantLifecycleUnitOfWork implements AccessGrantLifecy
   }
 }
 
-export class InMemorySessionRepository implements SessionRepositoryPort {
+/** Where `InMemoryAuthFunnelRepository` records the sessions its guarded writes let through. */
+interface InMemorySessionWriter {
+  create(params: { userId: string; accountId: string; sessionTokenHash: string; expiresAt: Date }): Promise<unknown>;
+  revokeAllForUser(userId: string, revokedAt: Date): Promise<number>;
+}
+
+export class InMemorySessionRepository implements SessionRepositoryPort, InMemorySessionWriter {
   private readonly items = new Map<string, SessionRecord>();
+  // Postgres reads the user's credential generation in the session lookup; tests wire the users in.
+  private users: Pick<InMemoryUserRepository, "findById"> | null = null;
+
+  setUserRepository(users: Pick<InMemoryUserRepository, "findById">): void {
+    this.users = users;
+  }
 
   async create(params: { userId: string; accountId: string; sessionTokenHash: string; expiresAt: Date }): Promise<SessionRecord> {
     const record: SessionRecord = {
@@ -604,12 +617,15 @@ export class InMemorySessionRepository implements SessionRepositoryPort {
     return record;
   }
 
-  async findActiveByTokenHash(sessionTokenHash: string, now: Date): Promise<SessionRecord | null> {
-    return (
-      [...this.items.values()].find(
-        (item) => item.sessionTokenHash === sessionTokenHash && item.expiresAt > now && item.revokedAt === null,
-      ) ?? null
+  async findActiveByTokenHash(sessionTokenHash: string, now: Date): Promise<ActiveSession | null> {
+    if (!this.users) {
+      throw new Error("InMemorySessionRepository: call setUserRepository before authenticating a session");
+    }
+    const session = [...this.items.values()].find(
+      (item) => item.sessionTokenHash === sessionTokenHash && item.expiresAt > now && item.revokedAt === null,
     );
+    const user = session ? await this.users.findById(session.userId) : null;
+    return session && user ? { ...session, userCredentialGeneration: user.credentialGeneration } : null;
   }
 
   async touch(sessionId: string, lastSeenAt: Date): Promise<void> {
@@ -806,7 +822,7 @@ export class InMemoryAuthFunnelRepository implements AuthFunnelRepositoryPort {
   constructor(private readonly dependencies: {
     emailVerificationTokens: InMemoryEmailVerificationTokenRepository;
     users: InMemoryUserRepository;
-    sessions: Pick<SessionRepositoryPort, "create" | "revokeAllForUser">;
+    sessions: InMemorySessionWriter;
     listMemberships: (userId: string) => Promise<AccountMembershipRecord[]>;
     passwordResetTokens?: InMemoryPasswordResetTokenRepository;
     federatedIdentities?: Pick<FederatedIdentityRepositoryPort, "deleteForUser" | "link">;

@@ -34,6 +34,7 @@ export const requireSession = (
       res.locals.userId = session.userId;
       res.locals.accountId = session.accountId;
       res.locals.sessionId = session.sessionId;
+      res.locals.credentialGeneration = session.credentialGeneration;
       next();
     } catch (error) {
       next(error);

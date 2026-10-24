@@ -31,8 +31,11 @@ export interface CredentialGeneration {
 
 /**
  * What a federated recovery did. Only a recovery that rotated the credentials
- * advances the generation; when verification won first the user is untouched
- * and the sign-in keeps the generation it read.
+ * advances the generation, and the sign-in continues under the one it set.
+ * Otherwise the user was already verified and the sign-in keeps the generation
+ * it read: still current when link verification won first, but stale when a
+ * reset or a concurrent recovery won, so that sign-in's writes are refused and
+ * it fails closed as superseded.
  */
 type FederatedRecovery =
   | { recovered: true; displayName: string | null; credentialGeneration: number }

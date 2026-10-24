@@ -4,6 +4,7 @@ interface CredentialSupersededLogger {
 
 /** The session issuers that write only under the credential generation they read. */
 type CredentialGuardedFlow =
+  | "registration"
   | "password_login"
   | "federated_login"
   | "invitation_accept"

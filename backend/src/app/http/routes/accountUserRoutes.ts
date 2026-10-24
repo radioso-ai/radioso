@@ -116,9 +116,10 @@ export const createAccountUserRoutes = (dependencies: AccountUserRouteDependenci
 
   router.post("/accounts", authenticatedUserSession, validateBody(createAccountSchema), async (req, res, next) => {
     try {
-      const { userId } = res.locals as { userId: string };
+      const { userId, credentialGeneration } = res.locals as { userId: string; credentialGeneration: number };
       const result = await dependencies.authService.createOrganization({
         userId,
+        credentialGeneration,
         organizationName: req.body.organizationName,
       });
       res.setHeader("Set-Cookie", result.sessionCookie);
@@ -180,9 +181,10 @@ export const createAccountUserRoutes = (dependencies: AccountUserRouteDependenci
 
   router.post("/switch", authenticatedUserSession, validateBody(accountSwitchSchema), async (req, res, next) => {
     try {
-      const { userId } = res.locals as { userId: string };
+      const { userId, credentialGeneration } = res.locals as { userId: string; credentialGeneration: number };
       const result = await dependencies.authService.switchAccount({
         userId,
+        credentialGeneration,
         targetAccountId: req.body.accountId,
         preferredWorkspaceId: req.body.preferredWorkspaceId,
       });

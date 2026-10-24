@@ -360,7 +360,7 @@ describe("lexical_search tool", () => {
     const lexicalSearch: LexicalSearchPort = {
       async search(input) {
         calls.push(input);
-        return { matches: [chunk({ chunkId: "l1" })], someTermsPass: skippedSomeTermsPass() };
+        return { matches: [chunk({ chunkId: "l1" })], someTermsPass: skippedSomeTermsPass("all_terms_only") };
       },
     };
     const registry = new InMemoryChunkRegistry();

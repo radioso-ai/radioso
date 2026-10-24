@@ -8,18 +8,32 @@ import type { LexicalQueryPlan } from "./retrievalPipelineTypes.js";
 export type LexicalMatchMode = "all_terms" | "all_or_some_terms";
 
 /**
- * What the some-terms pass did on one search: `skipped` (not asked for, not needed, or
- * nothing to relax), `ran`, or `timed_out` (its time budget ran out and the search kept
- * the all-terms hits).
+ * What the some-terms pass did on one search: `skipped` (with its reason), `ran`,
+ * `timed_out` (its time budget ran out), or `failed` (another database error). After a
+ * timeout or a failure the search keeps its all-terms hits.
  */
-export type LexicalSomeTermsPassOutcome = "skipped" | "ran" | "timed_out";
+export type LexicalSomeTermsPassOutcome = "skipped" | "ran" | "timed_out" | "failed";
 
-export interface LexicalSomeTermsPassReport {
-  outcome: LexicalSomeTermsPassOutcome;
-  durationMs: number;
-}
+export type LexicalSomeTermsPassSkipReason =
+  /** The caller asked for chunks holding every term. */
+  | "all_terms_only"
+  | "enough_all_terms_matches"
+  /** One term, explicit OR alternatives, or nothing searchable. */
+  | "nothing_to_relax"
+  /** Other requests were waiting for a database connection. */
+  | "connections_busy"
+  /** The all-terms search itself failed. */
+  | "lexical_unavailable";
 
-export const skippedSomeTermsPass = (): LexicalSomeTermsPassReport => ({ outcome: "skipped", durationMs: 0 });
+export type LexicalSomeTermsPassReport =
+  | { outcome: "skipped"; reason: LexicalSomeTermsPassSkipReason; durationMs: 0 }
+  | { outcome: Exclude<LexicalSomeTermsPassOutcome, "skipped">; durationMs: number };
+
+export const skippedSomeTermsPass = (reason: LexicalSomeTermsPassSkipReason): LexicalSomeTermsPassReport => ({
+  outcome: "skipped",
+  reason,
+  durationMs: 0,
+});
 
 export type LexicalTermAlternativeKind = "terms" | "phrase";
 
@@ -161,10 +175,9 @@ export const buildSomeTermsLexicalQuery = (plan: LexicalQueryPlan): SomeTermsLex
 };
 
 /**
- * How the adapter ranks some-terms matches. Rarer terms carry more weight, measured
- * against the query's most common ranked term, so the ranking needs no list of words to
- * ignore in any language: a word that appears in most chunks weighs least wherever it
- * comes from.
+ * How the adapter ranks some-terms matches. A term weighs more the fewer of the
+ * workspace's chunks hold it, so the ranking needs no list of words to ignore in any
+ * language: a word on most pages weighs least wherever it comes from.
  */
 export interface SomeTermsRankingPlan {
   /** Weight of each query term, by term index; 0 for a term the ranking leaves out. */
@@ -178,26 +191,30 @@ export interface SomeTermsRankingPlan {
   minimumCoveredWeight: number;
   /**
    * Whether a ranked chunk can hold every query term. It cannot when the query was cut
-   * at the term limit, when a term was left out of the ranking, or when a term matched
-   * nothing.
+   * at the term limit, or when a term was left out of the ranking: matched nothing,
+   * matched past the count cap, or fell outside the rarest terms.
    */
   everyTermRanked: boolean;
 }
 
-// The share floor is a ratio of sums of logarithms; this keeps a chunk that sits
-// exactly on it from falling off through rounding.
+// The floors are sums of logarithms; this keeps a chunk that sits exactly on one from
+// falling off through rounding.
 const COVERED_WEIGHT_TOLERANCE = 1e-9;
 
 export const planSomeTermsRanking = (input: {
   query: SomeTermsLexicalQuery;
   /** Chunks in scope that match each alternative, counted up to `matchCap + 1`. */
   alternativeMatchCounts: readonly number[];
+  /** Chunks in scope, the same scope the alternatives were counted in. */
+  scopeChunkCount: number;
   /** An alternative matching more chunks than this cannot find a chunk on its own. */
   matchCap: number;
   /** The most chunks the ranking reads, summed over the alternatives that define them. */
   rankedChunkBudget: number;
-  /** The share of the query's term weight a ranked chunk must hold. */
+  /** The share of the query's found term weight a ranked chunk must hold. */
   minimumWeightShare: number;
+  /** The term weight a ranked chunk must hold, however few terms the query found. */
+  minimumHeldWeight: number;
   /** The most terms a chunk is scored on; the rarest are kept. */
   maxRankedTerms: number;
 }): SomeTermsRankingPlan | null => {
@@ -206,7 +223,18 @@ export const planSomeTermsRanking = (input: {
     Math.min(Math.max(input.alternativeMatchCounts[alternativeIndex] ?? 0, 0), input.matchCap + 1);
 
   const termMatchCounts = countTermMatches(query, countOf);
-  const rankedTerms = new Set(selectRarestTerms(termMatchCounts, input.maxRankedTerms));
+  const scopeChunkCount = Math.max(input.scopeChunkCount, ...termMatchCounts.filter((count) => count <= input.matchCap));
+  const termWeights = weighTerms(termMatchCounts, scopeChunkCount, input.matchCap);
+  const rankedTerms = new Set(selectRarestTerms(termMatchCounts, termWeights, input.maxRankedTerms));
+  const rankedWeights = termWeights.map((weight, term) => (rankedTerms.has(term) ? weight : 0));
+  const totalWeight = rankedWeights.reduce((sum, weight) => sum + weight, 0);
+  const minimumCoveredWeight = Math.max(totalWeight * input.minimumWeightShare, input.minimumHeldWeight)
+    * (1 - COVERED_WEIGHT_TOLERANCE);
+  // Even a chunk holding every ranked term would fall short of the absolute floor.
+  if (totalWeight < minimumCoveredWeight) {
+    return null;
+  }
+
   const scoredAlternatives = query.alternatives
     .map((alternative, index) => ({ alternative, index }))
     .filter(({ alternative }) => alternative.covers.some((term) => rankedTerms.has(term)))
@@ -216,15 +244,12 @@ export const planSomeTermsRanking = (input: {
     return null;
   }
 
-  const termWeights = weighTerms(termMatchCounts, rankedTerms);
-  const totalWeight = termWeights.reduce((sum, weight) => sum + weight, 0);
-
   return {
-    termWeights,
+    termWeights: rankedWeights,
     scoredAlternatives,
     matchingAlternatives,
     totalWeight,
-    minimumCoveredWeight: totalWeight * input.minimumWeightShare * (1 - COVERED_WEIGHT_TOLERANCE),
+    minimumCoveredWeight,
     everyTermRanked: !query.truncated && rankedTerms.size === query.termCount,
   };
 };
@@ -242,11 +267,19 @@ const countTermMatches = (query: SomeTermsLexicalQuery, countOf: (alternativeInd
   return counts;
 };
 
-// Terms found nowhere carry no information about any chunk, so they are left out.
-const selectRarestTerms = (termMatchCounts: number[], maxRankedTerms: number): number[] =>
+// Inverse document frequency, ln(chunks in scope / chunks holding the term). It is
+// absolute, so a query whose only found term sits on most pages finds nothing rather
+// than scoring every one of those pages as a full match. A term found nowhere tells
+// nothing about any chunk, and a term past the count cap has an unknown frequency that
+// a guess would overstate, so both weigh 0.
+const weighTerms = (termMatchCounts: number[], scopeChunkCount: number, matchCap: number): number[] =>
+  termMatchCounts.map((count) =>
+    count > 0 && count <= matchCap && scopeChunkCount > count ? Math.log(scopeChunkCount / count) : 0);
+
+const selectRarestTerms = (termMatchCounts: number[], termWeights: number[], maxRankedTerms: number): number[] =>
   termMatchCounts
     .map((count, term) => ({ count, term }))
-    .filter(({ count }) => count > 0)
+    .filter(({ term }) => (termWeights[term] ?? 0) > 0)
     .sort((left, right) => left.count - right.count || left.term - right.term)
     .slice(0, Math.max(0, maxRankedTerms))
     .map(({ term }) => term);
@@ -271,12 +304,4 @@ const selectMatchingAlternatives = (
     selected.push(candidate.index);
   }
   return selected;
-};
-
-// Inverse document frequency against the most common ranked term: that term weighs
-// ln 2, a term found in a tenth as many chunks weighs ln 11.
-const weighTerms = (termMatchCounts: number[], rankedTerms: ReadonlySet<number>): number[] => {
-  const reference = Math.max(0, ...termMatchCounts.filter((_, term) => rankedTerms.has(term)));
-  return termMatchCounts.map((count, term) =>
-    rankedTerms.has(term) && count > 0 ? Math.log(1 + reference / count) : 0);
 };

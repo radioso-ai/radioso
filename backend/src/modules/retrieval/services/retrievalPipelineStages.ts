@@ -374,9 +374,9 @@ export const formatDegradedChannels = (channels: unknown): string | undefined =>
   return known.length === 0 ? "none" : known.join(",");
 };
 
-// Per-turn counts of the lexical branches whose some-terms pass ran or ran out of time,
-// and the slowest pass, so a turn with no partial matches is told apart from one whose
-// pass never finished.
+// Per-turn counts of the lexical branches whose some-terms pass ran, ran out of time,
+// failed, or was skipped for a busy connection pool, and the slowest pass, so a turn
+// with no partial matches is told apart from one whose pass never finished.
 const someTermsPassTraceAttributes = (
   branches: Array<{ lexicalSomeTermsPass?: LexicalSomeTermsPassReport }> | undefined,
 ): TraceAttributes => {
@@ -385,6 +385,10 @@ const someTermsPassTraceAttributes = (
     "retrieval.lexical.some_terms_pass.ran.count": boundedTraceCount(passes.filter((pass) => pass.outcome === "ran").length),
     "retrieval.lexical.some_terms_pass.timed_out.count": boundedTraceCount(
       passes.filter((pass) => pass.outcome === "timed_out").length,
+    ),
+    "retrieval.lexical.some_terms_pass.failed.count": boundedTraceCount(passes.filter((pass) => pass.outcome === "failed").length),
+    "retrieval.lexical.some_terms_pass.connections_busy.count": boundedTraceCount(
+      passes.filter((pass) => pass.outcome === "skipped" && pass.reason === "connections_busy").length,
     ),
     "retrieval.lexical.some_terms_pass.max_duration_ms": Math.max(0, ...passes.map((pass) => Math.round(pass.durationMs))),
   };

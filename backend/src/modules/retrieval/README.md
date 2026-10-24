@@ -190,14 +190,16 @@ pass follows and its hits are appended after the all-terms ones. The agentic
    runs, so user text never carries tsquery syntax; at most 32, `truncated` past
    that), adds each pair of adjacent words written as one, and keeps phrases and
    exclusions.
-2. One statement counts each alternative's matches in scope, capped at
-   `lexicalSomeTermsTermMatchCap + 1`.
-3. `planSomeTermsRanking` keeps the `lexicalSomeTermsMaxRankedTerms` rarest terms
-   that match anything, weighs them by inverse document frequency against the most
-   frequent of them (a term that matches nothing weighs 0), picks the alternatives
+2. One statement counts the chunks in scope (capped at
+   `lexicalSomeTermsScopeCountCap + 1`) and each alternative's matches in the same
+   scope (capped at `lexicalSomeTermsTermMatchCap + 1`).
+3. `planSomeTermsRanking` weighs each term ln(chunks in scope / chunks holding it);
+   a term that matches nothing or passes the count cap weighs 0. It keeps the
+   `lexicalSomeTermsMaxRankedTerms` rarest weighted terms, picks the alternatives
    that define the ranked set (rarest first, within
-   `lexicalSomeTermsRankedChunkBudget`), and sets the
-   `lexicalSomeTermsMinimumWeightShare` floor.
+   `lexicalSomeTermsRankedChunkBudget`), and sets two floors a chunk must clear: the
+   `lexicalSomeTermsMinimumWeightShare` of the ranked weight, and the absolute
+   `lexicalSomeTermsMinimumHeldWeight`.
 4. A second statement ranks those chunks by covered weight, then `ts_rank_cd`
    against the AND of the alternatives each chunk holds, the scale of an all-terms
    rank.
@@ -206,10 +208,12 @@ Both statements run in one transaction under `lexicalSomeTermsTimeoutMs`, applie
 as a transaction-local `statement_timeout` sized to what is left of the budget.
 Postgres can pick the workspace index over the GIN index for a term frequent in the
 partition and rare in the workspace, and then reads every chunk, so the cap does not
-bound time; the budget does. On timeout the search keeps its all-terms hits, logs a
-count-only warning, and reports the pass as `timed_out`. The port returns
-`{ matches, someTermsPass }`, `someTermsPass` being `skipped`, `ran`, or `timed_out`
-with its duration.
+bound time; the budget does. The pass is skipped while the pool has waiting
+clients (`connections_busy`). On a timeout or any other error the search keeps its
+all-terms hits, logs a count-only warning (plus the SQLSTATE for a failure), and
+reports the pass as `timed_out` or `failed`. The port returns
+`{ matches, someTermsPass }`: `skipped` with its reason, `ran`, `timed_out`, or
+`failed`, with its duration.
 
 Every lexical hit carries `lexicalTermCoverage`: `all_terms` or `some_terms` (a hit
 without the field holds every term). A some-terms row is `all_terms` only when the
@@ -228,11 +232,11 @@ as "the chunk holds what was asked for" check the coverage:
   hits as empty for trigger backoff, drops them on a turn where nothing else was
   found (`holdsPrimaryEvidence`), and passes them over for a `lexicalBias:
   "preferred"` shape.
-- The lexical trace stage reports `someTermsPass`, `someTermsPassDurationMs`, and
-  `someTermsCandidateCount`; the candidate retrieval span reports
-  `retrieval.candidates.lexical.some_terms.count` and
-  `retrieval.lexical.some_terms_pass.{ran,timed_out}.count` with
-  `retrieval.lexical.some_terms_pass.max_duration_ms`.
+- The lexical trace stage reports `someTermsPass`, `someTermsPassSkipReason`,
+  `someTermsPassDurationMs`, and `someTermsCandidateCount`; the candidate retrieval
+  span reports `retrieval.candidates.lexical.some_terms.count`,
+  `retrieval.lexical.some_terms_pass.{ran,timed_out,failed,connections_busy}.count`,
+  and `retrieval.lexical.some_terms_pass.max_duration_ms`.
 
 ## Stage Timings
 

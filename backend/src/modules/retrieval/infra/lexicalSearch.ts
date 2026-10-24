@@ -7,6 +7,7 @@ import {
   skippedSomeTermsPass,
   type LexicalMatchMode,
   type LexicalSomeTermsPassReport,
+  type LexicalSomeTermsPassSkipReason,
   type LexicalTermAlternative,
   type SomeTermsLexicalQuery,
   type SomeTermsRankingPlan,
@@ -60,6 +61,11 @@ interface LexicalSearchRow {
   rank: number;
 }
 
+interface AlternativeCountRow {
+  scope_count: number | string | null;
+  counts: number[] | null;
+}
+
 interface SomeTermsSearchRow extends LexicalSearchRow {
   covered_weight: number;
   covers_all_terms: boolean;
@@ -73,23 +79,33 @@ const CHUNK_SEARCH_VECTOR_SQL = "to_tsvector('simple', coalesce(c.search_text, '
 export class PgLexicalSearch implements LexicalSearchPort {
   constructor(
     private readonly database: Database,
-    private readonly options: { logger?: LexicalSearchLogger } = {},
+    private readonly options: { logger?: LexicalSearchLogger; someTermsTimeoutMs?: number } = {},
   ) {}
 
   async search(input: LexicalSearchInput): Promise<LexicalSearchResult> {
     const normalizedQuery = input.query.trim();
     if (!normalizedQuery) {
-      return { matches: [], someTermsPass: skippedSomeTermsPass() };
+      return { matches: [], someTermsPass: skippedSomeTermsPass("nothing_to_relax") };
     }
 
     const plan = input.lexicalPlan ?? buildPlainLexicalQueryPlan(normalizedQuery);
     const allTermsMatches = await this.searchAllTerms(input, plan);
-    const enoughAllTermsMatches = Math.min(input.topK, RETRIEVAL_BEHAVIOR.hybrid.lexicalSomeTermsBelowAllTermsMatches);
-    const someTermsQuery = input.matchMode === "all_or_some_terms" && allTermsMatches.length < enoughAllTermsMatches
-      ? buildSomeTermsLexicalQuery(plan)
-      : null;
+    const keepAllTerms = (reason: LexicalSomeTermsPassSkipReason): LexicalSearchResult =>
+      ({ matches: allTermsMatches, someTermsPass: skippedSomeTermsPass(reason) });
+    if (input.matchMode === "all_terms") {
+      return keepAllTerms("all_terms_only");
+    }
+    if (allTermsMatches.length >= Math.min(input.topK, RETRIEVAL_BEHAVIOR.hybrid.lexicalSomeTermsBelowAllTermsMatches)) {
+      return keepAllTerms("enough_all_terms_matches");
+    }
+    const someTermsQuery = buildSomeTermsLexicalQuery(plan);
     if (!someTermsQuery) {
-      return { matches: allTermsMatches, someTermsPass: skippedSomeTermsPass() };
+      return keepAllTerms("nothing_to_relax");
+    }
+    // The pass holds a connection for its whole budget; while others queue for one, the
+    // wait would spend that budget, and the all-terms hits are a sound answer.
+    if (this.database.pool.waitingCount > 0) {
+      return keepAllTerms("connections_busy");
     }
 
     const found = new Set(allTermsMatches.map((match) => match.chunkId));
@@ -170,16 +186,17 @@ export class PgLexicalSearch implements LexicalSearchPort {
 
   /**
    * Counts each alternative's matches, then ranks the chunks the rarer alternatives find
-   * by the share of the query's term weight they hold. Both statements run in one
-   * transaction under a shared time budget: a frequent word can make Postgres read every
-   * chunk in the workspace, and the all-terms hits are a sound answer on their own.
+   * by the term weight they hold. Both statements run in one transaction under a shared
+   * time budget: a frequent word can make Postgres read every chunk in the workspace.
+   * Whatever goes wrong, the all-terms hits are a sound answer on their own, so a
+   * timeout or a database error in this pass never fails the search.
    */
   private async searchSomeTermsWithinBudget(
     input: LexicalSearchInput,
     query: SomeTermsLexicalQuery,
     limit: number,
   ): Promise<{ matches: RetrievedChunk[]; report: LexicalSomeTermsPassReport }> {
-    const timeoutMs = RETRIEVAL_BEHAVIOR.hybrid.lexicalSomeTermsTimeoutMs;
+    const timeoutMs = this.options.someTermsTimeoutMs ?? RETRIEVAL_BEHAVIOR.hybrid.lexicalSomeTermsTimeoutMs;
     const startedAt = performance.now();
     const elapsedMs = () => Math.max(0, Math.round(performance.now() - startedAt));
     try {
@@ -196,15 +213,22 @@ export class PgLexicalSearch implements LexicalSearchPort {
       });
       return { matches, report: { outcome: "ran", durationMs: elapsedMs() } };
     } catch (error) {
-      if (!isSomeTermsTimeout(error)) {
-        throw error;
-      }
       const durationMs = elapsedMs();
+      const outcome = isSomeTermsTimeout(error) ? "timed_out" as const : "failed" as const;
+      const sqlState = sqlStateOf(error);
       this.options.logger?.warn(
-        { workspaceId: input.workspaceId, termCount: query.termCount, timeoutMs, durationMs },
-        "lexical some-terms search ran out of time; kept the all-terms matches",
+        {
+          workspaceId: input.workspaceId,
+          termCount: query.termCount,
+          timeoutMs,
+          durationMs,
+          ...(outcome === "failed" && sqlState ? { sqlState } : {}),
+        },
+        outcome === "timed_out"
+          ? "lexical some-terms search ran out of time; kept the all-terms matches"
+          : "lexical some-terms search failed; kept the all-terms matches",
       );
-      return { matches: [], report: { outcome: "timed_out", durationMs } };
+      return { matches: [], report: { outcome, durationMs } };
     }
   }
 
@@ -215,13 +239,15 @@ export class PgLexicalSearch implements LexicalSearchPort {
     run: SomeTermsStatementRunner,
   ): Promise<RetrievedChunk[]> {
     const behavior = RETRIEVAL_BEHAVIOR.hybrid;
-    const alternativeMatchCounts = await this.countAlternativeMatches(input, query, behavior.lexicalSomeTermsTermMatchCap, run);
+    const counts = await this.countAlternativeMatches(input, query, behavior.lexicalSomeTermsTermMatchCap, run);
     const ranking = planSomeTermsRanking({
       query,
-      alternativeMatchCounts,
+      alternativeMatchCounts: counts.alternativeMatchCounts,
+      scopeChunkCount: counts.scopeChunkCount,
       matchCap: behavior.lexicalSomeTermsTermMatchCap,
       rankedChunkBudget: behavior.lexicalSomeTermsRankedChunkBudget,
       minimumWeightShare: behavior.lexicalSomeTermsMinimumWeightShare,
+      minimumHeldWeight: behavior.lexicalSomeTermsMinimumHeldWeight,
       maxRankedTerms: behavior.lexicalSomeTermsMaxRankedTerms,
     });
     if (!ranking) {
@@ -241,12 +267,13 @@ export class PgLexicalSearch implements LexicalSearchPort {
     query: SomeTermsLexicalQuery,
     matchCap: number,
     run: SomeTermsStatementRunner,
-  ): Promise<number[]> {
+  ): Promise<{ scopeChunkCount: number; alternativeMatchCounts: number[] }> {
     const params: unknown[] = [input.workspaceId];
     const chunkFilterClause = compilePgChunkFilter(input, params);
     const bind = bindParam(params);
     const countLimit = bind(matchCap + 1);
-    const counts = query.alternatives.map((alternative) => `(
+    const scopeCountLimit = bind(RETRIEVAL_BEHAVIOR.hybrid.lexicalSomeTermsScopeCountCap + 1);
+    const cappedCount = (condition: string, limit: string, alias: string) => `(
       SELECT count(*)
       FROM (
         SELECT 1
@@ -255,16 +282,22 @@ export class PgLexicalSearch implements LexicalSearchPort {
         WHERE c.workspace_id = $1
           AND ${retrievableDocumentPredicateSql("d")}
           ${chunkFilterClause}
-          AND ${CHUNK_SEARCH_VECTOR_SQL} @@ ${alternativeTsquery(alternative, bind)}
-        LIMIT ${countLimit}
-      ) alternative_matches
-    )`);
+          ${condition}
+        LIMIT ${limit}
+      ) ${alias}
+    )`;
+    const counts = query.alternatives.map((alternative) =>
+      cappedCount(`AND ${CHUNK_SEARCH_VECTOR_SQL} @@ ${alternativeTsquery(alternative, bind)}`, countLimit, "alternative_matches"));
 
-    const rows = await run<{ counts: number[] | null }>(
-      `SELECT ARRAY[${counts.join(",\n")}]::int[] AS counts`,
+    const rows = await run<AlternativeCountRow>(
+      `SELECT ${cappedCount("", scopeCountLimit, "scope_chunks")} AS scope_count,
+              ARRAY[${counts.join(",\n")}]::int[] AS counts`,
       params,
     );
-    return (rows[0]?.counts ?? []).map(Number);
+    return {
+      scopeChunkCount: Number(rows[0]?.scope_count ?? 0),
+      alternativeMatchCounts: (rows[0]?.counts ?? []).map(Number),
+    };
   }
 
   private async rankSomeTermsMatches(
@@ -374,10 +407,16 @@ class SomeTermsBudgetExceeded extends Error {
   }
 }
 
+// A SQLSTATE is a five-character class code, never row content, so it is safe to log.
+const sqlStateOf = (error: unknown): string | undefined =>
+  typeof error === "object" && error !== null && "code" in error && typeof error.code === "string"
+    && /^[0-9A-Z]{5}$/.test(error.code)
+    ? error.code
+    : undefined;
+
 // 57014 is query_canceled: here, the transaction-local statement_timeout firing.
 const isSomeTermsTimeout = (error: unknown): boolean =>
-  error instanceof SomeTermsBudgetExceeded
-  || (typeof error === "object" && error !== null && "code" in error && error.code === "57014");
+  error instanceof SomeTermsBudgetExceeded || sqlStateOf(error) === "57014";
 
 const toRetrievedChunk = (row: LexicalSearchRow): Omit<RetrievedChunk, "similarity"> => ({
   chunkId: row.chunk_id,

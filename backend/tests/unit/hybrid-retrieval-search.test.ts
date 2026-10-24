@@ -15,7 +15,7 @@ type RecordedStatement = { sql: string; params: unknown[] };
 // Statement-timeout settings are recorded apart, so `calls` holds only the searches.
 const recordStatements = (
   responses: unknown[][] = [],
-  options: { failOn?: (call: RecordedStatement, index: number) => Error | undefined } = {},
+  options: { failOn?: (call: RecordedStatement, index: number) => Error | undefined; waitingClients?: number } = {},
 ) => {
   const calls: RecordedStatement[] = [];
   const timeoutSettings: RecordedStatement[] = [];
@@ -45,6 +45,7 @@ const recordStatements = (
       return call;
     },
     database: {
+      pool: { waitingCount: options.waitingClients ?? 0 },
       query: run,
       async withTransaction<T>(callback: (client: { query: (sql: string, params?: unknown[]) => Promise<{ rows: unknown[] }> }) => Promise<T>) {
         transactions += 1;
@@ -298,7 +299,7 @@ describe("hybrid retrieval search", () => {
   // made the tsvector expression differ from chunks_search_text_fts_idx, which cost
   // the GIN index and seq-scanned every chunk partition on every lexical search.
   it("builds its tsvector from search_text alone so the GIN index applies", async () => {
-    const statements = recordStatements([[], [{ counts: [3, 3, 0] }], []]);
+    const statements = recordStatements([[], [{ scope_count: 1000, counts: [3, 3, 0] }], []]);
     const search = new PgLexicalSearch(statements.database);
 
     await search.search({
@@ -425,7 +426,7 @@ describe("hybrid retrieval search", () => {
     const statements = recordStatements([
       [lexicalRow("exact", { rank: 0.05 })],
       // preventivo, completo, pernottamento, evento, then three joins.
-      [{ counts: [0, 120, 4, 201, 0, 0, 0] }],
+      [{ scope_count: 1000, counts: [0, 120, 4, 201, 0, 0, 0] }],
       [
         lexicalRow("exact", { covered_weight: 5, covers_all_terms: false, rank: 0.3 }),
         lexicalRow("stay", { covered_weight: 3, covers_all_terms: false, rank: 0.2 }),
@@ -456,7 +457,7 @@ describe("hybrid retrieval search", () => {
   });
 
   it("searches terms only as plain text, never as tsquery syntax", async () => {
-    const statements = recordStatements([[], [{ counts: [1, 1, 1, 0, 0, 0] }], []]);
+    const statements = recordStatements([[], [{ scope_count: 1000, counts: [1, 1, 1, 0, 0, 0] }], []]);
     const search = new PgLexicalSearch(statements.database);
     const query = "pernottamento & !evento | (coscienti:*";
 
@@ -487,7 +488,7 @@ describe("hybrid retrieval search", () => {
   });
 
   it("ranks nothing when every term is too common to find a chunk on its own", async () => {
-    const statements = recordStatements([[], [{ counts: [201, 201, 201, 0, 0] }]]);
+    const statements = recordStatements([[], [{ scope_count: 1000, counts: [201, 201, 201, 0, 0] }]]);
     const search = new PgLexicalSearch(statements.database);
 
     const result = await search.search({ workspaceId: "a1", query: "il di per", topK: 20, matchMode: "all_or_some_terms" });
@@ -509,7 +510,7 @@ describe("hybrid retrieval search", () => {
     });
 
     expect(statements.calls).toHaveLength(1);
-    expect(result).toEqual({ matches: [], someTermsPass: { outcome: "skipped", durationMs: 0 } });
+    expect(result).toEqual({ matches: [], someTermsPass: { outcome: "skipped", reason: "all_terms_only", durationMs: 0 } });
   });
 
   it("reports the some-terms pass as skipped when enough chunks hold every term", async () => {
@@ -518,11 +519,11 @@ describe("hybrid retrieval search", () => {
 
     const result = await search.search({ workspaceId: "a1", query: "alfa beta", topK: 20, matchMode: "all_or_some_terms" });
 
-    expect(result.someTermsPass).toEqual({ outcome: "skipped", durationMs: 0 });
+    expect(result.someTermsPass).toEqual({ outcome: "skipped", reason: "enough_all_terms_matches", durationMs: 0 });
   });
 
   it("runs the some-terms statements in one transaction, inside what is left of one time budget", async () => {
-    const statements = recordStatements([[], [{ counts: [3, 3, 0] }], [lexicalRow("partial", { covered_weight: 1, covers_all_terms: false })]]);
+    const statements = recordStatements([[], [{ scope_count: 1000, counts: [3, 3, 0] }], [lexicalRow("partial", { covered_weight: 1, covers_all_terms: false })]]);
     const search = new PgLexicalSearch(statements.database);
 
     const result = await search.search({ workspaceId: "a1", query: "alfa beta", topK: 20, matchMode: "all_or_some_terms" });
@@ -531,6 +532,7 @@ describe("hybrid retrieval search", () => {
     expect(statements.timeoutSettings).toHaveLength(2);
     const budgets = statements.timeoutSettings.map(({ params }) => Number.parseInt(String(params[0]), 10));
     expect(budgets[0]).toBeLessThanOrEqual(RETRIEVAL_BEHAVIOR.hybrid.lexicalSomeTermsTimeoutMs);
+    expect(budgets[0]).toBeGreaterThan(RETRIEVAL_BEHAVIOR.hybrid.lexicalSomeTermsTimeoutMs - 50);
     expect(budgets[1]).toBeLessThanOrEqual(budgets[0]);
     expect(budgets.every((budget) => budget >= 1)).toBe(true);
     // The setting is local to the transaction, so it never leaks onto the pooled connection.
@@ -543,7 +545,7 @@ describe("hybrid retrieval search", () => {
   it("falls back to the all-terms hits when the some-terms search runs out of time", async () => {
     const warnings: Array<{ fields: Record<string, unknown>; message: string }> = [];
     const statements = recordStatements(
-      [[lexicalRow("exact", { rank: 0.2 })], [{ counts: [3, 3, 0] }]],
+      [[lexicalRow("exact", { rank: 0.2 })], [{ scope_count: 1000, counts: [3, 3, 0] }]],
       { failOn: (_, index) => (index === 2 ? statementTimeout() : undefined) },
     );
     const search = new PgLexicalSearch(statements.database, {
@@ -559,16 +561,66 @@ describe("hybrid retrieval search", () => {
     expect(JSON.stringify(warnings[0])).not.toContain("alfa");
   });
 
-  it("still fails the search on a database error that is not a timeout", async () => {
-    const statements = recordStatements([[]], { failOn: (_, index) => (index === 1 ? new Error("connection reset") : undefined) });
+  it("keeps the all-terms hits when the some-terms search fails for another reason", async () => {
+    const warnings: Array<{ fields: Record<string, unknown>; message: string }> = [];
+    const statements = recordStatements(
+      [[lexicalRow("exact", { rank: 0.2 })]],
+      { failOn: (_, index) => (index === 1 ? Object.assign(new Error("terminating connection due to administrator command"), { code: "57P01" }) : undefined) },
+    );
+    const search = new PgLexicalSearch(statements.database, {
+      logger: { warn: (fields, message) => warnings.push({ fields, message }) },
+    });
+
+    const result = await search.search({ workspaceId: "a1", query: "alfa beta", topK: 20, matchMode: "all_or_some_terms" });
+
+    expect(result.matches.map((match) => match.chunkId)).toEqual(["exact"]);
+    expect(result.someTermsPass.outcome).toBe("failed");
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0].fields).toMatchObject({ termCount: 2, sqlState: "57P01" });
+    expect(JSON.stringify(warnings[0])).not.toContain("alfa");
+    expect(JSON.stringify(warnings[0])).not.toContain("administrator");
+  });
+
+  it("skips the some-terms search while other requests wait for a connection", async () => {
+    const statements = recordStatements([[]], { waitingClients: 2 });
     const search = new PgLexicalSearch(statements.database);
 
-    await expect(search.search({ workspaceId: "a1", query: "alfa beta", topK: 20, matchMode: "all_or_some_terms" }))
-      .rejects.toThrow("connection reset");
+    const result = await search.search({ workspaceId: "a1", query: "alfa beta", topK: 20, matchMode: "all_or_some_terms" });
+
+    expect(statements.calls).toHaveLength(1);
+    expect(statements.transactions()).toBe(0);
+    expect(result.someTermsPass).toEqual({ outcome: "skipped", reason: "connections_busy", durationMs: 0 });
+  });
+
+  it("reports a one-term query's pass as having nothing to relax", async () => {
+    const statements = recordStatements();
+    const result = await new PgLexicalSearch(statements.database)
+      .search({ workspaceId: "a1", query: "Supercoscienti", topK: 20, matchMode: "all_or_some_terms" });
+
+    expect(result.someTermsPass).toEqual({ outcome: "skipped", reason: "nothing_to_relax", durationMs: 0 });
+  });
+
+  it("takes its time budget from the constructor when one is given", async () => {
+    const statements = recordStatements([[], [{ scope_count: 1000, counts: [3, 3, 0] }], []]);
+    await new PgLexicalSearch(statements.database, { someTermsTimeoutMs: 40 })
+      .search({ workspaceId: "a1", query: "alfa beta", topK: 20, matchMode: "all_or_some_terms" });
+
+    expect(Number.parseInt(String(statements.timeoutSettings[0]?.params[0]), 10)).toBeLessThanOrEqual(40);
+  });
+
+  it("counts the chunks in scope alongside each alternative, under the same scope", async () => {
+    const statements = recordStatements([[], [{ scope_count: 1000, counts: [3, 3, 0] }], []]);
+    await new PgLexicalSearch(statements.database)
+      .search({ workspaceId: "a1", query: "alfa beta", topK: 20, matchMode: "all_or_some_terms" });
+
+    const countSql = statements.calls[1]?.sql ?? "";
+    expect(countSql).toMatch(/AS scope_count/);
+    expect(countSql.match(/d\.retrieval_enabled = true/g)).toHaveLength(4);
+    expect(statements.calls[1]?.params).toContain(RETRIEVAL_BEHAVIOR.hybrid.lexicalSomeTermsScopeCountCap + 1);
   });
 
   it("scopes the some-terms statements to the workspace, retrievable documents, and the turn's filters", async () => {
-    const statements = recordStatements([[], [{ counts: [3, 3, 0] }], []]);
+    const statements = recordStatements([[], [{ scope_count: 1000, counts: [3, 3, 0] }], []]);
     const search = new PgLexicalSearch(statements.database);
 
     await search.search({
@@ -593,7 +645,7 @@ describe("hybrid retrieval search", () => {
   });
 
   it("ranks a some-terms chunk against every alternative it holds, on the all-terms scale", async () => {
-    const statements = recordStatements([[], [{ counts: [3, 3, 0] }], []]);
+    const statements = recordStatements([[], [{ scope_count: 1000, counts: [3, 3, 0] }], []]);
     const search = new PgLexicalSearch(statements.database);
 
     await search.search({ workspaceId: "a1", query: "alfa beta", topK: 20, matchMode: "all_or_some_terms" });
@@ -604,13 +656,13 @@ describe("hybrid retrieval search", () => {
   });
 
   it("can tag a some-terms chunk as holding every term only when the ranking covers every term", async () => {
-    const complete = recordStatements([[], [{ counts: [3, 3, 0] }], []]);
+    const complete = recordStatements([[], [{ scope_count: 1000, counts: [3, 3, 0] }], []]);
     await new PgLexicalSearch(complete.database)
       .search({ workspaceId: "a1", query: "alfa beta", topK: 20, matchMode: "all_or_some_terms" });
     expect(complete.calls[2]?.sql).toContain("(h.alternative_0 AND h.alternative_1) AS covers_all_terms");
 
     // beta matches nothing, so no chunk can hold every term.
-    const partial = recordStatements([[], [{ counts: [3, 0, 0] }], []]);
+    const partial = recordStatements([[], [{ scope_count: 1000, counts: [3, 0, 0] }], []]);
     await new PgLexicalSearch(partial.database)
       .search({ workspaceId: "a1", query: "alfa beta", topK: 20, matchMode: "all_or_some_terms" });
     expect(partial.calls[2]?.sql).toContain("FALSE AS covers_all_terms");

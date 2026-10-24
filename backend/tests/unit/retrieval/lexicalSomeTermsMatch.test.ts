@@ -130,17 +130,21 @@ describe("buildSomeTermsLexicalQuery", () => {
 
 describe("planSomeTermsRanking", () => {
   const rankingFor = (lexicalQuery: string, alternativeMatchCounts: number[], overrides: Partial<{
+    scopeChunkCount: number;
     matchCap: number;
     rankedChunkBudget: number;
     minimumWeightShare: number;
+    minimumHeldWeight: number;
     maxRankedTerms: number;
   }> = {}) =>
     planSomeTermsRanking({
       query: queryFor(lexicalQuery),
       alternativeMatchCounts,
+      scopeChunkCount: 2_000,
       matchCap: 200,
       rankedChunkBudget: 1000,
       minimumWeightShare: 1 / 3,
+      minimumHeldWeight: Math.log(10),
       maxRankedTerms: 12,
       ...overrides,
     });
@@ -153,24 +157,48 @@ describe("planSomeTermsRanking", () => {
     return plan;
   };
 
-  it("weighs a rare term above a common one", () => {
+  it("weighs a term by how few of the workspace's chunks hold it", () => {
     // preventivo, completo, pernottamento, evento, then the three joins.
-    const plan = planFor("preventivo completo pernottamento evento", [30, 150, 4, 201, 0, 0, 0]);
+    const plan = planFor("preventivo completo pernottamento evento", [30, 150, 4, 190, 0, 0, 0]);
 
     const [preventivo, completo, pernottamento, evento] = plan.termWeights;
-    expect(pernottamento).toBeGreaterThan(preventivo);
-    expect(preventivo).toBeGreaterThan(completo);
-    expect(completo).toBeGreaterThan(evento);
+    expect(pernottamento).toBeCloseTo(Math.log(2_000 / 4));
+    expect(preventivo).toBeCloseTo(Math.log(2_000 / 30));
+    expect(completo).toBeCloseTo(Math.log(2_000 / 150));
+    expect(evento).toBeCloseTo(Math.log(2_000 / 190));
     expect(plan.totalWeight).toBeCloseTo(plan.termWeights.reduce((sum, weight) => sum + weight, 0));
     expect(plan.everyTermRanked).toBe(true);
   });
 
+  it("finds nothing when the only term found is common in the workspace", () => {
+    // A small workspace: evento is on 150 of its 200 pages; nothing else in the query is.
+    expect(rankingFor("preventivo costo parcheggio evento", [0, 0, 0, 150, 0, 0, 0], { scopeChunkCount: 200 })).toBeNull();
+  });
+
+  it("asks a chunk to hold an absolute amount of term weight as well as its share", () => {
+    // completo is on 40 of 200 pages: a third of the query's weight, but not specific.
+    const plan = planFor("completo pernottamento", [40, 2, 0], { scopeChunkCount: 200 });
+
+    expect(plan.minimumCoveredWeight).toBeCloseTo(Math.log(10) * (1 - 1e-9));
+    expect(plan.termWeights[0]).toBeLessThan(plan.minimumCoveredWeight);
+    expect(plan.termWeights[1]).toBeGreaterThan(plan.minimumCoveredWeight);
+  });
+
   it("leaves a term found nowhere out of the weight a chunk is measured against", () => {
-    const plan = planFor("preventivo completo pernottamento evento", [0, 150, 4, 201, 0, 0, 0]);
+    const plan = planFor("preventivo completo pernottamento evento", [0, 150, 4, 190, 0, 0, 0]);
 
     expect(plan.termWeights[0]).toBe(0);
     expect(plan.totalWeight).toBeCloseTo(plan.termWeights[1] + plan.termWeights[2] + plan.termWeights[3]);
     // No chunk can hold a term that no chunk holds.
+    expect(plan.everyTermRanked).toBe(false);
+  });
+
+  it("gives a term too common to count no weight, rather than guessing one", () => {
+    // evento passes the count cap: its real count is unknown, so it weighs nothing.
+    const plan = planFor("pernottamento evento", [4, 201, 0]);
+
+    expect(plan.termWeights[1]).toBe(0);
+    expect(plan.totalWeight).toBeCloseTo(plan.termWeights[0]);
     expect(plan.everyTermRanked).toBe(false);
   });
 
@@ -222,8 +250,7 @@ describe("planSomeTermsRanking", () => {
   it("asks a chunk to hold at least the configured share of the query's term weight", () => {
     const plan = planFor("alfa beta gamma", [10, 10, 10, 0, 0]);
 
-    expect(plan.minimumCoveredWeight).toBeGreaterThan(0);
-    expect(plan.minimumCoveredWeight).toBeLessThanOrEqual(plan.totalWeight / 3);
+    expect(plan.minimumCoveredWeight).toBeCloseTo(plan.totalWeight / 3 * (1 - 1e-9));
     // One of three equally weighted terms is exactly a third; rounding must not reject it.
     expect(plan.termWeights[0] >= plan.minimumCoveredWeight).toBe(true);
   });

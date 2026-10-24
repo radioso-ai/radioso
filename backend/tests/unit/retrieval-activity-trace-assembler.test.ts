@@ -60,10 +60,16 @@ describe("activity trace assembler", () => {
       },
       { ...second, lexicalSomeTermsPass: { outcome: "timed_out", durationMs: 150 } },
     ];
+    input.prompt.retrievalBranches.push({
+      ...second,
+      subqueryId: "subquery_3",
+      label: "Busy",
+      lexicalSomeTermsPass: { outcome: "skipped", reason: "connections_busy", durationMs: 0 },
+    });
 
     const trace = new ActivityTraceAssembler().assemble(input);
 
-    const [firstLexical, secondLexical] = trace.stages.filter((stage) => stage.kind === "lexical");
+    const [firstLexical, secondLexical, busyLexical] = trace.stages.filter((stage) => stage.kind === "lexical");
     expect(firstLexical?.metrics).toMatchObject({ candidateCount: 2, someTermsCandidateCount: 1, someTermsPassDurationMs: 42 });
     expect(firstLexical?.outputs?.someTermsPass).toBe("ran");
     expect(firstLexical?.outputs?.chunks).toEqual([
@@ -74,6 +80,8 @@ describe("activity trace assembler", () => {
     // A pass that ran out of time is told apart from one that found nothing.
     expect(secondLexical?.metrics).toMatchObject({ candidateCount: 1, someTermsCandidateCount: 0, someTermsPassDurationMs: 150 });
     expect(secondLexical?.outputs?.someTermsPass).toBe("timed_out");
+    expect(secondLexical?.outputs).not.toHaveProperty("someTermsPassSkipReason");
+    expect(busyLexical?.outputs).toMatchObject({ someTermsPass: "skipped", someTermsPassSkipReason: "connections_busy" });
     expect(secondLexical?.outputs?.chunks).toEqual([
       expect.objectContaining({ chunkId: "la1", lexicalTermCoverage: "all_terms" }),
     ]);

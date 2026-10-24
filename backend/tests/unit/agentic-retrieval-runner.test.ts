@@ -93,7 +93,7 @@ const buildDeps = (overrides: {
   };
   const lexicalSearch: LexicalSearchPort = {
     async search() {
-      return { matches: overrides.lexicalResults ?? [], someTermsPass: skippedSomeTermsPass() };
+      return { matches: overrides.lexicalResults ?? [], someTermsPass: skippedSomeTermsPass("all_terms_only") };
     },
   };
   const queryRewrite: QueryRewritePort = {

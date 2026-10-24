@@ -11,7 +11,7 @@ import type { LexicalSearchInput, LexicalSearchPort } from "../../src/modules/re
  */
 export const lexicalSearchStub = (
   fake: { search(input: LexicalSearchInput): Promise<RetrievedChunk[]> },
-  someTermsPass: LexicalSomeTermsPassReport = skippedSomeTermsPass(),
+  someTermsPass: LexicalSomeTermsPassReport = skippedSomeTermsPass("nothing_to_relax"),
 ): LexicalSearchPort => ({
   async search(input) {
     return { matches: await fake.search(input), someTermsPass };

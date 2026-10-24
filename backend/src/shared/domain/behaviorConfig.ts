@@ -297,9 +297,17 @@ export const RETRIEVAL_BEHAVIOR = {
     // this many do, it also returns chunks holding part of the query (some-terms
     // matches), ranked after the all-terms ones.
     lexicalSomeTermsBelowAllTermsMatches: 3,
-    // A some-terms match holds at least this share of the query's term weight. Rarer
-    // terms weigh more, so a chunk sharing only the query's frequent words falls short.
+    // A some-terms match holds at least this share of the query's found term weight.
+    // A term weighs ln(chunks in scope / chunks holding it), so a chunk sharing only the
+    // query's frequent words falls short.
     lexicalSomeTermsMinimumWeightShare: 1 / 3,
+    // ...and at least this much weight outright: as much as one term found on at most a
+    // tenth of the workspace's chunks. Without it, a query whose only found term sits on
+    // most pages would score every one of those pages as a full match.
+    lexicalSomeTermsMinimumHeldWeight: Math.log(10),
+    // Chunks in scope are counted up to this many. Past it the count is a lower bound,
+    // which only makes term weights smaller, never larger.
+    lexicalSomeTermsScopeCountCap: 10_000,
     // A term matching more chunks than this cannot find a chunk on its own; it still
     // counts toward the share a found chunk holds. Each term's count stops at the cap,
     // but Postgres may still read every chunk in the workspace to reach it (a term
@@ -311,7 +319,8 @@ export const RETRIEVAL_BEHAVIOR = {
     lexicalSomeTermsMaxRankedTerms: 12,
     // Wall-clock budget for the some-terms pass, counts and ranking together, enforced
     // as a transaction-local statement_timeout. When it runs out, the search keeps its
-    // all-terms hits and the trace records the pass as timed out.
+    // all-terms hits and the trace records the pass as timed out. The pass is skipped
+    // while requests wait for a pool connection, so the wait never eats the budget.
     lexicalSomeTermsTimeoutMs: 150,
     mergedCandidateCap: 50,
     minimumUsefulCandidateCount: 3,

@@ -767,6 +767,8 @@ describe("retrieval pipeline stages", () => {
         {},
         { lexicalSomeTermsPass: { outcome: "ran" as const, durationMs: 12 } },
         { lexicalSomeTermsPass: { outcome: "timed_out" as const, durationMs: 150 } },
+        { lexicalSomeTermsPass: { outcome: "failed" as const, durationMs: 3 } },
+        { lexicalSomeTermsPass: { outcome: "skipped" as const, reason: "connections_busy" as const, durationMs: 0 as const } },
       ],
       vectorFallbackApplied: false,
       activeRetrievalSubqueries: new Array(1_500).fill({}),
@@ -778,8 +780,10 @@ describe("retrieval pipeline stages", () => {
       "retrieval.candidates.lexical.some_terms.count": 1,
       "retrieval.lexical.some_terms_pass.ran.count": 1,
       "retrieval.lexical.some_terms_pass.timed_out.count": 1,
+      "retrieval.lexical.some_terms_pass.failed.count": 1,
+      "retrieval.lexical.some_terms_pass.connections_busy.count": 1,
       "retrieval.lexical.some_terms_pass.max_duration_ms": 150,
-      "retrieval.branch.count": 3,
+      "retrieval.branch.count": 5,
       "retrieval.subquery.count": 1_000,
     });
 

@@ -147,6 +147,66 @@ describeIntegration("PgLexicalSearch (Postgres full-text search)", () => {
     expect(results[0]).toMatchObject({ key: "supercoscienti_stay", coverage: "some_terms" });
   });
 
+  it("finds nothing when the only term the workspace holds is on most of its pages", async () => {
+    // evento is on 31 of the workspace's 41 retrievable pages; nothing else in the query is.
+    expect(await searchFor("preventivo costo parcheggio evento")).toEqual([]);
+    const { someTermsPass } = await search.search({
+      workspaceId,
+      query: "preventivo costo parcheggio evento",
+      topK: 20,
+      matchMode: "all_or_some_terms",
+    });
+    expect(someTermsPass.outcome).toBe("ran");
+  });
+
+  it("keeps the all-terms hits when the some-terms pass runs out of time on real Postgres", async () => {
+    // One connection, so the timeout check below reads the very connection the pass used.
+    const slowDatabase = new Database(integrationDatabaseUrl, { poolMax: 1 });
+    const runInTransaction = slowDatabase.withTransaction.bind(slowDatabase);
+    // Slow the count statement: a sleep on the same connection, under the pass's own
+    // transaction-local statement_timeout, so Postgres cancels it.
+    slowDatabase.withTransaction = (callback) => runInTransaction((client) => callback(new Proxy(client, {
+      get(target, property, receiver) {
+        if (property !== "query") {
+          return Reflect.get(target, property, receiver) as unknown;
+        }
+        return async (sql: string, params?: unknown[]) => {
+          if (sql.includes("AS scope_count")) {
+            await target.query("SELECT pg_sleep(2)");
+          }
+          return target.query(sql, params);
+        };
+      },
+    })));
+    try {
+      const [poolDefault] = await slowDatabase.query<{ statement_timeout: string }>("SHOW statement_timeout");
+      const warnings: Array<Record<string, unknown>> = [];
+      const slowSearch = new PgLexicalSearch(slowDatabase, {
+        someTermsTimeoutMs: 100,
+        logger: { warn: (fields) => warnings.push(fields) },
+      });
+
+      const result = await slowSearch.search({
+        workspaceId,
+        query: "Festival delle arti gioiose",
+        topK: 20,
+        matchMode: "all_or_some_terms",
+      });
+
+      expect(result.someTermsPass.outcome).toBe("timed_out");
+      expect(result.someTermsPass.durationMs).toBeLessThan(1_000);
+      expect(result.matches.map((match) => [keyOf(match), match.lexicalTermCoverage]).sort()).toEqual([
+        ["festival_program", "all_terms"],
+        ["festival_stay", "all_terms"],
+      ]);
+      expect(warnings).toEqual([expect.objectContaining({ timeoutMs: 100, termCount: 4 })]);
+      const [afterwards] = await slowDatabase.query<{ statement_timeout: string }>("SHOW statement_timeout");
+      expect(afterwards?.statement_timeout).toBe(poolDefault?.statement_timeout);
+    } finally {
+      await slowDatabase.close();
+    }
+  });
+
   it("finds the course page for an English question over an Italian corpus", async () => {
     const results = await searchFor("price overnight event Supercoscienti");
 

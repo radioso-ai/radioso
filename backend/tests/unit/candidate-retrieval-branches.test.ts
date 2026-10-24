@@ -870,6 +870,33 @@ describe("candidate retrieval branch timings", () => {
     expect(result.semanticRetrievalDurationMs).toBe(0);
     expect(result.lexicalRetrievalDurationMs).toBeGreaterThan(0);
   });
+  it("records a failed all-terms search's pass as skipped for lexical unavailability", async () => {
+    const stage = new CandidateRetrievalStageService(
+      {
+        async embedQueries() {
+          throw new Error("embedding provider down");
+        },
+      },
+      {
+        async search() {
+          throw new Error("vector search must not run without an embedding");
+        },
+      },
+      {
+        async search() {
+          throw new Error("lexical backend down");
+        },
+      },
+      hydrateSemanticCandidates,
+    );
+
+    const result = await stage.execute(singleBranchStageInput());
+
+    expect(result.retrievalBranches[0]?.lexicalSomeTermsPass)
+      .toEqual({ outcome: "skipped", reason: "lexical_unavailable", durationMs: 0 });
+    expect(result.degradedRetrievalChannels).toContain("lexical");
+  });
+
   it("asks each lexical branch for some-terms matches and keeps what the pass did", async () => {
     const inputs: LexicalSearchInput[] = [];
     const stage = new CandidateRetrievalStageService(

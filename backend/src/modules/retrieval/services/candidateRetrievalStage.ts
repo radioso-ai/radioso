@@ -69,7 +69,7 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
           lexicalPlan: subquery.lexicalPlan,
         }).catch((): LexicalSearchResult => {
           degradedChannels.add("lexical");
-          return { matches: [], someTermsPass: skippedSomeTermsPass() };
+          return { matches: [], someTermsPass: skippedSomeTermsPass("lexical_unavailable") };
         })),
       ] as const),
     );
@@ -165,7 +165,10 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
         const lexicalEntry = lexicalSearchBySubquery.get(subquery.id);
         const [semanticSearch, lexicalResult] = await Promise.all([
           semanticSearchForBranch,
-          lexicalEntry?.promise ?? Promise.resolve<LexicalSearchResult>({ matches: [], someTermsPass: skippedSomeTermsPass() }),
+          lexicalEntry?.promise ?? Promise.resolve<LexicalSearchResult>({
+            matches: [],
+            someTermsPass: skippedSomeTermsPass("nothing_to_relax"),
+          }),
         ]);
         // Read after the searches above have settled, so each timing is final.
         const semanticSearchTiming = semanticEntry?.timing();

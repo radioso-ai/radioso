@@ -196,6 +196,13 @@ resource "google_cloud_run_v2_service" "backend" {
         name  = "METRICS_ENABLED"
         value = tostring(var.metrics_enabled)
       }
+      # node-postgres reads PGSSLMODE when DATABASE_URL carries no TLS settings. no-verify encrypts
+      # the connection without checking the server certificate: Cloud SQL's private-IP certificate
+      # does not name the address clients dial, and the instance is reachable only on the VPC.
+      env {
+        name  = "PGSSLMODE"
+        value = "no-verify"
+      }
       env {
         name = "DATABASE_URL"
         value_source {
@@ -1153,6 +1160,11 @@ resource "google_cloud_run_v2_service" "document_worker" {
         name  = "GOOGLE_CLOUD_PROJECT"
         value = var.project_id
       }
+      # TLS to Postgres; see the backend service.
+      env {
+        name  = "PGSSLMODE"
+        value = "no-verify"
+      }
       env {
         name = "DATABASE_URL"
         value_source {
@@ -1681,6 +1693,11 @@ resource "google_cloud_run_v2_service" "crawler_worker" {
       env {
         name  = "GOOGLE_CLOUD_PROJECT"
         value = var.project_id
+      }
+      # TLS to Postgres; see the backend service.
+      env {
+        name  = "PGSSLMODE"
+        value = "no-verify"
       }
       env {
         name = "DATABASE_URL"

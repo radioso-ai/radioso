@@ -55,6 +55,7 @@ module "radioso" {
   db_tier                           = var.db_tier
   db_deletion_protection            = true
   db_point_in_time_recovery_enabled = var.db_point_in_time_recovery_enabled
+  db_require_encrypted_connections  = var.db_require_encrypted_connections
 
   secret_replication_locations = [var.region]
 

@@ -59,6 +59,7 @@ module "radioso" {
   db_tier                           = var.db_tier
   db_deletion_protection            = false
   db_point_in_time_recovery_enabled = var.db_point_in_time_recovery_enabled
+  db_require_encrypted_connections  = var.db_require_encrypted_connections
 
   worker_task_queue_name                    = "radioso-${var.environment}-document-processing"
   worker_crawl_task_queue_name              = "radioso-${var.environment}-website-crawls"

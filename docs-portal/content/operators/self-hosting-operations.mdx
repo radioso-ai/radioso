@@ -222,6 +222,10 @@ Rotate these values deliberately and keep historical impact in mind:
 
 Changing encryption or token secrets without a migration or rotation plan can invalidate existing sessions, tokens, or saved connector credentials.
 
+## Database TLS
+
+The Compose stack connects to Postgres without TLS, over the private Docker network. To encrypt that connection, set `PGSSLMODE=no-verify` on the backend and worker, or put `sslmode=verify-full&sslrootcert=<path>` in `DATABASE_URL` to also check the certificate. [Encryption](/operators/encryption#self-hosted-deployments) covers both and the certificate errors to expect.
+
 ## Visitor request facts
 
 Two more settings shape what a conversation records about the request that started it.

@@ -1856,6 +1856,7 @@ export interface UsageDailyRollups {
 export interface UsageEvents {
   account_id: string | null;
   agent_id: string | null;
+  cached_input_tokens: Int8 | null;
   conversation_id: string | null;
   created_at: Generated<Timestamp>;
   document_id: string | null;

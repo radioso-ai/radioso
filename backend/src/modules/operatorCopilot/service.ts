@@ -770,7 +770,7 @@ export class OperatorCopilotService {
     const proposals: CopilotProposalCard[] = [];
     try {
       const priorTranscript = await this.buildPriorTranscript(conversation.id);
-      const operatorMessage = await this.deps.repository.createMessage({ conversationId: conversation.id, role: "operator", content: input.message });
+      await this.deps.repository.createMessage({ conversationId: conversation.id, role: "operator", content: input.message });
       await this.audit(input, {
         accountId: input.accountId,
         workspaceId: input.workspaceId,
@@ -786,17 +786,6 @@ export class OperatorCopilotService {
           userMessage: buildCopilotTurnInput(input.pageContext, priorTranscript, input.message),
           usageContext: {
             workspaceId: input.workspaceId,
-            accountId: input.accountId,
-            // Ray's own conversation and this turn's operator message, not the assistant's
-            // `conversations`/`messages`: `copilot_conversations`/`copilot_messages`. The durable
-            // recorder tolerates that distinction (see durableUsageEventRecorder.ts) rather than
-            // this seam filtering it out. The message id matters beyond lineage: the idempotency
-            // key prefers conversationId over requestId once a conversation is set, and every turn
-            // on this same conversation starts its step count back at 0 -- without a fresh
-            // messageId to disambiguate, a second turn's first step would collide with the first
-            // turn's and never get recorded.
-            conversationId: conversation.id,
-            messageId: operatorMessage.id,
             requestId: turnId,
             surface: "operator_copilot",
             attemptKey: "copilot_turn",

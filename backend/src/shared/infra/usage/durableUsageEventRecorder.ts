@@ -27,41 +27,31 @@ const resolveAccountId = async (
 };
 
 const MESSAGE_LINK_CONSTRAINT = "usage_events_message_id_fkey";
-const CONVERSATION_LINK_CONSTRAINT = "usage_events_conversation_id_fkey";
 
-const violatesForeignKey = (error: unknown, constraint: string): boolean =>
+/** The insert named a message that no longer exists. */
+const isMissingMessageLink = (error: unknown): boolean =>
   typeof error === "object"
   && error !== null
   && (error as { code?: unknown }).code === "23503"
-  && (error as { constraint?: unknown }).constraint === constraint;
-
-interface UsageEventLinks {
-  readonly conversationId: string | null;
-  readonly messageId: string | null;
-}
+  && (error as { constraint?: unknown }).constraint === MESSAGE_LINK_CONSTRAINT;
 
 /**
- * Inserts with the event's conversation and message links, dropping whichever one its foreign
- * key rejects and retrying. A link is rejected for two different reasons, and both resolve the
- * same way: a voice turn's user message is deleted when a newer utterance replaces it while a
- * call it already made may still be recording, and a non-assistant surface's own conversation
- * (Ray's `copilot_conversations`, not `conversations`) can never satisfy a foreign key scoped to
- * chat conversations. The spend is the record; the link is context.
+ * Inserts with the event's message link, and again without it when that message was deleted
+ * between the call and the write: a voice turn's user message is deleted when a newer utterance
+ * replaces it, while a call it already made may still be recording. The spend is the record; the
+ * link is context.
  */
-const withLinkFallback = async <T>(
-  links: UsageEventLinks,
-  insert: (links: UsageEventLinks) => Promise<T>,
+const withMessageLinkFallback = async <T>(
+  messageId: string | null | undefined,
+  insert: (messageId: string | null) => Promise<T>,
 ): Promise<T> => {
   try {
-    return await insert(links);
+    return await insert(messageId ?? null);
   } catch (error) {
-    if (links.messageId && violatesForeignKey(error, MESSAGE_LINK_CONSTRAINT)) {
-      return withLinkFallback({ ...links, messageId: null }, insert);
+    if (!messageId || !isMissingMessageLink(error)) {
+      throw error;
     }
-    if (links.conversationId && violatesForeignKey(error, CONVERSATION_LINK_CONSTRAINT)) {
-      return withLinkFallback({ ...links, conversationId: null }, insert);
-    }
-    throw error;
+    return insert(null);
   }
 };
 
@@ -91,68 +81,65 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
     const totalTokens = (event.inputTokens ?? 0) + (event.outputTokens ?? 0);
     const eventId = randomUUID();
 
-    const inserted = await withLinkFallback(
-      { conversationId: event.conversationId ?? null, messageId: event.messageId ?? null },
-      (links) => this.db.transaction().execute(async (trx) => {
-        const insertedRow = await trx
-          .insertInto("usage_events")
-          .values({
-            id: eventId,
-            idempotency_key: event.idempotencyKey,
-            account_id: accountId,
-            workspace_id: event.workspaceId,
-            agent_id: event.agentId ?? null,
-            source_id: event.sourceId ?? null,
-            document_id: event.documentId ?? null,
-            document_revision: event.documentRevision ?? null,
-            conversation_id: links.conversationId,
-            message_id: links.messageId,
-            job_id: event.jobId ?? null,
-            surface: event.surface ?? "embedding",
-            operation: event.operation ?? "embedding",
-            provider: event.provider,
-            model: event.model,
-            input_tokens: event.inputTokens ?? 0,
-            output_tokens: event.outputTokens ?? 0,
-            total_tokens: totalTokens,
-            input_bytes: event.inputBytes,
-            output_bytes: 0,
-            vector_count: event.vectorCount,
-            event_kind: "embedding",
-            status: event.status,
-            usage_quality: event.usageQuality,
-            provider_request_id: event.providerRequestId ?? null,
-            error_code: event.errorCode ?? null,
-            occurred_at: occurredAt,
-          })
-          .onConflict((oc) => oc.column("idempotency_key").doNothing())
-          .returning("id")
-          .executeTakeFirst();
+    const inserted = await withMessageLinkFallback(event.messageId, (messageId) => this.db.transaction().execute(async (trx) => {
+      const insertedRow = await trx
+        .insertInto("usage_events")
+        .values({
+          id: eventId,
+          idempotency_key: event.idempotencyKey,
+          account_id: accountId,
+          workspace_id: event.workspaceId,
+          agent_id: event.agentId ?? null,
+          source_id: event.sourceId ?? null,
+          document_id: event.documentId ?? null,
+          document_revision: event.documentRevision ?? null,
+          conversation_id: event.conversationId ?? null,
+          message_id: messageId,
+          job_id: event.jobId ?? null,
+          surface: event.surface ?? "embedding",
+          operation: event.operation ?? "embedding",
+          provider: event.provider,
+          model: event.model,
+          input_tokens: event.inputTokens ?? 0,
+          output_tokens: event.outputTokens ?? 0,
+          total_tokens: totalTokens,
+          input_bytes: event.inputBytes,
+          output_bytes: 0,
+          vector_count: event.vectorCount,
+          event_kind: "embedding",
+          status: event.status,
+          usage_quality: event.usageQuality,
+          provider_request_id: event.providerRequestId ?? null,
+          error_code: event.errorCode ?? null,
+          occurred_at: occurredAt,
+        })
+        .onConflict((oc) => oc.column("idempotency_key").doNothing())
+        .returning("id")
+        .executeTakeFirst();
 
-        if (!insertedRow) {
-          return false;
+      if (!insertedRow) {
+        return false;
+      }
+      const insertedId = insertedRow.id;
+
+      if (event.chunks && event.chunks.length > 0) {
+        if (!event.documentId || event.documentRevision === null || event.documentRevision === undefined) {
+          this.logger?.warn(
+            { workspaceId: event.workspaceId, idempotencyKey: event.idempotencyKey },
+            "Embedding usage event included chunk items without document lineage",
+          );
+          return true;
         }
-        const insertedId = insertedRow.id;
+        await this.insertEmbeddingItems(trx, {
+          usageEventId: insertedId,
+          documentId: event.documentId,
+          documentRevision: event.documentRevision,
+          chunks: event.chunks,
+        });
+      }
 
-        if (event.chunks && event.chunks.length > 0) {
-          if (!event.documentId || event.documentRevision === null || event.documentRevision === undefined) {
-            this.logger?.warn(
-              { workspaceId: event.workspaceId, idempotencyKey: event.idempotencyKey },
-              "Embedding usage event included chunk items without document lineage",
-            );
-            return true;
-          }
-          await this.insertEmbeddingItems(trx, {
-            usageEventId: insertedId,
-            documentId: event.documentId,
-            documentRevision: event.documentRevision,
-            chunks: event.chunks,
-          });
-        }
-
-        return true;
-      }),
-    );
+      return true;
+    }));
 
     if (inserted && accountId && event.status === "succeeded") {
       await this.upsertDailyRollupBestEffort(accountId, occurredAt, {
@@ -204,44 +191,42 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
     const totalTokens = event.totalTokens ?? ((event.inputTokens ?? 0) + (event.outputTokens ?? 0));
     const eventId = randomUUID();
 
-    const inserted = await withLinkFallback(
-      { conversationId: event.conversationId ?? null, messageId: event.messageId ?? null },
-      (links) => this.db.transaction().execute(async (trx) => {
-        const insertedRow = await trx
-          .insertInto("usage_events")
-          .values({
-            id: eventId,
-            idempotency_key: event.idempotencyKey,
-            account_id: accountId,
-            workspace_id: event.workspaceId,
-            agent_id: event.agentId ?? null,
-            conversation_id: links.conversationId,
-            message_id: links.messageId,
-            surface: event.surface,
-            operation: event.operation,
-            provider: event.provider,
-            model: event.model,
-            input_tokens: event.inputTokens ?? 0,
-            output_tokens: event.outputTokens ?? 0,
-            reasoning_tokens: event.reasoningTokens ?? null,
-            total_tokens: totalTokens,
-            input_bytes: event.inputBytes ?? 0,
-            output_bytes: event.outputBytes ?? 0,
-            vector_count: 0,
-            event_kind: "model",
-            status: event.status,
-            usage_quality: event.usageQuality,
-            provider_request_id: event.providerRequestId ?? null,
-            error_code: event.errorCode ?? null,
-            occurred_at: occurredAt,
-          })
-          .onConflict((oc) => oc.column("idempotency_key").doNothing())
-          .returning("id")
-          .executeTakeFirst();
+    const inserted = await withMessageLinkFallback(event.messageId, (messageId) => this.db.transaction().execute(async (trx) => {
+      const insertedRow = await trx
+        .insertInto("usage_events")
+        .values({
+          id: eventId,
+          idempotency_key: event.idempotencyKey,
+          account_id: accountId,
+          workspace_id: event.workspaceId,
+          agent_id: event.agentId ?? null,
+          conversation_id: event.conversationId ?? null,
+          message_id: messageId,
+          surface: event.surface,
+          operation: event.operation,
+          provider: event.provider,
+          model: event.model,
+          input_tokens: event.inputTokens ?? 0,
+          output_tokens: event.outputTokens ?? 0,
+          reasoning_tokens: event.reasoningTokens ?? null,
+          cached_input_tokens: event.cachedInputTokens ?? null,
+          total_tokens: totalTokens,
+          input_bytes: event.inputBytes ?? 0,
+          output_bytes: event.outputBytes ?? 0,
+          vector_count: 0,
+          event_kind: "model",
+          status: event.status,
+          usage_quality: event.usageQuality,
+          provider_request_id: event.providerRequestId ?? null,
+          error_code: event.errorCode ?? null,
+          occurred_at: occurredAt,
+        })
+        .onConflict((oc) => oc.column("idempotency_key").doNothing())
+        .returning("id")
+        .executeTakeFirst();
 
-        return Boolean(insertedRow);
-      }),
-    );
+      return Boolean(insertedRow);
+    }));
 
     if (inserted && accountId && event.status === "succeeded") {
       await this.upsertDailyRollupBestEffort(accountId, occurredAt, {

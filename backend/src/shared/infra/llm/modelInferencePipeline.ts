@@ -382,6 +382,7 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
       inputTokens,
       outputTokens,
       reasoningTokens: input.providerUsage?.reasoningTokens ?? null,
+      cachedInputTokens: input.providerUsage?.cachedInputTokens ?? null,
       totalTokens,
       inputBytes,
       outputBytes,

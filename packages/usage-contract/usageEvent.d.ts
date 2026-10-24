@@ -60,6 +60,7 @@ export interface ModelUsageEvent {
   inputTokens?: number | null;
   outputTokens?: number | null;
   reasoningTokens?: number | null;
+  cachedInputTokens?: number | null;
   totalTokens?: number | null;
   inputBytes?: number | null;
   outputBytes?: number | null;

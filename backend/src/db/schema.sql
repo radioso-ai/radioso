@@ -3924,6 +3924,7 @@ CREATE TABLE public.usage_events (
     reasoning_tokens bigint,
     event_kind text DEFAULT 'unknown'::text NOT NULL,
     agent_id uuid,
+    cached_input_tokens bigint,
     CONSTRAINT usage_events_event_kind_check CHECK ((event_kind = ANY (ARRAY['model'::text, 'embedding'::text, 'unknown'::text])))
 );
 

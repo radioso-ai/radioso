@@ -726,7 +726,10 @@ helpers and the shared chat message limit from `app/http`
   stay, and a reply the conversation no longer holds keeps none (warned, ids
   only). A replay keeps no facts of its own, and a turn that switched the
   call's language spoke nothing: its follow-up keeps the facts of its answer,
-  timed from the switched turn's start. The note is written off the turn's
+  timed from the switched turn's start when it runs on that turn's instance.
+  A follow-up that holds no switched turn here (`languageSwitch: "unheld"`)
+  keeps `firstSpeechMs: null`, since only its own request is timed here, with
+  its own `bridged`, `turnLimitReached` and `outcome`. The note is written off the turn's
   path within the 5 s note limit and never fails the turn. Quality reads the
   block for the voice numbers of `GET /api/v1/quality/stats`; no migration
   holds it.

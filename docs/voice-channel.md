@@ -1140,7 +1140,10 @@ They are timings and closed values; what was said stays in the message. The
 heard part of a reply cut off mid-stream counts as a turn of its call, and a
 teammate's reply on the call does not. A turn that replays a stored answer adds
 nothing, and after a language switch the follow-up that speaks the answer
-keeps its facts, timed from the switching turn's start. A turn that stored no
+keeps its facts. When the follow-up reaches the Radioso instance that ran the
+switching turn, its first words are timed from that turn's start; when it
+reaches another instance, the caller's wait is unknown there, so the turn keeps
+no first-words time and "First words" leaves it out. A turn that stored no
 reply, such as chat's waiting message on a call a teammate owns, keeps none.
 
 The same numbers come back from `GET /api/v1/quality/stats` as `voice`, `null`

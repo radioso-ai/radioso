@@ -2962,6 +2962,22 @@ describe("VoiceTurnService", () => {
         );
       });
 
+      it("keeps the answer's facts with no first-speech time: the switched turn's start is the other instance's", async () => {
+        const notes = fakeNotes();
+        const elsewhere = service(scriptedChat([]), { notes, storedReplies: storedAnswerAt(1_500) });
+
+        const spoken = start(elsewhere, followUp(true));
+        await vi.runAllTimersAsync();
+        await spoken;
+
+        expect(notes.turnFacts.mock.calls).toEqual([[{
+          workspaceId,
+          conversationId,
+          assistantMessageId: "66666666-6666-4666-8666-666666666666",
+          facts: { firstSpeechMs: null, bridged: true, turnLimitReached: false, outcome: "continue" },
+        }]]);
+      });
+
       it("speaks the fallback line in the confirmed language when no answer is stored by the turn limit", async () => {
         const elsewhere = service(scriptedChat([]), { storedReplies: storedAnswerAt(null) }, voiceWithItalianFallback);
 

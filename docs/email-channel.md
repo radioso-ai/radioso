@@ -737,7 +737,8 @@ dashboard.
 
 Turning on direct receiving for a customer domain creates one more inbound
 route in the same project, scoped to that domain, so the project's existing
-webhook covers it too — no separate webhook per domain.
+webhook covers it too — no separate webhook per domain. Radioso turns that
+route's spam filter on at Lettermint's default threshold of 5.
 
 **Deploying with the bundled Terraform.** Each environment root under
 `infra/terraform/environments/` takes the channel's settings and passes them

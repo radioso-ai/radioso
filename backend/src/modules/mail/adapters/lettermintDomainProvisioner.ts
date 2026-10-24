@@ -57,6 +57,8 @@ interface LettermintReceivingRoute {
 /** Lettermint's documented MX host and priority; the API returns the host but never the priority. */
 const DEFAULT_MX_HOSTNAME = "lettermint.mx";
 const RECEIVING_MX_PRIORITY = 10;
+/** Lettermint's documented default inbound spam threshold: mail scoring at or above it is quarantined. */
+const INBOUND_SPAM_THRESHOLD = 5;
 const ROUTE_SLUG_PREFIX = "radioso-inbound-";
 const ROUTE_SLUG_HASH_LENGTH = 16;
 
@@ -93,14 +95,18 @@ export class LettermintEmailDomainProvisioner implements EmailDomainProvisioner 
     if (!name) {
       return null;
     }
-    // `filter[domain]` matches part of a name, so the listing is searched for the exact one.
-    const listing = await this.findListed("/domains", { "filter[domain]": name }, (entry) =>
-      typeof entry.domain === "string" && entry.domain.toLowerCase() === name);
+    const listing = await this.findListedByName(name);
     if (!listing) {
       return null;
     }
     const found = await this.readDomain(listing.id);
     return this.isOwn(found) ? this.providerDomainOf(found) : null;
+  }
+
+  /** The team's registration of exactly `name`; `filter[domain]` matches part of a name. */
+  private findListedByName(name: string): Promise<{ id: string } | null> {
+    return this.findListed("/domains", { "filter[domain]": name }, (entry) =>
+      typeof entry.domain === "string" && entry.domain.toLowerCase() === name);
   }
 
   /**
@@ -153,14 +159,18 @@ export class LettermintEmailDomainProvisioner implements EmailDomainProvisioner 
 
   /**
    * A 422 on the `domain` field covers both a malformed name and one already taken, possibly by
-   * another Lettermint team or another deployment on this one. Only a registration this
-   * deployment holds is reported as already registered.
+   * another Lettermint team or another deployment on this one. A registration this deployment
+   * holds is already registered; one the team holds for anyone else is held elsewhere.
    */
-  private async refusalFor(name: string, error: LettermintApiError): Promise<"already_registered" | "invalid_domain"> {
+  private async refusalFor(name: string, error: LettermintApiError): Promise<"already_registered" | "held_elsewhere" | "invalid_domain"> {
     if (!error.fieldNames.includes("domain")) {
       return "invalid_domain";
     }
-    return (await this.findByName(name)) ? "already_registered" : "invalid_domain";
+    const listing = await this.findListedByName(name);
+    if (!listing) {
+      return "invalid_domain";
+    }
+    return this.isOwn(await this.readDomain(listing.id)) ? "already_registered" : "held_elsewhere";
   }
 
   private async providerDomainOf(domain: LettermintDomain): Promise<ProviderDomain> {
@@ -219,6 +229,9 @@ export class LettermintEmailDomainProvisioner implements EmailDomainProvisioner 
           slug: receivingRouteSlug(domain),
           route_type: "inbound",
           inbound_domain: domain,
+          // The route's spam filter is off without a threshold, and the channel judges no mail
+          // again (see the inbound receiver), so every route Radioso makes sets Lettermint's default.
+          inbound_spam_threshold: INBOUND_SPAM_THRESHOLD,
           attachment_delivery: "url",
         },
       });

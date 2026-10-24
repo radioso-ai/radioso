@@ -311,6 +311,11 @@ export class SendingDomainService {
       await this.deps.domains.releaseClaim(claim.id);
       return { ok: false, refused: "invalid_domain" };
     }
+    // Another deployment's registration is the same refusal as another workspace's claim, naming neither.
+    if (registration.refused === "held_elsewhere") {
+      await this.deps.domains.releaseClaim(claim.id);
+      return { ok: false, refused: "claimed_elsewhere" };
+    }
     return { ok: true, domain: await this.awaitReconciliation(actor, claim) };
   }
 

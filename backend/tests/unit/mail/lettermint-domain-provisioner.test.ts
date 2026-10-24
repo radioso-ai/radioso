@@ -214,7 +214,7 @@ describe("Lettermint domain provisioner: registration", () => {
     expect(callsOf(provider.calls).slice(0, 2)).toEqual([`POST ${BASE}/domains`, `GET ${LIST_DOMAINS_URL}`]);
   });
 
-  it.each(NOT_THIS_DEPLOYMENTS)("refuses a taken name the team holds %s as invalid, and changes nothing", async (_label, projects) => {
+  it.each(NOT_THIS_DEPLOYMENTS)("refuses a taken name the team holds %s as held elsewhere, and changes nothing", async (_label, projects) => {
     const provider = team({
       domain: domainLimitedTo(projects),
       extra: (call) => {
@@ -224,7 +224,7 @@ describe("Lettermint domain provisioner: registration", () => {
       },
     });
 
-    expect(await provisionerFor(provider.fetch).registerSendingDomain(DOMAIN)).toEqual({ ok: false, refused: "invalid_domain" });
+    expect(await provisionerFor(provider.fetch).registerSendingDomain(DOMAIN)).toEqual({ ok: false, refused: "held_elsewhere" });
     expect(provider.calls.filter((call) => call.method !== "GET").map((call) => call.method)).toEqual(["POST"]);
   });
 
@@ -496,6 +496,7 @@ describe("Lettermint domain provisioner: receiving", () => {
           slug: ROUTE_SLUG,
           route_type: "inbound",
           inbound_domain: DOMAIN,
+          inbound_spam_threshold: 5,
           attachment_delivery: "url",
         },
       },

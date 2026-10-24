@@ -32,10 +32,12 @@ export interface ProviderDomain {
 /**
  * `already_registered`: the provider account holds the name already. The provider cannot say who
  * registered it, so the caller decides what to do with that registration; `findByName` reads it.
+ * `held_elsewhere`: the provider account holds the name for another deployment, which this one
+ * may neither adopt nor remove.
  */
 export type DomainRegistration =
   | ({ ok: true } & ProviderDomain)
-  | { ok: false; refused: "already_registered" | "invalid_domain" };
+  | { ok: false; refused: "already_registered" | "held_elsewhere" | "invalid_domain" };
 
 export interface EmailDomainProvisioner {
   readonly provider: string;

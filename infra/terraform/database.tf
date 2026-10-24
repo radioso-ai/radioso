@@ -38,6 +38,9 @@ resource "google_sql_database_instance" "postgres" {
       ipv4_enabled                                  = false
       private_network                               = google_compute_network.vpc.id
       enable_private_path_for_google_cloud_services = true
+      # Every runtime connects over TLS (PGSSLMODE in compute.tf). Refusing unencrypted connections
+      # is a per-stack switch, turned on only once a stack's runtimes run with that setting.
+      ssl_mode = var.db_require_encrypted_connections ? "ENCRYPTED_ONLY" : "ALLOW_UNENCRYPTED_AND_ENCRYPTED"
     }
 
     # Pinned rather than left to the provider's defaults, because deleted conversation data lives on

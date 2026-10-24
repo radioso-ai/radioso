@@ -52,6 +52,7 @@ export type {
   QualityStatsRange,
   QualityTriageState,
   QualityTriageRecord,
+  QualityVoiceStats,
 } from './api-quality'
 export { skillsApi } from './api-skills'
 export type {

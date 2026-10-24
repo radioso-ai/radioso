@@ -1,7 +1,7 @@
 ---
 title: "Voice Channel"
-description: "Let a voice runtime such as ElevenLabs Agents speak for a Radioso agent through an OpenAI-compatible chat-completions endpoint, with sessions Radioso starts on your vendor key, one conversation per voice session, authored lines that cover the wait in the language of each turn, a call that switches language with its caller, a teammate's Inbox replies spoken to the caller, and the call's recording in the Inbox."
-last_updated: 2026-10-19
+description: "Let a voice runtime such as ElevenLabs Agents speak for a Radioso agent through an OpenAI-compatible chat-completions endpoint, with sessions Radioso starts on your vendor key, one conversation per voice session, authored lines that cover the wait in the language of each turn, a call that switches language with its caller, a teammate's Inbox replies spoken to the caller, the call's recording in the Inbox, and the period's call numbers on the Quality page."
+last_updated: 2026-10-24
 ---
 
 # Voice Channel
@@ -1110,6 +1110,59 @@ residency region of the ElevenLabs account and, once the page reports it,
 ElevenLabs's id for the call. Together they name the call's recording; see
 [Recordings](#recordings).
 
+## Call numbers on the Quality page
+
+When an agent takes calls, Activity → Quality shows a **Voice** card under the
+health row. It covers the period and the agent you picked at the top of the
+page, and answers one question: how are calls going? For a busy week it reads:
+
+| Row | Value | What it counts |
+|---|---|---|
+| Calls | 42 | Voice conversations with at least one answered turn in the period. |
+| First words | 2.1 s | The median time from the start of a turn to its first speech, the reply's or the fallback line's. A bridge line covers the wait but is not the first words. |
+| Turns that hit the time limit | 3 of 380 | Turns that reached the [turn limit](#bridge-lines-and-the-turn-limit) before they spoke, out of all the period's turns on calls. |
+| Interruptions | 0.4 per call | Turns whose reply the caller spoke over, cut off while it streamed or after it finished, per call. |
+| Outcomes | 376 continued · 4 asked for a callback | The [outcome](#outcomes) each turn sent the runtime: `continue` or `callback_requested`. |
+
+In practice, watch two of them. A first-words time that climbs toward the
+10-second limit, or a share of time-limit turns that grows week on week, means
+the agent takes too long to answer, most often a slow model or a retrieval that
+searches too wide. A high interruption rate often means replies run long for a
+call.
+
+The card shows only for a period with voice turns, and not when the page is
+filtered to another channel. "First words" reads "—" when no turn measured it:
+a turn measures it when the agent's voice settings are on.
+
+Each turn keeps these facts with the reply it stored (`messages.metadata_json.voice`):
+`firstSpeechMs`, `bridged`, `turnLimitReached`, `outcome` and `recordedAt`.
+They are timings and closed values; what was said stays in the message. The
+heard part of a reply cut off mid-stream counts as a turn of its call, and a
+teammate's reply on the call does not. A turn that replays a stored answer adds
+nothing, and after a language switch the follow-up that speaks the answer
+keeps its facts, timed from the switching turn's start. A turn that stored no
+reply, such as chat's waiting message on a call a teammate owns, keeps none.
+
+The same numbers come back from `GET /api/v1/quality/stats` as `voice`, `null`
+without voice turns, and Ray reads them through `quality_signals`:
+
+```json
+"voice": {
+  "calls": 42,
+  "turns": 380,
+  "firstSpeechMedianMs": 2140,
+  "turnLimitTurns": 3,
+  "interruptions": 17,
+  "outcomes": { "continue": 376, "callbackRequested": 4 }
+}
+```
+
+When a voice runtime starts timing out, the Google Cloud deployment alerts on
+turns that hit the turn limit and on turns the runtime abandons before they
+finish; see [Monitoring On Google Cloud](monitoring-google-cloud.md) and, for
+other deployments, the Prometheus rules in
+[Monitoring And Alerts](monitoring-alerts.md).
+
 ## Recordings
 
 ElevenLabs records each call and keeps the audio in your ElevenLabs account.
@@ -1323,8 +1376,9 @@ phone number, records no notice.
   ahead of the speech by its synthesis backlog and by everything the caller
   said and the transcriber took while the old stream stayed open, so the
   stored part can hold sentences the caller never heard. The cut reply is not
-  billed as an answer; its model tokens stay in the usage ledger. It is no
-  turn Quality counts, and it cannot be sent to eval.
+  billed as an answer; its model tokens stay in the usage ledger. Quality's
+  answer-quality numbers leave it out, and it cannot be sent to eval; the
+  Voice card counts it as a turn of its call.
 - A request that replaces an unanswered one carries only its own utterance.
   When the runtime's newer transcript does not repeat the caller's earlier
   words, the agent answers without them.

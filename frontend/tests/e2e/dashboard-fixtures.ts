@@ -933,6 +933,7 @@ export const baseQualityStats = () => ({
     unmet_directives: 1,
   },
   resolutionBreakdown: [],
+  voice: null,
 });
 
 /** Account usage summary for a conversation-metered enterprise account, under 80% used. */

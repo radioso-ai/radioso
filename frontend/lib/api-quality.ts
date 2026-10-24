@@ -182,6 +182,21 @@ export interface QualityStatsBucket {
   skillFailures: QualityStatsMetric
 }
 
+/** The current window's voice calls; the stats carry no previous window for them. */
+export interface QualityVoiceStats {
+  /** Voice conversations with at least one answered turn in the period. */
+  calls: number
+  /** Assistant turns in those conversations in the period. */
+  turns: number
+  /** Median ms from turn start to the reply's first speech; null when no turn recorded one. */
+  firstSpeechMedianMs: number | null
+  /** Turns that hit the voice turn time limit. */
+  turnLimitTurns: number
+  /** Turns whose reply the caller spoke over. */
+  interruptions: number
+  outcomes: { continue: number; callbackRequested: number }
+}
+
 export interface QualityStats {
   range: QualityStatsRange
   filters: { agentId?: string; channel?: string }
@@ -197,6 +212,8 @@ export interface QualityStats {
     reason: QualityResolutionBreakdownReason
     count: number
   }>
+  /** Null when the period has no voice turns, or the request is pinned to another channel. */
+  voice: QualityVoiceStats | null
 }
 
 export interface GetQualityStatsOptions {

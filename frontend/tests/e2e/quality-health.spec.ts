@@ -348,3 +348,48 @@ test("a rollup that fails after a good load drops the counts instead of showing 
   await expect(page.getByRole("button", { name: "7 Negative feedback" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "— Negative feedback" })).toBeVisible();
 });
+
+test("the health row shows a Voice section when the backend reports voice activity", async ({ page }) => {
+  const statsWithVoice = {
+    ...baseQualityStats(),
+    voice: {
+      calls: 42,
+      turns: 380,
+      firstSpeechMedianMs: 2100,
+      turnLimitTurns: 3,
+      interruptions: 15,
+      outcomes: { continue: 37, callbackRequested: 4 },
+    },
+  };
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { qualityStats: statsWithVoice });
+  await installQualityTurnsMock(page, []);
+
+  await page.goto(`/w/${workspaceKey}/quality`);
+
+  const voiceSection = page.getByTestId("quality-voice-section");
+  await expect(voiceSection).toBeVisible();
+  await expect(voiceSection.getByText("Voice", { exact: true })).toBeVisible();
+  await expect(voiceSection.getByText("Calls your agents answered in this period.")).toBeVisible();
+  await expect(voiceSection.getByText("Calls", { exact: true })).toBeVisible();
+  await expect(voiceSection.getByText("42", { exact: true })).toBeVisible();
+  await expect(voiceSection.getByText("First words", { exact: true })).toBeVisible();
+  await expect(voiceSection.getByText("2.1 s", { exact: true })).toBeVisible();
+  await expect(voiceSection.getByText("Turns that hit the time limit", { exact: true })).toBeVisible();
+  await expect(voiceSection.getByText("3 of 380", { exact: true })).toBeVisible();
+  await expect(voiceSection.getByText("Interruptions", { exact: true })).toBeVisible();
+  await expect(voiceSection.getByText("0.4 per call", { exact: true })).toBeVisible();
+  await expect(voiceSection.getByText("Outcomes", { exact: true })).toBeVisible();
+  await expect(voiceSection.getByText("37 continued · 4 asked for a callback", { exact: true })).toBeVisible();
+});
+
+test("no Voice section renders when the backend reports no voice activity", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page);
+  await installQualityTurnsMock(page, []);
+
+  await page.goto(`/w/${workspaceKey}/quality`);
+
+  await expect(page.getByTestId("quality-health-row")).toBeVisible();
+  await expect(page.getByTestId("quality-voice-section")).toHaveCount(0);
+});

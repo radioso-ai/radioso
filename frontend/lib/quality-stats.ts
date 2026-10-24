@@ -4,6 +4,7 @@ import {
   type QualityStatsMetric,
   type QualityStatsRange,
   type QualityStatsWindow,
+  type QualityVoiceStats,
 } from '@/lib/api-quality'
 
 export { QUALITY_STATS_RANGES }
@@ -294,3 +295,37 @@ export const deltaTrend = (delta: QualityDelta): 'up' | 'down' | 'flat' | null =
       return null
   }
 }
+
+/** Seconds with one decimal, e.g. 2100 -> "2.1 s"; null when no turn recorded a first-speech time. */
+export const formatVoiceFirstSpeech = (medianMs: number | null): string =>
+  medianMs === null ? '—' : `${(medianMs / 1000).toFixed(1)} s`
+
+/** "<turns that hit the limit> of <turns>", using the same count formatting as the health tiles. */
+export const formatVoiceTurnLimit = (turnLimitTurns: number, turns: number): string =>
+  `${formatCount(turnLimitTurns)} of ${formatCount(turns)}`
+
+/** Interruptions per call, one decimal; exactly "0 per call" when there are none. */
+export const formatVoiceInterruptionRate = (interruptions: number, calls: number): string => {
+  if (interruptions === 0 || calls <= 0) {
+    return '0 per call'
+  }
+  return `${(interruptions / calls).toFixed(1)} per call`
+}
+
+/** "<n> continued · <n> asked for a callback". */
+export const formatVoiceOutcomes = (outcomes: QualityVoiceStats['outcomes']): string =>
+  `${formatCount(outcomes.continue)} continued · ${formatCount(outcomes.callbackRequested)} asked for a callback`
+
+export interface QualityVoiceStatsRow {
+  label: string
+  value: string
+}
+
+/** The Voice card's rows, in display order: current-window counts, with no delta against the previous window. */
+export const voiceStatsRows = (voice: QualityVoiceStats): QualityVoiceStatsRow[] => [
+  { label: 'Calls', value: formatCount(voice.calls) },
+  { label: 'First words', value: formatVoiceFirstSpeech(voice.firstSpeechMedianMs) },
+  { label: 'Turns that hit the time limit', value: formatVoiceTurnLimit(voice.turnLimitTurns, voice.turns) },
+  { label: 'Interruptions', value: formatVoiceInterruptionRate(voice.interruptions, voice.calls) },
+  { label: 'Outcomes', value: formatVoiceOutcomes(voice.outcomes) },
+]

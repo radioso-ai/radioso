@@ -105,6 +105,7 @@ import {
 } from '@/components/providers/dashboard-query-provider'
 import { resolveQueueScope } from '@/lib/quality-signals'
 import { QualityHealthRow } from '@/components/dashboard/quality/quality-health-row'
+import { QualityVoiceSection } from '@/components/dashboard/quality/quality-voice-section'
 import {
   CloseReviewPopover,
   REASON_LABELS,
@@ -1519,6 +1520,7 @@ export function QualityView({ accountId, routeState }: QualityViewProps) {
           isRefreshing={isStatsFetching}
           error={statsError}
         />
+        {stats?.voice ? <QualityVoiceSection voice={stats.voice} /> : null}
         <ResolutionBreakdown stats={stats} onSelect={applyResolutionBreakdown} />
       </div>
 

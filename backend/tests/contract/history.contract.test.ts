@@ -98,6 +98,7 @@ describe("history contract", () => {
     const spec = readFileSync(new URL("../../openapi.yaml", import.meta.url), "utf8");
 
     expect(spec).toContain("/api/v1/history:");
+    expect(spec).toContain("/api/v1/history/query:");
     expect(spec).toContain("/api/v1/history/chat:");
     expect(spec).toContain("/api/v1/history/search:");
     expect(spec).toContain("/api/v1/history/chat/{conversationId}:");
@@ -141,6 +142,61 @@ describe("history contract", () => {
     expect(response.status).toBe(200);
     expect(response.body.items).toHaveLength(1);
     expect(response.body.items[0]).toMatchObject({ kind: "chat", conversation: { id: matching.id } });
+  });
+
+  it("searches the merged history items by text sent in the request body", async () => {
+    const { app, repositories } = createTestApp();
+    const session = await issueTestSession(app, "history-items-query@example.com");
+    const matching = await repositories.conversationRepository.create({ workspaceId: session.workspaceId });
+    await repositories.conversationRepository.setTitle(matching.id, session.workspaceId, "Refund for the yoga retreat");
+    const other = await repositories.conversationRepository.create({ workspaceId: session.workspaceId });
+    await repositories.conversationRepository.setTitle(other.id, session.workspaceId, "Opening hours");
+
+    const response = await request(app)
+      .post("/api/v1/history/query")
+      .set(adminSessionHeaders(session))
+      .send({ q: "Yoga", limit: 10 });
+
+    expect(response.status).toBe(200);
+    expect(response.body.items).toHaveLength(1);
+    expect(response.body.items[0]).toMatchObject({ kind: "chat", conversation: { id: matching.id } });
+  });
+
+  // A URL's query string reaches Cloud Run's request log, which conversation erasure cannot reach.
+  it("rejects a text search in the merged history query string", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "history-items-query-string@example.com");
+
+    const response = await request(app)
+      .get("/api/v1/history?q=yoga")
+      .set(adminSessionHeaders(session));
+
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects a history query whose body is not JSON, rather than listing everything", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "history-items-query-text-body@example.com");
+
+    const response = await request(app)
+      .post("/api/v1/history/query")
+      .set(adminSessionHeaders(session))
+      .set("content-type", "text/plain")
+      .send(JSON.stringify({ q: "yoga" }));
+
+    expect(response.status).toBe(400);
+  });
+
+  it("rejects an unrecognized field in the merged history query body", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "history-items-query-unknown@example.com");
+
+    const response = await request(app)
+      .post("/api/v1/history/query")
+      .set(adminSessionHeaders(session))
+      .send({ search: "yoga" });
+
+    expect(response.status).toBe(400);
   });
 
   it("keeps contact detail on the same dashboard projection as chat detail", async () => {

@@ -55,6 +55,8 @@ describe("error_recorded log line", () => {
       "    at async Promise.all (index 0)",
       "    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)",
       "    at C:\\app\\dist\\index.js:1:2",
+      "    at Socket.emit (node:events:519:28)",
+      "    at <anonymous>",
       "async*render@/_next/static/chunks/app.js:3:4",
     ];
 
@@ -73,6 +75,8 @@ describe("error_recorded log line", () => {
         "    at 10:30:00",
         "    at home (see:1:2)",
         `    at ${"a/".repeat(20_000)}:1:2`,
+        "    at https://example.com/search?q=my%20daughter%20asthma:1:2",
+        "    at load (file:///app/page.js#my%20daughter:1:2)",
         "    at handler (/app/dist/index.js:1:2)",
       ].join("\n"),
     });
@@ -103,7 +107,11 @@ describe("error_recorded log line", () => {
         "renderRoot@/_next/static/chunks/app.js:3:4",
       ].join("\n"),
       requestContext: { method: "CLIENT", route: "/w/[workspaceKey]/chat" },
-      metadata: { componentStack: `\n    at Composer (${visitorWords})`, source: "embed", userAgent: "Mozilla/5.0 (Macintosh)" },
+      metadata: {
+        componentStack: `\n    at Composer (/_next/static/chunks/app.js:5:6)\n    at Inbox (${visitorWords})`,
+        source: "embed",
+        userAgent: "Mozilla/5.0 (Macintosh)",
+      },
     });
 
     expect(raw()).not.toContain(visitorWords);
@@ -112,7 +120,7 @@ describe("error_recorded log line", () => {
       "    at Dashboard (/w/[workspaceKey]/chat:1:2)",
       "renderRoot@/_next/static/chunks/app.js:3:4",
     ]);
-    expect(line().metadata).toEqual({ source: "embed" });
+    expect(line().metadata).toEqual({ source: "embed", componentStack: "    at Composer (/_next/static/chunks/app.js:5:6)" });
   });
 
   it("keeps the ids, counts, flags and codes a log query correlates on, and drops the rest", async () => {
@@ -144,14 +152,20 @@ describe("error_recorded log line", () => {
 
     await service.report({
       errorType: "background_job.dead_lettered",
-      metadata: { kind: "document.process", attempt: 5, jobId, lastError: "AppError [document_not_found]" },
+      metadata: { kind: "document.process", attempt: 5, jobId, lastError: "AppError [document_not_found]", hookError: "AppError [conflict]" },
     });
     await service.report({
       errorType: "background_job.poll_failed",
       metadata: { errorClass: `TypeError: ${visitorWords}`, lastError: visitorWords, kind: visitorWords },
     });
 
-    expect(line().metadata).toEqual({ kind: "document.process", attempt: 5, jobId, lastError: "AppError [document_not_found]" });
+    expect(line().metadata).toEqual({
+      kind: "document.process",
+      attempt: 5,
+      jobId,
+      lastError: "AppError [document_not_found]",
+      hookError: "AppError [conflict]",
+    });
   });
 
   it("drops correlation values that are not ids", async () => {

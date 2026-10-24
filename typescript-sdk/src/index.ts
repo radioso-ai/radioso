@@ -43,6 +43,7 @@ export type {
   AgentSettingsRequest,
   ChatConversationDetail,
   ChatHistoryListQuery,
+  HistoryQueryRequest,
   ChatHistoryListResponse,
   HistoryItemsResponse,
   VisitorConversationsQuery,

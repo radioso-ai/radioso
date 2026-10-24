@@ -4,7 +4,7 @@ import { pinoHttp } from "pino-http";
 import type { ProductAnalyticsEvent } from "../analytics/productAnalyticsTypes.js";
 import type { ErrorEvent } from "../errors/errorTypes.js";
 import { toCloudLoggingSeverity } from "./logging/cloudSeverity.js";
-import { isClassName, isUuid } from "./logging/logSafeValues.js";
+import { isClassName, isRequestCounter, isUuid } from "./logging/logSafeValues.js";
 import { emitPinoLogRecordForOpenTelemetry } from "./logging/index.js";
 import type { CorrelationFields } from "./telemetry/correlation.js";
 
@@ -62,7 +62,7 @@ export const extractCorrelationLogFields = (correlation?: CorrelationFields): Re
 
   const fields = Object.fromEntries(
     Object.entries({
-      requestId: typeof correlation.requestId === "string" && /^\d{1,20}$/u.test(correlation.requestId)
+      requestId: typeof correlation.requestId === "string" && isRequestCounter(correlation.requestId)
         ? correlation.requestId
         : uuidOf(correlation.requestId),
       workspaceId: uuidOf(correlation.workspaceId),

@@ -100,7 +100,8 @@ export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Rou
   router.post("/query", workspaceSession, historyRead, async (req, res, next) => {
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
-      const parsedBody = historyItemsQueryBodySchema.safeParse(req.body ?? {});
+      // A body sent as anything but JSON arrives unparsed; reject it rather than list unfiltered.
+      const parsedBody = historyItemsQueryBodySchema.safeParse(req.body);
       if (!parsedBody.success) {
         next(badRequest("Invalid request body", parsedBody.error.flatten()));
         return;

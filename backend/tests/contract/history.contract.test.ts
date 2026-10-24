@@ -174,6 +174,19 @@ describe("history contract", () => {
     expect(response.status).toBe(400);
   });
 
+  it("rejects a history query whose body is not JSON, rather than listing everything", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "history-items-query-text-body@example.com");
+
+    const response = await request(app)
+      .post("/api/v1/history/query")
+      .set(adminSessionHeaders(session))
+      .set("content-type", "text/plain")
+      .send(JSON.stringify({ q: "yoga" }));
+
+    expect(response.status).toBe(400);
+  });
+
   it("rejects an unrecognized field in the merged history query body", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "history-items-query-unknown@example.com");

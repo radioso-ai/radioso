@@ -1683,16 +1683,19 @@ export const installDashboardApiMocks = async (
       return;
     }
 
-    if (request.method() === "GET" && path === "/history") {
+    if ((request.method() === "GET" && path === "/history") || (request.method() === "POST" && path === "/history/query")) {
       // The All lens's search/outcome/agent/site/caller filters are server-side (issue #1126):
       // simulate just enough of that filtering here so an e2e test that types into the
       // toolbar search box exercises a real request round trip, not client-side narrowing.
+      // A text search arrives in a POST body; the other filters arrive either way.
       const url = new URL(request.url());
-      const q = url.searchParams.get("q");
-      const agentId = url.searchParams.get("agentId");
-      const sourceOrigin = url.searchParams.get("sourceOrigin");
-      const callerKind = url.searchParams.get("callerKind");
-      const hasFilter = Boolean(q || agentId || sourceOrigin || callerKind || url.searchParams.get("outcome"));
+      const body = request.method() === "POST" ? (request.postDataJSON() as Record<string, string | undefined>) : {};
+      const filter = (name: string): string | null => body[name] ?? url.searchParams.get(name);
+      const q = filter("q");
+      const agentId = filter("agentId");
+      const sourceOrigin = filter("sourceOrigin");
+      const callerKind = filter("callerKind");
+      const hasFilter = Boolean(q || agentId || sourceOrigin || callerKind || filter("outcome"));
       const allItems = (historyItems as { items?: Array<Record<string, unknown>> }).items ?? [];
       const filteredItems = !hasFilter ? allItems : allItems.filter((item) => {
         if (item.kind !== "chat") {

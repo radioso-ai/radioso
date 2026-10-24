@@ -1,7 +1,7 @@
 ---
 title: "Radioso TypeScript SDK: Getting Started"
 description: "Installation and client setup guide for role-aware workspace automation with the Radioso TypeScript SDK."
-last_updated: 2026-09-02
+last_updated: 2026-10-24
 ---
 
 # Radioso TypeScript SDK: Getting Started
@@ -110,6 +110,7 @@ client.documents.reprocess(...)
 client.documents.reprocessSource(...)
 
 client.history.list(...)
+client.history.query(...)            // text search, sent in the request body
 client.history.listChats(...)
 client.history.listSearches(...)
 client.history.getChat(...)

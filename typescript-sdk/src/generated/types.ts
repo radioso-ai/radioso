@@ -3206,10 +3206,33 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** List merged chat and document search history */
+        /**
+         * List merged chat and document search history
+         * @description To search by text, use `POST /api/v1/history/query`, which takes the same filters plus `q` in its body.
+         */
         get: operations["listHistory"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/history/query": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Search merged chat and document search history
+         * @description Lists the same merged history as `GET /api/v1/history`, with a text search. The search text travels in the body because a URL's query string is recorded in request logs.
+         */
+        post: operations["queryHistory"];
         delete?: never;
         options?: never;
         head?: never;
@@ -25395,7 +25418,6 @@ export interface operations {
                 limit?: number;
                 offset?: number;
                 sourceScope?: "end_user" | "operator_test" | "all";
-                q?: string;
                 agentId?: string;
                 sourceOrigin?: string;
                 outcome?: "in_progress" | "completed" | "handed_off";
@@ -25414,6 +25436,75 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HistoryItemsResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    queryHistory: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": {
+                    limit?: number;
+                    offset?: number;
+                    /**
+                     * @description Which conversation sources to include. Defaults to end_user, which excludes operator-driven dashboard test chat and workbench replay conversations.
+                     * @enum {string}
+                     */
+                    sourceScope?: "end_user" | "operator_test" | "all";
+                    /**
+                     * Format: uuid
+                     * @description Narrows to conversations handled by this agent. Narrows results to chat rows only.
+                     */
+                    agentId?: string;
+                    /** @description Exact match on the conversation's site origin. Narrows results to chat rows only. */
+                    sourceOrigin?: string;
+                    /**
+                     * @description Narrows to conversations in this outcome bucket: handed_off (a human_owned ownership record exists), in_progress (no such record and updated within the last 10 minutes), or completed (no such record and updated more than 10 minutes ago). Narrows results to chat rows only.
+                     * @enum {string}
+                     */
+                    outcome?: "in_progress" | "completed" | "handed_off";
+                    /**
+                     * @description Narrows to conversations whose caller was a person or another AI agent. Narrows results to chat rows only: a contact request has no conversation behind it and so no caller.
+                     * @enum {string}
+                     */
+                    callerKind?: "human" | "agent";
+                    /** @description Case-insensitive substring search over a conversation's generated title or its first user message. Narrows results to chat rows only (search and contact rows carry neither). */
+                    q?: string;
+                };
+            };
+        };
+        responses: {
+            /** @description Merged history items */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HistoryItemsResponse"];
+                };
+            };
+            /** @description Invalid request body */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             /** @description Authentication required */

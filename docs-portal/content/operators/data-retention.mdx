@@ -1,7 +1,7 @@
 ---
 title: "Data retention"
 description: "How long Radioso keeps conversations and every copy derived from them, how to set a workspace's conversation retention window, and how long backups and logs outlive a deletion."
-last_updated: 2026-10-19
+last_updated: 2026-10-24
 ---
 
 # Data retention
@@ -61,7 +61,7 @@ An erasure reaches what Radioso stores. It cannot reach back into a backup, so a
 | Point-in-time recovery logs, where recovery is on | 7 days |
 | Application and request logs | 30 days |
 
-Logs carry ids, counts and outcomes, never message content. Point-in-time recovery is enabled per stack deliberately, because turning it on restarts the database. A self-hosted deployment sets its own backup and log retention; the sweep itself runs in every deployment's worker ([Deployment](/operators/deployment#conversation-retention)).
+Logs carry ids, counts and outcomes, never message content: a request line names the method, path and status, without the query string, and an error line names the error's type, class and stack frames, without its message. Point-in-time recovery is enabled per stack deliberately, because turning it on restarts the database. A self-hosted deployment sets its own backup and log retention; the sweep itself runs in every deployment's worker ([Deployment](/operators/deployment#conversation-retention)).
 
 ## Common failure modes
 

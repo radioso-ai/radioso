@@ -51101,6 +51101,7 @@
           "History"
         ],
         "summary": "List merged chat and document search history",
+        "description": "To search by text, use `POST /api/v1/history/query`, which takes the same filters plus `q` in its body.",
         "operationId": "listHistory",
         "security": [
           {
@@ -51139,17 +51140,6 @@
             },
             "required": false,
             "name": "sourceScope",
-            "in": "query"
-          },
-          {
-            "schema": {
-              "type": "string",
-              "minLength": 1,
-              "maxLength": 200,
-              "description": "Case-insensitive substring search over a conversation's generated title or its first user message. Narrows results to chat rows only (search and contact rows carry neither)."
-            },
-            "required": false,
-            "name": "q",
             "in": "query"
           },
           {
@@ -51208,6 +51198,118 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/HistoryItemsResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/history/query": {
+      "post": {
+        "tags": [
+          "History"
+        ],
+        "summary": "Search merged chat and document search history",
+        "description": "Lists the same merged history as `GET /api/v1/history`, with a text search. The search text travels in the body because a URL's query string is recorded in request logs.",
+        "operationId": "queryHistory",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 100
+                  },
+                  "offset": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "sourceScope": {
+                    "type": "string",
+                    "enum": [
+                      "end_user",
+                      "operator_test",
+                      "all"
+                    ],
+                    "description": "Which conversation sources to include. Defaults to end_user, which excludes operator-driven dashboard test chat and workbench replay conversations."
+                  },
+                  "agentId": {
+                    "type": "string",
+                    "format": "uuid",
+                    "description": "Narrows to conversations handled by this agent. Narrows results to chat rows only."
+                  },
+                  "sourceOrigin": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048,
+                    "description": "Exact match on the conversation's site origin. Narrows results to chat rows only."
+                  },
+                  "outcome": {
+                    "type": "string",
+                    "enum": [
+                      "in_progress",
+                      "completed",
+                      "handed_off"
+                    ],
+                    "description": "Narrows to conversations in this outcome bucket: handed_off (a human_owned ownership record exists), in_progress (no such record and updated within the last 10 minutes), or completed (no such record and updated more than 10 minutes ago). Narrows results to chat rows only."
+                  },
+                  "callerKind": {
+                    "type": "string",
+                    "enum": [
+                      "human",
+                      "agent"
+                    ],
+                    "description": "Narrows to conversations whose caller was a person or another AI agent. Narrows results to chat rows only: a contact request has no conversation behind it and so no caller."
+                  },
+                  "q": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 200,
+                    "description": "Case-insensitive substring search over a conversation's generated title or its first user message. Narrows results to chat rows only (search and contact rows carry neither)."
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Merged history items",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HistoryItemsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
               }
             }

@@ -498,7 +498,11 @@ test("conversations toolbar search narrows the visible rows", async ({ page }) =
       hasMore: false,
     },
   });
-  await page.route(/\/history\?.*q=yoga/, async (route) => {
+  await page.route("**/backend/api/v1/history/query", async (route) => {
+    if ((route.request().postDataJSON() as { q?: string }).q !== "yoga") {
+      await route.fallback();
+      return;
+    }
     await new Promise((resolve) => setTimeout(resolve, 600));
     await route.fulfill({
       status: 200,
@@ -525,10 +529,10 @@ test("conversations toolbar search narrows the visible rows", async ({ page }) =
   await expect(list.getByRole("button").filter({ hasText: "Orari dei corsi" })).toBeVisible();
 
   const filteredRequest = page.waitForRequest((request) =>
-    request.url().includes("/history?") && new URL(request.url()).searchParams.get("q") === "yoga");
+    request.url().endsWith("/history/query") && (request.postDataJSON() as { q?: string }).q === "yoga");
   await page.getByPlaceholder("Search conversations").fill("yoga");
-  // The debounced keystroke reaches the server as a real `q` query param — search is no
-  // longer applied to an already-loaded page on the client.
+  // The debounced keystroke reaches the server as `q` in a POST body, which keeps the visitor's
+  // words out of request logs, and the server narrows the list rather than the client.
   await filteredRequest;
   await expect(page.getByPlaceholder("Search conversations")).toBeFocused();
 
@@ -688,9 +692,9 @@ test("an All-lens row shows the generated topic title over the raw preview, and 
   await expect(list.getByRole("button").filter({ hasText: "Orari dei corsi" })).toBeVisible();
 
   // Search matches the visible (generated) title, not just the raw preview — and the
-  // match happens server-side: the request itself carries `q`, not a client-side filter.
+  // match happens server-side: the request body carries `q`, not a client-side filter.
   const filteredRequest = page.waitForRequest((request) =>
-    request.url().includes("/history?") && new URL(request.url()).searchParams.get("q") === "refund");
+    request.url().endsWith("/history/query") && (request.postDataJSON() as { q?: string }).q === "refund");
   await page.getByPlaceholder("Search conversations").fill("refund");
   await filteredRequest;
 

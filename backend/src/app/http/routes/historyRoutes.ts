@@ -23,6 +23,7 @@ import {
   historySearchParamsSchema,
   historyItemsPageQuerySchema,
   historyItemsListQuerySchema,
+  historyItemsQueryBodySchema,
   visitorConversationsParamsSchema,
   visitorConversationsQuerySchema,
 } from "./conversationRouteSchemas.js";
@@ -90,6 +91,21 @@ export const createHistoryRoutes = (dependencies: HistoryRouteDependencies): Rou
         return;
       }
       const page = await dependencies.assistantHistoryService.listItems(workspaceId, parsedQuery.data);
+      res.status(200).json(page);
+    } catch (error) {
+      next(error);
+    }
+  });
+
+  router.post("/query", workspaceSession, historyRead, async (req, res, next) => {
+    try {
+      const { workspaceId } = res.locals as { workspaceId: string };
+      const parsedBody = historyItemsQueryBodySchema.safeParse(req.body ?? {});
+      if (!parsedBody.success) {
+        next(badRequest("Invalid request body", parsedBody.error.flatten()));
+        return;
+      }
+      const page = await dependencies.assistantHistoryService.listItems(workspaceId, parsedBody.data);
       res.status(200).json(page);
     } catch (error) {
       next(error);

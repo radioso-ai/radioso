@@ -1,5 +1,4 @@
 import type { RequestHandler } from "express";
-import { EDGE_FACTS_HEADERS } from "@radioso/edge-proof";
 import pino from "pino";
 import { pinoHttp } from "pino-http";
 import type { ProductAnalyticsEvent } from "../analytics/productAnalyticsTypes.js";
@@ -8,8 +7,6 @@ import { toCloudLoggingSeverity } from "./logging/cloudSeverity.js";
 import { isClassName, isUuid } from "./logging/logSafeValues.js";
 import { emitPinoLogRecordForOpenTelemetry } from "./logging/index.js";
 import type { CorrelationFields } from "./telemetry/correlation.js";
-import { redactedValue, shouldRedactKey } from "./telemetry/redactionPolicy.js";
-import { WORKER_TASK_AUTH_HEADER_LOWERCASE } from "../infra/workerTaskAuth.js";
 
 const loggerOptions = (level: string): pino.LoggerOptions => ({
   level,
@@ -154,46 +151,23 @@ export const extractRetrievalLogFields = (metadata?: Record<string, unknown>): R
   };
 };
 
-const httpCredentialHeaderNames = ["cookie", "authorization", "x-radioso-public-session", "set-cookie"].filter(shouldRedactKey);
-const httpRequestCredentialHeaderNames = httpCredentialHeaderNames.filter((headerName) => headerName !== "set-cookie");
-const httpResponseCredentialHeaderNames = httpCredentialHeaderNames.filter((headerName) => headerName === "set-cookie");
-const httpRequestClientAddressHeaderNames = [
-  "x-forwarded-for",
-  "forwarded",
-  "x-real-ip",
-  "cf-connecting-ip",
-  "true-client-ip",
-  "x-client-ip",
-  "x-cluster-client-ip",
-  "fastly-client-ip",
-  "x-envoy-external-address",
-];
-const httpHeaderRedactPath = (target: "req" | "res", headerName: string): string =>
-  `${target}.headers["${headerName}"]`;
+// The request line names the request by method and path and the response by status. A query
+// string or header can carry words a person typed, and the line lands in Cloud Logging, out of
+// reach of conversation erasure. pino-http's own `requestId` and `responseTime` sit beside these.
+const requestLogFields = (req: { id?: unknown; method?: unknown; url?: unknown }) => ({
+  id: req.id,
+  method: req.method,
+  url: routePath(req.url),
+});
 
-const httpLoggerRedactPaths = [
-  ...httpRequestCredentialHeaderNames.map((headerName) => httpHeaderRedactPath("req", headerName)),
-  ...httpRequestClientAddressHeaderNames.map((headerName) => httpHeaderRedactPath("req", headerName)),
-  httpHeaderRedactPath("req", WORKER_TASK_AUTH_HEADER_LOWERCASE),
-  httpHeaderRedactPath("req", "x-workspace-id"),
-  // The frontend's signed edge facts carry the visitor's forwarded-for chain,
-  // user agent, and geo headers, and ride on every relayed request.
-  httpHeaderRedactPath("req", EDGE_FACTS_HEADERS.facts),
-  httpHeaderRedactPath("req", EDGE_FACTS_HEADERS.signature),
-  ...httpResponseCredentialHeaderNames.map((headerName) => httpHeaderRedactPath("res", headerName)),
-  // Anonymous-session id response headers set in app/http/middleware/resolveAnonymousSession.ts.
-  // They carry the same raw session id as set-cookie but are not classified as sensitive by
-  // shouldRedactKey, so they must be redacted explicitly here (mirrors the set-cookie/session-id leak).
-  httpHeaderRedactPath("res", "x-radioso-anonymous-session"),
-  httpHeaderRedactPath("res", "x-radioso-public-session-id"),
-];
+const responseLogFields = (res: { statusCode?: unknown }) => ({ statusCode: res.statusCode });
 
 export const createHttpLogger = (logger: AppLogger): RequestHandler =>
   pinoHttp({
     logger,
-    redact: {
-      paths: httpLoggerRedactPaths,
-      censor: redactedValue(),
+    serializers: {
+      req: requestLogFields,
+      res: responseLogFields,
     },
     customProps: (req: { id?: string | number }) => ({
       requestId: req.id,

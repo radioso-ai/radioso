@@ -66,7 +66,7 @@ export interface QualityCopilotToolDependencies {
   readonly qualitySignalsService: CopilotQualitySignalsPort;
 }
 
-const qualitySignalsDescription = "Read workspace quality and needs-attention signals. The summary's `voice` block, when the period had calls, gives the calls, the median time to the first words of a reply, the turns that hit the time limit, the interruptions and the outcomes; it is null without calls.";
+const qualitySignalsDescription = "Read workspace quality and needs-attention signals. The summary's `voice` block, when the period had calls, gives the calls, the median time to the first words of a reply, the turns that hit the time limit, the interruptions and the calls that asked for a callback; it is null without calls.";
 
 export const createQualityCopilotTools = (deps: QualityCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {

@@ -560,7 +560,10 @@ describe("buildQualityVoiceStatsQuery", () => {
     expect(query.text).toContain("percentile_cont(0.5) WITHIN GROUP");
     // A malformed value reads as none instead of failing the cast for the whole response.
     expect(query.text).toContain("jsonb_typeof(");
-    expect(query.params).toEqual(expect.arrayContaining(["firstSpeechMs", "turnLimitReached", "outcome", "continue", "callback_requested"]));
+    expect(query.params).toEqual(expect.arrayContaining(["firstSpeechMs", "turnLimitReached", "outcome", "callback_requested"]));
+    // A call that asked for a callback counts once, however many of its turns asked.
+    expect(query.text).toContain("COUNT(DISTINCT m.conversation_id) FILTER (WHERE");
+    expect(query.params).not.toContain("continue");
   });
 
   it("binds every placeholder it references", () => {
@@ -612,8 +615,7 @@ describe("toQualityVoiceStats", () => {
     first_speech_median_ms: 2_499.6,
     turn_limit_count: "1",
     interruption_count: "2",
-    continue_count: "4",
-    callback_requested_count: "1",
+    callback_call_count: "1",
   };
 
   it("coerces int8-as-text counts and rounds the median to whole milliseconds", () => {
@@ -623,7 +625,7 @@ describe("toQualityVoiceStats", () => {
       firstSpeechMedianMs: 2_500,
       turnLimitTurns: 1,
       interruptions: 2,
-      outcomes: { continue: 4, callbackRequested: 1 },
+      callbackCalls: 1,
     });
   });
 

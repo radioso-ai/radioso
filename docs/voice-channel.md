@@ -1122,7 +1122,7 @@ page, and answers one question: how are calls going? For a busy week it reads:
 | First words | 2.1s | The median time from the start of a turn to its first speech, the reply's or the fallback line's. A bridge line covers the wait but is not the first words. |
 | Turns that hit the time limit | 3 of 380 | Turns that reached the [turn limit](#bridge-lines-and-the-turn-limit) before they spoke, out of all the period's turns on calls. |
 | Interruptions | 0.4 per call | Turns whose reply the caller spoke over, cut off while it streamed or after it finished, per call. |
-| Outcomes | 376 continued · 4 asked for a callback | The [outcome](#outcomes) each turn sent the runtime: `continue` or `callback_requested`. |
+| Asked for a callback | 4 of 42 calls | Calls in which a turn's [outcome](#outcomes) was `callback_requested`, counted once per call however many of its turns asked. |
 
 In practice, watch two of them. A first-words time that climbs toward the
 10-second limit, or a share of time-limit turns that grows week on week, means
@@ -1156,7 +1156,7 @@ without voice turns, and Ray reads them through `quality_signals`:
   "firstSpeechMedianMs": 2140,
   "turnLimitTurns": 3,
   "interruptions": 17,
-  "outcomes": { "continue": 376, "callbackRequested": 4 }
+  "callbackCalls": 4
 }
 ```
 

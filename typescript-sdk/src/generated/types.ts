@@ -9407,11 +9407,8 @@ export interface components {
             turnLimitTurns: number;
             /** @description Turns whose reply the caller spoke over, cut off mid-stream or after it finished. */
             interruptions: number;
-            /** @description Turns by the outcome the voice runtime received: the call went on, or the caller asked for a callback. */
-            outcomes: {
-                continue: number;
-                callbackRequested: number;
-            };
+            /** @description Calls in which a turn's outcome asked for a callback, counted once per call. At most `calls`. */
+            callbackCalls: number;
         };
         QualityStats: {
             range: components["schemas"]["QualityStatsRange"];

@@ -427,11 +427,13 @@ export interface QualityVoiceStatsRow {
   first_speech_median_ms: string | number | null;
   turn_limit_count: string | number;
   interruption_count: string | number;
-  continue_count: string | number;
-  callback_requested_count: string | number;
+  callback_call_count: string | number;
 }
 
 type VoiceTurnOutcome = NonNullable<VoiceTurnFacts["outcome"]>;
+
+/** The outcome by which a call counts as one that asked for a callback, at any of its turns. */
+const CALLBACK_OUTCOME: VoiceTurnOutcome = "callback_requested";
 
 /**
  * The window's voice numbers in one scan of the conversation turns pinned to the voice channel,
@@ -453,8 +455,7 @@ export const buildQualityVoiceStatsQuery = (input: QualityVoiceStatsQueryInput):
   const fact = (field: keyof VoiceTurnFacts): string => `(${facts} -> ${bindParam(params, field)}::text)`;
   const firstSpeech = fact("firstSpeechMs");
   const turnLimit = fact("turnLimitReached");
-  const outcome = fact("outcome");
-  const outcomeIs = (kind: VoiceTurnOutcome): string => `${outcome} = to_jsonb(${bindParam(params, kind)}::text)`;
+  const askedForCallback = `${fact("outcome")} = to_jsonb(${bindParam(params, CALLBACK_OUTCOME)}::text)`;
 
   return {
     text: `SELECT
@@ -465,8 +466,7 @@ export const buildQualityVoiceStatsQuery = (input: QualityVoiceStatsQueryInput):
          ) AS first_speech_median_ms,
          COUNT(*) FILTER (WHERE ${turnLimit} = 'true'::jsonb)::text AS turn_limit_count,
          COUNT(*) FILTER (WHERE jsonb_typeof(m.metadata_json -> 'interruption') = 'object')::text AS interruption_count,
-         COUNT(*) FILTER (WHERE ${outcomeIs("continue")})::text AS continue_count,
-         COUNT(*) FILTER (WHERE ${outcomeIs("callback_requested")})::text AS callback_requested_count
+         COUNT(DISTINCT m.conversation_id) FILTER (WHERE ${askedForCallback})::text AS callback_call_count
        ${TURN_POPULATION_SOURCE}
        WHERE ${filters.join("\n         AND ")}`,
     params,
@@ -486,9 +486,6 @@ export const toQualityVoiceStats = (row: QualityVoiceStatsRow | undefined): Qual
     firstSpeechMedianMs: median === null || !Number.isFinite(median) ? null : Math.round(median),
     turnLimitTurns: toNumber(row.turn_limit_count),
     interruptions: toNumber(row.interruption_count),
-    outcomes: {
-      continue: toNumber(row.continue_count),
-      callbackRequested: toNumber(row.callback_requested_count),
-    },
+    callbackCalls: toNumber(row.callback_call_count),
   };
 };

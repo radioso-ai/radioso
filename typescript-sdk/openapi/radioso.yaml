@@ -13016,26 +13016,17 @@ components:
           type: integer
           minimum: 0
           description: Turns whose reply the caller spoke over, cut off mid-stream or after it finished.
-        outcomes:
-          type: object
-          properties:
-            continue:
-              type: integer
-              minimum: 0
-            callbackRequested:
-              type: integer
-              minimum: 0
-          required:
-            - continue
-            - callbackRequested
-          description: "Turns by the outcome the voice runtime received: the call went on, or the caller asked for a callback."
+        callbackCalls:
+          type: integer
+          minimum: 0
+          description: Calls in which a turn's outcome asked for a callback, counted once per call. At most `calls`.
       required:
         - calls
         - turns
         - firstSpeechMedianMs
         - turnLimitTurns
         - interruptions
-        - outcomes
+        - callbackCalls
     QualityStats:
       type: object
       properties:

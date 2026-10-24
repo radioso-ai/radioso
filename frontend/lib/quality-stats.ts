@@ -313,9 +313,9 @@ export const formatVoiceInterruptionRate = (interruptions: number, calls: number
   return `${(interruptions / calls).toFixed(1)} per call`
 }
 
-/** "<n> continued · <n> asked for a callback". */
-export const formatVoiceOutcomes = (outcomes: QualityVoiceStats['outcomes']): string =>
-  `${formatCount(outcomes.continue)} continued · ${formatCount(outcomes.callbackRequested)} asked for a callback`
+/** "<calls that asked> of <calls> calls". */
+export const formatVoiceCallbackCalls = (callbackCalls: number, calls: number): string =>
+  `${formatCount(callbackCalls)} of ${formatCount(calls)} ${calls === 1 ? 'call' : 'calls'}`
 
 interface QualityVoiceStatsRow {
   label: string
@@ -328,5 +328,5 @@ export const voiceStatsRows = (voice: QualityVoiceStats): QualityVoiceStatsRow[]
   { label: 'First words', value: formatVoiceFirstSpeech(voice.firstSpeechMedianMs) },
   { label: 'Turns that hit the time limit', value: formatVoiceTurnLimit(voice.turnLimitTurns, voice.turns) },
   { label: 'Interruptions', value: formatVoiceInterruptionRate(voice.interruptions, voice.calls) },
-  { label: 'Outcomes', value: formatVoiceOutcomes(voice.outcomes) },
+  { label: 'Asked for a callback', value: formatVoiceCallbackCalls(voice.callbackCalls, voice.calls) },
 ]

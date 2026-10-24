@@ -358,7 +358,7 @@ test("the health row shows a Voice section when the backend reports voice activi
       firstSpeechMedianMs: 2100,
       turnLimitTurns: 3,
       interruptions: 15,
-      outcomes: { continue: 37, callbackRequested: 4 },
+      callbackCalls: 4,
     },
   };
   await seedDashboardStorage(page);
@@ -379,8 +379,8 @@ test("the health row shows a Voice section when the backend reports voice activi
   await expect(voiceSection.getByText("3 of 380", { exact: true })).toBeVisible();
   await expect(voiceSection.getByText("Interruptions", { exact: true })).toBeVisible();
   await expect(voiceSection.getByText("0.4 per call", { exact: true })).toBeVisible();
-  await expect(voiceSection.getByText("Outcomes", { exact: true })).toBeVisible();
-  await expect(voiceSection.getByText("37 continued · 4 asked for a callback", { exact: true })).toBeVisible();
+  await expect(voiceSection.getByText("Asked for a callback", { exact: true })).toBeVisible();
+  await expect(voiceSection.getByText("4 of 42 calls", { exact: true })).toBeVisible();
 });
 
 test("no Voice section renders when the backend reports no voice activity", async ({ page }) => {

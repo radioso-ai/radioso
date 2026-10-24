@@ -10,7 +10,7 @@ import {
   formatRate,
   formatVoiceFirstSpeech,
   formatVoiceInterruptionRate,
-  formatVoiceOutcomes,
+  formatVoiceCallbackCalls,
   formatVoiceTurnLimit,
   isSampleReportable,
   MIN_RATE_SAMPLE,
@@ -233,10 +233,9 @@ describe('voice stats formatting', () => {
     expect(formatVoiceInterruptionRate(0, 0)).toBe('0 per call')
   })
 
-  it('summarizes outcomes as a single line', () => {
-    expect(formatVoiceOutcomes({ continue: 37, callbackRequested: 4 })).toBe(
-      '37 continued · 4 asked for a callback',
-    )
+  it('reports the calls that asked for a callback out of the period\'s calls', () => {
+    expect(formatVoiceCallbackCalls(4, 42)).toBe('4 of 42 calls')
+    expect(formatVoiceCallbackCalls(0, 1)).toBe('0 of 1 call')
   })
 
   it('orders the Voice card rows label by label', () => {
@@ -246,7 +245,7 @@ describe('voice stats formatting', () => {
       firstSpeechMedianMs: 2100,
       turnLimitTurns: 3,
       interruptions: 15,
-      outcomes: { continue: 37, callbackRequested: 4 },
+      callbackCalls: 4,
     }
 
     expect(voiceStatsRows(voice)).toEqual([
@@ -254,7 +253,7 @@ describe('voice stats formatting', () => {
       { label: 'First words', value: '2.1s' },
       { label: 'Turns that hit the time limit', value: '3 of 380' },
       { label: 'Interruptions', value: '0.4 per call' },
-      { label: 'Outcomes', value: '37 continued · 4 asked for a callback' },
+      { label: 'Asked for a callback', value: '4 of 42 calls' },
     ])
   })
 
@@ -265,7 +264,7 @@ describe('voice stats formatting', () => {
       firstSpeechMedianMs: null,
       turnLimitTurns: 0,
       interruptions: 0,
-      outcomes: { continue: 5, callbackRequested: 0 },
+      callbackCalls: 0,
     }
 
     expect(voiceStatsRows(voice).find((row) => row.label === 'First words')).toEqual({

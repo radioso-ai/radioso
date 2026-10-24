@@ -238,12 +238,11 @@ export const registerQualitySchemas = (registry: OpenAPIRegistry, schemas: OpenA
         .int()
         .min(0)
         .describe("Turns whose reply the caller spoke over, cut off mid-stream or after it finished."),
-      outcomes: z
-        .object({
-          continue: z.number().int().min(0),
-          callbackRequested: z.number().int().min(0),
-        })
-        .describe("Turns by the outcome the voice runtime received: the call went on, or the caller asked for a callback."),
+      callbackCalls: z
+        .number()
+        .int()
+        .min(0)
+        .describe("Calls in which a turn's outcome asked for a callback, counted once per call. At most `calls`."),
     }),
   );
 

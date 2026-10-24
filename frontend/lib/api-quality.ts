@@ -194,7 +194,8 @@ export interface QualityVoiceStats {
   turnLimitTurns: number
   /** Turns whose reply the caller spoke over. */
   interruptions: number
-  outcomes: { continue: number; callbackRequested: number }
+  /** Calls in which a turn's outcome asked for a callback; at most `calls`. */
+  callbackCalls: number
 }
 
 export interface QualityStats {

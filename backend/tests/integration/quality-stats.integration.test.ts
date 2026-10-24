@@ -298,7 +298,7 @@ describeIfDatabase("quality stats integration", () => {
       interruption: { heardCharacterCount: 7, spokenCharacterCount: 16, ...(partial ? { partial } : { recordedAt: daysAgo(1) }) },
     });
 
-    it("counts calls, turns, median first speech, turns at the limit, interruptions and outcomes from the facts the replies keep", async () => {
+    it("counts calls, turns, median first speech, turns at the limit, interruptions and callback calls from the facts the replies keep", async () => {
       const { workspaceId, agentId } = await seedWorkspace("Voice");
       const secondAgentId = randomUUID();
       await database.query(`INSERT INTO agents (id, workspace_id, name) VALUES ($1, $2, $3)`, [secondAgentId, workspaceId, "Second Voice Bot"]);
@@ -320,6 +320,8 @@ describeIfDatabase("quality stats integration", () => {
       // A reply stored before its turn kept facts is counted as a turn, with no facts.
       await seedTurn({ conversationId: call, workspaceId, createdAt: daysAgo(1) });
       await seedTurn({ conversationId: callbackCall, workspaceId, createdAt: daysAgo(2), metadata: facts(null, "callback_requested") });
+      // A call that asked for a callback twice is one call that asked.
+      await seedTurn({ conversationId: callbackCall, workspaceId, createdAt: daysAgo(2), metadata: facts(null, "callback_requested") });
       // A teammate's reply on the call is no turn of the agent's.
       await seedTurn({ conversationId: callbackCall, workspaceId, createdAt: daysAgo(2), source: "human_agent", metadata: facts(9_000, "continue") });
       await seedTurn({ conversationId: secondAgentCall, workspaceId, createdAt: daysAgo(3), metadata: facts(5_000, "continue") });
@@ -333,20 +335,20 @@ describeIfDatabase("quality stats integration", () => {
 
       expect(all.voice).toEqual({
         calls: 3,
-        turns: 7,
+        turns: 8,
         firstSpeechMedianMs: 2_500,
         turnLimitTurns: 1,
         interruptions: 2,
-        outcomes: { continue: 4, callbackRequested: 1 },
+        callbackCalls: 1,
       });
       expect((await service.getQualityStats(workspaceId, { range: "7d", channel: "voice" })).voice).toEqual(all.voice);
       expect((await service.getQualityStats(workspaceId, { range: "7d", agentId })).voice).toEqual({
         calls: 2,
-        turns: 5,
+        turns: 6,
         firstSpeechMedianMs: 2_000,
         turnLimitTurns: 1,
         interruptions: 2,
-        outcomes: { continue: 3, callbackRequested: 1 },
+        callbackCalls: 1,
       });
       // A request pinned to another channel reports no voice block.
       expect((await service.getQualityStats(workspaceId, { range: "7d", channel: "embed" })).voice).toBeNull();

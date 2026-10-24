@@ -529,9 +529,14 @@ variable "lettermint_project_token" {
 }
 
 variable "mail_driver" {
-  description = "Transactional auth mail driver override (MAIL_DRIVER). Unset infers the driver from whichever provider key is set; required only when both resend_mail_api_key and lettermint_project_token are set."
+  description = "Transactional auth mail driver override (MAIL_DRIVER): resend, lettermint, log or noop. Unset, a Resend key keeps Resend and a Lettermint project token alone picks Lettermint, so set it to lettermint to move a stack with a Resend key onto Lettermint."
   type        = string
   default     = null
+
+  validation {
+    condition     = var.mail_driver == null || contains(["resend", "lettermint", "log", "noop"], coalesce(var.mail_driver, "resend"))
+    error_message = "mail_driver must be unset or one of resend, lettermint, log, noop."
+  }
 }
 
 variable "mail_from_email" {

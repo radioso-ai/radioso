@@ -186,6 +186,7 @@ import type {
 import type { MessageSource } from "@radioso/conversation-contract";
 import { deriveMessageSourceFromRole, ISO_INSTANT_PATTERN } from "../../src/db/repositories/messageRepository.js";
 import type { OperatorReplyClaim, PendingOperatorReply, ReplyInterruption, VoiceTurnFacts } from "../../src/modules/chat/contracts/index.js";
+import { voiceTurnFactsSchema } from "../../src/modules/chat/contracts/voiceTurnFacts.js";
 import { VOICE_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 import { isHumanAuthoredMessageSource } from "../../src/shared/domain/messageAuthorship.js";
 import type {
@@ -5074,14 +5075,17 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     return true;
   }
 
-  /** The first facts recorded on a reply stay, under `metadata.voice`, as the Postgres repository keeps them. */
+  /**
+   * The first facts recorded on a reply stay, under `metadata.voice`, as the Postgres repository
+   * keeps them: parsed by the same schema, so facts outside the contract fail here first.
+   */
   async recordVoiceTurnFacts(input: { workspaceId: string; conversationId: string; messageId: string } & VoiceTurnFacts): Promise<boolean> {
+    const facts = voiceTurnFactsSchema.parse(input);
     const reply = (this.items.get(input.conversationId) ?? [])
       .find((message) => message.id === input.messageId && message.workspaceId === input.workspaceId && message.role === "assistant");
     if (!reply) return false;
     if (!reply.metadata?.voice || typeof reply.metadata.voice !== "object") {
-      const { firstSpeechMs, bridged, turnLimitReached, outcome } = input;
-      reply.metadata = { ...reply.metadata, voice: { firstSpeechMs, bridged, turnLimitReached, outcome, recordedAt: new Date().toISOString() } };
+      reply.metadata = { ...reply.metadata, voice: { ...facts, recordedAt: new Date().toISOString() } };
     }
     return true;
   }

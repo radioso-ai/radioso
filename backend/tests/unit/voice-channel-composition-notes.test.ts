@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createVoiceStoredReplyReader, createVoiceTurnNotes } from "../../src/app/composition/voiceChannel.js";
 import type { AuditEventInput } from "../../src/modules/audit/contracts/index.js";
+import { InMemoryMessageRepository } from "../support/fakes.js";
 
 const note = {
   workspaceId: "workspace-1",
@@ -142,6 +143,19 @@ describe("voice channel composition: a turn's facts", () => {
       { workspaceId: "workspace-1", conversationId: "conversation-1", messageId: "message-1" },
       "Voice reply to keep the turn's facts on was not found",
     );
+  });
+
+  it("keeps only the contract's fields in the test message store, and refuses facts outside it, as Postgres does", async () => {
+    const messages = new InMemoryMessageRepository();
+    const reply = await messages.create({ conversationId: "conversation-1", workspaceId: "workspace-1", role: "assistant", content: "We open at nine." });
+    const notes = createVoiceTurnNotes({ replies: messages, auditService: { record: vi.fn() }, logger: { warn: vi.fn() } });
+    const note = { ...factsNote, assistantMessageId: reply.id };
+
+    await expect(notes.turnFacts({ ...note, facts: { ...note.facts, outcome: "hung_up" } as never })).rejects.toThrow();
+    expect(reply.metadata?.voice).toBeUndefined();
+
+    await notes.turnFacts({ ...note, facts: { ...note.facts, transcript: "When do you open?" } as never });
+    expect(reply.metadata?.voice).toEqual({ ...factsNote.facts, recordedAt: expect.any(String) });
   });
 
   it("rejects when the facts cannot be written, so the turn reports the note as not recorded", async () => {

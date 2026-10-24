@@ -1,7 +1,7 @@
 {
   "generatedFrom": "docs-portal/content",
   "citationBase": "https://docs.radioso.ai",
-  "pageCount": 63,
+  "pageCount": 64,
   "pages": [
     {
       "slug": "api",
@@ -2071,6 +2071,11 @@
           "body": "Agent revision storage changes the order of an upgrade. Before applying migration 171, stop\nadmission to replicas running the old application and stop old worker consumers. Wait for in-flight\nrequests and claimed jobs to drain, then verify that no old replica remains. Apply the migration\nand inspect the published baseline pointers, draft state, and conversation bindings before\nstarting revision-aware replicas. Do not run old and revision-aware writers or readers together:\nthey do not share the same publication boundary.\n\nExisting agents receive a migrated published baseline. New and imported agents remain\nprivate until an operator publishes them. A published revision is shared by every channel; a new\nconversation uses the current published revision, while an ongoing conversation continues with\nthe revision it started on. There is no per-channel publication pointer.\n\nActive routine state that refers to an older exact definition is retained only when its closure\ncan be identified safely. Missing, ambiguous, or invalid routine pins are surfaced for operator\naction and fail closed; they are not silently reassigned to the current routine. Validation of\nthis legacy-state retention is part of the migration readiness check, so do not declare the\nrollout complete from the presence of baseline rows alone.\n\nReview the unbound conversations before starting revision-aware traffic:\n\n```sql\nSELECT conversation_id, workspace_id, agent_id, routine_id, classification, created_at\nFROM agent_revision_migration_classifications\nORDER BY created_at, conversation_id;\n```\n\nEach row names the original routine pin and why Radioso could not bind that conversation. Keep\nthose conversations out of service until the pin has been investigated and the operator has a\nsafe recovery path for that exact routine state."
         },
         {
+          "id": "database-connection-encryption",
+          "heading": "Database connection encryption",
+          "body": "The backend, document worker and crawler worker connect to Postgres over TLS: Terraform sets `PGSSLMODE=no-verify` on all three services, and the Node.js Postgres driver reads it whenever `DATABASE_URL` carries no TLS settings of its own. Whether Cloud SQL also refuses unencrypted connections is a per-stack switch, `db_require_encrypted_connections`, and it starts off.\n\nTo turn it on for a stack:\n\n1. Apply Terraform for the stack, so every service runs a revision with `PGSSLMODE`. Any image works, because the driver reads the variable itself.\n2. Run the check in [Encryption](https://docs.radioso.ai/operators/encryption#check-that-database-connections-are-encrypted) against the stack's database. Every application name should show all of its sessions encrypted.\n3. Set `db_require_encrypted_connections = true` for the stack and apply. The instance updates in place; plan it for a quiet window in case Cloud SQL restarts it.\n4. Run the check again.\n\nA one-off `psql` session needs nothing extra: `psql` tries TLS first by default."
+        },
+        {
           "id": "conversation-erasure-keys",
           "heading": "Conversation erasure keys",
           "body": "The `228_conversation_erasure_*` migrations give each table that names a conversation a cascading key, one table per migration, and add the indexes the cascade and the erasers look rows up by. Each one waits at most three seconds for its table's lock; a deploy that hits that rolls back whole, and running it again is safe. `229_conversation_erasure_links_validate` then removes rows whose conversation is already gone and validates the keys without blocking reads or writes.\n\nA plain index build stops writes to its table until the migration commits. Before deploying, check the row counts of `usage_events`, `topic_memberships` and `routine_action_requests`. For each one over 100k rows, build its index first, under the same name and predicate, so the migration finds it already there:\n\n```sql\nCREATE INDEX CONCURRENTLY IF NOT EXISTS usage_events_message_idx\n  ON usage_events (message_id) WHERE message_id IS NOT NULL;\nCREATE INDEX CONCURRENTLY IF NOT EXISTS topic_memberships_message_idx\n  ON topic_memberships (message_id);\nCREATE INDEX CONCURRENTLY IF NOT EXISTS routine_action_requests_conversation_idx\n  ON routine_action_requests (conversation_id) WHERE conversation_id IS NOT NULL;\n```\n\nRun each statement on its own, outside a transaction. A concurrent build that fails leaves an invalid index of that name behind; drop it (`DROP INDEX CONCURRENTLY <name>`) before trying again or before deploying. The other erasure indexes are on small tables and build inside their migrations."
@@ -2206,6 +2211,47 @@
           "id": "read-next",
           "heading": "Read next",
           "body": "* [Human takeover](https://docs.radioso.ai/operators/human-takeover) — how ownership, handoffs, and the Inbox work across every channel, email included.\n* [Slack channel](https://docs.radioso.ai/operators/slack-channel) — the other connector channel, for comparison.\n* [Author a directive](https://docs.radioso.ai/guides/authoring-directives) — write finer rules for when an agent should and shouldn't engage, beyond a mailbox's mode.\n* [Data residency](https://docs.radioso.ai/operators/data-residency) — where Resend sends and receives this channel's mail, and what stays in the United States regardless."
+        }
+      ]
+    },
+    {
+      "slug": "operators/encryption",
+      "url": "https://docs.radioso.ai/operators/encryption",
+      "title": "Encryption",
+      "description": "What Radioso encrypts at rest and in transit, which keys protect it, and how to check that database connections are encrypted.",
+      "section": "Operator guides",
+      "lastUpdated": "2026-10-24",
+      "intro": "Everything Radioso Cloud stores is encrypted at rest, and everything that travels between its parts, and out to the services it calls, is encrypted in transit. This page says what that covers, which keys are involved, and how a self-hosted deployment gets the same.",
+      "sections": [
+        {
+          "id": "at-rest",
+          "heading": "At rest",
+          "body": "On Radioso Cloud, conversations, documents, settings and everything else live in Cloud SQL for PostgreSQL and in a Cloud Storage bucket for uploaded files. Google Cloud encrypts both with AES-256, including database backups and logs, under keys Google manages. Radioso doesn't offer customer-managed keys.\n\nCredentials get a second layer. Workspace provider API keys, connector and OAuth secrets, and webhook signing secrets are encrypted by the application with AES-256-GCM before they reach the database, under the deployment's `CONNECTOR_ENCRYPTION_KEY`. Nobody can read them back through the API, and they stay unreadable in a database copy without that key."
+        },
+        {
+          "id": "in-transit",
+          "heading": "In transit",
+          "body": "* **Browsers, embeds and API clients** reach Radioso over HTTPS.\n* **The backend and workers reach Postgres over TLS.** Every hosted runtime sets `PGSSLMODE=no-verify`. The connection is encrypted, and the client doesn't check the server's certificate, because a Cloud SQL private-IP certificate doesn't name the address clients connect to. The database has no public address and is reachable only from the stack's private network.\n* **Cloud SQL refuses unencrypted connections** on stacks where `db_require_encrypted_connections` is on. A client that tries plain text fails at connect.\n* **Model providers, email, Slack and the other outside services** are called over HTTPS. [Data residency](https://docs.radioso.ai/operators/data-residency) lists each one and where it processes data."
+        },
+        {
+          "id": "check-that-database-connections-are-encrypted",
+          "heading": "Check that database connections are encrypted",
+          "body": "Run this as the application's database user. Each runtime shows up under its own application name:\n\n```sql\nSELECT a.application_name,\n       count(*) FILTER (WHERE s.ssl) AS encrypted,\n       count(*) AS total\nFROM pg_stat_activity a\nJOIN pg_stat_ssl s USING (pid)\nWHERE a.usename = current_user\nGROUP BY a.application_name;\n```\n\nEvery row should show `encrypted` equal to `total`. A row where it doesn't is a runtime still connecting in plain text."
+        },
+        {
+          "id": "self-hosted-deployments",
+          "heading": "Self-hosted deployments",
+          "body": "You own both layers. Disk encryption is whatever your host or volume provides. The default Compose stack runs Postgres on the same private Docker network as the backend and connects without TLS.\n\nTo encrypt the database connection, set `PGSSLMODE` on the backend and worker containers, or put the TLS settings in `DATABASE_URL`:\n\n* `PGSSLMODE=no-verify` encrypts without checking the certificate. Use it when the network path to Postgres is already private.\n* `DATABASE_URL=postgres://...?sslmode=verify-full&sslrootcert=/etc/ssl/postgres-ca.pem` encrypts and checks both the certificate chain and the host name against your CA. Settings in `DATABASE_URL` take precedence over `PGSSLMODE`.\n\nKeep `CONNECTOR_ENCRYPTION_KEY` out of the database's backups. A backup and its key stored together protect nothing."
+        },
+        {
+          "id": "common-failure-modes",
+          "heading": "Common failure modes",
+          "body": "* **A certificate error at startup, such as `self-signed certificate`.** `DATABASE_URL` carries `sslmode=require` or `sslmode=verify-ca`. The Node.js Postgres driver treats both as `verify-full` and checks the certificate against the system's public CAs. Use `PGSSLMODE=no-verify`, or `verify-full` with `sslrootcert` pointing at your CA.\n* **A runtime fails to connect right after you turn on `db_require_encrypted_connections`.** That runtime has no `PGSSLMODE` and no TLS settings in `DATABASE_URL`. Run the check above before turning enforcement on."
+        },
+        {
+          "id": "read-next",
+          "heading": "Read next",
+          "body": "* [Deployment](https://docs.radioso.ai/operators/deployment#database-connection-encryption): turning on encrypted-only connections for a stack.\n* [Data retention](https://docs.radioso.ai/operators/data-retention): how long backups and logs keep data after a deletion.\n* [Data residency](https://docs.radioso.ai/operators/data-residency): where each outside service processes data."
         }
       ]
     },
@@ -2445,6 +2491,11 @@
           "id": "secrets",
           "heading": "Secrets",
           "body": "Rotate these values deliberately and keep historical impact in mind:\n\n* `SESSION_COOKIE_SECRET` affects browser sessions.\n* `RADIOSO_MCP_SIGNING_SECRET` keys standalone MCP source budgets and source proofs. A single in-memory MCP process can omit it and uses a process-random key that resets budgets on restart. Give the identical value to the backend and standalone MCP whenever the backend must trust source proofs, and always when Redis is configured; changing it starts a new budget window for every source. A backend without standalone MCP derives its source-budget key from `SESSION_COOKIE_SECRET`, so rotating that value has the same budget-window effect.\n* `WORKSPACE_TOKEN_SECRET` derives the per-agent signing keys used for signed visitor identity.\n* `PUBLIC_CHAT_SESSION_SECRET` affects anonymous public-chat sessions and website embeds.\n* `CONNECTOR_ENCRYPTION_KEY` protects both connector secrets and per-workspace LLM provider API keys at rest. The value must be 32 random bytes, base64-encoded — generate one with `openssl rand -base64 32`. The bootstrap command generates a key automatically when `.env` does not already have one. Workspaces that have stored an API key in the UI cannot read it back after the key is changed; operators must coordinate a rotation by clearing or re-entering each affected provider credential.\n* `RADIOSO_EDGE_PROOF_SECRET` lets the frontend's server-side proxies vouch for a visitor's IP address and geo headers when they forward public chat, embed session, and dashboard `/backend` requests to the backend. At least 32 characters, shared verbatim by both services. Leave it unset and the proof path never runs: the backend still serves every request, but it records that visitor's IP, country, region, and city as unknown instead of trusting an unsigned header, and it budgets relayed requests by a proxy's address rather than the visitor's. `docker-compose.yml` and `docker-compose.dev.yml` already set a matching dev value on both services, so the local stack exercises the signed path with no extra setup.\n* provider API keys affect chat, rewrite, rerank, and embedding calls.\n\nChanging encryption or token secrets without a migration or rotation plan can invalidate existing sessions, tokens, or saved connector credentials."
+        },
+        {
+          "id": "database-tls",
+          "heading": "Database TLS",
+          "body": "The Compose stack connects to Postgres without TLS, over the private Docker network. To encrypt that connection, set `PGSSLMODE=no-verify` on the backend and worker, or put `sslmode=verify-full&sslrootcert=<path>` in `DATABASE_URL` to also check the certificate. [Encryption](https://docs.radioso.ai/operators/encryption#self-hosted-deployments) covers both and the certificate errors to expect."
         },
         {
           "id": "visitor-request-facts",

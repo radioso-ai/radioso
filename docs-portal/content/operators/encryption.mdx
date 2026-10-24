@@ -1,0 +1,60 @@
+---
+title: "Encryption"
+description: "What Radioso encrypts at rest and in transit, which keys protect it, and how to check that database connections are encrypted."
+last_updated: 2026-10-24
+---
+
+# Encryption
+
+Everything Radioso Cloud stores is encrypted at rest, and everything that travels between its parts, and out to the services it calls, is encrypted in transit. This page says what that covers, which keys are involved, and how a self-hosted deployment gets the same.
+
+## At rest
+
+On Radioso Cloud, conversations, documents, settings and everything else live in Cloud SQL for PostgreSQL and in a Cloud Storage bucket for uploaded files. Google Cloud encrypts both with AES-256, including database backups and logs, under keys Google manages. Radioso doesn't offer customer-managed keys.
+
+Credentials get a second layer. Workspace provider API keys, connector and OAuth secrets, and webhook signing secrets are encrypted by the application with AES-256-GCM before they reach the database, under the deployment's `CONNECTOR_ENCRYPTION_KEY`. Nobody can read them back through the API, and they stay unreadable in a database copy without that key.
+
+## In transit
+
+- **Browsers, embeds and API clients** reach Radioso over HTTPS.
+- **The backend and workers reach Postgres over TLS.** Every hosted runtime sets `PGSSLMODE=no-verify`. The connection is encrypted, and the client doesn't check the server's certificate, because a Cloud SQL private-IP certificate doesn't name the address clients connect to. The database has no public address and is reachable only from the stack's private network.
+- **Cloud SQL refuses unencrypted connections** on stacks where `db_require_encrypted_connections` is on. A client that tries plain text fails at connect.
+- **Model providers, email, Slack and the other outside services** are called over HTTPS. [Data residency](/operators/data-residency) lists each one and where it processes data.
+
+## Check that database connections are encrypted
+
+Run this as the application's database user. Each runtime shows up under its own application name:
+
+```sql
+SELECT a.application_name,
+       count(*) FILTER (WHERE s.ssl) AS encrypted,
+       count(*) AS total
+FROM pg_stat_activity a
+JOIN pg_stat_ssl s USING (pid)
+WHERE a.usename = current_user
+GROUP BY a.application_name;
+```
+
+Every row should show `encrypted` equal to `total`. A row where it doesn't is a runtime still connecting in plain text.
+
+## Self-hosted deployments
+
+You own both layers. Disk encryption is whatever your host or volume provides. The default Compose stack runs Postgres on the same private Docker network as the backend and connects without TLS.
+
+To encrypt the database connection, set `PGSSLMODE` on the backend and worker containers, or put the TLS settings in `DATABASE_URL`:
+
+- `PGSSLMODE=no-verify` encrypts without checking the certificate. Use it when the network path to Postgres is already private.
+- `DATABASE_URL=postgres://...?sslmode=verify-full&sslrootcert=/etc/ssl/postgres-ca.pem` encrypts and checks both the certificate chain and the host name against your CA. Settings in `DATABASE_URL` take precedence over `PGSSLMODE`.
+
+Keep `CONNECTOR_ENCRYPTION_KEY` out of the database's backups. A backup and its key stored together protect nothing.
+
+## Common failure modes
+
+- **A certificate error at startup, such as `self-signed certificate`.** `DATABASE_URL` carries `sslmode=require` or `sslmode=verify-ca`. The Node.js Postgres driver treats both as `verify-full` and checks the certificate against the system's public CAs. Use `PGSSLMODE=no-verify`, or `verify-full` with `sslrootcert` pointing at your CA.
+- **A runtime fails to connect right after you turn on `db_require_encrypted_connections`.** That runtime has no `PGSSLMODE` and no TLS settings in `DATABASE_URL`. Run the check above before turning enforcement on.
+
+## Read next
+
+- [Deployment](/operators/deployment#database-connection-encryption): turning on encrypted-only connections for a stack.
+- [Data retention](/operators/data-retention): how long backups and logs keep data after a deletion.
+- [Data residency](/operators/data-residency): where each outside service processes data.

@@ -54,7 +54,8 @@ Radioso:
 
 ## 4. Subprocessors
 
-The Controller gives general authorisation for the subprocessors in Annex 3.
+The Controller gives general authorisation for the subprocessors Annex 3 lists
+for the region of each of its workspaces.
 Radioso gives the Controller **at least 30 days' notice by email** before it
 adds or replaces a subprocessor. The Controller may object on reasonable data
 protection grounds within that period. If the parties cannot resolve the
@@ -73,15 +74,25 @@ nature of the breach, the categories and approximate number of people and
 records affected, the likely consequences, and the measures taken or proposed.
 Radioso adds information as it becomes available.
 
-## 6. International transfers
+## 6. Region and international transfers
 
-Radioso Cloud runs in two regions: **europe-west1 (Belgium)** and
-**us-central1 (Iowa, United States)**. The Controller's workspace stays in the
-region where it was created. Some subprocessors in Annex 3 process data in the
-United States. For those transfers Radioso relies on the EU-U.S. Data Privacy
+The Controller picks the region of each workspace when it creates it:
+**europe-west1 (Belgium)** or **us-central1 (Iowa, United States)**. Radioso
+stores and processes the workspace's personal data in that region, using the
+subprocessors Annex 3 lists for it. Radioso does not move a workspace to another
+region without the Controller's written instruction.
+
+- **europe-west1.** Hosting, language-model calls and email stay in the EU.
+  Personal data leaves the EU only through Slack, and only when the Controller
+  connects it.
+- **us-central1.** Hosting and language-model calls take place in the United
+  States, so the core of the Service is itself a transfer outside the EEA.
+
+For every transfer outside the EEA, Radioso relies on the EU-U.S. Data Privacy
 Framework where the subprocessor is certified, and otherwise on the European
-Commission's Standard Contractual Clauses. [Counsel: confirm the SCC module for
-each transfer and for workspaces in us-central1.]
+Commission's Standard Contractual Clauses in the subprocessor's data processing
+terms. [Counsel: confirm the SCC module for each transfer, and whether
+us-central1 workspaces of EEA controllers need further measures.]
 
 ## 7. Deletion at the end of the Service
 
@@ -117,6 +128,7 @@ Terms of Service.]
 | Data subjects | The Controller's visitors; the Controller's team members; people named in the Controller's documents. |
 | Personal data | Conversation messages; answers collected by routines (for example name, email, phone, booking details); visitor technical data (browser, language, approximate country, page URL); email addresses and message content for the email channel; documents the Controller uploads. |
 | Special categories | Whatever visitors volunteer in free text, for example health, religion or beliefs. Radioso does not seek it. |
+| Location | The workspace's region, as set out in section 6. |
 | Retention | Set by the Controller (Settings → Workspace → Conversation retention). By default conversations are kept until deleted. |
 
 ## Annex 2: Security measures
@@ -144,15 +156,28 @@ Terms of Service.]
 
 ## Annex 3: Subprocessors
 
+Each workspace uses the subprocessors of its region.
+
+### Workspaces in europe-west1
+
 | Subprocessor | What it does | Data it receives | Where |
 |---|---|---|---|
-| Google Cloud (Google Cloud EMEA Ltd.) | Hosting, database, file storage | All Service data | The workspace's region: europe-west1 or us-central1 |
-| Microsoft Azure OpenAI (Microsoft Ireland Operations Ltd.) | Language model and embeddings, for workspaces in europe-west1 | Messages, retrieved document passages, and instructions sent at answer time | EU (Azure EU Data Zone; resource in Germany West Central) |
-| OpenAI (OpenAI Ireland Ltd.) | Language model and embeddings, for workspaces in us-central1 | Messages, retrieved document passages, and instructions sent at answer time | United States |
-| Lettermint B.V. | Sending account and notification email; the email channel, when enabled | Recipient address and email content | EU (Netherlands) |
-| PostHog | Product analytics | Usage events and browser data of the Controller's team; no conversation content | EU |
+| Google Cloud (Google Cloud EMEA Ltd.) | Hosting, database, file storage | All Service data | EU (europe-west1, Belgium) |
+| Microsoft Azure OpenAI (Microsoft Ireland Operations Ltd.) | Language model and embeddings | Messages, retrieved document passages and instructions sent at answer time | EU (Azure EU Data Zone; resource in Germany West Central) |
+| Lettermint B.V. | Notification email to the Controller's team; the email channel, when enabled | Recipient address and email content | EU (Netherlands) |
 | Slack | Notifications and handoff, only when the Controller connects Slack | Notification content the Controller configures | United States |
-| Stripe | Billing | The Controller's billing details only; no visitor data | United States |
+
+### Workspaces in us-central1
+
+| Subprocessor | What it does | Data it receives | Where |
+|---|---|---|---|
+| Google Cloud (Google Cloud EMEA Ltd.) | Hosting, database, file storage | All Service data | United States (us-central1, Iowa) |
+| OpenAI (OpenAI Ireland Ltd.) | Language model and embeddings | Messages, retrieved document passages and instructions sent at answer time | United States |
+| Lettermint B.V. | Notification email to the Controller's team; the email channel, when enabled | Recipient address and email content | EU (Netherlands) |
+| Slack | Notifications and handoff, only when the Controller connects Slack | Notification content the Controller configures | United States |
+
+Radioso's billing (Stripe) and product analytics (PostHog) handle data Radioso
+controls itself, as its Privacy Policy describes, and are outside this DPA.
 
 Providers the Controller connects with its own account and key, such as its
 own OpenAI, Anthropic, Gemini or ElevenLabs account, are the Controller's own

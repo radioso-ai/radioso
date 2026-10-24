@@ -2,7 +2,7 @@ import type { Request } from "express";
 import { Router } from "express";
 
 import type { AppDependencies } from "../../server/types.js";
-import { ResendWebhookVerifier } from "../../../modules/mail/public.js";
+import { deliveryWebhookVerifierFor } from "../../../modules/mail/public.js";
 import { recordNotificationSuppression } from "../../../modules/operatorNotifications/public.js";
 
 type Dependencies = Pick<
@@ -26,7 +26,7 @@ export const createNotificationDeliveryWebhookRoutes = (dependencies: Dependenci
   const router = Router();
   const secret = dependencies.env.EMAIL_CHANNEL_WEBHOOK_SECRET;
   const verifier = secret
-    ? new ResendWebhookVerifier({
+    ? deliveryWebhookVerifierFor(dependencies.env, {
         current: secret,
         previous: dependencies.env.EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS ?? null,
       })
@@ -46,7 +46,7 @@ export const createNotificationDeliveryWebhookRoutes = (dependencies: Dependenci
     if (!verified.ok) {
       dependencies.logger.warn({
         event: "notification_delivery_webhook_rejected",
-        provider: "resend",
+        provider: verifier.provider,
         reason: verified.reason,
       }, "Notification delivery webhook rejected");
       res.sendStatus(verified.reason === "malformed_payload" ? 400 : 401);
@@ -61,7 +61,7 @@ export const createNotificationDeliveryWebhookRoutes = (dependencies: Dependenci
     try {
       await recordNotificationSuppression({
         event,
-        provider: "resend",
+        provider: verifier.provider,
         store: dependencies.notificationRecipientSuppressions,
         logger: dependencies.logger,
         metrics: dependencies.metricsRegistry,

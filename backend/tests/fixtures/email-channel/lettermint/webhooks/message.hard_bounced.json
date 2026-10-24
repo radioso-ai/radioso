@@ -1,0 +1,21 @@
+{
+  "id": "123e4567-e89b-12d3-a456-426614174000",
+  "event": "message.hard_bounced",
+  "timestamp": "2025-08-08T20:15:30.000Z",
+  "sandbox": false,
+  "sandbox_result": null,
+  "data": {
+    "message_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+    "subject": "You have a new contact request",
+    "recipient": "alice@customer.test",
+    "response": {
+      "status_code": 550,
+      "enhanced_status_code": "5.1.1",
+      "content": "5.1.1 <alice@customer.test>: Recipient address rejected: User unknown"
+    },
+    "metadata": {},
+    "headers": [],
+    "tag": null,
+    "tags": [{ "name": "kind", "value": "contact_notification" }]
+  }
+}

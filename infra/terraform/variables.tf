@@ -521,6 +521,19 @@ variable "resend_mail_api_key" {
   default     = null
 }
 
+variable "lettermint_project_token" {
+  description = "Lettermint project token (lm_...), used by transactional auth mail (MAIL_DRIVER=lettermint) and, shared with the email channel, by channel mail sent through the lettermint provider."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "mail_driver" {
+  description = "Transactional auth mail driver override (MAIL_DRIVER). Unset infers the driver from whichever provider key is set; required only when both resend_mail_api_key and lettermint_project_token are set."
+  type        = string
+  default     = null
+}
+
 variable "mail_from_email" {
   description = "Verified sender email address for transactional auth mail."
   type        = string
@@ -534,13 +547,13 @@ variable "mail_from_name" {
 }
 
 variable "email_channel_provider" {
-  description = "Email channel provider (EMAIL_CHANNEL_PROVIDER). Unset leaves the email plugin, routes and workers unregistered. The only supported deployed value is \"resend\"; \"local\" is development-only."
+  description = "Email channel provider (EMAIL_CHANNEL_PROVIDER). Unset leaves the email plugin, routes and workers unregistered. The supported deployed values are \"resend\" and \"lettermint\"; \"local\" is development-only."
   type        = string
   default     = null
 
   validation {
-    condition     = var.email_channel_provider == null || var.email_channel_provider == "resend"
-    error_message = "email_channel_provider must be unset or \"resend\"."
+    condition     = var.email_channel_provider == null || contains(["resend", "lettermint"], var.email_channel_provider)
+    error_message = "email_channel_provider must be unset, \"resend\" or \"lettermint\"."
   }
 }
 
@@ -573,6 +586,19 @@ variable "resend_channel_api_key" {
   description = "Optional Resend API key the email channel receives and sends channel mail with (RESEND_CHANNEL_API_KEY). Unset, the channel uses resend_mail_api_key, transactional auth mail's key."
   type        = string
   sensitive   = true
+  default     = null
+}
+
+variable "lettermint_team_token" {
+  description = "Lettermint team token (lm_team_..., Team API: reads messages, manages domains and inbound routes). Required with email_channel_provider = \"lettermint\" (LETTERMINT_TEAM_TOKEN)."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "lettermint_project_id" {
+  description = "Lettermint project id the team token's domain and route calls act on. Required with email_channel_provider = \"lettermint\" (LETTERMINT_PROJECT_ID)."
+  type        = string
   default     = null
 }
 

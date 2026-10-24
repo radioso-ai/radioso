@@ -1,16 +1,22 @@
+import { createHmac } from "node:crypto";
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { ResendApiClient } from "../../../src/modules/mail/adapters/resendApi.js";
 import {
   EmailSendError,
   EmailService,
+  LettermintEmailDriver,
   ResendEmailDeliveryError,
   ResendEmailDriver,
   createMailService,
+  deliveryWebhookVerifierFor,
   rfcMessageId,
+  type DeliveryWebhookVerifier,
   type EmailDriver,
   type EmailMessage,
   type EmailSendResult,
+  type MailWebhookEnv,
   type SentEmailStatus,
 } from "../../../src/modules/mail/public.js";
 
@@ -504,5 +510,131 @@ describe("mail service", () => {
     expect(error).toBeInstanceOf(Error);
     expect(error).toMatchObject({ name: "EmailSendError", outcome: "unknown", code: "timeout" });
     expect(error.message).toBe("timeout");
+  });
+});
+
+describe("mail driver selection", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
+
+  const LETTERMINT_TOKEN = "lm_project_SECRET_0123456789";
+
+  it("builds a Lettermint-backed service when MAIL_DRIVER is lettermint", () => {
+    const service = createMailService({ MAIL_DRIVER: "lettermint", LETTERMINT_PROJECT_TOKEN: LETTERMINT_TOKEN });
+
+    expect(driverOf(service)).toBeInstanceOf(LettermintEmailDriver);
+  });
+
+  it("infers Lettermint when only a Lettermint project token is set", () => {
+    expect(driverOf(createMailService({ LETTERMINT_PROJECT_TOKEN: LETTERMINT_TOKEN }))).toBeInstanceOf(LettermintEmailDriver);
+  });
+
+  it("keeps inferring Resend when only a Resend key is set", () => {
+    expect(driverOf(createMailService({ RESEND_MAIL_API_KEY: "re_test" }))).toBeInstanceOf(ResendEmailDriver);
+  });
+
+  it("keeps Resend when both providers are configured without MAIL_DRIVER, as before Lettermint existed", () => {
+    const service = createMailService({ RESEND_MAIL_API_KEY: "re_test", LETTERMINT_PROJECT_TOKEN: LETTERMINT_TOKEN });
+
+    expect(driverOf(service)).toBeInstanceOf(ResendEmailDriver);
+  });
+
+  it.each([
+    ["lettermint", LettermintEmailDriver],
+    ["resend", ResendEmailDriver],
+  ])("lets MAIL_DRIVER=%s choose when both providers are configured", (driverName, driverClass) => {
+    const service = createMailService({
+      MAIL_DRIVER: driverName,
+      RESEND_MAIL_API_KEY: "re_test",
+      LETTERMINT_PROJECT_TOKEN: LETTERMINT_TOKEN,
+    });
+
+    expect(driverOf(service)).toBeInstanceOf(driverClass);
+  });
+
+  it.each([undefined, "   "])("requires a Lettermint project token when the Lettermint driver is selected (%j)", (token) => {
+    expect(() => createMailService({ MAIL_DRIVER: "lettermint", LETTERMINT_PROJECT_TOKEN: token })).toThrow(
+      "LETTERMINT_PROJECT_TOKEN is required when MAIL_DRIVER is lettermint",
+    );
+  });
+
+  it.each(["", "  "])("treats a blank MAIL_DRIVER (%j) as unset", (driverName) => {
+    expect(driverOf(createMailService({ MAIL_DRIVER: driverName, LETTERMINT_PROJECT_TOKEN: LETTERMINT_TOKEN })))
+      .toBeInstanceOf(LettermintEmailDriver);
+  });
+
+  it("sends Lettermint transactional mail with the project token", async () => {
+    const fetchMock = vi.fn(async (_url: unknown, _init?: RequestInit) =>
+      new Response(JSON.stringify({ message_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479", status: "pending" }), { status: 202 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const service = createMailService({ MAIL_DRIVER: "lettermint", LETTERMINT_PROJECT_TOKEN: ` ${LETTERMINT_TOKEN} ` });
+
+    const result = await service.send({ to: "ada@example.com", subject: "Reset your password", text: "Hello", kind: "password_reset" });
+
+    expect(result).toEqual({
+      dispatched: true,
+      driver: "lettermint",
+      providerMessageId: "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+      deliveredMessageId: null,
+    });
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("https://api.lettermint.co/v1/send");
+    expect(fetchMock.mock.calls[0]?.[1]?.headers).toMatchObject({ "x-lettermint-token": LETTERMINT_TOKEN });
+  });
+});
+
+describe("delivery webhook verifier selection", () => {
+  const SECRET = `whsec_${Buffer.from("delivery-webhook-signing-secret").toString("base64")}`;
+  const SECRETS = { current: SECRET, previous: null };
+  const NOW = new Date("2025-08-08T20:15:12.000Z");
+  const TIMESTAMP = Math.floor(NOW.getTime() / 1000);
+  const body = Buffer.from(JSON.stringify({
+    id: "9b0c4a4e-4e29-4d8b-8b3a-3f0f3e6d2f9b",
+    event: "message.delivered",
+    timestamp: NOW.toISOString(),
+    data: { message_id: "f47ac10b-58cc-4372-a567-0e02b2c3d479", recipient: "ada@example.com", tags: [] },
+  }));
+  const lettermintSigned = {
+    rawBody: body,
+    headers: {
+      "x-lettermint-signature": `t=${TIMESTAMP},v1=${createHmac("sha256", SECRET).update(`${TIMESTAMP}.`).update(body).digest("hex")}`,
+      "x-lettermint-delivery": String(TIMESTAMP),
+    },
+    now: NOW,
+  };
+
+  it.each<[MailWebhookEnv, DeliveryWebhookVerifier["provider"]]>([
+    [{ MAIL_DRIVER: "lettermint" }, "lettermint"],
+    [{ LETTERMINT_PROJECT_TOKEN: "lm_project_x" }, "lettermint"],
+    [{ MAIL_DRIVER: "resend" }, "resend"],
+    [{ RESEND_MAIL_API_KEY: "re_test" }, "resend"],
+    [{ MAIL_DRIVER: "log" }, "resend"],
+    [{}, "resend"],
+  ])("selects the verifier of the transactional driver %j resolves to", (source, provider) => {
+    expect(deliveryWebhookVerifierFor(source, SECRETS).provider).toBe(provider);
+  });
+
+  it("verifies a Lettermint-signed delivery when the transactional driver is lettermint", () => {
+    const verifier = deliveryWebhookVerifierFor({ MAIL_DRIVER: "lettermint" }, SECRETS);
+
+    expect(verifier.verify(lettermintSigned)).toMatchObject({
+      ok: true,
+      event: { kind: "delivery_status", status: { type: "delivered" }, recipients: ["ada@example.com"] },
+    });
+  });
+
+  it("keeps verifying with Resend's scheme otherwise", () => {
+    const verifier = deliveryWebhookVerifierFor({ RESEND_MAIL_API_KEY: "re_test" }, SECRETS);
+
+    expect(verifier.verify(lettermintSigned)).toEqual({ ok: false, reason: "missing_signature" });
+  });
+
+  it("disagrees with createMailService on nothing: both providers configured without MAIL_DRIVER resolve to Resend in both", () => {
+    const both = { RESEND_MAIL_API_KEY: "re_test", LETTERMINT_PROJECT_TOKEN: "lm_project_x" };
+
+    expect(deliveryWebhookVerifierFor(both, SECRETS).provider).toBe("resend");
+    expect(driverOf(createMailService(both))).toBeInstanceOf(ResendEmailDriver);
   });
 });

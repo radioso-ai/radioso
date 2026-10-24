@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
 
+import { LettermintApiClient } from "./adapters/lettermintApi.js";
+import { LettermintEmailDriver } from "./adapters/lettermintDriver.js";
 import { ResendApiClient } from "./adapters/resendApi.js";
 import { ResendEmailDriver } from "./adapters/resendDriver.js";
 import type { RfcMessageId } from "./emailHeaderValues.js";
@@ -198,19 +200,48 @@ interface MailEnv {
   MAIL_FROM_EMAIL?: string;
   MAIL_FROM_NAME?: string;
   RESEND_MAIL_API_KEY?: string;
+  LETTERMINT_PROJECT_TOKEN?: string;
 }
 
+/**
+ * The transactional mail driver a configuration names. A blank `MAIL_DRIVER` is unset; without
+ * one, a Resend key keeps Resend, as it did before Lettermint existed, so adding Lettermint
+ * credentials never changes or stops a running deployment's mail. Lettermint is chosen by name,
+ * or as the only configured provider; none means the log driver. The delivery webhook resolves
+ * its provider through this too, so the two can never disagree.
+ */
+export const resolveMailDriverName = (
+  source: Pick<MailEnv, "MAIL_DRIVER" | "RESEND_MAIL_API_KEY" | "LETTERMINT_PROJECT_TOKEN">,
+): string => {
+  const explicit = source.MAIL_DRIVER?.trim();
+  if (explicit) {
+    return explicit;
+  }
+  if (source.RESEND_MAIL_API_KEY?.trim()) {
+    return "resend";
+  }
+  return source.LETTERMINT_PROJECT_TOKEN?.trim() ? "lettermint" : "log";
+};
+
 export const createMailService = (source: MailEnv = process.env): EmailService => {
-  const resendApiKey = source.RESEND_MAIL_API_KEY?.trim();
-  const driverName = source.MAIL_DRIVER ?? (resendApiKey ? "resend" : "log");
+  const driverName = resolveMailDriverName(source);
   const fromEmail = source.MAIL_FROM_EMAIL ?? "noreply@example.com";
   const fromName = source.MAIL_FROM_NAME ?? "Radioso";
 
   if (driverName === "resend") {
+    const resendApiKey = source.RESEND_MAIL_API_KEY?.trim();
     if (!resendApiKey) {
       throw new Error("RESEND_MAIL_API_KEY is required when MAIL_DRIVER is resend");
     }
     const driver = new ResendEmailDriver({ api: new ResendApiClient({ apiKey: resendApiKey }) });
+    return new EmailService(driver, { fromEmail, fromName });
+  }
+  if (driverName === "lettermint") {
+    const projectToken = source.LETTERMINT_PROJECT_TOKEN?.trim();
+    if (!projectToken) {
+      throw new Error("LETTERMINT_PROJECT_TOKEN is required when MAIL_DRIVER is lettermint");
+    }
+    const driver = new LettermintEmailDriver({ api: new LettermintApiClient({ projectToken }) });
     return new EmailService(driver, { fromEmail, fromName });
   }
   if (driverName === "noop") {

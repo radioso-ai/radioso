@@ -124,4 +124,45 @@ describe("notification recipient confirmation contract", () => {
       providerEventId: id,
     });
   });
+
+  it("records signed Lettermint hard bounces even when the inbound email channel is off", async () => {
+    const secret = "whsec_notification-webhook-lettermint-test-0000";
+    const { app, dependencies } = createTestApp({
+      envOverrides: {
+        EMAIL_CHANNEL_WEBHOOK_SECRET: secret,
+        LETTERMINT_PROJECT_TOKEN: "lm_test_project_token",
+      },
+    });
+    const suppress = vi.spyOn(dependencies.notificationRecipientSuppressions, "suppress");
+    const id = "lm-evt-001";
+    const timestamp = Math.floor(Date.now() / 1000);
+    const body = JSON.stringify({
+      id,
+      event: "message.hard_bounced",
+      timestamp: new Date(timestamp * 1000).toISOString(),
+      data: {
+        message_id: "lm-msg-001",
+        recipient: "recipient@example.com",
+        tags: [{ name: "kind", value: "operator_notice" }],
+        response: { enhanced_status_code: "5.1.1" },
+      },
+    });
+    const signature = createHmac("sha256", Buffer.from(secret, "utf8"))
+      .update(`${timestamp}.${body}`)
+      .digest("hex");
+
+    const response = await request(app).post("/api/connectors/email/webhook")
+      .set("content-type", "application/json")
+      .set("X-Lettermint-Signature", `t=${timestamp},v1=${signature}`)
+      .set("X-Lettermint-Delivery", String(timestamp))
+      .send(body);
+
+    expect(response.status).toBe(200);
+    expect(suppress).toHaveBeenCalledWith({
+      email: "recipient@example.com",
+      reason: "hard_bounce",
+      provider: "lettermint",
+      providerEventId: id,
+    });
+  });
 });

@@ -1,4 +1,4 @@
-import type { AppLogger } from "../observability/logger.js";
+import { extractProductAnalyticsLogFields, type AppLogger } from "../observability/logger.js";
 import { redactRecord } from "../observability/telemetry/redactionPolicy.js";
 import type { ProductAnalyticsEvent, ProductAnalyticsEventName } from "./productAnalyticsTypes.js";
 import type { ProductAnalyticsSink } from "./productAnalyticsSink.js";
@@ -45,17 +45,7 @@ export class ProductAnalyticsService implements ProductAnalyticsPort {
     };
 
     this.options.logger.info(
-      {
-        analytics: {
-          eventName: event.eventName,
-          workspaceId: event.workspaceId,
-          accountId: event.accountId,
-          actorType: event.actorType,
-          subjectType: event.subjectType,
-          subjectId: event.subjectId,
-          source: event.source,
-        },
-      },
+      { analytics: extractProductAnalyticsLogFields(event) },
       "product_analytics_event",
     );
 

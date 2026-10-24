@@ -101,4 +101,24 @@ describe("buildLlmRegistry startup residency log", () => {
     const residencyCalls = info.mock.calls.filter(([, message]) => message === "Resolved provider residency");
     expect(residencyCalls).toHaveLength(0);
   });
+
+  it("logs azure plus the Azure resource host (never the key or the full endpoint URL) when AZURE_OPENAI_ENDPOINT is set", () => {
+    const env = getEnv({
+      ...baseEnv,
+      AZURE_OPENAI_ENDPOINT: "https://radioso-eu-1.openai.azure.com",
+    });
+    const info = vi.fn();
+    const logger = { info, debug: vi.fn(), warn: vi.fn(), error: vi.fn() };
+
+    buildLlmRegistry(env, logger as never);
+
+    const residencyCalls = info.mock.calls.filter(([, message]) => message === "Resolved provider residency");
+    expect(residencyCalls).toHaveLength(1);
+    const [payload] = residencyCalls[0] as [Record<string, unknown>, string];
+    expect(payload).toEqual({ openai: "azure", azureHost: "radioso-eu-1.openai.azure.com" });
+
+    const serialized = JSON.stringify(payload);
+    expect(serialized).not.toContain("env-openai-key");
+    expect(serialized).not.toMatch(/\/openai\/v1/);
+  });
 });

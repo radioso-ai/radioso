@@ -9,6 +9,22 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.21.0] - 2026-10-24
+
+### Added
+
+- **llm:** send the platform OpenAI key to an Azure OpenAI EU deployment ([#1611](https://github.com/radioso-ai/radioso/pull/1611))
+
+### Fixed
+
+- **infra:** grant image push on the repository instead of a conditioned project binding ([#1598](https://github.com/radioso-ai/radioso/pull/1598))
+
+### Internal
+
+- **infra:** scope the CI deploy identities to what each workflow uses ([#1597](https://github.com/radioso-ai/radioso/pull/1597))
+
+[1.21.0]: https://github.com/radioso-ai/radioso/compare/v1.20.0...v1.21.0
+
 ## [1.20.0] - 2026-10-21
 
 ### Added

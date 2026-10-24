@@ -742,6 +742,21 @@ variable "openai_data_residency" {
   }
 }
 
+variable "azure_openai_endpoint" {
+  description = "Azure OpenAI resource endpoint the platform-held openai_api_key (then an Azure key) calls instead of OpenAI's own host. Empty (default) keeps the key on OpenAI. Only takes effect when openai_data_residency is global; never applies to a workspace's own OpenAI key."
+  type        = string
+  default     = ""
+
+  validation {
+    # Mirrors the host suffixes and the path shape env.ts's AZURE_OPENAI_ENDPOINT schema accepts
+    # (empty path, or exactly /openai/v1, each with an optional trailing slash). Terraform does
+    # not normalize the value the way env.ts does, so a path this regex would otherwise accept
+    # but env.ts would reject crash-loops the app at startup instead of failing a `plan`.
+    condition     = var.azure_openai_endpoint == "" || can(regex("^https://[A-Za-z0-9.-]+\\.(openai\\.azure\\.com|services\\.ai\\.azure\\.com|cognitiveservices\\.azure\\.com)(|/|/openai/v1|/openai/v1/)$", var.azure_openai_endpoint))
+    error_message = "azure_openai_endpoint must be empty, or an https URL whose host ends in openai.azure.com, services.ai.azure.com, or cognitiveservices.azure.com, with no path or exactly /openai/v1."
+  }
+}
+
 variable "session_ttl_hours" {
   description = "Session TTL in hours"
   type        = number

@@ -742,8 +742,6 @@ describeIfDatabase("persistence integration", () => {
           lexicalCandidateCount: 5,
           normalizedCandidateCount: 14,
           finalContextCount: 4,
-          parsedSemanticQuery: "retreats",
-          parsedLexicalQuery: "retreats",
           appliedConstraintCount: 0,
           candidateFallbackApplied: false,
           fallbackApplied: true,

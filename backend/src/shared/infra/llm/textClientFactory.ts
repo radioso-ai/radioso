@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { ClaudeTextGenerationClient } from "./claudeProvider.js";
 import { GeminiTextGenerationClient } from "./geminiProvider.js";
 import { OpenAITextGenerationClient } from "./openaiProvider.js";
-import type { LlmCapabilityConfig, TextGenerationClient } from "./providerTypes.js";
+import { resolvedProviderEndpointIdentity, type LlmCapabilityConfig, type TextGenerationClient } from "./providerTypes.js";
 
 const createTextGenerationClient = (config: LlmCapabilityConfig): TextGenerationClient => {
   switch (config.provider) {
@@ -21,7 +21,7 @@ const hashApiKey = (apiKey: string): string =>
   createHash("sha256").update(apiKey).digest("hex").slice(0, 16);
 
 const clientCacheKey = (config: LlmCapabilityConfig): string =>
-  `${config.provider}:${config.model}:${hashApiKey(config.apiKey)}:${config.baseUrl ?? ""}`;
+  `${config.provider}:${config.model}:${hashApiKey(config.apiKey)}:${resolvedProviderEndpointIdentity(config) ?? ""}`;
 
 const DEFAULT_MAX_ENTRIES = 256;
 
@@ -31,11 +31,13 @@ interface TextGenerationClientCacheOptions {
 }
 
 /**
- * Per-process cache keyed by (provider, model, hashed apiKey, baseUrl). The
- * apiKey is hashed (truncated SHA-256) so heap dumps and any incidental cache
- * logging cannot leak the live credential. The LRU bound caps memory growth
- * across long uptimes where credential rotations would otherwise pin orphaned
- * client instances forever.
+ * Per-process cache keyed by (provider, model, hashed apiKey, resolved endpoint identity). The
+ * apiKey is hashed (truncated SHA-256) so heap dumps and any incidental cache logging cannot
+ * leak the live credential. The endpoint identity (`resolvedProviderEndpointIdentity`) is the
+ * Azure base URL or residency host for native `openai`, or `baseUrl` otherwise — always defined
+ * for native `openai`, so a platform-Azure client and a BYOK-global client sharing a model never
+ * collide on an empty `baseUrl`. The LRU bound caps memory growth across long uptimes where
+ * credential rotations would otherwise pin orphaned client instances forever.
  */
 export class TextGenerationClientCache {
   private readonly clients = new Map<string, TextGenerationClient>();

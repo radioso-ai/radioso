@@ -1,10 +1,10 @@
 import {
   callOpenAIResidencyProbeChatCompletion,
   callOpenAIResidencyProbeEmbeddings,
+  callOpenAIResidencyProbeResponses,
 } from "../shared/infra/llm/openAIResidencyProbeClient.js";
 import { resolveLlmConfig } from "../shared/infra/llm/providerConfig.js";
 import {
-  type LlmCapabilityDefault,
   type LlmCapabilityName,
   platformOpenAIEndpointLogFields,
   type PlatformOpenAIEndpoint,
@@ -66,10 +66,29 @@ export class AzureOpenAIDeploymentRejectedError extends Error {
   }
 }
 
+/**
+ * The OpenAI/Azure API surface a capability's own call shape uses. Chat and rewrite both run
+ * through `chat.completions`; native-openai rerank runs through `responses` instead (see
+ * `OpenAISemanticRerankGateway`/`providerRegistry.createRerankGateway`) — a different request and
+ * error shape, so it is probed separately even when it shares a model string with chat.
+ */
+type ProbeSurface = "embeddings" | "chat_completion" | "responses";
+
+const PROBE_SURFACE_BY_CAPABILITY: Record<LlmCapabilityName, ProbeSurface> = {
+  embeddings: "embeddings",
+  chat: "chat_completion",
+  rewrite: "chat_completion",
+  rerank: "responses",
+};
+
+/** Every capability `ResolvedLlmConfig` carries a default for — iterated generically below so a
+ *  capability can never be silently left out of the probe the way `rewrite` previously was. */
+const ALL_CAPABILITY_NAMES: readonly LlmCapabilityName[] = ["chat", "rewrite", "rerank", "embeddings"];
+
 interface ResidencyProbeTarget {
   model: string;
   capabilities: LlmCapabilityName[];
-  kind: "embeddings" | "chat_completion";
+  surface: ProbeSurface;
 }
 
 interface OpenAIResidencyStartupCheckDependencies {
@@ -82,48 +101,59 @@ interface OpenAIResidencyStartupCheckDependencies {
   callEmbeddings?: (input: { apiKey: string; endpoint: PlatformOpenAIEndpoint; model: string }) => Promise<unknown>;
   /** Defaults to a minimal chat completion through the same pinned client factory. */
   callChatCompletion?: (input: { apiKey: string; endpoint: PlatformOpenAIEndpoint; model: string }) => Promise<unknown>;
+  /** Defaults to a minimal `responses.create`, matching how native-openai rerank actually calls it. */
+  callResponses?: (input: { apiKey: string; endpoint: PlatformOpenAIEndpoint; model: string }) => Promise<unknown>;
 }
 
 const defaultCallEmbeddings: Required<OpenAIResidencyStartupCheckDependencies>["callEmbeddings"] =
   callOpenAIResidencyProbeEmbeddings;
 const defaultCallChatCompletion: Required<OpenAIResidencyStartupCheckDependencies>["callChatCompletion"] =
   callOpenAIResidencyProbeChatCompletion;
+const defaultCallResponses: Required<OpenAIResidencyStartupCheckDependencies>["callResponses"] =
+  callOpenAIResidencyProbeResponses;
 
 /**
- * Every distinct platform-OpenAI model this deployment is configured to call, grouped by probe
- * shape. Embeddings is checked unconditionally whenever a platform OpenAI key exists — the owner
- * requirement embeddings must never fail — because `resolveLlmConfig` always makes an
- * openai-embeddings capability latently available alongside the key, even when a workspace's own
- * preference or a different env default routes active embedding traffic elsewhere. Chat and
- * rerank are checked only when each one's own env default actually resolved to provider
- * `"openai"`; unlike embeddings there is no always-latent openai chat/rerank capability, so
- * probing a model nothing calls would just be noise. A model configured for both chat and rerank
- * (common on Azure, where there is no EU Data Zone quota for a nano-sized rerank model) is probed
- * once, naming both capabilities if it is ever rejected.
+ * Every distinct (API surface, model) pair this deployment's platform OpenAI key is configured
+ * to call, across every capability `ResolvedLlmConfig` carries a default for — chat, rewrite,
+ * rerank, and embeddings, iterated generically so a future capability is probed automatically
+ * rather than needing a line added here. Embeddings also folds in the supplemental openai
+ * embedding config even when the primary embeddings provider is not openai — the owner
+ * requirement is embeddings must never fail, and `resolveLlmConfig` always makes an
+ * openai-embeddings capability latently available alongside a platform key, since a workspace or
+ * an embedding profile can request it explicitly at any time. A model configured for both chat
+ * and rewrite (the common case) is probed once on the shared `chat_completion` surface, naming
+ * both capabilities if it is ever rejected; rerank never dedupes with them even on the same
+ * model, since it calls a different surface (`responses`).
  */
 const resolveProbeTargets = (config: ResolvedLlmConfig): ResidencyProbeTarget[] => {
-  const targets: ResidencyProbeTarget[] = [];
+  const targetsBySurfaceAndModel = new Map<string, ResidencyProbeTarget>();
 
-  const embeddingModel = config.embeddingProviderConfigs.find((entry) => entry.provider === "openai")?.model
-    ?? config.embeddings.model;
-  targets.push({ model: embeddingModel, capabilities: ["embeddings"], kind: "embeddings" });
-
-  const chatLikeCapabilities: ReadonlyArray<[LlmCapabilityName, LlmCapabilityDefault]> = [
-    ["chat", config.chat],
-    ["rerank", config.rerank],
-  ];
-  const chatLikeModels = new Map<string, LlmCapabilityName[]>();
-  for (const [capability, capabilityConfig] of chatLikeCapabilities) {
-    if (capabilityConfig.provider !== "openai") {
-      continue;
+  const addTarget = (capability: LlmCapabilityName, model: string): void => {
+    const surface = PROBE_SURFACE_BY_CAPABILITY[capability];
+    const key = `${surface}:${model}`;
+    const existing = targetsBySurfaceAndModel.get(key);
+    if (existing) {
+      existing.capabilities.push(capability);
+      return;
     }
-    chatLikeModels.set(capabilityConfig.model, [...(chatLikeModels.get(capabilityConfig.model) ?? []), capability]);
-  }
-  for (const [model, capabilities] of chatLikeModels) {
-    targets.push({ model, capabilities, kind: "chat_completion" });
+    targetsBySurfaceAndModel.set(key, { model, capabilities: [capability], surface });
+  };
+
+  for (const capability of ALL_CAPABILITY_NAMES) {
+    const capabilityConfig = config[capability];
+    if (capabilityConfig.provider === "openai") {
+      addTarget(capability, capabilityConfig.model);
+    }
   }
 
-  return targets;
+  const supplementalEmbeddingModel = config.embeddingProviderConfigs.find(
+    (entry) => entry.provider === "openai",
+  )?.model;
+  if (supplementalEmbeddingModel) {
+    addTarget("embeddings", supplementalEmbeddingModel);
+  }
+
+  return [...targetsBySurfaceAndModel.values()];
 };
 
 const buildRejectionError = (platform: PlatformOpenAIEndpoint, target: ResidencyProbeTarget): Error =>
@@ -131,18 +161,37 @@ const buildRejectionError = (platform: PlatformOpenAIEndpoint, target: Residency
     ? new AzureOpenAIDeploymentRejectedError(platform.baseUrl, target.model, target.capabilities)
     : new OpenAIRegionalEndpointRejectedError(platform.residency as RegionalResidency, target.model, target.capabilities);
 
+const callProbeTarget = (
+  target: ResidencyProbeTarget,
+  deps: { callEmbeddings: typeof defaultCallEmbeddings; callChatCompletion: typeof defaultCallChatCompletion; callResponses: typeof defaultCallResponses },
+  apiKey: string,
+  endpoint: PlatformOpenAIEndpoint,
+): Promise<unknown> => {
+  switch (target.surface) {
+    case "embeddings":
+      return deps.callEmbeddings({ apiKey, endpoint, model: target.model });
+    case "chat_completion":
+      return deps.callChatCompletion({ apiKey, endpoint, model: target.model });
+    case "responses":
+      return deps.callResponses({ apiKey, endpoint, model: target.model });
+  }
+};
+
 /**
- * One call per distinct configured platform-OpenAI model, made once at startup before a runtime
- * becomes ready. Skips outright at the default (global, no Azure) platform endpoint, or with no
- * platform OpenAI key — there is nothing but OpenAI's own default host to validate, and logging a
- * "skipped" line for the overwhelmingly common default case would just be noise.
+ * One call per distinct (API surface, model) this deployment's platform OpenAI key is configured
+ * to call, made in parallel once at startup before a runtime becomes ready. Skips outright at the
+ * default (global, no Azure) platform endpoint, or with no platform OpenAI key — there is nothing
+ * but OpenAI's own default host to validate, and logging a "skipped" line for the overwhelmingly
+ * common default case would just be noise.
  *
  * A definitive rejection (401/403/404: wrong key, wrong project/region, or on Azure a missing
- * deployment) throws, so a misconfigured deploy never ships silently degraded chat, rerank, or
- * embeddings; the caller lets this abort startup, and Cloud Run keeps serving the previous
- * revision. A transient failure (network error, timeout, 429, 5xx — anything that isn't a
- * definitive rejection) only warns and returns normally, so an OpenAI/Azure outage never blocks an
- * otherwise-good deploy.
+ * deployment) throws, so a misconfigured deploy never ships silently degraded chat, rewrite,
+ * rerank, or embeddings; the caller lets this abort startup, and Cloud Run keeps serving the
+ * previous revision. A transient failure (network error, timeout, 429, 5xx — anything that isn't
+ * a definitive rejection) only warns and returns normally, so an OpenAI/Azure outage never blocks
+ * an otherwise-good deploy. The probe clients themselves use a short timeout and no SDK-level
+ * retries (see `openAIResidencyProbeClient.ts`), so a slow or 5xx-ing endpoint reaches the
+ * transient-warning path quickly instead of holding up startup.
  */
 export const runOpenAIResidencyStartupCheck = async (
   env: Env,
@@ -159,23 +208,26 @@ export const runOpenAIResidencyStartupCheck = async (
   }
 
   const targets = resolveProbeTargets(config);
-  const callEmbeddings = deps.callEmbeddings ?? defaultCallEmbeddings;
-  const callChatCompletion = deps.callChatCompletion ?? defaultCallChatCompletion;
+  const callDeps = {
+    callEmbeddings: deps.callEmbeddings ?? defaultCallEmbeddings,
+    callChatCompletion: deps.callChatCompletion ?? defaultCallChatCompletion,
+    callResponses: deps.callResponses ?? defaultCallResponses,
+  };
+
+  const outcomes = await Promise.allSettled(
+    targets.map((target) => callProbeTarget(target, callDeps, apiKey, platform)),
+  );
 
   let sawTransientFailure = false;
-  for (const target of targets) {
-    try {
-      if (target.kind === "embeddings") {
-        await callEmbeddings({ apiKey, endpoint: platform, model: target.model });
-      } else {
-        await callChatCompletion({ apiKey, endpoint: platform, model: target.model });
-      }
-    } catch (error) {
-      if (isDefinitiveRejection(error)) {
-        throw buildRejectionError(platform, target);
-      }
-      sawTransientFailure = true;
+  for (let index = 0; index < outcomes.length; index += 1) {
+    const outcome = outcomes[index];
+    if (outcome.status === "fulfilled") {
+      continue;
     }
+    if (isDefinitiveRejection(outcome.reason)) {
+      throw buildRejectionError(platform, targets[index]);
+    }
+    sawTransientFailure = true;
   }
 
   // Content-free: a region code (or "azure" plus the Azure resource host) and the outcome only,

@@ -679,6 +679,31 @@ describe("runtime configuration", () => {
     expect(() => getEnv({ ...baseEnv, AZURE_OPENAI_ENDPOINT: "https://attacker.example/v1" })).toThrow();
   });
 
+  it("reports a named zod issue — never a raw TypeError — for a malformed AZURE_OPENAI_ENDPOINT value", () => {
+    // "radioso-eu-1.openai.azure.com" (no scheme, exactly what an operator might paste straight
+    // out of the Azure portal's resource summary) and whitespace both fail zod's own `.url()`
+    // check; a naive `new URL(value)` inside a later `.refine()` would otherwise leak that
+    // failure past zod's issue reporting as a raw, unhelpful `TypeError: Invalid URL`.
+    for (const malformed of ["radioso-eu-1.openai.azure.com", "   "]) {
+      let failure: unknown;
+      try {
+        getEnv({ ...baseEnv, AZURE_OPENAI_ENDPOINT: malformed });
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toBeInstanceOf(Error);
+      expect((failure as Error).name).not.toBe("TypeError");
+      expect((failure as Error).message).toContain("AZURE_OPENAI_ENDPOINT");
+    }
+  });
+
+  it("accepts a cognitiveservices.azure.com host", () => {
+    expect(
+      getEnv({ ...baseEnv, AZURE_OPENAI_ENDPOINT: "https://radioso-eu-1.cognitiveservices.azure.com" })
+        .AZURE_OPENAI_ENDPOINT,
+    ).toBe("https://radioso-eu-1.cognitiveservices.azure.com/openai/v1");
+  });
+
   it("refuses startup when AZURE_OPENAI_ENDPOINT is combined with a non-global OPENAI_DATA_RESIDENCY", () => {
     expect(() =>
       getEnv({

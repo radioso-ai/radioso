@@ -221,12 +221,19 @@ const buildResponseFormat = (
 };
 
 /**
- * First-party OpenAI only. An `openai-compatible` endpoint (Azure, OpenRouter, a local
- * server) may reject parameters it does not know, so it keeps the ordinary request.
+ * First-party OpenAI only — provider `"openai"`, which includes a platform Azure OpenAI
+ * endpoint (`config.openAIAzureBaseUrl`) deliberately: Azure OpenAI runs the same first-party
+ * surface (sampling params, strict JSON schema, and `prompt_cache_key`) under an operator's own
+ * Azure subscription, not a third-party gateway. Verified against an Azure EU Data Zone
+ * Standard deployment on 2026-10-24: `prompt_cache_key` cached 1792 of 2215 tokens, the same
+ * caching behavior as OpenAI's own host. An `openai-compatible` endpoint (OpenRouter, a local
+ * server, or any other gateway) may reject parameters it does not know, so it keeps the
+ * ordinary request.
  *
  * `createOpenAIClient` below enforces that a native `openai` config can only ever reach one of
- * OpenAI's own hosts — never an arbitrary `baseUrl` — so provider name alone is now a reliable
- * signal here; the classification no longer needs to inspect `openAIDataResidency` itself.
+ * OpenAI's own hosts or the configured Azure endpoint — never an arbitrary `baseUrl` — so
+ * provider name alone is now a reliable signal here; the classification no longer needs to
+ * inspect `openAIDataResidency` or `openAIAzureBaseUrl` itself.
  */
 const isFirstPartyOpenAI = (config: LlmCapabilityConfig): boolean => config.provider === "openai";
 
@@ -448,10 +455,23 @@ const nativeOpenAIBaseUrl = (config: Pick<LlmCapabilityConfig, "openAIDataReside
   return host;
 };
 
-export const createOpenAIClient = (config: LlmCapabilityConfig): OpenAI =>
+/**
+ * SDK-level overrides this factory otherwise never sets, so every ordinary call keeps the SDK's
+ * own defaults. The residency startup probe (`openAIResidencyProbeClient.ts`) passes a short
+ * `timeoutMs` and `maxRetries: 0` so a slow or 5xx-ing endpoint reaches its transient-warning
+ * path quickly instead of the SDK's default retry/backoff holding up startup.
+ */
+interface OpenAIClientOverrides {
+  timeoutMs?: number;
+  maxRetries?: number;
+}
+
+export const createOpenAIClient = (config: LlmCapabilityConfig, overrides: OpenAIClientOverrides = {}): OpenAI =>
   new OpenAI({
     apiKey: config.apiKey,
     baseURL: config.provider === "openai" ? nativeOpenAIBaseUrl(config) : config.baseUrl,
+    ...(overrides.timeoutMs !== undefined ? { timeout: overrides.timeoutMs } : {}),
+    ...(overrides.maxRetries !== undefined ? { maxRetries: overrides.maxRetries } : {}),
   });
 
 const withDispatchRecording = (client: OpenAI, input: TextGenerationRequest): OpenAI => {

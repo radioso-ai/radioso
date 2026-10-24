@@ -263,6 +263,27 @@ export const platformOpenAIEndpointLogFields = (
     ? { openai: "azure", azureHost: new URL(endpoint.baseUrl).host }
     : { openai: endpoint.residency };
 
+/**
+ * The concrete host a config's client actually connects to — used only for client-cache keys
+ * (`textClientFactory.ts`) and embedding-provider candidate dedup
+ * (`embeddingProviderResolver.ts`), never for a persisted embedding-space fingerprint. A space's
+ * fingerprint (`endpointScopeFingerprint`) must stay endpoint-agnostic for native `openai`: every
+ * endpoint this function distinguishes — OpenAI's own global/US/EU hosts, or an operator's Azure
+ * OpenAI deployment — serves identical model weights, so collapsing them into one persisted
+ * scope is correct there, while this function's job is the opposite: giving every one of those
+ * same endpoints its own client identity, so a platform-Azure client and a BYOK-global client
+ * are never served from the same cached client or treated as the same embedding-provider
+ * candidate. Always defined for native `openai` — `OPENAI_RESIDENCY_HOSTS` covers `global` too —
+ * so an Azure config (which leaves the generic `baseUrl` field unset) never collapses onto an
+ * unrelated config that also leaves `baseUrl` unset.
+ */
+export const resolvedProviderEndpointIdentity = (
+  config: Pick<LlmCapabilityDefault, "provider" | "baseUrl" | "openAIDataResidency" | "openAIAzureBaseUrl">,
+): string | undefined =>
+  config.provider === "openai"
+    ? config.openAIAzureBaseUrl ?? OPENAI_RESIDENCY_HOSTS[config.openAIDataResidency ?? "global"]
+    : config.baseUrl;
+
 export interface ResolvedLlmConfig {
   chat: LlmCapabilityDefault;
   rewrite: LlmCapabilityDefault;

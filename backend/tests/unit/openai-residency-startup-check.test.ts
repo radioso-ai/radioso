@@ -2,12 +2,14 @@ import { describe, expect, it, vi } from "vitest";
 
 const embeddingsCreateMock = vi.fn(async () => ({}));
 const chatCompletionsCreateMock = vi.fn(async () => ({}));
+const responsesCreateMock = vi.fn(async () => ({}));
 let capturedClientOptions: { apiKey?: string; baseURL?: string }[] = [];
 
 vi.mock("openai", () => ({
   default: class {
     embeddings = { create: embeddingsCreateMock };
     chat = { completions: { create: chatCompletionsCreateMock } };
+    responses = { create: responsesCreateMock };
     constructor(options: { apiKey?: string; baseURL?: string }) {
       capturedClientOptions.push(options);
     }
@@ -21,20 +23,26 @@ import {
 } from "../../src/runtime/openAIResidencyStartupCheck.js";
 import { getEnv } from "../../src/app/config/env.js";
 
-// Chat and rerank are kept on claude here so the single-target (embeddings-only) tests below stay
-// focused on exactly one probe call, matching their pre-Azure shape. Dedicated tests further down
-// cover chat/rerank probing (including the dedupe when they share a model) and Azure.
+// Chat, rewrite, and rerank are kept on claude here so the single-target (embeddings-only) tests
+// below stay focused on exactly one probe call, matching their pre-Azure shape. Dedicated tests
+// further down cover chat/rewrite/rerank probing (including the chat+rewrite dedupe, rerank's
+// separate "responses" surface, and Azure.
 const baseEnv = {
   NODE_ENV: "test",
   DATABASE_URL: "postgres://test:test@localhost:5432/test",
   OPENAI_API_KEY: "env-openai-key",
   ANTHROPIC_API_KEY: "env-claude-key",
   LLM_CHAT_PROVIDER: "claude",
+  LLM_REWRITE_PROVIDER: "claude",
   LLM_RERANK_PROVIDER: "claude",
   SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
 } as const;
 
 const buildLogger = () => ({ info: vi.fn(), warn: vi.fn() });
+const noopCallbacks = () => ({
+  callChatCompletion: vi.fn(async () => ({})),
+  callResponses: vi.fn(async () => ({})),
+});
 
 /** An API failure the way the OpenAI SDK throws it: an Error carrying the HTTP status and error code. */
 const apiError = (fields: { status: number; code?: string | null }) =>
@@ -80,7 +88,7 @@ describe("runOpenAIResidencyStartupCheck", () => {
     const callEmbeddings = vi.fn(async () => ({}));
     const logger = buildLogger();
 
-    const outcome = await runOpenAIResidencyStartupCheck(env, { logger, callEmbeddings });
+    const outcome = await runOpenAIResidencyStartupCheck(env, { logger, callEmbeddings, ...noopCallbacks() });
 
     expect(outcome).toBe("ok");
     expect(callEmbeddings).toHaveBeenCalledWith({
@@ -102,9 +110,9 @@ describe("runOpenAIResidencyStartupCheck", () => {
     });
     const logger = buildLogger();
 
-    await expect(runOpenAIResidencyStartupCheck(env, { logger, callEmbeddings })).rejects.toThrow(
-      OpenAIRegionalEndpointRejectedError,
-    );
+    await expect(
+      runOpenAIResidencyStartupCheck(env, { logger, callEmbeddings, ...noopCallbacks() }),
+    ).rejects.toThrow(OpenAIRegionalEndpointRejectedError);
     expect(logger.info).not.toHaveBeenCalled();
     expect(logger.warn).not.toHaveBeenCalled();
   });
@@ -115,9 +123,9 @@ describe("runOpenAIResidencyStartupCheck", () => {
       throw apiError({ status: 403 });
     });
 
-    await expect(runOpenAIResidencyStartupCheck(env, { logger: buildLogger(), callEmbeddings })).rejects.toThrow(
-      OpenAIRegionalEndpointRejectedError,
-    );
+    await expect(
+      runOpenAIResidencyStartupCheck(env, { logger: buildLogger(), callEmbeddings, ...noopCallbacks() }),
+    ).rejects.toThrow(OpenAIRegionalEndpointRejectedError);
   });
 
   it("throws on a definitive 404 rejection (the model isn't offered in this region)", async () => {
@@ -126,9 +134,9 @@ describe("runOpenAIResidencyStartupCheck", () => {
       throw apiError({ status: 404 });
     });
 
-    await expect(runOpenAIResidencyStartupCheck(env, { logger: buildLogger(), callEmbeddings })).rejects.toThrow(
-      OpenAIRegionalEndpointRejectedError,
-    );
+    await expect(
+      runOpenAIResidencyStartupCheck(env, { logger: buildLogger(), callEmbeddings, ...noopCallbacks() }),
+    ).rejects.toThrow(OpenAIRegionalEndpointRejectedError);
   });
 
   it("the rejection error names the residency, the model, the capability, and OPENAI_DATA_RESIDENCY", async () => {
@@ -139,7 +147,7 @@ describe("runOpenAIResidencyStartupCheck", () => {
 
     let failure: Error | undefined;
     try {
-      await runOpenAIResidencyStartupCheck(env, { logger: buildLogger(), callEmbeddings });
+      await runOpenAIResidencyStartupCheck(env, { logger: buildLogger(), callEmbeddings, ...noopCallbacks() });
     } catch (error) {
       failure = error as Error;
     }
@@ -163,7 +171,7 @@ describe("runOpenAIResidencyStartupCheck", () => {
         throw rejection;
       });
 
-      const outcome = await runOpenAIResidencyStartupCheck(env, { logger, callEmbeddings });
+      const outcome = await runOpenAIResidencyStartupCheck(env, { logger, callEmbeddings, ...noopCallbacks() });
 
       expect(outcome).toBe("transient_failure");
       expect(logger.warn).toHaveBeenCalledWith({ openai: "eu", probe: "transient_failure" }, "Resolved provider residency");
@@ -185,52 +193,88 @@ describe("runOpenAIResidencyStartupCheck", () => {
     expect(embeddingsCreateMock).toHaveBeenCalledWith({ model: "text-embedding-3-small", input: "x" });
   });
 
-  describe("chat and rerank probing", () => {
-    it("also probes the chat model via a minimal chat completion when chat resolves to provider openai", async () => {
+  describe("chat, rewrite, and rerank probing", () => {
+    it("probes chat and rewrite via one deduped chat-completion call when they share a model", async () => {
       const env = getEnv({
         NODE_ENV: "test",
         DATABASE_URL: "postgres://test:test@localhost:5432/test",
         OPENAI_API_KEY: "env-openai-key",
+        LLM_RERANK_PROVIDER: "claude",
+        ANTHROPIC_API_KEY: "env-claude-key",
         SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
         OPENAI_DATA_RESIDENCY: "eu",
         OPENAI_CHAT_MODEL: "gpt-5.4-mini",
-        OPENAI_RERANK_MODEL: "gpt-5.4-nano",
         OPENAI_VECTOR_MODEL: "text-embedding-3-small",
       });
       const callEmbeddings = vi.fn(async () => ({}));
       const callChatCompletion = vi.fn(async () => ({}));
+      const callResponses = vi.fn(async () => ({}));
       const logger = buildLogger();
 
-      const outcome = await runOpenAIResidencyStartupCheck(env, { logger, callEmbeddings, callChatCompletion });
+      const outcome = await runOpenAIResidencyStartupCheck(env, {
+        logger,
+        callEmbeddings,
+        callChatCompletion,
+        callResponses,
+      });
 
       expect(outcome).toBe("ok");
-      expect(callEmbeddings).toHaveBeenCalledWith({
-        apiKey: "env-openai-key",
-        endpoint: { kind: "openai", residency: "eu" },
-        model: "text-embedding-3-small",
-      });
+      // LLM_REWRITE_MODEL is unset, so rewrite falls back to OPENAI_CHAT_MODEL — the same model
+      // chat resolved to — and both ride the chat_completion surface, so this is one call.
+      expect(callChatCompletion).toHaveBeenCalledTimes(1);
       expect(callChatCompletion).toHaveBeenCalledWith({
         apiKey: "env-openai-key",
         endpoint: { kind: "openai", residency: "eu" },
         model: "gpt-5.4-mini",
       });
-      expect(callChatCompletion).toHaveBeenCalledWith({
-        apiKey: "env-openai-key",
-        endpoint: { kind: "openai", residency: "eu" },
-        model: "gpt-5.4-nano",
-      });
-      expect(callChatCompletion).toHaveBeenCalledTimes(2);
+      expect(callResponses).not.toHaveBeenCalled();
     });
 
-    it("probes a model shared by chat and rerank exactly once, naming both capabilities on rejection", async () => {
+    it("probes rerank via responses.create, never deduped with chat even when they share a model", async () => {
       const env = getEnv({
         NODE_ENV: "test",
         DATABASE_URL: "postgres://test:test@localhost:5432/test",
         OPENAI_API_KEY: "env-openai-key",
+        LLM_REWRITE_PROVIDER: "claude",
+        ANTHROPIC_API_KEY: "env-claude-key",
         SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
         OPENAI_DATA_RESIDENCY: "eu",
         OPENAI_CHAT_MODEL: "gpt-5.4-mini",
         OPENAI_RERANK_MODEL: "gpt-5.4-mini",
+        OPENAI_VECTOR_MODEL: "text-embedding-3-small",
+      });
+      const callEmbeddings = vi.fn(async () => ({}));
+      const callChatCompletion = vi.fn(async () => ({}));
+      const callResponses = vi.fn(async () => ({}));
+
+      const outcome = await runOpenAIResidencyStartupCheck(env, {
+        logger: buildLogger(),
+        callEmbeddings,
+        callChatCompletion,
+        callResponses,
+      });
+
+      expect(outcome).toBe("ok");
+      expect(callChatCompletion).toHaveBeenCalledTimes(1);
+      expect(callChatCompletion).toHaveBeenCalledWith(
+        expect.objectContaining({ model: "gpt-5.4-mini" }),
+      );
+      expect(callResponses).toHaveBeenCalledTimes(1);
+      expect(callResponses).toHaveBeenCalledWith(
+        expect.objectContaining({ model: "gpt-5.4-mini" }),
+      );
+    });
+
+    it("names every capability on a shared chat_completion target when it is rejected", async () => {
+      const env = getEnv({
+        NODE_ENV: "test",
+        DATABASE_URL: "postgres://test:test@localhost:5432/test",
+        OPENAI_API_KEY: "env-openai-key",
+        LLM_RERANK_PROVIDER: "claude",
+        ANTHROPIC_API_KEY: "env-claude-key",
+        SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
+        OPENAI_DATA_RESIDENCY: "eu",
+        OPENAI_CHAT_MODEL: "gpt-5.4-mini",
       });
       const callEmbeddings = vi.fn(async () => ({}));
       const callChatCompletion = vi.fn(async () => {
@@ -239,7 +283,12 @@ describe("runOpenAIResidencyStartupCheck", () => {
 
       let failure: Error | undefined;
       try {
-        await runOpenAIResidencyStartupCheck(env, { logger: buildLogger(), callEmbeddings, callChatCompletion });
+        await runOpenAIResidencyStartupCheck(env, {
+          logger: buildLogger(),
+          callEmbeddings,
+          callChatCompletion,
+          callResponses: vi.fn(async () => ({})),
+        });
       } catch (error) {
         failure = error as Error;
       }
@@ -248,25 +297,33 @@ describe("runOpenAIResidencyStartupCheck", () => {
       expect(failure).toBeInstanceOf(OpenAIRegionalEndpointRejectedError);
       expect(failure?.message).toContain("gpt-5.4-mini");
       expect(failure?.message).toContain("chat");
-      expect(failure?.message).toContain("rerank");
+      expect(failure?.message).toContain("rewrite");
     });
 
-    it("skips the chat probe when chat resolves to a different provider", async () => {
+    it("skips the chat/rewrite/rerank probes when they all resolve to a different provider", async () => {
       const env = getEnv({ ...baseEnv, OPENAI_DATA_RESIDENCY: "eu" });
       const callEmbeddings = vi.fn(async () => ({}));
-      const callChatCompletion = vi.fn();
+      const { callChatCompletion, callResponses } = noopCallbacks();
 
-      const outcome = await runOpenAIResidencyStartupCheck(env, { logger: buildLogger(), callEmbeddings, callChatCompletion });
+      const outcome = await runOpenAIResidencyStartupCheck(env, {
+        logger: buildLogger(),
+        callEmbeddings,
+        callChatCompletion,
+        callResponses,
+      });
 
       expect(outcome).toBe("ok");
       expect(callChatCompletion).not.toHaveBeenCalled();
+      expect(callResponses).not.toHaveBeenCalled();
     });
   });
 
   describe("Azure OpenAI endpoint", () => {
     const azureBaseUrl = "https://radioso-eu-1.openai.azure.com/openai/v1";
 
-    it("probes embeddings and chat when AZURE_OPENAI_ENDPOINT is set, even at the default (global) residency", async () => {
+    it("probes embeddings, chat/rewrite, and rerank when AZURE_OPENAI_ENDPOINT is set, even at the default (global) residency", async () => {
+      // Mirrors the real EU Azure stack: no EU Data Zone quota for a nano rerank model, so chat
+      // and rerank share gpt-5.4-mini — on two different surfaces, both must be probed.
       const env = getEnv({
         NODE_ENV: "test",
         DATABASE_URL: "postgres://test:test@localhost:5432/test",
@@ -279,9 +336,15 @@ describe("runOpenAIResidencyStartupCheck", () => {
       });
       const callEmbeddings = vi.fn(async () => ({}));
       const callChatCompletion = vi.fn(async () => ({}));
+      const callResponses = vi.fn(async () => ({}));
       const logger = buildLogger();
 
-      const outcome = await runOpenAIResidencyStartupCheck(env, { logger, callEmbeddings, callChatCompletion });
+      const outcome = await runOpenAIResidencyStartupCheck(env, {
+        logger,
+        callEmbeddings,
+        callChatCompletion,
+        callResponses,
+      });
 
       expect(outcome).toBe("ok");
       expect(callEmbeddings).toHaveBeenCalledWith({
@@ -295,6 +358,12 @@ describe("runOpenAIResidencyStartupCheck", () => {
         model: "gpt-5.4-mini",
       });
       expect(callChatCompletion).toHaveBeenCalledTimes(1);
+      expect(callResponses).toHaveBeenCalledWith({
+        apiKey: "env-azure-key",
+        endpoint: { kind: "azure", baseUrl: azureBaseUrl },
+        model: "gpt-5.4-mini",
+      });
+      expect(callResponses).toHaveBeenCalledTimes(1);
       expect(logger.info).toHaveBeenCalledWith(
         { openai: "azure", azureHost: "radioso-eu-1.openai.azure.com", probe: "ok" },
         "Resolved provider residency",
@@ -306,6 +375,10 @@ describe("runOpenAIResidencyStartupCheck", () => {
         NODE_ENV: "test",
         DATABASE_URL: "postgres://test:test@localhost:5432/test",
         OPENAI_API_KEY: "env-azure-key",
+        LLM_CHAT_PROVIDER: "claude",
+        LLM_REWRITE_PROVIDER: "claude",
+        LLM_RERANK_PROVIDER: "claude",
+        ANTHROPIC_API_KEY: "env-claude-key",
         SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
         AZURE_OPENAI_ENDPOINT: azureBaseUrl,
         OPENAI_VECTOR_MODEL: "text-embedding-3-small",
@@ -316,7 +389,7 @@ describe("runOpenAIResidencyStartupCheck", () => {
 
       let failure: Error | undefined;
       try {
-        await runOpenAIResidencyStartupCheck(env, { logger: buildLogger(), callEmbeddings });
+        await runOpenAIResidencyStartupCheck(env, { logger: buildLogger(), callEmbeddings, ...noopCallbacks() });
       } catch (error) {
         failure = error as Error;
       }
@@ -332,6 +405,10 @@ describe("runOpenAIResidencyStartupCheck", () => {
         NODE_ENV: "test",
         DATABASE_URL: "postgres://test:test@localhost:5432/test",
         OPENAI_API_KEY: "env-azure-key",
+        LLM_CHAT_PROVIDER: "claude",
+        LLM_REWRITE_PROVIDER: "claude",
+        LLM_RERANK_PROVIDER: "claude",
+        ANTHROPIC_API_KEY: "env-claude-key",
         SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
         AZURE_OPENAI_ENDPOINT: azureBaseUrl,
       });
@@ -340,7 +417,7 @@ describe("runOpenAIResidencyStartupCheck", () => {
       });
       const logger = buildLogger();
 
-      const outcome = await runOpenAIResidencyStartupCheck(env, { logger, callEmbeddings });
+      const outcome = await runOpenAIResidencyStartupCheck(env, { logger, callEmbeddings, ...noopCallbacks() });
 
       expect(outcome).toBe("transient_failure");
       expect(logger.warn).toHaveBeenCalledWith(

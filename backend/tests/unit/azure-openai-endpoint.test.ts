@@ -4,6 +4,7 @@ import {
   isAzureOpenAIHost,
   isNormalizableAzureOpenAIPath,
   normalizeAzureOpenAIEndpoint,
+  tryParseUrl,
 } from "../../src/shared/infra/llm/azureOpenAIEndpoint.js";
 
 describe("isAzureOpenAIHost", () => {
@@ -13,6 +14,10 @@ describe("isAzureOpenAIHost", () => {
 
   it("accepts an Azure AI Foundry resource host", () => {
     expect(isAzureOpenAIHost("radioso-eu-1.services.ai.azure.com")).toBe(true);
+  });
+
+  it("accepts an Azure Cognitive Services resource host", () => {
+    expect(isAzureOpenAIHost("radioso-eu-1.cognitiveservices.azure.com")).toBe(true);
   });
 
   it("is case-insensitive", () => {
@@ -70,5 +75,21 @@ describe("normalizeAzureOpenAIEndpoint", () => {
     expect(normalizeAzureOpenAIEndpoint("https://radioso-eu-1.openai.azure.com/openai/v1/")).toBe(
       "https://radioso-eu-1.openai.azure.com/openai/v1",
     );
+  });
+});
+
+describe("tryParseUrl", () => {
+  it("returns a URL for a well-formed value", () => {
+    const url = tryParseUrl("https://radioso-eu-1.openai.azure.com");
+    expect(url).toBeInstanceOf(URL);
+    expect(url?.hostname).toBe("radioso-eu-1.openai.azure.com");
+  });
+
+  it("returns undefined instead of throwing for a value with no scheme", () => {
+    expect(tryParseUrl("radioso-eu-1.openai.azure.com")).toBeUndefined();
+  });
+
+  it("returns undefined instead of throwing for whitespace", () => {
+    expect(tryParseUrl("   ")).toBeUndefined();
   });
 });

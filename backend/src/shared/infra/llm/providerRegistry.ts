@@ -61,6 +61,7 @@ import {
   type LlmCapabilityName,
   type LlmProviderMetadata,
   ProviderConfigurationError,
+  resolvedProviderEndpointIdentity,
   type ResolvedLlmConfig,
 } from "./providerTypes.js";
 
@@ -151,8 +152,14 @@ class RoutedEmbeddingClient implements EmbeddingClient {
     );
     const resolved = await this.clientFactory(metadata, workspaceId);
     const config = resolved.config as EmbeddingCapabilityConfig;
+    // Keyed by the resolved client identity (provider + concrete endpoint), not by
+    // endpointScopeFingerprint: that fingerprint is deliberately endpoint-agnostic for native
+    // openai (every OpenAI-weights endpoint shares one persisted embedding-space scope), so using
+    // it here would let an eu-platform call and a global-BYOK call sharing an apiKey collide onto
+    // the same cached provider instance and silently reach the wrong host.
     const cacheKey = [
-      endpointScopeFingerprint(config),
+      config.provider,
+      resolvedProviderEndpointIdentity(config) ?? "",
       createHash("sha256").update(resolved.config.apiKey).digest("hex").slice(0, 16),
     ].join(":");
     const existing = this.providers.get(cacheKey);

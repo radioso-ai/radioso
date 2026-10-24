@@ -6,6 +6,7 @@ import {
 } from "./supportedEmbeddingModels.js";
 import {
   ProviderConfigurationError,
+  resolvedProviderEndpointIdentity,
   type LlmCapabilityDefault,
 } from "./providerTypes.js";
 import type {
@@ -60,7 +61,7 @@ export const resolveEmbeddingProviderBinding = (
         all.findIndex(
         (candidate) =>
           candidate.provider === config.provider &&
-          candidate.baseUrl === config.baseUrl,
+          resolvedProviderEndpointIdentity(candidate) === resolvedProviderEndpointIdentity(config),
         ) === index,
     );
   const hasRequestedBinding = Boolean(
@@ -124,18 +125,18 @@ const normalizedUrlString = (rawUrl: string): string => {
 
 const normalizedEndpointScope = (config: LlmCapabilityDefault): string => {
   if (config.provider === "openai") {
-    // A platform Azure OpenAI endpoint is scoped by its own host — distinct from the global
-    // scope and from every other Azure resource, so embedding caching or binding never collapses
-    // a platform-Azure client together with a BYOK-global one or a different Azure resource.
-    if (config.openAIAzureBaseUrl) {
-      return `openai:azure:${normalizedUrlString(config.openAIAzureBaseUrl)}`;
-    }
-    // A regional data-residency endpoint is a distinct scope from the global one — distinct
-    // enough that caching or binding across them must not collapse together (#1555 finding 1).
-    // The default (global) scope string is unchanged from before data residency existed, so no
-    // already-persisted embedding space's fingerprint shifts under it.
-    const residency = config.openAIDataResidency ?? "global";
-    return residency === "global" ? "openai:public-api" : `openai:public-api:${residency}`;
+    // Every native openai endpoint -- OpenAI's own global/US/EU hosts, or an operator's Azure
+    // OpenAI deployment -- serves identical model weights. Verified empirically (2026-10-24) for
+    // text-embedding-3-small: Azure EU Data Zone vs. OpenAI global, cosine 1.000000, max |diff|
+    // 1.2e-4, on English and Italian inputs. A persisted embedding space's fingerprint must
+    // therefore stay endpoint-agnostic here, or switching OPENAI_DATA_RESIDENCY or
+    // AZURE_OPENAI_ENDPOINT would strand every already-ingested workspace's space with no
+    // resolvable binding (resolveEmbeddingProviderBinding would find no candidate at the new
+    // fingerprint). Endpoint identity still matters for client caching and candidate dedup --
+    // see resolvedProviderEndpointIdentity in providerTypes.ts -- just never for this scope. The
+    // scope string itself is unchanged from before data residency or Azure existed, so no
+    // already-persisted space's fingerprint ever shifts under it.
+    return "openai:public-api";
   }
   if (config.provider === "gemini") {
     return "gemini:public-api";

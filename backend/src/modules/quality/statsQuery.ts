@@ -24,6 +24,7 @@ import {
   buildEffectiveTriageStateExpression,
   buildFeedbackExistsPredicate,
   buildSignalPredicate,
+  buildConversationTurnFilters,
   buildSkillStatusPredicate,
   buildTurnPopulationFilters,
   type SqlQuery,
@@ -398,18 +399,17 @@ export interface QualityVoiceStatsRow {
 type VoiceTurnOutcome = NonNullable<VoiceTurnFacts["outcome"]>;
 
 /**
- * The window's voice numbers in one scan of the shared turn population, pinned to the voice
- * channel and keeping the heard part of a reply cut off mid-stream. The facts are read by the
+ * The window's voice numbers in one scan of the conversation turns pinned to the voice channel,
+ * the heard part of a reply cut off mid-stream included. The facts are read by the
  * chat contract's field names under `metadata_json.voice`; a value of another JSON type reads as
  * none rather than failing a cast for the whole response. A statement of its own: it answers a
  * different population than the windowed AI-quality numbers, so there is no total to agree with.
  */
 export const buildQualityVoiceStatsQuery = (input: QualityVoiceStatsQueryInput): SqlQuery => {
   const params: unknown[] = [];
-  const filters = buildTurnPopulationFilters(
+  const filters = buildConversationTurnFilters(
     { workspaceId: input.workspaceId, agentId: input.agentId, channel: VOICE_SOURCE_CHANNEL },
     params,
-    { includeHeardParts: true },
   );
   filters.push(`m.created_at >= ${bindParam(params, input.window.from.toISOString())}::timestamptz`);
   filters.push(`m.created_at < ${bindParam(params, input.window.to.toISOString())}::timestamptz`);

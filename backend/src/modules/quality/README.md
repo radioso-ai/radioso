@@ -91,11 +91,16 @@ is the failure this module exists to prevent. Both exclusions are NULL-safe;
 that is load-bearing, since `NOT IN` yields NULL rather than TRUE for a NULL
 column and would silently drop real turns.
 
-The stats' `voice` block counts the current window's calls over a population
-of its own: the shared population pinned to the voice channel, keeping the heard
-part of a reply cut off mid-stream (`buildTurnPopulationFilters` with
-`includeHeardParts`), because a turn the caller heard belongs to the call even
-when it is no whole answer. A call is a voice conversation with at least one
+`turnPopulationSql.ts` names two populations. `buildConversationTurnFilters`
+holds the agent's turns in real conversations: the workspace scope, the
+conversation join, the agent and channel filters, and both exclusions above.
+`buildTurnPopulationFilters`, the AI-quality population every signal and rate
+reads, is those turns with whole answers only: it leaves out the heard part of
+a voice reply cut off mid-stream.
+
+The stats' `voice` block counts the current window's calls over the conversation
+turns pinned to the voice channel, because a turn the caller heard belongs to
+the call even when it is no whole answer. A call is a voice conversation with at least one
 such turn. Timing, turn limit and outcome come from the facts the voice channel
 keeps on each stored reply, read by the field names of chat's
 `contracts/voiceTurnFacts.ts` under `metadata_json.voice`; a value of another

@@ -16,8 +16,10 @@ import {
 } from "../../src/modules/quality/statsQuery.js";
 import {
   RESOLVED_LATENCY_EXPRESSION,
+  buildConversationTurnFilters,
   buildEffectiveOpenPredicate,
   buildEffectiveTriageStateExpression,
+  buildTurnPopulationFilters,
 } from "../../src/modules/quality/turnPopulationSql.js";
 
 const WORKSPACE_ID = "11111111-1111-1111-1111-111111111111";
@@ -508,6 +510,23 @@ describe("buildQualityResolutionBreakdownQuery", () => {
     expect(query.text).toContain("c.source_channel IS NULL OR c.source_channel NOT IN");
     expect(query.params).toContain(AGENT_ID);
     expect(query.params).toContain("embed");
+  });
+});
+
+describe("the two turn populations", () => {
+  const scope = { workspaceId: WORKSPACE_ID, agentId: AGENT_ID, channel: "voice" };
+
+  it("makes the AI-quality population the conversation's agent turns with whole answers only, over the same params", () => {
+    const conversationParams: unknown[] = [];
+    const populationParams: unknown[] = [];
+    const conversationTurns = buildConversationTurnFilters(scope, conversationParams);
+    const population = buildTurnPopulationFilters(scope, populationParams);
+
+    expect(population).toEqual([
+      ...conversationTurns,
+      "COALESCE(m.metadata_json -> 'interruption' ->> 'partial', 'false') <> 'true'",
+    ]);
+    expect(populationParams).toEqual(conversationParams);
   });
 });
 

@@ -206,6 +206,7 @@ export class ConversationRetentionSweep {
     let drained = true;
     for (const rule of this.deps.rules) {
       let totalRemoved = 0;
+      let complete = true;
       try {
         for (let batch = 1; ; batch += 1) {
           const rows = await rule.enforce({ now, limit: ruleBatchSize });
@@ -218,13 +219,16 @@ export class ConversationRetentionSweep {
           }
         }
       } catch (error) {
+        // An earlier batch this run may already have removed rows before this one failed; those
+        // rows do not go unrecorded for it, so this falls through to `onRunComplete` below instead
+        // of skipping it.
         failed += 1;
+        complete = false;
         this.deps.logger.warn({ table: rule.table, errorName: errorName(error) }, "conversation_retention_rule_failed");
-        continue;
       }
-      if (!rule.onRunComplete) continue;
+      if (!rule.onRunComplete || totalRemoved === 0) continue;
       try {
-        await rule.onRunComplete({ now, totalRemoved });
+        await rule.onRunComplete({ now, totalRemoved, complete });
       } catch (error) {
         // What this run removed already committed; only the rule's own record of running failed to
         // write, so that alone does not ask the run to be retried.

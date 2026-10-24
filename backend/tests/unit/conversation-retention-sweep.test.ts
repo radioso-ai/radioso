@@ -252,7 +252,7 @@ describe("ConversationRetentionSweep", () => {
     expect(result.drained).toBe(false);
   });
 
-  it("calls a rule's onRunComplete once per run with the total it removed across every batch", async () => {
+  it("calls a rule's onRunComplete once per run with the total it removed across every batch, marked complete", async () => {
     const onRunComplete = vi.fn(async () => undefined);
     const { erasure } = createErasure({});
     const { sweep } = createSweep({
@@ -265,16 +265,44 @@ describe("ConversationRetentionSweep", () => {
     await sweep.run();
 
     expect(onRunComplete).toHaveBeenCalledTimes(1);
-    expect(onRunComplete).toHaveBeenCalledWith({ now: NOW, totalRemoved: 5 });
+    expect(onRunComplete).toHaveBeenCalledWith({ now: NOW, totalRemoved: 5, complete: true });
   });
 
-  it("does not call a rule's onRunComplete when the rule's own batch failed", async () => {
+  it("calls a rule's onRunComplete with what an earlier batch removed before a later one failed, marked incomplete", async () => {
+    const onRunComplete = vi.fn(async () => undefined);
+    let batch = 0;
+    const partiallyFailingRule: ConversationDataRetentionRule = {
+      table: "audit_events",
+      enforce: vi.fn(async ({ limit }) => {
+        batch += 1;
+        if (batch === 1) return Math.min(500, limit);
+        throw new RangeError("statement timeout");
+      }),
+      onRunComplete,
+    };
+    const { erasure } = createErasure({});
+    const { sweep } = createSweep({
+      policies: [],
+      erasure,
+      rules: [partiallyFailingRule],
+      budget: { ruleBatchSize: 500 },
+    });
+
+    const result = await sweep.run();
+
+    expect(onRunComplete).toHaveBeenCalledTimes(1);
+    expect(onRunComplete).toHaveBeenCalledWith({ now: NOW, totalRemoved: 500, complete: false });
+    expect(result.failed).toBe(1);
+    expect(result.removed.audit_events).toBe(500);
+  });
+
+  it("does not call a rule's onRunComplete when no batch removed anything", async () => {
     const onRunComplete = vi.fn(async () => undefined);
     const { erasure } = createErasure({});
     const { sweep } = createSweep({
       policies: [],
       erasure,
-      rules: [rule("audit_events", { rows: 1 }, { fails: true, onRunComplete })],
+      rules: [rule("audit_events", { rows: 0 }, { fails: true, onRunComplete })],
     });
 
     await sweep.run();

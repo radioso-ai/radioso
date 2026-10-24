@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Last updated:** 2026-10-24
+**Last updated:** 2026-10-25
 
 > **Fill in before publishing.** Replace every `[...]` placeholder. This document
 > is a drafting aid, not legal advice. Have counsel review it against your actual
@@ -219,11 +219,12 @@ We keep personal data only as long as needed for the purposes above:
   erases them; deletions propagate to every derived copy. Deleted data stays in
   database backups until they age out, after at most **7 days**.
 - **Operational logs** — **30 days**.
-- **Audit and security events** — **12 months**, because they support
-  security investigations and abuse detection. This window runs from when the
-  event happened, not from when a workspace closes: an audit event a closed
-  workspace left behind keeps the same 12 months rather than being deleted
-  with the workspace.
+- **Audit and security events** — kept for **up to 12 months**, because they
+  support security investigations and abuse detection. This window runs from
+  when the event happened, not from when a workspace closes. Closing a
+  workspace erases the audit events that carry a conversation's content along
+  with it; every other audit event for that workspace keeps the same window
+  rather than being deleted with the workspace.
 - **Billing and accounting records** — retained for **7 years**, as required by
   Estonian accounting law.
 

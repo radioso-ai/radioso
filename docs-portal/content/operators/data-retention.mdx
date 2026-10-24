@@ -52,7 +52,7 @@ Some copies of a conversation have a shorter life of their own, whether or not t
 
 Opening the raw view of an email older than 30 days answers `410 raw_purged`.
 
-An audit event's 365 days count from when it happened. Closing a workspace leaves its audit events in place with no workspace named, so the record of the closure itself, and everything that led up to it, keeps the same 365 days as any other event. A run that removes any audit events records one `audit_event.retention.enforced` event with the count and the window, naming no event it removed.
+An audit event's 365 days count from when it happened. Closing a workspace erases the turn audit events that carry a conversation's content, the same way deleting that conversation does; every other audit event for the workspace keeps its row with no workspace named, so the record of the closure itself, and everything that led up to it, keeps the same 365 days as any other event. A run that removes any audit events records one `audit_event.retention.enforced` event with the count and the window, naming no event it removed.
 
 ## Backups and logs on Radioso Cloud
 

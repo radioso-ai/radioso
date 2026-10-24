@@ -8,10 +8,13 @@ import {
 } from "../../src/app/composition/conversationErasure.js";
 import { createConversationRetentionSweep } from "../../src/app/composition/conversationRetention.js";
 import { AccountRepository } from "../../src/db/repositories/accountRepository.js";
+import { AuditEventRepository } from "../../src/db/repositories/auditEventRepository.js";
 import { PersonalCredentialLifecycleRepository } from "../../src/db/repositories/personalCredentialLifecycleRepository.js";
 import { WorkspaceRepository } from "../../src/db/repositories/workspaceRepository.js";
+import { AuditService } from "../../src/modules/audit/services/auditService.js";
 import { ConversationErasureService } from "../../src/modules/privacy/public.js";
 import { Database } from "../../src/shared/infra/database.js";
+import { createLogger } from "../../src/shared/observability/logger.js";
 import { MetricsRegistry } from "../../src/shared/observability/metrics/metricsRegistry.js";
 import { runAllTestMigrations } from "../support/databaseMigrations.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
@@ -37,6 +40,7 @@ describeIntegration("conversation retention (Postgres)", () => {
     invalidation: { enqueue: vi.fn() },
     auditLog: {},
   });
+  const auditService = new AuditService(createLogger("silent"), new AuditEventRepository(database.kysely));
   const seededAccountIds: string[] = [];
 
   beforeAll(async () => {
@@ -63,6 +67,7 @@ describeIntegration("conversation retention (Postgres)", () => {
   const sweepWith = (budget?: Parameters<typeof createConversationRetentionSweep>[0]["budget"]) => createConversationRetentionSweep({
     db: database.kysely,
     erasure,
+    audit: auditService,
     logger,
     metrics: new MetricsRegistry(),
     ...(budget ? { budget } : {}),
@@ -398,7 +403,7 @@ describeIntegration("conversation retention (Postgres)", () => {
       expect(summaries).toEqual([{
         account_id: null,
         workspace_id: null,
-        metadata_json: expect.objectContaining({ deletedCount: 2, windowDays: 365, principalType: "system" }),
+        metadata_json: expect.objectContaining({ deleted: 2, retentionDays: 365, cutoff: expect.any(String), principalType: "system" }),
       }]);
       expect(JSON.stringify(summaries)).not.toContain(oldWithWorkspace);
       expect(JSON.stringify(summaries)).not.toContain(oldOrphaned);

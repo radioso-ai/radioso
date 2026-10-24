@@ -4,7 +4,7 @@ import { anyOf, castText, jsonbKeyText, jsonbSet, toJsonb, toSanitizedJsonb } fr
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 import type { ConversationDataEraser, ConversationErasureScope } from "../../shared/domain/conversationDataErasure.js";
-import type { ConversationDataRetentionRule } from "../../shared/domain/conversationDataRetention.js";
+import type { ConversationDataRetentionRule, RetentionAuditRecorder } from "../../shared/domain/conversationDataRetention.js";
 
 export interface AuditEventRecord {
   id: string;
@@ -404,12 +404,15 @@ export const auditEventRetentionCutoff = (now: Date): Date => new Date(now.getTi
  * workspace left behind (`workspace_id` set NULL by that deletion, migration 007) is swept by the
  * same window rather than going with the workspace, since it is itself part of that deletion's own
  * record. The one event this writes per run that removed anything is content-free: a count and the
- * window, no id of what it removed.
+ * window, no id of what it removed. Writing goes through the injected audit recorder, the same port
+ * every other retention sweep in this codebase uses (`TtlRetentionWorker`, `CopilotRetentionWorker`),
+ * rather than inserting a row directly, so this event gets the same `audit_event` log line as every
+ * other one.
  */
 export class AuditEventRetention implements ConversationDataRetentionRule {
   readonly table = "audit_events";
 
-  constructor(private readonly db: Db) {}
+  constructor(private readonly db: Db, private readonly audit: RetentionAuditRecorder) {}
 
   async enforce(input: { now: Date; limit: number }): Promise<number> {
     const cutoff = auditEventRetentionCutoff(input.now);
@@ -426,24 +429,21 @@ export class AuditEventRetention implements ConversationDataRetentionRule {
     return Number(deleted.numDeletedRows);
   }
 
-  async onRunComplete(input: { now: Date; totalRemoved: number }): Promise<void> {
+  async onRunComplete(input: { now: Date; totalRemoved: number; complete: boolean }): Promise<void> {
     if (input.totalRemoved === 0) return;
-    await this.db
-      .insertInto("audit_events")
-      .values({
-        id: randomUUID(),
-        account_id: null,
-        workspace_id: null,
-        event_type: "audit_event.retention.enforced",
-        event_status: "success",
-        metadata_json: toSanitizedJsonb({
-          deletedCount: input.totalRemoved,
-          windowDays: AUDIT_EVENT_RETENTION_DAYS,
-          // The schedule acting on its own: stated rather than left absent, so a reader of the
-          // audit trail can tell this from an event that lost its attribution.
-          principalType: "system",
-        }),
-      })
-      .execute();
+    await this.audit.record({
+      accountId: null,
+      workspaceId: null,
+      eventType: "audit_event.retention.enforced",
+      eventStatus: "success",
+      metadata: {
+        deleted: input.totalRemoved,
+        retentionDays: AUDIT_EVENT_RETENTION_DAYS,
+        cutoff: auditEventRetentionCutoff(input.now).toISOString(),
+        // The schedule acting on its own: stated rather than left absent, so a reader of the
+        // audit trail can tell this from an event that lost its attribution.
+        principalType: "system",
+      },
+    });
   }
 }

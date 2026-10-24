@@ -31,12 +31,16 @@ composition calls them and assembles the result.
   `createRuntime`; see `backend/src/shared/background-jobs/README.md`.
 - `conversationErasure.ts` and `conversationRetention.ts`: every module's eraser
   for conversation-derived rows no foreign key reaches, and every module's fixed
-  retention window (`ConversationDataRetentionRule`) over rows that outlive their
-  conversation's own window. The retention sweep is a built-in periodic task
-  (`conversation-retention`), prepended to the `registerPeriodicTask` entries in
-  `dependencies.ts`, so the poll worker's interval loop and the push worker's
-  `/internal/tasks/periodic-tasks/:taskId/run` route both run it. A module that
-  keeps a shorter-lived copy of conversation content registers its rule here.
+  retention window (`ConversationDataRetentionRule`), run on its own schedule
+  rather than any workspace's conversation window — a summary or routine state
+  that outlives its conversation, the raw copy of an email, or audit events
+  swept by age alone across every workspace. The retention sweep is a built-in
+  periodic task (`conversation-retention`), prepended to the
+  `registerPeriodicTask` entries in `dependencies.ts`, so the poll worker's
+  interval loop and the push worker's `/internal/tasks/periodic-tasks/:taskId/run`
+  route both run it. A module whose rows need their own fixed window registers
+  its rule here; a rule whose own removal needs a record beyond the sweep's row
+  count implements the rule's optional `onRunComplete`.
 - `conversationLockOrder.ts`: the conversation lock protocol every unit of work
   touching a conversation's ownership, held replies or mailbox policy follows,
   and the bounded deadlock retry for the units that can still meet one. Read it

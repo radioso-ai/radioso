@@ -205,9 +205,11 @@ export class ConversationRetentionSweep {
     let failed = 0;
     let drained = true;
     for (const rule of this.deps.rules) {
+      let totalRemoved = 0;
       try {
         for (let batch = 1; ; batch += 1) {
           const rows = await rule.enforce({ now, limit: ruleBatchSize });
+          totalRemoved += rows;
           add(removed, rule.table, rows);
           if (rows < ruleBatchSize) break;
           if (batch >= maxRuleBatches) {
@@ -218,6 +220,15 @@ export class ConversationRetentionSweep {
       } catch (error) {
         failed += 1;
         this.deps.logger.warn({ table: rule.table, errorName: errorName(error) }, "conversation_retention_rule_failed");
+        continue;
+      }
+      if (!rule.onRunComplete) continue;
+      try {
+        await rule.onRunComplete({ now, totalRemoved });
+      } catch (error) {
+        // What this run removed already committed; only the rule's own record of running failed to
+        // write, so that alone does not ask the run to be retried.
+        this.deps.logger.warn({ table: rule.table, errorName: errorName(error) }, "conversation_retention_rule_summary_failed");
       }
     }
     return { failed, drained };

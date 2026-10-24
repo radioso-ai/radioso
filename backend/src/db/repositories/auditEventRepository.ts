@@ -4,6 +4,7 @@ import { anyOf, castText, jsonbKeyText, jsonbSet, toJsonb, toSanitizedJsonb } fr
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 import type { ConversationDataEraser, ConversationErasureScope } from "../../shared/domain/conversationDataErasure.js";
+import type { ConversationDataRetentionRule } from "../../shared/domain/conversationDataRetention.js";
 
 export interface AuditEventRecord {
   id: string;
@@ -383,5 +384,66 @@ export class ConversationAuditEraser implements ConversationDataEraser {
       erased += Number(result.numDeletedRows);
     }
     return erased;
+  }
+}
+
+const DAY_MS = 24 * 60 * 60 * 1_000;
+
+/**
+ * How long an audit or security event is kept, named rather than configurable: the window is the
+ * compliance commitment in `legal/privacy-policy.md`, not a setting a workspace tunes, so no
+ * workspace can lengthen or shorten it for its own events.
+ */
+export const AUDIT_EVENT_RETENTION_DAYS = 365;
+
+/** The instant `AUDIT_EVENT_RETENTION_DAYS` before `now`; an event older than this has passed its window. */
+export const auditEventRetentionCutoff = (now: Date): Date => new Date(now.getTime() - AUDIT_EVENT_RETENTION_DAYS * DAY_MS);
+
+/**
+ * Sweeps audit events past {@link AUDIT_EVENT_RETENTION_DAYS}, by age alone: an event a deleted
+ * workspace left behind (`workspace_id` set NULL by that deletion, migration 007) is swept by the
+ * same window rather than going with the workspace, since it is itself part of that deletion's own
+ * record. The one event this writes per run that removed anything is content-free: a count and the
+ * window, no id of what it removed.
+ */
+export class AuditEventRetention implements ConversationDataRetentionRule {
+  readonly table = "audit_events";
+
+  constructor(private readonly db: Db) {}
+
+  async enforce(input: { now: Date; limit: number }): Promise<number> {
+    const cutoff = auditEventRetentionCutoff(input.now);
+    const deleted = await this.db
+      .deleteFrom("audit_events")
+      .where("id", "in", (eb) => eb
+        .selectFrom("audit_events")
+        .select("id")
+        .where("created_at", "<", cutoff)
+        .limit(input.limit)
+        .forUpdate()
+        .skipLocked())
+      .executeTakeFirst();
+    return Number(deleted.numDeletedRows);
+  }
+
+  async onRunComplete(input: { now: Date; totalRemoved: number }): Promise<void> {
+    if (input.totalRemoved === 0) return;
+    await this.db
+      .insertInto("audit_events")
+      .values({
+        id: randomUUID(),
+        account_id: null,
+        workspace_id: null,
+        event_type: "audit_event.retention.enforced",
+        event_status: "success",
+        metadata_json: toSanitizedJsonb({
+          deletedCount: input.totalRemoved,
+          windowDays: AUDIT_EVENT_RETENTION_DAYS,
+          // The schedule acting on its own: stated rather than left absent, so a reader of the
+          // audit trail can tell this from an event that lost its attribution.
+          principalType: "system",
+        }),
+      })
+      .execute();
   }
 }

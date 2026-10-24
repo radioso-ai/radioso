@@ -1,7 +1,7 @@
 ---
 title: "Data retention"
 description: "How long Radioso keeps conversations and every copy derived from them, how to set a workspace's conversation retention window, and how long backups and logs outlive a deletion."
-last_updated: 2026-10-19
+last_updated: 2026-10-24
 ---
 
 # Data retention
@@ -48,8 +48,11 @@ Some copies of a conversation have a shorter life of their own, whether or not t
 | A routine waiting on a decision | 90 days without an update, and never while its conversation had activity in those 90 days |
 | The raw copy of an inbound email | 30 days; the parsed message and the facts threading needs stay with the conversation |
 | An inbound email that never opened a conversation | 30 days |
+| An audit or security event | 365 days from when it happened |
 
 Opening the raw view of an email older than 30 days answers `410 raw_purged`.
+
+An audit event's 365 days count from when it happened. Closing a workspace leaves its audit events in place with no workspace named, so the record of the closure itself, and everything that led up to it, keeps the same 365 days as any other event. A run that removes any audit events records one `audit_event.retention.enforced` event with the count and the window, naming no event it removed.
 
 ## Backups and logs on Radioso Cloud
 

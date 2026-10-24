@@ -219,9 +219,11 @@ We keep personal data only as long as needed for the purposes above:
   erases them; deletions propagate to every derived copy. Deleted data stays in
   database backups until they age out, after at most **7 days**.
 - **Operational logs** — **30 days**.
-- **Audit and security events** — up to **12 months**, because they support
-  security investigations and abuse detection. [Owner: true only once #1609
-  ships; today audit events have no expiry.]
+- **Audit and security events** — **12 months**, because they support
+  security investigations and abuse detection. This window runs from when the
+  event happened, not from when a workspace closes: an audit event a closed
+  workspace left behind keeps the same 12 months rather than being deleted
+  with the workspace.
 - **Billing and accounting records** — retained for **7 years**, as required by
   Estonian accounting law.
 

@@ -1,5 +1,6 @@
 import type { Kysely } from "kysely";
 
+import { AuditEventRetention } from "../../db/repositories/auditEventRepository.js";
 import { ConversationSummaryRetention } from "../../db/repositories/conversationSummaryRepository.js";
 import { RoutineStateRetention } from "../../db/repositories/routineStateRepository.js";
 import { WorkspacePrivacySettingsRepository } from "../../db/repositories/workspacePrivacySettingsRepository.js";
@@ -26,6 +27,7 @@ const defaultConversationDataRetentionRules: readonly ConversationDataRetentionR
   (db) => new ConversationSummaryRetention(db),
   (db) => new RoutineStateRetention(db),
   (db) => new EmailRawMimeRetention(db),
+  (db) => new AuditEventRetention(db),
 ];
 
 /** The registration id the worker task route runs it by, and the Cloud Scheduler job names. */

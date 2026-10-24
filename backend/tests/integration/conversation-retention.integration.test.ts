@@ -359,5 +359,63 @@ describeIntegration("conversation retention (Postgres)", () => {
 
       expect(await count("conversation_summaries WHERE session_id = ANY($1::uuid[])", [conversations])).toBe(0);
     });
+
+    /** The database's own clock, so a summary a prior test run left behind never counts as this test's. */
+    const databaseNow = async (): Promise<string> => (await database.query<{ now: string }>("SELECT now()::text AS now", []))[0].now;
+
+    const summaryEventsSince = (marker: string) =>
+      database.query<{ account_id: string | null; workspace_id: string | null; metadata_json: Record<string, unknown> }>(
+        "SELECT account_id, workspace_id, metadata_json FROM audit_events WHERE event_type = 'audit_event.retention.enforced' AND created_at >= $1",
+        [marker],
+      );
+
+    it("deletes audit events older than the retention window, orphaned or not, keeps recent ones, and records one summary event for the run", async () => {
+      const tenant = await seedTenant(null);
+      const marker = await databaseNow();
+      const seedAuditEvent = async (daysAgo: number, workspaceId: string | null): Promise<string> => {
+        const id = randomUUID();
+        await database.query(
+          `INSERT INTO audit_events (id, account_id, workspace_id, event_type, event_status, metadata_json, created_at)
+           VALUES ($1, $2, $3, 'workspace.privacy_settings.updated', 'success', '{}'::jsonb, now() - make_interval(days => $4))`,
+          [id, tenant.accountId, workspaceId, daysAgo],
+        );
+        return id;
+      };
+      const oldWithWorkspace = await seedAuditEvent(400, tenant.workspaceId);
+      const oldOrphaned = await seedAuditEvent(400, null);
+      const recentWithWorkspace = await seedAuditEvent(10, tenant.workspaceId);
+      const recentOrphaned = await seedAuditEvent(10, null);
+
+      await sweepWith().run();
+
+      const remaining = await database.query<{ id: string }>(
+        "SELECT id FROM audit_events WHERE id = ANY($1::uuid[])",
+        [[oldWithWorkspace, oldOrphaned, recentWithWorkspace, recentOrphaned]],
+      );
+      expect(remaining.map((row) => row.id).sort()).toEqual([recentOrphaned, recentWithWorkspace].sort());
+
+      const summaries = await summaryEventsSince(marker);
+      expect(summaries).toEqual([{
+        account_id: null,
+        workspace_id: null,
+        metadata_json: expect.objectContaining({ deletedCount: 2, windowDays: 365, principalType: "system" }),
+      }]);
+      expect(JSON.stringify(summaries)).not.toContain(oldWithWorkspace);
+      expect(JSON.stringify(summaries)).not.toContain(oldOrphaned);
+    });
+
+    it("records no summary event for a run that finds nothing past the audit event window", async () => {
+      const tenant = await seedTenant(null);
+      const marker = await databaseNow();
+      await database.query(
+        `INSERT INTO audit_events (id, account_id, workspace_id, event_type, event_status, metadata_json, created_at)
+         VALUES ($1, $2, $3, 'workspace.privacy_settings.updated', 'success', '{}'::jsonb, now() - interval '10 days')`,
+        [randomUUID(), tenant.accountId, tenant.workspaceId],
+      );
+
+      await sweepWith().run();
+
+      expect(await summaryEventsSince(marker)).toEqual([]);
+    });
   });
 });

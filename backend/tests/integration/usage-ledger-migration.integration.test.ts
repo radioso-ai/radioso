@@ -155,6 +155,41 @@ describeIfDatabase("usage ledger OSS migration", () => {
     expect(Number(rows[0].total_tokens)).toBe(300);
   });
 
+  it("keeps a model call's spend when its conversation belongs to a table this ledger has no foreign key for", async () => {
+    // Ray's own conversation lives in copilot_conversations, not the assistant's `conversations`
+    // table that usage_events.conversation_id is foreign-keyed to. The id is real (just not in the
+    // table the ledger's link points at), so this is the permanent shape of every Ray model call,
+    // not a one-off race like the deleted-message case above.
+    const { accountId, workspaceId } = await seedWorkspace();
+    const recorder = new DurableUsageEventRecorder(database.kysely);
+    const copilotConversationId = randomUUID();
+    const idempotencyKey = `agent_step:${randomUUID()}`;
+
+    await recorder.recordModelCall({
+      idempotencyKey,
+      accountId,
+      workspaceId,
+      conversationId: copilotConversationId,
+      surface: "operator_copilot",
+      operation: "agent_step",
+      provider: "openai",
+      model: "gpt-test",
+      inputTokens: 150,
+      outputTokens: 20,
+      totalTokens: 170,
+      status: "succeeded",
+      usageQuality: "actual",
+    });
+
+    const rows = await database.query<{ conversation_id: string | null; total_tokens: string; surface: string }>(
+      "SELECT conversation_id, total_tokens, surface FROM usage_events WHERE idempotency_key = $1",
+      [idempotencyKey],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ conversation_id: null, surface: "operator_copilot" });
+    expect(Number(rows[0].total_tokens)).toBe(170);
+  });
+
   it("does not double-count a replayed idempotency key", async () => {
     const { accountId, workspaceId } = await seedWorkspace();
     const recorder = new DurableUsageEventRecorder(database.kysely);

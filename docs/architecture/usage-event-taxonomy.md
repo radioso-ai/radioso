@@ -1,7 +1,7 @@
 ---
 title: "Usage Event Taxonomy"
 description: "Specification of how model inference and embedding operations are tracked and recorded in usage events with surface names and operation lineage."
-last_updated: 2026-08-03
+last_updated: 2026-10-24
 ---
 
 # Usage Event Taxonomy
@@ -56,6 +56,18 @@ The recorder can also store `agent_id` when the calling product flow knows the
 agent. It complements workspace, conversation, message, document, and job
 lineage; it does not replace them.
 
+The stored `conversation_id` and `message_id` columns are foreign-keyed to the
+assistant's `conversations` and `messages` tables. The idempotency key carries
+the calling surface's own conversation and message id regardless of which
+table they belong to, so a surface whose conversation lives elsewhere — Ray's
+`operator_copilot` turns reference `copilot_conversations` and
+`copilot_messages`, not `conversations` and `messages` — still has that
+identity in its key, and a later turn on the same Ray conversation does not
+collide with an earlier one's. The ledger row's `conversation_id` and
+`message_id` columns hold the same ids only when they resolve against
+`conversations` and `messages`; otherwise the row is recorded with those
+columns left null. The link is context; the spend is the record.
+
 ## Current Surfaces And Operations
 
 | Surface | Operation | Caller | Lineage |
@@ -95,6 +107,7 @@ lineage; it does not replace them.
 | `agent_wizard` | `analyze_website` | Agent Wizard website analysis | workspace, analysis request |
 | `agents` | `draft_directive` | Drafting a directive from an operator's coaching input | workspace, agent, request |
 | `agents` | `directive_coherence` | Checking a proposed directive against the agent's existing directives | workspace, agent |
+| `operator_copilot` | `agent_step` | Ray's own model calls: turn planning, each tool-loop step, and the closing answer | account, workspace, Ray conversation and this turn's operator message (`copilot_conversations`/`copilot_messages`, not `conversations`/`messages`) |
 | `documents` | `embedding` | Document processing chunk embeddings | account when resolvable, workspace, document, revision, job |
 
 ## Detailed Usage Reporting

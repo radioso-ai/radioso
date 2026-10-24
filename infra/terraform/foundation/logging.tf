@@ -10,11 +10,11 @@ locals {
   regional_log_bucket_id = "${local.resource_name_prefix}-logs"
 
   # Cloud Run services and jobs, Cloud Scheduler jobs and Cloud Tasks queues label an entry with
-  # the region it ran in. Cloud SQL labels it with a coarse `europe` or `us-central`, so the
-  # instance is matched by the name the routine root gives it.
+  # the region it ran in. Cloud SQL labels it with a coarse `europe` or `us-central`, so instances
+  # are matched by the environment's name prefix, which also covers a restored or cloned instance.
   regional_log_filter = join(" OR ", [
     "resource.labels.location=\"${var.region}\"",
-    "resource.labels.database_id=\"${var.project_id}:${local.resource_name_prefix}-db\"",
+    "resource.labels.database_id=~\"^${var.project_id}:${local.resource_name_prefix}-\"",
   ])
 }
 
@@ -40,8 +40,9 @@ resource "google_logging_project_sink" "regional" {
   destination = "logging.googleapis.com/${google_logging_project_bucket_config.regional[0].id}"
 }
 
-# Created after the sink, so an entry is never in neither bucket; destroyed before it, so removing
-# the routing duplicates entries rather than dropping them.
+# Terraform creates the exclusion after the sink and destroys it first. Google takes a few minutes
+# to apply either change, so the README's two-step apply checks the sink delivers before the
+# exclusion goes on.
 resource "google_logging_project_exclusion" "regional_from_default" {
   count = var.regional_log_bucket_enabled ? 1 : 0
 

@@ -145,10 +145,11 @@ describeIntegration("workspace stored-file deletion (Postgres)", () => {
 
   const storedObjects = (workspaceId: string) => storage.listWorkspaceObjects({ workspaceId, limit: 100 });
 
+  /** The purge a deletion handed off, under its origin-and-workspace key. */
   const purgeJobs = (workspaceId: string) =>
     database.query<{ id: string; status: string; attempts: number; last_error: string | null }>(
       "SELECT id, status, attempts, last_error FROM background_jobs WHERE kind = $1 AND idempotency_key = $2",
-      [WORKSPACE_STORAGE_PURGE_JOB.kind, workspaceId],
+      [WORKSPACE_STORAGE_PURGE_JOB.kind, `workspace_deletion:${workspaceId}`],
     );
 
   const deletionAudits = (workspaceId: string) =>

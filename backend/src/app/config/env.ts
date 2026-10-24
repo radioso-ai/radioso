@@ -13,6 +13,7 @@ import {
   isAzureOpenAIHost,
   isNormalizableAzureOpenAIPath,
   normalizeAzureOpenAIEndpoint,
+  tryParseUrl,
 } from "../../shared/infra/llm/azureOpenAIEndpoint.js";
 
 /** Shared default for both agent-revision test/eval evidence retention knobs; see their env entries. */
@@ -222,14 +223,29 @@ const envSchema = z.object({
       .string()
       .trim()
       .url()
-      .refine((value) => isAzureOpenAIHost(new URL(value).hostname), {
-        message:
-          "AZURE_OPENAI_ENDPOINT must use an Azure OpenAI host (a hostname ending in openai.azure.com or services.ai.azure.com)",
-      })
-      .refine((value) => isNormalizableAzureOpenAIPath(new URL(value).pathname), {
-        message: "AZURE_OPENAI_ENDPOINT must be the resource host, optionally followed by /openai/v1",
-      })
-      .transform(normalizeAzureOpenAIEndpoint),
+      // Each refine below returns `true` (no issue of its own) when the value isn't a parseable
+      // URL at all — the preceding `.url()` check has already reported that case, and zod still
+      // runs every refine after an earlier one failed, so skipping here (rather than calling
+      // `new URL()` unguarded) is what keeps a malformed value from surfacing as a raw
+      // `TypeError` instead of a normal, variable-naming zod issue.
+      .refine(
+        (value) => {
+          const url = tryParseUrl(value);
+          return url === undefined || isAzureOpenAIHost(url.hostname);
+        },
+        {
+          message:
+            "AZURE_OPENAI_ENDPOINT must use an Azure OpenAI host (a hostname ending in openai.azure.com, services.ai.azure.com, or cognitiveservices.azure.com)",
+        },
+      )
+      .refine(
+        (value) => {
+          const url = tryParseUrl(value);
+          return url === undefined || isNormalizableAzureOpenAIPath(url.pathname);
+        },
+        { message: "AZURE_OPENAI_ENDPOINT must be the resource host, optionally followed by /openai/v1" },
+      )
+      .transform((value) => (tryParseUrl(value) === undefined ? value : normalizeAzureOpenAIEndpoint(value))),
   ),
   GEMINI_API_KEY: emptyStringToUndefined(z.string().min(1)),
   ANTHROPIC_API_KEY: emptyStringToUndefined(z.string().min(1)),

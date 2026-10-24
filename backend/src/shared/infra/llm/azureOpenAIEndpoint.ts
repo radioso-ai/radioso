@@ -4,12 +4,31 @@
  * imported from `env.ts` (zod schema) without pulling in any env-parsing machinery itself.
  */
 
-const AZURE_OPENAI_HOST_SUFFIXES = [".openai.azure.com", ".services.ai.azure.com"] as const;
+const AZURE_OPENAI_HOST_SUFFIXES = [
+  ".openai.azure.com",
+  ".services.ai.azure.com",
+  ".cognitiveservices.azure.com",
+] as const;
 
-/** Whether a hostname is an Azure OpenAI (or Azure AI Foundry) resource host. */
+/** Whether a hostname is an Azure OpenAI (or Azure AI Foundry / Cognitive Services) resource host. */
 export const isAzureOpenAIHost = (hostname: string): boolean => {
   const lower = hostname.toLowerCase();
   return AZURE_OPENAI_HOST_SUFFIXES.some((suffix) => lower.endsWith(suffix));
+};
+
+/**
+ * Parses a URL, returning `undefined` instead of throwing on a value that isn't one. `env.ts`'s
+ * schema needs this: zod still runs every chained `.refine()` after an earlier one (including
+ * the built-in `.url()` check) has already failed, so a refine callback that calls `new URL()`
+ * without this guard leaks a raw `TypeError: Invalid URL` past zod's own issue reporting for a
+ * value like `"radioso-eu-1.openai.azure.com"` (no scheme) or whitespace.
+ */
+export const tryParseUrl = (value: string): URL | undefined => {
+  try {
+    return new URL(value);
+  } catch {
+    return undefined;
+  }
 };
 
 /**

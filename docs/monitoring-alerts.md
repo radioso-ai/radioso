@@ -135,12 +135,12 @@ groups:
           summary: "An email sending domain lost its verified status"
 
       - alert: RadiosoVoiceTurnLimitReached
-        expr: increase(radioso_voice_turn_limit_total[15m]) > 5
+        expr: sum(increase(radioso_voice_turn_limit_total[15m])) > 5
         annotations:
           summary: "Voice turns are hitting the turn limit: callers wait too long for answers"
 
       - alert: RadiosoVoiceTurnAbandoned
-        expr: increase(radioso_voice_turn_abandoned_total[15m]) > 5
+        expr: sum(increase(radioso_voice_turn_abandoned_total[15m])) > 5
         annotations:
           summary: "The voice runtime is abandoning turns before they finish"
 

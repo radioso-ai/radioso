@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "FORBIDDEN",
+    "message": "This token does not have the required abilities to perform this action."
+  }
+}

@@ -7,6 +7,7 @@ import {
 } from "../../../shared/observability/logger.js";
 import type { AuditEventInput, ChatAnswerAuditMetadata } from "../contracts/index.js";
 import { requestAuditMetadata } from "../../../shared/observability/requestAuditContext.js";
+import { auditEventLogFields } from "./auditEventLogFields.js";
 
 export class AuditService {
   constructor(
@@ -59,7 +60,7 @@ export class AuditService {
   logRecorded(event: AuditEventInput): void {
     this.logger.info(
       {
-        audit: event,
+        audit: auditEventLogFields(event),
         retrieval: extractRetrievalLogFields(event.metadata),
         analytics: extractProductAnalyticsLogFields(event.metadata?.analytics),
         error: extractErrorLogFields(event.metadata?.error),

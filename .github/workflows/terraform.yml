@@ -75,6 +75,9 @@ jobs:
 
     steps:
       - name: Require configured GitHub environment variables
+        env:
+          MAIL_DRIVER: ${{ vars.MAIL_DRIVER }}
+          LETTERMINT_PROJECT_TOKEN: ${{ secrets.LETTERMINT_PROJECT_TOKEN }}
         run: |
           for key in \
             GCP_TERRAFORM_SERVICE_ACCOUNT \
@@ -84,7 +87,6 @@ jobs:
             TF_VAR_connector_encryption_key \
             TF_VAR_mail_from_email \
             TF_VAR_openai_api_key \
-            TF_VAR_resend_mail_api_key \
             TF_VAR_session_cookie_secret \
             TF_VAR_public_chat_session_secret \
             TF_VAR_workspace_token_secret
@@ -94,6 +96,18 @@ jobs:
               exit 1
             fi
           done
+
+          # Transactional auth mail needs the credential of the provider MAIL_DRIVER names;
+          # unset, the backend keeps Resend.
+          if [ "${MAIL_DRIVER//[[:space:]]/}" = "lettermint" ]; then
+            mail_key=LETTERMINT_PROJECT_TOKEN
+          else
+            mail_key=TF_VAR_resend_mail_api_key
+          fi
+          if [ -z "${!mail_key//[[:space:]]/}" ]; then
+            echo "Missing required GitHub environment value: $mail_key" >&2
+            exit 1
+          fi
 
           # The backend turns "Sign in with Google" on only when both credentials
           # resolve, so half a pair plans clean, applies clean, and leaves the
@@ -149,6 +163,7 @@ jobs:
 
       - name: Export optional Terraform variables
         env:
+          AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
           ERROR_SINKS: ${{ vars.ERROR_SINKS }}
           MAIL_FROM_NAME: ${{ vars.MAIL_FROM_NAME }}
           METRICS_AUTH_TOKEN: ${{ secrets.METRICS_AUTH_TOKEN }}
@@ -156,6 +171,8 @@ jobs:
           MONITORING_EXTRA_NOTIFICATION_CHANNEL_IDS: ${{ vars.MONITORING_EXTRA_NOTIFICATION_CHANNEL_IDS }}
           MONITORING_NOTIFICATION_EMAILS: ${{ vars.MONITORING_NOTIFICATION_EMAILS }}
           OPENAI_DATA_RESIDENCY: ${{ vars.OPENAI_DATA_RESIDENCY }}
+          MAIL_DRIVER: ${{ vars.MAIL_DRIVER }}
+          OPENAI_RERANK_MODEL: ${{ vars.OPENAI_RERANK_MODEL }}
           OPS_EVENT_WEBHOOK_EVENTS: ${{ vars.OPS_EVENT_WEBHOOK_EVENTS }}
           OPS_EVENT_WEBHOOK_SECRET: ${{ secrets.OPS_EVENT_WEBHOOK_SECRET }}
           OPS_EVENT_WEBHOOK_URL: ${{ vars.OPS_EVENT_WEBHOOK_URL }}
@@ -181,6 +198,21 @@ jobs:
 
           if [ -n "${OPENAI_DATA_RESIDENCY}" ]; then
             echo "TF_VAR_openai_data_residency=${OPENAI_DATA_RESIDENCY}" >> "$GITHUB_ENV"
+          fi
+
+          if [ -n "${MAIL_DRIVER}" ]; then
+            echo "TF_VAR_mail_driver=${MAIL_DRIVER}" >> "$GITHUB_ENV"
+          fi
+
+          if [ -n "${AZURE_OPENAI_ENDPOINT}" ]; then
+            echo "TF_VAR_azure_openai_endpoint=${AZURE_OPENAI_ENDPOINT}" >> "$GITHUB_ENV"
+          fi
+
+          # Terraform's own default (environments/*/variables.tf) still only ever has quota for
+          # the regional rerank model each environment shipped with; the Azure cutover needs this
+          # switchable per environment without a code change (#1547).
+          if [ -n "${OPENAI_RERANK_MODEL}" ]; then
+            echo "TF_VAR_openai_rerank_model=${OPENAI_RERANK_MODEL}" >> "$GITHUB_ENV"
           fi
 
           # Alerting stays off until an environment opts in. Terraform's own precondition
@@ -263,6 +295,10 @@ jobs:
           EMAIL_CHANNEL_WEBHOOK_SECRET: ${{ secrets.EMAIL_CHANNEL_WEBHOOK_SECRET }}
           EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS: ${{ secrets.EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS }}
           RESEND_CHANNEL_API_KEY: ${{ secrets.RESEND_CHANNEL_API_KEY }}
+          LETTERMINT_PROJECT_TOKEN: ${{ secrets.LETTERMINT_PROJECT_TOKEN }}
+          LETTERMINT_TEAM_TOKEN: ${{ secrets.LETTERMINT_TEAM_TOKEN }}
+          LETTERMINT_PROJECT_ID: ${{ vars.LETTERMINT_PROJECT_ID }}
+          MAIL_DRIVER: ${{ vars.MAIL_DRIVER }}
         run: |
           # The module tests these inputs against null, and TF_VAR_x="" reaches Terraform as
           # an empty string rather than null (and fails outright for the bool and number
@@ -279,7 +315,10 @@ jobs:
             EMAIL_CHANNEL_SWEEP_MAX_JOBS \
             EMAIL_CHANNEL_WEBHOOK_SECRET \
             EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS \
-            RESEND_CHANNEL_API_KEY
+            RESEND_CHANNEL_API_KEY \
+            LETTERMINT_PROJECT_TOKEN \
+            LETTERMINT_TEAM_TOKEN \
+            LETTERMINT_PROJECT_ID
           do
             if [ -n "${!key//[[:space:]]/}" ]; then
               echo "TF_VAR_$(printf '%s' "$key" | tr '[:upper:]' '[:lower:]')=${!key}" >> "$GITHUB_ENV"
@@ -295,6 +334,31 @@ jobs:
                 exit 1
               fi
             done
+
+            # Lettermint also needs its own project and team credentials; the backend keeps the
+            # channel off and names the gap, but a CI deploy should refuse rather than roll out
+            # a half-provisioned provider.
+            if [ "${EMAIL_CHANNEL_PROVIDER//[[:space:]]/}" = "lettermint" ]; then
+              for key in LETTERMINT_PROJECT_TOKEN LETTERMINT_TEAM_TOKEN LETTERMINT_PROJECT_ID; do
+                if [ -z "${!key//[[:space:]]/}" ]; then
+                  echo "Missing required GitHub environment value: $key because EMAIL_CHANNEL_PROVIDER is lettermint" >&2
+                  exit 1
+                fi
+              done
+            fi
+
+            # Transactional mail's delivery events arrive on the channel's webhook, so its
+            # provider must be the channel's; otherwise the backend keeps the channel off.
+            channel_provider="${EMAIL_CHANNEL_PROVIDER//[[:space:]]/}"
+            mail_driver="${MAIL_DRIVER//[[:space:]]/}"
+            case "${mail_driver:-resend}" in
+              resend | lettermint)
+                if [ "${mail_driver:-resend}" != "$channel_provider" ]; then
+                  echo "MAIL_DRIVER must be $channel_provider because EMAIL_CHANNEL_PROVIDER is: transactional mail and the channel share one delivery webhook" >&2
+                  exit 1
+                fi
+                ;;
+            esac
           fi
 
       - name: Resolve Terraform deployment values

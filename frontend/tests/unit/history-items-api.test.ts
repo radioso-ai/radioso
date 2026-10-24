@@ -53,6 +53,23 @@ describe('offset-backed list APIs', () => {
     expect(response.items).toEqual([])
   })
 
+  it('sends a text search in the request body, never the URL', async () => {
+    vi.stubGlobal('window', { localStorage: createLocalStorage() })
+    const fetchMock = vi.fn().mockResolvedValue(
+      createJsonResponse({ items: [], total: 0, nextCursor: null, hasMore: false }),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await chatApi.listHistory({ limit: 50, offset: 0, q: 'asthma room', outcome: 'handed_off' })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/backend/api/v1/history/query',
+      expect.objectContaining({ method: 'POST' }),
+    )
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(JSON.parse(init.body as string)).toEqual({ limit: 50, offset: 0, q: 'asthma room', outcome: 'handed_off' })
+  })
+
   it('normalizes changed chat history responses for the merged history view', async () => {
     vi.stubGlobal('window', { localStorage: createLocalStorage() })
     const fetchMock = vi.fn().mockResolvedValue(

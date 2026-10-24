@@ -1,7 +1,7 @@
 ---
 title: "Close the Quality Loop with Evals"
 description: "Close answer-quality reviews, optionally classify the outcome, preserve weak turns as Eval cases, and verify the fix."
-last_updated: 2026-10-19
+last_updated: 2026-10-24
 ---
 
 # Close the Quality Loop with Evals
@@ -120,6 +120,8 @@ assistant-turn creation time.
 current-window structured `resolutionBreakdown`: a rolling `7d` or `30d`
 window, the equal-length window before it for comparison, one bucket per UTC
 day, and the all-time count of turns still awaiting triage for each signal.
+When the window holds calls, its `voice` block counts them for the Voice card
+on the same page; see [Call numbers on the Quality page](voice-channel.md#call-numbers-on-the-quality-page).
 Every rate ships with the population it is measured over and reports `null`
 instead of a rate when that population is empty. Both quality endpoints read
 the same turns, and both exclude operator activity — dashboard test chats,

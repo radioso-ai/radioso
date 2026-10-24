@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { Database } from "../../src/shared/infra/database.js";
 import { QualityTurnsService } from "../../src/modules/quality/service.js";
@@ -287,6 +287,124 @@ describeIfDatabase("quality stats integration", () => {
       channel: "embed",
     });
     expect(filtered.filters).toEqual({ agentId, channel: "embed" });
+  });
+
+  describe("the period's voice calls", () => {
+    /** The facts a voice turn keeps on its stored reply. */
+    const facts = (firstSpeechMs: unknown, outcome: unknown, extra: { turnLimitReached?: boolean } = {}) => ({
+      voice: { firstSpeechMs, bridged: false, turnLimitReached: extra.turnLimitReached ?? false, outcome, recordedAt: daysAgo(1) },
+    });
+    const interruption = (partial?: true) => ({
+      interruption: { heardCharacterCount: 7, spokenCharacterCount: 16, ...(partial ? { partial } : { recordedAt: daysAgo(1) }) },
+    });
+
+    it("counts calls, turns, median first speech, turns at the limit, interruptions and callback calls from the facts the replies keep", async () => {
+      const { workspaceId, agentId } = await seedWorkspace("Voice");
+      const secondAgentId = randomUUID();
+      await database.query(`INSERT INTO agents (id, workspace_id, name) VALUES ($1, $2, $3)`, [secondAgentId, workspaceId, "Second Voice Bot"]);
+      const call = await seedConversation(workspaceId, agentId, "voice");
+      const callbackCall = await seedConversation(workspaceId, agentId, "voice");
+      const secondAgentCall = await seedConversation(workspaceId, secondAgentId, "voice");
+      const lastWeeksCall = await seedConversation(workspaceId, agentId, "voice");
+      const chat = await seedConversation(workspaceId, agentId, "embed");
+
+      await seedTurn({ conversationId: call, workspaceId, createdAt: daysAgo(1), metadata: facts(1_000, "continue") });
+      await seedTurn({
+        conversationId: call,
+        workspaceId,
+        createdAt: daysAgo(1),
+        metadata: { ...facts(3_000, "continue", { turnLimitReached: true }), ...interruption() },
+      });
+      // The heard part of a reply the caller cut off mid-stream is a turn of the call.
+      await seedTurn({ conversationId: call, workspaceId, createdAt: daysAgo(1), skillName: null, skillOutcome: null, metadata: { ...facts(2_000, "continue"), ...interruption(true) } });
+      // A reply stored before its turn kept facts is counted as a turn, with no facts.
+      await seedTurn({ conversationId: call, workspaceId, createdAt: daysAgo(1) });
+      await seedTurn({ conversationId: callbackCall, workspaceId, createdAt: daysAgo(2), metadata: facts(null, "callback_requested") });
+      // A call that asked for a callback twice is one call that asked.
+      await seedTurn({ conversationId: callbackCall, workspaceId, createdAt: daysAgo(2), metadata: facts(null, "callback_requested") });
+      // A teammate's reply on the call is no turn of the agent's.
+      await seedTurn({ conversationId: callbackCall, workspaceId, createdAt: daysAgo(2), source: "human_agent", metadata: facts(9_000, "continue") });
+      await seedTurn({ conversationId: secondAgentCall, workspaceId, createdAt: daysAgo(3), metadata: facts(5_000, "continue") });
+      // Malformed facts read as none, without failing the response.
+      await seedTurn({ conversationId: secondAgentCall, workspaceId, createdAt: daysAgo(3), metadata: { voice: { firstSpeechMs: "soon", turnLimitReached: "yes", outcome: "hung_up" } } });
+      await seedTurn({ conversationId: lastWeeksCall, workspaceId, createdAt: daysAgo(10), metadata: facts(8_000, "callback_requested") });
+      await seedTurn({ conversationId: chat, workspaceId, createdAt: daysAgo(1), metadata: facts(7_000, "continue", { turnLimitReached: true }) });
+      // Another workspace's call, on the same days, is none of this workspace's.
+      const other = await seedWorkspace("OtherVoice");
+      const otherCall = await seedConversation(other.workspaceId, other.agentId, "voice");
+      await seedTurn({ conversationId: otherCall, workspaceId: other.workspaceId, createdAt: daysAgo(1), metadata: { ...facts(9_500, "callback_requested", { turnLimitReached: true }), ...interruption() } });
+
+      const service = createService();
+      const all = await service.getQualityStats(workspaceId, { range: "7d" });
+
+      expect(all.voice).toEqual({
+        calls: 3,
+        turns: 8,
+        firstSpeechMedianMs: 2_500,
+        turnLimitTurns: 1,
+        interruptions: 2,
+        callbackCalls: 1,
+      });
+      expect((await service.getQualityStats(workspaceId, { range: "7d", channel: "voice" })).voice).toEqual(all.voice);
+      expect((await service.getQualityStats(workspaceId, { range: "7d", agentId })).voice).toEqual({
+        calls: 2,
+        turns: 6,
+        firstSpeechMedianMs: 2_000,
+        turnLimitTurns: 1,
+        interruptions: 2,
+        callbackCalls: 1,
+      });
+      // A request pinned to another channel reports no voice block.
+      expect((await service.getQualityStats(workspaceId, { range: "7d", channel: "embed" })).voice).toBeNull();
+      expect((await service.getQualityStats(other.workspaceId, { range: "7d" })).voice).toEqual({
+        calls: 1,
+        turns: 1,
+        firstSpeechMedianMs: 9_500,
+        turnLimitTurns: 1,
+        interruptions: 1,
+        callbackCalls: 1,
+      });
+    });
+
+    it("ignores facts of another JSON shape, a scalar block or a first-speech time held as text, without failing the stats", async () => {
+      const { workspaceId, agentId } = await seedWorkspace("LegacyVoice");
+      const call = await seedConversation(workspaceId, agentId, "voice");
+      await seedTurn({ conversationId: call, workspaceId, createdAt: daysAgo(1), metadata: facts(1_000, "continue") });
+      await seedTurn({ conversationId: call, workspaceId, createdAt: daysAgo(1), metadata: { voice: "legacy" } });
+      await seedTurn({ conversationId: call, workspaceId, createdAt: daysAgo(1), metadata: facts("2100", "callback_requested", { turnLimitReached: true }) });
+
+      expect((await createService().getQualityStats(workspaceId, { range: "7d" })).voice).toEqual({
+        calls: 1,
+        turns: 3,
+        // Only the number counts toward the median; "2100" as text is no first-speech time.
+        firstSpeechMedianMs: 1_000,
+        turnLimitTurns: 1,
+        interruptions: 0,
+        callbackCalls: 1,
+      });
+    });
+
+    it("reports no voice block for a period without voice turns, without scanning for voice numbers", async () => {
+      const { workspaceId, agentId } = await seedWorkspace("NoVoice");
+      const chat = await seedConversation(workspaceId, agentId, "embed");
+      const lastMonthsCall = await seedConversation(workspaceId, agentId, "voice");
+      await seedTurn({ conversationId: chat, workspaceId, createdAt: daysAgo(1) });
+      await seedTurn({ conversationId: lastMonthsCall, workspaceId, createdAt: daysAgo(9), metadata: facts(1_000, "continue") });
+      const textOnly = await seedWorkspace("TextOnly");
+      await seedTurn({ conversationId: await seedConversation(textOnly.workspaceId, textOnly.agentId, "embed"), workspaceId: textOnly.workspaceId, createdAt: daysAgo(1) });
+      const statements = vi.spyOn(database.kysely, "executeQuery");
+
+      try {
+        expect((await createService().getQualityStats(workspaceId, { range: "7d" })).voice).toBeNull();
+        expect((await createService().getQualityStats(textOnly.workspaceId, { range: "7d" })).voice).toBeNull();
+
+        // Only the cheap check for voice activity ran; the voice statement never did.
+        const voiceStatements = statements.mock.calls.filter(([query]) => "sql" in query && query.sql.includes("percentile_cont"));
+        expect(voiceStatements).toEqual([]);
+      } finally {
+        statements.mockRestore();
+      }
+    });
   });
 
   it("excludes operator-test channels while keeping null-source conversations", async () => {

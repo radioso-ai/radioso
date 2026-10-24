@@ -5,6 +5,7 @@ import {
 } from "@radioso/workspace-invalidation-contract";
 
 import { systemClock, type Clock } from "../../shared/domain/clock.js";
+import { VOICE_SOURCE_CHANNEL } from "../../shared/domain/conversationSource.js";
 import { normalizeNullableText } from "../../shared/domain/nullableText.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type { ConversationActivityRecorder } from "../conversationActivity/contracts/index.js";
@@ -37,12 +38,16 @@ import {
   buildQualityResolutionBreakdownQuery,
   buildQualityStatsBacklogQuery,
   buildQualityStatsDailyQuery,
+  buildQualityVoiceActivityQuery,
+  buildQualityVoiceStatsQuery,
   mergeQualityStatsBuckets,
   resolveQualityStatsWindows,
   summarizeQualityStatsWindow,
+  toQualityVoiceStats,
   type QualityBacklogRow,
   type QualityResolutionBreakdownRow,
   type QualityStatsAggregateRow,
+  type QualityVoiceStatsRow,
 } from "./statsQuery.js";
 import {
   RESOLVED_LATENCY_EXPRESSION,
@@ -464,8 +469,10 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
     //
     // `backlog` stays a separate statement and is deliberately NOT made consistent with the
     // windowed numbers: it answers a different question — all-time active triage, with no
-    // date bound at all — so there is no shared total for it to agree with.
-    const [dailyRows, backlogRows, resolutionRows] = await Promise.all([
+    // date bound at all — so there is no shared total for it to agree with. The voice numbers
+    // are a read of their own for the same reason: a population of calls, not of AI-quality
+    // turns (`loadVoiceStats`).
+    const [dailyRows, backlogRows, resolutionRows, voice] = await Promise.all([
       this.runStatsQuery<QualityStatsAggregateRow>(
         buildQualityStatsDailyQuery({ ...scope, window: windows.span }),
       ),
@@ -478,6 +485,7 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
           window: windows.current,
         }),
       ),
+      this.loadVoiceStats(workspaceId, input, windows.current),
     ]);
 
     const backlogRow = backlogRows[0];
@@ -502,7 +510,31 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
         reason: row.reason as QualityStats["resolutionBreakdown"][number]["reason"],
         count: Number(row.count),
       })),
+      voice,
     };
+  }
+
+  /**
+   * The current window's voice numbers: none on a request pinned to another channel, and none
+   * without a voice turn in the window, which an existence check over the same population answers
+   * before the voice statement aggregates the window's turns. Distinct calls and a median do not add up across
+   * days, so the numbers cannot ride on the daily statement's buckets.
+   */
+  private async loadVoiceStats(
+    workspaceId: string,
+    input: QualityStatsInput,
+    window: { from: Date; to: Date },
+  ): Promise<QualityStats["voice"]> {
+    if (input.channel && input.channel !== VOICE_SOURCE_CHANNEL) {
+      return null;
+    }
+    const scope = { workspaceId, agentId: input.agentId, window };
+    const [activity] = await this.runStatsQuery<{ has_voice_activity: boolean }>(buildQualityVoiceActivityQuery(scope));
+    if (!activity?.has_voice_activity) {
+      return null;
+    }
+    const [row] = await this.runStatsQuery<QualityVoiceStatsRow>(buildQualityVoiceStatsQuery(scope));
+    return toQualityVoiceStats(row);
   }
 
   private async runStatsQuery<Row>(query: SqlQuery): Promise<Row[]> {

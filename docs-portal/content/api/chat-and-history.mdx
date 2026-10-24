@@ -1,7 +1,7 @@
 ---
 title: "Chat and history"
 description: "Ask one agent questions with a channel credential, then inspect saved history with workspace access."
-last_updated: 2026-10-17
+last_updated: 2026-10-24
 ---
 
 # Chat and history
@@ -78,7 +78,16 @@ Use the [API Reference](/api-reference) for the exact streaming and non-streamin
 
 History is an operator-facing workspace surface. Use a signed-in session or an eligible personal or service-account credential for these calls, not the role-free agent chat credential.
 
-Use `GET /api/v1/history` to list merged chat and document-search history.
+Use `GET /api/v1/history` to list merged chat and document-search history. It takes `limit`, `offset`, `sourceScope`, and filters that narrow the list to chat rows: `agentId`, `sourceOrigin`, `outcome`, and `callerKind`.
+
+To search that list by text, send the same fields plus `q` to `POST /api/v1/history/query`. The search is a case-insensitive substring match on a conversation's generated title or its first visitor message, so it usually carries a visitor's own words; it travels in the request body because request logs record a URL's query string. `GET /api/v1/history` answers `400` to a `q` parameter.
+
+```bash
+curl -sS -X POST https://api.radioso.ai/api/v1/history/query \
+  -H "Authorization: Bearer $RADIOSO_API_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"q":"ground floor room","outcome":"handed_off","limit":20}'
+```
 
 Use `GET /api/v1/history/chat` to list saved conversations. Add `ownership=human_owned` to return only conversations currently owned by a human operator; the response `total` then counts waiting handoffs.
 

@@ -1,7 +1,7 @@
 ---
 title: "Monitoring On Google Cloud"
-description: "Terraform-managed Cloud Monitoring alerting for a Radioso deployment on Google Cloud: uptime check, alert policies, log-based error metric, and Cloud Run health probes."
-last_updated: 2026-09-06
+description: "Terraform-managed Cloud Monitoring alerting for a Radioso deployment on Google Cloud: uptime check, alert policies, log-based error and voice turn metrics, and Cloud Run health probes."
+last_updated: 2026-10-24
 ---
 
 # Monitoring On Google Cloud
@@ -27,7 +27,7 @@ MONITORING_ENABLED=true
 MONITORING_NOTIFICATION_EMAILS=ops@your-domain.example,oncall@your-domain.example
 ```
 
-Either way, Terraform creates one email notification channel per address, an uptime check, a log-based metric, and the alert policies below. Every resource is named from the stack prefix (`radioso-live-…`), so two stacks sharing one project alert independently.
+Either way, Terraform creates one email notification channel per address, an uptime check, the log-based metrics, and the alert policies below. Every resource is named from the stack prefix (`radioso-live-…`), so two stacks sharing one project alert independently.
 
 A `precondition` fails the plan if you enable alerting with no notification target, because alerting that applies cleanly and stays silent is worse than none.
 
@@ -65,6 +65,10 @@ Every policy delivers to the union of the email channels and this list.
 
 **Scheduler job failures.** A log-based metric counts error-level Cloud Scheduler `AttemptFinished` execution logs. Those jobs are the recovery path for document processing, website crawls, and conversation-action delivery, so a quiet failure here surfaces later as a stalled queue.
 
+**Voice turn health.** Two log-based metrics on the backend service feed one policy, and either condition opens it. Each counts the backend's one log line per voice turn by its structured fields, `event: "voice.turn"` with `turnLimitReached: true` or with `streamAbandoned: true`, so the count holds however the line's message is worded. The turn-limit condition fires when more than `monitoring_voice_turn_limit_threshold` (default 5) voice turns hit the turn limit in fifteen minutes: the caller waited out the limit and heard the fallback line, or kept waiting when the agent has none for the call's language. The abandoned condition fires when the voice runtime closed more than `monitoring_voice_abandoned_turn_threshold` (default 5) turns' requests before their outcome reached it in fifteen minutes, however the turn itself ended: a runtime that stops waiting at 20 seconds while the answer lands at 30 still counts. It also counts a caller who hangs up while the agent is thinking or speaking, so a few a day are normal; set the threshold for a burst, which is what a runtime timing out on slow answers looks like. A turn that hit the limit counts toward the first condition whatever became of it, so a turn whose request closed after the limit counts toward both.
+
+Both thresholds count turns per window rather than a share of all voice turns, so a busy deployment wants a higher number than a quiet one; a true ratio would need a third log metric counting every voice turn. To see the turns behind an incident, search the backend's logs for `jsonPayload.event="voice.turn"` with `jsonPayload.turnLimitReached=true` or `jsonPayload.streamAbandoned=true`. Each line carries `agentId`, `vendor`, `conversationId`, `durationMs` and `result`, never what was said. The Quality page's Voice card shows the period's turn-limit turns out of all its voice turns; see [Call numbers on the Quality page](voice-channel.md#call-numbers-on-the-quality-page). The card has no row for closed requests: they show in the logs and this alert.
+
 ## Health probes
 
 Cloud Run's default startup probe opens a TCP connection to the container port, and a process that boots, binds, then fails to serve satisfies it and starts taking traffic. Set `container_health_probes_enabled = true` and the backend and MCP services probe their health routes (`/health` and `/healthz`) instead, so a revision that can't serve fails its rollout.
@@ -80,6 +84,8 @@ gcloud logging read \
   'resource.type="cloud_run_revision" AND severity>=ERROR' \
   --project radioso-494120 --limit 5 --freshness 1h
 ```
+
+`live-eu` stores its entries in its own `europe-west1` bucket (`infra/terraform/foundation/logging.tf`), so read them with `--bucket radioso-live-eu-logs --location europe-west1 --view _AllLogs` added. The log-based metric counts entries whatever bucket stores them.
 
 Entries with real stack traces mean the metric is counting. Nothing returned while you know errors are happening means the running revision predates the logger's severity mapping — redeploy the backend.
 

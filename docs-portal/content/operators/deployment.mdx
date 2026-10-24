@@ -1,7 +1,7 @@
 ---
 title: "Deployment"
 description: "Production deployment expectations for Radioso and the standalone docs portal."
-last_updated: 2026-10-19
+last_updated: 2026-10-24
 ---
 
 import { Callout } from 'nextra/components'
@@ -96,15 +96,17 @@ The Terraform workflow expects these GitHub environment secrets for each deploye
 - `RESEND_MAIL_API_KEY`
 - `POSTHOG_API_KEY`
 
+Lettermint is an alternative to Resend for transactional mail and the email channel; it isn't in this list because either provider works. See [Set up transactional mail](/operators/mail-setup) for `LETTERMINT_PROJECT_TOKEN`, and [Email channel](/operators/email-channel) for the channel-only `LETTERMINT_TEAM_TOKEN` and `LETTERMINT_PROJECT_ID`.
+
 `PUBLIC_CHAT_SESSION_SECRET` signs public chat session tokens for anonymous chat links and website embeds. In Terraform this maps to `public_chat_session_secret`, which is stored in Secret Manager and injected into the backend as `PUBLIC_CHAT_SESSION_SECRET`.
 
 `WORKSPACE_TOKEN_SECRET` derives the per-agent signing key a workspace admin can reveal so their website's own backend can prove [signed visitor identity](/operators/context-variables#signed-visitor-identity) for embedded chat. It is not a signer for personal or service API credentials.
 
-Set `MAIL_FROM_EMAIL` to a verified sender address. `MAIL_FROM_NAME` is optional and defaults to `Radioso`. Without `RESEND_MAIL_API_KEY`, the backend writes outbound mail to the log instead of sending it, so password resets, email verification, and [user invitations](/api/accounts-and-users#invite-a-user) reach nobody.
+Set `MAIL_FROM_EMAIL` to a verified sender address. `MAIL_FROM_NAME` is optional and defaults to `Radioso`. Without `RESEND_MAIL_API_KEY` or `LETTERMINT_PROJECT_TOKEN`, the backend writes outbound mail to the log instead of sending it, so password resets, email verification, and [user invitations](/api/accounts-and-users#invite-a-user) reach nobody.
 
 `NOTIFICATION_RECIPIENT_CONFIRMATION_ENABLED` defaults to `true`. Keep it on for shared or multi-tenant deployments: an external contact or operator-notice address confirms before it receives notification content. A single-tenant self-hosted deployment can set it to `false`; recipient status then reads `confirmation_not_required`, while hard-bounce and complaint suppression still applies. Confirmation and unsubscribe links use `CONNECTOR_PUBLIC_BASE_URL` when it is set, then `APP_BASE_URL`; configure one of those as the public HTTPS origin that reaches the backend.
 
-When transactional mail uses Resend, subscribe the existing `/api/connectors/email/webhook` endpoint to `email.bounced` and `email.complained`. Radioso verifies those requests with `EMAIL_CHANNEL_WEBHOOK_SECRET` and records permanent bounces and complaints for notification-tagged messages. SMTP and log drivers have no provider webhook, so their notification delivery continues without automatic bounce or complaint suppression.
+When transactional mail uses Resend, subscribe the existing `/api/connectors/email/webhook` endpoint to `email.bounced` and `email.complained`. When it uses Lettermint, subscribe the same endpoint to `message.hard_bounced` and `message.spam_complaint` instead. Either way Radioso verifies the requests with `EMAIL_CHANNEL_WEBHOOK_SECRET` and records permanent bounces and complaints for notification-tagged messages. With the email channel off, the route checks signatures for the provider `MAIL_DRIVER` resolves to; with it on, the channel's provider checks them, so transactional mail must use the channel's provider (see [Email channel](/operators/email-channel)). Log and noop drivers have no provider webhook, so their notification delivery continues without automatic bounce or complaint suppression.
 
 The included staging and live Terraform environments enable PostHog error reporting with `ERROR_SINKS=audit,posthog`. Staging also sends product analytics to PostHog with `PRODUCT_ANALYTICS_SINKS=audit,posthog`. Set `POSTHOG_API_KEY` for each environment. `POSTHOG_HOST` defaults to the US ingestion host and can be overridden for another PostHog region or a self-hosted instance.
 
@@ -194,7 +196,7 @@ The sweep runs in the document worker, so retention happens only where that proc
 
 The conversation retention sweep runs in the document worker every 15 minutes and enforces each workspace's retention window and the fixed windows on summaries, routine state and raw inbound mail (see [Data retention](/operators/data-retention)). Under the Cloud Run task runtime the trigger is a scheduled push to `POST /internal/tasks/periodic-tasks/conversation-retention/run`; the bundled Terraform provisions the Cloud Scheduler job (override the cadence with `conversation_retention_schedule`) and alerts on its failures with the other scheduler jobs.
 
-The same Terraform pins how long deleted data outlives an erasure: seven Cloud SQL backups, and 30 days in the project's `_Default` log bucket. Before the first apply in a project, confirm that bucket is in `global` with `gcloud logging buckets describe _Default --location=global --project=<project>`.
+The same Terraform pins how long deleted data outlives an erasure: seven Cloud SQL backups, and 30 days of logs, in the project's `_Default` log bucket or, where an environment's foundation root sets `regional_log_bucket_enabled`, in that environment's regional bucket (see [Data residency](/operators/data-residency#google-cloud-logging)). Before the first apply in a project, confirm `_Default` is in `global` with `gcloud logging buckets describe _Default --location=global --project=<project>`.
 
 Point-in-time recovery is a per-stack choice, `db_point_in_time_recovery_enabled`, off by default; when on, it keeps 7 days of transaction logs. Turning it on restarts the Cloud SQL instance, so enable it per stack deliberately, in a quiet window, and never as a side effect of an unrelated apply.
 

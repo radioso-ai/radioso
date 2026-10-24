@@ -22,7 +22,7 @@ const blockedKeys = new Set([
 const isPlainObject = (value: unknown): value is Record<string, unknown> =>
   Boolean(value) && typeof value === "object" && !Array.isArray(value);
 
-export const shouldRedactKey = (key: string): boolean => {
+const shouldRedactKey = (key: string): boolean => {
   const normalized = key.replaceAll(/[^a-zA-Z0-9]/g, "").toLowerCase();
   return (
     blockedKeys.has(key) ||
@@ -40,7 +40,7 @@ export const shouldRedactKey = (key: string): boolean => {
   );
 };
 
-export const redactValue = (value: unknown, parentKey?: string): unknown => {
+const redactValue = (value: unknown, parentKey?: string): unknown => {
   if (parentKey && shouldRedactKey(parentKey)) {
     return REDACTED;
   }

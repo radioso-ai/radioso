@@ -1,0 +1,65 @@
+{
+  "id": "e3d4f5a6-b7c8-9012-d3e4-f5a6b7c89012",
+  "event": "message.inbound",
+  "timestamp": "2025-10-02T14:30:00.000Z",
+  "context": {
+    "scope": "project",
+    "team_id": "9f4e3d2c-1b0a-4987-9654-3210fedcba98",
+    "project_id": "5c6d7e8f-9a0b-4c1d-8e2f-3a4b5c6d7e8f",
+    "route_id": "661f9511-f30c-52e5-b827-557766551111"
+  },
+  "data": {
+    "route": "support-inbox",
+    "message_id": "6b1f0c2e-3a4d-4e5f-8a9b-0c1d2e3f4a5b",
+    "envelope": {
+      "remote_ip": "203.0.113.42",
+      "remote_hostname": "mail.example.test",
+      "helo": "smtp.example.test",
+      "mail_from": "customer@example.test"
+    },
+    "from": { "email": "customer@example.test", "name": "John Doe", "subaddress": null },
+    "to": [{ "email": "support@customer.test", "name": null, "subaddress": null }],
+    "cc": [{ "email": "billing@customer.test", "name": "Billing", "subaddress": null }],
+    "recipient": "t_9f3c2a7b@in.relay.test",
+    "subaddress": null,
+    "reply_to": "customer@example.test",
+    "subject": "Question about my order",
+    "date": "2025-10-02T14:30:00.000Z",
+    "body": {
+      "text": "Hi, I have a question about my recent order...",
+      "html": "<p>Hi, I have a question about my recent order...</p>"
+    },
+    "tag": null,
+    "tags": [],
+    "headers": [
+      { "name": "Message-ID", "value": "<abc123@mail.example.test>" },
+      { "name": "X-Mailer", "value": "Apple Mail (2.3445.104.11)" }
+    ],
+    "authentication_results": {
+      "authserv_id": "lettermint.mx",
+      "header": "lettermint.mx; dkim=pass header.d=example.test header.s=mail; dmarc=pass header.from=example.test policy=none; spf=pass smtp.mailfrom=example.test",
+      "dkim": { "result": "pass", "domain": "example.test", "selector": "mail" },
+      "dmarc": { "result": "pass", "domain": "example.test", "policy": "none" },
+      "spf": { "result": "pass", "domain": "example.test" }
+    },
+    "attachments": [
+      {
+        "filename": "receipt.pdf",
+        "content_type": "application/pdf",
+        "size": 45678,
+        "content_id": null,
+        "url": "https://storage.lettermint.co/inbound/attachments/<signed>",
+        "expires_at": "2025-10-30T14:30:00+00:00"
+      }
+    ],
+    "raw": {
+      "url": "https://storage.lettermint.co/inbound/raw/<signed>",
+      "expires_at": "2025-10-30T14:30:00+00:00"
+    },
+    "is_spam": false,
+    "spam_score": 1.2,
+    "spam_symbols": [
+      { "name": "DKIM_VALID", "score": -0.1, "options": [], "description": "Message has valid DKIM signature" }
+    ]
+  }
+}

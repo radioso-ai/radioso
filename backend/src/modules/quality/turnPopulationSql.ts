@@ -135,10 +135,12 @@ export interface TurnPopulationScope {
 }
 
 /**
- * The predicate that defines which turns are AI-quality turns at all. Everything else a
- * quality query adds is a filter layered on top of this.
+ * The agent's turns in the workspace's real conversations: assistant replies the agent wrote,
+ * outside operator test traffic, scoped to the agent and channel asked for. The voice call
+ * numbers count these, the heard part of a reply cut off mid-stream included, since the caller
+ * heard it.
  */
-export const buildTurnPopulationFilters = (
+export const buildConversationTurnFilters = (
   scope: TurnPopulationScope,
   params: unknown[],
 ): string[] => {
@@ -166,11 +168,6 @@ export const buildTurnPopulationFilters = (
   );
   filters.push(`(m.source IS NULL OR m.source NOT IN (${sourcePlaceholders.join(", ")}))`);
 
-  // The heard part of a voice reply cut off mid-stream is no whole answer: it is stored without
-  // a skill outcome, grounding or retrieved chunks, so it is no AI-quality turn. A reply stored
-  // whole and marked interrupted later still is one.
-  filters.push(`COALESCE(m.metadata_json -> 'interruption' ->> 'partial', 'false') <> 'true'`);
-
   if (scope.agentId) {
     filters.push(`c.agent_id = ${bindParam(params, scope.agentId)}`);
   }
@@ -181,6 +178,22 @@ export const buildTurnPopulationFilters = (
 
   return filters;
 };
+
+/**
+ * The predicate that defines which turns are AI-quality turns at all: the conversation turns
+ * whose reply is a whole answer. Everything else a quality query adds is a filter layered on
+ * top of this.
+ */
+export const buildTurnPopulationFilters = (
+  scope: TurnPopulationScope,
+  params: unknown[],
+): string[] => [
+  ...buildConversationTurnFilters(scope, params),
+  // The heard part of a voice reply cut off mid-stream is no whole answer: it is stored without
+  // a skill outcome, grounding or retrieved chunks, so it is no AI-quality turn. A reply stored
+  // whole and marked interrupted later still is one.
+  `COALESCE(m.metadata_json -> 'interruption' ->> 'partial', 'false') <> 'true'`,
+];
 
 /**
  * Matches a turn against `(skillName, outcome)` tuples. Empty tuple sets yield an

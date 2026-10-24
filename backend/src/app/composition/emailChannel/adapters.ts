@@ -2,6 +2,10 @@ import { resolveTxt } from "node:dns/promises";
 
 import type { parseEmailChannelConfig } from "../../config/env.js";
 import {
+  LettermintApiClient,
+  LettermintEmailDomainProvisioner,
+  LettermintEmailDriver,
+  LettermintInboundEmailReceiver,
   LOCAL_EMAIL_SPOOL_DIR,
   LocalEmailDomainProvisioner,
   LocalEmailDriver,
@@ -17,14 +21,15 @@ import {
 
 export type EmailChannelConfig = NonNullable<ReturnType<typeof parseEmailChannelConfig>>;
 
-/** The provider the channel's adapters are built for: Resend's account, or the local spool. */
+/** The provider the channel's adapters are built for: Resend's account, Lettermint's project, or the local spool. */
 export type ChannelProvider =
   | Extract<EmailChannelConfig["provider"], { kind: "resend" }>
+  | Extract<EmailChannelConfig["provider"], { kind: "lettermint" }>
   | { kind: "local"; spoolDir: string };
 
 /** The configured provider; the local one spools to `localSpoolDir`, or to `LOCAL_EMAIL_SPOOL_DIR` without it. */
 export const channelProviderOf = (config: EmailChannelConfig, localSpoolDir: string | undefined): ChannelProvider =>
-  config.provider.kind === "resend"
+  config.provider.kind === "resend" || config.provider.kind === "lettermint"
     ? config.provider
     : { kind: "local", spoolDir: localSpoolDir ?? LOCAL_EMAIL_SPOOL_DIR };
 
@@ -41,6 +46,13 @@ export const providerAdapters = (
       provisioner: new ResendEmailDomainProvisioner({ api, region: provider.region, resolveTxt: (hostname) => resolveTxt(hostname) }),
     };
   }
+  if (provider.kind === "lettermint") {
+    const api = new LettermintApiClient({ projectToken: provider.projectToken, teamToken: provider.teamToken });
+    return {
+      receiver: new LettermintInboundEmailReceiver({ api, signingSecrets }),
+      provisioner: new LettermintEmailDomainProvisioner({ api, projectId: provider.projectId }),
+    };
+  }
   return {
     receiver: new LocalInboundEmailReceiver({ spoolDir: provider.spoolDir, signingSecrets }),
     provisioner: new LocalEmailDomainProvisioner({ spoolDir: provider.spoolDir }),
@@ -48,7 +60,13 @@ export const providerAdapters = (
 };
 
 /** The channel's sending driver, separate from transactional mail's (quickstart §1). */
-export const channelEmailDriver = (provider: ChannelProvider): EmailDriver =>
-  provider.kind === "resend"
-    ? new ResendEmailDriver({ api: new ResendApiClient({ apiKey: provider.apiKey }) })
-    : new LocalEmailDriver({ spoolDir: provider.spoolDir });
+export const channelEmailDriver = (provider: ChannelProvider): EmailDriver => {
+  if (provider.kind === "resend") {
+    return new ResendEmailDriver({ api: new ResendApiClient({ apiKey: provider.apiKey }) });
+  }
+  if (provider.kind === "lettermint") {
+    // Both tokens: the channel driver's `lookup` needs the Team API, unlike transactional mail's.
+    return new LettermintEmailDriver({ api: new LettermintApiClient({ projectToken: provider.projectToken, teamToken: provider.teamToken }) });
+  }
+  return new LocalEmailDriver({ spoolDir: provider.spoolDir });
+};

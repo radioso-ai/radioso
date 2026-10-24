@@ -527,6 +527,24 @@ variable "resend_mail_api_key" {
   default     = null
 }
 
+variable "lettermint_project_token" {
+  description = "Lettermint project token (lm_...), used by transactional auth mail (MAIL_DRIVER=lettermint) and, shared with the email channel, by channel mail sent through the lettermint provider."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "mail_driver" {
+  description = "Transactional auth mail driver override (MAIL_DRIVER): resend, lettermint, log or noop. Unset, a Resend key keeps Resend and a Lettermint project token alone picks Lettermint, so set it to lettermint to move a stack with a Resend key onto Lettermint."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.mail_driver == null || contains(["resend", "lettermint", "log", "noop"], coalesce(var.mail_driver, "resend"))
+    error_message = "mail_driver must be unset or one of resend, lettermint, log, noop."
+  }
+}
+
 variable "mail_from_email" {
   description = "Verified sender email address for transactional auth mail."
   type        = string
@@ -540,13 +558,13 @@ variable "mail_from_name" {
 }
 
 variable "email_channel_provider" {
-  description = "Email channel provider (EMAIL_CHANNEL_PROVIDER). Unset leaves the email plugin, routes and workers unregistered. The only supported deployed value is \"resend\"; \"local\" is development-only."
+  description = "Email channel provider (EMAIL_CHANNEL_PROVIDER). Unset leaves the email plugin, routes and workers unregistered. The supported deployed values are \"resend\" and \"lettermint\"; \"local\" is development-only."
   type        = string
   default     = null
 
   validation {
-    condition     = var.email_channel_provider == null || var.email_channel_provider == "resend"
-    error_message = "email_channel_provider must be unset or \"resend\"."
+    condition     = var.email_channel_provider == null || contains(["resend", "lettermint"], var.email_channel_provider)
+    error_message = "email_channel_provider must be unset, \"resend\" or \"lettermint\"."
   }
 }
 
@@ -579,6 +597,19 @@ variable "resend_channel_api_key" {
   description = "Optional Resend API key the email channel receives and sends channel mail with (RESEND_CHANNEL_API_KEY). Unset, the channel uses resend_mail_api_key, transactional auth mail's key."
   type        = string
   sensitive   = true
+  default     = null
+}
+
+variable "lettermint_team_token" {
+  description = "Lettermint team token (lm_team_..., Team API: reads messages, manages domains and inbound routes). Required with email_channel_provider = \"lettermint\" (LETTERMINT_TEAM_TOKEN)."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "lettermint_project_id" {
+  description = "Lettermint project id the team token's domain and route calls act on. Required with email_channel_provider = \"lettermint\" (LETTERMINT_PROJECT_ID)."
+  type        = string
   default     = null
 }
 
@@ -719,6 +750,21 @@ variable "openai_data_residency" {
   validation {
     condition     = contains(["global", "us", "eu"], var.openai_data_residency)
     error_message = "openai_data_residency must be global, us, or eu."
+  }
+}
+
+variable "azure_openai_endpoint" {
+  description = "Azure OpenAI resource endpoint the platform-held openai_api_key (then an Azure key) calls instead of OpenAI's own host. Empty (default) keeps the key on OpenAI. Only takes effect when openai_data_residency is global; never applies to a workspace's own OpenAI key."
+  type        = string
+  default     = ""
+
+  validation {
+    # Mirrors the host suffixes and the path shape env.ts's AZURE_OPENAI_ENDPOINT schema accepts
+    # (empty path, or exactly /openai/v1, each with an optional trailing slash). Terraform does
+    # not normalize the value the way env.ts does, so a path this regex would otherwise accept
+    # but env.ts would reject crash-loops the app at startup instead of failing a `plan`.
+    condition     = var.azure_openai_endpoint == "" || can(regex("^https://[A-Za-z0-9.-]+\\.(openai\\.azure\\.com|services\\.ai\\.azure\\.com|cognitiveservices\\.azure\\.com)(|/|/openai/v1|/openai/v1/)$", var.azure_openai_endpoint))
+    error_message = "azure_openai_endpoint must be empty, or an https URL whose host ends in openai.azure.com, services.ai.azure.com, or cognitiveservices.azure.com, with no path or exactly /openai/v1."
   }
 }
 
@@ -914,6 +960,28 @@ variable "monitoring_scheduler_failure_threshold" {
   description = "Error-level Cloud Scheduler execution logs in fifteen minutes that trigger the scheduler alert."
   type        = number
   default     = 0
+}
+
+variable "monitoring_voice_turn_limit_threshold" {
+  description = "Voice turns on the backend service that hit the turn limit in fifteen minutes that trigger the voice turn health alert."
+  type        = number
+  default     = 5
+
+  validation {
+    condition     = var.monitoring_voice_turn_limit_threshold >= 1 && floor(var.monitoring_voice_turn_limit_threshold) == var.monitoring_voice_turn_limit_threshold
+    error_message = "monitoring_voice_turn_limit_threshold must be a whole number of at least 1."
+  }
+}
+
+variable "monitoring_voice_abandoned_turn_threshold" {
+  description = "Voice turns on the backend service whose request the voice runtime closed before the outcome reached it, in fifteen minutes, that trigger the voice turn health alert."
+  type        = number
+  default     = 5
+
+  validation {
+    condition     = var.monitoring_voice_abandoned_turn_threshold >= 1 && floor(var.monitoring_voice_abandoned_turn_threshold) == var.monitoring_voice_abandoned_turn_threshold
+    error_message = "monitoring_voice_abandoned_turn_threshold must be a whole number of at least 1."
+  }
 }
 
 variable "container_health_probes_enabled" {

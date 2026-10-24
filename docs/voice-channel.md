@@ -1119,7 +1119,7 @@ page, and answers one question: how are calls going? For a busy week it reads:
 | Row | Value | What it counts |
 |---|---|---|
 | Calls | 42 | Voice conversations with at least one answered turn in the period. |
-| First words | 2.1s | The median time from the start of a turn to its first speech, the reply's or the fallback line's. A bridge line covers the wait but is not the first words. |
+| First words | 2.1 s | The median time from the start of a turn to its first speech, the reply's or the fallback line's. A bridge line covers the wait but is not the first words. |
 | Turns that hit the time limit | 3 of 380 | Turns that reached the [turn limit](#bridge-lines-and-the-turn-limit) before they spoke, out of the period's turns on calls. |
 | Interruptions | 0.4 per call | Turns whose reply the caller spoke over, cut off while it streamed or after it finished, per call. |
 | Asked for a callback | 4 of 42 calls | Calls in which a turn's [outcome](#outcomes) was `callback_requested`, counted once per call however many of its turns asked. |

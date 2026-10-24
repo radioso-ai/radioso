@@ -8,7 +8,7 @@ import {
   formatMetricSubtext,
   formatMetricValue,
   formatRate,
-  formatVoiceFirstSpeech,
+  formatDuration,
   formatVoiceInterruptionRate,
   formatVoiceCallbackCalls,
   formatVoiceTurnLimit,
@@ -208,13 +208,14 @@ describe('formatting', () => {
 })
 
 describe('voice stats formatting', () => {
-  it('prints the first-speech median in the duration style the turn flow uses', () => {
-    expect(formatVoiceFirstSpeech(2100)).toBe('2.1s')
-    expect(formatVoiceFirstSpeech(640)).toBe('640ms')
+  it('prints a duration in the Quality page style: ms under a second, one decimal under ten, whole seconds above', () => {
+    expect(formatDuration(640)).toBe('640 ms')
+    expect(formatDuration(2100)).toBe('2.1 s')
+    expect(formatDuration(12_400)).toBe('12 s')
   })
 
-  it('says there is no first-speech reading when no turn recorded one', () => {
-    expect(formatVoiceFirstSpeech(null)).toBe('—')
+  it('says there is no duration when none was recorded', () => {
+    expect(formatDuration(null)).toBe('—')
   })
 
   it('reports turns that hit the time limit as a count of a count', () => {
@@ -255,7 +256,7 @@ describe('voice stats formatting', () => {
 
     expect(voiceStatsRows(voice)).toEqual([
       { label: 'Calls', value: '42' },
-      { label: 'First words', value: '2.1s' },
+      { label: 'First words', value: '2.1 s' },
       { label: 'Turns that hit the time limit', value: '3 of 380' },
       { label: 'Interruptions', value: '0.4 per call' },
       { label: 'Asked for a callback', value: '4 of 42 calls' },

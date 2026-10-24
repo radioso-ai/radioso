@@ -6,7 +6,6 @@ import {
   type QualityStatsWindow,
   type QualityVoiceStats,
 } from '@/lib/api-quality'
-import { formatStageDuration } from '@/lib/activity-stage-presentation'
 
 export { QUALITY_STATS_RANGES }
 
@@ -297,9 +296,20 @@ export const deltaTrend = (delta: QualityDelta): 'up' | 'down' | 'flat' | null =
   }
 }
 
-/** The median in the dashboard's duration style (2100 -> "2.1s"); "—" when no turn recorded a first-speech time. */
-export const formatVoiceFirstSpeech = (medianMs: number | null): string =>
-  medianMs === null ? '—' : formatStageDuration(medianMs)
+/**
+ * A duration as the Quality page shows every one, turn latency and the Voice card's first words:
+ * "450 ms" under a second, "2.1 s" under ten, "12 s" above; "—" when none was recorded.
+ */
+export const formatDuration = (durationMs: number | null): string => {
+  if (durationMs === null) {
+    return '—'
+  }
+  if (durationMs < 1000) {
+    return `${durationMs} ms`
+  }
+  const seconds = durationMs / 1000
+  return `${seconds >= 10 ? Math.round(seconds) : seconds.toFixed(1)} s`
+}
 
 /** "<turns that hit the limit> of <turns>", using the same count formatting as the health tiles. */
 export const formatVoiceTurnLimit = (turnLimitTurns: number, turns: number): string =>
@@ -329,7 +339,7 @@ interface QualityVoiceStatsRow {
 /** The Voice card's rows, in display order: current-window counts, with no delta against the previous window. */
 export const voiceStatsRows = (voice: QualityVoiceStats): QualityVoiceStatsRow[] => [
   { label: 'Calls', value: formatCount(voice.calls) },
-  { label: 'First words', value: formatVoiceFirstSpeech(voice.firstSpeechMedianMs) },
+  { label: 'First words', value: formatDuration(voice.firstSpeechMedianMs) },
   { label: 'Turns that hit the time limit', value: formatVoiceTurnLimit(voice.turnLimitTurns, voice.turns) },
   { label: 'Interruptions', value: formatVoiceInterruptionRate(voice.interruptions, voice.calls) },
   { label: 'Asked for a callback', value: formatVoiceCallbackCalls(voice.callbackCalls, voice.calls) },

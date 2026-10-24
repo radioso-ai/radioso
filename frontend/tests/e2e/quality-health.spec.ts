@@ -374,7 +374,7 @@ test("the health row shows a Voice section when the backend reports voice activi
   await expect(voiceSection.getByText("Calls", { exact: true })).toBeVisible();
   await expect(voiceSection.getByText("42", { exact: true })).toBeVisible();
   await expect(voiceSection.getByText("First words", { exact: true })).toBeVisible();
-  await expect(voiceSection.getByText("2.1s", { exact: true })).toBeVisible();
+  await expect(voiceSection.getByText("2.1 s", { exact: true })).toBeVisible();
   await expect(voiceSection.getByText("Turns that hit the time limit", { exact: true })).toBeVisible();
   await expect(voiceSection.getByText("3 of 380", { exact: true })).toBeVisible();
   await expect(voiceSection.getByText("Interruptions", { exact: true })).toBeVisible();

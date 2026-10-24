@@ -2447,7 +2447,7 @@ export const createTestDependencies = (overrides: {
   const evalCaseService = new EvalCaseService(evalRepository);
   const evalSuiteService = new EvalSuiteService(evalRepository, evalRunService, logger);
   const qualitySignalsService = {
-    getQualityStats: async () => ({ backlog: {} }),
+    getQualityStats: async () => ({ backlog: {}, voice: null }),
     listLowQualityTurns: async () => ({ items: [], total: 0 }),
   };
   const qualityTriageService = {

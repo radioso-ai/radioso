@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { notFound } from "../../../shared/domain/errors.js";
+import type { QualityVoiceStats } from "../../quality/contracts/index.js";
 
 import { withCopilotActor, type CopilotAuditPort, type CopilotToolDescriptor } from "../contracts.js";
 import type { CopilotTriageLogPort } from "./escalationSources.js";
@@ -19,6 +20,8 @@ const optionalAgentInput = z.object({ agentId: idSchema.optional(), agentName: e
 export interface CopilotQualityStats {
   /** Active-triage counts per signal, all-time — an untriaged turn never ages out of it. */
   readonly backlog: Record<string, number>;
+  /** The window's voice calls, as the tool description names them; null without voice turns. */
+  readonly voice: QualityVoiceStats | null;
 }
 
 /** One reviewable turn, carrying the written evidence the digest ranks and quotes. */

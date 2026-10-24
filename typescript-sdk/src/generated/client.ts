@@ -1,6 +1,6 @@
 import type { InternalClientConfig } from "../core/config.js";
 import { requestJson } from "../core/http.js";
-import type { components } from "./types.js";
+import type { components, operations } from "./types.js";
 
 export type IngestionSettings = components["schemas"]["IngestionSettings"];
 export type UpdateIngestionSettingsRequest = components["schemas"]["UpdateIngestionSettingsRequest"];
@@ -74,6 +74,9 @@ export interface ChatHistoryListQuery extends PaginationQuery {
   sourceScope?: "end_user" | "operator_test" | "all";
   ownership?: "human_owned";
 }
+
+/** The merged history filters plus `q`, a text search over conversation titles and first messages. */
+export type HistoryQueryRequest = operations["queryHistory"]["requestBody"]["content"]["application/json"];
 
 export interface VisitorConversationsQuery extends PaginationQuery {
   exclude?: string;
@@ -314,6 +317,15 @@ export class GeneratedRadiosoClient {
       method: "GET",
       path: "/api/v1/history",
       query: query as Record<string, string | number | boolean | null | undefined> | undefined,
+    });
+  }
+
+  /** Searches the merged history. The search text travels in the body, out of request logs. */
+  queryHistory(body: HistoryQueryRequest): Promise<HistoryItemsResponse> {
+    return requestJson(this.config, {
+      method: "POST",
+      path: "/api/v1/history/query",
+      body,
     });
   }
 

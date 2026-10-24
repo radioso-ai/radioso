@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import { Writable } from "node:stream";
-import { describe, expect, it, vi } from "vitest";
+import { Client } from "pg";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { getEnv } from "../../src/app/config/env.js";
 import { Database } from "../../src/shared/infra/database.js";
@@ -241,6 +242,34 @@ describe("database configuration", () => {
     stubPoolQuery(database, [], 3);
 
     await expect(database.execute("DELETE FROM sessions WHERE user_id = $1", ["user-1"])).resolves.toBe(3);
+    await database.close();
+  });
+});
+
+// Hosted stacks turn on TLS to Postgres through PGSSLMODE, not through the code or DATABASE_URL
+// (infra/terraform/compute.tf). These pin the pg behaviour that relies on, so a pg upgrade that
+// changes it fails here rather than when Cloud SQL starts refusing unencrypted connections.
+describe("database TLS", () => {
+  const privateIpUrl = "postgres://radioso:secret@10.20.0.3:5432/radioso";
+  const sslForPoolClient = (database: Database): unknown => new Client(database.pool.options).ssl;
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("encrypts without checking the certificate when PGSSLMODE is no-verify, as hosted stacks set it", async () => {
+    vi.stubEnv("PGSSLMODE", "no-verify");
+    const database = new Database(privateIpUrl);
+
+    expect(sslForPoolClient(database)).toEqual({ rejectUnauthorized: false });
+    await database.close();
+  });
+
+  it("connects without TLS when PGSSLMODE is unset, as the local compose stack does", async () => {
+    vi.stubEnv("PGSSLMODE", undefined);
+    const database = new Database(privateIpUrl);
+
+    expect(sslForPoolClient(database)).toBe(false);
     await database.close();
   });
 });

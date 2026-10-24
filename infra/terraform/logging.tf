@@ -3,7 +3,8 @@
 # bucket exists in every project and cannot be created or deleted: applying this adopts it and sets
 # the retention, and destroying it only drops it from state. One stack per project owns it, the
 # same one that owns the project's API enablement, so a second regional stack in that project
-# leaves it alone while its logs land in the same bucket.
+# leaves it alone. That stack's entries land here too unless its foundation root routes them to a
+# bucket in its own region (`regional_log_bucket_enabled` in ../foundation/logging.tf).
 #
 # The `_Default` bucket's location is assumed to be `global`. Before the first apply in a project,
 # confirm it with `gcloud logging buckets describe _Default --location=global --project=<project>`;

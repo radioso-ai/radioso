@@ -294,6 +294,97 @@ resource "google_monitoring_alert_policy" "application_error_rate" {
   }
 }
 
+# --- Are calls answered in time ---
+
+# The voice turn counters are process-local (/metrics, not exported to Cloud Monitoring), so these
+# metrics count the backend's warn lines for a voice turn that ended at the turn limit and for one
+# the voice runtime abandoned. `jsonPayload.msg` is Pino's message key.
+resource "google_logging_metric" "voice_turn_limit" {
+  count = local.monitoring_enabled && var.deploy_services ? 1 : 0
+
+  name = "${local.resource_name_prefix}-voice-turn-limit"
+  filter = join(" AND ", [
+    "resource.type=\"cloud_run_revision\"",
+    "resource.labels.service_name=\"${local.resource_name_prefix}-backend\"",
+    "jsonPayload.msg=\"Voice turn reached the turn limit\"",
+  ])
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    unit        = "1"
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_logging_metric" "voice_turn_abandoned" {
+  count = local.monitoring_enabled && var.deploy_services ? 1 : 0
+
+  name = "${local.resource_name_prefix}-voice-turn-abandoned"
+  filter = join(" AND ", [
+    "resource.type=\"cloud_run_revision\"",
+    "resource.labels.service_name=\"${local.resource_name_prefix}-backend\"",
+    "jsonPayload.msg=\"Voice turn abandoned before it finished\"",
+  ])
+
+  metric_descriptor {
+    metric_kind = "DELTA"
+    value_type  = "INT64"
+    unit        = "1"
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+resource "google_monitoring_alert_policy" "voice_turn_health" {
+  count = local.monitoring_enabled && var.deploy_services ? 1 : 0
+
+  display_name = "${local.resource_name_prefix} voice turn health"
+  combiner     = "OR"
+
+  dynamic "conditions" {
+    for_each = {
+      turn_limit = {
+        display_name = "Voice turns hitting the turn limit"
+        metric_name  = google_logging_metric.voice_turn_limit[0].name
+        threshold    = var.monitoring_voice_turn_limit_threshold
+      }
+      abandoned = {
+        display_name = "Voice turns abandoned before they finish"
+        metric_name  = google_logging_metric.voice_turn_abandoned[0].name
+        threshold    = var.monitoring_voice_abandoned_turn_threshold
+      }
+    }
+
+    content {
+      display_name = conditions.value.display_name
+
+      condition_threshold {
+        filter = join(" AND ", [
+          "metric.type=\"logging.googleapis.com/user/${conditions.value.metric_name}\"",
+          "resource.type=\"cloud_run_revision\"",
+        ])
+        comparison      = "COMPARISON_GT"
+        threshold_value = conditions.value.threshold
+        duration        = "0s"
+
+        aggregations {
+          alignment_period     = "900s"
+          per_series_aligner   = "ALIGN_SUM"
+          cross_series_reducer = "REDUCE_SUM"
+        }
+      }
+    }
+  }
+
+  notification_channels = local.notification_channel_ids
+  depends_on            = [google_project_service.apis]
+  documentation {
+    content = "More than ${var.monitoring_voice_turn_limit_threshold} voice turns hit the turn limit, or more than ${var.monitoring_voice_abandoned_turn_threshold} were abandoned by the voice runtime before they finished, in fifteen minutes; the incident names the condition. Either way callers are waiting too long for answers: a turn at the limit spoke the fallback line (or kept the caller waiting without one), and an abandoned turn is one the runtime gave up on. Search the backend's logs for \"Voice turn reached the turn limit\" or \"Voice turn abandoned before it finished\": each line carries agentId, vendor, conversationId, durationMs and result, never what was said. ${local.alert_documentation}"
+  }
+}
+
 # --- Can it still reach its own state ---
 
 resource "google_monitoring_alert_policy" "cloudsql_saturation" {

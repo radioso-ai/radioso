@@ -1,7 +1,7 @@
 ---
 title: "Monitoring And Alerts"
 description: "Alert on a Radioso deployment: which signals exist, how to reach them through Prometheus metrics and the ops event feed, and example alert rules that work on any host."
-last_updated: 2026-10-13
+last_updated: 2026-10-24
 ---
 
 # Monitoring And Alerts
@@ -23,6 +23,8 @@ Radioso emits signals through standard interfaces — a Prometheus-compatible me
 | Is inbound email stuck past its processing deadline | `radioso_email_backlog{table="inbound_events",state="pending"}` | `/metrics` |
 | Is the email webhook being forged or misconfigured | `radioso_email_webhook_requests_total{result=~"bad_signature\|stale_timestamp"}` | `/metrics` |
 | Did an email sending domain stop verifying | `radioso_email_domain_readiness_transitions_total{capability="sending",to!="verified"}` | `/metrics` |
+| Are voice turns hitting the turn limit | `radioso_voice_turn_limit_total` | `/metrics` |
+| Are voice turns being abandoned before they finish | `radioso_voice_turn_abandoned_total` | `/metrics` |
 | Are email sends piling up with no resolved outcome | `radioso_email_send_intents_total{state="uncertain"}` | `/metrics` |
 | Is the email bounce rate spiking | `radioso_email_send_intents_total{state="bounced"}` against `{state="accepted"}` | `/metrics` |
 | Did someone sign up, did a conversation finish | `account.registered`, `chat.completed` | [ops event feed](ops-event-feed.md) |
@@ -131,6 +133,16 @@ groups:
         expr: increase(radioso_email_domain_readiness_transitions_total{capability="sending",to!="verified"}[15m]) > 0
         annotations:
           summary: "An email sending domain lost its verified status"
+
+      - alert: RadiosoVoiceTurnLimitReached
+        expr: increase(radioso_voice_turn_limit_total[15m]) > 5
+        annotations:
+          summary: "Voice turns are hitting the turn limit: callers wait too long for answers"
+
+      - alert: RadiosoVoiceTurnAbandoned
+        expr: increase(radioso_voice_turn_abandoned_total[15m]) > 5
+        annotations:
+          summary: "The voice runtime is abandoning turns before they finish"
 
       - alert: RadiosoEmailSendUncertain
         expr: increase(radioso_email_send_intents_total{state="uncertain"}[1h]) > 0

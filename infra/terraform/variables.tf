@@ -925,6 +925,28 @@ variable "monitoring_scheduler_failure_threshold" {
   default     = 0
 }
 
+variable "monitoring_voice_turn_limit_threshold" {
+  description = "Voice turns on the backend service that hit the turn limit in fifteen minutes that trigger the voice turn health alert."
+  type        = number
+  default     = 5
+
+  validation {
+    condition     = var.monitoring_voice_turn_limit_threshold >= 1 && floor(var.monitoring_voice_turn_limit_threshold) == var.monitoring_voice_turn_limit_threshold
+    error_message = "monitoring_voice_turn_limit_threshold must be a whole number of at least 1."
+  }
+}
+
+variable "monitoring_voice_abandoned_turn_threshold" {
+  description = "Voice turns on the backend service abandoned before finishing in fifteen minutes that trigger the voice turn health alert."
+  type        = number
+  default     = 5
+
+  validation {
+    condition     = var.monitoring_voice_abandoned_turn_threshold >= 1 && floor(var.monitoring_voice_abandoned_turn_threshold) == var.monitoring_voice_abandoned_turn_threshold
+    error_message = "monitoring_voice_abandoned_turn_threshold must be a whole number of at least 1."
+  }
+}
+
 variable "container_health_probes_enabled" {
   description = "Whether the backend and MCP Cloud Run services probe their health routes for startup and liveness. Enabling this makes a revision that boots but cannot serve fail its rollout instead of receiving traffic."
   type        = bool

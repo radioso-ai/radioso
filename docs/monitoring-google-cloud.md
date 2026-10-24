@@ -1,7 +1,7 @@
 ---
 title: "Monitoring On Google Cloud"
-description: "Terraform-managed Cloud Monitoring alerting for a Radioso deployment on Google Cloud: uptime check, alert policies, log-based error metric, and Cloud Run health probes."
-last_updated: 2026-09-06
+description: "Terraform-managed Cloud Monitoring alerting for a Radioso deployment on Google Cloud: uptime check, alert policies, log-based error and voice turn metrics, and Cloud Run health probes."
+last_updated: 2026-10-24
 ---
 
 # Monitoring On Google Cloud
@@ -27,7 +27,7 @@ MONITORING_ENABLED=true
 MONITORING_NOTIFICATION_EMAILS=ops@your-domain.example,oncall@your-domain.example
 ```
 
-Either way, Terraform creates one email notification channel per address, an uptime check, a log-based metric, and the alert policies below. Every resource is named from the stack prefix (`radioso-live-…`), so two stacks sharing one project alert independently.
+Either way, Terraform creates one email notification channel per address, an uptime check, the log-based metrics, and the alert policies below. Every resource is named from the stack prefix (`radioso-live-…`), so two stacks sharing one project alert independently.
 
 A `precondition` fails the plan if you enable alerting with no notification target, because alerting that applies cleanly and stays silent is worse than none.
 
@@ -64,6 +64,10 @@ Every policy delivers to the union of the email channels and this list.
 **Task queue backlog.** Fires when a Cloud Tasks queue holds more than `monitoring_queue_depth_threshold` tasks (default 100) for fifteen minutes. While a queue is stuck, documents stop being indexed and conversation actions stop being delivered, and neither produces a user-visible error.
 
 **Scheduler job failures.** A log-based metric counts error-level Cloud Scheduler `AttemptFinished` execution logs. Those jobs are the recovery path for document processing, website crawls, and conversation-action delivery, so a quiet failure here surfaces later as a stalled queue.
+
+**Voice turn health.** Two log-based metrics on the backend service feed one policy, and either condition opens it. The turn-limit condition fires when more than `monitoring_voice_turn_limit_threshold` (default 5) voice turns hit the turn limit in fifteen minutes: the caller waited out the limit and heard the fallback line, or kept waiting when the agent has none for the call's language. The abandoned condition fires when more than `monitoring_voice_abandoned_turn_threshold` (default 5) voice turns were abandoned in fifteen minutes: the voice runtime gave up on the request before the turn finished, which is what a runtime timing out looks like. A turn abandoned after it hit the limit counts as abandoned.
+
+Both thresholds count turns per window rather than a share of all voice turns, so a busy deployment wants a higher number than a quiet one; a true ratio would need a third log metric counting every voice turn. To see the turns behind an incident, search the backend's logs for `Voice turn reached the turn limit` or `Voice turn abandoned before it finished`. Each line carries `agentId`, `vendor`, `conversationId`, `durationMs` and `result`, never what was said. The Quality page's Voice card shows the same turns as a share of the period's calls; see [Call numbers on the Quality page](voice-channel.md#call-numbers-on-the-quality-page).
 
 ## Health probes
 

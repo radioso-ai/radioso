@@ -744,7 +744,9 @@ received), `handoffReason` (when the turn handed off) and
 `storedPartialReply: true` (when chat kept the heard part of its cut-off
 reply), plus `bridged`,
 `turnLimitReached` and `fallbackSpoken` when the voice policy ran, with
-`firstSpeechMs` once its first speech left,
+`firstSpeechMs`, the value the turn's facts keep (null when nothing was
+spoken, the response is not streamed, or a switch follow-up holds no switched
+turn here),
 `turnLanguage` (the BCP 47 tag the lines were picked in) with
 `languageSource` (`vendor_detected`, `turn_field`, `session`,
 `agent_default`, `builtin_default`) on a turn that ran with its lines (the

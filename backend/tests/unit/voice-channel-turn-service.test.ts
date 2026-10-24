@@ -1123,13 +1123,16 @@ describe("VoiceTurnService", () => {
 
       it("keeps no first-speech time for a response that is not streamed, which the runtime hears only at its outcome", async () => {
         const notes = fakeNotes();
+        const logger = fakeLogger();
 
-        await runWithClock(serviceWith(slowReply(3_000), { notes }), input({ streamsSpeech: false }));
+        await runWithClock(serviceWith(slowReply(3_000), { notes, logger }), input({ streamsSpeech: false }));
 
         expect(notes.turnFacts).toHaveBeenCalledWith(expect.objectContaining({
           assistantMessageId,
           facts: { firstSpeechMs: null, bridged: true, turnLimitReached: false, outcome: "continue" },
         }));
+        // The log line reports the same first-speech time the facts keep.
+        expect(logger.info).toHaveBeenCalledWith(expect.objectContaining({ firstSpeechMs: null, bridged: true }), "Voice turn finished");
       });
 
       it("keeps the turn limit on the reply the limit cut off, once the unheard reply is stored", async () => {

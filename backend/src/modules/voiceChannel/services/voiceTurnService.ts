@@ -757,7 +757,8 @@ export class VoiceTurnService implements VoiceTurnPort {
       ...(outcome ? { outcome: outcome.kind } : {}),
       ...(handoffReason ? { handoffReason } : {}),
       ...(chatTurnOf(record).reply?.partial ? { storedPartialReply: true } : {}),
-      ...record.policy,
+      // The first-speech time the turn's facts keep, by the same rule.
+      ...(record.policy ? { ...record.policy, firstSpeechMs: firstSpeechMsOf(record) } : {}),
       ...languageFields(record.language, input),
       ...(record.languageSwitch ? { languageSwitch: record.languageSwitch } : {}),
     };

@@ -160,7 +160,7 @@ export class OperatorReplySpeaker {
     const conversationId = this.taken!.conversationId;
     if (audit) {
       await this.dependencies.withinTimeout(audit({ workspaceId: this.session.workspaceId, conversationId, messageIds: marked })).catch((error: unknown) => {
-        this.dependencies.logger.warn(this.fields(conversationId, error), "Voice turn note could not be recorded");
+        this.dependencies.logger.warn({ ...this.fields(conversationId, error), note: "operator_reply_spoken" }, "Voice turn note could not be recorded");
       });
     }
   }

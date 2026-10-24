@@ -4,6 +4,7 @@ import type {
   ChatStreamEvent,
   OperatorReplySpeechClaims,
   ReplyInterruptionMarker,
+  VoiceTurnFactsRecorder,
 } from "../../modules/chat/contracts/index.js";
 import {
   VoiceRecordingErasureService,
@@ -54,11 +55,13 @@ const voiceProfileSource = (agentRepository: AgentVoiceProfileRepository) => ({
  * reply the conversation no longer holds is not marked and not audited, and the note resolves: a
  * retry would find it no more. (The heard part of a reply cut off mid-stream is stored marked,
  * with its audit event, by chat.) A teammate's replies the turn recorded as spoken are audited (the
- * turn marks them through chat's claims port first). Notes name replies by id and count
- * characters; they never carry what was said.
+ * turn marks them through chat's claims port first). A finished turn's facts are kept on the reply
+ * it stored, with no audit event; a reply the conversation no longer holds keeps none, and the
+ * note resolves. Notes name replies by id and carry counts, timings and closed values; they never
+ * carry what was said.
  */
 export const createVoiceTurnNotes = (deps: {
-  replies: ReplyInterruptionMarker;
+  replies: ReplyInterruptionMarker & VoiceTurnFactsRecorder;
   auditService: Pick<AuditPort, "record">;
   logger: Pick<AppLogger, "warn">;
 }): VoiceTurnNotes => ({
@@ -80,6 +83,15 @@ export const createVoiceTurnNotes = (deps: {
     deps.auditService.record({ workspaceId, eventType: "voice.reply_replayed", eventStatus: "success", metadata }),
   operatorRepliesSpoken: ({ workspaceId, ...metadata }) =>
     deps.auditService.record({ workspaceId, eventType: "voice.operator_reply_spoken", eventStatus: "success", metadata }),
+  turnFacts: async ({ workspaceId, conversationId, assistantMessageId, facts }) => {
+    const kept = await deps.replies.recordVoiceTurnFacts({ workspaceId, conversationId, messageId: assistantMessageId, ...facts });
+    if (!kept) {
+      deps.logger.warn(
+        { workspaceId, conversationId, messageId: assistantMessageId },
+        "Voice reply to keep the turn's facts on was not found",
+      );
+    }
+  },
 });
 
 /**
@@ -88,7 +100,7 @@ export const createVoiceTurnNotes = (deps: {
  * agent channel runs, the agent's voice settings and the conversation's routine state and owner for
  * the turn policy, the teammate replies the caller has not heard, and notes on a turn's stored
  * replies. The message repository is chat's side of the replies: it reads a teammate's pending
- * replies, marks them spoken, and marks an interrupted one. Vendor adapters mount over this port
+ * replies, marks them spoken, marks an interrupted one, and keeps each turn's facts. Vendor adapters mount over this port
  * in the HTTP layer.
  */
 /** The conversation's newest messages of the roles asked for, as the message store lists them, oldest first. */
@@ -137,7 +149,7 @@ export const createVoiceChannelComposition = (deps: {
   agentRepository: AgentVoiceProfileRepository;
   routineStates: { loadActive(input: { sessionId: string }): Promise<unknown> };
   conversationOwnership: ConversationOwnershipReader;
-  replies: ReplyInterruptionMarker & OperatorReplySpeechClaims & RecentMessages;
+  replies: ReplyInterruptionMarker & VoiceTurnFactsRecorder & OperatorReplySpeechClaims & RecentMessages;
   auditService: Pick<AuditPort, "record">;
   metricsRegistry: MetricsRegistry | null;
   logger: AppLogger;

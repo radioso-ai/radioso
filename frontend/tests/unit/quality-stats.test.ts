@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import type { QualityStatsBucket } from '@/lib/api'
+import type { QualityStatsBucket, QualityVoiceStats } from '@/lib/api'
 import {
   computeQualityDelta,
   deltaTrend,
@@ -8,6 +8,10 @@ import {
   formatMetricSubtext,
   formatMetricValue,
   formatRate,
+  formatDuration,
+  formatVoiceInterruptionRate,
+  formatVoiceCallbackCalls,
+  formatVoiceTurnLimit,
   isSampleReportable,
   MIN_RATE_SAMPLE,
   previousRangeLabel,
@@ -15,6 +19,7 @@ import {
   rangeLabel,
   sparklineSpanLabel,
   toSparklineSeries,
+  voiceStatsRows,
   type QualityMetricSample,
 } from '@/lib/quality-stats'
 
@@ -199,5 +204,78 @@ describe('formatting', () => {
     expect(rangeLabel('7d')).toBe('last 7 days')
     expect(rangeLabel('30d')).toBe('last 30 days')
     expect(previousRangeLabel('30d')).toBe('vs previous 30 days')
+  })
+})
+
+describe('voice stats formatting', () => {
+  it('prints a duration in the Quality page style: ms under a second, one decimal under ten, whole seconds above', () => {
+    expect(formatDuration(640)).toBe('640 ms')
+    expect(formatDuration(2100)).toBe('2.1 s')
+    expect(formatDuration(12_400)).toBe('12 s')
+  })
+
+  it('says there is no duration when none was recorded', () => {
+    expect(formatDuration(null)).toBe('—')
+  })
+
+  it('reports turns that hit the time limit as a count of a count', () => {
+    expect(formatVoiceTurnLimit(3, 380)).toBe('3 of 380')
+  })
+
+  it('reports interruptions per call with one decimal', () => {
+    expect(formatVoiceInterruptionRate(15, 42)).toBe('0.4 per call')
+  })
+
+  it('says exactly "0 per call" when there are no interruptions, with no decimal', () => {
+    expect(formatVoiceInterruptionRate(0, 42)).toBe('0 per call')
+  })
+
+  it('says "<0.1 per call" when a few interruptions round to zero, and "0.1 per call" once they reach it', () => {
+    expect(formatVoiceInterruptionRate(1, 30)).toBe('<0.1 per call')
+    expect(formatVoiceInterruptionRate(3, 30)).toBe('0.1 per call')
+  })
+
+  it('does not divide by zero when there are no calls', () => {
+    expect(formatVoiceInterruptionRate(0, 0)).toBe('0 per call')
+  })
+
+  it('reports the calls that asked for a callback out of the period\'s calls', () => {
+    expect(formatVoiceCallbackCalls(4, 42)).toBe('4 of 42 calls')
+    expect(formatVoiceCallbackCalls(0, 1)).toBe('0 of 1 call')
+  })
+
+  it('orders the Voice card rows label by label', () => {
+    const voice: QualityVoiceStats = {
+      calls: 42,
+      turns: 380,
+      firstSpeechMedianMs: 2100,
+      turnLimitTurns: 3,
+      interruptions: 15,
+      callbackCalls: 4,
+    }
+
+    expect(voiceStatsRows(voice)).toEqual([
+      { label: 'Calls', value: '42' },
+      { label: 'First words', value: '2.1 s' },
+      { label: 'Turns that hit the time limit', value: '3 of 380' },
+      { label: 'Interruptions', value: '0.4 per call' },
+      { label: 'Asked for a callback', value: '4 of 42 calls' },
+    ])
+  })
+
+  it('shows a null first-speech reading in the rows when no turn recorded one', () => {
+    const voice: QualityVoiceStats = {
+      calls: 5,
+      turns: 20,
+      firstSpeechMedianMs: null,
+      turnLimitTurns: 0,
+      interruptions: 0,
+      callbackCalls: 0,
+    }
+
+    expect(voiceStatsRows(voice).find((row) => row.label === 'First words')).toEqual({
+      label: 'First words',
+      value: '—',
+    })
   })
 })

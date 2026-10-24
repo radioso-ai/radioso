@@ -1,9 +1,12 @@
+import { VOICE_TURN_FACTS_METADATA_KEY, type VoiceTurnFacts } from "../chat/contracts/index.js";
+import { VOICE_SOURCE_CHANNEL } from "../../shared/domain/conversationSource.js";
 import type {
   QualitySignalId,
   QualityStatsBucket,
   QualityStatsMetric,
   QualityStatsRange,
   QualityStatsWindow,
+  QualityVoiceStats,
 } from "./contracts/index.js";
 import { QUALITY_SIGNAL_IDS } from "./contracts/index.js";
 import {
@@ -21,6 +24,7 @@ import {
   buildEffectiveTriageStateExpression,
   buildFeedbackExistsPredicate,
   buildSignalPredicate,
+  buildConversationTurnFilters,
   buildSkillStatusPredicate,
   buildTurnPopulationFilters,
   type SqlQuery,
@@ -32,14 +36,14 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 const RANGE_DAYS: Record<QualityStatsRange, number> = { "7d": 7, "30d": 30 };
 
-export interface QualityStatsPeriod {
+interface QualityStatsPeriod {
   /** Inclusive. */
   from: Date;
   /** Exclusive. */
   to: Date;
 }
 
-export interface QualityStatsWindows {
+interface QualityStatsWindows {
   current: QualityStatsPeriod;
   previous: QualityStatsPeriod;
   /**
@@ -249,7 +253,7 @@ export const summarizeQualityStatsWindow = (
 ): QualityStatsWindow =>
   toQualityStatsWindow(period, sumQualityStatsRows(rowsWithinPeriod(dailyRows, period)));
 
-export interface QualityStatsQueryInput extends TurnPopulationScope {
+interface QualityStatsQueryInput extends TurnPopulationScope {
   window: QualityStatsPeriod;
   tuples: GroundedOutcomeTuples;
 }
@@ -306,7 +310,7 @@ export const buildQualityStatsDailyQuery = (input: QualityStatsQueryInput): SqlQ
   };
 };
 
-export interface QualityBacklogQueryInput extends TurnPopulationScope {
+interface QualityBacklogQueryInput extends TurnPopulationScope {
   tuples: GroundedOutcomeTuples;
 }
 
@@ -341,7 +345,7 @@ export const buildQualityStatsBacklogQuery = (input: QualityBacklogQueryInput): 
   };
 };
 
-export interface QualityResolutionBreakdownQueryInput extends TurnPopulationScope {
+interface QualityResolutionBreakdownQueryInput extends TurnPopulationScope {
   window: QualityStatsPeriod;
 }
 
@@ -372,5 +376,105 @@ export const buildQualityResolutionBreakdownQuery = (
        GROUP BY tr.state, tr.resolution_reason
        ORDER BY tr.state, reason`,
     params,
+  };
+};
+
+interface QualityVoiceStatsQueryInput {
+  workspaceId: string;
+  agentId?: string;
+  window: QualityStatsPeriod;
+}
+
+/** The voice statement's population: the conversation turns pinned to the voice channel, in the window. */
+const buildVoiceTurnWindowFilters = (input: QualityVoiceStatsQueryInput, params: unknown[]): string[] => [
+  ...buildConversationTurnFilters(
+    { workspaceId: input.workspaceId, agentId: input.agentId, channel: VOICE_SOURCE_CHANNEL },
+    params,
+  ),
+  `m.created_at >= ${bindParam(params, input.window.from.toISOString())}::timestamptz`,
+  `m.created_at < ${bindParam(params, input.window.to.toISOString())}::timestamptz`,
+];
+
+/**
+ * Whether the voice statement's population holds any turn: the same filters, stopping at the
+ * first row. The stats ask this before the voice statement so a workspace without calls skips its
+ * aggregate over the window's turns; it stays because that is the fourth window scan a text-only
+ * workspace would otherwise pay on every stats call.
+ */
+export const buildQualityVoiceActivityQuery = (input: QualityVoiceStatsQueryInput): SqlQuery => {
+  const params: unknown[] = [];
+  const filters = buildVoiceTurnWindowFilters(input, params);
+  return {
+    text: `SELECT EXISTS (
+         SELECT 1
+       ${TURN_POPULATION_SOURCE}
+       WHERE ${filters.join("\n         AND ")}
+       ) AS has_voice_activity`,
+    params,
+  };
+};
+
+/** The voice numbers' one row, counts as text to dodge int8-as-string. */
+export interface QualityVoiceStatsRow {
+  call_count: string | number;
+  turn_count: string | number;
+  first_speech_median_ms: string | number | null;
+  turn_limit_count: string | number;
+  interruption_count: string | number;
+  callback_call_count: string | number;
+}
+
+type VoiceTurnOutcome = NonNullable<VoiceTurnFacts["outcome"]>;
+
+/** The outcome by which a call counts as one that asked for a callback, at any of its turns. */
+const CALLBACK_OUTCOME: VoiceTurnOutcome = "callback_requested";
+
+/**
+ * The window's voice numbers in one scan of the conversation turns pinned to the voice channel,
+ * the heard part of a reply cut off mid-stream included. The facts are read by the
+ * chat contract's field names under `metadata_json.voice`; a value of another JSON type reads as
+ * none rather than failing a cast for the whole response. A statement of its own: it answers a
+ * different population than the windowed AI-quality numbers, so there is no total to agree with.
+ */
+export const buildQualityVoiceStatsQuery = (input: QualityVoiceStatsQueryInput): SqlQuery => {
+  const params: unknown[] = [];
+  const filters = buildVoiceTurnWindowFilters(input, params);
+
+  const facts = `(m.metadata_json -> ${bindParam(params, VOICE_TURN_FACTS_METADATA_KEY)}::text)`;
+  const fact = (field: keyof VoiceTurnFacts): string => `(${facts} -> ${bindParam(params, field)}::text)`;
+  const firstSpeech = fact("firstSpeechMs");
+  const turnLimit = fact("turnLimitReached");
+  const askedForCallback = `${fact("outcome")} = to_jsonb(${bindParam(params, CALLBACK_OUTCOME)}::text)`;
+
+  return {
+    text: `SELECT
+         COUNT(DISTINCT m.conversation_id)::text AS call_count,
+         COUNT(*)::text AS turn_count,
+         percentile_cont(0.5) WITHIN GROUP (ORDER BY
+           CASE WHEN jsonb_typeof(${firstSpeech}) = 'number' THEN (${firstSpeech})::text::double precision END
+         ) AS first_speech_median_ms,
+         COUNT(*) FILTER (WHERE ${turnLimit} = 'true'::jsonb)::text AS turn_limit_count,
+         COUNT(*) FILTER (WHERE jsonb_typeof(m.metadata_json -> 'interruption') = 'object')::text AS interruption_count,
+         COUNT(DISTINCT m.conversation_id) FILTER (WHERE ${askedForCallback})::text AS callback_call_count
+       ${TURN_POPULATION_SOURCE}
+       WHERE ${filters.join("\n         AND ")}`,
+    params,
+  };
+};
+
+/** The voice numbers from their row; null when the window holds no voice turn. */
+export const toQualityVoiceStats = (row: QualityVoiceStatsRow | undefined): QualityVoiceStats | null => {
+  const turns = toNumber(row?.turn_count);
+  if (!row || turns === 0) {
+    return null;
+  }
+  const median = row.first_speech_median_ms === null ? null : Number(row.first_speech_median_ms);
+  return {
+    calls: toNumber(row.call_count),
+    turns,
+    firstSpeechMedianMs: median === null || !Number.isFinite(median) ? null : Math.round(median),
+    turnLimitTurns: toNumber(row.turn_limit_count),
+    interruptions: toNumber(row.interruption_count),
+    callbackCalls: toNumber(row.callback_call_count),
   };
 };

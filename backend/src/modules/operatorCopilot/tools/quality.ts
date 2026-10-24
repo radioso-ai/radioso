@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { notFound } from "../../../shared/domain/errors.js";
+import type { QualityVoiceStats } from "../../quality/contracts/index.js";
 
 import { withCopilotActor, type CopilotAuditPort, type CopilotToolDescriptor } from "../contracts.js";
 import type { CopilotTriageLogPort } from "./escalationSources.js";
@@ -19,6 +20,8 @@ const optionalAgentInput = z.object({ agentId: idSchema.optional(), agentName: e
 export interface CopilotQualityStats {
   /** Active-triage counts per signal, all-time — an untriaged turn never ages out of it. */
   readonly backlog: Record<string, number>;
+  /** The window's voice calls, as the tool description names them; null without voice turns. */
+  readonly voice: QualityVoiceStats | null;
 }
 
 /** One reviewable turn, carrying the written evidence the digest ranks and quotes. */
@@ -63,12 +66,14 @@ export interface QualityCopilotToolDependencies {
   readonly qualitySignalsService: CopilotQualitySignalsPort;
 }
 
+const qualitySignalsDescription = "Read workspace quality and needs-attention signals. The summary's `voice` block, when the period had calls, gives the calls, the median time to the first words of a reply, the turns that hit the time limit, the interruptions and the calls that asked for a callback; it is null without calls.";
+
 export const createQualityCopilotTools = (deps: QualityCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {
     name: "quality_signals", shape: "read", verificationCost: () => 0, uiLabel: "Reading quality signals", contributingModule: "quality", dashboardSubject: { type: "quality_turn" }, requiredPermissions: ["workspace.quality.read"],
-    description: "Read workspace quality and needs-attention signals.",
+    description: qualitySignalsDescription,
     inputSchema: optionalAgentInput, outputSchema: z.object({ summary: unknownRecord, needsAttention: z.array(unknownRecord) }),
-    createTool: (context) => ({ name: "quality_signals", description: "Read workspace quality and needs-attention signals.", inputSchema: optionalAgentInput, outputSchema: z.object({ summary: unknownRecord, needsAttention: z.array(unknownRecord) }), invoke: async ({ agentId }) => {
+    createTool: (context) => ({ name: "quality_signals", description: qualitySignalsDescription, inputSchema: optionalAgentInput, outputSchema: z.object({ summary: unknownRecord, needsAttention: z.array(unknownRecord) }), invoke: async ({ agentId }) => {
       const resolvedAgentId = agentId ?? context.pageContext.agentId ?? undefined;
       const [summary, needsAttention] = await Promise.all([
         deps.qualitySignalsService.getQualityStats(context.workspaceId, { range: "30d", ...(resolvedAgentId ? { agentId: resolvedAgentId } : {}) }),
@@ -90,7 +95,7 @@ export const createQualityCopilotTools = (deps: QualityCopilotToolDependencies):
  * `conflict` carries the row that won, because a competing operator's write is an answer Ray
  * has to see rather than an error to retry blindly.
  */
-export interface CopilotQualityTriageRecord {
+interface CopilotQualityTriageRecord {
   readonly state: string;
   readonly version: number;
   readonly resolution: { readonly reason: string; readonly note: string | null } | null;

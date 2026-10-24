@@ -972,6 +972,9 @@ describe("runtime configuration", () => {
     expect(monitoringTf).toContain('"${local.resource_name_prefix}-conversation-retention",');
     const loggingTf = await readFile(new URL("../../../infra/terraform/logging.tf", import.meta.url), "utf8");
     expect(loggingTf).toMatch(/resource "google_logging_project_bucket_config" "default" \{[\s\S]*?count = var\.manage_project_services \? 1 : 0[\s\S]*?bucket_id\s+= "_Default"[\s\S]*?retention_days = 30/);
+    // An environment that keeps its logs in its own region holds them for the same 30 days.
+    const foundationLoggingTf = await readFile(new URL("../../../infra/terraform/foundation/logging.tf", import.meta.url), "utf8");
+    expect(foundationLoggingTf).toMatch(/resource "google_logging_project_bucket_config" "regional" \{[\s\S]*?location\s+= var\.region[\s\S]*?retention_days = 30/);
     // Counted against the jobs actually declared rather than a fixed number: the invariant is
     // that EVERY scheduled push authenticates, and a hardcoded count silently stops checking the
     // job that pushed it past the number.

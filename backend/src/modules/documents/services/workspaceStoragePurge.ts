@@ -26,7 +26,7 @@ const PURGE_BATCHES_PER_RUN = 10;
 /** Deletes in flight at once within a batch. */
 const DELETE_CONCURRENCY = 10;
 
-export const workspaceIdSchema = z.string().uuid();
+const workspaceIdSchema = z.string().uuid();
 
 /**
  * Deletes every object document storage holds for a workspace the database no longer has. The

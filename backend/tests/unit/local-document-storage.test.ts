@@ -117,4 +117,25 @@ describe("LocalDocumentStorage", () => {
       await expect(storage.listWorkspaceObjects({ workspaceId, limit: 10 })).rejects.toThrow();
     }
   });
+
+  it("summarizes a workspace's objects: how many, and when the newest was written", async () => {
+    const { root, storage } = await createStorage();
+    expect(await storage.summarizeWorkspaceObjects({ workspaceId: "workspace-1" }))
+      .toEqual({ objectCount: 0, newestObjectAt: null });
+
+    const older = await upload(storage, "workspace-1", "document-a");
+    const newer = await upload(storage, "workspace-1", "document-b");
+    await fs.utimes(path.join(root, older.objectPath), new Date("2026-01-01T00:00:00Z"), new Date("2026-01-01T00:00:00Z"));
+    await fs.utimes(path.join(root, newer.objectPath), new Date("2026-03-01T00:00:00Z"), new Date("2026-03-01T00:00:00Z"));
+
+    expect(await storage.summarizeWorkspaceObjects({ workspaceId: "workspace-1" }))
+      .toEqual({ objectCount: 2, newestObjectAt: new Date("2026-03-01T00:00:00Z") });
+  });
+
+  it("writes every upload under its workspace's prefix, and refuses a workspace id that would leave it", async () => {
+    const { storage } = await createStorage();
+
+    expect((await upload(storage, "workspace-1", "document-1")).objectPath.startsWith("workspaces/workspace-1/")).toBe(true);
+    await expect(upload(storage, "..", "document-1")).rejects.toThrow();
+  });
 });

@@ -183,8 +183,6 @@ The document worker is where work that outlives a request runs, so run it wherev
 
 A deployment without a running worker still answers chat, but documents stay queued, routine actions are never sent, conversation summaries and titles stop updating, and a deleted workspace's files wait in storage until a worker runs.
 
-Migration `240_orphaned_workspace_storage_sweep.sql` queues one sweep of document storage for files whose workspace the database no longer has, such as those of a workspace deleted on an earlier release. The worker runs it once and queues the same file deletion a workspace deletion does for each such workspace. Before deleting anything, the sweep checks that the store holds the files of a workspace this database has uploaded documents in. A store that fails the check, such as one belonging to another deployment's database, keeps every file, and the worker logs `Orphaned stored-file sweep deleted nothing`. A database restored from a backup taken before that migration runs the sweep again, which is one more reason to restore PostgreSQL and document storage from the same point in time: files of workspaces created after the backup would read as orphaned.
-
 Background jobs live in the `background_jobs` table. A completed job is deleted, so the table holds only work that is waiting, running, or has failed for good. A failed job is retried with a growing delay. After its last attempt it stays for 14 days with its kind, key, attempt count, and the class of the error that stopped it, such as `BackgroundJobTimeoutError` or `AppError [provider_unavailable]`. Its payload is dropped when it fails for good, and neither the table nor your error tracking receives the error's message, because a payload or a message can carry conversation text:
 
 ```sql
@@ -193,6 +191,69 @@ FROM background_jobs
 ORDER BY created_at DESC
 LIMIT 20;
 ```
+
+## Stored files of deleted workspaces
+
+The worker deletes a workspace's files from the store this deployment is configured with: the `DOCUMENT_STORAGE_BUCKET` bucket, or the `DOCUMENT_STORAGE_LOCAL_PATH` folder. Files a workspace left in a bucket the deployment used before stay there. Give each deployment its own bucket or folder. Two deployments sharing one store cannot tell each other's workspaces from deleted ones, and the cleanup below would delete the other deployment's files.
+
+Storage can still hold files whose workspace this database no longer has, such as those of workspaces deleted on an earlier release. `storage:sweep-orphans` finds them and queues the same file deletion a workspace deletion does. It runs only when you run it. Run it from a checkout with the deployment's own backend environment (`DATABASE_URL`, `DOCUMENT_STORAGE_DRIVER`, `DOCUMENT_STORAGE_BUCKET` or `DOCUMENT_STORAGE_LOCAL_PATH`, and storage credentials allowed to list objects).
+
+<Steps>
+### Dry run
+
+```bash
+pnpm --dir backend run storage:sweep-orphans
+```
+
+```text
+Document storage check: verified: the store holds files of this database's workspaces
+Workspace prefixes scanned: 212
+Orphaned workspaces: 9 (1730 objects)
+Kept, workspace exists in this database: 203
+Kept, an object written in the last 24 hours: 0
+Kept, not a canonical workspace id: 0
+Dry run: nothing was queued. Re-run with --apply to queue the sweep.
+```
+
+It reads storage, counts, and changes nothing. A workspace whose newest file is less than a day old is kept, and so is anything under `workspaces/` that is not a lowercase workspace UUID.
+
+### Compare the count with this database's deletions
+
+```sql
+SELECT event_type, count(*) FROM audit_events
+WHERE event_type IN ('workspace.deleted', 'account.delete') AND event_status = 'success'
+GROUP BY event_type;
+```
+
+Each `workspace.deleted` is one workspace, and each `account.delete` is every workspace that organization had. If the orphaned workspaces outnumber what those deletions explain, or appear where nothing was deleted, the store holds another deployment's files: stop. The storage check only proves the store holds some of this database's files, so a shared store passes it.
+
+### Check that deleted files stay recoverable for a while
+
+On Google Cloud Storage, confirm soft delete is on, so a mistaken run can be undone within its window:
+
+```bash
+gcloud storage buckets describe gs://<bucket> --format="value(soft_delete_policy.retentionDurationSeconds)"
+```
+
+An empty answer or `0` means deletions are final. With local storage, back up the folder first.
+
+### Apply
+
+```bash
+pnpm --dir backend run storage:sweep-orphans --apply
+```
+
+The script prints the same counts and queues the sweep, unless the storage check did not pass. The worker then queues one purge per orphaned workspace, and each purge records its `workspace.stored_files.deleted` audit event.
+</Steps>
+
+A purge that failed for good stays in `background_jobs` for 14 days as a dead `documents.workspace_storage_purge` job keyed by the deleted workspace's id; the `workspace.deleted` audit event carries the same id as `deletedWorkspaceId`. Queue it again for that one workspace, dry run first:
+
+```bash
+pnpm --dir backend run storage:sweep-orphans --workspace <workspace id>
+pnpm --dir backend run storage:sweep-orphans --workspace <workspace id> --apply
+```
+
+The script refuses a workspace that exists in this database.
 
 ## Worker incidents
 

@@ -16,7 +16,6 @@ import { WorkspaceRepository } from "../../src/db/repositories/workspaceReposito
 import { AuditService } from "../../src/modules/audit/composition.js";
 import {
   LocalDocumentStorage,
-  ORPHANED_WORKSPACE_STORAGE_SWEEP_JOB,
   WORKSPACE_STORAGE_PURGE_JOB,
   orphanedWorkspaceStorageSweepHandler,
   orphanedWorkspaceStorageSweepRequest,
@@ -38,8 +37,8 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 const quietLogger = () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() });
 
 describeIntegration("workspace stored-file deletion (Postgres)", () => {
-  // A database of its own: migration 240 queues the one-time sweep, and the test reads that job
-  // before any worker in another file could claim it.
+  // A database of its own: the sweep's ownership check reads every workspace's documents, so rows
+  // another file left behind would decide it.
   const testDatabaseName = `workspace_storage_${randomUUID().replaceAll("-", "")}_test`;
   let database: Database;
   let root: string;
@@ -51,7 +50,6 @@ describeIntegration("workspace stored-file deletion (Postgres)", () => {
   let rollingBack: PersonalCredentialLifecycleRepository;
   let owners: DocumentStorageOwnerRepository;
   const wake = { requestDrain: vi.fn(async () => {}) };
-  let queuedByMigration: Array<{ idempotency_key: string | null; payload: unknown; status: string }>;
 
   beforeAll(async () => {
     const admin = new pg.Pool({ connectionString: integrationDatabaseUrl });
@@ -66,13 +64,6 @@ describeIntegration("workspace stored-file deletion (Postgres)", () => {
     database = new Database(url.toString());
     await runAllTestMigrations(database);
 
-    queuedByMigration = await database.query(
-      "SELECT idempotency_key, payload, status FROM background_jobs WHERE kind = $1",
-      [ORPHANED_WORKSPACE_STORAGE_SWEEP_JOB.kind],
-    );
-    // Each test queues its own sweep; the migration's would otherwise run inside the first drain.
-    await database.query("DELETE FROM background_jobs WHERE kind = $1", [ORPHANED_WORKSPACE_STORAGE_SWEEP_JOB.kind]);
-
     root = await fs.mkdtemp(path.join(os.tmpdir(), "radioso-workspace-storage-"));
     storage = new LocalDocumentStorage(root);
     const workerStorage: DocumentStorageAdapter = {
@@ -84,6 +75,7 @@ describeIntegration("workspace stored-file deletion (Postgres)", () => {
       },
       listWorkspaceObjects: (input) => storage.listWorkspaceObjects(input),
       listStoredWorkspaces: (input) => storage.listStoredWorkspaces(input),
+      summarizeWorkspaceObjects: (input) => storage.summarizeWorkspaceObjects(input),
     };
 
     const logger = quietLogger();
@@ -173,14 +165,6 @@ describeIntegration("workspace stored-file deletion (Postgres)", () => {
     metadata: {},
   });
 
-  it("migration 240 leaves the one-time orphan sweep queued for the worker", () => {
-    const expected = orphanedWorkspaceStorageSweepRequest(null);
-    expect(queuedByMigration).toEqual([
-      { idempotency_key: expected.idempotencyKey, payload: expected.payload, status: "pending" },
-    ]);
-    expect(ORPHANED_WORKSPACE_STORAGE_SWEEP_JOB.payload.safeParse(queuedByMigration[0]?.payload).success).toBe(true);
-  });
-
   it("commits a workspace's stored-file purge with its deletion, and the worker deletes the files after the commit", async () => {
     const { accountId, workspaceIds: [deleted, kept] } = await seedAccount(2);
     await uploadDocument(deleted);
@@ -266,7 +250,10 @@ describeIntegration("workspace stored-file deletion (Postgres)", () => {
     const { workspaceIds: [live] } = await seedAccount(1);
     await uploadDocument(live);
     const orphaned = randomUUID();
-    await storage.upload({ workspaceId: orphaned, documentId: randomUUID(), filename: "a", mimeType: "text/plain", buffer: Buffer.from("a") });
+    const left = await storage.upload({ workspaceId: orphaned, documentId: randomUUID(), filename: "a", mimeType: "text/plain", buffer: Buffer.from("a") });
+    // Left behind two days ago: the sweep keeps a prefix whose newest object is under a day old.
+    const twoDaysAgo = new Date(Date.now() - 2 * 24 * 60 * 60 * 1_000);
+    await fs.utimes(path.join(root, left.objectPath), twoDaysAgo, twoDaysAgo);
 
     await new DefaultBackgroundJobQueue({
       writer: new BackgroundJobRepository(database.kysely),

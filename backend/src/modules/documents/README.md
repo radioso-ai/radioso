@@ -104,10 +104,22 @@ together, in the GCS and local adapters alike.
   `workspace.stored_files.deleted` audit event with the count. It keeps the
   files of a workspace that still exists.
 - `services/orphanedWorkspaceStorageSweep.ts`: the
-  `documents.orphaned_workspace_storage_sweep` job that migration 240 queues
-  once. It pages through the workspaces the store holds and queues a purge for
-  each one `DocumentStorageOwnersPort` says is gone, after checking that the
-  store holds a file of a workspace this database records.
+  `documents.orphaned_workspace_storage_sweep` job and its dry-run report. An
+  operator queues it with `pnpm run storage:sweep-orphans --apply`
+  (`backend/scripts/workspaceStorageSweep.ts`, logic in
+  `workspaceStorageSweepCommand.ts`) after a dry run; nothing queues it on its
+  own. It pages through the workspaces the store holds and queues a purge for
+  each canonical lowercase workspace id that `DocumentStorageOwnersPort` says
+  is gone and whose newest object is more than a day old. Its ownership check
+  proves only that the store holds some of this database's files: a store
+  shared with another deployment passes it, and that deployment's workspaces
+  read as orphaned, which is why the sweep is a manual step and each
+  deployment needs its own bucket or folder.
+
+Both jobs reach only the store composition is configured with
+(`DOCUMENT_STORAGE_BUCKET` or `DOCUMENT_STORAGE_LOCAL_PATH`). Upload paths and
+listings derive from `workspaceStoragePrefix`, so the layout the inventory
+relies on is decided in one place.
 
 The payloads carry workspace ids and page cursors only. An object path never
 goes into a job, a log line, or an audit event, because paths written before
@@ -126,7 +138,7 @@ Focused starting points:
   for tag ownership across PUT, reprocess, failed runs, and manual edits.
 - `cd backend && pnpm exec vitest run tests/unit/document-enrichment-service.test.ts tests/unit/document-enrichment-gateway.test.ts tests/unit/document-enrichment-quote-location.test.ts`
   for extraction retries, reply reading, and placing dates by their quotes.
-- `cd backend && pnpm exec vitest run tests/unit/workspace-storage-cleanup.test.ts tests/unit/local-document-storage.test.ts tests/unit/gcs-document-storage.test.ts`
+- `cd backend && pnpm exec vitest run tests/unit/workspace-storage-cleanup.test.ts tests/unit/workspace-storage-sweep-command.test.ts tests/unit/local-document-storage.test.ts tests/unit/gcs-document-storage.test.ts`
   for removing a deleted workspace's stored files, and
   `tests/integration/workspace-storage-purge.integration.test.ts` for the
   hand-off committing with the deletion.

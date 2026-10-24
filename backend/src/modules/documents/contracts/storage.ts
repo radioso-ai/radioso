@@ -36,15 +36,25 @@ export interface DocumentStoragePort {
   delete(input: DocumentStorageDeleteInput): Promise<void>;
 }
 
+/** How many objects a workspace holds, and when the newest of them was written. */
+export interface DocumentStorageWorkspaceSummary {
+  objectCount: number;
+  /** Null when the workspace holds nothing. An object with no recorded write time counts as written now. */
+  newestObjectAt: Date | null;
+}
+
 /**
- * What a store holds, by workspace. Every object an adapter writes sits under its workspace, so a
- * workspace's objects are found by its id alone, whatever path an older release gave them below it.
+ * What a store holds, by workspace. Every object an adapter writes sits under its workspace
+ * (`workspaceStoragePrefix`), so a workspace's objects are found by its id alone, whatever path an
+ * older release gave them below it.
  */
 export interface DocumentStorageInventoryPort {
   /** Up to `limit` of the objects stored for one workspace. */
   listWorkspaceObjects(input: { workspaceId: string; limit: number }): Promise<DocumentStorageDeleteInput[]>;
   /** One page of at most `limit` workspaces holding at least one object. */
   listStoredWorkspaces(input: { cursor: string | null; limit: number }): Promise<DocumentStorageWorkspacePage>;
+  /** Reads every object of one workspace, so its cost grows with what the workspace holds. */
+  summarizeWorkspaceObjects(input: { workspaceId: string }): Promise<DocumentStorageWorkspaceSummary>;
 }
 
 /**
@@ -65,8 +75,10 @@ export interface DocumentStorageOwnersPort {
 }
 
 /**
- * Accepts a workspace id only as one path segment, so no id can widen a listing or a delete beyond
- * its own workspace. Structural: workspace ids are UUIDs.
+ * Where every object of a workspace lives: adapters derive upload paths and listings from it, so
+ * the layout the inventory relies on is decided here alone. Accepts a workspace id only as one path
+ * segment, so no id can widen an upload, a listing or a delete beyond its own workspace.
+ * Structural: workspace ids are UUIDs.
  */
 const STORAGE_WORKSPACE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9_-]*$/;
 

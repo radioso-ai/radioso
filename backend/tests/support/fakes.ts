@@ -204,11 +204,12 @@ import type {
 } from "../../src/modules/settings/contracts/services.js";
 import { AuditService } from "../../src/modules/audit/services/auditService.js";
 import { requestAuditMetadata } from "../../src/modules/audit/requestAuditContext.js";
-import type {
-  DocumentStorageAdapter,
-  DocumentStorageDeleteInput,
-  DocumentStorageReadInput,
-  DocumentStorageUploadInput,
+import {
+  workspaceStoragePrefix,
+  type DocumentStorageAdapter,
+  type DocumentStorageDeleteInput,
+  type DocumentStorageReadInput,
+  type DocumentStorageUploadInput,
 } from "../../src/modules/documents/contracts/storage.js";
 import { createWorkspacePublicRouteKey } from "../../src/modules/workspace/domain/publicRouteKey.js";
 import type { CutReplyStore, CutReplyStoreInput } from "../../src/modules/chat/services/chatTurnLifecycle.js";
@@ -3618,16 +3619,18 @@ const collectMetadataPaths = (
 };
 
 export class InMemoryDocumentStorage implements DocumentStorageAdapter {
-  readonly objects = new Map<string, { buffer: Buffer; generation: string; sizeBytes: number }>();
+  /** An object with no `writtenAt` was written long ago. */
+  readonly objects = new Map<string, { buffer: Buffer; generation: string; sizeBytes: number; writtenAt?: Date }>();
   deleteFailures = new Set<string>();
 
   async upload(input: DocumentStorageUploadInput) {
-    const objectPath = `workspaces/${input.workspaceId}/documents/${input.documentId}`;
+    const objectPath = `${workspaceStoragePrefix(input.workspaceId)}documents/${input.documentId}`;
     const generation = `${this.objects.size + 1}`;
     this.objects.set(objectPath, {
       buffer: Buffer.from(input.buffer),
       generation,
       sizeBytes: input.buffer.length,
+      writtenAt: new Date(),
     });
 
     return {
@@ -3655,13 +3658,29 @@ export class InMemoryDocumentStorage implements DocumentStorageAdapter {
     this.objects.delete(input.objectPath);
   }
 
-  /** Places an object at any path, as an older layout or a stray write would have left it. */
-  put(objectPath: string, content = "stored"): void {
+  /**
+   * Places an object at any path, as an older layout or a stray write would have left it, written
+   * long ago unless `writtenAt` says otherwise.
+   */
+  put(objectPath: string, options: { content?: string; writtenAt?: Date } = {}): void {
+    const content = options.content ?? "stored";
     this.objects.set(objectPath, {
       buffer: Buffer.from(content),
       generation: `${this.objects.size + 1}`,
       sizeBytes: Buffer.byteLength(content),
+      writtenAt: options.writtenAt ?? new Date(0),
     });
+  }
+
+  async summarizeWorkspaceObjects(input: { workspaceId: string }) {
+    const prefix = workspaceStoragePrefix(input.workspaceId);
+    const written = [...this.objects.entries()]
+      .filter(([objectPath]) => objectPath.startsWith(prefix))
+      .map(([, object]) => object.writtenAt?.getTime() ?? 0);
+    return {
+      objectCount: written.length,
+      newestObjectAt: written.length === 0 ? null : new Date(Math.max(...written)),
+    };
   }
 
   async listWorkspaceObjects(input: { workspaceId: string; limit: number }): Promise<DocumentStorageDeleteInput[]> {

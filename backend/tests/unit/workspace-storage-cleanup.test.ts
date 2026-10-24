@@ -63,7 +63,7 @@ const setup = (options: {
     store: jobs,
     handlers: [
       workspaceStoragePurgeHandler({ storage, owners, queue, audit, logger, ...options.purge }),
-      orphanedWorkspaceStorageSweepHandler({ storage, owners, queue, logger, ...options.sweep }),
+      orphanedWorkspaceStorageSweepHandler({ storage, owners, queue, logger, now: clock.now, ...options.sweep }),
     ],
     logger,
     now: clock.now,
@@ -257,7 +257,7 @@ describe("the one-time sweep for files a deleted workspace left behind", () => {
     expect(harness.logger.warn).toHaveBeenCalledWith(expect.any(Object), expect.stringMatching(/sweep/i));
   });
 
-  it("deletes nothing when the database records no uploaded file to check the store against", async () => {
+  it("deletes nothing when the database records no uploaded file to check the store against, and says so plainly", async () => {
     const unknown = randomUUID();
     const harness = setup({ owners: createOwners() });
     seedObjects(harness.storage, unknown, 2);
@@ -267,6 +267,53 @@ describe("the one-time sweep for files a deleted workspace left behind", () => {
 
     expect(objectsOf(harness.storage, unknown)).toHaveLength(2);
     expect(harness.audits).toEqual([]);
+    // Nothing to compare against is not a mismatch: no warning that the store is another database's.
+    expect(harness.logger.info).toHaveBeenCalledWith(expect.any(Object), expect.stringMatching(/no uploaded file/i));
+    expect(harness.logger.warn).not.toHaveBeenCalled();
+  });
+
+  it("leaves a workspace's files alone while its newest object is less than a day old", async () => {
+    const live = randomUUID();
+    const settled = randomUUID();
+    const fresh = randomUUID();
+    const harness = setup({ owners: createOwners({ existing: [live], withUploadedFiles: [live] }) });
+    seedObjects(harness.storage, live, 1);
+    seedObjects(harness.storage, settled, 2);
+    seedObjects(harness.storage, fresh, 2);
+    // Another database's workspace that is in use writes new files; one written two hours ago keeps the prefix.
+    harness.storage.put(`workspaces/${fresh}/documents/${randomUUID()}`, {
+      writtenAt: new Date(harness.clock.now().getTime() - 2 * 60 * 60 * 1_000),
+    });
+
+    await harness.queue.enqueue(orphanedWorkspaceStorageSweepRequest(null));
+    await harness.drainUntilIdle();
+
+    expect(objectsOf(harness.storage, settled)).toEqual([]);
+    expect(objectsOf(harness.storage, fresh)).toHaveLength(3);
+    expect(harness.logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ orphanedWorkspaceCount: 1, recentObjectCount: 1, liveWorkspaceCount: 1 }),
+      expect.any(String),
+    );
+  });
+
+  it("only considers canonical lowercase workspace ids, and counts what it skipped", async () => {
+    const live = randomUUID();
+    const orphaned = randomUUID();
+    const harness = setup({ owners: createOwners({ existing: [live], withUploadedFiles: [live] }) });
+    seedObjects(harness.storage, live, 1);
+    seedObjects(harness.storage, orphaned.toUpperCase(), 2);
+    harness.storage.put("workspaces/not-a-workspace/documents/leftover");
+
+    await harness.queue.enqueue(orphanedWorkspaceStorageSweepRequest(null));
+    await harness.drainUntilIdle();
+
+    expect(objectsOf(harness.storage, orphaned.toUpperCase())).toHaveLength(2);
+    expect(objectsOf(harness.storage, "not-a-workspace")).toHaveLength(1);
+    expect(harness.audits).toEqual([]);
+    expect(harness.logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ orphanedWorkspaceCount: 0, nonCanonicalPrefixCount: 2 }),
+      expect.any(String),
+    );
   });
 
   it("is keyed so a repeated start while one sweep waits queues no second sweep", async () => {

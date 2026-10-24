@@ -94,7 +94,7 @@ A voice call's recording lives in your ElevenLabs account, so Radioso asks Eleve
 
 Deleting a workspace deletes every conversation and visitor in it, with the same cleanup, voice call recordings included. It also deletes the files the workspace stored: the original of every uploaded document and every agent logo. Deleting the organization (**Settings → Workspace → Delete organization**, owners only) deletes every workspace it has, files included.
 
-The files go once the deletion has gone through. The deletion hands them to the worker in the same database transaction, so the workspace and the hand-off commit together or not at all, and the worker deletes the files in batches as soon as it picks the job up. A delete that storage refuses is tried again, with growing waits, for about a day; a file that is already gone counts as deleted. Each batch records a `workspace.stored_files.deleted` audit event with the deleted workspace's id and how many files went, never their names.
+The files go once the deletion has gone through. The deletion hands them to the worker in the same database transaction, so the workspace and the hand-off commit together or not at all, and the worker deletes the files in batches as soon as it picks the job up. A delete that storage refuses is tried again, with growing waits, for about a day; a file that is already gone counts as deleted. Each run of that job records one `workspace.stored_files.deleted` audit event with the deleted workspace's id and how many files went, never their names; a workspace with more than 1,000 files takes more than one run.
 
 ## Common failure modes
 

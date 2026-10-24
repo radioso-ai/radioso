@@ -8,6 +8,7 @@ import {
   type DocumentStorageReadInput,
   type DocumentStorageUploadInput,
   type DocumentStorageWorkspacePage,
+  type DocumentStorageWorkspaceSummary,
   type StoredDocumentObject,
 } from "../contracts/storage.js";
 
@@ -65,12 +66,7 @@ export class LocalDocumentStorage implements DocumentStorageAdapter {
     // Path leaf is the caller-generated random documentId; the original
     // filename is untrusted client input, so it's kept on the document row's
     // `sourceFilename` rather than the storage path.
-    const objectPath = [
-      "workspaces",
-      input.workspaceId,
-      "documents",
-      input.documentId,
-    ].join("/");
+    const objectPath = `${workspaceStoragePrefix(input.workspaceId)}documents/${input.documentId}`;
     const targetPath = ensureWithinRoot(this.rootPath, objectPath);
 
     await fs.mkdir(path.dirname(targetPath), { recursive: true });
@@ -96,15 +92,28 @@ export class LocalDocumentStorage implements DocumentStorageAdapter {
   }
 
   async listWorkspaceObjects(input: { workspaceId: string; limit: number }): Promise<DocumentStorageDeleteInput[]> {
-    const prefix = workspaceStoragePrefix(input.workspaceId);
-    const directory = ensureWithinRoot(this.rootPath, prefix);
+    return (await this.workspaceObjectPaths(input.workspaceId))
+      .slice(0, input.limit)
+      .map((objectPath) => ({ bucket: LOCAL_STORAGE_BUCKET, objectPath, generation: null }));
+  }
+
+  async summarizeWorkspaceObjects(input: { workspaceId: string }): Promise<DocumentStorageWorkspaceSummary> {
+    const objectPaths = await this.workspaceObjectPaths(input.workspaceId);
+    let newest: number | null = null;
+    for (const objectPath of objectPaths) {
+      const { mtimeMs } = await fs.stat(ensureWithinRoot(this.rootPath, objectPath));
+      newest = newest === null ? mtimeMs : Math.max(newest, mtimeMs);
+    }
+    return { objectCount: objectPaths.length, newestObjectAt: newest === null ? null : new Date(newest) };
+  }
+
+  private async workspaceObjectPaths(workspaceId: string): Promise<string[]> {
+    const directory = ensureWithinRoot(this.rootPath, workspaceStoragePrefix(workspaceId));
     const entries = await readDirectory(directory, { recursive: true });
     return entries
       .filter((entry) => entry.isFile())
       .map((entry) => path.relative(this.rootPath, path.join(entry.parentPath, entry.name)).split(path.sep).join("/"))
-      .sort()
-      .slice(0, input.limit)
-      .map((objectPath) => ({ bucket: LOCAL_STORAGE_BUCKET, objectPath, generation: null }));
+      .sort();
   }
 
   /** The cursor is the last workspace id of the previous page; directories list in name order. */

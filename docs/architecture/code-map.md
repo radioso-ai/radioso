@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-10-19
+last_updated: 2026-10-24
 ---
 
 # Code Map
@@ -301,8 +301,8 @@ Public surfaces and key files:
 
 - `backend/src/modules/mail/public.ts` — provider-neutral ports:
   `EmailDriver`, `InboundEmailReceiver`, `EmailDomainProvisioner`, and the
-  Resend and `local` adapters composition selects between (their code lives
-  in `backend/src/modules/mail/adapters/`).
+  Resend, Lettermint, and `local` adapters composition selects between
+  (their code lives in `backend/src/modules/mail/adapters/`).
 - `backend/src/app/composition/emailChannel/` — the channel's wiring, one
   file per concern: `index.ts` (`createEmailChannelComposition`, the
   `email.send` application module, the deployment's `supportedModes`),
@@ -921,7 +921,8 @@ eraser owner, increments `radioso_retention_rows_removed_total{table}`,
 `radioso_retention_rows_erased_total{owner}` and `radioso_retention_sweeps_total{outcome}`,
 and runs inside a `privacy.retention_sweep` span. Terraform pins the windows that
 outlast it: seven Cloud SQL backups, 30 days in the project's `_Default` log
-bucket, and seven days of point-in-time recovery logs where a stack turns
+bucket (or an environment's regional log bucket, `infra/terraform/foundation/logging.tf`),
+and seven days of point-in-time recovery logs where a stack turns
 recovery on (`db_point_in_time_recovery_enabled`, off by default, because turning
 it on restarts the instance).
 
@@ -1663,7 +1664,11 @@ event in the transition's transaction, through the conversation activity port.
 population, defined in `turnPopulationSql.ts`. It excludes operator-test channels
 and human-authored takeover replies, so a signal's count always matches the rows
 behind it. This is distinct from the offline eval suite below, which measures
-conversation behavior rather than triaging production turns.
+conversation behavior rather than triaging production turns. The stats' `voice`
+block (`buildQualityVoiceStatsQuery` in `statsQuery.ts`) counts the window's
+calls from the facts the voice channel keeps on each reply
+(`chat/contracts/voiceTurnFacts.ts`); the Quality page shows it as the Voice
+card (`frontend/components/dashboard/quality/quality-voice-section.tsx`).
 
 Public surfaces and contracts:
 
@@ -1689,6 +1694,7 @@ Related docs:
 
 - `docs/human-takeover.md` (the Inbox and the operator console)
 - `docs/quality-eval-learning-loop.md` (structured closure and Eval verification)
+- `docs/voice-channel.md#call-numbers-on-the-quality-page` (the Voice card)
 
 ## Conversation Activity
 

@@ -1,0 +1,11 @@
+{
+  "message": "Some required DNS records could not be verified.",
+  "failed_records": [
+    { "id": "0b9f6a52-7c1d-4e2f-9a3b-4c5d6e7f8a91", "type": "CNAME", "name": "lm1._domainkey.mail" }
+  ],
+  "errors": [
+    { "record_id": "0b9f6a52-7c1d-4e2f-9a3b-4c5d6e7f8a91", "error": "No CNAME record found for lm1._domainkey.mail.customer.test" }
+  ],
+  "failed_count": 1,
+  "total_count": 2
+}

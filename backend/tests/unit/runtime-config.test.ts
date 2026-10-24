@@ -599,6 +599,7 @@ describe("runtime configuration", () => {
     expect(example).toContain("MAIL_FROM_EMAIL=noreply@example.com");
     expect(example).toContain("MAIL_FROM_NAME=Radioso");
     expect(example).toContain("RESEND_MAIL_API_KEY=");
+    expect(example).toContain("LETTERMINT_PROJECT_TOKEN=");
     expect(example).toContain("NOTIFICATION_RECIPIENT_CONFIRMATION_ENABLED=true");
     expect(example).toContain("PASSWORD_RESET_TOKEN_TTL_MINUTES=30");
     expect(example).toContain("EMAIL_VERIFICATION_TOKEN_TTL_MINUTES=30");
@@ -665,6 +666,104 @@ describe("runtime configuration", () => {
         /openai_data_residency\s+= var\.openai_data_residency/,
       );
     }
+  });
+
+  it("normalizes AZURE_OPENAI_ENDPOINT and rejects a non-Azure host", () => {
+    expect(getEnv({ ...baseEnv, AZURE_OPENAI_ENDPOINT: "" }).AZURE_OPENAI_ENDPOINT).toBeUndefined();
+    expect(getEnv({ ...baseEnv, AZURE_OPENAI_ENDPOINT: "https://radioso-eu-1.openai.azure.com" }).AZURE_OPENAI_ENDPOINT).toBe(
+      "https://radioso-eu-1.openai.azure.com/openai/v1",
+    );
+    expect(
+      getEnv({ ...baseEnv, AZURE_OPENAI_ENDPOINT: "https://radioso-eu-1.openai.azure.com/openai/v1/" })
+        .AZURE_OPENAI_ENDPOINT,
+    ).toBe("https://radioso-eu-1.openai.azure.com/openai/v1");
+    expect(() => getEnv({ ...baseEnv, AZURE_OPENAI_ENDPOINT: "https://attacker.example/v1" })).toThrow();
+  });
+
+  it("reports a named zod issue — never a raw TypeError — for a malformed AZURE_OPENAI_ENDPOINT value", () => {
+    // "radioso-eu-1.openai.azure.com" (no scheme, exactly what an operator might paste straight
+    // out of the Azure portal's resource summary) and whitespace both fail zod's own `.url()`
+    // check; a naive `new URL(value)` inside a later `.refine()` would otherwise leak that
+    // failure past zod's issue reporting as a raw, unhelpful `TypeError: Invalid URL`.
+    for (const malformed of ["radioso-eu-1.openai.azure.com", "   "]) {
+      let failure: unknown;
+      try {
+        getEnv({ ...baseEnv, AZURE_OPENAI_ENDPOINT: malformed });
+      } catch (error) {
+        failure = error;
+      }
+      expect(failure).toBeInstanceOf(Error);
+      expect((failure as Error).name).not.toBe("TypeError");
+      expect((failure as Error).message).toContain("AZURE_OPENAI_ENDPOINT");
+    }
+  });
+
+  it("accepts a cognitiveservices.azure.com host", () => {
+    expect(
+      getEnv({ ...baseEnv, AZURE_OPENAI_ENDPOINT: "https://radioso-eu-1.cognitiveservices.azure.com" })
+        .AZURE_OPENAI_ENDPOINT,
+    ).toBe("https://radioso-eu-1.cognitiveservices.azure.com/openai/v1");
+  });
+
+  it("refuses startup when AZURE_OPENAI_ENDPOINT is combined with a non-global OPENAI_DATA_RESIDENCY", () => {
+    expect(() =>
+      getEnv({
+        ...baseEnv,
+        AZURE_OPENAI_ENDPOINT: "https://radioso-eu-1.openai.azure.com",
+        OPENAI_DATA_RESIDENCY: "eu",
+      }),
+    ).toThrow();
+    expect(() =>
+      getEnv({ ...baseEnv, AZURE_OPENAI_ENDPOINT: "https://radioso-eu-1.openai.azure.com", OPENAI_DATA_RESIDENCY: "global" }),
+    ).not.toThrow();
+  });
+
+  it("leaves AZURE_OPENAI_ENDPOINT empty in the example environment", async () => {
+    const example = await readFile(new URL("../../../.env.example", import.meta.url), "utf8");
+    expect(example).toMatch(/^AZURE_OPENAI_ENDPOINT=$/m);
+  });
+
+  it("wires AZURE_OPENAI_ENDPOINT into every service that gets OPENAI_API_KEY", async () => {
+    const terraformVariables = await readFile(new URL("../../../infra/terraform/variables.tf", import.meta.url), "utf8");
+    const computeTf = await readFile(new URL("../../../infra/terraform/compute.tf", import.meta.url), "utf8");
+    const terraformWorkflow = await readFile(new URL("../../../.github/workflows/terraform.yml", import.meta.url), "utf8");
+
+    expect(terraformVariables).toMatch(/variable "azure_openai_endpoint" \{[\s\S]*?default\s+= ""[\s\S]*?\n\}/);
+
+    expect((computeTf.match(/name\s+= "AZURE_OPENAI_ENDPOINT"\s*\n\s*value = var\.azure_openai_endpoint/g) ?? []))
+      .toHaveLength(3);
+
+    expect(terraformWorkflow).toContain("AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}");
+    expect(terraformWorkflow).toContain('if [ -n "${AZURE_OPENAI_ENDPOINT}" ]; then');
+    expect(terraformWorkflow).toContain("TF_VAR_azure_openai_endpoint=${AZURE_OPENAI_ENDPOINT}");
+
+    for (const environment of ["staging", "live", "live-eu"]) {
+      const wrapperVariables = await readFile(
+        new URL(`../../../infra/terraform/environments/${environment}/variables.tf`, import.meta.url),
+        "utf8",
+      );
+      const wrapperMain = await readFile(
+        new URL(`../../../infra/terraform/environments/${environment}/main.tf`, import.meta.url),
+        "utf8",
+      );
+      expect(wrapperVariables, `${environment} does not declare azure_openai_endpoint`).toContain(
+        'variable "azure_openai_endpoint"',
+      );
+      expect(wrapperMain, `${environment} does not pass azure_openai_endpoint to the root module`).toMatch(
+        /azure_openai_endpoint\s+= var\.azure_openai_endpoint/,
+      );
+    }
+  });
+
+  it("wires OPENAI_RERANK_MODEL as a per-environment GitHub variable, so live-eu can switch it without a code change", async () => {
+    // live-eu's own default (environments/live-eu/variables.tf) is gpt-5.4-nano, which has no EU
+    // Data Zone quota on Azure; switching the rerank model to gpt-5.4-mini for the Azure cutover
+    // must be a GitHub Environment variable change, not a Terraform default edit.
+    const terraformWorkflow = await readFile(new URL("../../../.github/workflows/terraform.yml", import.meta.url), "utf8");
+
+    expect(terraformWorkflow).toContain("OPENAI_RERANK_MODEL: ${{ vars.OPENAI_RERANK_MODEL }}");
+    expect(terraformWorkflow).toContain('if [ -n "${OPENAI_RERANK_MODEL}" ]; then');
+    expect(terraformWorkflow).toContain("TF_VAR_openai_rerank_model=${OPENAI_RERANK_MODEL}");
   });
 
   it("pins environment-aware observability identity and cloud runtime URLs for the Cloud Run API and worker services", async () => {
@@ -795,10 +894,21 @@ describe("runtime configuration", () => {
     expect(computeTf).toContain('secret  = google_secret_manager_secret.secrets["database-url"].secret_id');
     expect(computeTf).not.toContain("cpu_idle = false");
     expect((computeTf.match(/cpu_idle = true/g) ?? [])).toHaveLength(2);
-    expect(computeTf).not.toContain('name  = "MAIL_DRIVER"');
+    // MAIL_DRIVER only reaches the runtime when an operator sets it; unset, the parsed TF_VAR
+    // stays absent and the dynamic env block below contributes nothing.
+    expect(computeTf).toContain('for_each = var.mail_driver != null ? [var.mail_driver] : []');
+    expect((computeTf.match(/name {2}= "MAIL_DRIVER"/g) ?? [])).toHaveLength(2);
     expect(computeTf).toContain('for_each = var.resend_mail_api_key != null ? [google_secret_manager_secret.secrets["resend-mail-api-key"].secret_id] : []');
     expect(computeTf).toContain('name = "RESEND_MAIL_API_KEY"');
     expect((computeTf.match(/name = "RESEND_MAIL_API_KEY"/g) ?? [])).toHaveLength(2);
+    // Lettermint mirrors Resend's transactional key and channel-only credentials, on both
+    // services: one shared project token, plus a channel-only team token and project id.
+    expect(computeTf).toContain('for_each = var.lettermint_project_token != null ? [google_secret_manager_secret.secrets["lettermint-project-token"].secret_id] : []');
+    expect((computeTf.match(/name = "LETTERMINT_PROJECT_TOKEN"/g) ?? [])).toHaveLength(2);
+    expect(computeTf).toContain('for_each = var.lettermint_team_token != null ? [google_secret_manager_secret.secrets["lettermint-team-token"].secret_id] : []');
+    expect((computeTf.match(/name = "LETTERMINT_TEAM_TOKEN"/g) ?? [])).toHaveLength(2);
+    expect(computeTf).toContain('for_each = var.lettermint_project_id != null ? [var.lettermint_project_id] : []');
+    expect((computeTf.match(/name {2}= "LETTERMINT_PROJECT_ID"/g) ?? [])).toHaveLength(2);
     expect(computeTf).toContain('name  = "MAIL_FROM_EMAIL"');
     expect((computeTf.match(/name {2}= "MAIL_FROM_EMAIL"/g) ?? [])).toHaveLength(2);
     expect(computeTf).toContain('name  = "MAIL_FROM_NAME"');
@@ -874,6 +984,9 @@ describe("runtime configuration", () => {
     expect(monitoringTf).toContain('"${local.resource_name_prefix}-conversation-retention",');
     const loggingTf = await readFile(new URL("../../../infra/terraform/logging.tf", import.meta.url), "utf8");
     expect(loggingTf).toMatch(/resource "google_logging_project_bucket_config" "default" \{[\s\S]*?count = var\.manage_project_services \? 1 : 0[\s\S]*?bucket_id\s+= "_Default"[\s\S]*?retention_days = 30/);
+    // An environment that keeps its logs in its own region holds them for the same 30 days.
+    const foundationLoggingTf = await readFile(new URL("../../../infra/terraform/foundation/logging.tf", import.meta.url), "utf8");
+    expect(foundationLoggingTf).toMatch(/resource "google_logging_project_bucket_config" "regional" \{[\s\S]*?location\s+= var\.region[\s\S]*?retention_days = 30/);
     // Counted against the jobs actually declared rather than a fixed number: the invariant is
     // that EVERY scheduled push authenticates, and a hardcoded count silently stops checking the
     // job that pushed it past the number.
@@ -905,6 +1018,17 @@ describe("runtime configuration", () => {
     expect(registryTf).toContain('id     = "delete-untagged-older-than-7-days"');
     expect(registryTf).toContain('id     = "delete-tagged-older-than-30-days"');
     expect(terraformWorkflow).toContain("TF_VAR_resend_mail_api_key: ${{ secrets.RESEND_MAIL_API_KEY }}");
+    expect(terraformWorkflow).toContain("MAIL_DRIVER: ${{ vars.MAIL_DRIVER }}");
+    expect(terraformWorkflow).toContain('echo "TF_VAR_mail_driver=${MAIL_DRIVER}" >> "$GITHUB_ENV"');
+    expect(terraformWorkflow).toContain("LETTERMINT_PROJECT_TOKEN: ${{ secrets.LETTERMINT_PROJECT_TOKEN }}");
+    expect(terraformWorkflow).toContain("LETTERMINT_TEAM_TOKEN: ${{ secrets.LETTERMINT_TEAM_TOKEN }}");
+    expect(terraformWorkflow).toContain("LETTERMINT_PROJECT_ID: ${{ vars.LETTERMINT_PROJECT_ID }}");
+    expect(terraformWorkflow).toMatch(
+      /if \[ "\$\{EMAIL_CHANNEL_PROVIDER\/\/\[\[:space:\]\]\/\}" = "lettermint" \]; then[\s\S]*?LETTERMINT_PROJECT_TOKEN LETTERMINT_TEAM_TOKEN LETTERMINT_PROJECT_ID/,
+    );
+    expect(terraformWorkflow).toContain('mail_key=LETTERMINT_PROJECT_TOKEN');
+    expect(terraformWorkflow).toContain('mail_key=TF_VAR_resend_mail_api_key');
+    expect(terraformWorkflow).toContain('if [ "${mail_driver:-resend}" != "$channel_provider" ]; then');
     expect(terraformWorkflow).toContain("APP_BASE_URL: ${{ vars.APP_BASE_URL }}");
     expect(terraformWorkflow).toContain("PUBLIC_CHAT_BASE_URL: ${{ vars.PUBLIC_CHAT_BASE_URL }}");
     expect(terraformWorkflow).toContain('APP_BASE_URL_OVERRIDE="${APP_BASE_URL:-$FRONTEND_URL}"');
@@ -913,8 +1037,11 @@ describe("runtime configuration", () => {
     expect(terraformWorkflow).toContain("TF_VAR_mail_from_name");
     expect(terraformWorkflow).not.toContain("MAIL_SMTP");
     expect(terraformFoundation).toContain("assertion.ref == 'refs/heads/main'");
-    expect(stagingEnv).not.toContain("mail_driver");
+    expect(stagingEnv).toContain("mail_driver");
     expect(stagingEnv).toContain("resend_mail_api_key");
+    expect(stagingEnv).toContain("lettermint_project_token");
+    expect(stagingEnv).toContain("lettermint_team_token");
+    expect(stagingEnv).toContain("lettermint_project_id");
     expect(stagingEnv).toContain("mail_from_email");
     expect(stagingEnv).toContain("mail_from_name");
     expect(stagingEnv).toContain("document_worker_recovery_schedule");
@@ -923,8 +1050,11 @@ describe("runtime configuration", () => {
     expect(stagingEnvVariables).toContain('variable "crawler_worker_recovery_schedule"');
     expect(stagingEnvVariables).not.toContain('default     = "0 * * * *"');
     expect(stagingEnvVariables).not.toContain('default     = "0 3 * * *"');
-    expect(liveEnv).not.toContain("mail_driver");
+    expect(liveEnv).toContain("mail_driver");
     expect(liveEnv).toContain("resend_mail_api_key");
+    expect(liveEnv).toContain("lettermint_project_token");
+    expect(liveEnv).toContain("lettermint_team_token");
+    expect(liveEnv).toContain("lettermint_project_id");
     expect(liveEnv).toContain("mail_from_email");
     expect(liveEnv).toContain("mail_from_name");
     expect(liveEnv).toContain("document_worker_recovery_schedule");
@@ -1099,6 +1229,68 @@ describe("runtime configuration", () => {
       expect(env?.provider).toEqual({ kind: "resend", apiKey: "re_test", region: "eu-west-1" });
     });
 
+    it("keeps the channel off and names each missing lettermint setting, in order", () => {
+      const noTokens = { ...localChannelEnv, EMAIL_CHANNEL_PROVIDER: "lettermint" } as const;
+      expect(() => getEnv(noTokens)).not.toThrow();
+      expect(emailChannelOf(noTokens)).toBeUndefined();
+      expect(emailChannelConfigGaps(getEnv(noTokens))).toEqual({
+        provider: "lettermint",
+        unmet: ["LETTERMINT_PROJECT_TOKEN", "LETTERMINT_TEAM_TOKEN", "LETTERMINT_PROJECT_ID"],
+      });
+
+      const partial = { ...noTokens, LETTERMINT_PROJECT_TOKEN: "lm_test" } as const;
+      expect(emailChannelOf(partial)).toBeUndefined();
+      expect(emailChannelConfigGaps(getEnv(partial))?.unmet).toEqual([
+        "LETTERMINT_TEAM_TOKEN",
+        "LETTERMINT_PROJECT_ID",
+      ]);
+
+      const env = emailChannelOf({
+        ...localChannelEnv,
+        EMAIL_CHANNEL_PROVIDER: "lettermint",
+        LETTERMINT_PROJECT_TOKEN: "lm_test",
+        LETTERMINT_TEAM_TOKEN: "lm_team_test",
+        LETTERMINT_PROJECT_ID: "proj_test",
+      });
+      expect(env?.provider).toEqual({
+        kind: "lettermint",
+        projectToken: "lm_test",
+        teamToken: "lm_team_test",
+        projectId: "proj_test",
+      });
+    });
+
+    it("keeps the channel off while transactional mail resolves to the other provider, which shares its delivery webhook", () => {
+      const lettermintChannel = {
+        ...localChannelEnv,
+        EMAIL_CHANNEL_PROVIDER: "lettermint",
+        LETTERMINT_PROJECT_TOKEN: "lm_test",
+        LETTERMINT_TEAM_TOKEN: "lm_team_test",
+        LETTERMINT_PROJECT_ID: "proj_test",
+      } as const;
+      const withResendMail = { ...lettermintChannel, RESEND_MAIL_API_KEY: "re_mail" } as const;
+      expect(() => getEnv(withResendMail)).not.toThrow();
+      expect(emailChannelOf(withResendMail)).toBeUndefined();
+      expect(emailChannelConfigGaps(getEnv(withResendMail))).toEqual({
+        provider: "lettermint",
+        unmet: ["MAIL_DRIVER must be lettermint: transactional mail and the channel share one delivery webhook"],
+      });
+      expect(emailChannelOf({ ...withResendMail, MAIL_DRIVER: "lettermint" })?.provider.kind).toBe("lettermint");
+      expect(emailChannelOf({ ...lettermintChannel, MAIL_DRIVER: "log" })?.provider.kind).toBe("lettermint");
+
+      const resendChannel = {
+        ...localChannelEnv,
+        EMAIL_CHANNEL_PROVIDER: "resend",
+        RESEND_CHANNEL_API_KEY: "re_channel",
+        MAIL_DRIVER: "lettermint",
+        LETTERMINT_PROJECT_TOKEN: "lm_test",
+      } as const;
+      expect(emailChannelOf(resendChannel)).toBeUndefined();
+      expect(emailChannelConfigGaps(getEnv(resendChannel))?.unmet).toEqual([
+        "MAIL_DRIVER must be resend: transactional mail and the channel share one delivery webhook",
+      ]);
+    });
+
     it("uses transactional mail's Resend key when the channel has none of its own", () => {
       const shared = emailChannelOf({
         ...localChannelEnv,
@@ -1134,6 +1326,15 @@ describe("runtime configuration", () => {
       const nothing = { ...baseEnv, EMAIL_CHANNEL_PROVIDER: "resend" } as const;
       expect(emailChannelConfigGaps(getEnv(nothing))?.unmet).toEqual([
         "RESEND_CHANNEL_API_KEY or RESEND_MAIL_API_KEY",
+        "EMAIL_CHANNEL_INBOUND_DOMAIN",
+        "EMAIL_CHANNEL_WEBHOOK_SECRET",
+      ]);
+
+      const nothingLettermint = { ...baseEnv, EMAIL_CHANNEL_PROVIDER: "lettermint" } as const;
+      expect(emailChannelConfigGaps(getEnv(nothingLettermint))?.unmet).toEqual([
+        "LETTERMINT_PROJECT_TOKEN",
+        "LETTERMINT_TEAM_TOKEN",
+        "LETTERMINT_PROJECT_ID",
         "EMAIL_CHANNEL_INBOUND_DOMAIN",
         "EMAIL_CHANNEL_WEBHOOK_SECRET",
       ]);
@@ -1204,6 +1405,8 @@ describe("runtime configuration", () => {
         "EMAIL_CHANNEL_TASK_QUEUE_NAME",
         "RESEND_CHANNEL_API_KEY",
         "RESEND_CHANNEL_REGION",
+        "LETTERMINT_TEAM_TOKEN",
+        "LETTERMINT_PROJECT_ID",
       ]) {
         expect(example).toMatch(new RegExp(`^${setting}=`, "m"));
       }

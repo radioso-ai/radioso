@@ -9,6 +9,41 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.22.0] - 2026-10-24
+
+### Added
+
+- **mail:** add Lettermint as an EU email provider ([#1618](https://github.com/radioso-ai/radioso/pull/1618))
+- **quality:** voice call numbers on the Quality page and cloud alert policies ([#1613](https://github.com/radioso-ai/radioso/pull/1613))
+
+### Fixed
+
+- **privacy:** keep visitor search text out of the audit_event log line ([#1614](https://github.com/radioso-ai/radioso/pull/1614))
+
+### Database migrations
+
+This release adds 1 migration. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `239_email_domains_lettermint_provider.sql`
+
+[1.22.0]: https://github.com/radioso-ai/radioso/compare/v1.21.0...v1.22.0
+
+## [1.21.0] - 2026-10-24
+
+### Added
+
+- **llm:** send the platform OpenAI key to an Azure OpenAI EU deployment ([#1611](https://github.com/radioso-ai/radioso/pull/1611))
+
+### Fixed
+
+- **infra:** grant image push on the repository instead of a conditioned project binding ([#1598](https://github.com/radioso-ai/radioso/pull/1598))
+
+### Internal
+
+- **infra:** scope the CI deploy identities to what each workflow uses ([#1597](https://github.com/radioso-ai/radioso/pull/1597))
+
+[1.21.0]: https://github.com/radioso-ai/radioso/compare/v1.20.0...v1.21.0
+
 ## [1.20.0] - 2026-10-21
 
 ### Added

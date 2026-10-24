@@ -2393,7 +2393,7 @@ CREATE TABLE public.email_domains (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT email_domains_domain_check CHECK ((domain = lower(domain))),
-    CONSTRAINT email_domains_provider_check CHECK ((provider = ANY (ARRAY['resend'::text, 'local'::text]))),
+    CONSTRAINT email_domains_provider_check CHECK ((provider = ANY (ARRAY['resend'::text, 'lettermint'::text, 'local'::text]))),
     CONSTRAINT email_domains_provider_cleanup_status_check CHECK ((provider_cleanup_status = ANY (ARRAY['pending'::text, 'done'::text, 'failed'::text]))),
     CONSTRAINT email_domains_receiving_status_check CHECK ((receiving_status = ANY (ARRAY['not_requested'::text, 'pending'::text, 'verified'::text, 'failed'::text]))),
     CONSTRAINT email_domains_refresh_requested_version_check CHECK ((refresh_requested_version >= 0)),

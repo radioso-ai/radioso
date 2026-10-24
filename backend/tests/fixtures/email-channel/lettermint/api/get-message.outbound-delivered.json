@@ -1,0 +1,23 @@
+{
+  "id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "type": "outbound",
+  "status": "delivered",
+  "delivery_mode": "live",
+  "sandbox_result": null,
+  "status_changed_at": "2025-08-08T20:15:12.000Z",
+  "scheduled_at": null,
+  "tag": null,
+  "tags": [{ "name": "kind", "value": "channel_reply" }],
+  "from_email": "support@acme.test",
+  "from_name": "Acme Support",
+  "reply_to": ["support+t_9f3c2a@acme.test"],
+  "subject": "Re: Order 1042",
+  "to": [{ "email": "ada@example.test", "name": null, "sandbox_result": null }],
+  "cc": null,
+  "bcc": null,
+  "attachments": null,
+  "metadata": null,
+  "route_id": "550e8400-e29b-41d4-a716-446655440000",
+  "created_at": "2025-08-08T20:14:00.000Z",
+  "resent_from_message_id": null
+}

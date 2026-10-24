@@ -168,6 +168,24 @@ variable "resend_mail_api_key" {
   default     = null
 }
 
+variable "lettermint_project_token" {
+  description = "Lettermint project token for Enterprise auth mail and, shared with the email channel, channel mail in EU live."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "mail_driver" {
+  description = "Transactional auth mail driver override (MAIL_DRIVER): resend, lettermint, log or noop. Unset, a Resend key keeps Resend and a Lettermint project token alone picks Lettermint, so set it to lettermint to move a stack with a Resend key onto Lettermint."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.mail_driver == null || contains(["resend", "lettermint", "log", "noop"], coalesce(var.mail_driver, "resend"))
+    error_message = "mail_driver must be unset or one of resend, lettermint, log, noop."
+  }
+}
+
 variable "slack_oauth_client_id" {
   description = "Slack app OAuth client ID for the Slack channel in EU live."
   type        = string
@@ -266,6 +284,12 @@ variable "openai_data_residency" {
   description = "Endpoint the platform-held openai_api_key calls: global (default), us, or eu."
   type        = string
   default     = "global"
+}
+
+variable "azure_openai_endpoint" {
+  description = "Azure OpenAI resource endpoint the platform-held openai_api_key (then an Azure key) calls instead of OpenAI's own host. Empty (default) keeps the key on OpenAI."
+  type        = string
+  default     = ""
 }
 
 variable "session_ttl_hours" {
@@ -424,6 +448,18 @@ variable "monitoring_scheduler_failure_threshold" {
   default     = 0
 }
 
+variable "monitoring_voice_turn_limit_threshold" {
+  description = "Voice turns on the backend service that hit the turn limit in fifteen minutes that trigger the voice turn health alert."
+  type        = number
+  default     = 5
+}
+
+variable "monitoring_voice_abandoned_turn_threshold" {
+  description = "Voice turns on the backend service whose request the voice runtime closed before the outcome reached it, in fifteen minutes, that trigger the voice turn health alert."
+  type        = number
+  default     = 5
+}
+
 variable "container_health_probes_enabled" {
   description = "Whether the backend and MCP Cloud Run services probe their health routes for startup and liveness."
   type        = bool
@@ -497,7 +533,7 @@ variable "stripe_webhook_secret" {
 # set the remaining inputs first.
 
 variable "email_channel_provider" {
-  description = "Email channel provider in live-eu (EMAIL_CHANNEL_PROVIDER). Unset leaves the channel off; the only deployed value is \"resend\"."
+  description = "Email channel provider in live-eu (EMAIL_CHANNEL_PROVIDER). Unset leaves the channel off; the deployed values are \"resend\" and \"lettermint\"."
   type        = string
   default     = null
 }
@@ -526,6 +562,19 @@ variable "resend_channel_api_key" {
   description = "Resend API key the email channel receives and sends channel mail with in live-eu (RESEND_CHANNEL_API_KEY). Unset, the channel uses resend_mail_api_key."
   type        = string
   sensitive   = true
+  default     = null
+}
+
+variable "lettermint_team_token" {
+  description = "Lettermint team token in live-eu (LETTERMINT_TEAM_TOKEN). Required with email_channel_provider = \"lettermint\"."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "lettermint_project_id" {
+  description = "Lettermint project id in live-eu (LETTERMINT_PROJECT_ID). Required with email_channel_provider = \"lettermint\"."
+  type        = string
   default     = null
 }
 

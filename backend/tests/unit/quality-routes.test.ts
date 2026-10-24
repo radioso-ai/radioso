@@ -54,6 +54,7 @@ const DEFAULT_STATS: QualityStats = {
     unmet_directives: 2,
   },
   resolutionBreakdown: [],
+  voice: null,
 };
 
 class CapturingService implements QualityServicePort {

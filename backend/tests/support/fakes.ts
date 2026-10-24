@@ -185,7 +185,8 @@ import type {
 } from "../../src/db/repositories/messageRepository.js";
 import type { MessageSource } from "@radioso/conversation-contract";
 import { deriveMessageSourceFromRole, ISO_INSTANT_PATTERN } from "../../src/db/repositories/messageRepository.js";
-import type { OperatorReplyClaim, PendingOperatorReply, ReplyInterruption } from "../../src/modules/chat/contracts/index.js";
+import type { OperatorReplyClaim, PendingOperatorReply, ReplyInterruption, VoiceTurnFacts } from "../../src/modules/chat/contracts/index.js";
+import { voiceTurnFactsSchema } from "../../src/modules/chat/contracts/voiceTurnFacts.js";
 import { VOICE_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 import { isHumanAuthoredMessageSource } from "../../src/shared/domain/messageAuthorship.js";
 import type {
@@ -5074,6 +5075,21 @@ export class InMemoryMessageRepository implements MessageRepositoryPort {
     return true;
   }
 
+  /**
+   * The first facts recorded on a reply stay, under `metadata.voice`, as the Postgres repository
+   * keeps them: parsed by the same schema, so facts outside the contract fail here first.
+   */
+  async recordVoiceTurnFacts(input: { workspaceId: string; conversationId: string; messageId: string } & VoiceTurnFacts): Promise<boolean> {
+    const facts = voiceTurnFactsSchema.parse(input);
+    const reply = (this.items.get(input.conversationId) ?? [])
+      .find((message) => message.id === input.messageId && message.workspaceId === input.workspaceId && message.role === "assistant");
+    if (!reply) return false;
+    if (!reply.metadata?.voice || typeof reply.metadata.voice !== "object") {
+      reply.metadata = { ...reply.metadata, voice: { ...facts, recordedAt: new Date().toISOString() } };
+    }
+    return true;
+  }
+
   /** Claims on teammate replies by message id, as the Postgres repository keeps them in `speech`. */
   private readonly speechClaims = new Map<string, { claimTurnId: string; claimedAtMs: number }>();
 
@@ -5348,11 +5364,14 @@ export class InMemoryHistoryItemsRepository implements HistoryItemsRepositoryPor
 
   async listPageByWorkspaceId(
     workspaceId: string,
-    input: { limit: number; offset?: number; sourceScope?: ConversationSourceScope; agentId?: string | null } = { limit: 50, offset: 0 },
+    input: { limit: number; offset?: number; sourceScope?: ConversationSourceScope; agentId?: string | null; q?: string } = { limit: 50, offset: 0 },
   ): Promise<{ items: HistoryItemsSourceRecord[]; total: number; hasMore: boolean }> {
     const offset = input.offset ?? 0;
+    // Matches the title only; the Postgres repository also matches the first user message.
+    const search = input.q?.toLowerCase();
     const conversations: HistoryItemsSourceRecord[] = [...this.conversationRepository.items.values()]
       .filter((conversation) => conversation.workspaceId === workspaceId && (!input.agentId || conversation.agentId === input.agentId))
+      .filter((conversation) => !search || (conversation.title ?? "").toLowerCase().includes(search))
       .map((conversation) => ({
         kind: "chat" as const,
         id: conversation.id,

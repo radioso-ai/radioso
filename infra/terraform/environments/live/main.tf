@@ -83,6 +83,8 @@ module "radioso" {
   slack_oauth_client_secret                 = var.slack_oauth_client_secret
   slack_signing_secret                      = var.slack_signing_secret
   resend_mail_api_key                       = var.resend_mail_api_key
+  lettermint_project_token                  = var.lettermint_project_token
+  mail_driver                               = var.mail_driver
   mail_from_email                           = var.mail_from_email
   mail_from_name                            = var.mail_from_name
   metrics_auth_token                        = var.metrics_auth_token
@@ -96,6 +98,7 @@ module "radioso" {
   openai_rerank_model                       = var.openai_rerank_model
   openai_vector_model                       = var.openai_vector_model
   openai_data_residency                     = var.openai_data_residency
+  azure_openai_endpoint                     = var.azure_openai_endpoint
   session_ttl_hours                         = var.session_ttl_hours
   metrics_enabled                           = var.metrics_enabled
   connector_public_base_url                 = var.connector_public_base_url
@@ -122,6 +125,8 @@ module "radioso" {
   monitoring_cloudsql_disk_threshold        = var.monitoring_cloudsql_disk_threshold
   monitoring_queue_depth_threshold          = var.monitoring_queue_depth_threshold
   monitoring_scheduler_failure_threshold    = var.monitoring_scheduler_failure_threshold
+  monitoring_voice_turn_limit_threshold     = var.monitoring_voice_turn_limit_threshold
+  monitoring_voice_abandoned_turn_threshold = var.monitoring_voice_abandoned_turn_threshold
   container_health_probes_enabled           = var.container_health_probes_enabled
   ops_event_webhook_url                     = var.ops_event_webhook_url
   ops_event_webhook_secret                  = var.ops_event_webhook_secret
@@ -135,6 +140,8 @@ module "radioso" {
   email_channel_webhook_secret                 = var.email_channel_webhook_secret
   email_channel_webhook_secret_previous        = var.email_channel_webhook_secret_previous
   resend_channel_api_key                       = var.resend_channel_api_key
+  lettermint_team_token                        = var.lettermint_team_token
+  lettermint_project_id                        = var.lettermint_project_id
   email_channel_workers_enabled                = var.email_channel_workers_enabled
   email_channel_task_queue_name                = "radioso-${var.environment}-email-channel"
   email_channel_task_max_dispatches_per_second = var.email_channel_task_max_dispatches_per_second

@@ -4,6 +4,7 @@ import {
   type QualityStatsMetric,
   type QualityStatsRange,
   type QualityStatsWindow,
+  type QualityVoiceStats,
 } from '@/lib/api-quality'
 
 export { QUALITY_STATS_RANGES }
@@ -17,7 +18,7 @@ export { QUALITY_STATS_RANGES }
 export const MIN_RATE_SAMPLE = 20
 
 /** Points drawn in a tile sparkline. See `toSparklineSeries` for how longer windows are reduced. */
-export const SPARKLINE_POINTS = 12
+const SPARKLINE_POINTS = 12
 
 // Keyed by the range union, so adding a range to the API contract fails to compile here
 // until its day count is supplied.
@@ -120,14 +121,14 @@ export const QUALITY_METRICS: readonly QualityMetricDescriptor[] = [
  * How many observations a sample rests on: the population for a rate, the count
  * itself for a volume. This is what `MIN_RATE_SAMPLE` is applied to.
  */
-export const sampleSize = (sample: QualityMetricSample): number =>
+const sampleSize = (sample: QualityMetricSample): number =>
   sample.denominator ?? sample.count
 
 /** Whether a sample carries enough observations to report a rate or a delta. */
 export const isSampleReportable = (sample: QualityMetricSample): boolean =>
   sampleSize(sample) >= MIN_RATE_SAMPLE
 
-export type QualityDelta =
+type QualityDelta =
   /** Rate change expressed in percentage points (e.g. 62% -> 68% is +6 points). */
   | { kind: 'rate'; points: number; tone: QualityDeltaTone }
   /** Volume change expressed as a proportion of the previous window (0.25 is +25%). */
@@ -238,7 +239,7 @@ export const formatRate = (rate: number | null): string =>
   rate === null ? '—' : rateFormatter.format(rate)
 
 /** Shown in place of a rate when the sample is below the floor. */
-export const TOO_FEW_TO_RATE = 'too few to rate'
+const TOO_FEW_TO_RATE = 'too few to rate'
 
 /**
  * The headline figure for a tile: the count for volume metrics, the rate for
@@ -294,3 +295,52 @@ export const deltaTrend = (delta: QualityDelta): 'up' | 'down' | 'flat' | null =
       return null
   }
 }
+
+/**
+ * A duration as the Quality page shows every one, turn latency and the Voice card's first words:
+ * "450 ms" under a second, "2.1 s" under ten, "12 s" above; "—" when none was recorded.
+ */
+export const formatDuration = (durationMs: number | null): string => {
+  if (durationMs === null) {
+    return '—'
+  }
+  if (durationMs < 1000) {
+    return `${durationMs} ms`
+  }
+  const seconds = durationMs / 1000
+  return `${seconds >= 10 ? Math.round(seconds) : seconds.toFixed(1)} s`
+}
+
+/** "<turns that hit the limit> of <turns>", using the same count formatting as the health tiles. */
+export const formatVoiceTurnLimit = (turnLimitTurns: number, turns: number): string =>
+  `${formatCount(turnLimitTurns)} of ${formatCount(turns)}`
+
+/**
+ * Interruptions per call, one decimal; exactly "0 per call" when there are none, and "<0.1 per call"
+ * when some are too few to show at one decimal, so they never read as zero.
+ */
+export const formatVoiceInterruptionRate = (interruptions: number, calls: number): string => {
+  if (interruptions === 0 || calls <= 0) {
+    return '0 per call'
+  }
+  const rate = (interruptions / calls).toFixed(1)
+  return rate === '0.0' ? '<0.1 per call' : `${rate} per call`
+}
+
+/** "<calls that asked> of <calls> calls". */
+export const formatVoiceCallbackCalls = (callbackCalls: number, calls: number): string =>
+  `${formatCount(callbackCalls)} of ${formatCount(calls)} ${calls === 1 ? 'call' : 'calls'}`
+
+interface QualityVoiceStatsRow {
+  label: string
+  value: string
+}
+
+/** The Voice card's rows, in display order: current-window counts, with no delta against the previous window. */
+export const voiceStatsRows = (voice: QualityVoiceStats): QualityVoiceStatsRow[] => [
+  { label: 'Calls', value: formatCount(voice.calls) },
+  { label: 'First words', value: formatDuration(voice.firstSpeechMedianMs) },
+  { label: 'Turns that hit the time limit', value: formatVoiceTurnLimit(voice.turnLimitTurns, voice.turns) },
+  { label: 'Interruptions', value: formatVoiceInterruptionRate(voice.interruptions, voice.calls) },
+  { label: 'Asked for a callback', value: formatVoiceCallbackCalls(voice.callbackCalls, voice.calls) },
+]

@@ -107,3 +107,13 @@ output "application_error_log_metric_name" {
   description = "Log-based metric counting error-level application logs across this stack's Cloud Run services. Null when monitoring is disabled."
   value       = try(google_logging_metric.application_errors[0].name, null)
 }
+
+output "voice_turn_limit_log_metric_name" {
+  description = "Log-based metric counting voice turns that hit the turn limit on the backend service. Null when monitoring is disabled."
+  value       = try(google_logging_metric.voice_turn_limit[0].name, null)
+}
+
+output "voice_turn_abandoned_log_metric_name" {
+  description = "Log-based metric counting voice turns on the backend service whose request the voice runtime closed before the outcome reached it. Null when monitoring is disabled."
+  value       = try(google_logging_metric.voice_turn_abandoned[0].name, null)
+}

@@ -16,6 +16,12 @@ import type {
   OperatorReplySpeechClaims,
   PendingOperatorReply,
 } from "../../modules/chat/contracts/operatorReplySpeech.js";
+import {
+  VOICE_TURN_FACTS_METADATA_KEY,
+  voiceTurnFactsSchema,
+  type VoiceTurnFacts,
+  type VoiceTurnFactsRecorder,
+} from "../../modules/chat/contracts/voiceTurnFacts.js";
 import { VOICE_BEHAVIOR } from "../../shared/domain/behaviorConfig.js";
 import { HUMAN_AUTHORED_MESSAGE_SOURCES, isHumanAuthoredMessageSource } from "../../shared/domain/messageAuthorship.js";
 import { clockTimestamp, clockTimestampMinusSeconds, jsonbConcat, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
@@ -357,6 +363,7 @@ const markerRecordedAtOf = sql<string>`GREATEST(
   metadata_json -> 'speech' ->> 'skippedAt'
 )`;
 const carriesInterruption = sql<boolean>`jsonb_typeof(metadata_json -> 'interruption') = 'object'`;
+const carriesVoiceTurnFacts = sql<boolean>`jsonb_typeof(metadata_json -> ${VOICE_TURN_FACTS_METADATA_KEY}::text) = 'object'`;
 const speechState = sql<string>`metadata_json -> 'speech' ->> 'state'`;
 /** Pending, or claimed by a turn that never settled it within the expiry. */
 const awaitsSpeech = sql<boolean>`(${speechState} = 'pending' OR (${speechState} = 'claimed'
@@ -425,7 +432,7 @@ const toPreview = (content: string): string => {
 };
 
 export class MessageRepository
-  implements MessageRepositoryPort, ReplyInterruptionMarker, OperatorReplySpeechClaims {
+  implements MessageRepositoryPort, ReplyInterruptionMarker, OperatorReplySpeechClaims, VoiceTurnFactsRecorder {
   constructor(private readonly db: Db) {}
 
   async findByIdAndWorkspaceId(workspaceId: string, messageId: string): Promise<MessageRecord | null> {
@@ -873,6 +880,32 @@ export class MessageRepository
       .set((eb) => ({
         metadata_json: sql`CASE WHEN ${carriesInterruption} THEN metadata_json
           ELSE ${jsonbConcat(eb.ref("metadata_json"), sql`jsonb_build_object('interruption', ${marker})`)} END`,
+      }))
+      .where("workspace_id", "=", input.workspaceId)
+      .where("conversation_id", "=", input.conversationId)
+      .where("id", "=", input.messageId)
+      .where("role", "=", "assistant")
+      .executeTakeFirst();
+    return result.numUpdatedRows > 0n;
+  }
+
+  /**
+   * Keeps the facts under `metadata_json.voice` with the time they were recorded, merged into the
+   * reply's other metadata. Only the contract's closed fields are stored. A reply that already
+   * carries facts keeps them whole: the first record wins, so a retried note changes nothing.
+   */
+  async recordVoiceTurnFacts(input: {
+    workspaceId: string;
+    conversationId: string;
+    messageId: string;
+  } & VoiceTurnFacts): Promise<boolean> {
+    const facts: VoiceTurnFacts = voiceTurnFactsSchema.parse(input);
+    const block = jsonbConcat(toJsonb(facts), sql`jsonb_build_object('recordedAt', ${markerRecordedAt})`);
+    const result = await this.db
+      .updateTable("messages")
+      .set((eb) => ({
+        metadata_json: sql`CASE WHEN ${carriesVoiceTurnFacts} THEN metadata_json
+          ELSE ${jsonbConcat(eb.ref("metadata_json"), sql`jsonb_build_object(${VOICE_TURN_FACTS_METADATA_KEY}::text, ${block})`)} END`,
       }))
       .where("workspace_id", "=", input.workspaceId)
       .where("conversation_id", "=", input.conversationId)

@@ -1,12 +1,12 @@
 ---
 title: "Data Residency"
-description: "Where each outside service Radioso calls processes data, and which setting controls its region."
-last_updated: 2026-10-19
+description: "Where each outside service Radioso calls processes data, where each stack stores its logs, and which setting controls the region."
+last_updated: 2026-10-24
 ---
 
 # Data Residency
 
-Radioso's own backend, database, and documents run wherever you deploy them. A handful of outside services sit behind that: a model provider for chat and embeddings, a voice vendor for calls, an email provider for outbound and inbound mail, product analytics, Slack, and Stripe. Each one decides where it processes the data you send it, and that's a separate question from where Radioso itself runs. This page lists each one, what it handles, and the setting — if there is one — that controls its region.
+Radioso's own backend, database, and documents run wherever you deploy them. A handful of outside services sit behind that: a model provider for chat and embeddings, a voice vendor for calls, an email provider for outbound and inbound mail, product analytics, Slack, and Stripe. Each one decides where it processes the data you send it, and that's a separate question from where Radioso itself runs. This page lists each one, what it handles, and the setting — if there is one — that controls its region, then where each stack's own logs are stored.
 
 ## OpenAI
 
@@ -17,9 +17,21 @@ Getting OpenAI itself to process requests in-region takes its own setup, separat
 1. Apply for OpenAI's abuse-monitoring controls and sign its Modified Retention amendment. Regional processing requires both.
 2. Create a project with its region set to Europe (or United States) and issue an API key from it. An existing project can't change region later. A key from a project with Global geography reaches chat and Responses on the regional endpoints once your organization is eligible. The regional embeddings endpoint accepts only keys from a project created with a region.
 3. Confirm every model you use, including the embedding model, supports regional processing in that region.
-4. Set `OPENAI_DATA_RESIDENCY` and `OPENAI_API_KEY` (the regional project's key) together, then redeploy. Each runtime — the backend, the document worker, and the crawler worker — checks the key against its regional embeddings endpoint once at startup, before it serves traffic, and refuses to start if that endpoint rejects it. An OpenAI outage during that check only logs a warning and lets startup continue, so a transient OpenAI problem never blocks an otherwise-good deploy.
+4. Set `OPENAI_DATA_RESIDENCY` and `OPENAI_API_KEY` (the regional project's key) together, then redeploy. Each runtime — the backend, the document worker, and the crawler worker — checks the key against the regional endpoint once at startup, before it serves traffic, for every platform OpenAI model it's configured to call (embeddings, chat, rewrite, and rerank), and refuses to start if the endpoint rejects any of them. An OpenAI outage during that check only logs a warning and lets startup continue, so a transient OpenAI problem never blocks an otherwise-good deploy.
 
 A workspace's own OpenAI key (Settings → Providers, bring-your-own-key) carries its own residency choice, picked next to the key: Global (the default), US, or EU. It's independent of `OPENAI_DATA_RESIDENCY` — a workspace can bring a key from a Europe-region project while the platform key stays global, or the other way around. Match the choice to whichever region the key's own OpenAI project was created with; the workspace operator authors it, since Radioso has no way to tell a regional key from a global one by looking at it. Changing the choice later needs no new key — pick the new region next to the stored one and it takes effect on the next call.
+
+### Azure OpenAI
+
+Azure OpenAI runs the same models in an Azure region, under your own Azure subscription, with a key Azure issues rather than OpenAI. It's a second route to the same regional-processing outcome as the section above, without OpenAI's own abuse-monitoring approval step.
+
+1. In Azure AI Foundry, deploy each model your platform key uses — chat, rewrite, rerank, and the embedding model — as a **Data Zone Standard** deployment in an EU (or other) region. Give each deployment the same name as the model it serves (for example, deploy `gpt-5.4-mini` with the deployment name `gpt-5.4-mini`): the native `openai` client sends the model name as the request's `model` field, and Azure resolves that to a deployment by name. Data Zone Standard quota is separate from Global Standard quota, so a model your subscription already has on Global Standard still needs its own Data Zone Standard deployment. The host accepts `*.openai.azure.com`, `*.services.ai.azure.com`, or `*.cognitiveservices.azure.com` resource endpoints.
+2. Set `AZURE_OPENAI_ENDPOINT` to the resource's endpoint (shown in the Azure portal as something like `https://<resource>.openai.azure.com`), `OPENAI_API_KEY` to that resource's key, and leave `OPENAI_DATA_RESIDENCY` at its default, `global`. Setting `AZURE_OPENAI_ENDPOINT` together with a non-global `OPENAI_DATA_RESIDENCY` is a configuration error — the two routes are mutually exclusive — and the backend refuses to start until one of them is unset.
+3. Redeploy the backend, document worker, and crawler worker with the new settings. Each one checks every configured platform-OpenAI model — embeddings, chat, rewrite, and rerank — against the Azure endpoint once at startup, before it serves traffic, and refuses to start if Azure rejects the key or reports a model's deployment missing. As with the regional-endpoint check above, a transient Azure outage during that check only logs a warning and lets startup continue.
+
+Any other OpenAI model a workspace or an agent picks on the platform key — a workspace-level model override, or a per-agent one — needs its own Data Zone Standard deployment under its model name too, the same as the platform defaults above; a model that exists only on OpenAI's own host fails every call once the platform key is an Azure key.
+
+A workspace's own OpenAI key is unaffected either way: its BYOK residency choice only ever reaches OpenAI's own hosts, never an Azure endpoint.
 
 ## Anthropic and Gemini
 
@@ -33,11 +45,45 @@ A voice runtime key is a workspace's own ElevenLabs account, set under Settings 
 
 Resend sends and receives mail for the email channel. `RESEND_CHANNEL_REGION` picks the region of the sending domain Resend provisions for the channel — `eu-west-1` for an EU deployment, `us-east-1` by default. It doesn't move Resend's own account data, delivery metadata, logs, or received message content, which Resend keeps in the United States regardless. If your deployment needs a safeguard for that transfer — standard contractual clauses, for example — put it in place separately; this setting doesn't provide one.
 
+## Lettermint (email)
+
+Lettermint is the email channel's other provider (`EMAIL_CHANNEL_PROVIDER=lettermint`, and `MAIL_DRIVER=lettermint` for transactional mail). It has no region setting because it processes and stores sent and received mail — message content, delivery metadata, and logs — in the EU regardless of which region your deployment runs in. The sub-processors that handle mail are UpCloud (Netherlands), OVH (Germany, for backups), and Postmastery (Netherlands); its US sub-processors, Stripe for payments and Slack for its own team chat, have no access to mail. Lettermint keeps message content for 28 days.
+
 ## PostHog and OTEL log export
 
 PostHog product analytics and PostHog error reporting (`PRODUCT_ANALYTICS_SINKS` or `ERROR_SINKS` including `posthog`, an Enterprise Edition sink) send to `POSTHOG_HOST`. Point it at PostHog's EU ingestion host (`https://eu.i.posthog.com`) to keep that data in the EU, or its US host to keep it in the US.
 
 OTEL log export is a separate mechanism with its own setting, `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT`; it doesn't read `POSTHOG_HOST`. As a Terraform convenience, the Terraform module defaults `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` to `<posthog_host>/i/v1/logs` when OTEL logs are enabled and no explicit endpoint is set, but a deployment that sets `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` directly controls its own region independently of `POSTHOG_HOST`.
+
+## Google Cloud Logging
+
+On Radioso Cloud, every request and application log line goes to Google Cloud Logging in the stack's project, and the stack decides where it's stored. The EU stack keeps its entries in a log bucket in `europe-west1` (Belgium). The US stack keeps its entries in the project's `_Default` bucket, whose location is `global`. Both keep them for 30 days.
+
+Error Reporting groups the errors it finds in the EU bucket under `europe-west1`. Two kinds of entry stay in `global` on every stack. Google's admin-activity audit entries, which record which identity changed which resource, go to the project's `_Required` bucket for 400 days; Google fixes that bucket's location and retention. Entries about project-wide resources that have no region, such as a service account minting a deploy token, stay in `_Default`. Neither kind carries conversation content.
+
+A deployment on the bundled Terraform stores its logs in its project's `_Default` bucket until you route them. To keep an environment's entries in its own region, set `regional_log_bucket_enabled = true` in its foundation root (`infra/terraform/foundation/environments/<env>/main.tf`). That creates a `radioso-<env>-logs` bucket in the environment's region with 30-day retention, a sink that routes every entry about a resource in that region and about the environment's Cloud SQL instance to it, and an exclusion that keeps those entries out of `_Default`. The filter takes every entry in the region, so the environment has to be the only one in its region within the project.
+
+Apply it in two steps, because Google takes a few minutes to apply a sink or exclusion change, and an exclusion that lands first drops those minutes of entries:
+
+```bash
+cd infra/terraform/foundation/environments/<env>
+export GOOGLE_OAUTH_ACCESS_TOKEN="$(gcloud auth print-access-token)"
+terraform init -backend-config=backend.hcl
+terraform apply -target=module.foundation.google_logging_project_sink.regional
+gcloud logging read 'resource.type="cloud_run_revision"' --project=<project> \
+  --bucket=radioso-<env>-logs --location=<region> --view=_AllLogs --limit=3 --freshness=10m
+terraform apply
+```
+
+Run the last apply once the read returns entries. Entries written before the apply stay in `_Default` until its retention removes them.
+
+Read the regional bucket by naming its view. That needs the `logging.views.access` permission, which the Private Logs Viewer and Logs View Accessor roles carry and Logs Viewer doesn't:
+
+```bash
+gcloud logging read 'resource.type="cloud_run_revision" AND severity>=ERROR' \
+  --project=<project> --bucket=radioso-<env>-logs --location=<region> --view=_AllLogs \
+  --limit=5 --freshness=1h
+```
 
 ## Slack and Stripe
 

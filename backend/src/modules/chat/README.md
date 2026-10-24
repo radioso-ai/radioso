@@ -123,6 +123,15 @@ lands on `chat_replay_stream_first_answer_chunk_latency_ms` (`route`,
   marker arrives once, and the pane merges by id. The public tail and the
   calling-agent update reader never re-deliver. The voice channel's
   composition is the caller.
+- `contracts/voiceTurnFacts.ts`: `VoiceTurnFactsRecorder`, the port the voice
+  channel calls once a turn has ended, with the stored reply's id and the turn's
+  facts (`firstSpeechMs`, `bridged`, `turnLimitReached`, `outcome`), timings and
+  closed values only. `MessageRepository.recordVoiceTurnFacts` implements it: it
+  merges the contract's fields with `recordedAt` into `metadata_json.voice`
+  (`VOICE_TURN_FACTS_METADATA_KEY`), keeps the first facts on a reply whole, and
+  resolves false, leaving the message alone, when it is not an assistant reply of
+  that conversation. Chat reads none of it back; the quality stats count it, and
+  the block moves no tail cursor.
 - `contracts/operatorReplySpeech.ts`: a teammate's reply on a conversation
   whose caller hears replies (`operatorRepliesAreSpoken`: the voice channel
   context) waits for the caller's next turn. `OperatorReplyService.write`

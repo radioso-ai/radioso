@@ -8,6 +8,8 @@ frontend_image = "us-central1-docker.pkg.dev/radioso-494120/radioso-live/fronten
 # public_chat_session_secret     = ""
 # connector_encryption_key = ""
 # resend_mail_api_key      = ""
+# lettermint_project_token = ""
+# mail_driver           = "lettermint"
 # posthog_api_key          = ""
 # mail_from_email       = "noreply@your-verified-domain.example"
 # mail_from_name        = "Radioso"
@@ -42,6 +44,8 @@ frontend_image = "us-central1-docker.pkg.dev/radioso-494120/radioso-live/fronten
 # should not keep in state), then paste its ID here.
 # monitoring_extra_notification_channel_ids = ["projects/YOUR_PROJECT/notificationChannels/1234567890"]
 # container_health_probes_enabled = true
+# monitoring_voice_turn_limit_threshold     = 5   # voice turns hitting the turn limit per 15 minutes
+# monitoring_voice_abandoned_turn_threshold = 5   # voice requests closed before the outcome per 15 minutes
 
 # --- Ops event feed ---
 # Add ops_webhook to the sink lists above to push product events and errors out.
@@ -54,10 +58,12 @@ frontend_image = "us-central1-docker.pkg.dev/radioso-494120/radioso-live/fronten
 
 # --- Email channel ---
 # Unset email_channel_provider leaves the channel off. Supply secrets through TF_VAR_* in CI.
-# email_channel_provider                = "resend"
+# email_channel_provider                = "resend"   # or "lettermint"
 # email_channel_inbound_domain          = "inbound.your-domain.example"
 # email_channel_webhook_secret          = ""   # TF_VAR_email_channel_webhook_secret
 # email_channel_webhook_secret_previous = ""   # only while a rotation overlaps
 # resend_channel_api_key                = ""   # unset uses resend_mail_api_key
+# lettermint_team_token                 = ""   # lettermint only
+# lettermint_project_id                 = ""   # lettermint only
 # email_channel_workers_enabled         = true
 # email_channel_sweep_schedule          = "*/5 * * * *"

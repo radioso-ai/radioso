@@ -1,0 +1,8 @@
+{
+  "data": {
+    "verified": false,
+    "message": "The MX records of mail.customer.test do not point to lettermint.mx.",
+    "expected_mx_records": ["lettermint.mx"],
+    "found_mx_records": []
+  }
+}

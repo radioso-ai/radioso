@@ -6,6 +6,7 @@ import {
   type QualityStatsWindow,
   type QualityVoiceStats,
 } from '@/lib/api-quality'
+import { formatStageDuration } from '@/lib/activity-stage-presentation'
 
 export { QUALITY_STATS_RANGES }
 
@@ -296,9 +297,9 @@ export const deltaTrend = (delta: QualityDelta): 'up' | 'down' | 'flat' | null =
   }
 }
 
-/** Seconds with one decimal, e.g. 2100 -> "2.1 s"; null when no turn recorded a first-speech time. */
+/** The median in the dashboard's duration style (2100 -> "2.1s"); "—" when no turn recorded a first-speech time. */
 export const formatVoiceFirstSpeech = (medianMs: number | null): string =>
-  medianMs === null ? '—' : `${(medianMs / 1000).toFixed(1)} s`
+  medianMs === null ? '—' : formatStageDuration(medianMs)
 
 /** "<turns that hit the limit> of <turns>", using the same count formatting as the health tiles. */
 export const formatVoiceTurnLimit = (turnLimitTurns: number, turns: number): string =>

@@ -208,8 +208,9 @@ describe('formatting', () => {
 })
 
 describe('voice stats formatting', () => {
-  it('prints the first-speech median in seconds with one decimal', () => {
-    expect(formatVoiceFirstSpeech(2100)).toBe('2.1 s')
+  it('prints the first-speech median in the duration style the turn flow uses', () => {
+    expect(formatVoiceFirstSpeech(2100)).toBe('2.1s')
+    expect(formatVoiceFirstSpeech(640)).toBe('640ms')
   })
 
   it('says there is no first-speech reading when no turn recorded one', () => {
@@ -250,7 +251,7 @@ describe('voice stats formatting', () => {
 
     expect(voiceStatsRows(voice)).toEqual([
       { label: 'Calls', value: '42' },
-      { label: 'First words', value: '2.1 s' },
+      { label: 'First words', value: '2.1s' },
       { label: 'Turns that hit the time limit', value: '3 of 380' },
       { label: 'Interruptions', value: '0.4 per call' },
       { label: 'Outcomes', value: '37 continued · 4 asked for a callback' },

@@ -7,7 +7,7 @@ import { normalizeEmail } from "../../../modules/auth/domain/authPrimitives.js";
 import { PENDING_REGISTRATION_COOKIE_NAME } from "../../../modules/auth/services/authFunnelService.js";
 import { createRateLimitMiddleware } from "../middleware/rateLimit.js";
 import { readRequestSource } from "../middleware/requestSource.js";
-import { requireSession, type SessionDependencies } from "../middleware/requireSession.js";
+import { requireSession, sessionCredentialGeneration, type SessionDependencies } from "../middleware/requireSession.js";
 import { validateBody } from "../middleware/validate.js";
 
 // Shape only: the display-name rules (trim, blank clears, length, control
@@ -340,11 +340,11 @@ export const createAuthRoutes = (dependencies: AuthRouteDependencies): Router =>
     async (req, res, next) => {
       try {
         const params = invitationTokenParamsSchema.parse(req.params);
-        const { userId, credentialGeneration } = res.locals as { userId: string; credentialGeneration: number };
+        const { userId } = res.locals as { userId: string };
         const result = await dependencies.authService.acceptInvitationAsUser({
           invitationToken: params.invitationToken,
           userId,
-          credentialGeneration,
+          credentialGeneration: sessionCredentialGeneration(res),
         });
         res.setHeader("Set-Cookie", result.sessionCookie);
         res.status(200).json({

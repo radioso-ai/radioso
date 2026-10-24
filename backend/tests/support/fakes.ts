@@ -594,10 +594,11 @@ interface InMemorySessionWriter {
 
 export class InMemorySessionRepository implements SessionRepositoryPort, InMemorySessionWriter {
   private readonly items = new Map<string, SessionRecord>();
-  // Postgres reads the user's credential generation in the session lookup; tests wire the users in.
-  private users: Pick<InMemoryUserRepository, "findById"> | null = null;
+  // Postgres joins the user into the session lookup, for the credential generation and to
+  // drop disabled users; tests wire the users in.
+  private users: Pick<InMemoryUserRepository, "findById" | "disabledAt"> | null = null;
 
-  setUserRepository(users: Pick<InMemoryUserRepository, "findById">): void {
+  setUserRepository(users: Pick<InMemoryUserRepository, "findById" | "disabledAt">): void {
     this.users = users;
   }
 
@@ -624,7 +625,9 @@ export class InMemorySessionRepository implements SessionRepositoryPort, InMemor
     const session = [...this.items.values()].find(
       (item) => item.sessionTokenHash === sessionTokenHash && item.expiresAt > now && item.revokedAt === null,
     );
-    const user = session ? await this.users.findById(session.userId) : null;
+    const user = session && !this.users.disabledAt(session.userId)
+      ? await this.users.findById(session.userId)
+      : null;
     return session && user ? { ...session, userCredentialGeneration: user.credentialGeneration } : null;
   }
 

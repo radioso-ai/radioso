@@ -2,7 +2,7 @@ import { Router } from "express";
 import { z } from "zod";
 
 import type { AppDependencies } from "../../server/types.js";
-import { requireSession, type SessionDependencies } from "../middleware/requireSession.js";
+import { requireSession, sessionCredentialGeneration, type SessionDependencies } from "../middleware/requireSession.js";
 import { requireAccountPermission, requireWorkspacePermission } from "../middleware/requirePermission.js";
 import { validateBody } from "../middleware/validate.js";
 import { badRequest } from "../../../shared/domain/errors.js";
@@ -116,10 +116,10 @@ export const createAccountUserRoutes = (dependencies: AccountUserRouteDependenci
 
   router.post("/accounts", authenticatedUserSession, validateBody(createAccountSchema), async (req, res, next) => {
     try {
-      const { userId, credentialGeneration } = res.locals as { userId: string; credentialGeneration: number };
+      const { userId } = res.locals as { userId: string };
       const result = await dependencies.authService.createOrganization({
         userId,
-        credentialGeneration,
+        credentialGeneration: sessionCredentialGeneration(res),
         organizationName: req.body.organizationName,
       });
       res.setHeader("Set-Cookie", result.sessionCookie);
@@ -181,10 +181,10 @@ export const createAccountUserRoutes = (dependencies: AccountUserRouteDependenci
 
   router.post("/switch", authenticatedUserSession, validateBody(accountSwitchSchema), async (req, res, next) => {
     try {
-      const { userId, credentialGeneration } = res.locals as { userId: string; credentialGeneration: number };
+      const { userId } = res.locals as { userId: string };
       const result = await dependencies.authService.switchAccount({
         userId,
-        credentialGeneration,
+        credentialGeneration: sessionCredentialGeneration(res),
         targetAccountId: req.body.accountId,
         preferredWorkspaceId: req.body.preferredWorkspaceId,
       });

@@ -140,7 +140,11 @@ export interface AccountRepositoryPort {
   deleteById(id: string): Promise<boolean>;
 }
 
-/** Sessions are written by `AuthFunnelRepositoryPort.createSessionForCredential`. */
+/**
+ * Sessions are written through `AuthFunnelRepositoryPort`: by the
+ * generation-guarded `createSessionForCredential`, or by the email-verification
+ * and pending-ticket claims, which hold the user lock while they write.
+ */
 export interface SessionRepositoryPort {
   findActiveByTokenHash(sessionTokenHash: string, now: Date): Promise<ActiveSession | null>;
   touch(sessionId: string, lastSeenAt: Date): Promise<void>;

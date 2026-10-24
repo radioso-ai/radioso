@@ -5,8 +5,9 @@ This module owns each environment's identity plane:
 - the CI identities GitHub Actions impersonates, one per workflow, with their project roles;
 - the four application service accounts and the IAM the runtime services need between them;
 - the GitHub OIDC workload identity pool and provider, and which workflow may impersonate which
-  identity; and
-- the Terraform identity's access to the routine Terraform state bucket.
+  identity;
+- the Terraform identity's access to the routine Terraform state bucket; and
+- where an environment that opts in stores its log entries (see [Regional logs](#regional-logs)).
 
 The routine runtime roots in `../environments/` consume these identities through `data` sources
 and manage nothing above resource-level IAM, so the identity that applies them holds no project
@@ -29,8 +30,8 @@ terraform apply
 ```
 
 Applying needs a project owner, or a principal holding Project IAM Admin, Role Administrator,
-Service Account Admin, Workload Identity Pool Admin, Service Usage Admin, and Storage Admin on the
-state bucket.
+Service Account Admin, Workload Identity Pool Admin, Service Usage Admin, Storage Admin on the
+state bucket, and Logs Configuration Writer where `regional_log_bucket_enabled` is on.
 
 Every plan also reads the live project and service-account policies. Two `check` blocks warn when
 a CI identity holds a project role, or trusts a workload identity principal, that this module
@@ -99,6 +100,25 @@ can't create.
 | --- | --- |
 | `roles/firebasehosting.admin` | Releases the docs portal to Firebase Hosting |
 | `roles/serviceusage.apiKeysViewer` | `firebase-tools` reads the web app config, API key included, during a Hosting deploy |
+
+## Regional logs
+
+Every Cloud Run request and application log line lands in the project's `_Default` bucket, whose
+location is `global` and can't change. `live` and `live-eu` share a project, so without routing,
+EU entries would sit in that global bucket beside US ones. `live-eu` sets
+`regional_log_bucket_enabled = true`, which adds:
+
+- a `radioso-live-eu-logs` bucket in `europe-west1` with 30-day retention;
+- a sink of the same name routing every entry about a resource in `europe-west1`, plus the
+  `radioso-live-eu-db` Cloud SQL instance (whose entries carry only a coarse `europe` region), to
+  that bucket; and
+- an exclusion on the `_Default` sink with the same filter, so the entries are stored once.
+
+The routing sits here because the Terraform identity holds no sink or exclusion permission: a sink
+could send every log line out of the project, and an exclusion could drop them. Log-based metrics
+count entries whatever bucket stores them, so the routine root's alerts keep firing. Read the
+bucket with `gcloud logging read '<filter>' --bucket=radioso-live-eu-logs --location=europe-west1
+--view=_AllLogs --project=radioso-494120`.
 
 ## Changing a role
 

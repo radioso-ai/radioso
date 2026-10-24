@@ -58,6 +58,12 @@ variable "manage_project_services" {
   default     = true
 }
 
+variable "regional_log_bucket_enabled" {
+  description = "Whether this environment's log entries are stored in a log bucket in its own region instead of the project's global _Default bucket. Enable for an environment that promises regional residency."
+  type        = bool
+  default     = false
+}
+
 variable "docs_deployer_enabled" {
   description = "Whether this environment hosts the docs portal on Firebase Hosting, which adds the docs deploy identity."
   type        = bool

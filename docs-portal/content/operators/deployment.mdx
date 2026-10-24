@@ -1,7 +1,7 @@
 ---
 title: "Deployment"
 description: "Production deployment expectations for Radioso and the standalone docs portal."
-last_updated: 2026-10-19
+last_updated: 2026-10-24
 ---
 
 import { Callout } from 'nextra/components'
@@ -194,7 +194,7 @@ The sweep runs in the document worker, so retention happens only where that proc
 
 The conversation retention sweep runs in the document worker every 15 minutes and enforces each workspace's retention window and the fixed windows on summaries, routine state and raw inbound mail (see [Data retention](/operators/data-retention)). Under the Cloud Run task runtime the trigger is a scheduled push to `POST /internal/tasks/periodic-tasks/conversation-retention/run`; the bundled Terraform provisions the Cloud Scheduler job (override the cadence with `conversation_retention_schedule`) and alerts on its failures with the other scheduler jobs.
 
-The same Terraform pins how long deleted data outlives an erasure: seven Cloud SQL backups, and 30 days in the project's `_Default` log bucket. Before the first apply in a project, confirm that bucket is in `global` with `gcloud logging buckets describe _Default --location=global --project=<project>`.
+The same Terraform pins how long deleted data outlives an erasure: seven Cloud SQL backups, and 30 days in the project's `_Default` log bucket, or in the environment's own regional bucket where its foundation root sets `regional_log_bucket_enabled` (see [Data residency](/operators/data-residency#google-cloud-logging)). Before the first apply in a project, confirm that bucket is in `global` with `gcloud logging buckets describe _Default --location=global --project=<project>`.
 
 Point-in-time recovery is a per-stack choice, `db_point_in_time_recovery_enabled`, off by default; when on, it keeps 7 days of transaction logs. Turning it on restarts the Cloud SQL instance, so enable it per stack deliberately, in a quiet window, and never as a side effect of an unrelated apply.
 

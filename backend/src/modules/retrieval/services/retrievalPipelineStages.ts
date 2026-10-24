@@ -19,6 +19,7 @@ import type {
 import type { AppliedConstraint, ParsedQueryInterpretation } from "../domain/queryConstraintTypes.js";
 import type { RetrievalSourceFilter, RetrievalSourceScope } from "../domain/retrievalSourceFilter.js";
 import { isSomeTermsLexicalMatch, type RetrievedChunk } from "../domain/vectorSearch.js";
+import type { LexicalSomeTermsPassReport } from "../domain/lexicalSomeTermsMatch.js";
 import { type RequestedDateRange, requestedDateRangeDays } from "../domain/temporal/requestedDateRange.js";
 import type { PromptBuildResult } from "./promptBuilder.js";
 
@@ -81,6 +82,9 @@ export interface RetrievalBranchResult {
   semanticSearched: boolean;
   semanticContexts: RetrievedChunk[];
   lexicalContexts: RetrievedChunk[];
+  // What this branch's lexical some-terms pass did. Absent on a hand-built fixture,
+  // which the trace reads as skipped.
+  lexicalSomeTermsPass?: LexicalSomeTermsPassReport;
   // Measured around this branch's own search, not the enclosing stage. Branches
   // that share a semantic query share the one search issued for it, so they carry
   // identical semantic timing. The semantic pair is absent when the branch issued
@@ -261,7 +265,7 @@ type TraceCandidateRetrievalInput = TraceQueryInterpretationInput & {
   temporalDateRange?: RequestedDateRange;
   temporalLookupRanking?: TemporalLookupRanking;
   temporalStructuredLookupEnabled?: boolean;
-  retrievalBranches?: Array<unknown>;
+  retrievalBranches?: Array<{ lexicalSomeTermsPass?: LexicalSomeTermsPassReport }>;
   activeRetrievalSubqueries?: Array<unknown>;
   vectorFallbackApplied?: unknown;
   semanticRetrievalAvailability?: unknown;
@@ -370,6 +374,22 @@ export const formatDegradedChannels = (channels: unknown): string | undefined =>
   return known.length === 0 ? "none" : known.join(",");
 };
 
+// Per-turn counts of the lexical branches whose some-terms pass ran or ran out of time,
+// and the slowest pass, so a turn with no partial matches is told apart from one whose
+// pass never finished.
+const someTermsPassTraceAttributes = (
+  branches: Array<{ lexicalSomeTermsPass?: LexicalSomeTermsPassReport }> | undefined,
+): TraceAttributes => {
+  const passes = (branches ?? []).flatMap((branch) => (branch.lexicalSomeTermsPass ? [branch.lexicalSomeTermsPass] : []));
+  return {
+    "retrieval.lexical.some_terms_pass.ran.count": boundedTraceCount(passes.filter((pass) => pass.outcome === "ran").length),
+    "retrieval.lexical.some_terms_pass.timed_out.count": boundedTraceCount(
+      passes.filter((pass) => pass.outcome === "timed_out").length,
+    ),
+    "retrieval.lexical.some_terms_pass.max_duration_ms": Math.max(0, ...passes.map((pass) => Math.round(pass.durationMs))),
+  };
+};
+
 export const buildCandidateRetrievalTraceAttributes = (result: TraceCandidateRetrievalInput): TraceAttributes =>
   compactTraceAttributes({
     ...buildQueryInterpretationTraceAttributes(result),
@@ -379,6 +399,7 @@ export const buildCandidateRetrievalTraceAttributes = (result: TraceCandidateRet
     "retrieval.candidates.lexical.some_terms.count": boundedTraceCount(
       result.lexicalContexts?.filter(isSomeTermsLexicalMatch).length,
     ),
+    ...someTermsPassTraceAttributes(result.retrievalBranches),
     "retrieval.candidates.temporal.count": boundedTraceCount(result.temporalContexts?.length),
     "retrieval.temporal.mode": result.temporalQueryMode,
     "retrieval.temporal.structured_lookup.enabled": result.temporalStructuredLookupEnabled,

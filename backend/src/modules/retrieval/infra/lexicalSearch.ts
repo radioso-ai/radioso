@@ -4,6 +4,9 @@ import { buildPlainLexicalQueryPlan } from "../domain/lexicalQueryPlan.js";
 import {
   buildSomeTermsLexicalQuery,
   planSomeTermsRanking,
+  skippedSomeTermsPass,
+  type LexicalMatchMode,
+  type LexicalSomeTermsPassReport,
   type LexicalTermAlternative,
   type SomeTermsLexicalQuery,
   type SomeTermsRankingPlan,
@@ -19,18 +22,29 @@ export type LexicalSearchInput = {
   workspaceId: string;
   query: string;
   topK: number;
+  matchMode: LexicalMatchMode;
   metadataFilter?: VectorMetadataFilter;
   sourceFilter?: RetrievalSourceFilter;
   lexicalPlan?: LexicalQueryPlan;
 };
 
+export interface LexicalSearchResult {
+  /** All-terms hits first; under `all_or_some_terms`, some-terms hits may follow. */
+  matches: RetrievedChunk[];
+  someTermsPass: LexicalSomeTermsPassReport;
+}
+
 /**
- * Keyword search over chunk search text. Results hold every query term first; when too
- * few chunks do, chunks holding part of the query follow, each tagged with its
- * `lexicalTermCoverage`.
+ * Keyword search over chunk search text. Every match carries its
+ * `lexicalTermCoverage`, and the result says what the some-terms pass did.
  */
 export interface LexicalSearchPort {
-  search(input: LexicalSearchInput): Promise<RetrievedChunk[]>;
+  search(input: LexicalSearchInput): Promise<LexicalSearchResult>;
+}
+
+/** The one thing the adapter logs: a some-terms pass that ran out of time. */
+export interface LexicalSearchLogger {
+  warn(fields: Record<string, unknown>, message: string): void;
 }
 
 interface LexicalSearchRow {
@@ -57,32 +71,36 @@ interface SomeTermsSearchRow extends LexicalSearchRow {
 const CHUNK_SEARCH_VECTOR_SQL = "to_tsvector('simple', coalesce(c.search_text, ''))";
 
 export class PgLexicalSearch implements LexicalSearchPort {
-  constructor(private readonly database: Database) {}
+  constructor(
+    private readonly database: Database,
+    private readonly options: { logger?: LexicalSearchLogger } = {},
+  ) {}
 
-  async search(input: LexicalSearchInput): Promise<RetrievedChunk[]> {
+  async search(input: LexicalSearchInput): Promise<LexicalSearchResult> {
     const normalizedQuery = input.query.trim();
     if (!normalizedQuery) {
-      return [];
+      return { matches: [], someTermsPass: skippedSomeTermsPass() };
     }
 
     const plan = input.lexicalPlan ?? buildPlainLexicalQueryPlan(normalizedQuery);
     const allTermsMatches = await this.searchAllTerms(input, plan);
     const enoughAllTermsMatches = Math.min(input.topK, RETRIEVAL_BEHAVIOR.hybrid.lexicalSomeTermsBelowAllTermsMatches);
-    if (allTermsMatches.length >= enoughAllTermsMatches) {
-      return allTermsMatches;
-    }
-
-    const someTermsQuery = buildSomeTermsLexicalQuery(plan);
+    const someTermsQuery = input.matchMode === "all_or_some_terms" && allTermsMatches.length < enoughAllTermsMatches
+      ? buildSomeTermsLexicalQuery(plan)
+      : null;
     if (!someTermsQuery) {
-      return allTermsMatches;
+      return { matches: allTermsMatches, someTermsPass: skippedSomeTermsPass() };
     }
 
     const found = new Set(allTermsMatches.map((match) => match.chunkId));
-    const someTermsMatches = await this.searchSomeTerms(input, someTermsQuery, input.topK + found.size);
-    return [
-      ...allTermsMatches,
-      ...someTermsMatches.filter((match) => !found.has(match.chunkId)),
-    ].slice(0, input.topK);
+    const someTerms = await this.searchSomeTermsWithinBudget(input, someTermsQuery, input.topK + found.size);
+    return {
+      matches: [
+        ...allTermsMatches,
+        ...someTerms.matches.filter((match) => !found.has(match.chunkId)),
+      ].slice(0, input.topK),
+      someTermsPass: someTerms.report,
+    };
   }
 
   private async searchAllTerms(input: LexicalSearchInput, plan: LexicalQueryPlan): Promise<RetrievedChunk[]> {
@@ -151,29 +169,66 @@ export class PgLexicalSearch implements LexicalSearchPort {
   }
 
   /**
-   * Two statements: count each alternative's matches (capped, so a frequent word costs
-   * little), then rank the chunks the rarer alternatives find by the share of the
-   * query's term weight they hold, breaking ties with ts_rank_cd.
+   * Counts each alternative's matches, then ranks the chunks the rarer alternatives find
+   * by the share of the query's term weight they hold. Both statements run in one
+   * transaction under a shared time budget: a frequent word can make Postgres read every
+   * chunk in the workspace, and the all-terms hits are a sound answer on their own.
    */
+  private async searchSomeTermsWithinBudget(
+    input: LexicalSearchInput,
+    query: SomeTermsLexicalQuery,
+    limit: number,
+  ): Promise<{ matches: RetrievedChunk[]; report: LexicalSomeTermsPassReport }> {
+    const timeoutMs = RETRIEVAL_BEHAVIOR.hybrid.lexicalSomeTermsTimeoutMs;
+    const startedAt = performance.now();
+    const elapsedMs = () => Math.max(0, Math.round(performance.now() - startedAt));
+    try {
+      const matches = await this.database.withTransaction(async (client) => {
+        const run = async <Row>(sql: string, params: unknown[]): Promise<Row[]> => {
+          const remainingMs = Math.ceil(timeoutMs - (performance.now() - startedAt));
+          if (remainingMs < 1) {
+            throw new SomeTermsBudgetExceeded();
+          }
+          await client.query("SELECT set_config('statement_timeout', $1, true)", [`${remainingMs}ms`]);
+          return (await client.query(sql, params)).rows as Row[];
+        };
+        return this.searchSomeTerms(input, query, limit, run);
+      });
+      return { matches, report: { outcome: "ran", durationMs: elapsedMs() } };
+    } catch (error) {
+      if (!isSomeTermsTimeout(error)) {
+        throw error;
+      }
+      const durationMs = elapsedMs();
+      this.options.logger?.warn(
+        { workspaceId: input.workspaceId, termCount: query.termCount, timeoutMs, durationMs },
+        "lexical some-terms search ran out of time; kept the all-terms matches",
+      );
+      return { matches: [], report: { outcome: "timed_out", durationMs } };
+    }
+  }
+
   private async searchSomeTerms(
     input: LexicalSearchInput,
     query: SomeTermsLexicalQuery,
     limit: number,
+    run: SomeTermsStatementRunner,
   ): Promise<RetrievedChunk[]> {
     const behavior = RETRIEVAL_BEHAVIOR.hybrid;
-    const alternativeMatchCounts = await this.countAlternativeMatches(input, query, behavior.lexicalSomeTermsTermMatchCap);
+    const alternativeMatchCounts = await this.countAlternativeMatches(input, query, behavior.lexicalSomeTermsTermMatchCap, run);
     const ranking = planSomeTermsRanking({
       query,
       alternativeMatchCounts,
       matchCap: behavior.lexicalSomeTermsTermMatchCap,
       rankedChunkBudget: behavior.lexicalSomeTermsRankedChunkBudget,
       minimumWeightShare: behavior.lexicalSomeTermsMinimumWeightShare,
+      maxRankedTerms: behavior.lexicalSomeTermsMaxRankedTerms,
     });
     if (!ranking) {
       return [];
     }
 
-    const rows = await this.rankSomeTermsMatches(input, query, ranking, limit);
+    const rows = await this.rankSomeTermsMatches(input, query, ranking, limit, run);
     return rows.map((row) => ({
       ...toRetrievedChunk(row),
       similarity: Math.max(0, Math.min(1, Number(row.covered_weight) / ranking.totalWeight)),
@@ -185,6 +240,7 @@ export class PgLexicalSearch implements LexicalSearchPort {
     input: LexicalSearchInput,
     query: SomeTermsLexicalQuery,
     matchCap: number,
+    run: SomeTermsStatementRunner,
   ): Promise<number[]> {
     const params: unknown[] = [input.workspaceId];
     const chunkFilterClause = compilePgChunkFilter(input, params);
@@ -204,7 +260,7 @@ export class PgLexicalSearch implements LexicalSearchPort {
       ) alternative_matches
     )`);
 
-    const rows = await this.database.query<{ counts: number[] | null }>(
+    const rows = await run<{ counts: number[] | null }>(
       `SELECT ARRAY[${counts.join(",\n")}]::int[] AS counts`,
       params,
     );
@@ -216,34 +272,51 @@ export class PgLexicalSearch implements LexicalSearchPort {
     query: SomeTermsLexicalQuery,
     ranking: SomeTermsRankingPlan,
     limit: number,
+    run: SomeTermsStatementRunner,
   ): Promise<SomeTermsSearchRow[]> {
     const params: unknown[] = [input.workspaceId];
     const chunkFilterClause = compilePgChunkFilter(input, params);
     const bind = bindParam(params);
-    const alternativeSql = query.alternatives.map((alternative) => alternativeTsquery(alternative, bind));
-    const matchingSql = ranking.matchingAlternatives.map((index) => alternativeSql[index]).join(" || ");
-    const anyAlternativeSql = alternativeSql.join(" || ");
-    const termIndexes = Array.from({ length: query.termCount }, (_, termIndex) => termIndex);
-    const termHitSql = termIndexes.map((termIndex) => {
-      const covering = query.alternatives
-        .map((alternative, index) => (alternative.covers.includes(termIndex) ? alternativeSql[index] : null))
-        .filter((sql): sql is string => sql !== null);
-      return `(${covering.join(" || ")}) @@ m.search_vector AS term_${termIndex}`;
-    });
+    const textParams = new Map(ranking.scoredAlternatives.map((index) => [index, bind(query.alternatives[index]?.text ?? "")]));
+    const tsqueryOf = (index: number): string => {
+      const alternative = query.alternatives[index];
+      const text = textParams.get(index);
+      return alternative?.kind === "phrase" ? `phraseto_tsquery('simple', ${text})` : `plainto_tsquery('simple', ${text})`;
+    };
+    const hitOf = (index: number): string => `h.alternative_${index}`;
+    const matchingSql = ranking.matchingAlternatives.map(tsqueryOf).join(" || ");
+    const alternativeHitSql = ranking.scoredAlternatives
+      .map((index) => `${tsqueryOf(index)} @@ m.search_vector AS alternative_${index}`);
     const exclusionSql = query.excludedTerms.length > 0
       ? query.excludedTerms
           .map((term) => `NOT (plainto_tsquery('simple', ${bind(term)}) @@ m.search_vector)`)
           .join(" AND ")
       : "TRUE";
     const termWeights = bind(ranking.termWeights);
-    const coveredWeightSql = termIndexes
-      .map((termIndex) => `CASE WHEN t.term_${termIndex} THEN (${termWeights}::float8[])[${termIndex + 1}] ELSE 0 END`)
+    const coveredWeightSql = ranking.termWeights
+      .map((weight, term) => ({ weight, term }))
+      .filter(({ weight }) => weight > 0)
+      .map(({ term }) => {
+        const covering = ranking.scoredAlternatives
+          .filter((index) => query.alternatives[index]?.covers.includes(term))
+          .map(hitOf);
+        return `CASE WHEN ${covering.join(" OR ")} THEN (${termWeights}::float8[])[${term + 1}] ELSE 0 END`;
+      })
       .join(" + ");
-    const coversAllTermsSql = termIndexes.map((termIndex) => `t.term_${termIndex}`).join(" AND ");
+    // Every term found by its own text, not through a join: the chunk holds the query as
+    // written, on the same footing as an all-terms match.
+    const coversAllTermsSql = ranking.everyTermRanked
+      ? `(${Array.from({ length: query.termCount }, (_, term) => hitOf(term)).join(" AND ")})`
+      : "FALSE";
+    // ts_rank_cd against the AND of the alternatives this chunk holds, so a some-terms
+    // rank reads on the same scale as an all-terms rank.
+    const heldAlternativesSql = ranking.scoredAlternatives
+      .map((index) => `CASE WHEN ${hitOf(index)} THEN ${textParams.get(index)}::text END`)
+      .join(", ");
     const minimumCoveredWeight = bind(ranking.minimumCoveredWeight);
     const rowLimit = bind(limit);
 
-    return this.database.query<SomeTermsSearchRow>(
+    return run<SomeTermsSearchRow>(
       `WITH matched AS MATERIALIZED (
          SELECT c.id AS chunk_id,
                 c.document_id,
@@ -262,26 +335,26 @@ export class PgLexicalSearch implements LexicalSearchPort {
            ${chunkFilterClause}
            AND ${CHUNK_SEARCH_VECTOR_SQL} @@ (${matchingSql})
        ),
-       term_hits AS (
+       alternative_hits AS (
          SELECT m.*,
-                ${termHitSql.join(",\n                ")}
+                ${alternativeHitSql.join(",\n                ")}
          FROM matched m
          WHERE ${exclusionSql}
        ),
        scored AS (
-         SELECT t.chunk_id,
-                t.document_id,
-                t.title,
-                t.content,
-                t.search_text,
-                t.chunk_index,
-                t.start_offset,
-                t.end_offset,
-                t.metadata,
+         SELECT h.chunk_id,
+                h.document_id,
+                h.title,
+                h.content,
+                h.search_text,
+                h.chunk_index,
+                h.start_offset,
+                h.end_offset,
+                h.metadata,
                 ${coveredWeightSql} AS covered_weight,
-                (${coversAllTermsSql}) AS covers_all_terms,
-                ts_rank_cd(t.search_vector, ${anyAlternativeSql}) AS rank
-         FROM term_hits t
+                ${coversAllTermsSql} AS covers_all_terms,
+                ts_rank_cd(h.search_vector, plainto_tsquery('simple', concat_ws(' ', ${heldAlternativesSql}))) AS rank
+         FROM alternative_hits h
        )
        SELECT *
        FROM scored
@@ -292,6 +365,19 @@ export class PgLexicalSearch implements LexicalSearchPort {
     );
   }
 }
+
+type SomeTermsStatementRunner = <Row>(sql: string, params: unknown[]) => Promise<Row[]>;
+
+class SomeTermsBudgetExceeded extends Error {
+  constructor() {
+    super("lexical some-terms time budget exhausted");
+  }
+}
+
+// 57014 is query_canceled: here, the transaction-local statement_timeout firing.
+const isSomeTermsTimeout = (error: unknown): boolean =>
+  error instanceof SomeTermsBudgetExceeded
+  || (typeof error === "object" && error !== null && "code" in error && error.code === "57014");
 
 const toRetrievedChunk = (row: LexicalSearchRow): Omit<RetrievedChunk, "similarity"> => ({
   chunkId: row.chunk_id,

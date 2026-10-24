@@ -26,6 +26,7 @@ import {
   buildRetrievalPipelineTraceAttributes,
 } from "../../src/modules/retrieval/services/retrievalPipelineStages.js";
 import { hathaRajaYogaCandidates } from "../fixtures/retrievalSenseCorpus.js";
+import { lexicalSearchStub } from "../support/lexicalSearchStub.js";
 
 const embeddingSpace = { id: "space-active", dimensions: 3, distanceMetric: "cosine" as const };
 const emptyChunkHydrator = { async hydrate() { return []; } };
@@ -283,7 +284,7 @@ describe("retrieval pipeline stages", () => {
         },
       },
       { async search() { return []; } },
-      { async search() { return []; } },
+      lexicalSearchStub({ async search() { return []; } }),
       emptyChunkHydrator,
       {
         async findInWindow(input) {
@@ -339,7 +340,7 @@ describe("retrieval pipeline stages", () => {
         },
       },
       { async search() { return []; } },
-      { async search() { return []; } },
+      lexicalSearchStub({ async search() { return []; } }),
       emptyChunkHydrator,
       {
         async findInWindow() {
@@ -406,7 +407,7 @@ describe("retrieval pipeline stages", () => {
           },
         },
         { async search() { return []; } },
-        { async search() { return []; } },
+        lexicalSearchStub({ async search() { return []; } }),
         emptyChunkHydrator,
         {
           async findInWindow(input) {
@@ -487,7 +488,7 @@ describe("retrieval pipeline stages", () => {
       const stage = new CandidateRetrievalStageService(
         { async embedQueries() { throw new Error("embedding provider down"); } },
         { async search() { return []; } },
-        { async search() { return []; } },
+        lexicalSearchStub({ async search() { return []; } }),
         emptyChunkHydrator,
         {
           async findInWindow(input) {
@@ -597,7 +598,7 @@ describe("retrieval pipeline stages", () => {
           },
         },
         { async search() { return []; } },
-        { async search() { return []; } },
+        lexicalSearchStub({ async search() { return []; } }),
         { async hydrate() { return novemberCourses; } },
         temporal,
         clock,
@@ -762,7 +763,11 @@ describe("retrieval pipeline stages", () => {
       originalContexts: new Array(1_500).fill({}),
       rewrittenContexts: [],
       lexicalContexts: [{}, { lexicalTermCoverage: "some_terms" as const }],
-      retrievalBranches: [{}, {}, {}],
+      retrievalBranches: [
+        {},
+        { lexicalSomeTermsPass: { outcome: "ran" as const, durationMs: 12 } },
+        { lexicalSomeTermsPass: { outcome: "timed_out" as const, durationMs: 150 } },
+      ],
       vectorFallbackApplied: false,
       activeRetrievalSubqueries: new Array(1_500).fill({}),
     };
@@ -771,6 +776,9 @@ describe("retrieval pipeline stages", () => {
       "retrieval.candidates.semantic_rewritten.count": 0,
       "retrieval.candidates.lexical.count": 2,
       "retrieval.candidates.lexical.some_terms.count": 1,
+      "retrieval.lexical.some_terms_pass.ran.count": 1,
+      "retrieval.lexical.some_terms_pass.timed_out.count": 1,
+      "retrieval.lexical.some_terms_pass.max_duration_ms": 150,
       "retrieval.branch.count": 3,
       "retrieval.subquery.count": 1_000,
     });
@@ -1903,7 +1911,7 @@ describe("retrieval pipeline stages", () => {
           ];
         },
       },
-      {
+      lexicalSearchStub({
         async search(input) {
           lexicalQueries.push(input.query);
           return [
@@ -1916,7 +1924,7 @@ describe("retrieval pipeline stages", () => {
             },
           ];
         },
-      },
+      }),
       {
         async hydrate(input) {
           return input.candidates.map((candidate) => ({
@@ -2000,11 +2008,11 @@ describe("retrieval pipeline stages", () => {
           ];
         },
       },
-      {
+      lexicalSearchStub({
         async search() {
           return [];
         },
-      },
+      }),
       {
         async hydrate(input) {
           return input.candidates.map((candidate) => ({

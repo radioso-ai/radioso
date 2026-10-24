@@ -3,7 +3,8 @@ import type {
   QueryEmbeddingPort,
 } from "../../embeddingProfiles/contracts/embeddingConsumers.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
-import type { LexicalSearchPort } from "../infra/lexicalSearch.js";
+import type { LexicalSearchPort, LexicalSearchResult } from "../infra/lexicalSearch.js";
+import { skippedSomeTermsPass } from "../domain/lexicalSomeTermsMatch.js";
 import type { ChunkCandidateHydratorPort } from "../infra/chunkCandidateHydrator.js";
 import type { VectorCandidateSearchPort } from "../domain/vectorAdapter.js";
 import type { RetrievalSourceFilter } from "../domain/retrievalSourceFilter.js";
@@ -62,12 +63,13 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
           workspaceId: input.request.workspaceId,
           query: subquery.lexicalQuery,
           topK: RETRIEVAL_BEHAVIOR.hybrid.lexicalTopK,
+          matchMode: "all_or_some_terms",
           metadataFilter,
           sourceFilter,
           lexicalPlan: subquery.lexicalPlan,
-        }).catch(() => {
+        }).catch((): LexicalSearchResult => {
           degradedChannels.add("lexical");
-          return [];
+          return { matches: [], someTermsPass: skippedSomeTermsPass() };
         })),
       ] as const),
     );
@@ -161,9 +163,9 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
             ? Promise.resolve({ contexts: [], fallbackApplied: false })
             : Promise.resolve({ contexts: [], fallbackApplied: true });
         const lexicalEntry = lexicalSearchBySubquery.get(subquery.id);
-        const [semanticSearch, lexicalContexts] = await Promise.all([
+        const [semanticSearch, lexicalResult] = await Promise.all([
           semanticSearchForBranch,
-          lexicalEntry?.promise ?? Promise.resolve([]),
+          lexicalEntry?.promise ?? Promise.resolve<LexicalSearchResult>({ matches: [], someTermsPass: skippedSomeTermsPass() }),
         ]);
         // Read after the searches above have settled, so each timing is final.
         const semanticSearchTiming = semanticEntry?.timing();
@@ -179,7 +181,8 @@ export class CandidateRetrievalStageService implements CandidateRetrievalStageCo
           source: input.rewrittenQuery.retrievalEligible ? ("rewritten" as const) : ("original" as const),
           semanticSearched,
           semanticContexts: semanticSearch.contexts,
-          lexicalContexts,
+          lexicalContexts: lexicalResult.matches,
+          lexicalSomeTermsPass: lexicalResult.someTermsPass,
           fallbackApplied: semanticSearch.fallbackApplied,
           semanticSearchStartedAtMs: semanticSearchTiming?.startedAtMs,
           semanticSearchDurationMs: semanticSearchTiming?.durationMs,

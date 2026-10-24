@@ -12,6 +12,7 @@ import {
 } from "../../src/shared/agent-runtime/index.js";
 import { AgenticRetrievalRunner } from "../../src/modules/retrieval/services/agenticRetrievalRunner.js";
 import type { QueryEmbeddingPort } from "../../src/modules/embeddingProfiles/contracts/embeddingConsumers.js";
+import { skippedSomeTermsPass } from "../../src/modules/retrieval/domain/lexicalSomeTermsMatch.js";
 import type { LexicalSearchPort } from "../../src/modules/retrieval/infra/lexicalSearch.js";
 import type { QueryRewritePort } from "../../src/modules/retrieval/domain/queryRewritePort.js";
 import type { RerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
@@ -92,7 +93,7 @@ const buildDeps = (overrides: {
   };
   const lexicalSearch: LexicalSearchPort = {
     async search() {
-      return overrides.lexicalResults ?? [];
+      return { matches: overrides.lexicalResults ?? [], someTermsPass: skippedSomeTermsPass() };
     },
   };
   const queryRewrite: QueryRewritePort = {

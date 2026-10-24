@@ -32,13 +32,14 @@ The system runs semantic and lexical retrieval. Semantic retrieval uses embeddin
 
 Lexical search looks for chunks that hold every query term first. When fewer than 3 chunks hold them all, it also returns chunks that hold part of the query, ranked after the full matches. The lexical query `preventivo completo pernottamento evento` mixes request words with subject words, so no page holds all four; the course page holding `pernottamento` and `evento` is still found. The partial matches follow these rules:
 
-- A rarer term weighs more. Each term is weighed by how many chunks in scope hold it, against the query's most frequent term, so a word that appears on most pages counts least, in any language. A term found nowhere weighs as much as the rarest term that is found.
-- A chunk holds at least a third of the query's term weight, so a page sharing only the query's frequent words stays out. Among the rest, the chunk holding more of the weight comes first, and PostgreSQL's `ts_rank_cd` breaks ties.
-- Two adjacent words also match as one: `super coscienti` finds a page that writes `Supercoscienti`. A chunk that holds every term this way counts as a full match.
+- A rarer term weighs more. Each term is weighed by how many chunks in scope hold it, against the query's most frequent term, so a word that appears on most pages counts least, in any language. A term no chunk holds carries no weight, so an English question over an Italian corpus is measured by the words the corpus shares with it.
+- A chunk holds at least a third of the query's term weight, so a page sharing only the query's frequent words stays out. Among the rest, the chunk holding more of the weight comes first, and PostgreSQL's `ts_rank_cd` over the terms it holds breaks ties.
+- Two adjacent words also match as one: `super coscienti` finds a page that writes `Supercoscienti`. That page holds neither word as written, so it is a partial match.
 - Quoted phrases count as one term each, and excluded terms stay excluded. Punctuation and search operators in the query separate words; they never act as operators.
-- A term held by more than 200 chunks cannot find a chunk on its own, and the search ranks at most 1,000 chunks, taken from its rarest terms first. Both limits bound what a long question full of common words costs.
+- A chunk is scored on the query's 12 rarest terms, out of at most 32. A term held by more than 200 chunks cannot find a chunk on its own, and the search ranks at most 1,000 chunks, taken from its rarest terms first.
+- The partial-match search gets 150 ms, counting and ranking together. When it runs out, lexical search keeps its full matches.
 
-The lexical stage of the trace counts each branch's partial matches as `someTermsCandidateCount`, and each chunk it lists carries `lexicalTermCoverage`: `all_terms` or `some_terms`.
+The lexical stage of the trace records what the partial-match search did as `someTermsPass` (`skipped`, `ran`, or `timed_out`), with `someTermsPassDurationMs` and `someTermsCandidateCount`, and each chunk it lists carries `lexicalTermCoverage`: `all_terms` or `some_terms`. The reasoning retrieval strategy's `lexical_search` tool returns full matches only.
 
 The two run concurrently. Lexical queries go out before the query embedding resolves, so lexical results are often already in hand when vector search starts.
 

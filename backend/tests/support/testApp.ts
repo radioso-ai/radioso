@@ -107,6 +107,7 @@ import { RecursiveTextChunkingStrategy } from "../../src/modules/retrieval/domai
 import { StructuredSemanticChunkingStrategy } from "../../src/modules/retrieval/domain/chunking/structuredSemanticChunkingStrategy.js";
 import { ChonkieChunkingProvider } from "../../src/modules/retrieval/infra/chonkieChunkingProvider.js";
 import type { LexicalSearchPort } from "../../src/modules/retrieval/infra/lexicalSearch.js";
+import { lexicalSearchStub } from "./lexicalSearchStub.js";
 import { CandidatePreparationService } from "../../src/modules/retrieval/services/candidatePreparationService.js";
 import { ConversationContextService } from "../../src/modules/retrieval/services/conversationContextService.js";
 import { PromptBuilder } from "../../src/modules/retrieval/services/promptBuilder.js";
@@ -1151,7 +1152,7 @@ export const createTestDependencies = (overrides: {
       return rows.sort((a, b) => b.similarity - a.similarity).slice(0, input.topK);
     },
   };
-  const defaultLexicalSearch: LexicalSearchPort = {
+  const defaultLexicalSearch: LexicalSearchPort = lexicalSearchStub({
     async search(input): Promise<RetrievedChunk[]> {
       const rows: RetrievedChunk[] = [];
       for (const [documentId, chunks] of chunkRepository.items.entries()) {
@@ -1185,7 +1186,7 @@ export const createTestDependencies = (overrides: {
       }
       return rows.sort((a, b) => b.similarity - a.similarity).slice(0, input.topK);
     },
-  };
+  });
   const lexicalSearch = overrides.lexicalSearch ?? defaultLexicalSearch;
   let currentQueryText = "";
   const embeddingService = new EmbeddingGenerationService({

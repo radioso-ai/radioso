@@ -7,6 +7,8 @@ import { selectRetrievalAnswerShape } from "../../src/modules/retrieval/services
 import { RETRIEVAL_BEHAVIOR } from "../../src/shared/domain/behaviorConfig.js";
 import type { CandidateRetrievalStageResult } from "../../src/modules/retrieval/services/retrievalPipelineStages.js";
 import type { RetrievedChunk } from "../../src/modules/retrieval/public.js";
+import type { RetrievedCandidate } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
+import { answerCandidatePoolSize } from "../../src/modules/retrieval/domain/answerCandidatePool.js";
 
 const semanticChunk = (index: number, overrides: Partial<RetrievedChunk> = {}): RetrievedChunk => ({
   chunkId: `chunk-${index}`,
@@ -1015,6 +1017,35 @@ describe("candidate preparation stage", () => {
         relaxedRuleIds: ["matched-events"],
       });
       expect(result.scoredCandidates.map((candidate) => candidate.chunkId)).toEqual(["chunk-1", "partial-event"]);
+    });
+
+    // The production shape (d9d2becd): semantic search returns more candidates than the
+    // answer pool holds, and the page that answers sits low among them.
+    it("lift a low-ranked semantic candidate into the answer pool, and add none of their own", async () => {
+      const settings = { ...buildInput([]).settings, rerankTopK: 12 };
+      const poolSize = answerCandidatePoolSize(settings.rerankTopK);
+      const semantic = Array.from({ length: 15 }, (_, index) => semanticChunk(index + 1, { similarity: 0.9 - index / 100 }));
+      const target = semantic[14];
+      const poolOf = (candidates: RetrievedCandidate[]) => candidates.slice(0, poolSize).map((candidate) => candidate.chunkId);
+
+      const without = await stage().execute({ ...buildInput(semantic), settings });
+      const withPartial = await stage().execute({
+        ...buildInput(semantic),
+        settings,
+        lexicalContexts: [
+          { ...target, similarity: 0.6, lexicalRankScore: 0.1, lexicalTermCoverage: "some_terms" },
+          someTermsChunk("lexical-only"),
+        ],
+      });
+
+      expect(poolSize).toBeLessThan(semantic.length);
+      expect(poolOf(without.scoredCandidates)).not.toContain(target.chunkId);
+      expect(poolOf(withPartial.scoredCandidates)).toContain(target.chunkId);
+      expect(withPartial.scoredCandidates[0]?.chunkId).toBe(target.chunkId);
+      // A partial match semantic search did not find ranks below every semantic
+      // candidate, so it stays out of a full pool.
+      expect(poolOf(withPartial.scoredCandidates)).not.toContain("lexical-only");
+      expect(withPartial.scoredCandidates.at(-1)?.chunkId).toBe("lexical-only");
     });
 
     it("are not the lexical hits a lexical-preferred shape puts first", async () => {

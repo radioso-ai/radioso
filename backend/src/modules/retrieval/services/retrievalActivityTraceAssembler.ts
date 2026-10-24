@@ -13,6 +13,7 @@ import { getContextSelectionClauses, summarizeResolvedSteps } from "./retrievalS
 import { getCandidateFusedScore, hasUsefulCandidateEvidence } from "./candidateScoring.js";
 import { requestedDateRangeDays } from "../domain/temporal/requestedDateRange.js";
 import { isSomeTermsLexicalMatch, type LexicalTermCoverage } from "../domain/vectorSearch.js";
+import { skippedSomeTermsPass } from "../domain/lexicalSomeTermsMatch.js";
 
 interface StageTiming {
   startedAt: string;
@@ -198,6 +199,7 @@ export class ActivityTraceAssembler {
       reason: branch.reason,
       responseLanguagePolicy: branch.responseLanguagePolicy,
       contexts: branch.lexicalContexts,
+      someTermsPass: branch.lexicalSomeTermsPass ?? skippedSomeTermsPass(),
       searchStartedAtMs: branch.lexicalSearchStartedAtMs,
       searchDurationMs: branch.lexicalSearchDurationMs,
     }));
@@ -393,11 +395,15 @@ export class ActivityTraceAssembler {
             outputs: {
               candidateCount: branch.contexts.length,
               chunks: toLexicalChunkRefs(branch.contexts),
+              // skipped, ran, or timed_out: a pass that found nothing reads apart from
+              // one that never ran or never finished.
+              someTermsPass: branch.someTermsPass.outcome,
             },
             metrics: {
               candidateCount: branch.contexts.length,
               // Hits holding part of the query, returned because too few held all of it.
               someTermsCandidateCount: branch.contexts.filter(isSomeTermsLexicalMatch).length,
+              someTermsPassDurationMs: branch.someTermsPass.durationMs,
             },
             reason: branch.reason,
           },

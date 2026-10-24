@@ -21,6 +21,7 @@ import type {
 import type {
   QueryEmbeddingPort,
 } from "../../src/modules/embeddingProfiles/public.js";
+import { skippedSomeTermsPass } from "../../src/modules/retrieval/domain/lexicalSomeTermsMatch.js";
 import type { LexicalSearchPort } from "../../src/modules/retrieval/infra/lexicalSearch.js";
 import type { QueryRewritePort } from "../../src/modules/retrieval/domain/queryRewritePort.js";
 import type { RerankGateway } from "../../src/modules/retrieval/services/rerankService.js";
@@ -359,7 +360,7 @@ describe("lexical_search tool", () => {
     const lexicalSearch: LexicalSearchPort = {
       async search(input) {
         calls.push(input);
-        return [chunk({ chunkId: "l1" })];
+        return { matches: [chunk({ chunkId: "l1" })], someTermsPass: skippedSomeTermsPass() };
       },
     };
     const registry = new InMemoryChunkRegistry();
@@ -367,7 +368,9 @@ describe("lexical_search tool", () => {
 
     const result = await tool.invoke({ query: "Gandhi", topK: 3 }, toolCtx);
 
-    expect(calls[0]).toMatchObject({ workspaceId: "ws-1", query: "Gandhi", topK: 3 });
+    // The agent's prompt promises exact-term matching and a fallback when lexical search
+    // finds nothing, so the tool never asks for partial matches.
+    expect(calls[0]).toMatchObject({ workspaceId: "ws-1", query: "Gandhi", topK: 3, matchMode: "all_terms" });
     expect(result.results[0].chunkId).toBe("l1");
     expect(registry.has("l1")).toBe(true);
   });

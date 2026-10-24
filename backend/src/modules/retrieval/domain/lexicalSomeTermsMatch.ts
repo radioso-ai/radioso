@@ -1,5 +1,26 @@
 import type { LexicalQueryPlan } from "./retrievalPipelineTypes.js";
 
+/**
+ * What a lexical search may return. `all_terms` keeps to chunks holding every term,
+ * which a caller promising exact-term matching needs; `all_or_some_terms` adds the
+ * some-terms pass when too few chunks hold every term.
+ */
+export type LexicalMatchMode = "all_terms" | "all_or_some_terms";
+
+/**
+ * What the some-terms pass did on one search: `skipped` (not asked for, not needed, or
+ * nothing to relax), `ran`, or `timed_out` (its time budget ran out and the search kept
+ * the all-terms hits).
+ */
+export type LexicalSomeTermsPassOutcome = "skipped" | "ran" | "timed_out";
+
+export interface LexicalSomeTermsPassReport {
+  outcome: LexicalSomeTermsPassOutcome;
+  durationMs: number;
+}
+
+export const skippedSomeTermsPass = (): LexicalSomeTermsPassReport => ({ outcome: "skipped", durationMs: 0 });
+
 export type LexicalTermAlternativeKind = "terms" | "phrase";
 
 /**
@@ -23,13 +44,15 @@ export interface SomeTermsLexicalQuery {
   termCount: number;
   alternatives: LexicalTermAlternative[];
   excludedTerms: string[];
+  /** The query held more terms than one search counts; the later ones were left out. */
+  truncated: boolean;
 }
 
 /**
- * A raw question can run long; past this many terms the extra words add search cost
- * faster than they add evidence.
+ * The most terms one search counts. Every term costs a capped count, so this bounds a
+ * pasted paragraph; the ranking then keeps only the rarest of them.
  */
-const MAX_SOME_TERMS_QUERY_TERMS = 12;
+const MAX_SOME_TERMS_QUERY_TERMS = 32;
 
 // Letter, mark, and number runs, kept whole across inner dots and underscores so
 // "1.5" and "config_file" stay one term. Everything else — spaces, apostrophes,
@@ -70,10 +93,15 @@ export const buildSomeTermsLexicalQuery = (plan: LexicalQueryPlan): SomeTermsLex
   };
 
   let termCount = 0;
+  let truncated = false;
   const termIndexByKey = new Map<string, number>();
   for (const phrase of option.phrases) {
     const words = termsOf(phrase);
-    if (termCount >= MAX_SOME_TERMS_QUERY_TERMS || words.length === 0) {
+    if (words.length === 0) {
+      continue;
+    }
+    if (termCount >= MAX_SOME_TERMS_QUERY_TERMS) {
+      truncated = true;
       continue;
     }
     const text = words.join(" ");
@@ -94,6 +122,7 @@ export const buildSomeTermsLexicalQuery = (plan: LexicalQueryPlan): SomeTermsLex
     let termIndex = termIndexByKey.get(key);
     if (termIndex === undefined) {
       if (termCount >= MAX_SOME_TERMS_QUERY_TERMS) {
+        truncated = true;
         continue;
       }
       termIndex = termCount;
@@ -127,23 +156,32 @@ export const buildSomeTermsLexicalQuery = (plan: LexicalQueryPlan): SomeTermsLex
     termCount,
     alternatives,
     excludedTerms: option.excludedTerms.flatMap(termsOf),
+    truncated,
   };
 };
 
 /**
  * How the adapter ranks some-terms matches. Rarer terms carry more weight, measured
- * against the query's own most common term, so the ranking needs no list of words to
+ * against the query's most common ranked term, so the ranking needs no list of words to
  * ignore in any language: a word that appears in most chunks weighs least wherever it
  * comes from.
  */
 export interface SomeTermsRankingPlan {
+  /** Weight of each query term, by term index; 0 for a term the ranking leaves out. */
+  termWeights: number[];
+  /** Alternatives covering at least one ranked term: the hits a chunk is scored on. */
+  scoredAlternatives: number[];
   /** Alternatives whose matches make up the ranked chunk set, rarest first. */
   matchingAlternatives: number[];
-  /** Weight of each query term, by term index. */
-  termWeights: number[];
   totalWeight: number;
   /** A ranked chunk must hold at least this much term weight. */
   minimumCoveredWeight: number;
+  /**
+   * Whether a ranked chunk can hold every query term. It cannot when the query was cut
+   * at the term limit, when a term was left out of the ranking, or when a term matched
+   * nothing.
+   */
+  everyTermRanked: boolean;
 }
 
 // The share floor is a ratio of sums of logarithms; this keeps a chunk that sits
@@ -160,33 +198,66 @@ export const planSomeTermsRanking = (input: {
   rankedChunkBudget: number;
   /** The share of the query's term weight a ranked chunk must hold. */
   minimumWeightShare: number;
+  /** The most terms a chunk is scored on; the rarest are kept. */
+  maxRankedTerms: number;
 }): SomeTermsRankingPlan | null => {
+  const { query } = input;
   const countOf = (alternativeIndex: number): number =>
     Math.min(Math.max(input.alternativeMatchCounts[alternativeIndex] ?? 0, 0), input.matchCap + 1);
 
-  const matchingAlternatives = selectMatchingAlternatives(input.query, countOf, input);
+  const termMatchCounts = countTermMatches(query, countOf);
+  const rankedTerms = new Set(selectRarestTerms(termMatchCounts, input.maxRankedTerms));
+  const scoredAlternatives = query.alternatives
+    .map((alternative, index) => ({ alternative, index }))
+    .filter(({ alternative }) => alternative.covers.some((term) => rankedTerms.has(term)))
+    .map(({ index }) => index);
+  const matchingAlternatives = selectMatchingAlternatives(scoredAlternatives, countOf, input);
   if (matchingAlternatives.length === 0) {
     return null;
   }
 
-  const termWeights = weighTerms(input.query.termCount, countOf);
+  const termWeights = weighTerms(termMatchCounts, rankedTerms);
   const totalWeight = termWeights.reduce((sum, weight) => sum + weight, 0);
 
   return {
-    matchingAlternatives,
     termWeights,
+    scoredAlternatives,
+    matchingAlternatives,
     totalWeight,
     minimumCoveredWeight: totalWeight * input.minimumWeightShare * (1 - COVERED_WEIGHT_TOLERANCE),
+    everyTermRanked: !query.truncated && rankedTerms.size === query.termCount,
   };
 };
 
+// A term's chunks are those holding any alternative that covers it, so "super" in
+// "super coscienti" also counts the chunks writing "supercoscienti". The sum over
+// alternatives is an upper bound on that union, which is all the weighting needs.
+const countTermMatches = (query: SomeTermsLexicalQuery, countOf: (alternativeIndex: number) => number): number[] => {
+  const counts = Array.from({ length: query.termCount }, () => 0);
+  query.alternatives.forEach((alternative, index) => {
+    for (const term of alternative.covers) {
+      counts[term] = (counts[term] ?? 0) + countOf(index);
+    }
+  });
+  return counts;
+};
+
+// Terms found nowhere carry no information about any chunk, so they are left out.
+const selectRarestTerms = (termMatchCounts: number[], maxRankedTerms: number): number[] =>
+  termMatchCounts
+    .map((count, term) => ({ count, term }))
+    .filter(({ count }) => count > 0)
+    .sort((left, right) => left.count - right.count || left.term - right.term)
+    .slice(0, Math.max(0, maxRankedTerms))
+    .map(({ term }) => term);
+
 const selectMatchingAlternatives = (
-  query: SomeTermsLexicalQuery,
+  scoredAlternatives: number[],
   countOf: (alternativeIndex: number) => number,
   limits: { matchCap: number; rankedChunkBudget: number },
 ): number[] => {
-  const candidates = query.alternatives
-    .map((_, index) => ({ index, count: countOf(index) }))
+  const candidates = scoredAlternatives
+    .map((index) => ({ index, count: countOf(index) }))
     .filter((candidate) => candidate.count > 0 && candidate.count <= limits.matchCap)
     .sort((left, right) => left.count - right.count || left.index - right.index);
 
@@ -202,15 +273,10 @@ const selectMatchingAlternatives = (
   return selected;
 };
 
-// Inverse document frequency against the query's most common term: that term weighs
-// ln 2, a term found in a tenth as many chunks weighs ln 11. A term found nowhere is
-// unknown rather than common, so it weighs as much as the rarest term that is found —
-// a chunk then has to hold the query's specific words, not only its frequent ones.
-const weighTerms = (termCount: number, countOf: (alternativeIndex: number) => number): number[] => {
-  const termCounts = Array.from({ length: termCount }, (_, termIndex) => countOf(termIndex));
-  const reference = Math.max(...termCounts);
-  const foundWeights = termCounts.map((count) => (count > 0 ? Math.log(1 + reference / count) : undefined));
-  const rarestFoundWeight = Math.max(0, ...foundWeights.filter((weight): weight is number => weight !== undefined));
-  const absentWeight = rarestFoundWeight > 0 ? rarestFoundWeight : 1;
-  return foundWeights.map((weight) => weight ?? absentWeight);
+// Inverse document frequency against the most common ranked term: that term weighs
+// ln 2, a term found in a tenth as many chunks weighs ln 11.
+const weighTerms = (termMatchCounts: number[], rankedTerms: ReadonlySet<number>): number[] => {
+  const reference = Math.max(0, ...termMatchCounts.filter((_, term) => rankedTerms.has(term)));
+  return termMatchCounts.map((count, term) =>
+    rankedTerms.has(term) && count > 0 ? Math.log(1 + reference / count) : 0);
 };

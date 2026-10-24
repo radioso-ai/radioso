@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, beforeAll, expect, it } from "vitest";
 
+import type { LexicalMatchMode } from "../../src/modules/retrieval/domain/lexicalSomeTermsMatch.js";
 import { PgLexicalSearch } from "../../src/modules/retrieval/infra/lexicalSearch.js";
 import type { RetrievedChunk } from "../../src/modules/retrieval/domain/vectorSearch.js";
 import { Database } from "../../src/shared/infra/database.js";
@@ -22,13 +23,19 @@ describeIntegration("PgLexicalSearch (Postgres full-text search)", () => {
   const otherWorkspaceId = randomUUID();
   const chunkIds = new Map<string, string>();
 
-  const insertChunk = async (key: string, title: string, text: string, workspace = workspaceId) => {
+  const insertChunk = async (
+    key: string,
+    title: string,
+    text: string,
+    workspace = workspaceId,
+    document: { retrievalEnabled?: boolean; retrievalExpiresAt?: string } = {},
+  ) => {
     const documentId = randomUUID();
     const chunkId = randomUUID();
     await database.query(
-      `INSERT INTO documents (id, workspace_id, title, source_content, markdown_content, status, metadata, retrieval_enabled)
-       VALUES ($1, $2, $3, $4, $4, 'ready', '{}'::jsonb, true)`,
-      [documentId, workspace, title, text],
+      `INSERT INTO documents (id, workspace_id, title, source_content, markdown_content, status, metadata, retrieval_enabled, retrieval_expires_at)
+       VALUES ($1, $2, $3, $4, $4, 'ready', '{}'::jsonb, $5, $6)`,
+      [documentId, workspace, title, text, document.retrievalEnabled ?? true, document.retrievalExpiresAt ?? null],
     );
     await database.query(
       `INSERT INTO chunks (id, document_id, workspace_id, chunk_index, content, search_text, metadata)
@@ -41,9 +48,9 @@ describeIntegration("PgLexicalSearch (Postgres full-text search)", () => {
   const keyOf = (chunk: RetrievedChunk): string =>
     [...chunkIds.entries()].find(([, id]) => id === chunk.chunkId)?.[0] ?? "unknown";
 
-  const searchFor = async (query: string, topK = 20) => {
-    const results = await search.search({ workspaceId, query, topK });
-    return results.map((result) => ({ key: keyOf(result), coverage: result.lexicalTermCoverage, result }));
+  const searchFor = async (query: string, matchMode: LexicalMatchMode = "all_or_some_terms") => {
+    const { matches } = await search.search({ workspaceId, query, topK: 20, matchMode });
+    return matches.map((result) => ({ key: keyOf(result), coverage: result.lexicalTermCoverage, result }));
   };
 
   beforeAll(async () => {
@@ -94,6 +101,21 @@ describeIntegration("PgLexicalSearch (Postgres full-text search)", () => {
       "Le soluzioni Supercoscienti: pernottamento durante l'evento.",
       otherWorkspaceId,
     );
+    // Pages an operator took out of retrieval, and one past its retrieval expiry.
+    await insertChunk(
+      "disabled_stay",
+      "Supercoscienti: archivio",
+      "Archivio Supercoscienti: pernottamento e preventivo completo per l'evento.",
+      workspaceId,
+      { retrievalEnabled: false },
+    );
+    await insertChunk(
+      "expired_stay",
+      "Supercoscienti: edizione passata",
+      "Edizione passata Supercoscienti: pernottamento e preventivo completo per l'evento.",
+      workspaceId,
+      { retrievalExpiresAt: "2020-01-01T00:00:00.000Z" },
+    );
   });
 
   afterAll(async () => {
@@ -118,10 +140,48 @@ describeIntegration("PgLexicalSearch (Postgres full-text search)", () => {
     expect(results[0].result.similarity).toBeGreaterThan(results[1].result.similarity);
   });
 
-  it("finds a name written as two words in a chunk that writes it as one", async () => {
+  it("finds a name written as two words in a chunk that writes it as one, as a partial match", async () => {
     const results = await searchFor("super coscienti");
 
-    expect(results[0]).toMatchObject({ key: "supercoscienti_stay", coverage: "all_terms" });
+    // The chunk holds neither word as written, so it is no all-terms match.
+    expect(results[0]).toMatchObject({ key: "supercoscienti_stay", coverage: "some_terms" });
+  });
+
+  it("finds the course page for an English question over an Italian corpus", async () => {
+    const results = await searchFor("price overnight event Supercoscienti");
+
+    expect(results.map(({ key, coverage }) => [key, coverage])).toEqual([["supercoscienti_stay", "some_terms"]]);
+  });
+
+  it("keeps to chunks holding every term when the caller asks for exact matching", async () => {
+    expect(await searchFor("preventivo completo pernottamento evento", "all_terms")).toEqual([]);
+    const { someTermsPass } = await search.search({
+      workspaceId,
+      query: "preventivo completo pernottamento evento",
+      topK: 20,
+      matchMode: "all_terms",
+    });
+    expect(someTermsPass.outcome).toBe("skipped");
+  });
+
+  it("reports a some-terms pass that ran", async () => {
+    const result = await search.search({
+      workspaceId,
+      query: "preventivo completo pernottamento evento",
+      topK: 20,
+      matchMode: "all_or_some_terms",
+    });
+
+    expect(result.someTermsPass.outcome).toBe("ran");
+    expect(result.someTermsPass.durationMs).toBeLessThan(5_000);
+  });
+
+  it("leaves out documents taken out of retrieval and documents past their retrieval expiry", async () => {
+    for (const query of ["preventivo completo pernottamento evento", "Supercoscienti", "super coscienti"]) {
+      const keys = (await searchFor(query)).map(({ key }) => key);
+      expect(keys).not.toContain("disabled_stay");
+      expect(keys).not.toContain("expired_stay");
+    }
   });
 
   it("finds the course page for a full question with its function words", async () => {

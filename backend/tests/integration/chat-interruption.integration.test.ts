@@ -10,6 +10,7 @@ import type {
 } from "../../src/shared/domain/usageLimitPolicy.js";
 import { createLogger } from "../../src/shared/observability/logger.js";
 import { createTestDependencies } from "../support/testApp.js";
+import { lexicalSearchStub } from "../support/lexicalSearchStub.js";
 
 const deferred = () => {
   let resolve!: () => void;
@@ -382,7 +383,7 @@ describe("chat interruption", () => {
     let retrievalCalls = 0;
     const answer = vi.fn(async (input: { query: string }) => `answer for ${input.query}`);
     const ctx = await createChatContext({
-      lexicalSearch: {
+      lexicalSearch: lexicalSearchStub({
         async search() {
           retrievalCalls += 1;
           if (retrievalCalls === 1) {
@@ -391,7 +392,7 @@ describe("chat interruption", () => {
           }
           return [];
         },
-      },
+      }),
       turnRouter: {
         classify: async (input) => input.query === "first question"
           ? { route: "retrieval", framing: { isIdentityQuestion: false } }

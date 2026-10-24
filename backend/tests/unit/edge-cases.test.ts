@@ -12,6 +12,7 @@ import { ConversationContextService } from "../../src/modules/retrieval/services
 import { PromptContextSelectorService } from "../../src/modules/retrieval/services/promptContextSelectorService.js";
 import { RetrievalExecutionTelemetryService } from "../../src/modules/retrieval/services/retrievalExecutionTelemetryService.js";
 import type { RetrievedChunk } from "../../src/modules/retrieval/domain/vectorSearch.js";
+import { lexicalSearchStub } from "../support/lexicalSearchStub.js";
 
 const embeddingSpace = { id: "space-active", dimensions: 3, distanceMetric: "cosine" as const };
 
@@ -143,11 +144,11 @@ describe("edge cases", () => {
       } as never,
       semantic.queryEmbeddings,
       semantic.vectorSearch,
-      {
+      lexicalSearchStub({
         async search() {
           return [];
         },
-      },
+      }),
       new ConversationContextService(),
       new QueryRewriteService(),
       new CandidatePreparationService(),
@@ -303,11 +304,11 @@ describe("edge cases", () => {
       } as never,
       semantic.queryEmbeddings,
       semantic.vectorSearch,
-      {
+      lexicalSearchStub({
         async search() {
           return [];
         },
-      },
+      }),
       new ConversationContextService(),
       new QueryRewriteService(),
       new CandidatePreparationService(),
@@ -376,11 +377,11 @@ describe("edge cases", () => {
       } as never,
       semantic.queryEmbeddings,
       semantic.vectorSearch,
-      {
+      lexicalSearchStub({
         async search() {
           return [];
         },
-      },
+      }),
       new ConversationContextService(),
       new QueryRewriteService({
         async rewrite() {
@@ -465,11 +466,11 @@ describe("edge cases", () => {
       } as never,
       semantic.queryEmbeddings,
       semantic.vectorSearch,
-      {
+      lexicalSearchStub({
         async search() {
           return [];
         },
-      },
+      }),
       new ConversationContextService(),
       new QueryRewriteService({
         async rewrite() {
@@ -544,11 +545,11 @@ describe("edge cases", () => {
       } as never,
       semantic.queryEmbeddings,
       semantic.vectorSearch,
-      {
+      lexicalSearchStub({
         async search() {
           return [];
         },
-      },
+      }),
       new ConversationContextService(),
       new QueryRewriteService({
         async rewrite() {
@@ -679,11 +680,11 @@ describe("edge cases", () => {
       } as never,
       semantic.queryEmbeddings,
       semantic.vectorSearch,
-      {
+      lexicalSearchStub({
         async search() {
           return [];
         },
-      },
+      }),
       new ConversationContextService(),
       new QueryRewriteService({
         async rewrite() {

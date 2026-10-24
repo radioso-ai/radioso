@@ -105,6 +105,7 @@ describe("buildSomeTermsLexicalQuery", () => {
         { text: "expired", kind: "terms", covers: [1] },
       ],
       excludedTerms: ["revoked"],
+      truncated: false,
     });
   });
 
@@ -112,13 +113,18 @@ describe("buildSomeTermsLexicalQuery", () => {
     expect(buildSomeTermsLexicalQuery(deriveLexicalQueryPlan("reset token OR magic link"))).toBeNull();
   });
 
-  it("caps how many terms one query can search for", () => {
-    const words = Array.from({ length: 20 }, (_, index) => `parola${index}`);
-    const query = queryFor(words.join(" "));
+  it("keeps a long question's terms, and marks a query cut at the term limit", () => {
+    const words = Array.from({ length: 40 }, (_, index) => `parola${index}`);
 
-    expect(query.termCount).toBe(12);
-    expect(textsOf(query).slice(0, 12)).toEqual(words.slice(0, 12));
-    expect(query.alternatives.every((alternative) => alternative.covers.every((term) => term < 12))).toBe(true);
+    const long = queryFor(words.slice(0, 20).join(" "));
+    expect(long.termCount).toBe(20);
+    expect(long.truncated).toBe(false);
+
+    const cut = queryFor(words.join(" "));
+    expect(cut.termCount).toBe(32);
+    expect(cut.truncated).toBe(true);
+    expect(textsOf(cut).slice(0, 32)).toEqual(words.slice(0, 32));
+    expect(cut.alternatives.every((alternative) => alternative.covers.every((term) => term < 32))).toBe(true);
   });
 });
 
@@ -127,6 +133,7 @@ describe("planSomeTermsRanking", () => {
     matchCap: number;
     rankedChunkBudget: number;
     minimumWeightShare: number;
+    maxRankedTerms: number;
   }> = {}) =>
     planSomeTermsRanking({
       query: queryFor(lexicalQuery),
@@ -134,51 +141,102 @@ describe("planSomeTermsRanking", () => {
       matchCap: 200,
       rankedChunkBudget: 1000,
       minimumWeightShare: 1 / 3,
+      maxRankedTerms: 12,
       ...overrides,
     });
 
+  const planFor = (...args: Parameters<typeof rankingFor>) => {
+    const plan = rankingFor(...args);
+    if (!plan) {
+      throw new Error("expected a ranking plan");
+    }
+    return plan;
+  };
+
   it("weighs a rare term above a common one", () => {
     // preventivo, completo, pernottamento, evento, then the three joins.
-    const plan = rankingFor("preventivo completo pernottamento evento", [30, 150, 4, 201, 0, 0, 0]);
+    const plan = planFor("preventivo completo pernottamento evento", [30, 150, 4, 201, 0, 0, 0]);
 
-    expect(plan).not.toBeNull();
-    const [preventivo, completo, pernottamento, evento] = plan!.termWeights;
+    const [preventivo, completo, pernottamento, evento] = plan.termWeights;
     expect(pernottamento).toBeGreaterThan(preventivo);
     expect(preventivo).toBeGreaterThan(completo);
     expect(completo).toBeGreaterThan(evento);
-    expect(plan!.totalWeight).toBeCloseTo(plan!.termWeights.reduce((sum, weight) => sum + weight, 0));
+    expect(plan.totalWeight).toBeCloseTo(plan.termWeights.reduce((sum, weight) => sum + weight, 0));
+    expect(plan.everyTermRanked).toBe(true);
   });
 
-  it("weighs a term found nowhere like the rarest term that is found", () => {
-    const plan = rankingFor("preventivo completo pernottamento evento", [0, 150, 4, 201, 0, 0, 0]);
+  it("leaves a term found nowhere out of the weight a chunk is measured against", () => {
+    const plan = planFor("preventivo completo pernottamento evento", [0, 150, 4, 201, 0, 0, 0]);
 
-    expect(plan!.termWeights[0]).toBeCloseTo(plan!.termWeights[2]);
+    expect(plan.termWeights[0]).toBe(0);
+    expect(plan.totalWeight).toBeCloseTo(plan.termWeights[1] + plan.termWeights[2] + plan.termWeights[3]);
+    // No chunk can hold a term that no chunk holds.
+    expect(plan.everyTermRanked).toBe(false);
+  });
+
+  it("measures an English question against an Italian corpus by the one term the corpus holds", () => {
+    // price, overnight, event, Supercoscienti, then the three joins.
+    const plan = planFor("price overnight event Supercoscienti", [0, 0, 0, 1, 0, 0, 0]);
+
+    expect(plan.termWeights.map((weight) => weight > 0)).toEqual([false, false, false, true]);
+    expect(plan.totalWeight).toBeCloseTo(plan.termWeights[3]);
+    expect(plan.matchingAlternatives).toEqual([3]);
+    expect(plan.termWeights[3] >= plan.minimumCoveredWeight).toBe(true);
+  });
+
+  it("counts a term's matches through the joins that cover it", () => {
+    // super, coscienti, supercoscienti: only the join is found.
+    const plan = planFor("super coscienti", [60, 0, 1]);
+
+    expect(plan.termWeights[1]).toBeGreaterThan(plan.termWeights[0]);
+    expect(plan.matchingAlternatives).toEqual([2, 0]);
+    expect(plan.scoredAlternatives).toEqual([0, 1, 2]);
   });
 
   it("lets only terms under the match cap define the chunks it ranks, rarest first", () => {
-    const plan = rankingFor("preventivo completo pernottamento evento", [30, 150, 4, 201, 0, 2, 0]);
+    const plan = planFor("preventivo completo pernottamento evento", [30, 150, 4, 201, 0, 2, 0]);
 
     // evento matches more than the cap; joins that match nothing add no chunks.
-    expect(plan!.matchingAlternatives).toEqual([5, 2, 0, 1]);
+    expect(plan.matchingAlternatives).toEqual([5, 2, 0, 1]);
   });
 
   it("stops adding terms once their matches would pass the ranked-chunk budget", () => {
-    const plan = rankingFor("alfa beta gamma", [150, 120, 90, 0, 0], { rankedChunkBudget: 250 });
+    const plan = planFor("alfa beta gamma", [150, 120, 90, 0, 0], { rankedChunkBudget: 250 });
 
-    expect(plan!.matchingAlternatives).toEqual([2, 1]);
+    expect(plan.matchingAlternatives).toEqual([2, 1]);
+  });
+
+  it("ranks on the rarest terms when a question holds more than it ranks", () => {
+    const words = Array.from({ length: 20 }, (_, index) => `parola${index}`);
+    // The later the word, the rarer: parola19 is in 1 chunk, parola0 in 20.
+    const counts = [...words.map((_, index) => 20 - index), ...Array.from({ length: 19 }, () => 0)];
+
+    const plan = planFor(words.join(" "), counts);
+
+    const ranked = plan.termWeights.flatMap((weight, term) => (weight > 0 ? [term] : []));
+    expect(ranked).toEqual(Array.from({ length: 12 }, (_, index) => index + 8));
+    expect(plan.scoredAlternatives.every((alternative) => alternative >= 8)).toBe(true);
+    expect(plan.everyTermRanked).toBe(false);
   });
 
   it("asks a chunk to hold at least the configured share of the query's term weight", () => {
-    const plan = rankingFor("alfa beta gamma", [10, 10, 10, 0, 0]);
+    const plan = planFor("alfa beta gamma", [10, 10, 10, 0, 0]);
 
-    expect(plan!.minimumCoveredWeight).toBeGreaterThan(0);
-    expect(plan!.minimumCoveredWeight).toBeLessThanOrEqual(plan!.totalWeight / 3);
+    expect(plan.minimumCoveredWeight).toBeGreaterThan(0);
+    expect(plan.minimumCoveredWeight).toBeLessThanOrEqual(plan.totalWeight / 3);
     // One of three equally weighted terms is exactly a third; rounding must not reject it.
-    expect(plan!.termWeights[0] >= plan!.minimumCoveredWeight).toBe(true);
+    expect(plan.termWeights[0] >= plan.minimumCoveredWeight).toBe(true);
   });
 
   it("finds nothing to rank when every term is absent or too common", () => {
     expect(rankingFor("il di per", [201, 201, 201, 0, 0])).toBeNull();
     expect(rankingFor("alfa beta", [0, 0, 0])).toBeNull();
+  });
+
+  it("never treats a cut query as one a chunk can hold in full", () => {
+    const words = Array.from({ length: 40 }, (_, index) => `parola${index}`);
+    const counts = Array.from({ length: 32 + 31 }, (_, index) => (index < 32 ? 1 : 0));
+
+    expect(planFor(words.join(" "), counts, { maxRankedTerms: 40 }).everyTermRanked).toBe(false);
   });
 });

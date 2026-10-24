@@ -301,12 +301,18 @@ export const RETRIEVAL_BEHAVIOR = {
     // terms weigh more, so a chunk sharing only the query's frequent words falls short.
     lexicalSomeTermsMinimumWeightShare: 1 / 3,
     // A term matching more chunks than this cannot find a chunk on its own; it still
-    // counts toward the share a found chunk holds. Counting stops at the cap, which
-    // bounds what a frequent word costs to look up.
+    // counts toward the share a found chunk holds. Each term's count stops at the cap,
+    // but Postgres may still read every chunk in the workspace to reach it (a term
+    // frequent elsewhere in the partition, rare here), so the cap does not bound time.
     lexicalSomeTermsTermMatchCap: 200,
     // The most chunks a some-terms search ranks, taken from its rarest terms first.
-    // Ranking reads each chunk's search text, so this bounds the search's cost.
     lexicalSomeTermsRankedChunkBudget: 1000,
+    // The most terms a some-terms chunk is scored on; the rarest are kept.
+    lexicalSomeTermsMaxRankedTerms: 12,
+    // Wall-clock budget for the some-terms pass, counts and ranking together, enforced
+    // as a transaction-local statement_timeout. When it runs out, the search keeps its
+    // all-terms hits and the trace records the pass as timed out.
+    lexicalSomeTermsTimeoutMs: 150,
     mergedCandidateCap: 50,
     minimumUsefulCandidateCount: 3,
     hardFilterConfidenceThreshold: 0.85,

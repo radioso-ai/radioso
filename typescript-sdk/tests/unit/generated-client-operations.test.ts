@@ -30,6 +30,7 @@ describe("generated client operation coverage", () => {
     const clientSource = readFileSync(new URL("../../src/generated/client.ts", import.meta.url), "utf8");
     const operationIds = operationIdsForPaths([
       "/api/v1/history",
+      "/api/v1/history/query",
       "/api/v1/history/chat",
       "/api/v1/history/chat/{conversationId}",
       "/api/v1/history/{conversationId}",
@@ -40,6 +41,7 @@ describe("generated client operation coverage", () => {
 
     expect(operationIds).toEqual([
       "listHistory",
+      "queryHistory",
       "listChatHistory",
       "getHistoryConversation",
       "deleteHistoryConversation",
@@ -52,6 +54,16 @@ describe("generated client operation coverage", () => {
     for (const operationId of operationIds) {
       expect(clientSource).toContain(`${operationId}(`);
     }
+  });
+
+  it("types the history text search as a request body", () => {
+    const body: Parameters<GeneratedRadiosoClient["queryHistory"]>[0] = {
+      q: "ground floor room",
+      outcome: "handed_off",
+      limit: 10,
+    };
+
+    expect(body).toMatchObject({ q: "ground floor room" });
   });
 
   it("types visitor conversations query filters", () => {

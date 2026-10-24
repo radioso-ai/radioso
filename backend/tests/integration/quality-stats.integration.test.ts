@@ -366,6 +366,24 @@ describeIfDatabase("quality stats integration", () => {
       });
     });
 
+    it("ignores facts of another JSON shape, a scalar block or a first-speech time held as text, without failing the stats", async () => {
+      const { workspaceId, agentId } = await seedWorkspace("LegacyVoice");
+      const call = await seedConversation(workspaceId, agentId, "voice");
+      await seedTurn({ conversationId: call, workspaceId, createdAt: daysAgo(1), metadata: facts(1_000, "continue") });
+      await seedTurn({ conversationId: call, workspaceId, createdAt: daysAgo(1), metadata: { voice: "legacy" } });
+      await seedTurn({ conversationId: call, workspaceId, createdAt: daysAgo(1), metadata: facts("2100", "callback_requested", { turnLimitReached: true }) });
+
+      expect((await createService().getQualityStats(workspaceId, { range: "7d" })).voice).toEqual({
+        calls: 1,
+        turns: 3,
+        // Only the number counts toward the median; "2100" as text is no first-speech time.
+        firstSpeechMedianMs: 1_000,
+        turnLimitTurns: 1,
+        interruptions: 0,
+        callbackCalls: 1,
+      });
+    });
+
     it("reports no voice block for a period without voice turns, without scanning for voice numbers", async () => {
       const { workspaceId, agentId } = await seedWorkspace("NoVoice");
       const chat = await seedConversation(workspaceId, agentId, "embed");

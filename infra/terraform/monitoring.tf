@@ -299,9 +299,10 @@ resource "google_monitoring_alert_policy" "application_error_rate" {
 # The voice turn counters are process-local (/metrics, not exported to Cloud Monitoring), so these
 # metrics count the backend's one log line per voice turn by its structured fields: its `event`
 # (VOICE_TURN_LOG_EVENT in backend/src/modules/voiceChannel/domain.ts) with `turnLimitReached` for
-# a turn that hit the turn limit, whatever became of it, or with `result` for one the voice
-# runtime abandoned. backend/tests/unit/voice-channel-alert-log-events.test.ts holds the names in
-# step, and rewording a line's message leaves the metrics counting.
+# a turn that hit the turn limit, whatever became of it, or with `streamAbandoned` for one whose
+# request the voice runtime closed before the outcome reached it, however the turn ended.
+# backend/tests/unit/voice-channel-alert-log-events.test.ts holds the names in step, and rewording
+# a line's message leaves the metrics counting.
 resource "google_logging_metric" "voice_turn_limit" {
   count = local.monitoring_enabled && var.deploy_services ? 1 : 0
 
@@ -328,7 +329,7 @@ resource "google_logging_metric" "voice_turn_abandoned" {
   filter = join(" AND ", [
     "resource.type=\"cloud_run_revision\"",
     "resource.labels.service_name=\"${local.resource_name_prefix}-backend\"",
-    "jsonPayload.event=\"voice.turn\" AND jsonPayload.result=\"abandoned\"",
+    "jsonPayload.event=\"voice.turn\" AND jsonPayload.streamAbandoned=true",
   ])
 
   metric_descriptor {
@@ -354,7 +355,7 @@ resource "google_monitoring_alert_policy" "voice_turn_health" {
         threshold    = var.monitoring_voice_turn_limit_threshold
       }
       abandoned = {
-        display_name = "Voice turns abandoned before they finish"
+        display_name = "Voice requests closed before the outcome reached the runtime"
         metric_name  = google_logging_metric.voice_turn_abandoned[0].name
         threshold    = var.monitoring_voice_abandoned_turn_threshold
       }
@@ -384,7 +385,7 @@ resource "google_monitoring_alert_policy" "voice_turn_health" {
   notification_channels = local.notification_channel_ids
   depends_on            = [google_project_service.apis]
   documentation {
-    content = "More than ${var.monitoring_voice_turn_limit_threshold} voice turns hit the turn limit, or more than ${var.monitoring_voice_abandoned_turn_threshold} were abandoned by the voice runtime before they finished, in fifteen minutes; the incident names the condition. Either way callers are waiting too long for answers: a turn at the limit spoke the fallback line (or kept the caller waiting without one), and an abandoned turn is one the runtime gave up on. Search the backend's logs for jsonPayload.event=\"voice.turn\" with jsonPayload.turnLimitReached=true or jsonPayload.result=\"abandoned\": each line carries agentId, vendor, conversationId, durationMs and result, never what was said. ${local.alert_documentation}"
+    content = "More than ${var.monitoring_voice_turn_limit_threshold} voice turns hit the turn limit, or the voice runtime closed more than ${var.monitoring_voice_abandoned_turn_threshold} turns' requests before their outcome reached it, in fifteen minutes; the incident names the condition. A turn at the limit spoke the fallback line (or kept the caller waiting without one). A closed request is a runtime that stopped waiting for the answer, or a caller who hung up mid-turn; one or two are normal, and a burst is a runtime timing out on slow answers. Search the backend's logs for jsonPayload.event=\"voice.turn\" with jsonPayload.turnLimitReached=true or jsonPayload.streamAbandoned=true: each line carries agentId, vendor, conversationId, durationMs and result, never what was said. ${local.alert_documentation}"
   }
 }
 

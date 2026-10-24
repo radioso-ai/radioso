@@ -67,6 +67,7 @@ import { hasSpokenWords, spokenLength } from "./speechText.js";
 import { heardSpeechOf, type HeardSpeech, type ReachedSpeech } from "./heardSpeech.js";
 import {
   cutOffAt,
+  streamAbandoned,
   VoiceSessionMemory,
   type ReplayableVoiceExchange,
   type VoiceExchange,
@@ -462,7 +463,7 @@ export class VoiceTurnService implements VoiceTurnPort {
         // The log names how many replies were recorded spoken, so it waits for the settling writes;
         // its duration is the turn's own. The facts are the same record's, written beside it.
         const report = (): void => {
-          this.logTurn(input, record, startedAt, finishedAt, failure);
+          this.logTurn(input, record, { startedAt, finishedAt, streamAbandoned: streamAbandoned(claim) }, failure);
           this.noteTurnFacts(input, record);
         };
         if (repliesSettled) {
@@ -716,13 +717,19 @@ export class VoiceTurnService implements VoiceTurnPort {
     };
   }
 
-  private logTurn(input: VoiceTurnInput, record: VoiceTurnRecord, startedAt: number, finishedAt: number, failure: unknown): void {
+  private logTurn(
+    input: VoiceTurnInput,
+    record: VoiceTurnRecord,
+    request: { startedAt: number; finishedAt: number; streamAbandoned: boolean },
+    failure: unknown,
+  ): void {
     const { metrics, logger } = this.dependencies;
     const spokenTexts = [...record.spoken.operatorReplies, ...record.spoken.answer].map((piece) => piece.text).concat(record.spoken.fallback ?? []);
     const supersededAt = spokenTexts.some((text) => text.length > 0) ? "after_speech" : "before_speech";
     if (record.result === "superseded") {
       recordVoiceTurnSuperseded(metrics, supersededAt);
-    } else if (record.result === "abandoned") {
+    }
+    if (request.streamAbandoned) {
       recordVoiceTurnAbandoned(metrics);
     }
     // A turn that switched the call's language counts neither its outcome nor its lines' language
@@ -751,7 +758,9 @@ export class VoiceTurnService implements VoiceTurnPort {
       conversationId: record.conversationId,
       result: record.result,
       ...(record.result === "superseded" ? { supersededAt } : {}),
-      durationMs: finishedAt - startedAt,
+      durationMs: request.finishedAt - request.startedAt,
+      // The runtime closed the request before the outcome reached it, whatever `result` says.
+      streamAbandoned: request.streamAbandoned,
       speechPieceCount: record.speechPieceCount,
       ...(record.operatorReplyClaims.spokenCount > 0 ? { spokenOperatorReplies: record.operatorReplyClaims.spokenCount } : {}),
       ...(outcome ? { outcome: outcome.kind } : {}),

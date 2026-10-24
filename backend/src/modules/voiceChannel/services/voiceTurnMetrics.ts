@@ -88,10 +88,13 @@ export const recordVoiceTurnSuperseded = (metrics: VoiceTurnMetricsSink | null |
   });
 };
 
-/** The runtime tore the turn's request down before the turn reached its outcome. */
+/**
+ * The runtime closed the turn's request before the outcome reached it, however the turn ended: a
+ * runtime timing out shows as a burst of these, and a caller hanging up mid-turn adds one.
+ */
 export const recordVoiceTurnAbandoned = (metrics: VoiceTurnMetricsSink | null | undefined): void => {
   metrics?.incrementCounter("voice_turn_abandoned_total", {
-    help: "Voice turns whose request the voice runtime tore down before the turn reached its outcome",
+    help: "Voice turns whose request the voice runtime closed before the outcome reached it, however the turn ended: a runtime timing out, or a caller hanging up mid-turn",
   });
 };
 

@@ -114,6 +114,6 @@ output "voice_turn_limit_log_metric_name" {
 }
 
 output "voice_turn_abandoned_log_metric_name" {
-  description = "Log-based metric counting voice turns abandoned before they finished on the backend service. Null when monitoring is disabled."
+  description = "Log-based metric counting voice turns on the backend service whose request the voice runtime closed before the outcome reached it. Null when monitoring is disabled."
   value       = try(google_logging_metric.voice_turn_abandoned[0].name, null)
 }

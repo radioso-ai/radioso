@@ -1164,8 +1164,9 @@ without voice turns, and Ray reads them through `quality_signals`:
 ```
 
 When a voice runtime starts timing out, the Google Cloud deployment alerts on
-turns that hit the turn limit and on turns the runtime abandons before they
-finish; see [Monitoring On Google Cloud](monitoring-google-cloud.md) and, for
+turns that hit the turn limit and on a burst of requests the runtime closes
+before the answer reaches it (a caller who hangs up mid-turn counts too, so
+the threshold is for a burst); see [Monitoring On Google Cloud](monitoring-google-cloud.md) and, for
 other deployments, the Prometheus rules in
 [Monitoring And Alerts](monitoring-alerts.md).
 

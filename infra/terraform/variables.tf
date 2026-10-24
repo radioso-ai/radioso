@@ -937,7 +937,7 @@ variable "monitoring_voice_turn_limit_threshold" {
 }
 
 variable "monitoring_voice_abandoned_turn_threshold" {
-  description = "Voice turns on the backend service abandoned before finishing in fifteen minutes that trigger the voice turn health alert."
+  description = "Voice turns on the backend service whose request the voice runtime closed before the outcome reached it, in fifteen minutes, that trigger the voice turn health alert."
   type        = number
   default     = 5
 

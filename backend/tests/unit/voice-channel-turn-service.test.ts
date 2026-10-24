@@ -414,6 +414,7 @@ describe("VoiceTurnService", () => {
       conversationId,
       result: "completed",
       durationMs: 250,
+      streamAbandoned: false,
       speechPieceCount: 2,
       outcome: "continue",
     });
@@ -1020,7 +1021,7 @@ describe("VoiceTurnService", () => {
       expect(logger.warn).toHaveBeenCalledWith(
         { agentId, vendor: "elevenlabs", transport: "web", conversationId, result: "completed", durationMs: 11_000,
           speechPieceCount: 1, outcome: "continue", bridged: true, turnLimitReached: true, fallbackSpoken: false,
-          firstSpeechMs: 11_000, turnLanguage: "en", languageSource: "builtin_default", event: "voice.turn" },
+          firstSpeechMs: 11_000, turnLanguage: "en", languageSource: "builtin_default", event: "voice.turn", streamAbandoned: false },
         "Voice turn reached the turn limit",
       );
     });
@@ -1135,6 +1136,16 @@ describe("VoiceTurnService", () => {
         expect(logger.info).toHaveBeenCalledWith(expect.objectContaining({ firstSpeechMs: null, bridged: true }), "Voice turn finished");
       });
 
+      it("names a turn whose outcome reached the runtime no abandoned stream, and counts none", async () => {
+        const logger = fakeLogger();
+        const metrics = fakeMetrics();
+
+        await runWithClock(serviceWith(slowReply(3_000), { logger, metrics }));
+
+        expect(logger.info).toHaveBeenCalledWith(expect.objectContaining({ result: "completed", streamAbandoned: false }), "Voice turn finished");
+        expect(metrics.incrementCounter).not.toHaveBeenCalledWith("voice_turn_abandoned_total", expect.anything());
+      });
+
       it("keeps the turn limit on the reply the limit cut off, once the unheard reply is stored", async () => {
         const notes = fakeNotes();
 
@@ -1219,7 +1230,7 @@ describe("VoiceTurnService", () => {
       });
     });
 
-    it("logs a turn the runtime tore down before it finished at warn, counts it, and keeps no facts", async () => {
+    it("logs a turn the route gave up on after the runtime hung up at warn, counts the abandoned stream, and keeps no facts", async () => {
       const metrics = fakeMetrics();
       const logger = fakeLogger();
       const notes = fakeNotes();
@@ -1235,13 +1246,16 @@ describe("VoiceTurnService", () => {
         notes,
       });
 
-      const turn = service.runTurn(input(), new AbortController().signal);
+      // The runtime hung up, and the route returned the turn once the disconnect outlived its ceiling.
+      const hangUp = new AbortController();
+      const turn = service.runTurn(input(), new AbortController().signal, hangUp.signal);
       expect((await turn.next()).value).toEqual({ type: "conversation", conversationId });
+      hangUp.abort();
       await turn.return(undefined);
       await vi.runAllTimersAsync();
 
       expect(logger.warn).toHaveBeenCalledWith(
-        expect.objectContaining({ event: "voice.turn", agentId, conversationId, result: "abandoned" }),
+        expect.objectContaining({ event: "voice.turn", agentId, conversationId, result: "abandoned", streamAbandoned: true }),
         "Voice turn abandoned before it finished",
       );
       expect(logger.info).not.toHaveBeenCalled();
@@ -1369,7 +1383,7 @@ describe("VoiceTurnService", () => {
       expect(superseded).toHaveLength(2);
       expect(superseded[0]?.[0]).toEqual({
         event: "voice.turn", agentId, vendor: "elevenlabs", transport: "web", conversationId, result: "superseded",
-        supersededAt: "before_speech", durationMs: 150, speechPieceCount: 0, outcome: "continue",
+        supersededAt: "before_speech", durationMs: 150, streamAbandoned: false, speechPieceCount: 0, outcome: "continue",
       });
     });
 
@@ -1435,6 +1449,30 @@ describe("VoiceTurnService", () => {
         { type: "speech", text: "Yes, on Sundays too.", last: true },
       ]);
       expect(counted(metrics, "voice_turn_superseded_total")).toEqual([{ stage: "after_speech" }]);
+    });
+
+    it("counts no abandoned stream for a request the runtime closed after the caller's newer one arrived", async () => {
+      const chat = supersedingChat([answered("Hatha yoga is on Sundays at nine.", 2_000), answered("Yes, on Sundays too.")]);
+      const logger = fakeLogger();
+      const metrics = fakeMetrics();
+      const turns = service(chat, { logger, metrics });
+      const hangUp = new AbortController();
+
+      const first = start(turns, input({ utterance: "When is hatha yoga?" }), hangUp.signal);
+      await vi.advanceTimersByTimeAsync(500);
+      const second = start(turns, input({ utterance: "When is hatha yoga on Sundays?" }));
+      await vi.advanceTimersByTimeAsync(10);
+      hangUp.abort();
+      await vi.runAllTimersAsync();
+      await Promise.all([first, second]);
+
+      const lines = logger.info.mock.calls.map(([fields]) => fields as Record<string, unknown>);
+      expect(lines.map(({ result, streamAbandoned }) => ({ result, streamAbandoned }))).toEqual(expect.arrayContaining([
+        { result: "superseded", streamAbandoned: false },
+        { result: "completed", streamAbandoned: false },
+      ]));
+      expect(lines).toHaveLength(2);
+      expect(counted(metrics, "voice_turn_abandoned_total")).toEqual([]);
     });
 
     it("speaks no second bridge when the turn it superseded bridged moments ago", async () => {
@@ -1507,6 +1545,14 @@ describe("VoiceTurnService", () => {
         ]);
         expect(chat.requests).toHaveLength(1);
         expect(notes.replyReplayed).toHaveBeenCalledWith({ workspaceId, conversationId, assistantMessageId });
+        // The runtime hung up on the first turn at 1 s; its chat turn still completed at 3 s, so its
+        // stream counts as abandoned. The replay delivered its outcome.
+        const finished = logger.info.mock.calls.filter(([, message]) => message === "Voice turn finished").map(([fields]) => fields as Record<string, unknown>);
+        expect(finished.map(({ result, streamAbandoned }) => ({ result, streamAbandoned }))).toEqual([
+          { result: "completed", streamAbandoned: true },
+          { result: "replayed", streamAbandoned: false },
+        ]);
+        expect(counted(metrics, "voice_turn_abandoned_total")).toEqual([{}]);
         // The reply keeps the facts of the turn that wrote it; the replay adds none.
         expect(notes.turnFacts.mock.calls).toEqual([[expect.objectContaining({ assistantMessageId })]]);
         expect(counted(metrics, "voice_turn_replayed_total")).toEqual([{}]);

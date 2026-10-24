@@ -761,9 +761,16 @@ reached the turn limit` at warn when the limit fired on a turn that ended;
 else `Voice turn finished` at info (`completed`, `replayed`, `superseded` with
 `supersededAt`: `before_speech` or `after_speech`). Every turn line, whichever
 message it carries, has `event: "voice.turn"` (`VOICE_TURN_LOG_EVENT` in
-`domain.ts`). The voice turn health alert (`docs/monitoring-google-cloud.md`)
-counts the lines by that event with `turnLimitReached: true`, whatever became
-of the turn, and with `result: "abandoned"`;
+`domain.ts`) and `streamAbandoned`: true when the runtime closed the request
+before the outcome reached it (`streamAbandoned` in `voiceSessionMemory.ts`,
+from the claim's `hungUpAt`), however the chat turn ended, so a turn whose
+runtime gave up at 20 s while chat finished at 30 s logs `result: "completed"`
+with `streamAbandoned: true`. A request the session's newer one had overtaken
+first is not counted. It also counts a caller who hangs up while the agent is
+speaking or thinking, so one or two are normal; a runtime timing out shows as a
+burst. The voice turn health alert (`docs/monitoring-google-cloud.md`) counts
+the lines by that event with `turnLimitReached: true`, whatever became of the
+turn, and with `streamAbandoned: true`;
 `tests/unit/voice-channel-alert-log-events.test.ts` checks that
 `infra/terraform/monitoring.tf` filters on the same names. A tool result follow-up logs `Voice tool result follow-up
 answered with an empty completion` at debug with `event:
@@ -814,8 +821,8 @@ waiting). The service records `voice_turn_language_source_total` (`source`,
 the same values as `languageSource`) once per turn that runs with the lines
 it chose: not for a turn a person owns, which speaks neither line, nor for one
 a newer request overtook while it set up. It records `voice_turn_superseded_total` (`stage`:
-`before_speech`, `after_speech`), `voice_turn_abandoned_total` (no labels; a
-turn whose request the runtime tore down before it reached its outcome),
+`before_speech`, `after_speech`), `voice_turn_abandoned_total` (no labels;
+the turns whose line says `streamAbandoned: true`),
 `voice_turn_replayed_total`,
 `voice_reply_interrupted_total` (`partial`: `yes` for a reply stored as its
 heard part, counted as its store commits; `no` for a finished one, counted

@@ -24,7 +24,7 @@ Radioso emits signals through standard interfaces — a Prometheus-compatible me
 | Is the email webhook being forged or misconfigured | `radioso_email_webhook_requests_total{result=~"bad_signature\|stale_timestamp"}` | `/metrics` |
 | Did an email sending domain stop verifying | `radioso_email_domain_readiness_transitions_total{capability="sending",to!="verified"}` | `/metrics` |
 | Are voice turns hitting the turn limit | `radioso_voice_turn_limit_total` | `/metrics` |
-| Are voice turns being abandoned before they finish | `radioso_voice_turn_abandoned_total` | `/metrics` |
+| Is the voice runtime closing requests before the answer reaches it | `radioso_voice_turn_abandoned_total` | `/metrics` |
 | Are email sends piling up with no resolved outcome | `radioso_email_send_intents_total{state="uncertain"}` | `/metrics` |
 | Is the email bounce rate spiking | `radioso_email_send_intents_total{state="bounced"}` against `{state="accepted"}` | `/metrics` |
 | Did someone sign up, did a conversation finish | `account.registered`, `chat.completed` | [ops event feed](ops-event-feed.md) |
@@ -142,7 +142,7 @@ groups:
       - alert: RadiosoVoiceTurnAbandoned
         expr: sum(increase(radioso_voice_turn_abandoned_total[15m])) > 5
         annotations:
-          summary: "The voice runtime is abandoning turns before they finish"
+          summary: "The voice runtime is closing requests before the answer reaches it: likely timing out on slow answers"
 
       - alert: RadiosoEmailSendUncertain
         expr: increase(radioso_email_send_intents_total{state="uncertain"}[1h]) > 0
@@ -170,6 +170,8 @@ The outbox and email-backlog alerts earn their place the same way. While the act
 | `send_intents` | `queued` | Sends created more than 10 minutes ago that the provider has not accepted |
 
 The gauge exists only on an API with metrics enabled and the email channel configured. A deployment with the channel turned off never samples it, so the series is absent and the alert stays quiet. When a sample fails, the gauge keeps its previous values and the API logs `email_backlog_sample_failed`.
+
+The two voice rules watch whether calls get their answers in time. `radioso_voice_turn_limit_total` counts every turn that reached the voice turn limit before it spoke, whatever became of it. `radioso_voice_turn_abandoned_total` counts turns whose request the voice runtime closed before the answer reached it, however the turn itself ended, so a runtime that stops waiting at 20 seconds while the answer lands at 30 is counted. A caller who hangs up while the agent is thinking or speaking is counted too, so a few are normal; the threshold is for a burst, and a runtime timing out on slow answers shows as one.
 
 ## Rate limits
 

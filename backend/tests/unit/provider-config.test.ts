@@ -86,27 +86,66 @@ describe("resolveLlmConfig OpenAI data residency", () => {
     });
     expect(config.chat).not.toHaveProperty("baseUrl");
     expect(config.chat).not.toHaveProperty("openAIDataResidency");
-    expect(config.openAIPlatformResidency).toBeUndefined();
+    expect(config.openAIPlatformEndpoint).toBeUndefined();
   });
 
-  it("derives openAIPlatformResidency once, present only when a platform OpenAI key is configured", () => {
+  it("derives openAIPlatformEndpoint once, present only when a platform OpenAI key is configured", () => {
     const withKey = resolveLlmConfig({ ...baseEnv, OPENAI_DATA_RESIDENCY: "eu" });
-    expect(withKey.openAIPlatformResidency).toEqual({
-      residency: "eu",
-      baseUrl: "https://eu.api.openai.com/v1",
-    });
+    expect(withKey.openAIPlatformEndpoint).toEqual({ kind: "openai", residency: "eu" });
 
     const withoutKey = resolveLlmConfig({
       ANTHROPIC_API_KEY: "claude-test",
       LLM_PROVIDER: "claude",
       OPENAI_DATA_RESIDENCY: "eu",
     });
-    expect(withoutKey.openAIPlatformResidency).toBeUndefined();
+    expect(withoutKey.openAIPlatformEndpoint).toBeUndefined();
   });
 
-  it("derives openAIPlatformResidency at the default (global) residency with no base URL", () => {
+  it("derives openAIPlatformEndpoint at the default (global) residency", () => {
     const config = resolveLlmConfig({ ...baseEnv });
-    expect(config.openAIPlatformResidency).toEqual({ residency: "global" });
-    expect(config.openAIPlatformResidency).not.toHaveProperty("baseUrl");
+    expect(config.openAIPlatformEndpoint).toEqual({ kind: "openai", residency: "global" });
+  });
+});
+
+describe("resolveLlmConfig Azure OpenAI endpoint", () => {
+  const azureBaseUrl = "https://radioso-eu-1.openai.azure.com/openai/v1";
+
+  it("stamps openAIAzureBaseUrl (never baseUrl or openAIDataResidency) onto every openai capability default", () => {
+    const config = resolveLlmConfig({ ...baseEnv, AZURE_OPENAI_ENDPOINT: azureBaseUrl });
+    for (const capability of [config.chat, config.rewrite, config.rerank, config.embeddings]) {
+      expect(capability.openAIAzureBaseUrl).toBe(azureBaseUrl);
+      expect(capability).not.toHaveProperty("baseUrl");
+      expect(capability).not.toHaveProperty("openAIDataResidency");
+    }
+  });
+
+  it("derives openAIPlatformEndpoint as the azure kind", () => {
+    const config = resolveLlmConfig({ ...baseEnv, AZURE_OPENAI_ENDPOINT: azureBaseUrl });
+    expect(config.openAIPlatformEndpoint).toEqual({ kind: "azure", baseUrl: azureBaseUrl });
+  });
+
+  it("carries the Azure base URL onto the supplemental openai embedding config", () => {
+    const config = resolveLlmConfig({
+      ...baseEnv,
+      LLM_EMBEDDING_PROVIDER: "gemini",
+      GEMINI_API_KEY: "gemini-test",
+      AZURE_OPENAI_ENDPOINT: azureBaseUrl,
+    });
+    const openaiSupplement = config.embeddingProviderConfigs.find((entry) => entry.provider === "openai");
+    expect(openaiSupplement?.openAIAzureBaseUrl).toBe(azureBaseUrl);
+  });
+
+  it("throws rather than silently preferring one setting when combined with a non-global OPENAI_DATA_RESIDENCY", () => {
+    // Defense in depth: env.ts's own superRefine already rejects this combination for any
+    // deployment that goes through getEnv. This proves resolveLlmConfig refuses it too, for a
+    // caller (including a test) that builds a raw env object by hand.
+    expect(() =>
+      resolveLlmConfig({ ...baseEnv, AZURE_OPENAI_ENDPOINT: azureBaseUrl, OPENAI_DATA_RESIDENCY: "eu" }),
+    ).toThrow(ProviderConfigurationError);
+  });
+
+  it("produces no Azure fields when AZURE_OPENAI_ENDPOINT is unset, even with a platform key configured", () => {
+    const config = resolveLlmConfig({ ...baseEnv });
+    expect(config.chat).not.toHaveProperty("openAIAzureBaseUrl");
   });
 });

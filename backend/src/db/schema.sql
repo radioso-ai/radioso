@@ -3956,6 +3956,7 @@ CREATE TABLE public.users (
     email_verified_at timestamp with time zone,
     disabled_at timestamp with time zone,
     display_name text,
+    credential_generation integer DEFAULT 0 NOT NULL,
     CONSTRAINT users_display_name_check CHECK (((display_name IS NULL) OR (btrim(display_name) <> ''::text)))
 );
 

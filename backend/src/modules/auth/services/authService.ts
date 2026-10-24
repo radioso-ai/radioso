@@ -1,5 +1,12 @@
+import { randomUUID } from "node:crypto";
+
 import type { Env } from "../../../app/config/env.js";
-import type { AuthFunnelRepositoryPort } from "./authFunnelService.js";
+import type { AuthFunnelRepositoryPort, CredentialGeneration } from "./authFunnelService.js";
+import {
+  logCredentialSuperseded,
+  type CredentialGuardedFlow,
+  type CredentialSupersededLogger,
+} from "./credentialSupersededLogging.js";
 import { AppError, badRequest, conflict, forbidden, unauthorized } from "../../../shared/domain/errors.js";
 import type { AccountAccessService, AccountInvitationService, AuthenticatedPrincipal } from "../../account/public.js";
 import {
@@ -142,7 +149,6 @@ export interface FederatedIdentityRecord {
 }
 
 export interface FederatedIdentityRepositoryPort {
-  findByProviderSubject(provider: string, subject: string): Promise<FederatedIdentityRecord | null>;
   listForUser(userId: string): Promise<FederatedIdentityRecord[]>;
   /** Links the provider identity to the user, refreshing an existing link. */
   link(params: {
@@ -162,7 +168,10 @@ interface AuthServiceDependencies {
   userRepository: UserRepositoryPort;
   sessionRepository: SessionRepositoryPort;
   federatedIdentityRepository: FederatedIdentityRepositoryPort;
-  authFunnelRepository: Pick<AuthFunnelRepositoryPort, "recoverFederatedUser">;
+  authFunnelRepository: Pick<
+    AuthFunnelRepositoryPort,
+    "recoverFederatedUser" | "createSessionForCredential" | "linkFederatedIdentityForCredential"
+  >;
   workspaceService: WorkspaceService;
   accountAccessService: AccountAccessService;
   accountInvitationService: AccountInvitationService;
@@ -174,9 +183,16 @@ interface AuthServiceDependencies {
   apiPrincipalAuthenticator?: Pick<ApiPrincipalAuthenticator, "authenticate"> & Partial<Pick<ApiPrincipalAuthenticator, "recordSuccessfulUse">>;
   personalCredentialTermination?: Pick<PersonalCredentialTenureService, "endAccount">;
   personalCredentialLifecycle?: Pick<PersonalCredentialLifecyclePort, "deleteAccount">;
+  logger?: CredentialSupersededLogger;
 }
 
 type LoginMembership = Awaited<ReturnType<AccountAccessService["resolveLoginAccount"]>>;
+
+/** The generation a user record was read under, which its proof is checked against. */
+const credentialOf = (user: UserRecord): CredentialGeneration => ({
+  userId: user.id,
+  generation: user.credentialGeneration,
+});
 
 /**
  * Names a refusal to create the organization a first-time federated sign-in
@@ -266,7 +282,7 @@ export class AuthService {
       });
       await this.dependencies.onAccountCreated?.({ accountId: core.account.id });
       const sessionCookie = autoVerifyEmail
-        ? await this.createSessionCookie(core.userId, core.account.id)
+        ? await this.createNewUserSessionCookie(core.userId, core.account.id)
         : undefined;
       await organizationCreationReservation.commit({ accountId: core.account.id });
       await this.trackRegistration({
@@ -365,7 +381,11 @@ export class AuthService {
         passwordHash: user.passwordHash,
       });
       await this.dependencies.onAccountCreated?.({ accountId: core.account.id });
-      const sessionCookie = await this.createSessionCookie(user.id, core.account.id);
+      const sessionCookie = await this.requireSessionCookieForCredential(
+        credentialOf(user),
+        core.account.id,
+        "organization_create",
+      );
 
       await this.dependencies.auditService.record({
         accountId: core.account.id,
@@ -490,7 +510,23 @@ export class AuthService {
       membership.accountId,
       input.preferredWorkspaceId,
     );
-    const sessionCookie = await this.createSessionCookie(user.id, membership.accountId);
+    // The password was checked against the hash read with this generation; a
+    // reset that committed since then replaced it, so the session must not land.
+    const sessionCookie = await this.createSessionCookieForCredential(credentialOf(user), membership.accountId);
+    if (!sessionCookie) {
+      logCredentialSuperseded(this.dependencies.logger, {
+        flow: "password_login",
+        userId: user.id,
+        accountId: membership.accountId,
+      });
+      await this.dependencies.auditService.record({
+        accountId: membership.accountId,
+        eventType: "auth.login",
+        eventStatus: "failure",
+        metadata: { email, reason: "credential_superseded" },
+      });
+      throw unauthorized("Invalid email or password");
+    }
     await this.dependencies.auditService.record({
       accountId: membership.accountId,
       eventType: "auth.login",
@@ -586,15 +622,14 @@ export class AuthService {
       );
     }
 
+    // The linked user is read in the link lookup's own statement, so the
+    // generation it carries is the one the link was found under: a reset that
+    // deletes the link afterwards also advances past it.
     const match = await runFederatedLoginStage({ reason: "identity_lookup_failed" }, async () => {
-      const linked = await this.dependencies.federatedIdentityRepository
-        .findByProviderSubject(input.provider, input.subject);
-      return {
-        matchedBy: linked ? ("subject" as const) : ("email" as const),
-        user: linked
-          ? await this.dependencies.userRepository.findById(linked.userId)
-          : await this.dependencies.userRepository.findByEmail(input.email),
-      };
+      const linked = await this.dependencies.userRepository.findByFederatedIdentity(input.provider, input.subject);
+      return linked
+        ? { matchedBy: "subject" as const, user: linked }
+        : { matchedBy: "email" as const, user: await this.dependencies.userRepository.findByEmail(input.email) };
     });
 
     const existing = match.user;
@@ -602,6 +637,7 @@ export class AuthService {
       return this.provisionFederatedAccount(input);
     }
 
+    let credential = credentialOf(existing);
     let displayName = existing.displayName;
     if (!existing.emailVerifiedAt) {
       // The account was created by password registration but never verified,
@@ -625,6 +661,12 @@ export class AuthService {
         // link verification won first, this is an ordinary verified-user login
         // and must not rotate credentials or revoke the session it just made.
         displayName = recovery.displayName;
+        // This sign-in's own recovery advanced the generation, so it continues
+        // under the one the recovery set. A reset that commits after the
+        // recovery advances past that one too.
+        if (recovery.recovered) {
+          credential = { userId: existing.id, generation: recovery.credentialGeneration };
+        }
       });
     }
 
@@ -632,18 +674,25 @@ export class AuthService {
     // onto the user: a reassigned address could already belong to another
     // user, and rewriting the login email would move an account behind the
     // owner's back.
-    await this.recordFederatedIdentityLink({
-      userId: existing.id,
-      provider: input.provider,
-      subject: input.subject,
-      email: input.email,
+    await runFederatedLoginStage({ reason: "identity_link_write_failed" }, async () => {
+      const linked = await this.dependencies.authFunnelRepository.linkFederatedIdentityForCredential({
+        credential,
+        provider: input.provider,
+        subject: input.subject,
+        providerEmail: input.email,
+        authenticatedAt: new Date(),
+      });
+      if (!linked) throw this.refuseSupersededFederatedLogin(credential);
     });
 
     const membership = await this.resolveFederatedLoginAccount(existing.id);
     const workspace = await runFederatedLoginStage({ reason: "workspace_unavailable" }, () =>
       this.dependencies.workspaceService.resolveLoginWorkspace(membership.accountId));
-    const sessionCookie = await runFederatedLoginStage({ reason: "session_write_failed" }, () =>
-      this.createSessionCookie(existing.id, membership.accountId));
+    const sessionCookie = await runFederatedLoginStage({ reason: "session_write_failed" }, async () => {
+      const issued = await this.createSessionCookieForCredential(credential, membership.accountId);
+      if (!issued) throw this.refuseSupersededFederatedLogin(credential, membership.accountId);
+      return issued;
+    });
     const account = await runFederatedLoginStage({ reason: "account_lookup_failed" }, () =>
       this.dependencies.accountRepository.findById(membership.accountId));
 
@@ -694,10 +743,23 @@ export class AuthService {
   }
 
   /**
-   * Writes the provider link that later sign-ins match on. It sits on the
-   * critical path deliberately — skipping it would silently degrade every
-   * subsequent login back to email matching — so a failure is named rather than
-   * folded into whatever generic reason the sign-in would otherwise report.
+   * A sign-in whose credentials a reset or recovery replaced after it read them
+   * fails as one that never completed: the caller signs in again. The returned
+   * failure carries its reason to the attempt's single audit record.
+   */
+  private refuseSupersededFederatedLogin(credential: CredentialGeneration, accountId?: string): unknown {
+    logCredentialSuperseded(this.dependencies.logger, { flow: "federated_login", userId: credential.userId, accountId });
+    return failFederatedLoginStage({ reason: "credential_superseded" }, unauthorized());
+  }
+
+  /**
+   * Writes the provider link a first sign-in creates, which later sign-ins match
+   * on. It sits on the critical path deliberately — skipping it would silently
+   * degrade every subsequent login back to email matching — so a failure is
+   * named rather than folded into whatever generic reason the sign-in would
+   * otherwise report. This sign-in created the user, so no reset can have
+   * replaced their credentials; an existing user's link is written under the
+   * generation the sign-in read instead.
    */
   private async recordFederatedIdentityLink(input: {
     userId: string;
@@ -759,7 +821,7 @@ export class AuthService {
       });
       await this.dependencies.onAccountCreated?.({ accountId: provisioned.account.id });
       const sessionCookie = await runFederatedLoginStage({ reason: "session_write_failed" }, () =>
-        this.createSessionCookie(provisioned.userId, provisioned.account.id));
+        this.createNewUserSessionCookie(provisioned.userId, provisioned.account.id));
       await organizationCreationReservation.commit({ accountId: provisioned.account.id });
       await this.trackRegistration({
         accountId: provisioned.account.id,
@@ -974,7 +1036,7 @@ export class AuthService {
 
     return this.completeInvitationAcceptance({
       invitationToken: input.invitationToken,
-      userId: user.id,
+      credential: credentialOf(user),
       displayName: user.displayName,
       email,
       createdUserId: existingUser ? null : user.id,
@@ -1005,7 +1067,7 @@ export class AuthService {
 
     return this.completeInvitationAcceptance({
       invitationToken: input.invitationToken,
-      userId: user.id,
+      credential: credentialOf(user),
       displayName: user.displayName,
       email,
       createdUserId: null,
@@ -1033,24 +1095,25 @@ export class AuthService {
    */
   private async completeInvitationAcceptance(input: {
     invitationToken: string;
-    userId: string;
+    credential: CredentialGeneration;
     displayName: string | null;
     email: string;
     createdUserId: string | null;
   }): Promise<AuthenticatedAccountSession> {
+    const { userId } = input.credential;
     let accountId: string;
     try {
       ({ accountId } = await this.dependencies.accountInvitationService.acceptInvitation(
         input.invitationToken,
-        input.userId,
+        userId,
       ));
-      await this.dependencies.userRepository.markEmailVerified(input.userId, new Date());
+      await this.dependencies.userRepository.markEmailVerified(userId, new Date());
     } catch (error) {
       // The claim may already have succeeded and only the verification failed,
       // which would otherwise leave the invitation spent while the caller sees
       // an error and a retry gets "no longer valid". Reverting is a no-op when
       // the claim itself is what threw.
-      await this.dependencies.accountInvitationService.revertAcceptance(input.invitationToken, input.userId);
+      await this.dependencies.accountInvitationService.revertAcceptance(input.invitationToken, userId);
       if (input.createdUserId) {
         await this.dependencies.userRepository.deleteById(input.createdUserId);
       }
@@ -1060,10 +1123,14 @@ export class AuthService {
     try {
       const account = await this.dependencies.accountRepository.findById(accountId);
       const workspace = await this.dependencies.workspaceService.resolveLoginWorkspace(accountId);
-      const sessionCookie = await this.createSessionCookie(input.userId, accountId);
+      const sessionCookie = await this.requireSessionCookieForCredential(
+        input.credential,
+        accountId,
+        "invitation_accept",
+      );
 
       return {
-        userId: input.userId,
+        userId,
         displayName: input.displayName,
         accountId,
         organizationName: account?.name ?? deriveOrganizationName(input.email),
@@ -1073,7 +1140,7 @@ export class AuthService {
         sessionCookie,
       };
     } catch (error) {
-      await this.dependencies.accountInvitationService.revertAcceptance(input.invitationToken, input.userId);
+      await this.dependencies.accountInvitationService.revertAcceptance(input.invitationToken, userId);
       if (input.createdUserId) {
         await this.dependencies.userRepository.deleteById(input.createdUserId);
       }
@@ -1099,7 +1166,11 @@ export class AuthService {
       membership.accountId,
       input.preferredWorkspaceId,
     );
-    const sessionCookie = await this.createSessionCookie(input.userId, membership.accountId);
+    const sessionCookie = await this.requireSessionCookieForCredential(
+      credentialOf(user),
+      membership.accountId,
+      "account_switch",
+    );
 
     await this.dependencies.auditService.record({
       accountId: membership.accountId,
@@ -1231,18 +1302,53 @@ export class AuthService {
     }
   }
 
-  private async createSessionCookie(userId: string, accountId: string): Promise<string> {
+  /**
+   * Issues a session to a user who existed before this request, only while they
+   * still hold the credential generation the request read. A reset or recovery
+   * that commits in between leaves nothing written, and this answers null.
+   */
+  private async createSessionCookieForCredential(
+    credential: CredentialGeneration,
+    accountId: string,
+  ): Promise<string | null> {
     const sessionToken = generateSessionToken();
-    const expiresAt = new Date(Date.now() + this.dependencies.env.SESSION_TTL_HOURS * 60 * 60 * 1000);
+    const written = await this.dependencies.authFunnelRepository.createSessionForCredential({
+      credential,
+      accountId,
+      sessionId: randomUUID(),
+      sessionTokenHash: sha256(sessionToken),
+      sessionExpiresAt: this.sessionExpiresAt(),
+    });
+    return written ? serializeSessionCookie(sessionToken, this.dependencies.env) : null;
+  }
 
+  /** As `createSessionCookieForCredential`, answering superseded credentials as a signed-out request. */
+  private async requireSessionCookieForCredential(
+    credential: CredentialGeneration,
+    accountId: string,
+    flow: CredentialGuardedFlow,
+  ): Promise<string> {
+    const sessionCookie = await this.createSessionCookieForCredential(credential, accountId);
+    if (sessionCookie) return sessionCookie;
+    logCredentialSuperseded(this.dependencies.logger, { flow, userId: credential.userId, accountId });
+    throw unauthorized();
+  }
+
+  /** Issues a session to a user this request created, whose credentials nothing can have replaced. */
+  private async createNewUserSessionCookie(userId: string, accountId: string): Promise<string> {
+    const sessionToken = generateSessionToken();
     await this.dependencies.sessionRepository.create({
       userId,
       accountId,
       sessionTokenHash: sha256(sessionToken),
-      expiresAt,
+      expiresAt: this.sessionExpiresAt(),
     });
 
     return serializeSessionCookie(sessionToken, this.dependencies.env);
+  }
+
+  private sessionExpiresAt(): Date {
+    return new Date(Date.now() + this.dependencies.env.SESSION_TTL_HOURS * 60 * 60 * 1000);
   }
 
   /**

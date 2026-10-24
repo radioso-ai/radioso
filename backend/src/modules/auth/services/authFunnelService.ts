@@ -17,6 +17,27 @@ interface AuthFunnelClaim {
   accountId: string;
 }
 
+/**
+ * The credential generation a sign-in read together with the proof it checked.
+ * Password reset and federated recovery advance a user's generation in the
+ * transaction that revokes their sessions and provider links, so a session or
+ * link written for a generation the user no longer holds would outlive the
+ * recovery meant to end it. Writes made for one land only while it is current.
+ */
+export interface CredentialGeneration {
+  userId: string;
+  generation: number;
+}
+
+/**
+ * What a federated recovery did. Only a recovery that rotated the credentials
+ * advances the generation; when verification won first the user is untouched
+ * and the sign-in keeps the generation it read.
+ */
+type FederatedRecovery =
+  | { recovered: true; displayName: string | null; credentialGeneration: number }
+  | { recovered: false; displayName: string | null };
+
 export interface AuthFunnelRepositoryPort {
   createRegistrationChallenge(input: {
     userId: string;
@@ -53,13 +74,38 @@ export interface AuthFunnelRepositoryPort {
     email: string;
     displayName: string | null;
     revokedFederatedIdentities: number;
+    /** The generation the reset advanced the user to. */
+    credentialGeneration: number;
   } | null>;
   recoverFederatedUser(input: {
     userId: string;
     passwordHash: string;
     displayName: string | null;
     now: Date;
-  }): Promise<{ recovered: boolean; displayName: string | null } | null>;
+  }): Promise<FederatedRecovery | null>;
+  /**
+   * Writes a session only while the user holds the given generation. A recovery
+   * still in flight is waited for, so one that commits first leaves nothing
+   * written. Answers whether the session was written.
+   */
+  createSessionForCredential(input: {
+    credential: CredentialGeneration;
+    accountId: string;
+    sessionId: string;
+    sessionTokenHash: string;
+    sessionExpiresAt: Date;
+  }): Promise<boolean>;
+  /**
+   * Links, or refreshes the link of, a provider identity under the same rule as
+   * `createSessionForCredential`. Answers whether the link was written.
+   */
+  linkFederatedIdentityForCredential(input: {
+    credential: CredentialGeneration;
+    provider: string;
+    subject: string;
+    providerEmail: string;
+    authenticatedAt: Date;
+  }): Promise<boolean>;
 }
 
 interface PreparedSession {

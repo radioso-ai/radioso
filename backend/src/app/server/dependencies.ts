@@ -447,6 +447,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     auditService: infrastructure.auditService,
     database: infrastructure.database,
     env,
+    logger,
     organizationCreationGuard,
     onAccountCreated,
     productAnalytics: infrastructure.productAnalyticsService,

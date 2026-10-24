@@ -1,7 +1,7 @@
 ---
 title: "Authentication"
 description: "Session, workspace automation, Operator MCP, agent chat, public-chat, and Enterprise embed access patterns in Radioso."
-last_updated: 2026-10-13
+last_updated: 2026-10-24
 ---
 
 import { Steps } from 'nextra/components'
@@ -54,6 +54,8 @@ That ordering is what a returning user feels. On the first provider sign-in Radi
 A user created this way has no password. They can adopt one through the password reset flow, and until they do, provider sign-in is their only credential — which is why [accepting an invitation](/api/accounts-and-users#accept-an-invitation) reports the linked providers alongside the password requirement.
 
 Confirming a password reset drops the user's provider links along with their sessions. A reset proves control of the mailbox right now, and the links are a credential like any other: one established while an address was briefly held by someone else should not outlive the password it sat beside. Signing in with the provider again re-establishes the link.
+
+The reset also wins against a sign-in that is already under way. A password login that checked the old password, or a provider sign-in that matched a link the reset dropped, ends with the ordinary sign-in failure and leaves no session or link behind, so the person signs in again.
 
 ## Personal tokens and service accounts
 

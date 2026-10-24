@@ -479,7 +479,7 @@ describeIntegration("AuthFunnelRepository (Postgres)", () => {
       passwordHash: "rotated-hash",
       displayName: "Provider",
       now,
-    })).resolves.toEqual({ recovered: true, displayName: "Provider" });
+    })).resolves.toEqual({ recovered: true, displayName: "Provider", credentialGeneration: 1 });
     await expect(repository.verifyEmailAndCreateSession({
       verificationTokenHash: tokenHash,
       sessionId: randomUUID(),
@@ -488,5 +488,133 @@ describeIntegration("AuthFunnelRepository (Postgres)", () => {
       now: new Date(now.getTime() + 1),
     })).resolves.toBeNull();
     await database.query(`DELETE FROM accounts WHERE id = $1`, [googleAccountId]);
+  });
+
+  const seedCredentialUser = async (label: string): Promise<{ userId: string; accountId: string }> => {
+    const seededUserId = randomUUID();
+    const seededAccountId = randomUUID();
+    await database.query(
+      `INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, $2, $3, $4)`,
+      [seededAccountId, label, `${label}-${seededUserId}@example.com`, "hash"],
+    );
+    await database.query(
+      `INSERT INTO users (id, email, password_hash, email_verified_at) VALUES ($1, $2, $3, NOW())`,
+      [seededUserId, `${label}-user-${seededUserId}@example.com`, "old-password-hash"],
+    );
+    await database.query(
+      `INSERT INTO account_memberships (id, account_id, user_id, role, status)
+       VALUES ($1, $2, $3, 'owner', 'active')`,
+      [randomUUID(), seededAccountId, seededUserId],
+    );
+    return { userId: seededUserId, accountId: seededAccountId };
+  };
+
+  const credentialWrites = (input: {
+    userId: string;
+    accountId: string;
+    generation: number;
+    subject: string;
+  }) => ({
+    session: () => repository.createSessionForCredential({
+      credential: { userId: input.userId, generation: input.generation },
+      accountId: input.accountId,
+      sessionId: randomUUID(),
+      sessionTokenHash: `session-${randomUUID()}`,
+      sessionExpiresAt: new Date(Date.now() + 3_600_000),
+    }),
+    link: () => repository.linkFederatedIdentityForCredential({
+      credential: { userId: input.userId, generation: input.generation },
+      provider: "google",
+      subject: input.subject,
+      providerEmail: `provider-${input.subject}@example.com`,
+      authenticatedAt: new Date(),
+    }),
+  });
+
+  const countCredentialRows = async (seededUserId: string) => {
+    const [counts] = await database.query<{ sessions: string; links: string }>(
+      `SELECT
+         (SELECT COUNT(*)::text FROM sessions WHERE user_id = $1 AND revoked_at IS NULL) AS sessions,
+         (SELECT COUNT(*)::text FROM user_federated_identities WHERE user_id = $1) AS links`,
+      [seededUserId],
+    );
+    return counts;
+  };
+
+  /** Resolves once a statement inserting into `table` is queued behind a row lock. */
+  const waitForInsertBlockedOnLock = async (table: "sessions" | "user_federated_identities"): Promise<void> => {
+    for (let attempt = 0; attempt < 1_000; attempt += 1) {
+      const [row] = await database.query<{ waiting: number }>(
+        `SELECT COUNT(*)::int AS waiting FROM pg_stat_activity
+         WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE $1`,
+        [`insert into "${table}"%`],
+      );
+      if ((row?.waiting ?? 0) > 0) return;
+    }
+    throw new Error(`No insert into ${table} ever waited on the user lock`);
+  };
+
+  it("advances the credential generation on password reset and writes nothing at the generation it replaced", async () => {
+    const { userId: resetUserId, accountId: resetAccountId } = await seedCredentialUser("generation-reset");
+    const resetTokenHash = `generation-reset-${randomUUID()}`;
+    await database.query(
+      `INSERT INTO password_reset_tokens (id, user_id, token_hash, expires_at)
+       VALUES ($1, $2, $3, $4)`,
+      [randomUUID(), resetUserId, resetTokenHash, new Date(Date.now() + 60_000)],
+    );
+    const subject = `generation-reset-${randomUUID()}`;
+
+    await expect(repository.completePasswordReset({
+      resetTokenHash,
+      passwordHash: "new-password-hash",
+      now: new Date(),
+    })).resolves.toMatchObject({ userId: resetUserId, credentialGeneration: 1 });
+
+    const replaced = credentialWrites({ userId: resetUserId, accountId: resetAccountId, generation: 0, subject });
+    await expect(replaced.session()).resolves.toBe(false);
+    await expect(replaced.link()).resolves.toBe(false);
+    expect(await countCredentialRows(resetUserId)).toEqual({ sessions: "0", links: "0" });
+
+    const current = credentialWrites({ userId: resetUserId, accountId: resetAccountId, generation: 1, subject });
+    await expect(current.session()).resolves.toBe(true);
+    await expect(current.link()).resolves.toBe(true);
+    // A repeat sign-in refreshes the link it already holds rather than adding a row.
+    await expect(current.link()).resolves.toBe(true);
+    expect(await countCredentialRows(resetUserId)).toEqual({ sessions: "1", links: "1" });
+    await database.query(`DELETE FROM accounts WHERE id = $1`, [resetAccountId]);
+  });
+
+  it("makes session and link writes queued behind an in-flight reset write nothing once it commits", async () => {
+    const { userId: racedUserId, accountId: racedAccountId } = await seedCredentialUser("generation-race");
+    const writes = credentialWrites({
+      userId: racedUserId,
+      accountId: racedAccountId,
+      generation: 0,
+      subject: `generation-race-${randomUUID()}`,
+    });
+    let queued: Promise<[boolean, boolean]> | null = null;
+
+    // Stands in for a password reset that has locked the user, advanced the generation and
+    // revoked sessions and links, but not committed: the writes must wait for it, then see it.
+    await database.kysely.transaction().execute(async (transaction) => {
+      await transaction.selectFrom("users").select("id").where("id", "=", racedUserId).forUpdate().execute();
+      await transaction.updateTable("users")
+        .set((expression) => ({ credential_generation: expression("credential_generation", "+", 1) }))
+        .where("id", "=", racedUserId)
+        .execute();
+      await transaction.updateTable("sessions").set({ revoked_at: new Date() })
+        .where("user_id", "=", racedUserId)
+        .execute();
+      await transaction.deleteFrom("user_federated_identities").where("user_id", "=", racedUserId).execute();
+      const session = writes.session();
+      await waitForInsertBlockedOnLock("sessions");
+      const link = writes.link();
+      await waitForInsertBlockedOnLock("user_federated_identities");
+      queued = Promise.all([session, link]);
+    });
+
+    await expect(queued).resolves.toEqual([false, false]);
+    expect(await countCredentialRows(racedUserId)).toEqual({ sessions: "0", links: "0" });
+    await database.query(`DELETE FROM accounts WHERE id = $1`, [racedAccountId]);
   });
 });

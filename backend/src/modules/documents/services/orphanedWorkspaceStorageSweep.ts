@@ -31,8 +31,8 @@ const SWEEP_START_KEY = "start";
 /**
  * Finds the workspaces document storage holds files for that the database no longer has, and
  * queues a purge for each: the files of workspaces and organizations deleted before a deletion
- * handed its files to the worker. An operator queues it, after a dry run, with
- * `pnpm --dir backend run storage:sweep-orphans`; nothing queues it on its own.
+ * handed its files to the worker. An operator queues it, after a dry run, with the
+ * `workspaceStorageSweep` entrypoint (`src/workspaceStorageSweep.ts`); nothing queues it on its own.
  *
  * The sweep cannot tell a workspace this database deleted from one another database owns. Its
  * ownership check proves only that the store holds some of this database's files, so a store

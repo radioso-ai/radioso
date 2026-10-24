@@ -4,19 +4,19 @@ import {
   reportOrphanedWorkspaceStorage,
   workspaceStoragePurgeRequest,
   type OrphanedWorkspaceStorageReport,
-} from "../src/modules/documents/composition.js";
+} from "../../modules/documents/composition.js";
 import type {
   DocumentStorageInventoryPort,
   DocumentStorageOwnersPort,
-} from "../src/modules/documents/contracts/storage.js";
-import type { BackgroundJobQueue } from "../src/shared/background-jobs/index.js";
+} from "../../modules/documents/contracts/index.js";
+import type { BackgroundJobQueue } from "../../shared/background-jobs/index.js";
 
 /** What one run of the script does. Every form is a dry run unless `apply` is set. */
-export type WorkspaceStorageSweepCommand =
+type WorkspaceStorageSweepCommand =
   | { kind: "sweep"; apply: boolean }
   | { kind: "workspace"; workspaceId: string; apply: boolean };
 
-const USAGE = "Usage: storage:sweep-orphans [--apply] | --workspace <workspace id> [--apply]";
+const USAGE = "Usage: workspaceStorageSweep [--apply] | --workspace <workspace id> [--apply]";
 
 export const parseWorkspaceStorageSweepArgs = (argv: readonly string[]): WorkspaceStorageSweepCommand => {
   let apply = false;

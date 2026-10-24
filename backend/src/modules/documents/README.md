@@ -105,10 +105,10 @@ together, in the GCS and local adapters alike.
   files of a workspace that still exists.
 - `services/orphanedWorkspaceStorageSweep.ts`: the
   `documents.orphaned_workspace_storage_sweep` job and its dry-run report. An
-  operator queues it with `pnpm run storage:sweep-orphans --apply`
-  (`backend/scripts/workspaceStorageSweep.ts`, logic in
-  `workspaceStorageSweepCommand.ts`) after a dry run; nothing queues it on its
-  own. It pages through the workspaces the store holds and queues a purge for
+  operator queues it with `node ./dist/src/workspaceStorageSweep.js --apply`
+  (`pnpm run storage:sweep-orphans --apply` from a checkout; the entrypoint is
+  `src/workspaceStorageSweep.ts`, its logic `src/app/cli/workspaceStorageSweepCommand.ts`)
+  after a dry run; nothing queues it on its own. It pages through the workspaces the store holds and queues a purge for
   each canonical lowercase workspace id that `DocumentStorageOwnersPort` says
   is gone and whose newest object is more than a day old. Its ownership check
   proves only that the store holds some of this database's files: a store

@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   parseWorkspaceStorageSweepArgs,
   runWorkspaceStorageSweepCommand,
-} from "../../scripts/workspaceStorageSweepCommand.js";
+} from "../../src/app/cli/workspaceStorageSweepCommand.js";
 import {
   ORPHANED_WORKSPACE_STORAGE_SWEEP_JOB,
   WORKSPACE_STORAGE_PURGE_JOB,

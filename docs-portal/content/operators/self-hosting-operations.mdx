@@ -196,13 +196,19 @@ LIMIT 20;
 
 The worker deletes a workspace's files from the store this deployment is configured with: the `DOCUMENT_STORAGE_BUCKET` bucket, or the `DOCUMENT_STORAGE_LOCAL_PATH` folder. Files a workspace left in a bucket the deployment used before stay there. Give each deployment its own bucket or folder. Two deployments sharing one store cannot tell each other's workspaces from deleted ones, and the cleanup below would delete the other deployment's files.
 
-Storage can still hold files whose workspace this database no longer has, such as those of workspaces deleted on an earlier release. `storage:sweep-orphans` finds them and queues the same file deletion a workspace deletion does. It runs only when you run it. Run it from a checkout with the deployment's own backend environment (`DATABASE_URL`, `DOCUMENT_STORAGE_DRIVER`, `DOCUMENT_STORAGE_BUCKET` or `DOCUMENT_STORAGE_LOCAL_PATH`, and storage credentials allowed to list objects).
+Storage can still hold files whose workspace this database no longer has, such as those of workspaces deleted on an earlier release. The `workspaceStorageSweep` command finds them and queues the same file deletion a workspace deletion does. It runs only when you run it, and it needs what the worker has: the backend environment (`DATABASE_URL`, `DOCUMENT_STORAGE_DRIVER`, `DOCUMENT_STORAGE_BUCKET` or `DOCUMENT_STORAGE_LOCAL_PATH`, and the rest of the worker's settings), a connection to the database, and a storage identity that may list objects.
+
+- **Container deployments** run it in the backend image, with the worker's environment and identity: `node ./dist/src/workspaceStorageSweep.js`.
+- **Cloud Run, as the Terraform under `infra/terraform` sets it up**, runs it as a one-off Cloud Run job on the backend image. Give the job the worker's service account, which holds `roles/storage.objectAdmin` on the documents bucket, the worker's environment and secrets, and the backend's VPC connector, because Cloud SQL has only a private address. Pass the arguments below as the job's arguments.
+- **From a checkout** with the deployment's environment loaded, `pnpm --dir backend run storage:sweep-orphans` takes the same arguments.
+
+The command exits when it is done, so a job run finishes with it.
 
 <Steps>
 ### Dry run
 
 ```bash
-pnpm --dir backend run storage:sweep-orphans
+node ./dist/src/workspaceStorageSweep.js
 ```
 
 ```text
@@ -240,7 +246,7 @@ An empty answer or `0` means deletions are final. With local storage, back up th
 ### Apply
 
 ```bash
-pnpm --dir backend run storage:sweep-orphans --apply
+node ./dist/src/workspaceStorageSweep.js --apply
 ```
 
 The script prints the same counts and queues the sweep, unless the storage check did not pass. The worker then queues one purge per orphaned workspace, and each purge records its `workspace.stored_files.deleted` audit event.
@@ -249,8 +255,8 @@ The script prints the same counts and queues the sweep, unless the storage check
 A purge that failed for good stays in `background_jobs` for 14 days as a dead `documents.workspace_storage_purge` job keyed by the deleted workspace's id; the `workspace.deleted` audit event carries the same id as `deletedWorkspaceId`. Queue it again for that one workspace, dry run first:
 
 ```bash
-pnpm --dir backend run storage:sweep-orphans --workspace <workspace id>
-pnpm --dir backend run storage:sweep-orphans --workspace <workspace id> --apply
+node ./dist/src/workspaceStorageSweep.js --workspace <workspace id>
+node ./dist/src/workspaceStorageSweep.js --workspace <workspace id> --apply
 ```
 
 The script refuses a workspace that exists in this database.

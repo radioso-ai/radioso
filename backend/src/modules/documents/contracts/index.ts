@@ -43,6 +43,7 @@ export type {
 } from "../services/embeddingProfileJobService.js";
 export type {
   DocumentStorageAdapter,
+  DocumentStorageInventoryPort,
   DocumentStorageOwnersPort,
   DocumentStoragePort,
 } from "./storage.js";

@@ -30,6 +30,12 @@ locals {
     var.resend_channel_api_key != null ? {
       "resend-channel-api-key" = var.resend_channel_api_key
     } : {},
+    var.lettermint_project_token != null ? {
+      "lettermint-project-token" = var.lettermint_project_token
+    } : {},
+    var.lettermint_team_token != null ? {
+      "lettermint-team-token" = var.lettermint_team_token
+    } : {},
     var.email_channel_webhook_secret != null ? {
       "email-channel-webhook-secret" = var.email_channel_webhook_secret
     } : {},
@@ -90,6 +96,12 @@ locals {
     } : {},
     var.resend_channel_api_key != null ? {
       "resend-channel-api-key" = true
+    } : {},
+    var.lettermint_project_token != null ? {
+      "lettermint-project-token" = true
+    } : {},
+    var.lettermint_team_token != null ? {
+      "lettermint-team-token" = true
     } : {},
     var.email_channel_webhook_secret != null ? {
       "email-channel-webhook-secret" = true

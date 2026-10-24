@@ -1,0 +1,19 @@
+{
+  "id": "5e3b2a1f-0d9c-4b8e-a7f6-e5d4c3b2a1f0",
+  "event": "message.failed",
+  "timestamp": "2025-08-08T20:14:12.000Z",
+  "sandbox": false,
+  "sandbox_result": null,
+  "data": {
+    "message_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+    "subject": "Password reset request",
+    "recipient": "ada@example.test",
+    "reason": "5.7.10 Encryption needed: recipient did not offer STARTTLS",
+    "reason_code": "enforced_tls_failed",
+    "response": { "status_code": 550 },
+    "metadata": {},
+    "headers": [],
+    "tag": null,
+    "tags": [{ "name": "kind", "value": "password_reset" }]
+  }
+}

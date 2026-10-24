@@ -301,8 +301,8 @@ Public surfaces and key files:
 
 - `backend/src/modules/mail/public.ts` — provider-neutral ports:
   `EmailDriver`, `InboundEmailReceiver`, `EmailDomainProvisioner`, and the
-  Resend and `local` adapters composition selects between (their code lives
-  in `backend/src/modules/mail/adapters/`).
+  Resend, Lettermint, and `local` adapters composition selects between
+  (their code lives in `backend/src/modules/mail/adapters/`).
 - `backend/src/app/composition/emailChannel/` — the channel's wiring, one
   file per concern: `index.ts` (`createEmailChannelComposition`, the
   `email.send` application module, the deployment's `supportedModes`),

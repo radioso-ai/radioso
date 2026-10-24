@@ -1,0 +1,21 @@
+{
+  "id": "4d2a1f0e-9c8b-4a7d-b6e5-f4a3b2c1d0e9",
+  "event": "message.soft_bounced",
+  "timestamp": "2025-08-08T20:15:30.000Z",
+  "sandbox": false,
+  "sandbox_result": null,
+  "data": {
+    "message_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+    "subject": "Re: Order 1042",
+    "recipient": "ada@example.test",
+    "response": {
+      "status_code": 452,
+      "enhanced_status_code": "4.2.2",
+      "content": "4.2.2 The email account that you tried to reach is over quota: ada@example.test"
+    },
+    "metadata": {},
+    "headers": [],
+    "tag": null,
+    "tags": [{ "name": "kind", "value": "channel_reply" }]
+  }
+}

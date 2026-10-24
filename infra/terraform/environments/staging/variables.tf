@@ -162,6 +162,24 @@ variable "resend_mail_api_key" {
   default     = null
 }
 
+variable "lettermint_project_token" {
+  description = "Lettermint project token for Enterprise auth mail and, shared with the email channel, channel mail in staging."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "mail_driver" {
+  description = "Transactional auth mail driver override (MAIL_DRIVER): resend, lettermint, log or noop. Unset, a Resend key keeps Resend and a Lettermint project token alone picks Lettermint, so set it to lettermint to move a stack with a Resend key onto Lettermint."
+  type        = string
+  default     = null
+
+  validation {
+    condition     = var.mail_driver == null || contains(["resend", "lettermint", "log", "noop"], coalesce(var.mail_driver, "resend"))
+    error_message = "mail_driver must be unset or one of resend, lettermint, log, noop."
+  }
+}
+
 variable "mail_from_email" {
   description = "Verified sender email address for Enterprise auth mail in staging."
   type        = string
@@ -488,7 +506,7 @@ variable "stripe_webhook_secret" {
 # set the remaining inputs first.
 
 variable "email_channel_provider" {
-  description = "Email channel provider in staging (EMAIL_CHANNEL_PROVIDER). Unset leaves the channel off; the only deployed value is \"resend\"."
+  description = "Email channel provider in staging (EMAIL_CHANNEL_PROVIDER). Unset leaves the channel off; the deployed values are \"resend\" and \"lettermint\"."
   type        = string
   default     = null
 }
@@ -517,6 +535,19 @@ variable "resend_channel_api_key" {
   description = "Resend API key the email channel receives and sends channel mail with in staging (RESEND_CHANNEL_API_KEY). Unset, the channel uses resend_mail_api_key."
   type        = string
   sensitive   = true
+  default     = null
+}
+
+variable "lettermint_team_token" {
+  description = "Lettermint team token in staging (LETTERMINT_TEAM_TOKEN). Required with email_channel_provider = \"lettermint\"."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "lettermint_project_id" {
+  description = "Lettermint project id in staging (LETTERMINT_PROJECT_ID). Required with email_channel_provider = \"lettermint\"."
+  type        = string
   default     = null
 }
 

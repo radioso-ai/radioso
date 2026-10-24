@@ -189,6 +189,13 @@ describe("SendingDomainService", () => {
       expect(domains.records.size).toBe(0);
     });
 
+    it("releases the claim and refuses claimed_elsewhere when the provider holds the name for another deployment", async () => {
+      const { service, provisioner, domains } = harness();
+      provisioner.registerSendingDomain.mockResolvedValueOnce({ ok: false, refused: "held_elsewhere" });
+      expect(await service.ensureRegistered(actor, workspaceId, "customer.test")).toEqual({ ok: false, refused: "claimed_elsewhere" });
+      expect(domains.records.size).toBe(0);
+    });
+
     it("gives the same refusal, without calling the provider, when another workspace wins the claim race", async () => {
       const { service, domains, provisioner } = harness();
       const claim = domains.claim.bind(domains);

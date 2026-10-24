@@ -1,7 +1,7 @@
 ---
 title: "Email Channel"
 description: "Connect a support mailbox to a Radioso agent by forwarding, review and send the agent's drafted replies or let grounded ones send themselves, bound what runs without a person, verify sending on your own domain, reply with delivery tracked through to the customer, and work the mailbox event log and raw mail from operator settings."
-last_updated: 2026-10-19
+last_updated: 2026-10-24
 ---
 
 # Email Channel
@@ -58,6 +58,13 @@ none of its own. With `EMAIL_CHANNEL_PROVIDER=resend` and neither key set,
 the backend starts with the channel off and logs the missing setting at
 error level; the same holds for a missing inbound domain or webhook secret.
 
+With `EMAIL_CHANNEL_PROVIDER=lettermint`, the channel reaches Lettermint
+with `LETTERMINT_PROJECT_TOKEN` for sending and `LETTERMINT_TEAM_TOKEN` for
+reading inbound mail and managing domains and routes, scoped to the project
+named by `LETTERMINT_PROJECT_ID`. Any of the three missing starts the
+backend with the channel off and logs the missing setting, the same as a
+missing inbound domain or webhook secret.
+
 **Direct receiving** is an advanced option for a customer-owned domain or
 subdomain: you point its MX record at Radioso instead of forwarding. Typing
 the domain to confirm turns this on, because it means *all* mail for that
@@ -75,7 +82,10 @@ what your original `To:` line said.
 data — including email metadata, logs, and API records — and received
 message content in the United States regardless of which region a
 workspace or domain operates in. That holds for Radioso Cloud's EU stack as
-much as its US one.
+much as its US one. Lettermint, the alternative provider, keeps the same
+data in the EU regardless of workspace region, so it holds for the US stack
+as much as the EU one; see [Data residency](../docs-portal/content/operators/data-residency.mdx)
+for its sub-processors.
 
 ## Connect a mailbox and forward to it
 
@@ -661,15 +671,88 @@ endpoint is scraped, at most once every 30 seconds, so it needs
 
 ## Operations
 
+**Lettermint team and project setup.** One Lettermint team serves every
+deployment, and each deployment — staging, live, live-eu — gets its own
+project in it. Sending domains belong to the team, so the channel restricts
+each workspace domain it registers to its own deployment's project with
+Lettermint's project limits, and treats only domains restricted to that
+project as its own: one deployment never adopts, sends from, or removes
+another's workspace domains. The From domain of `MAIL_FROM_EMAIL` stays
+unrestricted, so every project sends transactional mail from it; verify it in
+the team's domains before the first deploy, since live sending needs a
+verified From domain.
+
+Two tokens reach the team: the **project token** (`lm_...`, header
+`x-lettermint-token`), created in the deployment's project, sends both
+transactional and channel mail through the project's default route and goes
+in `LETTERMINT_PROJECT_TOKEN`; the **team token** (`lm_team_...`, bearer
+auth), created in the team's settings, reads inbound messages and manages
+domains and routes for the channel, and goes in `LETTERMINT_TEAM_TOKEN`.
+`LETTERMINT_PROJECT_ID` names the deployment's project, the one those calls
+act on. A team token reaches every project in the team, so each deployment
+can hold the same one; a project token sends only from its own project.
+
+Transactional mail and the channel use one provider. Their delivery events
+arrive on the same webhook and are checked against one provider's signature,
+so a Lettermint channel needs `MAIL_DRIVER=lettermint` wherever a Resend key
+is also set; with the two providers mismatched, the channel stays off and the
+startup log names `MAIL_DRIVER` as the gap.
+
+Receiving mail needs a Lettermint plan that includes inbound email, and each
+deployment's project and each workspace domain counts against the plan's
+project and sending-domain limits; Lettermint's Free plan sends transactional
+mail only.
+
+The relay domain (`EMAIL_CHANNEL_INBOUND_DOMAIN`) is an inbound route you
+create in the project's dashboard: either a custom catch-all domain with its
+MX record pointed at `lettermint.mx`, or the route's own
+`<route-id>.lettermint.app` domain, which needs no DNS and works fine for
+staging. Turn on the route's spam filter there too: its threshold is the
+channel's spam filter for Lettermint. Mail at or above it waits in
+Lettermint's quarantine and never reaches Radioso; mail below it, or
+released from quarantine, arrives without a spam verdict of its own.
+
+Add one webhook at project scope, pointed at the same `/webhook` path Resend
+uses, subscribed to `message.inbound`, `message.sent`, `message.delivered`,
+`message.soft_bounced`, `message.hard_bounced`, `message.spam_complaint`,
+`message.failed`, `message.suppressed`, and `message.policy_rejected`. Its
+signing secret (`whsec_...`) goes in `EMAIL_CHANNEL_WEBHOOK_SECRET` as-is —
+Lettermint's secret isn't base64-encoded the way Resend's is.
+
+Lettermint ends the old secret the moment it issues a new one and doesn't
+retry a delivery the backend rejected, so regenerating a webhook's secret in
+place drops every event until the new secret is deployed. Rotate it by
+overlap instead:
+
+1. Add a second webhook with the same URL and events; it gets its own secret.
+2. Set the new secret as `EMAIL_CHANNEL_WEBHOOK_SECRET` and the old one as
+   `EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS`, and deploy.
+3. Delete the first webhook, then clear
+   `EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS` with the next deploy.
+
+While both webhooks exist, each event arrives twice; the channel records an
+inbound message once per Lettermint message id. A delivery rejected by
+mistake can be sent again from the webhook's delivery log in the Lettermint
+dashboard.
+
+Turning on direct receiving for a customer domain creates one more inbound
+route in the same project, scoped to that domain, so the project's existing
+webhook covers it too — no separate webhook per domain. Radioso turns that
+route's spam filter on at Lettermint's default threshold of 5.
+
 **Deploying with the bundled Terraform.** Each environment root under
 `infra/terraform/environments/` takes the channel's settings and passes them
 to the shared module: `email_channel_provider`,
 `email_channel_inbound_domain`, `email_channel_webhook_secret`,
 `email_channel_webhook_secret_previous`, `resend_channel_api_key`,
+`lettermint_team_token`, `lettermint_project_id`,
 `email_channel_workers_enabled`, the Cloud Tasks dispatch rates, and the
-sweep's schedule and batch size. Supply the secrets as `TF_VAR_*` values
-rather than in a committed `terraform.tfvars`. With `email_channel_provider`
-unset the channel stays off, while the apply still provisions its
+sweep's schedule and batch size. The project token and transactional driver
+override — `lettermint_project_token` and `mail_driver` — travel with
+transactional mail's own settings, since Lettermint's project token sends
+both. Supply the secrets as `TF_VAR_*` values rather than in a committed
+`terraform.tfvars`. With `email_channel_provider` unset the channel stays
+off, while the apply still provisions its
 `radioso-<environment>-email-channel` queue so a rollout can set the rest
 first.
 
@@ -678,16 +761,21 @@ reads the channel's inputs from the target GitHub environment and hands each
 one to Terraform only when it's set, so an environment that sets none of them
 keeps the channel off. Setting `EMAIL_CHANNEL_PROVIDER` without
 `EMAIL_CHANNEL_INBOUND_DOMAIN` and `EMAIL_CHANNEL_WEBHOOK_SECRET` stops the
-run before the plan, so a deploy never ships a channel that would come up
-switched off for want of a setting.
+run before the plan; naming `lettermint` without all three
+`LETTERMINT_PROJECT_TOKEN`, `LETTERMINT_TEAM_TOKEN`, and
+`LETTERMINT_PROJECT_ID`, or with `MAIL_DRIVER` naming the other provider,
+stops it the same way, so a deploy never ships a channel that would come up
+switched off for want of a setting. An unset `MAIL_DRIVER` counts as Resend.
 
 - Variables: `EMAIL_CHANNEL_PROVIDER`, `EMAIL_CHANNEL_INBOUND_DOMAIN`,
   `EMAIL_CHANNEL_WORKERS_ENABLED`,
   `EMAIL_CHANNEL_TASK_MAX_DISPATCHES_PER_SECOND`,
   `EMAIL_CHANNEL_TASK_MAX_CONCURRENT_DISPATCHES`,
-  `EMAIL_CHANNEL_SWEEP_SCHEDULE`, `EMAIL_CHANNEL_SWEEP_MAX_JOBS`
+  `EMAIL_CHANNEL_SWEEP_SCHEDULE`, `EMAIL_CHANNEL_SWEEP_MAX_JOBS`,
+  `LETTERMINT_PROJECT_ID`, `MAIL_DRIVER`
 - Secrets: `EMAIL_CHANNEL_WEBHOOK_SECRET`,
-  `EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS`, `RESEND_CHANNEL_API_KEY`
+  `EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS`, `RESEND_CHANNEL_API_KEY`,
+  `LETTERMINT_PROJECT_TOKEN`, `LETTERMINT_TEAM_TOKEN`
 
 **Provider outage.** Inbound fetches and sends both retry inside their own
 jobs; nothing accepted is dropped, and the backlog just grows until the

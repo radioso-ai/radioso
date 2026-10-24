@@ -471,6 +471,25 @@ resource "google_cloud_run_v2_service" "backend" {
         }
       }
       dynamic "env" {
+        for_each = var.lettermint_project_token != null ? [google_secret_manager_secret.secrets["lettermint-project-token"].secret_id] : []
+        content {
+          name = "LETTERMINT_PROJECT_TOKEN"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = var.mail_driver != null ? [var.mail_driver] : []
+        content {
+          name  = "MAIL_DRIVER"
+          value = env.value
+        }
+      }
+      dynamic "env" {
         for_each = var.email_channel_provider != null ? [var.email_channel_provider] : []
         content {
           name  = "EMAIL_CHANNEL_PROVIDER"
@@ -523,6 +542,25 @@ resource "google_cloud_run_v2_service" "backend" {
       env {
         name  = "RESEND_CHANNEL_REGION"
         value = local.resend_channel_region
+      }
+      dynamic "env" {
+        for_each = var.lettermint_team_token != null ? [google_secret_manager_secret.secrets["lettermint-team-token"].secret_id] : []
+        content {
+          name = "LETTERMINT_TEAM_TOKEN"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = var.lettermint_project_id != null ? [var.lettermint_project_id] : []
+        content {
+          name  = "LETTERMINT_PROJECT_ID"
+          value = env.value
+        }
       }
       env {
         name  = "EMAIL_CHANNEL_WORKERS_ENABLED"
@@ -1292,6 +1330,25 @@ resource "google_cloud_run_v2_service" "document_worker" {
         }
       }
       dynamic "env" {
+        for_each = var.lettermint_project_token != null ? [google_secret_manager_secret.secrets["lettermint-project-token"].secret_id] : []
+        content {
+          name = "LETTERMINT_PROJECT_TOKEN"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = var.mail_driver != null ? [var.mail_driver] : []
+        content {
+          name  = "MAIL_DRIVER"
+          value = env.value
+        }
+      }
+      dynamic "env" {
         for_each = var.email_channel_provider != null ? [var.email_channel_provider] : []
         content {
           name  = "EMAIL_CHANNEL_PROVIDER"
@@ -1344,6 +1401,25 @@ resource "google_cloud_run_v2_service" "document_worker" {
       env {
         name  = "RESEND_CHANNEL_REGION"
         value = local.resend_channel_region
+      }
+      dynamic "env" {
+        for_each = var.lettermint_team_token != null ? [google_secret_manager_secret.secrets["lettermint-team-token"].secret_id] : []
+        content {
+          name = "LETTERMINT_TEAM_TOKEN"
+          value_source {
+            secret_key_ref {
+              secret  = env.value
+              version = "latest"
+            }
+          }
+        }
+      }
+      dynamic "env" {
+        for_each = var.lettermint_project_id != null ? [var.lettermint_project_id] : []
+        content {
+          name  = "LETTERMINT_PROJECT_ID"
+          value = env.value
+        }
       }
       env {
         name  = "EMAIL_CHANNEL_WORKERS_ENABLED"

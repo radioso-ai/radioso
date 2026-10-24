@@ -82,6 +82,8 @@ module "radioso" {
   connector_encryption_key                  = var.connector_encryption_key
   ee_usage_admin_token                      = var.ee_usage_admin_token
   resend_mail_api_key                       = var.resend_mail_api_key
+  lettermint_project_token                  = var.lettermint_project_token
+  mail_driver                               = var.mail_driver
   mail_from_email                           = var.mail_from_email
   mail_from_name                            = var.mail_from_name
   metrics_auth_token                        = var.metrics_auth_token
@@ -136,6 +138,8 @@ module "radioso" {
   email_channel_webhook_secret                 = var.email_channel_webhook_secret
   email_channel_webhook_secret_previous        = var.email_channel_webhook_secret_previous
   resend_channel_api_key                       = var.resend_channel_api_key
+  lettermint_team_token                        = var.lettermint_team_token
+  lettermint_project_id                        = var.lettermint_project_id
   email_channel_workers_enabled                = var.email_channel_workers_enabled
   email_channel_task_queue_name                = "radioso-${var.environment}-email-channel"
   email_channel_task_max_dispatches_per_second = var.email_channel_task_max_dispatches_per_second

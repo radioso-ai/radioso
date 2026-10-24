@@ -8,6 +8,7 @@ import {
   COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT,
 } from "../../modules/operatorCopilot/public.js";
 import { SLACK_INBOUND_EVENT_RETENTION_DAYS } from "../../modules/slack/public.js";
+import { resolveMailDriverName } from "../../modules/mail/public.js";
 import { OPENAI_DATA_RESIDENCIES } from "../../shared/infra/llm/providerTypes.js";
 import {
   isAzureOpenAIHost,
@@ -72,7 +73,8 @@ const DNS_HOSTNAME = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[
 
 type EmailChannelProviderConfig =
   | { kind: "local" }
-  | { kind: "resend"; apiKey: string; region: (typeof RESEND_CHANNEL_REGIONS)[number] };
+  | { kind: "resend"; apiKey: string; region: (typeof RESEND_CHANNEL_REGIONS)[number] }
+  | { kind: "lettermint"; projectToken: string; teamToken: string; projectId: string };
 
 type EmailChannelConfig = {
   provider: EmailChannelProviderConfig;
@@ -86,7 +88,7 @@ type EmailChannelConfig = {
 };
 
 const emailChannelEnvShape = {
-  EMAIL_CHANNEL_PROVIDER: emptyStringToUndefined(z.enum(["resend", "local"])),
+  EMAIL_CHANNEL_PROVIDER: emptyStringToUndefined(z.enum(["resend", "lettermint", "local"])),
   EMAIL_CHANNEL_INBOUND_DOMAIN: emptyStringToUndefined(z.string().trim().toLowerCase()),
   EMAIL_CHANNEL_WEBHOOK_SECRET: emptyStringToUndefined(z.string().min(1)),
   EMAIL_CHANNEL_WEBHOOK_SECRET_PREVIOUS: emptyStringToUndefined(z.string().min(1)),
@@ -96,13 +98,22 @@ const emailChannelEnvShape = {
   /** Transactional mail's key, which the channel uses when it has none of its own. */
   RESEND_MAIL_API_KEY: emptyStringToUndefined(z.string().min(1)),
   RESEND_CHANNEL_REGION: emptyStringToDefault(z.enum(RESEND_CHANNEL_REGIONS), "us-east-1"),
+  /** Sends both transactional and channel mail; also the transactional driver's Lettermint credential. */
+  LETTERMINT_PROJECT_TOKEN: emptyStringToUndefined(z.string().min(1)),
+  /** Channel only: reads messages, manages domains and inbound routes. */
+  LETTERMINT_TEAM_TOKEN: emptyStringToUndefined(z.string().min(1)),
+  /** Channel only: the Lettermint project the team token's domain and route calls act on. */
+  LETTERMINT_PROJECT_ID: emptyStringToUndefined(z.string().min(1)),
+  /** Transactional driver selector, read directly by `createMailService`; named here only so the
+   * notification webhook route can read it from the parsed `Env` to pick its delivery verifier. */
+  MAIL_DRIVER: emptyStringToUndefined(z.string().min(1)),
 } as const;
 
 const emailChannelEnvSchema = z.object(emailChannelEnvShape);
 
 /** A named provider whose required settings are not all present. Setting names only, never values. */
 type EmailChannelConfigGap = {
-  provider: "resend" | "local";
+  provider: "resend" | "lettermint" | "local";
   /** Each unmet requirement, in the order the channel needs it. */
   unmet: readonly string[];
 };
@@ -128,6 +139,21 @@ const emailChannelOf = (
   if (providerName === "resend" && apiKey === undefined) {
     unmet.push("RESEND_CHANNEL_API_KEY or RESEND_MAIL_API_KEY");
   }
+  if (providerName === "lettermint" && value.LETTERMINT_PROJECT_TOKEN === undefined) {
+    unmet.push("LETTERMINT_PROJECT_TOKEN");
+  }
+  if (providerName === "lettermint" && value.LETTERMINT_TEAM_TOKEN === undefined) {
+    unmet.push("LETTERMINT_TEAM_TOKEN");
+  }
+  if (providerName === "lettermint" && value.LETTERMINT_PROJECT_ID === undefined) {
+    unmet.push("LETTERMINT_PROJECT_ID");
+  }
+  // Transactional mail's delivery events arrive on the channel's webhook, verified as the
+  // channel provider's, so the two providers must be one; the log and noop drivers send none.
+  const mailDriver = resolveMailDriverName(value);
+  if (providerName !== "local" && (mailDriver === "resend" || mailDriver === "lettermint") && mailDriver !== providerName) {
+    unmet.push(`MAIL_DRIVER must be ${providerName}: transactional mail and the channel share one delivery webhook`);
+  }
   const inboundDomain = value.EMAIL_CHANNEL_INBOUND_DOMAIN;
   if (inboundDomain === undefined) {
     unmet.push("EMAIL_CHANNEL_INBOUND_DOMAIN");
@@ -142,9 +168,20 @@ const emailChannelOf = (
     return { config: undefined, gap: { provider: providerName, unmet } };
   }
 
-  const provider: EmailChannelProviderConfig = providerName === "resend" && apiKey !== undefined
-    ? { kind: "resend", apiKey, region: value.RESEND_CHANNEL_REGION }
-    : { kind: "local" };
+  const provider: EmailChannelProviderConfig =
+    providerName === "resend" && apiKey !== undefined
+      ? { kind: "resend", apiKey, region: value.RESEND_CHANNEL_REGION }
+      : providerName === "lettermint" &&
+          value.LETTERMINT_PROJECT_TOKEN !== undefined &&
+          value.LETTERMINT_TEAM_TOKEN !== undefined &&
+          value.LETTERMINT_PROJECT_ID !== undefined
+        ? {
+            kind: "lettermint",
+            projectToken: value.LETTERMINT_PROJECT_TOKEN,
+            teamToken: value.LETTERMINT_TEAM_TOKEN,
+            projectId: value.LETTERMINT_PROJECT_ID,
+          }
+        : { kind: "local" };
 
   return {
     config: {

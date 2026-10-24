@@ -35,14 +35,14 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 const RANGE_DAYS: Record<QualityStatsRange, number> = { "7d": 7, "30d": 30 };
 
-export interface QualityStatsPeriod {
+interface QualityStatsPeriod {
   /** Inclusive. */
   from: Date;
   /** Exclusive. */
   to: Date;
 }
 
-export interface QualityStatsWindows {
+interface QualityStatsWindows {
   current: QualityStatsPeriod;
   previous: QualityStatsPeriod;
   /**
@@ -252,7 +252,7 @@ export const summarizeQualityStatsWindow = (
 ): QualityStatsWindow =>
   toQualityStatsWindow(period, sumQualityStatsRows(rowsWithinPeriod(dailyRows, period)));
 
-export interface QualityStatsQueryInput extends TurnPopulationScope {
+interface QualityStatsQueryInput extends TurnPopulationScope {
   window: QualityStatsPeriod;
   tuples: GroundedOutcomeTuples;
 }
@@ -309,7 +309,7 @@ export const buildQualityStatsDailyQuery = (input: QualityStatsQueryInput): SqlQ
   };
 };
 
-export interface QualityBacklogQueryInput extends TurnPopulationScope {
+interface QualityBacklogQueryInput extends TurnPopulationScope {
   tuples: GroundedOutcomeTuples;
 }
 
@@ -344,7 +344,7 @@ export const buildQualityStatsBacklogQuery = (input: QualityBacklogQueryInput): 
   };
 };
 
-export interface QualityResolutionBreakdownQueryInput extends TurnPopulationScope {
+interface QualityResolutionBreakdownQueryInput extends TurnPopulationScope {
   window: QualityStatsPeriod;
 }
 
@@ -378,7 +378,7 @@ export const buildQualityResolutionBreakdownQuery = (
   };
 };
 
-export interface QualityVoiceStatsQueryInput {
+interface QualityVoiceStatsQueryInput {
   workspaceId: string;
   agentId?: string;
   window: QualityStatsPeriod;

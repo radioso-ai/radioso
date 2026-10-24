@@ -73,7 +73,6 @@ export {
 // A voice turn's timing, limit and outcome, kept on the reply it stored; quality counts them.
 export {
   VOICE_TURN_FACTS_METADATA_KEY,
-  voiceTurnFactsSchema,
   type VoiceTurnFacts,
   type VoiceTurnFactsRecorder,
 } from "./voiceTurnFacts.js";

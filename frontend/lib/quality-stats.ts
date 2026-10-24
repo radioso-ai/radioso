@@ -18,7 +18,7 @@ export { QUALITY_STATS_RANGES }
 export const MIN_RATE_SAMPLE = 20
 
 /** Points drawn in a tile sparkline. See `toSparklineSeries` for how longer windows are reduced. */
-export const SPARKLINE_POINTS = 12
+const SPARKLINE_POINTS = 12
 
 // Keyed by the range union, so adding a range to the API contract fails to compile here
 // until its day count is supplied.
@@ -121,14 +121,14 @@ export const QUALITY_METRICS: readonly QualityMetricDescriptor[] = [
  * How many observations a sample rests on: the population for a rate, the count
  * itself for a volume. This is what `MIN_RATE_SAMPLE` is applied to.
  */
-export const sampleSize = (sample: QualityMetricSample): number =>
+const sampleSize = (sample: QualityMetricSample): number =>
   sample.denominator ?? sample.count
 
 /** Whether a sample carries enough observations to report a rate or a delta. */
 export const isSampleReportable = (sample: QualityMetricSample): boolean =>
   sampleSize(sample) >= MIN_RATE_SAMPLE
 
-export type QualityDelta =
+type QualityDelta =
   /** Rate change expressed in percentage points (e.g. 62% -> 68% is +6 points). */
   | { kind: 'rate'; points: number; tone: QualityDeltaTone }
   /** Volume change expressed as a proportion of the previous window (0.25 is +25%). */
@@ -239,7 +239,7 @@ export const formatRate = (rate: number | null): string =>
   rate === null ? '—' : rateFormatter.format(rate)
 
 /** Shown in place of a rate when the sample is below the floor. */
-export const TOO_FEW_TO_RATE = 'too few to rate'
+const TOO_FEW_TO_RATE = 'too few to rate'
 
 /**
  * The headline figure for a tile: the count for volume metrics, the rate for
@@ -316,7 +316,7 @@ export const formatVoiceInterruptionRate = (interruptions: number, calls: number
 export const formatVoiceOutcomes = (outcomes: QualityVoiceStats['outcomes']): string =>
   `${formatCount(outcomes.continue)} continued · ${formatCount(outcomes.callbackRequested)} asked for a callback`
 
-export interface QualityVoiceStatsRow {
+interface QualityVoiceStatsRow {
   label: string
   value: string
 }

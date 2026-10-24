@@ -92,7 +92,7 @@ export const createQualityCopilotTools = (deps: QualityCopilotToolDependencies):
  * `conflict` carries the row that won, because a competing operator's write is an answer Ray
  * has to see rather than an error to retry blindly.
  */
-export interface CopilotQualityTriageRecord {
+interface CopilotQualityTriageRecord {
   readonly state: string;
   readonly version: number;
   readonly resolution: { readonly reason: string; readonly note: string | null } | null;

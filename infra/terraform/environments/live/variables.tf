@@ -168,6 +168,19 @@ variable "resend_mail_api_key" {
   default     = null
 }
 
+variable "lettermint_project_token" {
+  description = "Lettermint project token for Enterprise auth mail and, shared with the email channel, channel mail in live."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "mail_driver" {
+  description = "Transactional auth mail driver override in live (MAIL_DRIVER). Unset infers the driver from whichever provider key is set."
+  type        = string
+  default     = null
+}
+
 variable "slack_oauth_client_id" {
   description = "Slack app OAuth client ID for the Slack channel in live."
   type        = string
@@ -503,7 +516,7 @@ variable "stripe_webhook_secret" {
 # set the remaining inputs first.
 
 variable "email_channel_provider" {
-  description = "Email channel provider in live (EMAIL_CHANNEL_PROVIDER). Unset leaves the channel off; the only deployed value is \"resend\"."
+  description = "Email channel provider in live (EMAIL_CHANNEL_PROVIDER). Unset leaves the channel off; the deployed values are \"resend\" and \"lettermint\"."
   type        = string
   default     = null
 }
@@ -532,6 +545,19 @@ variable "resend_channel_api_key" {
   description = "Resend API key the email channel receives and sends channel mail with in live (RESEND_CHANNEL_API_KEY). Unset, the channel uses resend_mail_api_key."
   type        = string
   sensitive   = true
+  default     = null
+}
+
+variable "lettermint_team_token" {
+  description = "Lettermint team token in live (LETTERMINT_TEAM_TOKEN). Required with email_channel_provider = \"lettermint\"."
+  type        = string
+  sensitive   = true
+  default     = null
+}
+
+variable "lettermint_project_id" {
+  description = "Lettermint project id in live (LETTERMINT_PROJECT_ID). Required with email_channel_provider = \"lettermint\"."
+  type        = string
   default     = null
 }
 

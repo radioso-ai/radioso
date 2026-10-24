@@ -1,7 +1,7 @@
 ---
 title: "Data Residency"
 description: "Where each outside service Radioso calls processes data, and which setting controls its region."
-last_updated: 2026-10-19
+last_updated: 2026-10-24
 ---
 
 # Data Residency
@@ -32,6 +32,10 @@ A voice runtime key is a workspace's own ElevenLabs account, set under Settings 
 ## Resend (email)
 
 Resend sends and receives mail for the email channel. `RESEND_CHANNEL_REGION` picks the region of the sending domain Resend provisions for the channel — `eu-west-1` for an EU deployment, `us-east-1` by default. It doesn't move Resend's own account data, delivery metadata, logs, or received message content, which Resend keeps in the United States regardless. If your deployment needs a safeguard for that transfer — standard contractual clauses, for example — put it in place separately; this setting doesn't provide one.
+
+## Lettermint (email)
+
+Lettermint is the email channel's other provider (`EMAIL_CHANNEL_PROVIDER=lettermint`, and `MAIL_DRIVER=lettermint` for transactional mail). It has no region setting because it processes and stores sent and received mail — message content, delivery metadata, and logs — in the EU regardless of which region your deployment runs in. The sub-processors that handle mail are UpCloud (Netherlands), OVH (Germany, for backups), and Postmastery (Netherlands); its US sub-processors, Stripe for payments and Slack for its own team chat, have no access to mail. Lettermint keeps message content for 28 days.
 
 ## PostHog and OTEL log export
 

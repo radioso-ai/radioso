@@ -44,6 +44,25 @@ describe("ProductAnalyticsService", () => {
     }));
   });
 
+  it("logs a subject id only when it has an id shape", async () => {
+    const logger = createLogger();
+    const service = new ProductAnalyticsService({ enabled: true, logger: logger as any });
+    const visitorText = "where can I pray during the retreat";
+
+    await service.track({
+      eventName: "chat.citation_clicked",
+      subjectType: "conversation",
+      subjectId: visitorText,
+      source: "frontend",
+    });
+
+    expect(JSON.stringify(logger.info.mock.calls)).not.toContain(visitorText);
+    expect(logger.info).toHaveBeenCalledWith(
+      { analytics: { eventName: "chat.citation_clicked", subjectType: "conversation", source: "frontend" } },
+      "product_analytics_event",
+    );
+  });
+
   it("logs sink failures but does not throw", async () => {
     const logger = createLogger();
     const service = new ProductAnalyticsService({

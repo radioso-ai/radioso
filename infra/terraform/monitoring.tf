@@ -297,10 +297,11 @@ resource "google_monitoring_alert_policy" "application_error_rate" {
 # --- Are calls answered in time ---
 
 # The voice turn counters are process-local (/metrics, not exported to Cloud Monitoring), so these
-# metrics count the backend's warn lines for a voice turn that ended at the turn limit and for one
-# the voice runtime abandoned, by their structured `event` field (VOICE_TURN_LIMIT_LOG_EVENT and
-# VOICE_TURN_ABANDONED_LOG_EVENT in backend/src/modules/voiceChannel/domain.ts; a backend unit test
-# holds the two in step), so rewording a line leaves the metrics counting.
+# metrics count the backend's one log line per voice turn by its structured fields: its `event`
+# (VOICE_TURN_LOG_EVENT in backend/src/modules/voiceChannel/domain.ts) with `turnLimitReached` for
+# a turn that hit the turn limit, whatever became of it, or with `result` for one the voice
+# runtime abandoned. backend/tests/unit/voice-channel-alert-log-events.test.ts holds the names in
+# step, and rewording a line's message leaves the metrics counting.
 resource "google_logging_metric" "voice_turn_limit" {
   count = local.monitoring_enabled && var.deploy_services ? 1 : 0
 
@@ -308,7 +309,7 @@ resource "google_logging_metric" "voice_turn_limit" {
   filter = join(" AND ", [
     "resource.type=\"cloud_run_revision\"",
     "resource.labels.service_name=\"${local.resource_name_prefix}-backend\"",
-    "jsonPayload.event=\"voice.turn_limit\"",
+    "jsonPayload.event=\"voice.turn\" AND jsonPayload.turnLimitReached=true",
   ])
 
   metric_descriptor {
@@ -327,7 +328,7 @@ resource "google_logging_metric" "voice_turn_abandoned" {
   filter = join(" AND ", [
     "resource.type=\"cloud_run_revision\"",
     "resource.labels.service_name=\"${local.resource_name_prefix}-backend\"",
-    "jsonPayload.event=\"voice.turn_abandoned\"",
+    "jsonPayload.event=\"voice.turn\" AND jsonPayload.result=\"abandoned\"",
   ])
 
   metric_descriptor {
@@ -383,7 +384,7 @@ resource "google_monitoring_alert_policy" "voice_turn_health" {
   notification_channels = local.notification_channel_ids
   depends_on            = [google_project_service.apis]
   documentation {
-    content = "More than ${var.monitoring_voice_turn_limit_threshold} voice turns hit the turn limit, or more than ${var.monitoring_voice_abandoned_turn_threshold} were abandoned by the voice runtime before they finished, in fifteen minutes; the incident names the condition. Either way callers are waiting too long for answers: a turn at the limit spoke the fallback line (or kept the caller waiting without one), and an abandoned turn is one the runtime gave up on. Search the backend's logs for jsonPayload.event=\"voice.turn_limit\" or jsonPayload.event=\"voice.turn_abandoned\": each line carries agentId, vendor, conversationId, durationMs and result, never what was said. ${local.alert_documentation}"
+    content = "More than ${var.monitoring_voice_turn_limit_threshold} voice turns hit the turn limit, or more than ${var.monitoring_voice_abandoned_turn_threshold} were abandoned by the voice runtime before they finished, in fifteen minutes; the incident names the condition. Either way callers are waiting too long for answers: a turn at the limit spoke the fallback line (or kept the caller waiting without one), and an abandoned turn is one the runtime gave up on. Search the backend's logs for jsonPayload.event=\"voice.turn\" with jsonPayload.turnLimitReached=true or jsonPayload.result=\"abandoned\": each line carries agentId, vendor, conversationId, durationMs and result, never what was said. ${local.alert_documentation}"
   }
 }
 

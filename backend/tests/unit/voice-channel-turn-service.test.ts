@@ -407,6 +407,7 @@ describe("VoiceTurnService", () => {
     expect(logger.info).toHaveBeenCalledTimes(1);
     const [fields] = logger.info.mock.calls[0];
     expect(fields).toEqual({
+      event: "voice.turn",
       agentId,
       vendor: "elevenlabs",
       transport: "web",
@@ -993,7 +994,7 @@ describe("VoiceTurnService", () => {
       }));
       expect(logger.info).not.toHaveBeenCalled();
       expect(logger.warn).toHaveBeenCalledWith(
-        expect.objectContaining({ event: "voice.turn_limit", result: "completed", bridged: true, turnLimitReached: true, fallbackSpoken: true }),
+        expect.objectContaining({ event: "voice.turn", result: "completed", bridged: true, turnLimitReached: true, fallbackSpoken: true }),
         "Voice turn reached the turn limit",
       );
       expect(JSON.stringify([metrics.incrementCounter.mock.calls, metrics.observeHistogram.mock.calls])).not.toMatch(
@@ -1019,7 +1020,7 @@ describe("VoiceTurnService", () => {
       expect(logger.warn).toHaveBeenCalledWith(
         { agentId, vendor: "elevenlabs", transport: "web", conversationId, result: "completed", durationMs: 11_000,
           speechPieceCount: 1, outcome: "continue", bridged: true, turnLimitReached: true, fallbackSpoken: false,
-          firstSpeechMs: 11_000, turnLanguage: "en", languageSource: "builtin_default", event: "voice.turn_limit" },
+          firstSpeechMs: 11_000, turnLanguage: "en", languageSource: "builtin_default", event: "voice.turn" },
         "Voice turn reached the turn limit",
       );
     });
@@ -1159,6 +1160,34 @@ describe("VoiceTurnService", () => {
         expect(notes.turnFacts).not.toHaveBeenCalled();
       });
 
+      it("names every turn's log line by the one event the alert counts, finished and failed alike", async () => {
+        const logger = fakeLogger();
+        await runWithClock(serviceWith(slowReply(3_000), { logger }));
+        const failing = {
+          streamTurn: () => (async function* (): AsyncGenerator<ChatStreamEvent> {
+            yield { type: "conversation", conversationId };
+            throw new Error("model unavailable");
+          })(),
+        };
+        const failed = new VoiceTurnService({
+          agents: voiceProfiles(voiceOn),
+          routines: routineStates(false),
+          ownership: conversationOwnership(false),
+          operatorReplies: noOperatorReplies(),
+          sessions: fakeSessions(conversationId),
+          chat: failing,
+          logger,
+        });
+
+        // Caught as the turn starts, so the failure is never left unhandled while the clock runs.
+        const failure = collect(failed.runTurn(input(), new AbortController().signal)).catch((error: unknown) => error);
+        await vi.runAllTimersAsync();
+        expect(await failure).toEqual(new Error("model unavailable"));
+
+        expect(logger.info).toHaveBeenCalledWith(expect.objectContaining({ event: "voice.turn", result: "completed" }), "Voice turn finished");
+        expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ event: "voice.turn", result: "failed" }), "Voice turn failed");
+      });
+
       it("warns, ids only, when the facts cannot be recorded, and the turn still ends as it would", async () => {
         const notes = fakeNotes();
         notes.turnFacts.mockRejectedValue(new Error("database unavailable"));
@@ -1198,7 +1227,7 @@ describe("VoiceTurnService", () => {
       await vi.runAllTimersAsync();
 
       expect(logger.warn).toHaveBeenCalledWith(
-        expect.objectContaining({ event: "voice.turn_abandoned", agentId, conversationId, result: "abandoned" }),
+        expect.objectContaining({ event: "voice.turn", agentId, conversationId, result: "abandoned" }),
         "Voice turn abandoned before it finished",
       );
       expect(logger.info).not.toHaveBeenCalled();
@@ -1325,7 +1354,7 @@ describe("VoiceTurnService", () => {
       const superseded = logger.info.mock.calls.filter(([fields]) => (fields as { result?: string }).result === "superseded");
       expect(superseded).toHaveLength(2);
       expect(superseded[0]?.[0]).toEqual({
-        agentId, vendor: "elevenlabs", transport: "web", conversationId, result: "superseded",
+        event: "voice.turn", agentId, vendor: "elevenlabs", transport: "web", conversationId, result: "superseded",
         supersededAt: "before_speech", durationMs: 150, speechPieceCount: 0, outcome: "continue",
       });
     });

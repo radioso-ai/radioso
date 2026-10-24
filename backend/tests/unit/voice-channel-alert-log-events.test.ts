@@ -2,22 +2,24 @@ import { readFile } from "node:fs/promises";
 
 import { describe, expect, it } from "vitest";
 
-import { VOICE_TURN_ABANDONED_LOG_EVENT, VOICE_TURN_LIMIT_LOG_EVENT } from "../../src/modules/voiceChannel/domain.js";
+import { VOICE_TURN_LOG_EVENT } from "../../src/modules/voiceChannel/domain.js";
+import type { VoiceTurnRecord, VoiceTurnResult } from "../../src/modules/voiceChannel/services/voiceTurnRecord.js";
 
 /**
- * The voice turn health alert counts the turn log lines by their `event` field, so the names the
- * service logs and the names the Terraform log metrics filter on are one contract.
+ * The voice turn health alert counts the turn's one log line by its `event` and two of its fields,
+ * so the names the service logs and the names the Terraform log metrics filter on are one
+ * contract. The field names are checked against the turn record the line is built from.
  */
-describe("the voice turn log events the Cloud alert counts", () => {
-  it("are the events infra/terraform/monitoring.tf filters its voice log metrics on", async () => {
+const TURN_LIMIT_FIELD = "turnLimitReached" satisfies keyof NonNullable<VoiceTurnRecord["policy"]>;
+const RESULT_FIELD = "result" satisfies keyof VoiceTurnRecord;
+const ABANDONED_RESULT = "abandoned" satisfies VoiceTurnResult;
+
+describe("the voice turn log line the Cloud alert counts", () => {
+  it("is the event and fields infra/terraform/monitoring.tf filters its voice log metrics on", async () => {
     const monitoring = await readFile(new URL("../../../infra/terraform/monitoring.tf", import.meta.url), "utf8");
+    const event = `jsonPayload.event=\\"${VOICE_TURN_LOG_EVENT}\\"`;
 
-    for (const event of [VOICE_TURN_LIMIT_LOG_EVENT, VOICE_TURN_ABANDONED_LOG_EVENT]) {
-      expect(monitoring).toContain(`jsonPayload.event=\\"${event}\\"`);
-    }
-  });
-
-  it("are two distinct names", () => {
-    expect(VOICE_TURN_LIMIT_LOG_EVENT).not.toBe(VOICE_TURN_ABANDONED_LOG_EVENT);
+    expect(monitoring).toContain(`${event} AND jsonPayload.${TURN_LIMIT_FIELD}=true`);
+    expect(monitoring).toContain(`${event} AND jsonPayload.${RESULT_FIELD}=\\"${ABANDONED_RESULT}\\"`);
   });
 });

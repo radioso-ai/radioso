@@ -516,8 +516,8 @@ export class QualityTurnsService implements QualityTurnsServicePort, QualityStat
 
   /**
    * The current window's voice numbers: none on a request pinned to another channel, and none
-   * without voice activity in the window, which one cheap existence check answers before the
-   * voice statement scans the window's turns. Distinct calls and a median do not add up across
+   * without a voice turn in the window, which an existence check over the same population answers
+   * before the voice statement aggregates the window's turns. Distinct calls and a median do not add up across
    * days, so the numbers cannot ride on the daily statement's buckets.
    */
   private async loadVoiceStats(

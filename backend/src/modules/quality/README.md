@@ -112,9 +112,10 @@ JSON type reads as none, so a malformed block never fails the response.
 Quality counts the facts and never interprets voice policy. The block is its
 own statement (`buildQualityVoiceStatsQuery`), null without voice turns or on a
 request pinned to another channel, and the request's agent applies. It runs only
-after `buildQualityVoiceActivityQuery` finds a voice conversation with a message
-in the window, so a workspace without calls pays one existence check instead of
-a scan of the window's turns. It cannot ride on the daily statement: distinct
+after `buildQualityVoiceActivityQuery`, an `EXISTS` over the same filters
+(`buildVoiceTurnWindowFilters`), finds a voice turn in the window, so a
+workspace without calls pays one existence check instead of the voice
+aggregate over the window's turns. It cannot ride on the daily statement: distinct
 calls and a median do not add up across day buckets.
 
 Rates are reported with the population they are measured over, and report `null`

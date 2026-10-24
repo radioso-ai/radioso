@@ -583,18 +583,16 @@ describe("buildQualityVoiceActivityQuery", () => {
   const windows = resolveQualityStatsWindows("7d", new Date("2026-07-28T13:45:00.000Z"));
   const query = buildQualityVoiceActivityQuery({ workspaceId: WORKSPACE_ID, agentId: AGENT_ID, window: windows.current });
 
-  it("asks only whether one of the workspace's voice conversations holds a message in the current window", () => {
+  it("asks only whether the voice statement's population has a turn, over the same filters and window", () => {
+    const voiceStatement = buildQualityVoiceStatsQuery({ workspaceId: WORKSPACE_ID, agentId: AGENT_ID, window: windows.current });
+    // The statement's own WHERE, after any `FILTER (WHERE ...)` in its projection.
+    const where = (text: string) => text.slice(text.lastIndexOf("\n       WHERE ") + "\n       WHERE ".length).split(/\n\s*AND /u).map((line) => line.trim());
+
     expect(query.text).toMatch(/^SELECT EXISTS \(/u);
-    expect(query.text).toContain("FROM conversations c");
-    expect(query.text).toContain("FROM messages m");
     expect(query.text).not.toContain("COUNT(");
-    expect(query.params).toEqual([
-      WORKSPACE_ID,
-      "voice",
-      AGENT_ID,
-      windows.current.from.toISOString(),
-      windows.current.to.toISOString(),
-    ]);
+    expect(where(query.text.replace(/\s*\) AS has_voice_activity$/u, ""))).toEqual(where(voiceStatement.text));
+    expect(voiceStatement.params.slice(0, query.params.length)).toEqual(query.params);
+    expect(query.params).toEqual(expect.arrayContaining([WORKSPACE_ID, "voice", AGENT_ID, windows.current.from.toISOString(), windows.current.to.toISOString()]));
   });
 
   it("binds every placeholder it references, and names no agent when the request names none", () => {

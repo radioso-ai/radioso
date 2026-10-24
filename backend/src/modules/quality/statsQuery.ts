@@ -385,36 +385,30 @@ interface QualityVoiceStatsQueryInput {
   window: QualityStatsPeriod;
 }
 
+/** The voice statement's population: the conversation turns pinned to the voice channel, in the window. */
+const buildVoiceTurnWindowFilters = (input: QualityVoiceStatsQueryInput, params: unknown[]): string[] => [
+  ...buildConversationTurnFilters(
+    { workspaceId: input.workspaceId, agentId: input.agentId, channel: VOICE_SOURCE_CHANNEL },
+    params,
+  ),
+  `m.created_at >= ${bindParam(params, input.window.from.toISOString())}::timestamptz`,
+  `m.created_at < ${bindParam(params, input.window.to.toISOString())}::timestamptz`,
+];
+
 /**
- * Whether the window holds any voice activity for the request's agent: one of the workspace's
- * voice conversations with a message in the window. The voice statement scans the window's turns,
- * so the stats ask this first and skip that scan for a workspace without calls. A superset of the
- * voice statement's population, so a false answer never hides a call.
+ * Whether the voice statement's population holds any turn: the same filters, stopping at the
+ * first row. The stats ask this before the voice statement so a workspace without calls skips its
+ * aggregate over the window's turns; it stays because that is the fourth window scan a text-only
+ * workspace would otherwise pay on every stats call.
  */
 export const buildQualityVoiceActivityQuery = (input: QualityVoiceStatsQueryInput): SqlQuery => {
   const params: unknown[] = [];
-  const filters = [
-    `c.workspace_id = ${bindParam(params, input.workspaceId)}`,
-    `c.source_channel = ${bindParam(params, VOICE_SOURCE_CHANNEL)}`,
-  ];
-  if (input.agentId) {
-    filters.push(`c.agent_id = ${bindParam(params, input.agentId)}`);
-  }
-  const from = bindParam(params, input.window.from.toISOString());
-  const to = bindParam(params, input.window.to.toISOString());
+  const filters = buildVoiceTurnWindowFilters(input, params);
   return {
     text: `SELECT EXISTS (
          SELECT 1
-         FROM conversations c
-         WHERE ${filters.join("\n           AND ")}
-           AND EXISTS (
-             SELECT 1
-             FROM messages m
-             WHERE m.workspace_id = c.workspace_id
-               AND m.conversation_id = c.id
-               AND m.created_at >= ${from}::timestamptz
-               AND m.created_at < ${to}::timestamptz
-           )
+       ${TURN_POPULATION_SOURCE}
+       WHERE ${filters.join("\n         AND ")}
        ) AS has_voice_activity`,
     params,
   };
@@ -444,12 +438,7 @@ const CALLBACK_OUTCOME: VoiceTurnOutcome = "callback_requested";
  */
 export const buildQualityVoiceStatsQuery = (input: QualityVoiceStatsQueryInput): SqlQuery => {
   const params: unknown[] = [];
-  const filters = buildConversationTurnFilters(
-    { workspaceId: input.workspaceId, agentId: input.agentId, channel: VOICE_SOURCE_CHANNEL },
-    params,
-  );
-  filters.push(`m.created_at >= ${bindParam(params, input.window.from.toISOString())}::timestamptz`);
-  filters.push(`m.created_at < ${bindParam(params, input.window.to.toISOString())}::timestamptz`);
+  const filters = buildVoiceTurnWindowFilters(input, params);
 
   const facts = `(m.metadata_json -> ${bindParam(params, VOICE_TURN_FACTS_METADATA_KEY)}::text)`;
   const fact = (field: keyof VoiceTurnFacts): string => `(${facts} -> ${bindParam(params, field)}::text)`;

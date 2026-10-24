@@ -761,7 +761,7 @@ describe("retrieval pipeline stages", () => {
       ...interpretationResult,
       originalContexts: new Array(1_500).fill({}),
       rewrittenContexts: [],
-      lexicalContexts: [{}, {}],
+      lexicalContexts: [{}, { lexicalTermCoverage: "some_terms" as const }],
       retrievalBranches: [{}, {}, {}],
       vectorFallbackApplied: false,
       activeRetrievalSubqueries: new Array(1_500).fill({}),
@@ -770,6 +770,7 @@ describe("retrieval pipeline stages", () => {
       "retrieval.candidates.semantic_original.count": 1_000,
       "retrieval.candidates.semantic_rewritten.count": 0,
       "retrieval.candidates.lexical.count": 2,
+      "retrieval.candidates.lexical.some_terms.count": 1,
       "retrieval.branch.count": 3,
       "retrieval.subquery.count": 1_000,
     });

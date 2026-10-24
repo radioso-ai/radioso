@@ -906,4 +906,131 @@ describe("candidate preparation stage", () => {
       expect(upcoming.scoredCandidates.map((candidate) => candidate.chunkId)).toContain("range-in-scope");
     });
   });
+  // #1576: a lexical hit holding only part of the query corroborates other evidence.
+  describe("some-terms lexical matches", () => {
+    const stage = () => new CandidatePreparationStageService(
+      new CandidatePreparationService(),
+      new MetadataRuleScoringService(),
+    );
+    const someTermsChunk = (id: string): RetrievedChunk => semanticChunk(0, {
+      chunkId: id,
+      documentId: `doc-${id}`,
+      similarity: 0.8,
+      lexicalRankScore: 0.6,
+      lexicalTermCoverage: "some_terms",
+    });
+    const definitionLookup = (input: CandidateRetrievalStageResult): CandidateRetrievalStageResult => {
+      const rewrittenQuery = {
+        ...input.rewrittenQuery,
+        structuredResult: {
+          rewrittenQuery: "BM25",
+          queryShape: "definition_lookup" as const,
+          turnKind: "fresh_subject" as const,
+          relatedEntities: [],
+          unresolved: false,
+          confidence: 0.9,
+        },
+      };
+      return {
+        ...input,
+        rewrittenQuery,
+        shapeSelection: selectRetrievalAnswerShape({ query: "BM25", rewrittenQuery }),
+      };
+    };
+
+    it("do not make a turn with no other evidence look answerable", async () => {
+      const result = await stage().execute({
+        ...buildInput([]),
+        lexicalContexts: [someTermsChunk("partial-1"), someTermsChunk("partial-2")],
+      });
+
+      expect(result.scoredCandidates).toEqual([]);
+    });
+
+    it("join the candidates when semantic search found something", async () => {
+      const result = await stage().execute({
+        ...buildInput([semanticChunk(1)]),
+        lexicalContexts: [someTermsChunk("partial-1")],
+      });
+
+      expect(result.scoredCandidates.map((candidate) => candidate.chunkId)).toEqual(["chunk-1", "partial-1"]);
+    });
+
+    it("join the candidates when another lexical branch found every term", async () => {
+      const result = await stage().execute({
+        ...buildInput([]),
+        lexicalContexts: [
+          someTermsChunk("partial-1"),
+          semanticChunk(2, { lexicalRankScore: 0.2, similarity: 1, lexicalTermCoverage: "all_terms" }),
+        ],
+      });
+
+      expect(result.scoredCandidates.map((candidate) => candidate.chunkId)).toEqual(["chunk-2", "partial-1"]);
+    });
+
+    it("left alone by a hard filter, still let the filter back off", async () => {
+      const result = await stage().execute({
+        ...buildInput([semanticChunk(1, { metadata: { category: "course" } })]),
+        lexicalContexts: [semanticChunk(0, {
+          chunkId: "partial-event",
+          documentId: "doc-partial-event",
+          similarity: 0.8,
+          lexicalRankScore: 0.6,
+          lexicalTermCoverage: "some_terms",
+          metadata: { category: "event" },
+        })],
+        settings: {
+          ...buildInput([]).settings,
+          metadataRules: [{
+            id: "matched-events",
+            field: "category",
+            valueType: "string",
+            operator: "equals",
+            value: "event",
+            effect: "filter",
+            enabled: true,
+            triggerMode: "match_turn",
+            triggerInstruction: "Enact when the user asks about events.",
+          }],
+        },
+        triggerAnalysis: {
+          status: "applied",
+          consideredRules: [{
+            ruleId: "matched-events",
+            matched: true,
+            matchStrength: 0.94,
+            reason: "The question asks about events.",
+            triggerInstructionPreview: "Enact when the user asks about events.",
+          }],
+          matchedRuleIds: ["matched-events"],
+          unmatchedRuleIds: [],
+          matchCount: 1,
+          matcherVersion: "test",
+        },
+      });
+
+      expect(result.triggerBackoff).toMatchObject({
+        applied: true,
+        reason: "empty_filtered_candidates",
+        relaxedRuleIds: ["matched-events"],
+      });
+      expect(result.scoredCandidates.map((candidate) => candidate.chunkId)).toEqual(["chunk-1", "partial-event"]);
+    });
+
+    it("are not the lexical hits a lexical-preferred shape puts first", async () => {
+      const semantic = [1, 2, 3].map((index) => semanticChunk(index, { similarity: 0.9 - index / 100 }));
+
+      const result = await stage().execute({
+        ...definitionLookup(buildInput(semantic)),
+        lexicalContexts: [someTermsChunk("partial-1")],
+      });
+
+      expect(result.scoredCandidates.map((candidate) => candidate.chunkId)).toEqual([
+        "chunk-1",
+        "chunk-2",
+        "chunk-3",
+        "partial-1",
+      ]);
+    });
+  });
 });

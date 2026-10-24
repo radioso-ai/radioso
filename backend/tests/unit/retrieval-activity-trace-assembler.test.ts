@@ -46,6 +46,35 @@ describe("activity trace assembler", () => {
     );
   });
 
+  it("counts each lexical branch's some-terms matches and tags every lexical chunk with its coverage", () => {
+    const input = baseInput();
+    const [first, second] = input.prompt.retrievalBranches;
+    input.prompt.retrievalBranches = [
+      {
+        ...first,
+        lexicalContexts: [
+          { chunkId: "ln1", documentId: "d1", title: "Narayani", content: "Narayani profile", similarity: 1, lexicalTermCoverage: "all_terms" },
+          { chunkId: "ln2", documentId: "d1", title: "Narayani", content: "Narayani dates", similarity: 0.5, lexicalTermCoverage: "some_terms" },
+        ],
+      },
+      second,
+    ];
+
+    const trace = new ActivityTraceAssembler().assemble(input);
+
+    const [firstLexical, secondLexical] = trace.stages.filter((stage) => stage.kind === "lexical");
+    expect(firstLexical?.metrics).toMatchObject({ candidateCount: 2, someTermsCandidateCount: 1 });
+    expect(firstLexical?.outputs?.chunks).toEqual([
+      expect.objectContaining({ chunkId: "ln1", lexicalTermCoverage: "all_terms" }),
+      expect.objectContaining({ chunkId: "ln2", lexicalTermCoverage: "some_terms" }),
+    ]);
+    // A hit with no coverage value holds every term.
+    expect(secondLexical?.metrics).toMatchObject({ candidateCount: 1, someTermsCandidateCount: 0 });
+    expect(secondLexical?.outputs?.chunks).toEqual([
+      expect.objectContaining({ chunkId: "la1", lexicalTermCoverage: "all_terms" }),
+    ]);
+  });
+
   it("falls back to the whole measured group span when a branch carries no timing of its own", () => {
     // The fixture's branches carry no semanticSearch*/lexicalSearch* fields (as an
     // older code path or fixture would produce), so every branch stage falls back to

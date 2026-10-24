@@ -12,6 +12,7 @@ import { presentParsedQuery } from "./activitySummaryPresenter.js";
 import { getContextSelectionClauses, summarizeResolvedSteps } from "./retrievalShapeResolver.js";
 import { getCandidateFusedScore, hasUsefulCandidateEvidence } from "./candidateScoring.js";
 import { requestedDateRangeDays } from "../domain/temporal/requestedDateRange.js";
+import { isSomeTermsLexicalMatch, type LexicalTermCoverage } from "../domain/vectorSearch.js";
 
 interface StageTiming {
   startedAt: string;
@@ -98,11 +99,13 @@ const toLexicalChunkRefs = (
     title: string;
     similarity: number;
     lexicalRankScore?: number;
+    lexicalTermCoverage?: LexicalTermCoverage;
   }>,
 ) => contexts.map((context) => ({
   ...toChunkRef(context),
   lexicalScore: context.similarity,
   lexicalRankScore: context.lexicalRankScore ?? 0,
+  lexicalTermCoverage: context.lexicalTermCoverage ?? "all_terms",
 }));
 
 const toCandidateChunkRefs = (
@@ -393,6 +396,8 @@ export class ActivityTraceAssembler {
             },
             metrics: {
               candidateCount: branch.contexts.length,
+              // Hits holding part of the query, returned because too few held all of it.
+              someTermsCandidateCount: branch.contexts.filter(isSomeTermsLexicalMatch).length,
             },
             reason: branch.reason,
           },

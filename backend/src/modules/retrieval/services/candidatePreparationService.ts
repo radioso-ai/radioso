@@ -1,7 +1,11 @@
-import type { RetrievedChunk } from "../domain/vectorSearch.js";
+import { isSomeTermsLexicalMatch, type RetrievedChunk } from "../domain/vectorSearch.js";
 import { buildRetrievalText } from "./searchTextRenderer.js";
 import type { RetrievedCandidate, RetrievalSource } from "../domain/retrievalPipelineTypes.js";
-import { compareByFusedScore, fuseCandidateRanks } from "./candidateScoring.js";
+import {
+  compareByFusedScore,
+  compareLexicalEvidence,
+  fuseCandidateRanks,
+} from "./candidateScoring.js";
 
 export class CandidatePreparationService {
   prepare(input: {
@@ -15,8 +19,11 @@ export class CandidatePreparationService {
     this.addSource(byChunkId, input.rewritten, "semantic_rewritten");
     this.addSource(byChunkId, input.lexical, "lexical");
 
-    const semanticRanks = this.buildSourceRanks([...input.original, ...input.rewritten], (row) => row.similarity);
-    const lexicalRanks = this.buildSourceRanks(input.lexical, (row) => row.lexicalRankScore ?? 0);
+    const semanticRanks = this.buildSourceRanks(
+      [...input.original, ...input.rewritten],
+      (left, right) => right.similarity - left.similarity,
+    );
+    const lexicalRanks = this.buildSourceRanks(input.lexical, compareLexicalEvidence);
 
     return [...byChunkId.values()]
       .map((candidate) => {
@@ -26,6 +33,7 @@ export class CandidatePreparationService {
           semanticRank,
           lexicalRank,
           lexicalScore: candidate.lexicalScore,
+          lexicalTermCoverage: candidate.lexicalTermCoverage,
         });
         return {
           ...candidate,
@@ -46,12 +54,12 @@ export class CandidatePreparationService {
     for (const row of rows) {
       const existing = target.get(row.chunkId);
       if (existing) {
+        const foundLexically = existing.retrievalSources.includes("lexical");
         if (!existing.retrievalSources.includes(source)) {
           existing.retrievalSources.push(source);
         }
         if (source === "lexical") {
-          existing.lexicalScore = Math.max(existing.lexicalScore, row.similarity);
-          existing.lexicalRankScore = Math.max(existing.lexicalRankScore ?? 0, row.lexicalRankScore ?? 0);
+          mergeLexicalRow(existing, row, foundLexically);
         } else {
           existing.semanticScore = Math.max(existing.semanticScore, row.similarity);
         }
@@ -78,16 +86,47 @@ export class CandidatePreparationService {
     }
   }
 
-  private buildSourceRanks(rows: RetrievedChunk[], score: (row: RetrievedChunk) => number): Map<string, number> {
-    const bestByChunkId = new Map<string, number>();
+  // `compare` orders the stronger row first. A chunk found by several branches ranks
+  // by its strongest row.
+  private buildSourceRanks(
+    rows: RetrievedChunk[],
+    compare: (left: RetrievedChunk, right: RetrievedChunk) => number,
+  ): Map<string, number> {
+    const bestByChunkId = new Map<string, RetrievedChunk>();
     for (const row of rows) {
-      bestByChunkId.set(row.chunkId, Math.max(bestByChunkId.get(row.chunkId) ?? 0, score(row)));
+      const best = bestByChunkId.get(row.chunkId);
+      if (!best || compare(row, best) < 0) {
+        bestByChunkId.set(row.chunkId, row);
+      }
     }
 
     return new Map(
-      [...bestByChunkId.entries()]
-        .sort(([leftId, leftScore], [rightId, rightScore]) => rightScore - leftScore || leftId.localeCompare(rightId))
-        .map(([chunkId], index) => [chunkId, index + 1]),
+      [...bestByChunkId.values()]
+        .sort((left, right) => compare(left, right) || left.chunkId.localeCompare(right.chunkId))
+        .map((row, index) => [row.chunkId, index + 1]),
     );
   }
 }
+
+// A candidate's lexical scores come from its strongest coverage: a branch that found
+// every term replaces a partial match, and a partial match never dilutes a full one.
+const mergeLexicalRow = (candidate: RetrievedCandidate, row: RetrievedChunk, foundLexically: boolean): void => {
+  const replace = () => {
+    candidate.lexicalScore = row.similarity;
+    candidate.lexicalRankScore = row.lexicalRankScore ?? 0;
+    candidate.lexicalTermCoverage = row.lexicalTermCoverage;
+  };
+  if (!foundLexically) {
+    replace();
+    return;
+  }
+  const candidateIsPartial = isSomeTermsLexicalMatch(candidate);
+  if (candidateIsPartial !== isSomeTermsLexicalMatch(row)) {
+    if (candidateIsPartial) {
+      replace();
+    }
+    return;
+  }
+  candidate.lexicalScore = Math.max(candidate.lexicalScore, row.similarity);
+  candidate.lexicalRankScore = Math.max(candidate.lexicalRankScore ?? 0, row.lexicalRankScore ?? 0);
+};

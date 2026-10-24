@@ -86,6 +86,9 @@ imports from `services/` or `infra/`.
   resolved fails the run instead of silently measuring workspace defaults.
 - `infra/pgVectorAdapter.ts`, `infra/chunkCandidateHydrator.ts`, and
   `infra/lexicalSearch.ts`: concrete search and hydration adapters.
+  `domain/lexicalSomeTermsMatch.ts` is the pure half of lexical search: the
+  terms, adjacent-word joins, and term weights the adapter's some-terms pass
+  runs on (see Lexical Matching below).
 - `infra/hnswIterativeScan.ts`: shared transaction wrapper that enables
   high-recall strict-order HNSW scanning for a filtered vector query, with a
   probe-once fallback for servers whose pgvector predates the setting.
@@ -173,6 +176,40 @@ still fuse and rank against their peers, and they still register as thin evidenc
 `CandidatePreparationService.addSource` takes `Math.max` across branches, so a
 multi-subquery turn lifts each branch's best hit to `1.0`. Each branch contributes
 its own best candidate to the pooled set.
+
+## Lexical Matching
+
+`infra/lexicalSearch.ts` first runs the all-terms search: `plainto_tsquery` and
+`phraseto_tsquery` per lexical option, every term required. When it finds fewer
+than `RETRIEVAL_BEHAVIOR.hybrid.lexicalSomeTermsBelowAllTermsMatches` chunks, a
+some-terms pass follows, and its hits are appended after the all-terms ones:
+
+1. `buildSomeTermsLexicalQuery` splits the option into terms (letter and number
+   runs, so user text never carries tsquery syntax), adds each pair of adjacent
+   words written as one, and keeps phrases and exclusions.
+2. One statement counts each alternative's matches in scope, capped at
+   `lexicalSomeTermsTermMatchCap + 1`.
+3. `planSomeTermsRanking` weighs each term by inverse document frequency against
+   the query's most frequent term, picks the alternatives that define the ranked
+   set (rarest first, within `lexicalSomeTermsRankedChunkBudget`), and sets the
+   `lexicalSomeTermsMinimumWeightShare` floor.
+4. A second statement ranks those chunks by covered weight, then `ts_rank_cd`.
+
+Every lexical hit carries `lexicalTermCoverage`: `all_terms` or `some_terms` (a hit
+without the field holds every term). A some-terms hit's `similarity` is the share
+of term weight it holds and its `lexicalRankScore` is `ts_rank_cd` against all the
+alternatives. Consumers that read a lexical hit as "the chunk holds what was asked
+for" check the coverage:
+
+- `fuseCandidateRanks` lets a some-terms hit contribute only as the secondary
+  source, and `compareLexicalEvidence` ranks it after every all-terms hit.
+- `hasUsefulCandidateEvidence` never counts it as lexical evidence.
+- `candidatePreparationStage.ts` treats a filtered set holding only some-terms
+  hits as empty for trigger backoff, drops them on a turn where nothing else was
+  found (`holdsPrimaryEvidence`), and passes them over for a `lexicalBias:
+  "preferred"` shape.
+- The lexical trace stage reports `someTermsCandidateCount`, and the candidate
+  retrieval span reports `retrieval.candidates.lexical.some_terms.count`.
 
 ## Stage Timings
 

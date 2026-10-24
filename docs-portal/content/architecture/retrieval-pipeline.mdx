@@ -22,13 +22,23 @@ The pipeline starts by resolving system retrieval defaults, any `retrieval.answe
 
 Radioso parses the original query, applies rewrite logic when enabled, and can split the request into retrieval subqueries. This is where semantic and lexical rewrite instructions matter.
 
-A follow-up such as "send me a quote for the event" names no subject of its own. Interpretation resolves it to the subject the visitor named earlier in the conversation, even when the agent's last turn only asked for a name and email. When the rewritten queries leave that subject out, retrieval adds it: every semantic query names it, and a lexical search for the subject alone runs beside the lexical searches the model wrote. Lexical search requires every query term to appear in a chunk, so the subject runs as its own search. This applies to follow-ups and to questions that relate an earlier subject to something else, on turns with conversation history.
+A follow-up such as "send me a quote for the event" names no subject of its own. Interpretation resolves it to the subject the visitor named earlier in the conversation, even when the agent's last turn only asked for a name and email. When the rewritten queries leave that subject out, retrieval adds it: every semantic query names it, and a lexical search for the subject alone runs beside the lexical searches the model wrote. Lexical search counts a chunk that holds part of a query only as support for other evidence, so the subject runs as its own search, where the subject's own pages hold every term. This applies to follow-ups and to questions that relate an earlier subject to something else, on turns with conversation history.
 
 The query interpretation stage of the turn trace shows the resolved subject, the related entities, and the one-line resolution note. `subjectAnchored` is `true` when retrieval added the subject itself, and `anchoredSubject` shows the text it added.
 
 ### Candidate retrieval
 
 The system runs semantic and lexical retrieval. Semantic retrieval uses embeddings. Lexical retrieval uses search text built from the document title, chunk content, and metadata-derived text.
+
+Lexical search looks for chunks that hold every query term first. When fewer than 3 chunks hold them all, it also returns chunks that hold part of the query, ranked after the full matches. The lexical query `preventivo completo pernottamento evento` mixes request words with subject words, so no page holds all four; the course page holding `pernottamento` and `evento` is still found. The partial matches follow these rules:
+
+- A rarer term weighs more. Each term is weighed by how many chunks in scope hold it, against the query's most frequent term, so a word that appears on most pages counts least, in any language. A term found nowhere weighs as much as the rarest term that is found.
+- A chunk holds at least a third of the query's term weight, so a page sharing only the query's frequent words stays out. Among the rest, the chunk holding more of the weight comes first, and PostgreSQL's `ts_rank_cd` breaks ties.
+- Two adjacent words also match as one: `super coscienti` finds a page that writes `Supercoscienti`. A chunk that holds every term this way counts as a full match.
+- Quoted phrases count as one term each, and excluded terms stay excluded. Punctuation and search operators in the query separate words; they never act as operators.
+- A term held by more than 200 chunks cannot find a chunk on its own, and the search ranks at most 1,000 chunks, taken from its rarest terms first. Both limits bound what a long question full of common words costs.
+
+The lexical stage of the trace counts each branch's partial matches as `someTermsCandidateCount`, and each chunk it lists carries `lexicalTermCoverage`: `all_terms` or `some_terms`.
 
 The two run concurrently. Lexical queries go out before the query embedding resolves, so lexical results are often already in hand when vector search starts.
 
@@ -41,6 +51,8 @@ Retrieved chunks are normalized, merged, and scored. Metadata rules and explicit
 Semantic cosine and query-relative lexical scores stay separate. Candidate preparation combines their source ranks into a fused score from 0 to 1, with a bounded boost when both sources find the same chunk.
 
 Two lexical gates apply, and they answer different questions. Fusion ranks candidates against each other, so it gates on the query-relative lexical score: a chunk contributes its lexical rank once it reaches 0.2 against the best lexical hit for that query. Evidence checks — trigger backoff and minimum-useful-candidate counts — ask whether the turn found real lexical signal at all, so they gate on the absolute PostgreSQL `ts_rank_cd` value against a floor of 0.05. A rare-term query can produce top hits whose absolute rank sits well under that floor. Those hits rank normally against their peers, and they count as thin evidence.
+
+A partial lexical match supports other evidence. Its lexical rank enters fusion as the secondary source only, so it lifts a chunk that semantic search also found, and on its own it ranks below semantic hits. It never counts as lexical evidence in those checks, and a definition lookup's preference for lexical hits passes it over. A turn whose only candidates are partial lexical matches keeps none of them, and answers as a turn that found no evidence.
 
 When upcoming-event boost is enabled, dated event evidence can receive a temporal boost during event date lookups: evidence in the requested range when the question names one, otherwise ongoing and upcoming evidence. Topic relevance still applies; the temporal signal refines the candidate set rather than replacing it.
 

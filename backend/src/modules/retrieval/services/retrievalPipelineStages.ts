@@ -18,7 +18,7 @@ import type {
 } from "../domain/retrievalPipelineTypes.js";
 import type { AppliedConstraint, ParsedQueryInterpretation } from "../domain/queryConstraintTypes.js";
 import type { RetrievalSourceFilter, RetrievalSourceScope } from "../domain/retrievalSourceFilter.js";
-import type { RetrievedChunk } from "../domain/vectorSearch.js";
+import { isSomeTermsLexicalMatch, type RetrievedChunk } from "../domain/vectorSearch.js";
 import { type RequestedDateRange, requestedDateRangeDays } from "../domain/temporal/requestedDateRange.js";
 import type { PromptBuildResult } from "./promptBuilder.js";
 
@@ -255,7 +255,7 @@ type TraceQueryInterpretationInput = TraceRetrievalContextInput & {
 type TraceCandidateRetrievalInput = TraceQueryInterpretationInput & {
   originalContexts?: Array<unknown>;
   rewrittenContexts?: Array<unknown>;
-  lexicalContexts?: Array<unknown>;
+  lexicalContexts?: Array<Pick<RetrievedChunk, "lexicalTermCoverage">>;
   temporalContexts?: Array<unknown>;
   temporalQueryMode?: TemporalQueryMode;
   temporalDateRange?: RequestedDateRange;
@@ -376,6 +376,9 @@ export const buildCandidateRetrievalTraceAttributes = (result: TraceCandidateRet
     "retrieval.candidates.semantic_original.count": boundedTraceCount(result.originalContexts?.length),
     "retrieval.candidates.semantic_rewritten.count": boundedTraceCount(result.rewrittenContexts?.length),
     "retrieval.candidates.lexical.count": boundedTraceCount(result.lexicalContexts?.length),
+    "retrieval.candidates.lexical.some_terms.count": boundedTraceCount(
+      result.lexicalContexts?.filter(isSomeTermsLexicalMatch).length,
+    ),
     "retrieval.candidates.temporal.count": boundedTraceCount(result.temporalContexts?.length),
     "retrieval.temporal.mode": result.temporalQueryMode,
     "retrieval.temporal.structured_lookup.enabled": result.temporalStructuredLookupEnabled,

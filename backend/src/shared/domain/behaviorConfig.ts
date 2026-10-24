@@ -293,6 +293,20 @@ export const RETRIEVAL_BEHAVIOR = {
     // can score every real match below the absolute floor above; gating fusion on that
     // floor makes the only on-topic documents unrankable.
     lexicalFusionMinimumRelativeScore: 0.2,
+    // Lexical search first asks for chunks holding every query term. When fewer than
+    // this many do, it also returns chunks holding part of the query (some-terms
+    // matches), ranked after the all-terms ones.
+    lexicalSomeTermsBelowAllTermsMatches: 3,
+    // A some-terms match holds at least this share of the query's term weight. Rarer
+    // terms weigh more, so a chunk sharing only the query's frequent words falls short.
+    lexicalSomeTermsMinimumWeightShare: 1 / 3,
+    // A term matching more chunks than this cannot find a chunk on its own; it still
+    // counts toward the share a found chunk holds. Counting stops at the cap, which
+    // bounds what a frequent word costs to look up.
+    lexicalSomeTermsTermMatchCap: 200,
+    // The most chunks a some-terms search ranks, taken from its rarest terms first.
+    // Ranking reads each chunk's search text, so this bounds the search's cost.
+    lexicalSomeTermsRankedChunkBudget: 1000,
     mergedCandidateCap: 50,
     minimumUsefulCandidateCount: 3,
     hardFilterConfidenceThreshold: 0.85,

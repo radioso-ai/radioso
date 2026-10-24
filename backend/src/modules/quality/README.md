@@ -101,7 +101,11 @@ a voice reply cut off mid-stream.
 The stats' `voice` block counts the current window's calls over the conversation
 turns pinned to the voice channel, because a turn the caller heard belongs to
 the call even when it is no whole answer. A call is a voice conversation with at least one
-such turn. Timing, turn limit and outcome come from the facts the voice channel
+such turn. Those turns are the ones that stored a reply: a voice turn that hit
+the turn limit and stored none (a switch's follow-up on another instance, a
+reply that failed after the limit) is counted by the voice turn health alert
+and `voice_turn_limit_total`, but not here, so the alert can read higher than
+`turnLimitTurns`. Timing, turn limit and outcome come from the facts the voice channel
 keeps on each stored reply, read by the field names of chat's
 `contracts/voiceTurnFacts.ts` under `metadata_json.voice`; a value of another
 JSON type reads as none, so a malformed block never fails the response.

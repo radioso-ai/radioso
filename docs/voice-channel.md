@@ -1120,7 +1120,7 @@ page, and answers one question: how are calls going? For a busy week it reads:
 |---|---|---|
 | Calls | 42 | Voice conversations with at least one answered turn in the period. |
 | First words | 2.1s | The median time from the start of a turn to its first speech, the reply's or the fallback line's. A bridge line covers the wait but is not the first words. |
-| Turns that hit the time limit | 3 of 380 | Turns that reached the [turn limit](#bridge-lines-and-the-turn-limit) before they spoke, out of all the period's turns on calls. |
+| Turns that hit the time limit | 3 of 380 | Turns that reached the [turn limit](#bridge-lines-and-the-turn-limit) before they spoke, out of the period's turns on calls. |
 | Interruptions | 0.4 per call | Turns whose reply the caller spoke over, cut off while it streamed or after it finished, per call. |
 | Asked for a callback | 4 of 42 calls | Calls in which a turn's [outcome](#outcomes) was `callback_requested`, counted once per call however many of its turns asked. |
 
@@ -1148,6 +1148,13 @@ switching turn, its first words are timed from that turn's start; when it
 reaches another instance, the caller's wait is unknown there, so the turn keeps
 no first-words time and "First words" leaves it out. A turn that stored no
 reply, such as chat's waiting message on a call a teammate owns, keeps none.
+
+So the card's turns are the period's turns that stored a reply. The alert on
+turn-limit turns and the `voice_turn_limit_total` counter count every turn that
+hit the limit, including one that stored no reply: a switch's follow-up on
+another instance that reached the limit before the answer was stored, or a
+turn whose reply failed after the limit. The alert can therefore read higher
+than the card.
 
 The same numbers come back from `GET /api/v1/quality/stats` as `voice`, `null`
 without voice turns, and Ray reads them through `quality_signals`:

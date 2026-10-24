@@ -102,8 +102,9 @@ process whatever you choose to share with us for that purpose.
 ## 3. AI providers and how content reaches them
 
 To produce grounded answers, the Service sends prompts and retrieved context to
-the AI provider configured for your workspace or deployment. Radioso Cloud uses
-OpenAI. A workspace can connect its own account with another provider, such as
+the AI provider configured for your workspace or deployment. On Radioso Cloud,
+workspaces in europe-west1 use OpenAI's models through Microsoft Azure OpenAI in
+the EU, and workspaces in us-central1 use OpenAI directly. A workspace can connect its own account with another provider, such as
 Anthropic or Gemini; that provider is then the workspace's own processor, under
 the workspace's agreement with it.
 
@@ -178,8 +179,9 @@ Self-hosted deployments do not use these unless the operator chooses to.
 | Sub-processor | Role | Data processed | Location |
 |---|---|---|---|
 | Google Cloud EMEA Ltd. (Google Cloud Platform) | Hosting, compute, database and file storage | All Service data | The workspace's region: europe-west1 (Belgium) or us-central1 (United States) |
-| OpenAI Ireland Ltd. | Language model and embeddings | Messages, retrieved document passages and instructions sent at answer time | United States |
-| Resend | Account and notification email; the email channel, when enabled | Recipient address and email content | United States |
+| Microsoft Ireland Operations Ltd. (Azure OpenAI) | Language model and embeddings, for workspaces in europe-west1 | Messages, retrieved document passages and instructions sent at answer time | EU (Azure EU Data Zone) |
+| OpenAI Ireland Ltd. | Language model and embeddings, for workspaces in us-central1 | Messages, retrieved document passages and instructions sent at answer time | United States |
+| Lettermint B.V. | Account and notification email; the email channel, when enabled | Recipient address and email content | EU (Netherlands) |
 | PostHog Inc. | Product and website analytics | Usage events, device/browser data, approximate location; no conversation content | EU Cloud (eu.posthog.com), EEA |
 | Slack Technologies | Notifications and handoff, only when a workspace connects Slack | Notification content the workspace configures | United States |
 | Stripe | Payments | Billing details of account holders; no end-user conversation data | United States |
@@ -195,8 +197,10 @@ privacy contact above.
 Radioso Cloud is hosted on Google Cloud Platform in two regions: europe-west1
 (Belgium, within the EEA) and us-central1 (United States). A workspace stays in
 the region where it was created. Our analytics (PostHog) run on EU Cloud. The
-main transfers outside the EEA are prompts and retrieved context sent to OpenAI,
-email sent through Resend, and, for workspaces in us-central1, hosting itself.
+For workspaces in europe-west1, hosting, language-model calls and email stay in
+the EU. The main transfers outside the EEA are hosting and language-model calls
+for workspaces in us-central1, payments through Stripe, and Slack when a
+workspace connects it.
 Where we transfer personal data outside the EEA, UK, or Switzerland, we rely on a
 lawful transfer mechanism such as the EU Standard Contractual Clauses and the UK
 Addendum, together with supplementary measures where needed. Copies are available

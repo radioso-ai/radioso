@@ -147,8 +147,9 @@ Terms of Service.]
 | Subprocessor | What it does | Data it receives | Where |
 |---|---|---|---|
 | Google Cloud (Google Cloud EMEA Ltd.) | Hosting, database, file storage | All Service data | The workspace's region: europe-west1 or us-central1 |
-| OpenAI (OpenAI Ireland Ltd.) | Language model and embeddings | Messages, retrieved document passages, and instructions sent at answer time | United States (global API) [Owner: update when the EU endpoint is live, #1547] |
-| Resend | Sending account and notification email; the email channel, when enabled | Recipient address and email content | United States |
+| Microsoft Azure OpenAI (Microsoft Ireland Operations Ltd.) | Language model and embeddings, for workspaces in europe-west1 | Messages, retrieved document passages, and instructions sent at answer time | EU (Azure EU Data Zone; resource in Germany West Central) |
+| OpenAI (OpenAI Ireland Ltd.) | Language model and embeddings, for workspaces in us-central1 | Messages, retrieved document passages, and instructions sent at answer time | United States |
+| Lettermint B.V. | Sending account and notification email; the email channel, when enabled | Recipient address and email content | EU (Netherlands) |
 | PostHog | Product analytics | Usage events and browser data of the Controller's team; no conversation content | EU |
 | Slack | Notifications and handoff, only when the Controller connects Slack | Notification content the Controller configures | United States |
 | Stripe | Billing | The Controller's billing details only; no visitor data | United States |

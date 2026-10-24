@@ -21,7 +21,13 @@ import type {
   McpConnectionRecord,
   McpConnectionRepositoryPort,
 } from "../../../db/repositories/mcpConnectionRepository.js";
-import type { McpConnectionInput, McpConnectionUpdateInput, StoredOauthClientConfig } from "../domain.js";
+import {
+  McpCredentialsRejectedError,
+  McpServerUnavailableError,
+  type McpConnectionInput,
+  type McpConnectionUpdateInput,
+  type StoredOauthClientConfig,
+} from "../domain.js";
 import type { ToolServiceFactory } from "../executor/mcpSkillExecutor.js";
 
 /** Non-secret view of a connection (the only shape returned to clients). */
@@ -272,6 +278,23 @@ export class McpConnectionService {
       // to OauthNotAuthorizedError above, so this is never a "needs reauth" case.
       if (error instanceof OauthClientError) {
         throw serviceUnavailable("The OAuth provider is temporarily unavailable. Try again shortly.");
+      }
+      if (error instanceof McpCredentialsRejectedError) {
+        await this.options.repository.updateStatus(agentId, record.id, "needs_reauth").catch(() => undefined);
+        this.options.logger?.warn(
+          { event: "external_skill.discovery", outcome: "credentials_rejected", upstreamStatus: error.status, agentId, connectionId: record.id },
+          "MCP server rejected the connection's credentials",
+        );
+        throw conflict(record.authMethod === "oauth"
+          ? "The MCP server rejected this connection's authorization. Re-authorize the connection to continue."
+          : "The MCP server rejected this connection's access token. Replace the token on the connection to continue.");
+      }
+      if (error instanceof McpServerUnavailableError) {
+        this.options.logger?.warn(
+          { event: "external_skill.discovery", outcome: "server_unavailable", agentId, connectionId: record.id },
+          "MCP server did not complete tool discovery",
+        );
+        throw new AppError(502, "bad_gateway", "The MCP server did not complete tool discovery. Check that it is reachable, then try again.");
       }
       throw error;
     } finally {

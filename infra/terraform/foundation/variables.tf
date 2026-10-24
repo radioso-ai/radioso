@@ -59,7 +59,7 @@ variable "manage_project_services" {
 }
 
 variable "regional_log_bucket_enabled" {
-  description = "Whether this environment's log entries are stored in a log bucket in its own region instead of the project's global _Default bucket. Enable for an environment that promises regional residency."
+  description = "Whether this environment's log entries are stored in a log bucket in its own region instead of the project's global _Default bucket. Enable for an environment that promises regional residency and is the only environment in its region within the project."
   type        = bool
   default     = false
 }

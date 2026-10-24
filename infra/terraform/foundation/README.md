@@ -1,7 +1,8 @@
 # Terraform foundation
 
-This module owns the project configuration a person applies and the Terraform workflow's identity
-may not change: each environment's identity plane, and where its log entries are stored.
+This module owns the project configuration a person applies: each environment's identity plane,
+and where its log entries are stored. The Terraform workflow's identity can't create the sinks or
+exclusions that route logs.
 
 - the CI identities GitHub Actions impersonates, one per workflow, with their project roles;
 - the four application service accounts and the IAM the runtime services need between them;
@@ -111,10 +112,18 @@ EU entries would sit in that global bucket beside US ones. `live-eu` sets
 `regional_log_bucket_enabled = true`, which adds:
 
 - a `radioso-live-eu-logs` bucket in `europe-west1` with 30-day retention;
-- a sink of the same name routing every entry about a resource in `europe-west1`, plus every
-  `radioso-live-eu-` Cloud SQL instance (whose entries carry only a coarse `europe` region), to
-  that bucket; and
+- a sink of the same name routing every entry about a resource in `europe-west1`, plus the
+  `radioso-live-eu-db` Cloud SQL instance and any restore or clone of it (whose entries carry only
+  a coarse `europe` region), to that bucket, leaving out the audit entries `_Required` already
+  stores; and
 - an exclusion on the `_Default` sink with the same filter, so the entries are stored once.
+
+The filter takes every entry in the region, so it assumes `live-eu` is the project's only
+environment in `europe-west1`. A second environment there would need a filter of its own.
+
+`live`'s Terraform identity can update log bucket settings anywhere in the project, because it
+owns `_Default`'s retention, so it could also change this bucket's. The next plan of this root
+shows any such change as drift.
 
 The routing sits here because the Terraform identity holds no sink or exclusion permission: a sink
 could send every log line out of the project, and an exclusion could drop them. Log-based metrics
@@ -133,8 +142,18 @@ gcloud logging read 'resource.type="cloud_run_revision"' --project=radioso-49412
 terraform apply
 ```
 
-Run the full apply once the read returns entries. Turning the routing off reverses the order:
-remove the exclusion first, then the sink and bucket.
+Run the full apply once the read returns entries.
+
+Turning the routing off reverses the order, again in two steps:
+
+```sh
+terraform destroy -target=module.foundation.google_logging_project_exclusion.regional_from_default
+# a few minutes later, set regional_log_bucket_enabled = false, then:
+terraform apply
+```
+
+The second apply deletes the bucket and the entries it holds. Google keeps a deleted bucket's id
+reserved for 7 days, so turning the routing back on inside that window fails until it frees.
 
 ## Changing a role
 

@@ -253,6 +253,25 @@ export interface QualityStatsBucket {
   skillFailures: QualityStatsMetric;
 }
 
+/**
+ * The period's voice calls, over one population: the voice channel's assistant turns in the
+ * current window (a reply the caller cut off mid-stream included, a teammate's reply not). A call
+ * is a voice conversation with at least one such turn. The timing, limit and outcome come from the
+ * facts each turn kept on its reply; a turn without them still counts as a turn.
+ */
+export interface QualityVoiceStats {
+  calls: number;
+  turns: number;
+  /** Median time from a turn's start to its first speech, over turns that recorded one; null when none did. */
+  firstSpeechMedianMs: number | null;
+  /** Turns that reached the turn limit before they spoke. */
+  turnLimitTurns: number;
+  /** Turns whose reply the caller spoke over, cut off mid-stream or after it finished. */
+  interruptions: number;
+  /** Calls in which a turn's outcome asked for a callback; at most `calls`. */
+  callbackCalls: number;
+}
+
 export interface QualityStatsInput {
   range: QualityStatsRange;
   agentId?: string;
@@ -273,6 +292,11 @@ export interface QualityStats {
    */
   backlog: Record<QualitySignalId, number>;
   resolutionBreakdown: QualityResolutionBreakdownEntry[];
+  /**
+   * Current window only. Null when the window has no voice turns, or the request is pinned to
+   * another channel; the request's agent applies.
+   */
+  voice: QualityVoiceStats | null;
 }
 
 export interface QualityResolutionBreakdownEntry {

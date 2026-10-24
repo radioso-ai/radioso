@@ -92,7 +92,7 @@ const dependencies = (overrides: Partial<NeedsAttentionCopilotToolDependencies> 
     listConversations: vi.fn(async () => ({ conversations: [], total: 0 })),
   },
   qualitySignalsService: {
-    getQualityStats: vi.fn(async () => ({ backlog: {} })),
+    getQualityStats: vi.fn(async () => ({ backlog: {}, voice: null })),
     listLowQualityTurns: vi.fn(async () => ({ items: [], total: 0 })),
   },
   workspaceRouteKeyResolver: { resolveWorkspaceKey: vi.fn(async () => "acme") },
@@ -119,7 +119,7 @@ const populated = (overrides: Partial<NeedsAttentionCopilotToolDependencies> = {
     listConversations: vi.fn(async () => ({ conversations: [conversation()], total: 1 })),
   },
   qualitySignalsService: {
-    getQualityStats: vi.fn(async () => ({ backlog: {} })),
+    getQualityStats: vi.fn(async () => ({ backlog: {}, voice: null })),
     listLowQualityTurns: vi.fn(async () => ({ items: [qualityTurn()], total: 1 })),
   },
   ...overrides,
@@ -275,7 +275,7 @@ describe("needs_attention", () => {
     // unreachable while `total` reports them as merely paged away.
     const listLowQualityTurns = vi.fn(async () => ({ items: [qualityTurn()], total: 300 }));
     const deps = populated({
-      qualitySignalsService: { getQualityStats: vi.fn(async () => ({ backlog: {} })), listLowQualityTurns },
+      qualitySignalsService: { getQualityStats: vi.fn(async () => ({ backlog: {}, voice: null })), listLowQualityTurns },
     });
 
     const result = await list(deps, { kinds: ["negative_feedback"], limit: 25 });
@@ -290,7 +290,7 @@ describe("needs_attention", () => {
   it("reads one page when the whole complaint queue fits in it", async () => {
     const listLowQualityTurns = vi.fn(async () => ({ items: [qualityTurn()], total: 1 }));
     const deps = populated({
-      qualitySignalsService: { getQualityStats: vi.fn(async () => ({ backlog: {} })), listLowQualityTurns },
+      qualitySignalsService: { getQualityStats: vi.fn(async () => ({ backlog: {}, voice: null })), listLowQualityTurns },
     });
 
     await list(deps, { kinds: ["negative_feedback"] });

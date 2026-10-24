@@ -430,7 +430,7 @@ callerKind: "human" as const,
       }],
     },
     qualitySignalsService: {
-      getQualityStats: async () => ({ backlog: { negative_feedback: 3 } }),
+      getQualityStats: async () => ({ backlog: { negative_feedback: 3 }, voice: null }),
       listLowQualityTurns: async () => ({
         items: [{
           assistantMessageId: COPILOT_EVAL_MESSAGE_ID,

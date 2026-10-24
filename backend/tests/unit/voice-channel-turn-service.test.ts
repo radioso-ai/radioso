@@ -98,6 +98,14 @@ const voiceOff = {
   operatorReplies: noOperatorReplies(),
 };
 
+/** Notes on a turn's stored replies that record every call and always succeed. */
+const fakeNotes = () => ({
+  replyInterrupted: vi.fn().mockResolvedValue(undefined),
+  replyReplayed: vi.fn().mockResolvedValue(undefined),
+  operatorRepliesSpoken: vi.fn().mockResolvedValue(undefined),
+  turnFacts: vi.fn().mockResolvedValue(undefined),
+});
+
 const collect = async (events: AsyncIterable<VoiceTurnEvent>): Promise<VoiceTurnEvent[]> => {
   const collected: VoiceTurnEvent[] = [];
   for await (const event of events) collected.push(event);
@@ -1081,12 +1089,6 @@ describe("VoiceTurnService", () => {
 
     describe("the facts a turn keeps on its stored reply", () => {
       const assistantMessageId = "66666666-6666-4666-8666-666666666666";
-      const fakeNotes = () => ({
-        replyInterrupted: vi.fn().mockResolvedValue(undefined),
-        replyReplayed: vi.fn().mockResolvedValue(undefined),
-        operatorRepliesSpoken: vi.fn().mockResolvedValue(undefined),
-        turnFacts: vi.fn().mockResolvedValue(undefined),
-      });
       const serviceWith = (
         steps: Array<{ atMs: number; event: ChatStreamEvent }>,
         overrides: Partial<ConstructorParameters<typeof VoiceTurnService>[0]> = {},
@@ -1177,12 +1179,7 @@ describe("VoiceTurnService", () => {
     it("logs a turn the runtime tore down before it finished at warn, counts it, and keeps no facts", async () => {
       const metrics = fakeMetrics();
       const logger = fakeLogger();
-      const notes = {
-        replyInterrupted: vi.fn().mockResolvedValue(undefined),
-        replyReplayed: vi.fn().mockResolvedValue(undefined),
-        operatorRepliesSpoken: vi.fn().mockResolvedValue(undefined),
-        turnFacts: vi.fn().mockResolvedValue(undefined),
-      };
+      const notes = fakeNotes();
       const service = new VoiceTurnService({
         agents: voiceProfiles(voiceOn),
         routines: routineStates(false),
@@ -1267,12 +1264,6 @@ describe("VoiceTurnService", () => {
       { atMs, event: { ...done(), answer: text } as ChatStreamEvent },
     ];
 
-    const fakeNotes = () => ({
-      replyInterrupted: vi.fn().mockResolvedValue(undefined),
-      replyReplayed: vi.fn().mockResolvedValue(undefined),
-      operatorRepliesSpoken: vi.fn().mockResolvedValue(undefined),
-      turnFacts: vi.fn().mockResolvedValue(undefined),
-    });
     const fakeMetrics = () => ({ observeHistogram: vi.fn(), incrementCounter: vi.fn() });
 
     const service = (chat: { streamTurn: (request: VoiceChatTurnRequest) => AsyncIterable<ChatStreamEvent> }, overrides: Partial<ConstructorParameters<typeof VoiceTurnService>[0]> = {}) =>
@@ -3109,12 +3100,7 @@ describe("VoiceTurnService", () => {
 
     it("keeps a switched turn's facts on its answer once, from the follow-up that spoke it, timed from the switched turn's start", async () => {
       const chat = scriptedChat([plannedIn("it")]);
-      const notes = {
-        replyInterrupted: vi.fn().mockResolvedValue(undefined),
-        replyReplayed: vi.fn().mockResolvedValue(undefined),
-        operatorRepliesSpoken: vi.fn().mockResolvedValue(undefined),
-        turnFacts: vi.fn().mockResolvedValue(undefined),
-      };
+      const notes = fakeNotes();
       const turns = service(chat, { notes });
 
       const switching = start(turns, offered());

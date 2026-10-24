@@ -1,0 +1,19 @@
+Authentication-Results: lettermint.mx; dkim=none; dmarc=fail header.from=example.test policy=reject;
+ spf=softfail (sender not permitted) smtp.mailfrom=example.test
+Received: from mail.attacker.test (mail.attacker.test [203.0.113.42])
+	by lettermint.mx with ESMTPS id 4f1c2d9e
+	for <t_9f3c2a7b@in.relay.test>;
+	Thu, 02 Oct 2025 14:30:00 +0000
+Authentication-Results: lettermint.mx; dkim=pass header.d=example.test; dmarc=pass header.from=example.test;
+ spf=pass smtp.mailfrom=example.test
+Authentication-Results: mx.attacker.test; spf=pass; dkim=pass; dmarc=pass
+Message-ID: <abc123@mail.example.test>
+From: John Doe <customer@example.test>
+To: t_9f3c2a7b@in.relay.test
+Subject: Question about my order
+Date: Thu, 02 Oct 2025 14:29:58 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+Content-Transfer-Encoding: 7bit
+
+Hi, I have a question about my recent order...

@@ -30,8 +30,10 @@ import {
 } from "../../../src/modules/emailChannel/public.js";
 import { LocalInboundEmailReceiver } from "../../../src/modules/mail/adapters/localInboundReceiver.js";
 import { ResendInboundEmailReceiver } from "../../../src/modules/mail/adapters/resendInboundReceiver.js";
+import { LettermintInboundEmailReceiver } from "../../../src/modules/mail/adapters/lettermintInboundReceiver.js";
 import { LocalEmailDomainProvisioner } from "../../../src/modules/mail/adapters/localDomainProvisioner.js";
 import { ResendEmailDomainProvisioner } from "../../../src/modules/mail/adapters/resendDomainProvisioner.js";
+import { LettermintEmailDomainProvisioner } from "../../../src/modules/mail/adapters/lettermintDomainProvisioner.js";
 import { createRecordingKysely } from "../../support/recordingKysely.js";
 
 const SECRET = "whsec_bG9jYWwtZGV2LXNlY3JldC0wMDAwMDAwMDAwMDA=";
@@ -103,6 +105,20 @@ describe("email channel composition", () => {
 
     expect(composition?.receiver).toBeInstanceOf(ResendInboundEmailReceiver);
     expect(composition?.provisioner).toBeInstanceOf(ResendEmailDomainProvisioner);
+  });
+
+  it("selects the Lettermint adapters for the lettermint provider", () => {
+    const composition = compose(parseEmailChannelConfig({
+      EMAIL_CHANNEL_PROVIDER: "lettermint",
+      EMAIL_CHANNEL_INBOUND_DOMAIN: "in.radioso.test",
+      EMAIL_CHANNEL_WEBHOOK_SECRET: SECRET,
+      LETTERMINT_PROJECT_TOKEN: "lm_test_project_token",
+      LETTERMINT_TEAM_TOKEN: "lm_team_test_team_token",
+      LETTERMINT_PROJECT_ID: "proj_test",
+    } as never));
+
+    expect(composition?.receiver).toBeInstanceOf(LettermintInboundEmailReceiver);
+    expect(composition?.provisioner).toBeInstanceOf(LettermintEmailDomainProvisioner);
   });
 
   it("supports operator_only, draft and auto, and defaults new mailboxes to draft", () => {

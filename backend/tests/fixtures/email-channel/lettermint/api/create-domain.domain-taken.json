@@ -1,0 +1,6 @@
+{
+  "message": "The domain has already been taken.",
+  "errors": {
+    "domain": ["The domain has already been taken."]
+  }
+}

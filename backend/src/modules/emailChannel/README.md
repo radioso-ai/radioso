@@ -30,7 +30,7 @@ It does not own:
   module's repositories and services. This module knows nothing about
   HTTP, the webhook signature, or the worker that drains inbound events.
 - **Provider calls.** `backend/src/modules/mail/` is the only place that
-  talks to Resend or the `local` driver (`EmailDriver`,
+  talks to Resend, Lettermint, or the `local` driver (`EmailDriver`,
   `InboundEmailReceiver`, `EmailDomainProvisioner`). This module calls those
   ports with a provider-neutral `EmailMessage`; it does not construct
   provider requests itself.

@@ -10,7 +10,6 @@ import {
   type LlmCapabilityConfig,
   type LlmProviderName,
   OPENAI_RESIDENCY_HOSTS,
-  type OpenAIDataResidency,
   ProviderConfigurationError,
   type ProviderCacheCapability,
   type ProviderUsage,
@@ -424,14 +423,21 @@ export const createChatCompletionWithSamplingFallback = async <T>(
 };
 
 /**
- * The only host a native `openai` call may ever reach, chosen by the config's resolved data
- * residency (an unset value means `global`). Never `config.baseUrl` directly — that field is
- * for `openai-compatible` — and never `undefined`, so the OpenAI SDK's own
+ * The only host a native `openai` call may ever reach: the platform's configured Azure OpenAI
+ * endpoint (`config.openAIAzureBaseUrl`) when set, otherwise the config's resolved data residency
+ * (an unset value means `global`). Never `config.baseUrl` directly — that field is for
+ * `openai-compatible` — and never `undefined`, so the OpenAI SDK's own
  * `process.env.OPENAI_BASE_URL` fallback can never redirect platform or BYOK traffic. A
- * residency this module does not recognize is a programming error, not a value to tolerate.
+ * workspace's own (BYOK) key never carries `openAIAzureBaseUrl` — nothing in
+ * `WorkspaceLlmCapabilityResolver`'s workspace-credential branch ever sets it — so this function
+ * cannot route a BYOK call to Azure even if a bad value were somehow forced through. A residency
+ * this module does not recognize is a programming error, not a value to tolerate.
  */
-const nativeOpenAIBaseUrl = (residency: OpenAIDataResidency | undefined): string => {
-  const effective = residency ?? "global";
+const nativeOpenAIBaseUrl = (config: Pick<LlmCapabilityConfig, "openAIDataResidency" | "openAIAzureBaseUrl">): string => {
+  if (config.openAIAzureBaseUrl) {
+    return config.openAIAzureBaseUrl;
+  }
+  const effective = config.openAIDataResidency ?? "global";
   const host = OPENAI_RESIDENCY_HOSTS[effective];
   if (!host) {
     throw new ProviderConfigurationError(`Unrecognized OpenAI data residency "${String(effective)}"`, {
@@ -445,7 +451,7 @@ const nativeOpenAIBaseUrl = (residency: OpenAIDataResidency | undefined): string
 export const createOpenAIClient = (config: LlmCapabilityConfig): OpenAI =>
   new OpenAI({
     apiKey: config.apiKey,
-    baseURL: config.provider === "openai" ? nativeOpenAIBaseUrl(config.openAIDataResidency) : config.baseUrl,
+    baseURL: config.provider === "openai" ? nativeOpenAIBaseUrl(config) : config.baseUrl,
   });
 
 const withDispatchRecording = (client: OpenAI, input: TextGenerationRequest): OpenAI => {

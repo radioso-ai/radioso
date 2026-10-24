@@ -9,6 +9,11 @@ import {
 } from "../../modules/operatorCopilot/public.js";
 import { SLACK_INBOUND_EVENT_RETENTION_DAYS } from "../../modules/slack/public.js";
 import { OPENAI_DATA_RESIDENCIES } from "../../shared/infra/llm/providerTypes.js";
+import {
+  isAzureOpenAIHost,
+  isNormalizableAzureOpenAIPath,
+  normalizeAzureOpenAIEndpoint,
+} from "../../shared/infra/llm/azureOpenAIEndpoint.js";
 
 /** Shared default for both agent-revision test/eval evidence retention knobs; see their env entries. */
 const AGENT_TEST_EVIDENCE_RETENTION_DAYS_DEFAULT = 90;
@@ -207,6 +212,25 @@ const envSchema = z.object({
   // Which OpenAI endpoint the platform-held OPENAI_API_KEY calls: the global default, or an
   // explicit US or EU data-residency endpoint. Never applies to a workspace's own (BYOK) key.
   OPENAI_DATA_RESIDENCY: emptyStringToDefault(z.enum(OPENAI_DATA_RESIDENCIES), "global"),
+  // An Azure OpenAI resource endpoint the platform-held OPENAI_API_KEY (then an Azure key)
+  // calls instead of OpenAI's own host. Only takes effect at the default (global)
+  // OPENAI_DATA_RESIDENCY; see the superRefine check below. Accepts either form the Azure
+  // portal shows (the bare resource host, or the host with /openai/v1) and normalizes to the
+  // latter. Never applies to a workspace's own (BYOK) key.
+  AZURE_OPENAI_ENDPOINT: emptyStringToUndefined(
+    z
+      .string()
+      .trim()
+      .url()
+      .refine((value) => isAzureOpenAIHost(new URL(value).hostname), {
+        message:
+          "AZURE_OPENAI_ENDPOINT must use an Azure OpenAI host (a hostname ending in openai.azure.com or services.ai.azure.com)",
+      })
+      .refine((value) => isNormalizableAzureOpenAIPath(new URL(value).pathname), {
+        message: "AZURE_OPENAI_ENDPOINT must be the resource host, optionally followed by /openai/v1",
+      })
+      .transform(normalizeAzureOpenAIEndpoint),
+  ),
   GEMINI_API_KEY: emptyStringToUndefined(z.string().min(1)),
   ANTHROPIC_API_KEY: emptyStringToUndefined(z.string().min(1)),
   LLM_PROVIDER: emptyStringToUndefined(z.enum(["openai", "openai-compatible", "gemini", "claude"])),
@@ -391,6 +415,15 @@ const envSchema = z.object({
       code: z.ZodIssueCode.custom,
       path: ["METRICS_AUTH_TOKEN"],
       message: "METRICS_AUTH_TOKEN is required when METRICS_ENABLED is true",
+    });
+  }
+
+  if (value.AZURE_OPENAI_ENDPOINT && value.OPENAI_DATA_RESIDENCY !== "global") {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["AZURE_OPENAI_ENDPOINT"],
+      message:
+        "AZURE_OPENAI_ENDPOINT cannot be set together with a non-global OPENAI_DATA_RESIDENCY; Azure OpenAI is reached only at the default (global) residency.",
     });
   }
 

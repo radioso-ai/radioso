@@ -113,8 +113,23 @@ export const resolveEmbeddingProviderBinding = (
   return resolved;
 };
 
+/** Strips the fragment, query, and trailing slash so two equivalent URLs scope identically. */
+const normalizedUrlString = (rawUrl: string): string => {
+  const url = new URL(rawUrl);
+  url.hash = "";
+  url.search = "";
+  url.pathname = url.pathname.replace(/\/+$/, "");
+  return url.toString();
+};
+
 const normalizedEndpointScope = (config: LlmCapabilityDefault): string => {
   if (config.provider === "openai") {
+    // A platform Azure OpenAI endpoint is scoped by its own host — distinct from the global
+    // scope and from every other Azure resource, so embedding caching or binding never collapses
+    // a platform-Azure client together with a BYOK-global one or a different Azure resource.
+    if (config.openAIAzureBaseUrl) {
+      return `openai:azure:${normalizedUrlString(config.openAIAzureBaseUrl)}`;
+    }
     // A regional data-residency endpoint is a distinct scope from the global one — distinct
     // enough that caching or binding across them must not collapse together (#1555 finding 1).
     // The default (global) scope string is unchanged from before data residency existed, so no
@@ -130,11 +145,7 @@ const normalizedEndpointScope = (config: LlmCapabilityDefault): string => {
       `Provider ${config.provider} has no embedding endpoint scope`,
     );
   }
-  const url = new URL(config.baseUrl);
-  url.hash = "";
-  url.search = "";
-  url.pathname = url.pathname.replace(/\/+$/, "");
-  return `${config.provider}:${url.toString()}`;
+  return `${config.provider}:${normalizedUrlString(config.baseUrl)}`;
 };
 
 export const endpointScopeFingerprint = (

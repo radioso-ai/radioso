@@ -1,27 +1,36 @@
 import { describe, expect, it, vi } from "vitest";
 
 const embeddingsCreateMock = vi.fn(async () => ({}));
-let capturedClientOptions: { apiKey?: string; baseURL?: string } | undefined;
+const chatCompletionsCreateMock = vi.fn(async () => ({}));
+let capturedClientOptions: { apiKey?: string; baseURL?: string }[] = [];
 
 vi.mock("openai", () => ({
   default: class {
     embeddings = { create: embeddingsCreateMock };
+    chat = { completions: { create: chatCompletionsCreateMock } };
     constructor(options: { apiKey?: string; baseURL?: string }) {
-      capturedClientOptions = options;
+      capturedClientOptions.push(options);
     }
   },
 }));
 
 import {
+  AzureOpenAIDeploymentRejectedError,
   OpenAIRegionalEndpointRejectedError,
   runOpenAIResidencyStartupCheck,
 } from "../../src/runtime/openAIResidencyStartupCheck.js";
 import { getEnv } from "../../src/app/config/env.js";
 
+// Chat and rerank are kept on claude here so the single-target (embeddings-only) tests below stay
+// focused on exactly one probe call, matching their pre-Azure shape. Dedicated tests further down
+// cover chat/rerank probing (including the dedupe when they share a model) and Azure.
 const baseEnv = {
   NODE_ENV: "test",
   DATABASE_URL: "postgres://test:test@localhost:5432/test",
   OPENAI_API_KEY: "env-openai-key",
+  ANTHROPIC_API_KEY: "env-claude-key",
+  LLM_CHAT_PROVIDER: "claude",
+  LLM_RERANK_PROVIDER: "claude",
   SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
 } as const;
 
@@ -32,15 +41,17 @@ const apiError = (fields: { status: number; code?: string | null }) =>
   Object.assign(new Error(`OpenAI API error ${fields.status}`), fields);
 
 describe("runOpenAIResidencyStartupCheck", () => {
-  it("skips with no call at the default (global) residency", async () => {
+  it("skips with no call at the default (global, no Azure) platform endpoint", async () => {
     const env = getEnv({ ...baseEnv });
     const callEmbeddings = vi.fn();
+    const callChatCompletion = vi.fn();
     const logger = buildLogger();
 
-    const outcome = await runOpenAIResidencyStartupCheck(env, { logger, callEmbeddings });
+    const outcome = await runOpenAIResidencyStartupCheck(env, { logger, callEmbeddings, callChatCompletion });
 
     expect(outcome).toBe("skipped");
     expect(callEmbeddings).not.toHaveBeenCalled();
+    expect(callChatCompletion).not.toHaveBeenCalled();
     expect(logger.info).not.toHaveBeenCalled();
     expect(logger.warn).not.toHaveBeenCalled();
   });
@@ -64,7 +75,7 @@ describe("runOpenAIResidencyStartupCheck", () => {
     expect(callEmbeddings).not.toHaveBeenCalled();
   });
 
-  it("calls the regional endpoint with the resolved embedding model and logs ok on success", async () => {
+  it("calls the regional embeddings endpoint with the resolved model and logs ok on success", async () => {
     const env = getEnv({ ...baseEnv, OPENAI_DATA_RESIDENCY: "eu", OPENAI_VECTOR_MODEL: "text-embedding-3-small" });
     const callEmbeddings = vi.fn(async () => ({}));
     const logger = buildLogger();
@@ -74,7 +85,7 @@ describe("runOpenAIResidencyStartupCheck", () => {
     expect(outcome).toBe("ok");
     expect(callEmbeddings).toHaveBeenCalledWith({
       apiKey: "env-openai-key",
-      residency: "eu",
+      endpoint: { kind: "openai", residency: "eu" },
       model: "text-embedding-3-small",
     });
     expect(logger.info).toHaveBeenCalledWith({ openai: "eu", probe: "ok" }, "Resolved provider residency");
@@ -120,7 +131,7 @@ describe("runOpenAIResidencyStartupCheck", () => {
     );
   });
 
-  it("the rejection error names the residency, the embedding model, and OPENAI_DATA_RESIDENCY", async () => {
+  it("the rejection error names the residency, the model, the capability, and OPENAI_DATA_RESIDENCY", async () => {
     const env = getEnv({ ...baseEnv, OPENAI_DATA_RESIDENCY: "eu", OPENAI_VECTOR_MODEL: "text-embedding-3-small" });
     const callEmbeddings = vi.fn(async () => {
       throw apiError({ status: 401 });
@@ -136,6 +147,7 @@ describe("runOpenAIResidencyStartupCheck", () => {
     expect(failure?.message).toContain("OPENAI_DATA_RESIDENCY");
     expect(failure?.message).toContain("eu");
     expect(failure?.message).toContain("text-embedding-3-small");
+    expect(failure?.message).toContain("embeddings");
   });
 
   it("logs a warn and returns transient_failure on a network error, timeout, 429, or 5xx", async () => {
@@ -160,16 +172,181 @@ describe("runOpenAIResidencyStartupCheck", () => {
   });
 
   it("defaults to a call through the pinned client factory, reaching the exact regional host", async () => {
+    capturedClientOptions = [];
     const env = getEnv({ ...baseEnv, OPENAI_DATA_RESIDENCY: "eu", OPENAI_VECTOR_MODEL: "text-embedding-3-small" });
     const logger = buildLogger();
 
     const outcome = await runOpenAIResidencyStartupCheck(env, { logger });
 
     expect(outcome).toBe("ok");
-    expect(capturedClientOptions).toMatchObject({
-      apiKey: "env-openai-key",
-      baseURL: "https://eu.api.openai.com/v1",
-    });
+    expect(capturedClientOptions).toContainEqual(
+      expect.objectContaining({ apiKey: "env-openai-key", baseURL: "https://eu.api.openai.com/v1" }),
+    );
     expect(embeddingsCreateMock).toHaveBeenCalledWith({ model: "text-embedding-3-small", input: "x" });
+  });
+
+  describe("chat and rerank probing", () => {
+    it("also probes the chat model via a minimal chat completion when chat resolves to provider openai", async () => {
+      const env = getEnv({
+        NODE_ENV: "test",
+        DATABASE_URL: "postgres://test:test@localhost:5432/test",
+        OPENAI_API_KEY: "env-openai-key",
+        SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
+        OPENAI_DATA_RESIDENCY: "eu",
+        OPENAI_CHAT_MODEL: "gpt-5.4-mini",
+        OPENAI_RERANK_MODEL: "gpt-5.4-nano",
+        OPENAI_VECTOR_MODEL: "text-embedding-3-small",
+      });
+      const callEmbeddings = vi.fn(async () => ({}));
+      const callChatCompletion = vi.fn(async () => ({}));
+      const logger = buildLogger();
+
+      const outcome = await runOpenAIResidencyStartupCheck(env, { logger, callEmbeddings, callChatCompletion });
+
+      expect(outcome).toBe("ok");
+      expect(callEmbeddings).toHaveBeenCalledWith({
+        apiKey: "env-openai-key",
+        endpoint: { kind: "openai", residency: "eu" },
+        model: "text-embedding-3-small",
+      });
+      expect(callChatCompletion).toHaveBeenCalledWith({
+        apiKey: "env-openai-key",
+        endpoint: { kind: "openai", residency: "eu" },
+        model: "gpt-5.4-mini",
+      });
+      expect(callChatCompletion).toHaveBeenCalledWith({
+        apiKey: "env-openai-key",
+        endpoint: { kind: "openai", residency: "eu" },
+        model: "gpt-5.4-nano",
+      });
+      expect(callChatCompletion).toHaveBeenCalledTimes(2);
+    });
+
+    it("probes a model shared by chat and rerank exactly once, naming both capabilities on rejection", async () => {
+      const env = getEnv({
+        NODE_ENV: "test",
+        DATABASE_URL: "postgres://test:test@localhost:5432/test",
+        OPENAI_API_KEY: "env-openai-key",
+        SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
+        OPENAI_DATA_RESIDENCY: "eu",
+        OPENAI_CHAT_MODEL: "gpt-5.4-mini",
+        OPENAI_RERANK_MODEL: "gpt-5.4-mini",
+      });
+      const callEmbeddings = vi.fn(async () => ({}));
+      const callChatCompletion = vi.fn(async () => {
+        throw apiError({ status: 404 });
+      });
+
+      let failure: Error | undefined;
+      try {
+        await runOpenAIResidencyStartupCheck(env, { logger: buildLogger(), callEmbeddings, callChatCompletion });
+      } catch (error) {
+        failure = error as Error;
+      }
+
+      expect(callChatCompletion).toHaveBeenCalledTimes(1);
+      expect(failure).toBeInstanceOf(OpenAIRegionalEndpointRejectedError);
+      expect(failure?.message).toContain("gpt-5.4-mini");
+      expect(failure?.message).toContain("chat");
+      expect(failure?.message).toContain("rerank");
+    });
+
+    it("skips the chat probe when chat resolves to a different provider", async () => {
+      const env = getEnv({ ...baseEnv, OPENAI_DATA_RESIDENCY: "eu" });
+      const callEmbeddings = vi.fn(async () => ({}));
+      const callChatCompletion = vi.fn();
+
+      const outcome = await runOpenAIResidencyStartupCheck(env, { logger: buildLogger(), callEmbeddings, callChatCompletion });
+
+      expect(outcome).toBe("ok");
+      expect(callChatCompletion).not.toHaveBeenCalled();
+    });
+  });
+
+  describe("Azure OpenAI endpoint", () => {
+    const azureBaseUrl = "https://radioso-eu-1.openai.azure.com/openai/v1";
+
+    it("probes embeddings and chat when AZURE_OPENAI_ENDPOINT is set, even at the default (global) residency", async () => {
+      const env = getEnv({
+        NODE_ENV: "test",
+        DATABASE_URL: "postgres://test:test@localhost:5432/test",
+        OPENAI_API_KEY: "env-azure-key",
+        SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
+        AZURE_OPENAI_ENDPOINT: azureBaseUrl,
+        OPENAI_CHAT_MODEL: "gpt-5.4-mini",
+        OPENAI_RERANK_MODEL: "gpt-5.4-mini",
+        OPENAI_VECTOR_MODEL: "text-embedding-3-small",
+      });
+      const callEmbeddings = vi.fn(async () => ({}));
+      const callChatCompletion = vi.fn(async () => ({}));
+      const logger = buildLogger();
+
+      const outcome = await runOpenAIResidencyStartupCheck(env, { logger, callEmbeddings, callChatCompletion });
+
+      expect(outcome).toBe("ok");
+      expect(callEmbeddings).toHaveBeenCalledWith({
+        apiKey: "env-azure-key",
+        endpoint: { kind: "azure", baseUrl: azureBaseUrl },
+        model: "text-embedding-3-small",
+      });
+      expect(callChatCompletion).toHaveBeenCalledWith({
+        apiKey: "env-azure-key",
+        endpoint: { kind: "azure", baseUrl: azureBaseUrl },
+        model: "gpt-5.4-mini",
+      });
+      expect(callChatCompletion).toHaveBeenCalledTimes(1);
+      expect(logger.info).toHaveBeenCalledWith(
+        { openai: "azure", azureHost: "radioso-eu-1.openai.azure.com", probe: "ok" },
+        "Resolved provider residency",
+      );
+    });
+
+    it("throws AzureOpenAIDeploymentRejectedError naming AZURE_OPENAI_ENDPOINT, the deployment, and the deployment-name convention on a 404", async () => {
+      const env = getEnv({
+        NODE_ENV: "test",
+        DATABASE_URL: "postgres://test:test@localhost:5432/test",
+        OPENAI_API_KEY: "env-azure-key",
+        SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
+        AZURE_OPENAI_ENDPOINT: azureBaseUrl,
+        OPENAI_VECTOR_MODEL: "text-embedding-3-small",
+      });
+      const callEmbeddings = vi.fn(async () => {
+        throw apiError({ status: 404, code: "DeploymentNotFound" });
+      });
+
+      let failure: Error | undefined;
+      try {
+        await runOpenAIResidencyStartupCheck(env, { logger: buildLogger(), callEmbeddings });
+      } catch (error) {
+        failure = error as Error;
+      }
+
+      expect(failure).toBeInstanceOf(AzureOpenAIDeploymentRejectedError);
+      expect(failure?.message).toContain("AZURE_OPENAI_ENDPOINT");
+      expect(failure?.message).toContain("text-embedding-3-small");
+      expect(failure?.message).toContain("deployment name equal to the model name");
+    });
+
+    it("warns and returns transient_failure on a 5xx from Azure, never throwing", async () => {
+      const env = getEnv({
+        NODE_ENV: "test",
+        DATABASE_URL: "postgres://test:test@localhost:5432/test",
+        OPENAI_API_KEY: "env-azure-key",
+        SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
+        AZURE_OPENAI_ENDPOINT: azureBaseUrl,
+      });
+      const callEmbeddings = vi.fn(async () => {
+        throw apiError({ status: 503 });
+      });
+      const logger = buildLogger();
+
+      const outcome = await runOpenAIResidencyStartupCheck(env, { logger, callEmbeddings });
+
+      expect(outcome).toBe("transient_failure");
+      expect(logger.warn).toHaveBeenCalledWith(
+        { openai: "azure", azureHost: "radioso-eu-1.openai.azure.com", probe: "transient_failure" },
+        "Resolved provider residency",
+      );
+    });
   });
 });

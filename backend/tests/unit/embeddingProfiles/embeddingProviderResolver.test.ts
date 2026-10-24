@@ -98,4 +98,38 @@ describe("embedding provider binding resolution", () => {
     expect(us).not.toBe(global);
     expect(eu).not.toBe(us);
   });
+
+  it("distinguishes a platform Azure OpenAI endpoint by its host, from the global scope, and from another Azure resource", () => {
+    const global = endpointScopeFingerprint(openai);
+    const azure = endpointScopeFingerprint({
+      ...openai,
+      openAIAzureBaseUrl: "https://radioso-eu-1.openai.azure.com/openai/v1",
+    });
+    const azureTrailingSlash = endpointScopeFingerprint({
+      ...openai,
+      openAIAzureBaseUrl: "https://radioso-eu-1.openai.azure.com/openai/v1/",
+    });
+    const otherAzureResource = endpointScopeFingerprint({
+      ...openai,
+      openAIAzureBaseUrl: "https://radioso-eu-2.openai.azure.com/openai/v1",
+    });
+
+    expect(azure).not.toBe(global);
+    expect(azure).not.toBe(otherAzureResource);
+    // Trailing-slash variance collapses, matching the openai-compatible fingerprint's own
+    // normalization.
+    expect(azure).toBe(azureTrailingSlash);
+    expect(azure).not.toContain("radioso-eu-1");
+  });
+
+  it("never binds a platform-Azure capability and a BYOK-global capability to the same embedding provider instance", () => {
+    const byokGlobal: LlmCapabilityConfig = { ...openai, apiKey: "byok-secret" };
+    const platformAzure: LlmCapabilityConfig = {
+      ...openai,
+      apiKey: "azure-secret",
+      openAIAzureBaseUrl: "https://radioso-eu-1.openai.azure.com/openai/v1",
+    };
+
+    expect(endpointScopeFingerprint(byokGlobal)).not.toBe(endpointScopeFingerprint(platformAzure));
+  });
 });

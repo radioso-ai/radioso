@@ -193,9 +193,19 @@ export interface LlmCapabilityConfig extends LlmProviderMetadata {
   /**
    * Set only for `provider: "openai"`, and only when the key answering this call — platform or
    * workspace (BYOK) — resolved to a non-default residency. The client factory treats an unset
-   * value as `global`.
+   * value as `global`. Never set together with {@link openAIAzureBaseUrl}.
    */
   openAIDataResidency?: OpenAIDataResidency;
+  /**
+   * Set only for `provider: "openai"`, and only when the platform-held key resolved to the
+   * Azure OpenAI endpoint (`AZURE_OPENAI_ENDPOINT`). A workspace's own (BYOK) key never sets
+   * this — {@link WorkspaceLlmCapabilityResolver}'s workspace-credential branch only ever reads
+   * the workspace's authored {@link OpenAIDataResidency}, so there is no code path that could
+   * populate this field for a BYOK call. Deliberately a field distinct from `baseUrl` (reserved
+   * for `openai-compatible`) so a native `openai` client's host-pin logic keeps ignoring
+   * `baseUrl` unconditionally; see the host-enforcement tests in `openaiProvider.ts`.
+   */
+  openAIAzureBaseUrl?: string;
   resolvedBy?: LlmCapabilityResolvedBy;
 }
 
@@ -204,7 +214,54 @@ export interface LlmCapabilityDefault extends LlmProviderMetadata {
   baseUrl?: string;
   /** See {@link LlmCapabilityConfig.openAIDataResidency}. */
   openAIDataResidency?: OpenAIDataResidency;
+  /** See {@link LlmCapabilityConfig.openAIAzureBaseUrl}. */
+  openAIAzureBaseUrl?: string;
 }
+
+/**
+ * Where a native `openai` call made with the platform-held `OPENAI_API_KEY` goes: OpenAI's own
+ * global/US/EU hosts (`OPENAI_DATA_RESIDENCY`), or an operator's Azure OpenAI deployment
+ * (`AZURE_OPENAI_ENDPOINT`, which then holds an Azure key instead of an OpenAI one). The two are
+ * mutually exclusive by construction — `resolveLlmConfig` and `env.ts` both refuse startup if
+ * `AZURE_OPENAI_ENDPOINT` is set alongside a non-global `OPENAI_DATA_RESIDENCY` — so this union
+ * is the one place "which platform endpoint" is ever represented, instead of two independent
+ * optional fields that could disagree.
+ */
+export type PlatformOpenAIEndpoint =
+  | { kind: "openai"; residency: OpenAIDataResidency }
+  | { kind: "azure"; baseUrl: string };
+
+/**
+ * Flattens a {@link PlatformOpenAIEndpoint} into the `LlmCapabilityDefault`/`LlmCapabilityConfig`
+ * fields a native `openai` capability carries it as. The one place that reads the union apart —
+ * `providerConfig.ts` (env-derived capability defaults), `WorkspaceLlmCapabilityResolver`
+ * (per-call resolution for an environment-sourced credential), and the residency probe client
+ * all call this instead of re-deriving the mapping.
+ */
+export const platformOpenAIEndpointFields = (
+  endpoint: PlatformOpenAIEndpoint,
+): Pick<LlmCapabilityDefault, "baseUrl" | "openAIDataResidency" | "openAIAzureBaseUrl"> => {
+  if (endpoint.kind === "azure") {
+    return { openAIAzureBaseUrl: endpoint.baseUrl };
+  }
+  return endpoint.residency === "global"
+    ? {}
+    : { openAIDataResidency: endpoint.residency, baseUrl: OPENAI_RESIDENCY_HOSTS[endpoint.residency] };
+};
+
+/**
+ * The content-free fields the "Resolved provider residency" log carries for a platform
+ * endpoint: a region code, or `"azure"` plus the Azure resource host (never the full URL, which
+ * carries no secret but is more than the log needs). The one place that shapes this log line so
+ * the two emitters (`buildLlmRegistry` at registry-build time, the residency startup probe once
+ * it has run) agree on it.
+ */
+export const platformOpenAIEndpointLogFields = (
+  endpoint: PlatformOpenAIEndpoint,
+): { openai: OpenAIDataResidency | "azure"; azureHost?: string } =>
+  endpoint.kind === "azure"
+    ? { openai: "azure", azureHost: new URL(endpoint.baseUrl).host }
+    : { openai: endpoint.residency };
 
 export interface ResolvedLlmConfig {
   chat: LlmCapabilityDefault;
@@ -214,15 +271,13 @@ export interface ResolvedLlmConfig {
   embeddingProviderConfigs: LlmCapabilityDefault[];
   providerApiKeys?: Partial<Record<LlmProviderName, string>>;
   /**
-   * The platform-held `OPENAI_API_KEY`'s resolved data residency, derived once here from
-   * `OPENAI_DATA_RESIDENCY`. Present only when a platform OpenAI key is configured — a
-   * deployment running entirely on workspace (BYOK) OpenAI keys has no platform residency to
-   * report or route by. Composition and the startup log read this instead of re-deriving it.
+   * The platform-held `OPENAI_API_KEY`'s resolved endpoint, derived once here from
+   * `OPENAI_DATA_RESIDENCY` and `AZURE_OPENAI_ENDPOINT`. Present only when a platform OpenAI key
+   * is configured — a deployment running entirely on workspace (BYOK) OpenAI keys has no
+   * platform endpoint to report or route by. Composition and the startup log read this instead
+   * of re-deriving it.
    */
-  openAIPlatformResidency?: {
-    residency: OpenAIDataResidency;
-    baseUrl?: string;
-  };
+  openAIPlatformEndpoint?: PlatformOpenAIEndpoint;
 }
 
 import { AppError } from "../../domain/errors.js";

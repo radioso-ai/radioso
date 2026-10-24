@@ -83,15 +83,14 @@ export const callOpenAIResidencyProbeChatCompletion = (input: ResidencyProbeInpu
 /**
  * The default way the startup residency probe reaches OpenAI (or Azure OpenAI) for a rerank
  * model: a minimal `responses.create` call, matching how native-openai rerank actually calls it
- * (`OpenAISemanticRerankGateway`) rather than a chat completion. `reasoning.effort` uses the
- * literal value that path sends first (`"minimal"`) — the Responses API's reasoning-effort
- * vocabulary never includes `"none"`, unlike chat.completions, so this probe does not run it
- * through the chat-completions-specific normalizer.
+ * (`OpenAISemanticRerankGateway`) rather than a chat completion. It sends no `reasoning.effort`:
+ * the accepted values differ by model (gpt-5.4-mini's Responses endpoint rejects `"minimal"`
+ * with a 400), the rerank path itself strips a rejected effort and retries, and a 400 here
+ * would count as transient and leave the deployment unverified.
  */
 export const callOpenAIResidencyProbeResponses = (input: ResidencyProbeInput): Promise<unknown> =>
   probeClient("rerank", input).responses.create({
     model: input.model,
     input: "x",
     max_output_tokens: PROBE_MAX_OUTPUT_TOKENS,
-    ...(isOpenAIGpt5Model(input.model) ? { reasoning: { effort: "minimal" as const } } : {}),
   });

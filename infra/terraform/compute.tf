@@ -231,6 +231,10 @@ resource "google_cloud_run_v2_service" "backend" {
         value = var.openai_data_residency
       }
       env {
+        name  = "AZURE_OPENAI_ENDPOINT"
+        value = var.azure_openai_endpoint
+      }
+      env {
         name  = "SESSION_COOKIE_NAME"
         value = "radioso_session"
       }
@@ -1137,6 +1141,10 @@ resource "google_cloud_run_v2_service" "document_worker" {
         value = var.openai_data_residency
       }
       env {
+        name  = "AZURE_OPENAI_ENDPOINT"
+        value = var.azure_openai_endpoint
+      }
+      env {
         name  = "SESSION_COOKIE_NAME"
         value = "radioso_session"
       }
@@ -1622,6 +1630,10 @@ resource "google_cloud_run_v2_service" "crawler_worker" {
       env {
         name  = "OPENAI_DATA_RESIDENCY"
         value = var.openai_data_residency
+      }
+      env {
+        name  = "AZURE_OPENAI_ENDPOINT"
+        value = var.azure_openai_endpoint
       }
       env {
         name  = "SESSION_COOKIE_NAME"

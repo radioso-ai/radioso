@@ -149,6 +149,7 @@ jobs:
 
       - name: Export optional Terraform variables
         env:
+          AZURE_OPENAI_ENDPOINT: ${{ vars.AZURE_OPENAI_ENDPOINT }}
           ERROR_SINKS: ${{ vars.ERROR_SINKS }}
           MAIL_FROM_NAME: ${{ vars.MAIL_FROM_NAME }}
           METRICS_AUTH_TOKEN: ${{ secrets.METRICS_AUTH_TOKEN }}
@@ -156,6 +157,7 @@ jobs:
           MONITORING_EXTRA_NOTIFICATION_CHANNEL_IDS: ${{ vars.MONITORING_EXTRA_NOTIFICATION_CHANNEL_IDS }}
           MONITORING_NOTIFICATION_EMAILS: ${{ vars.MONITORING_NOTIFICATION_EMAILS }}
           OPENAI_DATA_RESIDENCY: ${{ vars.OPENAI_DATA_RESIDENCY }}
+          OPENAI_RERANK_MODEL: ${{ vars.OPENAI_RERANK_MODEL }}
           OPS_EVENT_WEBHOOK_EVENTS: ${{ vars.OPS_EVENT_WEBHOOK_EVENTS }}
           OPS_EVENT_WEBHOOK_SECRET: ${{ secrets.OPS_EVENT_WEBHOOK_SECRET }}
           OPS_EVENT_WEBHOOK_URL: ${{ vars.OPS_EVENT_WEBHOOK_URL }}
@@ -181,6 +183,17 @@ jobs:
 
           if [ -n "${OPENAI_DATA_RESIDENCY}" ]; then
             echo "TF_VAR_openai_data_residency=${OPENAI_DATA_RESIDENCY}" >> "$GITHUB_ENV"
+          fi
+
+          if [ -n "${AZURE_OPENAI_ENDPOINT}" ]; then
+            echo "TF_VAR_azure_openai_endpoint=${AZURE_OPENAI_ENDPOINT}" >> "$GITHUB_ENV"
+          fi
+
+          # Terraform's own default (environments/*/variables.tf) still only ever has quota for
+          # the regional rerank model each environment shipped with; the Azure cutover needs this
+          # switchable per environment without a code change (#1547).
+          if [ -n "${OPENAI_RERANK_MODEL}" ]; then
+            echo "TF_VAR_openai_rerank_model=${OPENAI_RERANK_MODEL}" >> "$GITHUB_ENV"
           fi
 
           # Alerting stays off until an environment opts in. Terraform's own precondition

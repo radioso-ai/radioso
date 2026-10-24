@@ -58,6 +58,12 @@ variable "worker_max_instances" {
   default     = 5
 }
 
+variable "db_require_encrypted_connections" {
+  description = "Whether this stack's Cloud SQL instance refuses connections that are not encrypted with TLS."
+  type        = bool
+  default     = false
+}
+
 variable "db_point_in_time_recovery_enabled" {
   description = "Whether Cloud SQL keeps 7 days of point-in-time recovery logs for this stack. Turning it on restarts the instance."
   type        = bool

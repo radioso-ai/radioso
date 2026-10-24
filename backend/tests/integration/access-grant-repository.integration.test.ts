@@ -106,6 +106,28 @@ describeIntegration("AccessGrantRepository (Postgres)", () => {
     });
   });
 
+  it("saves, lists, and rotates an agent channel credential that never expires", async () => {
+    const saved = await repository.save({
+      agentId,
+      workspaceId,
+      label: "never expires",
+      principalKind: "agent-api",
+      role: "agent",
+      channel: "mcp-converse",
+      tokenPrefix: "rdso_nev",
+      tokenHash: "grant-hash-never-expires",
+      encryptedToken: null,
+      originConstraint: { mode: "allow-all", origins: [] },
+      expiresAt: null,
+    });
+
+    expect(saved.expiresAt).toBeNull();
+    const listed = await repository.listByAgent(agentId, { principalKind: "agent-api", channel: "mcp-converse" });
+    expect(listed.grants.map((grant) => grant.id)).toContain(saved.id);
+    const rotated = await repository.rotate(saved.id, { tokenPrefix: "rdso_nv2", tokenHash: "grant-hash-never-expires-2", encryptedToken: null });
+    expect(rotated).toMatchObject({ tokenHash: "grant-hash-never-expires-2", expiresAt: null });
+  });
+
   it("save with allow-all stores an empty allowlist", async () => {
     const saved = await repository.save({
       agentId,

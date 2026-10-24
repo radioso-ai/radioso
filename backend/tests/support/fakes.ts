@@ -205,8 +205,8 @@ import type {
 import { AuditService } from "../../src/modules/audit/services/auditService.js";
 import { requestAuditMetadata } from "../../src/modules/audit/requestAuditContext.js";
 import type {
+  DocumentStorageAdapter,
   DocumentStorageDeleteInput,
-  DocumentStoragePort,
   DocumentStorageReadInput,
   DocumentStorageUploadInput,
 } from "../../src/modules/documents/contracts/storage.js";
@@ -3617,7 +3617,7 @@ const collectMetadataPaths = (
   return paths;
 };
 
-export class InMemoryDocumentStorage implements DocumentStoragePort {
+export class InMemoryDocumentStorage implements DocumentStorageAdapter {
   readonly objects = new Map<string, { buffer: Buffer; generation: string; sizeBytes: number }>();
   deleteFailures = new Set<string>();
 
@@ -3653,6 +3653,35 @@ export class InMemoryDocumentStorage implements DocumentStoragePort {
     }
 
     this.objects.delete(input.objectPath);
+  }
+
+  /** Places an object at any path, as an older layout or a stray write would have left it. */
+  put(objectPath: string, content = "stored"): void {
+    this.objects.set(objectPath, {
+      buffer: Buffer.from(content),
+      generation: `${this.objects.size + 1}`,
+      sizeBytes: Buffer.byteLength(content),
+    });
+  }
+
+  async listWorkspaceObjects(input: { workspaceId: string; limit: number }): Promise<DocumentStorageDeleteInput[]> {
+    const prefix = `workspaces/${input.workspaceId}/`;
+    return [...this.objects.keys()]
+      .filter((objectPath) => objectPath.startsWith(prefix))
+      .sort()
+      .slice(0, input.limit)
+      .map((objectPath) => ({ bucket: "test-document-imports", objectPath, generation: null }));
+  }
+
+  async listStoredWorkspaces(input: { cursor: string | null; limit: number }) {
+    const workspaceIds = [...new Set([...this.objects.keys()]
+      .filter((objectPath) => objectPath.startsWith("workspaces/"))
+      .map((objectPath) => objectPath.split("/")[1])
+      .filter((workspaceId): workspaceId is string => Boolean(workspaceId)))]
+      .sort()
+      .filter((workspaceId) => input.cursor === null || workspaceId > input.cursor);
+    const page = workspaceIds.slice(0, input.limit);
+    return { workspaceIds: page, nextCursor: workspaceIds.length > page.length ? page.at(-1) ?? null : null };
   }
 }
 

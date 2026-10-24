@@ -42,7 +42,9 @@ import { MachineAccessRepository } from "../../../db/repositories/machineAccessR
 import { PersonalCredentialLifecycleRepository } from "../../../db/repositories/personalCredentialLifecycleRepository.js";
 import { AuditService } from "../../../modules/audit/composition.js";
 import { type ApplicationComposition } from "../../composition/index.js";
-import { createWorkspaceConversationDataErasure } from "../../composition/conversationErasure.js";
+import { createWorkspaceDeletionHooks } from "../../composition/workspaceDeletion.js";
+import { DocumentStorageOwnerRepository } from "../../../db/repositories/documentStorageOwnerRepository.js";
+import type { BackgroundJobQueue } from "../../../shared/background-jobs/index.js";
 import { ChunkRepository } from "../../../modules/documents/composition.js";
 import { AbuseControlRepository } from "../../../db/repositories/abuseControlRepository.js";
 import {
@@ -174,12 +176,27 @@ export const buildInfrastructure = (input: {
   };
 };
 
+/** Workspace and organization deletion, with what each deletion does beyond its cascade. */
+const buildPersonalCredentialLifecycleRepository = (
+  database: Database,
+  backgroundJobs: Pick<BackgroundJobQueue, "enqueueInTransaction" | "wake">,
+): PersonalCredentialLifecycleRepository => {
+  const workspaceDeletion = createWorkspaceDeletionHooks({ queue: backgroundJobs });
+  return new PersonalCredentialLifecycleRepository(
+    database.kysely,
+    workspaceDeletion.inTransaction,
+    workspaceDeletion.afterCommit,
+  );
+};
+
 export const buildRepositories = (
   database: Database,
   options: {
     agentSurfaceExtensions?: AgentSurfaceExtensionRegistry;
     agentSkillSettings?: AgentSkillSettingsRegistry;
-  } = {},
+    /** Where a workspace deletion hands its stored files, inside its own transaction. */
+    backgroundJobs: Pick<BackgroundJobQueue, "enqueueInTransaction" | "wake">;
+  },
 ) => ({
   accountMembershipRepository: new AccountMembershipRepository(database.kysely),
   accountRepository: new AccountRepository(database.kysely),
@@ -219,10 +236,8 @@ export const buildRepositories = (
   workspaceRepository: new WorkspaceRepository(database.kysely),
   workspaceSetupStateRepository: new WorkspaceSetupStateRepository(database.kysely),
   machineAccessRepository: new MachineAccessRepository(database.kysely),
-  personalCredentialLifecycleRepository: new PersonalCredentialLifecycleRepository(
-    database.kysely,
-    createWorkspaceConversationDataErasure(),
-  ),
+  personalCredentialLifecycleRepository: buildPersonalCredentialLifecycleRepository(database, options.backgroundJobs),
+  documentStorageOwnerRepository: new DocumentStorageOwnerRepository(database.kysely),
   abuseControlRepository: new AbuseControlRepository(database.kysely),
   accountInvitationRepository: new AccountInvitationRepository(database.kysely),
   workspaceProviderCredentialsRepository: new WorkspaceProviderCredentialsRepository(database.kysely),

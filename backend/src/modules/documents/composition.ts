@@ -6,10 +6,21 @@ export { ChunkRepository } from "./infra/chunkRepository.js";
 export { CloudTasksDocumentJobDispatcher } from "./infra/cloudTasksDocumentJobDispatcher.js";
 export {
   type DocumentJobDispatcherPort,
+  type DocumentStorageAdapter,
   type DocumentStoragePort,
 } from "./contracts/index.js";
 export { GcsDocumentStorage } from "./infra/gcsDocumentStorage.js";
 export { LocalDocumentStorage } from "./infra/localDocumentStorage.js";
+export {
+  ORPHANED_WORKSPACE_STORAGE_SWEEP_JOB,
+  orphanedWorkspaceStorageSweepHandler,
+  orphanedWorkspaceStorageSweepRequest,
+} from "./services/orphanedWorkspaceStorageSweep.js";
+export {
+  WORKSPACE_STORAGE_PURGE_JOB,
+  handOffWorkspaceStoragePurges,
+  workspaceStoragePurgeHandler,
+} from "./services/workspaceStoragePurge.js";
 export { NoopDocumentJobDispatcher } from "./services/documentJobDispatcher.js";
 export { DocumentDeletionService } from "./services/documentDeletionService.js";
 export { DocumentReviewedOperationService } from "./services/documentReviewedOperationService.js";

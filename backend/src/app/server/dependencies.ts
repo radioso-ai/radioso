@@ -120,7 +120,11 @@ import { createAgentSkillMcpApplyPort } from "../composition/copilotAgentSkillAt
 import { createReviewedReceiptSettlement } from "../composition/copilotReviewedReceiptSettlement.js";
 import { createDocumentCopilotProposalAdapter } from "../../modules/operatorCopilot/documentProposalAdapter.js";
 import { createDocumentReviewedOperationAdapter } from "../../modules/operatorCopilot/documentReviewedOperationAdapter.js";
-import { DocumentReviewedOperationService } from "../../modules/documents/composition.js";
+import {
+  DocumentReviewedOperationService,
+  orphanedWorkspaceStorageSweepHandler,
+  workspaceStoragePurgeHandler,
+} from "../../modules/documents/composition.js";
 import { createIngestionSettingsCopilotProposalAdapter } from "../../modules/operatorCopilot/ingestionSettingsProposalAdapter.js";
 import { createWorkspaceSettingCopilotProposalAdapter } from "../../modules/operatorCopilot/workspaceSettingProposalAdapter.js";
 import { createPrivacySettingCopilotProposalAdapter } from "../../modules/operatorCopilot/privacySettingProposalAdapter.js";
@@ -197,7 +201,21 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     agentSurfaceExtensions.register(extension);
   }
   const agentSkillSettings = createDefaultAgentSkillSettingsRegistry();
-  const repositories = buildRepositories(infrastructure.database, { agentSurfaceExtensions, agentSkillSettings });
+  // Durable background work the worker runs. The queue exists before the repositories and modules
+  // that enqueue; the runtime is assembled below from the handlers those modules return.
+  const backgroundJobs = createBackgroundJobComposition({
+    db: infrastructure.database.kysely,
+    env,
+    logger,
+    metrics: infrastructure.metricsRegistry,
+    errorReporter: infrastructure.errorReportingService,
+    audit: infrastructure.auditService,
+  });
+  const repositories = buildRepositories(infrastructure.database, {
+    agentSurfaceExtensions,
+    agentSkillSettings,
+    backgroundJobs: backgroundJobs.queue,
+  });
   const abuseControlComposition = createAbuseControlComposition({
     env,
     logger,
@@ -348,16 +366,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     store: repositories.conversationActivityRepository,
     teammateLabels,
     messages: repositories.messageRepository,
-  });
-  // Durable background work the worker runs. The queue exists before the modules that enqueue;
-  // the runtime is assembled below from the handlers those modules return.
-  const backgroundJobs = createBackgroundJobComposition({
-    db: infrastructure.database.kysely,
-    env,
-    logger,
-    metrics: infrastructure.metricsRegistry,
-    errorReporter: infrastructure.errorReportingService,
-    audit: infrastructure.auditService,
   });
   const chat = buildChatServices({
     abuseControlService: abuseControlComposition.service,
@@ -1329,9 +1337,18 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     starterPrompts: chat.agentStarterPromptReader,
     conversationLinks,
   });
+  // A deleted workspace's stored files, handed off by its deletion or found by the one-time sweep.
+  const workspaceStorageCleanup = {
+    storage: documents.documentStorage,
+    owners: repositories.documentStorageOwnerRepository,
+    queue: backgroundJobs.queue,
+    logger,
+  };
   const backgroundJobRuntime = backgroundJobs.createRuntime([
     ...chat.backgroundJobHandlers,
     ...slackInboundJobs.backgroundJobHandlers,
+    workspaceStoragePurgeHandler({ ...workspaceStorageCleanup, audit: infrastructure.auditService }),
+    orphanedWorkspaceStorageSweepHandler(workspaceStorageCleanup),
   ]);
   refreshEmbedConfigsOnVoiceVendorKeyChange({ credentials: workspaceProviderCredentialsService, embedConfigs: agentService });
   // One service starts sessions and tells the website embed whether to offer them, by the same gate.

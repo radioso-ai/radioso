@@ -42,6 +42,8 @@ export type {
   EmbeddingProfileTerminalFailurePort,
 } from "../services/embeddingProfileJobService.js";
 export type {
+  DocumentStorageAdapter,
+  DocumentStorageOwnersPort,
   DocumentStoragePort,
 } from "./storage.js";
 export { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../domain/sourceConstants.js";

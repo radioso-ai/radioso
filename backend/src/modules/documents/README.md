@@ -87,6 +87,32 @@ the job table and `available_at`.
 When changing worker payloads or dispatch behavior, review message queue docs,
 contract tests, and worker recovery tests.
 
+## Stored Files Of Deleted Workspaces
+
+Every object a storage adapter writes sits under `workspaces/<workspaceId>/`,
+so `DocumentStorageInventoryPort` (`contracts/storage.ts`) finds a workspace's
+objects by its id alone, whatever path an older release gave them below it.
+Composition wires a `DocumentStorageAdapter`: the object port and the inventory
+together, in the GCS and local adapters alike.
+
+- `services/workspaceStoragePurge.ts`: the `documents.workspace_storage_purge`
+  background job. A workspace or organization deletion enqueues one per
+  workspace inside its own transaction (`handOffWorkspaceStoragePurges`, wired
+  by `app/composition/workspaceDeletion.ts`), so the hand-off commits with the
+  deletion. A run deletes up to ten batches of 100 objects, asks for a rerun
+  when more remain, retries failed deletes over about a day, and records a
+  `workspace.stored_files.deleted` audit event with the count. It keeps the
+  files of a workspace that still exists.
+- `services/orphanedWorkspaceStorageSweep.ts`: the
+  `documents.orphaned_workspace_storage_sweep` job that migration 240 queues
+  once. It pages through the workspaces the store holds and queues a purge for
+  each one `DocumentStorageOwnersPort` says is gone, after checking that the
+  store holds a file of a workspace this database records.
+
+The payloads carry workspace ids and page cursors only. An object path never
+goes into a job, a log line, or an audit event, because paths written before
+storage dropped filenames carry them.
+
 ## Tests
 
 Focused starting points:
@@ -100,6 +126,10 @@ Focused starting points:
   for tag ownership across PUT, reprocess, failed runs, and manual edits.
 - `cd backend && pnpm exec vitest run tests/unit/document-enrichment-service.test.ts tests/unit/document-enrichment-gateway.test.ts tests/unit/document-enrichment-quote-location.test.ts`
   for extraction retries, reply reading, and placing dates by their quotes.
+- `cd backend && pnpm exec vitest run tests/unit/workspace-storage-cleanup.test.ts tests/unit/local-document-storage.test.ts tests/unit/gcs-document-storage.test.ts`
+  for removing a deleted workspace's stored files, and
+  `tests/integration/workspace-storage-purge.integration.test.ts` for the
+  hand-off committing with the deletion.
 - `cd backend && pnpm run test:integration` for processing and import flows.
 
 Use contract tests when document API response shape changes.

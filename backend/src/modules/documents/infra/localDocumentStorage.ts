@@ -1,15 +1,31 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 
-import type {
-  DocumentStorageDeleteInput,
-  DocumentStoragePort,
-  DocumentStorageReadInput,
-  DocumentStorageUploadInput,
-  StoredDocumentObject,
+import {
+  workspaceStoragePrefix,
+  type DocumentStorageAdapter,
+  type DocumentStorageDeleteInput,
+  type DocumentStorageReadInput,
+  type DocumentStorageUploadInput,
+  type DocumentStorageWorkspacePage,
+  type StoredDocumentObject,
 } from "../contracts/storage.js";
 
 const LOCAL_STORAGE_BUCKET = "local";
+const WORKSPACES_DIRECTORY = "workspaces";
+
+const errorCode = (error: unknown): unknown =>
+  error && typeof error === "object" && "code" in error ? error.code : undefined;
+
+/** A directory's entries, or none when the directory does not exist. */
+const readDirectory = async (directory: string, options: { recursive: boolean }) => {
+  try {
+    return await fs.readdir(directory, { withFileTypes: true, recursive: options.recursive });
+  } catch (error) {
+    if (errorCode(error) === "ENOENT") return [];
+    throw error;
+  }
+};
 
 const ensureWithinRoot = (rootPath: string, candidatePath: string): string => {
   const root = path.resolve(rootPath);
@@ -38,7 +54,7 @@ const pruneEmptyParents = async (startPath: string, stopPath: string): Promise<v
   }
 };
 
-export class LocalDocumentStorage implements DocumentStoragePort {
+export class LocalDocumentStorage implements DocumentStorageAdapter {
   private readonly rootPath: string;
 
   constructor(rootPath: string) {
@@ -77,5 +93,32 @@ export class LocalDocumentStorage implements DocumentStoragePort {
     const targetPath = ensureWithinRoot(this.rootPath, input.objectPath);
     await fs.rm(targetPath, { force: true });
     await pruneEmptyParents(targetPath, this.rootPath);
+  }
+
+  async listWorkspaceObjects(input: { workspaceId: string; limit: number }): Promise<DocumentStorageDeleteInput[]> {
+    const prefix = workspaceStoragePrefix(input.workspaceId);
+    const directory = ensureWithinRoot(this.rootPath, prefix);
+    const entries = await readDirectory(directory, { recursive: true });
+    return entries
+      .filter((entry) => entry.isFile())
+      .map((entry) => path.relative(this.rootPath, path.join(entry.parentPath, entry.name)).split(path.sep).join("/"))
+      .sort()
+      .slice(0, input.limit)
+      .map((objectPath) => ({ bucket: LOCAL_STORAGE_BUCKET, objectPath, generation: null }));
+  }
+
+  /** The cursor is the last workspace id of the previous page; directories list in name order. */
+  async listStoredWorkspaces(input: { cursor: string | null; limit: number }): Promise<DocumentStorageWorkspacePage> {
+    const entries = await readDirectory(ensureWithinRoot(this.rootPath, WORKSPACES_DIRECTORY), { recursive: false });
+    const remaining = entries
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort()
+      .filter((workspaceId) => input.cursor === null || workspaceId > input.cursor);
+    const workspaceIds = remaining.slice(0, input.limit);
+    return {
+      workspaceIds,
+      nextCursor: remaining.length > workspaceIds.length ? workspaceIds.at(-1) ?? null : null,
+    };
   }
 }

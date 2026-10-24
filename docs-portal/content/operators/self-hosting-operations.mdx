@@ -1,7 +1,7 @@
 ---
 title: "Self-hosting operations"
 description: "Backup, restore, upgrade, realtime, and worker incident practices for self-hosted Radioso deployments."
-last_updated: 2026-10-15
+last_updated: 2026-10-25
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -179,8 +179,11 @@ The document worker is where work that outlives a request runs, so run it wherev
 - drains the email channel's inbound mail and review turns, when a provider is configured
 - extracts message facets for Audience Pulse
 - removes data past its retention window: old Ray conversations, test executions, Slack event ids, and dead-lettered background jobs
+- deletes the stored files of a deleted workspace or organization, so the worker's storage credentials need to list and delete objects (`roles/storage.objectAdmin` on the GCS bucket)
 
-A deployment without a running worker still answers chat, but documents stay queued, routine actions are never sent, and conversation summaries and titles stop updating.
+A deployment without a running worker still answers chat, but documents stay queued, routine actions are never sent, conversation summaries and titles stop updating, and a deleted workspace's files wait in storage until a worker runs.
+
+Migration `240_orphaned_workspace_storage_sweep.sql` queues one sweep of document storage for files whose workspace the database no longer has, such as those of a workspace deleted on an earlier release. The worker runs it once and queues the same file deletion a workspace deletion does for each such workspace. Before deleting anything, the sweep checks that the store holds the files of a workspace this database has uploaded documents in. A store that fails the check, such as one belonging to another deployment's database, keeps every file, and the worker logs `Orphaned stored-file sweep deleted nothing`. A database restored from a backup taken before that migration runs the sweep again, which is one more reason to restore PostgreSQL and document storage from the same point in time: files of workspaces created after the backup would read as orphaned.
 
 Background jobs live in the `background_jobs` table. A completed job is deleted, so the table holds only work that is waiting, running, or has failed for good. A failed job is retried with a growing delay. After its last attempt it stays for 14 days with its kind, key, attempt count, and the class of the error that stopped it, such as `BackgroundJobTimeoutError` or `AppError [provider_unavailable]`. Its payload is dropped when it fails for good, and neither the table nor your error tracking receives the error's message, because a payload or a message can carry conversation text:
 

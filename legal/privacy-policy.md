@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Last updated:** 2026-06-24
+**Last updated:** 2026-10-24
 
 > **Fill in before publishing.** Replace every `[...]` placeholder. This document
 > is a drafting aid, not legal advice. Have counsel review it against your actual
@@ -103,8 +103,9 @@ process whatever you choose to share with us for that purpose.
 
 To produce grounded answers, the Service sends prompts and retrieved context to
 the AI provider configured for your workspace or deployment. Radioso Cloud uses
-more than one provider (for example, OpenAI and Anthropic), depending on
-configuration.
+OpenAI. A workspace can connect its own account with another provider, such as
+Anthropic or Gemini; that provider is then the workspace's own processor, under
+the workspace's agreement with it.
 
 - For **Radioso Cloud**, the active providers are listed in the sub-processor
   table in Section 6.1.
@@ -176,22 +177,26 @@ Self-hosted deployments do not use these unless the operator chooses to.
 
 | Sub-processor | Role | Data processed | Location |
 |---|---|---|---|
-| Google Cloud EMEA Ltd. (Google Cloud Platform) | Cloud hosting, compute, and managed PostgreSQL database | All Service data stored and processed in the platform | EU (europe-west, EEA) |
-| PostHog Inc. | Product and website analytics | Usage events, device/browser data, approximate location | EU Cloud (eu.posthog.com), EEA |
-| Configured AI providers (e.g. OpenAI, Anthropic) | Generating grounded answers | Prompts and retrieved context sent at answer time | Primarily United States **[confirm the providers you enable]** |
+| Google Cloud EMEA Ltd. (Google Cloud Platform) | Hosting, compute, database and file storage | All Service data | The workspace's region: europe-west1 (Belgium) or us-central1 (United States) |
+| OpenAI Ireland Ltd. | Language model and embeddings | Messages, retrieved document passages and instructions sent at answer time | United States |
+| Resend | Account and notification email; the email channel, when enabled | Recipient address and email content | United States |
+| PostHog Inc. | Product and website analytics | Usage events, device/browser data, approximate location; no conversation content | EU Cloud (eu.posthog.com), EEA |
+| Slack Technologies | Notifications and handoff, only when a workspace connects Slack | Notification content the workspace configures | United States |
+| Stripe | Payments | Billing details of account holders; no end-user conversation data | United States |
 
-We update this list when sub-processors change. We do not currently use a payment
-processor, because Radioso Cloud does not yet sell subscriptions online; one will
-be added here before paid online billing launches.
+We give customers at least 30 days' notice by email before we add or replace a
+sub-processor. Customers can request our Data Processing Agreement at the
+privacy contact above.
 
 ---
 
 ## 7. International transfers
 
-Radioso Cloud is hosted on Google Cloud Platform in an EU region (europe-west,
-within the EEA), and our analytics (PostHog) run on EU Cloud. The main transfer
-outside the EEA is when prompts and retrieved context are sent to AI providers
-(such as OpenAI and Anthropic), which primarily process in the United States.
+Radioso Cloud is hosted on Google Cloud Platform in two regions: europe-west1
+(Belgium, within the EEA) and us-central1 (United States). A workspace stays in
+the region where it was created. Our analytics (PostHog) run on EU Cloud. The
+main transfers outside the EEA are prompts and retrieved context sent to OpenAI,
+email sent through Resend, and, for workspaces in us-central1, hosting itself.
 Where we transfer personal data outside the EEA, UK, or Switzerland, we rely on a
 lawful transfer mechanism such as the EU Standard Contractual Clauses and the UK
 Addendum, together with supplementary measures where needed. Copies are available
@@ -221,8 +226,9 @@ For self-hosted deployments, retention is controlled by the operator.
 ## 9. Security
 
 We use technical and organizational measures appropriate to the risk, including
-encryption in transit, access controls, audit logging, and least-privilege
-operational practices. PostgreSQL is the system of record; application state,
+encryption at rest (the database, its backups and uploaded files are encrypted
+with AES-256 on Google Cloud), encryption in transit, access controls, audit
+logging, and least-privilege operational practices. PostgreSQL is the system of record; application state,
 documents, chunks, vectors, settings, sessions, and audit events are stored there.
 No system is perfectly secure, so we cannot guarantee absolute security.
 

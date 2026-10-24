@@ -146,7 +146,7 @@ helpers and the shared chat message limit from `app/http`
   settings and default locale), the routine state store, the conversation
   ownership reader (`handoff/public.ts`), the message repository as chat's
   `OperatorReplySpeechClaims` (with `randomUUID` minting each turn's claim id),
-  `ReplyInterruptionMarker` and, through `createVoiceStoredReplyReader`, the
+  `ReplyInterruptionMarker` and `VoiceTurnFactsRecorder` and, through `createVoiceStoredReplyReader`, the
   `VoiceStoredReplyReader` a switch's follow-up reads, and the audit service (the
   `voice.reply_interrupted`, `voice.reply_replayed` and
   `voice.operator_reply_spoken` notes, built by `createVoiceTurnNotes`; a
@@ -715,6 +715,21 @@ helpers and the shared chat message limit from `app/http`
   variables inside the extra body are not interpolated.
 - **Disconnects** follow the REST agent channel: the turn keeps running after
   the vendor hangs up, and is aborted only past the post-disconnect ceiling.
+- **A turn's facts live on the reply it stored.** Once a turn has ended and
+  its record is final, the service notes the facts of the reply it stored and
+  spoke (`turnFacts`): `firstSpeechMs` (the reply's or the fallback line's first
+  speech, timed from the turn's start; null when the voice policy did not run
+  or nothing was spoken), `bridged`, `turnLimitReached` and `outcome`
+  (`continue`, `callback_requested`). Composition keeps them through chat's
+  `VoiceTurnFactsRecorder` (`chat/contracts/voiceTurnFacts.ts`) as
+  `messages.metadata_json.voice`, with `recordedAt`; the first facts on a reply
+  stay, and a reply the conversation no longer holds keeps none (warned, ids
+  only). A replay keeps no facts of its own, and a turn that switched the
+  call's language spoke nothing: its follow-up keeps the facts of its answer,
+  timed from the switched turn's start. The note is written off the turn's
+  path within the 5 s note limit and never fails the turn. Quality reads the
+  block for the voice numbers of `GET /api/v1/quality/stats`; no migration
+  holds it.
 
 ## Observability
 
@@ -724,18 +739,23 @@ received), `handoffReason` (when the turn handed off) and
 `spokenOperatorReplies` (when it spoke a teammate's replies),
 `storedPartialReply: true` (when chat kept the heard part of its cut-off
 reply), plus `bridged`,
-`turnLimitReached` and `fallbackSpoken` when the voice policy ran,
+`turnLimitReached` and `fallbackSpoken` when the voice policy ran, with
+`firstSpeechMs` once its first speech left,
 `turnLanguage` (the BCP 47 tag the lines were picked in) with
 `languageSource` (`vendor_detected`, `turn_field`, `session`,
 `agent_default`, `builtin_default`) on a turn that ran with its lines (the
 turns `voice_turn_language_source_total` counts), `reportedTurnLanguage` (the
 tag the request reported) on every turn that reports one, voice off
 included, and `languageReport` (`blocked`, `unreadable`) when the newest
-language switch the request carried was not taken: `Voice turn
-reached the turn limit` at warn when the limit fired, else `Voice turn finished` at info
-(`completed`, `replayed`, `superseded` with `supersededAt`: `before_speech` or
-`after_speech`, `abandoned`), or `Voice turn failed` at warn with
-`errorClass`. A tool result follow-up logs `Voice tool result follow-up
+language switch the request carried was not taken: `Voice turn failed` at
+warn with `errorClass`; `Voice turn abandoned before it finished` at warn
+(`result: "abandoned"`) when the runtime tore the request down before the turn
+reached any end of its own, whatever else the turn reached; `Voice turn
+reached the turn limit` at warn when the limit fired on a turn that ended;
+else `Voice turn finished` at info (`completed`, `replayed`, `superseded` with
+`supersededAt`: `before_speech` or `after_speech`). The two warn lines on
+turns that ended late or not at all feed the voice turn health alert
+(`docs/monitoring-google-cloud.md`). A tool result follow-up logs `Voice tool result follow-up
 answered with an empty completion` at debug with `event:
 "voice.tool_followup_ignored"`, `dialect` and `agentId`, and no turn line.
 `Voice reply was interrupted` at info names the conversation,
@@ -749,7 +769,8 @@ it` at warn with `agentId`, `vendor`, `conversationId`,
 turn note could not be recorded` at warn, and an interrupted reply the
 conversation no longer holds logs `Voice reply to mark interrupted was not
 found` at warn (workspace, conversation and message ids) and writes no audit
-event. `Voice turn could not update the teammate's pending replies` at warn
+event; a turn's facts whose reply the conversation no longer holds log `Voice
+reply to keep the turn's facts on was not found` at warn, with the same ids. `Voice turn could not update the teammate's pending replies` at warn
 with `agentId`, `vendor`, `conversationId`, `errorClass` and `step`
 (`claim`, `mark`, `skip`, `release`). A warn when a concurrent first turn bound the session to another
 conversation, and a warn naming only `dialect` and `agentId` when a request
@@ -782,7 +803,9 @@ waiting). The service records `voice_turn_language_source_total` (`source`,
 the same values as `languageSource`) once per turn that runs with the lines
 it chose: not for a turn a person owns, which speaks neither line, nor for one
 a newer request overtook while it set up. It records `voice_turn_superseded_total` (`stage`:
-`before_speech`, `after_speech`), `voice_turn_replayed_total`,
+`before_speech`, `after_speech`), `voice_turn_abandoned_total` (no labels; a
+turn whose request the runtime tore down before it reached its outcome),
+`voice_turn_replayed_total`,
 `voice_reply_interrupted_total` (`partial`: `yes` for a reply stored as its
 heard part, counted as its store commits; `no` for a finished one, counted
 once its note is recorded), `voice_operator_reply_spoken_total` (one

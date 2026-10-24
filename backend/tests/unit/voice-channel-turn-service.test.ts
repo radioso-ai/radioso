@@ -1011,7 +1011,7 @@ describe("VoiceTurnService", () => {
       expect(logger.warn).toHaveBeenCalledWith(
         { agentId, vendor: "elevenlabs", transport: "web", conversationId, result: "completed", durationMs: 11_000,
           speechPieceCount: 1, outcome: "continue", bridged: true, turnLimitReached: true, fallbackSpoken: false,
-          turnLanguage: "en", languageSource: "builtin_default" },
+          firstSpeechMs: 11_000, turnLanguage: "en", languageSource: "builtin_default" },
         "Voice turn reached the turn limit",
       );
     });
@@ -1078,6 +1078,138 @@ describe("VoiceTurnService", () => {
         value: 3_000,
       }));
     });
+
+    describe("the facts a turn keeps on its stored reply", () => {
+      const assistantMessageId = "66666666-6666-4666-8666-666666666666";
+      const fakeNotes = () => ({
+        replyInterrupted: vi.fn().mockResolvedValue(undefined),
+        replyReplayed: vi.fn().mockResolvedValue(undefined),
+        operatorRepliesSpoken: vi.fn().mockResolvedValue(undefined),
+        turnFacts: vi.fn().mockResolvedValue(undefined),
+      });
+      const serviceWith = (
+        steps: Array<{ atMs: number; event: ChatStreamEvent }>,
+        overrides: Partial<ConstructorParameters<typeof VoiceTurnService>[0]> = {},
+      ) => new VoiceTurnService({
+        agents: voiceProfiles(voiceOn),
+        routines: routineStates(false),
+        ownership: conversationOwnership(false),
+        operatorReplies: noOperatorReplies(),
+        sessions: fakeSessions(conversationId),
+        chat: timedChat(steps),
+        logger: fakeLogger(),
+        ...overrides,
+      });
+
+      it("keeps how long the caller waited for the reply, whether a bridge covered the wait, and the outcome, by ids only", async () => {
+        const notes = fakeNotes();
+        const logger = fakeLogger();
+
+        await runWithClock(serviceWith(slowReply(3_000), { notes, logger }));
+
+        expect(notes.turnFacts).toHaveBeenCalledTimes(1);
+        expect(notes.turnFacts).toHaveBeenCalledWith({
+          workspaceId,
+          conversationId,
+          assistantMessageId,
+          facts: { firstSpeechMs: 3_000, bridged: true, turnLimitReached: false, outcome: "continue" },
+        });
+        expect(JSON.stringify(notes.turnFacts.mock.calls)).not.toMatch(/nine|check|open/iu);
+        expect(logger.info).toHaveBeenCalledWith(expect.objectContaining({ firstSpeechMs: 3_000, bridged: true }), "Voice turn finished");
+      });
+
+      it("keeps the turn limit on the reply the limit cut off, once the unheard reply is stored", async () => {
+        const notes = fakeNotes();
+
+        await runWithClock(serviceWith(slowReply(12_000), { notes }));
+
+        expect(notes.turnFacts).toHaveBeenCalledTimes(1);
+        expect(notes.turnFacts).toHaveBeenCalledWith(expect.objectContaining({
+          assistantMessageId,
+          facts: { firstSpeechMs: 10_000, bridged: true, turnLimitReached: true, outcome: "continue" },
+        }));
+      });
+
+      it("keeps a callback request as the outcome of a turn without the voice policy, which measured no speech", async () => {
+        const notes = fakeNotes();
+        const handedOff = { ...done(), ownership: { state: "human_owned", suppressed: false }, handoff: { reason: "routine_handoff", collectedSlotCount: 1 } } as ChatStreamEvent;
+
+        await runWithClock(serviceWith(
+          [{ atMs: 0, event: { type: "conversation", conversationId } }, { atMs: 400, event: { type: "chunk", text: "A teammate will call you." } }, { atMs: 400, event: handedOff }],
+          { notes, agents: voiceProfiles(defaultAgentVoiceSettings()) },
+        ));
+
+        expect(notes.turnFacts).toHaveBeenCalledWith(expect.objectContaining({
+          assistantMessageId,
+          facts: { firstSpeechMs: null, bridged: false, turnLimitReached: false, outcome: "callback_requested" },
+        }));
+      });
+
+      it("keeps no facts for a turn that stored no reply: chat's waiting message on a conversation a person owns", async () => {
+        const notes = fakeNotes();
+        const waiting = "Thanks for waiting. A teammate has your message.";
+
+        await runWithClock(serviceWith(
+          [{ atMs: 0, event: { type: "chunk", text: waiting } }, { atMs: 0, event: waitingDone(waiting) }],
+          { notes, ownership: conversationOwnership(true) },
+        ));
+
+        expect(notes.turnFacts).not.toHaveBeenCalled();
+      });
+
+      it("warns, ids only, when the facts cannot be recorded, and the turn still ends as it would", async () => {
+        const notes = fakeNotes();
+        notes.turnFacts.mockRejectedValue(new Error("database unavailable"));
+        const logger = fakeLogger();
+
+        const events = await runWithClock(serviceWith(slowReply(3_000), { notes, logger }));
+        await vi.runAllTimersAsync();
+
+        expect(events.at(-1)).toEqual({ type: "outcome", outcome: { kind: "continue" } });
+        expect(logger.info).toHaveBeenCalledWith(expect.objectContaining({ result: "completed" }), "Voice turn finished");
+        expect(logger.warn).toHaveBeenCalledWith(
+          { agentId, vendor: "elevenlabs", conversationId, errorClass: "Error" },
+          "Voice turn note could not be recorded",
+        );
+      });
+    });
+
+    it("logs a turn the runtime tore down before it finished at warn, counts it, and keeps no facts", async () => {
+      const metrics = fakeMetrics();
+      const logger = fakeLogger();
+      const notes = {
+        replyInterrupted: vi.fn().mockResolvedValue(undefined),
+        replyReplayed: vi.fn().mockResolvedValue(undefined),
+        operatorRepliesSpoken: vi.fn().mockResolvedValue(undefined),
+        turnFacts: vi.fn().mockResolvedValue(undefined),
+      };
+      const service = new VoiceTurnService({
+        agents: voiceProfiles(voiceOn),
+        routines: routineStates(false),
+        ownership: conversationOwnership(false),
+        operatorReplies: noOperatorReplies(),
+        sessions: fakeSessions(conversationId),
+        chat: timedChat(slowReply(3_000)),
+        logger,
+        metrics,
+        notes,
+      });
+
+      const turn = service.runTurn(input(), new AbortController().signal);
+      expect((await turn.next()).value).toEqual({ type: "conversation", conversationId });
+      await turn.return(undefined);
+      await vi.runAllTimersAsync();
+
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ agentId, conversationId, result: "abandoned" }),
+        "Voice turn abandoned before it finished",
+      );
+      expect(logger.info).not.toHaveBeenCalled();
+      expect(metrics.incrementCounter.mock.calls.filter(([name]) => name === "voice_turn_abandoned_total")).toEqual([
+        ["voice_turn_abandoned_total", expect.not.objectContaining({ labels: expect.anything() })],
+      ]);
+      expect(notes.turnFacts).not.toHaveBeenCalled();
+    });
   });
 
   describe("when requests of one session overlap", () => {
@@ -1139,6 +1271,7 @@ describe("VoiceTurnService", () => {
       replyInterrupted: vi.fn().mockResolvedValue(undefined),
       replyReplayed: vi.fn().mockResolvedValue(undefined),
       operatorRepliesSpoken: vi.fn().mockResolvedValue(undefined),
+      turnFacts: vi.fn().mockResolvedValue(undefined),
     });
     const fakeMetrics = () => ({ observeHistogram: vi.fn(), incrementCounter: vi.fn() });
 
@@ -1340,6 +1473,8 @@ describe("VoiceTurnService", () => {
         ]);
         expect(chat.requests).toHaveLength(1);
         expect(notes.replyReplayed).toHaveBeenCalledWith({ workspaceId, conversationId, assistantMessageId });
+        // The reply keeps the facts of the turn that wrote it; the replay adds none.
+        expect(notes.turnFacts.mock.calls).toEqual([[expect.objectContaining({ assistantMessageId })]]);
         expect(counted(metrics, "voice_turn_replayed_total")).toEqual([{}]);
         expect(logger.info).toHaveBeenLastCalledWith(
           expect.objectContaining({ conversationId, result: "replayed", speechPieceCount: 2 }),
@@ -2970,6 +3105,31 @@ describe("VoiceTurnService", () => {
         { atMs: 10_000 - 1_655, event: { type: "speech", text: "Sorry, could you ask me again?", last: true } },
       ]);
       expect(metrics.observeHistogram).toHaveBeenCalledWith("voice_turn_first_speech_ms", expect.objectContaining({ value: 10_000 }));
+    });
+
+    it("keeps a switched turn's facts on its answer once, from the follow-up that spoke it, timed from the switched turn's start", async () => {
+      const chat = scriptedChat([plannedIn("it")]);
+      const notes = {
+        replyInterrupted: vi.fn().mockResolvedValue(undefined),
+        replyReplayed: vi.fn().mockResolvedValue(undefined),
+        operatorRepliesSpoken: vi.fn().mockResolvedValue(undefined),
+        turnFacts: vi.fn().mockResolvedValue(undefined),
+      };
+      const turns = service(chat, { notes });
+
+      const switching = start(turns, offered());
+      await vi.advanceTimersByTimeAsync(1_655);
+      await switching;
+      const spoken = start(turns, followUp(true));
+      await vi.runAllTimersAsync();
+      await spoken;
+
+      expect(notes.turnFacts.mock.calls).toEqual([[{
+        workspaceId,
+        conversationId,
+        assistantMessageId: "66666666-6666-4666-8666-666666666666",
+        facts: { firstSpeechMs: 3_000, bridged: true, turnLimitReached: false, outcome: "continue" },
+      }]]);
     });
 
     it("logs a reply that fails after the switch once, as the switched turn's failure", async () => {

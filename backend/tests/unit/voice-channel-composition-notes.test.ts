@@ -11,7 +11,7 @@ const note = {
   spokenCharacterCount: 40,
 };
 
-const sinks = (options: { markFails?: boolean; replyFound?: boolean } = {}) => {
+const sinks = (options: { markFails?: boolean; replyFound?: boolean; factsFail?: boolean } = {}) => {
   const writes: string[] = [];
   const audits: AuditEventInput[] = [];
   const logger = { warn: vi.fn() };
@@ -20,6 +20,13 @@ const sinks = (options: { markFails?: boolean; replyFound?: boolean } = {}) => {
       markReplyInterrupted: async (input) => {
         writes.push(`mark:${input.messageId}:${input.heardCharacterCount}/${input.spokenCharacterCount}`);
         if (options.markFails) {
+          throw new Error("database unavailable");
+        }
+        return options.replyFound ?? true;
+      },
+      recordVoiceTurnFacts: async (input) => {
+        writes.push(`facts:${JSON.stringify(input)}`);
+        if (options.factsFail) {
           throw new Error("database unavailable");
         }
         return options.replyFound ?? true;
@@ -98,6 +105,49 @@ describe("voice channel composition: turn notes", () => {
       eventStatus: "success",
       metadata: { conversationId: "conversation-1", messageIds: ["reply-1", "reply-2"] },
     }]);
+  });
+});
+
+describe("voice channel composition: a turn's facts", () => {
+  const factsNote = {
+    workspaceId: "workspace-1",
+    conversationId: "conversation-1",
+    assistantMessageId: "message-1",
+    facts: { firstSpeechMs: 2_140, bridged: true, turnLimitReached: false, outcome: "continue" as const },
+  };
+
+  it("keeps the facts on the stored reply, scoped to its workspace and conversation, with no audit event", async () => {
+    const { notes, writes, audits } = sinks();
+
+    await notes.turnFacts(factsNote);
+
+    expect(writes).toEqual([`facts:${JSON.stringify({
+      workspaceId: "workspace-1",
+      conversationId: "conversation-1",
+      messageId: "message-1",
+      firstSpeechMs: 2_140,
+      bridged: true,
+      turnLimitReached: false,
+      outcome: "continue",
+    })}`]);
+    expect(audits).toEqual([]);
+  });
+
+  it("warns, ids only, and resolves when the conversation holds no such reply", async () => {
+    const { notes, logger } = sinks({ replyFound: false });
+
+    await expect(notes.turnFacts(factsNote)).resolves.toBeUndefined();
+
+    expect(logger.warn).toHaveBeenCalledWith(
+      { workspaceId: "workspace-1", conversationId: "conversation-1", messageId: "message-1" },
+      "Voice reply to keep the turn's facts on was not found",
+    );
+  });
+
+  it("rejects when the facts cannot be written, so the turn reports the note as not recorded", async () => {
+    const { notes } = sinks({ factsFail: true });
+
+    await expect(notes.turnFacts(factsNote)).rejects.toThrow("database unavailable");
   });
 });
 

@@ -70,6 +70,13 @@ export {
   type ReplyInterruption,
   type ReplyInterruptionMarker,
 } from "./interruption.js";
+// A voice turn's timing, limit and outcome, kept on the reply it stored; quality counts them.
+export {
+  VOICE_TURN_FACTS_METADATA_KEY,
+  voiceTurnFactsSchema,
+  type VoiceTurnFacts,
+  type VoiceTurnFactsRecorder,
+} from "./voiceTurnFacts.js";
 // A teammate's reply on a call waits for the caller's next turn; the voice channel reads and marks it.
 export {
   operatorRepliesAreSpoken,

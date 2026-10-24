@@ -153,6 +153,19 @@ describe("a reply the caller speaks over while it is still being said", () => {
     expect(messages[3]).not.toHaveProperty("interruption");
     // The next answer was written knowing what the agent had said.
     expect(model.asked[1]?.history.map((message) => [message.role, message.content])).toContainEqual(["assistant", "We open at **nine** on weekdays."]);
+    // Both replies keep how their turn went for the caller: timings and closed values, no text. The
+    // default agent has its voice policy off, so no first speech was measured.
+    const factsOf = async (messageId: string) =>
+      (await voice.repositories.messageRepository.findByIdAndWorkspaceId(voice.session.workspaceId, messageId))?.metadata?.voice;
+    for (const reply of [cutReply, messages[3]]) {
+      expect(await factsOf(reply.id)).toEqual({
+        firstSpeechMs: null,
+        bridged: false,
+        turnLimitReached: false,
+        outcome: "continue",
+        recordedAt: expect.any(String),
+      });
+    }
 
     const audits = voice.repositories.auditEventRepository.items;
     expect(audits.filter((event) => event.eventType === "voice.reply_interrupted")).toEqual([

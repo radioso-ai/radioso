@@ -88,6 +88,13 @@ export const recordVoiceTurnSuperseded = (metrics: VoiceTurnMetricsSink | null |
   });
 };
 
+/** The runtime tore the turn's request down before the turn reached its outcome. */
+export const recordVoiceTurnAbandoned = (metrics: VoiceTurnMetricsSink | null | undefined): void => {
+  metrics?.incrementCounter("voice_turn_abandoned_total", {
+    help: "Voice turns whose request the voice runtime tore down before the turn reached its outcome",
+  });
+};
+
 export const recordVoiceTurnReplayed = (metrics: VoiceTurnMetricsSink | null | undefined): void => {
   metrics?.incrementCounter("voice_turn_replayed_total", {
     help: "Identical voice re-requests answered with the stored reply of a turn that lost its caller, without a new turn",

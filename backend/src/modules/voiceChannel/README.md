@@ -752,13 +752,16 @@ tag the request reported) on every turn that reports one, voice off
 included, and `languageReport` (`blocked`, `unreadable`) when the newest
 language switch the request carried was not taken: `Voice turn failed` at
 warn with `errorClass`; `Voice turn abandoned before it finished` at warn
-(`result: "abandoned"`) when the runtime tore the request down before the turn
-reached any end of its own, whatever else the turn reached; `Voice turn
-reached the turn limit` at warn when the limit fired on a turn that ended;
+(`result: "abandoned"`, `event: "voice.turn_abandoned"`) when the runtime tore
+the request down before the turn reached any end of its own, whatever else the
+turn reached; `Voice turn reached the turn limit` at warn (`event:
+"voice.turn_limit"`) when the limit fired on a turn that ended;
 else `Voice turn finished` at info (`completed`, `replayed`, `superseded` with
-`supersededAt`: `before_speech` or `after_speech`). The two warn lines on
-turns that ended late or not at all feed the voice turn health alert
-(`docs/monitoring-google-cloud.md`). A tool result follow-up logs `Voice tool result follow-up
+`supersededAt`: `before_speech` or `after_speech`). The voice turn health
+alert (`docs/monitoring-google-cloud.md`) counts those two warn lines by their
+`event` (`VOICE_TURN_LIMIT_LOG_EVENT`, `VOICE_TURN_ABANDONED_LOG_EVENT` in
+`domain.ts`); `tests/unit/voice-channel-alert-log-events.test.ts` checks that
+`infra/terraform/monitoring.tf` filters on the same names. A tool result follow-up logs `Voice tool result follow-up
 answered with an empty completion` at debug with `event:
 "voice.tool_followup_ignored"`, `dialect` and `agentId`, and no turn line.
 `Voice reply was interrupted` at info names the conversation,

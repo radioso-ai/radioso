@@ -14,6 +14,8 @@ import { VOICE_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 import { VOICE_SOURCE_CHANNEL } from "../../../shared/domain/conversationSource.js";
 import {
   VOICE_REPLY_INTERRUPTED_EVENT,
+  VOICE_TURN_ABANDONED_LOG_EVENT,
+  VOICE_TURN_LIMIT_LOG_EVENT,
   VoiceTurnIncompleteError,
   type VoiceChannelContext,
   type VoiceSessionRef,
@@ -756,14 +758,14 @@ export class VoiceTurnService implements VoiceTurnPort {
     } else if (record.result === "abandoned") {
       // The runtime gave up on the request before the turn reached its outcome, whatever else the
       // turn reached: the caller heard no end to it.
-      logger.warn(fields, "Voice turn abandoned before it finished");
+      logger.warn({ ...fields, event: VOICE_TURN_ABANDONED_LOG_EVENT }, "Voice turn abandoned before it finished");
     } else if (record.languageSwitch === "unheld") {
       // The expected path when the switched turn runs on another instance: the caller heard its
       // stored answer whole, or the fallback line.
       logger.info(fields, "Voice language switch follow-up found no switched turn here");
     } else if (record.policy?.turnLimitReached) {
       // The caller heard the fallback line, or kept waiting when the agent has none for the locale.
-      logger.warn(fields, "Voice turn reached the turn limit");
+      logger.warn({ ...fields, event: VOICE_TURN_LIMIT_LOG_EVENT }, "Voice turn reached the turn limit");
     } else {
       logger.info(fields, "Voice turn finished");
     }

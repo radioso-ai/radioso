@@ -187,6 +187,15 @@ export type VoiceChannelContext = Extract<ConversationChannelContext, { provider
 /** The audit event a reply the caller spoke over leaves: ids and character counts, never the text. */
 export const VOICE_REPLY_INTERRUPTED_EVENT = "voice.reply_interrupted";
 
+/**
+ * The `event` field of the two turn log lines the voice turn health alert counts
+ * (`infra/terraform/monitoring.tf` filters its log metrics on them): a turn that ended at the turn
+ * limit, and one the runtime abandoned before it finished. The alert reads these names, never the
+ * lines' wording.
+ */
+export const VOICE_TURN_LIMIT_LOG_EVENT = "voice.turn_limit";
+export const VOICE_TURN_ABANDONED_LOG_EVENT = "voice.turn_abandoned";
+
 /** A vendor's API key, held by the workspace and read only to start that vendor's sessions. */
 export interface VoiceVendorCredential {
   apiKey: string;

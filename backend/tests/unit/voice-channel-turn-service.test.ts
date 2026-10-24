@@ -993,7 +993,7 @@ describe("VoiceTurnService", () => {
       }));
       expect(logger.info).not.toHaveBeenCalled();
       expect(logger.warn).toHaveBeenCalledWith(
-        expect.objectContaining({ result: "completed", bridged: true, turnLimitReached: true, fallbackSpoken: true }),
+        expect.objectContaining({ event: "voice.turn_limit", result: "completed", bridged: true, turnLimitReached: true, fallbackSpoken: true }),
         "Voice turn reached the turn limit",
       );
       expect(JSON.stringify([metrics.incrementCounter.mock.calls, metrics.observeHistogram.mock.calls])).not.toMatch(
@@ -1019,7 +1019,7 @@ describe("VoiceTurnService", () => {
       expect(logger.warn).toHaveBeenCalledWith(
         { agentId, vendor: "elevenlabs", transport: "web", conversationId, result: "completed", durationMs: 11_000,
           speechPieceCount: 1, outcome: "continue", bridged: true, turnLimitReached: true, fallbackSpoken: false,
-          firstSpeechMs: 11_000, turnLanguage: "en", languageSource: "builtin_default" },
+          firstSpeechMs: 11_000, turnLanguage: "en", languageSource: "builtin_default", event: "voice.turn_limit" },
         "Voice turn reached the turn limit",
       );
     });
@@ -1198,7 +1198,7 @@ describe("VoiceTurnService", () => {
       await vi.runAllTimersAsync();
 
       expect(logger.warn).toHaveBeenCalledWith(
-        expect.objectContaining({ agentId, conversationId, result: "abandoned" }),
+        expect.objectContaining({ event: "voice.turn_abandoned", agentId, conversationId, result: "abandoned" }),
         "Voice turn abandoned before it finished",
       );
       expect(logger.info).not.toHaveBeenCalled();

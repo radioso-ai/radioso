@@ -6,7 +6,7 @@ last_updated: 2026-10-24
 
 # Data Residency
 
-Radioso's own backend, database, and documents run wherever you deploy them. A handful of outside services sit behind that: a model provider for chat and embeddings, a voice vendor for calls, an email provider for outbound and inbound mail, product analytics, Slack, and Stripe. Each one decides where it processes the data you send it, and that's a separate question from where Radioso itself runs. This page lists each one, what it handles, and the setting — if there is one — that controls its region.
+Radioso's own backend, database, and documents run wherever you deploy them. A handful of outside services sit behind that: a model provider for chat and embeddings, a voice vendor for calls, an email provider for outbound and inbound mail, product analytics, Slack, and Stripe. Each one decides where it processes the data you send it, and that's a separate question from where Radioso itself runs. This page lists each one, what it handles, and the setting — if there is one — that controls its region, then where each stack's own logs are stored.
 
 ## OpenAI
 
@@ -57,9 +57,9 @@ On Radioso Cloud, every request and application log line goes to Google Cloud Lo
 
 Two kinds of entry stay in `global` on every stack. Google's admin-activity audit entries, which record which identity changed which resource, go to the project's `_Required` bucket for 400 days; Google fixes that bucket's location and retention. Entries about project-wide resources that have no region, such as a service account minting a deploy token, stay in `_Default`. Neither kind carries conversation content.
 
-A deployment on the bundled Terraform stores its logs in its project's `_Default` bucket until you route them. To keep an environment's entries in its own region, set `regional_log_bucket_enabled = true` in its foundation root (`infra/terraform/foundation/environments/<env>/main.tf`) and apply it. That creates a `radioso-<env>-logs` bucket in the environment's region with 30-day retention, a sink that routes every entry about a resource in that region and about the environment's Cloud SQL instance to it, and an exclusion that keeps those entries out of `_Default`. Entries written before the apply stay in `_Default` until its retention removes them.
+A deployment on the bundled Terraform stores its logs in its project's `_Default` bucket until you route them. To keep an environment's entries in its own region, set `regional_log_bucket_enabled = true` in its foundation root (`infra/terraform/foundation/environments/<env>/main.tf`) and apply it. That creates a `radioso-<env>-logs` bucket in the environment's region with 30-day retention, a sink that routes every entry about a resource in that region and about the environment's Cloud SQL instances to it, and an exclusion that keeps those entries out of `_Default`. The foundation README (`infra/terraform/foundation/README.md`) gives the two-step apply that keeps entries flowing while the routing takes effect. Entries written before the apply stay in `_Default` until its retention removes them.
 
-Read the regional bucket by naming its view:
+Read the regional bucket by naming its view. That needs the `logging.views.access` permission, which the Private Logs Viewer and Logs View Accessor roles carry and Logs Viewer doesn't:
 
 ```bash
 gcloud logging read 'resource.type="cloud_run_revision" AND severity>=ERROR' \

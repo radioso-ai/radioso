@@ -3,6 +3,7 @@ const meta = {
   'mail-setup': 'Set up transactional mail',
   deployment: 'Deployment',
   'data-residency': 'Data residency',
+  subprocessors: 'Subprocessors',
   'clarification-behavior': 'Clarification behavior',
   'context-variables': 'Context variables',
   'visitor-data': 'Visitor data',

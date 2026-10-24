@@ -329,6 +329,10 @@ describeIfDatabase("quality stats integration", () => {
       await seedTurn({ conversationId: secondAgentCall, workspaceId, createdAt: daysAgo(3), metadata: { voice: { firstSpeechMs: "soon", turnLimitReached: "yes", outcome: "hung_up" } } });
       await seedTurn({ conversationId: lastWeeksCall, workspaceId, createdAt: daysAgo(10), metadata: facts(8_000, "callback_requested") });
       await seedTurn({ conversationId: chat, workspaceId, createdAt: daysAgo(1), metadata: facts(7_000, "continue", { turnLimitReached: true }) });
+      // Another workspace's call, on the same days, is none of this workspace's.
+      const other = await seedWorkspace("OtherVoice");
+      const otherCall = await seedConversation(other.workspaceId, other.agentId, "voice");
+      await seedTurn({ conversationId: otherCall, workspaceId: other.workspaceId, createdAt: daysAgo(1), metadata: { ...facts(9_500, "callback_requested", { turnLimitReached: true }), ...interruption() } });
 
       const service = createService();
       const all = await service.getQualityStats(workspaceId, { range: "7d" });
@@ -352,6 +356,14 @@ describeIfDatabase("quality stats integration", () => {
       });
       // A request pinned to another channel reports no voice block.
       expect((await service.getQualityStats(workspaceId, { range: "7d", channel: "embed" })).voice).toBeNull();
+      expect((await service.getQualityStats(other.workspaceId, { range: "7d" })).voice).toEqual({
+        calls: 1,
+        turns: 1,
+        firstSpeechMedianMs: 9_500,
+        turnLimitTurns: 1,
+        interruptions: 1,
+        callbackCalls: 1,
+      });
     });
 
     it("reports no voice block for a period without voice turns, without scanning for voice numbers", async () => {

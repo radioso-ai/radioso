@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Last updated:** 2026-06-24
+**Last updated:** 2026-10-24
 
 > **Fill in before publishing.** Replace every `[...]` placeholder. This document
 > is a drafting aid, not legal advice. Have counsel review it against your actual
@@ -56,7 +56,7 @@ up across the product.
   Google sign-in if you use it).
 - Workspace and organization names and membership.
 - Billing and subscription details. Payment card data is handled by our payment
-  processor; we do not store full card numbers.
+  processor, Stripe; we do not store full card numbers.
 
 ### 2.2 Website data (radioso.ai)
 
@@ -85,12 +85,22 @@ End users who chat with an assistant you operate may submit personal data in the
 messages. Where you control the assistant, **you decide** what is collected and
 are responsible for giving those end users appropriate notice.
 
+End users may also volunteer special categories of personal data in free text,
+such as information about their health or their religious beliefs (GDPR
+Article 9). For Radioso Cloud, we process it as part of the conversation, as your
+processor, under our [Data Processing Agreement](./data-processing-agreement.md);
+you need a condition under Article 9(2), such as explicit consent, to process it.
+
 ### 2.5 Operational and security data
 
 - Logs, audit events, error reports, and basic usage metrics needed to run,
   secure, and debug the Service.
 - These are designed to **exclude** raw prompts, completions, document content,
   retrieved chunks, tokens, credentials, cookies, and connection strings.
+
+> **Confirm before publishing:** the application log line written for each audit
+> event includes the search query the Service derives from an end user's message.
+> Remove it from the log line, or describe it here.
 
 ### 2.6 Support and diagnostics (self-hosted)
 
@@ -102,12 +112,13 @@ process whatever you choose to share with us for that purpose.
 ## 3. AI providers and how content reaches them
 
 To produce grounded answers, the Service sends prompts and retrieved context to
-the AI provider configured for your workspace or deployment. Radioso Cloud uses
-more than one provider (for example, OpenAI and Anthropic), depending on
-configuration.
+the AI provider configured for your workspace or deployment.
 
-- For **Radioso Cloud**, the active providers are listed in the sub-processor
-  table in Section 6.1.
+- For **Radioso Cloud**, our own models run on **OpenAI**, which is listed in the
+  sub-processor table in Section 6.1. A workspace can instead store its own key
+  for OpenAI, Anthropic, Google Gemini, or an OpenAI-compatible provider. Content
+  sent with the workspace's own key is governed by the workspace's agreement with
+  that provider, not by us.
 - For **Radioso Self-Hosted**, **you choose the provider** and configure the
   credentials. Content you send to that provider is governed by your agreement
   with them, not by us.
@@ -143,9 +154,10 @@ preferences, and understand website usage. Strictly necessary cookies are always
 active; non-essential cookies are used only where you allow them, in line with
 your cookie choices.
 
-We use **PostHog** for product and website analytics. PostHog helps us understand
-how the website and Service are used so we can improve them. Where required by
-law, analytics run only after you give consent.
+We use **PostHog** (EU Cloud) to collect the Service's error reports and
+application logs, so we can find and fix faults. [Confirm whether the
+`radioso.ai` website uses PostHog for analytics.] Where required by law,
+analytics run only after you give consent.
 
 > **Confirm before publishing:** the cookie names/durations you actually set and,
 > if you display a consent banner, the provider you use. If you enable PostHog
@@ -158,7 +170,8 @@ law, analytics run only after you give consent.
 We share personal data only as needed to run the Service:
 
 - **Sub-processors and service providers** — hosting, database, AI provider,
-  and analytics. The current list is in Section 6.1 below.
+  email delivery, error reporting, and payments. The current list is in
+  Section 6.1 below.
 - **Within your organization** — workspace members and operators can see data
   according to the access controls you configure.
 - **Legal and safety** — where required by law, to enforce our terms, or to
@@ -174,26 +187,40 @@ behavioral advertising as those terms are defined under the CCPA/CPRA.
 These third parties process personal data on our behalf to run Radioso Cloud.
 Self-hosted deployments do not use these unless the operator chooses to.
 
+Radioso Cloud runs in two regions: an EU stack (`app.radioso.ai`) hosted in
+Google Cloud `europe-west1`, Belgium, and a US stack (`app-us.radioso.ai`) hosted
+in Google Cloud `us-central1`, Iowa, United States. Both use the same
+sub-processors. The current list for each region, with what each one receives,
+is published at <https://docs.radioso.ai/operators/subprocessors>.
+
 | Sub-processor | Role | Data processed | Location |
 |---|---|---|---|
-| Google Cloud EMEA Ltd. (Google Cloud Platform) | Cloud hosting, compute, and managed PostgreSQL database | All Service data stored and processed in the platform | EU (europe-west, EEA) |
-| PostHog Inc. | Product and website analytics | Usage events, device/browser data, approximate location | EU Cloud (eu.posthog.com), EEA |
-| Configured AI providers (e.g. OpenAI, Anthropic) | Generating grounded answers | Prompts and retrieved context sent at answer time | Primarily United States **[confirm the providers you enable]** |
+| Google Cloud EMEA Ltd. (Google Cloud Platform) | Hosting, compute, managed PostgreSQL database, document storage, logs | All Service data stored and processed in the platform | EU stack: `europe-west1`, Belgium. US stack: `us-central1`, Iowa, United States. Logs of both: Cloud Logging's `global` location |
+| OpenAI **[confirm contracting entity]** | Models for answers, query rewriting, reranking, summaries, and document embeddings | Prompts, conversation text, retrieved context, and document text | OpenAI's global API (primarily United States) |
+| Resend **[confirm contracting entity]** | Sending email: sign-in verification, password resets, invitations, contact requests, and routine notices | Recipient addresses and message content | United States |
+| PostHog Inc. | Error reports and application logs | Error messages, stack traces, identifiers, counts, and outcomes | EU Cloud (`eu.i.posthog.com`), EEA |
+| Stripe **[confirm contracting entity]** | Payments for paid plans and top-ups | Billing email, organization id, name, address, tax id, and payment details entered at checkout | United States |
 
-We update this list when sub-processors change. We do not currently use a payment
-processor, because Radioso Cloud does not yet sell subscriptions online; one will
-be added here before paid online billing launches.
+Some features send data to a provider under **your own** account when you connect
+them: your own AI provider key, ElevenLabs for voice, Slack, WhatsApp, and
+webhooks or external MCP servers you configure. Those providers process the data
+under your agreement with them and are not our sub-processors.
+
+We give at least 30 days' notice by email before adding or replacing a
+sub-processor, as the Data Processing Agreement describes.
 
 ---
 
 ## 7. International transfers
 
-Radioso Cloud is hosted on Google Cloud Platform in an EU region (europe-west,
-within the EEA), and our analytics (PostHog) run on EU Cloud. The main transfer
-outside the EEA is when prompts and retrieved context are sent to AI providers
-(such as OpenAI and Anthropic), which primarily process in the United States.
-Where we transfer personal data outside the EEA, UK, or Switzerland, we rely on a
-lawful transfer mechanism such as the EU Standard Contractual Clauses and the UK
+Radioso Cloud is hosted on Google Cloud Platform in two regions. The EU stack runs
+in `europe-west1` (Belgium, within the EEA); the US stack runs in `us-central1`
+(Iowa, United States), so data held on the US stack is stored outside the EEA.
+Our error reporting (PostHog) runs on EU Cloud. On both stacks, personal data
+leaves the EEA when prompts and retrieved context are sent to OpenAI's global
+API, when Resend delivers email, and when Stripe processes payments, all of
+which process in the United States. Where we transfer personal data outside the
+EEA, UK, or Switzerland, we rely on a lawful transfer mechanism such as the EU Standard Contractual Clauses and the UK
 Addendum, together with supplementary measures where needed. Copies are available
 on request at the privacy contact above.
 
@@ -203,14 +230,21 @@ on request at the privacy contact above.
 
 We keep personal data only as long as needed for the purposes above:
 
-- **Account data** — for the life of the account, then deleted or anonymized
-  within **30 days** after closure.
+- **Account data** — for the life of the organization. Deleting the organization
+  deletes it, with its workspaces, at once. A person's sign-in account (email
+  address, display name, and password hash) is separate from any organization;
+  **[confirm how and when sign-in accounts are deleted — there is no self-serve
+  route today]**.
 - **Ingested content and conversations (Cloud)** — for as long as the workspace
-  keeps them, or until you delete them; deletions propagate to derived chunks and
-  vectors. Backups are purged within **35 days** on our standard backup cycle.
-- **Operational logs** — up to **90 days**.
-- **Audit and security events** — up to **12 months**, because they support
-  security investigations and abuse detection.
+  keeps them, until you delete them, or until the workspace's retention window
+  erases them; deletions propagate to derived chunks and vectors. **[Confirm
+  before publishing: deleting a workspace or an organization leaves its uploaded
+  files in document storage.]** Database backups keep deleted data until they
+  age out: we keep the **7** most recent daily backups.
+- **Operational logs** — **30 days**.
+- **Audit and security events** — **[set a maximum period; no automatic expiry
+  applies today]**. They carry identifiers and outcomes, and outlive the deletion
+  of the organization they belong to.
 - **Billing and accounting records** — retained for **7 years**, as required by
   Estonian accounting law.
 
@@ -221,10 +255,22 @@ For self-hosted deployments, retention is controlled by the operator.
 ## 9. Security
 
 We use technical and organizational measures appropriate to the risk, including
-encryption in transit, access controls, audit logging, and least-privilege
-operational practices. PostgreSQL is the system of record; application state,
-documents, chunks, vectors, settings, sessions, and audit events are stored there.
-No system is perfectly secure, so we cannot guarantee absolute security.
+encryption in transit, encryption at rest, access controls, audit logging, and
+least-privilege operational practices. PostgreSQL is the system of record;
+application state, documents, chunks, vectors, settings, sessions, and audit
+events are stored there.
+
+- **In transit:** the Service is reachable over HTTPS only, calls AI providers
+  and other outside services over HTTPS, and connects to its database over TLS.
+  The database has a private IP address only.
+- **At rest:** Google Cloud encrypts the database, its backups, and document
+  storage with Google-managed AES-256 keys. Credentials you store in the
+  Service, such as API keys and connector tokens, are additionally encrypted by
+  the application with AES-256-GCM. Passwords are stored as bcrypt hashes.
+
+Annex 2 of the [Data Processing Agreement](./data-processing-agreement.md)
+describes these measures in full. No system is perfectly secure, so we cannot
+guarantee absolute security.
 
 ---
 

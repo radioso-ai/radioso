@@ -222,6 +222,8 @@ module.exports = {
           "^src/app/server/(dependencies|dependencyBuilders|types)\\.ts$",
           "^src/app/server/builders/",
           "^src/app/composition/defaultComposition\\.ts$",
+          "^src/app/composition/workspaceDeletion\\.ts$",
+          "^src/app/cli/",
         ],
       },
       to: {

@@ -41,6 +41,11 @@ composition calls them and assembles the result.
   route both run it. A module whose rows need their own fixed window registers
   its rule here; a rule whose own removal needs a record beyond the sweep's row
   count implements the rule's optional `onRunComplete`.
+- `workspaceDeletion.ts`: what deleting a workspace, or an organization with
+  its workspaces, does beyond the cascade. Inside the deletion's transaction it
+  runs the conversation erasers and hands each workspace's stored files to the
+  `documents.workspace_storage_purge` background job; after the commit it wakes
+  the worker. `PersonalCredentialLifecycleRepository` runs both hooks.
 - `conversationLockOrder.ts`: the conversation lock protocol every unit of work
   touching a conversation's ownership, held replies or mailbox policy follows,
   and the bounded deadlock retry for the units that can still meet one. Read it

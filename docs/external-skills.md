@@ -36,12 +36,18 @@ that talk to this agent.
     [Connecting an OAuth server](#connecting-an-oauth-server) below.
 
 The access token is **write-only**. It is encrypted at rest and never returned by
-the API or shown again. To replace it, edit the connection and enter a new token.
+the API or shown again. To replace it, choose **Replace token** on the connection
+and paste the new one.
 
 Choose **Test connection** on a saved connection to authenticate with the server
 and list its available tools. The result shows a tool count or an error beside
 that connection. The test does not invoke any tools. **Credentials saved** means
 the credential is stored; use the test to check that the connection works.
+
+When the server turns the token down, for example because it was rotated or
+revoked on the server's side, the test and the skill form both say so and the
+connection is marked **Needs re-auth**. Replace the token to bring it back. Skills
+keep their binding to the connection, so nothing else needs to change.
 
 Connecting requires the `CONNECTOR_ENCRYPTION_KEY` environment variable to be set,
 since credentials are encrypted with it. Without it, creating a connection that

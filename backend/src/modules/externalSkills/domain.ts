@@ -36,6 +36,22 @@ export type McpAuthMethod = (typeof mcpAuthMethods)[number];
 export const mcpConnectionStatuses = ["unconfigured", "authorized", "needs_reauth", "error"] as const;
 export type McpConnectionStatus = (typeof mcpConnectionStatuses)[number];
 
+/** The MCP server refused the credentials the connection presented (HTTP 401/403). */
+export class McpCredentialsRejectedError extends Error {
+  constructor(readonly status: number) {
+    super(`MCP server rejected the connection's credentials (HTTP ${status})`);
+    this.name = "McpCredentialsRejectedError";
+  }
+}
+
+/** The MCP server could not complete a request: it timed out or answered with a non-auth HTTP failure. */
+export class McpServerUnavailableError extends Error {
+  constructor() {
+    super("MCP server did not complete the request");
+    this.name = "McpServerUnavailableError";
+  }
+}
+
 // Skill names are the routine `@mention` identifiers: lower-case, snake_case.
 const skillNamePattern = /^[a-z][a-z0-9_]*$/u;
 // Tool input keys and named outcomes follow a permissive identifier shape.

@@ -156,6 +156,9 @@ export const registerExternalSkillsPaths = (
       200: { description: "Discovered tools", content: json(DiscoveredToolsSchema) },
       401: errorResponse("Authentication required"),
       404: errorResponse("Connection not found"),
+      409: errorResponse("The MCP server rejected the connection's credentials; the connection now needs re-authorization or a new access token"),
+      502: errorResponse("The MCP server did not complete tool discovery"),
+      503: errorResponse("The OAuth provider is temporarily unavailable"),
     },
   });
 

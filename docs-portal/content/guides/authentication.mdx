@@ -1,7 +1,7 @@
 ---
 title: "Authentication"
 description: "Session, workspace automation, Operator MCP, agent chat, public-chat, and Enterprise embed access patterns in Radioso."
-last_updated: 2026-10-24
+last_updated: 2026-10-25
 ---
 
 import { Steps } from 'nextra/components'
@@ -91,7 +91,7 @@ The API access card shows safe grant metadata—client, workspace, creation time
 
 ## Agent chat credentials
 
-Use a REST-audience agent credential for `POST /api/v1/agents/{agentId}/chat`, or an MCP-audience credential for the standalone MCP server's `ask_agent` tool. Both are bound to exactly one agent, require an expiry, and carry no `member` or `admin` role.
+Use a REST-audience agent credential for `POST /api/v1/agents/{agentId}/chat`, or an MCP-audience credential for the standalone MCP server's `ask_agent` tool. Both are bound to exactly one agent and carry no `member` or `admin` role. Each keeps working until you rotate or revoke it, or until the expiry date you gave it.
 
 A signed-in user with agent-manage permission issues, rotates, or revokes these credentials from the agent's **Channels** page. The plaintext secret is shown once and stored only as a hash. Personal tokens and service-account credentials are not accepted for agent chat, and agent credentials cannot call workspace-administration APIs. Operator-minted agent credentials are static bearers; Radioso does not require OAuth for them.
 

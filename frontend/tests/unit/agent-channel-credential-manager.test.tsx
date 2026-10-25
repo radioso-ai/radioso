@@ -331,16 +331,30 @@ describe('AgentChannelCredentialManager', () => {
     expect(document.body.textContent).not.toContain('one-time-secret')
   })
 
-  it('sends the trimmed label and an expiry instant to the issue endpoint', async () => {
+  it('issues a credential that never expires unless the operator picks a date', async () => {
     await act(async () => {
       root.render(<AgentChannelCredentialManager agentId="agent-1" audience="rest" />)
     })
     await create('  Production chat client  ')
 
-    expect(apiMocks.issue).toHaveBeenCalledWith('agent-1', expect.objectContaining({
+    expect(apiMocks.issue).toHaveBeenCalledWith('agent-1', {
       audience: 'rest',
       label: 'Production chat client',
-    }))
+      expiresAt: null,
+    })
+  })
+
+  it('sends an expiry instant when the operator picks a date', async () => {
+    await act(async () => {
+      root.render(<AgentChannelCredentialManager agentId="agent-1" audience="rest" />)
+    })
+    const expiry = container.querySelector<HTMLSelectElement>('#rest-credential-expiry')
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')?.set?.call(expiry, 'date')
+      expiry?.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    await create('Production chat client')
+
     const [, payload] = apiMocks.issue.mock.calls[0] as [string, { expiresAt: string }]
     expect(new Date(payload.expiresAt).getTime()).toBeGreaterThan(Date.now())
   })

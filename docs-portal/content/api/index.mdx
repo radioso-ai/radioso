@@ -1,7 +1,7 @@
 ---
 title: "API overview"
 description: "How the Radioso API is organized, which auth mode to use, and where each workflow lives."
-last_updated: 2026-09-01
+last_updated: 2026-10-25
 ---
 
 # API overview
@@ -10,7 +10,7 @@ Call the Radioso API to create workspaces, upload documents, and talk to a confi
 
 ## Get an agent credential and ask a question
 
-Sign in to the dashboard, open the agent's **Channels → API** card, and create a REST credential with a label and expiry. Save the one-time secret, then:
+Sign in to the dashboard, open the agent's **Channels → API** card, and create a REST credential with a label (add an expiry date if it should stop working on its own). Save the one-time secret, then:
 
 ```bash
 curl -sS -X POST https://api.radioso.ai/api/v1/agents/<agent-id>/chat \

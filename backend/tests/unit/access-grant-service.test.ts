@@ -129,7 +129,22 @@ describe("AccessGrantService", () => {
     expect(second.revokedAt?.getTime()).toBe(first.revokedAt?.getTime());
   });
 
-  it("requires expiry for newly issued agent channel credentials", async () => {
+  it("issues an agent channel credential that never expires when no expiry is given", async () => {
+    const { service } = createService();
+
+    const issued = await service.issueGrant({
+      agentId: randomUUID(),
+      workspaceId: randomUUID(),
+      principalKind: "agent-api",
+      channel: "mcp-converse",
+      originConstraint: { mode: "allow-all", origins: [] },
+    });
+
+    expect(issued.grant.expiresAt).toBeNull();
+    await expect(service.resolveAgentChannelGrant(issued.token, "mcp-converse")).resolves.toMatchObject({ id: issued.grant.id });
+  });
+
+  it("rejects an agent channel credential expiry that is already past", async () => {
     const { service } = createService();
 
     await expect(service.issueGrant({
@@ -138,6 +153,7 @@ describe("AccessGrantService", () => {
       principalKind: "agent-api",
       channel: "agent-api",
       originConstraint: { mode: "allow-all", origins: [] },
+      expiresAt: new Date(Date.now() - 60_000),
     })).rejects.toMatchObject({ statusCode: 400 });
   });
 
@@ -242,6 +258,36 @@ describe("AccessGrantService", () => {
         actor: { kind: "user", id: "user-1" },
         audience: "mcp",
       }),
+    }));
+  });
+
+  it("records the issued expiry, or its absence, on the lifecycle audit event", async () => {
+    const repository = new InMemoryAccessGrantRepository();
+    const auditService = { record: vi.fn().mockResolvedValue(undefined), logRecorded: vi.fn() };
+    const service = new AccessGrantService({
+      repository,
+      lifecycleUnitOfWork: new InMemoryAccessGrantLifecycleUnitOfWork(repository),
+      originMatcher: new DefaultOriginMatcher(),
+      workspaceTokenSecret: "0123456789abcdef0123456789abcdef",
+      auditService,
+    });
+    const common = {
+      agentId: "agent-1",
+      workspaceId: "workspace-1",
+      principalKind: "agent-api" as const,
+      channel: "mcp-converse" as const,
+      originConstraint: { mode: "allow-all" as const, origins: [] as [] },
+    };
+    const expiresAt = futureExpiry();
+
+    await service.issueGrant(common);
+    await service.issueGrant({ ...common, expiresAt });
+
+    expect(auditService.logRecorded).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      metadata: expect.objectContaining({ expiresAt: null }),
+    }));
+    expect(auditService.logRecorded).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      metadata: expect.objectContaining({ expiresAt: expiresAt.toISOString() }),
     }));
   });
 

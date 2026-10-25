@@ -208,11 +208,13 @@ import type {
 } from "../../src/modules/settings/contracts/services.js";
 import { AuditService } from "../../src/modules/audit/services/auditService.js";
 import { requestAuditMetadata } from "../../src/modules/audit/requestAuditContext.js";
-import type {
-  DocumentStorageDeleteInput,
-  DocumentStoragePort,
-  DocumentStorageReadInput,
-  DocumentStorageUploadInput,
+import {
+  WORKSPACE_STORAGE_ROOT,
+  workspaceStoragePrefix,
+  type DocumentStorageAdapter,
+  type DocumentStorageDeleteInput,
+  type DocumentStorageReadInput,
+  type DocumentStorageUploadInput,
 } from "../../src/modules/documents/contracts/storage.js";
 import { createWorkspacePublicRouteKey } from "../../src/modules/workspace/domain/publicRouteKey.js";
 import type { CutReplyStore, CutReplyStoreInput } from "../../src/modules/chat/services/chatTurnLifecycle.js";
@@ -3712,17 +3714,19 @@ const collectMetadataPaths = (
   return paths;
 };
 
-export class InMemoryDocumentStorage implements DocumentStoragePort {
-  readonly objects = new Map<string, { buffer: Buffer; generation: string; sizeBytes: number }>();
+export class InMemoryDocumentStorage implements DocumentStorageAdapter {
+  /** An object with no `writtenAt` counts as written now, as the port treats an unknown write time. */
+  readonly objects = new Map<string, { buffer: Buffer; generation: string; sizeBytes: number; writtenAt?: Date }>();
   deleteFailures = new Set<string>();
 
   async upload(input: DocumentStorageUploadInput) {
-    const objectPath = `workspaces/${input.workspaceId}/documents/${input.documentId}`;
+    const objectPath = `${workspaceStoragePrefix(input.workspaceId)}documents/${input.documentId}`;
     const generation = `${this.objects.size + 1}`;
     this.objects.set(objectPath, {
       buffer: Buffer.from(input.buffer),
       generation,
       sizeBytes: input.buffer.length,
+      writtenAt: new Date(),
     });
 
     return {
@@ -3748,6 +3752,51 @@ export class InMemoryDocumentStorage implements DocumentStoragePort {
     }
 
     this.objects.delete(input.objectPath);
+  }
+
+  /**
+   * Places an object at any path, as an older layout or a stray write would have left it, written
+   * long ago unless `writtenAt` says otherwise.
+   */
+  put(objectPath: string, options: { content?: string; writtenAt?: Date } = {}): void {
+    const content = options.content ?? "stored";
+    this.objects.set(objectPath, {
+      buffer: Buffer.from(content),
+      generation: `${this.objects.size + 1}`,
+      sizeBytes: Buffer.byteLength(content),
+      writtenAt: options.writtenAt ?? new Date(0),
+    });
+  }
+
+  async summarizeWorkspaceObjects(input: { workspaceId: string }) {
+    const prefix = workspaceStoragePrefix(input.workspaceId);
+    const written = [...this.objects.entries()]
+      .filter(([objectPath]) => objectPath.startsWith(prefix))
+      .map(([, object]) => object.writtenAt?.getTime() ?? Date.now());
+    return {
+      objectCount: written.length,
+      newestObjectAt: written.length === 0 ? null : new Date(Math.max(...written)),
+    };
+  }
+
+  async listWorkspaceObjects(input: { workspaceId: string; limit: number }): Promise<DocumentStorageDeleteInput[]> {
+    const prefix = workspaceStoragePrefix(input.workspaceId);
+    return [...this.objects.keys()]
+      .filter((objectPath) => objectPath.startsWith(prefix))
+      .sort()
+      .slice(0, input.limit)
+      .map((objectPath) => ({ bucket: "test-document-imports", objectPath, generation: null }));
+  }
+
+  async listStoredWorkspaces(input: { cursor: string | null; limit: number }) {
+    const workspaceIds = [...new Set([...this.objects.keys()]
+      .filter((objectPath) => objectPath.startsWith(`${WORKSPACE_STORAGE_ROOT}/`))
+      .map((objectPath) => objectPath.split("/")[1])
+      .filter((workspaceId): workspaceId is string => Boolean(workspaceId)))]
+      .sort()
+      .filter((workspaceId) => input.cursor === null || workspaceId > input.cursor);
+    const page = workspaceIds.slice(0, input.limit);
+    return { workspaceIds: page, nextCursor: workspaceIds.length > page.length ? page.at(-1) ?? null : null };
   }
 }
 

@@ -59,6 +59,7 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
   const loadVersion = useRef(0)
   const scopeVersion = useRef(0)
   const [testResults, setTestResults] = useState<Record<string, ConnectionTestResult>>({})
+  const [tokenReplacement, setTokenReplacement] = useState<{ connectionId: string; token: string } | null>(null)
 
   const load = useCallback(async () => {
     const version = ++loadVersion.current
@@ -160,6 +161,22 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
     }
   }
 
+  const replaceAccessToken = async (connectionId: string, token: string) => {
+    setBusyAction(`replace-token:${connectionId}`)
+    setError(null)
+    try {
+      await externalSkillsApi.updateConnection(agentId, connectionId, { accessToken: token })
+      setTokenReplacement(null)
+      // A test result from the old token no longer describes this connection.
+      setTestResults((current) => Object.fromEntries(Object.entries(current).filter(([id]) => id !== connectionId)))
+      await load()
+    } catch (replaceError) {
+      setError(getApiErrorMessage(replaceError, 'Failed to replace the access token.'))
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
   const deleteConnection = async (connectionId: string) => {
     setBusyAction(`delete:${connectionId}`)
     setError(null)
@@ -234,6 +251,19 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
                       {connection.status === 'needs_reauth' ? 'Re-authorize' : 'Authorize'}
                     </Button>
                   ) : null}
+                  {connection.authMethod === 'access_token' ? (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      aria-label={`Replace token for ${connection.displayName}`}
+                      onClick={() => setTokenReplacement({ connectionId: connection.id, token: '' })}
+                      icon={<KeyRound />}
+                      disabled={testing || busyAction !== null}
+                    >
+                      Replace token
+                    </Button>
+                  ) : null}
                   <Button
                     type="button"
                     variant="ghost"
@@ -246,6 +276,32 @@ export function McpConnectionsSection({ agentId }: { agentId: string }) {
                   </Button>
                 </div>
               </div>
+              {tokenReplacement?.connectionId === connection.id ? (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input
+                    type="password"
+                    aria-label={`New access token for ${connection.displayName}`}
+                    placeholder="New access token"
+                    className="max-w-sm"
+                    value={tokenReplacement.token}
+                    onChange={(event) => setTokenReplacement({ connectionId: connection.id, token: event.target.value })}
+                    autoFocus
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    aria-label={`Save token for ${connection.displayName}`}
+                    onClick={() => void replaceAccessToken(connection.id, tokenReplacement.token.trim())}
+                    disabled={!tokenReplacement.token.trim()}
+                    loading={busyAction === `replace-token:${connection.id}`}
+                  >
+                    Save token
+                  </Button>
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setTokenReplacement(null)}>
+                    Cancel
+                  </Button>
+                </div>
+              ) : null}
               {result?.status === 'success' ? (
                 <p role="status" className="text-sm text-emerald-600 dark:text-emerald-400">
                   Connected · {result.toolCount} {result.toolCount === 1 ? 'tool' : 'tools'} found

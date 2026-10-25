@@ -118,7 +118,7 @@ function McpConnectedClients({
   // to the generic configuration block.
   const [connectSetup, setConnectSetup] = useState<McpClientSetup | null>(null)
 
-  const connect = async ({ setup, label, expiresAt }: { setup: McpClientSetup; label: string; expiresAt: string }) => {
+  const connect = async ({ setup, label, expiresAt }: { setup: McpClientSetup; label: string; expiresAt: string | null }) => {
     setConnectSetup(setup)
     const issued = await engine.issue({ label, expiresAt })
     if (issued) setIsPickerOpen(false)
@@ -187,6 +187,7 @@ function McpConnectedClients({
           title={connectSetup ? `Finish connecting — ${connectSetup.name}` : 'Credential issued'}
           acknowledgeLabel={connectSetup ? 'Config pasted — the secret won’t be shown again.' : undefined}
           copyAriaLabel="Copy MCP credential secret"
+          className="sm:max-w-2xl"
           additionalContent={<ClientConfigContent setup={issuedSetup} mcpUrl={mcpUrl} secret={engine.issued.secret} />}
           error={engine.error}
           onDiscard={async () => {

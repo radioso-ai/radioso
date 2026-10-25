@@ -1858,6 +1858,8 @@ export interface UsageEvents {
   agent_id: string | null;
   cached_input_tokens: Int8 | null;
   conversation_id: string | null;
+  copilot_conversation_id: string | null;
+  copilot_message_id: string | null;
   created_at: Generated<Timestamp>;
   document_id: string | null;
   document_revision: number | null;

@@ -202,6 +202,8 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
           agent_id: event.agentId ?? null,
           conversation_id: event.conversationId ?? null,
           message_id: messageId,
+          copilot_conversation_id: event.copilotConversationId ?? null,
+          copilot_message_id: event.copilotMessageId ?? null,
           surface: event.surface,
           operation: event.operation,
           provider: event.provider,

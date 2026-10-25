@@ -770,7 +770,7 @@ export class OperatorCopilotService {
     const proposals: CopilotProposalCard[] = [];
     try {
       const priorTranscript = await this.buildPriorTranscript(conversation.id);
-      await this.deps.repository.createMessage({ conversationId: conversation.id, role: "operator", content: input.message });
+      const operatorMessage = await this.deps.repository.createMessage({ conversationId: conversation.id, role: "operator", content: input.message });
       await this.audit(input, {
         accountId: input.accountId,
         workspaceId: input.workspaceId,
@@ -786,6 +786,11 @@ export class OperatorCopilotService {
           userMessage: buildCopilotTurnInput(input.pageContext, priorTranscript, input.message),
           usageContext: {
             workspaceId: input.workspaceId,
+            // Ray's own conversation and this turn's operator message -- never conversationId or
+            // messageId, which are foreign-keyed to the assistant's conversations/messages and must
+            // never hold a Ray id (see durableUsageEventRecorder.ts).
+            copilotConversationId: conversation.id,
+            copilotMessageId: operatorMessage.id,
             requestId: turnId,
             surface: "operator_copilot",
             attemptKey: "copilot_turn",

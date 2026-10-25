@@ -61,6 +61,15 @@ The recorder can also store `agent_id` when the calling product flow knows the
 agent. It complements workspace, conversation, message, document, and job
 lineage; it does not replace them.
 
+Ray's own operator-copilot turns carry their conversation and per-turn message
+lineage on a dedicated pair of columns, `copilot_conversation_id` and
+`copilot_message_id`, foreign-keyed to `copilot_conversations` and
+`copilot_messages`. These are never the same columns as `conversation_id` and
+`message_id` above, which are foreign-keyed to the assistant's `conversations`
+and `messages` and must never hold a Ray id. Both pairs are independently
+`SET NULL` on delete: Ray's own retention sweep and conversation erasure each
+remove only their own link, never the ledger row.
+
 ## Current Surfaces And Operations
 
 | Surface | Operation | Caller | Lineage |
@@ -100,7 +109,7 @@ lineage; it does not replace them.
 | `agent_wizard` | `analyze_website` | Agent Wizard website analysis | workspace, analysis request |
 | `agents` | `draft_directive` | Drafting a directive from an operator's coaching input | workspace, agent, request |
 | `agents` | `directive_coherence` | Checking a proposed directive against the agent's existing directives | workspace, agent |
-| `operator_copilot` | `agent_step` | Ray's own model calls: turn planning, each tool-loop step, and the closing answer | account when available, workspace, request |
+| `operator_copilot` | `agent_step` | Ray's own model calls: turn planning, each tool-loop step, and the closing answer | account when available, workspace, Ray conversation and turn message, request |
 | `documents` | `embedding` | Document processing chunk embeddings | account when resolvable, workspace, document, revision, job |
 
 ## Detailed Usage Reporting

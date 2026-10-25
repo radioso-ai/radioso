@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 import { z } from "zod";
 
 import { AccountRepository } from "../../src/db/repositories/accountRepository.js";
@@ -24,32 +24,15 @@ import {
 } from "../../src/shared/agent-runtime/index.js";
 import { OperatorCopilotService } from "../../src/modules/operatorCopilot/public.js";
 import { NoopUsageLimitPolicy } from "../../src/shared/domain/usageLimitPolicy.js";
-import { runAllTestMigrations } from "../support/databaseMigrations.js";
+import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 // Proves the real route Ray's model calls take: AgenticCapabilityRunner -> DefaultAgentRuntime ->
 // TextRoutedToolCallingGateway -> ModelInferencePipelineService -> the real DurableUsageEventRecorder
 // against Postgres. Uses the real CopilotRepository too, not the in-memory fake: the usage ledger's
 // copilot_conversation_id/copilot_message_id are foreign-keyed to copilot_conversations/
 // copilot_messages, so a Ray conversation that never lands in Postgres would make every one of
-// these calls fail that foreign key. Gated on INTEGRATION_DATABASE_URL; skips when no database is
-// reachable.
-const integrationDatabaseUrl = process.env.INTEGRATION_DATABASE_URL;
-
-const canReachIntegrationDatabase = async (databaseUrl?: string): Promise<boolean> => {
-  if (!databaseUrl) return false;
-  const database = new Database(databaseUrl);
-  try {
-    await database.query("SELECT 1");
-    return true;
-  } catch {
-    return false;
-  } finally {
-    await database.close().catch(() => undefined);
-  }
-};
-
-const hasReachableIntegrationDatabase = await canReachIntegrationDatabase(integrationDatabaseUrl);
-const describeIfDatabase = hasReachableIntegrationDatabase ? describe : describe.skip;
+// these calls fail that foreign key.
+const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
 
 /** Scripted stand-in for the provider: answers in order, usage included, for assertions on what
  * each call's recorded usage looked like. */
@@ -88,18 +71,17 @@ const readerTool = (name: string, invoke: (input: unknown) => Promise<unknown>) 
 const workspaceRouteKeyResolver = { resolveWorkspaceKey: async () => "workspace" };
 const currentAuthorization = { hasAllPermissions: async () => true };
 
-describeIfDatabase("copilot (Ray) usage events against the real ledger", () => {
+describeIntegration("copilot (Ray) usage events against the real ledger", () => {
   let database: Database;
   let accountRepository: AccountRepository;
   let workspaceRepository: WorkspaceRepository;
   let copilotRepository: CopilotRepository;
 
   beforeAll(async () => {
-    database = new Database(integrationDatabaseUrl!);
+    database = new Database(integrationDatabaseUrl);
     accountRepository = new AccountRepository(database.kysely);
     workspaceRepository = new WorkspaceRepository(database.kysely);
     copilotRepository = new CopilotRepository(database.kysely);
-    await runAllTestMigrations(database);
   });
 
   afterAll(async () => {
@@ -307,5 +289,92 @@ describeIfDatabase("copilot (Ray) usage events against the real ledger", () => {
     expect(rows[0].surface).toBe("assistant");
     expect(Number(rows[0].input_tokens)).toBe(500);
     expect(Number(rows[0].cached_input_tokens)).toBe(384);
+  });
+
+  it("leaves cached_input_tokens null when the provider does not report it", async () => {
+    const { accountId, workspaceId } = await seedWorkspace();
+    const recorder = new DurableUsageEventRecorder(database.kysely);
+    const client = new ScriptedTextGenerationClient([
+      { text: "Here's the answer.", usage: { inputTokens: 500, outputTokens: 40, totalTokens: 540, quality: "actual" } },
+    ]);
+    const pipeline = new ModelInferencePipelineService(client, recorder);
+
+    await pipeline.complete({
+      operation: {
+        workspaceId,
+        accountId,
+        surface: "assistant",
+        operation: "answer",
+        attemptKey: `attempt:${randomUUID()}`,
+      },
+      prompt: "What are your hours?",
+      systemPrompt: "You are a helpful assistant.",
+    });
+
+    const rows = await database.query<{ cached_input_tokens: string | null }>(
+      `SELECT cached_input_tokens FROM usage_events WHERE workspace_id = $1 AND surface = 'assistant'`,
+      [workspaceId],
+    );
+    expect(rows).toHaveLength(1);
+    // Omitted, never coerced to zero: the provider simply did not report cache usage.
+    expect(rows[0].cached_input_tokens).toBeNull();
+  });
+
+  it("keeps a model call's spend when the Ray conversation is deleted mid-call", async () => {
+    // Simulates another tab, a direct API delete, or Ray's own retention sweep racing the call
+    // that is still recording against the conversation and message it was given: the scripted
+    // client deletes both from inside complete(), before the pipeline's own recordUsage ever
+    // attempts the insert. Exercised directly against ModelInferencePipelineService/
+    // DurableUsageEventRecorder -- the seam that owns this fallback -- rather than through a full
+    // OperatorCopilotService turn, whose own persistTerminal() would try to write a further
+    // message into the now-deleted conversation and fail for an unrelated reason.
+    const { workspaceId, operatorUserId } = await seedWorkspace();
+    const conversation = await copilotRepository.createConversation({ workspaceId, operatorUserId, title: "Deleted mid-call" });
+    const operatorMessage = await copilotRepository.createMessage({ conversationId: conversation.id, role: "operator", content: "What needs attention?" });
+    const recorder = new DurableUsageEventRecorder(database.kysely);
+
+    class ConversationDeletingClient implements TextGenerationClient {
+      readonly metadata: LlmProviderMetadata = { capability: "chat", provider: "openai", model: "gpt-ray-test" };
+      async complete(): Promise<TextGenerationResult> {
+        await database.query(`DELETE FROM copilot_conversations WHERE id = $1`, [conversation.id]);
+        return { text: "Two handoffs are waiting.", usage: { inputTokens: 100, outputTokens: 10, totalTokens: 110, quality: "actual" } };
+      }
+
+      stream(): TextGenerationStreamResult {
+        throw new Error("ConversationDeletingClient: stream() is not used by this test");
+      }
+    }
+    const pipeline = new ModelInferencePipelineService(new ConversationDeletingClient(), recorder);
+
+    await pipeline.complete({
+      operation: {
+        workspaceId,
+        // Ray never sets conversationId/requestId here, so without this the idempotency key would
+        // fall back to a fixed `request:none` for every run -- globally unique by key, not scoped
+        // to this workspace, so a prior run's row would already occupy it.
+        requestId: randomUUID(),
+        copilotConversationId: conversation.id,
+        copilotMessageId: operatorMessage.id,
+        surface: "operator_copilot",
+        operation: "agent_step",
+        attemptKey: "agent_step:0",
+      },
+      prompt: "What needs attention?",
+      systemPrompt: "You are Ray.",
+    });
+
+    const rows = await database.query<{
+      copilot_conversation_id: string | null;
+      copilot_message_id: string | null;
+      total_tokens: string;
+    }>(
+      `SELECT copilot_conversation_id, copilot_message_id, total_tokens FROM usage_events
+       WHERE workspace_id = $1 AND surface = 'operator_copilot'`,
+      [workspaceId],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0].copilot_conversation_id).toBeNull();
+    expect(rows[0].copilot_message_id).toBeNull();
+    expect(Number(rows[0].total_tokens)).toBe(110);
   });
 });

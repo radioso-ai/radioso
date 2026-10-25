@@ -143,6 +143,9 @@ export class OpenAISemanticRerankGateway implements RerankGateway {
             input_tokens?: number | null;
             output_tokens?: number | null;
             total_tokens?: number | null;
+            // The Responses API's cache-read count, distinct from the Chat Completions API's
+            // `prompt_tokens_details.cached_tokens` this adapter's siblings read.
+            input_tokens_details?: { cached_tokens?: number | null } | null;
           } | null;
         }>;
       };
@@ -292,6 +295,7 @@ export class OpenAISemanticRerankGateway implements RerankGateway {
       input_tokens?: number | null;
       output_tokens?: number | null;
       total_tokens?: number | null;
+      input_tokens_details?: { cached_tokens?: number | null } | null;
     };
     error?: unknown;
   }): Promise<void> {
@@ -309,12 +313,15 @@ export class OpenAISemanticRerankGateway implements RerankGateway {
       workspaceId: input.operation.workspaceId,
       conversationId: input.operation.conversationId ?? null,
       messageId: input.operation.messageId ?? null,
+      copilotConversationId: input.operation.copilotConversationId ?? null,
+      copilotMessageId: input.operation.copilotMessageId ?? null,
       surface: input.operation.surface,
       operation: input.operation.operation,
       provider: "openai",
       model: this.model,
       inputTokens,
       outputTokens,
+      cachedInputTokens: input.providerUsage?.input_tokens_details?.cached_tokens ?? null,
       totalTokens: input.providerUsage?.total_tokens ?? inputTokens + outputTokens,
       inputBytes,
       outputBytes,

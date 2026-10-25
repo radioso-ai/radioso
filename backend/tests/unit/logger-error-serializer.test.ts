@@ -88,6 +88,17 @@ describe("app logger error serializer", () => {
     expect(logged[1]).toMatchObject({ workspaceId: "workspace-1", err: { name: "Error" } });
   });
 
+  it("never lets pino fill a missing message from a non-Error err's own message", () => {
+    const { logger, lines } = captureLines();
+
+    // pino reads `obj.err.message` whenever `err` is truthy, whatever it is.
+    logger.error({ err: { message: `provider said: ${visitorWords}`, code: "ECONNRESET" } });
+
+    const [line] = lines();
+    expect(JSON.stringify(line)).not.toContain(visitorWords);
+    expect(line).toMatchObject({ msg: "object", err: { name: "object", code: "ECONNRESET" } });
+  });
+
   it("leaves a call's own message alone", () => {
     const { logger, lines } = captureLines();
 

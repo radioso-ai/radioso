@@ -121,4 +121,24 @@ describe("safeErrorFields", () => {
     expect(depthOf(safeErrorFields(cyclic))).toBeLessThanOrEqual(3);
     expect(JSON.stringify(safeErrorFields(chain))).not.toContain(visitorWords);
   });
+
+  it("never throws on a caught value whose properties throw when read", () => {
+    const hostile = new Error(visitorWords);
+    for (const property of ["cause", "code", "status", "name", "stack"]) {
+      Object.defineProperty(hostile, property, {
+        get: () => {
+          throw new Error(`getter for ${visitorWords}`);
+        },
+      });
+    }
+    const plain = Object.defineProperty({}, "cause", {
+      get: () => {
+        throw new Error("cause getter");
+      },
+    });
+
+    expect(() => safeErrorFields(hostile)).not.toThrow();
+    expect(safeErrorFields(hostile)).toEqual({ name: "Error" });
+    expect(safeErrorFields(plain)).toEqual({ name: "object" });
+  });
 });

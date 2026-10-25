@@ -19,6 +19,11 @@ import type { RequestHandler } from "express";
  */
 const MATCHED_ROUTE = Symbol("radioso.matchedRoute");
 
+// Every pattern recorded so far. Patterns are route definitions, so the set stays as small as the
+// route table; the cap only bounds it if something unexpected resolves into a pattern.
+const MAX_REMEMBERED_PATTERNS = 4096;
+const rememberedPatterns = new Set<string>();
+
 type RouteCarrier = { [MATCHED_ROUTE]?: string };
 
 const ROUTE_PARAMETER_PATTERN = /:(\w+)/gu;
@@ -68,7 +73,11 @@ export const createMatchedRouteRecorder = (): RequestHandler => (req, _res, next
     get: () => route,
     set: (value: unknown) => {
       route = value;
-      (req as RouteCarrier)[MATCHED_ROUTE] = patternOf(req, value);
+      const pattern = patternOf(req, value);
+      (req as RouteCarrier)[MATCHED_ROUTE] = pattern;
+      if (pattern && rememberedPatterns.size < MAX_REMEMBERED_PATTERNS) {
+        rememberedPatterns.add(pattern);
+      }
     },
   });
   next();
@@ -78,3 +87,10 @@ export const matchedRoutePattern = (req: object): string | undefined => {
   const pattern = (req as RouteCarrier)[MATCHED_ROUTE];
   return typeof pattern === "string" ? pattern : undefined;
 };
+
+/**
+ * Whether a string is a route pattern this process recorded a request matching, so a `route`
+ * field read off a log call's arguments can be trusted to be a pattern rather than a raw path
+ * (`logging/index.ts`).
+ */
+export const isRecordedRoutePattern = (value: string): boolean => rememberedPatterns.has(value);

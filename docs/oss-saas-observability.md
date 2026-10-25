@@ -427,11 +427,18 @@ OTEL_LOGS_MIN_LEVEL=info
 For PostHog, use the regional ingestion host for the project and append
 `/i/v1/logs`. The bearer token is the PostHog project token. Do not use a
 personal API key. The bridge applies `OTEL_LOGS_MIN_LEVEL` before records leave
-the process, and exports each record's fields by what their values look like: a
-logged error as its class, code, HTTP status, first cause and stack frames; any
-other field only when it holds a flag, a number, an id, a short lowercase code
-such as `rate_limited`, or, under `route`, a route pattern. Free text, a phone
-number or a nested object stays in the process, whatever key it was logged under.
+the process, and exports each record's fields by what their values look like. A
+logged error exports as its class, code, HTTP status, first cause and stack
+frames. Any other field exports when it holds a flag, a number, an id or a short
+lowercase code such as `rate_limited`, and a few named fields take one more
+shape: a class name under `errorType`, `errorName`, `errorClass` or `causeType`,
+an errno or SQLSTATE under `code` or `sqlState`, an HTTP method under `method`,
+a provider's opaque id under `wamid`, `eventId`, `teamId` or `channelId`, and,
+under `route`, only a route pattern a request actually matched.
+`error_recorded`'s `errorEvent` fields export as `errorEvent.<field>` through the
+same checks. A sentence, an email address, a phone number written as text, a raw
+path and any other nested object stay in the process. A bare number or a single
+lowercase word does pass, which is why a call site never logs one a person typed.
 
 The backend adds primitive OpenTelemetry correlation to debug turn traces when
 an active span exists:

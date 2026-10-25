@@ -9,27 +9,37 @@ import { emitPinoLogRecordForOpenTelemetry } from "./logging/index.js";
 import { matchedRoutePattern } from "./matchedRoute.js";
 import type { CorrelationFields } from "./telemetry/correlation.js";
 
-// pino fills a call's missing message from the error it was handed (`err.message`), which would
-// put the message back on the line the serializers below keep it off. A call that passes an error
-// and no message of its own is given the error's class as its message instead.
-const caughtValueOf = (first: unknown): unknown => {
+// pino fills a call's missing message from the value it was handed: an `Error` first argument's
+// `message`, or `obj.err.message` whenever `obj.err` is truthy, whatever it holds. That would put
+// the message back on the line the serializers below keep it off, so a call that passes a caught
+// value and no message of its own is given the value's class (`safeErrorFields`) instead. An
+// `Error` under `error` is treated the same way, so both caught-value keys read alike.
+type CaughtValue = { value: unknown } | undefined;
+
+const caughtValueOf = (first: unknown): CaughtValue => {
   if (first instanceof Error) {
-    return first;
+    return { value: first };
   }
   if (typeof first !== "object" || first === null) {
     return undefined;
   }
   const fields = first as Record<string, unknown>;
-  return fields.msg === undefined ? (fields.err ?? fields.error) : undefined;
+  if (fields.msg !== undefined) {
+    return undefined;
+  }
+  if (fields.err) {
+    return { value: fields.err };
+  }
+  return fields.error instanceof Error ? { value: fields.error } : undefined;
 };
 
 const withoutErrorMessageFill = (args: unknown[]): unknown[] => {
   const [first, second, ...rest] = args;
   const caught = caughtValueOf(first);
-  if (typeof second === "string" || !(caught instanceof Error)) {
+  if (typeof second === "string" || !caught) {
     return args;
   }
-  return [first, safeErrorFields(caught).name, ...(second === undefined ? rest : [second, ...rest])];
+  return [first, safeErrorFields(caught.value).name, ...(second === undefined ? rest : [second, ...rest])];
 };
 
 const loggerOptions = (level: string): pino.LoggerOptions => ({

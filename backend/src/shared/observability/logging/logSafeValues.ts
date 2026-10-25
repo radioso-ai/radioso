@@ -94,8 +94,29 @@ const safeStack = (stack: unknown): string | undefined => {
   return frames.length > 0 ? frames.join("\n") : undefined;
 };
 
-const statusOf = (fields: Record<string, unknown>): number | undefined =>
-  isHttpStatus(fields.status) ? fields.status : isHttpStatus(fields.statusCode) ? fields.statusCode : undefined;
+// A caught value's properties can be getters, and a getter can throw; a log call must not.
+const readProperty = (value: object, key: string): unknown => {
+  try {
+    return (value as Record<string, unknown>)[key];
+  } catch {
+    return undefined;
+  }
+};
+
+const statusOf = (value: object): number | undefined => {
+  const status = readProperty(value, "status");
+  const statusCode = readProperty(value, "statusCode");
+  return isHttpStatus(status) ? status : isHttpStatus(statusCode) ? statusCode : undefined;
+};
+
+const errorClassOf = (error: Error): string => {
+  const name = readProperty(error, "name");
+  if (typeof name === "string" && isClassName(name)) {
+    return name;
+  }
+  const constructorName = readProperty(readProperty(error, "constructor") ?? {}, "name");
+  return typeof constructorName === "string" && isClassName(constructorName) ? constructorName : "Error";
+};
 
 const describeCaught = (value: unknown, depth: number, seen: Set<object>): SafeErrorCause => {
   if (value === null) {
@@ -106,15 +127,14 @@ const describeCaught = (value: unknown, depth: number, seen: Set<object>): SafeE
   }
 
   seen.add(value);
-  const fields = value as Record<string, unknown>;
-  const name = value instanceof Error ? (isClassName(value.name) ? value.name : value.constructor.name) : "object";
-  const status = statusOf(fields);
-  const cause = fields.cause;
+  const code = readProperty(value, "code");
+  const status = statusOf(value);
+  const cause = readProperty(value, "cause");
   const followCause = depth < MAX_CAUSE_DEPTH && cause !== undefined && !(typeof cause === "object" && cause !== null && seen.has(cause));
 
   return {
-    name,
-    ...(isErrorCode(fields.code) ? { code: fields.code } : {}),
+    name: value instanceof Error ? errorClassOf(value) : "object",
+    ...(isErrorCode(code) ? { code } : {}),
     ...(status !== undefined ? { status } : {}),
     ...(followCause ? { cause: describeCaught(cause, depth + 1, seen) } : {}),
   };
@@ -133,7 +153,7 @@ const describeCaught = (value: unknown, depth: number, seen: Set<object>): SafeE
  * logged.
  */
 export const safeErrorFields = (error: unknown): SafeErrorFields => {
-  const stack = error instanceof Error ? safeStack(error.stack) : undefined;
+  const stack = error instanceof Error ? safeStack(readProperty(error, "stack")) : undefined;
   return {
     ...describeCaught(error, 0, new Set()),
     ...(stack ? { stack } : {}),
@@ -150,6 +170,22 @@ interface LogSafeMetadataKeys {
 // pino-http's request counter, which reaches correlation and metadata as a `requestId`.
 export const isRequestCounter = (value: string): boolean => /^\d{1,20}$/u.test(value);
 
+// Keys whose values name a class, or a class and its code (`AppError [document_not_found]`).
+const CLASS_NAME_KEYS = new Set(["errorType", "errorName", "errorClass", "causeType"]);
+
+// Keys whose values are an error code: an errno, a SQLSTATE, a lowercase code (`isErrorCode`).
+const ERROR_CODE_KEYS = new Set(["code", "sqlState"]);
+
+// Keys whose values are a provider's opaque id: a WhatsApp message id, a Stripe or Slack event id,
+// a Slack team or channel id. The only correlation a line has with the provider's own records.
+const PROVIDER_ID_KEYS = new Set(["wamid", "localWamid", "providerWamid", "outboundWamid", "eventId", "teamId", "channelId"]);
+
+// An opaque id: at least one letter (so never a bare phone number), then letters, digits and the
+// punctuation provider ids use, no spaces or `@`, at most 128 characters.
+const PROVIDER_ID_PATTERN = /^(?=[^A-Za-z]*[A-Za-z])[A-Za-z0-9][\w.:=+/-]{0,127}$/u;
+
+const HTTP_METHOD_PATTERN = /^[A-Z]{1,16}$/u;
+
 const isShapeSafeScalar = (key: string, value: unknown): value is LogSafeValue => {
   if (typeof value === "boolean") return true;
   if (typeof value === "number") return Number.isFinite(value);
@@ -158,17 +194,22 @@ const isShapeSafeScalar = (key: string, value: unknown): value is LogSafeValue =
     isUuid(value) ||
     isCode(value) ||
     (key === "requestId" && isRequestCounter(value)) ||
-    (key === "route" && isPathShape(value))
+    (key === "method" && HTTP_METHOD_PATTERN.test(value)) ||
+    (CLASS_NAME_KEYS.has(key) && (isClassName(value) || isErrorSummary(value))) ||
+    (ERROR_CODE_KEYS.has(key) && isErrorCode(value)) ||
+    (PROVIDER_ID_KEYS.has(key) && PROVIDER_ID_PATTERN.test(value))
   );
 };
 
 /**
- * The entries of a record whose value's shape alone rules out a person's words, under any key: a
- * flag, a finite number, an id, a lowercase code, a request counter under `requestId`, a route
- * path under `route`, or an array of those. Everything else is dropped, never redacted in place,
- * so a key nobody anticipated (a phone number under `waId`, a query under `rerankQuery`) can't
- * carry free text out. For records a log call site builds from server values; metadata that can
- * hold a visitor's own words under a code-shaped value (an audit event's) uses `logSafeMetadata`.
+ * The entries of a record whose value's shape alone rules out a person's words: under any key, a
+ * flag, a finite number, an id or a lowercase code; under the keys named for them, a request
+ * counter, an HTTP method, a class name or error summary, an error code, or a provider's opaque
+ * id; or an array of those. Everything else is dropped, never redacted in place, so a key nobody
+ * anticipated (a phone number under `waId`, a query under `rerankQuery`) can't carry a sentence,
+ * an email address or a phone number out. A single lowercase word or a bare number does pass. For
+ * records a log call site builds from server values; metadata that can hold a visitor's own words
+ * under a code-shaped value (an audit event's) uses `logSafeMetadata`.
  */
 export const shapeSafeFields = (record: Record<string, unknown>): Record<string, LogSafeValue | LogSafeValue[]> =>
   Object.fromEntries(

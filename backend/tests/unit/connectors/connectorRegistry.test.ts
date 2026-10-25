@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { ConfigFieldDefinition, ConnectorContext, ConnectorPlugin } from "@radioso/connector-api";
 import { ConnectorRegistry } from "../../../src/modules/connectors/services/connectorRegistry.js";
+import { createMatchedRouteRecorder, matchedRoutePattern } from "../../../src/shared/observability/matchedRoute.js";
 import {
   decryptField,
   encryptField,
@@ -192,6 +193,41 @@ describe("ConnectorRegistry", () => {
 
     await request(app).post("/api/connectors/scoped/workspace-1/webhook").expect(204);
     expect(mountHandler).toHaveBeenCalledTimes(1);
+  });
+
+  it("names a parameter mount by its parameter even when the plugin's router omits mergeParams", async () => {
+    const registry = new ConnectorRegistry();
+    const seen: { workspaceId?: string; route?: string } = {};
+    registry.register(createFakePlugin({
+      id: "plain",
+      initialize: async (context) => {
+        const router = Router();
+        router.post("/", (req: Request, res: Response) => {
+          seen.workspaceId = (req.params as { workspaceId?: string }).workspaceId;
+          seen.route = matchedRoutePattern(req);
+          res.status(204).end();
+        });
+        context.http.mount("/:workspaceId/webhook", router);
+      },
+    }));
+
+    await registry.initializeAll({
+      db: {} as any,
+      logger: { info: () => {}, error: () => {}, warn: () => {} },
+      chat: { answer: async () => ({ conversationId: "conversation-1", answer: "ok" }) } as any,
+      ingestion: {
+        ingest: async () => ({ documentId: "doc-1", status: "queued" }),
+        deleteByExternalId: async () => false,
+        ensureSource: async () => ({ id: "src-1" }),
+      },
+    });
+
+    const app = express();
+    app.use(createMatchedRouteRecorder());
+    app.use("/api/connectors", registry.getRouter());
+
+    await request(app).post("/api/connectors/plain/8509864081/webhook").expect(204);
+    expect(seen).toEqual({ workspaceId: "8509864081", route: "/api/connectors/plain/:workspaceId/webhook/" });
   });
 
   it("continues initializing other plugins if one fails", async () => {

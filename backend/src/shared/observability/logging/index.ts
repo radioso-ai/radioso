@@ -17,6 +17,7 @@ import {
 
 import type { AppLogger } from "../logger.js";
 import { safeTraceAttributes } from "../tracing/attributePolicy.js";
+import { isRecordedRoutePattern } from "../matchedRoute.js";
 import { safeErrorFields, shapeSafeFields } from "./logSafeValues.js";
 import type { RuntimeRole } from "../runtimeRole.js";
 
@@ -234,11 +235,26 @@ const errorAttributes = (prefix: string, caught: unknown): Record<string, string
   };
 };
 
+// A path-shaped string can still hold a token (`/api/v1/auth/invitations/<token>`), so `route`
+// exports only when it is a pattern a request was recorded matching (`matchedRoute.ts`).
+const exportableFields = (record: Record<string, unknown>): Record<string, unknown> => {
+  const { route, ...rest } = record;
+  return {
+    ...shapeSafeFields(rest),
+    ...(typeof route === "string" && isRecordedRoutePattern(route) ? { route } : {}),
+  };
+};
+
+// error_recorded's and audit_event's `errorEvent` is already an allow-listed record on the Cloud
+// Logging line; it exports one level down, as `errorEvent.<field>`, through the same checks.
+const NESTED_RECORD_KEYS = new Set(["errorEvent"]);
+
 // The OpenTelemetry bridge runs on the call's own arguments, before pino's serializers, so it
 // applies its own allow-list: caught values through `safeErrorFields`, everything else only when
-// its value's shape rules out free text (`shapeSafeFields`). Nested objects never export.
+// its value's shape rules out free text (`exportableFields`). Other nested objects never export.
 const attributesFromRecord = (record: Record<string, unknown>): Record<string, unknown> => {
   const errors: Record<string, string | number> = {};
+  const nested: Record<string, unknown> = {};
   const rest: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(record)) {
@@ -249,12 +265,16 @@ const attributesFromRecord = (record: Record<string, unknown>): Record<string, u
       Object.assign(errors, errorAttributes("error", value));
     } else if (value instanceof Error) {
       Object.assign(errors, errorAttributes(key, value));
+    } else if (NESTED_RECORD_KEYS.has(key) && isRecord(value)) {
+      for (const [field, fieldValue] of Object.entries(exportableFields(value))) {
+        nested[`${key}.${field}`] = fieldValue;
+      }
     } else {
       rest[key] = value;
     }
   }
 
-  return { ...shapeSafeFields(rest), ...errors };
+  return { ...exportableFields(rest), ...nested, ...errors };
 };
 
 const attributesFromArgs = (args: unknown[]): Record<string, unknown> => {

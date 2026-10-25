@@ -1,9 +1,12 @@
 import { randomUUID } from "node:crypto";
 
 import type { ReadableLogRecord, LogRecordExporter } from "@opentelemetry/sdk-logs";
+import express from "express";
+import request from "supertest";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createLogger } from "../../src/shared/observability/logger.js";
+import { createHttpLogger, createLogger } from "../../src/shared/observability/logger.js";
+import { createMatchedRouteRecorder } from "../../src/shared/observability/matchedRoute.js";
 import {
   initializeOpenTelemetryLogging,
   shutdownOpenTelemetryLogging,
@@ -26,13 +29,14 @@ const initializeLogging = (
     error: vi.fn(),
     info: vi.fn(),
   },
+  minimumLevel: "info" | "warn" = "warn",
 ): void => {
   initializeOpenTelemetryLogging({
     enabled: true,
     environment: "test",
     logger,
     logExporter: exporter,
-    minimumLevel: "warn",
+    minimumLevel,
     otlpEndpoint: "http://localhost:4318/v1/logs",
     runtimeRole: "api",
     serviceName: "radioso-api",
@@ -54,14 +58,14 @@ describe("OpenTelemetry log bridge", () => {
 
     const logger = createLogger("debug");
     logger.info({ requestId: "req-ignored" }, "ignored info log");
-    logger.warn({ requestId: "req-1", route: "/api/v1/test" }, "warning log");
+    logger.warn({ requestId: "req-1", attempt: 1 }, "warning log");
 
     expect(exporter.records).toHaveLength(1);
     expect(exporter.records[0]?.body).toBe("warning log");
     expect(exporter.records[0]?.severityText).toBe("WARN");
     expect(exporter.records[0]?.attributes).toMatchObject({
       requestId: "req-1",
-      route: "/api/v1/test",
+      attempt: 1,
       "log.logger": "radioso-api",
       "log.pino_level": 40,
     });
@@ -107,7 +111,6 @@ describe("OpenTelemetry log bridge", () => {
       attempt: 2,
       retried: true,
       requestId: "42",
-      route: "/api/v1/auth/invitations/:token",
     }, "probe");
 
     expect(exporter.records).toHaveLength(1);
@@ -127,8 +130,107 @@ describe("OpenTelemetry log bridge", () => {
       attempt: 2,
       retried: true,
       requestId: "42",
-      route: "/api/v1/auth/invitations/:token",
     });
+  });
+
+  it("exports class names, SQLSTATE codes, HTTP methods and provider ids under the keys named for them", () => {
+    const exporter = new RecordingLogExporter();
+    initializeLogging(exporter);
+
+    const logger = createLogger("debug");
+    logger.warn({
+      errorType: "TypeError",
+      errorName: "AbortError",
+      errorClass: "AppError [document_not_found]",
+      causeType: "SyntaxError",
+      code: "57P01",
+      sqlState: "23505",
+      method: "POST",
+      wamid: "wamid.HBgLMTU1NTEyMzQ1NjcVAgASGBQzQUY0QkU1Q0Y2MDE5RTlGNzgA",
+      eventId: "evt_1Q2w3E4r5T6y7U8i",
+      teamId: "T0123ABCD",
+    }, "named keys");
+    logger.warn({
+      errorType: visitorWords,
+      code: "CONTACT JANE",
+      method: "post me",
+      wamid: "15551234567",
+      eventId: "jane@example.com",
+      teamId: `T ${visitorWords}`,
+    }, "named keys holding something else");
+
+    expect(exporter.records[0]?.attributes).toMatchObject({
+      errorType: "TypeError",
+      errorName: "AbortError",
+      errorClass: "AppError [document_not_found]",
+      causeType: "SyntaxError",
+      code: "57P01",
+      sqlState: "23505",
+      method: "POST",
+      wamid: "wamid.HBgLMTU1NTEyMzQ1NjcVAgASGBQzQUY0QkU1Q0Y2MDE5RTlGNzgA",
+      eventId: "evt_1Q2w3E4r5T6y7U8i",
+      teamId: "T0123ABCD",
+    });
+    const dropped = exporter.records[1]?.attributes ?? {};
+    for (const key of ["errorType", "code", "method", "wamid", "eventId", "teamId"]) {
+      expect(dropped).not.toHaveProperty(key);
+    }
+  });
+
+  it("exports a route only when it is a pattern a request matched, never a raw path", async () => {
+    const exporter = new RecordingLogExporter();
+    initializeLogging(exporter, { error: vi.fn(), info: vi.fn() }, "info");
+    const logger = createLogger("debug");
+    const app = express();
+    app.use(createMatchedRouteRecorder());
+    app.use(createHttpLogger(logger));
+    const router = express.Router();
+    router.get("/otel-probe/:probeToken", (_req, res) => {
+      res.status(200).end();
+    });
+    app.use("/api/v1/test", router);
+
+    await request(app).get("/api/v1/test/otel-probe/secret-probe-token").expect(200);
+    logger.warn({ route: "/api/v1/auth/invitations/secret-invite-token" }, "raw route");
+
+    const requestRecord = exporter.records.find((record) => record.body === "request completed");
+    expect(requestRecord?.attributes).toMatchObject({ route: "/api/v1/test/otel-probe/:probeToken" });
+    const rawRecord = exporter.records.find((record) => record.body === "raw route");
+    expect(rawRecord?.attributes).not.toHaveProperty("route");
+    expect(JSON.stringify(exporter.records.map((record) => record.attributes))).not.toContain("secret-");
+  });
+
+  it("exports error_recorded's allow-listed fields through the same shape checks", () => {
+    const exporter = new RecordingLogExporter();
+    initializeLogging(exporter);
+    const workspaceId = randomUUID();
+
+    const logger = createLogger("debug");
+    logger.error({
+      errorEvent: {
+        errorType: "chat.turn.failed",
+        severity: "error",
+        errorClass: "TypeError",
+        method: "GET",
+        requestId: "17",
+        workspaceId,
+        route: "/api/v1/auth/invitations/secret-invite-token",
+        detail: visitorWords,
+      },
+    }, "error_recorded");
+
+    const attributes = exporter.records[0]?.attributes ?? {};
+    expect(attributes).toMatchObject({
+      "errorEvent.errorType": "chat.turn.failed",
+      "errorEvent.severity": "error",
+      "errorEvent.errorClass": "TypeError",
+      "errorEvent.method": "GET",
+      "errorEvent.requestId": "17",
+      "errorEvent.workspaceId": workspaceId,
+    });
+    expect(attributes).not.toHaveProperty("errorEvent.route");
+    expect(JSON.stringify(attributes)).not.toContain("secret-invite-token");
+    expect(JSON.stringify(attributes)).not.toContain(visitorWords);
   });
 
   it("exports an error's status and its cause's class and code, never a message", () => {

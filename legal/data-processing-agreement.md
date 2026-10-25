@@ -144,8 +144,14 @@ Terms of Service.]
   issue #1601 is live on both stacks.]
 - **Access control.** Workspace data is visible only to that workspace's team,
   by role. Radioso's staff console has no access to workspace conversations.
-- **Logs and telemetry.** Application logs and telemetry carry ids, counts and
-  outcomes, never message content. Logs are kept for 30 days.
+- **Logs and telemetry.** Application log lines, and the copy exported to
+  Radioso's log tooling, carry ids, counts and coded outcomes, never message
+  content. Google Cloud Run's own request log records each request's URL, which
+  can include an access token in the path and the search term of a Radioso
+  staff member's account search. Logs are kept for 30 days. An error report can
+  carry the error's message, which may quote personal data; error reports are
+  kept in the audit log for 12 months and, where error tracking is enabled, are
+  also sent to PostHog.
 - **Backups.** Daily database backups, the 7 most recent kept.
 - **Erasure and retention.** Deleting a conversation or a visitor removes the
   data and every copy derived from it. Retention windows erase conversations
@@ -178,6 +184,11 @@ Each workspace uses the subprocessors of its region.
 
 Radioso's billing (Stripe) and product analytics (PostHog) handle data Radioso
 controls itself, as its Privacy Policy describes, and are outside this DPA.
+[Owner: both live stacks also send error reports to PostHog
+(`error_sinks = "audit,posthog"`), and an error report can carry an error's
+message quoting a workspace's personal data. Either list PostHog error tracking
+as a subprocessor in both tables above, with its region, or stop sending error
+reports to it.]
 
 Providers the Controller connects with its own account and key, such as its
 own OpenAI, Anthropic, Gemini or ElevenLabs account, are the Controller's own

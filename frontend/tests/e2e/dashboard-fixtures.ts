@@ -81,7 +81,7 @@ export type AgentChannelCredentialFixture = {
   prefix: string;
   status: "active" | "expired" | "revoked" | "disabled";
   createdAt: string;
-  expiresAt: string;
+  expiresAt: string | null;
   lastUsedAt: string | null;
   revokedAt: string | null;
 };
@@ -3024,7 +3024,7 @@ export const installDashboardApiMocks = async (
     }
 
     if (request.method() === "POST" && path === `/agents/${defaultAgentId}/channel-credentials`) {
-      const body = request.postDataJSON() as { audience: "mcp" | "rest"; label: string; expiresAt: string };
+      const body = request.postDataJSON() as { audience: "mcp" | "rest"; label: string; expiresAt: string | null };
       agentChannelCredentialRequests?.push({ method: "POST", path, body });
       const token = `radioso_${body.audience}_${nextAgentChannelCredentialIndex}_plaintext`;
       const credential: AgentChannelCredentialFixture = {

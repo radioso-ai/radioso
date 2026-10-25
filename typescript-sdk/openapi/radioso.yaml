@@ -3382,8 +3382,11 @@ components:
           type: string
           format: date-time
         expiresAt:
-          type: string
+          type:
+            - string
+            - "null"
           format: date-time
+          description: "When the credential stops working. `null` means it never expires: it works until it is rotated or revoked."
         lastUsedAt:
           type:
             - string
@@ -3417,12 +3420,14 @@ components:
           minLength: 1
           maxLength: 80
         expiresAt:
-          type: string
+          type:
+            - string
+            - "null"
           format: date-time
+          description: "A future instant when the credential stops working. Omit it, or send `null`, for a credential that never expires: it works until it is rotated or revoked."
       required:
         - audience
         - label
-        - expiresAt
       additionalProperties: false
     AgentChannelCredentialIssueResponse:
       type: object
@@ -25997,6 +26002,24 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Connection not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: The MCP server rejected the connection's credentials; the connection now needs re-authorization or a new access token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "502":
+          description: The MCP server did not complete tool discovery
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "503":
+          description: The OAuth provider is temporarily unavailable
           content:
             application/json:
               schema:

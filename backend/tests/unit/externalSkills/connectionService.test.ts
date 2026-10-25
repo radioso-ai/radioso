@@ -4,6 +4,7 @@ import {
   EncryptionNotConfiguredError,
   McpConnectionService,
 } from "../../../src/modules/externalSkills/services/mcpConnectionService.js";
+import { McpCredentialsRejectedError, McpServerUnavailableError } from "../../../src/modules/externalSkills/domain.js";
 import type { FetchLike } from "../../../src/modules/externalSkills/oauth/oauthClient.js";
 import type { ToolServiceFactory } from "../../../src/modules/externalSkills/executor/mcpSkillExecutor.js";
 import {
@@ -241,6 +242,50 @@ describe("McpConnectionService (unit)", () => {
     // A transient provider outage must not force the operator through re-authorization.
     const after = await service.get("agent-1", created.id);
     expect(after.status).toBe("authorized");
+  });
+
+  it("flags an access-token connection for re-auth and answers 409 when the MCP server rejects its token", async () => {
+    const service = new McpConnectionService({
+      repository: new InMemoryMcpConnectionRepository(),
+      toolServiceFactory: {
+        create: () => ({
+          listTools: () => Promise.reject(new McpCredentialsRejectedError(401)),
+        } as never),
+      },
+      encryptionKey,
+    });
+    const created = await service.create("agent-1", baseInput);
+
+    await expect(service.discoverTools("agent-1", created.id)).rejects.toMatchObject({
+      statusCode: 409,
+      code: "conflict",
+      message: expect.stringContaining("access token") as unknown,
+    });
+    expect((await service.get("agent-1", created.id)).status).toBe("needs_reauth");
+
+    // Replacing the token is the operator's way back.
+    await expect(service.update("agent-1", created.id, { accessToken: "fresh-token" })).resolves.toMatchObject({
+      status: "authorized",
+    });
+  });
+
+  it("answers 502 (not a 500) when the MCP server fails discovery, and leaves the connection authorized", async () => {
+    const service = new McpConnectionService({
+      repository: new InMemoryMcpConnectionRepository(),
+      toolServiceFactory: {
+        create: () => ({
+          listTools: () => Promise.reject(new McpServerUnavailableError()),
+        } as never),
+      },
+      encryptionKey,
+    });
+    const created = await service.create("agent-1", baseInput);
+
+    await expect(service.discoverTools("agent-1", created.id)).rejects.toMatchObject({
+      statusCode: 502,
+      code: "bad_gateway",
+    });
+    expect((await service.get("agent-1", created.id)).status).toBe("authorized");
   });
 
   it("never returns OAuth secrets in the connection summary", async () => {

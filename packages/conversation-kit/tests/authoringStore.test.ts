@@ -296,6 +296,7 @@ describe("file authoring store round-trips the full authoring contract", () => {
         { id: "slot_email", key: "email", type: "email", required: true, description: "Contact email" },
         { id: "slot_qty", key: "quantity", type: "number", required: false, mutable: true },
         { id: "slot_when", key: "when", type: "date", required: false },
+        { id: "slot_injury", key: "injury", type: "text", required: false, sensitivity: "sensitive" },
       ],
       steps: [
         { id: "start", kind: "chat", action: "Collect details." },

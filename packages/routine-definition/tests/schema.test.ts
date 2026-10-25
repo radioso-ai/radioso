@@ -17,6 +17,7 @@ import {
   routineInputBindingSchema,
   routineValidationCodes,
   routineSlotSchema,
+  routineSlotSensitivities,
   routineStepSchema,
   routineTerminalSchema,
   routineTransitionSchema,
@@ -228,6 +229,15 @@ describe("routine definition schemas", () => {
 
   it("rejects invalid slot keys", () => {
     expect(routineSlotSchema.safeParse({ ...validSlot, key: "bad-key" }).success).toBe(false);
+  });
+
+  it("keeps a slot's authored sensitivity and reads an absent one as unset, not defaulted", () => {
+    expect(routineSlotSchema.parse({ ...validSlot, sensitivity: "sensitive" }).sensitivity).toBe("sensitive");
+    expect(routineSlotSchema.parse({ ...validSlot, sensitivity: "normal" }).sensitivity).toBe("normal");
+    // Absent stays absent, so existing slots and published snapshots parse to the same shape.
+    expect("sensitivity" in routineSlotSchema.parse(validSlot)).toBe(false);
+    expect(routineSlotSchema.safeParse({ ...validSlot, sensitivity: "secret" }).success).toBe(false);
+    expect(routineSlotSensitivities).toEqual(["normal", "sensitive"]);
   });
 
   it("rejects approval steps without choices", () => {
@@ -509,6 +519,13 @@ describe("routineAdvisories", () => {
         { stableStepId: "end_handoff", kind: "handoff", operatorNotice: { replyToSlot: "guest_email" } },
         { stableStepId: "end_complete", kind: "complete", operatorNotice: { subject: null, intro: null, replyToSlot: "guest_email" } },
       ],
+    })).toEqual([]);
+  });
+
+  it("reports nothing when the routine's only email slot is sensitive, since it cannot be a reply-to", () => {
+    expect(routineAdvisories({
+      slots: [{ key: "guest_email", type: "email" as const, sensitivity: "sensitive" as const }],
+      terminals: [{ stableStepId: "end_handoff", kind: "handoff" }],
     })).toEqual([]);
   });
 

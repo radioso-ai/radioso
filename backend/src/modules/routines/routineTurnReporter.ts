@@ -1,6 +1,6 @@
 import type { Routine, RoutineState, RoutineStep } from "@radioso/conversation-contract";
 
-import { collectedSlotsForStep, isSlotCollectionStepSatisfied } from "./domain.js";
+import { collectedSlotsForStep, isSlotCollectionStepSatisfied, sensitiveSlotKeys } from "./domain.js";
 import { compiledRoutineToolName, type DirectInvocationOutcome } from "./exposure/directInvocationActivator.js";
 import type {
   RoutineInvocationReport,
@@ -136,6 +136,10 @@ export const createRoutineTurnReporter = (
     describeRoutineName: (routineId: string): string | null => {
       const routine = routinesById.get(routineId);
       return routine ? routineDisplayName(routine) : null;
+    },
+    sensitiveSlotKeysHeld: (state: RoutineState): string[] => {
+      const routine = routinesById.get(state.routineId);
+      return routine ? sensitiveSlotKeys(routine).filter((key) => hasVariable(state.variables, key)) : [];
     },
   };
 };

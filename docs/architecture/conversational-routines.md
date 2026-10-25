@@ -1,7 +1,7 @@
 ---
 title: "Conversational Routines"
 description: "The engine-level design of multi-turn flows with slots, steps, guards, terminals, activation ranking, and runtime slot extraction mechanics."
-last_updated: 2026-10-10
+last_updated: 2026-10-25
 ---
 
 # Conversational Routines
@@ -268,6 +268,29 @@ from any of them never reaches routine state, an action step's payload, or an
 unbound tool-step input. A routine with no declared slot schema has no list to
 check a key against, so every key it is given reaches state untouched — the
 built-in contact routine, authored with no typed slots, keeps capture this way.
+
+### A sensitive slot's value
+
+A slot the author marks `sensitivity: "sensitive"` (#1543) keeps its value in the
+routine's state, where steps, guards, and step instructions read it, and in the
+transcript. Every copy that leaves goes through one rule, `redactSensitiveValues`
+in `@radioso/conversation-contract`, which context variables share: the value
+reads as `[redacted]`.
+
+- The runner masks it in what it hands the host: an ending's `collected` (the
+  hand-off and operator notice), a completion export's `data`, an action step's
+  payload, and opted-in trace `slotValues`. `endedVariables`, the host's record
+  of the ended run, keeps it.
+- A tool step with no input bindings passes the routine's variables with the
+  value masked (`resolveUntypedSkillArguments`); a binding that names the slot
+  passes it, because its author named it. The runner tells the dispatcher which
+  slots are sensitive (`sensitiveSlotKeys`), so every executor gets the same
+  arguments.
+- The host marks both messages of a turn whose saved routine state holds a
+  sensitive value (`RoutineTurnReporter.sensitiveSlotKeysHeld`, written as
+  `metadata.sensitiveSlotKeys` in the turn's transaction). The rolling summary,
+  facet extraction, a notice's AI summary, and eval snapshot capture read a
+  marked message as withheld (`backend/src/shared/domain/sensitiveTranscript.ts`).
 
 ### When a step keeps being asked
 

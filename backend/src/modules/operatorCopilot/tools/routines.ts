@@ -260,7 +260,14 @@ const projectRoutineEditableElements = (routine: RoutineDefinition) => {
         }
       : null,
   })));
-  const fields = cappedEditableElements((routine.slots ?? []).map((slot) => ({ key: slot.key, type: slot.type, required: slot.required, description: locator(slot.description ?? null) })));
+  // `sensitivity` is shown even when normal, so a reader asked to mark a field sees where it stands.
+  const fields = cappedEditableElements((routine.slots ?? []).map((slot) => ({
+    key: slot.key,
+    type: slot.type,
+    required: slot.required,
+    description: locator(slot.description ?? null),
+    sensitivity: slot.sensitivity ?? "normal",
+  })));
   return {
     steps: steps.items,
     stepsTruncated: steps.truncated,
@@ -379,7 +386,7 @@ const routineExposureDescription = `Propose offering a routine to calling AI age
 // The tool transport renders a nested input object as the bare word "object", so the shape of
 // `changes` has to live in the description or the model invents one of its own. Shared by both
 // descriptor variants below so the two copies cannot drift out of step with the schema.
-const routineEditDescription = `Propose an edit to an existing routine's wording, name, trigger, or whether it is enabled. \`changes\` takes at least one of: \`name\` (string); \`enabled\` (boolean, takes the routine in or out of service without touching its wording); \`activation\` ({triggerDescription?, priority?, reentryMode?, coverageCriteria?: {coverage: [...], reasons?: [...]}}); \`steps\` ([{stableStepId, instruction}]); \`terminals\` ([{stableStepId, instruction?, operatorNotice?: {skillName?, replyToSlot?, includeAiSummary?}}], an ending's message and its operator notice, the email sent when the routine ends there, shown as \`operatorNotice\` on \`editable.endings\`; \`includeAiSummary\` asks for a background AI summary of details not collected in fields; \`skillName\` is a notify skill from \`operator_notice_destinations\`, null for the default destination; \`replyToSlot\` is the key of an email field in \`editable.fields\` that replies go to, null for none, and only ever the field the operator names since a routine can collect several addresses; the notice's subject and intro change only in the routine editor); \`slots\` ([{key, description?, required?}], an information field). Example: {"steps":[{"stableStepId":"ask_order_number","instruction":"Ask for the order number and say why we need it."}]}. Every id comes from the \`editable\` block \`routine_definition\` returns — read the routine first and never invent one. It edits elements that already exist: it cannot add or remove a step or rework branching, so send the operator to the routine editor for those. ${scopedAgentDraftPublicationNote}`;
+const routineEditDescription = `Propose an edit to an existing routine's wording, name, trigger, or whether it is enabled. \`changes\` takes at least one of: \`name\` (string); \`enabled\` (boolean, takes the routine in or out of service without touching its wording); \`activation\` ({triggerDescription?, priority?, reentryMode?, coverageCriteria?: {coverage: [...], reasons?: [...]}}); \`steps\` ([{stableStepId, instruction}]); \`terminals\` ([{stableStepId, instruction?, operatorNotice?: {skillName?, replyToSlot?, includeAiSummary?}}], an ending's message and its operator notice, the email sent when the routine ends there, shown as \`operatorNotice\` on \`editable.endings\`; \`includeAiSummary\` asks for a background AI summary of details not collected in fields; \`skillName\` is a notify skill from \`operator_notice_destinations\`, null for the default destination; \`replyToSlot\` is the key of an email field in \`editable.fields\` that replies go to, null for none, and only ever the field the operator names since a routine can collect several addresses; the notice's subject and intro change only in the routine editor); \`slots\` ([{key, description?, required?, sensitivity?}], an information field; \`sensitivity\` "sensitive" or "normal" only when the operator asks). Example: {"steps":[{"stableStepId":"ask_order_number","instruction":"Ask for the order number and say why we need it."}]}. Every id comes from the \`editable\` block \`routine_definition\` returns — read the routine first and never invent one. It edits elements that already exist: it cannot add or remove a step or rework branching, so send the operator to the routine editor for those. ${scopedAgentDraftPublicationNote}`;
 
 const routineValidationOutput = (draft: CopilotRoutineProposalDraft) => ({
   ok: draft.diagnostics.length === 0,

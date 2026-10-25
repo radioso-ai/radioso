@@ -29,6 +29,15 @@ export const ROUTINE_DEFINITION_LIMITS = {
 // slice and currently resolves like the default at activation time.
 export const routineReentryModes = ["once_per_conversation", "always", "semantic"] as const;
 export const routineSlotTypes = ["text", "number", "boolean", "email", "date"] as const;
+/**
+ * Whether a slot's value may leave the conversation as the visitor gave it. Authored, never
+ * inferred from the slot's key or what the visitor typed. A sensitive value stays in the
+ * routine's own state and the transcript; every copy that leaves (operator notices, action and
+ * export payloads, the arguments of a skill step without input bindings, traces) reads as a
+ * redaction marker, and the turns of a routine holding one stay out of summaries, facets and
+ * eval snapshots. A skill step receives it only through an input binding that names the slot.
+ */
+export const routineSlotSensitivities = ["normal", "sensitive"] as const;
 export const routineStepKinds = ["chat", "tool", "action", "approval"] as const;
 export const routineGuardKinds = ["llm", "default", "slot_filled", "outcome", "counter", "field"] as const;
 export const routineFieldGuardOps = ["is_true", "is_false", "equals", "not_equals", "in", "is_present", "is_absent", "gt", "gte", "lt", "lte", "older_than", "within"] as const;
@@ -204,6 +213,10 @@ const routineSlotSchemaFor = <TDescription extends z.ZodTypeAny>(description: TD
   // the compile/persist boundary and by the column default, so existing slot literals and
   // stored rows stay immutable without a forced field everywhere.
   mutable: z.boolean().optional(),
+  // Optional for the same reason as `mutable`: absent means "normal", applied at the
+  // compile/persist boundary and by the column default, so stored rows and published
+  // snapshots authored before the field existed parse to the same shape.
+  sensitivity: z.enum(routineSlotSensitivities).optional(),
 }).strict();
 
 export const routineSlotSchema = routineSlotSchemaFor(
@@ -551,6 +564,7 @@ export const routineDefinitionSchema = routineDefinitionDraftInputSchema.extend(
 
 export type RoutineReentryMode = typeof routineReentryModes[number];
 export type RoutineSlotType = typeof routineSlotTypes[number];
+export type RoutineSlotSensitivity = typeof routineSlotSensitivities[number];
 export type RoutineStepKind = typeof routineStepKinds[number];
 export type RoutineApprovalOption = z.infer<typeof routineApprovalOptionSchema>;
 export type RoutineGuardKind = typeof routineGuardKinds[number];
@@ -712,20 +726,21 @@ export interface RoutineAdvisory {
 
 /**
  * Advisory check: an ending that notifies operators (see {@link endingNotifiesOperators}) but
- * names no `replyToSlot`, on a routine that declares at least one email field. Unset is a
- * legitimate authoring choice — some routines collect no address worth replying to — so this
- * never blocks compile, validation, or publish. The input is narrow so a stored definition and
- * the editor's draft both pass themselves in.
+ * names no `replyToSlot`, on a routine that declares at least one email field that is not
+ * sensitive (a sensitive address never leaves the conversation, so it cannot be a reply-to).
+ * Unset is a legitimate authoring choice — some routines collect no address worth replying to —
+ * so this never blocks compile, validation, or publish. The input is narrow so a stored
+ * definition and the editor's draft both pass themselves in.
  */
 export const routineAdvisories = (definition: {
-  readonly slots: ReadonlyArray<{ readonly key: string; readonly type: RoutineSlotType }>;
+  readonly slots: ReadonlyArray<{ readonly key: string; readonly type: RoutineSlotType; readonly sensitivity?: RoutineSlotSensitivity }>;
   readonly terminals: ReadonlyArray<{
     readonly stableStepId: string;
     readonly kind: RoutineTerminalKind;
     readonly operatorNotice?: { readonly replyToSlot?: string };
   }>;
 }): RoutineAdvisory[] => {
-  if (!definition.slots.some((slot) => slot.type === "email")) return [];
+  if (!definition.slots.some((slot) => slot.type === "email" && slot.sensitivity !== "sensitive")) return [];
   const advisories: RoutineAdvisory[] = [];
   for (const terminal of definition.terminals) {
     if (!endingNotifiesOperators(terminal) || terminal.operatorNotice?.replyToSlot) continue;

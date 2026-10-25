@@ -178,6 +178,23 @@ describe("createRoutineTurnReporter", () => {
   });
 });
 
+describe("createRoutineTurnReporter sensitive slots (#1543)", () => {
+  const withSensitiveNote: Routine = {
+    ...bookDemo,
+    slots: bookDemo.slots?.map((slot) => slot.key === "note" || slot.key === "company" ? { ...slot, sensitivity: "sensitive" as const } : slot),
+  };
+  const reporter = createRoutineTurnReporter([withSensitiveNote]);
+
+  it("names the sensitive slots the state holds a value for, and only those", () => {
+    expect(reporter.sensitiveSlotKeysHeld(state({ variables: { name: "Ada", note: "torn ligament" } }))).toEqual(["note"]);
+    expect(reporter.sensitiveSlotKeysHeld(state({ variables: { name: "Ada" } }))).toEqual([]);
+  });
+
+  it("names none for a routine this turn does not know", () => {
+    expect(reporter.sensitiveSlotKeysHeld(state({ routineId: "routine-unknown", variables: { note: "x" } }))).toEqual([]);
+  });
+});
+
 describe("createRoutineTurnReporter with exposed routines", () => {
   const exposed: Routine = {
     ...bookDemo,

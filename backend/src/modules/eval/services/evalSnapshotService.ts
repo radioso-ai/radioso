@@ -1,4 +1,4 @@
-import type { RoutineState } from "@radioso/conversation-contract";
+import { redactSensitiveValues, type RoutineState } from "@radioso/conversation-contract";
 import type { AgentRepositoryPort } from "../../../db/repositories/agentRepository.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { ExternalSkillDefinitionRepositoryPort } from "../../../db/repositories/externalSkillDefinitionRepository.js";
@@ -28,6 +28,7 @@ import type {
   EvalSnapshotOriginalRetrievalChunk,
   EvalSnapshotReplayTarget,
 } from "../domain/types.js";
+import { carriesSensitiveValue, sensitiveSlotKeysOf, transcriptCopyContent } from "../../../shared/domain/sensitiveTranscript.js";
 
 export interface EvalSnapshotCaptureInput {
   workspaceId: string;
@@ -145,6 +146,7 @@ const extractDirectiveFirings = (metadata: Record<string, unknown> | undefined):
   return names.length > 0 ? names : undefined;
 };
 
+// A message of a turn whose routine held a sensitive value is captured withheld (#1543).
 const toSnapshotMessage = (record: MessageRecord): EvalSnapshotMessage => {
   const directiveFirings = record.role === "assistant"
     ? extractDirectiveFirings(record.metadata)
@@ -152,7 +154,7 @@ const toSnapshotMessage = (record: MessageRecord): EvalSnapshotMessage => {
   return {
     id: record.id,
     role: record.role,
-    content: record.content,
+    content: transcriptCopyContent(record),
     createdAt: record.createdAt.toISOString(),
     ...(record.role === "assistant" ? {
       citations: extractCitations(record.metadata),
@@ -416,7 +418,9 @@ export class EvalSnapshotService {
     }
 
     const retrieval = assistantTurn ? extractRetrievedChunks(assistantTurn.metadata) : null;
-    const instructionBlock = assistantTurn
+    // The prompt a sensitive turn's reply was composed from can carry the value a step
+    // instruction interpolated, so it is left out like the turn's text (#1543).
+    const instructionBlock = assistantTurn && !carriesSensitiveValue(assistantTurn.metadata)
       ? extractStringField(assistantTurn.metadata, "composedInstructions")
       : null;
     const modelId = assistantTurn ? extractStringField(assistantTurn.metadata, "modelId") : null;
@@ -439,8 +443,15 @@ export class EvalSnapshotService {
     const activeRoutine = this.routineStateReader
       ? await this.routineStateReader.loadActive({ sessionId: conversation.id })
       : null;
+    // A sensitive slot's value is left out (#1543). The conversation's marked turns name every
+    // sensitive slot a routine of it held; an operator who wants one replayed supplies a value of
+    // their own through the run's explicit routine start state.
+    const sensitiveSlotKeys = new Set(allMessages.flatMap((message) => sensitiveSlotKeysOf(message.metadata)));
     const originalRoutineState = activeRoutine
-      ? (({ sessionId: _sessionId, ...rest }) => rest)(activeRoutine)
+      ? (({ sessionId: _sessionId, ...rest }) => ({
+          ...rest,
+          variables: redactSensitiveValues(rest.variables, sensitiveSlotKeys),
+        }))(activeRoutine)
       : null;
 
     // Freeze the rolling summary (#866) that the captured turn actually saw.

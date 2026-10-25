@@ -333,6 +333,29 @@ describe("ConversationSummaryService", () => {
     expect(capturedPrompt).not.toContain("z".repeat(80));
   });
 
+  it("withholds the messages of a turn whose routine held a sensitive value from the summary model (#1543)", async () => {
+    const messages = [
+      ...fifteenMessages().slice(0, 13),
+      message({ id: "visitor", role: "user", content: "I tore my ACL skiing", metadata: { sensitiveSlotKeys: ["injury"] }, createdAt: new Date(2026, 0, 2) }),
+      message({ id: "reply", role: "assistant", content: "Noted: torn ACL. Which class?", metadata: { sensitiveSlotKeys: ["injury"] }, createdAt: new Date(2026, 0, 2, 0, 1) }),
+    ];
+    let capturedPrompt = "";
+    const generator: ConversationSummaryGenerator = {
+      generate: vi.fn(async ({ prompt }) => {
+        capturedPrompt = prompt;
+        return { summary: "ok" };
+      }),
+    };
+    const service = new ConversationSummaryService(inMemoryStore(), messageReader(messages), generator, inMemoryTitleWriter(), blankEarlyTitleGenerator(), undefined, config);
+
+    await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
+
+    expect(capturedPrompt).not.toContain("ACL");
+    expect(capturedPrompt).toContain("USER: [redacted]");
+    expect(capturedPrompt).toContain("ASSISTANT: [redacted]");
+    expect(capturedPrompt).toContain("message 12");
+  });
+
   it("hard-clamps the generated summary before persisting", async () => {
     const store = inMemoryStore();
     const generator: ConversationSummaryGenerator = {

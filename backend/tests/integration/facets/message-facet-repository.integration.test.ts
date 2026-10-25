@@ -97,6 +97,48 @@ describeIntegration("MessageFacetRepository (Postgres)", () => {
     });
   });
 
+  it("upsertFacet stores nothing, and says so, for a message of a turn whose routine held a sensitive value (#1543)", async () => {
+    const plain = await createMessage();
+    const sensitive = await createMessage();
+    await database.query(
+      `UPDATE messages SET metadata_json = '{"sensitiveSlotKeys":["injury"]}'::jsonb WHERE id = $1`,
+      [sensitive],
+    );
+
+    await expect(repository.upsertFacet({ messageId: plain, workspaceId, facetText: "asks about hours", promptVersion: "v1" }))
+      .resolves.toBe(true);
+    await expect(repository.upsertFacet({ messageId: sensitive, workspaceId, facetText: "asks about an injury", promptVersion: "v1" }))
+      .resolves.toBe(false);
+    await expect(repository.upsertFacet({ messageId: randomUUID(), workspaceId, facetText: "gone", promptVersion: "v1" }))
+      .resolves.toBe(false);
+
+    const rows = await database.query<{ message_id: string }>(
+      "SELECT message_id FROM message_facets WHERE workspace_id = $1",
+      [workspaceId],
+    );
+    expect(rows).toEqual([{ message_id: plain }]);
+  });
+
+  it("upsertFacet waits for a turn marking its message, then stores nothing (#1543)", async () => {
+    const messageId = await createMessage();
+    const turn = await database.pool.connect();
+    try {
+      await turn.query("BEGIN");
+      await turn.query(
+        `UPDATE messages SET metadata_json = metadata_json || '{"sensitiveSlotKeys":["injury"]}'::jsonb WHERE id = $1`,
+        [messageId],
+      );
+      const upsert = repository.upsertFacet({ messageId, workspaceId, facetText: "asks about an injury", promptVersion: "v1" });
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await turn.query("COMMIT");
+      await expect(upsert).resolves.toBe(false);
+    } finally {
+      turn.release();
+    }
+    const rows = await database.query("SELECT 1 FROM message_facets WHERE message_id = $1", [messageId]);
+    expect(rows).toEqual([]);
+  });
+
   it("upsertFacet leaves embedding null on insert", async () => {
     const messageId = await createMessage();
 

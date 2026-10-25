@@ -1,3 +1,4 @@
+import { REDACTED_VALUE } from "@radioso/conversation-contract";
 import { SLOT_REFERENCE_PATTERN } from "@radioso/routine-definition";
 
 import type { HandoffCollectedValue, RoutineEndingOperatorNotification } from "./operatorNotification.js";
@@ -45,6 +46,14 @@ const labelForSlotKey = (key: string): string => {
 const renderCollectedValue = (value: HandoffCollectedValue): string =>
   typeof value === "boolean" ? (value ? "yes" : "no") : String(value);
 
+/**
+ * A sensitive slot's value reaches the notice already masked by the routine runner. The notice
+ * says one was collected and leaves the reading to the conversation, which the sink links to.
+ */
+const isSensitive = (value: HandoffCollectedValue | undefined): boolean => value === REDACTED_VALUE;
+const SENSITIVE_IN_TEXT = "(sensitive)";
+const SENSITIVE_IN_COLLECTED = "sensitive, open the conversation to read it";
+
 const collectedBlock = (collected: Record<string, HandoffCollectedValue> | undefined): string[] | null => {
   const entries = Object.entries(collected ?? {});
   if (entries.length === 0) {
@@ -52,7 +61,8 @@ const collectedBlock = (collected: Record<string, HandoffCollectedValue> | undef
   }
   return [
     "Collected:",
-    ...entries.map(([key, value]) => `  ${labelForSlotKey(key)}: ${renderCollectedValue(value)}`),
+    ...entries.map(([key, value]) =>
+      `  ${labelForSlotKey(key)}: ${isSensitive(value) ? SENSITIVE_IN_COLLECTED : renderCollectedValue(value)}`),
   ];
 };
 
@@ -70,6 +80,9 @@ const renderTemplate = (
   }
   const rendered = template.replace(SLOT_REFERENCE_PATTERN, (_token, key: string) => {
     const value = collected?.[key];
+    if (isSensitive(value)) {
+      return SENSITIVE_IN_TEXT;
+    }
     const text = value === undefined ? "" : renderCollectedValue(value).trim();
     const shown = text.length > 0 ? text : MISSING_VALUE;
     return options.singleLine ? shown.replace(LINE_BREAKS, " ") : shown;
@@ -90,7 +103,8 @@ const footerLines = (notification: RoutineEndingOperatorNotification): string[] 
  * One rendering of a routine-ending notice shared by every operator sink, so email, webhook text,
  * and Slack show the same subject, routine name, and collected values. The authored subject
  * replaces the default, the authored intro follows the headline, and every collected value is
- * always listed after the details so a template can never hide what the routine gathered. Sinks
+ * always listed after the details so a template can never hide what the routine gathered; a
+ * sensitive one is listed as collected, without its value. Sinks
  * append transport-specific lines (such as the dashboard link) themselves.
  *
  * The body reads as plain prose for non-technical staff, not a log: no agent, routine, reason,

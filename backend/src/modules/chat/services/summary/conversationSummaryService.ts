@@ -11,6 +11,7 @@ import type {
   ConversationSummaryStore,
 } from "../../contracts/conversationSummary.js";
 import { CONVERSATION_TITLE_RULES } from "./titlePromptRules.js";
+import { transcriptCopyContent } from "../../../../shared/domain/sensitiveTranscript.js";
 
 /** The narrow message-read slice the summary regeneration needs. */
 export type ConversationSummaryMessageReader = Pick<
@@ -431,9 +432,11 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
     };
   }
 
+  // A message of a turn whose routine held a sensitive value reads as withheld (#1543): the
+  // summary is a copy of the transcript that outlives the turn and feeds later prompts.
   private buildConversationExcerpt(messages: MessageRecord[]): string {
     return messages
-      .map((message) => `${message.role.toUpperCase()}: ${clampExcerpt(message.content, this.config.maxSourceMessageChars)}`)
+      .map((message) => `${message.role.toUpperCase()}: ${clampExcerpt(transcriptCopyContent(message), this.config.maxSourceMessageChars)}`)
       .join("\n");
   }
 

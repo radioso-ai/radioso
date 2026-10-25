@@ -105,9 +105,23 @@ describe("copilot routine readers", () => {
       stepsTruncated: false,
       endings: [{ stableStepId: "done", kind: "complete", instruction: null, notifiesOperators: false, operatorNotice: null }],
       endingsTruncated: false,
-      fields: [{ key: "order_number", type: "text", required: true, description: "The order" }],
+      fields: [{ key: "order_number", type: "text", required: true, description: "The order", sensitivity: "normal" }],
       fieldsTruncated: false,
     });
+  });
+
+  it("shows which fields are sensitive, so an edit can mark one or set it back (#1543)", async () => {
+    const ports = dependencies([routine({
+      slots: [{ stableSlotId: "slot_injury", key: "injury", type: "text", required: true, description: "Any injury", ordinal: 0, sensitivity: "sensitive" }],
+    })]);
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "routine_definition")!;
+
+    const result = await tool.createTool(context("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+      .invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never) as { routine: { editable: { fields: unknown[] } } };
+
+    expect(result.routine.editable.fields).toEqual([
+      { key: "injury", type: "text", required: true, description: "Any injury", sensitivity: "sensitive" },
+    ]);
   });
 
   it("shows which endings notify operators and the notice text each one carries", async () => {

@@ -281,14 +281,18 @@ export const addEnding = (doc: RoutineBlockDoc, kind: RoutineTerminalKind): Rout
 /** The operator notice an ending carries, as the document editor holds it. */
 export type EndingNotice = NonNullable<RoutineBlockEnding['operatorNotice']>
 
+/** The email fields a notice may reply to: a sensitive address never leaves the conversation. */
+export const replyToCandidates = <T extends { type: string; sensitivity?: string }>(fields: ReadonlyArray<T>): T[] =>
+  fields.filter((field) => field.type === 'email' && field.sensitivity !== 'sensitive')
+
 /**
  * The notice the editor starts when the author creates one. With exactly one email field there is
  * only one address to reply to, so replies start going there, in plain sight in the editor. With
  * none or several the author picks; nothing chooses by a field's name. An ending that already has
  * a notice never gets one filled in.
  */
-export const newEndingNotice = (fields: ReadonlyArray<{ key: string; type: string }>): EndingNotice => {
-  const emailFields = fields.filter((field) => field.type === 'email')
+export const newEndingNotice = (fields: ReadonlyArray<{ key: string; type: string; sensitivity?: string }>): EndingNotice => {
+  const emailFields = replyToCandidates(fields)
   return { subject: null, intro: null, ...(emailFields.length === 1 ? { replyToSlot: emailFields[0].key } : {}) }
 }
 
@@ -457,6 +461,18 @@ export const addSlot = (doc: RoutineBlockDoc): RoutineBlockDoc => {
 
 export const updateSlot = (doc: RoutineBlockDoc, stableSlotId: string, patch: Partial<RoutineBlockSlot>): RoutineBlockDoc => ({
   ...copy(doc), information: doc.information.map((slot) => slot.stableSlotId === stableSlotId ? { ...copy(slot), ...copy(patch) } : copy(slot)),
+})
+
+// Whether a field's value may leave the conversation (#1543). Normal is the absence of the field,
+// as a saved slot reads back, so a field set back to normal leaves the document as it was.
+export const setSlotSensitivity = (doc: RoutineBlockDoc, stableSlotId: string, sensitive: boolean): RoutineBlockDoc => ({
+  ...copy(doc),
+  information: doc.information.map((slot) => {
+    const next = copy(slot)
+    if (slot.stableSlotId !== stableSlotId) return next
+    delete next.sensitivity
+    return sensitive ? { ...next, sensitivity: 'sensitive' as const } : next
+  }),
 })
 
 export const slotReferences = (doc: RoutineBlockDoc, key: string): string[] => {

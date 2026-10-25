@@ -76,6 +76,7 @@ import {
   type TurnExecutionMode,
 } from "../../../shared/domain/turnExecutionMode.js";
 import type { SuppressedSkillEffect } from "../../../shared/domain/suppressedSkillEffect.js";
+import { sensitiveTurnMetadata } from "../../../shared/domain/sensitiveTranscript.js";
 import {
   directiveAdherenceMetadataOf,
   UNMET_DIRECTIVES_METADATA_KEY,
@@ -279,6 +280,11 @@ export interface AssistantTurnPersistencePort {
     clarificationTransition?: CapturedClarificationTransition | null;
     /** Exact request whose provisional coverage assessment this reply commits. */
     answerCoverageRequestMessageId?: string;
+    /**
+     * The visitor message of a turn whose routine holds a sensitive slot value (#1543): marked with
+     * those slots' keys in the turn's transaction, and any facet already extracted from it removed.
+     */
+    sensitiveVisitorMessage?: { id: string; sensitiveSlotKeys: readonly string[] };
     assistantMessage: MessageCreateInput;
     auditEvent: AuditEventInput;
     ownershipHandoff?: OwnershipHandoffInput | null;
@@ -646,6 +652,32 @@ const describeRoutineTurn = (input: {
       })
     : input.session.declinedRoutine ?? input.session.suspendedRoutine ?? null;
 
+/**
+ * The sensitive slots (#1543) the routine this turn saved holds a value for. Both messages of
+ * such a turn are marked, so every copy of the transcript that leaves reads them as withheld.
+ */
+const sensitiveSlotKeysForTurn = (input: {
+  routineStateTransition?: CapturedRoutineTransition | null;
+  routineReporter?: ChatRoutineTurnReporter;
+}): string[] =>
+  input.routineReporter && input.routineStateTransition?.kind === "save"
+    ? input.routineReporter.sensitiveSlotKeysHeld(input.routineStateTransition.state)
+    : [];
+
+const withSensitiveTurnMarker = (
+  presentation: TurnTracePresentation,
+  sensitiveSlotKeys: readonly string[],
+): TurnTracePresentation =>
+  sensitiveSlotKeys.length === 0
+    ? presentation
+    : {
+        ...presentation,
+        assistantMessage: {
+          ...presentation.assistantMessage,
+          metadata: { ...presentation.assistantMessage.metadata, ...sensitiveTurnMetadata(sensitiveSlotKeys) },
+        },
+      };
+
 interface CompleteAssistantTurnInput {
   workspaceId: string;
   accountId?: string;
@@ -880,7 +912,8 @@ export class ChatTurnLifecycle {
         labels: { outcome: invocationReport.outcome },
       });
     }
-    const presentation = buildTurnTraceForPresentation({
+    const sensitiveSlotKeys = sensitiveSlotKeysForTurn(input);
+    const presentation = withSensitiveTurnMarker(buildTurnTraceForPresentation({
       workspaceId: input.workspaceId,
       accountId: input.accountId,
       session: input.session,
@@ -890,7 +923,7 @@ export class ChatTurnLifecycle {
       stream: input.stream,
       engineTrace: input.engineTrace,
       modelCallTrace: input.modelCallTrace,
-    });
+    }), sensitiveSlotKeys);
     let assistantMessage: MessageRecord;
     let postCommitReceipt: PostCommitInvalidationReceipt;
     let postCommitWake: (() => void) | undefined;
@@ -941,6 +974,9 @@ export class ChatTurnLifecycle {
         pendingDecisionTransition: input.pendingDecisionTransition,
         clarificationTransition: input.clarificationTransition,
         answerCoverageRequestMessageId: input.session.userMessage.id,
+        ...(sensitiveSlotKeys.length > 0
+          ? { sensitiveVisitorMessage: { id: input.session.userMessage.id, sensitiveSlotKeys } }
+          : {}),
         assistantMessage: presentation.assistantMessage,
         auditEvent,
         ownershipHandoff: storedHandoff(ownershipHandoff),

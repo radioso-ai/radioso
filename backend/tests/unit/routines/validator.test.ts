@@ -629,6 +629,19 @@ describe("validateRoutineDefinition operator notice reply-to", () => {
     expect(undeclared.diagnostics[0].message).not.toEqual(notEmail.diagnostics[0].message);
   });
 
+  it("refuses a sensitive email field as the reply-to, since its address never leaves the conversation", () => {
+    const routine = giftRoutine("recipient_email");
+    const result = validateRoutineDefinition({
+      ...routine,
+      slots: routine.slots.map((slot) => slot.key === "recipient_email" ? { ...slot, sensitivity: "sensitive" as const } : slot),
+    });
+
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({ code: "operator_notice_reply_to_slot_invalid", location: "step:done.operatorNotice.replyToSlot" }),
+    ]);
+    expect(result.diagnostics[0].message).toContain("sensitive");
+  });
+
   it("counts the reply-to as a use of its field", () => {
     const routine = giftRoutine("recipient_email");
     const result = validateRoutineDefinition({

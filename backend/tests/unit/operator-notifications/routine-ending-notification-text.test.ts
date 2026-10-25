@@ -148,4 +148,18 @@ describe("formatRoutineEndingNotification", () => {
     expect(formatted.lines.at(-1)).toBe("");
     expect(formatted.lines.some((line) => line.startsWith("Entry page:"))).toBe(false);
   });
+
+  it("says a sensitive value was collected and sends the reader to the conversation, never the value (#1543)", () => {
+    const formatted = formatRoutineEndingNotification({
+      ...booking,
+      // The runner masks a sensitive slot before the notice is queued; the marker is all that arrives.
+      collected: { name: "Ada Lovelace", injury: "[redacted]" },
+      notice: { subject: "Booking for {{slot.name}}: {{slot.injury}}", intro: "Injury: {{slot.injury}}." },
+    });
+
+    expect(formatted.subject).toBe("Booking for Ada Lovelace: (sensitive)");
+    expect(formatted.lines).toContain("Injury: (sensitive)." );
+    expect(formatted.lines).toContain("  Injury: sensitive, open the conversation to read it");
+    expect(formatted.lines.join("\n")).not.toContain("[redacted]");
+  });
 });

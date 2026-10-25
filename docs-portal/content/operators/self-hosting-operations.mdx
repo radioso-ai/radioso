@@ -321,7 +321,7 @@ Add it to `CONNECTOR_ENCRYPTION_PREVIOUS_KEYS` on the backend and on every worke
 
 ### Make the new key current
 
-Swap the two: the new key becomes `CONNECTOR_ENCRYPTION_KEY`, and the old key takes its place in `CONNECTOR_ENCRYPTION_PREVIOUS_KEYS`. Deploy. New and edited credentials are written under the new key, and during the rollout every instance, swapped or not, holds both keys.
+Once that deploy runs on every instance (backend, worker, worker task service, and any job), swap the two: the new key becomes `CONNECTOR_ENCRYPTION_KEY`, and the old key takes its place in `CONNECTOR_ENCRYPTION_PREVIOUS_KEYS`. Deploy. New and edited credentials are written under the new key, and during the rollout every instance, swapped or not, holds both keys. From this deploy until `--apply` has finished, don't roll back to a release that can't read `CONNECTOR_ENCRYPTION_PREVIOUS_KEYS`: it decrypts with `CONNECTOR_ENCRYPTION_KEY` alone, and can't read anything written under the new key.
 
 ### Dry run
 
@@ -375,14 +375,14 @@ A credential someone edits while the command runs keeps the edit: the command re
 
 ### Confirm nothing is left under the old key
 
-Run the dry run again. Every column should list only the current key or no values, and the summary should read `To re-encrypt: 0. Unreadable: 0.`
+Run the dry run again, with the old key still listed in `CONNECTOR_ENCRYPTION_PREVIOUS_KEYS`. Every column should list only the current key or no values, and the summary should read `To re-encrypt: 0. Unreadable: 0.` Without the old key configured, the command can't count what is left under it: a connector secret under a key no configured key opens looks like a plain setting. The command prints a warning when it runs with no previous keys.
 
 ### Remove the old key
 
 Remove the old key from `CONNECTOR_ENCRYPTION_PREVIOUS_KEYS`, or unset the variable, and deploy. Keep the old key itself, stored safely, for as long as you keep database backups taken before the rotation: credentials in such a backup decrypt only under it. After restoring one, list the old key in `CONNECTOR_ENCRYPTION_PREVIOUS_KEYS` again and repeat the dry run and the apply.
 </Steps>
 
-The command exits `1` while any stored value can't be decrypted. It counts those values per column on `unreadable` lines and leaves them as they are. Usually the key that wrote them was removed from `CONNECTOR_ENCRYPTION_PREVIOUS_KEYS` too early: put it back and run the command again. A value that no key you hold decrypts has to be re-entered in its workspace.
+The command exits `1` while any stored credential column holds a value it can't decrypt. It counts those values per column on `unreadable` lines and leaves them as they are. Connector settings are the exception: a connector secret that no configured key opens looks like a plain setting, so the command neither counts it nor fails on it, and the connector's dashboard page shows it as `[re-enter secret]`. Usually the key that wrote an unreadable value was removed from `CONNECTOR_ENCRYPTION_PREVIOUS_KEYS` too early: put it back and run the command again. A value that no key you hold decrypts has to be re-entered in its workspace.
 
 ## Database TLS
 

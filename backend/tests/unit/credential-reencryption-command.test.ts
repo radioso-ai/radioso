@@ -101,12 +101,16 @@ class InMemoryEncryptedFieldStore implements EncryptedFieldStorePort {
   }
 }
 
-const setup = (locations: EncryptedFieldLocation[] = [TEXT_LOCATION, JSON_LOCATION], batchSize?: number) => {
+const setup = (
+  locations: EncryptedFieldLocation[] = [TEXT_LOCATION, JSON_LOCATION],
+  batchSize?: number,
+  keys: { current: string; previous: string[] } = KEYS,
+) => {
   const store = new InMemoryEncryptedFieldStore();
   const lines: string[] = [];
   const run = (argv: string[]) =>
     runCredentialReencryptionCommand(parseCredentialReencryptionArgs(argv), {
-      keys: KEYS,
+      keys,
       locations,
       store,
       print: (line) => lines.push(line),
@@ -276,6 +280,21 @@ describe("re-encrypting stored credentials", () => {
       { label: SECRETS, limit: 2 },
     ]);
     expect(lines.at(-1)).toBe(`Re-encrypted 5 values under the current key ${CURRENT_ID}.`);
+  });
+
+  it("warns, without failing, when no previous key is configured to tell a replaced key from a lost one", async () => {
+    const { store, run, lines } = setup([TEXT_LOCATION], undefined, { current: CURRENT_KEY, previous: [] });
+    store.seed(SECRETS, [{ key: ["a"], value: encryptField("current", CURRENT_KEY) }]);
+
+    const { exitCode } = await run([]);
+
+    expect(exitCode).toBe(0);
+    expect(lines.slice(0, 2)).toEqual([
+      `Current key: ${CURRENT_ID}. Previous keys: none.`,
+      "Warning: no previous keys are configured. A value under a replaced key counts as unreadable, and a " +
+        "connector secret under one is not counted at all. To confirm a rotation, run with the replaced key " +
+        "still in CONNECTOR_ENCRYPTION_PREVIOUS_KEYS.",
+    ]);
   });
 
   it("never prints a key or a stored value", async () => {

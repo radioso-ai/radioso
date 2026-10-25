@@ -17,6 +17,14 @@ interface CredentialReencryptionCommand {
 }
 
 const USAGE = "Usage: credentialReencryption [--apply]";
+/**
+ * Without the replaced key, its values cannot be told from values under a lost key, and an unkeyed
+ * connector secret under it reads as a plain setting, so a "nothing left" report proves nothing.
+ */
+const NO_PREVIOUS_KEYS_WARNING =
+  "Warning: no previous keys are configured. A value under a replaced key counts as unreadable, and a " +
+  "connector secret under one is not counted at all. To confirm a rotation, run with the replaced key " +
+  "still in CONNECTOR_ENCRYPTION_PREVIOUS_KEYS.";
 const DEFAULT_BATCH_SIZE = 100;
 
 export const parseCredentialReencryptionArgs = (argv: readonly string[]): CredentialReencryptionCommand => {
@@ -206,6 +214,7 @@ export const runCredentialReencryptionCommand = async (
   const previousIds = deps.keys.previous.map((key) => fieldEncryptionKeyId(key));
   const totals: RunTotals = { toReencrypt: 0, unreadable: 0, reencrypted: 0, changedDuringRun: 0 };
   deps.print(`Current key: ${currentId}. Previous keys: ${previousIds.length > 0 ? previousIds.join(", ") : "none"}.`);
+  if (previousIds.length === 0) deps.print(NO_PREVIOUS_KEYS_WARNING);
 
   for (const location of deps.locations) {
     const tally = emptyTally();

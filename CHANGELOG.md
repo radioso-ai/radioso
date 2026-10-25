@@ -9,6 +9,39 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.23.0] - 2026-10-25
+
+### Added
+
+- **mcp:** make channel credential expiry optional and keep the connect config inside its dialog ([#1624](https://github.com/radioso-ai/radioso/pull/1624))
+- **security:** connect to Postgres over TLS on every hosted stack ([#1605](https://github.com/radioso-ai/radioso/pull/1605))
+
+### Fixed
+
+- **retrieval:** let lexical search match on shared terms, not only every term ([#1625](https://github.com/radioso-ai/radioso/pull/1625))
+- **copilot:** record Ray's usage with its conversation and turn, and cached input tokens ([#1622](https://github.com/radioso-ai/radioso/pull/1622))
+- **privacy:** delete audit events older than twelve months ([#1621](https://github.com/radioso-ai/radioso/pull/1621))
+- **auth:** stop in-flight logins from creating a session after a password reset ([#1623](https://github.com/radioso-ai/radioso/pull/1623))
+- **privacy:** delete a workspace's stored files when the workspace is deleted ([#1626](https://github.com/radioso-ai/radioso/pull/1626))
+- **skills:** report a rejected MCP token instead of a 500, and let operators replace it ([#1620](https://github.com/radioso-ai/radioso/pull/1620))
+- **privacy:** keep search text and error messages out of request and error log lines ([#1617](https://github.com/radioso-ai/radioso/pull/1617))
+- **infra:** keep live-eu logs in an EU log bucket ([#1615](https://github.com/radioso-ai/radioso/pull/1615))
+
+### Documentation
+
+- **legal:** add a DPA draft and correct the privacy policy's subprocessors ([#1603](https://github.com/radioso-ai/radioso/pull/1603))
+
+### Database migrations
+
+This release adds 4 migrations. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `241_user_credential_generation.sql`
+- `242_audit_events_created_at_idx.sql`
+- `243_agent_channel_credentials_optional_expiry.sql`
+- `244_usage_event_cached_input_tokens_and_copilot_link.sql`
+
+[1.23.0]: https://github.com/radioso-ai/radioso/compare/v1.22.0...v1.23.0
+
 ## [1.22.0] - 2026-10-24
 
 ### Added

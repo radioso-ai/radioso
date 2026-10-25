@@ -30,6 +30,7 @@ import {
   encryptField,
   isEncryptedField,
   maskSecret,
+  type FieldEncryptionKeys,
 } from "../../../shared/infra/crypto/fieldEncryption.js";
 
 const CONNECTOR_KEY_OPTIONS = { keyName: "CONNECTOR_ENCRYPTION_KEY" } as const;
@@ -88,7 +89,7 @@ export class ConnectorRegistry {
   /** The logger the plugins were started with, which their shutdown failures go to. */
   private lifecycleLogger: ConnectorLogger | null = null;
   private readonly router: Router;
-  private encryptionKey: string | undefined;
+  private encryptionKey: FieldEncryptionKeys | undefined;
 
   constructor() {
     this.router = createRouter();
@@ -198,7 +199,7 @@ export class ConnectorRegistry {
 
   // ── Config persistence ──────────────────────────────────────────────
 
-  setEncryptionKey(key: string): void {
+  setEncryptionKey(key: FieldEncryptionKeys): void {
     this.encryptionKey = key;
   }
 

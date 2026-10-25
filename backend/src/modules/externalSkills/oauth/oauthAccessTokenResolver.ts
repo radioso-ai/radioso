@@ -1,3 +1,4 @@
+import type { FieldEncryptionKeys } from "../../../shared/infra/crypto/fieldEncryption.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 import type { McpConnectionRecord } from "../../../db/repositories/mcpConnectionRepository.js";
@@ -18,7 +19,6 @@ export interface OauthTokenPersistencePort {
     agentId: string,
     id: string,
     credentialCiphertext: string,
-    encryptionKeyId: string | null,
   ): Promise<McpConnectionRecord | null>;
   updateStatus(agentId: string, id: string, status: "needs_reauth"): Promise<McpConnectionRecord | null>;
 }
@@ -34,8 +34,7 @@ export interface ResolveFreshAccessTokenInput {
   agentId: string;
   record: McpConnectionRecord;
   repository: OauthTokenPersistencePort;
-  encryptionKey: string;
-  encryptionKeyId?: string | null;
+  encryptionKey: FieldEncryptionKeys;
   assertPublicUrl?: (url: string) => void | Promise<void>;
   fetchImpl?: FetchLike;
   logger?: AppLogger;
@@ -73,7 +72,6 @@ export const resolveFreshAccessToken = async (input: ResolveFreshAccessTokenInpu
       agentId,
       record.id,
       encryptOauthTokens(refreshed, encryptionKey),
-      input.encryptionKeyId ?? null,
     );
     input.logger?.info(
       { event: "external_skill.oauth", phase: "refreshed", agentId, connectionId: record.id },

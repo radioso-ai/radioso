@@ -1,5 +1,9 @@
 import { AppError, badRequest, conflict, notFound, serviceUnavailable } from "../../../shared/domain/errors.js";
-import { encryptField, decryptField } from "../../../shared/infra/crypto/fieldEncryption.js";
+import {
+  encryptField,
+  decryptField,
+  type FieldEncryptionKeys,
+} from "../../../shared/infra/crypto/fieldEncryption.js";
 import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import {
@@ -72,8 +76,7 @@ export class EncryptionNotConfiguredError extends AppError {
 interface McpConnectionServiceOptions {
   repository: McpConnectionRepositoryPort;
   toolServiceFactory: ToolServiceFactory;
-  encryptionKey?: string;
-  encryptionKeyId?: string;
+  encryptionKey?: FieldEncryptionKeys;
   /**
    * Public-URL / SSRF guard, enforced on create AND before every outbound
    * connection. Rejects loopback/private/link-local hosts and resolves DNS, so a
@@ -122,7 +125,6 @@ export class McpConnectionService {
 
     let credentialCiphertext: string | null = null;
     let oauthClientCiphertext: string | null = null;
-    let encryptionKeyId: string | null = null;
     let status: McpConnectionRecord["status"] = "unconfigured";
 
     if (input.authMethod === "access_token") {
@@ -133,7 +135,6 @@ export class McpConnectionService {
         throw new EncryptionNotConfiguredError();
       }
       credentialCiphertext = encryptField(input.accessToken, this.options.encryptionKey);
-      encryptionKeyId = this.options.encryptionKeyId ?? null;
       status = "authorized";
     }
 
@@ -148,7 +149,6 @@ export class McpConnectionService {
       await this.options.assertPublicUrl?.(input.oauth.authorizationEndpoint);
       await this.options.assertPublicUrl?.(input.oauth.tokenEndpoint);
       oauthClientCiphertext = encryptOauthClientConfig(input.oauth, this.options.encryptionKey);
-      encryptionKeyId = this.options.encryptionKeyId ?? null;
       // Stays unconfigured until the one-time consent flow completes.
       status = "unconfigured";
     }
@@ -160,7 +160,6 @@ export class McpConnectionService {
       authMethod: input.authMethod,
       credentialCiphertext,
       oauthClientCiphertext,
-      encryptionKeyId,
       status,
     });
     return toSummary(record);
@@ -186,7 +185,6 @@ export class McpConnectionService {
     }
 
     let credentialCiphertext: string | undefined;
-    let encryptionKeyId: string | undefined;
     let status: McpConnectionRecord["status"] | undefined;
     if (input.accessToken !== undefined) {
       if (existing.authMethod !== "access_token") {
@@ -196,14 +194,12 @@ export class McpConnectionService {
         throw new EncryptionNotConfiguredError();
       }
       credentialCiphertext = encryptField(input.accessToken, this.options.encryptionKey);
-      encryptionKeyId = this.options.encryptionKeyId ?? undefined;
       status = "authorized";
     }
 
     const updated = await this.options.repository.update(agentId, id, {
       displayName: input.displayName,
       credentialCiphertext,
-      encryptionKeyId,
       status,
     });
     if (!updated) {
@@ -251,7 +247,6 @@ export class McpConnectionService {
           record,
           repository: this.options.repository,
           encryptionKey: this.options.encryptionKey!,
-          encryptionKeyId: this.options.encryptionKeyId ?? null,
           assertPublicUrl: this.options.assertPublicUrl,
           fetchImpl: this.options.fetchImpl,
           logger: this.options.logger,
@@ -305,7 +300,7 @@ export class McpConnectionService {
   private requireOauthConnection(record: McpConnectionRecord | null): {
     record: McpConnectionRecord;
     config: StoredOauthClientConfig;
-    key: string;
+    key: FieldEncryptionKeys;
   } {
     if (!record) {
       throw notFound("MCP connection not found");
@@ -402,7 +397,6 @@ export class McpConnectionService {
       agentId,
       id,
       encryptOauthTokens(tokens, key),
-      this.options.encryptionKeyId ?? null,
     );
     if (!updated) {
       throw notFound("MCP connection not found");

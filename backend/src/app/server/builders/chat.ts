@@ -150,7 +150,7 @@ import { TelemetryService } from "../../../shared/observability/telemetry/teleme
 import { createPublishedRoutineRegistrationSource } from "../../composition/routineDefinitionSource.js";
 import { ChatAnswerSupport, recordClarificationDecision } from "../../../modules/chat/composition.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
-import type { Env } from "../../config/env.js";
+import { connectorEncryptionKeys, type Env } from "../../config/env.js";
 import type { McpConverseRouteDependencies, McpConverseRouteServices } from "../../http/routes/mcpConverseRoutes.js";
 import type { ChatTurnPlanHandle } from "../../../modules/chat/services/turnPlanCoordinator.js";
 import { buildInfrastructure } from "./infra.js";
@@ -353,15 +353,16 @@ export const buildChatServices = (input: {
   // key are available (spec 087). Guarded for repeated dependency builds; skipped when
   // no encryption key is configured, since stored credentials cannot be decrypted then
   // (routine skill steps then degrade to a failed outcome rather than crashing).
+  const encryptionKeys = connectorEncryptionKeys(input.env);
   if (
-    input.env.CONNECTOR_ENCRYPTION_KEY &&
+    encryptionKeys &&
     !input.composition.skillExecutorRegistry.resolve({ kind: "internal", adapter: EXTERNAL_SKILLS_ADAPTER })
   ) {
     input.composition.skillExecutorRegistry.register({
       kind: "internal",
       adapter: EXTERNAL_SKILLS_ADAPTER,
       executor: new McpSkillExecutor(
-        buildExternalSkillsDeps(input.database, input.env.CONNECTOR_ENCRYPTION_KEY, input.assertPublicWebsiteUrl, {
+        buildExternalSkillsDeps(input.database, encryptionKeys, input.assertPublicWebsiteUrl, {
           fetchImpl: fetchPublicUrl,
           logger: input.logger,
           transportFetchImpl: fetchPublicUrl,
@@ -371,7 +372,7 @@ export const buildChatServices = (input: {
     });
   }
   if (
-    input.env.CONNECTOR_ENCRYPTION_KEY &&
+    encryptionKeys &&
     !input.composition.skillExecutorRegistry.resolve({ kind: "internal", adapter: CUSTOMER_EMAIL_SKILLS_ADAPTER })
   ) {
     const oauthConnectionRepository = new OauthConnectionRepository(input.database.kysely);
@@ -398,7 +399,7 @@ export const buildChatServices = (input: {
           },
           oauthTokenRepository: oauthConnectionRepository,
           providers: customerEmailProviderRegistry,
-          encryptionKey: input.env.CONNECTOR_ENCRYPTION_KEY,
+          encryptionKey: encryptionKeys,
           assertPublicUrl: input.assertPublicWebsiteUrl,
           fetchImpl: fetchPublicUrl,
           logger: input.logger,

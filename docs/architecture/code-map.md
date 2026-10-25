@@ -185,6 +185,20 @@ Primary paths:
   Postgres-specific fragments: pgvector, jsonb, `now()`, etc.)
 - `backend/src/app/server/builders/infra.ts` — where repositories are wired (`database.kysely`)
 
+Credentials encrypted under `CONNECTOR_ENCRYPTION_KEY`:
+
+- `backend/src/shared/infra/crypto/fieldEncryption.ts` — the cipher: `v1.<key id>.` header bound as
+  AAD, key rings whose previous keys only decrypt. Composition passes services the ring from
+  `connectorEncryptionKeys(env)` (`app/config/env.ts`), never the raw key.
+- `backend/src/db/repositories/encryptedFieldRepository.ts` — `ENCRYPTED_FIELD_LOCATIONS`, every
+  encrypted column. A new encrypted column adds an entry there; name it `*_ciphertext` and
+  `tests/unit/encrypted-field-locations.test.ts` checks the schema against the list.
+- `backend/src/credentialReencryption.ts` and `app/cli/credentialReencryptionCommand.ts` — the key
+  rotation CLI (`pnpm run credentials:reencrypt`). A deploy-time CLI with no HTTP route, so it sits
+  outside the copilot coverage map. Procedure: `docs-portal/content/operators/self-hosting-operations.mdx`.
+  Focused tests: `fieldEncryption.test.ts`, `credential-reencryption-command.test.ts`,
+  `encrypted-field-repository.integration.test.ts`.
+
 Useful searches:
 
 - `rg "implements .*RepositoryPort" backend/src/db/repositories`

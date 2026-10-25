@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { sql, type Kysely, type Transaction } from "kysely";
 
+import type { FieldEncryptionKeys } from "../../../shared/infra/crypto/fieldEncryption.js";
 import { currentTimestamp } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { DB, Db } from "../../../shared/infra/kysely/types.js";
 import { badRequest, conflict, notFound } from "../../../shared/domain/errors.js";
@@ -109,7 +110,7 @@ interface SlackInstallationServiceOptions {
   installations: SlackInstallationRepositoryPort;
   bindings: SlackBindingRepositoryPort;
   workspaceAccounts: WorkspaceAccountLookup;
-  encryptionKey?: string;
+  encryptionKey?: FieldEncryptionKeys;
 }
 
 export interface WorkspaceAccountLookup {
@@ -385,14 +386,13 @@ export class SlackInstallationService {
     input: SaveSlackInstallationInput,
     workspaceId: string,
     oauthConnectionId: string,
-    encryptionKey: string,
+    encryptionKey: FieldEncryptionKeys,
     displayName: string,
   ): Promise<OauthConnectionRecord> {
     const updated = await this.options.oauthConnections.setOauthTokens(
       workspaceId,
       oauthConnectionId,
       encryptOauthTokens(toStoredTokens(input), encryptionKey),
-      null,
       input.grantedScopes,
       input.teamId,
     );
@@ -425,7 +425,7 @@ export class SlackInstallationService {
     return updated;
   }
 
-  private requireEncryptionKey(): string {
+  private requireEncryptionKey(): FieldEncryptionKeys {
     if (!this.options.encryptionKey) {
       throw new Error("CONNECTOR_ENCRYPTION_KEY must be set before saving Slack credentials");
     }

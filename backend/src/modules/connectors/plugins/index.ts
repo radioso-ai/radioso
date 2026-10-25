@@ -2,6 +2,7 @@ import type { ConnectorPlugin } from "@radioso/connector-api";
 
 import type { ConnectorRegistry } from "../services/connectorRegistry.js";
 import type { BackgroundJobQueue } from "../../../shared/background-jobs/index.js";
+import type { FieldEncryptionKeys } from "../../../shared/infra/crypto/fieldEncryption.js";
 import { getSlackReadiness, type RequiredSlackEnvVar } from "../../slack/public.js";
 import { SlackPlugin } from "./slack/slackPlugin.js";
 import { WordpressConnector } from "./wordpress/wordpressConnector.js";
@@ -22,7 +23,7 @@ export { WhatsAppMessageLogEraser } from "./whatsapp/whatsappPersistence.js";
 interface BuiltInConnectorOptions {
   slack?: Partial<Record<RequiredSlackEnvVar, string | undefined>> & {
     signingSecret?: string;
-    encryptionKey?: string;
+    encryptionKey?: FieldEncryptionKeys;
     /** The webhook's enqueue port. Required wherever the Slack connector actually registers. */
     backgroundJobs?: Pick<BackgroundJobQueue, "enqueueInTransaction" | "wake">;
   };

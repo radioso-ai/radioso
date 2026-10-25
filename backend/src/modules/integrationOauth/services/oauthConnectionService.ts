@@ -28,6 +28,10 @@ import type {
   OauthConnectionRepositoryPort,
 } from "../../../db/repositories/oauthConnectionRepository.js";
 import { badRequest, notFound, serviceUnavailable } from "../../../shared/domain/errors.js";
+import {
+  currentFieldEncryptionKey,
+  type FieldEncryptionKeys,
+} from "../../../shared/infra/crypto/fieldEncryption.js";
 import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 
@@ -61,7 +65,7 @@ export class StaticOauthProviderRegistry implements OauthProviderRegistryPort {
 export interface OauthConnectionServiceOptions {
   repository: OauthConnectionRepositoryPort;
   providers: OauthProviderRegistryPort;
-  encryptionKey?: string;
+  encryptionKey?: FieldEncryptionKeys;
   /**
    * Public origin of the user-facing dashboard. Used for the post-authorization
    * browser redirect back to the connections UI.
@@ -220,7 +224,6 @@ export class OauthConnectionService {
       record.workspaceId,
       record.id,
       encryptOauthTokens(tokens.tokens, key),
-      null,
       grantedScopes,
       tokens.providerAccountId ?? null,
     );
@@ -247,7 +250,7 @@ export class OauthConnectionService {
     record: OauthConnectionRecord,
     provider: OauthProviderDefinition,
     config: StoredOauthClientConfig,
-    key: string,
+    key: FieldEncryptionKeys,
   ): Promise<OauthAuthorizationStartResult> {
     const baseUrl = normalizeBaseUrl(this.options.apiBaseUrl ?? this.options.appBaseUrl);
     if (!baseUrl) {
@@ -300,7 +303,7 @@ export class OauthConnectionService {
     return scopes;
   }
 
-  private requireEncryptionKey(): string {
+  private requireEncryptionKey(): FieldEncryptionKeys {
     if (!this.options.encryptionKey) {
       throw serviceUnavailable("CONNECTOR_ENCRYPTION_KEY must be set before saving OAuth credentials");
     }
@@ -315,18 +318,19 @@ export class OauthConnectionService {
     return record;
   }
 
-  private signState(payload: SignedStatePayload, key: string): string {
+  /** Signed with the current key; a flow started before a key rotation is started again. */
+  private signState(payload: SignedStatePayload, key: FieldEncryptionKeys): string {
     const encoded = encodePayload(payload);
-    const signature = createHmac("sha256", key).update(encoded).digest("base64url");
+    const signature = createHmac("sha256", currentFieldEncryptionKey(key)).update(encoded).digest("base64url");
     return `${encoded}.${signature}`;
   }
 
-  private verifyState(state: string, key: string): SignedStatePayload {
+  private verifyState(state: string, key: FieldEncryptionKeys): SignedStatePayload {
     const [encoded, signature, extra] = state.split(".");
     if (!encoded || !signature || extra !== undefined) {
       throw badRequest("Invalid OAuth state");
     }
-    const expected = createHmac("sha256", key).update(encoded).digest("base64url");
+    const expected = createHmac("sha256", currentFieldEncryptionKey(key)).update(encoded).digest("base64url");
     const actualBuffer = Buffer.from(signature, "base64url");
     const expectedBuffer = Buffer.from(expected, "base64url");
     if (actualBuffer.length !== expectedBuffer.length || !timingSafeEqual(actualBuffer, expectedBuffer)) {

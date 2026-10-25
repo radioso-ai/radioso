@@ -23,7 +23,6 @@ class FakeWebhookDestinationRepository implements WebhookDestinationRepositoryPo
     name: string;
     url: string;
     secretCiphertext: string;
-    encryptionKeyId: string;
   }): Promise<WebhookDestinationRecord> {
     if ([...this.rows.values()].some((row) =>
       row.workspaceId === input.workspaceId && row.name.toLowerCase() === input.name.toLowerCase()
@@ -37,7 +36,6 @@ class FakeWebhookDestinationRepository implements WebhookDestinationRepositoryPo
       name: input.name,
       url: input.url,
       secretCiphertext: input.secretCiphertext,
-      encryptionKeyId: input.encryptionKeyId,
       lastDeliveryStatus: null,
       lastDeliveryAt: null,
       createdAt: now,
@@ -73,7 +71,7 @@ class FakeWebhookDestinationRepository implements WebhookDestinationRepositoryPo
   async updateSecret(
     id: string,
     inputWorkspaceId: string,
-    input: { secretCiphertext: string; encryptionKeyId: string },
+    input: { secretCiphertext: string },
   ): Promise<WebhookDestinationRecord | null> {
     const record = await this.findByIdAndWorkspace(id, inputWorkspaceId);
     if (!record) {

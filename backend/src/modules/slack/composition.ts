@@ -1,4 +1,4 @@
-import type { Env } from "../../app/config/env.js";
+import { connectorEncryptionKeys, type Env } from "../../app/config/env.js";
 import type { ApplicationModule } from "../../app/composition/applicationModule.js";
 import { getSlackReadiness } from "./manifest/slackManifest.js";
 import { buildSlackOauthProviderDefinition } from "./oauth/slackProvider.js";
@@ -31,7 +31,7 @@ export const createSlackApplicationModule = (env?: Partial<SlackOauthEnv>): Appl
         new SlackPostActionHandler({
           credentials: new SlackPostActionCredentialResolver({
             database,
-            encryptionKey: runtimeEnv.CONNECTOR_ENCRYPTION_KEY,
+            encryptionKey: connectorEncryptionKeys(runtimeEnv),
           }),
           logger,
         }),

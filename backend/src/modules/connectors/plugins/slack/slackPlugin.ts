@@ -13,6 +13,7 @@ import type { ConversationOwnershipService } from "../../../handoff/public.js";
 import type { MetricsRegistry } from "../../../../shared/observability/metrics/metricsRegistry.js";
 import type { ConversationLinkResolver } from "../../../../shared/domain/conversationLinkResolver.js";
 import type { BackgroundJobQueue } from "../../../../shared/background-jobs/index.js";
+import type { FieldEncryptionKeys } from "../../../../shared/infra/crypto/fieldEncryption.js";
 import { IntegrationConnectionRepository } from "../../../integrationConnections/public.js";
 import {
   createSlackInteractivityRouter,
@@ -33,7 +34,7 @@ import { createSlackWebhookRouter } from "./slackWebhook.js";
 
 interface SlackPluginOptions {
   signingSecret: string;
-  encryptionKey?: string;
+  encryptionKey?: FieldEncryptionKeys;
   /** Lets the webhook enqueue the durable job the worker dispatches; never used for the turn itself. */
   backgroundJobs: Pick<BackgroundJobQueue, "enqueueInTransaction" | "wake">;
 }

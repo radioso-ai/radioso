@@ -1,7 +1,7 @@
 ---
 title: "Encryption"
 description: "What Radioso encrypts at rest and in transit, which keys protect it, and how to check that database connections are encrypted."
-last_updated: 2026-10-24
+last_updated: 2026-10-25
 ---
 
 # Encryption
@@ -12,7 +12,7 @@ Everything Radioso Cloud stores is encrypted at rest, and everything that travel
 
 On Radioso Cloud, conversations, documents, settings and everything else live in Cloud SQL for PostgreSQL and in a Cloud Storage bucket for uploaded files. Google Cloud encrypts both with AES-256, including database backups and logs, under keys Google manages. Radioso doesn't offer customer-managed keys.
 
-Credentials get a second layer. Workspace provider API keys, connector and OAuth secrets, and webhook signing secrets are encrypted by the application with AES-256-GCM before they reach the database, under the deployment's `CONNECTOR_ENCRYPTION_KEY`. Nobody can read them back through the API, and they stay unreadable in a database copy without that key.
+Credentials get a second layer. Workspace provider API keys, connector and OAuth secrets, and webhook signing secrets are encrypted by the application with AES-256-GCM before they reach the database, under the deployment's `CONNECTOR_ENCRYPTION_KEY`. Nobody can read them back through the API, and they stay unreadable in a database copy without that key. Each stored value records which key encrypted it, so the key can be replaced without re-entering credentials: [Rotate the credential encryption key](/operators/self-hosting-operations#rotate-the-credential-encryption-key) walks through it.
 
 ## In transit
 

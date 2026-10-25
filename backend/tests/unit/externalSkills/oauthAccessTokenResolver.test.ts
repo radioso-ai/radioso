@@ -31,7 +31,6 @@ const buildRecord = (tokens: StoredOauthTokens | null): McpConnectionRecord => (
   serverUrl: "https://mcp.example.com",
   authMethod: "oauth",
   credentialCiphertext: tokens ? encryptOauthTokens(tokens, KEY) : null,
-  encryptionKeyId: null,
   oauthClientCiphertext: encryptOauthClientConfig(CONFIG, KEY),
   oauthFlowCiphertext: null,
   status: "authorized",

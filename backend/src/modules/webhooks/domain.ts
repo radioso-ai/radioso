@@ -30,7 +30,6 @@ export interface WebhookDestinationRecord {
   name: string;
   url: string;
   secretCiphertext: string;
-  encryptionKeyId: string;
   lastDeliveryStatus: string | null;
   lastDeliveryAt: Date | null;
   createdAt: Date;

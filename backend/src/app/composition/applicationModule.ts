@@ -12,7 +12,7 @@ import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import type {
   DocumentJobDispatcherPort,
-  DocumentStoragePort,
+  DocumentStorageAdapter,
 } from "../../modules/documents/contracts/index.js";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { Database } from "../../shared/infra/database.js";
@@ -372,7 +372,7 @@ interface ApplicationExtensionRegistry {
   managedModelPolicyRegistration?: ApplicationManagedModelPolicyRegistration;
   organizationCreationGuardRegistration?: ApplicationOrganizationCreationGuardRegistration;
   usageEventRecorderRegistration?: ApplicationUsageEventRecorderRegistration;
-  documentStorage?: DocumentStoragePort;
+  documentStorage?: DocumentStorageAdapter;
   documentJobDispatcher?: DocumentJobDispatcherPort;
   documentJobConsumer?: JobConsumerPort;
   websiteCrawlerProvider?: WebsiteCrawlerProvider;
@@ -423,7 +423,7 @@ export interface ApplicationModuleRegistrationContext {
   registerManagedModelPolicy(policy: ApplicationManagedModelPolicyRegistration): void;
   registerOrganizationCreationGuard(guard: ApplicationOrganizationCreationGuardRegistration): void;
   registerUsageEventRecorder(recorder: ApplicationUsageEventRecorderRegistration): void;
-  registerDocumentStorage(storage: DocumentStoragePort): void;
+  registerDocumentStorage(storage: DocumentStorageAdapter): void;
   registerDocumentJobDispatcher(dispatcher: DocumentJobDispatcherPort): void;
   registerDocumentJobConsumer(consumer: JobConsumerPort): void;
   registerWebsiteCrawlerProvider(provider: WebsiteCrawlerProvider): void;

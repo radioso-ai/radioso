@@ -521,6 +521,9 @@ describe("default application composition", () => {
       upload: vi.fn(),
       read: vi.fn(),
       delete: vi.fn(),
+      listWorkspaceObjects: vi.fn(),
+      listStoredWorkspaces: vi.fn(),
+      summarizeWorkspaceObjects: vi.fn(),
     };
     const documentJobDispatcher = {
       dispatch: vi.fn(),

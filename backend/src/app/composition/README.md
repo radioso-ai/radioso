@@ -37,6 +37,11 @@ composition calls them and assembles the result.
   `dependencies.ts`, so the poll worker's interval loop and the push worker's
   `/internal/tasks/periodic-tasks/:taskId/run` route both run it. A module that
   keeps a shorter-lived copy of conversation content registers its rule here.
+- `workspaceDeletion.ts`: what deleting a workspace, or an organization with
+  its workspaces, does beyond the cascade. Inside the deletion's transaction it
+  runs the conversation erasers and hands each workspace's stored files to the
+  `documents.workspace_storage_purge` background job; after the commit it wakes
+  the worker. `PersonalCredentialLifecycleRepository` runs both hooks.
 - `conversationLockOrder.ts`: the conversation lock protocol every unit of work
   touching a conversation's ownership, held replies or mailbox policy follows,
   and the bounded deadlock retry for the units that can still meet one. Read it

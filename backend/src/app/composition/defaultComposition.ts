@@ -11,7 +11,7 @@ import {
   NoopDocumentJobDispatcher,
   type DocumentJobDispatcherPort,
   type DocumentProcessingWorker,
-  type DocumentStoragePort,
+  type DocumentStorageAdapter,
 } from "../../modules/documents/composition.js";
 import {
   ChonkieChunkingProvider,
@@ -290,7 +290,7 @@ export const createDefaultErrorSinks = (input: {
 
 export const createDefaultDocumentStorage = (env: Pick<Env,
   "DOCUMENT_STORAGE_DRIVER" | "DOCUMENT_STORAGE_BUCKET" | "DOCUMENT_STORAGE_LOCAL_PATH"
->): DocumentStoragePort =>
+>): DocumentStorageAdapter =>
   env.DOCUMENT_STORAGE_DRIVER === "gcs"
     ? new GcsDocumentStorage(env.DOCUMENT_STORAGE_BUCKET!)
     : new LocalDocumentStorage(env.DOCUMENT_STORAGE_LOCAL_PATH);

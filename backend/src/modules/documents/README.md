@@ -87,6 +87,47 @@ the job table and `available_at`.
 When changing worker payloads or dispatch behavior, review message queue docs,
 contract tests, and worker recovery tests.
 
+## Stored Files Of Deleted Workspaces
+
+Every object a storage adapter writes sits under `workspaces/<workspaceId>/`,
+so `DocumentStorageInventoryPort` (`contracts/storage.ts`) finds a workspace's
+objects by its id alone, whatever path an older release gave them below it.
+Composition wires a `DocumentStorageAdapter`: the object port and the inventory
+together, in the GCS and local adapters alike.
+
+- `services/workspaceStoragePurge.ts`: the `documents.workspace_storage_purge`
+  background job, keyed `<origin>:<workspaceId>`. A workspace or organization
+  deletion enqueues one per workspace inside its own transaction
+  (`handOffWorkspaceStoragePurges`, origin `workspace_deletion`, wired by
+  `app/composition/workspaceDeletion.ts`), so the hand-off commits with the
+  deletion. A run deletes up to ten batches of 100 objects, asks for a rerun
+  when more remain, retries failed deletes over about a day, and records a
+  `workspace.stored_files.deleted` audit event with the count. It keeps the
+  files of a workspace that still exists, and, for origin `orphan_sweep`, of a
+  prefix written to in the last 24 hours, checked when it runs. Its payload
+  accepts only a canonical lowercase workspace id.
+- `services/orphanedWorkspaceStorageReport.ts`: what an orphan sweep would
+  queue, read from the whole store. The operator command
+  (`src/workspaceStorageSweep.ts`, logic in
+  `src/app/cli/workspaceStorageSweepCommand.ts`) prints it as a dry run, and with
+  `--apply --expect-orphans <n>` scans again, refuses a different count, and
+  queues one `orphan_sweep` purge per workspace in the report it printed;
+  nothing queues purges on its own. The report counts only canonical lowercase
+  workspace ids absent from the database whose newest object is more than a day
+  old. Its ownership check proves only that the store holds some of this
+  database's files: a store shared with another deployment passes it, and that
+  deployment's workspaces read as orphaned, which is why the step is manual and
+  each deployment needs its own bucket or folder.
+
+Purges reach only the store composition is configured with
+(`DOCUMENT_STORAGE_BUCKET` or `DOCUMENT_STORAGE_LOCAL_PATH`). Upload paths and
+listings derive from `WORKSPACE_STORAGE_ROOT` and `workspaceStoragePrefix`, so
+the layout the inventory relies on is decided in one place.
+
+Purge payloads carry a workspace id and an origin only. An object path never
+goes into a job, a log line, or an audit event, because paths written before
+storage dropped filenames carry them.
+
 ## Tests
 
 Focused starting points:
@@ -100,6 +141,10 @@ Focused starting points:
   for tag ownership across PUT, reprocess, failed runs, and manual edits.
 - `cd backend && pnpm exec vitest run tests/unit/document-enrichment-service.test.ts tests/unit/document-enrichment-gateway.test.ts tests/unit/document-enrichment-quote-location.test.ts`
   for extraction retries, reply reading, and placing dates by their quotes.
+- `cd backend && pnpm exec vitest run tests/unit/workspace-storage-cleanup.test.ts tests/unit/workspace-storage-sweep-command.test.ts tests/unit/local-document-storage.test.ts tests/unit/gcs-document-storage.test.ts`
+  for removing a deleted workspace's stored files, and
+  `tests/integration/workspace-storage-purge.integration.test.ts` for the
+  hand-off committing with the deletion.
 - `cd backend && pnpm run test:integration` for processing and import flows.
 
 Use contract tests when document API response shape changes.

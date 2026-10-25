@@ -17,10 +17,14 @@ interface InvalidatedCredential {
 }
 
 /**
- * Runs inside a tenancy deletion's transaction, just before its workspaces go, for the rows a
- * workspace's cascade leaves behind. Composition supplies it.
+ * Runs inside a tenancy deletion's transaction, just before its workspaces go, for what a
+ * workspace's cascade leaves behind: rows no foreign key reaches, and the stored files it hands to
+ * the worker. Composition supplies it.
  */
 type WorkspaceDeletionEraser = (trx: Db, workspaceIds: readonly string[]) => Promise<void>;
+
+/** Runs once a tenancy deletion committed, to wake the worker for what it handed over. Never rejects. */
+type WorkspaceDeletionCommitted = () => Promise<void>;
 
 /**
  * The sole storage adapter allowed to combine tenancy deletion and API
@@ -32,6 +36,7 @@ export class PersonalCredentialLifecycleRepository implements PersonalCredential
   constructor(
     private readonly db: Db,
     private readonly eraseWorkspaceData: WorkspaceDeletionEraser = async () => undefined,
+    private readonly afterWorkspaceDeletion: WorkspaceDeletionCommitted = async () => undefined,
   ) {}
 
   async removeMembership(input: {
@@ -72,7 +77,7 @@ export class PersonalCredentialLifecycleRepository implements PersonalCredential
     actorUserId?: string | null;
     auditEvent?: TransactionalLifecycleAuditEvent;
   }): Promise<boolean> {
-    return this.db.transaction().execute(async (trx) => {
+    const deleted = await this.db.transaction().execute(async (trx) => {
       // Rotation takes a tenure lock before its credential row. Acquire every
       // affected tenure lock before the workspace row so the delete never
       // holds the parent while waiting on a rotation that needs that parent
@@ -99,6 +104,8 @@ export class PersonalCredentialLifecycleRepository implements PersonalCredential
         .executeTakeFirst();
       return Number(deleted.numDeletedRows) === 1;
     });
+    if (deleted) await this.afterWorkspaceDeletion();
+    return deleted;
   }
 
   async deleteAccount(input: {
@@ -106,7 +113,7 @@ export class PersonalCredentialLifecycleRepository implements PersonalCredential
     actorUserId?: string | null;
     auditEvent?: TransactionalLifecycleAuditEvent;
   }): Promise<boolean> {
-    return this.db.transaction().execute(async (trx) => {
+    const deleted = await this.db.transaction().execute(async (trx) => {
       // See workspace deletion above. Account deletion must not invert the
       // membership -> credential -> parent ordering used by personal rotation.
       await this.lockActivePersonalTenuresForAccount(trx, input.accountId);
@@ -129,6 +136,8 @@ export class PersonalCredentialLifecycleRepository implements PersonalCredential
       const deleted = await trx.deleteFrom("accounts").where("id", "=", input.accountId).executeTakeFirst();
       return Number(deleted.numDeletedRows) === 1;
     });
+    if (deleted) await this.afterWorkspaceDeletion();
+    return deleted;
   }
 
   private async invalidateByMembership(trx: Db, membershipId: string, actorUserId: string | null | undefined, reason: "membership_ended") {

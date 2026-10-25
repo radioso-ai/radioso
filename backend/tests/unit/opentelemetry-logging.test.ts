@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import type { ReadableLogRecord, LogRecordExporter } from "@opentelemetry/sdk-logs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
@@ -65,7 +67,7 @@ describe("OpenTelemetry log bridge", () => {
     });
   });
 
-  it("redacts sensitive log attributes before export", () => {
+  it("drops or redacts sensitive log attributes before export", () => {
     const exporter = new RecordingLogExporter();
     initializeLogging(exporter);
 
@@ -78,12 +80,74 @@ describe("OpenTelemetry log bridge", () => {
     }, "redacted error log");
 
     expect(exporter.records).toHaveLength(1);
-    expect(exporter.records[0]?.attributes).toMatchObject({
-      apiKey: "[REDACTED]",
-      connectionString: "[REDACTED]",
-      prompt: "[REDACTED]",
-      safeCount: 2,
+    const attributes = exporter.records[0]?.attributes;
+    expect(attributes).toMatchObject({ apiKey: "[REDACTED]", safeCount: 2 });
+    expect(attributes).not.toHaveProperty("connectionString");
+    expect(attributes).not.toHaveProperty("prompt");
+    expect(JSON.stringify(attributes)).not.toContain("password");
+  });
+
+  it("exports only attributes whose value's shape rules out free text, whatever their key", () => {
+    const exporter = new RecordingLogExporter();
+    initializeLogging(exporter);
+    const workspaceId = randomUUID();
+    const routineId = randomUUID();
+
+    const logger = createLogger("debug");
+    logger.warn({
+      err: "Invalid to: jane@example.com",
+      errorMessage: `provider said: ${visitorWords}`,
+      rerankQuery: visitorWords,
+      waId: "15551234567",
+      recipient: "jane@example.com",
+      labels: ["ok", visitorWords],
+      workspaceId,
+      routineIds: [routineId],
+      outcome: "rate_limited",
+      attempt: 2,
+      retried: true,
+      requestId: "42",
+      route: "/api/v1/auth/invitations/:token",
+    }, "probe");
+
+    expect(exporter.records).toHaveLength(1);
+    const attributes = exporter.records[0]?.attributes ?? {};
+    const exported = JSON.stringify(attributes);
+    for (const text of ["jane@example.com", visitorWords, "15551234567", "provider said"]) {
+      expect(exported).not.toContain(text);
+    }
+    for (const key of ["errorMessage", "rerankQuery", "waId", "recipient", "labels", "err"]) {
+      expect(attributes).not.toHaveProperty(key);
+    }
+    expect(attributes).toMatchObject({
+      errorClass: "string",
+      workspaceId,
+      routineIds: [routineId],
+      outcome: "rate_limited",
+      attempt: 2,
+      retried: true,
+      requestId: "42",
+      route: "/api/v1/auth/invitations/:token",
     });
+  });
+
+  it("exports an error's status and its cause's class and code, never a message", () => {
+    const exporter = new RecordingLogExporter();
+    initializeLogging(exporter);
+
+    const socketError = Object.assign(new Error(`connect ECONNREFUSED for ${visitorWords}`), { code: "ECONNREFUSED" });
+    const logger = createLogger("debug");
+    logger.error({ err: Object.assign(new TypeError("fetch failed", { cause: socketError }), { status: 503 }) }, "provider call failed");
+
+    const attributes = exporter.records[0]?.attributes;
+    expect(attributes).toMatchObject({
+      errorClass: "TypeError",
+      errorStatus: 503,
+      errorCauseClass: "Error",
+      errorCauseCode: "ECONNREFUSED",
+    });
+    expect(JSON.stringify(attributes)).not.toContain(visitorWords);
+    expect(JSON.stringify(attributes)).not.toContain("fetch failed");
   });
 
   it("names a nested Error's class from structured Pino records but never its message", () => {

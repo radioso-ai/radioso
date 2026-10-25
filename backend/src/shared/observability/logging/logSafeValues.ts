@@ -9,11 +9,12 @@ const CODE_PATTERN = /^[a-z][a-z0-9_.:-]{0,63}$/u;
 // A JavaScript class name such as `TypeError` or `DOMException`.
 const CLASS_NAME_PATTERN = /^[A-Za-z_$][\w$.]{0,127}$/u;
 
-// A route or page path a browser's own router produced: a leading slash, then URL-path-safe
-// characters only — no space, `@`, comma, or quote. A caller that only stripped a query string
-// (an older convention this module replaces) can still hand this a sentence or an email address;
-// this is the shape check that catches what the strip alone does not.
-const PATH_SHAPE_PATTERN = /^\/[\w\-./%[\]:]*$/u;
+// A route pattern or a page path a browser's own router produced: a leading slash, then
+// URL-path-safe characters only — no space, `@`, comma, or quote, and no `%`, since a
+// percent-encoded segment (`/my%20daughter%20has%20asthma`) can spell out any of those. A caller
+// that only stripped a query string can still hand this a sentence or an email address; this is
+// the shape check that catches what the strip alone does not.
+const PATH_SHAPE_PATTERN = /^\/[\w\-./[\]:]*$/u;
 
 export const isUuid = (value: string): boolean => UUID_PATTERN.test(value);
 
@@ -49,11 +50,38 @@ export const isStackFrame = (line: string): boolean =>
 
 export type LogSafeValue = string | number | boolean;
 
-interface SafeErrorFields {
+// An uppercase constant such as `ECONNREFUSED` or `UND_ERR_CONNECT_TIMEOUT` (Node and undici), or a
+// five-character SQLSTATE such as `23505` or `42P01` (Postgres): no spaces or lowercase, so never a
+// sentence.
+const UPPERCASE_CODE_PATTERN = /^[A-Z][A-Z0-9_]{1,63}$/u;
+const SQLSTATE_PATTERN = /^[0-9A-Z]{5}$/u;
+// A numeric code (a gRPC status, an errno) fits a signed 32-bit integer; a phone number does not.
+const MAX_NUMERIC_CODE = 2 ** 31;
+
+type SafeErrorCode = string | number;
+
+const isErrorCode = (value: unknown): value is SafeErrorCode =>
+  typeof value === "number"
+    ? Number.isInteger(value) && Math.abs(value) < MAX_NUMERIC_CODE
+    : typeof value === "string" && (isCode(value) || UPPERCASE_CODE_PATTERN.test(value) || SQLSTATE_PATTERN.test(value));
+
+const isHttpStatus = (value: unknown): value is number =>
+  typeof value === "number" && Number.isInteger(value) && value >= 100 && value <= 599;
+
+interface SafeErrorCause {
   name: string;
-  code?: string;
+  code?: SafeErrorCode;
+  status?: number;
+  cause?: SafeErrorCause;
+}
+
+interface SafeErrorFields extends SafeErrorCause {
   stack?: string;
 }
+
+// An undici `fetch failed` carries its socket error's code one level down; a wrapped database
+// error can sit two or three down. Deeper chains add nothing a log reader acts on.
+const MAX_CAUSE_DEPTH = 3;
 
 // The error's own stack, minus its first line (always a restatement of the message, which is
 // never safe to log) and any further line that is not a V8 or browser stack frame: a multi-line
@@ -66,28 +94,48 @@ const safeStack = (stack: unknown): string | undefined => {
   return frames.length > 0 ? frames.join("\n") : undefined;
 };
 
-/**
- * What a log line may keep of a caught value: the error's class, a structural code if it set one
- * (shaped like `isCode`, so an `AppError`'s `not_found` passes while a provider's free-text code
- * does not), and its shape-checked stack frames. Never the message, the first stack line (which
- * restates it), or a `cause`'s message: this never looks past the error's own properties, so a
- * visitor's words, an email address, or a provider's response text in any of those can't reach
- * a log line through this path. The pino `err`/`error` serializer (`logger.ts`) and the
- * OpenTelemetry log bridge (`logging/index.ts`) both call this so a caught error reads the same
- * safe way everywhere it is logged.
- */
-export const safeErrorFields = (error: unknown): SafeErrorFields => {
-  if (!(error instanceof Error)) {
-    return { name: typeof error };
+const statusOf = (fields: Record<string, unknown>): number | undefined =>
+  isHttpStatus(fields.status) ? fields.status : isHttpStatus(fields.statusCode) ? fields.statusCode : undefined;
+
+const describeCaught = (value: unknown, depth: number, seen: Set<object>): SafeErrorCause => {
+  if (value === null) {
+    return { name: "null" };
+  }
+  if (typeof value !== "object") {
+    return { name: typeof value };
   }
 
-  const name = isClassName(error.name) ? error.name : error.constructor.name;
-  const code = (error as { code?: unknown }).code;
-  const stack = safeStack(error.stack);
+  seen.add(value);
+  const fields = value as Record<string, unknown>;
+  const name = value instanceof Error ? (isClassName(value.name) ? value.name : value.constructor.name) : "object";
+  const status = statusOf(fields);
+  const cause = fields.cause;
+  const followCause = depth < MAX_CAUSE_DEPTH && cause !== undefined && !(typeof cause === "object" && cause !== null && seen.has(cause));
 
   return {
     name,
-    ...(typeof code === "string" && isCode(code) ? { code } : {}),
+    ...(isErrorCode(fields.code) ? { code: fields.code } : {}),
+    ...(status !== undefined ? { status } : {}),
+    ...(followCause ? { cause: describeCaught(cause, depth + 1, seen) } : {}),
+  };
+};
+
+/**
+ * What a log line may keep of a caught value: the error's class; a code if it set one in a shape
+ * that rules out free text (a lowercase code such as an `AppError`'s `not_found`, an uppercase
+ * errno such as `ECONNREFUSED`, a SQLSTATE such as `23505`, or a small integer); an HTTP status;
+ * the same three for each `cause`, a bounded number of levels down; and its shape-checked stack
+ * frames. Never a message, at any level, nor the first stack line (which restates it), nor any
+ * other property: a visitor's words, an email address or a provider's response text in any of
+ * them can't reach a log line through this path. A thrown value that is not an `Error` is named
+ * by its JS type. The pino `err`/`error` serializer (`logger.ts`) and the OpenTelemetry log bridge
+ * (`logging/index.ts`) both call this so a caught error reads the same safe way everywhere it is
+ * logged.
+ */
+export const safeErrorFields = (error: unknown): SafeErrorFields => {
+  const stack = error instanceof Error ? safeStack(error.stack) : undefined;
+  return {
+    ...describeCaught(error, 0, new Set()),
     ...(stack ? { stack } : {}),
   };
 };
@@ -101,6 +149,35 @@ interface LogSafeMetadataKeys {
 
 // pino-http's request counter, which reaches correlation and metadata as a `requestId`.
 export const isRequestCounter = (value: string): boolean => /^\d{1,20}$/u.test(value);
+
+const isShapeSafeScalar = (key: string, value: unknown): value is LogSafeValue => {
+  if (typeof value === "boolean") return true;
+  if (typeof value === "number") return Number.isFinite(value);
+  if (typeof value !== "string") return false;
+  return (
+    isUuid(value) ||
+    isCode(value) ||
+    (key === "requestId" && isRequestCounter(value)) ||
+    (key === "route" && isPathShape(value))
+  );
+};
+
+/**
+ * The entries of a record whose value's shape alone rules out a person's words, under any key: a
+ * flag, a finite number, an id, a lowercase code, a request counter under `requestId`, a route
+ * path under `route`, or an array of those. Everything else is dropped, never redacted in place,
+ * so a key nobody anticipated (a phone number under `waId`, a query under `rerankQuery`) can't
+ * carry free text out. For records a log call site builds from server values; metadata that can
+ * hold a visitor's own words under a code-shaped value (an audit event's) uses `logSafeMetadata`.
+ */
+export const shapeSafeFields = (record: Record<string, unknown>): Record<string, LogSafeValue | LogSafeValue[]> =>
+  Object.fromEntries(
+    Object.entries(record).filter(([key, value]) =>
+      Array.isArray(value)
+        ? value.length > 0 && value.every((entry) => isShapeSafeScalar(key, entry))
+        : isShapeSafeScalar(key, value),
+    ),
+  ) as Record<string, LogSafeValue | LogSafeValue[]>;
 
 const isLogSafe = (key: string, value: unknown, keys: LogSafeMetadataKeys): value is LogSafeValue => {
   if (typeof value === "boolean") return true;

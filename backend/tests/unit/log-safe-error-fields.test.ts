@@ -55,5 +55,70 @@ describe("safeErrorFields", () => {
   it("names the JS type of a thrown non-error value without echoing its content", () => {
     expect(safeErrorFields(visitorWords)).toEqual({ name: "string" });
     expect(safeErrorFields(undefined)).toEqual({ name: "undefined" });
+    expect(safeErrorFields(null)).toEqual({ name: "null" });
+  });
+
+  it("keeps the uppercase errno and library codes an outage is diagnosed by", () => {
+    for (const code of ["ECONNREFUSED", "ETIMEDOUT", "UND_ERR_CONNECT_TIMEOUT", "ERR_INVALID_ARG_TYPE"]) {
+      const error = Object.assign(new Error(`connect ${code} 10.0.0.4:5432 for ${visitorWords}`), { code });
+      expect(safeErrorFields(error).code).toBe(code);
+    }
+  });
+
+  it("keeps a Postgres SQLSTATE code", () => {
+    for (const code of ["23505", "42P01", "57P01"]) {
+      const error = Object.assign(new Error(`duplicate key value violates unique constraint: ${visitorWords}`), { code });
+      expect(safeErrorFields(error).code).toBe(code);
+    }
+  });
+
+  it("keeps a numeric code and an HTTP status, and drops either when it is not a plain number", () => {
+    const provider = Object.assign(new Error(visitorWords), { status: 429, code: 8 });
+    expect(safeErrorFields(provider)).toMatchObject({ code: 8, status: 429 });
+
+    const gateway = Object.assign(new Error(visitorWords), { statusCode: 503 });
+    expect(safeErrorFields(gateway).status).toBe(503);
+
+    const malformed = Object.assign(new Error(visitorWords), { status: `failed for ${visitorWords}`, code: Number.NaN });
+    expect(safeErrorFields(malformed)).not.toHaveProperty("status");
+    expect(safeErrorFields(malformed)).not.toHaveProperty("code");
+    expect(safeErrorFields(Object.assign(new Error("x"), { status: 15551234567 }))).not.toHaveProperty("status");
+  });
+
+  it("drops an uppercase code that carries more than a code", () => {
+    const error = Object.assign(new Error("ignored"), { code: "CONTACT JANE@EXAMPLE.COM" });
+    expect(safeErrorFields(error)).not.toHaveProperty("code");
+  });
+
+  it("follows a cause for its class and code, never its message", () => {
+    const socketError = Object.assign(new Error(`connect ECONNREFUSED for ${visitorWords}`), { code: "ECONNREFUSED" });
+    const fetchFailure = new TypeError("fetch failed", { cause: socketError });
+
+    const fields = safeErrorFields(fetchFailure);
+
+    expect(fields).toMatchObject({ name: "TypeError", cause: { name: "Error", code: "ECONNREFUSED" } });
+    expect(JSON.stringify(fields)).not.toContain(visitorWords);
+    expect(JSON.stringify(fields)).not.toContain("connect ECONNREFUSED");
+  });
+
+  it("reads a thrown plain object's code and status but nothing else it carries", () => {
+    const fields = safeErrorFields({ code: "ECONNRESET", status: 502, message: visitorWords, name: "jane" });
+
+    expect(fields).toEqual({ name: "object", code: "ECONNRESET", status: 502 });
+  });
+
+  it("stops following causes after a bounded depth, and on a cycle", () => {
+    let chain: Error = Object.assign(new Error(visitorWords), { code: "E_DEEPEST" });
+    for (let depth = 0; depth < 10; depth += 1) {
+      chain = new Error(visitorWords, { cause: chain });
+    }
+    const depthOf = (fields: { cause?: unknown }): number =>
+      fields.cause && typeof fields.cause === "object" ? 1 + depthOf(fields.cause) : 0;
+    expect(depthOf(safeErrorFields(chain))).toBe(3);
+
+    const cyclic = new Error(visitorWords);
+    (cyclic as { cause?: unknown }).cause = cyclic;
+    expect(depthOf(safeErrorFields(cyclic))).toBeLessThanOrEqual(3);
+    expect(JSON.stringify(safeErrorFields(chain))).not.toContain(visitorWords);
   });
 });

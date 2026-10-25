@@ -1,11 +1,11 @@
 import { Writable } from "node:stream";
 import { EDGE_FACTS_HEADERS } from "@radioso/edge-proof";
 import express from "express";
-import pino from "pino";
 import request from "supertest";
 import { describe, expect, it } from "vitest";
 
-import { createHttpLogger, type AppLogger } from "../../src/shared/observability/logger.js";
+import { createHttpLogger, createLogger, type AppLogger } from "../../src/shared/observability/logger.js";
+import { createMatchedRouteRecorder } from "../../src/shared/observability/matchedRoute.js";
 
 const createCapturedLogger = (): { logger: AppLogger; lines: string[] } => {
   const lines: string[] = [];
@@ -17,12 +17,15 @@ const createCapturedLogger = (): { logger: AppLogger; lines: string[] } => {
   });
 
   return {
-    logger: pino({ level: "info" }, stream),
+    logger: createLogger("info", stream),
     lines,
   };
 };
 
 const visitorWords = "my daughter has asthma and needs the ground floor room";
+
+const lastLine = (lines: string[]): Record<string, unknown> =>
+  JSON.parse(lines.join("").trim().split("\n").at(-1) ?? "{}") as Record<string, unknown>;
 
 describe("HTTP request log line", () => {
   it("logs a request as its method, path and status alone", async () => {
@@ -33,6 +36,7 @@ describe("HTTP request log line", () => {
       (req as { id?: string }).id = "req-redaction-test";
       next();
     });
+    app.use(createMatchedRouteRecorder());
     app.use(createHttpLogger(logger));
     app.get("/health", (_req, res) => {
       res.setHeader("set-cookie", "session=secret-response-cookie");
@@ -116,6 +120,7 @@ describe("HTTP request log line", () => {
   it("logs the matched route pattern, not a credential segment resolved into it", async () => {
     const { logger, lines } = createCapturedLogger();
     const app = express();
+    app.use(createMatchedRouteRecorder());
     app.use(createHttpLogger(logger));
     const router = express.Router();
     router.get("/invitations/:token", (_req, res) => {
@@ -125,21 +130,93 @@ describe("HTTP request log line", () => {
 
     await request(app).get("/api/v1/auth/invitations/super-secret-invite-token").expect(200);
 
-    const requestLog = JSON.parse(lines.join("").trim().split("\n").at(-1) ?? "{}") as Record<string, unknown>;
     expect(lines.join("")).not.toContain("super-secret-invite-token");
-    expect(requestLog).toMatchObject({ route: "/api/v1/auth/invitations/:token" });
+    expect(lastLine(lines)).toMatchObject({ route: "/api/v1/auth/invitations/:token" });
+  });
+
+  it("keeps the whole pattern when a route's error leaves its router through next(err)", async () => {
+    const { logger, lines } = createCapturedLogger();
+    const app = express();
+    app.use(createMatchedRouteRecorder());
+    app.use(createHttpLogger(logger));
+    const router = express.Router();
+    router.post("/invitations/:token/accept", (_req, _res, next) => {
+      next(new Error("invitation lookup failed"));
+    });
+    app.use("/api/v1/auth", router);
+    app.use(((_error, _req, res, _next) => {
+      res.status(500).json({ error: "internal_error" });
+    }) as express.ErrorRequestHandler);
+
+    await request(app).post("/api/v1/auth/invitations/super-secret-invite-token/accept").expect(500);
+
+    expect(lines.join("")).not.toContain("super-secret-invite-token");
+    expect(lastLine(lines)).toMatchObject({ route: "/api/v1/auth/invitations/:token/accept", res: { statusCode: 500 } });
+  });
+
+  it("names a parameter mount by its parameter, not the value it resolved to", async () => {
+    const { logger, lines } = createCapturedLogger();
+    const app = express();
+    app.use(createMatchedRouteRecorder());
+    app.use(createHttpLogger(logger));
+    const connectors = express.Router();
+    const webhook = express.Router({ mergeParams: true });
+    webhook.post("/", (_req, res) => {
+      res.status(202).end();
+    });
+    connectors.use("/wordpress/:workspaceId/webhook", webhook);
+    app.use("/api/connectors", connectors);
+
+    await request(app).post("/api/connectors/wordpress/8509864081/webhook").expect(202);
+
+    expect(lines.join("")).not.toContain("8509864081");
+    expect(lastLine(lines)).toMatchObject({ route: "/api/connectors/wordpress/:workspaceId/webhook/" });
+  });
+
+  it("logs no route for a response a middleware sent before any route matched", async () => {
+    const { logger, lines } = createCapturedLogger();
+    const app = express();
+    app.use(createMatchedRouteRecorder());
+    app.use(createHttpLogger(logger));
+    const publicChat = express.Router();
+    publicChat.use((_req, res) => {
+      res.status(429).json({ error: "rate_limited" });
+    });
+    publicChat.get("/:token/messages", (_req, res) => {
+      res.status(200).end();
+    });
+    const auth = express.Router();
+    auth.use((_req, res) => {
+      res.status(401).json({ error: "unauthorized" });
+    });
+    auth.get("/invitations/:token", (_req, res) => {
+      res.status(200).end();
+    });
+    app.use("/api/v1/public/chat", publicChat);
+    app.use("/api/v1/auth", auth);
+
+    await request(app).get("/api/v1/public/chat/super-secret-chat-token/messages").expect(429);
+    await request(app).get("/api/v1/auth/invitations/super-secret-invite-token").expect(401);
+
+    const requestLogs = lines.join("").trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(lines.join("")).not.toContain("super-secret-chat-token");
+    expect(lines.join("")).not.toContain("super-secret-invite-token");
+    expect(requestLogs.map((line) => line.res)).toEqual([{ statusCode: 429 }, { statusCode: 401 }]);
+    for (const line of requestLogs) {
+      expect(line).not.toHaveProperty("route");
+    }
   });
 
   it("does not fall back to the raw path for an unmatched route", async () => {
     const { logger, lines } = createCapturedLogger();
     const app = express();
+    app.use(createMatchedRouteRecorder());
     app.use(createHttpLogger(logger));
     // No routes registered; Express answers 404 on its own, leaving req.route unset.
 
     await request(app).get("/api/v1/public/chat/super-secret-chat-token/messages").expect(404);
 
-    const requestLog = JSON.parse(lines.join("").trim().split("\n").at(-1) ?? "{}") as Record<string, unknown>;
     expect(lines.join("")).not.toContain("super-secret-chat-token");
-    expect(requestLog).not.toHaveProperty("route");
+    expect(lastLine(lines)).not.toHaveProperty("route");
   });
 });

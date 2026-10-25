@@ -334,9 +334,10 @@ export class WebsiteCrawlWorker {
           role: "website-crawl-worker",
           jobId: job.id,
           workspaceId: job.workspaceId,
-          error: failure.kind === "internal"
-            ? "Unexpected internal website crawl failure"
-            : error instanceof Error ? error.message : String(error),
+          failureKind: failure.kind,
+          // The provider's message can quote the crawled URL; it reaches the operator through
+          // the job's failure copy, and the log keeps the error's class and code.
+          err: error,
         },
         "Website crawl job failed",
       );

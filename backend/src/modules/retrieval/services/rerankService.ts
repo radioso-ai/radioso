@@ -78,12 +78,13 @@ export class ModelRerankGateway implements RerankGateway {
     } catch (error) {
       this.logger?.warn(
         {
-          error,
+          // Lengths, never the query or the reply: the model can quote the visitor's question back.
+          err: error,
+          workspaceId: input.workspaceContext?.workspaceId,
           rerankModel: this.client.metadata.model,
           rerankProvider: this.client.metadata.provider,
-          rerankQuery: input.query,
           candidateCount: input.contexts.length,
-          rawResponsePreview: content.slice(0, 500),
+          responseLength: content.length,
         },
         "Rerank response could not be parsed; falling back to fused candidate ordering",
       );
@@ -243,8 +244,8 @@ export class OpenAISemanticRerankGateway implements RerankGateway {
     if (!content) {
       this.logger?.warn(
         {
+          workspaceId: input.workspaceContext?.workspaceId,
           rerankModel: this.model,
-          rerankQuery: input.query,
           candidateCount: input.contexts.length,
           maxOutputTokens,
           responseStatus: response.status,
@@ -381,7 +382,7 @@ export class RerankService {
       if (validScores.length === 0) {
         this.logger?.warn(
           {
-            rerankQuery: input.query,
+            workspaceId: input.workspaceContext?.workspaceId,
             candidateCount: input.contexts.length,
             rerankCandidateCount: input.contexts.length,
             rerankBatchCount: rerankBatches.length,
@@ -415,7 +416,7 @@ export class RerankService {
       this.logger?.warn(
         {
           err: error,
-          rerankQuery: input.query,
+          workspaceId: input.workspaceContext?.workspaceId,
           candidateCount: input.contexts.length,
           rerankCandidateCount: input.contexts.length,
           rerankBatchCount: Math.ceil(input.contexts.length / RETRIEVAL_BEHAVIOR.rerank.maxBatchSize),

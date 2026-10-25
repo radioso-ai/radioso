@@ -72,4 +72,28 @@ describe("app logger error serializer", () => {
     expect(JSON.stringify(line)).not.toContain(visitorWords);
     expect(line?.err).toMatchObject({ name: "string" });
   });
+
+  it("never lets pino fill a missing message from the error's own", () => {
+    const { logger, lines } = captureLines();
+
+    // pino writes `err.message` as the line's `msg` when a call passes an error and no message.
+    logger.error(new TypeError(`Could not book "${visitorWords}"`));
+    logger.error({ err: new Error(`provider said: ${visitorWords}`), workspaceId: "workspace-1" });
+    logger.warn({ error: new Error(`visitor said: ${visitorWords}`) });
+
+    const logged = lines();
+    expect(logged).toHaveLength(3);
+    expect(JSON.stringify(logged)).not.toContain(visitorWords);
+    expect(logged.map((line) => line.msg)).toEqual(["TypeError", "Error", "Error"]);
+    expect(logged[1]).toMatchObject({ workspaceId: "workspace-1", err: { name: "Error" } });
+  });
+
+  it("leaves a call's own message alone", () => {
+    const { logger, lines } = captureLines();
+
+    logger.error(new TypeError("ignored"), "booking failed");
+    logger.info({ workspaceId: "workspace-1" });
+
+    expect(lines().map((line) => line.msg)).toEqual(["booking failed", undefined]);
+  });
 });

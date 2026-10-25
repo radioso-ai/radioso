@@ -260,10 +260,13 @@ describe("AMQP document job queue", () => {
       expect.objectContaining({
         role: "amqp-document-job-consumer",
         deadLetterQueueName: "radioso-document-jobs.dlq",
-        rawPayloadBase64: expect.any(String),
+        // The payload stays in the dead-letter queue; the line carries its size, never its bytes.
+        payloadBytes: 9,
+        err: expect.any(SyntaxError),
       }),
       "Rejected invalid document job queue message",
     );
+    expect(logger.warn.mock.calls[0]?.[0]).not.toHaveProperty("rawPayloadBase64");
   });
 
   it("requeues messages when the durable job is busy", async () => {

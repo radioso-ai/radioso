@@ -1,7 +1,7 @@
 ---
 title: "Data retention"
 description: "How long Radioso keeps conversations and every copy derived from them, how to set a workspace's conversation retention window, and how long backups and logs outlive a deletion."
-last_updated: 2026-10-24
+last_updated: 2026-10-26
 ---
 
 # Data retention
@@ -64,7 +64,7 @@ An erasure reaches what Radioso stores. It cannot reach back into a backup, so a
 | Point-in-time recovery logs, where recovery is on | 7 days |
 | Application and request logs | 30 days |
 
-Radioso's request and error lines carry ids, counts and outcomes: a request line names the method, path and status, and an error report's line names the error's type, class and stack frames. The inbox search, which usually carries a visitor's words, travels in a request body, which no log records. Cloud Run's own request log also records each request's URL, client IP address and user agent. Point-in-time recovery is enabled per stack deliberately, because turning it on restarts the database. A self-hosted deployment sets its own backup and log retention; the sweep itself runs in every deployment's worker ([Deployment](/operators/deployment#conversation-retention)).
+Radioso's request and error lines carry ids, counts and outcomes. A request line names the method, the route the request matched and the status: an invitation link logs as `/api/v1/auth/invitations/:token`, with the token itself left out. An error line names the error's type, class, code and stack frames, and keeps its message for the error report. A WhatsApp line names a message by its WhatsApp message id rather than the sender's phone number. The inbox search, which usually carries a visitor's words, travels in a request body, which no log records. Cloud Run's own request log also records each request's URL, client IP address and user agent. Point-in-time recovery is enabled per stack deliberately, because turning it on restarts the database. A self-hosted deployment sets its own backup and log retention; the sweep itself runs in every deployment's worker ([Deployment](/operators/deployment#conversation-retention)).
 
 ## Common failure modes
 

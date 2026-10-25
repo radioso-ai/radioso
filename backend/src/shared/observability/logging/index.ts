@@ -17,7 +17,7 @@ import {
 
 import type { AppLogger } from "../logger.js";
 import { safeTraceAttributes } from "../tracing/attributePolicy.js";
-import { safeErrorFields } from "./logSafeValues.js";
+import { safeErrorFields, shapeSafeFields } from "./logSafeValues.js";
 import type { RuntimeRole } from "../runtimeRole.js";
 
 export type LogLevelName = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
@@ -214,40 +214,53 @@ const messageFromArgs = (args: unknown[]): string | undefined => {
   return undefined;
 };
 
-// Mirrors the Cloud Logging lines' allow-list shape (`safeErrorFields`): an error's class, a
-// structural code, and shape-checked stack frames, never its message. `err` and `error` are the
-// two keys the codebase logs a caught error under; any other key keeps its own name as a prefix
-// so two different error fields on the same record don't collide.
-const errorAttributesFromField = (key: string, error: Error): Record<string, string> => {
-  const safe = safeErrorFields(error);
-  const prefix = key === "err" || key === "error" ? "error" : key;
+// The two keys the codebase logs a caught value under. Whatever such a key holds — an error, a
+// string, a plain object — exports only through `safeErrorFields`, like the Cloud Logging line.
+const CAUGHT_VALUE_KEYS = new Set(["err", "error"]);
 
+// An error's class, code and HTTP status, its first cause's class and code, and its shape-checked
+// stack frames (`safeErrorFields`): never a message. A caught value under `err`/`error` is named
+// `error…`; an `Error` under any other key keeps that key as its prefix, so two error fields on
+// one record don't collide.
+const errorAttributes = (prefix: string, caught: unknown): Record<string, string | number> => {
+  const safe = safeErrorFields(caught);
   return {
     [`${prefix}Class`]: safe.name,
-    ...(safe.code ? { [`${prefix}Code`]: safe.code } : {}),
+    ...(safe.code !== undefined ? { [`${prefix}Code`]: safe.code } : {}),
+    ...(safe.status !== undefined ? { [`${prefix}Status`]: safe.status } : {}),
+    ...(safe.cause ? { [`${prefix}CauseClass`]: safe.cause.name } : {}),
+    ...(safe.cause?.code !== undefined ? { [`${prefix}CauseCode`]: safe.cause.code } : {}),
     ...(safe.stack ? { [`${prefix}Stack`]: safe.stack } : {}),
   };
 };
 
+// The OpenTelemetry bridge runs on the call's own arguments, before pino's serializers, so it
+// applies its own allow-list: caught values through `safeErrorFields`, everything else only when
+// its value's shape rules out free text (`shapeSafeFields`). Nested objects never export.
 const attributesFromRecord = (record: Record<string, unknown>): Record<string, unknown> => {
-  const attributes: Record<string, unknown> = {};
+  const errors: Record<string, string | number> = {};
+  const rest: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(record)) {
-    if (value instanceof Error) {
-      Object.assign(attributes, errorAttributesFromField(key, value));
+    if (value === undefined) {
       continue;
     }
-
-    attributes[key] = value;
+    if (CAUGHT_VALUE_KEYS.has(key)) {
+      Object.assign(errors, errorAttributes("error", value));
+    } else if (value instanceof Error) {
+      Object.assign(errors, errorAttributes(key, value));
+    } else {
+      rest[key] = value;
+    }
   }
 
-  return attributes;
+  return { ...shapeSafeFields(rest), ...errors };
 };
 
 const attributesFromArgs = (args: unknown[]): Record<string, unknown> => {
   const [firstArg] = args;
   if (firstArg instanceof Error) {
-    return errorAttributesFromField("error", firstArg);
+    return errorAttributes("error", firstArg);
   }
   if (!isRecord(firstArg)) {
     return {};

@@ -127,11 +127,7 @@ export class DocumentProcessingWorker {
         })
         .catch((reportError) => {
           this.logger.error(
-            {
-              err: reportError instanceof Error
-                ? reportError.message
-                : String(reportError),
-            },
+            { err: reportError },
             "Post-job maintenance error report failed",
           );
         });

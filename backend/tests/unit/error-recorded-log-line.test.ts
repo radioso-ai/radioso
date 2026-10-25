@@ -1,9 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { Writable } from "node:stream";
-import pino from "pino";
+import express from "express";
+import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
+import { createErrorHandler } from "../../src/app/http/middleware/errorHandler.js";
 import { ErrorReportingService } from "../../src/shared/errors/errorReportingService.js";
+import { createLogger } from "../../src/shared/observability/logger.js";
+import { createMatchedRouteRecorder } from "../../src/shared/observability/matchedRoute.js";
 import type { ErrorSink } from "../../src/shared/errors/errorSink.js";
 
 const captureErrorLog = (sinks: ErrorSink[] = []): { service: ErrorReportingService; line: () => Record<string, unknown>; raw: () => string } => {
@@ -17,7 +21,8 @@ const captureErrorLog = (sinks: ErrorSink[] = []): { service: ErrorReportingServ
   return {
     service: new ErrorReportingService({
       environment: "test",
-      logger: pino({ level: "info" }, stream),
+      // The production logger, so its serializers run on the line exactly as they do in Cloud Logging.
+      logger: createLogger("info", stream),
       service: "radioso-api",
       sinks,
     }),
@@ -40,7 +45,7 @@ describe("error_recorded log line", () => {
     });
 
     expect(raw()).not.toContain(visitorWords);
-    expect(line().error).toMatchObject({ errorType: "chat.turn.failed", severity: "error", errorClass: "TypeError" });
+    expect(line().errorEvent).toMatchObject({ errorType: "chat.turn.failed", severity: "error", errorClass: "TypeError" });
     expect(stackLines(line())[0]).toContain("error-recorded-log-line.test.ts");
     expect(stackLines(line()).every((frame) => frame.trimStart().startsWith("at "))).toBe(true);
   });
@@ -180,7 +185,7 @@ describe("error_recorded log line", () => {
 
     expect(raw()).not.toContain(visitorWords);
     expect(raw()).not.toContain("not an id");
-    expect(line().error).toMatchObject({ requestId: "17", conversationId, method: "GET", route: "/api/v1/history" });
+    expect(line().errorEvent).toMatchObject({ requestId: "17", conversationId, method: "GET", route: "/api/v1/history" });
   });
 
   it("drops a route that only survived a query-string strip, not a real path shape", async () => {
@@ -195,8 +200,67 @@ describe("error_recorded log line", () => {
 
     expect(raw()).not.toContain(emailAddress);
     expect(raw()).not.toContain("visitor typed this");
-    expect(line().error).toMatchObject({ method: "CLIENT" });
-    expect(line().error).not.toHaveProperty("route");
+    expect(line().errorEvent).toMatchObject({ method: "CLIENT" });
+    expect(line().errorEvent).not.toHaveProperty("route");
+  });
+
+  it("drops a percent-encoded route, which can spell out a sentence", async () => {
+    const { service, line, raw } = captureErrorLog();
+
+    await service.report({
+      errorType: "frontend.runtime.unhandled",
+      error: new Error("boom"),
+      requestContext: { method: "CLIENT", route: "/my%20daughter%20has%20asthma" },
+    });
+
+    expect(raw()).not.toContain("daughter");
+    expect(line().errorEvent).not.toHaveProperty("route");
+  });
+
+  it("names an unhandled request error's route by its pattern, never the token resolved into it", async () => {
+    const sink: ErrorSink = { name: "test-sink", record: vi.fn().mockResolvedValue(undefined) };
+    const { service, line, raw } = captureErrorLog([sink]);
+    const app = express();
+    app.use(createMatchedRouteRecorder());
+    const router = express.Router();
+    router.post("/invitations/:token/accept", (_req, _res, next) => {
+      next(new Error(`Could not accept the invitation for ${visitorWords}`));
+    });
+    app.use("/api/v1/auth", router);
+    app.use(createErrorHandler(service));
+
+    await request(app).post("/api/v1/auth/invitations/super-secret-invite-token/accept?ref=newsletter").expect(500);
+    await vi.waitFor(() => expect(sink.record).toHaveBeenCalledOnce());
+
+    expect(raw()).not.toContain("super-secret-invite-token");
+    expect(raw()).not.toContain(visitorWords);
+    expect(line().errorEvent).toMatchObject({ method: "POST", route: "/api/v1/auth/invitations/:token/accept" });
+    const reported = vi.mocked(sink.record).mock.calls[0]?.[0];
+    expect(JSON.stringify(reported)).not.toContain("super-secret-invite-token");
+    expect(reported).toMatchObject({
+      message: `Could not accept the invitation for ${visitorWords}`,
+      requestContext: { route: "/api/v1/auth/invitations/:token/accept" },
+      correlation: { route: "/api/v1/auth/invitations/:token/accept" },
+    });
+  });
+
+  it("names no route for an unhandled error raised before any route matched", async () => {
+    const sink: ErrorSink = { name: "test-sink", record: vi.fn().mockResolvedValue(undefined) };
+    const { service, raw } = captureErrorLog([sink]);
+    const app = express();
+    app.use(createMatchedRouteRecorder());
+    app.use("/api/v1/public/chat", (_req, _res, next) => {
+      next(new Error("session lookup failed"));
+    });
+    app.use(createErrorHandler(service));
+
+    await request(app).get("/api/v1/public/chat/super-secret-chat-token/messages").expect(500);
+    await vi.waitFor(() => expect(sink.record).toHaveBeenCalledOnce());
+
+    expect(raw()).not.toContain("super-secret-chat-token");
+    const reported = vi.mocked(sink.record).mock.calls[0]?.[0];
+    expect(JSON.stringify(reported)).not.toContain("super-secret-chat-token");
+    expect(reported?.requestContext).not.toHaveProperty("route");
   });
 
   it("logs nothing of a thrown non-error value", async () => {
@@ -206,7 +270,7 @@ describe("error_recorded log line", () => {
     await service.report({ errorType: "process.unhandledRejection", error: `rejected: ${visitorWords}` });
 
     expect(raw()).not.toContain(visitorWords);
-    expect(line().error).toMatchObject({ errorType: "process.unhandledRejection", errorClass: "NonErrorThrowable" });
+    expect(line().errorEvent).toMatchObject({ errorType: "process.unhandledRejection", errorClass: "NonErrorThrowable" });
   });
 
   it("still hands the full error to its sinks", async () => {

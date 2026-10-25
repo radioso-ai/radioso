@@ -30,7 +30,6 @@ describe("ErrorReportingService", () => {
       request: {
         id: "req-1",
         method: "GET",
-        originalUrl: "/api/v1/settings/retrieval",
         header(name) {
           return name === "x-workspace-id" ? "workspace-1" : undefined;
         },
@@ -48,10 +47,11 @@ describe("ErrorReportingService", () => {
       },
       requestContext: {
         method: "GET",
-        route: "/api/v1/settings/retrieval",
         statusCode: 500,
       },
     });
+    // No route matched this bare request, so none is named (see error-recorded-log-line.test.ts).
+    expect(error?.requestContext).not.toHaveProperty("route");
     expect(logger.error).toHaveBeenCalledOnce();
     expect(sink.record).toHaveBeenCalledWith(expect.objectContaining({
       errorType: "http.request.unhandled",
@@ -133,11 +133,11 @@ describe("ErrorReportingService", () => {
     await service.report({ errorType: "test.warn", message: "warning", severity: "warn" });
 
     expect(logger.info).toHaveBeenCalledWith(
-      expect.objectContaining({ error: expect.objectContaining({ severity: "info" }) }),
+      expect.objectContaining({ errorEvent: expect.objectContaining({ severity: "info" }) }),
       "error_recorded",
     );
     expect(logger.warn).toHaveBeenCalledWith(
-      expect.objectContaining({ error: expect.objectContaining({ severity: "warn" }) }),
+      expect.objectContaining({ errorEvent: expect.objectContaining({ severity: "warn" }) }),
       "error_recorded",
     );
     expect(logger.error).not.toHaveBeenCalled();

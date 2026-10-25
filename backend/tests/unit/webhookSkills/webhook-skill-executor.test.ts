@@ -162,11 +162,11 @@ describe("WebhookSkillExecutor", () => {
         agentId: "agent-1",
         destinationId: "33333333-3333-4333-8333-333333333333",
         skillName: "send_lead_webhook",
-        errorName: "Error",
-        errorMessage: "Webhook POST failed with status 500",
+        err: expect.any(Error),
       }),
       "Webhook skill delivery failed",
     );
+    expect(warn.mock.calls[0]?.[0]).not.toHaveProperty("errorMessage");
     expect(JSON.stringify(warn.mock.calls[0]?.[0])).not.toContain("receiver-secret");
   });
 });

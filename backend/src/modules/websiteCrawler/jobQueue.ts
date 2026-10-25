@@ -227,7 +227,8 @@ export class AmqpWebsiteCrawlJobConsumer implements JobConsumerPort {
           queueName: this.options.queueName,
           deadLetterQueueName: this.options.deadLetterQueueName,
           err: error,
-          rawPayloadBase64: message.content.toString("base64"),
+          // The message itself dead-letters intact; the line carries its size, never its bytes.
+          payloadBytes: message.content.length,
         },
         "Rejected invalid website crawl queue message",
       );

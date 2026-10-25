@@ -1,7 +1,7 @@
 ---
 title: "OSS And SaaS Observability"
 description: "Vendor-neutral observability strategy separating telemetry, analytics, and error reporting via internal contracts with OSS defaults and optional SaaS exporters."
-last_updated: 2026-10-13
+last_updated: 2026-10-26
 ---
 
 # OSS And SaaS Observability
@@ -98,6 +98,10 @@ The Prometheus-style surface is intentionally small and low-cardinality:
 - `radioso_product_events_total`
 - `radioso_errors_total`
 - `radioso_abuse_control_store_fallback_total`
+
+The two HTTP metrics label a request by the route pattern it matched, such as
+`/api/v1/public/chat/:token/messages`. Requests no route matched, a 404 or a
+401 or 429 sent before routing, share `route="unmatched"`.
 
 Additional traces, request-in-flight gauges, and richer chat-specific metrics can
 be layered on later without changing the internal seams.
@@ -422,8 +426,12 @@ OTEL_LOGS_MIN_LEVEL=info
 
 For PostHog, use the regional ingestion host for the project and append
 `/i/v1/logs`. The bearer token is the PostHog project token. Do not use a
-personal API key. The backend bridge redacts sensitive log attributes before
-export and applies `OTEL_LOGS_MIN_LEVEL` before records leave the process.
+personal API key. The bridge applies `OTEL_LOGS_MIN_LEVEL` before records leave
+the process, and exports each record's fields by what their values look like: a
+logged error as its class, code, HTTP status, first cause and stack frames; any
+other field only when it holds a flag, a number, an id, a short lowercase code
+such as `rate_limited`, or, under `route`, a route pattern. Free text, a phone
+number or a nested object stays in the process, whatever key it was logged under.
 
 The backend adds primitive OpenTelemetry correlation to debug turn traces when
 an active span exists:

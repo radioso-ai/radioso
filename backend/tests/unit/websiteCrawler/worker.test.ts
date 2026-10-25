@@ -264,16 +264,25 @@ describe("website crawl worker", () => {
       updateCheckpoint: vi.fn().mockResolvedValue(false),
       releasePausedClaim: vi.fn().mockResolvedValue(false),
     };
+    const logger = { info: vi.fn(), error: vi.fn(), warn: vi.fn() };
     const worker = new WebsiteCrawlWorker({
       repository: repository as never,
       provider,
       dispatcher: createDispatcher(),
       documentIngestionService: { ingest: vi.fn() },
       publisher,
-      logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn() } as never,
+      logger: logger as never,
     });
 
     await expect(worker.runOnce()).resolves.toBe(true);
+    // The provider's message (which can quote the crawled URL) goes to the operator's failure
+    // copy, not the log line; the error itself reaches the app logger's serializer.
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ jobId: job.id, failureKind: "expected", err: expect.any(Error) }),
+      "Website crawl job failed",
+    );
+    const [failedFields] = logger.error.mock.calls.find((call) => call[1] === "Website crawl job failed") ?? [];
+    expect(failedFields).not.toHaveProperty("error");
     expect(publisher.enqueue).toHaveBeenCalledTimes(2);
     expect(publisher.enqueue).toHaveBeenCalledWith(job.workspaceId, ["crawl.status_changed"]);
     expect(markFailed).toHaveBeenLastCalledWith(job.id, job.attemptCount, "provider unavailable");

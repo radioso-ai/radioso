@@ -2,9 +2,11 @@ import type { EncryptedFieldLocation, EncryptedFieldRow } from "../../db/reposit
 import {
   decryptField,
   encryptField,
+  FIELD_ENCRYPTION_WRITE_FORMAT,
   FieldDecryptionError,
   fieldEncryptionKeyId,
   openEncryptedField,
+  type FieldCiphertextFormat,
   type FieldEncryptionKeyRing,
   type OpenedEncryptedField,
 } from "../../shared/infra/crypto/fieldEncryption.js";
@@ -52,7 +54,7 @@ interface StoredCell {
 }
 
 interface LocationTally {
-  readable: Map<string, { keyed: number; unkeyed: number }>;
+  readable: Map<string, Record<FieldCiphertextFormat, number>>;
   unknownKeys: Map<string, number>;
   unauthenticated: number;
 }
@@ -65,6 +67,15 @@ interface RunTotals {
 }
 
 const plural = (count: number, one: string, many: string): string => `${count} ${count === 1 ? one : many}`;
+
+const FORMAT_LABELS: Record<FieldCiphertextFormat, string> = {
+  keyed: "written with a key id",
+  unkeyed: "written without a key id",
+};
+
+/** Done means under the current key, in the stored form `encryptField` writes. */
+const needsReencryption = (reading: OpenedEncryptedField, currentId: string): boolean =>
+  reading.keyId !== currentId || reading.format !== FIELD_ENCRYPTION_WRITE_FORMAT;
 
 const textCell = (value: string): StoredCell => ({
   ciphertexts: [value],
@@ -119,7 +130,10 @@ const record = (tally: LocationTally, reading: ValueReading): void => {
   }
 };
 
-/** Re-encrypts under the current key, and refuses to hand back anything that does not read back. */
+/**
+ * Re-encrypts under the current key in the write format, and refuses to hand back anything that does
+ * not read back.
+ */
 const reencrypt = (plaintext: string, keys: FieldEncryptionKeyRing): string => {
   const next = encryptField(plaintext, keys);
   if (decryptField(next, keys.current) !== plaintext) {
@@ -130,14 +144,20 @@ const reencrypt = (plaintext: string, keys: FieldEncryptionKeyRing): string => {
 
 const tallyLines = (tally: LocationTally, currentId: string, previousIds: readonly string[]): string[] => {
   const lines: string[] = [];
-  for (const keyId of new Set([currentId, ...previousIds, ...tally.readable.keys()])) {
-    const counts = tally.readable.get(keyId);
-    if (!counts) continue;
-    const role = keyId === currentId ? "current" : "previous";
-    if (counts.keyed > 0) {
-      lines.push(`  ${role} key ${keyId}: ${counts.keyed}${role === "current" ? "" : " to re-encrypt"}`);
+  const current = tally.readable.get(currentId);
+  if (current) {
+    const otherFormat: FieldCiphertextFormat = FIELD_ENCRYPTION_WRITE_FORMAT === "keyed" ? "unkeyed" : "keyed";
+    if (current[FIELD_ENCRYPTION_WRITE_FORMAT] > 0) {
+      lines.push(`  current key ${currentId}: ${current[FIELD_ENCRYPTION_WRITE_FORMAT]}`);
     }
-    if (counts.unkeyed > 0) lines.push(`  ${role} key ${keyId}, written without a key id: ${counts.unkeyed} to re-encrypt`);
+    if (current[otherFormat] > 0) {
+      lines.push(`  current key ${currentId}, ${FORMAT_LABELS[otherFormat]}: ${current[otherFormat]} to re-encrypt`);
+    }
+  }
+  for (const keyId of new Set([...previousIds, ...tally.readable.keys()])) {
+    const counts = tally.readable.get(keyId);
+    if (keyId === currentId || !counts) continue;
+    lines.push(`  previous key ${keyId}: ${counts.keyed + counts.unkeyed} to re-encrypt`);
   }
   for (const [keyId, count] of tally.unknownKeys) {
     lines.push(`  unreadable, encrypted under key ${keyId}, which is not configured: ${count}`);
@@ -173,7 +193,8 @@ const outcomeLines = (command: CredentialReencryptionCommand, totals: RunTotals,
 
 /**
  * Reports, per encrypted location, how many values each configured key holds, and with `apply`
- * re-encrypts every readable value that is not already keyed under the current key. Prints counts
+ * re-encrypts every readable value that is not already under the current key in the write format.
+ * A value's key is the configured key that decrypts it, whichever stored form it is in. Prints counts
  * and key ids only, never a value or a key. Exits 1 while any value cannot be decrypted.
  */
 export const runCredentialReencryptionCommand = async (
@@ -198,7 +219,7 @@ export const runCredentialReencryptionCommand = async (
           const reading = readValue(ciphertext, location, deps.keys);
           record(tally, reading);
           if (reading.kind === "unreadable") totals.unreadable += 1;
-          if (reading.kind !== "readable" || (reading.format === "keyed" && reading.keyId === currentId)) continue;
+          if (reading.kind !== "readable" || !needsReencryption(reading, currentId)) continue;
           totals.toReencrypt += 1;
           if (command.apply) replacements.set(ciphertext, reencrypt(reading.plaintext, deps.keys));
         }

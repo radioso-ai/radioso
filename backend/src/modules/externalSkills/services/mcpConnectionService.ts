@@ -2,7 +2,7 @@ import { AppError, badRequest, conflict, notFound, serviceUnavailable } from "..
 import {
   encryptField,
   decryptField,
-  type FieldEncryptionKeys,
+  type FieldEncryptionKeyRing,
 } from "../../../shared/infra/crypto/fieldEncryption.js";
 import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
@@ -76,7 +76,7 @@ export class EncryptionNotConfiguredError extends AppError {
 interface McpConnectionServiceOptions {
   repository: McpConnectionRepositoryPort;
   toolServiceFactory: ToolServiceFactory;
-  encryptionKey?: FieldEncryptionKeys;
+  encryptionKey?: FieldEncryptionKeyRing;
   /**
    * Public-URL / SSRF guard, enforced on create AND before every outbound
    * connection. Rejects loopback/private/link-local hosts and resolves DNS, so a
@@ -300,7 +300,7 @@ export class McpConnectionService {
   private requireOauthConnection(record: McpConnectionRecord | null): {
     record: McpConnectionRecord;
     config: StoredOauthClientConfig;
-    key: FieldEncryptionKeys;
+    key: FieldEncryptionKeyRing;
   } {
     if (!record) {
       throw notFound("MCP connection not found");

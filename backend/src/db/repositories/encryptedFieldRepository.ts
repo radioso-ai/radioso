@@ -37,8 +37,8 @@ const location = <T extends Extract<keyof DB, string>>(spec: {
 /**
  * Every column that holds values encrypted under CONNECTOR_ENCRYPTION_KEY through `fieldEncryption.ts`.
  * The credential re-encryption command moves exactly these onto the current key, so a new encrypted
- * column adds its entry here. Name such a column `*_ciphertext`: a unit test checks every one in the
- * schema against this list.
+ * column adds its entry here. Name such a column `*_ciphertext`: a unit test checks every column whose
+ * name contains `ciphertext`, `sealed` or `encrypted` against this list.
  */
 export const ENCRYPTED_FIELD_LOCATIONS: readonly EncryptedFieldLocation[] = [
   location({ table: "connector_configs", keyColumns: ["id"], column: "config_data", shape: "json_object_values" }),

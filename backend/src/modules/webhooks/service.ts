@@ -2,10 +2,9 @@ import { randomBytes } from "node:crypto";
 
 import { AppError, badRequest, conflict, notFound } from "../../shared/domain/errors.js";
 import {
-  currentFieldEncryptionKey,
   decryptField,
   encryptField,
-  type FieldEncryptionKeys,
+  type FieldEncryptionKeyRing,
 } from "../../shared/infra/crypto/fieldEncryption.js";
 import type { AuditPort } from "../audit/contracts/index.js";
 import {
@@ -49,7 +48,7 @@ export interface WebhookDestinationExistencePort {
 }
 
 interface WebhookDestinationsEncryptionConfig {
-  key: FieldEncryptionKeys | undefined;
+  key: FieldEncryptionKeyRing | undefined;
 }
 
 export interface WebhookDestinationActor {
@@ -138,7 +137,7 @@ export class WebhookDestinationService implements WebhookDestinationExistencePor
 
   isEncryptionConfigured(): boolean {
     const key = this.options.encryption.key;
-    return key !== undefined && currentFieldEncryptionKey(key).length > 0;
+    return key !== undefined && key.current.length > 0;
   }
 
   async create(input: {

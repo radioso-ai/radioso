@@ -1,4 +1,4 @@
-import type { FieldEncryptionKeys } from "../../../shared/infra/crypto/fieldEncryption.js";
+import type { FieldEncryptionKeyRing } from "../../../shared/infra/crypto/fieldEncryption.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 import type { McpConnectionRecord } from "../../../db/repositories/mcpConnectionRepository.js";
@@ -34,7 +34,7 @@ interface ResolveFreshAccessTokenInput {
   agentId: string;
   record: McpConnectionRecord;
   repository: OauthTokenPersistencePort;
-  encryptionKey: FieldEncryptionKeys;
+  encryptionKey: FieldEncryptionKeyRing;
   assertPublicUrl?: (url: string) => void | Promise<void>;
   fetchImpl?: FetchLike;
   logger?: AppLogger;

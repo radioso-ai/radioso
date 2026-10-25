@@ -1,4 +1,4 @@
-import type { FieldEncryptionKeys } from "../../../shared/infra/crypto/fieldEncryption.js";
+import type { FieldEncryptionKeyRing } from "../../../shared/infra/crypto/fieldEncryption.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 import type { OauthCredentialRecord, OauthReauthStatus } from "../domain.js";
@@ -38,7 +38,7 @@ export interface ResolveFreshAccessTokenInput {
   subjectId: string;
   record: OauthCredentialRecord;
   repository: OauthTokenPersistencePort;
-  encryptionKey: FieldEncryptionKeys;
+  encryptionKey: FieldEncryptionKeyRing;
   assertPublicUrl?: (url: string) => void | Promise<void>;
   fetchImpl?: FetchLike;
   logger?: AppLogger;

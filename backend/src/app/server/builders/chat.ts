@@ -553,6 +553,7 @@ export const buildChatServices = (input: {
           ? registration.handler({
               database: input.database,
               env: input.env,
+              credentialKeys: encryptionKeys,
               logger: input.logger,
               auditService: input.auditService,
               telemetryService: input.telemetryService,

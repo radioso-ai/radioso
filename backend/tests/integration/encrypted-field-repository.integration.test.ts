@@ -12,7 +12,13 @@ import {
   type EncryptedFieldLocation,
   type EncryptedFieldRow,
 } from "../../src/db/repositories/encryptedFieldRepository.js";
-import { encryptField, fieldEncryptionKeyId, openEncryptedField } from "../../src/shared/infra/crypto/fieldEncryption.js";
+import {
+  encryptField,
+  encryptFieldAs,
+  FIELD_ENCRYPTION_WRITE_FORMAT,
+  fieldEncryptionKeyId,
+  openEncryptedField,
+} from "../../src/shared/infra/crypto/fieldEncryption.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
@@ -147,7 +153,7 @@ describeIntegration("EncryptedFieldRepository (Postgres)", () => {
       [
         mcpId,
         agentId,
-        encryptField("mcp-token", PREVIOUS_KEY),
+        encryptFieldAs("keyed", "mcp-token", PREVIOUS_KEY),
         encryptField("mcp-client", PREVIOUS_KEY),
         encryptUnkeyed("mcp-flow", PREVIOUS_KEY),
       ],
@@ -156,7 +162,7 @@ describeIntegration("EncryptedFieldRepository (Postgres)", () => {
       `INSERT INTO workspace_provider_credentials (workspace_id, provider, ciphertext) VALUES ($1, 'elevenlabs', $2)`,
       [workspaceId, encryptUnkeyed("provider-key", PREVIOUS_KEY)],
     );
-    const webhookId = await insertWebhookDestination(encryptField("webhook-secret", PREVIOUS_KEY));
+    const webhookId = await insertWebhookDestination(encryptFieldAs("keyed", "webhook-secret", PREVIOUS_KEY));
 
     await runCredentialReencryptionCommand(parseCredentialReencryptionArgs(["--apply"]), {
       keys: { current: CURRENT_KEY, previous: [PREVIOUS_KEY] },
@@ -165,36 +171,40 @@ describeIntegration("EncryptedFieldRepository (Postgres)", () => {
       print: () => undefined,
     });
 
-    const currentKeyed = (plaintext: string) => ({ plaintext, keyId: fieldEncryptionKeyId(CURRENT_KEY), format: "keyed" });
+    const currentInWriteFormat = (plaintext: string) => ({
+      plaintext,
+      keyId: fieldEncryptionKeyId(CURRENT_KEY),
+      format: FIELD_ENCRYPTION_WRITE_FORMAT,
+    });
     const [connector] = await database.query<{ config_data: Record<string, string> }>(
       `SELECT config_data FROM connector_configs WHERE id = $1`,
       [connectorId],
     );
     expect(connector?.config_data.site_url).toBe("https://example.com");
-    expect(openEncryptedField(connector.config_data.api_token, CURRENT_KEY)).toEqual(currentKeyed("wp-token"));
+    expect(openEncryptedField(connector.config_data.api_token, CURRENT_KEY)).toEqual(currentInWriteFormat("wp-token"));
     const [oauth] = await database.query<Record<string, string>>(
       `SELECT credential_ciphertext, oauth_client_ciphertext, oauth_flow_ciphertext FROM integration_oauth_connections WHERE id = $1`,
       [oauthId],
     );
-    expect(openEncryptedField(oauth.credential_ciphertext, CURRENT_KEY)).toEqual(currentKeyed("oauth-tokens"));
-    expect(openEncryptedField(oauth.oauth_client_ciphertext, CURRENT_KEY)).toEqual(currentKeyed("oauth-client"));
-    expect(openEncryptedField(oauth.oauth_flow_ciphertext, CURRENT_KEY)).toEqual(currentKeyed("oauth-flow"));
+    expect(openEncryptedField(oauth.credential_ciphertext, CURRENT_KEY)).toEqual(currentInWriteFormat("oauth-tokens"));
+    expect(openEncryptedField(oauth.oauth_client_ciphertext, CURRENT_KEY)).toEqual(currentInWriteFormat("oauth-client"));
+    expect(openEncryptedField(oauth.oauth_flow_ciphertext, CURRENT_KEY)).toEqual(currentInWriteFormat("oauth-flow"));
     const [mcp] = await database.query<Record<string, string>>(
       `SELECT credential_ciphertext, oauth_client_ciphertext, oauth_flow_ciphertext FROM mcp_connections WHERE id = $1`,
       [mcpId],
     );
-    expect(openEncryptedField(mcp.credential_ciphertext, CURRENT_KEY)).toEqual(currentKeyed("mcp-token"));
-    expect(openEncryptedField(mcp.oauth_client_ciphertext, CURRENT_KEY)).toEqual(currentKeyed("mcp-client"));
-    expect(openEncryptedField(mcp.oauth_flow_ciphertext, CURRENT_KEY)).toEqual(currentKeyed("mcp-flow"));
+    expect(openEncryptedField(mcp.credential_ciphertext, CURRENT_KEY)).toEqual(currentInWriteFormat("mcp-token"));
+    expect(openEncryptedField(mcp.oauth_client_ciphertext, CURRENT_KEY)).toEqual(currentInWriteFormat("mcp-client"));
+    expect(openEncryptedField(mcp.oauth_flow_ciphertext, CURRENT_KEY)).toEqual(currentInWriteFormat("mcp-flow"));
     const [provider] = await database.query<{ ciphertext: string }>(
       `SELECT ciphertext FROM workspace_provider_credentials WHERE workspace_id = $1 AND provider = 'elevenlabs'`,
       [workspaceId],
     );
-    expect(openEncryptedField(provider.ciphertext, CURRENT_KEY)).toEqual(currentKeyed("provider-key"));
+    expect(openEncryptedField(provider.ciphertext, CURRENT_KEY)).toEqual(currentInWriteFormat("provider-key"));
     const [webhook] = await database.query<{ secret_ciphertext: string }>(
       `SELECT secret_ciphertext FROM workspace_webhook_destinations WHERE id = $1`,
       [webhookId],
     );
-    expect(openEncryptedField(webhook.secret_ciphertext, CURRENT_KEY)).toEqual(currentKeyed("webhook-secret"));
+    expect(openEncryptedField(webhook.secret_ciphertext, CURRENT_KEY)).toEqual(currentInWriteFormat("webhook-secret"));
   });
 });

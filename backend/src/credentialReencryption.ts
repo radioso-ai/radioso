@@ -7,8 +7,9 @@ import { Database } from "./shared/infra/database.js";
 /**
  * Moves stored credentials onto `CONNECTOR_ENCRYPTION_KEY` after a key rotation. Without `--apply` it
  * reports how many values each configured key holds in every encrypted column, and changes nothing.
- * With `--apply` it re-encrypts each readable value that is not already keyed under the current key,
- * row by row, and never overwrites a credential edited since it was read. It runs with the backend's
+ * With `--apply` it re-encrypts each readable value that is not already under the current key, in the
+ * stored form `encryptField` writes, row by row, and never overwrites a credential edited since it
+ * was read. It runs with the backend's
  * environment: the database, `CONNECTOR_ENCRYPTION_KEY`, and `CONNECTOR_ENCRYPTION_PREVIOUS_KEYS`.
  *
  *   node ./dist/src/credentialReencryption.js            # dry run: counts per key id

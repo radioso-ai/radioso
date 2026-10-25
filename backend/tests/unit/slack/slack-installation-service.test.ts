@@ -293,7 +293,7 @@ const createService = () => {
     installations,
     bindings,
     workspaceAccounts,
-    encryptionKey,
+    encryptionKey: { current: encryptionKey, previous: [] },
   });
   return { service, oauthConnections, integrationConnections, installations, bindings, workspaceAccounts };
 };

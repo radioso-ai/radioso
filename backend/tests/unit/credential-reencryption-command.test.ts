@@ -1,5 +1,3 @@
-import { createCipheriv, randomBytes } from "node:crypto";
-
 import { describe, expect, it } from "vitest";
 
 import {
@@ -14,6 +12,8 @@ import type {
 import {
   decryptField,
   encryptField,
+  encryptFieldAs,
+  FIELD_ENCRYPTION_WRITE_FORMAT,
   fieldEncryptionKeyId,
   openEncryptedField,
 } from "../../src/shared/infra/crypto/fieldEncryption.js";
@@ -44,13 +44,18 @@ const JSON_LOCATION: EncryptedFieldLocation = {
   shape: "json_object_values",
 };
 
-/** The stored form written before ciphertext named its key. */
-const encryptUnkeyed = (plaintext: string, keyBase64: string): string => {
-  const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", Buffer.from(keyBase64, "base64"), iv, { authTagLength: 16 });
-  const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
-  return Buffer.concat([iv, encrypted, cipher.getAuthTag()]).toString("base64");
-};
+/**
+ * Written so the tests hold whichever stored form production writes: "done" means under the current
+ * key in the write format, and the other form is something the command re-encrypts.
+ */
+const OTHER_FORMAT = FIELD_ENCRYPTION_WRITE_FORMAT === "keyed" ? "unkeyed" : "keyed";
+const OTHER_FORMAT_LABEL = OTHER_FORMAT === "keyed" ? "written with a key id" : "written without a key id";
+const encryptInOtherFormat = (plaintext: string, keyBase64: string): string =>
+  encryptFieldAs(OTHER_FORMAT, plaintext, keyBase64);
+const encryptKeyed = (plaintext: string, keyBase64: string): string => encryptFieldAs("keyed", plaintext, keyBase64);
+const encryptUnkeyed = (plaintext: string, keyBase64: string): string =>
+  encryptFieldAs("unkeyed", plaintext, keyBase64);
+const CURRENT_IN_WRITE_FORMAT = { keyId: CURRENT_ID, format: FIELD_ENCRYPTION_WRITE_FORMAT };
 
 const compareKeys = (left: readonly string[], right: readonly string[]): number => {
   for (let index = 0; index < left.length; index += 1) {
@@ -128,10 +133,10 @@ describe("re-encrypting stored credentials", () => {
   it("reports, as a dry run, how many values each key holds per location and changes nothing", async () => {
     const { store, run, output, lines } = setup();
     const seeded: EncryptedFieldRow[] = [
-      { key: ["a"], value: encryptField("current-keyed", CURRENT_KEY) },
-      { key: ["b"], value: encryptUnkeyed("current-unkeyed", CURRENT_KEY) },
-      { key: ["c"], value: encryptField("previous-keyed", PREVIOUS_KEY) },
-      { key: ["d"], value: encryptUnkeyed("previous-unkeyed", PREVIOUS_KEY) },
+      { key: ["a"], value: encryptField("current-in-place", CURRENT_KEY) },
+      { key: ["b"], value: encryptInOtherFormat("current-other-form", CURRENT_KEY) },
+      { key: ["c"], value: encryptField("previous-in-write-form", PREVIOUS_KEY) },
+      { key: ["d"], value: encryptInOtherFormat("previous-other-form", PREVIOUS_KEY) },
     ];
     store.seed(SECRETS, seeded.map((row) => ({ ...row })));
 
@@ -142,16 +147,15 @@ describe("re-encrypting stored credentials", () => {
       `Current key: ${CURRENT_ID}. Previous keys: ${PREVIOUS_ID}.`,
       SECRETS,
       `  current key ${CURRENT_ID}: 1`,
-      `  current key ${CURRENT_ID}, written without a key id: 1 to re-encrypt`,
-      `  previous key ${PREVIOUS_ID}: 1 to re-encrypt`,
-      `  previous key ${PREVIOUS_ID}, written without a key id: 1 to re-encrypt`,
+      `  current key ${CURRENT_ID}, ${OTHER_FORMAT_LABEL}: 1 to re-encrypt`,
+      `  previous key ${PREVIOUS_ID}: 2 to re-encrypt`,
       CONNECTORS,
       "  no encrypted values",
       "To re-encrypt: 3. Unreadable: 0.",
       "Dry run: nothing was changed. Run again with --apply to re-encrypt these values under the current key.",
     ]);
     expect(store.rows.get(SECRETS)).toEqual(seeded);
-    expect(output()).not.toContain("previous-keyed");
+    expect(output()).not.toContain("previous-in-write-form");
   });
 
   it("moves every value onto the current key with --apply, and a second run finds nothing left", async () => {
@@ -159,8 +163,8 @@ describe("re-encrypting stored credentials", () => {
     const untouched = encryptField("already-current", CURRENT_KEY);
     store.seed(SECRETS, [
       { key: ["a"], value: untouched },
-      { key: ["b"], value: encryptUnkeyed("current-unkeyed", CURRENT_KEY) },
-      { key: ["c"], value: encryptField("previous-keyed", PREVIOUS_KEY) },
+      { key: ["b"], value: encryptInOtherFormat("current-other-form", CURRENT_KEY) },
+      { key: ["c"], value: encryptKeyed("previous-keyed", PREVIOUS_KEY) },
       { key: ["d"], value: encryptUnkeyed("previous-unkeyed", PREVIOUS_KEY) },
     ]);
 
@@ -169,9 +173,9 @@ describe("re-encrypting stored credentials", () => {
     expect(applied.exitCode).toBe(0);
     expect(lines.at(-1)).toBe(`Re-encrypted 3 values under the current key ${CURRENT_ID}.`);
     expect(store.value(SECRETS, ["a"])).toBe(untouched);
-    for (const [key, plaintext] of [["b", "current-unkeyed"], ["c", "previous-keyed"], ["d", "previous-unkeyed"]] as const) {
+    for (const [key, plaintext] of [["b", "current-other-form"], ["c", "previous-keyed"], ["d", "previous-unkeyed"]] as const) {
       const opened = openEncryptedField(store.value(SECRETS, [key])!, CURRENT_KEY);
-      expect(opened).toEqual({ plaintext, keyId: CURRENT_ID, format: "keyed" });
+      expect(opened).toEqual({ plaintext, ...CURRENT_IN_WRITE_FORMAT });
     }
 
     lines.length = 0;
@@ -205,13 +209,13 @@ describe("re-encrypting stored credentials", () => {
 
   it("counts values no configured key decrypts, leaves them alone, and exits non-zero", async () => {
     const { store, run, lines, output } = setup();
-    const orphaned = encryptField("orphaned", REMOVED_KEY);
+    const orphaned = encryptKeyed("orphaned", REMOVED_KEY);
     const unkeyedOrphan = encryptUnkeyed("unkeyed-orphan", REMOVED_KEY);
     store.seed(SECRETS, [
       { key: ["a"], value: orphaned },
       { key: ["b"], value: unkeyedOrphan },
       { key: ["c"], value: "stored-in-plaintext" },
-      { key: ["d"], value: encryptField("readable", PREVIOUS_KEY) },
+      { key: ["d"], value: encryptInOtherFormat("readable", PREVIOUS_KEY) },
     ]);
 
     const { exitCode } = await run(["--apply"]);
@@ -237,7 +241,7 @@ describe("re-encrypting stored credentials", () => {
       site_url: "https://example.com",
       api_token: encryptUnkeyed("wp-token", PREVIOUS_KEY),
       webhook_secret: encryptField("generated", CURRENT_KEY),
-      stale_secret: encryptField("from-a-removed-key", REMOVED_KEY),
+      stale_secret: encryptKeyed("from-a-removed-key", REMOVED_KEY),
       retries: 3,
     };
     store.seed(CONNECTORS, [{ key: ["connector-1"], value: JSON.stringify(config) }]);
@@ -248,7 +252,7 @@ describe("re-encrypting stored credentials", () => {
     expect(lines).toEqual(expect.arrayContaining([
       CONNECTORS,
       `  current key ${CURRENT_ID}: 1`,
-      `  previous key ${PREVIOUS_ID}, written without a key id: 1 to re-encrypt`,
+      `  previous key ${PREVIOUS_ID}: 1 to re-encrypt`,
       `  unreadable, encrypted under key ${REMOVED_ID}, which is not configured: 1`,
     ]));
     const stored = JSON.parse(store.value(CONNECTORS, ["connector-1"])!) as Record<string, unknown>;
@@ -257,7 +261,7 @@ describe("re-encrypting stored credentials", () => {
     expect(stored.webhook_secret).toBe(config.webhook_secret);
     expect(stored.stale_secret).toBe(config.stale_secret);
     expect(openEncryptedField(stored.api_token as string, CURRENT_KEY))
-      .toEqual({ plaintext: "wp-token", keyId: CURRENT_ID, format: "keyed" });
+      .toEqual({ plaintext: "wp-token", ...CURRENT_IN_WRITE_FORMAT });
   });
 
   it("reads each location in batches until it is exhausted", async () => {

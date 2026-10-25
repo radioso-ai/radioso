@@ -1,4 +1,4 @@
-import { connectorEncryptionKeys, type Env } from "../../app/config/env.js";
+import type { Env } from "../../app/config/env.js";
 import type { ApplicationModule } from "../../app/composition/applicationModule.js";
 import { getSlackReadiness } from "./manifest/slackManifest.js";
 import { buildSlackOauthProviderDefinition } from "./oauth/slackProvider.js";
@@ -27,11 +27,11 @@ export const createSlackApplicationModule = (env?: Partial<SlackOauthEnv>): Appl
       type: SLACK_POST_ACTION_TYPE,
       // Host code queues most posts, but the Slack escalation skill posts from a routine step.
       queuedFrom: "routine_action_step",
-      handler: ({ database, env: runtimeEnv, logger }) =>
+      handler: ({ database, credentialKeys, logger }) =>
         new SlackPostActionHandler({
           credentials: new SlackPostActionCredentialResolver({
             database,
-            encryptionKey: connectorEncryptionKeys(runtimeEnv),
+            encryptionKey: credentialKeys,
           }),
           logger,
         }),

@@ -187,12 +187,16 @@ Primary paths:
 
 Credentials encrypted under `CONNECTOR_ENCRYPTION_KEY`:
 
-- `backend/src/shared/infra/crypto/fieldEncryption.ts` — the cipher: `v1.<key id>.` header bound as
-  AAD, key rings whose previous keys only decrypt. Composition passes services the ring from
-  `connectorEncryptionKeys(env)` (`app/config/env.ts`), never the raw key.
+- `backend/src/shared/infra/crypto/fieldEncryption.ts` — the cipher. It reads two stored forms, keyed
+  (`v1.<key id>.` header bound as AAD) and unkeyed, under any key in a ring whose previous keys only
+  decrypt. `FIELD_ENCRYPTION_WRITE_FORMAT` decides what `encryptField` writes: `unkeyed`, the form
+  the release before #1610 reads, until a later release flips it to `keyed`. Composition passes
+  services the ring from `connectorEncryptionKeys(env)` (`app/config/env.ts`), never the raw key;
+  application modules get it as `credentialKeys` in their action handler factory context.
 - `backend/src/db/repositories/encryptedFieldRepository.ts` — `ENCRYPTED_FIELD_LOCATIONS`, every
   encrypted column. A new encrypted column adds an entry there; name it `*_ciphertext` and
-  `tests/unit/encrypted-field-locations.test.ts` checks the schema against the list.
+  `tests/unit/encrypted-field-locations.test.ts` checks the schema against the list (any column
+  named `*ciphertext*`, `*sealed*` or `*encrypted*`, less the commented exclusions).
 - `backend/src/credentialReencryption.ts` and `app/cli/credentialReencryptionCommand.ts` — the key
   rotation CLI (`pnpm run credentials:reencrypt`). A deploy-time CLI with no HTTP route, so it sits
   outside the copilot coverage map. Procedure: `docs-portal/content/operators/self-hosting-operations.mdx`.

@@ -7,10 +7,10 @@ const KEY_LENGTH = 32;
 const MIN_ENCRYPTED_PAYLOAD_BYTES = IV_LENGTH + AUTH_TAG_LENGTH;
 
 /**
- * Stored form: `v1.<key id>.<base64(iv | ciphertext | tag)>`. Values written before ciphertext named
- * its key are `base64(iv | ciphertext | tag)` alone; base64 has no dot, so the two never collide.
- * The `v1.<key id>.` header is GCM additional authenticated data: changing or stripping it fails
- * decryption.
+ * Two stored forms. `keyed`: `v1.<key id>.<base64(iv | ciphertext | tag)>`, where the `v1.<key id>.`
+ * header is GCM additional authenticated data, so changing or stripping it fails decryption.
+ * `unkeyed`: `base64(iv | ciphertext | tag)` alone, the form every release reads. Base64 has no dot,
+ * so the two never collide. Both decrypt under any configured key.
  */
 const FORMAT_VERSION = "v1";
 const KEYED_FORMAT = /^v1\.([0-9a-f]{16})\.([A-Za-z0-9+/]+={0,2})$/;
@@ -40,8 +40,18 @@ export interface FieldEncryptionKeyRing {
 /** One base64 key, or a key ring. A single key behaves as a ring with no previous keys. */
 export type FieldEncryptionKeys = string | FieldEncryptionKeyRing;
 
-/** `keyed` values carry their key id; `unkeyed` values were written before they did. */
-type FieldCiphertextFormat = "keyed" | "unkeyed";
+/** `keyed` values carry their key id; `unkeyed` values are identified by the key that opens them. */
+export type FieldCiphertextFormat = "keyed" | "unkeyed";
+
+/**
+ * The stored form `encryptField` writes. Phase one of naming keys in ciphertext (#1610): this
+ * release reads both forms but writes `unkeyed`, the only form the previous release reads, so
+ * instances still on it during a rolling deploy, and a rollback, keep reading every credential this
+ * release writes. Key rotation works either way, because an `unkeyed` value's key is the configured
+ * key that authenticates it. Phase two: flip this to `keyed` in a release after this one runs on
+ * every stack.
+ */
+export const FIELD_ENCRYPTION_WRITE_FORMAT: FieldCiphertextFormat = "unkeyed";
 
 export interface OpenedEncryptedField {
   plaintext: string;
@@ -165,7 +175,7 @@ export const fieldEncryptionKeyId = (keyBase64: string, options: FieldEncryption
   keyIdOf(decodeKey(keyBase64, options.keyName ?? "encryption key"));
 
 /** The key that encrypts new values. */
-export const currentFieldEncryptionKey = (keys: FieldEncryptionKeys): string => ringOf(keys).current;
+const currentFieldEncryptionKey = (keys: FieldEncryptionKeys): string => ringOf(keys).current;
 
 /**
  * Why a ring's previous keys cannot be used, one sentence per problem: a malformed entry, an entry
@@ -205,23 +215,34 @@ export const previousFieldEncryptionKeyProblems = (
   return problems;
 };
 
-/** Encrypts under the current key, in the keyed stored form. */
-export const encryptField = (
+/**
+ * Encrypts under the current key in a named stored form. Production writes through `encryptField`,
+ * which uses `FIELD_ENCRYPTION_WRITE_FORMAT`; this keeps the keyed writer exercised until phase two.
+ */
+export const encryptFieldAs = (
+  format: FieldCiphertextFormat,
   plaintext: string,
   keys: FieldEncryptionKeys,
   options: FieldEncryptionOptions = {},
 ): string => {
   const current = ringKey(currentFieldEncryptionKey(keys), options.keyName ?? "encryption key");
-  const header = headerFor(current.id);
+  const header = format === "keyed" ? headerFor(current.id) : "";
   const iv = randomBytes(IV_LENGTH);
   const cipher = createCipheriv(ALGORITHM, current.key, iv, { authTagLength: AUTH_TAG_LENGTH });
-  cipher.setAAD(Buffer.from(header, "utf8"));
+  if (format === "keyed") cipher.setAAD(Buffer.from(header, "utf8"));
 
   const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
   const authTag = cipher.getAuthTag();
 
   return `${header}${Buffer.concat([iv, encrypted, authTag]).toString("base64")}`;
 };
+
+/** Encrypts under the current key in `FIELD_ENCRYPTION_WRITE_FORMAT`. */
+export const encryptField = (
+  plaintext: string,
+  keys: FieldEncryptionKeys,
+  options: FieldEncryptionOptions = {},
+): string => encryptFieldAs(FIELD_ENCRYPTION_WRITE_FORMAT, plaintext, keys, options);
 
 /** Decrypts either stored form under whichever configured key wrote it, and says which. */
 export const openEncryptedField = (

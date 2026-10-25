@@ -1,8 +1,7 @@
 import {
-  currentFieldEncryptionKey,
   decryptField,
   encryptField,
-  type FieldEncryptionKeys,
+  type FieldEncryptionKeyRing,
 } from "../../../../shared/infra/crypto/fieldEncryption.js";
 import { badRequest, notFound, AppError } from "../../../../shared/domain/errors.js";
 import type {
@@ -22,8 +21,8 @@ const KEY_NAME = "CONNECTOR_ENCRYPTION_KEY";
 const PREVIOUS_KEYS_NAME = "CONNECTOR_ENCRYPTION_PREVIOUS_KEYS";
 
 export interface WorkspaceCredentialsEncryptionConfig {
-  /** The credential key ring (or one base64 32-byte key). Undefined when the operator has not configured one. */
-  key: FieldEncryptionKeys | undefined;
+  /** The credential key ring. Undefined when the operator has not configured `CONNECTOR_ENCRYPTION_KEY`. */
+  key: FieldEncryptionKeyRing | undefined;
 }
 
 interface ProviderCredentialFailureRecoveryPort {
@@ -79,7 +78,7 @@ export class WorkspaceProviderCredentialsService {
   ) {}
 
   isEncryptionConfigured(): boolean {
-    return this.encryption.key !== undefined && currentFieldEncryptionKey(this.encryption.key).length > 0;
+    return this.encryption.key !== undefined && this.encryption.key.current.length > 0;
   }
 
   onDecryptError(listener: (error: unknown, provider: WorkspaceCredentialProvider) => void): void {

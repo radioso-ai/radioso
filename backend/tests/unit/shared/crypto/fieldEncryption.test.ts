@@ -1,9 +1,11 @@
-import { createCipheriv, randomBytes } from "node:crypto";
+import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 import { describe, expect, it } from "vitest";
 
 import {
   decryptField,
   encryptField,
+  encryptFieldAs,
+  FIELD_ENCRYPTION_WRITE_FORMAT,
   fieldEncryptionKeyId,
   previousFieldEncryptionKeyProblems,
   FieldDecryptionError,
@@ -25,6 +27,20 @@ const encryptUnkeyed = (plaintext: string, keyBase64: string): string => {
   const encrypted = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
   return Buffer.concat([iv, encrypted, cipher.getAuthTag()]).toString("base64");
 };
+
+/** The previous release's reader: base64(iv | ciphertext | tag) under one key, no AAD. */
+const decryptAsPreviousRelease = (stored: string, keyBase64: string): string => {
+  const data = Buffer.from(stored, "base64");
+  const decipher = createDecipheriv("aes-256-gcm", Buffer.from(keyBase64, "base64"), data.subarray(0, 12), {
+    authTagLength: 16,
+  });
+  decipher.setAuthTag(data.subarray(data.length - 16));
+  return Buffer.concat([decipher.update(data.subarray(12, data.length - 16)), decipher.final()]).toString("utf8");
+};
+
+/** The keyed writer, which production switches to once the write format flips. */
+const encryptKeyed = (plaintext: string, keys: Parameters<typeof encryptFieldAs>[2]): string =>
+  encryptFieldAs("keyed", plaintext, keys);
 
 const decryptionFailure = (run: () => unknown): FieldDecryptionError => {
   try {
@@ -91,9 +107,29 @@ describe("field encryption", () => {
     });
   });
 
+  describe("write format", () => {
+    it("writes the stored form the previous release reads, so a rolling deploy or a rollback keeps credentials readable", () => {
+      const encrypted = encryptField("written-by-this-release", TEST_KEY);
+
+      expect(FIELD_ENCRYPTION_WRITE_FORMAT).toBe("unkeyed");
+      expect(encrypted).not.toContain(".");
+      expect(decryptAsPreviousRelease(encrypted, TEST_KEY)).toBe("written-by-this-release");
+    });
+
+    it("encrypts under the ring's current key in the write format", () => {
+      const ring = { current: TEST_KEY, previous: [OLD_KEY] };
+
+      expect(openEncryptedField(encryptField("secret", ring), ring)).toEqual({
+        plaintext: "secret",
+        keyId: fieldEncryptionKeyId(TEST_KEY),
+        format: FIELD_ENCRYPTION_WRITE_FORMAT,
+      });
+    });
+  });
+
   describe("stored format", () => {
     it("names the encrypting key ahead of the payload", () => {
-      const encrypted = encryptField("secret", TEST_KEY);
+      const encrypted = encryptKeyed("secret", TEST_KEY);
       const [version, keyId, payload, ...rest] = encrypted.split(".");
 
       expect(version).toBe("v1");
@@ -112,28 +148,28 @@ describe("field encryption", () => {
     });
 
     it("encrypts under the ring's current key", () => {
-      const encrypted = encryptField("secret", { current: TEST_KEY, previous: [OLD_KEY] });
+      const encrypted = encryptKeyed("secret", { current: TEST_KEY, previous: [OLD_KEY] });
 
       expect(encrypted.split(".")[1]).toBe(fieldEncryptionKeyId(TEST_KEY));
       expect(decryptField(encrypted, TEST_KEY)).toBe("secret");
     });
 
     it("rejects a value whose key id was swapped for another configured key's", () => {
-      const encrypted = encryptField("secret", TEST_KEY);
+      const encrypted = encryptKeyed("secret", TEST_KEY);
       const swapped = encrypted.replace(fieldEncryptionKeyId(TEST_KEY), fieldEncryptionKeyId(OLD_KEY));
 
       expect(() => decryptField(swapped, { current: TEST_KEY, previous: [OLD_KEY] })).toThrow(FieldDecryptionError);
     });
 
     it("rejects the payload once its header is stripped, because the header is authenticated", () => {
-      const encrypted = encryptField("secret", TEST_KEY);
+      const encrypted = encryptKeyed("secret", TEST_KEY);
       const payloadOnly = encrypted.split(".")[2];
 
       expect(() => decryptField(payloadOnly, TEST_KEY)).toThrow(FieldDecryptionError);
     });
 
     it("rejects an unsupported version", () => {
-      const encrypted = encryptField("secret", TEST_KEY);
+      const encrypted = encryptKeyed("secret", TEST_KEY);
 
       expect(decryptionFailure(() => decryptField(`v2${encrypted.slice(2)}`, TEST_KEY)).reason).toBe("malformed");
     });
@@ -160,7 +196,7 @@ describe("field encryption", () => {
     });
 
     it("decrypts a keyed value under a previous key", () => {
-      const stored = encryptField("before-rotation", OLD_KEY);
+      const stored = encryptKeyed("before-rotation", OLD_KEY);
       const ring = { current: TEST_KEY, previous: [OLD_KEY] };
 
       expect(openEncryptedField(stored, ring)).toEqual({
@@ -171,7 +207,7 @@ describe("field encryption", () => {
     });
 
     it("fails cleanly on a key id the ring does not hold, naming the id and never the key", () => {
-      const stored = encryptField("orphaned", UNCONFIGURED_KEY);
+      const stored = encryptKeyed("orphaned", UNCONFIGURED_KEY);
       const failure = decryptionFailure(() => decryptField(stored, { current: TEST_KEY, previous: [OLD_KEY] }));
 
       expect(failure.reason).toBe("unknown_key");
@@ -190,9 +226,9 @@ describe("field encryption", () => {
     it("accepts either format under any configured key as encrypted", () => {
       const ring = { current: TEST_KEY, previous: [OLD_KEY] };
 
-      expect(isEncryptedField(encryptField("a", OLD_KEY), ring)).toBe(true);
+      expect(isEncryptedField(encryptKeyed("a", OLD_KEY), ring)).toBe(true);
       expect(isEncryptedField(encryptUnkeyed("b", OLD_KEY), ring)).toBe(true);
-      expect(isEncryptedField(encryptField("c", UNCONFIGURED_KEY), ring)).toBe(false);
+      expect(isEncryptedField(encryptKeyed("c", UNCONFIGURED_KEY), ring)).toBe(false);
       expect(isEncryptedField("plain-text-secret", ring)).toBe(false);
     });
   });

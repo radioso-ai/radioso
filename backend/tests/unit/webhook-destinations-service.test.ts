@@ -9,7 +9,7 @@ import {
   type WebhookDestinationRecord,
   type WebhookDestinationRepositoryPort,
 } from "../../src/modules/webhooks/public.js";
-import { decryptField } from "../../src/shared/infra/crypto/fieldEncryption.js";
+import { decryptField, type FieldEncryptionKeyRing } from "../../src/shared/infra/crypto/fieldEncryption.js";
 
 const TEST_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
 const workspaceId = "11111111-1111-4111-8111-111111111111";
@@ -106,7 +106,7 @@ const audit = () => ({
 });
 
 const createService = (overrides: {
-  key?: string;
+  key?: FieldEncryptionKeyRing;
   assertPublicUrl?: (url: string) => Promise<void>;
   allowHttpLoopback?: boolean;
   referencedRoutineNames?: string[];
@@ -115,7 +115,7 @@ const createService = (overrides: {
   const service = new WebhookDestinationService({
     repository,
     auditService: audit(),
-    encryption: { key: Object.hasOwn(overrides, "key") ? overrides.key : TEST_KEY },
+    encryption: { key: Object.hasOwn(overrides, "key") ? overrides.key : { current: TEST_KEY, previous: [] } },
     assertPublicUrl: overrides.assertPublicUrl ?? (async () => undefined),
     allowHttpLoopback: overrides.allowHttpLoopback,
     routineReferences: {

@@ -50,6 +50,8 @@ composition calls them and assembles the result.
   the worker. `PersonalCredentialLifecycleRepository` runs both hooks;
   `app/server/builders/infra.ts`'s `buildPersonalCredentialLifecycleRepository`
   builds it, after the voice recording composition it hands recordings to.
+  That composition's `erasureRecoveryTask` (`voice-recording-erasure-recovery`)
+  is a built-in periodic task beside the conversation retention sweep.
 - `conversationLockOrder.ts`: the conversation lock protocol every unit of work
   touching a conversation's ownership, held replies or mailbox policy follows,
   and the bounded deadlock retry for the units that can still meet one. Read it

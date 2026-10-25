@@ -427,6 +427,12 @@ variable "conversation_retention_schedule" {
   default     = null
 }
 
+variable "voice_recording_erasure_recovery_schedule" {
+  description = "Optional cron schedule for the voice recording erasure recovery sweep, which queues the erasure job again for recordings a deletion handed off that no job is working on. Defaults to every 15 minutes, the worker poll loop's own cadence."
+  type        = string
+  default     = null
+}
+
 variable "slack_inbound_event_retention_schedule" {
   description = "Optional cron schedule for the Slack inbound-event dedup ledger sweep. The worker deletes event ids older than SLACK_INBOUND_EVENT_RETENTION_DAYS only when this sweep runs, so a deployment without it keeps the ledger forever."
   type        = string

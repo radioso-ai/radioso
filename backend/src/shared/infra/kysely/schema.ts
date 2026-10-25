@@ -1959,8 +1959,10 @@ export interface VoiceRecordingErasureItems {
   conversation_id: string | null;
   created_at: Generated<Timestamp>;
   erasure_id: string;
+  failed_at: Timestamp | null;
   failure_reason: string | null;
   id: Generated<string>;
+  next_attempt_at: Generated<Timestamp>;
   status: Generated<string>;
   updated_at: Generated<Timestamp>;
   vendor_conversation_id: string;

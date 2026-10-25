@@ -31,6 +31,24 @@ export class AuditService {
     this.logRecorded(attributedEvent);
   }
 
+  /**
+   * Records an event about an organization and a workspace that may be gone by the time it is
+   * written: one still there is pointed at, one gone is named by id in the metadata instead. The
+   * proof a deletion leaves when it finishes after its subjects are gone.
+   */
+  async recordNamingGoneSubjects(event: AuditEventInput & { accountId: string; workspaceId: string }): Promise<void> {
+    const contextualMetadata = requestAuditMetadata(event.eventType);
+    const metadata = { ...event.metadata, ...contextualMetadata };
+    await this.auditEventRepository.createNamingGoneSubjects({
+      accountId: event.accountId,
+      workspaceId: event.workspaceId,
+      eventType: event.eventType,
+      eventStatus: event.eventStatus,
+      metadata,
+    });
+    this.logRecorded({ ...event, metadata });
+  }
+
   async recordForLiveConversation(
     event: AuditEventInput,
     conversation: { workspaceId: string; conversationId: string },

@@ -5,7 +5,6 @@ import type {
   VoiceRecordingErasureHandOff,
   VoiceRecordingErasurePort,
   VoiceRecordingStore,
-  VoiceRecordingToErase,
   VoiceVendorCredentialReader,
   VoiceVendorCredentialSealer,
 } from "../domain.js";
@@ -22,7 +21,7 @@ interface VoiceRecordingErasureJobs {
 
 /** The recordings, the backlog and the job queue, bound to one deletion's transaction; the key reads and the sealer. */
 interface VoiceRecordingErasureHandOffDependencies {
-  recordings: Pick<VoiceRecordingStore, "listRecordings">;
+  recordings: Pick<VoiceRecordingStore, "lockRecordedVendors">;
   backlog: Pick<VoiceRecordingErasureBacklog, "hold">;
   credentials: Pick<VoiceVendorCredentialReader, "read">;
   sealer: Pick<VoiceVendorCredentialSealer, "seal">;
@@ -34,11 +33,12 @@ const NOTHING_HANDED_OFF = { afterCommit: async () => undefined };
 
 /**
  * Hands the recordings in a deletion's scope to the erasure backlog, inside the deletion's
- * transaction: for each workspace and vendor in scope, the recordings (read and locked
- * while the voice sessions that name them still exist) and the workspace's key for that vendor,
- * sealed, because a workspace's deletion takes its credential store with it. Each hand-off queues
- * its run of the erasure job in the same transaction, so the deletion and the backlog commit
- * together or not at all; `afterCommit` wakes a worker to start at once.
+ * transaction: for each workspace and vendor in scope, the workspace's key for that vendor, sealed,
+ * because a workspace's deletion takes its credential store with it, and the recordings, copied
+ * from the voice sessions that name them (locked first, while they still exist) in one statement,
+ * however many there are. Each hand-off queues its run of the erasure job in the same transaction,
+ * so the deletion and the backlog commit together or not at all; `afterCommit` wakes a worker to
+ * start at once. A call in two scopes of one erasure is held once.
  *
  * A read that fails rejects, and the deletion fails whole, to be run again. A workspace with no key,
  * or one the backend cannot decrypt, still hands its recordings off: the job records each as left
@@ -48,35 +48,27 @@ export class VoiceRecordingErasureService implements VoiceRecordingErasurePort {
   constructor(private readonly dependencies: VoiceRecordingErasureHandOffDependencies) {}
 
   async handOff(erasure: VendorHeldConversationDataErasure): Promise<{ afterCommit(): Promise<void> }> {
-    // A call can be in two scopes at once (a visitor's conversation, started by their key): once is enough.
-    const seen = new Set<string>();
     let handedOff = 0;
     for (const scope of erasure.scopes) {
-      const recordings = (await this.listRecordings(scope)).filter((recording) => {
-        const key = `${recording.vendor}:${recording.region}:${recording.vendorConversationId}`;
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
-      for (const vendor of new Set(recordings.map((recording) => recording.vendor))) {
-        const ofVendor = recordings.filter((recording) => recording.vendor === vendor);
-        const erasureId = await this.dependencies.backlog.hold({
+      for (const vendor of await this.lockRecordedVendors(scope)) {
+        const held = await this.dependencies.backlog.hold({
           accountId: erasure.accountId,
           workspaceId: scope.workspaceId,
           vendor,
+          scope,
           credential: await this.sealedCredential(scope.workspaceId, vendor),
-          recordings: ofVendor.map(({ conversationId, region, vendorConversationId }) => ({ conversationId, region, vendorConversationId })),
         });
-        await this.dependencies.jobs.queue(erasureId);
-        handedOff += ofVendor.length;
+        if (!held) continue;
+        await this.dependencies.jobs.queue(held.erasureId);
+        handedOff += held.recordings;
       }
     }
     return handedOff > 0 ? { afterCommit: () => this.dependencies.jobs.wake() } : NOTHING_HANDED_OFF;
   }
 
-  private async listRecordings(scope: VendorHeldConversationDataErasure["scopes"][number]): Promise<VoiceRecordingToErase[]> {
+  private async lockRecordedVendors(scope: VendorHeldConversationDataErasure["scopes"][number]): Promise<VoiceVendor[]> {
     try {
-      return await this.dependencies.recordings.listRecordings(scope);
+      return await this.dependencies.recordings.lockRecordedVendors(scope);
     } catch (error) {
       this.dependencies.logger.warn(
         { workspaceId: scope.workspaceId, scope: scope.kind, errorClass: errorClassOf(error) },

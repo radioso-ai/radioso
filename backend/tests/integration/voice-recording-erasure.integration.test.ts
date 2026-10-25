@@ -59,6 +59,8 @@ describeIntegration("voice recording erasure backlog (Postgres)", () => {
   const jobs = new BackgroundJobRepository(database.kysely);
   const wake = { requestDrain: vi.fn(async () => {}) };
   const queue = new DefaultBackgroundJobQueue({ writer: jobs, wake, logger });
+  /** Staff's view: the error reports the job sends for recordings it leaves at the vendor. */
+  const errorReporter = { report: vi.fn(async (_input: { errorType: string; metadata?: Record<string, unknown> }) => undefined) };
   const voice = createVoiceRecordingComposition({
     recordings: sessions,
     recordingsIn: (db) => new VoiceSessionRepository(db),
@@ -68,6 +70,7 @@ describeIntegration("voice recording erasure backlog (Postgres)", () => {
     fetch: vendorFetch,
     auditService,
     queue,
+    errorReporter,
     metricsRegistry: null,
     logger,
   });
@@ -196,15 +199,27 @@ describeIntegration("voice recording erasure backlog (Postgres)", () => {
     "SELECT sealed_api_key FROM voice_recording_erasures WHERE id = $1",
     [erasureId],
   );
-  const erasureJobs = (erasureId: string) => database.query<{ id: string; status: string; attempts: number; last_error: string | null }>(
-    "SELECT id, status, attempts, last_error FROM background_jobs WHERE kind = $1 AND idempotency_key = $2 AND dead_at IS NULL",
-    [ERASURE_JOB, erasureId],
+  /** Every live run of an erasure: the one its hand-off queued, and any follow-up queued for a later time. */
+  const erasureJobs = (erasureId: string) => database.query<{ id: string; status: string; attempts: number; last_error: string | null; due_in_seconds: number }>(
+    `SELECT id, status, attempts, last_error, extract(epoch FROM available_at - now())::int AS due_in_seconds
+       FROM background_jobs WHERE kind = $1 AND idempotency_key LIKE $2 AND dead_at IS NULL`,
+    [ERASURE_JOB, `${erasureId}%`],
   );
-  /** A retried job, due again now rather than after its backoff. */
-  const makeDue = (erasureId: string) => database.query(
-    "UPDATE background_jobs SET available_at = now() WHERE kind = $1 AND idempotency_key = $2 AND status = 'pending'",
-    [ERASURE_JOB, erasureId],
+  /** The erasure's waiting recordings and runs, due now rather than after their waits. */
+  const makeDue = async (erasureId: string) => {
+    await database.query("UPDATE voice_recording_erasure_items SET next_attempt_at = now() WHERE erasure_id = $1 AND status = 'pending'", [erasureId]);
+    await database.query(
+      "UPDATE background_jobs SET available_at = now() WHERE kind = $1 AND idempotency_key LIKE $2 AND status = 'pending'",
+      [ERASURE_JOB, `${erasureId}%`],
+    );
+  };
+  const itemTimes = (erasureId: string) => database.query<{ attempts: number; due_in_seconds: number }>(
+    "SELECT attempts, extract(epoch FROM next_attempt_at - now())::int AS due_in_seconds FROM voice_recording_erasure_items WHERE erasure_id = $1 ORDER BY attempts DESC",
+    [erasureId],
   );
+  const leftAtVendorReports = () => errorReporter.report.mock.calls
+    .map(([input]) => input)
+    .filter((input) => input.errorType === "voice.recording_left_at_vendor");
   const recordingAudits = async (match: { conversationId?: string | null; vendorConversationId?: string; deletedWorkspaceId?: string }) => {
     const rows = await database.query<AuditRow>(
       "SELECT account_id, workspace_id, event_status, metadata_json FROM audit_events WHERE event_type = 'conversation.recording_deleted' ORDER BY created_at",
@@ -218,6 +233,7 @@ describeIntegration("voice recording erasure backlog (Postgres)", () => {
     await worker.drain({ maxJobs: 50 });
     vendorFetch.mockClear();
     wake.requestDrain.mockClear();
+    errorReporter.report.mockClear();
     steps.length = 0;
   };
 
@@ -320,9 +336,13 @@ describeIntegration("voice recording erasure backlog (Postgres)", () => {
       await worker.drain({ maxJobs: 10 });
 
       await expect(heldRecordings(vendorConversationId)).resolves.toEqual([expect.objectContaining({ status: "pending", attempts: 1, failure_reason: "vendor_rejected" })]);
-      const [retrying] = await erasureJobs(erasureId);
-      expect(retrying).toMatchObject({ status: "pending", attempts: 1 });
-      expect(retrying.last_error).toBeTruthy();
+      // The recording waits a minute for its next ask, and the run queued the next for then: no failed run, no burnt attempt.
+      const [waiting] = await itemTimes(erasureId);
+      expect(waiting.due_in_seconds).toBeGreaterThan(50);
+      expect(waiting.due_in_seconds).toBeLessThanOrEqual(60);
+      const [followUp] = await erasureJobs(erasureId);
+      expect(followUp).toMatchObject({ status: "pending", attempts: 0, last_error: null });
+      expect(followUp.due_in_seconds).toBeGreaterThan(50);
       await expect(database.query("SELECT 1 FROM conversations WHERE id = $1", [conversationId])).resolves.toEqual([]);
 
       await makeDue(erasureId);
@@ -361,6 +381,93 @@ describeIntegration("voice recording erasure backlog (Postgres)", () => {
         event_status: "failure",
         metadata_json: { conversationId, vendor: "elevenlabs", outcome: "left_at_vendor", reason: "vendor_rejected", vendorConversationId },
       }]);
+      // Staff hear of it by ids, counts and codes.
+      expect(leftAtVendorReports()).toEqual([expect.objectContaining({
+        errorType: "voice.recording_left_at_vendor",
+        metadata: { erasureId, accountId: seeded.accountId, vendor: "elevenlabs", leftAtVendor: 1, reasons: { vendor_rejected: 1 } },
+      })]);
+      expect(JSON.stringify(errorReporter.report.mock.calls)).not.toContain(VENDOR_KEY);
+      // The organization reads it in its own list; another organization does not.
+      const listed = await new VoiceRecordingErasureRepository(database.kysely).listForAccount({ accountId: seeded.accountId, limit: 10 });
+      expect(listed).toEqual({
+        total: 1,
+        recordings: [{
+          vendor: "elevenlabs",
+          vendorRegion: "eu",
+          vendorConversationId,
+          conversationId,
+          workspaceId: seeded.workspaceId,
+          reason: "vendor_rejected",
+          failedAt: expect.any(Date),
+        }],
+      });
+      const stranger = await seedWorkspace();
+      await expect(new VoiceRecordingErasureRepository(database.kysely).listForAccount({ accountId: stranger.accountId, limit: 10 }))
+        .resolves.toEqual({ total: 0, recordings: [] });
+    });
+
+    it("asks each recording of an erasure on its own schedule: eight asks over about a day, whatever the others do", async () => {
+      await reset();
+      const seeded = await seedWorkspace();
+      const calls = [await recordedCall(seeded), await recordedCall(seeded), await recordedCall(seeded)];
+      const stubborn = calls[0].vendorConversationId;
+      // The stubborn recording is refused every time; the others only on their first ask.
+      const asked = new Map<string, number>();
+      vendorFetch.mockImplementation(async (url) => {
+        const id = (typeof url === "string" ? url : url instanceof URL ? url.href : url.url).split("/").at(-1)!;
+        asked.set(id, (asked.get(id) ?? 0) + 1);
+        return new Response("{}", { status: id === stubborn || asked.get(id) === 1 ? 503 : 200 });
+      });
+      await lifecycle.deleteWorkspace({
+        accountId: seeded.accountId,
+        workspaceId: seeded.workspaceId,
+        auditEvent: { accountId: seeded.accountId, eventType: "workspace.deleted", eventStatus: "success", metadata: {} },
+      });
+      const [{ erasure_id: erasureId }] = await heldRecordings(stubborn);
+
+      const waits: number[] = [];
+      for (let run = 0; run < 12; run += 1) {
+        await worker.drain({ maxJobs: 5 });
+        const [held] = await heldRecordings(stubborn);
+        if (held?.status !== "pending") break;
+        waits.push((await itemTimes(erasureId))[0].due_in_seconds);
+        await makeDue(erasureId);
+      }
+
+      // The schedule's waits, one per refused ask, then the eighth ask gives up.
+      expect(waits.map((wait) => Math.round(wait / 60))).toEqual([1, 5, 15, 60, 180, 360, 720]);
+      expect(asked.get(stubborn)).toBe(8);
+      for (const call of calls.slice(1)) {
+        expect(asked.get(call.vendorConversationId)).toBe(2);
+        await expect(heldRecordings(call.vendorConversationId)).resolves.toEqual([]);
+      }
+      await expect(heldRecordings(stubborn)).resolves.toEqual([expect.objectContaining({ status: "failed", attempts: 8, sealed_api_key: null })]);
+    });
+
+    it("stops asking a vendor that answers 429 and waits for its Retry-After, leaving recordings it never asked about uncounted", async () => {
+      await reset();
+      vendorFetch.mockImplementation(async () => new Response("{}", { status: 429, headers: { "retry-after": "600" } }));
+      const seeded = await seedWorkspace();
+      for (let call = 0; call < 6; call += 1) await recordedCall(seeded);
+
+      await lifecycle.deleteWorkspace({
+        accountId: seeded.accountId,
+        workspaceId: seeded.workspaceId,
+        auditEvent: { accountId: seeded.accountId, eventType: "workspace.deleted", eventStatus: "success", metadata: {} },
+      });
+      const [{ id: erasureId }] = await database.query<{ id: string }>("SELECT id FROM voice_recording_erasures WHERE workspace_id = $1", [seeded.workspaceId]);
+      await worker.drain({ maxJobs: 1 });
+
+      // At most the four asks already in flight; every recording waits out the vendor's ten minutes.
+      expect(vendorDeletes().length).toBeLessThanOrEqual(4);
+      const times = await itemTimes(erasureId);
+      expect(times).toHaveLength(6);
+      expect(times.every((time) => time.due_in_seconds > 590)).toBe(true);
+      expect(times.filter((time) => time.attempts === 0)).toHaveLength(6 - vendorDeletes().length);
+      const [followUp] = await erasureJobs(erasureId);
+      expect(followUp.due_in_seconds).toBeGreaterThan(590);
+      await database.query("DELETE FROM background_jobs WHERE kind = $1 AND idempotency_key LIKE $2", [ERASURE_JOB, `${erasureId}%`]);
+      await database.query("DELETE FROM voice_recording_erasures WHERE id = $1", [erasureId]);
     });
 
     it("records a recording whose workspace held no vendor key as left at the vendor, without asking", async () => {
@@ -406,7 +513,8 @@ describeIntegration("voice recording erasure backlog (Postgres)", () => {
           WHERE kind = $1 AND idempotency_key = $2`,
         [ERASURE_JOB, erasureId],
       );
-      await database.query("UPDATE voice_recording_erasure_items SET attempts = 1 WHERE erasure_id = $1", [erasureId]);
+      // Its claim's lease on the recording has run out too.
+      await database.query("UPDATE voice_recording_erasure_items SET attempts = 1, next_attempt_at = now() - interval '1 second' WHERE erasure_id = $1", [erasureId]);
       vendorFetch.mockImplementation(async () => new Response("{}", { status: 404 }));
 
       await newWorker().drain({ maxJobs: 10 });
@@ -414,6 +522,92 @@ describeIntegration("voice recording erasure backlog (Postgres)", () => {
       expect((await recordingAudits({ conversationId })).map((row) => row.metadata_json.outcome)).toEqual(["already_absent"]);
       await expect(heldRecordings(vendorConversationId)).resolves.toEqual([]);
       await expect(erasureJobs(erasureId)).resolves.toEqual([]);
+    });
+  });
+
+  describe("recordings no run can finish", () => {
+    /** One conversation erasure's recording, handed off and committed, with its erasure id. */
+    const handedOff = async () => {
+      const seeded = await seedWorkspace();
+      const call = await recordedCall(seeded);
+      await erasure.eraseConversation({ workspaceId: seeded.workspaceId, conversationId: call.conversationId!, actor: { accountId: seeded.accountId, userId: null } });
+      const [{ erasure_id: erasureId }] = await heldRecordings(call.vendorConversationId);
+      return { seeded, call, erasureId };
+    };
+
+    it("leases what a claim takes, so a run that takes over cannot ask about the same recordings", async () => {
+      await reset();
+      const { erasureId } = await handedOff();
+      const backlog = new VoiceRecordingErasureRepository(database.kysely);
+
+      const first = await backlog.claim(erasureId, 50, 300);
+      const second = await backlog.claim(erasureId, 50, 300);
+
+      expect(first).toMatchObject({ kind: "batch", items: [expect.objectContaining({ attempts: 1 })] });
+      expect(second).toMatchObject({ kind: "batch", items: [] });
+      const [time] = await itemTimes(erasureId);
+      expect(time.due_in_seconds).toBeGreaterThan(290);
+      await database.query("DELETE FROM background_jobs WHERE kind = $1 AND idempotency_key LIKE $2", [ERASURE_JOB, `${erasureId}%`]);
+      await database.query("DELETE FROM voice_recording_erasures WHERE id = $1", [erasureId]);
+    });
+
+    it("queues a run again for an erasure whose recordings no job is working on", async () => {
+      await reset();
+      const { call, erasureId } = await handedOff();
+      // Its job is gone (a dead letter whose hand-back failed, say) and the recording is long overdue.
+      await database.query("DELETE FROM background_jobs WHERE kind = $1 AND idempotency_key LIKE $2", [ERASURE_JOB, `${erasureId}%`]);
+      await database.query("UPDATE voice_recording_erasure_items SET next_attempt_at = now() - interval '1 hour' WHERE erasure_id = $1", [erasureId]);
+
+      await voice.erasureRecoveryTask.handle.run();
+      await worker.drain({ maxJobs: 10 });
+
+      expect(voice.erasureRecoveryTask.id).toBe("voice-recording-erasure-recovery");
+      expect(vendorDeletes()).toEqual([recordingUrl(call.vendorConversationId)]);
+      await expect(heldRecordings(call.vendorConversationId)).resolves.toEqual([]);
+    });
+
+    it("leaves what is pending at the vendor, recorded and reported, once the job itself keeps crashing", async () => {
+      await reset();
+      const { seeded, call, erasureId } = await handedOff();
+      // Every attempt the job has was claimed by a worker that died.
+      await database.query(
+        `UPDATE background_jobs SET status = 'running', attempts = 5, claim_token = gen_random_uuid(),
+                lease_expires_at = now() - interval '1 second'
+          WHERE kind = $1 AND idempotency_key = $2`,
+        [ERASURE_JOB, erasureId],
+      );
+
+      await worker.drain({ maxJobs: 10 });
+
+      expect(vendorDeletes()).toEqual([]);
+      await expect(heldRecordings(call.vendorConversationId)).resolves.toEqual([expect.objectContaining({ status: "failed", failure_reason: "drain_failed", sealed_api_key: null })]);
+      expect((await recordingAudits({ conversationId: call.conversationId })).map((row) => [row.event_status, row.metadata_json.reason])).toEqual([["failure", "drain_failed"]]);
+      expect(leftAtVendorReports()).toEqual([expect.objectContaining({ metadata: expect.objectContaining({ accountId: seeded.accountId, reasons: { drain_failed: 1 } }) })]);
+    });
+
+    it("leaves the recordings of a vendor this build does not know at the vendor, and says so", async () => {
+      await reset();
+      const { call, erasureId } = await handedOff();
+      await database.query("UPDATE voice_recording_erasures SET vendor = 'retired-vendor' WHERE id = $1", [erasureId]);
+
+      await worker.drain({ maxJobs: 10 });
+
+      expect(vendorDeletes()).toEqual([]);
+      await expect(heldRecordings(call.vendorConversationId)).resolves.toEqual([expect.objectContaining({ status: "failed", failure_reason: "vendor_unsupported", sealed_api_key: null })]);
+      expect(leftAtVendorReports()).toEqual([expect.objectContaining({ metadata: expect.objectContaining({ vendor: "retired-vendor", reasons: { vendor_unsupported: 1 } }) })]);
+    });
+
+    it("leaves a recording in a region this build has no host for at the vendor, recorded once", async () => {
+      await reset();
+      const { call, erasureId } = await handedOff();
+      await database.query("UPDATE voice_recording_erasure_items SET vendor_region = 'moon' WHERE erasure_id = $1", [erasureId]);
+
+      await worker.drain({ maxJobs: 10 });
+
+      expect(vendorDeletes()).toEqual([]);
+      await expect(heldRecordings(call.vendorConversationId)).resolves.toEqual([expect.objectContaining({ status: "failed", failure_reason: "vendor_unsupported" })]);
+      expect((await recordingAudits({ conversationId: call.conversationId })).map((row) => [row.event_status, row.metadata_json.reason])).toEqual([["failure", "vendor_unsupported"]]);
+      expect(leftAtVendorReports()).toHaveLength(1);
     });
   });
 
@@ -477,6 +671,40 @@ describeIntegration("voice recording erasure backlog (Postgres)", () => {
       await expect(heldRecordings(unanswered.vendorConversationId)).resolves.toEqual([]);
     });
 
+    it("hands off a workspace with more recordings than one statement could carry as parameters", async () => {
+      await reset();
+      const seeded = await seedWorkspace();
+      // Postgres takes at most 65,535 parameters per statement; a row-per-parameter insert of these would not fit.
+      const recordings = 13_200;
+      const batchTag = randomUUID().replaceAll("-", "");
+      await database.query(
+        `INSERT INTO voice_sessions (workspace_id, agent_id, vendor, session_key, vendor_agent_id, vendor_region, vendor_conversation_id)
+         SELECT $1, $2, 'elevenlabs', 'bulk-' || n, 'agent_42', 'eu', 'conv_bulk_' || $3 || '_' || n
+           FROM generate_series(1, $4::int) AS n`,
+        [seeded.workspaceId, seeded.agentId, batchTag, recordings],
+      );
+
+      expect(await lifecycle.deleteWorkspace({
+        accountId: seeded.accountId,
+        workspaceId: seeded.workspaceId,
+        auditEvent: { accountId: seeded.accountId, eventType: "workspace.deleted", eventStatus: "success", metadata: {} },
+      })).toBe(true);
+
+      const [held] = await database.query<{ erasure_id: string; count: number }>(
+        `SELECT e.id AS erasure_id, count(i.id)::int AS count
+           FROM voice_recording_erasures e JOIN voice_recording_erasure_items i ON i.erasure_id = e.id
+          WHERE e.workspace_id = $1
+          GROUP BY e.id`,
+        [seeded.workspaceId],
+      );
+      expect(held.count).toBe(recordings);
+      await expect(erasureJobs(held.erasure_id)).resolves.toHaveLength(1);
+      expect(vendorDeletes()).toEqual([]);
+      // Too many for the other tests' drains: this one's backlog is dropped here.
+      await database.query("DELETE FROM background_jobs WHERE kind = $1 AND idempotency_key LIKE $2", [ERASURE_JOB, `${held.erasure_id}%`]);
+      await database.query("DELETE FROM voice_recording_erasures WHERE id = $1", [held.erasure_id]);
+    }, 120_000);
+
     it("names the organization by id once it is deleted with its workspaces", async () => {
       await reset();
       const seeded = await seedWorkspace();
@@ -500,6 +728,30 @@ describeIntegration("voice recording erasure backlog (Postgres)", () => {
           deletedWorkspaceId: seeded.workspaceId,
           deletedAccountId: seeded.accountId,
         },
+      }]);
+    });
+
+    it("keeps the proof of erasure when the workspace is deleted while the vendor is being asked", async () => {
+      await reset();
+      const seeded = await seedWorkspace();
+      const { conversationId } = await recordedCall(seeded);
+      await erasure.eraseConversation({ workspaceId: seeded.workspaceId, conversationId: conversationId!, actor: { accountId: seeded.accountId, userId: null } });
+      vendorFetch.mockImplementation(async () => {
+        await lifecycle.deleteWorkspace({
+          accountId: seeded.accountId,
+          workspaceId: seeded.workspaceId,
+          auditEvent: { accountId: seeded.accountId, eventType: "workspace.deleted", eventStatus: "success", metadata: {} },
+        });
+        return new Response("{}", { status: 200 });
+      });
+
+      await worker.drain({ maxJobs: 10 });
+
+      await expect(recordingAudits({ conversationId })).resolves.toEqual([{
+        account_id: seeded.accountId,
+        workspace_id: null,
+        event_status: "success",
+        metadata_json: { conversationId, vendor: "elevenlabs", outcome: "deleted", deletedWorkspaceId: seeded.workspaceId },
       }]);
     });
 

@@ -4059,11 +4059,14 @@ CREATE TABLE public.voice_recording_erasure_items (
     vendor_conversation_id text NOT NULL,
     status text DEFAULT 'pending'::text NOT NULL,
     attempts integer DEFAULT 0 NOT NULL,
+    next_attempt_at timestamp with time zone DEFAULT now() NOT NULL,
     failure_reason text,
+    failed_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
     CONSTRAINT voice_recording_erasure_items_attempts_check CHECK ((attempts >= 0)),
     CONSTRAINT voice_recording_erasure_items_failed_has_reason CHECK (((status = 'pending'::text) OR (failure_reason IS NOT NULL))),
+    CONSTRAINT voice_recording_erasure_items_failed_has_time CHECK (((status = 'failed'::text) = (failed_at IS NOT NULL))),
     CONSTRAINT voice_recording_erasure_items_failure_reason_check CHECK (((failure_reason IS NULL) OR ((length(failure_reason) >= 1) AND (length(failure_reason) <= 64)))),
     CONSTRAINT voice_recording_erasure_items_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'failed'::text]))),
     CONSTRAINT voice_recording_erasure_items_vendor_conversation_id_check CHECK (((length(vendor_conversation_id) >= 1) AND (length(vendor_conversation_id) <= 128))),
@@ -9058,17 +9061,38 @@ CREATE INDEX usage_events_message_idx ON public.usage_events USING btree (messag
 
 
 --
--- Name: voice_recording_erasure_items_failed_idx; Type: INDEX; Schema: public; Owner: -
+-- Name: voice_recording_erasure_items_due_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX voice_recording_erasure_items_failed_idx ON public.voice_recording_erasure_items USING btree (updated_at) WHERE (status = 'failed'::text);
+CREATE INDEX voice_recording_erasure_items_due_idx ON public.voice_recording_erasure_items USING btree (erasure_id, next_attempt_at) WHERE (status = 'pending'::text);
 
 
 --
--- Name: voice_recording_erasure_items_pending_idx; Type: INDEX; Schema: public; Owner: -
+-- Name: voice_recording_erasure_items_erasure_idx; Type: INDEX; Schema: public; Owner: -
 --
 
-CREATE INDEX voice_recording_erasure_items_pending_idx ON public.voice_recording_erasure_items USING btree (erasure_id, attempts, created_at) WHERE (status = 'pending'::text);
+CREATE INDEX voice_recording_erasure_items_erasure_idx ON public.voice_recording_erasure_items USING btree (erasure_id);
+
+
+--
+-- Name: voice_recording_erasure_items_overdue_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX voice_recording_erasure_items_overdue_idx ON public.voice_recording_erasure_items USING btree (next_attempt_at) WHERE (status = 'pending'::text);
+
+
+--
+-- Name: voice_recording_erasure_items_pending_recording_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX voice_recording_erasure_items_pending_recording_idx ON public.voice_recording_erasure_items USING btree (vendor_conversation_id, vendor_region) WHERE (status = 'pending'::text);
+
+
+--
+-- Name: voice_recording_erasures_account_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX voice_recording_erasures_account_idx ON public.voice_recording_erasures USING btree (account_id);
 
 
 --

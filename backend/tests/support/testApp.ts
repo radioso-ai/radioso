@@ -57,7 +57,7 @@ import { RetrievalTurnController } from "../../src/modules/chat/services/retriev
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
 import {
   type VoiceRecordingStore,
-  type VoiceRecordingToErase,
+  type VoiceRecordingsLeftAtVendorReader,
   type VoiceSessionRef,
   type VoiceSessionStartLookup,
   type VoiceSessionStartRegistry,
@@ -867,7 +867,10 @@ const createInMemoryVoiceSessions = (): VoiceSessionStore & VoiceSessionStartReg
   const started = new Map<string, InMemoryVoiceStart>();
   const keyOf = (session: { workspaceId: string; agentId: string; vendor: string; sessionKey: string }) =>
     JSON.stringify([session.workspaceId, session.agentId, session.vendor, session.sessionKey]);
-  const recordings = (): Array<{ recording: VoiceRecordingToErase; visitorKey: string | null }> =>
+  const recordings = (): Array<{
+    recording: { workspaceId: string; conversationId: string | null; vendor: "elevenlabs"; region: VoiceSessionVendorAgent["region"]; vendorConversationId: string };
+    visitorKey: string | null;
+  }> =>
     [...started.entries()].flatMap(([key, start]) => start.vendorConversationId
       ? [{
         recording: {
@@ -915,13 +918,14 @@ const createInMemoryVoiceSessions = (): VoiceSessionStore & VoiceSessionStartReg
         .find((candidate) => candidate.workspaceId === workspaceId && candidate.conversationId === conversationId);
       return recording ? { conversationId, vendor: recording.vendor, region: recording.region, vendorConversationId: recording.vendorConversationId } : null;
     },
-    listRecordings: async (scope) =>
+    lockRecordedVendors: async (scope) => [...new Set(
       recordings()
         .filter(({ recording, visitorKey }) => recording.workspaceId === scope.workspaceId
           && (scope.kind === "workspace"
             || (scope.kind === "conversations" && recording.conversationId !== null && scope.conversationIds.includes(recording.conversationId))
             || (scope.kind === "visitor_key" && visitorKey === scope.visitorKey)))
-        .map(({ recording }) => recording),
+        .map(({ recording }) => recording.vendor),
+    )],
     findStartedVisitor: async (session) => {
       const start = started.get(keyOf(session));
       if (!start || bound.has(keyOf(session)) || start.expiresAt.getTime() <= Date.now()) return null;
@@ -966,6 +970,8 @@ export const createTestDependencies = (overrides: {
   heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;
   /** The `fetch` voice vendor session starters call; omitted means every vendor call fails as unreachable. */
   voiceVendorFetch?: typeof globalThis.fetch;
+  /** The organization's list of recordings left at the vendor; the in-memory app keeps none by default. */
+  voiceRecordingsLeftAtVendor?: VoiceRecordingsLeftAtVendorReader;
   /** Writes chat's line for a turn a person owns before a teammate has replied; omitted means no line. */
   handoffWaitingMessageGenerator?: ChatServiceOptions["handoffWaitingMessageGenerator"];
   /** Keeps the heard part of a reply cut off mid-stream; omitted means the in-memory store over the test repositories. */
@@ -1582,6 +1588,8 @@ export const createTestDependencies = (overrides: {
     fail: noErasureBacklog,
     release: noErasureBacklog,
     failRemaining: noErasureBacklog,
+    postpone: noErasureBacklog,
+    overdueErasures: noErasureBacklog,
   };
   const voiceRecordings = createVoiceRecordingComposition({
     recordings: voiceSessions,
@@ -1593,6 +1601,7 @@ export const createTestDependencies = (overrides: {
     fetch: voiceVendorFetch,
     auditService,
     queue: { enqueue: noErasureBacklog, enqueueInTransaction: noErasureBacklog, wake: async () => undefined },
+    errorReporter: null,
     metricsRegistry,
     logger,
   });
@@ -3088,6 +3097,7 @@ export const createTestDependencies = (overrides: {
     voiceSessionStarts,
     voiceSessionAvailability: voiceSessionStarts,
     voiceRecordings: voiceRecordings.recordings,
+    voiceRecordingsLeftAtVendor: overrides.voiceRecordingsLeftAtVendor ?? { listForAccount: async () => ({ total: 0, recordings: [] }) },
     assistantHistoryService,
     conversationErasure: overrides.conversationErasure ?? {
       // The in-memory app has no transaction to erase in; the Postgres erasure is covered by
@@ -3230,6 +3240,8 @@ export const createTestApp = (overrides: {
   dataSubjectAccess?: AppDependencies["dataSubjectAccess"];
   heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;
   voiceVendorFetch?: typeof globalThis.fetch;
+  /** The organization's list of recordings left at the vendor; the in-memory app keeps none by default. */
+  voiceRecordingsLeftAtVendor?: VoiceRecordingsLeftAtVendorReader;
   handoffWaitingMessageGenerator?: ChatServiceOptions["handoffWaitingMessageGenerator"];
   cutReplyStore?: ChatServiceOptions["cutReplyStore"];
   turnPlanCoordinator?: ChatServiceOptions["turnPlanCoordinator"];

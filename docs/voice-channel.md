@@ -1,7 +1,7 @@
 ---
 title: "Voice Channel"
 description: "Let a voice runtime such as ElevenLabs Agents speak for a Radioso agent through an OpenAI-compatible chat-completions endpoint, with sessions Radioso starts on your vendor key, one conversation per voice session, authored lines that cover the wait in the language of each turn, a call that switches language with its caller, a teammate's Inbox replies spoken to the caller, the call's recording in the Inbox, and the period's call numbers on the Quality page."
-last_updated: 2026-10-25
+last_updated: 2026-10-26
 ---
 
 # Voice Channel
@@ -1290,33 +1290,43 @@ conversation was deleted before it.
 
 The deletion hands its recordings to a backlog in its own database
 transaction, so the deletion and the backlog commit together or not at all.
-For each workspace and vendor it writes the recordings (vendor, region,
+For each workspace and vendor it copies the recordings straight from the
+call's session rows in one statement, however many there are (region,
 ElevenLabs conversation id, and the organization, workspace and conversation
-they belonged to, by id) and the workspace's ElevenLabs key, encrypted with
-the same `CONNECTOR_ENCRYPTION_KEY` the credential store uses, because a
-workspace's deletion takes its credential store with it. The backlog names
-nothing it would have to follow a deleted row to, so it outlives the
-workspace and the organization. The read holds the call's session rows, so
-a report arriving meanwhile waits; when the recordings or the key cannot be
-read, the deletion fails whole and can be sent again, rather than go on
-without knowing where the recordings are.
+they belonged to, by id), and writes the workspace's ElevenLabs key beside
+them, encrypted with the same `CONNECTOR_ENCRYPTION_KEY` the credential store
+uses, because a workspace's deletion takes its credential store with it. The
+backlog names nothing it would have to follow a deleted row to, so it
+outlives the workspace and the organization. The hand-off locks the call's
+session rows first, so a report arriving meanwhile waits; when the
+recordings or the key cannot be read, the deletion fails whole and can be
+sent again, rather than go on without knowing where the recordings are.
 
-A background job, `voice.recording_erasure`, then deletes them: one run per
-workspace and vendor a deletion reached, woken as soon as the deletion
-commits. Each run asks ElevenLabs about up to 50 recordings, four at a time,
-with the held key. A recording ElevenLabs deleted, or no longer held, leaves
-the backlog. One it refused or did not answer for is kept and asked again:
-first by a run right away while recordings never asked about remain, then
-on the job's growing waits (a minute, five, fifteen, an hour, and on up to
-twelve hours), eight asks in all, about a day. A recording still there after
-its eighth ask stays in the backlog as `failed`, with why. A workspace that
-held no ElevenLabs key when it was deleted, or one the backend could not
-decrypt, has its recordings marked `failed` on the job's first run without
-asking. The held key is cleared as soon as no recording waiting to be
-deleted needs it, `failed` ones included. A worker that dies between the
-commit and the vendor, or between the vendor's answer and its own record,
-leaves the backlog as it was, and the next run picks it up; a recording
-asked twice reads as already absent the second time.
+A background job, `voice.recording_erasure`, then deletes them, woken as
+soon as the deletion commits. Each run takes up to 50 recordings that are
+due, holding each for five minutes so no other run asks about it meanwhile,
+and asks ElevenLabs to delete them four at a time with the held key. A
+recording ElevenLabs deleted, or no longer held, leaves the backlog. Each
+recording ElevenLabs refused or did not answer for keeps its own schedule:
+it is asked again after a minute, then five, fifteen, an hour, three, six
+and twelve hours, eight asks in all over about a day, or later when
+ElevenLabs sends a longer `Retry-After`. When ElevenLabs answers `429`, the
+run asks nothing more, and the recordings it had not asked about yet wait
+for that `Retry-After` without it counting as an ask. The run then queues the
+next for when the next recording is due: at once while more are due, at that
+time otherwise. A recording still there after its eighth ask stays in the
+backlog as `failed`, with why and when. A workspace that held no ElevenLabs
+key when it was deleted has its recordings marked `failed` on the job's first
+run without asking. The held key is cleared as soon as no recording waiting
+to be deleted needs it, `failed` ones included. A worker that dies between
+the commit and the vendor, or between the vendor's answer and its own
+record, leaves the backlog as it was, and the next run picks it up once the
+hold runs out; a recording asked twice reads as already absent the second
+time. The `voice-recording-erasure-recovery` periodic task, every 15 minutes,
+queues the job again for any erasure whose pending recordings are more than
+15 minutes overdue, so none is stranded by a lost wake. A job that keeps
+crashing gives up after five attempts and leaves its pending recordings as
+`failed` with `drain_failed`.
 
 Each recording Radioso deletes is recorded as a
 `conversation.recording_deleted` audit event with the conversation id, the
@@ -1325,13 +1335,22 @@ longer held it). A recording left at the vendor is the same event with
 status `failure`, `outcome: "left_at_vendor"`, a `reason`
 (`credential_missing`, `credential_unreadable`, `vendor_rejected`,
 `vendor_unreachable`, `vendor_timeout`, `vendor_malformed_response`,
-`vendor_failed`, or `drain_failed` when the job itself kept failing), and
-`vendorConversationId`, so the organization can delete it in ElevenLabs. The
-backend log names it as `Voice recording was left at the vendor` with its
-`conversationId` and `vendorConversationId`. When the workspace is gone by
-the time the job records it, the event belongs to the organization and names
-`deletedWorkspaceId`, so the organization keeps its proof of erasure. When
-the organization itself is gone, the event names it as `deletedAccountId`.
+`vendor_failed`, `vendor_unsupported` when this deployment knows no host for
+its vendor or region, or `drain_failed`), and `vendorConversationId`. The
+event names the workspace and the organization as long as they exist; one
+that is gone by the time the job records it is named by id as
+`deletedWorkspaceId` or `deletedAccountId`, decided in the same write, so the
+organization keeps its proof of erasure. The organization's owners and
+admins list what was left with
+`GET /api/v1/account/voice-recordings/left-at-vendor` (vendor, region,
+ElevenLabs conversation id, conversation, workspace, reason, when), across
+every workspace, deleted ones included, and delete each in ElevenLabs by its
+id. Once the organization itself is deleted, only the deployment's operators
+see its leftovers: each batch is reported to the error sinks as
+`voice.recording_left_at_vendor` (erasure, organization and workspace ids,
+vendor, count and reasons), the backend log names each recording as
+`Voice recording was left at the vendor` with its `conversationId` and
+`vendorConversationId`, and the rows stay in `voice_recording_erasure_items`.
 `voice_recording_delete_total` counts each ask by `outcome` (`deleted`,
 `already_absent`, `vendor_failed`, `credential_unreadable`) and each
 recording given up on as `left_at_vendor`; the job's own runs show under

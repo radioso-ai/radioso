@@ -2,7 +2,8 @@ export type {
   VoiceRecordingAvailabilityPort,
   VoiceRecordingErasureBacklog,
   VoiceRecordingPlaybackPort,
-  VoiceRecordingToErase,
+  VoiceRecordingLeftAtVendor,
+  VoiceRecordingsLeftAtVendorReader,
   VoiceRecordingStore,
   VoiceRecordingStream,
   VoiceVendorCredentialReader,
@@ -25,12 +26,13 @@ export { VoiceRecordingService, type VoiceRecordingAudit } from "./services/voic
 export { VoiceRecordingErasureService } from "./services/voiceRecordingErasureService.js";
 export {
   VoiceRecordingErasureDrain,
+  recoverStrandedVoiceRecordingErasures,
   voiceRecordingErasureJobHandler,
   voiceRecordingErasureRequest,
 } from "./services/voiceRecordingErasureJob.js";
 export { createElevenLabsRecordingSource } from "./adapters/elevenlabs/recordingSource.js";
 
-export { VOICE_CALL_READINESS_GAPS, VOICE_REPLY_INTERRUPTED_EVENT } from "./domain.js";
+export { VOICE_CALL_READINESS_GAPS, VOICE_RECORDING_LEFT_REASONS, VOICE_REPLY_INTERRUPTED_EVENT } from "./domain.js";
 export { createElevenLabsSessionStarter } from "./adapters/elevenlabs/sessionStarter.js";
 export { VoiceSessionRepository } from "./persistence/voiceSessionRepository.js";
 export { VoiceSessionEraser } from "./persistence/voiceSessionEraser.js";

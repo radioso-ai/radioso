@@ -14,6 +14,7 @@ import {
   VoiceTurnService,
   createElevenLabsRecordingSource,
   createElevenLabsSessionStarter,
+  recoverStrandedVoiceRecordingErasures,
   voiceRecordingErasureJobHandler,
   voiceRecordingErasureRequest,
   type VoiceChatTurnRequest,
@@ -33,8 +34,10 @@ import {
   VOICE_REPLY_INTERRUPTED_EVENT,
 } from "../../modules/voiceChannel/public.js";
 import type { AgentRecord } from "../../modules/agents/public.js";
-import type { AuditPort } from "../../modules/audit/contracts/index.js";
+import type { AuditEventInput, AuditPort } from "../../modules/audit/contracts/index.js";
 import type { BackgroundJobHandlerRegistration, BackgroundJobQueue } from "../../shared/background-jobs/index.js";
+import type { ErrorReporter } from "../../shared/errors/errorReporter.js";
+import type { ApplicationPeriodicTaskHandle } from "./applicationModule.js";
 import { isHumanOwned, type ConversationOwnershipReader } from "../../modules/handoff/public.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
@@ -224,52 +227,36 @@ const voiceVendorCredentialReader = (credentials: VoiceVendorCredentialStore): V
   },
 });
 
-/** A row may only point at a workspace or an organization that still exists; one gone since is kept by id in the metadata. */
-const deletionSubject = (event: { account: { id: string; deleted: boolean }; workspaceId: string; workspaceDeleted: boolean }) => ({
-  row: {
-    accountId: event.account.deleted ? null : event.account.id,
-    workspaceId: event.workspaceDeleted ? null : event.workspaceId,
-  },
-  metadata: {
-    ...(event.workspaceDeleted ? { deletedWorkspaceId: event.workspaceId } : {}),
-    ...(event.account.deleted ? { deletedAccountId: event.account.id } : {}),
-  },
-});
+/** Audit events about an organization and a workspace that may be gone by the time they are written. */
+type GoneSubjectAudit = {
+  recordNamingGoneSubjects(event: AuditEventInput & { accountId: string; workspaceId: string }): Promise<void>;
+};
 
 /**
  * The audit events a recording leaves, ids and closed codes only: who played which conversation's
- * recording, and how each deletion at the vendor ended, with the organization it belonged to. A
- * recording given up on is the same event as a failure, with why and the vendor's id for it, so
- * the organization can delete it there.
+ * recording, and how each deletion at the vendor ended, with the organization and workspace it
+ * belonged to, named by id alone once either is gone. A recording given up on is the same event as
+ * a failure, with why and the vendor's id for it, so the organization can delete it there.
  */
-const createVoiceRecordingAudit = (auditService: Pick<AuditPort, "record">): VoiceRecordingAudit => ({
+const createVoiceRecordingAudit = (auditService: Pick<AuditPort, "record"> & GoneSubjectAudit): VoiceRecordingAudit => ({
   played: ({ workspaceId, ...metadata }) =>
     auditService.record({ workspaceId, eventType: "conversation.recording_played", eventStatus: "success", metadata }),
-  deleted: (event) => {
-    const subject = deletionSubject(event);
-    return auditService.record({
-      ...subject.row,
+  deleted: ({ accountId, workspaceId, conversationId, vendor, outcome }) =>
+    auditService.recordNamingGoneSubjects({
+      accountId,
+      workspaceId,
       eventType: "conversation.recording_deleted",
       eventStatus: "success",
-      metadata: { conversationId: event.conversationId, vendor: event.vendor, outcome: event.outcome, ...subject.metadata },
-    });
-  },
-  left: (event) => {
-    const subject = deletionSubject(event);
-    return auditService.record({
-      ...subject.row,
+      metadata: { conversationId, vendor, outcome },
+    }),
+  left: ({ accountId, workspaceId, conversationId, vendor, vendorConversationId, reason }) =>
+    auditService.recordNamingGoneSubjects({
+      accountId,
+      workspaceId,
       eventType: "conversation.recording_deleted",
       eventStatus: "failure",
-      metadata: {
-        conversationId: event.conversationId,
-        vendor: event.vendor,
-        outcome: "left_at_vendor",
-        reason: event.reason,
-        vendorConversationId: event.vendorConversationId,
-        ...subject.metadata,
-      },
-    });
-  },
+      metadata: { conversationId, vendor, outcome: "left_at_vendor", reason, vendorConversationId },
+    }),
 });
 
 /**
@@ -279,7 +266,8 @@ const createVoiceRecordingAudit = (auditService: Pick<AuditPort, "record">): Voi
  * records into), and the audit service for each play and each deletion. A deletion hands its
  * recordings, and the key sealed by the credential store's own encryption, to the erasure backlog
  * in its own transaction (`erasureIn`), with the erasure job queued beside them; the job's handler
- * deletes them at the vendor through the same source and audit.
+ * deletes them at the vendor through the same source and audit, and reports every recording it
+ * leaves there to the error sinks.
  */
 export const createVoiceRecordingComposition = (deps: {
   recordings: VoiceRecordingStore;
@@ -290,8 +278,9 @@ export const createVoiceRecordingComposition = (deps: {
   erasuresIn: (db: Db) => VoiceRecordingErasureBacklog;
   credentials: VoiceVendorCredentialStore & CredentialSealing;
   fetch: typeof globalThis.fetch;
-  auditService: Pick<AuditPort, "record">;
+  auditService: Pick<AuditPort, "record"> & GoneSubjectAudit;
   queue: Pick<BackgroundJobQueue, "enqueue" | "enqueueInTransaction" | "wake">;
+  errorReporter: Pick<ErrorReporter, "report"> | null;
   metricsRegistry: MetricsRegistry | null;
   logger: AppLogger;
 }): {
@@ -300,6 +289,8 @@ export const createVoiceRecordingComposition = (deps: {
   erasureIn: (db: Db) => VoiceRecordingErasureService;
   /** Deletes handed-off recordings at the vendor, on the background-job runtime. */
   erasureJobHandler: BackgroundJobHandlerRegistration;
+  /** Queues a run again for erasures whose pending recordings no job is working on. */
+  erasureRecoveryTask: { id: string; intervalMs: number; handle: ApplicationPeriodicTaskHandle };
 } => {
   const credentials = voiceVendorCredentialReader(deps.credentials);
   const sealer = voiceVendorCredentialSealer(deps.credentials);
@@ -312,6 +303,7 @@ export const createVoiceRecordingComposition = (deps: {
     sources,
     audit,
     queue: deps.queue,
+    errorReporter: deps.errorReporter,
     metrics: deps.metricsRegistry,
     logger: deps.logger,
   });
@@ -338,8 +330,22 @@ export const createVoiceRecordingComposition = (deps: {
       logger: deps.logger,
     }),
     erasureJobHandler: voiceRecordingErasureJobHandler(drain),
+    erasureRecoveryTask: {
+      id: VOICE_RECORDING_ERASURE_RECOVERY_TASK_ID,
+      intervalMs: VOICE_RECORDING_ERASURE_RECOVERY_INTERVAL_MS,
+      handle: {
+        run: async () => {
+          await recoverStrandedVoiceRecordingErasures({ backlog: deps.erasures, queue: deps.queue, logger: deps.logger });
+        },
+      },
+    },
   };
 };
+
+/** The recovery sweep's id: the poll worker's loop and the push worker's task route both run it by this name. */
+const VOICE_RECORDING_ERASURE_RECOVERY_TASK_ID = "voice-recording-erasure-recovery";
+/** Every 15 minutes, matching `voice_recording_erasure_recovery_schedule` in Terraform. */
+const VOICE_RECORDING_ERASURE_RECOVERY_INTERVAL_MS = 15 * 60 * 1_000;
 
 /**
  * The embed config says whether the embed offers calls, which follows the voice vendor key's

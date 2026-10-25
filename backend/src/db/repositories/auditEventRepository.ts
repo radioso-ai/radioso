@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 
-import { anyOf, castText, jsonbKeyText, jsonbSet, toJsonb, toSanitizedJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
+import { sql } from "kysely";
+
+import { anyOf, castText, isForeignKeyViolation, jsonbKeyText, jsonbSet, toJsonb, toSanitizedJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 import type { ConversationDataEraser, ConversationErasureScope } from "../../shared/domain/conversationDataErasure.js";
@@ -24,6 +26,19 @@ export interface AuditEventRepositoryPort {
     eventStatus: string;
     metadata?: Record<string, unknown>;
   }): Promise<AuditEventRecord>;
+  /**
+   * Creates an event about an organization and a workspace that may be gone by the time it is
+   * written: each that still exists is pointed at, and each that is gone is named by id in the
+   * metadata (`deletedAccountId`, `deletedWorkspaceId`) instead, decided in the insert itself so a
+   * deletion racing it can never fail the write.
+   */
+  createNamingGoneSubjects(input: {
+    accountId: string;
+    workspaceId: string;
+    eventType: string;
+    eventStatus: string;
+    metadata: Record<string, unknown>;
+  }): Promise<void>;
   /**
    * Creates the event only if the named conversation still exists, checked and written in one
    * transaction. Returns null, writing nothing, when it does not (a different workspace counts
@@ -120,6 +135,43 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
       .executeTakeFirstOrThrow();
 
     return mapAuditEvent(row as AuditEventRow);
+  }
+
+  async createNamingGoneSubjects(input: {
+    accountId: string;
+    workspaceId: string;
+    eventType: string;
+    eventStatus: string;
+    metadata: Record<string, unknown>;
+  }): Promise<void> {
+    const insert = () => this.db
+      .insertInto("audit_events")
+      .columns(["id", "account_id", "workspace_id", "event_type", "event_status", "metadata_json"])
+      .expression(
+        this.db
+          .selectNoFrom((eb) => {
+            const liveAccount = eb.selectFrom("accounts").select("id").where("id", "=", input.accountId);
+            const liveWorkspace = eb.selectFrom("workspaces").select("id").where("id", "=", input.workspaceId);
+            return [
+              eb.val(randomUUID()).as("id"),
+              liveAccount.as("account_id"),
+              liveWorkspace.as("workspace_id"),
+              eb.val(input.eventType).as("event_type"),
+              eb.val(input.eventStatus).as("event_status"),
+              sql<unknown>`${toSanitizedJsonb(input.metadata)}
+                || CASE WHEN EXISTS (${liveWorkspace}) THEN '{}'::jsonb ELSE jsonb_build_object('deletedWorkspaceId', ${input.workspaceId}::text) END
+                || CASE WHEN EXISTS (${liveAccount}) THEN '{}'::jsonb ELSE jsonb_build_object('deletedAccountId', ${input.accountId}::text) END`.as("metadata_json"),
+            ];
+          }),
+      )
+      .execute();
+    try {
+      await insert();
+    } catch (error) {
+      // A deletion that committed between the statement's read and its key check: read again.
+      if (!isForeignKeyViolation(error)) throw error;
+      await insert();
+    }
   }
 
   async createIfConversationLive(input: {

@@ -233,16 +233,18 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   // Recordings stay with the vendor; the Inbox plays them through the backend with the workspace's
   // key, Ray reads whether one exists, and a deletion hands them, with the key sealed, to the
   // erasure backlog the background-job worker drains.
+  const voiceRecordingErasures = new VoiceRecordingErasureRepository(infrastructure.database.kysely);
   const voiceRecordings = createVoiceRecordingComposition({
     recordings: voiceSessions,
     recordingsIn: (db) => new VoiceSessionRepository(db),
-    erasures: new VoiceRecordingErasureRepository(infrastructure.database.kysely),
+    erasures: voiceRecordingErasures,
     erasuresIn: (db) => new VoiceRecordingErasureRepository(db),
     credentials: workspaceProviderCredentialsService,
     // Called through its own receiver, never detached from globalThis.
     fetch: (url, init) => globalThis.fetch(url, init),
     auditService: infrastructure.auditService,
     queue: backgroundJobs.queue,
+    errorReporter: infrastructure.errorReportingService,
     metricsRegistry: infrastructure.metricsRegistry,
     logger,
   });
@@ -1302,6 +1304,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       logger,
       metrics: infrastructure.metricsRegistry,
     })),
+    // Built in: recordings a deletion left pending with no job working on them are queued again.
+    voiceRecordings.erasureRecoveryTask,
     ...composition.periodicTaskRegistrations.map((registration) => ({
       id: registration.id,
       intervalMs: registration.intervalMs,
@@ -1501,6 +1505,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     voiceSessionStarts,
     voiceSessionAvailability: voiceSessionStarts,
     voiceRecordings: voiceRecordings.recordings,
+    voiceRecordingsLeftAtVendor: voiceRecordingErasures,
     assistantHistoryService: chat.assistantHistoryService,
     conversationErasure,
     privacySettingsService,

@@ -423,17 +423,4 @@ describe("voice recording contract", () => {
     expect([401, 403]).toContain(machine.status);
     await request(app).get("/api/v1/conversations/not-a-uuid/recording").set(dashboard).expect(400);
   });
-
-  it("deletes the workspace without waiting on the vendor, even one that refuses to delete the recording", async () => {
-    const vendorFetch = vendorStandIn("eu", { remove: () => new Response("{}", { status: 500 }) });
-    const { app, operator, recordedCall, recordingEvents } = await recordedWorkspace({ vendorFetch });
-    await recordedCall();
-    await request(app).post("/api/v1/workspace").set("Cookie", operator.cookie).send({ name: "Keep" }).expect(201);
-
-    await request(app).delete(`/api/v1/workspace/${operator.workspaceId}`).set("Cookie", operator.cookie).expect(204);
-
-    const workspaces = await request(app).get("/api/v1/workspace").set("Cookie", operator.cookie).expect(200);
-    expect((workspaces.body.workspaces as Array<{ id: string }>).map((workspace) => workspace.id)).not.toContain(operator.workspaceId);
-    expect(recordingEvents("conversation.recording_deleted")).toEqual([]);
-  });
 });

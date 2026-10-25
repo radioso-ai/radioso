@@ -91,11 +91,15 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   transaction, one erasure per workspace and vendor, with the workspace's key
   sealed through `VoiceVendorCredentialSealer` and the erasure's
   `voice.recording_erasure` job queued beside it; `voiceRecordingErasureJob.ts`
-  is that job (`VoiceRecordingErasureDrain`): it claims an erasure's pending
-  recordings, those asked least first, deletes them at the vendor with the
-  held key, and settles each (gone, kept for another ask, or after eight
-  asks `failed` with a `VoiceRecordingLeftReason`), then clears the key once
-  nothing pending needs it.
+  is that job (`VoiceRecordingErasureDrain`): it claims an erasure's due
+  recordings under a five-minute lease, deletes them at the vendor with the
+  held key four at a time, and settles each (gone; kept with its own next ask
+  on the schedule or the vendor's `Retry-After`; or after eight asks `failed`
+  with a `VoiceRecordingLeftReason`, audited, logged and reported to the error
+  sinks), pauses on a `429`, clears the key once nothing pending needs it,
+  and queues the next run for when the next recording is due;
+  `recoverStrandedVoiceRecordingErasures` re-queues erasures whose pending
+  recordings are overdue (the `voice-recording-erasure-recovery` periodic task).
 - `persistence/` maps `(agent_id, vendor, session_key)` to a conversation in
   `voice_sessions`. The first binding wins. A Radioso-started row also holds
   the vendor agent it opened on, that account's region and, once reported and
@@ -106,9 +110,12 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   `voiceRecordingErasureRepository.ts` is the erasure backlog
   (`VoiceRecordingErasureBacklog`, migration `245_voice_recording_erasures.sql`):
   `voice_recording_erasures` (organization, workspace, vendor, sealed key) and
-  `voice_recording_erasure_items` (one per recording), every id a plain value,
-  so it outlives what was deleted; a claim reads whether the organization and
-  workspace are gone since.
+  `voice_recording_erasure_items` (one per recording, with its asks, next ask,
+  and why and when it was left), every id a plain value, so it outlives what
+  was deleted. `hold` copies a scope's recordings from `voice_sessions` with
+  one `INSERT … SELECT`, through the scope filter `voiceSessionScope.ts`
+  shares with the session repository's `lockRecordedVendors`. The same
+  repository is the organization's `VoiceRecordingsLeftAtVendorReader`.
 - `adapters/*` translate one wire to the domain port and back, and nothing
   else. `adapters/openaiCompletions/` is the OpenAI chat-completions wire;
   vendors that share it differ only by a dialect in `dialects.ts`, which is
@@ -154,7 +161,8 @@ helpers and the shared chat message limit from `app/http`
   `createElevenLabsSessionStarter`; the recording ports,
   `VoiceRecordingService`, `VoiceRecordingErasureService`,
   `VoiceRecordingErasureDrain`, `voiceRecordingErasureJobHandler`,
-  `voiceRecordingErasureRequest`, `VoiceRecordingErasureRepository`,
+  `voiceRecordingErasureRequest`, `recoverStrandedVoiceRecordingErasures`,
+  `VoiceRecordingErasureRepository`, `VoiceRecordingsLeftAtVendorReader`,
   `VoiceRecordingAudit` and `createElevenLabsRecordingSource`.
 - `backend/src/app/composition/voiceChannel.ts` — builds the port over a
   session store, `AssistantChatService.streamAnswer`, the agent repository (voice
@@ -184,8 +192,17 @@ helpers and the shared chat message limit from `app/http`
   `failure`, built by `createVoiceRecordingAudit`); the playback is
   `AppDependencies.voiceRecordings`, Ray's catalog reads its availability,
   `erasureIn` is the `VendorHeldConversationDataEraser` the privacy erasure
-  and the workspace deletion hooks bind to their transactions, and
-  `erasureJobHandler` joins the background-job runtime.
+  and the workspace deletion hooks bind to their transactions,
+  `erasureJobHandler` joins the background-job runtime with the error
+  reporter, and `erasureRecoveryTask` joins the periodic tasks. The audit
+  writes go through `AuditService.recordNamingGoneSubjects`, which names an
+  organization or workspace gone since by id in the same insert.
+- `backend/src/app/http/routes/accountVoiceRecordingRoutes.ts` — mounts
+  `GET /api/v1/account/voice-recordings/left-at-vendor` (account session,
+  `workspace.history.delete` on the organization: owners and admins), the
+  organization's recordings left at the vendor, newest first, from
+  `AppDependencies.voiceRecordingsLeftAtVendor`; a permanent copilot coverage
+  exclusion (`listVoiceRecordingsLeftAtVendor`).
 - `backend/src/app/http/routes/conversationRecordingRoutes.ts` — mounts
   `GET /api/v1/conversations/:conversationId/recording` (dashboard sessions,
   `workspace.history.read`, `sessionOnly` in `apiPrincipalRoutePolicy.ts`),
@@ -873,8 +890,11 @@ vendor reason and status), and logs `Voice recording was left at the vendor`
 at warn for every recording given up on, with `conversationId`,
 `vendorConversationId` and the reason as `outcome`, so an operator can delete
 it at the vendor; the same recording's `conversation.recording_deleted`
-`failure` event carries them for its organization. The job's runs also count
-under `background_jobs_total{kind="voice.recording_erasure"}`. Otherwise
+`failure` event carries them for its organization, and each batch given up on
+is reported to the error sinks as `voice.recording_left_at_vendor` (erasure,
+organization and workspace ids, vendor, count, reasons). The recovery sweep
+logs a warn with the count of erasures it queued again. The job's runs also
+count under `background_jobs_total{kind="voice.recording_erasure"}`. Otherwise
 never the vendor's conversation id, and never the key, the vendor URL or any
 audio.
 
@@ -910,8 +930,12 @@ audio.
   a workspace deletion that never waits on the vendor)
 - `cd backend && pnpm exec vitest run tests/integration/voice-recording-erasure.integration.test.ts --no-file-parallelism`
   (the erasure backlog on Postgres: the hand-off in each deletion's
-  transaction, the job's deletes, retries, give-up and records, a worker that
-  dies mid-way, and a backlog that outlives its workspace and organization)
+  transaction, 13,200 recordings in one hand-off, the job's deletes,
+  per-recording retries and give-up, a `429` pause, the claim's lease, the
+  recovery sweep, a dead letter, a worker that dies mid-way, and a backlog
+  that outlives its workspace and organization)
+- `cd backend && pnpm exec vitest run tests/contract/account-voice-recordings-left-at-vendor.contract.test.ts`
+  (the organization's list: owners and admins only, scoped to their organization)
 - `cd backend && pnpm exec vitest run tests/integration/voice-session-repository.integration.test.ts`
   (needs the disposable integration database; see the code map)
 - `cd backend && pnpm exec vitest run tests/unit/eval-suite/voice-behaviour.test.ts`

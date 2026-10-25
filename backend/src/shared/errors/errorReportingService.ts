@@ -93,7 +93,8 @@ export class ErrorReportingService {
       } catch (sinkError) {
         this.options.logger.error(
           {
-            err: sinkError instanceof Error ? sinkError.message : String(sinkError),
+            sinkName: sink.name,
+            err: sinkError,
             errorType: errorEvent.errorType,
           },
           "error_sink_failed",

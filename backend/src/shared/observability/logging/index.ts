@@ -17,6 +17,7 @@ import {
 
 import type { AppLogger } from "../logger.js";
 import { safeTraceAttributes } from "../tracing/attributePolicy.js";
+import { safeErrorFields } from "./logSafeValues.js";
 import type { RuntimeRole } from "../runtimeRole.js";
 
 export type LogLevelName = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
@@ -91,12 +92,10 @@ const shouldSkipMessage = (message: string | undefined): boolean =>
   message === "otel_logging_shutdown_failed" ||
   message === "otel_logging_shutdown_timeout";
 
-const errorFields = (error: unknown): Record<string, string> => {
-  if (error instanceof Error) {
-    return { err: error.message };
-  }
-  return { err: String(error) };
-};
+// The bridge's own diagnostics about itself (export/shutdown failures) go through the same real
+// pino logger as every other line, so handing it the raw error lets that logger's `err`
+// serializer (`logger.ts`) keep this safe rather than pre-extracting a message here.
+const errorFields = (error: unknown): Record<string, unknown> => ({ err: error });
 
 class LoggingLogRecordExporter implements LogRecordExporter {
   constructor(
@@ -112,7 +111,7 @@ class LoggingLogRecordExporter implements LogRecordExporter {
       if (result.code !== 0) {
         this.logger?.error(
           {
-            err: result.error instanceof Error ? result.error.message : "log export failed",
+            ...errorFields(result.error ?? new Error("log export failed")),
             logCount: records.length,
           },
           "otel_log_export_failed",
@@ -215,24 +214,18 @@ const messageFromArgs = (args: unknown[]): string | undefined => {
   return undefined;
 };
 
+// Mirrors the Cloud Logging lines' allow-list shape (`safeErrorFields`): an error's class, a
+// structural code, and shape-checked stack frames, never its message. `err` and `error` are the
+// two keys the codebase logs a caught error under; any other key keeps its own name as a prefix
+// so two different error fields on the same record don't collide.
 const errorAttributesFromField = (key: string, error: Error): Record<string, string> => {
-  if (key === "err") {
-    return {
-      err: error.message,
-      errorClass: error.name,
-    };
-  }
-
-  if (key === "error") {
-    return {
-      errorClass: error.name,
-      errorMessage: error.message,
-    };
-  }
+  const safe = safeErrorFields(error);
+  const prefix = key === "err" || key === "error" ? "error" : key;
 
   return {
-    [`${key}Class`]: error.name,
-    [`${key}Message`]: error.message,
+    [`${prefix}Class`]: safe.name,
+    ...(safe.code ? { [`${prefix}Code`]: safe.code } : {}),
+    ...(safe.stack ? { [`${prefix}Stack`]: safe.stack } : {}),
   };
 };
 
@@ -254,10 +247,7 @@ const attributesFromRecord = (record: Record<string, unknown>): Record<string, u
 const attributesFromArgs = (args: unknown[]): Record<string, unknown> => {
   const [firstArg] = args;
   if (firstArg instanceof Error) {
-    return {
-      errorClass: firstArg.name,
-      errorMessage: firstArg.message,
-    };
+    return errorAttributesFromField("error", firstArg);
   }
   if (!isRecord(firstArg)) {
     return {};

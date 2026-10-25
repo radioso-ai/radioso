@@ -380,7 +380,7 @@ describe("website crawl worker", () => {
 
     expect(publisher.enqueue).not.toHaveBeenCalled();
     expect(logger.error).toHaveBeenCalledWith(
-      expect.objectContaining({ error: "transaction rolled back" }),
+      expect.objectContaining({ err: expect.objectContaining({ message: "transaction rolled back" }) }),
       "Failed to release stale crawl jobs",
     );
   });

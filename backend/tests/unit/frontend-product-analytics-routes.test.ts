@@ -357,6 +357,28 @@ describe("frontend error reporting routes", () => {
     }));
   });
 
+  it("drops a client-supplied path that is not shaped like a route, rather than storing it as one", async () => {
+    const { app, repositories } = createTestApp();
+
+    await request(app)
+      .post("/api/v1/observability/frontend-errors")
+      .send({
+        errorType: "frontend.runtime.unhandled",
+        message: "boom",
+        path: "visitor typed this: contact me at visitor@example.com",
+        source: "frontend",
+      })
+      .expect(202, {
+        accepted: true,
+        recorded: true,
+      });
+
+    const recorded = repositories.auditEventRepository.items.find((event) => event.eventType === "error.recorded");
+    expect(JSON.stringify(recorded)).not.toContain("visitor@example.com");
+    expect(JSON.stringify(recorded)).not.toContain("visitor typed this");
+    expect((recorded?.metadata?.error as { requestContext?: { route?: string } } | undefined)?.requestContext?.route).toBeUndefined();
+  });
+
   it("drops browser extension crashes and counts them instead of recording them", async () => {
     const { app, repositories, dependencies } = createTestApp({
       envOverrides: { METRICS_ENABLED: true, METRICS_AUTH_TOKEN: "metrics-auth-token-000000" },

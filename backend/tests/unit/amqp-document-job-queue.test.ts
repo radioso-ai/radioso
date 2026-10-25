@@ -458,7 +458,7 @@ describe("AMQP document job queue", () => {
     expect(logger.error).toHaveBeenCalledWith(
       expect.objectContaining({
         role: "amqp-document-job-consumer",
-        error: "queue unavailable",
+        err: expect.objectContaining({ message: "queue unavailable" }),
       }),
       "AMQP document job consumer startup failed; database polling remains active",
     );
@@ -692,7 +692,7 @@ describe("AMQP document job queue", () => {
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({
         role: "amqp-document-job-consumer",
-        error: "channel closed",
+        err: expect.objectContaining({ message: "channel closed" }),
       }),
       "Failed to acknowledge AMQP document job message",
     );

@@ -169,8 +169,7 @@ export class ConnectorRegistry {
         } as Parameters<ConnectorPlugin["initialize"]>[0]);
         this.initialized.add(plugin.id);
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        context.logger.error({ connectorId: plugin.id, err: message }, `Connector "${plugin.id}" failed to initialize`);
+        context.logger.error({ connectorId: plugin.id, err: error }, `Connector "${plugin.id}" failed to initialize`);
       }
     }
   }

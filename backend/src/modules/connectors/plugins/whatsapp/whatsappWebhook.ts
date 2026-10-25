@@ -220,7 +220,7 @@ export const createWhatsAppWebhookRouter = ({
                 workspaceId: message.workspaceId,
                 waId: message.waId,
                 wamid: message.wamid,
-                err: error instanceof Error ? error.message : String(error),
+                err: error,
               },
               "WhatsApp inbound message processing failed",
             );

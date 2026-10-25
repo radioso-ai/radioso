@@ -12,6 +12,7 @@ const createLogger = () => ({
 describe("ErrorReportingService", () => {
   it("normalizes unhandled request errors and records them", async () => {
     const sink: ErrorSink = {
+      name: "test-sink",
       record: vi.fn().mockResolvedValue(undefined),
     };
     const logger = createLogger();
@@ -66,6 +67,7 @@ describe("ErrorReportingService", () => {
       service: "radioso-api",
       sinks: [
         {
+          name: "test-sink",
           record: vi.fn().mockRejectedValue(new Error("sink down")),
         },
       ],
@@ -82,13 +84,14 @@ describe("ErrorReportingService", () => {
       prompt: "[REDACTED]",
     });
     expect(logger.error).toHaveBeenCalledWith(
-      expect.objectContaining({ err: "sink down", errorType: "test.error" }),
+      expect.objectContaining({ sinkName: "test-sink", err: expect.objectContaining({ message: "sink down" }), errorType: "test.error" }),
       "error_sink_failed",
     );
   });
 
   it("preserves caller-provided sanitized error class and stack", async () => {
     const sink: ErrorSink = {
+      name: "test-sink",
       record: vi.fn().mockResolvedValue(undefined),
     };
     const service = new ErrorReportingService({

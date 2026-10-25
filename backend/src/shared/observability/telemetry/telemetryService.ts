@@ -5,7 +5,7 @@ import { createRequestCorrelation, type CorrelationFields, type RequestCorrelati
 import { redactRecord } from "./redactionPolicy.js";
 import type { TelemetryEvent, TelemetrySeverity, TelemetrySink } from "./telemetrySink.js";
 
-export interface TelemetryServiceOptions {
+interface TelemetryServiceOptions {
   enabled?: boolean;
   environment: string;
   logger: AppLogger;
@@ -105,7 +105,7 @@ export class TelemetryService {
       } catch (error) {
         this.options.logger.error(
           {
-            err: error instanceof Error ? error.message : String(error),
+            err: error,
             eventType: event.eventType,
           },
           "telemetry_sink_failed",

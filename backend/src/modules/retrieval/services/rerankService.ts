@@ -414,7 +414,7 @@ export class RerankService {
     } catch (error) {
       this.logger?.warn(
         {
-          error: toLoggableError(error),
+          err: error,
           rerankQuery: input.query,
           candidateCount: input.contexts.length,
           rerankCandidateCount: input.contexts.length,
@@ -457,38 +457,6 @@ const chunkContexts = (contexts: RetrievedCandidate[], size: number): RetrievedC
     batches.push(contexts.slice(index, index + size));
   }
   return batches;
-};
-
-const toLoggableError = (error: unknown): Record<string, unknown> => {
-  if (!error || typeof error !== "object") {
-    return { message: String(error) };
-  }
-
-  const candidate = error as {
-    name?: unknown;
-    message?: unknown;
-    status?: unknown;
-    code?: unknown;
-    type?: unknown;
-    param?: unknown;
-    request_id?: unknown;
-    headers?: unknown;
-    error?: unknown;
-    cause?: unknown;
-  };
-
-  return {
-    name: candidate.name,
-    message: candidate.message,
-    status: candidate.status,
-    code: candidate.code,
-    type: candidate.type,
-    param: candidate.param,
-    request_id: candidate.request_id,
-    headers: candidate.headers,
-    error: candidate.error,
-    cause: candidate.cause,
-  };
 };
 
 const estimateTokens = (bytes: number): number => Math.max(1, Math.ceil(bytes / 4));

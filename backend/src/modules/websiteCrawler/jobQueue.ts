@@ -12,7 +12,7 @@ import type {
 
 const WORKER_TASK_PATH = "/internal/tasks/website-crawl";
 
-export const websiteCrawlJobQueueMessageSchema = z.object({
+const websiteCrawlJobQueueMessageSchema = z.object({
   jobId: z.string().uuid(),
   workspaceId: z.string().uuid(),
 }).strict();
@@ -37,9 +37,9 @@ const assertCrawlQueuesWithDlq = async (
   await channel.assertQueue(queueName, buildCrawlMainQueueOptions(deadLetterQueueName));
 };
 
-export type WebsiteCrawlJobQueueMessage = z.infer<typeof websiteCrawlJobQueueMessageSchema>;
+type WebsiteCrawlJobQueueMessage = z.infer<typeof websiteCrawlJobQueueMessageSchema>;
 
-export const toWebsiteCrawlJobQueueMessage = (
+const toWebsiteCrawlJobQueueMessage = (
   input: WebsiteCrawlJobDispatchRequest,
 ): WebsiteCrawlJobQueueMessage => ({
   jobId: input.jobId,
@@ -193,7 +193,7 @@ export class AmqpWebsiteCrawlJobConsumer implements JobConsumerPort {
         {
           role: "amqp-website-crawl-job-consumer",
           queueName: this.options.queueName,
-          error: error instanceof Error ? error.message : String(error),
+          err: error,
         },
         "AMQP website crawl job consumer startup failed; database polling remains active",
       );
@@ -226,7 +226,7 @@ export class AmqpWebsiteCrawlJobConsumer implements JobConsumerPort {
           role: "amqp-website-crawl-job-consumer",
           queueName: this.options.queueName,
           deadLetterQueueName: this.options.deadLetterQueueName,
-          error: error instanceof Error ? error.message : String(error),
+          err: error,
           rawPayloadBase64: message.content.toString("base64"),
         },
         "Rejected invalid website crawl queue message",
@@ -248,7 +248,7 @@ export class AmqpWebsiteCrawlJobConsumer implements JobConsumerPort {
           role: "amqp-website-crawl-job-consumer",
           queueName: this.options.queueName,
           jobId,
-          error: error instanceof Error ? error.message : String(error),
+          err: error,
         },
         "Website crawl queue message handling failed",
       );

@@ -174,7 +174,7 @@ export const buildWorkspaceProviderCredentialsService = (input: {
   service.onDecryptError((error, provider) => {
     input.logger.warn(
       {
-        err: error instanceof Error ? error.message : String(error),
+        err: error,
         provider,
         remediation:
           "Stored credential ciphertext could not be decrypted. Re-enter the API key for this provider after rotating CONNECTOR_ENCRYPTION_KEY.",

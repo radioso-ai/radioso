@@ -183,6 +183,22 @@ describe("error_recorded log line", () => {
     expect(line().error).toMatchObject({ requestId: "17", conversationId, method: "GET", route: "/api/v1/history" });
   });
 
+  it("drops a route that only survived a query-string strip, not a real path shape", async () => {
+    const { service, line, raw } = captureErrorLog();
+    const emailAddress = "visitor@example.com";
+
+    await service.report({
+      errorType: "frontend.runtime.unhandled",
+      error: new Error("boom"),
+      requestContext: { method: "CLIENT", route: `visitor typed this: contact me at ${emailAddress}` },
+    });
+
+    expect(raw()).not.toContain(emailAddress);
+    expect(raw()).not.toContain("visitor typed this");
+    expect(line().error).toMatchObject({ method: "CLIENT" });
+    expect(line().error).not.toHaveProperty("route");
+  });
+
   it("logs nothing of a thrown non-error value", async () => {
     const { service, line, raw } = captureErrorLog();
 
@@ -194,7 +210,7 @@ describe("error_recorded log line", () => {
   });
 
   it("still hands the full error to its sinks", async () => {
-    const sink: ErrorSink = { record: vi.fn().mockResolvedValue(undefined) };
+    const sink: ErrorSink = { name: "test-sink", record: vi.fn().mockResolvedValue(undefined) };
     const { service } = captureErrorLog([sink]);
 
     await service.report({

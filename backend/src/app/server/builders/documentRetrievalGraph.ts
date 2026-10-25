@@ -130,7 +130,7 @@ export const buildDocumentRetrievalGraph = (input: {
     onIdle: () => vectorTransitionMaintenance.reconcileBuildingTransitions(),
     onLoopError: (error) => {
       logger.error(
-        { backend: "pgvector", err: error instanceof Error ? error.message : String(error) },
+        { backend: "pgvector", err: error },
         "Vector index reconciliation tick failed",
       );
       void infrastructure.errorReportingService.report({
@@ -139,7 +139,7 @@ export const buildDocumentRetrievalGraph = (input: {
         severity: "error",
       }).catch((reportError) => {
         logger.error(
-          { err: reportError instanceof Error ? reportError.message : String(reportError) },
+          { err: reportError },
           "Vector index reconciliation error report failed",
         );
       });

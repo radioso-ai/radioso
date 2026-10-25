@@ -75,8 +75,8 @@ describe("HTTP request log line", () => {
     ]) {
       expect(raw).not.toContain(text);
     }
-    expect(requestLog).toMatchObject({ requestId: "req-redaction-test" });
-    expect(requestLog?.req).toEqual({ id: "req-redaction-test", method: "GET", url: "/health" });
+    expect(requestLog).toMatchObject({ requestId: "req-redaction-test", route: "/health" });
+    expect(requestLog?.req).toEqual({ id: "req-redaction-test", method: "GET" });
     expect(requestLog?.res).toEqual({ statusCode: 200 });
   });
 
@@ -111,5 +111,35 @@ describe("HTTP request log line", () => {
     const requestLog = JSON.parse(lines.join("").trim().split("\n").at(-1) ?? "{}") as Record<string, unknown>;
     expect(lines.join("")).not.toContain(visitorWords);
     expect(requestLog.err).toEqual({ type: "TypeError" });
+  });
+
+  it("logs the matched route pattern, not a credential segment resolved into it", async () => {
+    const { logger, lines } = createCapturedLogger();
+    const app = express();
+    app.use(createHttpLogger(logger));
+    const router = express.Router();
+    router.get("/invitations/:token", (_req, res) => {
+      res.status(200).json({ ok: true });
+    });
+    app.use("/api/v1/auth", router);
+
+    await request(app).get("/api/v1/auth/invitations/super-secret-invite-token").expect(200);
+
+    const requestLog = JSON.parse(lines.join("").trim().split("\n").at(-1) ?? "{}") as Record<string, unknown>;
+    expect(lines.join("")).not.toContain("super-secret-invite-token");
+    expect(requestLog).toMatchObject({ route: "/api/v1/auth/invitations/:token" });
+  });
+
+  it("does not fall back to the raw path for an unmatched route", async () => {
+    const { logger, lines } = createCapturedLogger();
+    const app = express();
+    app.use(createHttpLogger(logger));
+    // No routes registered; Express answers 404 on its own, leaving req.route unset.
+
+    await request(app).get("/api/v1/public/chat/super-secret-chat-token/messages").expect(404);
+
+    const requestLog = JSON.parse(lines.join("").trim().split("\n").at(-1) ?? "{}") as Record<string, unknown>;
+    expect(lines.join("")).not.toContain("super-secret-chat-token");
+    expect(requestLog).not.toHaveProperty("route");
   });
 });

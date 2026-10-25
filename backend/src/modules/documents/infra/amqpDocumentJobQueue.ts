@@ -43,7 +43,7 @@ const assertQueuesWithDlq = async (
   await channel.assertQueue(queueName, buildMainQueueOptions(deadLetterQueueName));
 };
 
-export type AmqpDocumentJobDispatcherOptions = AmqpDocumentJobQueueOptions;
+type AmqpDocumentJobDispatcherOptions = AmqpDocumentJobQueueOptions;
 
 export class AmqpDocumentJobDispatcher implements DocumentJobDispatcherPort {
   private readonly connect: AmqpConnect;
@@ -112,14 +112,14 @@ export class AmqpDocumentJobDispatcher implements DocumentJobDispatcherPort {
         role: "amqp-document-job-dispatcher",
         queueName: this.options.queueName,
         resource,
-        error: error instanceof Error ? error.message : String(error),
+        err: error,
       },
       "AMQP document job dispatcher lifecycle error",
     );
   }
 }
 
-export interface AmqpDocumentJobConsumerOptions extends AmqpDocumentJobQueueOptions {
+interface AmqpDocumentJobConsumerOptions extends AmqpDocumentJobQueueOptions {
   prefetch?: number;
   busyRequeueDelayMs?: number;
   reconnectDelayMs?: number;
@@ -161,7 +161,7 @@ export class AmqpDocumentJobConsumer implements DocumentJobConsumerPort {
         {
           role: "amqp-document-job-consumer",
           queueName: this.options.queueName,
-          error: error instanceof Error ? error.message : String(error),
+          err: error,
         },
         "AMQP document job consumer startup failed; database polling remains active",
       );
@@ -219,7 +219,7 @@ export class AmqpDocumentJobConsumer implements DocumentJobConsumerPort {
               {
                 role: "amqp-document-job-consumer",
                 queueName: this.options.queueName,
-                error: error instanceof Error ? error.message : String(error),
+                err: error,
               },
               "Unhandled document job queue message failure",
             );
@@ -277,7 +277,7 @@ export class AmqpDocumentJobConsumer implements DocumentJobConsumerPort {
         role: "amqp-document-job-consumer",
         queueName: this.options.queueName,
         resource,
-        error: error instanceof Error ? error.message : String(error),
+        err: error,
       },
       "AMQP document job consumer lifecycle error",
     );
@@ -361,7 +361,7 @@ export class AmqpDocumentJobConsumer implements DocumentJobConsumerPort {
         {
           role: "amqp-document-job-consumer",
           queueName: this.options.queueName,
-          error: error instanceof Error ? error.message : String(error),
+          err: error,
         },
         "AMQP document job consumer reconnect failed",
       );
@@ -407,7 +407,7 @@ export class AmqpDocumentJobConsumer implements DocumentJobConsumerPort {
           role: "amqp-document-job-consumer",
           queueName: this.options.queueName,
           jobId,
-          error: error instanceof Error ? error.message : String(error),
+          err: error,
         },
         "Document job queue message handling failed",
       );
@@ -469,7 +469,7 @@ const closeQuietly = async (
   } catch (error) {
     logger.warn(
       {
-        err: error instanceof Error ? error.message : String(error),
+        err: error,
         resource,
       },
       "Failed to close AMQP resource",
@@ -490,7 +490,7 @@ const ackQuietly = (
       {
         role: "amqp-document-job-consumer",
         queueName,
-        error: error instanceof Error ? error.message : String(error),
+        err: error,
       },
       "Failed to acknowledge AMQP document job message",
     );
@@ -512,7 +512,7 @@ const nackQuietly = (
         role: "amqp-document-job-consumer",
         queueName,
         requeue,
-        error: error instanceof Error ? error.message : String(error),
+        err: error,
       },
       "Failed to reject AMQP document job message",
     );
@@ -529,7 +529,7 @@ const cancelQuietly = async (
   } catch (error) {
     logger.warn(
       {
-        err: error instanceof Error ? error.message : String(error),
+        err: error,
         consumerTag,
       },
       "Failed to cancel AMQP consumer",

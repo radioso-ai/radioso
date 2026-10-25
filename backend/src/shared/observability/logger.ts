@@ -4,7 +4,7 @@ import { pinoHttp } from "pino-http";
 import type { ProductAnalyticsEvent } from "../analytics/productAnalyticsTypes.js";
 import type { ErrorEvent } from "../errors/errorTypes.js";
 import { toCloudLoggingSeverity } from "./logging/cloudSeverity.js";
-import { isClassName, isRequestCounter, isUuid } from "./logging/logSafeValues.js";
+import { isClassName, isPathShape, isRequestCounter, isUuid, safeErrorFields } from "./logging/logSafeValues.js";
 import { emitPinoLogRecordForOpenTelemetry } from "./logging/index.js";
 import type { CorrelationFields } from "./telemetry/correlation.js";
 
@@ -17,6 +17,13 @@ const loggerOptions = (level: string): pino.LoggerOptions => ({
       level: numericLevel,
       severity: toCloudLoggingSeverity(numericLevel),
     }),
+  },
+  // Every call site in the codebase logs a caught error under `err` or `error`; pino's own
+  // default `err` serializer writes the message and a stack whose first line restates it, so
+  // both keys route through the same allow-list shape instead.
+  serializers: {
+    err: safeErrorFields,
+    error: safeErrorFields,
   },
   hooks: {
     logMethod(args, method, pinoLevel) {
@@ -46,10 +53,19 @@ interface RetrievalLogFields {
   fallbackApplied: boolean;
 }
 
-// A route reaches a log line as its path alone: the query string can carry search text a person typed.
-// The error and correlation fields arrive as unknown metadata, so a non-string route is dropped, not dereferenced.
-const routePath = (route: unknown): string | undefined =>
-  typeof route === "string" ? route.replace(/[?#].*$/su, "") : undefined;
+// A route reaches a log line as its path alone: the query string can carry search text a person
+// typed. The error and correlation fields arrive as unknown metadata, so a non-string route is
+// dropped, not dereferenced. Stripping the query string is not by itself a shape check — a
+// client-supplied route (a frontend error report's `path`) that carried no `?`/`#` at all, such
+// as a sentence or an email address, would survive the strip whole, so the result must still
+// look like a path before it passes.
+const routePath = (route: unknown): string | undefined => {
+  if (typeof route !== "string") {
+    return undefined;
+  }
+  const stripped = route.replace(/[?#].*$/su, "");
+  return isPathShape(stripped) ? stripped : undefined;
+};
 
 const uuidOf = (value: unknown): string | undefined => (typeof value === "string" && isUuid(value) ? value : undefined);
 
@@ -178,9 +194,29 @@ const traceIdOf = (headers: unknown): string | undefined => {
   return traceId && TRACE_ID_PATTERN.test(traceId) ? traceId : undefined;
 };
 
-const requestLogFields = (req: { id?: unknown; method?: unknown; url?: unknown; headers?: unknown }) => {
+// Express sets `req.route` only once a route handler matched, to that handler's own route
+// object; a sub-router's mount prefix lives on `req.baseUrl`, not on the route itself, so both
+// are needed to name the whole path. A credential or a search term can sit in a path segment
+// (an invitation token, a public chat token), so the pattern — `/invitations/:token`, never the
+// resolved value — is what the request line keeps. An unmatched request (a 404) never set
+// `req.route`, and must not fall back to the raw, unmatched path.
+//
+// pino-http serializes `req` as soon as its own middleware runs, before Express has routed the
+// request, so `req.route`/`req.baseUrl` are never set yet inside the `req` serializer below —
+// this has to run later, in the `customSuccessObject`/`customErrorObject` hooks pino-http calls
+// once the response (and so the routing that produced it) has finished.
+const routePatternOf = (req: { baseUrl?: unknown; route?: unknown }): string | undefined => {
+  const route = req.route as { path?: unknown } | undefined;
+  if (typeof route?.path !== "string") {
+    return undefined;
+  }
+  const baseUrl = typeof req.baseUrl === "string" ? req.baseUrl : "";
+  return `${baseUrl}${route.path}`;
+};
+
+const requestLogFields = (req: { id?: unknown; method?: unknown; headers?: unknown }) => {
   const traceId = traceIdOf(req.headers);
-  return { id: req.id, method: req.method, url: routePath(req.url), ...(traceId ? { traceId } : {}) };
+  return { id: req.id, method: req.method, ...(traceId ? { traceId } : {}) };
 };
 
 const responseLogFields = (res: { statusCode?: unknown }) => ({ statusCode: res.statusCode });
@@ -191,6 +227,8 @@ const requestErrorLogFields = (err: { type?: unknown; name?: unknown }) => {
   return { type: typeof type === "string" && isClassName(type) ? type : "Error" };
 };
 
+type HttpLoggerRequest = { id?: string | number; baseUrl?: unknown; route?: unknown };
+
 export const createHttpLogger = (logger: AppLogger): RequestHandler =>
   pinoHttp({
     logger,
@@ -199,7 +237,15 @@ export const createHttpLogger = (logger: AppLogger): RequestHandler =>
       res: responseLogFields,
       err: requestErrorLogFields,
     },
-    customProps: (req: { id?: string | number }) => ({
+    customProps: (req: HttpLoggerRequest) => ({
       requestId: req.id,
     }),
+    customSuccessObject: (req: HttpLoggerRequest, _res, successObject: Record<string, unknown>) => {
+      const route = routePatternOf(req);
+      return route ? { ...successObject, route } : successObject;
+    },
+    customErrorObject: (req: HttpLoggerRequest, _res, _error, errorObject: Record<string, unknown>) => {
+      const route = routePatternOf(req);
+      return route ? { ...errorObject, route } : errorObject;
+    },
   }) as unknown as RequestHandler;

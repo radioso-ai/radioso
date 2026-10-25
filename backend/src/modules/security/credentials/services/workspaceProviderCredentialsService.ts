@@ -194,7 +194,7 @@ export class WorkspaceProviderCredentialsService {
           // Each transaction claims a bounded, revision-fenced batch.
         }
       } catch (error) {
-        this.logger?.warn({ workspaceId, err: error instanceof Error ? error.message : String(error) }, "Provider credential recovery failed");
+        this.logger?.warn({ workspaceId, err: error }, "Provider credential recovery failed");
       }
     })();
   }
@@ -293,7 +293,7 @@ export class WorkspaceProviderCredentialsService {
       // kind of silent failure security teams care about. Payload is keyless.
       this.logger?.warn(
         {
-          err: error instanceof Error ? error.message : String(error),
+          err: error,
           eventType: input.eventType,
           eventStatus: input.eventStatus,
           provider: input.provider,

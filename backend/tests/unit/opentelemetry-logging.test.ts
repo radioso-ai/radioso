@@ -38,6 +38,8 @@ const initializeLogging = (
   });
 };
 
+const visitorWords = "my daughter has asthma and needs the ground floor room";
+
 describe("OpenTelemetry log bridge", () => {
   afterEach(async () => {
     await shutdownOpenTelemetryLogging();
@@ -84,25 +86,39 @@ describe("OpenTelemetry log bridge", () => {
     });
   });
 
-  it("preserves nested Error details from structured Pino records", () => {
+  it("names a nested Error's class from structured Pino records but never its message", () => {
     const exporter = new RecordingLogExporter();
     initializeLogging(exporter);
 
     const logger = createLogger("debug");
-    logger.error({ err: new Error("database unavailable"), workspaceId: "workspace-1" }, "worker failed");
-    logger.error({ error: new TypeError("invalid payload"), jobId: "job-1" }, "job failed");
+    logger.error({ err: new Error(`provider said: ${visitorWords}`), workspaceId: "workspace-1" }, "worker failed");
+    logger.error({ error: new TypeError(`rejected "${visitorWords}"`), jobId: "job-1" }, "job failed");
 
     expect(exporter.records).toHaveLength(2);
     expect(exporter.records[0]?.attributes).toMatchObject({
-      err: "database unavailable",
       errorClass: "Error",
       workspaceId: "workspace-1",
     });
     expect(exporter.records[1]?.attributes).toMatchObject({
-      errorMessage: "invalid payload",
       errorClass: "TypeError",
       jobId: "job-1",
     });
+    expect(JSON.stringify(exporter.records[0]?.attributes)).not.toContain(visitorWords);
+    expect(JSON.stringify(exporter.records[1]?.attributes)).not.toContain(visitorWords);
+    expect(exporter.records[0]?.attributes).not.toHaveProperty("err");
+    expect(exporter.records[1]?.attributes).not.toHaveProperty("errorMessage");
+  });
+
+  it("names a top-level thrown Error's class but never its message", () => {
+    const exporter = new RecordingLogExporter();
+    initializeLogging(exporter);
+
+    const logger = createLogger("debug");
+    logger.error(new RangeError(`out of range: ${visitorWords}`));
+
+    expect(exporter.records).toHaveLength(1);
+    expect(exporter.records[0]?.attributes).toMatchObject({ errorClass: "RangeError" });
+    expect(JSON.stringify(exporter.records[0]?.attributes)).not.toContain(visitorWords);
   });
 
   it("does not leave the shutdown timeout timer pending after a successful shutdown", async () => {
@@ -131,7 +147,10 @@ describe("OpenTelemetry log bridge", () => {
 
     await expect(shutdownOpenTelemetryLogging()).resolves.toBeUndefined();
 
-    expect(logger.error).toHaveBeenCalledWith({ err: "provider failed" }, "otel_logging_shutdown_failed");
+    expect(logger.error).toHaveBeenCalledWith(
+      { err: expect.objectContaining({ message: "provider failed" }) },
+      "otel_logging_shutdown_failed",
+    );
   });
 
   it("keeps disabled OpenTelemetry logging as a no-op", () => {

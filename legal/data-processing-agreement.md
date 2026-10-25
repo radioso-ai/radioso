@@ -145,9 +145,7 @@ Terms of Service.]
 - **Access control.** Workspace data is visible only to that workspace's team,
   by role. Radioso's staff console has no access to workspace conversations.
 - **Logs and telemetry.** Application logs and telemetry carry ids, counts and
-  outcomes, never message content. Logs are kept for 30 days. [Owner: true once
-  issue #1616 is fixed. Until then, WhatsApp log lines carry the visitor's phone
-  number, and some error lines carry the error's message.]
+  outcomes, never message content. Logs are kept for 30 days.
 - **Backups.** Daily database backups, the 7 most recent kept.
 - **Erasure and retention.** Deleting a conversation or a visitor removes the
   data and every copy derived from it. Retention windows erase conversations

@@ -263,7 +263,7 @@ describe("WhatsAppMessageHandler", () => {
     }));
     expect(client.sendTextMessage).toHaveBeenCalledWith(
       expect.objectContaining({ phoneNumberId: "15550001111" }),
-      { to: "14155551234", text: "Combined answer" },
+      { to: "14155551234", text: "Combined answer", outboundWamid: expect.any(String) },
     );
     expect(persistence.contacts.get("workspace-1:14155551234")).toMatchObject({
       conversationId: "conversation-1",
@@ -509,6 +509,7 @@ describe("WhatsAppMessageHandler", () => {
     expect(client.sendTextMessage).toHaveBeenLastCalledWith(expect.any(Object), {
       to: "14155551234",
       text: "Stable answer",
+      outboundWamid: expect.any(String),
     });
     expect(persistence.messageLogs.get("wamid-delivery-retry")?.status).toBe("replied");
   });

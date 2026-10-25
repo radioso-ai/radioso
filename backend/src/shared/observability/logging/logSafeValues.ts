@@ -9,11 +9,19 @@ const CODE_PATTERN = /^[a-z][a-z0-9_.:-]{0,63}$/u;
 // A JavaScript class name such as `TypeError` or `DOMException`.
 const CLASS_NAME_PATTERN = /^[A-Za-z_$][\w$.]{0,127}$/u;
 
+// A route or page path a browser's own router produced: a leading slash, then URL-path-safe
+// characters only — no space, `@`, comma, or quote. A caller that only stripped a query string
+// (an older convention this module replaces) can still hand this a sentence or an email address;
+// this is the shape check that catches what the strip alone does not.
+const PATH_SHAPE_PATTERN = /^\/[\w\-./%[\]:]*$/u;
+
 export const isUuid = (value: string): boolean => UUID_PATTERN.test(value);
 
 const isCode = (value: string): boolean => CODE_PATTERN.test(value);
 
 export const isClassName = (value: string): boolean => CLASS_NAME_PATTERN.test(value);
+
+export const isPathShape = (value: string): boolean => PATH_SHAPE_PATTERN.test(value);
 
 // A class name followed by a code, such as `AppError [document_not_found]`: how a background job
 // summarizes its error.
@@ -40,6 +48,49 @@ export const isStackFrame = (line: string): boolean =>
   line.length <= FRAME_MAX_LENGTH && (V8_FRAME_PATTERN.test(line) || BROWSER_FRAME_PATTERN.test(line));
 
 export type LogSafeValue = string | number | boolean;
+
+interface SafeErrorFields {
+  name: string;
+  code?: string;
+  stack?: string;
+}
+
+// The error's own stack, minus its first line (always a restatement of the message, which is
+// never safe to log) and any further line that is not a V8 or browser stack frame: a multi-line
+// message indented to look like one must not survive this filter.
+const safeStack = (stack: unknown): string | undefined => {
+  if (typeof stack !== "string") {
+    return undefined;
+  }
+  const frames = stack.split("\n").slice(1).filter(isStackFrame);
+  return frames.length > 0 ? frames.join("\n") : undefined;
+};
+
+/**
+ * What a log line may keep of a caught value: the error's class, a structural code if it set one
+ * (shaped like `isCode`, so an `AppError`'s `not_found` passes while a provider's free-text code
+ * does not), and its shape-checked stack frames. Never the message, the first stack line (which
+ * restates it), or a `cause`'s message: this never looks past the error's own properties, so a
+ * visitor's words, an email address, or a provider's response text in any of those can't reach
+ * a log line through this path. The pino `err`/`error` serializer (`logger.ts`) and the
+ * OpenTelemetry log bridge (`logging/index.ts`) both call this so a caught error reads the same
+ * safe way everywhere it is logged.
+ */
+export const safeErrorFields = (error: unknown): SafeErrorFields => {
+  if (!(error instanceof Error)) {
+    return { name: typeof error };
+  }
+
+  const name = isClassName(error.name) ? error.name : error.constructor.name;
+  const code = (error as { code?: unknown }).code;
+  const stack = safeStack(error.stack);
+
+  return {
+    name,
+    ...(typeof code === "string" && isCode(code) ? { code } : {}),
+    ...(stack ? { stack } : {}),
+  };
+};
 
 interface LogSafeMetadataKeys {
   /** Keys whose values the reporting code picks from a closed set of codes. */

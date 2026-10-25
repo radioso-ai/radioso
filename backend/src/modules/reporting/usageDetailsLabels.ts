@@ -6,6 +6,7 @@ const knownLabels = new Map<string, string>([
   ["agents:draft_directive", "Draft directive"],
   ["agents:directive_coherence", "Directive coherence"],
   ["assistant:answer", "Answer"],
+  ["operator_copilot:agent_step", "Ray model call"],
 ]);
 
 const humanize = (value: string): string => value

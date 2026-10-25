@@ -1,7 +1,7 @@
 ---
 title: "Ray"
 description: "Use Ray in the dashboard to triage what needs attention, investigate agent behavior, check the email channel and its held replies, edit routines, test a routine change before it ships, and review linked activity and proposals."
-last_updated: 2026-10-19
+last_updated: 2026-10-25
 ---
 
 # Ray
@@ -743,7 +743,9 @@ the change should have moved, read the result, then ask for the next batch.
   runs in a short window. Ray says how long to wait and answers from what it
   already has.
 - **A Ray conversation is gone** — it passed the 90-day retention window.
-  Deleted conversations are not recoverable.
+  Deleted conversations are not recoverable. The usage events Ray's calls in
+  that conversation recorded stay in the billing ledger with their token
+  counts; only the link to the conversation and its message goes.
 - **A test conversation cannot be continued** — start a fresh test from the
   current Ray thread. Probe conversations are scoped to the Ray thread,
   operator, workspace, and agent that created them.

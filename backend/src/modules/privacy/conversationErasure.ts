@@ -112,8 +112,9 @@ export interface ConversationErasureWriteScope {
   /**
    * What vendors hold for the erased subjects, such as a voice call's recording: read in this
    * transaction, with its rows locked, before any eraser or the cascade removes the rows that say
-   * where it is, and erased at the vendor once the transaction committed. Its read rejecting fails
-   * the erasure. Null when nothing is held outside Radioso.
+   * where it is, and handed to a durable backlog in it, so a background job deletes it at the vendor
+   * once the transaction committed. Its read rejecting fails the erasure. Null when nothing is held
+   * outside Radioso.
    */
   vendorHeldData: VendorHeldConversationDataEraser | null;
   audit: { record(event: AuditEventInput): Promise<void> };
@@ -130,8 +131,8 @@ interface ConversationErasureDependencies {
   auditLog: { logRecorded?(event: AuditEventInput): void };
 }
 
-/** What an erasure leaves for after its commit: the vendors' copies, read while the transaction ran. */
-type AfterCommit = (erase: () => Promise<void>) => void;
+/** What an erasure leaves for after its commit: the wake of the job that deletes the vendors' copies it handed off. */
+type AfterCommit = (work: () => Promise<void>) => void;
 
 /** Who an erasure's audit event names, and what it says beyond the counts; null records nothing. */
 type ErasureRecord = (receipt: ConversationErasureReceipt) => { eventType: string; metadata: Record<string, unknown> } | null;
@@ -158,7 +159,7 @@ export class ConversationErasureService implements ConversationErasure, Inactive
         throw notFound("Conversation not found");
       }
       const ids = [input.conversationId];
-      await this.readVendorHeld(scope, input.actor.accountId, [{ kind: "conversations", workspaceId: input.workspaceId, conversationIds: ids }], afterCommit);
+      await this.handOffVendorHeld(scope, input.actor.accountId, [{ kind: "conversations", workspaceId: input.workspaceId, conversationIds: ids }], afterCommit);
       return this.eraseConversations(scope, input.workspaceId, ids);
     });
   }
@@ -177,9 +178,9 @@ export class ConversationErasureService implements ConversationErasure, Inactive
       const conversationIds = visitor.conversationIds.length > 0
         ? [...await scope.subjects.lockConversations(input.workspaceId, visitor.conversationIds)]
         : [];
-      // One read for everything vendors hold for the visitor: their conversations, and what they
+      // One hand-off for everything vendors hold for the visitor: their conversations, and what they
       // left by their key before any conversation, such as a call whose first turn never came.
-      await this.readVendorHeld(scope, input.actor.accountId, [
+      await this.handOffVendorHeld(scope, input.actor.accountId, [
         ...(conversationIds.length > 0 ? [{ kind: "conversations" as const, workspaceId: input.workspaceId, conversationIds }] : []),
         ...(visitor.visitorKey ? [{ kind: "visitor_key" as const, workspaceId: input.workspaceId, visitorKey: visitor.visitorKey }] : []),
       ], afterCommit);
@@ -219,26 +220,26 @@ export class ConversationErasureService implements ConversationErasure, Inactive
       if (inactive.length === 0) {
         return { conversationCount: 0, messageCount: 0, rowsByOwner: {} };
       }
-      await this.readVendorHeld(scope, input.accountId, [{ kind: "conversations", workspaceId: input.workspaceId, conversationIds: inactive }], afterCommit);
+      await this.handOffVendorHeld(scope, input.accountId, [{ kind: "conversations", workspaceId: input.workspaceId, conversationIds: inactive }], afterCommit);
       return this.eraseConversations(scope, input.workspaceId, inactive);
     });
     return { ...receipt, claimedCount };
   }
 
   /**
-   * Reads what vendors hold for the erased subjects, in the erasure's transaction and before any
-   * eraser runs, and leaves its deletion at the vendor for after the commit. A read that rejects
-   * fails the erasure.
+   * Hands what vendors hold for the erased subjects to the backlog, in the erasure's transaction and
+   * before any eraser runs, and leaves the wake of the job that deletes it for after the commit. A
+   * read that rejects fails the erasure.
    */
-  private async readVendorHeld(
+  private async handOffVendorHeld(
     scope: ConversationErasureWriteScope,
     accountId: string,
     scopes: readonly VendorHeldConversationDataScope[],
     afterCommit: AfterCommit,
   ): Promise<void> {
     if (!scope.vendorHeldData || scopes.length === 0) return;
-    const vendorHeld = await scope.vendorHeldData.prepare({ account: { id: accountId, deleted: false }, scopes });
-    afterCommit(() => vendorHeld.erase());
+    const handedOff = await scope.vendorHeldData.handOff({ accountId, scopes });
+    afterCommit(() => handedOff.afterCommit());
   }
 
   /** Erasers first, while the conversations they key on still exist, then the conversations and their cascade. */
@@ -258,10 +259,10 @@ export class ConversationErasureService implements ConversationErasure, Inactive
 
   /**
    * Runs `erase` in one transaction with its audit event (none when `record` returns null), then —
-   * only once that committed — tells live dashboards, logs the event, and asks the vendors to delete
-   * their copies. A refusal (not found) rolls everything back, records nothing and asks the vendors
-   * nothing; a transaction that runs again reads the vendors' copies again, and only the run that
-   * committed is erased.
+   * only once that committed — tells live dashboards, logs the event, and wakes the job that deletes
+   * the vendors' copies. A refusal (not found) rolls everything back, records nothing and hands
+   * nothing off; a transaction that runs again hands the vendors' copies off again, and only the
+   * run that committed leaves a backlog.
    */
   private async commit(
     workspaceId: string,
@@ -270,11 +271,11 @@ export class ConversationErasureService implements ConversationErasure, Inactive
     erase: (scope: ConversationErasureWriteScope, afterCommit: AfterCommit) => Promise<ConversationErasureReceipt>,
   ): Promise<ConversationErasureReceipt> {
     let recorded: AuditEventInput | null = null;
-    let vendorErasures: Array<() => Promise<void>> = [];
+    let afterCommits: Array<() => Promise<void>> = [];
     const receipt = await this.deps.unitOfWork.run(async (scope) => {
       recorded = null;
-      vendorErasures = [];
-      const result = await erase(scope, (eraseAtVendor) => vendorErasures.push(eraseAtVendor));
+      afterCommits = [];
+      const result = await erase(scope, (work) => afterCommits.push(work));
       const subject = record(result);
       if (!subject) return result;
       const event: AuditEventInput = {
@@ -299,8 +300,8 @@ export class ConversationErasureService implements ConversationErasure, Inactive
     if (recorded) {
       this.deps.auditLog.logRecorded?.(recorded);
     }
-    for (const eraseAtVendor of vendorErasures) {
-      await eraseAtVendor().catch(() => undefined);
+    for (const work of afterCommits) {
+      await work().catch(() => undefined);
     }
     return receipt;
   }

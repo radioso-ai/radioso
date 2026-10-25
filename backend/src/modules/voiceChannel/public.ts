@@ -1,10 +1,12 @@
 export type {
   VoiceRecordingAvailabilityPort,
+  VoiceRecordingErasureBacklog,
   VoiceRecordingPlaybackPort,
   VoiceRecordingToErase,
   VoiceRecordingStore,
   VoiceRecordingStream,
   VoiceVendorCredentialReader,
+  VoiceVendorCredentialSealer,
   VoiceVendorConversationReportPort,
   VoiceSessionAvailabilityPort,
   VoiceSessionStartLookup,
@@ -21,11 +23,17 @@ export type { VoiceStoredReplyReader } from "./services/languageSwitchFollowUp.j
 export { VoiceSessionStartService } from "./services/voiceSessionStartService.js";
 export { VoiceRecordingService, type VoiceRecordingAudit } from "./services/voiceRecordingService.js";
 export { VoiceRecordingErasureService } from "./services/voiceRecordingErasureService.js";
+export {
+  VoiceRecordingErasureDrain,
+  voiceRecordingErasureJobHandler,
+  voiceRecordingErasureRequest,
+} from "./services/voiceRecordingErasureJob.js";
 export { createElevenLabsRecordingSource } from "./adapters/elevenlabs/recordingSource.js";
 
 export { VOICE_CALL_READINESS_GAPS, VOICE_REPLY_INTERRUPTED_EVENT } from "./domain.js";
 export { createElevenLabsSessionStarter } from "./adapters/elevenlabs/sessionStarter.js";
 export { VoiceSessionRepository } from "./persistence/voiceSessionRepository.js";
 export { VoiceSessionEraser } from "./persistence/voiceSessionEraser.js";
+export { VoiceRecordingErasureRepository } from "./persistence/voiceRecordingErasureRepository.js";
 export { registerOpenAiCompletionsRoute } from "./adapters/openaiCompletions/route.js";
 export { ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS } from "./adapters/openaiCompletions/dialects.js";

@@ -43,9 +43,13 @@ composition calls them and assembles the result.
   count implements the rule's optional `onRunComplete`.
 - `workspaceDeletion.ts`: what deleting a workspace, or an organization with
   its workspaces, does beyond the cascade. Inside the deletion's transaction it
-  runs the conversation erasers and hands each workspace's stored files to the
+  hands what vendors hold (each call recording, with the workspace's vendor key
+  sealed, to the `voice.recording_erasure` job) off first, then runs the
+  conversation erasers and hands each workspace's stored files to the
   `documents.workspace_storage_purge` background job; after the commit it wakes
-  the worker. `PersonalCredentialLifecycleRepository` runs both hooks.
+  the worker. `PersonalCredentialLifecycleRepository` runs both hooks;
+  `app/server/builders/infra.ts`'s `buildPersonalCredentialLifecycleRepository`
+  builds it, after the voice recording composition it hands recordings to.
 - `conversationLockOrder.ts`: the conversation lock protocol every unit of work
   touching a conversation's ownership, held replies or mailbox policy follows,
   and the bounded deadlock retry for the units that can still meet one. Read it

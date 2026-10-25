@@ -83,12 +83,19 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   call, null for a conversation that is not a call or cannot be read; the
   history detail and Ray's transcript both ask it) and a play
   (`VoiceRecordingPlaybackPort`), audited through `VoiceRecordingAudit`
-  before the audio is handed on; `voiceRecordingErasureService.ts` deletes
-  recordings at the vendor when their conversation, visitor, workspace or
-  organization is deleted (`VoiceRecordingErasurePort`, the shared
-  `VendorHeldConversationDataEraser` in `shared/domain/conversationDataErasure.ts`:
-  one erasure per deletion, its scopes in order under one concurrency limit
-  and one deadline).
+  before the audio is handed on; `voiceRecordingErasureService.ts` hands
+  recordings to the erasure backlog when their conversation, visitor,
+  workspace or organization is deleted (`VoiceRecordingErasurePort`, the
+  shared `VendorHeldConversationDataEraser` in
+  `shared/domain/conversationDataErasure.ts`): in the deletion's own
+  transaction, one erasure per workspace and vendor, with the workspace's key
+  sealed through `VoiceVendorCredentialSealer` and the erasure's
+  `voice.recording_erasure` job queued beside it; `voiceRecordingErasureJob.ts`
+  is that job (`VoiceRecordingErasureDrain`): it claims an erasure's pending
+  recordings, those asked least first, deletes them at the vendor with the
+  held key, and settles each (gone, kept for another ask, or after eight
+  asks `failed` with a `VoiceRecordingLeftReason`), then clears the key once
+  nothing pending needs it.
 - `persistence/` maps `(agent_id, vendor, session_key)` to a conversation in
   `voice_sessions`. The first binding wins. A Radioso-started row also holds
   the vendor agent it opened on, that account's region and, once reported and
@@ -96,6 +103,12 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   holds that id outlives its agent, its conversation (both links are SET
   NULL) and the next start's cleanup; it goes with its workspace. A session
   whose conversation is gone is unbound, and its next turn binds a new one.
+  `voiceRecordingErasureRepository.ts` is the erasure backlog
+  (`VoiceRecordingErasureBacklog`, migration `245_voice_recording_erasures.sql`):
+  `voice_recording_erasures` (organization, workspace, vendor, sealed key) and
+  `voice_recording_erasure_items` (one per recording), every id a plain value,
+  so it outlives what was deleted; a claim reads whether the organization and
+  workspace are gone since.
 - `adapters/*` translate one wire to the domain port and back, and nothing
   else. `adapters/openaiCompletions/` is the OpenAI chat-completions wire;
   vendors that share it differ only by a dialect in `dialects.ts`, which is
@@ -140,6 +153,8 @@ helpers and the shared chat message limit from `app/http`
   `VoiceSessionStartResult`, `VoiceSessionStartService`,
   `createElevenLabsSessionStarter`; the recording ports,
   `VoiceRecordingService`, `VoiceRecordingErasureService`,
+  `VoiceRecordingErasureDrain`, `voiceRecordingErasureJobHandler`,
+  `voiceRecordingErasureRequest`, `VoiceRecordingErasureRepository`,
   `VoiceRecordingAudit` and `createElevenLabsRecordingSource`.
 - `backend/src/app/composition/voiceChannel.ts` — builds the port over a
   session store, `AssistantChatService.streamAnswer`, the agent repository (voice
@@ -161,13 +176,16 @@ helpers and the shared chat message limit from `app/http`
   `app/server/dependencies.ts` builds one `VoiceSessionRepository` and hands it
   to both: the turn reads bindings and starts from it, and the start records
   into it. `createVoiceRecordingComposition` builds the recording services
-  over the same repository, the ElevenLabs recording source with `fetch`, the
-  same credential reader and the audit service
-  (`conversation.recording_played` and `conversation.recording_deleted`,
-  built by `createVoiceRecordingAudit`); the playback is
+  over the same repository, the erasure backlog, the ElevenLabs recording
+  source with `fetch`, the same credential reader, the credential store's
+  `sealSecret`/`openSealedSecret` as the sealer, the background-job queue and
+  the audit service (`conversation.recording_played` and
+  `conversation.recording_deleted`, a recording left at the vendor as its
+  `failure`, built by `createVoiceRecordingAudit`); the playback is
   `AppDependencies.voiceRecordings`, Ray's catalog reads its availability,
-  and the erasure is the workspace service's
-  `VendorHeldConversationDataEraser`.
+  `erasureIn` is the `VendorHeldConversationDataEraser` the privacy erasure
+  and the workspace deletion hooks bind to their transactions, and
+  `erasureJobHandler` joins the background-job runtime.
 - `backend/src/app/http/routes/conversationRecordingRoutes.ts` — mounts
   `GET /api/v1/conversations/:conversationId/recording` (dashboard sessions,
   `workspace.history.read`, `sessionOnly` in `apiPrincipalRoutePolicy.ts`),
@@ -257,21 +275,22 @@ helpers and the shared chat message limit from `app/http`
   recording up with the workspace's own key, and no response carries it. A
   self-minted session key has no recording. Each answer that carries audio is
   audited first; an audit that fails refuses the play, and `partial` follows
-  the bytes sent. Every deletion that reaches a recording reads the
-  recordings and the key before anything removes them, then asks the vendor
-  to delete each once it committed, four at a time for at most 20 s in all:
-  the privacy module's conversation and visitor erasure (the unit of work's
-  `vendorHeldData`, bound to the erasure's transaction by
-  `createVoiceRecordingComposition`'s `erasureIn`, read with the session rows
-  locked before its erasers run, and a failed read failing the erasure; a
-  visitor's scope adds their key, for calls no turn ever bound;
-  `persistence/voiceSessionEraser.ts` is the `voice-channel` conversation and
-  visitor-key eraser that then removes the rows), and workspace and
-  organization deletion (the workspace service's hook, best-effort before the
-  deleting transaction) (deletes still in flight at
-  the deadline are aborted); what is left is logged with its ids and never
-  fails the deletion. Deleting an agent deletes no
-  recording. The route is a permanent coverage exclusion
+  the bytes sent. Every deletion that reaches a recording hands the
+  recordings and the sealed key to the erasure backlog in its own
+  transaction, before anything removes them, so the deletion and the backlog
+  commit together: the privacy module's conversation, visitor and retention
+  erasure (the unit of work's `vendorHeldData`, bound to the erasure's
+  transaction by `createVoiceRecordingComposition`'s `erasureIn`, read with
+  the session rows locked before its erasers run; a visitor's scope adds
+  their key, for calls no turn ever bound; `persistence/voiceSessionEraser.ts`
+  is the `voice-channel` conversation and visitor-key eraser that then
+  removes the rows), and workspace and organization deletion
+  (`app/composition/workspaceDeletion.ts`, first in the lifecycle
+  repository's transaction hook). A failed read of the recordings or the key
+  fails the deletion. The `voice.recording_erasure` job deletes them once the
+  deletion committed, four at a time, retrying refusals for about a day; a
+  crash anywhere leaves the backlog for the next run. Deleting an agent
+  deletes no recording. The route is a permanent coverage exclusion
   (`getConversationRecording`: binary audio a teammate hears); Ray's
   `conversation_transcript` carries `recordingAvailable`. The agent's
   optional `voice.recordingNotice` is shown by the embed, not spoken: the
@@ -844,13 +863,20 @@ and `vendorStatus`. A report records `voice_vendor_conversation_report_total`
 (`recorded`, `no_session`, `vendor_not_found`, `vendor_agent_mismatch`,
 `already_reported`, `store_failed`, `credential_*`, `vendor_failed`) and logs
 `Voice vendor conversation report was refused` or `… could not be checked`
-with `workspaceId`, `agentId`, `vendor` and `outcome`. A deletion records
-`voice_recording_delete_total` (`deleted`, `already_absent`, `vendor_failed`,
-`credential_*`, `deadline_passed`) and logs `Voice recording was left at the
-vendor` at warn for every recording it leaves, past the deadline included,
-with `conversationId` and `vendorConversationId` so an operator can delete
-it at the vendor. Otherwise never the vendor's conversation id, and never
-the key, the vendor URL or any audio.
+with `workspaceId`, `agentId`, `vendor` and `outcome`. The erasure job
+records `voice_recording_delete_total` for each ask (`deleted`,
+`already_absent`, `vendor_failed`, `credential_unreadable`) and once for each
+recording it gives up on (`left_at_vendor`), logs one line per run
+(`Voice recording erasure ran` at info, or `… left recordings at the vendor`
+at warn, with the erasure id, the counts and the first refusal's code,
+vendor reason and status), and logs `Voice recording was left at the vendor`
+at warn for every recording given up on, with `conversationId`,
+`vendorConversationId` and the reason as `outcome`, so an operator can delete
+it at the vendor; the same recording's `conversation.recording_deleted`
+`failure` event carries them for its organization. The job's runs also count
+under `background_jobs_total{kind="voice.recording_erasure"}`. Otherwise
+never the vendor's conversation id, and never the key, the vendor URL or any
+audio.
 
 ## Tests
 
@@ -881,7 +907,11 @@ the key, the vendor URL or any audio.
   spoken, marked `partial`, and audited)
 - `cd backend && pnpm exec vitest run tests/contract/voice-recording.contract.test.ts`
   (the report, the detail flag, playback through a fake vendor `fetch`, and
-  deletion with the workspace)
+  a workspace deletion that never waits on the vendor)
+- `cd backend && pnpm exec vitest run tests/integration/voice-recording-erasure.integration.test.ts --no-file-parallelism`
+  (the erasure backlog on Postgres: the hand-off in each deletion's
+  transaction, the job's deletes, retries, give-up and records, a worker that
+  dies mid-way, and a backlog that outlives its workspace and organization)
 - `cd backend && pnpm exec vitest run tests/integration/voice-session-repository.integration.test.ts`
   (needs the disposable integration database; see the code map)
 - `cd backend && pnpm exec vitest run tests/unit/eval-suite/voice-behaviour.test.ts`

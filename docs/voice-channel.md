@@ -1,7 +1,7 @@
 ---
 title: "Voice Channel"
 description: "Let a voice runtime such as ElevenLabs Agents speak for a Radioso agent through an OpenAI-compatible chat-completions endpoint, with sessions Radioso starts on your vendor key, one conversation per voice session, authored lines that cover the wait in the language of each turn, a call that switches language with its caller, a teammate's Inbox replies spoken to the caller, the call's recording in the Inbox, and the period's call numbers on the Quality page."
-last_updated: 2026-10-24
+last_updated: 2026-10-25
 ---
 
 # Voice Channel
@@ -1282,35 +1282,60 @@ included, on the account's region host, after the deletion has gone through.
 A visitor deletion also reaches a call the widget started for that visitor
 whose first turn never came, which has no conversation in Radioso, by the
 visitor's key; a workspace or organization deletion reaches every such call.
-Radioso reads the recordings and the key first, because the deletion takes
-both with it. For a conversation or a visitor that read runs in the
-deletion's own transaction and holds the call's session rows, so a report
-arriving meanwhile waits; when it fails, the deletion fails whole and can be
-sent again, rather than go on without knowing where the recordings are.
 Deleting an agent deletes no recording: its conversations stay, and so do
 their recordings, which still play from the Inbox and go when their
 workspace does. Radioso's record of where a recording is also outlives the
 call's conversation, so a workspace deletion still reaches a recording whose
 conversation was deleted before it.
 
+The deletion hands its recordings to a backlog in its own database
+transaction, so the deletion and the backlog commit together or not at all.
+For each workspace and vendor it writes the recordings (vendor, region,
+ElevenLabs conversation id, and the organization, workspace and conversation
+they belonged to, by id) and the workspace's ElevenLabs key, encrypted with
+the same `CONNECTOR_ENCRYPTION_KEY` the credential store uses, because a
+workspace's deletion takes its credential store with it. The backlog names
+nothing it would have to follow a deleted row to, so it outlives the
+workspace and the organization. The read holds the call's session rows, so
+a report arriving meanwhile waits; when the recordings or the key cannot be
+read, the deletion fails whole and can be sent again, rather than go on
+without knowing where the recordings are.
+
+A background job, `voice.recording_erasure`, then deletes them: one run per
+workspace and vendor a deletion reached, woken as soon as the deletion
+commits. Each run asks ElevenLabs about up to 50 recordings, four at a time,
+with the held key. A recording ElevenLabs deleted, or no longer held, leaves
+the backlog. One it refused or did not answer for is kept and asked again:
+first by a run right away while recordings never asked about remain, then
+on the job's growing waits (a minute, five, fifteen, an hour, and on up to
+twelve hours), eight asks in all, about a day. A recording still there after
+its eighth ask stays in the backlog as `failed`, with why. A workspace that
+held no ElevenLabs key when it was deleted, or one the backend could not
+decrypt, has its recordings marked `failed` on the job's first run without
+asking. The held key is cleared as soon as no recording waiting to be
+deleted needs it, `failed` ones included. A worker that dies between the
+commit and the vendor, or between the vendor's answer and its own record,
+leaves the backlog as it was, and the next run picks it up; a recording
+asked twice reads as already absent the second time.
+
 Each recording Radioso deletes is recorded as a
 `conversation.recording_deleted` audit event with the conversation id, the
 vendor and `outcome` (`deleted`, or `already_absent` when ElevenLabs no
-longer held it), beside the conversation's own `conversation.erased` or
-`visitor.erased` event. When a workspace is deleted, the event belongs to the
-organization and names `deletedWorkspaceId`, so the organization keeps its
-proof of erasure.
-When the organization itself is deleted, the event names it as
-`deletedAccountId`.
-
-The deletion never waits on ElevenLabs. Every deletion works through its
-recordings (for an organization, its workspaces in order) four calls at a
-time, for at most 20 seconds in all. A recording ElevenLabs refuses to delete or does not answer for, and
-every recording not yet deleted when the time runs out (a delete still
-waiting on ElevenLabs is let go of then), stays in your ElevenLabs account and is logged as `Voice recording was left at the vendor`
-with its `conversationId` and `vendorConversationId`. Radioso does not try
-again, so delete those from the ElevenLabs dashboard by that id.
-`voice_recording_delete_total` counts each outcome.
+longer held it). A recording left at the vendor is the same event with
+status `failure`, `outcome: "left_at_vendor"`, a `reason`
+(`credential_missing`, `credential_unreadable`, `vendor_rejected`,
+`vendor_unreachable`, `vendor_timeout`, `vendor_malformed_response`,
+`vendor_failed`, or `drain_failed` when the job itself kept failing), and
+`vendorConversationId`, so the organization can delete it in ElevenLabs. The
+backend log names it as `Voice recording was left at the vendor` with its
+`conversationId` and `vendorConversationId`. When the workspace is gone by
+the time the job records it, the event belongs to the organization and names
+`deletedWorkspaceId`, so the organization keeps its proof of erasure. When
+the organization itself is gone, the event names it as `deletedAccountId`.
+`voice_recording_delete_total` counts each ask by `outcome` (`deleted`,
+`already_absent`, `vendor_failed`, `credential_unreadable`) and each
+recording given up on as `left_at_vendor`; the job's own runs show under
+`background_jobs_total{kind="voice.recording_erasure"}`.
 
 Recordings are deleted with the workspace's ElevenLabs key. Once you remove
 that key, or replace it with a key for another ElevenLabs account, Radioso

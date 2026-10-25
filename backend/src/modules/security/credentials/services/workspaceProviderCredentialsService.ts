@@ -236,6 +236,22 @@ export class WorkspaceProviderCredentialsService {
     }
   }
 
+  /**
+   * Encrypts a secret the way stored credentials are encrypted, for a holder whose rows must outlive
+   * the workspace's own credentials (the voice recording erasure backlog holds a deleted
+   * workspace's vendor key until its recordings are gone). Rejects without the master key.
+   */
+  sealSecret(plaintext: string): string {
+    if (!this.isEncryptionConfigured()) throw new EncryptionNotConfiguredError();
+    return encryptField(plaintext, this.encryption.key!, { keyName: KEY_NAME });
+  }
+
+  /** Decrypts a secret `sealSecret` encrypted. Rejects without the master key, or when it changed since. */
+  openSealedSecret(sealed: string): string {
+    if (!this.isEncryptionConfigured()) throw new EncryptionNotConfiguredError();
+    return decryptField(sealed, this.encryption.key!, { keyName: KEY_NAME });
+  }
+
   /** Presence only. Reads no plaintext, so it works without the master key. */
   async hasCredentials(workspaceId: string, provider: WorkspaceCredentialProvider): Promise<boolean> {
     const record = await this.repository.findByWorkspaceAndProvider(workspaceId, provider);

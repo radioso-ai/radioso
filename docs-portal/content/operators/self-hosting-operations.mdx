@@ -180,8 +180,9 @@ The document worker is where work that outlives a request runs, so run it wherev
 - extracts message facets for Audience Pulse
 - removes data past its retention window: old Ray conversations, test executions, Slack event ids, and dead-lettered background jobs
 - deletes the stored files of a deleted workspace or organization, so the worker's storage credentials need to list and delete objects (`roles/storage.objectAdmin` on the GCS bucket)
+- deletes at ElevenLabs the call recordings of deleted conversations, visitors, workspaces and organizations, so the worker needs outbound HTTPS to the ElevenLabs API and the same `CONNECTOR_ENCRYPTION_KEY` as the backend
 
-A deployment without a running worker still answers chat, but documents stay queued, routine actions are never sent, conversation summaries and titles stop updating, and a deleted workspace's files wait in storage until a worker runs.
+A deployment without a running worker still answers chat, but documents stay queued, routine actions are never sent, conversation summaries and titles stop updating, and a deleted workspace's files and deleted calls' recordings wait until a worker runs.
 
 Background jobs live in the `background_jobs` table. A completed job is deleted, so the table holds only work that is waiting, running, or has failed for good. A failed job is retried with a growing delay. After its last attempt it stays for 14 days with its kind, key, attempt count, and the class of the error that stopped it, such as `BackgroundJobTimeoutError` or `AppError [provider_unavailable]`. Its payload is dropped when it fails for good, and neither the table nor your error tracking receives the error's message, because a payload or a message can carry conversation text:
 
@@ -191,6 +192,21 @@ FROM background_jobs
 ORDER BY created_at DESC
 LIMIT 20;
 ```
+
+## Call recordings left at ElevenLabs
+
+A deletion writes each call recording to delete into `voice_recording_erasure_items`, beside an encrypted copy of the workspace's ElevenLabs key in `voice_recording_erasures`, and the `voice.recording_erasure` job deletes them ([Deleting conversation data](/operators/deleting-conversation-data)). A recording ElevenLabs kept refusing for about a day stays there with status `failed` and a `reason`, and its key copy is gone by then. List them, newest first, to delete each in ElevenLabs or to tell the organization:
+
+```sql
+SELECT e.account_id, e.workspace_id, i.conversation_id, i.vendor_region,
+       i.vendor_conversation_id, i.failure_reason, i.attempts, i.updated_at
+FROM voice_recording_erasure_items i
+JOIN voice_recording_erasures e ON e.id = i.erasure_id
+WHERE i.status = 'failed'
+ORDER BY i.updated_at DESC;
+```
+
+The organization and workspace ids stay after both are deleted. Each row also has its `conversation.recording_deleted` audit event with status `failure`. A row you have dealt with can be deleted; the backlog keeps a failed recording until someone does. Rows with status `pending` are still being worked through: if they grow old, check that the worker runs and look for `voice.recording_erasure` in `background_jobs`.
 
 ## Stored files of deleted workspaces
 

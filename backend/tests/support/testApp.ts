@@ -1569,13 +1569,30 @@ export const createTestDependencies = (overrides: {
   const voiceVendorFetch: typeof globalThis.fetch = overrides.voiceVendorFetch ?? (async () => {
     throw new TypeError("Voice vendor calls are disabled in tests");
   });
+  // The in-memory app has no transactions and runs no background jobs, so no deletion in it hands
+  // recordings to the erasure backlog: the backlog and the job queue refuse to be used.
+  const noErasureBacklog = async (): Promise<never> => {
+    throw new Error("The in-memory app keeps no voice recording erasure backlog");
+  };
+  const erasureBacklog = {
+    hold: noErasureBacklog,
+    claim: noErasureBacklog,
+    remove: noErasureBacklog,
+    keep: noErasureBacklog,
+    fail: noErasureBacklog,
+    release: noErasureBacklog,
+    failRemaining: noErasureBacklog,
+  };
   const voiceRecordings = createVoiceRecordingComposition({
     recordings: voiceSessions,
     // The in-memory app has no transactions: every handle reads the same store.
     recordingsIn: () => voiceSessions,
+    erasures: erasureBacklog,
+    erasuresIn: () => erasureBacklog,
     credentials: workspaceProviderCredentialsService,
     fetch: voiceVendorFetch,
     auditService,
+    queue: { enqueue: noErasureBacklog, enqueueInTransaction: noErasureBacklog, wake: async () => undefined },
     metricsRegistry,
     logger,
   });
@@ -1583,9 +1600,6 @@ export const createTestDependencies = (overrides: {
     workspaceRepository,
     auditService,
     accountMembershipRepository,
-    undefined,
-    undefined,
-    { eraser: voiceRecordings.erasure, logger },
   );
   const workspaceSessionService = new WorkspaceSessionService(workspaceService);
   const oauthConnectionRepository = new InMemoryOauthConnectionRepository();

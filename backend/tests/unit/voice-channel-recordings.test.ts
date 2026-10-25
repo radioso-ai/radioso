@@ -2,6 +2,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   VoiceRecordingRequestError,
+  type VoiceRecordingErasureBatch,
+  type VoiceRecordingErasureHandOff,
+  type VoiceRecordingErasureItem,
   type VoiceRecordingRef,
   type VoiceReportableSession,
   type VoiceRecordingSource,
@@ -11,7 +14,13 @@ import {
   type VoiceVendorCredentialPresence,
   type VoiceVendorCredentialReading,
 } from "../../src/modules/voiceChannel/domain.js";
-import { VoiceRecordingErasureService, VoiceRecordingService, type VoiceRecordingAudit } from "../../src/modules/voiceChannel/public.js";
+import {
+  VoiceRecordingErasureDrain,
+  VoiceRecordingErasureService,
+  VoiceRecordingService,
+  voiceRecordingErasureRequest,
+  type VoiceRecordingAudit,
+} from "../../src/modules/voiceChannel/public.js";
 
 const workspaceId = "11111111-1111-4111-8111-111111111111";
 const agentId = "22222222-2222-4222-8222-222222222222";
@@ -32,14 +41,12 @@ const audioStream = (): VoiceRecordingStream => ({
 
 const harness = (overrides: {
   recording?: VoiceRecordingRef | null | Error;
-  recordings?: VoiceRecordingToErase[] | Error;
   recorded?: boolean;
   reportable?: VoiceReportableSession | null;
   describeConversation?: VoiceRecordingSource["describeConversation"];
   credential?: VoiceVendorCredentialReading | Error;
   stored?: VoiceVendorCredentialPresence | Error;
   fetchRecording?: VoiceRecordingSource["fetchRecording"];
-  deleteRecording?: VoiceRecordingSource["deleteRecording"];
   played?: VoiceRecordingAudit["played"];
 } = {}) => {
   const logger = { warn: vi.fn(), info: vi.fn() };
@@ -53,11 +60,7 @@ const harness = (overrides: {
       if (recording instanceof Error) throw recording;
       return recording;
     }),
-    listRecordings: vi.fn<VoiceRecordingStore["listRecordings"]>(async () => {
-      const recordings = overrides.recordings ?? [erasable(recordingRef)];
-      if (recordings instanceof Error) throw recordings;
-      return recordings;
-    }),
+    listRecordings: vi.fn<VoiceRecordingStore["listRecordings"]>(async () => []),
   };
   const credentials = {
     read: vi.fn(async (): Promise<VoiceVendorCredentialReading> => {
@@ -74,16 +77,14 @@ const harness = (overrides: {
   const source = {
     describeConversation: vi.fn<VoiceRecordingSource["describeConversation"]>(overrides.describeConversation ?? (async () => ({ vendorAgentId: "agent_42" }))),
     fetchRecording: vi.fn<VoiceRecordingSource["fetchRecording"]>(overrides.fetchRecording ?? (async () => audioStream())),
-    deleteRecording: vi.fn<VoiceRecordingSource["deleteRecording"]>(overrides.deleteRecording ?? (async () => "deleted")),
+    deleteRecording: vi.fn<VoiceRecordingSource["deleteRecording"]>(async () => "deleted"),
   };
   const audit = {
     played: vi.fn<VoiceRecordingAudit["played"]>(overrides.played ?? (async () => undefined)),
-    deleted: vi.fn<VoiceRecordingAudit["deleted"]>(async () => undefined),
   };
   const dependencies = { recordings: store, credentials, sources: { elevenlabs: source }, audit, metrics, logger };
   return {
     service: new VoiceRecordingService(dependencies),
-    eraser: new VoiceRecordingErasureService(dependencies),
     store,
     credentials,
     source,
@@ -315,146 +316,343 @@ describe("voice recording playback", () => {
   });
 });
 
-describe("voice recording erasure", () => {
+describe("voice recording erasure hand-off", () => {
   const accountId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
-  const otherWorkspaceId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
   const second: VoiceRecordingRef = { ...recordingRef, conversationId: "88888888-8888-4888-8888-888888888888", vendorConversationId: "conv_second" };
-  const workspaceDeletion = { account: { id: accountId, deleted: false }, scopes: [{ kind: "workspace" as const, workspaceId }] };
+  const workspaceDeletion = { accountId, scopes: [{ kind: "workspace" as const, workspaceId }] };
 
-  it("reads the recordings and the key while they exist, and deletes each at the vendor once erase runs, auditing each", async () => {
-    const { eraser, store, credentials, source, audit, metrics } = harness({ recordings: [erasable(recordingRef), erasable(second)] });
+  const handOffHarness = (overrides: {
+    recordings?: VoiceRecordingToErase[] | Error;
+    credential?: VoiceVendorCredentialReading | Error;
+  } = {}) => {
+    const logger = { warn: vi.fn() };
+    const recordings = {
+      listRecordings: vi.fn<VoiceRecordingStore["listRecordings"]>(async () => {
+        const listed = overrides.recordings ?? [erasable(recordingRef)];
+        if (listed instanceof Error) throw listed;
+        return listed;
+      }),
+    };
+    const credentials = {
+      read: vi.fn(async (): Promise<VoiceVendorCredentialReading> => {
+        const credential = overrides.credential ?? { kind: "present", credential: { apiKey } };
+        if (credential instanceof Error) throw credential;
+        return credential;
+      }),
+    };
+    const held: VoiceRecordingErasureHandOff[] = [];
+    const backlog = { hold: vi.fn(async (handOff: VoiceRecordingErasureHandOff) => `erasure-${held.push(handOff)}`) };
+    const sealer = { seal: vi.fn(({ apiKey: key }: { apiKey: string }) => `sealed(${key.length})`) };
+    const jobs = { queue: vi.fn(async (_erasureId: string) => undefined), wake: vi.fn(async () => undefined) };
+    const service = new VoiceRecordingErasureService({ recordings, backlog, credentials, sealer, jobs, logger });
+    return { service, recordings, credentials, held, backlog, sealer, jobs, logger };
+  };
 
-    const prepared = await eraser.prepare(workspaceDeletion);
+  it("hands each recording to the backlog with the workspace's key sealed, queues its erasure, and wakes the job only after the commit", async () => {
+    const { service, recordings, credentials, held, jobs } = handOffHarness({ recordings: [erasable(recordingRef), { ...erasable(second), conversationId: null }] });
 
-    expect(store.listRecordings).toHaveBeenCalledWith({ kind: "workspace", workspaceId });
+    const handedOff = await service.handOff(workspaceDeletion);
+
+    expect(recordings.listRecordings).toHaveBeenCalledWith({ kind: "workspace", workspaceId });
     expect(credentials.read).toHaveBeenCalledWith({ workspaceId, vendor: "elevenlabs" });
-    expect(source.deleteRecording).not.toHaveBeenCalled();
+    expect(held).toEqual([{
+      accountId,
+      workspaceId,
+      vendor: "elevenlabs",
+      credential: { kind: "sealed", sealed: `sealed(${apiKey.length})` },
+      recordings: [
+        { conversationId, region: "eu", vendorConversationId },
+        { conversationId: null, region: "eu", vendorConversationId: "conv_second" },
+      ],
+    }]);
+    expect(JSON.stringify(held)).not.toContain(apiKey);
+    expect(jobs.queue).toHaveBeenCalledWith("erasure-1");
+    expect(jobs.wake).not.toHaveBeenCalled();
 
-    await prepared.erase();
-
-    expect(source.deleteRecording.mock.calls.map(([input]) => input)).toEqual([
-      { vendorConversationId, region: "eu", credential: { apiKey }, signal: expect.any(AbortSignal) },
-      { vendorConversationId: "conv_second", region: "eu", credential: { apiKey }, signal: expect.any(AbortSignal) },
-    ]);
-    expect(audit.deleted.mock.calls.map(([event]) => event)).toEqual([
-      { account: { id: accountId, deleted: false }, workspaceId, workspaceDeleted: true, conversationId, vendor: "elevenlabs", outcome: "deleted" },
-      { account: { id: accountId, deleted: false }, workspaceId, workspaceDeleted: true, conversationId: second.conversationId, vendor: "elevenlabs", outcome: "deleted" },
-    ]);
-    expect(counted(metrics, "voice_recording_delete_total")).toEqual([
-      { vendor: "elevenlabs", outcome: "deleted" },
-      { vendor: "elevenlabs", outcome: "deleted" },
-    ]);
+    await handedOff.afterCommit();
+    expect(jobs.wake).toHaveBeenCalledTimes(1);
   });
 
-  it("audits a recording the vendor no longer held as already absent", async () => {
-    const { eraser, audit, metrics } = harness({ deleteRecording: async () => "already_absent" });
+  it("hands a call in two scopes off once, and each workspace's recordings with that workspace's key", async () => {
+    const otherWorkspaceId = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+    const { service, recordings, held, jobs } = handOffHarness();
+    recordings.listRecordings.mockImplementation(async (scope) => (scope.workspaceId === workspaceId
+      ? [erasable(recordingRef)]
+      : [{ ...erasable(second), workspaceId: otherWorkspaceId }]));
 
-    await (await eraser.prepare(workspaceDeletion)).erase();
-
-    expect(audit.deleted.mock.calls.map(([event]) => event.outcome)).toEqual(["already_absent"]);
-    expect(counted(metrics, "voice_recording_delete_total")).toEqual([{ vendor: "elevenlabs", outcome: "already_absent" }]);
-  });
-
-  it("keeps going past a recording the vendor would not delete, logs where it is, and never rejects", async () => {
-    const { eraser, audit, logger, metrics } = harness({
-      recordings: [erasable(recordingRef), erasable(second)],
-      deleteRecording: async ({ vendorConversationId: id }) => {
-        if (id === vendorConversationId) throw new VoiceRecordingRequestError("rejected", 500);
-        return "deleted";
-      },
+    await service.handOff({
+      accountId,
+      scopes: [
+        { kind: "conversations", workspaceId, conversationIds: [conversationId] },
+        { kind: "visitor_key", workspaceId, visitorKey: "visitor-key-1" },
+        { kind: "workspace", workspaceId: otherWorkspaceId },
+      ],
     });
 
-    const prepared = await eraser.prepare({
-      account: { id: accountId, deleted: false },
-      scopes: [{ kind: "conversations", workspaceId, conversationIds: [conversationId, second.conversationId] }],
-    });
-    await expect(prepared.erase()).resolves.toBeUndefined();
-
-    expect(audit.deleted.mock.calls.map(([event]) => event.conversationId)).toEqual([second.conversationId]);
-    expect(logger.warn).toHaveBeenCalledWith(
-      { workspaceId, conversationId, vendorConversationId, vendor: "elevenlabs", outcome: "vendor_failed", reason: "rejected", vendorStatus: 500 },
-      "Voice recording was left at the vendor",
-    );
-    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain(apiKey);
-    expect(counted(metrics, "voice_recording_delete_total")).toEqual([
-      { vendor: "elevenlabs", outcome: "vendor_failed" },
-      { vendor: "elevenlabs", outcome: "deleted" },
+    expect(held.map((handOff) => [handOff.workspaceId, handOff.recordings.map((recording) => recording.vendorConversationId)])).toEqual([
+      [workspaceId, [vendorConversationId]],
+      [otherWorkspaceId, ["conv_second"]],
     ]);
+    expect(jobs.queue).toHaveBeenCalledTimes(2);
   });
 
-  it("deletes a recording whose call never bound a conversation", async () => {
-    const { eraser, source, audit } = harness({ recordings: [{ ...erasable(recordingRef), conversationId: null }] });
+  it("still hands off the recordings of a workspace with no key, or one the backend cannot decrypt, saying why", async () => {
+    for (const [credential, reason] of [[{ kind: "missing" }, "credential_missing"], [{ kind: "unreadable" }, "credential_unreadable"]] as const) {
+      const { service, held, sealer } = handOffHarness({ credential });
 
-    await (await eraser.prepare(workspaceDeletion)).erase();
+      await service.handOff(workspaceDeletion);
 
-    expect(source.deleteRecording).toHaveBeenCalledTimes(1);
-    expect(audit.deleted).toHaveBeenCalledWith(expect.objectContaining({ conversationId: null, outcome: "deleted" }));
+      expect(held.map((handOff) => handOff.credential)).toEqual([{ kind: "absent", reason }]);
+      expect(sealer.seal).not.toHaveBeenCalled();
+    }
   });
 
-  it("leaves the recordings at the vendor, and says where, when the workspace's key cannot be read", async () => {
-    const { eraser, source, logger, metrics } = harness({ credential: { kind: "missing" } });
-
-    await (await eraser.prepare(workspaceDeletion)).erase();
-
-    expect(source.deleteRecording).not.toHaveBeenCalled();
-    expect(logger.warn).toHaveBeenCalledWith(
-      { workspaceId, conversationId, vendorConversationId, vendor: "elevenlabs", outcome: "credential_missing" },
-      "Voice recording was left at the vendor",
-    );
-    expect(counted(metrics, "voice_recording_delete_total")).toEqual([{ vendor: "elevenlabs", outcome: "credential_missing" }]);
-  });
-
-  it("skips a scope whose recordings cannot be read, says so, and never fails the deletion", async () => {
-    const { eraser, logger } = harness({ recordings: new Error("connection refused") });
-
-    const prepared = await eraser.prepare(workspaceDeletion);
-
-    await expect(prepared.erase()).resolves.toBeUndefined();
-    expect(logger.warn).toHaveBeenCalledWith({ workspaceId, scope: "workspace", errorClass: "Error" }, "Voice recordings to delete could not be read");
-  });
-
-  it("fails an erasure of named conversations or a visitor whose recordings cannot be read, so it runs again", async () => {
+  it("fails the deletion when the recordings or the key cannot be read, so it runs again, and logs ids only", async () => {
     for (const scope of [
+      { kind: "workspace" as const, workspaceId },
       { kind: "conversations" as const, workspaceId, conversationIds: [conversationId] },
       { kind: "visitor_key" as const, workspaceId, visitorKey: "visitor-key-1" },
     ]) {
-      const { eraser, logger } = harness({ recordings: new Error("connection refused") });
+      const { service, logger, held } = handOffHarness({ recordings: new Error("connection refused") });
 
-      await expect(eraser.prepare({ account: { id: accountId, deleted: false }, scopes: [scope] })).rejects.toThrow("connection refused");
+      await expect(service.handOff({ accountId, scopes: [scope] })).rejects.toThrow("connection refused");
       expect(logger.warn).toHaveBeenCalledWith({ workspaceId, scope: scope.kind, errorClass: "Error" }, "Voice recordings to delete could not be read");
+      expect(held).toEqual([]);
     }
+    const { service, logger, held } = handOffHarness({ credential: new Error("connection refused") });
+    await expect(service.handOff(workspaceDeletion)).rejects.toThrow("connection refused");
+    expect(logger.warn).toHaveBeenCalledWith({ workspaceId, vendor: "elevenlabs", errorClass: "Error" }, "Voice vendor key to delete recordings with could not be read");
+    expect(held).toEqual([]);
   });
 
-  it("works through an organization's workspaces in order under one budget, and names every recording it left past it", async () => {
-    const inOther: VoiceRecordingToErase = { ...erasable(second), workspaceId: otherWorkspaceId, vendorConversationId: "conv_other" };
-    const third: VoiceRecordingToErase = { ...erasable(recordingRef), conversationId: "99999999-9999-4999-8999-999999999999", vendorConversationId: "conv_third", workspaceId: otherWorkspaceId };
-    const { store, credentials, source, audit, metrics, logger } = harness();
-    store.listRecordings.mockImplementation(async (scope) => (scope.workspaceId === workspaceId ? [erasable(recordingRef)] : [inOther, third]));
-    // The first delete answers; the second is still waiting on the vendor when the time runs out.
-    source.deleteRecording.mockImplementation(({ vendorConversationId: id, signal }) => (id === vendorConversationId
-      ? Promise.resolve("deleted")
-      : new Promise((_resolve, reject) => {
-        signal?.addEventListener("abort", () => reject(new VoiceRecordingRequestError("abandoned")));
-      })));
-    const eraser = new VoiceRecordingErasureService(
-      { recordings: store, credentials, sources: { elevenlabs: source }, audit, metrics, logger },
-      { deadlineMs: 30, concurrency: 1 },
+  it("hands nothing off, and wakes nothing, when the scope holds no recording", async () => {
+    const { service, backlog, jobs } = handOffHarness({ recordings: [] });
+
+    await (await service.handOff(workspaceDeletion)).afterCommit();
+
+    expect(backlog.hold).not.toHaveBeenCalled();
+    expect(jobs.queue).not.toHaveBeenCalled();
+    expect(jobs.wake).not.toHaveBeenCalled();
+  });
+});
+
+describe("voice recording erasure job", () => {
+  const accountId = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const erasureId = "cccccccc-cccc-4ccc-8ccc-cccccccccccc";
+  const item = (overrides: Partial<VoiceRecordingErasureItem> = {}): VoiceRecordingErasureItem => ({
+    id: `item-${overrides.vendorConversationId ?? vendorConversationId}`,
+    conversationId,
+    region: "eu",
+    vendorConversationId,
+    attempts: 1,
+    failureReason: null,
+    ...overrides,
+  });
+  const batchOf = (items: VoiceRecordingErasureItem[], overrides: Partial<VoiceRecordingErasureBatch> = {}): VoiceRecordingErasureBatch => ({
+    account: { id: accountId, deleted: false },
+    workspace: { id: workspaceId, deleted: true },
+    vendor: "elevenlabs",
+    sealedCredential: "sealed-key",
+    items,
+    ...overrides,
+  });
+
+  const drainHarness = (options: {
+    batch?: VoiceRecordingErasureBatch | null;
+    remaining?: { pending: number; neverAsked: number };
+    deleteRecording?: VoiceRecordingSource["deleteRecording"];
+    open?: (sealed: string) => { apiKey: string };
+    deleted?: VoiceRecordingAudit["deleted"];
+  } = {}) => {
+    const logger = { warn: vi.fn(), info: vi.fn() };
+    const metrics = { incrementCounter: vi.fn() };
+    const backlog = {
+      hold: vi.fn(async () => "unused"),
+      claim: vi.fn(async () => (options.batch === undefined ? batchOf([item()]) : options.batch)),
+      remove: vi.fn(async (_itemId: string) => undefined),
+      keep: vi.fn(async (_itemId: string, _reason: string) => undefined),
+      fail: vi.fn(async (_itemId: string, _reason: string) => undefined),
+      release: vi.fn(async () => options.remaining ?? { pending: 0, neverAsked: 0 }),
+      failRemaining: vi.fn(async (): Promise<VoiceRecordingErasureBatch | null> => null),
+    };
+    const source = { deleteRecording: vi.fn<VoiceRecordingSource["deleteRecording"]>(options.deleteRecording ?? (async () => "deleted")) };
+    const audit = {
+      deleted: vi.fn<VoiceRecordingAudit["deleted"]>(options.deleted ?? (async () => undefined)),
+      left: vi.fn<VoiceRecordingAudit["left"]>(async () => undefined),
+    };
+    const queue = { enqueue: vi.fn(async () => ({ inserted: false as const })) };
+    const sealer = { open: vi.fn(options.open ?? (() => ({ apiKey }))) };
+    const drain = new VoiceRecordingErasureDrain({
+      backlog,
+      backlogIn: () => backlog,
+      sealer,
+      sources: { elevenlabs: source },
+      audit,
+      queue,
+      metrics,
+      logger,
+    });
+    return { drain, backlog, source, audit, queue, sealer, metrics, logger };
+  };
+  const signal = () => new AbortController().signal;
+
+  it("deletes each recording at the vendor with the held key, records it for the organization, and removes it from the backlog", async () => {
+    const { drain, backlog, source, audit, metrics, queue } = drainHarness({
+      batch: batchOf([item(), item({ vendorConversationId: "conv_second", conversationId: null })]),
+    });
+
+    await drain.run(erasureId, signal());
+
+    expect(backlog.claim).toHaveBeenCalledWith(erasureId, 50);
+    expect(source.deleteRecording.mock.calls.map(([input]) => [input.vendorConversationId, input.region, input.credential])).toEqual([
+      [vendorConversationId, "eu", { apiKey }],
+      ["conv_second", "eu", { apiKey }],
+    ]);
+    expect(audit.deleted.mock.calls.map(([event]) => event)).toEqual([
+      { account: { id: accountId, deleted: false }, workspaceId, workspaceDeleted: true, conversationId, vendor: "elevenlabs", outcome: "deleted" },
+      { account: { id: accountId, deleted: false }, workspaceId, workspaceDeleted: true, conversationId: null, vendor: "elevenlabs", outcome: "deleted" },
+    ]);
+    expect(backlog.remove.mock.calls.map(([id]) => id)).toEqual([`item-${vendorConversationId}`, "item-conv_second"]);
+    expect(backlog.release).toHaveBeenCalledWith(erasureId);
+    expect(queue.enqueue).not.toHaveBeenCalled();
+    expect(counted(metrics, "voice_recording_delete_total")).toEqual([
+      { vendor: "elevenlabs", outcome: "deleted" },
+      { vendor: "elevenlabs", outcome: "deleted" },
+    ]);
+  });
+
+  it("counts a recording the vendor no longer held as done, and records it as already absent", async () => {
+    const { drain, audit, backlog } = drainHarness({ deleteRecording: async () => "already_absent" });
+
+    await drain.run(erasureId, signal());
+
+    expect(audit.deleted.mock.calls.map(([event]) => event.outcome)).toEqual(["already_absent"]);
+    expect(backlog.remove).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps a refused recording for another ask, and waits out the backoff once no recording is left unasked", async () => {
+    const { drain, backlog, audit, metrics, logger } = drainHarness({
+      deleteRecording: async () => { throw new VoiceRecordingRequestError("rejected", 503); },
+      remaining: { pending: 1, neverAsked: 0 },
+    });
+
+    await expect(drain.run(erasureId, signal())).rejects.toThrow("still at the vendor");
+
+    expect(backlog.keep).toHaveBeenCalledWith(`item-${vendorConversationId}`, "vendor_rejected");
+    expect(backlog.fail).not.toHaveBeenCalled();
+    expect(audit.deleted).not.toHaveBeenCalled();
+    expect(audit.left).not.toHaveBeenCalled();
+    expect(counted(metrics, "voice_recording_delete_total")).toEqual([{ vendor: "elevenlabs", outcome: "vendor_failed" }]);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ erasureId, retrying: 1, pending: 1, firstHeld: { outcome: "vendor_rejected", reason: "rejected", vendorStatus: 503 } }),
+      "Voice recording erasure left recordings at the vendor",
     );
+  });
 
-    await (await eraser.prepare({
-      account: { id: accountId, deleted: true },
-      scopes: [{ kind: "workspace", workspaceId }, { kind: "workspace", workspaceId: otherWorkspaceId }],
-    })).erase();
+  it("asks for another run at once while recordings never asked about remain", async () => {
+    const { drain, queue } = drainHarness({
+      deleteRecording: async () => { throw new VoiceRecordingRequestError("unreachable"); },
+      remaining: { pending: 60, neverAsked: 59 },
+    });
 
-    expect(source.deleteRecording.mock.calls.map(([input]) => input.vendorConversationId)).toEqual([vendorConversationId, "conv_other"]);
-    expect(source.deleteRecording.mock.calls[1]?.[0].signal?.aborted).toBe(true);
-    expect(audit.deleted.mock.calls.map(([event]) => event.account)).toEqual([{ id: accountId, deleted: true }]);
-    for (const left of [inOther, third]) {
-      expect(logger.warn).toHaveBeenCalledWith(
-        { workspaceId: otherWorkspaceId, conversationId: left.conversationId, vendorConversationId: left.vendorConversationId, vendor: "elevenlabs", outcome: "deadline_passed" },
-        "Voice recording was left at the vendor",
-      );
-    }
-    expect(counted(metrics, "voice_recording_delete_total").filter((labels) => labels.outcome === "deadline_passed")).toHaveLength(2);
+    await drain.run(erasureId, signal());
+
+    expect(queue.enqueue).toHaveBeenCalledWith(voiceRecordingErasureRequest(erasureId));
+  });
+
+  it("leaves a recording at the vendor once its asks run out: marks it failed, logs where it is, and records why", async () => {
+    const { drain, backlog, audit, metrics, logger } = drainHarness({
+      batch: batchOf([item({ attempts: 8 })], { workspace: { id: workspaceId, deleted: false } }),
+      deleteRecording: async () => { throw new VoiceRecordingRequestError("timeout"); },
+    });
+
+    await drain.run(erasureId, signal());
+
+    expect(backlog.fail).toHaveBeenCalledWith(`item-${vendorConversationId}`, "vendor_timeout");
+    expect(backlog.keep).not.toHaveBeenCalled();
+    expect(audit.left).toHaveBeenCalledWith({
+      account: { id: accountId, deleted: false },
+      workspaceId,
+      workspaceDeleted: false,
+      conversationId,
+      vendor: "elevenlabs",
+      vendorConversationId,
+      reason: "vendor_timeout",
+    });
+    expect(logger.warn).toHaveBeenCalledWith(
+      { workspaceId, conversationId, vendorConversationId, vendor: "elevenlabs", outcome: "vendor_timeout", attempts: 8, reason: "timeout" },
+      "Voice recording was left at the vendor",
+    );
+    expect(JSON.stringify([logger.warn.mock.calls, logger.info.mock.calls, audit.left.mock.calls])).not.toContain(apiKey);
+    expect(counted(metrics, "voice_recording_delete_total")).toEqual([
+      { vendor: "elevenlabs", outcome: "vendor_failed" },
+      { vendor: "elevenlabs", outcome: "left_at_vendor" },
+    ]);
+  });
+
+  it("leaves the recordings of a deletion that found no key at the vendor, without asking", async () => {
+    const { drain, backlog, source, audit } = drainHarness({
+      batch: batchOf([item({ failureReason: "credential_missing" })], { sealedCredential: null }),
+    });
+
+    await drain.run(erasureId, signal());
+
+    expect(source.deleteRecording).not.toHaveBeenCalled();
+    expect(backlog.fail).toHaveBeenCalledWith(`item-${vendorConversationId}`, "credential_missing");
+    expect(audit.left).toHaveBeenCalledWith(expect.objectContaining({ reason: "credential_missing" }));
+  });
+
+  it("counts a held key that no longer opens as a failed ask", async () => {
+    const { drain, backlog, source } = drainHarness({
+      open: () => { throw new Error("Unsupported state or unable to authenticate data"); },
+      remaining: { pending: 1, neverAsked: 0 },
+    });
+
+    await expect(drain.run(erasureId, signal())).rejects.toThrow();
+
+    expect(source.deleteRecording).not.toHaveBeenCalled();
+    expect(backlog.keep).toHaveBeenCalledWith(`item-${vendorConversationId}`, "credential_unreadable");
+  });
+
+  it("still removes a recording the vendor deleted when its record cannot be written, and says so", async () => {
+    const { drain, backlog, logger } = drainHarness({ deleted: async () => { throw new Error("connection refused"); } });
+
+    await drain.run(erasureId, signal());
+
+    expect(backlog.remove).toHaveBeenCalledTimes(1);
+    expect(logger.warn).toHaveBeenCalledWith(
+      { workspaceId, conversationId, vendor: "elevenlabs", errorClass: "Error" },
+      "Voice recording deletion could not be audited",
+    );
+  });
+
+  it("does nothing for an erasure an earlier run drained", async () => {
+    const { drain, backlog, source } = drainHarness({ batch: null });
+
+    await drain.run(erasureId, signal());
+
+    expect(source.deleteRecording).not.toHaveBeenCalled();
+    expect(backlog.release).not.toHaveBeenCalled();
+  });
+
+  it("gives up on every recording still pending once the job itself kept failing, each with why", async () => {
+    const { drain, backlog, audit, metrics } = drainHarness();
+    backlog.failRemaining.mockResolvedValue(batchOf([
+      item({ failureReason: "vendor_unreachable" }),
+      item({ vendorConversationId: "conv_second", failureReason: "drain_failed", attempts: 0 }),
+    ]));
+    const transaction = {} as Parameters<VoiceRecordingErasureDrain["giveUp"]>[1];
+
+    await drain.giveUp(erasureId, transaction);
+
+    expect(backlog.failRemaining).toHaveBeenCalledWith(erasureId);
+    expect(audit.left.mock.calls.map(([event]) => [event.vendorConversationId, event.reason])).toEqual([
+      [vendorConversationId, "vendor_unreachable"],
+      ["conv_second", "drain_failed"],
+    ]);
+    expect(counted(metrics, "voice_recording_delete_total")).toEqual([
+      { vendor: "elevenlabs", outcome: "left_at_vendor" },
+      { vendor: "elevenlabs", outcome: "left_at_vendor" },
+    ]);
   });
 });

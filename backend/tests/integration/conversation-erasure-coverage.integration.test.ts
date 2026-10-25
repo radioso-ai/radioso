@@ -57,6 +57,14 @@ const coverage: Record<string, ErasureCoverage> = {
     owner: "voice-channel",
     reason: "The voice vendor's id for the call, which names its recording there; the erasure asks the vendor to delete the recording, and the voice eraser removes the row.",
   },
+  "voice_recording_erasure_items.conversation_id": {
+    kind: "retained",
+    reason: "Written by the erasure itself, as the conversation goes: the backlog of recordings the vendor still has to delete names the erased conversation by id so each recording's audit event can. It holds no content, and a recording's row goes once the vendor deleted it.",
+  },
+  "voice_recording_erasure_items.vendor_conversation_id": {
+    kind: "retained",
+    reason: "The voice vendor's id for an erased call, which names its recording there: the erasure backlog asks the vendor to delete it, and keeps the id only while the vendor still holds the recording.",
+  },
   "voice_sessions.started_public_session_id": {
     kind: "eraser",
     owner: "voice-channel",

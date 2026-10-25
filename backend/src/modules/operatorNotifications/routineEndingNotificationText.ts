@@ -1,4 +1,3 @@
-import { REDACTED_VALUE } from "@radioso/conversation-contract";
 import { SLOT_REFERENCE_PATTERN } from "@radioso/routine-definition";
 
 import type { HandoffCollectedValue, RoutineEndingOperatorNotification } from "./operatorNotification.js";
@@ -47,14 +46,18 @@ const renderCollectedValue = (value: HandoffCollectedValue): string =>
   typeof value === "boolean" ? (value ? "yes" : "no") : String(value);
 
 /**
- * A sensitive slot's value reaches the notice already masked by the routine runner. The notice
- * says one was collected and leaves the reading to the conversation, which the sink links to.
+ * A sensitive slot's value reaches the notice already masked by the routine runner, which names
+ * the slot beside it. The notice says one was collected and leaves the reading to the
+ * conversation, which the sink links to. Which slots read as sensitive comes from those names,
+ * so a visitor who types the marker into a normal field sees it printed as typed.
  */
-const isSensitive = (value: HandoffCollectedValue | undefined): boolean => value === REDACTED_VALUE;
 const SENSITIVE_IN_TEXT = "(sensitive)";
 const SENSITIVE_IN_COLLECTED = "sensitive, open the conversation to read it";
 
-const collectedBlock = (collected: Record<string, HandoffCollectedValue> | undefined): string[] | null => {
+const collectedBlock = (
+  collected: Record<string, HandoffCollectedValue> | undefined,
+  sensitiveKeys: ReadonlySet<string>,
+): string[] | null => {
   const entries = Object.entries(collected ?? {});
   if (entries.length === 0) {
     return null;
@@ -62,7 +65,7 @@ const collectedBlock = (collected: Record<string, HandoffCollectedValue> | undef
   return [
     "Collected:",
     ...entries.map(([key, value]) =>
-      `  ${labelForSlotKey(key)}: ${isSensitive(value) ? SENSITIVE_IN_COLLECTED : renderCollectedValue(value)}`),
+      `  ${labelForSlotKey(key)}: ${sensitiveKeys.has(key) ? SENSITIVE_IN_COLLECTED : renderCollectedValue(value)}`),
   ];
 };
 
@@ -73,14 +76,14 @@ const collectedBlock = (collected: Record<string, HandoffCollectedValue> | undef
 const renderTemplate = (
   template: string | undefined,
   collected: Record<string, HandoffCollectedValue> | undefined,
-  options: { singleLine: boolean },
+  options: { singleLine: boolean; sensitiveKeys: ReadonlySet<string> },
 ): string | null => {
   if (!template) {
     return null;
   }
   const rendered = template.replace(SLOT_REFERENCE_PATTERN, (_token, key: string) => {
     const value = collected?.[key];
-    if (isSensitive(value)) {
+    if (value !== undefined && options.sensitiveKeys.has(key)) {
       return SENSITIVE_IN_TEXT;
     }
     const text = value === undefined ? "" : renderCollectedValue(value).trim();
@@ -120,10 +123,11 @@ export const formatRoutineEndingNotification = (
 ): FormattedRoutineEndingNotification => {
   const defaults = DEFAULT_TEXT[notification.kind];
   const routineName = notification.routine?.name ?? null;
-  const subject = renderTemplate(notification.notice?.subject, notification.collected, { singleLine: true });
-  const intro = renderTemplate(notification.notice?.intro, notification.collected, { singleLine: false });
+  const sensitiveKeys = new Set(notification.sensitiveSlotKeys ?? []);
+  const subject = renderTemplate(notification.notice?.subject, notification.collected, { singleLine: true, sensitiveKeys });
+  const intro = renderTemplate(notification.notice?.intro, notification.collected, { singleLine: false, sensitiveKeys });
   const headline = [defaults.headline, ...(intro ? [intro] : [])];
-  const collected = collectedBlock(notification.collected);
+  const collected = collectedBlock(notification.collected, sensitiveKeys);
   const aiSummary = notification.aiSummary?.trim();
   const sections: string[][] = [headline, ...(collected ? [collected] : []), ...(aiSummary ? [["AI summary:", `  ${aiSummary}`]] : []), footerLines(notification)];
   return {

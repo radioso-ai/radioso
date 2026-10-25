@@ -117,7 +117,7 @@ export const resolvedAgent = (
 export const dependencies = (routineDefinitions: RoutineDefinition[] = [
   routine(),
   routine({ id: "22222222-2222-4222-8222-222222222222", name: "book-a-demo" }),
-], agent = resolvedAgent()) => {
+], agent = resolvedAgent(), skillInputKeys?: Readonly<Record<string, readonly string[]>>) => {
   const listAgents = vi.fn(async () => [{
     id: agent.id,
     name: agent.name,
@@ -146,7 +146,15 @@ export const dependencies = (routineDefinitions: RoutineDefinition[] = [
     recordingAvailability,
     descriptors: [
       ...createAgentConfigurationCopilotTools({ agentService: { listExisting: listAgents, resolve: resolveAgent } }),
-      ...createRoutineDefinitionCopilotTools({ agentLookup: { listExisting: listAgents }, routineDefinitionService: { list: listRoutines, get: getRoutine, validate: validateRoutine } }),
+      ...createRoutineDefinitionCopilotTools({
+        agentLookup: { listExisting: listAgents },
+        routineDefinitionService: {
+          list: listRoutines,
+          get: getRoutine,
+          validate: validateRoutine,
+          ...(skillInputKeys ? { skillInputKeys: vi.fn(async () => skillInputKeys) } : {}),
+        },
+      }),
       ...createChatCopilotTools({
         chatHistoryService: { getConversation, getConversationTurn, listConversations },
         voiceRecordings: { availability: recordingAvailability },

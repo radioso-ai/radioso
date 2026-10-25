@@ -152,8 +152,9 @@ describe("formatRoutineEndingNotification", () => {
   it("says a sensitive value was collected and sends the reader to the conversation, never the value (#1543)", () => {
     const formatted = formatRoutineEndingNotification({
       ...booking,
-      // The runner masks a sensitive slot before the notice is queued; the marker is all that arrives.
+      // The runner masks a sensitive slot before the notice is queued, and names it beside the value.
       collected: { name: "Ada Lovelace", injury: "[redacted]" },
+      sensitiveSlotKeys: ["injury"],
       notice: { subject: "Booking for {{slot.name}}: {{slot.injury}}", intro: "Injury: {{slot.injury}}." },
     });
 
@@ -161,5 +162,11 @@ describe("formatRoutineEndingNotification", () => {
     expect(formatted.lines).toContain("Injury: (sensitive)." );
     expect(formatted.lines).toContain("  Injury: sensitive, open the conversation to read it");
     expect(formatted.lines.join("\n")).not.toContain("[redacted]");
+  });
+
+  it("prints a normal field's value as the visitor gave it, even text that looks like the marker (#1543)", () => {
+    const formatted = formatRoutineEndingNotification({ ...booking, collected: { name: "[redacted]" } });
+
+    expect(formatted.lines).toContain("  Name: [redacted]");
   });
 });

@@ -310,6 +310,49 @@ describe("copilot routine validation", () => {
     });
   });
 
+  it("suggests only email fields that are not sensitive for the reply-to (#1543)", async () => {
+    const ports = dependencies([routine({
+      slots: [
+        { stableSlotId: "slot_guest", key: "guest_email", type: "email", required: true, description: null, ordinal: 0, sensitivity: "sensitive" },
+        { stableSlotId: "slot_work", key: "work_email", type: "email", required: true, description: null, ordinal: 1 },
+      ],
+      terminals: [{ stableStepId: "human", kind: "handoff", instruction: null, ordinal: 0 }],
+    })]);
+    const tool = ports.descriptors.find((descriptor) => descriptor.name === "validate_routine")!;
+
+    const result = await tool.createTool(context("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+      .invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never) as { advisories: Array<{ message: string }> };
+
+    expect(result.advisories[0]?.message).toContain("(work_email)");
+    expect(result.advisories[0]?.message).not.toContain("guest_email");
+  });
+
+  it("flags a sensitive field a skill step with no input bindings would send as [redacted] (#1543)", async () => {
+    const steps = (inputBindings?: Record<string, { kind: "variableRef"; ref: string }>) => [
+      { stableStepId: "ask_injury", kind: "chat" as const, instruction: "Ask about {{slot.injury}}.", toolRef: null, ordinal: 0, metadata: {} },
+      { stableStepId: "send_case", kind: "tool" as const, instruction: "Send the case.", toolRef: "post_case", ordinal: 1, metadata: inputBindings ? { inputBindings } : {} },
+    ];
+    const slots = [{ stableSlotId: "slot_injury", key: "injury", type: "text" as const, required: true, description: null, ordinal: 0, sensitivity: "sensitive" as const }];
+    const validate = async (routineSteps: ReturnType<typeof steps>) => {
+      const ports = dependencies([routine({ slots, steps: routineSteps, transitions: [] })], undefined, { post_case: ["injury", "email"] });
+      const tool = ports.descriptors.find((descriptor) => descriptor.name === "validate_routine")!;
+      return await tool.createTool(context("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"))
+        .invoke({ routineId: "11111111-1111-4111-8111-111111111111" }, {} as never) as { ok: boolean; advisories: Array<{ code: string; location: string; message: string }> };
+    };
+
+    const unbound = await validate(steps());
+    expect(unbound.ok).toBe(true);
+    expect(unbound.advisories).toEqual([expect.objectContaining({
+      code: "sensitive_slot_unbound_skill_input",
+      location: "step:send_case.inputBindings.injury",
+    })]);
+    expect(unbound.advisories[0]?.message).toContain("[redacted]");
+    expect(unbound.advisories[0]?.message).toContain("post_case");
+
+    // A binding that names the field is the opt-in: the skill receives the value.
+    expect((await validate(steps({ injury: { kind: "variableRef", ref: "injury" } }))).advisories).toEqual([]);
+  });
+
   it("reports no advisory once the ending names a reply-to field", async () => {
     const ports = dependencies([routine({
       slots: [{ stableSlotId: "slot_email", key: "guest_email", type: "email", required: true, description: null, ordinal: 0 }],

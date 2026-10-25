@@ -1,7 +1,7 @@
 ---
 title: "Conversational Routines"
 description: "The engine-level design of multi-turn flows with slots, steps, guards, terminals, activation ranking, and runtime slot extraction mechanics."
-last_updated: 2026-10-25
+last_updated: 2026-10-26
 ---
 
 # Conversational Routines
@@ -286,11 +286,19 @@ reads as `[redacted]`.
   passes it, because its author named it. The runner tells the dispatcher which
   slots are sensitive (`sensitiveSlotKeys`), so every executor gets the same
   arguments.
-- The host marks both messages of a turn whose saved routine state holds a
-  sensitive value (`RoutineTurnReporter.sensitiveSlotKeysHeld`, written as
-  `metadata.sensitiveSlotKeys` in the turn's transaction). The rolling summary,
-  facet extraction, a notice's AI summary, and eval snapshot capture read a
-  marked message as withheld (`backend/src/shared/domain/sensitiveTranscript.ts`).
+- The host marks a visitor message as it is created when the active routine's
+  current step collects a sensitive slot (`sensitiveSlotsAwaited`, read in
+  `ChatSessionPreparer` before any facet job is queued), and marks both messages
+  of a turn whose saved routine state holds a sensitive value
+  (`RoutineTurnReporter.sensitiveSlotKeysHeld`, written as
+  `metadata.sensitiveSlotKeys` in the turn's transaction). The rolling summary
+  (which reads only up to the latest assistant reply), facet extraction, a
+  notice's AI summary, eval snapshot capture, a Test Chat seed, and the stored
+  coverage request read a marked message as withheld
+  (`backend/src/shared/domain/sensitiveTranscript.ts`).
+- An ending reports which collected keys it masked (`terminal.sensitiveSlotKeys`,
+  carried on the hand-off and notice effects and the notice payload), so the
+  notice renders a slot as sensitive from its metadata, never from its text.
 
 ### When a step keeps being asked
 

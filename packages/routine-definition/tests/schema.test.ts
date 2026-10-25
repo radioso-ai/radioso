@@ -529,6 +529,27 @@ describe("routineAdvisories", () => {
     })).toEqual([]);
   });
 
+  it("flags a sensitive field a skill step with no input bindings sends as [redacted], when skill inputs are known (#1543)", () => {
+    const definition = {
+      slots: [{ key: "injury", type: "text" as const, sensitivity: "sensitive" as const }, { key: "email", type: "text" as const }],
+      steps: [
+        { stableStepId: "send", kind: "tool" as const, toolRef: "post_case", metadata: {} },
+        { stableStepId: "bound", kind: "tool" as const, toolRef: "post_case", metadata: { inputBindings: { injury: { kind: "variableRef", ref: "injury" } } } },
+      ],
+      terminals: [],
+    };
+
+    expect(routineAdvisories(definition, { skillInputKeys: { post_case: ["injury", "email"] } })).toEqual([{
+      code: "sensitive_slot_unbound_skill_input",
+      location: "step:send.inputBindings.injury",
+      stableStepId: "send",
+      slotKey: "injury",
+      skillName: "post_case",
+    }]);
+    // Without the skill catalog there is nothing to compare the step against.
+    expect(routineAdvisories(definition)).toEqual([]);
+  });
+
   it("reports nothing when the routine declares no email slot", () => {
     expect(routineAdvisories({
       slots: [{ key: "guest_name", type: "text" as const }],

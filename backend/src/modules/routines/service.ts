@@ -12,6 +12,7 @@ import {
   type RoutineDefinition,
   type RoutineDefinitionDraftInput,
   type RoutineDefinitionDraftAuthoringInput,
+  type RoutineSkillInputKeys,
 } from "./domain.js";
 import type { RoutineTriggerEmbeddingService } from "./routineTriggerEmbeddingService.js";
 import {
@@ -468,6 +469,15 @@ export class RoutineDefinitionService {
       skillDescriptors: new Map(descriptors.map((descriptor) => [descriptor.skillName, descriptor])),
       availableContextVariables: resolveAvailableContextVariables(contextVariables),
     };
+  }
+
+  /**
+   * The input keys each of the agent's skills reads from a step's arguments, for the advisory that
+   * tells an author a skill step with no bindings sends a sensitive field masked (#1543).
+   */
+  async skillInputKeys(workspaceId: string, agentId: string): Promise<RoutineSkillInputKeys> {
+    const descriptors = await this.options.skillAuthoringCatalog?.listForAgent({ workspaceId, agentId }) ?? [];
+    return Object.fromEntries(descriptors.map((descriptor) => [descriptor.skillName, descriptor.inputs.map((input) => input.key)]));
   }
 
   private async validateWithAvailableSkills(

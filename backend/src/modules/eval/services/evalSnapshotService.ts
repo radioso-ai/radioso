@@ -146,11 +146,14 @@ const extractDirectiveFirings = (metadata: Record<string, unknown> | undefined):
   return names.length > 0 ? names : undefined;
 };
 
-// A message of a turn whose routine held a sensitive value is captured withheld (#1543).
+// A message of a turn whose routine held a sensitive value is captured withheld (#1543): its text
+// and the answer segments that repeat it. Citations, grounding counts, and directive names carry
+// no visitor text and stay.
 const toSnapshotMessage = (record: MessageRecord): EvalSnapshotMessage => {
   const directiveFirings = record.role === "assistant"
     ? extractDirectiveFirings(record.metadata)
     : undefined;
+  const withheld = carriesSensitiveValue(record.metadata);
   return {
     id: record.id,
     role: record.role,
@@ -158,7 +161,7 @@ const toSnapshotMessage = (record: MessageRecord): EvalSnapshotMessage => {
     createdAt: record.createdAt.toISOString(),
     ...(record.role === "assistant" ? {
       citations: extractCitations(record.metadata),
-      answerSegments: extractAnswerSegments(record.metadata),
+      ...(withheld ? {} : { answerSegments: extractAnswerSegments(record.metadata) }),
       groundingSummary: extractGroundingSummary(record.metadata),
       ...(directiveFirings ? { directiveFirings } : {}),
     } : {}),

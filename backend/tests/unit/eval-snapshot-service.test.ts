@@ -1050,7 +1050,12 @@ describe("EvalSnapshotService.capture", () => {
       { id: "m2", conversationId: conversation.id, workspaceId: "ws-1", role: "user", content: "I tore my ACL", metadata: sensitive, createdAt: fixedDate },
       {
         id: "m3", conversationId: conversation.id, workspaceId: "ws-1", role: "assistant", content: "Noted, a torn ACL.",
-        metadata: { ...sensitive, composedInstructions: "Confirm the torn ACL." }, createdAt: fixedDate,
+        metadata: {
+          ...sensitive,
+          composedInstructions: "Confirm the torn ACL.",
+          answerSegments: [{ text: "Noted, a torn ACL." }],
+        },
+        createdAt: fixedDate,
       },
     ];
     const repository = new CapturingEvalRepository();
@@ -1076,6 +1081,7 @@ describe("EvalSnapshotService.capture", () => {
     const snapshot = await service.capture({ workspaceId: "ws-1", conversationId: conversation.id, messageId: "m3", capturedBy: "account-1" });
 
     expect(snapshot.messages.map((message) => message.content)).toEqual(["I want to book yoga", "[redacted]", "[redacted]"]);
+    expect(snapshot.messages[2]).not.toHaveProperty("answerSegments");
     expect(snapshot.originalRoutineState?.variables).toEqual({ class_name: "Yoga", injury: "[redacted]" });
     expect(snapshot.originalInstructionBlock).toBeNull();
     expect(JSON.stringify(snapshot)).not.toContain("ACL");

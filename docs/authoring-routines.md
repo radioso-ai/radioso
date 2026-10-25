@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "Create and edit dashboard routines in the Document view, read the Map, connect skills, and try a change in a test chat before it ships."
-last_updated: 2026-10-25
+last_updated: 2026-10-26
 ---
 
 # Authoring Routines
@@ -196,14 +196,22 @@ reads it in the Inbox. Every copy that leaves the conversation shows it masked:
   as they are, with `@injury` as `[redacted]`. A skill receives the value only
   when the step binds one of its inputs to `@injury` — a webhook skill whose
   `notes` input you bind to `@injury`, say. The binding shows on the step, so
-  anyone reading the routine sees exactly where the value goes.
-- A Test Chat trace shows the value as `[redacted]`.
-- The turns a routine runs while it holds the value, the visitor's message and
-  the agent's reply alike, read as `[redacted]` in the conversation summary,
-  Audience Pulse, the AI summary on a notice, and an eval snapshot. An eval
-  snapshot captures the routine's own value as `[redacted]` too; to replay the
-  turn with a value, run the case with a `routineStartState` override that
-  carries one of your own.
+  anyone reading the routine sees exactly where the value goes. Switching an
+  input to a variable never picks a sensitive field for you, and Ray's
+  `validate_routine` reports `sensitive_slot_unbound_skill_input` when a step
+  with no bindings runs a skill whose input reads a sensitive field, since that
+  input receives `[redacted]`.
+- A Test Chat trace shows the value as `[redacted]`. **Continue in Test Chat**
+  copies the conversation with its turns withheld and the routine's value as
+  `[redacted]`, so the test picks up at the same step.
+- The visitor's reply to a step that asks for `@injury` is marked as soon as it
+  arrives, and so is every turn after which the routine holds the value, the
+  agent's reply included. Marked turns read as `[redacted]` in the conversation
+  summary, Audience Pulse, the AI summary on a notice, and an eval snapshot. The
+  summary also waits for the agent's reply before it reads a visitor message,
+  so a turn still running never reaches it. An eval snapshot captures the
+  routine's own value as `[redacted]` too; to replay the turn with a value, run
+  the case with a `routineStartState` override that carries one of your own.
 
 A sensitive email field can't be a notice's **Replies go to** field, because its
 address never leaves the conversation. Validation reports
@@ -211,10 +219,12 @@ address never leaves the conversation. Validation reports
 **No reply-to**.
 
 Only you mark a field sensitive. Radioso never decides it from the field's name
-or from what the visitor wrote, and Ray sets it only when you ask. Two limits are
-worth knowing: the model the agent runs on reads the value, since it is part of
-the conversation, and once the routine has ended, a later reply that brings the
-value up again is not masked.
+or from what the visitor wrote, and Ray sets it only when you ask. A few limits
+are worth knowing. The model the agent runs on reads the value, since it is part
+of the conversation. A value the visitor gives while no step is asking for it,
+before its step or as a correction after the routine has finished, is marked only
+when the routine stores it. Once the routine has ended, a later reply that brings
+the value up again is not masked.
 
 #### Read the visitor's context
 

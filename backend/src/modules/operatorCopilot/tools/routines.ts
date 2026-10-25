@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { canonicalRoutineAuthoringDraft, endingNotifiesOperators, projectRoutineToPortableDocument, ROUTINE_DEFINITION_LIMITS, routineAdvisoriesWithMessages, routineDefinitionDraftInputSchema, routineFieldPatchSchema, type RoutineDefinition } from "../../routines/public.js";
+import { canonicalRoutineAuthoringDraft, endingNotifiesOperators, projectRoutineToPortableDocument, ROUTINE_DEFINITION_LIMITS, routineAdvisoriesWithMessages, routineDefinitionDraftInputSchema, routineFieldPatchSchema, type RoutineDefinition, type RoutineSkillInputKeys } from "../../routines/public.js";
 import type {
   CopilotMcpInvocationReconciliation,
   CopilotMcpProposalRecoveryPort,
@@ -80,6 +80,8 @@ export interface CopilotRoutineDefinitionPort {
   list(workspaceId: string, agentId: string): Promise<ReadonlyArray<RoutineDefinition>>;
   get(workspaceId: string, agentId: string, routineId: string): Promise<RoutineDefinition>;
   validate(workspaceId: string, agentId: string, target: { id: string }): Promise<CopilotRoutineValidationResult>;
+  /** The input keys each of the agent's skills reads; absent leaves out the advisories that need them. */
+  skillInputKeys?(workspaceId: string, agentId: string): Promise<RoutineSkillInputKeys>;
 }
 
 // Every routine write addresses one routine. Name resolution rewrites `routineTitle` into
@@ -158,7 +160,8 @@ export const createRoutineDefinitionCopilotTools = (deps: RoutineDefinitionCopil
         const resolvedRoutineId = requiredRoutine(routineId);
         const routine = await deps.routineDefinitionService.get(context.workspaceId, resolvedAgentId, resolvedRoutineId);
         const validation = await deps.routineDefinitionService.validate(context.workspaceId, resolvedAgentId, { id: resolvedRoutineId });
-        const advisories = routineAdvisoriesWithMessages(routine);
+        const skillInputKeys = await deps.routineDefinitionService.skillInputKeys?.(context.workspaceId, resolvedAgentId);
+        const advisories = routineAdvisoriesWithMessages(routine, skillInputKeys ? { skillInputKeys } : {});
         return {
           routineId: routine.id,
           name: routine.name,

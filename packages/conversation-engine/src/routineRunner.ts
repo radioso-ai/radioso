@@ -525,13 +525,23 @@ const routesToHandoff = (routine: Routine): boolean =>
     return target !== undefined && terminalKindFor(target) === "handoff";
   });
 
+/** The keys of an ending's collected values that were masked as sensitive, reported beside them. */
+const maskedSlotKeys = (
+  routine: Routine,
+  collected: Record<string, unknown>,
+): Pick<NonNullable<ConversationRoutineResumeResult["terminal"]>, "sensitiveSlotKeys"> => {
+  const keys = sensitiveSlotKeys(routine).filter((key) => hasVariable(collected, key));
+  return keys.length > 0 ? { sensitiveSlotKeys: keys } : {};
+};
+
 const terminalResult = (
+  routine: Routine,
   kind: RoutineAuthoredTerminalKind,
   step: RoutineStep,
   collected: Record<string, unknown>,
 ): NonNullable<ConversationRoutineResumeResult["terminal"]> => {
   const operatorNotice = operatorNoticeTemplateFor(step);
-  return { kind, stepId: step.id, collected, ...(operatorNotice ? { operatorNotice } : {}) };
+  return { kind, stepId: step.id, collected, ...maskedSlotKeys(routine, collected), ...(operatorNotice ? { operatorNotice } : {}) };
 };
 
 /**
@@ -1258,7 +1268,12 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         kind: "claimed",
         effects: {
           nextState: null,
-          terminal: { kind: "stuck", stepId: currentStep.id, collected: declaredSlotVariables(routine, variables) },
+          terminal: {
+            kind: "stuck",
+            stepId: currentStep.id,
+            collected: declaredSlotVariables(routine, variables),
+            ...maskedSlotKeys(routine, declaredSlotVariables(routine, variables)),
+          },
           endedVariables: variables,
           trace: {
             routineId: routine.id,
@@ -1540,7 +1555,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         // with for the host's record of the ended run.
         ...(step.kind === "terminal" ? { nextState: null, endedVariables: variables } : { nextState }),
         ...(terminalKind
-          ? { terminal: terminalResult(terminalKind, step, declaredSlotVariables(routine, variables)) }
+          ? { terminal: terminalResult(routine, terminalKind, step, declaredSlotVariables(routine, variables)) }
           : {}),
         ...(actions.length > 0 ? { actions } : {}),
         ...(skillsWithExternalEffects.length > 0 ? { skillsWithExternalEffects } : {}),

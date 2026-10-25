@@ -38,6 +38,7 @@ export const buildRoutineEndingNotifyAction = (input: {
       routineId: input.notice.routineId,
       stepId: input.notice.stepId,
       collected: input.notice.collected,
+      sensitiveSlotKeys: input.notice.sensitiveSlotKeys,
       notice: input.notice,
       responseLanguage: input.responseLanguage,
       routineStartMessageId: input.routineStartMessageId,
@@ -64,6 +65,7 @@ export const operatorNoticeForTurn = (
     stepId: turn.handoff.stepId,
     terminalKind: turn.handoff.terminalKind,
     ...(turn.handoff.collected ? { collected: turn.handoff.collected } : {}),
+    ...(turn.handoff.sensitiveSlotKeys?.length ? { sensitiveSlotKeys: turn.handoff.sensitiveSlotKeys } : {}),
   };
 };
 

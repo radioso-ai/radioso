@@ -1695,6 +1695,8 @@ export interface ConversationRoutineResumeResult {
     kind: RoutineTerminalKind;
     stepId: string;
     collected?: Record<string, unknown>;
+    /** The keys of `collected` whose values were masked as sensitive; absent when none were. */
+    sensitiveSlotKeys?: string[];
     operatorNotice?: RoutineOperatorNoticeTemplate;
   };
   /**
@@ -2056,6 +2058,8 @@ export interface ProcessTurnResult {
     stepId: string;
     terminalKind: RoutineHandoffTerminalKind;
     collected?: Record<string, unknown>;
+    /** The keys of `collected` whose values were masked as sensitive; absent when none were. */
+    sensitiveSlotKeys?: string[];
   };
   /**
    * Present when a routine ended on a terminal that notifies operators: every hand-off, and a
@@ -2079,6 +2083,11 @@ export interface RoutineOperatorNoticeEffect extends RoutineOperatorNoticeTempla
   stepId: string;
   terminalKind: "complete" | "handoff" | "stuck";
   collected?: Record<string, unknown>;
+  /**
+   * The keys of `collected` whose values were masked as sensitive; absent when none were. A
+   * notice decides what reads as sensitive from these, never from a value's text.
+   */
+  sensitiveSlotKeys?: string[];
 }
 
 export type ProcessTurnStreamEvent =

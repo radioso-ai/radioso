@@ -2695,6 +2695,77 @@ describe("chat service streaming", () => {
     });
   });
 
+  it("marks the resumed reply when the routine holds a sensitive value, as a live turn's is (#1543)", async () => {
+    const conversationRepository = new InMemoryConversationRepository();
+    const messageRepository = new InMemoryMessageRepository();
+    const agentRepository = new InMemoryAgentRepository();
+    const agent = await agentRepository.create("workspace-1", { name: "Support" });
+    const conversation = await conversationRepository.create({ workspaceId: "workspace-1", agentId: agent.id });
+    const activationMessage = await messageRepository.create({
+      conversationId: conversation.id, workspaceId: "workspace-1", role: "user", content: "Please book physio for my knee.",
+    });
+    const assistantTurnPersistence = createCapturingAssistantTurnPersistence();
+    const conversationEngine = createConversationEngine();
+    const completedState = {
+      sessionId: conversation.id, routineId: "physio-flow", path: ["await-approval", "booked"],
+      variables: { injury: "torn ACL" }, status: "completed" as const,
+    };
+    vi.spyOn(conversationEngine, "resumeAwaitingDecision").mockImplementation(async (resumeInput) => {
+      await resumeInput.suspendedReader.loadSuspended({ sessionId: resumeInput.sessionId });
+      return { resumed: true, response: { answer: "Booked." }, nextState: null, completedState, terminal: { kind: "complete" as const, stepId: "booked" } };
+    });
+    const reporter = {
+      describe: vi.fn(() => null),
+      describeDeclined: vi.fn(() => null),
+      describeInvocation: vi.fn(() => null),
+      describeRoutineName: vi.fn(() => null),
+      sensitiveSlotKeysHeld: vi.fn(() => ["injury"]),
+    };
+    const service = makeChatService(
+      conversationRepository,
+      messageRepository,
+      new RetrievalTurnController({ async interpret() { throw new Error("no retrieval"); } } as never),
+      { async answer() { return "unused"; }, async *streamAnswer() { yield "unused"; } },
+      createAuditService(),
+      fallbackReplyComposer,
+      undefined, undefined, undefined,
+      { resolve: vi.fn(async () => agent) },
+      undefined, undefined, undefined, undefined, undefined,
+      conversationEngine,
+      {
+        routineStore: undefined,
+        routineProvider: {
+          forTurn: vi.fn(async () => ({ activator: { activate: vi.fn(async () => null) }, runner: {} as never, reporter })),
+        },
+        suspendedRoutineReader: {
+          loadSuspended: vi.fn(async () => ({
+            sessionId: conversation.id, routineId: "physio-flow", startedMessageId: activationMessage.id,
+            path: ["await-approval"], variables: { injury: "torn ACL" }, status: "suspended" as const,
+          })),
+        },
+        assistantTurnPersistence,
+      },
+    );
+    const now = new Date("2026-07-19T12:00:00.000Z");
+
+    await service.resumeAwaitingDecisionTurn({
+      record: {
+        id: "decision-1", handle: "physio-approval", conversationId: conversation.id, sessionId: conversation.id,
+        workspaceId: "workspace-1", agentId: agent.id, routineId: "physio-flow", stepId: "await-approval",
+        reason: "physio_review", options: [{ id: "approve", label: "Approve" }], deciderScope: {}, contentHash: "hash-1",
+        status: "resolved", decision: { optionId: "approve" }, decidedBy: "account-1", decidedByUserId: null,
+        decidedAt: now, deadline: null, createdAt: now, updatedAt: now,
+      },
+      optionId: "approve",
+      decidedBy: "account-1",
+      transaction: {} as never,
+    });
+
+    const persisted = vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
+    expect(reporter.sensitiveSlotKeysHeld).toHaveBeenCalledWith(completedState);
+    expect(persisted.assistantMessage.metadata?.sensitiveSlotKeys).toEqual(["injury"]);
+  });
+
   describe("an approval resume's other outcomes (#1460)", () => {
     // Applies an operator's approval to a routine parked at `manager-approval`, with the engine's
     // decision result built for the conversation the resume runs in.

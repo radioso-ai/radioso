@@ -715,40 +715,90 @@ export const endingNotifiesOperators = (terminal: {
  * enum so a transport cannot confuse the two kinds of finding, and so the contract test pinning
  * `routineValidationCodes` to the OpenAPI enum never has to carry one of these.
  */
-export const routineAdvisoryCodes = ["operator_notice_reply_to_unset"] as const;
+export const routineAdvisoryCodes = ["operator_notice_reply_to_unset", "sensitive_slot_unbound_skill_input"] as const;
 export type RoutineAdvisoryCode = typeof routineAdvisoryCodes[number];
 
 export interface RoutineAdvisory {
   readonly code: RoutineAdvisoryCode;
   readonly location: string;
   readonly stableStepId: string;
+  /** `sensitive_slot_unbound_skill_input`: the sensitive field the skill's input reads. */
+  readonly slotKey?: string;
+  /** `sensitive_slot_unbound_skill_input`: the skill the step runs. */
+  readonly skillName?: string;
+}
+
+/** The input keys each skill reads from a step's arguments, by skill name. */
+export type RoutineSkillInputKeys = Readonly<Record<string, readonly string[]>>;
+
+/**
+ * A skill step with no input bindings hands the skill the routine's values by key, a sensitive
+ * one masked; a skill input whose key names a sensitive field therefore receives `[redacted]`.
+ * The value reaches the skill only through a binding that names the field, so the author is
+ * told where the default masking applies.
+ */
+const unboundSensitiveSkillInputAdvisories = (
+  steps: ReadonlyArray<RoutineAdvisoryStep>,
+  sensitiveKeys: ReadonlySet<string>,
+  skillInputKeys: RoutineSkillInputKeys,
+): RoutineAdvisory[] => steps.flatMap((step) => {
+  const bindings = step.metadata?.inputBindings;
+  if (step.kind !== "tool" || !step.toolRef || (bindings && Object.keys(bindings).length > 0)) return [];
+  const skillName = step.toolRef;
+  return (skillInputKeys[skillName] ?? [])
+    .filter((key) => sensitiveKeys.has(key))
+    .map((key): RoutineAdvisory => ({
+      code: "sensitive_slot_unbound_skill_input",
+      location: `step:${step.stableStepId}.inputBindings.${key}`,
+      stableStepId: step.stableStepId,
+      slotKey: key,
+      skillName,
+    }));
+});
+
+interface RoutineAdvisoryStep {
+  readonly stableStepId: string;
+  readonly kind: RoutineStepKind;
+  readonly toolRef?: string | null;
+  readonly metadata?: { readonly inputBindings?: Readonly<Record<string, unknown>> } | null;
 }
 
 /**
- * Advisory check: an ending that notifies operators (see {@link endingNotifiesOperators}) but
- * names no `replyToSlot`, on a routine that declares at least one email field that is not
- * sensitive (a sensitive address never leaves the conversation, so it cannot be a reply-to).
- * Unset is a legitimate authoring choice — some routines collect no address worth replying to —
- * so this never blocks compile, validation, or publish. The input is narrow so a stored
- * definition and the editor's draft both pass themselves in.
+ * Non-blocking findings; none affects compile, validation, or publish. The input is narrow so a
+ * stored definition and the editor's draft both pass themselves in.
+ *
+ * - `operator_notice_reply_to_unset`: an ending that notifies operators (see
+ *   {@link endingNotifiesOperators}) but names no `replyToSlot`, on a routine that declares at
+ *   least one email field that is not sensitive (a sensitive address never leaves the
+ *   conversation, so it cannot be a reply-to). Unset is a legitimate authoring choice — some
+ *   routines collect no address worth replying to.
+ * - `sensitive_slot_unbound_skill_input`: a skill step with no input bindings whose skill reads
+ *   an input keyed like a sensitive field, which it receives as `[redacted]`. Reported only when
+ *   the caller supplies `skillInputKeys`.
  */
 export const routineAdvisories = (definition: {
   readonly slots: ReadonlyArray<{ readonly key: string; readonly type: RoutineSlotType; readonly sensitivity?: RoutineSlotSensitivity }>;
+  readonly steps?: ReadonlyArray<RoutineAdvisoryStep>;
   readonly terminals: ReadonlyArray<{
     readonly stableStepId: string;
     readonly kind: RoutineTerminalKind;
     readonly operatorNotice?: { readonly replyToSlot?: string };
   }>;
-}): RoutineAdvisory[] => {
-  if (!definition.slots.some((slot) => slot.type === "email" && slot.sensitivity !== "sensitive")) return [];
+}, options: { readonly skillInputKeys?: RoutineSkillInputKeys } = {}): RoutineAdvisory[] => {
   const advisories: RoutineAdvisory[] = [];
-  for (const terminal of definition.terminals) {
-    if (!endingNotifiesOperators(terminal) || terminal.operatorNotice?.replyToSlot) continue;
-    advisories.push({
-      code: "operator_notice_reply_to_unset",
-      location: `step:${terminal.stableStepId}.operatorNotice.replyToSlot`,
-      stableStepId: terminal.stableStepId,
-    });
+  if (definition.slots.some((slot) => slot.type === "email" && slot.sensitivity !== "sensitive")) {
+    for (const terminal of definition.terminals) {
+      if (!endingNotifiesOperators(terminal) || terminal.operatorNotice?.replyToSlot) continue;
+      advisories.push({
+        code: "operator_notice_reply_to_unset",
+        location: `step:${terminal.stableStepId}.operatorNotice.replyToSlot`,
+        stableStepId: terminal.stableStepId,
+      });
+    }
+  }
+  if (options.skillInputKeys) {
+    const sensitiveKeys = new Set(definition.slots.filter((slot) => slot.sensitivity === "sensitive").map((slot) => slot.key));
+    advisories.push(...unboundSensitiveSkillInputAdvisories(definition.steps ?? [], sensitiveKeys, options.skillInputKeys));
   }
   return advisories;
 };

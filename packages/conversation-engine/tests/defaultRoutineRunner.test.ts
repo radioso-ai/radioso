@@ -4774,6 +4774,8 @@ describe("DefaultRoutineRunner sensitive slots", () => {
     const { result } = await run();
 
     expect(result.terminal?.collected).toEqual({ email: "a@b.c", injury: "[redacted]", class_name: "Yoga" });
+    // Which values were masked travels with them, so a notice decides from the slot, never the text.
+    expect(result.terminal?.sensitiveSlotKeys).toEqual(["injury"]);
     expect(result.endedVariables).toEqual(held);
   });
 

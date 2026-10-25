@@ -606,7 +606,10 @@ imports from `services/`.
   `refreshEveryMessages` so it does not pay an LLM call every turn, and a failed model call or
   save rejects so the job retries (a deliberate skip or a failed title write resolves). The first summary for
   a legacy long conversation uses a capped recent backfill window (`maxInitialBackfillMessages`)
-  so one post-deploy turn cannot trigger unbounded sequential model calls. Rows FK-cascade
+  so one post-deploy turn cannot trigger unbounded sequential model calls. A refresh reads a
+  conversation only up to its latest assistant reply, and a message marked as holding a
+  sensitive routine value (#1543, `shared/domain/sensitiveTranscript.ts`) reads as withheld, so a
+  visitor message whose turn is still running never reaches the summary. Rows FK-cascade
   with their conversation (content, unlike the structural `routine_states`/`directive_states`).
   Injected via
   `services/summary/conversationSummarySection.ts` into four prompts — turn

@@ -1,7 +1,7 @@
 ---
 title: "Author a routine"
 description: "Build a multi-step flow your agent runs across turns in the dashboard routine editor, then test it and ship it with the agent."
-last_updated: 2026-10-25
+last_updated: 2026-10-26
 ---
 
 # Author a routine
@@ -192,18 +192,25 @@ conversation shows it masked:
 - A skill step with no inputs bound hands the routine's values to its skill with
   `@injury` as `[redacted]`. A skill receives the value only when the step binds
   one of its inputs to `@injury` — the binding shows on the step, so anyone
-  reading the routine sees where the value goes.
-- A Test Chat trace shows `[redacted]`.
-- While the routine holds the value, its turns read as `[redacted]` in the
-  conversation summary, Audience Pulse, a notice's AI summary, and an eval
-  snapshot, which also captures the routine's value as `[redacted]`. To replay
-  such a turn with a value, run the case with a routine start state of your own
-  (see [Evals](/guides/evals)).
+  reading the routine sees where the value goes. Switching an input to a
+  variable never picks a sensitive field for you, and Ray flags a step whose
+  skill would receive one as `[redacted]`.
+- A Test Chat trace shows `[redacted]`, and **Continue in Test Chat** copies the
+  conversation with the sensitive turns withheld and the routine's value as
+  `[redacted]`.
+- The visitor's reply to a step that asks for `@injury` is marked as soon as it
+  arrives, and so is every turn after which the routine holds the value. Marked
+  turns read as `[redacted]` in the conversation summary, Audience Pulse, a
+  notice's AI summary, and an eval snapshot, which also captures the routine's
+  value as `[redacted]`. To replay such a turn with a value, run the case with a
+  routine start state of your own (see [Evals](/guides/evals)).
 
 Only you mark a field sensitive: Radioso never decides it from the field's name
 or the visitor's words, and Ray sets it only when you ask. The model the agent
-runs on still reads the value, since it is part of the conversation, and once
-the routine has ended a later reply that mentions the value is not masked.
+runs on still reads the value, since it is part of the conversation. A value the
+visitor gives while no step is asking for it, before its step or as a correction
+after the routine has finished, is marked only when the routine stores it, and
+once the routine has ended a later reply that mentions the value is not masked.
 
 ## Set branches, approvals, and endings
 

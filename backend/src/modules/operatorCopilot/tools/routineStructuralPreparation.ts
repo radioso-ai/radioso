@@ -162,7 +162,11 @@ const reviewOutput = (input: {
 });
 
 export interface RoutineStructuralPreparationDependencies extends ReviewedPreparationDependencies {
-  readonly routines: Pick<RoutineDefinitionService, "get" | "validateForDraftMutation"> & { readonly findCreateConflict?: RoutineDefinitionService["findCreateConflict"] };
+  readonly routines: Pick<RoutineDefinitionService, "get" | "validateForDraftMutation"> & {
+    readonly findCreateConflict?: RoutineDefinitionService["findCreateConflict"];
+    // Absent leaves out the advisories that compare a step against its skill's inputs.
+    readonly skillInputKeys?: RoutineDefinitionService["skillInputKeys"];
+  };
   readonly scopedReferences: {
     assertNoScopedReferences(input: { readonly workspaceId: string; readonly agentId: string; readonly routineId: string; readonly removedNodeIds: readonly string[]; readonly removedSlotIds: readonly string[] }): Promise<void>;
   };
@@ -213,7 +217,8 @@ export const createRoutineStructuralPreparationTool = (
         const payload = { kind: "create" as const, draft: input.draft };
         const versionToken = blocking ? `blocked:${blocking.id}:${blocking.updatedAt.toISOString()}` : "open";
         const after = boundedRoutineReview(input.draft);
-        const reviewSnapshot = storedReviewSnapshot({ diagnostics: validation.diagnostics.slice(0, reviewLimit), advisories: routineAdvisoriesWithMessages(input.draft).slice(0, reviewLimit), review: { before: {}, after: after.summary, truncated: after.truncated, detailAvailable: after.truncated, beforeConnections: [], afterConnections: connectionsForReview(input.draft.transitions ?? []), connectionsTruncated: (input.draft.transitions?.length ?? 0) > reviewLimit, operations: [{ kind: "create" }], operationsTruncated: false }, fullReview: { before: {}, after: after.full } });
+        const skillInputKeys = await deps.routines.skillInputKeys?.(context.workspaceId, input.agentId);
+        const reviewSnapshot = storedReviewSnapshot({ diagnostics: validation.diagnostics.slice(0, reviewLimit), advisories: routineAdvisoriesWithMessages(input.draft, skillInputKeys ? { skillInputKeys } : {}).slice(0, reviewLimit), review: { before: {}, after: after.summary, truncated: after.truncated, detailAvailable: after.truncated, beforeConnections: [], afterConnections: connectionsForReview(input.draft.transitions ?? []), connectionsTruncated: (input.draft.transitions?.length ?? 0) > reviewLimit, operations: [{ kind: "create" }], operationsTruncated: false }, fullReview: { before: {}, after: after.full } });
         const stored = await persistReviewedPreparation({ deps, context, targetType: "routine", targetRef, payload, versionToken, reviewSnapshot, operation: "prepare_routine_structure", metadata: { kind: input.kind }, effect: routineDraftChangeEffect(input.kind) });
         return reviewOutput({ proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt, confirmation: stored.confirmation, snapshot: reviewSnapshot });
       }
@@ -263,7 +268,8 @@ export const createRoutineStructuralPreparationTool = (
       const afterConnections = connectionsForReview(draft.transitions ?? []);
       const before = boundedRoutineReview(current);
       const after = boundedRoutineReview(draft);
-      const reviewSnapshot = storedReviewSnapshot({ diagnostics: validation.diagnostics.slice(0, 40), advisories: routineAdvisoriesWithMessages(draft).slice(0, 40), review: { before: before.summary, after: after.summary, truncated: before.truncated || after.truncated, detailAvailable: before.truncated || after.truncated, beforeConnections, afterConnections, connectionsTruncated: (current.transitions?.length ?? 0) > reviewLimit || (draft.transitions?.length ?? 0) > reviewLimit, operations: input.operations.slice(0, reviewLimit), operationsTruncated: input.operations.length > reviewLimit }, fullReview: { before: before.full, after: after.full } });
+      const skillInputKeys = await deps.routines.skillInputKeys?.(context.workspaceId, input.agentId);
+      const reviewSnapshot = storedReviewSnapshot({ diagnostics: validation.diagnostics.slice(0, 40), advisories: routineAdvisoriesWithMessages(draft, skillInputKeys ? { skillInputKeys } : {}).slice(0, 40), review: { before: before.summary, after: after.summary, truncated: before.truncated || after.truncated, detailAvailable: before.truncated || after.truncated, beforeConnections, afterConnections, connectionsTruncated: (current.transitions?.length ?? 0) > reviewLimit || (draft.transitions?.length ?? 0) > reviewLimit, operations: input.operations.slice(0, reviewLimit), operationsTruncated: input.operations.length > reviewLimit }, fullReview: { before: before.full, after: after.full } });
       const stored = await persistReviewedPreparation({ deps, context, targetType: "routine", targetRef, payload, versionToken, reviewSnapshot, operation: "prepare_routine_structure", metadata: { kind: input.kind }, effect: routineDraftChangeEffect("edit") });
       return reviewOutput({ proposalId: stored.proposal.id, reviewDigest: stored.reviewDigest, expiresAt: stored.expiresAt, confirmation: stored.confirmation, snapshot: reviewSnapshot });
     },

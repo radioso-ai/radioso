@@ -4,8 +4,10 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 
 import type { LexicalMatchMode } from "../../src/modules/retrieval/domain/lexicalSomeTermsMatch.js";
 import { PgLexicalSearch } from "../../src/modules/retrieval/infra/lexicalSearch.js";
+import { renderSearchText } from "../../src/modules/retrieval/services/searchTextRenderer.js";
 import type { RetrievedChunk } from "../../src/modules/retrieval/domain/vectorSearch.js";
 import { Database } from "../../src/shared/infra/database.js";
+import { conversationQualityCorpus, MOUNTAIN_COURSE_DOC_ID } from "../fixtures/conversation-quality/corpus.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
@@ -276,5 +278,73 @@ describeIntegration("PgLexicalSearch (Postgres full-text search)", () => {
     const results = await searchFor("pernottamento evento Supercoscienti");
 
     expect(results.map(({ key }) => key)).not.toContain("other_workspace_stay");
+  });
+});
+
+// The lexical half of the `directive-withholds-figures-it` eval case, on that case's own
+// corpus: whatever lexical query the model writes for "Quanto costa il corso di yoga in
+// montagna?", the course page comes back first, including when the model writes request
+// words that no page holds alongside the subject.
+describeIntegration("PgLexicalSearch over the conversation-quality corpus", () => {
+  const database = new Database(integrationDatabaseUrl);
+  const search = new PgLexicalSearch(database);
+  const accountId = randomUUID();
+  const workspaceId = randomUUID();
+  const fixtureIdByChunk = new Map<string, string>();
+
+  beforeAll(async () => {
+    await database.query(
+      `INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, $2, $3, $4)`,
+      [accountId, "Lexical Corpus Co", `lexical-corpus-${accountId}@example.com`, "hash"],
+    );
+    await database.query(
+      `INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1, $2, $3, $4)`,
+      [workspaceId, accountId, "Lexical Corpus Workspace", `lexical-corpus-${workspaceId}`],
+    );
+    for (const document of conversationQualityCorpus) {
+      const documentId = randomUUID();
+      const chunkId = randomUUID();
+      await database.query(
+        `INSERT INTO documents (id, workspace_id, title, source_content, markdown_content, status, metadata, retrieval_enabled)
+         VALUES ($1, $2, $3, $4, $4, 'ready', '{}'::jsonb, true)`,
+        [documentId, workspaceId, document.title, document.content],
+      );
+      await database.query(
+        `INSERT INTO chunks (id, document_id, workspace_id, chunk_index, content, search_text, metadata)
+         VALUES ($1, $2, $3, 0, $4, $5, '{}'::jsonb)`,
+        [chunkId, documentId, workspaceId, document.content, renderSearchText({ title: document.title, content: document.content })],
+      );
+      fixtureIdByChunk.set(chunkId, document.id);
+    }
+  });
+
+  afterAll(async () => {
+    await database.query("DELETE FROM accounts WHERE id = $1", [accountId]).catch(() => undefined);
+    await database.close().catch(() => undefined);
+  });
+
+  const topMatch = async (query: string, matchMode: LexicalMatchMode) => {
+    const { matches, someTermsPass } = await search.search({ workspaceId, query, topK: 20, matchMode });
+    const [first] = matches;
+    return {
+      document: first ? fixtureIdByChunk.get(first.chunkId) : undefined,
+      coverage: first?.lexicalTermCoverage,
+      outcome: someTermsPass.outcome,
+    };
+  };
+
+  it("finds the course page first for the subject itself, in both modes", async () => {
+    for (const matchMode of ["all_terms", "all_or_some_terms"] as const) {
+      expect(await topMatch("corso di yoga in montagna", matchMode))
+        .toMatchObject({ document: MOUNTAIN_COURSE_DOC_ID, coverage: "all_terms" });
+    }
+  });
+
+  it("finds the course page first when the query adds request words no page holds", async () => {
+    for (const query of ["prezzo corso di yoga in montagna", "costo corso yoga montagna", "Quanto costa il corso di yoga in montagna?"]) {
+      expect(await topMatch(query, "all_terms")).toMatchObject({ document: undefined });
+      expect(await topMatch(query, "all_or_some_terms"))
+        .toMatchObject({ document: MOUNTAIN_COURSE_DOC_ID, coverage: "some_terms", outcome: "ran" });
+    }
   });
 });

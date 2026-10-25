@@ -539,7 +539,6 @@ CREATE TABLE public.agent_access_grants (
     last_used_at timestamp with time zone,
     revoked_at timestamp with time zone,
     channel text DEFAULT 'public-link'::text NOT NULL,
-    CONSTRAINT agent_access_grants_agent_api_expiry_check CHECK (((principal_kind <> 'agent-api'::text) OR (expires_at IS NOT NULL))),
     CONSTRAINT agent_access_grants_channel_check CHECK ((channel = ANY (ARRAY['embed'::text, 'public-link'::text, 'mcp-converse'::text, 'agent-api'::text]))),
     CONSTRAINT agent_access_grants_origin_mode_check CHECK ((origin_mode = ANY (ARRAY['allow-all'::text, 'list'::text]))),
     CONSTRAINT agent_access_grants_principal_kind_check CHECK ((principal_kind = ANY (ARRAY['workspace-admin'::text, 'agent-api'::text, 'public-launch'::text]))),
@@ -3959,6 +3958,7 @@ CREATE TABLE public.users (
     email_verified_at timestamp with time zone,
     disabled_at timestamp with time zone,
     display_name text,
+    credential_generation integer DEFAULT 0 NOT NULL,
     CONSTRAINT users_display_name_check CHECK (((display_name IS NULL) OR (btrim(display_name) <> ''::text)))
 );
 
@@ -6564,6 +6564,13 @@ CREATE INDEX audit_events_chat_answer_conversation_lookup_idx ON public.audit_ev
 --
 
 CREATE INDEX audit_events_chat_answer_user_message_unanswered_idx ON public.audit_events USING btree (workspace_id, ((metadata_json ->> 'conversationId'::text)), ((metadata_json ->> 'userMessageId'::text)), created_at DESC, id DESC) WHERE ((event_type = 'chat.answer'::text) AND (event_status = ANY (ARRAY['failure'::text, 'cancelled'::text])) AND ((metadata_json ->> 'assistantMessageId'::text) IS NULL));
+
+
+--
+-- Name: audit_events_created_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX audit_events_created_at_idx ON public.audit_events USING btree (created_at);
 
 
 --

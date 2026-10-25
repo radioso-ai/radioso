@@ -22,7 +22,7 @@ import {
   agentChannelCredentialListQuerySchema,
   agentChannelCredentialParamsSchema,
 } from "../schemas/agentChannelSchemas.js";
-import { AppError, badRequest, forbidden, notFound } from "../../../shared/domain/errors.js";
+import { badRequest, forbidden, notFound } from "../../../shared/domain/errors.js";
 import { recipientEmailChangeMetadata } from "../../../shared/domain/recipientEmailAudit.js";
 import {
   isMachinePrincipal,
@@ -154,29 +154,23 @@ const decodeCredentialCursor = (value: string | undefined): { createdAt: string;
   }
 };
 
-const presentAgentChannelCredential = (grant: AccessGrant) => {
-  if (!grant.expiresAt) {
-    throw new AppError(500, "internal_error", "Agent-channel credential is missing its required expiry.");
-  }
-
-  return {
-    id: grant.id,
-    audience: audienceForChannel(grant.channel),
-    label: grant.label,
-    prefix: grant.tokenPrefix,
-    status: grant.revokedAt
-      ? "revoked"
-      : !grant.enabled
-        ? "disabled"
-        : grant.expiresAt.getTime() <= Date.now()
-          ? "expired"
-          : "active",
-    createdAt: grant.createdAt.toISOString(),
-    expiresAt: grant.expiresAt.toISOString(),
-    lastUsedAt: grant.lastUsedAt ? grant.lastUsedAt.toISOString() : null,
-    revokedAt: grant.revokedAt ? grant.revokedAt.toISOString() : null,
-  };
-};
+const presentAgentChannelCredential = (grant: AccessGrant) => ({
+  id: grant.id,
+  audience: audienceForChannel(grant.channel),
+  label: grant.label,
+  prefix: grant.tokenPrefix,
+  status: grant.revokedAt
+    ? "revoked"
+    : !grant.enabled
+      ? "disabled"
+      : grant.expiresAt && grant.expiresAt.getTime() <= Date.now()
+        ? "expired"
+        : "active",
+  createdAt: grant.createdAt.toISOString(),
+  expiresAt: grant.expiresAt ? grant.expiresAt.toISOString() : null,
+  lastUsedAt: grant.lastUsedAt ? grant.lastUsedAt.toISOString() : null,
+  revokedAt: grant.revokedAt ? grant.revokedAt.toISOString() : null,
+});
 
 const presentAgentChannelCredentialSecret = ({ grant, token }: AccessGrantSecret) => ({
   credential: presentAgentChannelCredential(grant),

@@ -29,7 +29,7 @@ describeIntegration("UserRepository (Postgres)", () => {
   it("creates and finds by id and email", async () => {
     const u = newUser();
     const user = await repository.create(u);
-    expect(user).toMatchObject({ id: u.id, email: u.email, emailVerifiedAt: null });
+    expect(user).toMatchObject({ id: u.id, email: u.email, emailVerifiedAt: null, credentialGeneration: 0 });
     expect((await repository.findById(u.id))?.email).toBe(u.email);
     expect((await repository.findByEmail(u.email))?.id).toBe(u.id);
     expect(await repository.findByEmail("missing@example.com")).toBeNull();
@@ -95,6 +95,22 @@ describeIntegration("UserRepository (Postgres)", () => {
 
     const second = await repository.markEmailVerified(u.id, new Date("2026-02-02T00:00:00.000Z"));
     expect(second.emailVerifiedAt?.toISOString()).toBe("2026-01-01T00:00:00.000Z");
+  });
+
+  it("finds the user a provider identity is linked to, with the credential generation it holds", async () => {
+    const linked = newUser();
+    await repository.create(linked);
+    const subject = `subject-${linked.id}`;
+    await database.query(
+      `INSERT INTO user_federated_identities (user_id, provider, subject, provider_email) VALUES ($1, 'google', $2, $3)`,
+      [linked.id, subject, `provider-${linked.id}@example.com`],
+    );
+    await database.query(`UPDATE users SET credential_generation = 3 WHERE id = $1`, [linked.id]);
+
+    expect(await repository.findByFederatedIdentity("google", subject))
+      .toMatchObject({ id: linked.id, email: linked.email, credentialGeneration: 3 });
+    expect(await repository.findByFederatedIdentity("google", `missing-${linked.id}`)).toBeNull();
+    expect(await repository.findByFederatedIdentity("other-provider", subject)).toBeNull();
   });
 
   it("deleteById returns whether a row was removed", async () => {

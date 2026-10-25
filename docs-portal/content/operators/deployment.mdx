@@ -194,7 +194,7 @@ The sweep runs in the document worker, so retention happens only where that proc
 
 ## Conversation retention
 
-The conversation retention sweep runs in the document worker every 15 minutes and enforces each workspace's retention window and the fixed windows on summaries, routine state and raw inbound mail (see [Data retention](/operators/data-retention)). Under the Cloud Run task runtime the trigger is a scheduled push to `POST /internal/tasks/periodic-tasks/conversation-retention/run`; the bundled Terraform provisions the Cloud Scheduler job (override the cadence with `conversation_retention_schedule`) and alerts on its failures with the other scheduler jobs.
+The conversation retention sweep runs in the document worker every 15 minutes and enforces each workspace's retention window and the fixed windows on summaries, routine state, raw inbound mail and audit events (see [Data retention](/operators/data-retention)). Under the Cloud Run task runtime the trigger is a scheduled push to `POST /internal/tasks/periodic-tasks/conversation-retention/run`; the bundled Terraform provisions the Cloud Scheduler job (override the cadence with `conversation_retention_schedule`) and alerts on its failures with the other scheduler jobs.
 
 The same Terraform pins how long deleted data outlives an erasure: seven Cloud SQL backups, and 30 days of logs, in the project's `_Default` log bucket or, where an environment's foundation root sets `regional_log_bucket_enabled`, in that environment's regional bucket (see [Data residency](/operators/data-residency#google-cloud-logging)). Before the first apply in a project, confirm `_Default` is in `global` with `gcloud logging buckets describe _Default --location=global --project=<project>`.
 
@@ -333,6 +333,18 @@ above moves that wait out of the deploy window the same way `usage_events_messag
 already does.
 
 Run each statement on its own, outside a transaction. A concurrent build that fails leaves an invalid index of that name behind; drop it (`DROP INDEX CONCURRENTLY <name>`) before trying again or before deploying. The other erasure indexes are on small tables and build inside their migrations.
+
+## Audit event retention index
+
+Migration `242_audit_events_created_at_idx` adds the index the audit event retention sweep needs to delete by age alone, across every workspace. Migrations run with `statement_timeout = 0`, so once the migration's three-second `lock_timeout` lets it acquire the table lock, the index build itself has no time bound: it holds `SHARE` until it finishes, blocking every chat turn's audit insert for however long that takes.
+
+Before deploying, check the row count of `audit_events`. If it is over 100k rows, build the index first, under the same name, so the migration finds it already there:
+
+```sql
+CREATE INDEX CONCURRENTLY IF NOT EXISTS audit_events_created_at_idx ON audit_events (created_at);
+```
+
+Run it on its own, outside a transaction. A concurrent build that fails leaves an invalid index of that name behind. The migration checks for one and raises rather than silently reusing it, so drop it (`DROP INDEX CONCURRENTLY audit_events_created_at_idx`) before trying again or before deploying.
 
 ## Docs portal deployment
 

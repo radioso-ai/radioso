@@ -176,6 +176,32 @@ describe("agent channel credential routes", () => {
     expect(JSON.stringify(response.body)).not.toContain("secret-hash");
   });
 
+  it("issues a credential that never expires when the request omits an expiry", async () => {
+    const dependencies = createDependencies();
+    vi.mocked(dependencies.accessGrantService.issueGrant).mockResolvedValue({ grant: grant({ expiresAt: null }), token: "plain-issued-token" });
+
+    const response = await request(createApp(dependencies))
+      .post(`/api/v1/agents/${agentId}/channel-credentials`)
+      .set("X-Radioso-CSRF", "1")
+      .send({ audience: "mcp", label: "Desktop client" })
+      .expect(201);
+
+    expect(dependencies.accessGrantService.issueGrant).toHaveBeenCalledWith(expect.objectContaining({ expiresAt: undefined }));
+    expect(response.body.credential).toMatchObject({ status: "active", expiresAt: null });
+  });
+
+  it("accepts an explicit null expiry as a credential that never expires", async () => {
+    const dependencies = createDependencies();
+
+    await request(createApp(dependencies))
+      .post(`/api/v1/agents/${agentId}/channel-credentials`)
+      .set("X-Radioso-CSRF", "1")
+      .send({ audience: "rest", label: "Backend job", expiresAt: null })
+      .expect(201);
+
+    expect(dependencies.accessGrantService.issueGrant).toHaveBeenCalledWith(expect.objectContaining({ expiresAt: null }));
+  });
+
   it("lists only the requested audience for the requested agent", async () => {
     const response = await request(createApp())
       .get(`/api/v1/agents/${agentId}/channel-credentials?audience=rest`)

@@ -6059,8 +6059,11 @@ export interface components {
             status: "active" | "expired" | "revoked" | "disabled";
             /** Format: date-time */
             createdAt: string;
-            /** Format: date-time */
-            expiresAt: string;
+            /**
+             * Format: date-time
+             * @description When the credential stops working. `null` means it never expires: it works until it is rotated or revoked.
+             */
+            expiresAt: string | null;
             /** Format: date-time */
             lastUsedAt: string | null;
             /** Format: date-time */
@@ -6070,8 +6073,11 @@ export interface components {
             /** @enum {string} */
             audience: "mcp" | "rest";
             label: string;
-            /** Format: date-time */
-            expiresAt: string;
+            /**
+             * Format: date-time
+             * @description A future instant when the credential stops working. Omit it, or send `null`, for a credential that never expires: it works until it is rotated or revoked.
+             */
+            expiresAt?: string | null;
         };
         AgentChannelCredentialIssueResponse: {
             credential: components["schemas"]["AgentChannelCredentialMetadata"];
@@ -18895,6 +18901,33 @@ export interface operations {
             };
             /** @description Connection not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The MCP server rejected the connection's credentials; the connection now needs re-authorization or a new access token */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The MCP server did not complete tool discovery */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description The OAuth provider is temporarily unavailable */
+            503: {
                 headers: {
                     [name: string]: unknown;
                 };

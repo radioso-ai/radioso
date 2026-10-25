@@ -192,6 +192,13 @@ describe("createRoutineTurnReporter sensitive slots (#1543)", () => {
 
   it("names none for a routine this turn does not know", () => {
     expect(reporter.sensitiveSlotKeysHeld(state({ routineId: "routine-unknown", variables: { note: "x" } }))).toEqual([]);
+    expect(reporter.sensitiveSlotKeysAwaited(state({ routineId: "routine-unknown", path: ["ask_contact"] }))).toEqual([]);
+  });
+
+  it("names the sensitive slots the step a state waits on collects, held or not", () => {
+    // ask_contact collects email (normal) and company (sensitive here).
+    expect(reporter.sensitiveSlotKeysAwaited(state({ path: ["ask_name", "ask_contact"] }))).toEqual(["company"]);
+    expect(reporter.sensitiveSlotKeysAwaited(state({ path: [] }))).toEqual([]);
   });
 });
 

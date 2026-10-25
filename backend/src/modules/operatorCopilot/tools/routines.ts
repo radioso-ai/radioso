@@ -80,8 +80,8 @@ export interface CopilotRoutineDefinitionPort {
   list(workspaceId: string, agentId: string): Promise<ReadonlyArray<RoutineDefinition>>;
   get(workspaceId: string, agentId: string, routineId: string): Promise<RoutineDefinition>;
   validate(workspaceId: string, agentId: string, target: { id: string }): Promise<CopilotRoutineValidationResult>;
-  /** The input keys each of the agent's skills reads; absent leaves out the advisories that need them. */
-  skillInputKeys?(workspaceId: string, agentId: string): Promise<RoutineSkillInputKeys>;
+  /** The input keys each of the agent's skills reads, for the advisories that compare a step against its skill. */
+  skillInputKeys(workspaceId: string, agentId: string): Promise<RoutineSkillInputKeys>;
 }
 
 // Every routine write addresses one routine. Name resolution rewrites `routineTitle` into
@@ -160,8 +160,8 @@ export const createRoutineDefinitionCopilotTools = (deps: RoutineDefinitionCopil
         const resolvedRoutineId = requiredRoutine(routineId);
         const routine = await deps.routineDefinitionService.get(context.workspaceId, resolvedAgentId, resolvedRoutineId);
         const validation = await deps.routineDefinitionService.validate(context.workspaceId, resolvedAgentId, { id: resolvedRoutineId });
-        const skillInputKeys = await deps.routineDefinitionService.skillInputKeys?.(context.workspaceId, resolvedAgentId);
-        const advisories = routineAdvisoriesWithMessages(routine, skillInputKeys ? { skillInputKeys } : {});
+        const skillInputKeys = await deps.routineDefinitionService.skillInputKeys(context.workspaceId, resolvedAgentId);
+        const advisories = routineAdvisoriesWithMessages(routine, { skillInputKeys });
         return {
           routineId: routine.id,
           name: routine.name,

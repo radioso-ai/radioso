@@ -70,4 +70,6 @@ export interface RoutineTurnReporter {
    * of every copy of the transcript that leaves the conversation.
    */
   sensitiveSlotKeysHeld(state: RoutineState): string[];
+  /** The routine's sensitive slots the step a state waits on collects, held or not; empty for an unknown routine. */
+  sensitiveSlotKeysAwaited(state: RoutineState): string[];
 }

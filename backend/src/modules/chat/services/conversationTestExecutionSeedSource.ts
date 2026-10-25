@@ -4,7 +4,7 @@ import type { ConversationRecord } from "../../../db/repositories/conversationRe
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { DirectiveFiringState } from "../../directives/public.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
-import { transcriptCopyContent } from "../../../shared/domain/sensitiveTranscript.js";
+import { carriesSensitiveValue, transcriptCopyContent } from "../../../shared/domain/sensitiveTranscript.js";
 import type {
   TestExecutionSeed,
   TestExecutionSeedMessage,
@@ -74,6 +74,24 @@ const seedThread = (fetched: readonly MessageRecord[]): TestExecutionSeedMessage
 };
 
 /**
+ * A pending clarification keeps the visitor message it was asked about as text, so it is seeded
+ * without it when that message is marked (#1543). The row names the message by its text, not its
+ * id; one outside the window cannot be checked, so it is dropped whenever the conversation has a
+ * marked message at all.
+ */
+const seedClarification = (
+  pending: PendingClarification | null,
+  messages: readonly MessageRecord[],
+  sensitiveSlotKeys: readonly string[],
+): PendingClarification | null => {
+  if (!pending?.originalQuery || sensitiveSlotKeys.length === 0) return pending;
+  const originating = messages.filter((message) => message.role === "user" && message.content === pending.originalQuery);
+  if (originating.length > 0 && !originating.some((message) => carriesSensitiveValue(message.metadata))) return pending;
+  const { originalQuery: _withheld, ...rest } = pending;
+  return rest;
+};
+
+/**
  * Seeds a private test execution from a live conversation: the user+assistant thread plus
  * the conversation's CURRENT (post-turn) routine, clarification, and directive position,
  * which is exactly what a forward-continuing test needs. (Eval *replay* deliberately does
@@ -91,7 +109,7 @@ export class ConversationTestExecutionSeedSource implements TestExecutionSeedSou
     if (!source || source.agentId !== input.agentId) return null;
 
     const sessionId = input.conversationId;
-    const [messages, activeRoutine, pendingClarification, directiveState, sensitiveSlotKeys] = await Promise.all([
+    const [messages, activeRoutine, pendingClarificationRow, directiveState, sensitiveSlotKeys] = await Promise.all([
       this.options.messages.listRecentByConversationId(input.workspaceId, input.conversationId, HISTORY_WINDOW + 1),
       this.options.routineStates.loadActive({ sessionId }),
       this.options.clarifications.loadPending({ sessionId }),
@@ -103,6 +121,7 @@ export class ConversationTestExecutionSeedSource implements TestExecutionSeedSou
     const routineState = activeRoutine
       ? { ...activeRoutine, variables: redactSensitiveValues(activeRoutine.variables, sensitiveSlotKeys) }
       : null;
+    const pendingClarification = seedClarification(pendingClarificationRow, messages, sensitiveSlotKeys);
 
     return {
       messages: seedThread(messages),

@@ -1,4 +1,6 @@
-import { transcriptCopyContent } from "../../../shared/domain/sensitiveTranscript.js";
+import { REDACTED_VALUE } from "@radioso/conversation-contract";
+
+import { carriesSensitiveValue, transcriptCopyContent } from "../../../shared/domain/sensitiveTranscript.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
 
 /**
@@ -12,3 +14,15 @@ export const buildContextualizedRequest = (session: Pick<PreparedSession, "histo
   const history = session.history.slice(-6).map((message) => `${message.role}: ${transcriptCopyContent(message)}`).join("\n");
   return history ? `${history}\nuser: ${session.effectiveQuery || request}` : session.effectiveQuery || request;
 };
+
+/**
+ * The framing as the assessment record stores it. The visitor's own message is withheld too when
+ * it is marked (#1543): it is marked before the assessment runs, and the assessor's model input
+ * keeps the text, since that is what the turn asks.
+ */
+export const storedContextualizedRequest = (
+  session: Pick<PreparedSession, "history" | "effectiveQuery" | "userMessage">,
+  request: string,
+): string => carriesSensitiveValue(session.userMessage.metadata)
+  ? buildContextualizedRequest({ history: session.history, effectiveQuery: REDACTED_VALUE }, REDACTED_VALUE)
+  : buildContextualizedRequest(session, request);

@@ -1043,6 +1043,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       get: routineDefinitionService.get.bind(routineDefinitionService),
       list: routineDefinitionService.list.bind(routineDefinitionService),
       validate: routineDefinitionService.validate.bind(routineDefinitionService),
+      skillInputKeys: routineDefinitionService.skillInputKeys.bind(routineDefinitionService),
     },
     chatHistoryService: chat.chatHistoryService,
     voiceRecordings: voiceRecordings.recordings,
@@ -1131,6 +1132,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       findCreateConflict: routineDefinitionService.findCreateConflict.bind(routineDefinitionService),
       get: routineDefinitionService.get.bind(routineDefinitionService),
       validateForDraftMutation: routineDefinitionService.validateForDraftMutation.bind(routineDefinitionService),
+      skillInputKeys: routineDefinitionService.skillInputKeys.bind(routineDefinitionService),
     },
     scopedReferences: scopedRoutineReferences,
     reviewedProposalExecution: {

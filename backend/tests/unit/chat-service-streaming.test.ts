@@ -2720,6 +2720,7 @@ describe("chat service streaming", () => {
       describeInvocation: vi.fn(() => null),
       describeRoutineName: vi.fn(() => null),
       sensitiveSlotKeysHeld: vi.fn(() => ["injury"]),
+      sensitiveSlotKeysAwaited: vi.fn(() => []),
     };
     const service = makeChatService(
       conversationRepository,

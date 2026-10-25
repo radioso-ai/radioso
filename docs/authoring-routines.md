@@ -203,10 +203,14 @@ reads it in the Inbox. Every copy that leaves the conversation shows it masked:
   input receives `[redacted]`.
 - A Test Chat trace shows the value as `[redacted]`. **Continue in Test Chat**
   copies the conversation with its turns withheld and the routine's value as
-  `[redacted]`, so the test picks up at the same step.
+  `[redacted]`, so the test picks up at the same step. A branch rule or an AI
+  condition that reads `@injury` then sees `[redacted]`, so the continued test
+  can take a different branch than the conversation did.
 - The visitor's reply to a step that asks for `@injury` is marked as soon as it
   arrives, and so is every turn after which the routine holds the value, the
-  agent's reply included. Marked turns read as `[redacted]` in the conversation
+  agent's reply included. Any message sent while that step waits is marked, an
+  off-topic question included, so it stays out of Audience Pulse and eval
+  snapshots too. Marked turns read as `[redacted]` in the conversation
   summary, Audience Pulse, the AI summary on a notice, and an eval snapshot. The
   summary also waits for the agent's reply before it reads a visitor message,
   so a turn still running never reaches it. An eval snapshot captures the

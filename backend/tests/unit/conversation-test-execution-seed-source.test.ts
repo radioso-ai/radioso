@@ -175,6 +175,26 @@ describe("ConversationTestExecutionSeedSource", () => {
     expect(JSON.stringify(seed)).not.toContain("ACL");
   });
 
+  it("seeds a pending clarification without the question it holds when that visitor message is marked (#1543)", async () => {
+    const pending = (originalQuery: string) => ({
+      sessionId: conversationId, source: "routine", originalQuery, mode: "ask" as const, status: "pending" as const,
+      candidates: [{ id: "a", label: "Knee", confidence: 1, payload: {} }], expiresAt: new Date("2026-06-01T01:00:00.000Z"),
+    });
+    listRecentByConversationId.mockResolvedValue([
+      buildMessage({ id: "m-1", role: "user", content: "Which class suits my torn ACL?", metadata: { sensitiveSlotKeys: ["injury"] }, createdAt: new Date(1) }),
+      buildMessage({ id: "m-2", role: "user", content: "Which class is easiest?", createdAt: new Date(2) }),
+    ]);
+    listSensitiveSlotKeys.mockResolvedValue(["injury"]);
+
+    loadPending.mockResolvedValue(pending("Which class suits my torn ACL?"));
+    const masked = await source.loadSeed({ workspaceId, agentId, conversationId });
+    expect((masked?.continuation as { pendingClarification: object }).pendingClarification).not.toHaveProperty("originalQuery");
+
+    loadPending.mockResolvedValue(pending("Which class is easiest?"));
+    const kept = await source.loadSeed({ workspaceId, agentId, conversationId });
+    expect(kept?.continuation).toMatchObject({ pendingClarification: { originalQuery: "Which class is easiest?" } });
+  });
+
   it("leaves the continuation null when the source has no active routine, clarification, or directive memory", async () => {
     const seed = await source.loadSeed({ workspaceId, agentId, conversationId });
 

@@ -76,7 +76,7 @@ import {
   type TurnExecutionMode,
 } from "../../../shared/domain/turnExecutionMode.js";
 import type { SuppressedSkillEffect } from "../../../shared/domain/suppressedSkillEffect.js";
-import { sensitiveTurnMetadata } from "../../../shared/domain/sensitiveTranscript.js";
+import { sensitiveSlotKeysOf, sensitiveTurnMetadata } from "../../../shared/domain/sensitiveTranscript.js";
 import {
   directiveAdherenceMetadataOf,
   UNMET_DIRECTIVES_METADATA_KEY,
@@ -653,16 +653,20 @@ const describeRoutineTurn = (input: {
     : input.session.declinedRoutine ?? input.session.suspendedRoutine ?? null;
 
 /**
- * The sensitive slots (#1543) the routine this turn saved holds a value for. Both messages of
- * such a turn are marked, so every copy of the transcript that leaves reads them as withheld.
+ * The sensitive slots (#1543) the routine this turn saved holds a value for, and those the step
+ * the turn started on asks for (the visitor's message answers it, stored or not). Both messages
+ * of such a turn are marked, so every copy of the transcript that leaves reads them as withheld.
  */
 const sensitiveSlotKeysForTurn = (input: {
   routineStateTransition?: CapturedRoutineTransition | null;
   routineReporter?: ChatRoutineTurnReporter;
-}): string[] =>
-  input.routineReporter && input.routineStateTransition?.kind === "save"
-    ? input.routineReporter.sensitiveSlotKeysHeld(input.routineStateTransition.state)
-    : [];
+}): string[] => {
+  const { routineReporter: reporter, routineStateTransition: transition } = input;
+  if (!reporter || !transition) return [];
+  const held = transition.kind === "save" ? reporter.sensitiveSlotKeysHeld(transition.state) : [];
+  const awaited = transition.startedFrom ? reporter.sensitiveSlotKeysAwaited(transition.startedFrom) : [];
+  return [...new Set([...held, ...awaited])];
+};
 
 const withSensitiveTurnMarker = (
   presentation: TurnTracePresentation,
@@ -1355,7 +1359,14 @@ export class ChatTurnLifecycle {
     cancelledEventFor: (cutReplyId: string) => AuditEventInput,
   ): Promise<string | undefined> {
     const conversationId = session.conversation.id;
-    const assistantMessage = cutReplyMessage({ id: randomUUID(), workspaceId: input.workspaceId, conversationId, ...heardPart });
+    // The heard part can restate what the visitor's message held, so it carries that message's marker.
+    const assistantMessage = cutReplyMessage({
+      id: randomUUID(),
+      workspaceId: input.workspaceId,
+      conversationId,
+      ...heardPart,
+      metadata: sensitiveTurnMetadata(sensitiveSlotKeysOf(session.userMessage.metadata)),
+    });
     const auditEvents: AuditEventInput[] = [
       cancelledEventFor(assistantMessage.id),
       ...(heardPart.auditEvent

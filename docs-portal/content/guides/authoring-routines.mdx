@@ -197,9 +197,13 @@ conversation shows it masked:
   skill would receive one as `[redacted]`.
 - A Test Chat trace shows `[redacted]`, and **Continue in Test Chat** copies the
   conversation with the sensitive turns withheld and the routine's value as
-  `[redacted]`.
+  `[redacted]`. A branch rule or AI condition that reads `@injury` then sees
+  `[redacted]`, so the continued test can branch differently than the
+  conversation did.
 - The visitor's reply to a step that asks for `@injury` is marked as soon as it
-  arrives, and so is every turn after which the routine holds the value. Marked
+  arrives, and so is every turn after which the routine holds the value. Any
+  message sent while that step waits is marked, an off-topic question included,
+  so it stays out of Audience Pulse and eval snapshots too. Marked
   turns read as `[redacted]` in the conversation summary, Audience Pulse, a
   notice's AI summary, and an eval snapshot, which also captures the routine's
   value as `[redacted]`. To replay such a turn with a value, run the case with a

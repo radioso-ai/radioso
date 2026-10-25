@@ -152,7 +152,7 @@ export const dependencies = (routineDefinitions: RoutineDefinition[] = [
           list: listRoutines,
           get: getRoutine,
           validate: validateRoutine,
-          ...(skillInputKeys ? { skillInputKeys: vi.fn(async () => skillInputKeys) } : {}),
+          skillInputKeys: vi.fn(async () => skillInputKeys ?? {}),
         },
       }),
       ...createChatCopilotTools({

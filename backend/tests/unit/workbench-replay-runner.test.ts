@@ -1505,6 +1505,7 @@ describe("WorkbenchReplayRunner", () => {
     const describeRoutineName = vi.fn(() => "Book accommodation");
     const reporter: ChatRoutineTurnReporter = {
       sensitiveSlotKeysHeld: () => [],
+      sensitiveSlotKeysAwaited: () => [],
       describe: () => null,
       describeDeclined: () => null,
       describeInvocation: () => null,
@@ -1587,6 +1588,7 @@ describe("WorkbenchReplayRunner", () => {
     } as unknown as ConversationEngine;
     const reporter: ChatRoutineTurnReporter = {
       sensitiveSlotKeysHeld: () => [],
+      sensitiveSlotKeysAwaited: () => [],
       describe: () => null,
       describeDeclined: () => null,
       describeInvocation: () => null,
@@ -3045,6 +3047,7 @@ describe("WorkbenchReplayRunner coverage routine takeover", () => {
     const describeRoutineName = vi.fn(() => name);
     const reporter: ChatRoutineTurnReporter = {
       sensitiveSlotKeysHeld: () => [],
+      sensitiveSlotKeysAwaited: () => [],
       describe: () => null,
       describeDeclined: () => null,
       describeInvocation: () => null,

@@ -141,5 +141,12 @@ export const createRoutineTurnReporter = (
       const routine = routinesById.get(state.routineId);
       return routine ? sensitiveSlotKeys(routine).filter((key) => hasVariable(state.variables, key)) : [];
     },
+    sensitiveSlotKeysAwaited: (state: RoutineState): string[] => {
+      const routine = routinesById.get(state.routineId);
+      const currentStep = routine?.steps.find((step) => step.id === (state.path.at(-1) ?? routine.rootStepId));
+      if (!routine || !currentStep) return [];
+      const collected = new Set(collectedSlotsForStep(currentStep));
+      return sensitiveSlotKeys(routine).filter((key) => collected.has(key));
+    },
   };
 };

@@ -289,8 +289,9 @@ reads as `[redacted]`.
 - The host marks a visitor message as it is created when the active routine's
   current step collects a sensitive slot (`sensitiveSlotsAwaited`, read in
   `ChatSessionPreparer` before any facet job is queued), and marks both messages
-  of a turn whose saved routine state holds a sensitive value
-  (`RoutineTurnReporter.sensitiveSlotKeysHeld`, written as
+  of a turn whose saved routine state holds a sensitive value, or whose start
+  state (`CapturedRoutineTransition.startedFrom`) waited on one
+  (`RoutineTurnReporter.sensitiveSlotKeysHeld` / `sensitiveSlotKeysAwaited`, written as
   `metadata.sensitiveSlotKeys` in the turn's transaction). The rolling summary
   (which reads only up to the latest assistant reply), facet extraction, a
   notice's AI summary, eval snapshot capture, a Test Chat seed, and the stored

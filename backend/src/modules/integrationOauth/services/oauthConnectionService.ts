@@ -46,7 +46,7 @@ export interface OauthProviderDefinition {
   tokenResponseNormalizer?: OauthTokenResponseNormalizer;
 }
 
-export interface OauthProviderRegistryPort {
+interface OauthProviderRegistryPort {
   get(provider: string): OauthProviderDefinition | null;
 }
 
@@ -62,7 +62,7 @@ export class StaticOauthProviderRegistry implements OauthProviderRegistryPort {
   }
 }
 
-export interface OauthConnectionServiceOptions {
+interface OauthConnectionServiceOptions {
   repository: OauthConnectionRepositoryPort;
   providers: OauthProviderRegistryPort;
   encryptionKey?: FieldEncryptionKeys;

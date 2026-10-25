@@ -62,7 +62,7 @@ const mapRecord = (row: McpConnectionRow): McpConnectionRecord => ({
   updatedAt: new Date(row.updated_at),
 });
 
-export const mcpConnectionColumns = [
+const mcpConnectionColumns = [
   "id",
   "agent_id",
   "display_name",

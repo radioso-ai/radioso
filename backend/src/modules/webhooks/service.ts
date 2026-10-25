@@ -12,7 +12,6 @@ import {
   toWebhookDestination,
   type WebhookDeliveryOutcomeStatus,
   webhookDestinationCreateSchema,
-  webhookDestinationUpdateSchema,
   type WebhookDestination,
   type WebhookDestinationRecord,
   type WebhookDestinationWithSecret,
@@ -196,7 +195,7 @@ export class WebhookDestinationService implements WebhookDestinationExistencePor
     url: string;
     actor: WebhookDestinationActor;
   }): Promise<WebhookDestination> {
-    const parsed = webhookDestinationUpdateSchema.parse({ name: input.name, url: input.url });
+    const parsed = webhookDestinationCreateSchema.parse({ name: input.name, url: input.url });
     const url = await this.normalizeAllowedDestinationUrl(parsed.url);
     try {
       const record = await this.options.repository.update(input.id, input.workspaceId, {

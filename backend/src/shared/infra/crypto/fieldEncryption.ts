@@ -23,7 +23,7 @@ const FORMAT_SEPARATOR = ".";
 const KEY_ID_LABEL = "radioso field encryption key id";
 const KEY_ID_BYTES = 8;
 
-export interface FieldEncryptionOptions {
+interface FieldEncryptionOptions {
   /** Operator-facing name of the configuration source, used only in error messages. */
   keyName?: string;
 }

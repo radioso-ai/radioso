@@ -70,7 +70,6 @@ describe("integration OAuth access token resolver", () => {
       "workspace-1",
       "oauth-1",
       expect.any(String),
-      null,
     );
   });
 

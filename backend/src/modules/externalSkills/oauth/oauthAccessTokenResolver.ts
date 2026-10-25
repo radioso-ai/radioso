@@ -30,7 +30,7 @@ export class OauthNotAuthorizedError extends Error {
   }
 }
 
-export interface ResolveFreshAccessTokenInput {
+interface ResolveFreshAccessTokenInput {
   agentId: string;
   record: McpConnectionRecord;
   repository: OauthTokenPersistencePort;

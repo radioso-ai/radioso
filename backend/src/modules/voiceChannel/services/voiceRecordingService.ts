@@ -38,16 +38,15 @@ export interface VoiceRecordingAudit {
     outcome: "deleted" | "already_absent";
   }): Promise<void>;
   /**
-   * A recording Radioso gave up on, which stays at the vendor: why, and the vendor's id for it, so
-   * the organization can delete it there.
+   * Recordings Radioso gave up on, which stay at the vendor, recorded in one write however many:
+   * each with why and the vendor's id for it, so the organization can delete it there. `vendor` is
+   * as stored, which may be one this build no longer knows.
    */
   left(event: {
     accountId: string;
     workspaceId: string;
-    conversationId: string | null;
-    vendor: VoiceVendor;
-    vendorConversationId: string;
-    reason: VoiceRecordingLeftReason;
+    vendor: string;
+    recordings: ReadonlyArray<{ conversationId: string | null; vendorConversationId: string; reason: VoiceRecordingLeftReason }>;
   }): Promise<void>;
 }
 

@@ -10,6 +10,8 @@ import { validateQuery } from "../middleware/validate.js";
 export const voiceRecordingsLeftAtVendorQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).optional().default(100)
     .describe("How many recordings to return, newest first. Defaults to 100; at most 500."),
+  cursor: z.string().min(1).max(512).optional()
+    .describe("The `nextCursor` of the page before, to read the next page."),
 }).strict();
 
 type AccountVoiceRecordingRouteDependencies = SessionDependencies & Pick<AppDependencies, "voiceRecordingsLeftAtVendor">;
@@ -42,11 +44,12 @@ export const createAccountVoiceRecordingRoutes = (dependencies: AccountVoiceReco
     async (req, res, next) => {
       try {
         const { accountId } = res.locals as { accountId: string };
-        const { limit } = req.query as unknown as z.infer<typeof voiceRecordingsLeftAtVendorQuerySchema>;
-        const listed = await dependencies.voiceRecordingsLeftAtVendor.listForAccount({ accountId, limit });
+        const { limit, cursor } = req.query as unknown as z.infer<typeof voiceRecordingsLeftAtVendorQuerySchema>;
+        const listed = await dependencies.voiceRecordingsLeftAtVendor.listForAccount({ accountId, limit, ...(cursor ? { cursor } : {}) });
         res.set("Cache-Control", "no-store").status(200).json({
           total: listed.total,
           recordings: listed.recordings.map(presentLeftAtVendor),
+          nextCursor: listed.nextCursor,
         });
       } catch (error) {
         next(error);

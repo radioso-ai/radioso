@@ -32,21 +32,21 @@ export class AuditService {
   }
 
   /**
-   * Records an event about an organization and a workspace that may be gone by the time it is
-   * written: one still there is pointed at, one gone is named by id in the metadata instead. The
-   * proof a deletion leaves when it finishes after its subjects are gone.
+   * Records events about an organization and a workspace that may be gone by the time they are
+   * written, one per `metadata` entry, in one write: a subject still there is pointed at, one gone is
+   * named by id in the metadata instead. The proof a deletion leaves when it finishes after its
+   * subjects are gone. Logs one line for the write.
    */
-  async recordNamingGoneSubjects(event: AuditEventInput & { accountId: string; workspaceId: string }): Promise<void> {
+  async recordNamingGoneSubjects(event: Omit<AuditEventInput, "metadata"> & {
+    accountId: string;
+    workspaceId: string;
+    metadata: readonly Record<string, unknown>[];
+  }): Promise<void> {
     const contextualMetadata = requestAuditMetadata(event.eventType);
-    const metadata = { ...event.metadata, ...contextualMetadata };
-    await this.auditEventRepository.createNamingGoneSubjects({
-      accountId: event.accountId,
-      workspaceId: event.workspaceId,
-      eventType: event.eventType,
-      eventStatus: event.eventStatus,
-      metadata,
-    });
-    this.logRecorded({ ...event, metadata });
+    const metadata = event.metadata.map((entry) => ({ ...entry, ...contextualMetadata }));
+    await this.auditEventRepository.createNamingGoneSubjects({ ...event, metadata });
+    const [only] = metadata;
+    this.logRecorded({ ...event, metadata: metadata.length === 1 && only ? only : { events: metadata.length } });
   }
 
   async recordForLiveConversation(

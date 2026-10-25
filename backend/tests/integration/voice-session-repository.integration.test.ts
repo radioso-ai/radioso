@@ -305,6 +305,19 @@ describeIntegration("VoiceSessionRepository (Postgres)", () => {
       await expect(repository.findRecording({ workspaceId, conversationId })).resolves.toBeNull();
     });
 
+    it("locks every session row in scope while it names the vendors, rows with no recording included", async () => {
+      const recorded = await startedSession();
+      await recorded.report(`conv_${randomUUID().replaceAll("-", "")}`);
+      const unrecorded = await startedSession();
+      const [unrecordedRow] = await database.query<{ id: string }>("SELECT id FROM voice_sessions WHERE session_key = $1", [unrecorded.session.sessionKey]);
+
+      await database.kysely.transaction().execute(async (trx) => {
+        await expect(new VoiceSessionRepository(trx).lockRecordedVendors({ kind: "workspace", workspaceId })).resolves.toEqual(["elevenlabs"]);
+        // Another connection cannot take the row a report would write to until the erasure ends.
+        await expect(database.query("SELECT 1 FROM voice_sessions WHERE id = $1 FOR UPDATE NOWAIT", [unrecordedRow.id])).rejects.toMatchObject({ code: "55P03" });
+      });
+    });
+
     it("names the vendors whose recordings some conversations or the whole workspace hold, and none for a conversation without one", async () => {
       const bound = await Promise.all([startedSession(), startedSession()].map(async (pending) => {
         const { session, report } = await pending;

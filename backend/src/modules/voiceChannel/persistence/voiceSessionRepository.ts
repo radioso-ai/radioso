@@ -182,10 +182,17 @@ export class VoiceSessionRepository implements VoiceSessionStartRegistry, VoiceS
 
   async lockRecordedVendors(scope: VoiceRecordingScope): Promise<VoiceVendor[]> {
     if (isEmptyScope(scope)) return [];
-    // Every row in scope, recorded or not yet, is locked, so a report waits for the erasure rather
-    // than landing on a row about to go; only the vendors come back, never the rows.
+    // Every row in scope, recorded or not yet, is locked, in id order, so a report waits for the
+    // erasure rather than landing on a row about to go and two erasures never lock in opposite
+    // orders. OFFSET 0 keeps Postgres from pushing the outer recorded-row filter into the locking
+    // subquery, which would leave unrecorded rows unlocked. Only the vendors come back, never the rows.
     const rows = await this.db
-      .selectFrom(voiceSessionsInScope(this.db, scope).select(["s.vendor", "s.vendor_conversation_id"]).forUpdate().as("locked"))
+      .selectFrom(voiceSessionsInScope(this.db, scope)
+        .select(["s.vendor", "s.vendor_conversation_id"])
+        .orderBy("s.id")
+        .offset(0)
+        .forUpdate()
+        .as("locked"))
       .select("locked.vendor")
       .distinct()
       .where("locked.vendor_conversation_id", "is not", null)

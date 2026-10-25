@@ -22944,9 +22944,10 @@
               "vendor_malformed_response",
               "vendor_failed",
               "vendor_unsupported",
+              "expired",
               "drain_failed"
             ],
-            "description": "Why it is still at the vendor: `credential_missing` (the workspace held no vendor key when it was deleted), `credential_unreadable` (a key could not be decrypted), `vendor_rejected`, `vendor_unreachable`, `vendor_timeout`, `vendor_malformed_response` or `vendor_failed` (the vendor's last answer, after eight asks over about a day), `vendor_unsupported` (this deployment knows no host for the vendor or region), or `drain_failed` (the deleting job itself kept failing)."
+            "description": "Why it is still at the vendor: `credential_missing` (the workspace held no vendor key when it was deleted), `credential_unreadable` (a key could not be decrypted), `vendor_rejected`, `vendor_unreachable`, `vendor_timeout`, `vendor_malformed_response` or `vendor_failed` (the vendor's last answer, after eight asks over about a day), `vendor_unsupported` (this deployment knows no host for the vendor or region), `expired` (still pending a week after its deletion), or `drain_failed` (the deleting job itself kept failing)."
           },
           "failedAt": {
             "type": "string",
@@ -22978,11 +22979,19 @@
               "$ref": "#/components/schemas/VoiceRecordingLeftAtVendor"
             },
             "description": "Newest first, at most `limit`."
+          },
+          "nextCursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Pass as `cursor` to read the next page; null on the last page."
           }
         },
         "required": [
           "total",
-          "recordings"
+          "recordings",
+          "nextCursor"
         ]
       },
       "DeliveryFailure": {
@@ -53250,7 +53259,7 @@
           "Account"
         ],
         "summary": "List call recordings the organization's deletions left at the voice vendor",
-        "description": "Deleting a conversation, a visitor, a workspace or the organization asks the voice vendor to delete each call's recording, retrying what it refuses for about a day. This lists the recordings it gave up on, across every workspace of the organization, deleted ones included, newest first, so they can be deleted in the vendor account by `vendorConversationId`. Each is also recorded as a `conversation.recording_deleted` audit event with status `failure`. Account session only; owners and admins (`workspace.history.delete` on the organization). The response is `Cache-Control: no-store`.",
+        "description": "Deleting a conversation, a visitor, a workspace or the organization asks the voice vendor to delete each call's recording, retrying what it refuses for about a day. This lists the recordings it gave up on, across every workspace of the organization, deleted ones included, newest first, so they can be deleted in the vendor account by `vendorConversationId`. Page with `cursor`, from the previous page's `nextCursor`. Each is also recorded as a `conversation.recording_deleted` audit event with status `failure`. Account session only; owners and admins (`workspace.history.delete` on the organization). The response is `Cache-Control: no-store`.",
         "operationId": "listVoiceRecordingsLeftAtVendor",
         "security": [
           {
@@ -53270,6 +53279,18 @@
             "description": "How many recordings to return, newest first. Defaults to 100; at most 500.",
             "name": "limit",
             "in": "query"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512,
+              "description": "The `nextCursor` of the page before, to read the next page."
+            },
+            "required": false,
+            "description": "The `nextCursor` of the page before, to read the next page.",
+            "name": "cursor",
+            "in": "query"
           }
         ],
         "responses": {
@@ -53284,7 +53305,7 @@
             }
           },
           "400": {
-            "description": "Invalid query",
+            "description": "Invalid query or cursor",
             "content": {
               "application/json": {
                 "schema": {

@@ -96,8 +96,11 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   held key four at a time, and settles each (gone; kept with its own next ask
   on the schedule or the vendor's `Retry-After`; or after eight asks `failed`
   with a `VoiceRecordingLeftReason`, audited, logged and reported to the error
-  sinks), pauses on a `429`, clears the key once nothing pending needs it,
-  and queues the next run for when the next recording is due;
+  sinks), pauses on a `429` for its `Retry-After` (an hour at most, uncounted),
+  gives up in one write on what no ask can finish (no key, an unknown vendor
+  or region, pending a week: `expired`), clears the key once nothing pending
+  needs it, and queues the next run for when the next recording is due; a
+  dead letter gives up only on recordings whose eight asks are spent;
   `recoverStrandedVoiceRecordingErasures` re-queues erasures whose pending
   recordings are overdue (the `voice-recording-erasure-recovery` periodic task).
 - `persistence/` maps `(agent_id, vendor, session_key)` to a conversation in
@@ -882,8 +885,8 @@ and `vendorStatus`. A report records `voice_vendor_conversation_report_total`
 `Voice vendor conversation report was refused` or `… could not be checked`
 with `workspaceId`, `agentId`, `vendor` and `outcome`. The erasure job
 records `voice_recording_delete_total` for each ask (`deleted`,
-`already_absent`, `vendor_failed`, `credential_unreadable`) and once for each
-recording it gives up on (`left_at_vendor`), logs one line per run
+`already_absent`, `vendor_failed`, `rate_limited`, `credential_unreadable`) and
+once for each recording it gives up on (`left_at_vendor`), logs one line per run
 (`Voice recording erasure ran` at info, or `… left recordings at the vendor`
 at warn, with the erasure id, the counts and the first refusal's code,
 vendor reason and status), and logs `Voice recording was left at the vendor`

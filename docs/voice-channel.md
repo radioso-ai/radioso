@@ -1311,13 +1311,15 @@ recording ElevenLabs refused or did not answer for keeps its own schedule:
 it is asked again after a minute, then five, fifteen, an hour, three, six
 and twelve hours, eight asks in all over about a day, or later when
 ElevenLabs sends a longer `Retry-After`. When ElevenLabs answers `429`, the
-run asks nothing more, and the recordings it had not asked about yet wait
-for that `Retry-After` without it counting as an ask. The run then queues the
+run asks nothing more, and every recording it turned away or had not asked
+about yet waits for that `Retry-After` (a minute when it names none, an hour
+at most) without it counting as an ask. The run then queues the
 next for when the next recording is due: at once while more are due, at that
 time otherwise. A recording still there after its eighth ask stays in the
-backlog as `failed`, with why and when. A workspace that held no ElevenLabs
-key when it was deleted has its recordings marked `failed` on the job's first
-run without asking. The held key is cleared as soon as no recording waiting
+backlog as `failed`, with why and when, and so does one still pending a week
+after its deletion (`expired`). A workspace that held no ElevenLabs key when
+it was deleted has all its recordings marked `failed` on the job's first run,
+in one write, recorded in one write and reported once, without asking. The held key is cleared as soon as no recording waiting
 to be deleted needs it, `failed` ones included. A worker that dies between
 the commit and the vendor, or between the vendor's answer and its own
 record, leaves the backlog as it was, and the next run picks it up once the
@@ -1325,8 +1327,9 @@ hold runs out; a recording asked twice reads as already absent the second
 time. The `voice-recording-erasure-recovery` periodic task, every 15 minutes,
 queues the job again for any erasure whose pending recordings are more than
 15 minutes overdue, so none is stranded by a lost wake. A job that keeps
-crashing gives up after five attempts and leaves its pending recordings as
-`failed` with `drain_failed`.
+crashing gives up after five attempts: the recordings whose eight asks are
+spent are left as `failed` (with their last reason, or `drain_failed`), and
+the rest stay pending for the recovery sweep.
 
 Each recording Radioso deletes is recorded as a
 `conversation.recording_deleted` audit event with the conversation id, the
@@ -1336,7 +1339,7 @@ status `failure`, `outcome: "left_at_vendor"`, a `reason`
 (`credential_missing`, `credential_unreadable`, `vendor_rejected`,
 `vendor_unreachable`, `vendor_timeout`, `vendor_malformed_response`,
 `vendor_failed`, `vendor_unsupported` when this deployment knows no host for
-its vendor or region, or `drain_failed`), and `vendorConversationId`. The
+its vendor or region, `expired`, or `drain_failed`), and `vendorConversationId`. The
 event names the workspace and the organization as long as they exist; one
 that is gone by the time the job records it is named by id as
 `deletedWorkspaceId` or `deletedAccountId`, decided in the same write, so the
@@ -1344,16 +1347,16 @@ organization keeps its proof of erasure. The organization's owners and
 admins list what was left with
 `GET /api/v1/account/voice-recordings/left-at-vendor` (vendor, region,
 ElevenLabs conversation id, conversation, workspace, reason, when), across
-every workspace, deleted ones included, and delete each in ElevenLabs by its
-id. Once the organization itself is deleted, only the deployment's operators
+every workspace, deleted ones included, newest first and paged by `cursor`,
+and delete each in ElevenLabs by its id. Once the organization itself is deleted, only the deployment's operators
 see its leftovers: each batch is reported to the error sinks as
 `voice.recording_left_at_vendor` (erasure, organization and workspace ids,
 vendor, count and reasons), the backend log names each recording as
 `Voice recording was left at the vendor` with its `conversationId` and
 `vendorConversationId`, and the rows stay in `voice_recording_erasure_items`.
 `voice_recording_delete_total` counts each ask by `outcome` (`deleted`,
-`already_absent`, `vendor_failed`, `credential_unreadable`) and each
-recording given up on as `left_at_vendor`; the job's own runs show under
+`already_absent`, `vendor_failed`, `rate_limited`, `credential_unreadable`)
+and each recording given up on as `left_at_vendor`; the job's own runs show under
 `background_jobs_total{kind="voice.recording_erasure"}`.
 
 Recordings are deleted with the workspace's ElevenLabs key. Once you remove

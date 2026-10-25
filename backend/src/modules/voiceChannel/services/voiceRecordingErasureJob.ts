@@ -20,6 +20,7 @@ import {
   type VoiceRecordingErasureEntry,
   type VoiceRecordingErasureItem,
   type VoiceRecordingErasureSubject,
+  type VoiceRecordingGivenUp,
   type VoiceRecordingLeftReason,
   type VoiceRecordingSource,
   type VoiceVendorCredential,
@@ -38,8 +39,12 @@ const MAX_ASKS_PER_RECORDING = 8;
  * an hour, three, six, then twelve. Its eight asks span about a day.
  */
 const ASK_DELAYS_SECONDS = [60, 300, 900, 3_600, 10_800, 21_600, 43_200] as const;
-/** The longest a vendor's `Retry-After` is honoured for: the last step of the schedule. */
+/** The longest a vendor's `Retry-After` on a refusal is honoured for: the last step of the schedule. */
 const MAX_RETRY_AFTER_SECONDS = 43_200;
+/** How long a run that met a 429 waits when the vendor names no `Retry-After`, and the most it waits when it does. */
+const RATE_LIMIT_PAUSE_SECONDS = { default: 60, max: 3_600 } as const;
+/** A recording still pending this long after its deletion is left at the vendor, whatever its asks. */
+const EXPIRE_AFTER_SECONDS = 7 * 24 * 60 * 60;
 /**
  * How long a claim holds the recordings it took: longer than a run's deadline, so a run that takes
  * over a lost one finds them not yet due rather than asking the vendor about them a second time.
@@ -100,15 +105,17 @@ const delayBeforeNextAsk = (attempts: number, retryAfterSeconds?: number): numbe
  * How `voice_recording_delete_total` counts: each ask's result, and `left_at_vendor` once for a
  * recording given up on. A closed set, beside the vendor.
  */
-type VoiceRecordingDeleteOutcome = "deleted" | "already_absent" | "vendor_failed" | "credential_unreadable" | "left_at_vendor";
+type VoiceRecordingDeleteOutcome = "deleted" | "already_absent" | "vendor_failed" | "rate_limited" | "credential_unreadable" | "left_at_vendor";
 
 /**
- * What asking about one recording came to. `final`: no later ask can change it. `rateLimited`: the
- * vendor asked to be left alone, so the run asks it nothing more.
+ * What asking about one recording came to. `final`: no later ask can change it. `rate_limited`: the
+ * vendor turned the request away without considering it and asked to be left alone for
+ * `pauseSeconds`, so the run asks it nothing more and the ask does not count.
  */
 type Ask =
   | { kind: "gone"; outcome: "deleted" | "already_absent" }
-  | { kind: "held"; reason: VoiceRecordingLeftReason; final: boolean; delaySeconds: number; rateLimited: boolean; fields: Record<string, unknown> }
+  | { kind: "held"; reason: VoiceRecordingLeftReason; final: boolean; delaySeconds: number; fields: Record<string, unknown> }
+  | { kind: "rate_limited"; pauseSeconds: number }
   | { kind: "abandoned" };
 
 /** The held key, opened for this run, or why none can be used. */
@@ -131,7 +138,7 @@ const leftCount = (tally: Pick<RunTally, "left">): number => Object.values(tally
 interface VoiceRecordingErasureDrainDependencies {
   backlog: VoiceRecordingErasureBacklog;
   /** The backlog over a dead letter's transaction, so giving up commits with the park. */
-  backlogIn: (db: Db) => Pick<VoiceRecordingErasureBacklog, "failRemaining">;
+  backlogIn: (db: Db) => Pick<VoiceRecordingErasureBacklog, "failExhausted">;
   sealer: Pick<VoiceVendorCredentialSealer, "open">;
   sources: Readonly<Record<VoiceVendor, Pick<VoiceRecordingSource, "deleteRecording">>>;
   audit: Pick<VoiceRecordingAudit, "deleted" | "left">;
@@ -160,56 +167,62 @@ const forEachConcurrently = async <T>(
 };
 
 /**
- * One run of an erasure: claims its recordings that are due, leasing each, asks the vendor to
+ * One run of an erasure: gives up on what no ask can finish (claimed in one write, recorded in one
+ * write, reported once), then claims its recordings that are due, leasing each, asks the vendor to
  * delete each with the held key, four at a time, and settles each. A recording the vendor deleted,
  * or no longer held, leaves the backlog with its `conversation.recording_deleted` record. One it
  * refused is kept, its next ask after the schedule's wait or the vendor's `Retry-After`, whichever
  * is longer, until its eighth ask; then it stays as left at the vendor, with its record, a warn log
  * naming where it is, and an error report to staff. A vendor that answers 429 is asked nothing more
- * this run: the recordings not yet asked about wait for its `Retry-After`, their claim uncounted.
- * The key is dropped as soon as no pending recording needs it. Logs, reports and records carry ids,
- * counts and closed codes only, never the key or the vendor's answer.
+ * this run, and every recording the run turned away or never reached waits for its `Retry-After`
+ * (a minute when it names none, an hour at most), uncounted. The key is dropped as soon as no
+ * pending recording needs it. Logs, reports and records carry ids, counts and closed codes only,
+ * never the key or the vendor's answer.
  */
 export class VoiceRecordingErasureDrain {
   constructor(private readonly deps: VoiceRecordingErasureDrainDependencies) {}
 
   async run(erasureId: string, signal: AbortSignal): Promise<void> {
-    const claim = await this.deps.backlog.claim(erasureId, RECORDINGS_PER_RUN, CLAIM_LEASE_SECONDS);
+    const claim = await this.deps.backlog.claim(erasureId, {
+      limit: RECORDINGS_PER_RUN,
+      leaseSeconds: CLAIM_LEASE_SECONDS,
+      expireAfterSeconds: EXPIRE_AFTER_SECONDS,
+    });
     // Gone: an earlier run drained it, and this one is a duplicate or a stale follow-up.
     if (claim.kind === "gone") return;
-    if (claim.kind === "unsupported_vendor") {
-      this.deps.logger.warn(
-        { erasureId, workspaceId: claim.workspaceId, vendor: claim.vendor, leftAtVendor: claim.failed, outcome: "vendor_unsupported" },
-        "Voice recording erasure names a vendor this build does not know; its recordings were left at the vendor",
-      );
-      this.reportLeft(erasureId, { accountId: claim.accountId, workspaceId: claim.workspaceId, vendor: claim.vendor }, { vendor_unsupported: claim.failed });
-      return;
-    }
 
-    const { erasure, items, unreachable } = claim;
+    const { erasure, items, givenUp } = claim;
     const tally: RunTally = { deleted: 0, alreadyAbsent: 0, retrying: 0, postponed: 0, left: {}, firstHeld: null };
-    // Given up on inside the claim: this build knows no host for their region.
-    for (const entry of unreachable) await this.leftAtVendor(erasure, entry, "vendor_unsupported", {}, tally);
+    await this.leftAtVendorAll(erasure, givenUp, tally);
 
-    const credential = this.openCredential(erasure.sealedCredential);
     let pausedForSeconds: number | null = null;
-    const unasked: string[] = [];
-    await forEachConcurrently(items, DELETE_CONCURRENCY, signal, async (item) => {
-      if (pausedForSeconds !== null) {
-        unasked.push(item.id);
-        return;
-      }
-      const ask = await this.ask(erasure.vendor, credential, item, signal);
-      if (ask.kind === "held" && ask.rateLimited) pausedForSeconds ??= ask.delaySeconds;
-      await this.settle(erasure, item, ask, tally);
-    });
+    const postponed: string[] = [];
+    const { vendor } = erasure;
+    if (items.length > 0 && isVoiceVendor(vendor)) {
+      const credential = this.openCredential(erasure.sealedCredential);
+      await forEachConcurrently(items, DELETE_CONCURRENCY, signal, async (item) => {
+        if (pausedForSeconds !== null) {
+          postponed.push(item.id);
+          return;
+        }
+        const ask = await this.ask(vendor, credential, item, signal);
+        if (ask.kind === "rate_limited") {
+          pausedForSeconds = Math.max(pausedForSeconds ?? 0, ask.pauseSeconds);
+          this.count(vendor, "rate_limited");
+          postponed.push(item.id);
+          return;
+        }
+        await this.settle({ ...erasure, vendor }, item, ask, tally);
+      });
+    }
+    // Staff hear of what this run gave up on even when its deadline passed partway.
+    if (leftCount(tally) > 0) this.reportLeft(erasureId, erasure, tally.left);
     // The deadline passed and the runtime has moved on: the claimed recordings come due when their lease ends.
     if (signal.aborted) return;
-    if (unasked.length > 0) {
-      await this.deps.backlog.postpone(unasked, pausedForSeconds ?? ASK_DELAYS_SECONDS[0]);
-      tally.postponed = unasked.length;
+    if (postponed.length > 0) {
+      await this.deps.backlog.postpone(postponed, pausedForSeconds ?? RATE_LIMIT_PAUSE_SECONDS.default);
+      tally.postponed = postponed.length;
     }
-    if (leftCount(tally) > 0) this.reportLeft(erasureId, erasure, tally.left);
 
     const remaining = await this.deps.backlog.release(erasureId);
     this.logRun(erasureId, erasure, tally, remaining.pending);
@@ -217,17 +230,19 @@ export class VoiceRecordingErasureDrain {
     await this.deps.queue.enqueue(voiceRecordingErasureRequest(erasureId, remaining.dueNow ? undefined : (remaining.nextAskAt ?? undefined)));
   }
 
-  /** The job itself kept failing: every recording still pending is left at the vendor, with its record. */
+  /**
+   * The job itself kept failing: the recordings whose asks are spent are left at the vendor, with
+   * their record; the rest stay pending for a later run, which the recovery sweep queues.
+   */
   async giveUp(erasureId: string, transaction: Db): Promise<void> {
-    const given = await this.deps.backlogIn(transaction).failRemaining(erasureId);
+    const given = await this.deps.backlogIn(transaction).failExhausted(erasureId, MAX_ASKS_PER_RECORDING);
     if (!given || given.entries.length === 0) return;
     const tally: Pick<RunTally, "left"> = { left: {} };
-    const { vendor } = given.erasure;
-    for (const entry of given.entries) {
-      const reason = entry.failureReason ?? "drain_failed";
-      if (isVoiceVendor(vendor)) await this.leftAtVendor({ ...given.erasure, vendor }, entry, reason, {}, tally);
-      else tally.left[reason] = (tally.left[reason] ?? 0) + 1;
-    }
+    await this.leftAtVendorAll(given.erasure, given.entries, tally);
+    this.deps.logger.warn(
+      { erasureId, workspaceId: given.erasure.workspaceId, vendor: given.erasure.vendor, leftAtVendor: leftCount(tally), left: tally.left },
+      "Voice recording erasure left recordings at the vendor",
+    );
     this.reportLeft(erasureId, given.erasure, tally.left);
   }
 
@@ -245,10 +260,10 @@ export class VoiceRecordingErasureDrain {
     const delaySeconds = delayBeforeNextAsk(item.attempts);
     if (credential.kind === "absent") {
       // The deletion found no key to hand over: no ask can be made, now or later.
-      return { kind: "held", reason: item.failureReason ?? "credential_missing", final: true, delaySeconds, rateLimited: false, fields: {} };
+      return { kind: "held", reason: item.failureReason ?? "credential_missing", final: true, delaySeconds, fields: {} };
     }
     if (credential.kind === "unreadable") {
-      return { kind: "held", reason: "credential_unreadable", final, delaySeconds, rateLimited: false, fields: { errorClass: credential.errorClass } };
+      return { kind: "held", reason: "credential_unreadable", final, delaySeconds, fields: { errorClass: credential.errorClass } };
     }
     try {
       const outcome = await this.deps.sources[vendor].deleteRecording({
@@ -261,18 +276,26 @@ export class VoiceRecordingErasureDrain {
     } catch (error) {
       if (signal.aborted) return { kind: "abandoned" };
       const requestError = error instanceof VoiceRecordingRequestError ? error : null;
+      if (requestError?.vendorStatus === RATE_LIMITED_STATUS) {
+        const asked = requestError.retryAfterSeconds ?? RATE_LIMIT_PAUSE_SECONDS.default;
+        return { kind: "rate_limited", pauseSeconds: Math.min(Math.max(asked, 1), RATE_LIMIT_PAUSE_SECONDS.max) };
+      }
       return {
         kind: "held",
         reason: leftReasonOf(error),
         final,
         delaySeconds: delayBeforeNextAsk(item.attempts, requestError?.retryAfterSeconds),
-        rateLimited: requestError?.vendorStatus === RATE_LIMITED_STATUS,
         fields: recordingErrorFields(error),
       };
     }
   }
 
-  private async settle(erasure: VoiceRecordingErasureSubject, item: VoiceRecordingErasureItem, ask: Ask, tally: RunTally): Promise<void> {
+  private async settle(
+    erasure: VoiceRecordingErasureSubject & { vendor: VoiceVendor },
+    item: VoiceRecordingErasureItem,
+    ask: Exclude<Ask, { kind: "rate_limited" }>,
+    tally: RunTally,
+  ): Promise<void> {
     if (ask.kind === "abandoned") return;
     if (ask.kind === "gone") {
       this.count(erasure.vendor, ask.outcome);
@@ -294,7 +317,7 @@ export class VoiceRecordingErasureDrain {
   }
 
   /** The recording is gone at the vendor, so a failed audit write is logged with its ids rather than asked again. */
-  private async recordDeleted(erasure: VoiceRecordingErasureSubject, item: VoiceRecordingErasureItem, outcome: "deleted" | "already_absent"): Promise<void> {
+  private async recordDeleted(erasure: VoiceRecordingErasureSubject & { vendor: VoiceVendor }, item: VoiceRecordingErasureItem, outcome: "deleted" | "already_absent"): Promise<void> {
     await this.deps.audit
       .deleted({ accountId: erasure.accountId, workspaceId: erasure.workspaceId, conversationId: item.conversationId, vendor: erasure.vendor, outcome })
       .catch((error: unknown) => {
@@ -305,7 +328,7 @@ export class VoiceRecordingErasureDrain {
       });
   }
 
-  /** A recording given up on: counted, logged with where it is so an operator can delete it there, and recorded for its organization. */
+  /** One recording an ask gave up on: counted, logged with where it is so an operator can delete it there, and recorded for its organization. */
   private async leftAtVendor(
     erasure: Pick<VoiceRecordingErasureSubject, "accountId" | "workspaceId" | "vendor">,
     entry: VoiceRecordingErasureEntry,
@@ -313,7 +336,7 @@ export class VoiceRecordingErasureDrain {
     fields: Record<string, unknown>,
     tally: Pick<RunTally, "left">,
   ): Promise<void> {
-    const { vendor, workspaceId, accountId } = erasure;
+    const { vendor, workspaceId } = erasure;
     const { conversationId, vendorConversationId } = entry;
     tally.left[reason] = (tally.left[reason] ?? 0) + 1;
     this.count(vendor, "left_at_vendor");
@@ -321,11 +344,32 @@ export class VoiceRecordingErasureDrain {
       { workspaceId, conversationId, vendorConversationId, vendor, outcome: reason, attempts: entry.attempts, ...fields },
       "Voice recording was left at the vendor",
     );
-    await this.deps.audit
-      .left({ accountId, workspaceId, conversationId, vendor, vendorConversationId, reason })
-      .catch((error: unknown) => {
-        this.deps.logger.warn({ workspaceId, conversationId, vendor, errorClass: errorClassOf(error) }, "Voice recording left at the vendor could not be audited");
-      });
+    await this.recordLeft(erasure, [{ conversationId, vendorConversationId, reason }]);
+  }
+
+  /**
+   * Recordings given up on together, however many: counted once, recorded in one write, and left to
+   * the run's own log line and report rather than a line each.
+   */
+  private async leftAtVendorAll(
+    erasure: Pick<VoiceRecordingErasureSubject, "accountId" | "workspaceId" | "vendor">,
+    entries: readonly VoiceRecordingGivenUp[],
+    tally: Pick<RunTally, "left">,
+  ): Promise<void> {
+    if (entries.length === 0) return;
+    for (const entry of entries) tally.left[entry.failureReason] = (tally.left[entry.failureReason] ?? 0) + 1;
+    this.count(erasure.vendor, "left_at_vendor", entries.length);
+    await this.recordLeft(erasure, entries.map(({ conversationId, vendorConversationId, failureReason }) => ({ conversationId, vendorConversationId, reason: failureReason })));
+  }
+
+  private async recordLeft(
+    erasure: Pick<VoiceRecordingErasureSubject, "accountId" | "workspaceId" | "vendor">,
+    recordings: Array<{ conversationId: string | null; vendorConversationId: string; reason: VoiceRecordingLeftReason }>,
+  ): Promise<void> {
+    const { accountId, workspaceId, vendor } = erasure;
+    await this.deps.audit.left({ accountId, workspaceId, vendor, recordings }).catch((error: unknown) => {
+      this.deps.logger.warn({ workspaceId, vendor, recordings: recordings.length, errorClass: errorClassOf(error) }, "Voice recordings left at the vendor could not be audited");
+    });
   }
 
   /** Staff hear of every batch of recordings left at the vendor: ids, counts and codes, never a recording's content or key. */
@@ -358,10 +402,11 @@ export class VoiceRecordingErasureDrain {
     else this.deps.logger.info(fields, "Voice recording erasure ran");
   }
 
-  private count(vendor: VoiceVendor, outcome: VoiceRecordingDeleteOutcome): void {
+  private count(vendor: string, outcome: VoiceRecordingDeleteOutcome, value = 1): void {
     this.deps.metrics?.incrementCounter("voice_recording_delete_total", {
       help: "Voice recording deletions at the vendor, by vendor and outcome: each ask's result, and left_at_vendor once a recording is given up on",
       labels: { vendor, outcome },
+      value,
     });
   }
 }

@@ -191,7 +191,7 @@ DELETE /api/v1/account/users/{membershipId}
 Deleting a conversation, a visitor, a workspace or the organization asks the voice vendor (ElevenLabs) to delete each call's recording, and asks each one up to eight times over about a day. The recordings it gave up on stay in your vendor account. Owners and admins list them across the whole organization, deleted workspaces included, newest first:
 
 ```text
-GET /api/v1/account/voice-recordings/left-at-vendor?limit=100
+GET /api/v1/account/voice-recordings/left-at-vendor?limit=100&cursor=…
 ```
 
 ```json
@@ -207,11 +207,12 @@ GET /api/v1/account/voice-recordings/left-at-vendor?limit=100
       "reason": "vendor_rejected",
       "failedAt": "2026-10-25T09:30:00.000Z"
     }
-  ]
+  ],
+  "nextCursor": null
 }
 ```
 
-Delete each one in the vendor's dashboard or API by `vendorConversationId`. `conversationId` is null for a call whose first turn never came. `reason` says why it was left: `credential_missing` (the workspace held no vendor key when it was deleted), `credential_unreadable`, `vendor_rejected`, `vendor_unreachable`, `vendor_timeout`, `vendor_malformed_response`, `vendor_failed`, `vendor_unsupported`, or `drain_failed`. `limit` is 1 to 500 and defaults to 100; `total` counts them all. The route takes the account session only, answers `403` to members, and sends `Cache-Control: no-store`. See [Deleting conversation data](/operators/deleting-conversation-data#recordings-left-in-elevenlabs).
+Delete each one in the vendor's dashboard or API by `vendorConversationId`. `conversationId` is null for a call whose first turn never came. `reason` says why it was left: `credential_missing` (the workspace held no vendor key when it was deleted), `credential_unreadable`, `vendor_rejected`, `vendor_unreachable`, `vendor_timeout`, `vendor_malformed_response`, `vendor_failed`, `vendor_unsupported`, `expired` (still pending a week after its deletion), or `drain_failed`. `limit` is 1 to 500 and defaults to 100; `total` counts them all. When there are more, `nextCursor` is set: pass it back as `cursor` for the next page, and it is null on the last one. A cursor the route cannot read is `400`. The route takes the account session only, answers `403` to members, and sends `Cache-Control: no-store`. See [Deleting conversation data](/operators/deleting-conversation-data#recordings-left-in-elevenlabs).
 
 ## Endpoint reference
 

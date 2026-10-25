@@ -5345,9 +5345,9 @@ export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
     workspaceId: string;
     eventType: string;
     eventStatus: string;
-    metadata: Record<string, unknown>;
+    metadata: readonly Record<string, unknown>[];
   }): Promise<void> {
-    await this.create(input);
+    for (const metadata of input.metadata) await this.create({ ...input, metadata });
   }
 
   async createIfConversationLive(input: {

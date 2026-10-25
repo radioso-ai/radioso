@@ -195,7 +195,7 @@ LIMIT 20;
 
 ## Call recordings left at ElevenLabs
 
-A deletion writes each call recording to delete into `voice_recording_erasure_items`, beside an encrypted copy of the workspace's ElevenLabs key in `voice_recording_erasures`, and the `voice.recording_erasure` job deletes them, retrying each recording on its own for about a day ([Deleting conversation data](/operators/deleting-conversation-data)). A recording ElevenLabs kept refusing stays there with status `failed`, a `reason` and `failed_at`, and its key copy is gone by then.
+A deletion writes each call recording to delete into `voice_recording_erasure_items`, beside an encrypted copy of the workspace's ElevenLabs key in `voice_recording_erasures`, and the `voice.recording_erasure` job deletes them, retrying each recording on its own for about a day ([Deleting conversation data](/operators/deleting-conversation-data)). A recording ElevenLabs kept refusing, or one still pending a week after its deletion, stays there with status `failed`, a `reason` and `failed_at`, and its key copy is gone by then.
 
 Each batch of recordings given up on is reported to your error tracking as `voice.recording_left_at_vendor`, with the erasure, organization and workspace ids, the vendor, a count and the reasons, never a recording id or a key. A live organization's owners and admins see their own in `GET /api/v1/account/voice-recordings/left-at-vendor`. Once the organization is deleted, you are the only ones who can see them; list them, newest first, to delete each in ElevenLabs or to tell the organization:
 

@@ -1,6 +1,7 @@
 import { sql } from "kysely";
 
 import { isVoiceVendor, isVoiceVendorRegion } from "../../../shared/domain/voiceVendor.js";
+import { decodeCursorWithKeys, encodeCursor } from "../../../shared/domain/cursorPagination.js";
 import { currentTimestamp } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
 import {
@@ -10,6 +11,8 @@ import {
   type VoiceRecordingErasureEntry,
   type VoiceRecordingErasureHandOff,
   type VoiceRecordingErasureItem,
+  type VoiceRecordingErasureSubject,
+  type VoiceRecordingGivenUp,
   type VoiceRecordingLeftAtVendor,
   type VoiceRecordingLeftReason,
   type VoiceRecordingsLeftAtVendorReader,
@@ -98,21 +101,23 @@ export class VoiceRecordingErasureRepository implements VoiceRecordingErasureBac
     return { erasureId: erasure.id, recordings };
   }
 
-  async claim(erasureId: string, limit: number, leaseSeconds: number): Promise<VoiceRecordingErasureClaim> {
-    const erasure = await this.db
-      .selectFrom("voice_recording_erasures")
-      .select(["account_id", "workspace_id", "vendor", "sealed_api_key"])
-      .where("id", "=", erasureId)
-      .executeTakeFirst();
-    if (!erasure) return { kind: "gone" };
-    if (!isVoiceVendor(erasure.vendor)) {
-      const failed = await this.failPending(erasureId, "vendor_unsupported");
-      await this.release(erasureId);
-      return { kind: "unsupported_vendor", accountId: erasure.account_id, workspaceId: erasure.workspace_id, vendor: erasure.vendor, failed: failed.length };
+  async claim(erasureId: string, claim: { limit: number; leaseSeconds: number; expireAfterSeconds: number }): Promise<VoiceRecordingErasureClaim> {
+    const row = await this.readErasure(erasureId);
+    if (!row) return { kind: "gone" };
+    const erasure = { accountId: row.account_id, workspaceId: row.workspace_id, vendor: row.vendor, sealedCredential: row.sealed_api_key };
+    const givenUp = await this.failPending(erasureId, { reason: "expired", keepLastReason: false, createdBeforeSeconds: claim.expireAfterSeconds });
+    // No ask can be made: every pending recording is given up on in one write, however many.
+    if (!isVoiceVendor(row.vendor)) {
+      givenUp.push(...await this.failPending(erasureId, { reason: "vendor_unsupported", keepLastReason: false }));
+      return { kind: "batch", erasure, items: [], givenUp };
+    }
+    if (row.sealed_api_key === null) {
+      givenUp.push(...await this.failPending(erasureId, { reason: "credential_missing", keepLastReason: true }));
+      return { kind: "batch", erasure, items: [], givenUp };
     }
     const rows = await this.db
       .updateTable("voice_recording_erasure_items")
-      .set((eb) => ({ attempts: eb("attempts", "+", 1), next_attempt_at: secondsFromNow(leaseSeconds), updated_at: currentTimestamp() }))
+      .set((eb) => ({ attempts: eb("attempts", "+", 1), next_attempt_at: secondsFromNow(claim.leaseSeconds), updated_at: currentTimestamp() }))
       .where("id", "in", (eb) => eb
         .selectFrom("voice_recording_erasure_items")
         .select("id")
@@ -121,27 +126,21 @@ export class VoiceRecordingErasureRepository implements VoiceRecordingErasureBac
         .where("next_attempt_at", "<=", currentTimestamp())
         .orderBy("next_attempt_at", "asc")
         .orderBy("id", "asc")
-        .limit(limit)
+        .limit(claim.limit)
         .forUpdate()
         .skipLocked())
       .returning(ITEM_COLUMNS)
       .execute();
     const items: VoiceRecordingErasureItem[] = [];
-    const unreachable: VoiceRecordingErasureEntry[] = [];
-    for (const row of rows) {
-      if (isVoiceVendorRegion(row.vendor_region)) {
-        items.push({ ...entryOf(row), region: row.vendor_region });
-      } else if (await this.fail(row.id, "vendor_unsupported")) {
+    for (const claimed of rows) {
+      if (isVoiceVendorRegion(claimed.vendor_region)) {
+        items.push({ ...entryOf(claimed), region: claimed.vendor_region });
+      } else if (await this.fail(claimed.id, "vendor_unsupported")) {
         // No host to ask in a region this build does not know: given up on here, so no claim keeps returning it.
-        unreachable.push({ ...entryOf(row), failureReason: "vendor_unsupported" });
+        givenUp.push({ ...entryOf(claimed), failureReason: "vendor_unsupported" });
       }
     }
-    return {
-      kind: "batch",
-      erasure: { accountId: erasure.account_id, workspaceId: erasure.workspace_id, vendor: erasure.vendor, sealedCredential: erasure.sealed_api_key },
-      items,
-      unreachable,
-    };
+    return { kind: "batch", erasure, items, givenUp };
   }
 
   async remove(itemId: string): Promise<void> {
@@ -198,22 +197,12 @@ export class VoiceRecordingErasureRepository implements VoiceRecordingErasureBac
     return { pending, nextAskAt, dueNow: counts.due_now };
   }
 
-  async failRemaining(erasureId: string): Promise<{
-    erasure: { accountId: string; workspaceId: string; vendor: string; sealedCredential: string | null };
-    entries: VoiceRecordingErasureEntry[];
-  } | null> {
-    const erasure = await this.db
-      .selectFrom("voice_recording_erasures")
-      .select(["account_id", "workspace_id", "vendor", "sealed_api_key"])
-      .where("id", "=", erasureId)
-      .executeTakeFirst();
-    if (!erasure) return null;
-    const entries = await this.failPending(erasureId, "drain_failed");
+  async failExhausted(erasureId: string, maxAsks: number): Promise<{ erasure: VoiceRecordingErasureSubject; entries: VoiceRecordingGivenUp[] } | null> {
+    const row = await this.readErasure(erasureId);
+    if (!row) return null;
+    const entries = await this.failPending(erasureId, { reason: "drain_failed", keepLastReason: true, minAttempts: maxAsks });
     await this.release(erasureId);
-    return {
-      erasure: { accountId: erasure.account_id, workspaceId: erasure.workspace_id, vendor: erasure.vendor, sealedCredential: null },
-      entries,
-    };
+    return { erasure: { accountId: row.account_id, workspaceId: row.workspace_id, vendor: row.vendor, sealedCredential: row.sealed_api_key }, entries };
   }
 
   async overdueErasures(overdueSeconds: number, limit: number): Promise<string[]> {
@@ -228,7 +217,14 @@ export class VoiceRecordingErasureRepository implements VoiceRecordingErasureBac
     return rows.map((row) => row.erasure_id);
   }
 
-  async listForAccount(input: { accountId: string; limit: number }): Promise<{ total: number; recordings: VoiceRecordingLeftAtVendor[] }> {
+  async listForAccount(input: { accountId: string; limit: number; cursor?: string }): Promise<{
+    total: number;
+    recordings: VoiceRecordingLeftAtVendor[];
+    nextCursor: string | null;
+  }> {
+    // Keyed by when each was given up on, newest first, then by id: many rows fail in one write at
+    // one instant, so the time is carried at the database's full precision.
+    const after = input.cursor ? decodeCursorWithKeys(input.cursor, ["failedAt", "id"]).keys : null;
     const failedOfAccount = this.db
       .selectFrom("voice_recording_erasure_items as i")
       .innerJoin("voice_recording_erasures as e", "e.id", "i.erasure_id")
@@ -236,16 +232,23 @@ export class VoiceRecordingErasureRepository implements VoiceRecordingErasureBac
       .where("i.status", "=", "failed");
     const [rows, total] = await Promise.all([
       failedOfAccount
-        .select(["e.vendor", "e.workspace_id", "i.vendor_region", "i.vendor_conversation_id", "i.conversation_id", "i.failure_reason", "i.failed_at"])
+        .select(["i.id", "e.vendor", "e.workspace_id", "i.vendor_region", "i.vendor_conversation_id", "i.conversation_id", "i.failure_reason", "i.failed_at"])
+        .select(sql<string>`i.failed_at::text`.as("failed_at_key"))
+        .$if(after !== null, (qb) => qb.where((eb) => eb.or([
+          eb("i.failed_at", "<", sql<Date>`${after!.failedAt}::timestamptz`),
+          eb.and([eb("i.failed_at", "=", sql<Date>`${after!.failedAt}::timestamptz`), eb("i.id", ">", after!.id)]),
+        ])))
         .orderBy("i.failed_at", "desc")
         .orderBy("i.id", "asc")
-        .limit(input.limit)
+        .limit(input.limit + 1)
         .execute(),
       failedOfAccount.select((eb) => eb.fn.countAll<string>().as("total")).executeTakeFirstOrThrow(),
     ]);
+    const page = rows.slice(0, input.limit);
+    const last = page.at(-1);
     return {
       total: Number(total.total),
-      recordings: rows.map((row) => ({
+      recordings: page.map((row) => ({
         vendor: row.vendor,
         vendorRegion: row.vendor_region,
         vendorConversationId: row.vendor_conversation_id,
@@ -254,24 +257,43 @@ export class VoiceRecordingErasureRepository implements VoiceRecordingErasureBac
         reason: leftReasonOf(row.failure_reason) ?? "vendor_failed",
         failedAt: row.failed_at ?? new Date(0),
       })),
+      nextCursor: rows.length > input.limit && last ? encodeCursor({ failedAt: last.failed_at_key, id: last.id }) : null,
     };
   }
 
-  /** Every pending recording of the erasure, given up on with its last reason or `fallback`; returns those it changed. */
-  private async failPending(erasureId: string, fallback: VoiceRecordingLeftReason): Promise<VoiceRecordingErasureEntry[]> {
+  private readErasure(erasureId: string) {
+    return this.db
+      .selectFrom("voice_recording_erasures")
+      .select(["account_id", "workspace_id", "vendor", "sealed_api_key"])
+      .where("id", "=", erasureId)
+      .executeTakeFirst();
+  }
+
+  /**
+   * Gives up on the erasure's pending recordings in one write, however many: all of them, those
+   * created more than `createdBeforeSeconds` ago, or those with at least `minAttempts` asks. Each
+   * takes `reason`, or keeps its last one when `keepLastReason` and it has one. Returns those it changed.
+   */
+  private async failPending(
+    erasureId: string,
+    failure: { reason: VoiceRecordingLeftReason; keepLastReason: boolean; createdBeforeSeconds?: number; minAttempts?: number },
+  ): Promise<VoiceRecordingGivenUp[]> {
     const rows = await this.db
       .updateTable("voice_recording_erasure_items")
       .set({
         status: "failed",
-        failure_reason: sql<string>`coalesce(failure_reason, ${fallback})`,
+        failure_reason: failure.keepLastReason ? sql<string>`coalesce(failure_reason, ${failure.reason})` : failure.reason,
         failed_at: currentTimestamp(),
         updated_at: currentTimestamp(),
       })
       .where("erasure_id", "=", erasureId)
       .where("status", "=", "pending")
+      .$if(failure.createdBeforeSeconds !== undefined, (qb) =>
+        qb.where("created_at", "<", sql<Date>`now() - make_interval(secs => ${failure.createdBeforeSeconds})`))
+      .$if(failure.minAttempts !== undefined, (qb) => qb.where("attempts", ">=", failure.minAttempts!))
       .returning(ITEM_COLUMNS)
       .execute();
-    return rows.map(entryOf);
+    return rows.map((row) => ({ ...entryOf(row), failureReason: leftReasonOf(row.failure_reason) ?? failure.reason }));
   }
 
   /** No pending recording needs the key any more: clear it, and remove the erasure once it holds nothing at all. */

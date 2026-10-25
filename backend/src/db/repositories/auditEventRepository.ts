@@ -27,17 +27,18 @@ export interface AuditEventRepositoryPort {
     metadata?: Record<string, unknown>;
   }): Promise<AuditEventRecord>;
   /**
-   * Creates an event about an organization and a workspace that may be gone by the time it is
-   * written: each that still exists is pointed at, and each that is gone is named by id in the
-   * metadata (`deletedAccountId`, `deletedWorkspaceId`) instead, decided in the insert itself so a
-   * deletion racing it can never fail the write.
+   * Creates events about an organization and a workspace that may be gone by the time they are
+   * written, one per `metadata` entry, in one statement however many: each subject that still
+   * exists is pointed at, and each that is gone is named by id in the metadata
+   * (`deletedAccountId`, `deletedWorkspaceId`) instead, decided in the insert itself so a deletion
+   * racing it can never fail the write.
    */
   createNamingGoneSubjects(input: {
     accountId: string;
     workspaceId: string;
     eventType: string;
     eventStatus: string;
-    metadata: Record<string, unknown>;
+    metadata: readonly Record<string, unknown>[];
   }): Promise<void>;
   /**
    * Creates the event only if the named conversation still exists, checked and written in one
@@ -142,29 +143,19 @@ export class AuditEventRepository implements AuditEventRepositoryPort {
     workspaceId: string;
     eventType: string;
     eventStatus: string;
-    metadata: Record<string, unknown>;
+    metadata: readonly Record<string, unknown>[];
   }): Promise<void> {
-    const insert = () => this.db
-      .insertInto("audit_events")
-      .columns(["id", "account_id", "workspace_id", "event_type", "event_status", "metadata_json"])
-      .expression(
-        this.db
-          .selectNoFrom((eb) => {
-            const liveAccount = eb.selectFrom("accounts").select("id").where("id", "=", input.accountId);
-            const liveWorkspace = eb.selectFrom("workspaces").select("id").where("id", "=", input.workspaceId);
-            return [
-              eb.val(randomUUID()).as("id"),
-              liveAccount.as("account_id"),
-              liveWorkspace.as("workspace_id"),
-              eb.val(input.eventType).as("event_type"),
-              eb.val(input.eventStatus).as("event_status"),
-              sql<unknown>`${toSanitizedJsonb(input.metadata)}
-                || CASE WHEN EXISTS (${liveWorkspace}) THEN '{}'::jsonb ELSE jsonb_build_object('deletedWorkspaceId', ${input.workspaceId}::text) END
-                || CASE WHEN EXISTS (${liveAccount}) THEN '{}'::jsonb ELSE jsonb_build_object('deletedAccountId', ${input.accountId}::text) END`.as("metadata_json"),
-            ];
-          }),
-      )
-      .execute();
+    if (input.metadata.length === 0) return;
+    // One array parameter for every event's metadata, so any number of events fits one statement.
+    const insert = () => sql`
+      INSERT INTO audit_events (id, account_id, workspace_id, event_type, event_status, metadata_json)
+      SELECT gen_random_uuid(), live_account.id, live_workspace.id, ${input.eventType}, ${input.eventStatus},
+             event.metadata
+               || CASE WHEN live_workspace.id IS NULL THEN jsonb_build_object('deletedWorkspaceId', ${input.workspaceId}::text) ELSE '{}'::jsonb END
+               || CASE WHEN live_account.id IS NULL THEN jsonb_build_object('deletedAccountId', ${input.accountId}::text) ELSE '{}'::jsonb END
+        FROM jsonb_array_elements(${toSanitizedJsonb(input.metadata)}) AS event(metadata)
+        LEFT JOIN accounts AS live_account ON live_account.id = ${input.accountId}::uuid
+        LEFT JOIN workspaces AS live_workspace ON live_workspace.id = ${input.workspaceId}::uuid`.execute(this.db);
     try {
       await insert();
     } catch (error) {

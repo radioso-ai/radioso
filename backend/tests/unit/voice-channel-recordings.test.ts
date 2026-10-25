@@ -6,6 +6,7 @@ import {
   type VoiceRecordingErasureClaim,
   type VoiceRecordingErasureHandOff,
   type VoiceRecordingErasureItem,
+  type VoiceRecordingLeftReason,
   type VoiceRecordingRef,
   type VoiceReportableSession,
   type VoiceRecordingSource,
@@ -447,15 +448,26 @@ describe("voice recording erasure job", () => {
     failureReason: null,
     ...overrides,
   });
-  const erasureSubject = { accountId, workspaceId, vendor: "elevenlabs" as const, sealedCredential: "sealed-key" };
+  const givenUpEntry = (reason: VoiceRecordingLeftReason, index: number) => ({
+    id: `given-up-${index}`,
+    conversationId: null,
+    vendorConversationId: `conv_given_up_${index}`,
+    attempts: 0,
+    failureReason: reason,
+  });
+  const erasureSubject = { accountId, workspaceId, vendor: "elevenlabs", sealedCredential: "sealed-key" as string | null };
   const batchOf = (
     items: VoiceRecordingErasureItem[],
-    overrides: { sealedCredential?: string | null; unreachable?: Extract<VoiceRecordingErasureClaim, { kind: "batch" }>["unreachable"] } = {},
+    overrides: { sealedCredential?: string | null; vendor?: string; givenUp?: Extract<VoiceRecordingErasureClaim, { kind: "batch" }>["givenUp"] } = {},
   ): VoiceRecordingErasureClaim => ({
     kind: "batch",
-    erasure: { ...erasureSubject, ...(overrides.sealedCredential === undefined ? {} : { sealedCredential: overrides.sealedCredential }) },
+    erasure: {
+      ...erasureSubject,
+      ...(overrides.sealedCredential === undefined ? {} : { sealedCredential: overrides.sealedCredential }),
+      ...(overrides.vendor ? { vendor: overrides.vendor } : {}),
+    },
     items,
-    unreachable: overrides.unreachable ?? [],
+    givenUp: overrides.givenUp ?? [],
   });
 
   const drainHarness = (options: {
@@ -471,13 +483,13 @@ describe("voice recording erasure job", () => {
     const errorReporter = { report: vi.fn(async (_input: { errorType: string; metadata?: Record<string, unknown> }) => undefined) };
     const backlog = {
       hold: vi.fn(async () => null),
-      claim: vi.fn(async (): Promise<VoiceRecordingErasureClaim> => options.claim ?? batchOf([item()])),
+      claim: vi.fn(async (_erasureId: string, _claim: { limit: number; leaseSeconds: number; expireAfterSeconds: number }): Promise<VoiceRecordingErasureClaim> => options.claim ?? batchOf([item()])),
       remove: vi.fn(async (_itemId: string) => undefined),
       keep: vi.fn(async (_itemId: string, _reason: string, _delaySeconds: number) => undefined),
       postpone: vi.fn(async (_itemIds: readonly string[], _delaySeconds: number) => undefined),
       fail: vi.fn(async (_itemId: string, _reason: string) => options.failChanges ?? true),
       release: vi.fn(async () => options.remaining ?? { pending: 0, nextAskAt: null, dueNow: false }),
-      failRemaining: vi.fn<VoiceRecordingErasureBacklog["failRemaining"]>(async () => null),
+      failExhausted: vi.fn<VoiceRecordingErasureBacklog["failExhausted"]>(async () => null),
       overdueErasures: vi.fn(async () => []),
     };
     const source = { deleteRecording: vi.fn<VoiceRecordingSource["deleteRecording"]>(options.deleteRecording ?? (async () => "deleted")) };
@@ -501,6 +513,10 @@ describe("voice recording erasure job", () => {
     return { drain, backlog, source, audit, queue, sealer, metrics, logger, errorReporter };
   };
   const signal = () => new AbortController().signal;
+  const leftValues = (metrics: { incrementCounter: ReturnType<typeof vi.fn> }) => metrics.incrementCounter.mock.calls
+    .map(([, options]) => options as { labels: Record<string, string>; value?: number })
+    .filter((options) => options.labels.outcome === "left_at_vendor")
+    .map((options) => options.value ?? 1);
 
   it("deletes each recording at the vendor with the held key, records it for the organization, and removes it from the backlog", async () => {
     const { drain, backlog, source, audit, metrics, queue, errorReporter } = drainHarness({
@@ -509,7 +525,7 @@ describe("voice recording erasure job", () => {
 
     await drain.run(erasureId, signal());
 
-    expect(backlog.claim).toHaveBeenCalledWith(erasureId, 50, 300);
+    expect(backlog.claim).toHaveBeenCalledWith(erasureId, { limit: 50, leaseSeconds: 300, expireAfterSeconds: 7 * 24 * 60 * 60 });
     expect(source.deleteRecording.mock.calls.map(([input]) => [input.vendorConversationId, input.region, input.credential])).toEqual([
       [vendorConversationId, "eu", { apiKey }],
       ["conv_second", "eu", { apiKey }],
@@ -585,13 +601,11 @@ describe("voice recording erasure job", () => {
     expect(voiceRecordingErasureRequest(erasureId)).toMatchObject({ idempotencyKey: erasureId, payload: { erasureId } });
   });
 
-  it("asks a vendor that answers 429 nothing more this run, and postpones what it never asked until its Retry-After", async () => {
+  it("stops asking a vendor that answers 429, and postpones every recording it turned away or never reached for its Retry-After, none counted", async () => {
     const items = Array.from({ length: 10 }, (_, index) => item({ vendorConversationId: `conv_${index}` }));
-    let inFlight = 0;
-    const { drain, backlog, source } = drainHarness({
+    const { drain, backlog, source, metrics } = drainHarness({
       claim: batchOf(items),
       deleteRecording: async () => {
-        inFlight += 1;
         await Promise.resolve();
         throw new VoiceRecordingRequestError("rejected", 429, undefined, 900);
       },
@@ -600,12 +614,26 @@ describe("voice recording erasure job", () => {
 
     await drain.run(erasureId, signal());
 
-    expect(source.deleteRecording.mock.calls.length).toBe(inFlight);
-    expect(inFlight).toBeLessThanOrEqual(4);
+    expect(source.deleteRecording.mock.calls.length).toBeLessThanOrEqual(4);
+    expect(backlog.keep).not.toHaveBeenCalled();
+    expect(backlog.postpone).toHaveBeenCalledTimes(1);
     const [postponed, delay] = backlog.postpone.mock.calls[0];
-    expect(postponed).toHaveLength(10 - inFlight);
+    expect([...postponed].sort()).toEqual(items.map((entry) => entry.id).sort());
     expect(delay).toBe(900);
-    expect(backlog.keep.mock.calls.every(([, , keptFor]) => keptFor === 900)).toBe(true);
+    expect(counted(metrics, "voice_recording_delete_total").every((labels) => labels.outcome === "rate_limited")).toBe(true);
+  });
+
+  it("pauses for a minute when a 429 names no Retry-After, and for at most an hour when it names a longer one", async () => {
+    for (const [retryAfter, expected] of [[undefined, 60], [86_400, 3_600], [120, 120]] as const) {
+      const { drain, backlog } = drainHarness({
+        deleteRecording: async () => { throw new VoiceRecordingRequestError("rejected", 429, undefined, retryAfter); },
+        remaining: { pending: 1, nextAskAt: new Date(Date.now() + 60_000), dueNow: false },
+      });
+
+      await drain.run(erasureId, signal());
+
+      expect(backlog.postpone.mock.calls[0]?.[1]).toBe(expected);
+    }
   });
 
   it("leaves a recording at the vendor once its eighth ask is refused: marks it failed, logs where it is, records why, and reports to staff", async () => {
@@ -618,7 +646,12 @@ describe("voice recording erasure job", () => {
 
     expect(backlog.fail).toHaveBeenCalledWith(`item-${vendorConversationId}`, "vendor_timeout");
     expect(backlog.keep).not.toHaveBeenCalled();
-    expect(audit.left).toHaveBeenCalledWith({ accountId, workspaceId, conversationId, vendor: "elevenlabs", vendorConversationId, reason: "vendor_timeout" });
+    expect(audit.left).toHaveBeenCalledWith({
+      accountId,
+      workspaceId,
+      vendor: "elevenlabs",
+      recordings: [{ conversationId, vendorConversationId, reason: "vendor_timeout" }],
+    });
     expect(logger.warn).toHaveBeenCalledWith(
       { workspaceId, conversationId, vendorConversationId, vendor: "elevenlabs", outcome: "vendor_timeout", attempts: 8, reason: "timeout" },
       "Voice recording was left at the vendor",
@@ -647,29 +680,63 @@ describe("voice recording erasure job", () => {
 
     expect(audit.left).not.toHaveBeenCalled();
     expect(errorReporter.report).not.toHaveBeenCalled();
-    expect(counted(metrics, "voice_recording_delete_total").filter((labels) => labels.outcome === "left_at_vendor")).toEqual([]);
+    expect(leftValues(metrics)).toEqual([]);
   });
 
-  it("records and reports a recording the claim gave up on because its region has no host", async () => {
-    const unreachable = { id: "item-moon", conversationId, vendorConversationId: "conv_moon", attempts: 1, failureReason: "vendor_unsupported" as const };
-    const { drain, audit, errorReporter } = drainHarness({ claim: batchOf([], { unreachable: [unreachable] }) });
+  it("reports what it gave up on even when its deadline passes mid-run, and leaves the rest to their lease", async () => {
+    const deadline = new AbortController();
+    const { drain, backlog, errorReporter } = drainHarness({
+      claim: batchOf([item({ attempts: 8 }), item({ vendorConversationId: "conv_late" })]),
+      deleteRecording: async ({ vendorConversationId: id }) => {
+        if (id === vendorConversationId) throw new VoiceRecordingRequestError("timeout");
+        // The deadline passes while this ask waits on the vendor, after the other has been settled.
+        await new Promise((resolve) => setTimeout(resolve, 5));
+        deadline.abort();
+        throw new VoiceRecordingRequestError("abandoned");
+      },
+    });
+
+    await drain.run(erasureId, deadline.signal);
+
+    expect(backlog.fail).toHaveBeenCalledWith(`item-${vendorConversationId}`, "vendor_timeout");
+    expect(errorReporter.report).toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ reasons: { vendor_timeout: 1 } }) }));
+    expect(backlog.release).not.toHaveBeenCalled();
+  });
+
+  it("records what the claim gave up on in one write, counts it once, and sends one report and one log line", async () => {
+    const givenUp = Array.from({ length: 3 }, (_, index) => givenUpEntry(index === 2 ? "expired" : "credential_missing", index));
+    const { drain, source, audit, metrics, logger, errorReporter } = drainHarness({ claim: batchOf([], { sealedCredential: null, givenUp }) });
 
     await drain.run(erasureId, signal());
 
-    expect(audit.left).toHaveBeenCalledWith(expect.objectContaining({ vendorConversationId: "conv_moon", reason: "vendor_unsupported" }));
-    expect(errorReporter.report).toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ reasons: { vendor_unsupported: 1 } }) }));
+    expect(source.deleteRecording).not.toHaveBeenCalled();
+    expect(audit.left).toHaveBeenCalledTimes(1);
+    expect(audit.left).toHaveBeenCalledWith({
+      accountId,
+      workspaceId,
+      vendor: "elevenlabs",
+      recordings: givenUp.map((entry) => ({ conversationId: null, vendorConversationId: entry.vendorConversationId, reason: entry.failureReason })),
+    });
+    expect(leftValues(metrics)).toEqual([3]);
+    expect(errorReporter.report).toHaveBeenCalledTimes(1);
+    expect(errorReporter.report).toHaveBeenCalledWith(expect.objectContaining({ metadata: expect.objectContaining({ leftAtVendor: 3, reasons: { credential_missing: 2, expired: 1 } }) }));
+    expect(logger.warn.mock.calls.filter(([, message]) => message === "Voice recording was left at the vendor")).toEqual([]);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ erasureId, leftAtVendor: 3, left: { credential_missing: 2, expired: 1 } }),
+      "Voice recording erasure left recordings at the vendor",
+    );
   });
 
-  it("leaves the recordings of a deletion that found no key at the vendor, without asking", async () => {
-    const { drain, backlog, source, audit } = drainHarness({
-      claim: batchOf([item({ failureReason: "credential_missing" })], { sealedCredential: null }),
+  it("records the recordings of a vendor this build does not know under that vendor's name, and asks nobody", async () => {
+    const { drain, source, audit, metrics } = drainHarness({
+      claim: batchOf([], { vendor: "retired-vendor", givenUp: [givenUpEntry("vendor_unsupported", 0)] }),
     });
 
     await drain.run(erasureId, signal());
 
     expect(source.deleteRecording).not.toHaveBeenCalled();
-    expect(backlog.fail).toHaveBeenCalledWith(`item-${vendorConversationId}`, "credential_missing");
-    expect(audit.left).toHaveBeenCalledWith(expect.objectContaining({ reason: "credential_missing" }));
+    expect(audit.left).toHaveBeenCalledWith(expect.objectContaining({ vendor: "retired-vendor", recordings: [expect.objectContaining({ reason: "vendor_unsupported" })] }));
+    expect(counted(metrics, "voice_recording_delete_total")).toEqual([{ vendor: "retired-vendor", outcome: "left_at_vendor" }]);
   });
 
   it("counts a held key that no longer opens as a refused ask, kept for the next", async () => {
@@ -705,44 +772,29 @@ describe("voice recording erasure job", () => {
     expect(backlog.release).not.toHaveBeenCalled();
   });
 
-  it("reports an erasure whose vendor this build does not know, whose recordings the claim left at the vendor", async () => {
-    const { drain, source, errorReporter, logger } = drainHarness({
-      claim: { kind: "unsupported_vendor", accountId, workspaceId, vendor: "retired-vendor", failed: 3 },
-    });
-
-    await drain.run(erasureId, signal());
-
-    expect(source.deleteRecording).not.toHaveBeenCalled();
-    expect(errorReporter.report).toHaveBeenCalledWith(expect.objectContaining({
-      metadata: { erasureId, accountId, vendor: "retired-vendor", leftAtVendor: 3, reasons: { vendor_unsupported: 3 } },
-    }));
-    expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ erasureId, leftAtVendor: 3 }), expect.any(String));
-  });
-
-  it("gives up on every recording still pending once the job itself kept failing, each with why, and reports them", async () => {
+  it("gives up, once the job itself kept failing, only on recordings whose eight asks are spent, and reports them", async () => {
     const { drain, backlog, audit, metrics, errorReporter } = drainHarness();
-    backlog.failRemaining.mockResolvedValue({
+    backlog.failExhausted.mockResolvedValue({
       erasure: { accountId, workspaceId, vendor: "elevenlabs", sealedCredential: null },
       entries: [
-        { id: "a", conversationId, vendorConversationId, attempts: 2, failureReason: "vendor_unreachable" },
-        { id: "b", conversationId: null, vendorConversationId: "conv_second", attempts: 0, failureReason: "drain_failed" },
+        { id: "a", conversationId, vendorConversationId, attempts: 9, failureReason: "vendor_unreachable" },
+        { id: "b", conversationId: null, vendorConversationId: "conv_second", attempts: 8, failureReason: "drain_failed" },
       ],
     });
     const transaction = {} as Parameters<VoiceRecordingErasureDrain["giveUp"]>[1];
 
     await drain.giveUp(erasureId, transaction);
 
-    expect(backlog.failRemaining).toHaveBeenCalledWith(erasureId);
-    expect(audit.left.mock.calls.map(([event]) => [event.vendorConversationId, event.reason])).toEqual([
-      [vendorConversationId, "vendor_unreachable"],
-      ["conv_second", "drain_failed"],
-    ]);
+    expect(backlog.failExhausted).toHaveBeenCalledWith(erasureId, 8);
+    expect(audit.left).toHaveBeenCalledWith(expect.objectContaining({
+      recordings: [
+        { conversationId, vendorConversationId, reason: "vendor_unreachable" },
+        { conversationId: null, vendorConversationId: "conv_second", reason: "drain_failed" },
+      ],
+    }));
     expect(errorReporter.report).toHaveBeenCalledWith(expect.objectContaining({
       metadata: expect.objectContaining({ leftAtVendor: 2, reasons: { vendor_unreachable: 1, drain_failed: 1 } }),
     }));
-    expect(counted(metrics, "voice_recording_delete_total")).toEqual([
-      { vendor: "elevenlabs", outcome: "left_at_vendor" },
-      { vendor: "elevenlabs", outcome: "left_at_vendor" },
-    ]);
+    expect(leftValues(metrics)).toEqual([2]);
   });
 });

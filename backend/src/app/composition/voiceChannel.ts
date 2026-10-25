@@ -229,7 +229,11 @@ const voiceVendorCredentialReader = (credentials: VoiceVendorCredentialStore): V
 
 /** Audit events about an organization and a workspace that may be gone by the time they are written. */
 type GoneSubjectAudit = {
-  recordNamingGoneSubjects(event: AuditEventInput & { accountId: string; workspaceId: string }): Promise<void>;
+  recordNamingGoneSubjects(event: Omit<AuditEventInput, "metadata"> & {
+    accountId: string;
+    workspaceId: string;
+    metadata: readonly Record<string, unknown>[];
+  }): Promise<void>;
 };
 
 /**
@@ -247,15 +251,22 @@ const createVoiceRecordingAudit = (auditService: Pick<AuditPort, "record"> & Gon
       workspaceId,
       eventType: "conversation.recording_deleted",
       eventStatus: "success",
-      metadata: { conversationId, vendor, outcome },
+      metadata: [{ conversationId, vendor, outcome }],
     }),
-  left: ({ accountId, workspaceId, conversationId, vendor, vendorConversationId, reason }) =>
+  // One event per recording, written together.
+  left: ({ accountId, workspaceId, vendor, recordings }) =>
     auditService.recordNamingGoneSubjects({
       accountId,
       workspaceId,
       eventType: "conversation.recording_deleted",
       eventStatus: "failure",
-      metadata: { conversationId, vendor, outcome: "left_at_vendor", reason, vendorConversationId },
+      metadata: recordings.map(({ conversationId, vendorConversationId, reason }) => ({
+        conversationId,
+        vendor,
+        outcome: "left_at_vendor",
+        reason,
+        vendorConversationId,
+      })),
     }),
 });
 

@@ -1587,7 +1587,7 @@ export const createTestDependencies = (overrides: {
     keep: noErasureBacklog,
     fail: noErasureBacklog,
     release: noErasureBacklog,
-    failRemaining: noErasureBacklog,
+    failExhausted: noErasureBacklog,
     postpone: noErasureBacklog,
     overdueErasures: noErasureBacklog,
   };
@@ -3097,7 +3097,7 @@ export const createTestDependencies = (overrides: {
     voiceSessionStarts,
     voiceSessionAvailability: voiceSessionStarts,
     voiceRecordings: voiceRecordings.recordings,
-    voiceRecordingsLeftAtVendor: overrides.voiceRecordingsLeftAtVendor ?? { listForAccount: async () => ({ total: 0, recordings: [] }) },
+    voiceRecordingsLeftAtVendor: overrides.voiceRecordingsLeftAtVendor ?? { listForAccount: async () => ({ total: 0, recordings: [], nextCursor: null }) },
     assistantHistoryService,
     conversationErasure: overrides.conversationErasure ?? {
       // The in-memory app has no transaction to erase in; the Postgres erasure is covered by

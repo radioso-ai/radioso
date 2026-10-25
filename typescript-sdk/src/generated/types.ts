@@ -3621,7 +3621,7 @@ export interface paths {
         };
         /**
          * List call recordings the organization's deletions left at the voice vendor
-         * @description Deleting a conversation, a visitor, a workspace or the organization asks the voice vendor to delete each call's recording, retrying what it refuses for about a day. This lists the recordings it gave up on, across every workspace of the organization, deleted ones included, newest first, so they can be deleted in the vendor account by `vendorConversationId`. Each is also recorded as a `conversation.recording_deleted` audit event with status `failure`. Account session only; owners and admins (`workspace.history.delete` on the organization). The response is `Cache-Control: no-store`.
+         * @description Deleting a conversation, a visitor, a workspace or the organization asks the voice vendor to delete each call's recording, retrying what it refuses for about a day. This lists the recordings it gave up on, across every workspace of the organization, deleted ones included, newest first, so they can be deleted in the vendor account by `vendorConversationId`. Page with `cursor`, from the previous page's `nextCursor`. Each is also recorded as a `conversation.recording_deleted` audit event with status `failure`. Account session only; owners and admins (`workspace.history.delete` on the organization). The response is `Cache-Control: no-store`.
          */
         get: operations["listVoiceRecordingsLeftAtVendor"];
         put?: never;
@@ -10406,10 +10406,10 @@ export interface components {
              */
             workspaceId: string;
             /**
-             * @description Why it is still at the vendor: `credential_missing` (the workspace held no vendor key when it was deleted), `credential_unreadable` (a key could not be decrypted), `vendor_rejected`, `vendor_unreachable`, `vendor_timeout`, `vendor_malformed_response` or `vendor_failed` (the vendor's last answer, after eight asks over about a day), `vendor_unsupported` (this deployment knows no host for the vendor or region), or `drain_failed` (the deleting job itself kept failing).
+             * @description Why it is still at the vendor: `credential_missing` (the workspace held no vendor key when it was deleted), `credential_unreadable` (a key could not be decrypted), `vendor_rejected`, `vendor_unreachable`, `vendor_timeout`, `vendor_malformed_response` or `vendor_failed` (the vendor's last answer, after eight asks over about a day), `vendor_unsupported` (this deployment knows no host for the vendor or region), `expired` (still pending a week after its deletion), or `drain_failed` (the deleting job itself kept failing).
              * @enum {string}
              */
-            reason: "credential_missing" | "credential_unreadable" | "vendor_rejected" | "vendor_unreachable" | "vendor_timeout" | "vendor_malformed_response" | "vendor_failed" | "vendor_unsupported" | "drain_failed";
+            reason: "credential_missing" | "credential_unreadable" | "vendor_rejected" | "vendor_unreachable" | "vendor_timeout" | "vendor_malformed_response" | "vendor_failed" | "vendor_unsupported" | "expired" | "drain_failed";
             /**
              * Format: date-time
              * @description When Radioso gave up on it.
@@ -10421,6 +10421,8 @@ export interface components {
             total: number;
             /** @description Newest first, at most `limit`. */
             recordings: components["schemas"]["VoiceRecordingLeftAtVendor"][];
+            /** @description Pass as `cursor` to read the next page; null on the last page. */
+            nextCursor: string | null;
         };
         DeliveryFailure: {
             /** Format: uuid */
@@ -26773,6 +26775,8 @@ export interface operations {
             query?: {
                 /** @description How many recordings to return, newest first. Defaults to 100; at most 500. */
                 limit?: number;
+                /** @description The `nextCursor` of the page before, to read the next page. */
+                cursor?: string;
             };
             header?: never;
             path?: never;
@@ -26789,7 +26793,7 @@ export interface operations {
                     "application/json": components["schemas"]["VoiceRecordingsLeftAtVendorResponse"];
                 };
             };
-            /** @description Invalid query */
+            /** @description Invalid query or cursor */
             400: {
                 headers: {
                     [name: string]: unknown;

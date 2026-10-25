@@ -764,13 +764,16 @@ export class OperatorCopilotService {
     // and decides whether more verification is worth another turn. Denominated in replayed turns,
     // not in tool calls, because one call can replay several cases.
     const probeBudget = createCopilotProbeBudget(this.deps.probeBudgetPerTurn ?? COPILOT_PROBE_BUDGET_PER_TURN_DEFAULT);
-    const tools = this.resolveTools({ ...input, copilotConversationId: conversation.id }, probeBudget);
     const descriptors = new Map(this.deps.tools.map((tool) => [tool.name, tool]));
     const entitiesByToolCall = new Map<string, CopilotEntityReference>();
     const proposals: CopilotProposalCard[] = [];
     try {
       const priorTranscript = await this.buildPriorTranscript(conversation.id);
-      await this.deps.repository.createMessage({ conversationId: conversation.id, role: "operator", content: input.message });
+      const operatorMessage = await this.deps.repository.createMessage({ conversationId: conversation.id, role: "operator", content: input.message });
+      // Resolved after the operator message exists, not before: a tool that reads or records
+      // through usage (document_search's retrieval pipeline) needs this turn's own message id on
+      // its invocation context the same way the turn's own model calls already carry it.
+      const tools = this.resolveTools({ ...input, copilotConversationId: conversation.id, copilotMessageId: operatorMessage.id }, probeBudget);
       await this.audit(input, {
         accountId: input.accountId,
         workspaceId: input.workspaceId,
@@ -786,6 +789,11 @@ export class OperatorCopilotService {
           userMessage: buildCopilotTurnInput(input.pageContext, priorTranscript, input.message),
           usageContext: {
             workspaceId: input.workspaceId,
+            // Ray's own conversation and this turn's operator message -- never conversationId or
+            // messageId, which are foreign-keyed to the assistant's conversations/messages and must
+            // never hold a Ray id (see durableUsageEventRecorder.ts).
+            copilotConversationId: conversation.id,
+            copilotMessageId: operatorMessage.id,
             requestId: turnId,
             surface: "operator_copilot",
             attemptKey: "copilot_turn",
@@ -895,12 +903,12 @@ export class OperatorCopilotService {
     return acquired;
   }
 
-  private resolveTools(input: { workspaceId: string; accountId: string; operatorUserId: string; surface: CopilotSurface; copilotConversationId: string; pageContext: CopilotPageContext; permissions: ReadonlySet<string> }, probeBudget: CopilotProbeBudget): ReadonlyArray<AgentTool> {
+  private resolveTools(input: { workspaceId: string; accountId: string; operatorUserId: string; surface: CopilotSurface; copilotConversationId: string; copilotMessageId: string; pageContext: CopilotPageContext; permissions: ReadonlySet<string> }, probeBudget: CopilotProbeBudget): ReadonlyArray<AgentTool> {
     return this.deps.tools
       .filter((descriptor) => hasAllCopilotToolPermissions(descriptor.requiredPermissions, input.permissions))
       .filter((descriptor) => !descriptor.surfaces || descriptor.surfaces.includes(input.surface))
       .map((descriptor) => meteredCopilotTool(
-        descriptor.createTool({ workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, surface: input.surface, copilotConversationId: input.copilotConversationId, permissions: input.permissions, currentAuthorization: this.deps.currentAuthorization, pageContext: input.pageContext }),
+        descriptor.createTool({ workspaceId: input.workspaceId, accountId: input.accountId, operatorUserId: input.operatorUserId, surface: input.surface, copilotConversationId: input.copilotConversationId, copilotMessageId: input.copilotMessageId, permissions: input.permissions, currentAuthorization: this.deps.currentAuthorization, pageContext: input.pageContext }),
         // Bound to its descriptor, not handed over bare: the contract declares a method, so a
         // contributed descriptor may legitimately be class-backed and read `this` to answer.
         (toolInput) => descriptor.verificationCost(toolInput),

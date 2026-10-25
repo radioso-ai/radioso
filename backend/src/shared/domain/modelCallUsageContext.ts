@@ -4,6 +4,13 @@ export interface ModelCallUsageContext {
   agentId?: string | null;
   conversationId?: string | null;
   messageId?: string | null;
+  /**
+   * Ray's own conversation, distinct from `conversationId`: `copilot_conversations`, not the
+   * assistant's `conversations`. Only the copilot surface sets this.
+   */
+  copilotConversationId?: string | null;
+  /** Ray's own per-turn operator message, distinct from `messageId`: `copilot_messages`, not `messages`. */
+  copilotMessageId?: string | null;
   requestId?: string | null;
   surface: string;
   operation: string;

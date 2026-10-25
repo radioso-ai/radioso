@@ -21,6 +21,11 @@ export interface EmbeddingUsageEvent {
   agentId?: string | null;
   conversationId?: string | null;
   messageId?: string | null;
+  /** Ray's own conversation, distinct from `conversationId`: `copilot_conversations`, not the
+   * assistant's `conversations`. A caller that is not Ray never sets this. */
+  copilotConversationId?: string | null;
+  /** Ray's own per-turn operator message, distinct from `messageId`: `copilot_messages`, not `messages`. */
+  copilotMessageId?: string | null;
   surface?: string;
   operation?: string;
   sourceId?: string | null;
@@ -53,6 +58,13 @@ export interface ModelUsageEvent {
   agentId?: string | null;
   conversationId?: string | null;
   messageId?: string | null;
+  /**
+   * Ray's own conversation, distinct from `conversationId` above: `copilot_conversations`, not
+   * the assistant's `conversations`. A caller that is not Ray never sets this.
+   */
+  copilotConversationId?: string | null;
+  /** Ray's own per-turn operator message, distinct from `messageId`: `copilot_messages`, not `messages`. */
+  copilotMessageId?: string | null;
   surface: string;
   operation: string;
   provider: string;
@@ -60,6 +72,7 @@ export interface ModelUsageEvent {
   inputTokens?: number | null;
   outputTokens?: number | null;
   reasoningTokens?: number | null;
+  cachedInputTokens?: number | null;
   totalTokens?: number | null;
   inputBytes?: number | null;
   outputBytes?: number | null;

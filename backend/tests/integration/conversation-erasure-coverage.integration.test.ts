@@ -84,6 +84,14 @@ const coverage: Record<string, ErasureCoverage> = {
   },
   "usage_events.conversation_id": { kind: "retained", reason: "The billing ledger keeps its rows and loses the link (SET NULL)." },
   "usage_events.message_id": { kind: "retained", reason: "The billing ledger keeps its rows and loses the link (SET NULL)." },
+  "usage_events.copilot_conversation_id": {
+    kind: "not_a_conversation",
+    reason: "Ray's own conversation, not the assistant's; the billing ledger keeps its rows and loses the link (SET NULL) under Ray's own retention sweep, not this erasure.",
+  },
+  "usage_events.copilot_message_id": {
+    kind: "not_a_conversation",
+    reason: "Ray's own per-turn operator message, not the assistant's; the billing ledger keeps its rows and loses the link (SET NULL) under Ray's own retention sweep, not this erasure.",
+  },
   "notification_delivery_outcomes.conversation_id": {
     kind: "retained",
     reason: "The daily email cap's ledger: counts and a recipient digest only. Erasing a conversation must not return its emails to the day's budget (SET NULL).",

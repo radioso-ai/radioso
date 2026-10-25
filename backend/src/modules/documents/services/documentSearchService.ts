@@ -8,7 +8,9 @@ import type { AuditService } from "../../audit/contracts/index.js";
 import type { DocumentRepositoryPort, DocumentSummaryRecord } from "./documentIngestionService.js";
 import type { RetrievalPipelineService, ActivityTrace } from "../../retrieval/public.js";
 
-export type DocumentSearchActionType =
+// Not exported: nothing outside this module names a search action directly; callers only ever
+// see it nested inside DocumentSearchAction, which is exported.
+type DocumentSearchActionType =
   | "open_document"
   | "inspect_match_evidence"
   | "open_history_entry"
@@ -43,7 +45,8 @@ export interface DocumentSearchResponse {
   activityTrace?: ActivityTrace;
 }
 
-export type DocumentSearchExecutionSurface = "documents" | "mcp_capability" | "operator_copilot";
+// Not exported: callers pass the literal string; nothing outside this module names the type.
+type DocumentSearchExecutionSurface = "documents" | "mcp_capability" | "operator_copilot";
 
 interface DocumentSearchAuditMetadata extends Record<string, unknown> {
   searchId: string;
@@ -68,6 +71,10 @@ export class DocumentSearchService {
     query: string;
     metadataFilter?: Record<string, unknown>;
     executionSurface?: DocumentSearchExecutionSurface;
+    /** Ray's own conversation and this turn's operator message, set only when
+     * `executionSurface` is `"operator_copilot"`; never the assistant's own ids. */
+    copilotConversationId?: string;
+    copilotMessageId?: string;
   }): Promise<DocumentSearchResponse> {
     const searchId = randomUUID();
     const retrieval = await this.retrievalPipeline.run({
@@ -80,6 +87,8 @@ export class DocumentSearchService {
         requestId: searchId,
         surface: input.executionSurface ?? "documents",
         attemptKey: "document_search",
+        copilotConversationId: input.copilotConversationId ?? null,
+        copilotMessageId: input.copilotMessageId ?? null,
       },
     });
 

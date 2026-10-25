@@ -126,7 +126,14 @@ const recrawlSourceOutputSchema = z.object({
 });
 
 export interface CopilotDocumentSearchPort {
-  search(input: { workspaceId: string; query: string; executionSurface: "operator_copilot" }): Promise<{ results: ReadonlyArray<unknown> }>;
+  search(input: {
+    workspaceId: string;
+    query: string;
+    executionSurface: "operator_copilot";
+    /** Ray's own conversation and this turn's operator message, never the assistant's ids. */
+    copilotConversationId?: string;
+    copilotMessageId?: string;
+  }): Promise<{ results: ReadonlyArray<unknown> }>;
 }
 export interface CopilotDocumentStatusPort {
   summarizeWorkspace(workspaceId: string): Promise<{ documentCount: number; readyDocumentCount: number; pendingDocumentCount: number; failedDocumentCount: number }>;
@@ -181,7 +188,7 @@ export const createDocumentSearchCopilotTools = (deps: DocumentSearchCopilotTool
     name: "document_search", shape: "read", verificationCost: () => 0, uiLabel: "Searching documents", contributingModule: "documents", dashboardSubject: { type: "document" }, requiredPermissions: ["workspace.documents.read"],
     description: "Search workspace documents and return matching document metadata and quoted evidence snippets — the only document text available to you.",
     inputSchema: documentSearchInputSchema, outputSchema: documentSearchOutputSchema,
-    createTool: (context) => ({ name: "document_search", description: "Search workspace documents and return matching document metadata and quoted evidence snippets — the only document text available to you.", inputSchema: documentSearchInputSchema, outputSchema: documentSearchOutputSchema, invoke: async ({ query }) => boundPayload({ results: (await deps.documentSearchService.search({ workspaceId: context.workspaceId, query, executionSurface: "operator_copilot" })).results as Record<string, unknown>[] }) }),
+    createTool: (context) => ({ name: "document_search", description: "Search workspace documents and return matching document metadata and quoted evidence snippets — the only document text available to you.", inputSchema: documentSearchInputSchema, outputSchema: documentSearchOutputSchema, invoke: async ({ query }) => boundPayload({ results: (await deps.documentSearchService.search({ workspaceId: context.workspaceId, query, executionSurface: "operator_copilot", copilotConversationId: context.copilotConversationId, copilotMessageId: context.copilotMessageId })).results as Record<string, unknown>[] }) }),
   },
 ];
 

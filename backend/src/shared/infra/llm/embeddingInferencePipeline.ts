@@ -16,14 +16,17 @@ import type {
   ProviderUsage,
 } from "./providerTypes.js";
 
-export interface EmbeddingUsageItem {
+// Not exported: nothing outside this module imports these three. Each consumer that needs the
+// same shape (embeddingProfiles/contracts/embeddingGeneration.ts, embeddingConsumers.ts) defines
+// its own, so widening these to a shared export would be a port nobody has asked for yet.
+interface EmbeddingUsageItem {
   chunkIndex: number;
   chunkId?: string | null;
   contentBytes: number;
   estimatedTokens?: number | null;
 }
 
-export interface EmbeddingInferenceRequest {
+interface EmbeddingInferenceRequest {
   texts: string[];
   model?: string;
   dimensions?: number;
@@ -38,7 +41,7 @@ export interface EmbeddingInferenceRequest {
   items?: EmbeddingUsageItem[];
 }
 
-export interface EmbeddingInferencePipeline {
+interface EmbeddingInferencePipeline {
   readonly metadata: LlmProviderMetadata;
   embedTexts(input: EmbeddingInferenceRequest): Promise<EmbeddingResult>;
 }
@@ -157,6 +160,8 @@ export class EmbeddingInferencePipelineService implements EmbeddingInferencePipe
       agentId: input.operation.agentId ?? null,
       conversationId: input.operation.conversationId ?? null,
       messageId: input.operation.messageId ?? null,
+      copilotConversationId: input.operation.copilotConversationId ?? null,
+      copilotMessageId: input.operation.copilotMessageId ?? null,
       surface: input.operation.surface,
       operation: input.operation.operation,
       sourceId: input.sourceId ?? null,

@@ -64,6 +64,8 @@ export interface CopilotToolInvocationContext {
   readonly currentAuthorization: CopilotCurrentAuthorizationPort;
   /** Internal copilot thread identity; distinct from pageContext.conversationId. */
   readonly copilotConversationId?: string;
+  /** This turn's operator message within the copilot thread above; set alongside it. */
+  readonly copilotMessageId?: string;
   /** Durable origin for a direct Operator MCP invocation; mutually exclusive with a copilot thread. */
   readonly operatorMcpInvocationId?: string;
   /** Receipt bindings carried only by the authenticated Operator MCP transport. */

@@ -1,7 +1,7 @@
 ---
 title: "Usage Event Taxonomy"
 description: "Specification of how model inference and embedding operations are tracked and recorded in usage events with surface names and operation lineage."
-last_updated: 2026-08-03
+last_updated: 2026-10-25
 ---
 
 # Usage Event Taxonomy
@@ -52,9 +52,40 @@ supplies it. A missing value means the provider did not supply a usable
 reasoning count; it is not treated as zero. The dashboard uses this distinction
 when it reports visible output tokens.
 
+Model events also store provider-reported `cached_input_tokens` when the
+provider supplies it: tokens served from the provider's own cache rather than
+reprocessed. A missing value means the provider did not report cache usage for
+that call, the same convention `reasoning_tokens` uses. Providers differ in
+what the number means relative to `input_tokens`, and this column stores
+exactly what each provider reports without reconciling them to one shape:
+
+- **OpenAI, Azure OpenAI, Gemini**: `cached_input_tokens` is a *subset* of
+  `input_tokens` (OpenAI's `prompt_tokens_details.cached_tokens` out of
+  `prompt_tokens`; Gemini's `cachedContentTokenCount` out of
+  `promptTokenCount`). The prompt's total cost is `input_tokens`;
+  `cached_input_tokens` says how much of it was free or discounted.
+- **Claude**: `cached_input_tokens` stores `cache_read_input_tokens`, which is
+  *additional* to `input_tokens`, not a part of it. Anthropic's `input_tokens`
+  already excludes anything served from cache, so the prompt's total token
+  count is `input_tokens + cache_read_input_tokens` (plus
+  `cache_creation_input_tokens` on a call that wrote to the cache, which this
+  column does not carry). A query that sums `cached_input_tokens` as a share of
+  `input_tokens` to estimate savings is only valid for OpenAI/Azure/Gemini
+  rows; for a Claude row it understates the prompt's real size by the cached
+  amount. Group by `provider` before comparing the two columns.
+
 The recorder can also store `agent_id` when the calling product flow knows the
 agent. It complements workspace, conversation, message, document, and job
 lineage; it does not replace them.
+
+Ray's own operator-copilot turns carry their conversation and per-turn message
+lineage on a dedicated pair of columns, `copilot_conversation_id` and
+`copilot_message_id`, foreign-keyed to `copilot_conversations` and
+`copilot_messages`. These are never the same columns as `conversation_id` and
+`message_id` above, which are foreign-keyed to the assistant's `conversations`
+and `messages` and must never hold a Ray id. Both pairs are independently
+`SET NULL` on delete: Ray's own retention sweep and conversation erasure each
+remove only their own link, never the ledger row.
 
 ## Current Surfaces And Operations
 
@@ -95,6 +126,10 @@ lineage; it does not replace them.
 | `agent_wizard` | `analyze_website` | Agent Wizard website analysis | workspace, analysis request |
 | `agents` | `draft_directive` | Drafting a directive from an operator's coaching input | workspace, agent, request |
 | `agents` | `directive_coherence` | Checking a proposed directive against the agent's existing directives | workspace, agent |
+| `operator_copilot` | `agent_step` | Ray's own model calls: turn planning, each tool-loop step, and the closing answer | account when available, workspace, Ray conversation and turn message, request |
+| `operator_copilot` | `query_interpretation` | Query rewrite behind Ray's `document_search` tool | workspace, Ray conversation and turn message, request |
+| `operator_copilot` | `query_embedding` | Semantic query embeddings behind Ray's `document_search` tool | workspace, Ray conversation and turn message, request |
+| `operator_copilot` | `rerank` | Model reranking behind Ray's `document_search` tool | workspace, Ray conversation and turn message, request |
 | `documents` | `embedding` | Document processing chunk embeddings | account when resolvable, workspace, document, revision, job |
 
 ## Detailed Usage Reporting

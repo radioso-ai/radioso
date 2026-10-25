@@ -10,6 +10,7 @@ import {
   noisyCorpusQueries,
   retrievalFixtureDocuments,
 } from "../support/retrievalFixtures.js";
+import { lexicalSearchStub } from "../support/lexicalSearchStub.js";
 
 const updateRetrievalSkillSettings = async (
   dependencies: ReturnType<typeof createTestApp>["dependencies"],
@@ -112,11 +113,11 @@ describe("retrieval benchmark integration", () => {
   it("keeps hybrid retrieval at least as effective as a lexical-disabled baseline within bounded runtime", async () => {
     const hybrid = createTestApp();
     const vectorOnly = createTestApp({
-      lexicalSearch: {
+      lexicalSearch: lexicalSearchStub({
         async search() {
           return [];
         },
-      },
+      }),
     });
 
     const setupAccount = async (testApp: ReturnType<typeof createTestApp>, email: string) => {

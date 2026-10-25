@@ -24,6 +24,7 @@ import {
   groundedV2Envelope,
   noSupportV2Envelope,
 } from "../support/answerEnvelopeV2Fixtures.js";
+import { lexicalSearchStub } from "../support/lexicalSearchStub.js";
 
 const envelope = (answer: string, suggestions: unknown[]): string =>
   `${answer}\n${SUGGESTIONS_SENTINEL}\n${JSON.stringify(suggestions)}`;
@@ -2548,11 +2549,11 @@ describe("chat integration", () => {
 
   it("still answers grounded questions when lexical search is disabled", async () => {
     const { app } = createTestApp({
-      lexicalSearch: {
+      lexicalSearch: lexicalSearchStub({
         async search() {
           return [];
         },
-      },
+      }),
     });
 
     const { token } = await issueTestToken(app, "lexical-off@example.com");

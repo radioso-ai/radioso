@@ -89,7 +89,7 @@ export const createDefaultRetrievalServices = (input: {
     input.retrievalDefaultsProvider,
     input.queryEmbeddings,
     input.vectorSearch,
-    new PgLexicalSearch(input.database),
+    new PgLexicalSearch(input.database, { logger: input.logger }),
     new ConversationContextService(),
     new QueryRewriteService(
       input.llmRegistry.createRewriteGateway(input.usageEventRecorder),

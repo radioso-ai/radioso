@@ -13,6 +13,7 @@ import { RerankService } from "../../../src/modules/retrieval/services/rerankSer
 import { RetrievalExecutionTelemetryService } from "../../../src/modules/retrieval/services/retrievalExecutionTelemetryService.js";
 import { RetrievalPipelineService } from "../../../src/modules/retrieval/services/retrievalPipelineService.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../src/shared/domain/behaviorConfig.js";
+import { lexicalSearchStub } from "../../support/lexicalSearchStub.js";
 
 // The production workspace's retrieval settings the live calendar verification ran with.
 const productionSettings = {
@@ -105,7 +106,7 @@ const runJanuaryTurn = async (input: {
         }));
       },
     },
-    { async search() { return []; } },
+    lexicalSearchStub({ async search() { return []; } }),
     new ConversationContextService(),
     new QueryRewriteService(),
     new CandidatePreparationService(),

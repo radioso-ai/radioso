@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import type { VectorCandidateSearchPort } from "../../src/modules/retrieval/domain/vectorAdapter.js";
 import { CandidateRetrievalStageService } from "../../src/modules/retrieval/services/candidateRetrievalStage.js";
+import { lexicalSearchStub } from "../support/lexicalSearchStub.js";
+import type { LexicalSearchInput } from "../../src/modules/retrieval/infra/lexicalSearch.js";
 
 const embeddingSpace = { id: "space-active", dimensions: 1, distanceMetric: "cosine" as const };
 
@@ -48,7 +50,7 @@ describe("candidate retrieval branches", () => {
           ];
         },
       },
-      {
+      lexicalSearchStub({
         async search(input) {
           lexicalQueries.push(input.query);
           lexicalPlans.push(input.lexicalPlan);
@@ -62,7 +64,7 @@ describe("candidate retrieval branches", () => {
             },
           ];
         },
-      },
+      }),
       hydrateSemanticCandidates,
       undefined,
       () => {
@@ -196,7 +198,7 @@ describe("candidate retrieval branches", () => {
           ];
         },
       },
-      {
+      lexicalSearchStub({
         async search(input) {
           lexicalQueries.push(input.query);
           return [
@@ -209,7 +211,7 @@ describe("candidate retrieval branches", () => {
             },
           ];
         },
-      },
+      }),
       hydrateSemanticCandidates,
     );
 
@@ -338,11 +340,11 @@ describe("candidate retrieval branches", () => {
           }];
         },
       },
-      {
+      lexicalSearchStub({
         async search() {
           return [];
         },
-      },
+      }),
       {
         async hydrate(input) {
           seenHydrationInputs.push({
@@ -476,7 +478,7 @@ describe("candidate retrieval branches", () => {
           ];
         },
       },
-      {
+      lexicalSearchStub({
         async search(input) {
           lexicalQueries.push(input.query);
           lexicalPlans.push(input.lexicalPlan);
@@ -490,7 +492,7 @@ describe("candidate retrieval branches", () => {
             },
           ];
         },
-      },
+      }),
       hydrateSemanticCandidates,
     );
 
@@ -723,7 +725,7 @@ describe("candidate retrieval branch timings", () => {
           ];
         },
       },
-      {
+      lexicalSearchStub({
         async search(input) {
           await delay(lexicalDelayMs);
           return [
@@ -736,7 +738,7 @@ describe("candidate retrieval branch timings", () => {
             },
           ];
         },
-      },
+      }),
       hydrateSemanticCandidates,
     );
 
@@ -786,7 +788,7 @@ describe("candidate retrieval branch timings", () => {
           ];
         },
       },
-      {
+      lexicalSearchStub({
         async search(input) {
           await delay(lexicalDelayMsByQuery[input.query] ?? 0);
           return [
@@ -799,7 +801,7 @@ describe("candidate retrieval branch timings", () => {
             },
           ];
         },
-      },
+      }),
       hydrateSemanticCandidates,
     );
 
@@ -846,7 +848,7 @@ describe("candidate retrieval branch timings", () => {
           throw new Error("vector search must not run without an embedding");
         },
       },
-      {
+      lexicalSearchStub({
         async search(input) {
           await delay(20);
           return [
@@ -859,7 +861,7 @@ describe("candidate retrieval branch timings", () => {
             },
           ];
         },
-      },
+      }),
       hydrateSemanticCandidates,
     );
 
@@ -867,5 +869,59 @@ describe("candidate retrieval branch timings", () => {
 
     expect(result.semanticRetrievalDurationMs).toBe(0);
     expect(result.lexicalRetrievalDurationMs).toBeGreaterThan(0);
+  });
+  it("records a failed all-terms search's pass as skipped for lexical unavailability", async () => {
+    const stage = new CandidateRetrievalStageService(
+      {
+        async embedQueries() {
+          throw new Error("embedding provider down");
+        },
+      },
+      {
+        async search() {
+          throw new Error("vector search must not run without an embedding");
+        },
+      },
+      {
+        async search() {
+          throw new Error("lexical backend down");
+        },
+      },
+      hydrateSemanticCandidates,
+    );
+
+    const result = await stage.execute(singleBranchStageInput());
+
+    expect(result.retrievalBranches[0]?.lexicalSomeTermsPass)
+      .toEqual({ outcome: "skipped", reason: "lexical_unavailable", durationMs: 0 });
+    expect(result.degradedRetrievalChannels).toContain("lexical");
+  });
+
+  it("asks each lexical branch for some-terms matches and keeps what the pass did", async () => {
+    const inputs: LexicalSearchInput[] = [];
+    const stage = new CandidateRetrievalStageService(
+      {
+        async embedQueries() {
+          throw new Error("embedding provider down");
+        },
+      },
+      {
+        async search() {
+          throw new Error("vector search must not run without an embedding");
+        },
+      },
+      {
+        async search(input) {
+          inputs.push(input);
+          return { matches: [], someTermsPass: { outcome: "timed_out", durationMs: 150 } };
+        },
+      },
+      hydrateSemanticCandidates,
+    );
+
+    const result = await stage.execute(singleBranchStageInput());
+
+    expect(inputs.map((input) => input.matchMode)).toEqual(["all_or_some_terms"]);
+    expect(result.retrievalBranches[0]?.lexicalSomeTermsPass).toEqual({ outcome: "timed_out", durationMs: 150 });
   });
 });

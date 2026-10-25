@@ -14,10 +14,14 @@ import type {
   CandidateRetrievalStageResult,
 } from "./retrievalPipelineStages.js";
 import type { RetrievedCandidate, TriggerBackoffDecision } from "../domain/retrievalPipelineTypes.js";
-import type { RetrievedChunk } from "../domain/vectorSearch.js";
+import { isSomeTermsLexicalMatch, type RetrievedChunk } from "../domain/vectorSearch.js";
 import type { RetrievalMetadataRule } from "../../settings/contracts/retrieval.js";
 import { getContextSelectionClauses } from "./retrievalShapeResolver.js";
-import { getCandidateFusedScore, hasUsefulCandidateEvidence } from "./candidateScoring.js";
+import {
+  getCandidateFusedScore,
+  hasUsefulCandidateEvidence,
+  holdsPrimaryEvidence,
+} from "./candidateScoring.js";
 
 export class CandidatePreparationStageService implements CandidatePreparationStageContract {
   constructor(
@@ -60,7 +64,8 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
       if (matchedHardFilterRules.length === 0) {
         return undefined;
       }
-      if (candidates.length === 0) {
+      // A filter that leaves only some-terms lexical hits has emptied the turn's evidence.
+      if (!candidates.some(holdsPrimaryEvidence)) {
         return "empty_filtered_candidates";
       }
       if (
@@ -152,7 +157,13 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
       temporalCandidates,
       rankedCandidates: orderedCandidates,
     });
-    const mergedCandidates = temporallyMergedCandidates.slice(0, RETRIEVAL_BEHAVIOR.hybrid.mergedCandidateCap);
+    // Some-terms lexical hits corroborate other evidence. A turn that found nothing else
+    // keeps none of them, so it reaches the answer as a turn with no evidence.
+    const supportedCandidates = temporallyMergedCandidates.some(holdsPrimaryEvidence)
+      || (requestedRangeLookup && temporalCandidates.length > 0)
+      ? temporallyMergedCandidates
+      : [];
+    const mergedCandidates = supportedCandidates.slice(0, RETRIEVAL_BEHAVIOR.hybrid.mergedCandidateCap);
     const triggerBackoffApplied = relaxedRuleIds.length > 0;
 
     return {
@@ -204,14 +215,17 @@ export class CandidatePreparationStageService implements CandidatePreparationSta
       return candidates;
     }
 
+    // The preference is for chunks that hold the looked-up term; a partial match does not.
+    const preferredLexicalScore = (candidate: RetrievedCandidate): number =>
+      isSomeTermsLexicalMatch(candidate) ? 0 : candidate.lexicalScore;
     return [...candidates].sort((left, right) => {
-      const leftHasLexical = left.lexicalScore > 0 ? 1 : 0;
-      const rightHasLexical = right.lexicalScore > 0 ? 1 : 0;
+      const leftHasLexical = preferredLexicalScore(left) > 0 ? 1 : 0;
+      const rightHasLexical = preferredLexicalScore(right) > 0 ? 1 : 0;
       if (leftHasLexical !== rightHasLexical) {
         return rightHasLexical - leftHasLexical;
       }
-      if (left.lexicalScore !== right.lexicalScore) {
-        return right.lexicalScore - left.lexicalScore;
+      if (preferredLexicalScore(left) !== preferredLexicalScore(right)) {
+        return preferredLexicalScore(right) - preferredLexicalScore(left);
       }
       return getCandidateFusedScore(right) - getCandidateFusedScore(left);
     });

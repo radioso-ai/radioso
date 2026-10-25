@@ -23,9 +23,10 @@ const anchorSemanticQuery = (semanticQuery: string, subject: string): string =>
 /**
  * Makes sure the subject a referential turn resolved to reaches retrieval when the
  * model's queries left it out. Every semantic query names the subject, and a lexical
- * search for the subject alone runs beside the model's own lexical searches: lexical
- * search requires every term, so the subject is added as an alternative rather than
- * appended to, or substituted for, the terms the model chose.
+ * search for the subject alone runs beside the model's own lexical searches. Lexical
+ * search ranks chunks holding every term first, and a chunk holding only some of them
+ * merely corroborates other evidence, so the subject is added as an alternative rather
+ * than appended to, or substituted for, the terms the model chose.
  *
  * Without model subqueries the model's single query becomes the first branch; the
  * subject search shares its semantic query, so it costs no extra embedding.

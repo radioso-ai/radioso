@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { CandidateRetrievalStageService } from "../../../src/modules/retrieval/services/candidateRetrievalStage.js";
 import { RetrievalExecutionTelemetryService } from "../../../src/modules/retrieval/services/retrievalExecutionTelemetryService.js";
 import { buildCandidateRetrievalTraceAttributes } from "../../../src/modules/retrieval/services/retrievalPipelineStages.js";
+import { lexicalSearchStub } from "../../support/lexicalSearchStub.js";
 
 const lexicalChunk = {
   chunkId: "chunk-lexical",
@@ -98,9 +99,9 @@ const input = {
 describe("retrieval semantic degradation", () => {
   it("continues with lexical candidates when query embedding is unavailable", async () => {
     const vectorSearch = { search: vi.fn() };
-    const lexicalSearch = {
+    const lexicalSearch = lexicalSearchStub({
       search: vi.fn().mockResolvedValue([lexicalChunk]),
-    };
+    });
     const stage = new CandidateRetrievalStageService(
       {
         embedQueries: vi.fn().mockRejectedValue(
@@ -131,9 +132,9 @@ describe("retrieval semantic degradation", () => {
   });
 
   it("continues with lexical candidates when active-space vector search is unavailable", async () => {
-    const lexicalSearch = {
+    const lexicalSearch = lexicalSearchStub({
       search: vi.fn().mockResolvedValue([lexicalChunk]),
-    };
+    });
     const stage = new CandidateRetrievalStageService(
       {
         embedQueries: vi.fn().mockResolvedValue({
@@ -169,9 +170,9 @@ describe("retrieval semantic degradation", () => {
 
   it("continues with semantic candidates when lexical search fails", async () => {
     const semanticChunk = { ...lexicalChunk, chunkId: "chunk-semantic" };
-    const lexicalSearch = {
+    const lexicalSearch = lexicalSearchStub({
       search: vi.fn().mockRejectedValue(new Error("canceling statement due to statement timeout")),
-    };
+    });
     const stage = new CandidateRetrievalStageService(
       {
         embedQueries: vi.fn().mockResolvedValue({
@@ -214,7 +215,7 @@ describe("retrieval semantic degradation", () => {
         }),
       },
       { search: vi.fn().mockResolvedValue([]) },
-      { search: vi.fn().mockResolvedValue([lexicalChunk]) },
+      lexicalSearchStub({ search: vi.fn().mockResolvedValue([lexicalChunk]) }),
       { hydrate: vi.fn().mockResolvedValue([]) },
       {
         findInWindow: vi.fn().mockRejectedValue(
@@ -239,7 +240,7 @@ describe("retrieval semantic degradation", () => {
         }),
       },
       { search: vi.fn().mockResolvedValue([]) },
-      { search: vi.fn().mockResolvedValue([lexicalChunk]) },
+      lexicalSearchStub({ search: vi.fn().mockResolvedValue([lexicalChunk]) }),
       { hydrate: vi.fn().mockResolvedValue([]) },
     );
 

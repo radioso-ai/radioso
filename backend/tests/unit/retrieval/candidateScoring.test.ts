@@ -149,3 +149,88 @@ describe("compareByFusedScore", () => {
     expect([weak, strong].sort(compareByFusedScore).map((candidate) => candidate.fusedScore)).toEqual([0.8, 0.5]);
   });
 });
+
+// A some-terms lexical hit holds part of the query, not all of it (#1576). It may lift a
+// candidate another source found, but every verdict that reads a lexical hit as "the
+// chunk contains what was asked for" must keep ignoring it.
+describe("some-terms lexical matches", () => {
+  const someTermsChunk = (chunkId: string, lexicalRankScore: number): RetrievedChunk => ({
+    ...lexicalChunk({ chunkId, lexicalScore: 0.9, lexicalRankScore }),
+    lexicalTermCoverage: "some_terms",
+  });
+
+  it("never count as useful lexical evidence", () => {
+    const candidate = { semanticScore: 0, lexicalRankScore: 0.8 };
+
+    expect(hasUsefulCandidateEvidence({ ...candidate, lexicalTermCoverage: "some_terms" })).toBe(false);
+    expect(hasUsefulCandidateEvidence({ ...candidate, lexicalTermCoverage: "all_terms" })).toBe(true);
+    expect(hasUsefulCandidateEvidence(candidate)).toBe(true);
+    expect(hasUsefulCandidateEvidence({ semanticScore: 0.4, lexicalRankScore: 0.8, lexicalTermCoverage: "some_terms" })).toBe(true);
+  });
+
+  it("only corroborate in fusion: alone they rank below semantic hits", () => {
+    const someTermsAlone = fuseCandidateRanks({ lexicalRank: 1, lexicalScore: 1, lexicalTermCoverage: "some_terms" });
+    const allTermsAlone = fuseCandidateRanks({ lexicalRank: 1, lexicalScore: 1, lexicalTermCoverage: "all_terms" });
+    const semanticRankFifty = fuseCandidateRanks({ semanticRank: 50, lexicalScore: 0 });
+
+    expect(someTermsAlone).toBeGreaterThan(0);
+    expect(someTermsAlone).toBeLessThan(semanticRankFifty);
+    expect(allTermsAlone).toBeGreaterThan(semanticRankFifty);
+  });
+
+  it("lift a semantic hit they corroborate, by less than an all-terms match would", () => {
+    const semanticOnly = fuseCandidateRanks({ semanticRank: 10, lexicalScore: 0 });
+    const withSomeTerms = fuseCandidateRanks({ semanticRank: 10, lexicalRank: 1, lexicalScore: 1, lexicalTermCoverage: "some_terms" });
+    const withAllTerms = fuseCandidateRanks({ semanticRank: 10, lexicalRank: 1, lexicalScore: 1, lexicalTermCoverage: "all_terms" });
+
+    expect(withSomeTerms).toBeGreaterThan(semanticOnly);
+    expect(withSomeTerms).toBeLessThan(withAllTerms);
+  });
+
+  it("take lexical ranks only after every all-terms hit", () => {
+    const prepared = new CandidatePreparationService().prepare({
+      original: [],
+      rewritten: [],
+      lexical: [
+        someTermsChunk("partial", 0.9),
+        { ...lexicalChunk({ chunkId: "exact", lexicalScore: 1, lexicalRankScore: 0.01 }), lexicalTermCoverage: "all_terms" },
+      ],
+    });
+
+    expect(byChunkId(prepared, "exact").lexicalRank).toBe(1);
+    expect(byChunkId(prepared, "partial").lexicalRank).toBe(2);
+    expect(prepared.map((candidate) => candidate.chunkId)).toEqual(["exact", "partial"]);
+  });
+
+  it("give way to an all-terms match of the same chunk from another branch", () => {
+    const prepared = new CandidatePreparationService().prepare({
+      original: [],
+      rewritten: [],
+      lexical: [
+        someTermsChunk("shared", 0.9),
+        { ...lexicalChunk({ chunkId: "shared", lexicalScore: 1, lexicalRankScore: 0.2 }), lexicalTermCoverage: "all_terms" },
+      ],
+    });
+
+    // The all-terms row's scores stand; the partial row's higher OR-query rank is ignored.
+    expect(byChunkId(prepared, "shared")).toMatchObject({
+      lexicalTermCoverage: "all_terms",
+      lexicalScore: 1,
+      lexicalRankScore: 0.2,
+    });
+    expect(hasUsefulCandidateEvidence(byChunkId(prepared, "shared"))).toBe(true);
+  });
+
+  it("take a semantic candidate's coverage from the first lexical row that finds it", () => {
+    const prepared = new CandidatePreparationService().prepare({
+      original: [semanticChunk({ chunkId: "semantic", similarity: 0.7 })],
+      rewritten: [],
+      lexical: [someTermsChunk("semantic", 0.9)],
+    });
+
+    expect(byChunkId(prepared, "semantic")).toMatchObject({
+      lexicalTermCoverage: "some_terms",
+      retrievalSources: ["semantic_original", "lexical"],
+    });
+  });
+});

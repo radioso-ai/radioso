@@ -35,7 +35,7 @@ const extractIndexedExpression = (schema: string): string => {
 };
 
 const extractQueryExpression = (source: string): string => {
-  const match = source.match(/(to_tsvector\('simple',[^)]*\([^)]*\)\))\s+AS search_vector/);
+  const match = source.match(/CHUNK_SEARCH_VECTOR_SQL = "(to_tsvector\('simple',[^"]*)";/);
   if (!match?.[1]) {
     throw new Error("lexical search_vector expression not found");
   }

@@ -383,7 +383,7 @@ const buildRetrievalAnswerExecutor = (
         queryEmbeddings: input.queryEmbeddings,
         vectorSearch: input.vectorSearch,
         chunkHydrator: input.chunkHydrator,
-        lexicalSearch: new PgLexicalSearch(input.database),
+        lexicalSearch: new PgLexicalSearch(input.database, { logger: input.logger }),
         queryRewrite: new GatewayQueryRewritePortAdapter(input.llmRegistry.createRewriteGateway(input.usageEventRecorder)),
         rerankGateway: input.llmRegistry.createRerankGateway(input.usageEventRecorder),
       });

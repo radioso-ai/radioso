@@ -10,7 +10,7 @@ import { mergeMetadataFilters } from "./semanticSearchTool.js";
 const DEFAULT_TOP_K = 5;
 const MAX_TOP_K = 20;
 
-export interface LexicalSearchToolDeps {
+interface LexicalSearchToolDeps {
   readonly workspaceId: string;
   readonly lexicalSearch: LexicalSearchPort;
   readonly registry: ChunkRegistry;
@@ -51,14 +51,17 @@ export const createLexicalSearchTool = (
   outputSchema,
   async invoke(input) {
     const topK = input.topK ?? DEFAULT_TOP_K;
-    const chunks = await deps.lexicalSearch.search({
+    const { matches } = await deps.lexicalSearch.search({
       workspaceId: deps.workspaceId,
       query: input.query,
       topK,
+      // The agent is told this tool matches exact terms and to fall back when it finds
+      // nothing, so it only ever sees chunks holding every term.
+      matchMode: "all_terms",
       metadataFilter: mergeMetadataFilters(input.metadataFilter, deps.callerMetadataFilter),
       sourceFilter: deps.sourceFilter,
     });
-    const registered = chunks.map((chunk) => fromRetrievedChunk(chunk, deps.snippetChars));
+    const registered = matches.map((chunk) => fromRetrievedChunk(chunk, deps.snippetChars));
     deps.registry.record(registered);
     return {
       results: registered.map((chunk) => ({

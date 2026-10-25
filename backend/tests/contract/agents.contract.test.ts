@@ -14,6 +14,7 @@ import {
 } from "../support/testApp.js";
 import { forbidden } from "../../src/shared/domain/errors.js";
 import { textResult } from "../support/llmStubs.js";
+import { lexicalSearchStub } from "../support/lexicalSearchStub.js";
 
 const parseSseData = (body: string, eventName: string): unknown[] =>
   body
@@ -721,11 +722,11 @@ describe("agents contract", () => {
 
   it("routes explicit agents and rejects agents from another workspace", async () => {
     const { app } = createTestApp({
-      lexicalSearch: {
+      lexicalSearch: lexicalSearchStub({
         async search() {
           throw new Error("direct-only agent should not invoke retrieval search");
         },
-      },
+      }),
     });
     const first = await issueTestToken(app, "agents-first@example.com");
     const second = await issueTestToken(app, "agents-second@example.com");

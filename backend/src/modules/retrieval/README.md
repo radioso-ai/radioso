@@ -86,6 +86,9 @@ imports from `services/` or `infra/`.
   resolved fails the run instead of silently measuring workspace defaults.
 - `infra/pgVectorAdapter.ts`, `infra/chunkCandidateHydrator.ts`, and
   `infra/lexicalSearch.ts`: concrete search and hydration adapters.
+  `domain/lexicalSomeTermsMatch.ts` is the pure half of lexical search: the
+  terms, adjacent-word joins, and term weights the adapter's some-terms pass
+  runs on (see Lexical Matching below).
 - `infra/hnswIterativeScan.ts`: shared transaction wrapper that enables
   high-recall strict-order HNSW scanning for a filtered vector query, with a
   probe-once fallback for servers whose pgvector predates the setting.
@@ -173,6 +176,67 @@ still fuse and rank against their peers, and they still register as thin evidenc
 `CandidatePreparationService.addSource` takes `Math.max` across branches, so a
 multi-subquery turn lifts each branch's best hit to `1.0`. Each branch contributes
 its own best candidate to the pooled set.
+
+## Lexical Matching
+
+`infra/lexicalSearch.ts` first runs the all-terms search: `plainto_tsquery` and
+`phraseto_tsquery` per lexical option, every term required. Under `matchMode:
+"all_or_some_terms"` (the pipeline's candidate retrieval), when it finds fewer than
+`RETRIEVAL_BEHAVIOR.hybrid.lexicalSomeTermsBelowAllTermsMatches` chunks, a some-terms
+pass follows and its hits are appended after the all-terms ones. The agentic
+`lexical_search` tool asks for `all_terms`, which its prompt promises.
+
+1. `buildSomeTermsLexicalQuery` splits the option into terms (letter and number
+   runs, so user text never carries tsquery syntax; at most 32, `truncated` past
+   that), adds each pair of adjacent words written as one, and keeps phrases and
+   exclusions.
+2. One statement counts the chunks in scope (capped at
+   `lexicalSomeTermsScopeCountCap + 1`) and each alternative's matches in the same
+   scope (capped at `lexicalSomeTermsTermMatchCap + 1`).
+3. `planSomeTermsRanking` weighs each term ln(chunks in scope / chunks holding it);
+   a term that matches nothing or passes the count cap weighs 0. It keeps the
+   `lexicalSomeTermsMaxRankedTerms` rarest weighted terms, picks the alternatives
+   that define the ranked set (rarest first, within
+   `lexicalSomeTermsRankedChunkBudget`), and sets two floors a chunk must clear: the
+   `lexicalSomeTermsMinimumWeightShare` of the ranked weight, and the absolute
+   `lexicalSomeTermsMinimumHeldWeight`.
+4. A second statement ranks those chunks by covered weight, then `ts_rank_cd`
+   against the AND of the alternatives each chunk holds, the scale of an all-terms
+   rank.
+
+Both statements run in one transaction under `lexicalSomeTermsTimeoutMs`, applied
+as a transaction-local `statement_timeout` sized to what is left of the budget.
+Postgres can pick the workspace index over the GIN index for a term frequent in the
+partition and rare in the workspace, and then reads every chunk, so the cap does not
+bound time; the budget does. The pass is skipped while the pool has waiting
+clients (`connections_busy`). On a timeout or any other error the search keeps its
+all-terms hits, logs a count-only warning (plus the SQLSTATE for a failure), and
+reports the pass as `timed_out` or `failed`. The port returns
+`{ matches, someTermsPass }`: `skipped` with its reason, `ran`, `timed_out`, or
+`failed`, with its duration.
+
+Every lexical hit carries `lexicalTermCoverage`: `all_terms` or `some_terms` (a hit
+without the field holds every term). A some-terms row is `all_terms` only when the
+query was not cut, every term matched something, and the chunk holds each term by
+its own text; a chunk found through a join is `some_terms`. A some-terms hit's
+`similarity` is the share of term weight it holds. Consumers that read a lexical hit
+as "the chunk holds what was asked for" check the coverage:
+
+- `fuseCandidateRanks` lets a some-terms hit contribute only as the secondary
+  source, and `compareLexicalEvidence` ranks it after every all-terms hit. It lifts
+  a candidate semantic search also found; on its own it ranks below every semantic
+  candidate, so it reaches the answer pool only when semantic search returned fewer
+  candidates than the pool holds.
+- `hasUsefulCandidateEvidence` never counts it as lexical evidence.
+- `candidatePreparationStage.ts` treats a filtered set holding only some-terms
+  hits as empty for trigger backoff, drops them on a turn where nothing else was
+  found (`holdsPrimaryEvidence`), and passes them over for a `lexicalBias:
+  "preferred"` shape.
+- The lexical trace stage reports `someTermsPass`, `someTermsPassSkipReason`,
+  `someTermsPassDurationMs`, and `someTermsCandidateCount`; the candidate retrieval
+  span reports `retrieval.candidates.lexical.some_terms.count`,
+  `retrieval.lexical.some_terms_pass.{ran,timed_out,failed,connections_busy}.count`,
+  and `retrieval.lexical.some_terms_pass.max_duration_ms`.
 
 ## Stage Timings
 

@@ -1306,7 +1306,8 @@ Primary internals:
   `chunk_embeddings` candidate search)
 - `backend/src/modules/retrieval/infra/chunkEmbeddingVectorIndex.ts` (per-width
   HNSW index rule, shared by the index DDL and the query's `ORDER BY`)
-- `backend/src/modules/retrieval/infra/lexicalSearch.ts`
+- `backend/src/modules/retrieval/infra/lexicalSearch.ts` (all-terms search, then
+  the some-terms pass planned by `domain/lexicalSomeTermsMatch.ts`)
 
 Operator scripts:
 

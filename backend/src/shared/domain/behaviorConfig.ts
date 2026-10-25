@@ -293,6 +293,35 @@ export const RETRIEVAL_BEHAVIOR = {
     // can score every real match below the absolute floor above; gating fusion on that
     // floor makes the only on-topic documents unrankable.
     lexicalFusionMinimumRelativeScore: 0.2,
+    // Lexical search first asks for chunks holding every query term. When fewer than
+    // this many do, it also returns chunks holding part of the query (some-terms
+    // matches), ranked after the all-terms ones.
+    lexicalSomeTermsBelowAllTermsMatches: 3,
+    // A some-terms match holds at least this share of the query's found term weight.
+    // A term weighs ln(chunks in scope / chunks holding it), so a chunk sharing only the
+    // query's frequent words falls short.
+    lexicalSomeTermsMinimumWeightShare: 1 / 3,
+    // ...and at least this much weight outright: as much as one term found on at most a
+    // tenth of the workspace's chunks. Without it, a query whose only found term sits on
+    // most pages would score every one of those pages as a full match.
+    lexicalSomeTermsMinimumHeldWeight: Math.log(10),
+    // Chunks in scope are counted up to this many. Past it the count is a lower bound,
+    // which only makes term weights smaller, never larger.
+    lexicalSomeTermsScopeCountCap: 10_000,
+    // A term matching more chunks than this cannot find a chunk on its own; it still
+    // counts toward the share a found chunk holds. Each term's count stops at the cap,
+    // but Postgres may still read every chunk in the workspace to reach it (a term
+    // frequent elsewhere in the partition, rare here), so the cap does not bound time.
+    lexicalSomeTermsTermMatchCap: 200,
+    // The most chunks a some-terms search ranks, taken from its rarest terms first.
+    lexicalSomeTermsRankedChunkBudget: 1000,
+    // The most terms a some-terms chunk is scored on; the rarest are kept.
+    lexicalSomeTermsMaxRankedTerms: 12,
+    // Wall-clock budget for the some-terms pass, counts and ranking together, enforced
+    // as a transaction-local statement_timeout. When it runs out, the search keeps its
+    // all-terms hits and the trace records the pass as timed out. The pass is skipped
+    // while requests wait for a pool connection, so the wait never eats the budget.
+    lexicalSomeTermsTimeoutMs: 150,
     mergedCandidateCap: 50,
     minimumUsefulCandidateCount: 3,
     hardFilterConfidenceThreshold: 0.85,

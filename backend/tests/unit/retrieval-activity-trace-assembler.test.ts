@@ -46,6 +46,56 @@ describe("activity trace assembler", () => {
     );
   });
 
+  it("counts each lexical branch's some-terms matches and tags every lexical chunk with its coverage", () => {
+    const input = baseInput();
+    const [first, second] = input.prompt.retrievalBranches;
+    input.prompt.retrievalBranches = [
+      {
+        ...first,
+        lexicalContexts: [
+          { chunkId: "ln1", documentId: "d1", title: "Narayani", content: "Narayani profile", similarity: 1, lexicalTermCoverage: "all_terms" },
+          { chunkId: "ln2", documentId: "d1", title: "Narayani", content: "Narayani dates", similarity: 0.5, lexicalTermCoverage: "some_terms" },
+        ],
+        lexicalSomeTermsPass: { outcome: "ran", durationMs: 42 },
+      },
+      { ...second, lexicalSomeTermsPass: { outcome: "timed_out", durationMs: 150 } },
+    ];
+    input.prompt.retrievalBranches.push({
+      ...second,
+      subqueryId: "subquery_3",
+      label: "Busy",
+      lexicalSomeTermsPass: { outcome: "skipped", reason: "connections_busy", durationMs: 0 },
+    });
+
+    const trace = new ActivityTraceAssembler().assemble(input);
+
+    const [firstLexical, secondLexical, busyLexical] = trace.stages.filter((stage) => stage.kind === "lexical");
+    expect(firstLexical?.metrics).toMatchObject({ candidateCount: 2, someTermsCandidateCount: 1, someTermsPassDurationMs: 42 });
+    expect(firstLexical?.outputs?.someTermsPass).toBe("ran");
+    expect(firstLexical?.outputs?.chunks).toEqual([
+      expect.objectContaining({ chunkId: "ln1", lexicalTermCoverage: "all_terms" }),
+      expect.objectContaining({ chunkId: "ln2", lexicalTermCoverage: "some_terms" }),
+    ]);
+    // A hit with no coverage value holds every term.
+    // A pass that ran out of time is told apart from one that found nothing.
+    expect(secondLexical?.metrics).toMatchObject({ candidateCount: 1, someTermsCandidateCount: 0, someTermsPassDurationMs: 150 });
+    expect(secondLexical?.outputs?.someTermsPass).toBe("timed_out");
+    expect(secondLexical?.outputs).not.toHaveProperty("someTermsPassSkipReason");
+    expect(busyLexical?.outputs).toMatchObject({ someTermsPass: "skipped", someTermsPassSkipReason: "connections_busy" });
+    expect(secondLexical?.outputs?.chunks).toEqual([
+      expect.objectContaining({ chunkId: "la1", lexicalTermCoverage: "all_terms" }),
+    ]);
+  });
+
+  it("reports a lexical branch without a pass report as skipped", () => {
+    const trace = new ActivityTraceAssembler().assemble(baseInput());
+
+    for (const stage of trace.stages.filter((candidate) => candidate.kind === "lexical")) {
+      expect(stage.outputs?.someTermsPass).toBe("skipped");
+      expect(stage.metrics?.someTermsPassDurationMs).toBe(0);
+    }
+  });
+
   it("falls back to the whole measured group span when a branch carries no timing of its own", () => {
     // The fixture's branches carry no semanticSearch*/lexicalSearch* fields (as an
     // older code path or fixture would produce), so every branch stage falls back to

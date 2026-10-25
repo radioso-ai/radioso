@@ -12,6 +12,7 @@ import { presentParsedQuery } from "./activitySummaryPresenter.js";
 import { getContextSelectionClauses, summarizeResolvedSteps } from "./retrievalShapeResolver.js";
 import { getCandidateFusedScore, hasUsefulCandidateEvidence } from "./candidateScoring.js";
 import { requestedDateRangeDays } from "../domain/temporal/requestedDateRange.js";
+import { isSomeTermsLexicalMatch, type LexicalTermCoverage } from "../domain/vectorSearch.js";
 
 interface StageTiming {
   startedAt: string;
@@ -98,11 +99,13 @@ const toLexicalChunkRefs = (
     title: string;
     similarity: number;
     lexicalRankScore?: number;
+    lexicalTermCoverage?: LexicalTermCoverage;
   }>,
 ) => contexts.map((context) => ({
   ...toChunkRef(context),
   lexicalScore: context.similarity,
   lexicalRankScore: context.lexicalRankScore ?? 0,
+  lexicalTermCoverage: context.lexicalTermCoverage ?? "all_terms",
 }));
 
 const toCandidateChunkRefs = (
@@ -195,6 +198,7 @@ export class ActivityTraceAssembler {
       reason: branch.reason,
       responseLanguagePolicy: branch.responseLanguagePolicy,
       contexts: branch.lexicalContexts,
+      someTermsPass: branch.lexicalSomeTermsPass,
       searchStartedAtMs: branch.lexicalSearchStartedAtMs,
       searchDurationMs: branch.lexicalSearchDurationMs,
     }));
@@ -390,9 +394,19 @@ export class ActivityTraceAssembler {
             outputs: {
               candidateCount: branch.contexts.length,
               chunks: toLexicalChunkRefs(branch.contexts),
+              // skipped, ran, timed_out, or failed: a pass that found nothing reads
+              // apart from one that never ran or never finished. A branch without a
+              // report (a hand-built fixture) reads as skipped.
+              someTermsPass: branch.someTermsPass?.outcome ?? "skipped",
+              ...(branch.someTermsPass?.outcome === "skipped"
+                ? { someTermsPassSkipReason: branch.someTermsPass.reason }
+                : {}),
             },
             metrics: {
               candidateCount: branch.contexts.length,
+              // Hits holding part of the query, returned because too few held all of it.
+              someTermsCandidateCount: branch.contexts.filter(isSomeTermsLexicalMatch).length,
+              someTermsPassDurationMs: branch.someTermsPass?.durationMs ?? 0,
             },
             reason: branch.reason,
           },

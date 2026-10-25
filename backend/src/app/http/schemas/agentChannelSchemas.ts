@@ -26,7 +26,8 @@ export const agentChannelCredentialLabelSchema = z.string()
 export const agentChannelCredentialIssueSchema = z.object({
   audience: z.enum(["mcp", "rest"]),
   label: agentChannelCredentialLabelSchema,
-  expiresAt: z.string().datetime().transform((value) => new Date(value)),
+  // Omitted or null: the credential never expires.
+  expiresAt: z.string().datetime().transform((value) => new Date(value)).nullable().optional(),
 }).strict();
 
 export const agentChannelCredentialListQuerySchema = z.object({

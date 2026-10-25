@@ -10,7 +10,8 @@ export interface AgentChannelCredential {
   prefix: string
   status: 'active' | 'expired' | 'revoked' | 'disabled'
   createdAt: string
-  expiresAt: string
+  /** `null` when the credential never expires. */
+  expiresAt: string | null
   lastUsedAt: string | null
   revokedAt: string | null
 }
@@ -20,7 +21,7 @@ export interface IssuedAgentChannelCredential {
   secret: string
 }
 
-export interface AgentChannelCredentialPage {
+interface AgentChannelCredentialPage {
   credentials: AgentChannelCredential[]
   nextCursor: string | null
 }
@@ -39,7 +40,7 @@ export const agentChannelCredentialsApi = {
 
   issue(
     agentId: string,
-    input: { audience: AgentChannelCredentialAudience; label: string; expiresAt: string },
+    input: { audience: AgentChannelCredentialAudience; label: string; expiresAt: string | null },
   ): Promise<IssuedAgentChannelCredential> {
     return request<IssuedAgentChannelCredential>(credentialPath(agentId), {
       method: 'POST',

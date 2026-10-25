@@ -1,7 +1,7 @@
 ---
 title: "MCP server"
 description: "Connect an MCP client to one Radioso agent or to Ray through delegated Operator MCP access."
-last_updated: 2026-10-19
+last_updated: 2026-10-24
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -66,7 +66,7 @@ For a self-hosted deployment, the frontend reads `RADIOSO_OPERATOR_MCP_PUBLIC_UR
 
 ## Connect a client
 
-Sign in to the dashboard, open the agent's **Channels → MCP** card, and choose **Connect a client**. Pick the client, name the connection, set an expiry, and Radioso issues a credential bound to that agent and to the MCP audience. The dialog then shows the finished configuration with the secret already in place. Radioso stores only the hash, so copy it before you close the dialog; the **Discard** exit revokes the credential you just created.
+Sign in to the dashboard, open the agent's **Channels → MCP** card, and choose **Connect a client**. Pick the client and name the connection, and Radioso issues a credential bound to that agent and to the MCP audience. **Expires** starts at **Never**, so the connection keeps working until you rotate or revoke it; choose **On a date** when it should stop on its own. The dialog then shows the finished configuration with the secret already in place. Radioso stores only the hash, so copy it before you close the dialog; the **Discard** exit revokes the credential you just created.
 
 Each client gets its own credential, so rotating or revoking one connection leaves the others working. The examples below use `https://mcp.example.com/mcp` as the server URL and `radioso_mcp_v1_example` as the secret.
 
@@ -119,7 +119,7 @@ POST /api/v1/agents/{agentId}/channel-credentials/{credentialId}/rotate
 POST /api/v1/agents/{agentId}/channel-credentials/{credentialId}/revoke
 ```
 
-The create request sets `audience` to `mcp` and includes `label` and `expiresAt`. Lifecycle calls require a signed-in session with agent-manage permission. The operator-minted secret is a static bearer, so Radioso does not require OAuth for this connection.
+The create request sets `audience` to `mcp` and includes a `label`. `expiresAt` is optional: leave it out, or send `null`, for a credential that works until you rotate or revoke it. Lifecycle calls require a signed-in session with agent-manage permission. The operator-minted secret is a static bearer, so Radioso does not require OAuth for this connection.
 
 <Callout type="info" emoji="i">
   Personal and service-account credentials authorize role-aware workspace APIs. They do not authorize MCP or agent chat.

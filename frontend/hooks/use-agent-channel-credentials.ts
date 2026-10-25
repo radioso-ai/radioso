@@ -23,7 +23,7 @@ export interface AgentChannelCredentialEngine {
   isLoadingMore: boolean
   issued: IssuedAgentChannelCredential | null
   clearIssued: () => void
-  issue: (input: { label: string; expiresAt: string }) => Promise<boolean>
+  issue: (input: { label: string; expiresAt: string | null }) => Promise<boolean>
   loadMore: () => Promise<void>
   revoke: (credentialId: string) => Promise<boolean>
   rotate: (credentialId: string) => Promise<boolean>
@@ -108,7 +108,7 @@ export function useAgentChannelCredentials(
     }
   }
 
-  const issue = async ({ label, expiresAt }: { label: string; expiresAt: string }) => {
+  const issue = async ({ label, expiresAt }: { label: string; expiresAt: string | null }) => {
     const generation = scopeGeneration.current
     setIsCreating(true)
     setError(null)

@@ -9,13 +9,13 @@
       "title": "API overview",
       "description": "How the Radioso API is organized, which auth mode to use, and where each workflow lives.",
       "section": "API reference",
-      "lastUpdated": "2026-09-01",
+      "lastUpdated": "2026-10-25",
       "intro": "Call the Radioso API to create workspaces, upload documents, and talk to a configured agent over HTTP. Workspace automation and agent chat have different credentials because one carries a workspace role while the other is confined to one agent.",
       "sections": [
         {
           "id": "get-an-agent-credential-and-ask-a-question",
           "heading": "Get an agent credential and ask a question",
-          "body": "Sign in to the dashboard, open the agent's **Channels → API** card, and create a REST credential with a label and expiry. Save the one-time secret, then:\n\n```bash\ncurl -sS -X POST https://api.radioso.ai/api/v1/agents/<agent-id>/chat \\\n  -H \"Authorization: Bearer $RADIOSO_AGENT_API_TOKEN\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"message\":\"What can this workspace answer?\",\"stream\":false}'\n```\n\nSwap in `https://api-us.radioso.ai` for the US-hosted instance, or your own origin when self-hosting. The credential works only for the agent in the URL and only against the instance that issued it. If the workspace has no documents yet, the agent still answers, just without grounding; [Documents and search](https://docs.radioso.ai/api/documents-and-search) covers giving it something to answer from."
+          "body": "Sign in to the dashboard, open the agent's **Channels → API** card, and create a REST credential with a label (add an expiry date if it should stop working on its own). Save the one-time secret, then:\n\n```bash\ncurl -sS -X POST https://api.radioso.ai/api/v1/agents/<agent-id>/chat \\\n  -H \"Authorization: Bearer $RADIOSO_AGENT_API_TOKEN\" \\\n  -H \"Content-Type: application/json\" \\\n  -d '{\"message\":\"What can this workspace answer?\",\"stream\":false}'\n```\n\nSwap in `https://api-us.radioso.ai` for the US-hosted instance, or your own origin when self-hosting. The credential works only for the agent in the URL and only against the instance that issued it. If the workspace has no documents yet, the agent still answers, just without grounding; [Documents and search](https://docs.radioso.ai/api/documents-and-search) covers giving it something to answer from."
         },
         {
           "id": "find-your-workflow",
@@ -295,7 +295,7 @@
         {
           "id": "how-it-works",
           "heading": "How it works",
-          "body": "1. Open the agent's **Channels → API** card and create a REST credential with a label and expiry.\n2. Copy the one-time secret before closing the result. Radioso stores only its hash.\n3. Send the secret to `POST /api/v1/agents/{agentId}/chat` and choose whether the response should stream.\n4. Reuse `conversationId` when you want continuity across turns.\n5. Use a personal token or service-account credential when an operator integration needs to inspect workspace history later.\n\nAgents own assistant identity, instructions, greeting settings, retrieval participation, per-skill settings, and surface settings for authenticated chat, anonymous chat, and website embed. Retrieval answer configuration lives on the agent through `skillSettings[\"retrieval.answer\"]`; omitted fields inherit system/model defaults. If an agent has retrieval enabled, assistant chat may use retrieval and return citations. Direct-only agents use the direct assistant path and return retrieval diagnostics with `retrievalInvoked: false`."
+          "body": "1. Open the agent's **Channels → API** card and create a REST credential with a label. Add an expiry date if you want it to stop working on its own; otherwise it lasts until you rotate or revoke it.\n2. Copy the one-time secret before closing the result. Radioso stores only its hash.\n3. Send the secret to `POST /api/v1/agents/{agentId}/chat` and choose whether the response should stream.\n4. Reuse `conversationId` when you want continuity across turns.\n5. Use a personal token or service-account credential when an operator integration needs to inspect workspace history later.\n\nAgents own assistant identity, instructions, greeting settings, retrieval participation, per-skill settings, and surface settings for authenticated chat, anonymous chat, and website embed. Retrieval answer configuration lives on the agent through `skillSettings[\"retrieval.answer\"]`; omitted fields inherit system/model defaults. If an agent has retrieval enabled, assistant chat may use retrieval and return citations. Direct-only agents use the direct assistant path and return retrieval diagnostics with `retrievalInvoked: false`."
         },
         {
           "id": "ask-a-grounded-question",
@@ -600,7 +600,7 @@
       "title": "Personal tokens and service accounts",
       "description": "Create role-bounded credentials for people and durable service identities for unattended API clients.",
       "section": "API reference",
-      "lastUpdated": "2026-09-24",
+      "lastUpdated": "2026-10-25",
       "intro": "Use a personal token for workspace automation you run as yourself. Use a service account for CI, production services, and jobs that need a stable non-human identity. Both authenticate role-aware REST API calls with `Authorization: Bearer <token>`.\n\nCredential management itself is available only through a signed-in browser session. Mutation requests must also send `X-Radioso-CSRF: 1`; a bearer token cannot mint, reveal, rotate, or manage another credential.",
       "sections": [
         {
@@ -626,7 +626,7 @@
         {
           "id": "agent-chat-credentials-are-separate",
           "heading": "Agent chat credentials are separate",
-          "body": "Personal tokens and service-account credentials authenticate eligible workspace REST routes. They do not authenticate the MCP server or `POST /api/v1/agents/{agentId}/chat`.\n\nCreate a separate agent credential from the agent's **Channels → MCP** or **Channels → API** card. Each credential has one audience, an expiry, and one agent. Its secret is returned once and stored as a hash. A signed-in user with permission to manage that agent can issue, rotate, or revoke it; the agent credential itself cannot manage credentials."
+          "body": "Personal tokens and service-account credentials authenticate eligible workspace REST routes. They do not authenticate the MCP server or `POST /api/v1/agents/{agentId}/chat`.\n\nCreate a separate agent credential from the agent's **Channels → MCP** or **Channels → API** card. Each credential has one audience and one agent, plus an expiry date when you set one. Its secret is returned once and stored as a hash. A signed-in user with permission to manage that agent can issue, rotate, or revoke it; the agent credential itself cannot manage credentials."
         },
         {
           "id": "common-failure-modes",
@@ -938,7 +938,7 @@
       "title": "Authentication",
       "description": "Session, workspace automation, Operator MCP, agent chat, public-chat, and Enterprise embed access patterns in Radioso.",
       "section": "Guides",
-      "lastUpdated": "2026-10-13",
+      "lastUpdated": "2026-10-25",
       "intro": "Radioso has more than one authentication model because it serves more than one audience. A person in the dashboard, a script calling the API, and an anonymous visitor on your website all need to be trusted differently, so the web app, API, public chat, and Enterprise embed flows don't share credentials. Pick the mode that matches who's knocking.",
       "sections": [
         {
@@ -964,7 +964,7 @@
         {
           "id": "agent-chat-credentials",
           "heading": "Agent chat credentials",
-          "body": "Use a REST-audience agent credential for `POST /api/v1/agents/{agentId}/chat`, or an MCP-audience credential for the standalone MCP server's `ask_agent` tool. Both are bound to exactly one agent, require an expiry, and carry no `member` or `admin` role.\n\nA signed-in user with agent-manage permission issues, rotates, or revokes these credentials from the agent's **Channels** page. The plaintext secret is shown once and stored only as a hash. Personal tokens and service-account credentials are not accepted for agent chat, and agent credentials cannot call workspace-administration APIs. Operator-minted agent credentials are static bearers; Radioso does not require OAuth for them."
+          "body": "Use a REST-audience agent credential for `POST /api/v1/agents/{agentId}/chat`, or an MCP-audience credential for the standalone MCP server's `ask_agent` tool. Both are bound to exactly one agent and carry no `member` or `admin` role. Each keeps working until you rotate or revoke it, or until the expiry date you gave it.\n\nA signed-in user with agent-manage permission issues, rotates, or revokes these credentials from the agent's **Channels** page. The plaintext secret is shown once and stored only as a hash. Personal tokens and service-account credentials are not accepted for agent chat, and agent credentials cannot call workspace-administration APIs. Operator-minted agent credentials are static bearers; Radioso does not require OAuth for them."
         },
         {
           "id": "public-chat-and-embed-access",
@@ -1300,7 +1300,7 @@
       "title": "MCP server",
       "description": "Connect an MCP client to one Radioso agent or to Ray through delegated Operator MCP access.",
       "section": "Guides",
-      "lastUpdated": "2026-10-19",
+      "lastUpdated": "2026-10-24",
       "intro": "Radioso's standalone MCP server lets a client talk to one agent through `ask_agent`, start any routine the operator has exposed through a typed tool of its own, and read Radioso's own documentation through `radioso_docs` and `radioso_doc_page`. The credential has no workspace role: it is bound to that agent and to the MCP audience.",
       "sections": [
         {
@@ -1321,12 +1321,12 @@
         {
           "id": "connect-a-client",
           "heading": "Connect a client",
-          "body": "Sign in to the dashboard, open the agent's **Channels → MCP** card, and choose **Connect a client**. Pick the client, name the connection, set an expiry, and Radioso issues a credential bound to that agent and to the MCP audience. The dialog then shows the finished configuration with the secret already in place. Radioso stores only the hash, so copy it before you close the dialog; the **Discard** exit revokes the credential you just created.\n\nEach client gets its own credential, so rotating or revoking one connection leaves the others working. The examples below use `https://mcp.example.com/mcp` as the server URL and `radioso_mcp_v1_example` as the secret.\n\nThe card lists the credentials that can reach this agent right now, so revoking one takes its row off the list. To let this agent call tools or other agents, open **Skills → Manage MCP connections** and add a connection in the side panel.\n\n### Claude Desktop\n\nOpen Claude Desktop → Settings → Developer → Edit config, merge this block into `claude_desktop_config.json`, and restart Claude Desktop.\n\n```json\n{\n  \"mcpServers\": {\n    \"radioso\": {\n      \"url\": \"https://mcp.example.com/mcp\",\n      \"headers\": {\n        \"Authorization\": \"Bearer radioso_mcp_v1_example\"\n      }\n    }\n  }\n}\n```\n\n### Claude Code\n\nRun this in your terminal:\n\n```bash\nclaude mcp add --transport http radioso https://mcp.example.com/mcp \\\n  --header \"Authorization: Bearer radioso_mcp_v1_example\"\n```\n\n### Cursor\n\nOpen Cursor → Settings → MCP → Add new server, or merge the same `mcpServers` block into `~/.cursor/mcp.json`.\n\n### Other MCP clients\n\nPoint the client at the server URL and send the secret as a bearer token. Clients that read a configuration file take the standard `mcpServers` block shown above."
+          "body": "Sign in to the dashboard, open the agent's **Channels → MCP** card, and choose **Connect a client**. Pick the client and name the connection, and Radioso issues a credential bound to that agent and to the MCP audience. **Expires** starts at **Never**, so the connection keeps working until you rotate or revoke it; choose **On a date** when it should stop on its own. The dialog then shows the finished configuration with the secret already in place. Radioso stores only the hash, so copy it before you close the dialog; the **Discard** exit revokes the credential you just created.\n\nEach client gets its own credential, so rotating or revoking one connection leaves the others working. The examples below use `https://mcp.example.com/mcp` as the server URL and `radioso_mcp_v1_example` as the secret.\n\nThe card lists the credentials that can reach this agent right now, so revoking one takes its row off the list. To let this agent call tools or other agents, open **Skills → Manage MCP connections** and add a connection in the side panel.\n\n### Claude Desktop\n\nOpen Claude Desktop → Settings → Developer → Edit config, merge this block into `claude_desktop_config.json`, and restart Claude Desktop.\n\n```json\n{\n  \"mcpServers\": {\n    \"radioso\": {\n      \"url\": \"https://mcp.example.com/mcp\",\n      \"headers\": {\n        \"Authorization\": \"Bearer radioso_mcp_v1_example\"\n      }\n    }\n  }\n}\n```\n\n### Claude Code\n\nRun this in your terminal:\n\n```bash\nclaude mcp add --transport http radioso https://mcp.example.com/mcp \\\n  --header \"Authorization: Bearer radioso_mcp_v1_example\"\n```\n\n### Cursor\n\nOpen Cursor → Settings → MCP → Add new server, or merge the same `mcpServers` block into `~/.cursor/mcp.json`.\n\n### Other MCP clients\n\nPoint the client at the server URL and send the secret as a bearer token. Clients that read a configuration file take the standard `mcpServers` block shown above."
         },
         {
           "id": "credential-lifecycle",
           "heading": "Credential lifecycle",
-          "body": "Rotate a connection from its **⋯** menu when a secret leaks or a rotation window comes due: the old secret stops working immediately and the dialog shows the replacement once. Revoke removes access for that client alone.\n\nThe dashboard uses the shared agent-credential lifecycle endpoints:\n\n```text\nPOST /api/v1/agents/{agentId}/channel-credentials\nGET  /api/v1/agents/{agentId}/channel-credentials?audience=mcp\nPOST /api/v1/agents/{agentId}/channel-credentials/{credentialId}/rotate\nPOST /api/v1/agents/{agentId}/channel-credentials/{credentialId}/revoke\n```\n\nThe create request sets `audience` to `mcp` and includes `label` and `expiresAt`. Lifecycle calls require a signed-in session with agent-manage permission. The operator-minted secret is a static bearer, so Radioso does not require OAuth for this connection.\n\nPersonal and service-account credentials authorize role-aware workspace APIs. They do not authorize MCP or agent chat."
+          "body": "Rotate a connection from its **⋯** menu when a secret leaks or a rotation window comes due: the old secret stops working immediately and the dialog shows the replacement once. Revoke removes access for that client alone.\n\nThe dashboard uses the shared agent-credential lifecycle endpoints:\n\n```text\nPOST /api/v1/agents/{agentId}/channel-credentials\nGET  /api/v1/agents/{agentId}/channel-credentials?audience=mcp\nPOST /api/v1/agents/{agentId}/channel-credentials/{credentialId}/rotate\nPOST /api/v1/agents/{agentId}/channel-credentials/{credentialId}/revoke\n```\n\nThe create request sets `audience` to `mcp` and includes a `label`. `expiresAt` is optional: leave it out, or send `null`, for a credential that works until you rotate or revoke it. Lifecycle calls require a signed-in session with agent-manage permission. The operator-minted secret is a static bearer, so Radioso does not require OAuth for this connection.\n\nPersonal and service-account credentials authorize role-aware workspace APIs. They do not authorize MCP or agent chat."
         },
         {
           "id": "radioso-documentation-tools",

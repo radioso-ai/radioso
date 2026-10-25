@@ -6059,8 +6059,11 @@ export interface components {
             status: "active" | "expired" | "revoked" | "disabled";
             /** Format: date-time */
             createdAt: string;
-            /** Format: date-time */
-            expiresAt: string;
+            /**
+             * Format: date-time
+             * @description When the credential stops working. `null` means it never expires: it works until it is rotated or revoked.
+             */
+            expiresAt: string | null;
             /** Format: date-time */
             lastUsedAt: string | null;
             /** Format: date-time */
@@ -6070,8 +6073,11 @@ export interface components {
             /** @enum {string} */
             audience: "mcp" | "rest";
             label: string;
-            /** Format: date-time */
-            expiresAt: string;
+            /**
+             * Format: date-time
+             * @description A future instant when the credential stops working. Omit it, or send `null`, for a credential that never expires: it works until it is rotated or revoked.
+             */
+            expiresAt?: string | null;
         };
         AgentChannelCredentialIssueResponse: {
             credential: components["schemas"]["AgentChannelCredentialMetadata"];

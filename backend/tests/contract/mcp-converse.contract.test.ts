@@ -34,8 +34,12 @@ describe("MCP converse HTTP contract", () => {
       { agentChannelBearerAuth: [] },
     ]);
     expect(document.components?.schemas?.AgentChannelCredentialMetadata).toMatchObject({
-      properties: { expiresAt: { type: "string", format: "date-time" } },
+      properties: { expiresAt: { type: ["string", "null"], format: "date-time" } },
       required: expect.arrayContaining(["expiresAt"]),
+    });
+    expect(document.components?.schemas?.AgentChannelCredentialIssueRequest).toMatchObject({
+      properties: { expiresAt: { type: ["string", "null"], format: "date-time" } },
+      required: ["audience", "label"],
     });
     expect(document.paths?.["/api/v1/agents/{agentId}/chat"]?.post?.responses).toMatchObject({
       "429": {

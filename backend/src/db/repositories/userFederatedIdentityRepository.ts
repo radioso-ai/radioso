@@ -3,7 +3,7 @@ import { randomUUID } from "node:crypto";
 import type { FederatedIdentityRepositoryPort } from "../../modules/auth/services/authService.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 
-export interface UserFederatedIdentityRecord {
+interface UserFederatedIdentityRecord {
   id: string;
   userId: string;
   provider: string;
@@ -48,17 +48,6 @@ const mapUserFederatedIdentity = (row: UserFederatedIdentityRow): UserFederatedI
 // superset of what that narrow port asks for.
 export class UserFederatedIdentityRepository implements FederatedIdentityRepositoryPort {
   constructor(private readonly db: Db) {}
-
-  async findByProviderSubject(provider: string, subject: string): Promise<UserFederatedIdentityRecord | null> {
-    const row = await this.db
-      .selectFrom("user_federated_identities")
-      .select(userFederatedIdentityColumns)
-      .where("provider", "=", provider)
-      .where("subject", "=", subject)
-      .executeTakeFirst();
-
-    return row ? mapUserFederatedIdentity(row) : null;
-  }
 
   async listForUser(userId: string): Promise<UserFederatedIdentityRecord[]> {
     const rows = await this.db

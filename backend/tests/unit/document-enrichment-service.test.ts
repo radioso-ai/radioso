@@ -15,6 +15,7 @@ type Reply = { output: unknown } | { error: unknown };
 const scriptedGateway = (replies: Reply[]) => {
   const requests: DocumentEnrichmentRequest[] = [];
   const gateway: DocumentEnrichmentGateway = {
+    requestProfile: "test",
     async generate(request) {
       requests.push(request);
       const reply = replies[requests.length - 1];
@@ -333,7 +334,7 @@ describe("DocumentEnrichmentService", () => {
 
   it("makes no request when the catalog renders past its prompt budget", async () => {
     const generate = vi.fn();
-    const service = serviceWith({ generate });
+    const service = serviceWith({ requestProfile: "test", generate });
 
     const result = await service.enrich({
       ...workshopInput(),
@@ -391,7 +392,7 @@ describe("DocumentEnrichmentService run outcome", () => {
   });
 
   it("codes a catalog over its prompt budget without asking the model", async () => {
-    const result = await serviceWith({ generate: vi.fn() }).enrich({
+    const result = await serviceWith({ requestProfile: "test", generate: vi.fn() }).enrich({
       ...workshopInput(),
       catalog: {
         revision: "9",

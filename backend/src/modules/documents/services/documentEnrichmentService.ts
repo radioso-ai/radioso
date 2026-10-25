@@ -1,6 +1,7 @@
 import { ZodError } from "zod";
 
 import { loadPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
+import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { EnabledDocumentTypesSnapshot } from "../../documentTypes/public.js";
 import {
   parseDocumentEnrichmentOutput,
@@ -21,6 +22,7 @@ import {
   fingerprintEnrichmentRequest,
   noEnrichmentReplyStore,
   type EnrichmentReplyStore,
+  type StoredEnrichmentReply,
 } from "../domain/enrichment/enrichmentReplyStore.js";
 import { locateQuotedFacts } from "../domain/enrichment/factQuoteLocation.js";
 import {
@@ -80,6 +82,12 @@ export interface DocumentEnrichmentStageInput<TChunk extends EnrichableChunk = E
    * document itself are a syncing connector's defaults the run may replace.
    */
   source?: { kind: string; documentMetadata: Record<string, unknown> } | null;
+  /**
+   * Ask the model even when the stored reply answered this exact request, and
+   * store its reply instead. Only an operator's explicit request for a fresh
+   * extraction of one document sets this.
+   */
+  refreshReply?: boolean;
 }
 
 /**
@@ -167,6 +175,7 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
     strategyRegistry?: DocumentEnrichmentStrategyRegistry;
     prompt?: string;
     now?: () => Date;
+    logger?: Pick<AppLogger, "warn">;
   }) {
     this.prompt = deps.prompt ?? loadPromptTemplate("ingestion/document-enrichment.md");
     this.strategyRegistry = deps.strategyRegistry ?? createDefaultDocumentEnrichmentStrategyRegistry();
@@ -197,7 +206,7 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
         body: representation.body,
         title: input.document.title,
       });
-      const { reply, reused } = await this.usableReplyFor(request, attempts, read);
+      const { reply, reused } = await this.usableReplyFor(request, attempts, read, input.refreshReply === true);
       const { parsed, matched, droppedFactCount } = reply;
       const shape = normalizeDocumentShape(parsed.shape, parsed.confidence);
 
@@ -260,6 +269,7 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
         generatedKeys: [...applied.generatedKeys, ...strategyResult.generatedKeys],
         fieldCounts: reportsFields ? fieldCounts : null,
         classificationNote: matched.note,
+        reusedReply: reused,
       });
 
       return {
@@ -303,56 +313,71 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
   }
 
   /**
-   * The stored reply when this exact request already has a usable one;
-   * otherwise the model's, stored for the next identical request.
+   * The stored reply when this exact request already has a usable one, unless
+   * the run asks for a fresh one; otherwise the model's, stored for the next
+   * identical request. A stored reply that answered another request, or no
+   * longer reads, is cleared before asking: it quotes text the document may no
+   * longer hold, and a failed run must not leave it behind.
    */
   private async usableReplyFor(
     request: EnrichmentRequestInput,
     attempts: ModelAttempts,
     read: (model: string, output: unknown) => UsableReply,
+    refresh: boolean,
   ): Promise<{ reply: UsableReply; reused: boolean }> {
-    const requestFingerprint = fingerprintEnrichmentRequest(request);
-    const stored = await this.findStoredReply(request, requestFingerprint, read);
-    if (stored) {
-      return { reply: stored, reused: true };
+    const requestFingerprint = fingerprintEnrichmentRequest(request, this.deps.gateway.requestProfile);
+    const stored = await this.findStoredReply(request);
+    const reusable = stored?.requestFingerprint === requestFingerprint ? readStoredReply(stored, read) : null;
+    if (reusable && !refresh) {
+      return { reply: reusable, reused: true };
+    }
+    if (stored && !reusable) {
+      await this.writeStoredReply(request, null);
     }
     const reply = await this.requestUsableReply(request, attempts, read);
-    await this.storeReply(request, { requestFingerprint, model: reply.model, output: reply.output });
+    await this.writeStoredReply(request, { requestFingerprint, model: reply.model, output: reply.output });
     return { reply, reused: false };
   }
 
-  /**
-   * The stored reply, when it answered exactly this request and still reads as
-   * usable. Anything else — no reply, another request's, one that no longer
-   * parses or places — means asking the model.
-   */
-  private async findStoredReply(
-    request: EnrichmentRequestInput,
-    requestFingerprint: string,
-    read: (model: string, output: unknown) => UsableReply,
-  ): Promise<UsableReply | null> {
-    const stored = await this.replyStore
-      .find({ workspaceId: request.workspaceId, documentId: request.documentId })
-      .catch(() => null);
-    if (stored?.requestFingerprint !== requestFingerprint) {
-      return null;
-    }
+  // A store that cannot be read costs this run a model call, never its result.
+  private async findStoredReply(request: EnrichmentRequestInput): Promise<StoredEnrichmentReply | null> {
     try {
-      return read(stored.model, stored.output);
-    } catch {
+      return await this.replyStore.find({ workspaceId: request.workspaceId, documentId: request.documentId });
+    } catch (error) {
+      this.warnReplyStoreFailure(request, error, "Document enrichment reply could not be read");
       return null;
     }
   }
 
-  // A reply that cannot be stored costs the next identical request a model
-  // call, never this run its result.
-  private async storeReply(
-    request: EnrichmentRequestInput,
-    reply: { requestFingerprint: string; model: string; output: unknown },
-  ): Promise<void> {
-    await this.replyStore
-      .save({ workspaceId: request.workspaceId, documentId: request.documentId }, reply)
-      .catch(() => undefined);
+  // A reply that cannot be stored or cleared costs the next identical request
+  // a model call, never this run its result.
+  private async writeStoredReply(request: EnrichmentRequestInput, reply: StoredEnrichmentReply | null): Promise<void> {
+    const document = {
+      workspaceId: request.workspaceId,
+      documentId: request.documentId,
+      revision: request.documentRevision,
+    };
+    try {
+      await (reply ? this.replyStore.save(document, reply) : this.replyStore.clear(document));
+    } catch (error) {
+      this.warnReplyStoreFailure(
+        request,
+        error,
+        reply ? "Document enrichment reply could not be stored" : "Document enrichment reply could not be cleared",
+      );
+    }
+  }
+
+  // Ids and the error's class only: a store error can echo the reply it held.
+  private warnReplyStoreFailure(request: EnrichmentRequestInput, error: unknown, message: string): void {
+    this.deps.logger?.warn(
+      {
+        workspaceId: request.workspaceId,
+        documentId: request.documentId,
+        errorClass: error instanceof Error ? error.name : typeof error,
+      },
+      message,
+    );
   }
 
   /**
@@ -387,6 +412,18 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
     return read(reply.model, reply.output);
   }
 }
+
+/** The stored reply read as a fresh one would be, or null when it no longer reads as usable. */
+const readStoredReply = (
+  stored: StoredEnrichmentReply,
+  read: (model: string, output: unknown) => UsableReply,
+): UsableReply | null => {
+  try {
+    return read(stored.model, stored.output);
+  } catch {
+    return null;
+  }
+};
 
 /** Parses a reply and places its facts; throws when the reply is unusable. */
 const readUsableReply = (input: {
@@ -504,4 +541,5 @@ const buildProvenance = (input: DocumentEnrichmentProvenance): DocumentEnrichmen
   dateOwnershipRecorded: true,
   fieldCounts: input.fieldCounts ?? null,
   classificationNote: input.classificationNote ?? null,
+  reusedReply: input.reusedReply ?? false,
 });

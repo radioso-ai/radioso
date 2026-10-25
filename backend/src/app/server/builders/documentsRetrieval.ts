@@ -182,6 +182,7 @@ export const buildDocumentServices = (input: {
   const documentEnrichmentService = new DocumentEnrichmentService({
     gateway: new ModelDocumentEnrichmentGateway(llmRegistry.createChatInferencePipeline(usageEventRecorder)),
     replyStore: repositories.documentEnrichmentReplyRepository,
+    logger,
   });
   const documentProcessingService = new DocumentProcessingService(
     repositories.documentRepository,

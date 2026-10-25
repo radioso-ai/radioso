@@ -14,6 +14,12 @@ export type DocumentProcessingJobEnrichmentOverride = "on" | "off";
 
 export interface DocumentProcessingJobOptions {
   documentEnrichmentOverride?: DocumentProcessingJobEnrichmentOverride;
+  /**
+   * Ask the extraction model afresh even when the document's stored reply
+   * answered the same request. Set only by a single-document reprocess; a job
+   * row without it reuses the stored reply.
+   */
+  refreshDocumentEnrichment?: boolean;
 }
 
 export interface DocumentReviewedWriteGuard {

@@ -53,6 +53,10 @@ class InMemoryReplyStore implements EnrichmentReplyStore {
   async save(document: { workspaceId: string; documentId: string }, reply: StoredEnrichmentReply) {
     this.replies.set(`${document.workspaceId}:${document.documentId}`, reply);
   }
+
+  async clear(document: { workspaceId: string; documentId: string }) {
+    this.replies.delete(`${document.workspaceId}:${document.documentId}`);
+  }
 }
 
 const buildWorkspace = () => {
@@ -66,6 +70,7 @@ const buildWorkspace = () => {
 
   let modelCalls = 0;
   const gateway: DocumentEnrichmentGateway = {
+    requestProfile: "test",
     async generate() {
       modelCalls += 1;
       return {
@@ -160,6 +165,16 @@ const buildWorkspace = () => {
       await ingestion.reprocess({ workspaceId: WORKSPACE_ID, documentId });
       await drain();
     },
+    // What a document's "Run metadata extraction" action sends.
+    runMetadataExtraction: async (documentId: string) => {
+      await ingestion.reprocess({
+        workspaceId: WORKSPACE_ID,
+        documentId,
+        documentEnrichmentOverride: "on",
+        refreshDocumentEnrichment: true,
+      });
+      await drain();
+    },
     put: async (documentId: string, content: string) => {
       await ingestion.update({ workspaceId: WORKSPACE_ID, documentId, title: "Summer workshop", content });
       await drain();
@@ -233,6 +248,18 @@ describe("enrichment of unchanged content", () => {
       ["2026-07-24", "2026-07-26"],
       ["2026-07-24", "2026-07-26"],
     ]);
+  });
+
+  it("asks the model afresh when an operator runs metadata extraction on one document", async () => {
+    const workspace = buildWorkspace();
+    const documentId = await workspace.crawlPage();
+
+    await workspace.runMetadataExtraction(documentId);
+    await workspace.reprocess(documentId);
+
+    expect(workspace.modelCalls()).toBe(2);
+    expect(workspace.lastEnrichmentOutcome()).toBe("reused");
+    expect(workspace.documentOf(documentId).enrichment).toMatchObject({ status: "applied", reusedReply: true });
   });
 
   it("asks the model again when the content changes", async () => {

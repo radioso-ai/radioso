@@ -570,6 +570,7 @@ export class DocumentIngestionService implements DocumentInventoryPort {
     workspaceId: string;
     documentId: string;
     documentEnrichmentOverride?: DocumentProcessingJobOptions["documentEnrichmentOverride"];
+    refreshDocumentEnrichment?: boolean;
   }): Promise<{ documentId: string; status: string }> {
     await this.getDocument(input.workspaceId, input.documentId);
 
@@ -585,7 +586,7 @@ export class DocumentIngestionService implements DocumentInventoryPort {
       document = await this.documentRepository.requeueAndQueue(
         input.documentId,
         input.workspaceId,
-        buildDocumentProcessingOptions(input),
+        withDocumentEnrichmentRefresh(buildDocumentProcessingOptions(input), input.refreshDocumentEnrichment),
       );
     } catch (error) {
       await this.auditService.record({
@@ -1138,6 +1139,14 @@ const deriveWebsiteSourceName = (url: string): string => {
   const path = parsed.pathname.replace(/^\/+/, "");
   return path ? `${parsed.hostname}/${path}` : parsed.hostname;
 };
+
+// A fresh extraction is asked for one document at a time: only `reprocess`
+// adds it, so no source- or workspace-wide reprocess re-bills every document.
+const withDocumentEnrichmentRefresh = (
+  options: DocumentProcessingJobOptions | null,
+  refresh: boolean | undefined,
+): DocumentProcessingJobOptions | null =>
+  refresh ? { ...(options ?? {}), refreshDocumentEnrichment: true } : options;
 
 export const buildDocumentProcessingOptions = (input: {
   documentEnrichmentOverride?: DocumentProcessingJobOptions["documentEnrichmentOverride"];

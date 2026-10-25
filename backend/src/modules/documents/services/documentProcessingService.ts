@@ -542,6 +542,7 @@ export class DocumentProcessingService {
             source: source
               ? { kind: source.kind, documentMetadata: parseSourceDocumentMetadata(source.config) }
               : null,
+            refreshReply: job.options?.refreshDocumentEnrichment === true,
           }),
           (enrichment) => buildDocumentProcessingTraceAttributes(job, {
             stage: "enrichment",
@@ -578,7 +579,8 @@ export class DocumentProcessingService {
         }
 
         const { status, ...outcome } = enrichmentRunOutcome(result);
-        this.logger?.info(
+        const quiet = QUIET_ENRICHMENT_OUTCOMES.has(result.outcome);
+        this.logger?.[quiet ? "info" : "warn"](
           {
             role: "worker",
             workspaceId: job.workspaceId,
@@ -603,7 +605,7 @@ export class DocumentProcessingService {
         });
         await this.telemetry?.emit({
           eventType: "document.worker.enrichment_completed",
-          severity: QUIET_ENRICHMENT_OUTCOMES.has(result.outcome) ? "info" : "warn",
+          severity: quiet ? "info" : "warn",
           correlation: { workspaceId: job.workspaceId, documentId: document.id, jobId: job.id },
           metrics: { modelAttemptCount: result.modelAttemptCount },
           tags: { outcome: result.outcome },

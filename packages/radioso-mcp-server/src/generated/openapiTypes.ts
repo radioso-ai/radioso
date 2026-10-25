@@ -7435,6 +7435,12 @@ export interface components {
             /** @enum {string} */
             documentEnrichmentOverride?: "on" | "off";
         };
+        SingleDocumentReprocessRequest: {
+            /** @enum {string} */
+            documentEnrichmentOverride?: "on" | "off";
+            /** @description Ask the metadata extraction model afresh even when the document's title, text, and catalog are unchanged since its last successful extraction. Without it, an unchanged document applies the reply from that extraction again with no model call. Only this single-document reprocess accepts it. */
+            refreshDocumentEnrichment?: boolean;
+        };
         SourceReprocessResponse: {
             /** Format: uuid */
             sourceId: string;
@@ -7505,6 +7511,8 @@ export interface components {
             } | null;
             /** @description Content-free note about a classification fallback on an otherwise successful run. */
             classificationNote?: string | null;
+            /** @description `true` when the run applied the reply an earlier extraction got for the same title, text, and catalog instead of calling the model; `model` names the model that gave that reply. */
+            reusedReply?: boolean;
         };
         RagStatus: string;
         DocumentSummary: {
@@ -25162,7 +25170,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SingleDocumentReprocessRequest"];
+            };
+        };
         responses: {
             /** @description Document accepted for reprocessing */
             202: {

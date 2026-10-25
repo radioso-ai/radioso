@@ -419,10 +419,12 @@ describe("document processing enrichment split", () => {
       failureReason: "invalid_output: truncated",
       firstAttemptFailureReason: "invalid_output: no_usable_facts",
     };
-    expect(logger.info).toHaveBeenCalledWith(
+    // A run that hit the output cap is a quality bug: it logs at warn.
+    expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({ enrichmentStatus: "failed", ...counts }),
       "Document enrichment completed",
     );
+    expect(logger.info).not.toHaveBeenCalledWith(expect.anything(), "Document enrichment completed");
     const audit = auditService.events.find((event) => event.eventType === "document.enrichment");
     expect(audit?.metadata).toMatchObject({ status: "failed", ...counts });
     expect(audit?.metadata).not.toHaveProperty("attemptCount");
@@ -436,6 +438,51 @@ describe("document processing enrichment split", () => {
       metrics: { modelAttemptCount: 2 },
       tags: { outcome: "truncated" },
     });
+  });
+
+  it("passes a fresh-extraction request on the enrich job to the stage, and nothing else asks for one", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const chunkRepository = new InMemoryChunkRepository(documentRepository);
+    const refreshRequests: Array<boolean | undefined> = [];
+    const stage: DocumentEnrichmentStagePort = {
+      async enrich(input) {
+        refreshRequests.push(input.refreshReply);
+        return alwaysAppliesFirstChunkDate.enrich(input);
+      },
+    };
+    const document = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Summer Workshop",
+      sourceContent: "Summer workshop introduction.\n\nThe event runs on 2026-07-17.",
+      markdownContent: "Summer workshop introduction.\n\nThe event runs on 2026-07-17.",
+      status: "queued",
+    });
+    const service = new DocumentProcessingService(
+      documentRepository,
+      chunkRepository,
+      buildEmbeddingService([]),
+      createAuditService(),
+      settingsReader(true),
+      new ChunkingStrategyRegistry([singleChunkStrategy()]),
+      undefined,
+      undefined,
+      stage,
+      undefined,
+      jobRepository,
+    );
+    await service.process(buildVectorizeJob(document.id, document.revision));
+
+    await service.processEnrichment(buildEnrichJob(document.id, document.revision, {
+      options: { documentEnrichmentOverride: "on", refreshDocumentEnrichment: true },
+    }));
+    await service.processEnrichment(buildEnrichJob(document.id, document.revision, {
+      id: "job-enrich-2",
+      options: { documentEnrichmentOverride: "on" },
+    }));
+
+    expect(refreshRequests).toEqual([true, false]);
   });
 
   it("skips a stale-revision enrich job without error", async () => {

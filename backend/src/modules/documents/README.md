@@ -69,11 +69,14 @@ imports from `services/` or `infra/`.
   Each run ends in one coded `DocumentEnrichmentRunOutcome`, which the
   processing service logs, audits, and emits as the
   `document.worker.enrichment_completed` telemetry event.
-- `domain/enrichment/enrichmentReplyStore.ts`: the request fingerprint and the
-  port for a document's last usable reply. A run whose request matches the
-  stored fingerprint applies that reply without a model call; the adapter is
-  `db/repositories/documentEnrichmentReplyRepository.ts`
-  (`documents.enrichment_reply`).
+- `domain/enrichment/enrichmentReplyStore.ts`: the request fingerprint (which
+  folds in the gateway's `requestProfile`) and the port for a document's last
+  usable reply. A run whose request matches the stored fingerprint applies that
+  reply without a model call, unless its job carries `refreshDocumentEnrichment`
+  (single-document reprocess only). Saves and clears match the revision the run
+  read; the adapter is `db/repositories/documentEnrichmentReplyRepository.ts`
+  (`documents.enrichment_reply`), and `DocumentRepository` writes that change a
+  document's title or text clear the column.
 - `domain/enrichment/factQuoteLocation.ts`: places each extracted date by the
   text the model quoted, in the body offsets chunks use. A date that cannot be
   placed is dropped and counted, never fatal.

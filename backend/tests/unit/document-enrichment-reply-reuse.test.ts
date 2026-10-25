@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { builtInDocumentTypes } from "../../src/modules/documentTypes/domain/builtInDocumentTypes.js";
 import type {
@@ -24,9 +24,10 @@ const WORKSHOP_FACT = {
 const EVENT_REPLY = { type: "event", confidence: 0.91, facts: [WORKSHOP_FACT] };
 
 /** A gateway that answers every request with `output` and counts them. */
-const countingGateway = (output: unknown = EVENT_REPLY) => {
+const countingGateway = (output: unknown = EVENT_REPLY, requestProfile = "profile-1") => {
   const requests: DocumentEnrichmentRequest[] = [];
   const gateway: DocumentEnrichmentGateway = {
+    requestProfile,
     async generate(request) {
       requests.push(request);
       return { model: "gpt-5.4-mini", output };
@@ -39,6 +40,7 @@ const countingGateway = (output: unknown = EVENT_REPLY) => {
 class InMemoryReplyStore implements EnrichmentReplyStore {
   readonly replies = new Map<string, StoredEnrichmentReply>();
   saves = 0;
+  clears = 0;
 
   async find(document: { workspaceId: string; documentId: string }): Promise<StoredEnrichmentReply | null> {
     return this.replies.get(`${document.workspaceId}:${document.documentId}`) ?? null;
@@ -48,19 +50,29 @@ class InMemoryReplyStore implements EnrichmentReplyStore {
     this.saves += 1;
     this.replies.set(`${document.workspaceId}:${document.documentId}`, reply);
   }
+
+  async clear(document: { workspaceId: string; documentId: string }): Promise<void> {
+    this.clears += 1;
+    this.replies.delete(`${document.workspaceId}:${document.documentId}`);
+  }
 }
 
-const serviceWith = (gateway: DocumentEnrichmentGateway, replyStore: EnrichmentReplyStore, prompt?: string) =>
+const serviceWith = (
+  gateway: DocumentEnrichmentGateway,
+  replyStore: EnrichmentReplyStore,
+  options: { prompt?: string; logger?: { warn: (...args: unknown[]) => void } } = {},
+) =>
   new DocumentEnrichmentService({
     gateway,
     replyStore,
     strategyRegistry: createDefaultDocumentEnrichmentStrategyRegistry(),
     now: () => new Date("2026-07-02T12:00:00.000Z"),
-    ...(prompt ? { prompt } : {}),
+    ...options,
   });
 
 const workshopInput = (overrides: {
   revision?: number;
+  refreshReply?: boolean;
   markdownContent?: string;
   metadata?: Record<string, unknown>;
   chunks?: Array<{ chunkIndex: number; startOffset: number; endOffset: number; metadata: Record<string, unknown> }>;
@@ -81,6 +93,7 @@ const workshopInput = (overrides: {
       { chunkIndex: 1, startOffset: 17, endOffset: markdownContent.length, metadata: {} },
     ],
     anchor: { source: "document_created_at" as const, date: "2026-07-01" },
+    ...(overrides.refreshReply ? { refreshReply: true } : {}),
   };
 };
 
@@ -96,18 +109,19 @@ describe("enrichment request fingerprint", () => {
   });
 
   it("names what the model is asked, not which revision asks it", () => {
-    expect(fingerprintEnrichmentRequest(request({ documentRevision: 8 }))).toBe(fingerprintEnrichmentRequest(request()));
+    expect(fingerprintEnrichmentRequest(request({ documentRevision: 8 }), "profile-1")).toBe(fingerprintEnrichmentRequest(request(), "profile-1"));
     expect(fingerprintEnrichmentRequest(request({
       outputSchema: { properties: { confidence: { type: "number" }, type: { type: "string" } }, type: "object" },
-    }))).toBe(fingerprintEnrichmentRequest(request()));
+    }), "profile-1")).toBe(fingerprintEnrichmentRequest(request(), "profile-1"));
   });
 
-  it("changes with the prompt, the document representation, or the output schema", () => {
-    const original = fingerprintEnrichmentRequest(request());
+  it("changes with the prompt, the document representation, the output schema, or the request settings", () => {
+    const original = fingerprintEnrichmentRequest(request(), "profile-1");
 
-    expect(fingerprintEnrichmentRequest(request({ prompt: "Classify the document carefully." }))).not.toBe(original);
-    expect(fingerprintEnrichmentRequest(request({ documentRepresentation: "Title: Summer workshop\n\nBody edited" }))).not.toBe(original);
-    expect(fingerprintEnrichmentRequest(request({ outputSchema: { type: "object", properties: {} } }))).not.toBe(original);
+    expect(fingerprintEnrichmentRequest(request({ prompt: "Classify the document carefully." }), "profile-1")).not.toBe(original);
+    expect(fingerprintEnrichmentRequest(request({ documentRepresentation: "Title: Summer workshop\n\nBody edited" }), "profile-1")).not.toBe(original);
+    expect(fingerprintEnrichmentRequest(request({ outputSchema: { type: "object", properties: {} } }), "profile-1")).not.toBe(original);
+    expect(fingerprintEnrichmentRequest(request(), "profile-2")).not.toBe(original);
   });
 });
 
@@ -120,7 +134,7 @@ describe("DocumentEnrichmentService reply reuse", () => {
 
     const stored = await store.find({ workspaceId: "workspace-1", documentId: "doc-1" });
     expect(stored).toEqual({
-      requestFingerprint: fingerprintEnrichmentRequest(requests[0]),
+      requestFingerprint: fingerprintEnrichmentRequest(requests[0], "profile-1"),
       model: "gpt-5.4-mini",
       output: EVENT_REPLY,
     });
@@ -143,7 +157,7 @@ describe("DocumentEnrichmentService reply reuse", () => {
 
     expect(requests).toHaveLength(1);
     expect(result).toMatchObject({ status: "applied", outcome: "reused", modelAttemptCount: 0, factCount: 1 });
-    expect(result.provenance).toMatchObject({ status: "applied", model: "gpt-5.4-mini", matchedTypeKey: "event" });
+    expect(result.provenance).toMatchObject({ status: "applied", model: "gpt-5.4-mini", matchedTypeKey: "event", reusedReply: true });
     expect(result.documentMetadata).toMatchObject({ dateFrom: "2026-07-17", dateTo: "2026-07-19" });
     expect(result.chunks.map((chunk) => chunk.metadata)).toEqual([
       expect.objectContaining({ dateFrom: "2026-07-17", dateTo: "2026-07-19" }),
@@ -181,19 +195,46 @@ describe("DocumentEnrichmentService reply reuse", () => {
 
     expect(requests).toHaveLength(2);
     expect(result).toMatchObject({ outcome: "applied", modelAttemptCount: 1 });
+    expect(result.provenance.reusedReply).toBe(false);
     expect(store.saves).toBe(2);
   });
 
   it("asks the model again when the prompt changed", async () => {
     const store = new InMemoryReplyStore();
     const { gateway, requests } = countingGateway();
-    await serviceWith(gateway, store, "Classify: {{documentTypeKeys}}\n\n{{documentTypeCatalog}}").enrich(workshopInput());
+    await serviceWith(gateway, store, { prompt: "Classify: {{documentTypeKeys}}\n\n{{documentTypeCatalog}}" }).enrich(workshopInput());
 
-    await serviceWith(gateway, store, "Classify the document: {{documentTypeKeys}}\n\n{{documentTypeCatalog}}").enrich(
+    await serviceWith(gateway, store, { prompt: "Classify the document: {{documentTypeKeys}}\n\n{{documentTypeCatalog}}" }).enrich(
       workshopInput({ revision: 8 }),
     );
 
     expect(requests).toHaveLength(2);
+  });
+
+  it("asks the model again when the gateway's request settings changed", async () => {
+    const store = new InMemoryReplyStore();
+    const before = countingGateway(EVENT_REPLY, "low effort, 2000 tokens");
+    await serviceWith(before.gateway, store).enrich(workshopInput());
+
+    const after = countingGateway(EVENT_REPLY, "minimal effort, 2000 tokens");
+    const result = await serviceWith(after.gateway, store).enrich(workshopInput({ revision: 8 }));
+
+    expect(after.requests).toHaveLength(1);
+    expect(result.outcome).toBe("applied");
+  });
+
+  it("asks the model afresh when the run asks for a refresh, and replaces the stored reply", async () => {
+    const store = new InMemoryReplyStore();
+    await serviceWith(countingGateway().gateway, store).enrich(workshopInput());
+    const refreshed = { ...EVENT_REPLY, confidence: 0.97 };
+    const { gateway, requests } = countingGateway(refreshed);
+
+    const result = await serviceWith(gateway, store).enrich(workshopInput({ revision: 8, refreshReply: true }));
+
+    expect(requests).toHaveLength(1);
+    expect(result).toMatchObject({ status: "applied", outcome: "applied", modelAttemptCount: 1 });
+    expect(result.provenance.reusedReply).toBe(false);
+    expect((await store.find({ workspaceId: "workspace-1", documentId: "doc-1" }))?.output).toEqual(refreshed);
   });
 
   it("asks the model again when the enabled catalog changed", async () => {
@@ -223,7 +264,7 @@ describe("DocumentEnrichmentService reply reuse", () => {
     expect((await store.find({ workspaceId: "workspace-1", documentId: "doc-1" }))?.output).toEqual(EVENT_REPLY);
   });
 
-  it("keeps the last usable reply when a run fails", async () => {
+  it("drops a stored reply that answered other content, even when the run then fails", async () => {
     const store = new InMemoryReplyStore();
     await serviceWith(countingGateway().gateway, store).enrich(workshopInput());
     const unusable = countingGateway("not an envelope");
@@ -235,23 +276,32 @@ describe("DocumentEnrichmentService reply reuse", () => {
 
     expect(result.status).toBe("failed");
     expect(store.saves).toBe(1);
-    expect((await store.find({ workspaceId: "workspace-1", documentId: "doc-1" }))?.output).toEqual(EVENT_REPLY);
+    expect(await store.find({ workspaceId: "workspace-1", documentId: "doc-1" })).toBeNull();
   });
 
-  it("treats a store that cannot read or write as holding nothing", async () => {
+  it("treats a store that cannot read or write as holding nothing, and warns without content", async () => {
+    const failure = new TypeError("connection reset by 10.0.0.7 while reading Summer workshop");
     const failingStore: EnrichmentReplyStore = {
       async find() {
-        throw new Error("connection reset");
+        throw failure;
       },
       async save() {
-        throw new Error("connection reset");
+        throw failure;
+      },
+      async clear() {
+        throw failure;
       },
     };
+    const logger = { warn: vi.fn() };
     const { gateway, requests } = countingGateway();
 
-    const result = await serviceWith(gateway, failingStore).enrich(workshopInput());
+    const result = await serviceWith(gateway, failingStore, { logger }).enrich(workshopInput());
 
     expect(requests).toHaveLength(1);
     expect(result).toMatchObject({ status: "applied", outcome: "applied" });
+    expect(logger.warn.mock.calls).toEqual([
+      [{ workspaceId: "workspace-1", documentId: "doc-1", errorClass: "TypeError" }, "Document enrichment reply could not be read"],
+      [{ workspaceId: "workspace-1", documentId: "doc-1", errorClass: "TypeError" }, "Document enrichment reply could not be stored"],
+    ]);
   });
 });

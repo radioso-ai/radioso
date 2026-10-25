@@ -18,7 +18,7 @@ What extraction looks for comes from your **document type catalog**, a workspace
 
 The call reads a bounded portion of the document (up to roughly the first 48,000 characters), so very large files add a predictable, capped model cost. The call is metered like any other model usage in the workspace, against the document it read.
 
-A document pays for that call once per version of its content. When it processes again with the same title and text under the same catalog — a re-crawl of an unchanged page, a reprocess after you change chunking, a tag edit — extraction applies the reply its last successful call got, with no new model call. Your current tags still go through the same ownership rules on every run, so dates you typed since still win. Edit the content or the catalog and the next run asks the model again.
+A document pays for that call once per version of its content. When it processes again with the same title and text under the same catalog — a re-crawl of an unchanged page, a reprocess after you change chunking, a tag edit — extraction applies the reply its last successful call got, with no new model call. Your current tags still go through the same ownership rules on every run, so dates you typed since still win. Edit the content or the catalog and the next run asks the model again; **Run metadata extraction** on a document asks it afresh even when nothing changed.
 
 ### Built-In Types
 

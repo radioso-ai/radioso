@@ -87,6 +87,16 @@ describe("ModelDocumentEnrichmentGateway", () => {
     });
   });
 
+  it("names the request settings every attempt is sent with, so a stored reply is reused only under the same ones", () => {
+    const { pipeline } = scriptedPipeline([]);
+
+    expect(JSON.parse(new ModelDocumentEnrichmentGateway(pipeline).requestProfile)).toEqual({
+      temperature: 0,
+      firstAttempt: { maxOutputTokens: 2_000, reasoningEffort: "low" },
+      truncationRetry: { maxOutputTokens: 4_000, reasoningEffort: "minimal" },
+    });
+  });
+
   it("reads a fenced JSON reply from a provider that does not enforce the schema", async () => {
     const { pipeline } = scriptedPipeline([{ text: `\`\`\`json\n${VALID_REPLY}\n\`\`\`` }]);
 

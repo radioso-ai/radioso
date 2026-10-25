@@ -11503,6 +11503,23 @@
         },
         "additionalProperties": false
       },
+      "SingleDocumentReprocessRequest": {
+        "type": "object",
+        "properties": {
+          "documentEnrichmentOverride": {
+            "type": "string",
+            "enum": [
+              "on",
+              "off"
+            ]
+          },
+          "refreshDocumentEnrichment": {
+            "type": "boolean",
+            "description": "Ask the metadata extraction model afresh even when the document's title, text, and catalog are unchanged since its last successful extraction. Without it, an unchanged document applies the reply from that extraction again with no model call. Only this single-document reprocess accepts it."
+          }
+        },
+        "additionalProperties": false
+      },
       "SourceReprocessResponse": {
         "type": "object",
         "properties": {
@@ -11739,6 +11756,10 @@
               "null"
             ],
             "description": "Content-free note about a classification fallback on an otherwise successful run."
+          },
+          "reusedReply": {
+            "type": "boolean",
+            "description": "`true` when the run applied the reply an earlier extraction got for the same title, text, and catalog instead of calling the model; `model` names the model that gave that reply."
           }
         },
         "required": [
@@ -50742,6 +50763,16 @@
             "in": "path"
           }
         ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SingleDocumentReprocessRequest"
+              }
+            }
+          }
+        },
         "responses": {
           "202": {
             "description": "Document accepted for reprocessing",

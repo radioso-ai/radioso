@@ -13,8 +13,11 @@ const readStoredReply = (value: unknown): StoredEnrichmentReply | null => {
     return null;
   }
   const record = value as Record<string, unknown>;
-  return typeof record.requestFingerprint === "string" && typeof record.model === "string" && "output" in record
-    ? { requestFingerprint: record.requestFingerprint, model: record.model, output: record.output }
+  return typeof record.requestFingerprint === "string"
+    && typeof record.revision === "number"
+    && typeof record.model === "string"
+    && "output" in record
+    ? { requestFingerprint: record.requestFingerprint, revision: record.revision, model: record.model, output: record.output }
     : null;
 };
 

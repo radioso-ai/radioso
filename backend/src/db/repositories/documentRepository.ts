@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { sql, type ExpressionBuilder, type RawBuilder, type SelectQueryBuilder } from "kysely";
 
 import type {
+  BulkDocumentProcessingJobOptions,
   DocumentCreateInput,
   DocumentDerivedContentUpdateInput,
   DocumentEnrichmentMetadataUpdateInput,
@@ -780,7 +781,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
   async requeueEligibleAndQueue(
     documentId: string,
     workspaceId: string,
-    options?: DocumentProcessingJobOptions | null,
+    options?: BulkDocumentProcessingJobOptions | null,
     expectedUpdatedAt?: Date,
   ): Promise<{ document: DocumentRecord; queued: boolean }> {
     return this.db.transaction().execute(async (trx) => {
@@ -819,7 +820,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
     });
   }
 
-  async requeueAllEligibleAndQueue(workspaceId: string, options?: DocumentProcessingJobOptions | null): Promise<{
+  async requeueAllEligibleAndQueue(workspaceId: string, options?: BulkDocumentProcessingJobOptions | null): Promise<{
     queuedDocumentCount: number;
     skippedDocumentCount: number;
     queuedDocuments: Array<{ documentId: string; revision: number }>;
@@ -870,7 +871,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
     workspaceId: string;
     /** null selects the manually added documents, which have no source row. */
     sourceId: string | null;
-    options?: DocumentProcessingJobOptions | null;
+    options?: BulkDocumentProcessingJobOptions | null;
   }): Promise<{
     queuedDocumentCount: number;
     skippedDocumentCount: number;

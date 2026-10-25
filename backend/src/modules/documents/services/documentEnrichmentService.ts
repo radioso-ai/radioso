@@ -314,7 +314,8 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
 
   /**
    * The stored reply when this exact request already has a usable one, unless
-   * the run asks for a fresh one; otherwise the model's, stored for the next
+   * the run asks for a fresh one and the reply predates it; otherwise the
+   * model's, stored for the next
    * identical request. A stored reply that answered another request, or no
    * longer reads, is cleared before asking: it quotes text the document may no
    * longer hold, and a failed run must not leave it behind.
@@ -328,14 +329,22 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
     const requestFingerprint = fingerprintEnrichmentRequest(request, this.deps.gateway.requestProfile);
     const stored = await this.findStoredReply(request);
     const reusable = stored?.requestFingerprint === requestFingerprint ? readStoredReply(stored, read) : null;
-    if (reusable && !refresh) {
+    // A refresh skips only a reply an earlier revision stored; one at this
+    // revision is the refresh's own, kept by a retry of the same job.
+    const refreshSkipsStored = refresh && (stored?.revision ?? 0) < request.documentRevision;
+    if (reusable && !refreshSkipsStored) {
       return { reply: reusable, reused: true };
     }
     if (stored && !reusable) {
       await this.writeStoredReply(request, null);
     }
     const reply = await this.requestUsableReply(request, attempts, read);
-    await this.writeStoredReply(request, { requestFingerprint, model: reply.model, output: reply.output });
+    await this.writeStoredReply(request, {
+      requestFingerprint,
+      revision: request.documentRevision,
+      model: reply.model,
+      output: reply.output,
+    });
     return { reply, reused: false };
   }
 

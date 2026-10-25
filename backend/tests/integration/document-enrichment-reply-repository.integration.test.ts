@@ -4,6 +4,8 @@ import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { DocumentEnrichmentReplyRepository } from "../../src/db/repositories/documentEnrichmentReplyRepository.js";
 import { DocumentRepository } from "../../src/db/repositories/documentRepository.js";
+import type { DocumentEnrichmentGateway } from "../../src/modules/documents/domain/enrichment/enrichmentGateway.js";
+import { DocumentEnrichmentService } from "../../src/modules/documents/services/documentEnrichmentService.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
@@ -11,6 +13,7 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 
 const REPLY = {
   requestFingerprint: "fingerprint-1",
+  revision: 1,
   model: "gpt-5.4-mini",
   output: { type: "event", confidence: 0.9, facts: [{ kind: "event_date", quote: "July 17-19, 2026", dateFrom: "2026-07-17", dateTo: "2026-07-19", unresolvedText: null }] },
 };
@@ -173,6 +176,46 @@ describeIntegration("DocumentEnrichmentReplyRepository (Postgres)", () => {
       markdownContent: "Dates: 17-19 July 2026.",
     });
     expect(await replies.find(refOf(document))).toBeNull();
+  });
+
+  it("publishes a run that reused the stored reply as reused when the document is read back", async () => {
+    const document = await createDocument();
+    let modelCalls = 0;
+    const gateway: DocumentEnrichmentGateway = {
+      requestProfile: "test",
+      async generate() {
+        modelCalls += 1;
+        return { model: "gpt-5.4-mini", output: REPLY.output };
+      },
+    };
+    const service = new DocumentEnrichmentService({ gateway, replyStore: replies });
+    const input = {
+      document: {
+        id: document.id,
+        workspaceId,
+        revision: document.revision,
+        title: document.title,
+        markdownContent: document.markdownContent,
+        metadata: {},
+        createdAt: document.createdAt,
+      },
+      chunks: [{ chunkIndex: 0, startOffset: 0, endOffset: document.markdownContent.length, metadata: {} }],
+      anchor: { source: "document_created_at" as const, date: "2026-07-01" },
+    };
+
+    await service.enrich(input);
+    const reused = await service.enrich(input);
+    await documents.updateMetadataForRevision({
+      documentId: document.id,
+      workspaceId,
+      revision: document.revision,
+      metadata: reused.documentMetadata,
+      enrichment: reused.provenance as unknown as Record<string, unknown>,
+    });
+
+    expect(modelCalls).toBe(1);
+    const readBack = await documents.findByIdAndWorkspaceId(document.id, workspaceId);
+    expect(readBack?.enrichment).toMatchObject({ status: "applied", model: "gpt-5.4-mini", reusedReply: true });
   });
 
   it("goes with the document when it is deleted", async () => {

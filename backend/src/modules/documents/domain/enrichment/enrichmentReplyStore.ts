@@ -9,6 +9,13 @@ import type { DocumentEnrichmentRequest } from "./enrichmentGateway.js";
  */
 export interface StoredEnrichmentReply {
   requestFingerprint: string;
+  /**
+   * The document revision whose run stored the reply. A refresh skips only a
+   * reply from an earlier revision: a reprocess always bumps the revision, so
+   * a reply at the current one came from the refresh itself, and a retry of
+   * that job reuses it instead of paying again.
+   */
+  revision: number;
   /** The model that answered, recorded on the provenance of every run that applies the reply. */
   model: string;
   /** The reply as the gateway returned it, read again in full by every run that applies it. */

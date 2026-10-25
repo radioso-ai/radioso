@@ -135,6 +135,7 @@ describe("DocumentEnrichmentService reply reuse", () => {
     const stored = await store.find({ workspaceId: "workspace-1", documentId: "doc-1" });
     expect(stored).toEqual({
       requestFingerprint: fingerprintEnrichmentRequest(requests[0], "profile-1"),
+      revision: 7,
       model: "gpt-5.4-mini",
       output: EVENT_REPLY,
     });
@@ -262,6 +263,20 @@ describe("DocumentEnrichmentService reply reuse", () => {
     expect(requests).toHaveLength(2);
     expect(result).toMatchObject({ status: "applied", outcome: "applied" });
     expect((await store.find({ workspaceId: "workspace-1", documentId: "doc-1" }))?.output).toEqual(EVENT_REPLY);
+  });
+
+  it("pays for a refresh once: a retry of the same refreshing job reuses the reply it stored", async () => {
+    const store = new InMemoryReplyStore();
+    await serviceWith(countingGateway().gateway, store).enrich(workshopInput());
+    const { gateway, requests } = countingGateway({ ...EVENT_REPLY, confidence: 0.97 });
+
+    // The refresh job asks and stores at its own revision; a later step of the
+    // job fails, and the worker runs the same job, refresh flag and all, again.
+    await serviceWith(gateway, store).enrich(workshopInput({ revision: 8, refreshReply: true }));
+    const retry = await serviceWith(gateway, store).enrich(workshopInput({ revision: 8, refreshReply: true }));
+
+    expect(requests).toHaveLength(1);
+    expect(retry).toMatchObject({ status: "applied", outcome: "reused", modelAttemptCount: 0 });
   });
 
   it("drops a stored reply that answered other content, even when the run then fails", async () => {

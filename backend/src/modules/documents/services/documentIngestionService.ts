@@ -20,6 +20,7 @@ import {
   type DocumentSourceRepositoryPort,
 } from "../../../db/repositories/documentSourceRepository.js";
 import type {
+  BulkDocumentProcessingJobOptions,
   DocumentProcessingJobOptions,
   DocumentReviewedWriteGuard,
   DocumentSourceSummary,
@@ -595,6 +596,7 @@ export class DocumentIngestionService implements DocumentInventoryPort {
         eventStatus: "failure",
         metadata: {
           documentId: input.documentId,
+          refreshDocumentEnrichment: input.refreshDocumentEnrichment === true,
           reason: error instanceof Error ? error.message : "Failed to queue document processing",
         },
       });
@@ -611,6 +613,7 @@ export class DocumentIngestionService implements DocumentInventoryPort {
         revision: document.revision,
         status: document.status,
         documentEnrichmentOverride: input.documentEnrichmentOverride ?? null,
+        refreshDocumentEnrichment: input.refreshDocumentEnrichment === true,
         ...(await this.queueSnapshotMetadata()),
       },
     });
@@ -1143,14 +1146,14 @@ const deriveWebsiteSourceName = (url: string): string => {
 // A fresh extraction is asked for one document at a time: only `reprocess`
 // adds it, so no source- or workspace-wide reprocess re-bills every document.
 const withDocumentEnrichmentRefresh = (
-  options: DocumentProcessingJobOptions | null,
+  options: BulkDocumentProcessingJobOptions | null,
   refresh: boolean | undefined,
 ): DocumentProcessingJobOptions | null =>
   refresh ? { ...(options ?? {}), refreshDocumentEnrichment: true } : options;
 
 export const buildDocumentProcessingOptions = (input: {
   documentEnrichmentOverride?: DocumentProcessingJobOptions["documentEnrichmentOverride"];
-}): DocumentProcessingJobOptions | null =>
+}): BulkDocumentProcessingJobOptions | null =>
   input.documentEnrichmentOverride
     ? { documentEnrichmentOverride: input.documentEnrichmentOverride }
     : null;

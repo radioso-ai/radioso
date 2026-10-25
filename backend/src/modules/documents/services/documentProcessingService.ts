@@ -25,6 +25,7 @@ import type {
 } from "../../embeddingProfiles/contracts/embeddingConsumers.js";
 import type { IngestionSettingsRecord } from "../../settings/contracts/ingestion.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
+import type { TelemetryService } from "../../../shared/observability/telemetry/telemetryService.js";
 import { traceOperation } from "../../../shared/observability/tracing/operations.js";
 import {
   parseDocumentEnrichmentOverride,
@@ -48,6 +49,7 @@ import type {
   DocumentRepositoryPort,
 } from "../contracts/documentContracts.js";
 import type {
+  DocumentEnrichmentRunOutcome,
   DocumentEnrichmentStagePort,
   DocumentEnrichmentStageResult,
 } from "./documentEnrichmentService.js";
@@ -130,6 +132,7 @@ const toEnrichmentProvenance = (value: unknown): DocumentEnrichmentProvenance | 
  */
 const enrichmentRunOutcome = (result: DocumentEnrichmentStageResult) => ({
   status: result.status,
+  outcome: result.outcome,
   factCount: result.factCount,
   // Facts the model returned that were invalid or quoted text the document does not contain.
   droppedFactCount: result.droppedFactCount,
@@ -144,10 +147,15 @@ const enrichmentRunOutcome = (result: DocumentEnrichmentStageResult) => ({
   ...(result.firstAttemptFailureReason ? { firstAttemptFailureReason: result.firstAttemptFailureReason } : {}),
 });
 
+// Runs that hit the output cap are a quality bug even when the retry saved
+// them, so they warn alongside every run that stored nothing.
+const QUIET_ENRICHMENT_OUTCOMES: ReadonlySet<DocumentEnrichmentRunOutcome> = new Set(["applied", "reused"]);
+
 const enrichmentTraceInput = (result: DocumentEnrichmentStageResult) => {
   const outcome = enrichmentRunOutcome(result);
   return {
     enrichmentStatus: outcome.status,
+    enrichmentOutcome: outcome.outcome,
     enrichmentFactCount: outcome.factCount,
     enrichmentDroppedFactCount: outcome.droppedFactCount,
     enrichmentAppliedChunkCount: outcome.appliedChunkCount,
@@ -162,6 +170,7 @@ export const buildDocumentProcessingTraceAttributes = (
     outcome?: DocumentProcessingOutcome | "completed" | "published";
     chunkCount?: number;
     enrichmentStatus?: string;
+    enrichmentOutcome?: string;
     enrichmentShape?: string;
     enrichmentFactCount?: number;
     enrichmentDroppedFactCount?: number;
@@ -181,6 +190,7 @@ export const buildDocumentProcessingTraceAttributes = (
   "document.processing.outcome": input.outcome,
   "document.processing.item.count": input.chunkCount === undefined ? undefined : boundedTraceCount(input.chunkCount),
   "document.enrichment.status": input.enrichmentStatus,
+  "document.enrichment.outcome": input.enrichmentOutcome,
   "document.enrichment.shape": input.enrichmentShape,
   "document.enrichment.fact_count": input.enrichmentFactCount,
   "document.enrichment.dropped_fact_count": input.enrichmentDroppedFactCount,
@@ -207,6 +217,9 @@ export class DocumentProcessingService {
     private readonly documentTypeCatalogReader?: DocumentTypeCatalogReaderPort,
     private readonly workspaceInvalidationPublisher: WorkspaceInvalidationPublisher =
       createNoopWorkspaceInvalidationPublisher(),
+    // Carries the enrichment outcome metric; absent in tests and tools that
+    // run the pipeline without one.
+    private readonly telemetry?: Pick<TelemetryService, "emit">,
   ) {}
 
   async process(job: DocumentProcessingJobRecord): Promise<DocumentProcessingOutcome> {
@@ -587,6 +600,13 @@ export class DocumentProcessingService {
             status,
             ...outcome,
           },
+        });
+        await this.telemetry?.emit({
+          eventType: "document.worker.enrichment_completed",
+          severity: QUIET_ENRICHMENT_OUTCOMES.has(result.outcome) ? "info" : "warn",
+          correlation: { workspaceId: job.workspaceId, documentId: document.id, jobId: job.id },
+          metrics: { modelAttemptCount: result.modelAttemptCount },
+          tags: { outcome: result.outcome },
         });
 
         return "completed";

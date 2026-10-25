@@ -75,9 +75,11 @@ The catalog says what extraction looks for. A separate control says whether it r
 
 Each processed document with extraction enabled costs one model call, reading up to the first 48,000 characters. That call happens *after* the document is chunked, embedded, and searchable, as a lower-priority job — so a large import indexes everything first and extraction drains behind it. A document is answerable before its tags land.
 
+The call is paid once per version of the content. A document that processes again with the same title and text under the same catalog — a nightly re-crawl that finds the page unchanged, a reprocess after a chunking change, a tag edit — gets the reply from its last successful call applied again, with no new model call, and your own tags still win as they would on a fresh run. Edit the content or the catalog and the next run asks the model.
+
 ## Run it, then read the results
 
-Existing documents keep the tags they have until they process again. **Reprocess source**, next to the source's settings, is what applies a fresh catalog to content a source already ingested. For a single document, **Run metadata extraction** in its Properties panel reprocesses that one with extraction forced on.
+Existing documents keep the tags they have until they process again. **Reprocess source**, next to the source's settings, is what applies a fresh catalog to content a source already ingested. For a single document, **Run metadata extraction** in its Properties panel reprocesses that one with extraction forced on; on content and a catalog the model has already read, it applies that reply again.
 
 Open a document and click **Properties**:
 

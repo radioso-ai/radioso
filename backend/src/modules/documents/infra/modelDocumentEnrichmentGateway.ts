@@ -67,6 +67,8 @@ export class ModelDocumentEnrichmentGateway implements DocumentEnrichmentGateway
         operation: {
           workspaceId: request.workspaceId,
           requestId: request.documentId,
+          documentId: request.documentId,
+          documentRevision: request.documentRevision,
           surface: "documents",
           operation: "document_enrichment",
           // Distinct per attempt, so a retry's usage is recorded rather than deduplicated.

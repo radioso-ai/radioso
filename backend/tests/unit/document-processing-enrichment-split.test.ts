@@ -91,6 +91,7 @@ const alwaysAppliesFirstChunkDate: DocumentEnrichmentStagePort = {
   async enrich({ chunks }) {
     return {
       status: "applied",
+      outcome: "applied",
       documentMetadata: { dateFrom: "2026-07-17", dateTo: "2026-07-19" },
       provenance: {
         status: "applied" as const,
@@ -352,17 +353,19 @@ describe("document processing enrichment split", () => {
     expect(publisher.enqueue).toHaveBeenCalledWith("workspace-1", ["document.status_changed"]);
   });
 
-  it("reports dropped facts, model attempts, and the failure reason without content", async () => {
+  it("reports the coded outcome, dropped facts, model attempts, and the failure reason without content", async () => {
     const documentRepository = new InMemoryDocumentRepository();
     const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
     documentRepository.setJobRepository(jobRepository);
     const chunkRepository = new InMemoryChunkRepository(documentRepository);
     const auditService = createAuditService();
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    const telemetry = { emit: vi.fn(async () => null) };
     const truncatedTwice: DocumentEnrichmentStagePort = {
       async enrich({ document, chunks }) {
         return {
           status: "failed",
+          outcome: "truncated",
           documentMetadata: document.metadata,
           provenance: {
             status: "failed" as const,
@@ -399,6 +402,10 @@ describe("document processing enrichment split", () => {
       truncatedTwice,
       undefined,
       jobRepository,
+      undefined,
+      undefined,
+      undefined,
+      telemetry,
     );
     await service.process(buildVectorizeJob(document.id, document.revision));
 
@@ -406,6 +413,7 @@ describe("document processing enrichment split", () => {
 
     // The stage result is the one source: provenance counts do not leak in.
     const counts = {
+      outcome: "truncated",
       modelAttemptCount: 2,
       droppedFactCount: 3,
       failureReason: "invalid_output: truncated",
@@ -419,6 +427,15 @@ describe("document processing enrichment split", () => {
     expect(audit?.metadata).toMatchObject({ status: "failed", ...counts });
     expect(audit?.metadata).not.toHaveProperty("attemptCount");
     expect(JSON.stringify(audit?.metadata)).not.toContain("2026-07-17");
+    // One low-cardinality series per outcome: the coded outcome is the only label.
+    expect(telemetry.emit).toHaveBeenCalledOnce();
+    expect(telemetry.emit).toHaveBeenCalledWith({
+      eventType: "document.worker.enrichment_completed",
+      severity: "warn",
+      correlation: { workspaceId: "workspace-1", documentId: document.id, jobId: "job-enrich" },
+      metrics: { modelAttemptCount: 2 },
+      tags: { outcome: "truncated" },
+    });
   });
 
   it("skips a stale-revision enrich job without error", async () => {

@@ -17,6 +17,7 @@ import { ConversationOwnershipRepository } from "../../../db/repositories/conver
 import { DocumentProcessingJobRepository } from "../../../db/repositories/documentProcessingJobRepository.js";
 import { EmbeddingProfileJobRepository } from "../../../db/repositories/embeddingProfileJobRepository.js";
 import { EmbeddingProfileCleanupRepository } from "../../../db/repositories/embeddingProfileCleanupRepository.js";
+import { DocumentEnrichmentReplyRepository } from "../../../db/repositories/documentEnrichmentReplyRepository.js";
 import { DocumentRepository } from "../../../db/repositories/documentRepository.js";
 import { DocumentSourceRepository } from "../../../db/repositories/documentSourceRepository.js";
 import { EmbeddingProfileRepository } from "../../../db/repositories/embeddingProfileRepository.js";
@@ -211,6 +212,7 @@ export const buildRepositories = (
   conversationActivityRepository: new ConversationActivityRepository(database.kysely),
   conversationOwnershipRepository: new ConversationOwnershipRepository(database.kysely),
   documentProcessingJobRepository: new DocumentProcessingJobRepository(database.kysely),
+  documentEnrichmentReplyRepository: new DocumentEnrichmentReplyRepository(database.kysely),
   documentRepository: new DocumentRepository(database.kysely),
   documentSourceRepository: new DocumentSourceRepository(database.kysely),
   embeddingProfileRepository: new EmbeddingProfileRepository(database.kysely),

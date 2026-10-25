@@ -181,6 +181,7 @@ export const buildDocumentServices = (input: {
   );
   const documentEnrichmentService = new DocumentEnrichmentService({
     gateway: new ModelDocumentEnrichmentGateway(llmRegistry.createChatInferencePipeline(usageEventRecorder)),
+    replyStore: repositories.documentEnrichmentReplyRepository,
   });
   const documentProcessingService = new DocumentProcessingService(
     repositories.documentRepository,
@@ -197,6 +198,7 @@ export const buildDocumentServices = (input: {
     documentJobDispatcher,
     settings.documentTypeCatalogService,
     input.workspaceInvalidationPublisher,
+    telemetryService,
   );
   const embeddingProfileJobService = input.pinnedDocumentEmbeddings
     ? new EmbeddingProfileJobService(

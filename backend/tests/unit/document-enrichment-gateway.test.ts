@@ -77,7 +77,10 @@ describe("ModelDocumentEnrichmentGateway", () => {
       maxOutputTokens: 2_000,
       responseFormat: { type: "json_schema", name: "document_enrichment", strict: true, schema: OUTPUT_SCHEMA },
       operation: expect.objectContaining({
+        workspaceId: "workspace-1",
         requestId: "doc-1",
+        documentId: "doc-1",
+        documentRevision: 11,
         operation: "document_enrichment",
         attemptKey: "document-enrichment:doc-1:11",
       }),

@@ -17,6 +17,11 @@ import {
   type EnrichmentRetryCause,
 } from "../domain/enrichment/enrichmentGateway.js";
 import { buildDocumentEnrichmentOutputSchema } from "../domain/enrichment/enrichmentOutputSchema.js";
+import {
+  fingerprintEnrichmentRequest,
+  noEnrichmentReplyStore,
+  type EnrichmentReplyStore,
+} from "../domain/enrichment/enrichmentReplyStore.js";
 import { locateQuotedFacts } from "../domain/enrichment/factQuoteLocation.js";
 import {
   createDefaultDocumentEnrichmentStrategyRegistry,
@@ -77,8 +82,25 @@ export interface DocumentEnrichmentStageInput<TChunk extends EnrichableChunk = E
   source?: { kind: string; documentMetadata: Record<string, unknown> } | null;
 }
 
+/**
+ * How a run ended, as a closed code for logs, audit and the outcome metric.
+ * `applied_after_truncation` and `truncated` mark replies that hit the output
+ * cap: the first is complete metadata that cost a second request, the second
+ * stored nothing. `reused` applied the reply stored for an identical request
+ * and made no request at all.
+ */
+export type DocumentEnrichmentRunOutcome =
+  | "applied"
+  | "applied_after_truncation"
+  | "reused"
+  | "truncated"
+  | "invalid_output"
+  | "provider_error"
+  | "catalog_over_budget";
+
 export interface DocumentEnrichmentStageResult<TChunk extends EnrichableChunk = EnrichableChunk> {
   status: "applied" | "failed";
+  outcome: DocumentEnrichmentRunOutcome;
   // Flat user-facing tags only; provenance travels separately because document
   // metadata is a flat scalar contract owned by the caller.
   documentMetadata: Record<string, unknown>;
@@ -88,7 +110,7 @@ export interface DocumentEnrichmentStageResult<TChunk extends EnrichableChunk = 
   /** Facts the reply carried that the run could not use: invalid, or quoting text the document lacks. */
   droppedFactCount: number;
   appliedChunkCount: number;
-  /** Model requests the run made: 0 when it failed before asking, 2 after a retry. */
+  /** Model requests the run made: 0 when it reused a stored reply or failed before asking, 2 after a retry. */
   modelAttemptCount: number;
   /** Content-free reason the first request's reply was unusable, when the run asked again. */
   firstAttemptFailureReason: string | null;
@@ -106,11 +128,14 @@ type EnrichmentRequestInput = Omit<DocumentEnrichmentRequest, "retry">;
 interface ModelAttempts {
   count: number;
   firstFailureReason: string | null;
+  retryCause: EnrichmentRetryCause | null;
 }
 
 /** A reply read and placed against the document: what the run applies. */
 interface UsableReply {
   model: string;
+  /** The reply as the gateway returned it: what a later identical request reuses. */
+  output: unknown;
   parsed: DocumentEnrichmentOutput;
   facts: TemporalFact[];
   droppedFactCount: number;
@@ -132,16 +157,20 @@ class NoUsableFactsError extends Error {
 export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
   private readonly prompt: string;
   private readonly strategyRegistry: DocumentEnrichmentStrategyRegistry;
+  private readonly replyStore: EnrichmentReplyStore;
   private readonly now: () => Date;
 
   constructor(private readonly deps: {
     gateway: DocumentEnrichmentGateway;
+    /** Absent means every run asks the model. */
+    replyStore?: EnrichmentReplyStore;
     strategyRegistry?: DocumentEnrichmentStrategyRegistry;
     prompt?: string;
     now?: () => Date;
   }) {
     this.prompt = deps.prompt ?? loadPromptTemplate("ingestion/document-enrichment.md");
     this.strategyRegistry = deps.strategyRegistry ?? createDefaultDocumentEnrichmentStrategyRegistry();
+    this.replyStore = deps.replyStore ?? noEnrichmentReplyStore;
     this.now = deps.now ?? (() => new Date());
   }
 
@@ -149,25 +178,26 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
     input: DocumentEnrichmentStageInput<TChunk>,
   ): Promise<DocumentEnrichmentStageResult<TChunk>> {
     const catalog = input.catalog ?? defaultEnabledDocumentTypes();
-    const attempts: ModelAttempts = { count: 0, firstFailureReason: null };
+    const attempts: ModelAttempts = { count: 0, firstFailureReason: null, retryCause: null };
 
     try {
-      const prompt = buildDocumentEnrichmentPrompt({ template: this.prompt, types: catalog.types });
       const representation = buildBoundedDocumentRepresentation(input.document);
-      const reply = await this.requestUsableReply({
+      const request: EnrichmentRequestInput = {
         workspaceId: input.document.workspaceId,
         documentId: input.document.id,
         documentRevision: input.document.revision,
-        prompt,
+        prompt: buildDocumentEnrichmentPrompt({ template: this.prompt, types: catalog.types }),
         documentRepresentation: representation.text,
         outputSchema: buildDocumentEnrichmentOutputSchema(catalog.types),
-      }, attempts, (model, output) => readUsableReply({
+      };
+      const read = (model: string, output: unknown) => readUsableReply({
         model,
         output,
         types: catalog.types,
         body: representation.body,
         title: input.document.title,
-      }));
+      });
+      const { reply, reused } = await this.usableReplyFor(request, attempts, read);
       const { parsed, matched, droppedFactCount } = reply;
       const shape = normalizeDocumentShape(parsed.shape, parsed.confidence);
 
@@ -234,6 +264,7 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
 
       return {
         status: "applied",
+        outcome: reused ? "reused" : attempts.retryCause === "truncated" ? "applied_after_truncation" : "applied",
         documentMetadata: strategyResult.documentMetadata,
         provenance,
         chunks: strategyResult.chunks,
@@ -249,6 +280,7 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
       // all survive for the next attempt to clean up.
       return {
         status: "failed",
+        outcome: failedRunOutcome(error),
         documentMetadata: input.document.metadata,
         provenance: buildProvenance({
           ...preservedProvenanceFields(input.previousProvenance),
@@ -271,6 +303,59 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
   }
 
   /**
+   * The stored reply when this exact request already has a usable one;
+   * otherwise the model's, stored for the next identical request.
+   */
+  private async usableReplyFor(
+    request: EnrichmentRequestInput,
+    attempts: ModelAttempts,
+    read: (model: string, output: unknown) => UsableReply,
+  ): Promise<{ reply: UsableReply; reused: boolean }> {
+    const requestFingerprint = fingerprintEnrichmentRequest(request);
+    const stored = await this.findStoredReply(request, requestFingerprint, read);
+    if (stored) {
+      return { reply: stored, reused: true };
+    }
+    const reply = await this.requestUsableReply(request, attempts, read);
+    await this.storeReply(request, { requestFingerprint, model: reply.model, output: reply.output });
+    return { reply, reused: false };
+  }
+
+  /**
+   * The stored reply, when it answered exactly this request and still reads as
+   * usable. Anything else — no reply, another request's, one that no longer
+   * parses or places — means asking the model.
+   */
+  private async findStoredReply(
+    request: EnrichmentRequestInput,
+    requestFingerprint: string,
+    read: (model: string, output: unknown) => UsableReply,
+  ): Promise<UsableReply | null> {
+    const stored = await this.replyStore
+      .find({ workspaceId: request.workspaceId, documentId: request.documentId })
+      .catch(() => null);
+    if (stored?.requestFingerprint !== requestFingerprint) {
+      return null;
+    }
+    try {
+      return read(stored.model, stored.output);
+    } catch {
+      return null;
+    }
+  }
+
+  // A reply that cannot be stored costs the next identical request a model
+  // call, never this run its result.
+  private async storeReply(
+    request: EnrichmentRequestInput,
+    reply: { requestFingerprint: string; model: string; output: unknown },
+  ): Promise<void> {
+    await this.replyStore
+      .save({ workspaceId: request.workspaceId, documentId: request.documentId }, reply)
+      .catch(() => undefined);
+  }
+
+  /**
    * One request, and one more when its reply cannot be used. Provider errors
    * are not asked again here: the adapters retry transient ones themselves.
    */
@@ -287,6 +372,7 @@ export class DocumentEnrichmentService implements DocumentEnrichmentStagePort {
         throw error;
       }
       attempts.firstFailureReason = describeEnrichmentFailure(error);
+      attempts.retryCause = after;
       return this.ask({ ...request, retry: { after } }, attempts, read);
     }
   }
@@ -319,7 +405,7 @@ const readUsableReply = (input: {
   if (matched.type?.payload === "facts" && droppedFactCount > 0 && located.facts.length === 0) {
     throw new NoUsableFactsError();
   }
-  return { model: input.model, parsed, facts: located.facts, droppedFactCount, matched };
+  return { model: input.model, output: input.output, parsed, facts: located.facts, droppedFactCount, matched };
 };
 
 // A reply that does not match the envelope schema, or whose facts are all
@@ -364,6 +450,19 @@ const describeEnrichmentFailure = (error: unknown): string => {
   }
   if (error instanceof NoUsableFactsError) {
     return "invalid_output: no_usable_facts";
+  }
+  if (error instanceof Error && error.message === ENRICHMENT_CATALOG_OVER_BUDGET) {
+    return "catalog_over_budget";
+  }
+  return "provider_error";
+};
+
+const failedRunOutcome = (error: unknown): DocumentEnrichmentRunOutcome => {
+  if (error instanceof EnrichmentReplyUnreadableError && error.reason === "truncated") {
+    return "truncated";
+  }
+  if (error instanceof ZodError || error instanceof EnrichmentReplyUnreadableError || error instanceof NoUsableFactsError) {
+    return "invalid_output";
   }
   if (error instanceof Error && error.message === ENRICHMENT_CATALOG_OVER_BUDGET) {
     return "catalog_over_budget";

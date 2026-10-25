@@ -66,6 +66,14 @@ imports from `services/` or `infra/`.
   Provider errors are left to the adapters' own transport retries. It asks the model through the
   `domain/enrichment/enrichmentGateway.ts` port; the adapter that implements it
   over the inference pipeline is `infra/modelDocumentEnrichmentGateway.ts`.
+  Each run ends in one coded `DocumentEnrichmentRunOutcome`, which the
+  processing service logs, audits, and emits as the
+  `document.worker.enrichment_completed` telemetry event.
+- `domain/enrichment/enrichmentReplyStore.ts`: the request fingerprint and the
+  port for a document's last usable reply. A run whose request matches the
+  stored fingerprint applies that reply without a model call; the adapter is
+  `db/repositories/documentEnrichmentReplyRepository.ts`
+  (`documents.enrichment_reply`).
 - `domain/enrichment/factQuoteLocation.ts`: places each extracted date by the
   text the model quoted, in the body offsets chunks use. A date that cannot be
   placed is dropped and counted, never fatal.
@@ -141,6 +149,9 @@ Focused starting points:
   for tag ownership across PUT, reprocess, failed runs, and manual edits.
 - `cd backend && pnpm exec vitest run tests/unit/document-enrichment-service.test.ts tests/unit/document-enrichment-gateway.test.ts tests/unit/document-enrichment-quote-location.test.ts`
   for extraction retries, reply reading, and placing dates by their quotes.
+- `cd backend && pnpm exec vitest run tests/unit/document-enrichment-reply-reuse.test.ts tests/unit/document-enrichment-unchanged-content.test.ts`
+  for reusing a stored reply, and re-crawls, re-sent documents, reprocesses,
+  and metadata edits that make no model call.
 - `cd backend && pnpm exec vitest run tests/unit/workspace-storage-cleanup.test.ts tests/unit/workspace-storage-sweep-command.test.ts tests/unit/local-document-storage.test.ts tests/unit/gcs-document-storage.test.ts`
   for removing a deleted workspace's stored files, and
   `tests/integration/workspace-storage-purge.integration.test.ts` for the

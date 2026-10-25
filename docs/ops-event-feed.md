@@ -1,12 +1,12 @@
 ---
 title: "Ops Event Feed"
 description: "Push Radioso product events and errors to an HTTP endpoint as signed JSON: configuration, the envelope shape, signature verification, and what arrives."
-last_updated: 2026-09-03
+last_updated: 2026-10-24
 ---
 
 # Ops Event Feed
 
-Radioso records every signup, chat turn, and error as a structured event. By default those land in the `audit_events` table and stay there, which means finding out that someone signed up involves querying your database. The ops event feed pushes them instead: each event becomes a signed JSON POST to a URL you choose.
+Radioso records every signup, chat turn, and error as a structured event. By default those land in the `audit_events` table, which means finding out that someone signed up involves querying your database. The ops event feed pushes them instead: each event becomes a signed JSON POST to a URL you choose.
 
 Point it at a Slack workflow to get a message per signup. Point it at n8n, Make, or your own handler to trigger something. One endpoint, so adding a second destination is a change in your automation tool rather than in Radioso.
 
@@ -23,7 +23,7 @@ OPS_EVENT_WEBHOOK_SECRET=a-long-random-shared-secret
 
 The backend refuses to start if a sink list names `ops_webhook` without both a URL and a secret, so a half-finished configuration fails at boot rather than going quietly nowhere.
 
-`audit` stays in the list because it is the durable record. The feed is deliberately lossy — see [Delivery](#delivery) — and `audit_events` is what you go back to when you need the history.
+`audit` stays in the list because `audit_events` is the durable record, kept for 365 days ([Data retention](../docs-portal/content/operators/data-retention.mdx)). The feed is deliberately lossy — see [Delivery](#delivery) — and `audit_events` is what you go back to when you need the history.
 
 ### Narrowing what you receive
 
@@ -117,7 +117,7 @@ The tradeoffs that buys:
 - A process restart drops whatever is still queued.
 - After three failed attempts an event is logged and abandoned.
 
-So treat the feed as a notification channel, not a ledger. Every event it carries is also in `audit_events`, which is where to look when you need a complete history.
+So treat the feed as a notification channel, not a ledger. Every event it carries is also in `audit_events`, which is where to look when you need the history, for the 365 days it keeps each event.
 
 Retries repeat the same `Idempotency-Key`, so a receiver that acts on events — creating a ticket, sending a message — should key on it.
 

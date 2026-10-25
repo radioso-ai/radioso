@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { describe, expect, expectTypeOf, it, vi } from "vitest";
 
 import { createTestEnv } from "../support/testApp.js";
@@ -9,6 +11,7 @@ import {
   InMemoryEmailVerificationTokenRepository,
   InMemoryUserRepository,
   InMemoryFederatedIdentityRepository,
+  InMemoryPasswordResetTokenRepository,
   InMemoryWorkspaceRepository,
   RecordingAccountInvitationNotifier,
 } from "../support/fakes.js";
@@ -20,7 +23,7 @@ import {
   type AccountRepositoryPort,
   type SessionRepositoryPort,
 } from "../../src/modules/auth/services/authService.js";
-import { sha256 } from "../../src/modules/auth/domain/authPrimitives.js";
+import { hashPassword, sha256 } from "../../src/modules/auth/domain/authPrimitives.js";
 import { registrationClosed } from "../../src/modules/auth/services/ossOrganizationCreationGuard.js";
 import { AuthFunnelService } from "../../src/modules/auth/services/authFunnelService.js";
 import { WorkspaceService } from "../../src/modules/workspace/services/workspaceService.js";
@@ -195,7 +198,8 @@ class RecordingOrganizationCreationReservation implements OrganizationCreationRe
 const createAuthService = (options: {
   accountRepository?: AccountRepositoryPort;
   userRepository?: InMemoryUserRepository;
-  sessionRepository?: SessionRepositoryPort;
+  /** Also records the sessions the in-memory funnel's guarded writes let through. */
+  sessionRepository?: SessionRepositoryPort & Pick<WorkingSessionRepository, "create" | "revokeAllForUser">;
   federatedIdentityRepository?: InMemoryFederatedIdentityRepository;
   workspaceService?: WorkspaceService;
   accountInvitationRepository?: InMemoryAccountInvitationRepository;
@@ -206,6 +210,7 @@ const createAuthService = (options: {
   personalCredentialLifecycle?: { deleteAccount(input: { accountId: string; actorUserId?: string | null; auditEvent?: unknown }): Promise<boolean> };
   envOverrides?: Partial<ReturnType<typeof createTestEnv>>;
   productAnalytics?: ProductAnalyticsPort;
+  logger?: { warn(payload: Record<string, unknown>, message: string): void };
 }) => {
   const env = { ...createTestEnv(), ...options.envOverrides };
   const auditService = createAuditService();
@@ -225,12 +230,16 @@ const createAuthService = (options: {
   const workspaceService = options.workspaceService ?? new WorkspaceService(new InMemoryWorkspaceRepository(), auditService);
   const federatedIdentityRepository = options.federatedIdentityRepository ?? new InMemoryFederatedIdentityRepository();
   const sessionRepository = options.sessionRepository ?? new FailingSessionRepository();
+  userRepository.setFederatedIdentityRepository(federatedIdentityRepository);
   const emailVerificationTokenRepository = new InMemoryEmailVerificationTokenRepository();
+  const passwordResetTokenRepository = new InMemoryPasswordResetTokenRepository();
   const authFunnelRepository = new InMemoryAuthFunnelRepository({
     emailVerificationTokens: emailVerificationTokenRepository,
     users: userRepository,
     sessions: sessionRepository,
     listMemberships: (userId) => accountAccessService.listUserMemberships(userId),
+    passwordResetTokens: passwordResetTokenRepository,
+    federatedIdentities: federatedIdentityRepository,
   });
 
   return {
@@ -256,12 +265,14 @@ const createAuthService = (options: {
       ),
       personalCredentialTermination: options.personalCredentialTermination,
       personalCredentialLifecycle: options.personalCredentialLifecycle,
+      logger: options.logger,
     }),
     accountRepository,
     userRepository,
     federatedIdentityRepository,
     authFunnelRepository,
     emailVerificationTokenRepository,
+    passwordResetTokenRepository,
     sessionRepository,
     accountMembershipRepository,
     accountInvitationRepository,
@@ -335,6 +346,7 @@ describe("AuthService rollback", () => {
     await expect(
       authService.createOrganization({
         userId: "user-1",
+        credentialGeneration: 0,
         organizationName: "Rollback Org",
       }),
     ).rejects.toThrow("session create failed");
@@ -421,6 +433,7 @@ describe("AuthService rollback", () => {
       authService.acceptInvitationAsUser({
         invitationToken,
         userId: invitee.id,
+        credentialGeneration: 0,
       }),
     ).rejects.toThrow("mark email verified failed");
 
@@ -490,6 +503,7 @@ describe("AuthService rollback", () => {
 
     const { accountId } = await orgAuthService.createOrganization({
       userId: "user-1",
+      credentialGeneration: 0,
       organizationName: "Hook Org",
     });
 
@@ -512,6 +526,7 @@ describe("AuthService rollback", () => {
 
     await orgAuthService.createOrganization({
       userId: "user-1",
+      credentialGeneration: 0,
       organizationName: "Guard Org",
     });
 
@@ -538,6 +553,7 @@ describe("AuthService rollback", () => {
 
     await expect(orgAuthService.createOrganization({
       userId: "user-1",
+      credentialGeneration: 0,
       organizationName: "Release Org",
     })).rejects.toThrow("session create failed");
 
@@ -563,6 +579,7 @@ describe("AuthService rollback", () => {
 
     await expect(orgAuthService.createOrganization({
       userId: "user-1",
+      credentialGeneration: 0,
       organizationName: "Never Persisted",
     })).rejects.toThrow("account create failed");
 
@@ -764,6 +781,7 @@ describe("AuthService rollback", () => {
 
     await expect(authService.createOrganization({
       userId: "user-1",
+      credentialGeneration: 0,
       organizationName: "Rollback Fault Org",
     })).rejects.toThrow("session create failed");
 
@@ -798,6 +816,7 @@ describe("AuthService rollback", () => {
 
     await expect(authService.createOrganization({
       userId: "user-1",
+      credentialGeneration: 0,
       organizationName: "Release Fault Org",
     })).rejects.toThrow("session create failed");
 
@@ -833,6 +852,7 @@ describe("AuthService rollback", () => {
 
     await expect(orgAuthService.createOrganization({
       userId: "user-1",
+      credentialGeneration: 0,
       organizationName: "Blocked Org",
     })).rejects.toMatchObject({ statusCode: 429, code: "rate_limit_exceeded" });
 
@@ -917,6 +937,7 @@ describe("AuthService rollback", () => {
 
     const { accountId } = await orgAuthService.createOrganization({
       userId: "user-1",
+      credentialGeneration: 0,
       organizationName: "Deleted Org",
     });
     await orgAuthService.deleteOrganization({ accountId, userId: "user-1" });
@@ -936,7 +957,7 @@ describe("AuthService rollback", () => {
       sessionRepository: new WorkingSessionRepository(),
       personalCredentialTermination: { endAccount: async ({ accountId }) => { ended.push(accountId); } },
     });
-    const { accountId } = await orgAuthService.createOrganization({ userId: "user-1", organizationName: "Deleted Org" });
+    const { accountId } = await orgAuthService.createOrganization({ userId: "user-1", credentialGeneration: 0, organizationName: "Deleted Org" });
 
     await orgAuthService.deleteOrganization({ accountId, userId: "user-1" });
 
@@ -958,7 +979,7 @@ describe("AuthService rollback", () => {
       workspaceService,
       personalCredentialTermination: { endAccount: async () => { steps.push("delete"); } },
     });
-    const { accountId } = await orgAuthService.createOrganization({ userId: "user-1", organizationName: "Deleted Org" });
+    const { accountId } = await orgAuthService.createOrganization({ userId: "user-1", credentialGeneration: 0, organizationName: "Deleted Org" });
 
     await orgAuthService.deleteOrganization({ accountId, userId: "user-1" });
 
@@ -975,7 +996,7 @@ describe("AuthService rollback", () => {
       sessionRepository: new WorkingSessionRepository(),
       personalCredentialLifecycle: { deleteAccount: async (input) => { deleted.push(input); return true; } },
     });
-    const { accountId } = await orgAuthService.createOrganization({ userId: "user-1", organizationName: "Deleted Org" });
+    const { accountId } = await orgAuthService.createOrganization({ userId: "user-1", credentialGeneration: 0, organizationName: "Deleted Org" });
 
     await orgAuthService.deleteOrganization({ accountId, userId: "user-1" });
 
@@ -1472,6 +1493,238 @@ describe("AuthService rollback", () => {
       userId,
       sessionCookie: expect.stringContaining("radioso_session="),
     });
+  });
+});
+
+describe("AuthService credential generation", () => {
+  class RecordingSessionRepository extends WorkingSessionRepository {
+    readonly createdForUsers: string[] = [];
+
+    override async create(params: {
+      userId: string;
+      accountId: string;
+      sessionTokenHash: string;
+      expiresAt: Date;
+    }): ReturnType<WorkingSessionRepository["create"]> {
+      this.createdForUsers.push(params.userId);
+      return super.create(params);
+    }
+  }
+
+  const createContext = (options: { accountInvitationRepository?: InMemoryAccountInvitationRepository } = {}) => {
+    const sessionRepository = new RecordingSessionRepository();
+    const logger = { warn: vi.fn() };
+    return { ...createAuthService({ ...options, sessionRepository, logger }), sessionRepository, logger };
+  };
+
+  type Context = ReturnType<typeof createContext>;
+
+  const registerVerifiedUser = async (
+    context: Context,
+    email: string,
+  ): Promise<{ userId: string; accountId: string }> => {
+    const registered = await context.authService.register({ email, password: "verysecurepassword" });
+    await context.userRepository.markEmailVerified(registered.userId, new Date());
+    return { userId: registered.userId, accountId: registered.accountId };
+  };
+
+  /** Completes a password reset for the user, as one landing in the middle of a sign-in would. */
+  const resetPassword = async (context: Context, userId: string, password = "replacedpassword"): Promise<void> => {
+    const token = `reset-${randomUUID()}`;
+    await context.passwordResetTokenRepository.create({
+      userId,
+      tokenHash: sha256(token),
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    const recovery = await context.authFunnelRepository.completePasswordReset({
+      resetTokenHash: sha256(token),
+      passwordHash: await hashPassword(password),
+      now: new Date(),
+    });
+    expect(recovery).not.toBeNull();
+  };
+
+  /** Lands a password reset right before the sign-in writes its session. */
+  const resetBeforeSessionWrite = (context: Context, userId: string): void => {
+    const write = context.authFunnelRepository.createSessionForCredential.bind(context.authFunnelRepository);
+    context.authFunnelRepository.createSessionForCredential = async (input) => {
+      await resetPassword(context, userId);
+      return write(input);
+    };
+  };
+
+  it("refuses a password login whose password a reset replaced after it was checked", async () => {
+    const context = createContext();
+    const email = "raced-login@example.com";
+    const { userId, accountId } = await registerVerifiedUser(context, email);
+    resetBeforeSessionWrite(context, userId);
+
+    await expect(context.authService.login({ email, password: "verysecurepassword" }))
+      .rejects.toMatchObject({ statusCode: 401, message: "Invalid email or password" });
+
+    expect(context.sessionRepository.createdForUsers).toEqual([]);
+    expect(context.auditService.events.filter((event) => event.eventType === "auth.login")).toEqual([
+      {
+        accountId,
+        eventType: "auth.login",
+        eventStatus: "failure",
+        metadata: { email, reason: "credential_superseded" },
+      },
+    ]);
+    expect(context.logger.warn).toHaveBeenCalledTimes(1);
+    expect(context.logger.warn).toHaveBeenCalledWith(
+      { event: "auth.credential_superseded", flow: "password_login", userId, accountId },
+      expect.any(String),
+    );
+  });
+
+  it("signs a login in with the password the reset set", async () => {
+    const context = createContext();
+    const email = "after-reset@example.com";
+    const { userId } = await registerVerifiedUser(context, email);
+    await resetPassword(context, userId, "thenewpassword");
+
+    await expect(context.authService.login({ email, password: "thenewpassword" }))
+      .resolves.toMatchObject({ userId, sessionCookie: expect.stringContaining("radioso_session=") });
+    expect(context.sessionRepository.createdForUsers).toEqual([userId]);
+    expect(context.logger.warn).not.toHaveBeenCalled();
+  });
+
+  it("refuses a linked Google sign-in, re-linking nothing, when a reset lands after the link lookup", async () => {
+    const context = createContext();
+    const { userId, accountId } = await registerVerifiedUser(context, "raced-google@example.com");
+    await context.federatedIdentityRepository.link({
+      userId,
+      provider: "google",
+      subject: "raced-subject",
+      providerEmail: "provider-address@example.com",
+      authenticatedAt: new Date(),
+    });
+    const lookup = context.userRepository.findByFederatedIdentity.bind(context.userRepository);
+    context.userRepository.findByFederatedIdentity = async (provider, subject) => {
+      const user = await lookup(provider, subject);
+      await resetPassword(context, userId);
+      return user;
+    };
+
+    await expect(context.authService.federatedLogin({
+      provider: "google",
+      subject: "raced-subject",
+      email: "provider-address@example.com",
+      emailVerified: true,
+    })).rejects.toMatchObject({ statusCode: 401 });
+
+    expect(await context.federatedIdentityRepository.listForUser(userId)).toEqual([]);
+    expect(context.sessionRepository.createdForUsers).toEqual([]);
+    expect(context.auditService.events.filter((event) => event.eventType === "auth.federated_login")).toEqual([
+      {
+        eventType: "auth.federated_login",
+        eventStatus: "failure",
+        metadata: {
+          email: "provider-address@example.com",
+          provider: "google",
+          subject: "raced-subject",
+          reason: "credential_superseded",
+        },
+      },
+    ]);
+    expect(context.logger.warn).toHaveBeenCalledWith(
+      { event: "auth.credential_superseded", flow: "federated_login", userId },
+      expect.any(String),
+    );
+    expect(context.logger.warn).not.toHaveBeenCalledWith(
+      expect.objectContaining({ accountId }),
+      expect.any(String),
+    );
+  });
+
+  it("leaves no session when a reset lands between a Google sign-in's link and its session write", async () => {
+    const context = createContext();
+    const { userId, accountId } = await registerVerifiedUser(context, "raced-google-session@example.com");
+    resetBeforeSessionWrite(context, userId);
+
+    await expect(context.authService.federatedLogin({
+      provider: "google",
+      subject: "raced-session-subject",
+      email: "raced-google-session@example.com",
+      emailVerified: true,
+    })).rejects.toMatchObject({ statusCode: 401 });
+
+    // The reset removed the link this sign-in had just written, and the session never landed.
+    expect(await context.federatedIdentityRepository.listForUser(userId)).toEqual([]);
+    expect(context.sessionRepository.createdForUsers).toEqual([]);
+    expect(context.logger.warn).toHaveBeenCalledWith(
+      { event: "auth.credential_superseded", flow: "federated_login", userId, accountId },
+      expect.any(String),
+    );
+  });
+
+  it("signs a reclaimed account in at the generation its Google recovery advanced to", async () => {
+    const context = createContext();
+    const registered = await context.authService.register({
+      email: "reclaimed@example.com",
+      password: "verysecurepassword",
+    });
+
+    await expect(context.authService.federatedLogin({
+      provider: "google",
+      subject: "reclaimed-subject",
+      email: "reclaimed@example.com",
+      emailVerified: true,
+    })).resolves.toMatchObject({ userId: registered.userId });
+
+    expect((await context.userRepository.findById(registered.userId))?.credentialGeneration).toBe(1);
+    expect(context.sessionRepository.createdForUsers).toEqual([registered.userId]);
+    expect(await context.federatedIdentityRepository.listForUser(registered.userId)).toHaveLength(1);
+  });
+
+  it("refuses an invitation join whose password a reset replaced after it was checked", async () => {
+    const accountInvitationRepository = new InMemoryAccountInvitationRepository();
+    const context = createContext({ accountInvitationRepository });
+    const email = "raced-invitee@example.com";
+    const { userId } = await registerVerifiedUser(context, email);
+    const invitingAccount = await context.accountRepository.create({
+      name: "Inviting Org",
+      email: "owner@example.com",
+      passwordHash: "hash",
+    });
+    const invitationToken = `invitation-${randomUUID()}`;
+    await accountInvitationRepository.create({
+      accountId: invitingAccount.id,
+      email,
+      invitedByMembershipId: "membership-owner",
+      tokenHash: sha256(invitationToken),
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    resetBeforeSessionWrite(context, userId);
+
+    await expect(context.authService.acceptInvitation({
+      invitationToken,
+      email,
+      password: "verysecurepassword",
+    })).rejects.toMatchObject({ statusCode: 401 });
+
+    expect((await accountInvitationRepository.findByTokenHash(sha256(invitationToken)))?.status).toBe("pending");
+    expect(context.sessionRepository.createdForUsers).toEqual([]);
+    expect(context.logger.warn).toHaveBeenCalledWith(
+      { event: "auth.credential_superseded", flow: "invitation_accept", userId, accountId: invitingAccount.id },
+      expect.any(String),
+    );
+  });
+
+  it("refuses an account switch when a reset lands before the new session is written", async () => {
+    const context = createContext();
+    const { userId, accountId } = await registerVerifiedUser(context, "raced-switch@example.com");
+    resetBeforeSessionWrite(context, userId);
+
+    await expect(context.authService.switchAccount({ userId, credentialGeneration: 0, targetAccountId: accountId }))
+      .rejects.toMatchObject({ statusCode: 401 });
+
+    expect(context.sessionRepository.createdForUsers).toEqual([]);
+    expect(context.logger.warn).toHaveBeenCalledWith(
+      { event: "auth.credential_superseded", flow: "account_switch", userId, accountId },
+      expect.any(String),
+    );
   });
 });
 

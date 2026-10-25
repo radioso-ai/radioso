@@ -51,13 +51,17 @@ import type {
 import type {
   AccountRecord,
   AccountRepositoryPort,
+  ActiveSession,
   FederatedIdentityRecord,
   FederatedIdentityRepositoryPort,
   SessionRecord,
   SessionRepositoryPort,
 } from "../../src/modules/auth/services/authService.js";
 import type { CreateUserParams, UserRecord, UserRepositoryPort } from "../../src/db/repositories/userRepository.js";
-import type { AuthFunnelRepositoryPort } from "../../src/modules/auth/services/authFunnelService.js";
+import type {
+  AuthFunnelRepositoryPort,
+  CredentialGeneration,
+} from "../../src/modules/auth/services/authFunnelService.js";
 import type { WorkspaceRecord, WorkspaceRepositoryPort } from "../../src/db/repositories/workspaceRepository.js";
 import type {
   AgentGreetingUpdateOptions,
@@ -295,6 +299,25 @@ export class InMemoryUserRepository implements UserRepositoryPort {
   private readonly items = new Map<string, UserRecord>();
   // `users.disabled_at` is set outside the user repository (staff tooling); tests set it here.
   private readonly disabledAtById = new Map<string, Date>();
+  // Postgres answers `findByFederatedIdentity` by joining the link table; tests wire the links in.
+  private federatedIdentities: Pick<InMemoryFederatedIdentityRepository, "findByProviderSubject"> | null = null;
+
+  setFederatedIdentityRepository(
+    federatedIdentities: Pick<InMemoryFederatedIdentityRepository, "findByProviderSubject">,
+  ): void {
+    this.federatedIdentities = federatedIdentities;
+  }
+
+  /** Stands in for the generation bump a reset or recovery makes inside its transaction. */
+  advanceCredentialGeneration(id: string): number {
+    const existing = this.items.get(id);
+    if (!existing) {
+      throw notFound("User not found");
+    }
+    const credentialGeneration = existing.credentialGeneration + 1;
+    this.items.set(id, { ...existing, credentialGeneration, updatedAt: new Date() });
+    return credentialGeneration;
+  }
 
   disable(userId: string, at: Date = new Date()): void {
     this.disabledAtById.set(userId, at);
@@ -311,6 +334,7 @@ export class InMemoryUserRepository implements UserRepositoryPort {
       passwordHash: params.passwordHash,
       displayName: params.displayName ?? null,
       emailVerifiedAt: params.emailVerifiedAt === undefined ? new Date() : params.emailVerifiedAt,
+      credentialGeneration: 0,
       createdAt: new Date(),
       updatedAt: new Date(),
     };
@@ -325,6 +349,14 @@ export class InMemoryUserRepository implements UserRepositoryPort {
 
   async findById(id: string): Promise<UserRecord | null> {
     return this.items.get(id) ?? null;
+  }
+
+  async findByFederatedIdentity(provider: string, subject: string): Promise<UserRecord | null> {
+    if (!this.federatedIdentities) {
+      throw new Error("InMemoryUserRepository: call setFederatedIdentityRepository before a federated lookup");
+    }
+    const link = await this.federatedIdentities.findByProviderSubject(provider, subject);
+    return link ? this.items.get(link.userId) ?? null : null;
   }
 
   async findByIds(ids: readonly string[]): Promise<UserRecord[]> {
@@ -556,8 +588,21 @@ export class InMemoryAccessGrantLifecycleUnitOfWork implements AccessGrantLifecy
   }
 }
 
-export class InMemorySessionRepository implements SessionRepositoryPort {
+/** Where `InMemoryAuthFunnelRepository` records the sessions its guarded writes let through. */
+interface InMemorySessionWriter {
+  create(params: { userId: string; accountId: string; sessionTokenHash: string; expiresAt: Date }): Promise<unknown>;
+  revokeAllForUser(userId: string, revokedAt: Date): Promise<number>;
+}
+
+export class InMemorySessionRepository implements SessionRepositoryPort, InMemorySessionWriter {
   private readonly items = new Map<string, SessionRecord>();
+  // Postgres joins the user into the session lookup, for the credential generation and to
+  // drop disabled users; tests wire the users in.
+  private users: Pick<InMemoryUserRepository, "findById" | "disabledAt"> | null = null;
+
+  setUserRepository(users: Pick<InMemoryUserRepository, "findById" | "disabledAt">): void {
+    this.users = users;
+  }
 
   async create(params: { userId: string; accountId: string; sessionTokenHash: string; expiresAt: Date }): Promise<SessionRecord> {
     const record: SessionRecord = {
@@ -575,12 +620,17 @@ export class InMemorySessionRepository implements SessionRepositoryPort {
     return record;
   }
 
-  async findActiveByTokenHash(sessionTokenHash: string, now: Date): Promise<SessionRecord | null> {
-    return (
-      [...this.items.values()].find(
-        (item) => item.sessionTokenHash === sessionTokenHash && item.expiresAt > now && item.revokedAt === null,
-      ) ?? null
+  async findActiveByTokenHash(sessionTokenHash: string, now: Date): Promise<ActiveSession | null> {
+    if (!this.users) {
+      throw new Error("InMemorySessionRepository: call setUserRepository before authenticating a session");
+    }
+    const session = [...this.items.values()].find(
+      (item) => item.sessionTokenHash === sessionTokenHash && item.expiresAt > now && item.revokedAt === null,
     );
+    const user = session && !this.users.disabledAt(session.userId)
+      ? await this.users.findById(session.userId)
+      : null;
+    return session && user ? { ...session, userCredentialGeneration: user.credentialGeneration } : null;
   }
 
   async touch(sessionId: string, lastSeenAt: Date): Promise<void> {
@@ -777,10 +827,10 @@ export class InMemoryAuthFunnelRepository implements AuthFunnelRepositoryPort {
   constructor(private readonly dependencies: {
     emailVerificationTokens: InMemoryEmailVerificationTokenRepository;
     users: InMemoryUserRepository;
-    sessions: Pick<SessionRepositoryPort, "create" | "revokeAllForUser">;
+    sessions: InMemorySessionWriter;
     listMemberships: (userId: string) => Promise<AccountMembershipRecord[]>;
     passwordResetTokens?: InMemoryPasswordResetTokenRepository;
-    federatedIdentities?: Pick<FederatedIdentityRepositoryPort, "deleteForUser">;
+    federatedIdentities?: Pick<FederatedIdentityRepositoryPort, "deleteForUser" | "link">;
   }) {}
 
   async createRegistrationChallenge(input: {
@@ -879,6 +929,7 @@ export class InMemoryAuthFunnelRepository implements AuthFunnelRepositoryPort {
     email: string;
     displayName: string | null;
     revokedFederatedIdentities: number;
+    credentialGeneration: number;
   } | null> {
     const tokens = this.dependencies.passwordResetTokens;
     if (!tokens) throw new Error("Password reset repository is not configured");
@@ -895,10 +946,11 @@ export class InMemoryAuthFunnelRepository implements AuthFunnelRepositoryPort {
     await this.dependencies.users.updatePassword(user.id, input.passwordHash);
     await this.dependencies.users.updateDisplayName(user.id, displayName);
     await this.dependencies.users.markEmailVerified(user.id, input.now);
+    const credentialGeneration = this.dependencies.users.advanceCredentialGeneration(user.id);
     await tokens.markAllActiveUsedForUser(user.id, input.now);
     await this.invalidateRecoveryCredentials(user.id, input.now);
     const revokedFederatedIdentities = await this.dependencies.federatedIdentities?.deleteForUser(user.id) ?? 0;
-    return { userId: user.id, email: user.email, displayName, revokedFederatedIdentities };
+    return { userId: user.id, email: user.email, displayName, revokedFederatedIdentities, credentialGeneration };
   }
 
   async recoverFederatedUser(input: {
@@ -906,15 +958,58 @@ export class InMemoryAuthFunnelRepository implements AuthFunnelRepositoryPort {
     passwordHash: string;
     displayName: string | null;
     now: Date;
-  }): Promise<{ recovered: boolean; displayName: string | null } | null> {
+  }): ReturnType<AuthFunnelRepositoryPort["recoverFederatedUser"]> {
     const user = await this.dependencies.users.findById(input.userId);
     if (!user) return null;
     if (user.emailVerifiedAt) return { recovered: false, displayName: user.displayName };
     await this.dependencies.users.updatePassword(user.id, input.passwordHash);
     await this.dependencies.users.updateDisplayName(user.id, input.displayName);
     await this.dependencies.users.markEmailVerified(user.id, input.now);
+    const credentialGeneration = this.dependencies.users.advanceCredentialGeneration(user.id);
     await this.invalidateRecoveryCredentials(user.id, input.now);
-    return { recovered: true, displayName: input.displayName };
+    return { recovered: true, displayName: input.displayName, credentialGeneration };
+  }
+
+  async createSessionForCredential(input: {
+    credential: CredentialGeneration;
+    accountId: string;
+    sessionId: string;
+    sessionTokenHash: string;
+    sessionExpiresAt: Date;
+  }): Promise<boolean> {
+    if (!await this.holdsCredential(input.credential)) return false;
+    await this.dependencies.sessions.create({
+      userId: input.credential.userId,
+      accountId: input.accountId,
+      sessionTokenHash: input.sessionTokenHash,
+      expiresAt: input.sessionExpiresAt,
+    });
+    return true;
+  }
+
+  async linkFederatedIdentityForCredential(input: {
+    credential: CredentialGeneration;
+    provider: string;
+    subject: string;
+    providerEmail: string;
+    authenticatedAt: Date;
+  }): Promise<boolean> {
+    const federatedIdentities = this.dependencies.federatedIdentities;
+    if (!federatedIdentities) throw new Error("Federated identity repository is not configured");
+    if (!await this.holdsCredential(input.credential)) return false;
+    await federatedIdentities.link({
+      userId: input.credential.userId,
+      provider: input.provider,
+      subject: input.subject,
+      providerEmail: input.providerEmail,
+      authenticatedAt: input.authenticatedAt,
+    });
+    return true;
+  }
+
+  private async holdsCredential(credential: CredentialGeneration): Promise<boolean> {
+    const user = await this.dependencies.users.findById(credential.userId);
+    return user?.credentialGeneration === credential.generation;
   }
 
   private async invalidateRecoveryCredentials(userId: string, now: Date): Promise<void> {

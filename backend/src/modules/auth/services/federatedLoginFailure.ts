@@ -26,6 +26,8 @@ export type FederatedLoginFailureReason =
   | "account_lookup_failed"
   /** The session could not be persisted, so no cookie could be issued. */
   | "session_write_failed"
+  /** A password reset or recovery replaced the user's credentials after this sign-in read them. */
+  | "credential_superseded"
   /** Signup is closed, so a first-time sign-in has nowhere to land. */
   | "registration_closed"
   /** Provisioning a first-time account and workspace failed. */

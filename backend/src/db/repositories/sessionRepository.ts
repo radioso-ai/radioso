@@ -1,8 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { sql } from "kysely";
-
 import type { Db } from "../../shared/infra/kysely/types.js";
-import type { SessionRecord, SessionRepositoryPort } from "../../modules/auth/services/authService.js";
+import type { ActiveSession, SessionRepositoryPort } from "../../modules/auth/services/authService.js";
 
 interface SessionRow {
   id: string;
@@ -13,20 +10,10 @@ interface SessionRow {
   expires_at: Date;
   last_seen_at: Date;
   revoked_at: Date | null;
+  credential_generation: number;
 }
 
-const sessionColumns = [
-  "id",
-  "user_id",
-  "account_id",
-  "session_token_hash",
-  "created_at",
-  "expires_at",
-  "last_seen_at",
-  "revoked_at",
-] as const;
-
-const mapSession = (row: SessionRow): SessionRecord => ({
+const mapSession = (row: SessionRow): ActiveSession => ({
   id: row.id,
   userId: row.user_id,
   accountId: row.account_id,
@@ -35,38 +22,35 @@ const mapSession = (row: SessionRow): SessionRecord => ({
   expiresAt: new Date(row.expires_at),
   lastSeenAt: new Date(row.last_seen_at),
   revokedAt: row.revoked_at ? new Date(row.revoked_at) : null,
+  userCredentialGeneration: row.credential_generation,
 });
 
 export class SessionRepository implements SessionRepositoryPort {
   constructor(private readonly db: Db) {}
 
-  async create(params: { userId: string; accountId: string; sessionTokenHash: string; expiresAt: Date }): Promise<SessionRecord> {
-    const row = await this.db
-      .insertInto("sessions")
-      .values({
-        id: randomUUID(),
-        user_id: params.userId,
-        account_id: params.accountId,
-        session_token_hash: params.sessionTokenHash,
-        expires_at: params.expiresAt,
-      })
-      .returning(sessionColumns)
-      .executeTakeFirstOrThrow();
-
-    return mapSession(row);
-  }
-
-  async findActiveByTokenHash(sessionTokenHash: string, now: Date): Promise<SessionRecord | null> {
+  // The user's credential generation comes from the same statement that finds
+  // the session live. A reset revokes the session and advances the generation in
+  // one transaction (as does federated recovery), so whoever acts on this session
+  // presents the generation it was live under, which a later reset supersedes.
+  async findActiveByTokenHash(sessionTokenHash: string, now: Date): Promise<ActiveSession | null> {
     const row = await this.db
       .selectFrom("sessions")
-      .select(sessionColumns)
-      .where("session_token_hash", "=", sessionTokenHash)
-      .where("revoked_at", "is", null)
-      .where("expires_at", ">", now)
-      .where(sql<boolean>`EXISTS (
-        SELECT 1 FROM users account_user
-        WHERE account_user.id = sessions.user_id AND account_user.disabled_at IS NULL
-      )`)
+      .innerJoin("users as account_user", "account_user.id", "sessions.user_id")
+      .select([
+        "sessions.id",
+        "sessions.user_id",
+        "sessions.account_id",
+        "sessions.session_token_hash",
+        "sessions.created_at",
+        "sessions.expires_at",
+        "sessions.last_seen_at",
+        "sessions.revoked_at",
+        "account_user.credential_generation",
+      ])
+      .where("sessions.session_token_hash", "=", sessionTokenHash)
+      .where("sessions.revoked_at", "is", null)
+      .where("sessions.expires_at", ">", now)
+      .where("account_user.disabled_at", "is", null)
       .executeTakeFirst();
 
     return row ? mapSession(row) : null;

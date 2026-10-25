@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
 import type { Env } from "../../../app/config/env.js";
 import type { AccountAccessService } from "../../account/public.js";
@@ -7,10 +7,7 @@ import type { WorkspaceService } from "../../workspace/public.js";
 import type { UserRepositoryPort } from "../../../db/repositories/userRepository.js";
 import type { PasswordResetTokenRepositoryPort } from "../../../db/repositories/passwordResetTokenRepository.js";
 import type { AuthFunnelRepositoryPort } from "./authFunnelService.js";
-import type {
-  AccountRepositoryPort,
-  SessionRepositoryPort,
-} from "./authService.js";
+import type { AccountRepositoryPort } from "./authService.js";
 import { appUrl } from "../../../shared/domain/appUrl.js";
 import type { EmailService } from "../../mail/public.js";
 import { renderPasswordResetEmail } from "../../mail/templates/passwordResetEmail.js";
@@ -24,6 +21,7 @@ import {
 } from "../domain/authPrimitives.js";
 import { unauthorized } from "../../../shared/domain/errors.js";
 import { logAuthMailDeliveryFailure, type AuthMailDeliveryLogger } from "./authMailDeliveryLogging.js";
+import { logCredentialSuperseded } from "./credentialSupersededLogging.js";
 import { DEFAULT_AUTH_EMAIL_FLOW_MIN_RESPONSE_MS, waitForMinimumElapsed } from "./responsePadding.js";
 
 const generateRecoveryToken = (): string => randomBytes(32).toString("base64url");
@@ -35,8 +33,7 @@ export class PasswordResetService {
     accountRepository: AccountRepositoryPort;
     accountAccessService: AccountAccessService;
     workspaceService: WorkspaceService;
-    sessionRepository: SessionRepositoryPort;
-    authFunnelRepository: Pick<AuthFunnelRepositoryPort, "completePasswordReset">;
+    authFunnelRepository: Pick<AuthFunnelRepositoryPort, "completePasswordReset" | "createSessionForCredential">;
     passwordResetTokenRepository: PasswordResetTokenRepositoryPort;
     mailService: EmailService;
     auditService: AuditService;
@@ -152,12 +149,23 @@ export class PasswordResetService {
     );
     const account = await this.dependencies.accountRepository.findById(membership.accountId);
     const sessionToken = generateSessionToken();
-    await this.dependencies.sessionRepository.create({
-      userId: recovery.userId,
+    // A later reset that commits before this session lands has revoked
+    // everything this one granted, its own session included.
+    const sessionWritten = await this.dependencies.authFunnelRepository.createSessionForCredential({
+      credential: { userId: recovery.userId, generation: recovery.credentialGeneration },
       accountId: membership.accountId,
+      sessionId: randomUUID(),
       sessionTokenHash: sha256(sessionToken),
-      expiresAt: new Date(now.getTime() + this.dependencies.env.SESSION_TTL_HOURS * 60 * 60 * 1000),
+      sessionExpiresAt: new Date(now.getTime() + this.dependencies.env.SESSION_TTL_HOURS * 60 * 60 * 1000),
     });
+    if (!sessionWritten) {
+      logCredentialSuperseded(this.dependencies.logger, {
+        flow: "password_reset",
+        userId: recovery.userId,
+        accountId: membership.accountId,
+      });
+      throw unauthorized("Password reset link is invalid or expired");
+    }
     const sessionCookie = serializeSessionCookie(sessionToken, this.dependencies.env);
 
     await this.dependencies.auditService.record({

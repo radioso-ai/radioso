@@ -9,6 +9,11 @@ export interface UserRecord {
   passwordHash: string;
   displayName: string | null;
   emailVerifiedAt: Date | null;
+  /**
+   * Advanced by every password reset and federated recovery. A sign-in reads it
+   * with the proof it checks and writes only while the user still holds it.
+   */
+  credentialGeneration: number;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -19,6 +24,7 @@ interface UserRow {
   password_hash: string;
   display_name: string | null;
   email_verified_at: Date | null;
+  credential_generation: number;
   created_at: Date;
   updated_at: Date;
 }
@@ -27,7 +33,16 @@ interface UserRow {
 // value Postgres could not cast to the uuid column rather than failing the whole read.
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
-const userColumns = ["id", "email", "password_hash", "display_name", "email_verified_at", "created_at", "updated_at"] as const;
+const userColumns = [
+  "id",
+  "email",
+  "password_hash",
+  "display_name",
+  "email_verified_at",
+  "credential_generation",
+  "created_at",
+  "updated_at",
+] as const;
 
 const mapUser = (row: UserRow): UserRecord => ({
   id: row.id,
@@ -35,6 +50,7 @@ const mapUser = (row: UserRow): UserRecord => ({
   passwordHash: row.password_hash,
   displayName: row.display_name,
   emailVerifiedAt: row.email_verified_at ? new Date(row.email_verified_at) : null,
+  credentialGeneration: row.credential_generation,
   createdAt: new Date(row.created_at),
   updatedAt: new Date(row.updated_at),
 });
@@ -51,6 +67,11 @@ export interface UserRepositoryPort {
   create(params: CreateUserParams): Promise<UserRecord>;
   findByEmail(email: string): Promise<UserRecord | null>;
   findById(id: string): Promise<UserRecord | null>;
+  /**
+   * The user a provider identity is linked to, read in the same statement as the
+   * link, so the credential generation it carries is the one the link was found under.
+   */
+  findByFederatedIdentity(provider: string, subject: string): Promise<UserRecord | null>;
   /** The users with these ids, in no particular order; an id with no user is skipped. */
   findByIds(ids: readonly string[]): Promise<UserRecord[]>;
   updatePassword(id: string, passwordHash: string): Promise<UserRecord>;
@@ -93,6 +114,18 @@ export class UserRepository implements UserRepositoryPort {
       .selectFrom("users")
       .select(userColumns)
       .where("id", "=", id)
+      .executeTakeFirst();
+
+    return row ? mapUser(row) : null;
+  }
+
+  async findByFederatedIdentity(provider: string, subject: string): Promise<UserRecord | null> {
+    const row = await this.db
+      .selectFrom("user_federated_identities as identity")
+      .innerJoin("users", "users.id", "identity.user_id")
+      .selectAll("users")
+      .where("identity.provider", "=", provider)
+      .where("identity.subject", "=", subject)
       .executeTakeFirst();
 
     return row ? mapUser(row) : null;

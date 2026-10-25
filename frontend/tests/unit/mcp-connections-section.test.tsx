@@ -8,6 +8,7 @@ const apiMocks = vi.hoisted(() => ({
   listConnections: vi.fn(),
   createConnection: vi.fn(),
   deleteConnection: vi.fn(),
+  updateConnection: vi.fn(),
   startOauth: vi.fn(),
   discoverTools: vi.fn(),
 }))
@@ -111,4 +112,37 @@ describe('McpConnectionsSection', () => {
     expect(container.textContent).not.toContain('1 tool found')
     expect(container.textContent).not.toContain('Testing…')
   })
+
+  it('replaces a rejected access token and reloads the connection', async () => {
+    apiMocks.listConnections
+      .mockResolvedValueOnce({ connections: [{ ...connection('conn-1', 'Valmora'), status: 'needs_reauth' }] })
+      .mockResolvedValueOnce({ connections: [connection('conn-1', 'Valmora')] })
+    apiMocks.discoverTools.mockRejectedValue(new Error('The MCP server rejected this connection\'s access token.'))
+    apiMocks.updateConnection.mockResolvedValue(connection('conn-1', 'Valmora'))
+    await act(async () => { root.render(<McpConnectionsSection agentId="agent-1" />) })
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Test connection to Valmora"]')!.click()
+    })
+    apiMocks.listConnections.mockClear()
+    expect(container.textContent).toContain('rejected this connection')
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Replace token for Valmora"]')!.click()
+    })
+    const tokenInput = container.querySelector<HTMLInputElement>('[aria-label="New access token for Valmora"]')!
+    await act(async () => { typeInto(tokenInput, 'fresh-token') })
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[aria-label="Save token for Valmora"]')!.click()
+    })
+
+    expect(apiMocks.updateConnection).toHaveBeenCalledWith('agent-1', 'conn-1', { accessToken: 'fresh-token' })
+    expect(apiMocks.listConnections).toHaveBeenCalledTimes(1)
+    expect(container.querySelector('[aria-label="New access token for Valmora"]')).toBeNull()
+    expect(container.textContent).not.toContain('rejected this connection')
+  })
 })
+
+const typeInto = (input: HTMLInputElement, value: string) => {
+  Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+  input.dispatchEvent(new Event('input', { bubbles: true }))
+}

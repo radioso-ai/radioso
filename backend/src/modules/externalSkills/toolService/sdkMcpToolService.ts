@@ -1,5 +1,5 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { StreamableHTTPClientTransport, StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import type { OAuthClientProvider } from "@modelcontextprotocol/sdk/client/auth.js";
 import type { Transport } from "@modelcontextprotocol/sdk/shared/transport.js";
 import { McpError } from "@modelcontextprotocol/sdk/types.js";
@@ -11,6 +11,7 @@ import type {
   ToolService,
 } from "@radioso/conversation-contract";
 import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
+import { McpCredentialsRejectedError, McpServerUnavailableError } from "../domain.js";
 
 const idempotencyKeyFrom = (input: ToolCallInput): string | undefined => {
   const value = input.context?.idempotencyKey;
@@ -95,6 +96,25 @@ const withTimeout = async <T>(operation: Promise<T>, timeoutMs: number, label: s
       clearTimeout(timer);
     }
   }
+};
+
+const isTimeoutFailure = (error: unknown): boolean =>
+  error instanceof McpTimeoutError
+  || (error instanceof McpError && error.code === MCP_SDK_REQUEST_TIMEOUT_ERROR_CODE);
+
+/**
+ * Discovery failures the server caused become module errors, so callers can tell a
+ * stale credential from an unreachable server without knowing the SDK. Anything
+ * else (SSRF refusal, programming errors) passes through unchanged.
+ */
+const classifyDiscoveryFailure = (error: unknown): unknown => {
+  if (error instanceof StreamableHTTPError && (error.code === 401 || error.code === 403)) {
+    return new McpCredentialsRejectedError(error.code);
+  }
+  if (error instanceof StreamableHTTPError || isTimeoutFailure(error)) {
+    return new McpServerUnavailableError();
+  }
+  return error;
 };
 
 const textFromContent = (content: McpContentBlock[] | undefined): string | undefined => {
@@ -192,8 +212,13 @@ export class SdkMcpToolService implements ToolService {
   }
 
   async listTools(): Promise<ConversationToolDefinition[]> {
-    const client = await this.getClient();
-    const result = await client.listTools(undefined, { timeout: this.timeoutMs });
+    let result: Awaited<ReturnType<Client["listTools"]>>;
+    try {
+      const client = await this.getClient();
+      result = await client.listTools(undefined, { timeout: this.timeoutMs });
+    } catch (error) {
+      throw classifyDiscoveryFailure(error);
+    }
     return result.tools.map((tool) => ({
       name: tool.name,
       description: tool.description,
@@ -231,8 +256,7 @@ export class SdkMcpToolService implements ToolService {
       // Connect uses our own withTimeout wrapper (McpTimeoutError); a per-call
       // timeout is enforced natively by the SDK's request `{ timeout }` option,
       // which rejects with McpError(RequestTimeout) instead.
-      const isTimeout = error instanceof McpTimeoutError
-        || (error instanceof McpError && error.code === MCP_SDK_REQUEST_TIMEOUT_ERROR_CODE);
+      const isTimeout = isTimeoutFailure(error);
       return {
         status: "failed",
         error: {

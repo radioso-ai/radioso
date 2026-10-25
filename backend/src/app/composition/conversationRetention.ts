@@ -1,5 +1,6 @@
 import type { Kysely } from "kysely";
 
+import { AuditEventRetention } from "../../db/repositories/auditEventRepository.js";
 import { ConversationSummaryRetention } from "../../db/repositories/conversationSummaryRepository.js";
 import { RoutineStateRetention } from "../../db/repositories/routineStateRepository.js";
 import { WorkspacePrivacySettingsRepository } from "../../db/repositories/workspacePrivacySettingsRepository.js";
@@ -9,7 +10,7 @@ import {
   type ConversationRetentionBudget,
   type InactiveConversationErasure,
 } from "../../modules/privacy/public.js";
-import type { ConversationDataRetentionRule } from "../../shared/domain/conversationDataRetention.js";
+import type { ConversationDataRetentionRule, RetentionAuditRecorder } from "../../shared/domain/conversationDataRetention.js";
 import type { DB } from "../../shared/infra/kysely/types.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
@@ -20,12 +21,16 @@ type ConversationDataRetentionRuleBinding = (db: Kysely<DB>) => ConversationData
 /**
  * Every module's fixed retention window over conversation-derived rows that outlive their
  * conversation's own window. A module that keeps a copy of conversation content with a shorter life
- * than the conversation registers its rule here.
+ * than the conversation registers its rule here. Takes the audit recorder rather than closing over
+ * one built at module scope, since the audit event rule records its own run through it.
  */
-const defaultConversationDataRetentionRules: readonly ConversationDataRetentionRuleBinding[] = [
+const defaultConversationDataRetentionRules = (
+  audit: RetentionAuditRecorder,
+): readonly ConversationDataRetentionRuleBinding[] => [
   (db) => new ConversationSummaryRetention(db),
   (db) => new RoutineStateRetention(db),
   (db) => new EmailRawMimeRetention(db),
+  (db) => new AuditEventRetention(db, audit),
 ];
 
 /** The registration id the worker task route runs it by, and the Cloud Scheduler job names. */
@@ -36,6 +41,7 @@ const CONVERSATION_RETENTION_INTERVAL_MS = 15 * 60 * 1_000;
 export const createConversationRetentionSweep = (deps: {
   db: Kysely<DB>;
   erasure: InactiveConversationErasure;
+  audit: RetentionAuditRecorder;
   logger: Pick<AppLogger, "info" | "warn">;
   metrics: Pick<MetricsRegistry, "incrementCounter"> | null;
   rules?: readonly ConversationDataRetentionRuleBinding[];
@@ -44,7 +50,7 @@ export const createConversationRetentionSweep = (deps: {
 }): ConversationRetentionSweep => new ConversationRetentionSweep({
   policies: new WorkspacePrivacySettingsRepository(deps.db),
   erasure: deps.erasure,
-  rules: (deps.rules ?? defaultConversationDataRetentionRules).map((bind) => bind(deps.db)),
+  rules: (deps.rules ?? defaultConversationDataRetentionRules(deps.audit)).map((bind) => bind(deps.db)),
   clock: deps.clock ?? (() => new Date()),
   logger: deps.logger,
   metrics: deps.metrics,

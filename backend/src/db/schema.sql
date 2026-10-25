@@ -6564,6 +6564,13 @@ CREATE INDEX audit_events_chat_answer_user_message_unanswered_idx ON public.audi
 
 
 --
+-- Name: audit_events_created_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX audit_events_created_at_idx ON public.audit_events USING btree (created_at);
+
+
+--
 -- Name: audit_events_document_search_search_id_lookup_idx; Type: INDEX; Schema: public; Owner: -
 --
 

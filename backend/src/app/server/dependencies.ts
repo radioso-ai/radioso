@@ -454,6 +454,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     auditService: infrastructure.auditService,
     database: infrastructure.database,
     env,
+    logger,
     organizationCreationGuard,
     onAccountCreated,
     productAnalytics: infrastructure.productAnalyticsService,
@@ -1287,6 +1288,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     conversationRetentionPeriodicTask(createConversationRetentionSweep({
       db: infrastructure.database.kysely,
       erasure: conversationErasure,
+      audit: infrastructure.auditService,
       logger,
       metrics: infrastructure.metricsRegistry,
     })),

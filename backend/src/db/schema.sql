@@ -3923,6 +3923,9 @@ CREATE TABLE public.usage_events (
     reasoning_tokens bigint,
     event_kind text DEFAULT 'unknown'::text NOT NULL,
     agent_id uuid,
+    cached_input_tokens bigint,
+    copilot_conversation_id uuid,
+    copilot_message_id uuid,
     CONSTRAINT usage_events_event_kind_check CHECK ((event_kind = ANY (ARRAY['model'::text, 'embedding'::text, 'unknown'::text])))
 );
 
@@ -3955,6 +3958,7 @@ CREATE TABLE public.users (
     email_verified_at timestamp with time zone,
     disabled_at timestamp with time zone,
     display_name text,
+    credential_generation integer DEFAULT 0 NOT NULL,
     CONSTRAINT users_display_name_check CHECK (((display_name IS NULL) OR (btrim(display_name) <> ''::text)))
 );
 
@@ -6563,6 +6567,13 @@ CREATE INDEX audit_events_chat_answer_user_message_unanswered_idx ON public.audi
 
 
 --
+-- Name: audit_events_created_at_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX audit_events_created_at_idx ON public.audit_events USING btree (created_at);
+
+
+--
 -- Name: audit_events_document_search_search_id_lookup_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -8968,6 +8979,20 @@ CREATE INDEX topic_memberships_message_idx ON public.topic_memberships USING btr
 --
 
 CREATE UNIQUE INDEX uq_slack_channel_bindings_install_channel ON public.slack_channel_bindings USING btree (installation_id, channel_id) NULLS NOT DISTINCT;
+
+
+--
+-- Name: usage_events_copilot_conversation_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX usage_events_copilot_conversation_idx ON public.usage_events USING btree (copilot_conversation_id) WHERE (copilot_conversation_id IS NOT NULL);
+
+
+--
+-- Name: usage_events_copilot_message_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX usage_events_copilot_message_idx ON public.usage_events USING btree (copilot_message_id) WHERE (copilot_message_id IS NOT NULL);
 
 
 --
@@ -12227,6 +12252,22 @@ ALTER TABLE ONLY public.usage_events
 
 ALTER TABLE ONLY public.usage_events
     ADD CONSTRAINT usage_events_conversation_id_fkey FOREIGN KEY (conversation_id) REFERENCES public.conversations(id) ON DELETE SET NULL;
+
+
+--
+-- Name: usage_events usage_events_copilot_conversation_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.usage_events
+    ADD CONSTRAINT usage_events_copilot_conversation_id_fkey FOREIGN KEY (copilot_conversation_id) REFERENCES public.copilot_conversations(id) ON DELETE SET NULL;
+
+
+--
+-- Name: usage_events usage_events_copilot_message_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.usage_events
+    ADD CONSTRAINT usage_events_copilot_message_id_fkey FOREIGN KEY (copilot_message_id) REFERENCES public.copilot_messages(id) ON DELETE SET NULL;
 
 
 --

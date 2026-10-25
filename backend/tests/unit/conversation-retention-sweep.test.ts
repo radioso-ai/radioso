@@ -49,7 +49,11 @@ const createPolicies = (policies: WorkspaceConversationRetention[]) => {
   };
 };
 
-const rule = (table: string, backlog: { rows: number }, options: { fails?: boolean } = {}): ConversationDataRetentionRule => ({
+const rule = (
+  table: string,
+  backlog: { rows: number },
+  options: { fails?: boolean; onRunComplete?: (input: { now: Date; totalRemoved: number }) => Promise<void> } = {},
+): ConversationDataRetentionRule => ({
   table,
   enforce: vi.fn(async ({ limit }) => {
     if (options.fails) throw new RangeError("statement timeout");
@@ -57,6 +61,7 @@ const rule = (table: string, backlog: { rows: number }, options: { fails?: boole
     backlog.rows -= removed;
     return removed;
   }),
+  ...(options.onRunComplete ? { onRunComplete: vi.fn(options.onRunComplete) } : {}),
 });
 
 const policy = (workspaceId: string, retentionDays = 30): WorkspaceConversationRetention => ({
@@ -245,6 +250,82 @@ describe("ConversationRetentionSweep", () => {
 
     expect(result.removed.routine_states).toBe(30);
     expect(result.drained).toBe(false);
+  });
+
+  it("calls a rule's onRunComplete once per run with the total it removed across every batch, marked complete", async () => {
+    const onRunComplete = vi.fn(async () => undefined);
+    const { erasure } = createErasure({});
+    const { sweep } = createSweep({
+      policies: [],
+      erasure,
+      rules: [rule("audit_events", { rows: 5 }, { onRunComplete })],
+      budget: { ruleBatchSize: 2 },
+    });
+
+    await sweep.run();
+
+    expect(onRunComplete).toHaveBeenCalledTimes(1);
+    expect(onRunComplete).toHaveBeenCalledWith({ now: NOW, totalRemoved: 5, complete: true });
+  });
+
+  it("calls a rule's onRunComplete with what an earlier batch removed before a later one failed, marked incomplete", async () => {
+    const onRunComplete = vi.fn(async () => undefined);
+    let batch = 0;
+    const partiallyFailingRule: ConversationDataRetentionRule = {
+      table: "audit_events",
+      enforce: vi.fn(async ({ limit }) => {
+        batch += 1;
+        if (batch === 1) return Math.min(500, limit);
+        throw new RangeError("statement timeout");
+      }),
+      onRunComplete,
+    };
+    const { erasure } = createErasure({});
+    const { sweep } = createSweep({
+      policies: [],
+      erasure,
+      rules: [partiallyFailingRule],
+      budget: { ruleBatchSize: 500 },
+    });
+
+    const result = await sweep.run();
+
+    expect(onRunComplete).toHaveBeenCalledTimes(1);
+    expect(onRunComplete).toHaveBeenCalledWith({ now: NOW, totalRemoved: 500, complete: false });
+    expect(result.failed).toBe(1);
+    expect(result.removed.audit_events).toBe(500);
+  });
+
+  it("does not call a rule's onRunComplete when no batch removed anything", async () => {
+    const onRunComplete = vi.fn(async () => undefined);
+    const { erasure } = createErasure({});
+    const { sweep } = createSweep({
+      policies: [],
+      erasure,
+      rules: [rule("audit_events", { rows: 0 }, { fails: true, onRunComplete })],
+    });
+
+    await sweep.run();
+
+    expect(onRunComplete).not.toHaveBeenCalled();
+  });
+
+  it("does not fail the run when a rule's onRunComplete rejects, since its rows already went", async () => {
+    const onRunComplete = vi.fn(async () => {
+      throw new Error("insert failed");
+    });
+    const { erasure } = createErasure({});
+    const { sweep, logger } = createSweep({
+      policies: [],
+      erasure,
+      rules: [rule("audit_events", { rows: 3 }, { onRunComplete })],
+    });
+
+    const result = await sweep.run();
+
+    expect(result.failed).toBe(0);
+    expect(result.removed.audit_events).toBe(3);
+    expect(logger.warn).toHaveBeenCalledWith({ table: "audit_events", errorName: "Error" }, "conversation_retention_rule_summary_failed");
   });
 
   it("runs the other windows when one rule fails", async () => {

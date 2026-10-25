@@ -740,6 +740,27 @@ describe("auth integration", () => {
     );
   });
 
+  it("refuses an account switch whose session check a password reset overtook", async () => {
+    const { app, dependencies, repositories } = createTestApp();
+    const session = await issueTestSession(app, "raced-switch@example.com");
+    // A reset that commits after the cookie was checked and before the handler
+    // writes the new session advances the user's generation past the checked one.
+    const authenticateSession = dependencies.authService.authenticateSession.bind(dependencies.authService);
+    dependencies.authService.authenticateSession = async (token) => {
+      const authenticated = await authenticateSession(token);
+      repositories.userRepository.advanceCredentialGeneration(authenticated.userId);
+      return authenticated;
+    };
+
+    const switched = await request(app)
+      .post("/api/v1/account/switch")
+      .set("Cookie", session.cookie)
+      .send({ accountId: session.accountId });
+
+    expect(switched.status).toBe(401);
+    expect(switched.headers["set-cookie"]).toBeUndefined();
+  });
+
   it("renames the active organization", async () => {
     const { app } = createTestApp();
 

@@ -106,6 +106,34 @@ describeIntegration("CopilotRepository retention sweep (Postgres)", () => {
     expect(proposals).toHaveLength(0);
   });
 
+  // The opposite treatment from messages and proposals above: a usage event is the billing ledger,
+  // never a child of the conversation it was spent on. Deleting the conversation must lose the
+  // link (SET NULL), not the row -- the spend stays recorded even after Ray's own retention sweep
+  // removes the conversation that produced it.
+  it("leaves usage events in place with their copilot links nulled", async () => {
+    const conversationId = await seedConversation(new Date("2026-01-01T00:00:00.000Z"));
+    const message = await repository.createMessage({ conversationId, role: "operator", content: "What needs attention?" });
+    const usageEventId = randomUUID();
+    await database.query(
+      `INSERT INTO usage_events (
+         id, idempotency_key, workspace_id, surface, operation, provider, model,
+         input_tokens, output_tokens, total_tokens, status, usage_quality,
+         copilot_conversation_id, copilot_message_id
+       ) VALUES ($1, $2, $3, 'operator_copilot', 'agent_step', 'openai', 'gpt-test', 10, 5, 15, 'succeeded', 'actual', $4, $5)`,
+      [usageEventId, `agent_step:${usageEventId}`, workspaceId, conversationId, message.id],
+    );
+
+    await repository.deleteConversationsUpdatedBefore({ cutoff: new Date("2026-06-01T00:00:00.000Z"), limit: 100 });
+
+    const rows = await database.query<{ copilot_conversation_id: string | null; copilot_message_id: string | null; total_tokens: string }>(
+      `SELECT copilot_conversation_id, copilot_message_id, total_tokens FROM usage_events WHERE id = $1`,
+      [usageEventId],
+    );
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ copilot_conversation_id: null, copilot_message_id: null });
+    expect(Number(rows[0].total_tokens)).toBe(15);
+  });
+
   // The bug this pins: the delete selects expired ids in a subquery, and if the outer statement
   // only matched on those ids, a conversation an operator revived after the snapshot was taken
   // would still be deleted — mid-turn, with its messages and proposals cascading away. Postgres

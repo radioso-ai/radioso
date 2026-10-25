@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-10-24
+last_updated: 2026-10-25
 ---
 
 # Code Map
@@ -907,11 +907,12 @@ batch one transaction and one `conversation.retention.enforced` audit event. A
 check that claims nothing spends its own budget, and each run starts with the
 workspaces reached longest ago (`conversation_retention_swept_at`). Then
 it runs each module's `ConversationDataRetentionRule`
-(`backend/src/shared/domain/conversationDataRetention.ts`), a fixed window over
-rows whose conversation lives on: expired summaries, expired or 90-day-abandoned
-routine states, and inbound mail's raw MIME after 30 days. Claims lock with
-`SKIP LOCKED`, so two runs at once remove each row once. It knows the erasure
-port, the policy list and the rules, and nothing about tables.
+(`backend/src/shared/domain/conversationDataRetention.ts`), a fixed window run
+on its own schedule: expired summaries, expired or 90-day-abandoned routine
+states, inbound mail's raw MIME after 30 days, and audit events past 365 days
+by age alone across every workspace. Claims lock with `SKIP LOCKED`, so two
+runs at once remove each row once. It knows the erasure port, the policy list
+and the rules, and nothing about tables.
 
 The sweep is a built-in periodic task (`conversation-retention`, every 15
 minutes): the poll worker's interval loop, and on Cloud Run the

@@ -27,31 +27,63 @@ const resolveAccountId = async (
 };
 
 const MESSAGE_LINK_CONSTRAINT = "usage_events_message_id_fkey";
+const COPILOT_CONVERSATION_LINK_CONSTRAINT = "usage_events_copilot_conversation_id_fkey";
+const COPILOT_MESSAGE_LINK_CONSTRAINT = "usage_events_copilot_message_id_fkey";
 
-/** The insert named a message that no longer exists. */
-const isMissingMessageLink = (error: unknown): boolean =>
+/** A link's own foreign key rejected it. */
+const violatesLinkConstraint = (error: unknown, constraint: string): boolean =>
   typeof error === "object"
   && error !== null
   && (error as { code?: unknown }).code === "23503"
-  && (error as { constraint?: unknown }).constraint === MESSAGE_LINK_CONSTRAINT;
+  && (error as { constraint?: unknown }).constraint === constraint;
+
+interface UsageEventLinks {
+  readonly messageId: string | null;
+  readonly copilotConversationId: string | null;
+  readonly copilotMessageId: string | null;
+}
+
+/** One per constraint this ledger's optional links can hit, plus one final attempt with every
+ * matching link cleared -- never more retries than there are constraints to clear. */
+const MAX_LINK_FALLBACK_ATTEMPTS = 4;
 
 /**
- * Inserts with the event's message link, and again without it when that message was deleted
- * between the call and the write: a voice turn's user message is deleted when a newer utterance
- * replaces it, while a call it already made may still be recording. The spend is the record; the
- * link is context.
+ * Inserts with the event's optional links, dropping whichever one a foreign key rejects and
+ * retrying, bounded so a persistently failing insert cannot loop forever. Two different races
+ * produce the same shape of failure: a voice turn's user message is deleted when a newer
+ * utterance replaces it while a call it already made may still be recording (the message link),
+ * and a Ray conversation or its per-turn message can be deleted mid-turn by another tab, a direct
+ * API call, or Ray's own retention sweep racing the call that is still recording against it (the
+ * copilot links). A conversation that is gone takes its message with it, so clearing the
+ * conversation link also clears the message link rather than leaving an orphaned reference to a
+ * row that, if it still exists, no longer means anything without the conversation around it.
+ * Either way: the spend is the record, the link is context.
  */
-const withMessageLinkFallback = async <T>(
-  messageId: string | null | undefined,
-  insert: (messageId: string | null) => Promise<T>,
+const withLinkFallback = async <T>(
+  links: UsageEventLinks,
+  insert: (links: UsageEventLinks) => Promise<T>,
+  logger: Pick<AppLogger, "warn"> | undefined,
+  attempt = 1,
 ): Promise<T> => {
   try {
-    return await insert(messageId ?? null);
+    return await insert(links);
   } catch (error) {
-    if (!messageId || !isMissingMessageLink(error)) {
+    if (attempt >= MAX_LINK_FALLBACK_ATTEMPTS) {
       throw error;
     }
-    return insert(null);
+    if (links.messageId && violatesLinkConstraint(error, MESSAGE_LINK_CONSTRAINT)) {
+      logger?.warn({ constraint: MESSAGE_LINK_CONSTRAINT }, "Usage event link dropped after its foreign key rejected it");
+      return withLinkFallback({ ...links, messageId: null }, insert, logger, attempt + 1);
+    }
+    if (links.copilotConversationId && violatesLinkConstraint(error, COPILOT_CONVERSATION_LINK_CONSTRAINT)) {
+      logger?.warn({ constraint: COPILOT_CONVERSATION_LINK_CONSTRAINT }, "Usage event link dropped after its foreign key rejected it");
+      return withLinkFallback({ ...links, copilotConversationId: null, copilotMessageId: null }, insert, logger, attempt + 1);
+    }
+    if (links.copilotMessageId && violatesLinkConstraint(error, COPILOT_MESSAGE_LINK_CONSTRAINT)) {
+      logger?.warn({ constraint: COPILOT_MESSAGE_LINK_CONSTRAINT }, "Usage event link dropped after its foreign key rejected it");
+      return withLinkFallback({ ...links, copilotMessageId: null }, insert, logger, attempt + 1);
+    }
+    throw error;
   }
 };
 
@@ -81,7 +113,13 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
     const totalTokens = (event.inputTokens ?? 0) + (event.outputTokens ?? 0);
     const eventId = randomUUID();
 
-    const inserted = await withMessageLinkFallback(event.messageId, (messageId) => this.db.transaction().execute(async (trx) => {
+    const inserted = await withLinkFallback(
+      {
+        messageId: event.messageId ?? null,
+        copilotConversationId: event.copilotConversationId ?? null,
+        copilotMessageId: event.copilotMessageId ?? null,
+      },
+      (links) => this.db.transaction().execute(async (trx) => {
       const insertedRow = await trx
         .insertInto("usage_events")
         .values({
@@ -94,7 +132,9 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
           document_id: event.documentId ?? null,
           document_revision: event.documentRevision ?? null,
           conversation_id: event.conversationId ?? null,
-          message_id: messageId,
+          message_id: links.messageId,
+          copilot_conversation_id: links.copilotConversationId,
+          copilot_message_id: links.copilotMessageId,
           job_id: event.jobId ?? null,
           surface: event.surface ?? "embedding",
           operation: event.operation ?? "embedding",
@@ -139,7 +179,9 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
       }
 
       return true;
-    }));
+    }),
+      this.logger,
+    );
 
     if (inserted && accountId && event.status === "succeeded") {
       await this.upsertDailyRollupBestEffort(accountId, occurredAt, {
@@ -191,7 +233,13 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
     const totalTokens = event.totalTokens ?? ((event.inputTokens ?? 0) + (event.outputTokens ?? 0));
     const eventId = randomUUID();
 
-    const inserted = await withMessageLinkFallback(event.messageId, (messageId) => this.db.transaction().execute(async (trx) => {
+    const inserted = await withLinkFallback(
+      {
+        messageId: event.messageId ?? null,
+        copilotConversationId: event.copilotConversationId ?? null,
+        copilotMessageId: event.copilotMessageId ?? null,
+      },
+      (links) => this.db.transaction().execute(async (trx) => {
       const insertedRow = await trx
         .insertInto("usage_events")
         .values({
@@ -201,7 +249,9 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
           workspace_id: event.workspaceId,
           agent_id: event.agentId ?? null,
           conversation_id: event.conversationId ?? null,
-          message_id: messageId,
+          message_id: links.messageId,
+          copilot_conversation_id: links.copilotConversationId,
+          copilot_message_id: links.copilotMessageId,
           surface: event.surface,
           operation: event.operation,
           provider: event.provider,
@@ -209,6 +259,7 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
           input_tokens: event.inputTokens ?? 0,
           output_tokens: event.outputTokens ?? 0,
           reasoning_tokens: event.reasoningTokens ?? null,
+          cached_input_tokens: event.cachedInputTokens ?? null,
           total_tokens: totalTokens,
           input_bytes: event.inputBytes ?? 0,
           output_bytes: event.outputBytes ?? 0,
@@ -225,7 +276,9 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
         .executeTakeFirst();
 
       return Boolean(insertedRow);
-    }));
+    }),
+      this.logger,
+    );
 
     if (inserted && accountId && event.status === "succeeded") {
       await this.upsertDailyRollupBestEffort(accountId, occurredAt, {

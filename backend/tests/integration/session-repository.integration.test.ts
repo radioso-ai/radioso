@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, beforeAll, expect, it } from "vitest";
 
+import { AuthFunnelRepository } from "../../src/db/repositories/authFunnelRepository.js";
 import { SessionRepository } from "../../src/db/repositories/sessionRepository.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
@@ -15,6 +16,8 @@ const { describeIntegration, integrationDatabaseUrl } = await resolveIntegration
 describeIntegration("SessionRepository (Postgres)", () => {
   const database = new Database(integrationDatabaseUrl);
   const repository = new SessionRepository(database.kysely);
+  // Sessions are written only through the credential-guarded writer.
+  const writer = new AuthFunnelRepository(database.kysely);
 
   const accountId = randomUUID();
   const userId = randomUUID();
@@ -37,23 +40,42 @@ describeIntegration("SessionRepository (Postgres)", () => {
     await database.close().catch(() => undefined);
   });
 
-  const createSession = (overrides: { expiresAt?: Date } = {}) =>
-    repository.create({
+  const currentGeneration = async (): Promise<number> => {
+    const [user] = await database.query<{ credential_generation: number }>(
+      `SELECT credential_generation FROM users WHERE id = $1`,
+      [userId],
+    );
+    return user?.credential_generation ?? -1;
+  };
+
+  const createSession = async (overrides: { expiresAt?: Date } = {}) => {
+    const session = { id: randomUUID(), sessionTokenHash: `hash-${randomUUID()}` };
+    const written = await writer.createSessionForCredential({
+      credential: { userId, generation: await currentGeneration() },
+      accountId,
+      sessionId: session.id,
+      sessionTokenHash: session.sessionTokenHash,
+      sessionExpiresAt: overrides.expiresAt ?? new Date(Date.now() + 60 * 60 * 1000),
+    });
+    expect(written).toBe(true);
+    return session;
+  };
+
+  it("reads a live session's full record with the credential generation its user holds", async () => {
+    const created = await createSession();
+    await database.query(`UPDATE users SET credential_generation = 4 WHERE id = $1`, [userId]);
+
+    const found = await repository.findActiveByTokenHash(created.sessionTokenHash, new Date());
+
+    expect(found).toMatchObject({
+      id: created.id,
       userId,
       accountId,
-      sessionTokenHash: `hash-${randomUUID()}`,
-      expiresAt: overrides.expiresAt ?? new Date(Date.now() + 60 * 60 * 1000),
+      revokedAt: null,
+      userCredentialGeneration: 4,
     });
-
-  it("creates a session and returns the full record", async () => {
-    const session = await createSession();
-
-    expect(session.id).toMatch(/[0-9a-f-]{36}/);
-    expect(session.userId).toBe(userId);
-    expect(session.accountId).toBe(accountId);
-    expect(session.createdAt).toBeInstanceOf(Date);
-    expect(session.lastSeenAt).toBeInstanceOf(Date);
-    expect(session.revokedAt).toBeNull();
+    expect(found?.createdAt).toBeInstanceOf(Date);
+    expect(found?.lastSeenAt).toBeInstanceOf(Date);
   });
 
   it("finds an active session by token hash", async () => {

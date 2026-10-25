@@ -1,9 +1,28 @@
 import type { Kysely, Transaction } from "kysely";
 
 import type { DB } from "../../shared/infra/kysely/schema.js";
-import type { AuthFunnelRepositoryPort } from "../../modules/auth/services/authFunnelService.js";
+import type {
+  AuthFunnelRepositoryPort,
+  CredentialGeneration,
+} from "../../modules/auth/services/authFunnelService.js";
 
 type AuthFunnelTransaction = Transaction<DB>;
+
+/**
+ * The user row a credential-guarded write is made under, locked `FOR SHARE` in
+ * the write's own statement. A reset or recovery holds the row `FOR UPDATE`
+ * while it advances the generation, so a write that arrives during one waits for
+ * it to commit, rechecks the advanced row and matches nothing. A write that runs
+ * first makes the recovery wait for it instead, so the recovery's revocation
+ * covers what was written. Concurrent sign-ins share the lock and never wait on
+ * each other. A plain read would not do: it sees the row as it was before an
+ * uncommitted recovery, and the insert would land after the recovery revoked.
+ */
+const currentCredentialUser = (db: Kysely<DB>, credential: CredentialGeneration) => db
+  .selectFrom("users")
+  .where("users.id", "=", credential.userId)
+  .where("users.credential_generation", "=", credential.generation)
+  .forShare();
 
 const findActiveAccountId = async (
   transaction: AuthFunnelTransaction,
@@ -219,6 +238,7 @@ export class AuthFunnelRepository implements AuthFunnelRepositoryPort {
     email: string;
     displayName: string | null;
     revokedFederatedIdentities: number;
+    credentialGeneration: number;
   } | null> {
     return this.db.transaction().execute(async (transaction) => {
       const candidate = await transaction.selectFrom("password_reset_tokens")
@@ -270,12 +290,15 @@ export class AuthFunnelRepository implements AuthFunnelRepositoryPort {
       if (Number(consumed.numUpdatedRows) !== 1) return null;
 
       const displayName = user.email_verified_at ? user.display_name : null;
-      await transaction.updateTable("users").set((expression) => ({
+      const updated = await transaction.updateTable("users").set((expression) => ({
         password_hash: input.passwordHash,
         display_name: displayName,
         email_verified_at: expression.fn.coalesce("email_verified_at", expression.val(input.now)),
+        credential_generation: expression("credential_generation", "+", 1),
         updated_at: input.now,
-      })).where("id", "=", user.id).executeTakeFirstOrThrow();
+      })).where("id", "=", user.id)
+        .returning("credential_generation")
+        .executeTakeFirstOrThrow();
       await transaction.updateTable("password_reset_tokens")
         .set({ used_at: input.now })
         .where("user_id", "=", user.id)
@@ -290,6 +313,7 @@ export class AuthFunnelRepository implements AuthFunnelRepositoryPort {
         email: user.email,
         displayName,
         revokedFederatedIdentities: Number(deleted.numDeletedRows),
+        credentialGeneration: updated.credential_generation,
       };
     });
   }
@@ -299,7 +323,7 @@ export class AuthFunnelRepository implements AuthFunnelRepositoryPort {
     passwordHash: string;
     displayName: string | null;
     now: Date;
-  }): Promise<{ recovered: boolean; displayName: string | null } | null> {
+  }): ReturnType<AuthFunnelRepositoryPort["recoverFederatedUser"]> {
     return this.db.transaction().execute(async (transaction) => {
       const user = await transaction.selectFrom("users")
         .select(["id", "display_name", "email_verified_at"])
@@ -311,20 +335,72 @@ export class AuthFunnelRepository implements AuthFunnelRepositoryPort {
         return { recovered: false, displayName: user.display_name };
       }
 
-      const recovered = await transaction.updateTable("users").set({
+      const recovered = await transaction.updateTable("users").set((expression) => ({
         password_hash: input.passwordHash,
         display_name: input.displayName,
         email_verified_at: input.now,
+        credential_generation: expression("credential_generation", "+", 1),
         updated_at: input.now,
-      }).where("id", "=", user.id)
+      })).where("id", "=", user.id)
         .where("email_verified_at", "is", null)
+        .returning("credential_generation")
         .executeTakeFirst();
-      if (Number(recovered.numUpdatedRows) !== 1) {
+      if (!recovered) {
         return { recovered: false, displayName: user.display_name };
       }
       await this.invalidateRecoveryCredentials(transaction, user.id, input.now);
-      return { recovered: true, displayName: input.displayName };
+      return {
+        recovered: true,
+        displayName: input.displayName,
+        credentialGeneration: recovered.credential_generation,
+      };
     });
+  }
+
+  async createSessionForCredential(input: {
+    credential: CredentialGeneration;
+    accountId: string;
+    sessionId: string;
+    sessionTokenHash: string;
+    sessionExpiresAt: Date;
+  }): Promise<boolean> {
+    const inserted = await this.db.insertInto("sessions")
+      .columns(["id", "user_id", "account_id", "session_token_hash", "expires_at"])
+      .expression((expression) => currentCredentialUser(this.db, input.credential).select([
+        expression.val(input.sessionId).as("id"),
+        "users.id as user_id",
+        expression.val(input.accountId).as("account_id"),
+        expression.val(input.sessionTokenHash).as("session_token_hash"),
+        expression.val(input.sessionExpiresAt).as("expires_at"),
+      ]))
+      .executeTakeFirst();
+    return Number(inserted.numInsertedOrUpdatedRows ?? 0) === 1;
+  }
+
+  async linkFederatedIdentityForCredential(input: {
+    credential: CredentialGeneration;
+    provider: string;
+    subject: string;
+    providerEmail: string;
+    authenticatedAt: Date;
+  }): Promise<boolean> {
+    const linked = await this.db.insertInto("user_federated_identities")
+      .columns(["user_id", "provider", "subject", "provider_email", "last_authenticated_at"])
+      .expression((expression) => currentCredentialUser(this.db, input.credential).select([
+        "users.id as user_id",
+        expression.val(input.provider).as("provider"),
+        expression.val(input.subject).as("subject"),
+        expression.val(input.providerEmail).as("provider_email"),
+        expression.val(input.authenticatedAt).as("last_authenticated_at"),
+      ]))
+      // As `UserFederatedIdentityRepository.link`: a repeat sign-in refreshes the
+      // link, and never re-points a subject at a different user.
+      .onConflict((conflict) => conflict.columns(["provider", "subject"]).doUpdateSet({
+        provider_email: input.providerEmail,
+        last_authenticated_at: input.authenticatedAt,
+      }))
+      .executeTakeFirst();
+    return Number(linked.numInsertedOrUpdatedRows ?? 0) === 1;
   }
 
   private async invalidateRecoveryCredentials(

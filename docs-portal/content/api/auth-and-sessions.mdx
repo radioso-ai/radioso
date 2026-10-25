@@ -1,7 +1,7 @@
 ---
 title: Auth and sessions
 description: Check registration availability, register, log in, join an organization by invitation, and set the name teammates and visitors see.
-last_updated: 2026-09-30
+last_updated: 2026-10-24
 ---
 
 import { Steps } from 'nextra/components'
@@ -62,7 +62,7 @@ Password reset is also available from the open-source auth API:
 - `POST /api/v1/auth/password-reset/request`
 - `POST /api/v1/auth/password-reset/confirm`
 
-The request endpoint always returns `202 Accepted` with `{ "accepted": true }`, including for unknown email addresses. The confirm endpoint sets a new session cookie after a valid reset and revokes older sessions for that user.
+The request endpoint always returns `202 Accepted` with `{ "accepted": true }`, including for unknown email addresses. The confirm endpoint sets a new session cookie after a valid reset and revokes older sessions for that user. A login that was already in flight when the reset committed answers `401` with `Invalid email or password`, the same as the replaced password would.
 
 Email verification is available through:
 

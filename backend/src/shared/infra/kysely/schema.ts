@@ -1856,7 +1856,10 @@ export interface UsageDailyRollups {
 export interface UsageEvents {
   account_id: string | null;
   agent_id: string | null;
+  cached_input_tokens: Int8 | null;
   conversation_id: string | null;
+  copilot_conversation_id: string | null;
+  copilot_message_id: string | null;
   created_at: Generated<Timestamp>;
   document_id: string | null;
   document_revision: number | null;
@@ -1897,6 +1900,7 @@ export interface UserFederatedIdentities {
 
 export interface Users {
   created_at: Generated<Timestamp>;
+  credential_generation: Generated<number>;
   disabled_at: Timestamp | null;
   display_name: string | null;
   email: string;

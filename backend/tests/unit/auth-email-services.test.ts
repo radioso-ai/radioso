@@ -70,6 +70,7 @@ const createHarness = async (options: { verified?: boolean; displayName?: string
   const accountAccessService = new AccountAccessService(accountMembershipRepository, auditService);
   const workspaceService = new WorkspaceService(new InMemoryWorkspaceRepository(), auditService);
   const sessionRepository = new InMemorySessionRepository();
+  sessionRepository.setUserRepository(userRepository);
   const federatedIdentityRepository = new InMemoryFederatedIdentityRepository();
   const passwordResetTokenRepository = new InMemoryPasswordResetTokenRepository();
   const emailVerificationTokenRepository = new InMemoryEmailVerificationTokenRepository();
@@ -104,7 +105,6 @@ const createHarness = async (options: { verified?: boolean; displayName?: string
       auditService,
       accountRepository,
       userRepository,
-      sessionRepository,
       authFunnelRepository,
       accountAccessService,
       workspaceService,
@@ -301,7 +301,6 @@ describe("PasswordResetService", () => {
       auditService: harness.auditService,
       accountRepository: new InMemoryAccountRepository(),
       userRepository: harness.userRepository,
-      sessionRepository: harness.sessionRepository,
       authFunnelRepository: harness.authFunnelRepository,
       accountAccessService: new AccountAccessService(new InMemoryAccountMembershipRepository(), harness.auditService),
       workspaceService: new WorkspaceService(new InMemoryWorkspaceRepository(), harness.auditService),

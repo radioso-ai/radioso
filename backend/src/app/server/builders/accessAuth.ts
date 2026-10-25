@@ -230,6 +230,7 @@ export const buildAuthService = (input: {
   auditService: AuditService;
   database: Database;
   env: Env;
+  logger: Pick<AppLogger, "warn">;
   organizationCreationGuard: OrganizationCreationGuard;
   onAccountCreated?: (input: { accountId: string }) => Promise<void>;
   productAnalytics?: ProductAnalyticsPort;
@@ -254,6 +255,7 @@ export const buildAuthService = (input: {
     apiPrincipalAuthenticator: input.access.apiPrincipalAuthenticator,
     personalCredentialTermination: input.access.personalCredentialTenureService,
     personalCredentialLifecycle: input.access.personalCredentialLifecycle,
+    logger: input.logger,
   });
 
 export const buildPasswordResetService = (input: {
@@ -271,7 +273,6 @@ export const buildPasswordResetService = (input: {
     accountRepository: input.repositories.accountRepository,
     accountAccessService: input.access.accountAccessService,
     workspaceService: input.workspaceService,
-    sessionRepository: input.repositories.sessionRepository,
     authFunnelRepository: input.repositories.authFunnelRepository,
     passwordResetTokenRepository: input.repositories.passwordResetTokenRepository,
     mailService: input.infrastructure.mailService,

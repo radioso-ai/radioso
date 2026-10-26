@@ -1,3 +1,5 @@
+// First: Zod 4 gives `.openapi()` only to schemas built after this runs.
+import "./app/http/openapi/zodOpenApiExtension.js";
 import { getEnv } from "./app/config/env.js";
 import { createLogger } from "./shared/observability/logger.js";
 import { loadEnvFileIfPresent } from "./runtime/loadEnv.js";

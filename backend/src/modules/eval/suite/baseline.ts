@@ -43,7 +43,7 @@ const evalRunStatusSchema = z.enum(["pass", "fail", "error", "recorded"]) satisf
 const baselineFileSchema = z.object({
   generatedAt: z.string().optional(),
   passThreshold: z.number().min(0).max(1).optional(),
-  cases: z.record(z.union([
+  cases: z.record(z.string(), z.union([
     evalRunStatusSchema,
     z.object({
       status: evalRunStatusSchema,
@@ -51,7 +51,7 @@ const baselineFileSchema = z.object({
       samples: z.number().int().positive().optional(),
     }).strict(),
   ])).default({}),
-}).strict() satisfies z.ZodType<BaselineFile, z.ZodTypeDef, unknown>;
+}).strict() satisfies z.ZodType<BaselineFile, unknown>;
 
 /**
  * Reads a baseline file's parsed JSON as the shape the recorder writes. Anything else throws, with

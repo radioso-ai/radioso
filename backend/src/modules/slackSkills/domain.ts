@@ -17,8 +17,8 @@ const slackExposedInputSchema = z.object({
   required: z.boolean().default(true),
 }).strict();
 
-export const slackBoundInputsSchema = z.record(inputKeySchema, z.unknown());
-export const slackExposedInputsSchema = z.record(inputKeySchema, slackExposedInputSchema);
+export const slackBoundInputsSchema = z.partialRecord(inputKeySchema, z.unknown());
+export const slackExposedInputsSchema = z.partialRecord(inputKeySchema, slackExposedInputSchema);
 
 const validateSlackInputConfig = (
   value: {

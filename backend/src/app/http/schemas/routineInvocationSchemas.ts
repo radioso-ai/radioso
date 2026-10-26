@@ -10,7 +10,7 @@ import { CHAT_MESSAGE_MAX_LENGTH } from "./textInputLimits.js";
  */
 export const routineInvocationRequestSchema = z.object({
   toolName: z.string().trim().min(1).max(63),
-  input: z.record(z.unknown()).refine(
+  input: z.record(z.string(), z.unknown()).refine(
     (input) => JSON.stringify(input).length <= CHAT_MESSAGE_MAX_LENGTH,
     { message: `Routine input must serialize to at most ${CHAT_MESSAGE_MAX_LENGTH} characters` },
   ),

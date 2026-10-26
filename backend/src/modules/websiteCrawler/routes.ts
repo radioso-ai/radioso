@@ -16,6 +16,7 @@ import {
 import type { WebsiteCrawlerProvider } from "./provider.js";
 import type { WebsiteCrawlJobService } from "./jobService.js";
 import type { AuthenticatedPrincipal } from "../account/public.js";
+import { documentSourceIdSchema } from "../documents/contracts/index.js";
 
 type RouteDependencies = WorkspaceSessionDependencies & {
   abuseControlService: RateLimitAbuseControlPort;
@@ -25,7 +26,7 @@ type RouteDependencies = WorkspaceSessionDependencies & {
   assertCrawlUrlAllowed?: (url: string) => Promise<void>;
 };
 
-export interface WebsiteCrawlerRouteOptions {
+interface WebsiteCrawlerRouteOptions {
   provider?: WebsiteCrawlerProvider;
 }
 
@@ -59,7 +60,7 @@ const crawlJobsQuerySchema = z.object({
   status: z.enum(["queued", "processing", "paused", "completed", "failed"]).optional(),
   sinceMinutes: z.coerce.number().int().min(1).max(1440).optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
-  sourceId: z.string().uuid().optional(),
+  sourceId: documentSourceIdSchema.optional(),
 });
 
 const crawlJobParamsSchema = z.object({

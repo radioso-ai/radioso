@@ -49,6 +49,25 @@ const createApp = (dependencies = createDependencies()) => {
   return app;
 };
 
+describe("agent directive update route", () => {
+  it("passes on only the fields the patch names, so an update leaves the rest as stored", async () => {
+    const update = vi.fn().mockResolvedValue({ id: "directive-1" });
+    const dependencies = createDependencies({
+      authoredDirectiveService: { update } as unknown as AppDependencies["authoredDirectiveService"],
+    });
+
+    await request(createApp(dependencies))
+      .patch(`/api/v1/agents/${agentId}/directives/33333333-3333-4333-8333-333333333333`)
+      .set("Authorization", "Bearer token")
+      .send({ action: "Answer in one sentence." })
+      .expect(200);
+
+    // `enabled`, `tags`, `metadata` and the lists default on create; defaulting them here would
+    // re-enable a disabled directive and clear its tags on every unrelated edit.
+    expect(update.mock.calls[0]?.[3]).toEqual({ action: "Answer in one sentence." });
+  });
+});
+
 describe("agent directive draft route", () => {
   it("rejects a member changing an agent recipient list", async () => {
     const create = vi.fn();

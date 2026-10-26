@@ -1,3 +1,5 @@
+// First: Zod 4 gives `.openapi()` only to schemas built after this runs.
+import "../src/app/http/openapi/zodOpenApiExtension.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { stringify } from "yaml";

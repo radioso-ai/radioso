@@ -15,7 +15,7 @@ const outputSchema = z.object({
   confirmation: reviewedConfirmationSchema,
   review: z.object({
     target: z.object({ agentId: z.string().uuid(), agentName: z.string().max(200) }).strict(),
-    changes: z.array(z.object({ key: z.string().max(200), before: z.unknown(), after: z.unknown(), lifecycle: z.enum(["live", "agent_draft"]), reach: z.boolean() }).strict()).max(25),
+    changes: z.array(z.object({ key: z.string().max(200), before: z.unknown().optional(), after: z.unknown().optional(), lifecycle: z.enum(["live", "agent_draft"]), reach: z.boolean() }).strict()).max(25),
     unchanged: z.array(z.string().max(200)).max(25),
     effects: z.object({ liveKeys: z.array(z.string().max(200)).max(25), draftKeys: z.array(z.string().max(200)).max(25), publicationRequired: z.boolean(), reach: z.boolean() }).strict(),
   }).strict(),

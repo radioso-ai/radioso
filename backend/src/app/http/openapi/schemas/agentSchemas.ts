@@ -34,7 +34,9 @@ import { LOCALE_TAG_PATTERN } from "../../../../shared/domain/locale.js";
 import { VOICE_VENDORS } from "../../../../shared/domain/voiceVendor.js";
 import { AGENT_BUNDLE_SCHEMA_VERSION } from "../../../../modules/agentBundle/public.js";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
+import { nullableComponent } from "../zodOpenApiExtension.js";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
+import { documentSourceIdSchema } from "../../../../modules/documents/contracts/index.js";
 
 // Bundle collections are name-keyed, not id-keyed: see `agentBundle/domain.ts`
 // for why. The enums below mirror the route-level validation in
@@ -79,8 +81,8 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
           surface: z.string(),
           text: z.string(),
         }),
-        copy: z.record(z.record(z.string())),
-        expertOverrides: z.record(z.string()),
+        copy: z.record(z.string(), z.record(z.string(), z.string())),
+        expertOverrides: z.record(z.string(), z.string()),
         voiceCallsOffered: z.boolean().openapi({
           description: "The operator offers voice calls from the website embed: its composer shows Talk while the agent's voice is also on, bound to a runtime and the workspace holds the vendor key. Defaults to false.",
         }),
@@ -96,7 +98,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       }),
       z.object({
         mode: z.literal("selected"),
-        sourceIds: z.array(z.string().uuid()).max(200),
+        sourceIds: z.array(documentSourceIdSchema).max(200),
       }),
     ]),
   );
@@ -245,7 +247,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
         provider: z.enum(["openai", "openai-compatible", "gemini", "claude"]),
         model: z.string(),
       }).nullable(),
-      skillSettings: z.record(z.unknown()),
+      skillSettings: z.record(z.string(), z.unknown()),
       surfaceSettings: ConversationAgentSurfaceSettingsSchema,
     }),
   );
@@ -301,7 +303,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
         }),
         z.object({
           mode: z.literal("selected"),
-          sourceIds: z.array(z.string().uuid()).max(200),
+          sourceIds: z.array(documentSourceIdSchema).max(200),
         }),
       ]).optional(),
       greetingInstruction: z.string().max(200).optional(),
@@ -320,7 +322,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
           model: z.string().min(1).max(200),
         }),
       ]).optional(),
-      skillSettings: z.record(z.unknown()).optional(),
+      skillSettings: z.record(z.string(), z.unknown()).optional(),
       surfaceSettings: z.object({
         authenticatedChat: z.object({
           enabled: z.boolean().optional(),
@@ -339,8 +341,8 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
             surface: z.string().optional(),
             text: z.string().optional(),
           }).optional(),
-          copy: z.record(z.record(z.string())).optional(),
-          expertOverrides: z.record(z.string()).optional(),
+          copy: z.record(z.string(), z.record(z.string(), z.string())).optional(),
+          expertOverrides: z.record(z.string(), z.string()).optional(),
           voiceCallsOffered: z.boolean().optional(),
         }).optional(),
       }).optional(),
@@ -499,12 +501,12 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     tags: z.array(z.string().min(1).max(200)).optional(),
     description: z.string().min(1).max(1000).nullable().optional(),
     binding: z.union([AuthoredDirectiveBindingSchema, z.null()]).optional(),
-    lifecycle: z.union([AuthoredDirectiveLifecycleSchema, z.null()]).optional(),
+    lifecycle: nullableComponent(AuthoredDirectiveLifecycleSchema).optional(),
     coverageCriteria: AnswerCoverageCriteriaSchema.optional(),
     enabled: z.boolean().optional().openapi({
       description: "Reversible off switch. A disabled directive keeps its authored text but never reaches the matcher. Defaults to true.",
     }),
-    metadata: z.record(z.unknown()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
   }).strict();
 
   const AuthoredDirectiveCreateRequestSchema = registry.register(
@@ -570,10 +572,10 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       tags: z.array(z.string()),
       description: z.string().nullable(),
       binding: z.union([AuthoredDirectiveBindingSchema, z.null()]),
-      lifecycle: z.union([AuthoredDirectiveLifecycleSchema, z.null()]),
+      lifecycle: nullableComponent(AuthoredDirectiveLifecycleSchema),
       coverageCriteria: AnswerCoverageCriteriaSchema.optional(),
       enabled: z.boolean(),
-      metadata: z.record(z.unknown()),
+      metadata: z.record(z.string(), z.unknown()),
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),
     }),
@@ -768,7 +770,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
         surface: z.string(),
         text: z.string(),
       }).optional(),
-      copy: z.record(z.record(z.string())).optional(),
+      copy: z.record(z.string(), z.record(z.string(), z.string())).optional(),
       branding: z.object({
         hidePoweredBy: z.boolean(),
         privacyPolicyUrl: z.string().nullable(),
@@ -894,8 +896,8 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     launcherLabel: z.string(),
     launcherPosition: z.enum(agentSurfacePositions),
     theme: AgentBundleThemeSchema,
-    copy: z.record(z.record(z.string())),
-    expertOverrides: z.record(z.string()),
+    copy: z.record(z.string(), z.record(z.string(), z.string())),
+    expertOverrides: z.record(z.string(), z.string()),
     voiceCallsOffered: z.boolean().optional(),
   });
 
@@ -914,10 +916,10 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       tags: z.array(z.string()),
       description: z.string().nullable(),
       binding: z.union([AuthoredDirectiveBindingSchema, z.null()]),
-      lifecycle: z.union([AuthoredDirectiveLifecycleSchema, z.null()]),
+      lifecycle: nullableComponent(AuthoredDirectiveLifecycleSchema),
       coverageCriteria: AnswerCoverageCriteriaSchema.optional(),
       enabled: z.boolean(),
-      metadata: z.record(z.unknown()),
+      metadata: z.record(z.string(), z.unknown()),
     }).openapi({
       description:
         "An authored directive as it travels. Every reference is a name — `binding.skillName`, `dependsOn` and "
@@ -946,14 +948,14 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
         skillName: z.string(),
         connection: AgentConfigRefPlaceholderSchema,
         toolName: z.string(),
-        boundParams: z.record(z.unknown()),
-        exposedParams: z.record(z.object({
+        boundParams: z.record(z.string(), z.unknown()),
+        exposedParams: z.record(z.string(), z.object({
           description: z.string().optional(),
           slotBinding: z.string().optional(),
           required: z.boolean().optional(),
         })),
         declaredOutcomes: z.array(z.string()).nullable(),
-        outcomeMap: z.record(z.string()).nullable(),
+        outcomeMap: z.record(z.string(), z.string()).nullable(),
         enabled: z.boolean(),
       })),
     }).openapi({
@@ -973,7 +975,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     "AgentBundleAgentConfig",
     z.object({
       schemaVersion: z.number().int(),
-      portability: z.record(z.enum(["portable", "ref", "secret"])).openapi({
+      portability: z.record(z.string(), z.enum(["portable", "ref", "secret"])).openapi({
         description: "Per-field classification, keyed by field path. `ref` and `secret` fields carry placeholders.",
       }),
       name: z.string(),
@@ -1008,11 +1010,11 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
           token: z.union([AgentConfigSecretPlaceholderSchema, z.null()]),
         }),
         websiteEmbed: AgentBundleWebsiteEmbedSchema,
-        extensions: z.record(z.unknown()).openapi({
+        extensions: z.record(z.string(), z.unknown()).openapi({
           description: "Surface extensions keyed by extension id; shape is owned by the contributing extension.",
         }),
       }),
-      skillSettings: z.record(z.unknown()).openapi({
+      skillSettings: z.record(z.string(), z.unknown()).openapi({
         description:
           "Per-skill settings keyed by skill name. `retrieval.answer` carries an `{ enabled, settings }` envelope "
           + "whose `settings.__agentRetrievalDefaults` holds the agent-level retrieval defaults and source scope.",
@@ -1073,7 +1075,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       capability: z.string(),
       invocationMode: AgentBundleSkillInvocationModeSchema,
       enabled: z.boolean(),
-      config: z.record(z.unknown()).openapi({ description: "Only the fields a capability marked portable." }),
+      config: z.record(z.string(), z.unknown()).openapi({ description: "Only the fields a capability marked portable." }),
       omittedConfigKeys: z.array(z.string()).openapi({
         description: "Settings the source agent had a value for that the capability does not mark portable. Key names only, never values; import reports them so the operator knows what to re-enter.",
       }),
@@ -1135,7 +1137,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     "AgentBundle",
     z.object({
       bundleVersion: z.literal(AGENT_BUNDLE_SCHEMA_VERSION),
-      portability: z.record(AgentConfigPortabilityValueSchema).openapi({
+      portability: z.record(z.string(), AgentConfigPortabilityValueSchema).openapi({
         description: "Portability of the bundle's own top-level collections, keyed by field path (for example \"agentSkills[].config\").",
       }),
       agent: AgentBundleAgentConfigSchema,
@@ -1182,7 +1184,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
     "AgentBundleImportRequest",
     z.object({
       bundleVersion: z.number().int(),
-      portability: z.record(AgentConfigPortabilityValueSchema).optional(),
+      portability: z.record(z.string(), AgentConfigPortabilityValueSchema).optional(),
       agent: AgentBundleImportAgentConfigSchema,
       routines: z.array(AgentBundleRoutineSchema).optional(),
       contextVariables: z.array(AgentBundleContextVariableSchema).optional(),

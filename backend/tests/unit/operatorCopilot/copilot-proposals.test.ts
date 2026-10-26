@@ -1408,7 +1408,7 @@ describe("directive proposal adapter payload mapping", () => {
 
     const result = await adapter.applyIfVersionMatches(
       "workspace-1",
-      { agentId: "6a6a6a6a-1111-2222-3333-444444444444", directiveId: null },
+      { agentId: "6a6a6a6a-1111-2222-8333-444444444444", directiveId: null },
       {
         name: "shipping-damage-remediation",
         condition: { kind: "contextual", description: "Order arrived damaged." },
@@ -1430,8 +1430,8 @@ describe("directive proposal adapter payload mapping", () => {
     // `op` field. This is the regression that matters: a live workspace's pending proposals must
     // keep applying as saves, not start being misread as removals.
     const { createDirectiveCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
-    const existing = { id: "6a6a6a6a-1111-2222-3333-444444444445", agentId: "6a6a6a6a-1111-2222-3333-444444444444", name: "Old name", condition: { kind: "always" }, action: "Old action", priority: null, requiredCapabilities: [], dependsOn: [], excludes: [], routes: [], tags: [], description: null, binding: null, lifecycle: null, metadata: {}, createdAt: new Date(0), updatedAt: new Date(0) };
-    const update = vi.fn(async () => ({ directive: { id: "6a6a6a6a-1111-2222-3333-444444444445" }, coherence: null }));
+    const existing = { id: "6a6a6a6a-1111-2222-8333-444444444445", agentId: "6a6a6a6a-1111-2222-8333-444444444444", name: "Old name", condition: { kind: "always" }, action: "Old action", priority: null, requiredCapabilities: [], dependsOn: [], excludes: [], routes: [], tags: [], description: null, binding: null, lifecycle: null, metadata: {}, createdAt: new Date(0), updatedAt: new Date(0) };
+    const update = vi.fn(async () => ({ directive: { id: "6a6a6a6a-1111-2222-8333-444444444445" }, coherence: null }));
     const deleteDirective = vi.fn();
     const adapter = createDirectiveCopilotProposalAdapter({
       authoredDirectiveService: { list: vi.fn(async () => [existing]), create: vi.fn(), update, delete: deleteDirective } as never,
@@ -1441,12 +1441,12 @@ describe("directive proposal adapter payload mapping", () => {
 
     const result = await adapter.applyIfVersionMatches(
       "workspace-1",
-      { agentId: "6a6a6a6a-1111-2222-3333-444444444444", directiveId: "6a6a6a6a-1111-2222-3333-444444444445" },
+      { agentId: "6a6a6a6a-1111-2222-8333-444444444444", directiveId: "6a6a6a6a-1111-2222-8333-444444444445" },
       { name: "New name", condition: { kind: "always" }, action: "New action", tags: [] },
       new Date(0).toISOString(),
     );
 
-    expect(result).toEqual({ outcome: "applied", appliedRef: { directiveId: "6a6a6a6a-1111-2222-3333-444444444445" } });
+    expect(result).toEqual({ outcome: "applied", appliedRef: { directiveId: "6a6a6a6a-1111-2222-8333-444444444445" } });
     expect(update).toHaveBeenCalledOnce();
     expect(deleteDirective).not.toHaveBeenCalled();
   });
@@ -1466,26 +1466,26 @@ describe("directive proposal adapter payload mapping", () => {
       directiveAuthorService: { draftForProposal: vi.fn() },
       agentService: { get: vi.fn(async () => ({ updatedAt: currentUpdatedAt })) } as never,
     });
-    const targetRef = { agentId: "6a6a6a6a-1111-2222-3333-444444444444", directiveId: "6a6a6a6a-1111-2222-3333-444444444445" };
+    const targetRef = { agentId: "6a6a6a6a-1111-2222-8333-444444444444", directiveId: "6a6a6a6a-1111-2222-8333-444444444445" };
 
     // A stale token races an edit made after the proposal drafted. Deleting here would discard
     // whatever changed the directive between drafting and apply, so it must be refused outright.
     expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, { op: "remove" }, new Date(0).toISOString())).toEqual({ outcome: "stale", reason: "Field changed: directive" });
 
-    expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, { op: "remove" }, new Date(5).toISOString())).toEqual({ outcome: "applied", appliedRef: { directiveId: "6a6a6a6a-1111-2222-3333-444444444445" } });
-    expect(deleteDirective).toHaveBeenCalledWith("workspace-1", targetRef.agentId, "6a6a6a6a-1111-2222-3333-444444444445", { expectedUpdatedAt: new Date(5) });
+    expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, { op: "remove" }, new Date(5).toISOString())).toEqual({ outcome: "applied", appliedRef: { directiveId: "6a6a6a6a-1111-2222-8333-444444444445" } });
+    expect(deleteDirective).toHaveBeenCalledWith("workspace-1", targetRef.agentId, "6a6a6a6a-1111-2222-8333-444444444445", { expectedUpdatedAt: new Date(5) });
   });
 
   it("previews a removal as the directive in place today, next to a plain removal notice", async () => {
     const { createDirectiveCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
-    const existing = { id: "6a6a6a6a-1111-2222-3333-444444444445", agentId: "6a6a6a6a-1111-2222-3333-444444444444", name: "Avoid competitors", condition: { kind: "always" }, action: "Say nothing about rivals.", priority: null, requiredCapabilities: [], dependsOn: [], excludes: [], routes: [], tags: [], description: null, binding: null, lifecycle: null, metadata: {}, createdAt: new Date(0), updatedAt: new Date(0) };
+    const existing = { id: "6a6a6a6a-1111-2222-8333-444444444445", agentId: "6a6a6a6a-1111-2222-8333-444444444444", name: "Avoid competitors", condition: { kind: "always" }, action: "Say nothing about rivals.", priority: null, requiredCapabilities: [], dependsOn: [], excludes: [], routes: [], tags: [], description: null, binding: null, lifecycle: null, metadata: {}, createdAt: new Date(0), updatedAt: new Date(0) };
     const adapter = createDirectiveCopilotProposalAdapter({
       authoredDirectiveService: { list: vi.fn(async () => [existing]), create: vi.fn(), update: vi.fn(), delete: vi.fn() } as never,
       directiveAuthorService: { draftForProposal: vi.fn() },
       agentService: { get: vi.fn() },
     });
 
-    const preview = await adapter.preview("workspace-1", { agentId: "6a6a6a6a-1111-2222-3333-444444444444", directiveId: "6a6a6a6a-1111-2222-3333-444444444445" }, { op: "remove" });
+    const preview = await adapter.preview("workspace-1", { agentId: "6a6a6a6a-1111-2222-8333-444444444444", directiveId: "6a6a6a6a-1111-2222-8333-444444444445" }, { op: "remove" });
 
     expect(preview.targetLabel).toBe("Avoid competitors");
     expect(preview.current).toEqual(existing);
@@ -1501,8 +1501,8 @@ describe("directive proposal adapter payload mapping", () => {
   it("creates a new directive whose fence survives an unrelated agent-row change", async () => {
     const { createDirectiveCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
     const { DIRECTIVE_CREATE_FENCE } = await import("../../../src/modules/agents/public.js");
-    const agentId = "6a6a6a6a-1111-2222-3333-444444444444";
-    const create = vi.fn(async () => ({ directive: { id: "6a6a6a6a-1111-2222-3333-444444444445" } }));
+    const agentId = "6a6a6a6a-1111-2222-8333-444444444444";
+    const create = vi.fn(async () => ({ directive: { id: "6a6a6a6a-1111-2222-8333-444444444445" } }));
     const draftForProposal = vi.fn(async () => ({
       draft: { directive: { name: "locale", condition: { kind: "always" }, action: "Use Estonian." } },
       versionToken: DIRECTIVE_CREATE_FENCE,
@@ -1529,7 +1529,7 @@ describe("directive proposal adapter payload mapping", () => {
   it("previews and applies a set_enabled payload as a one-field partial update", async () => {
     const { createDirectiveCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
     const existing = {
-      id: "6a6a6a6a-1111-2222-3333-444444444445", agentId: "6a6a6a6a-1111-2222-3333-444444444444", name: "Avoid competitors", condition: { kind: "always" }, action: "Say nothing about rivals.", priority: 80,
+      id: "6a6a6a6a-1111-2222-8333-444444444445", agentId: "6a6a6a6a-1111-2222-8333-444444444444", name: "Avoid competitors", condition: { kind: "always" }, action: "Say nothing about rivals.", priority: 80,
       requiredCapabilities: ["retrieve"], dependsOn: ["base-rule"], excludes: ["other-rule"], routes: [], tags: ["sales"], description: "Keep the configured text.", binding: { kind: "skill", skillName: "order.lookup" }, lifecycle: { kind: "cooldown", turns: 3 }, enabled: true, metadata: { source: "operator" }, createdAt: new Date(0), updatedAt: new Date(0),
     };
     const update = vi.fn(async () => ({ directive: { ...existing, enabled: false }, coherence: null }));
@@ -1560,7 +1560,7 @@ describe("directive proposal adapter payload mapping", () => {
 
     await expect(adapter.preview(
       "workspace-1",
-      { agentId: "6a6a6a6a-1111-2222-3333-444444444444", directiveId: "6a6a6a6a-1111-2222-3333-444444444445" },
+      { agentId: "6a6a6a6a-1111-2222-8333-444444444444", directiveId: "6a6a6a6a-1111-2222-8333-444444444445" },
       { op: "set_enabled", enabled: false, name: "Avoid competitors" },
     )).resolves.toEqual({
       targetLabel: "Avoid competitors",
@@ -1571,7 +1571,7 @@ describe("directive proposal adapter payload mapping", () => {
 
   it("maps a stale set_enabled write to stale and preserves the service validation reason on re-enable", async () => {
     const { createDirectiveCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
-    const targetRef = { agentId: "6a6a6a6a-1111-2222-3333-444444444444", directiveId: "6a6a6a6a-1111-2222-3333-444444444445" };
+    const targetRef = { agentId: "6a6a6a6a-1111-2222-8333-444444444444", directiveId: "6a6a6a6a-1111-2222-8333-444444444445" };
     const update = vi.fn()
       .mockRejectedValueOnce(conflict("Directive was updated by another writer; reload before saving again"))
       .mockResolvedValueOnce({ directive: { id: targetRef.directiveId, enabled: false }, coherence: null })
@@ -1603,7 +1603,7 @@ describe("routine proposal adapter", () => {
       routineDraftAssistService: { draft } as never,
       routineDefinitionService: { createDraft } as never,
     });
-    const targetRef = { agentId: "6a6a6a6a-1111-2222-3333-444444444444", routineId: null };
+    const targetRef = { agentId: "6a6a6a6a-1111-2222-8333-444444444444", routineId: null };
     const summary = "Draft routine Return intake has 1 open validation diagnostic.";
     const storedPayload = { ...payload, rationale: summary };
 
@@ -1646,7 +1646,7 @@ describe("routine proposal adapter", () => {
       routineDraftAssistService: {} as never,
       routineDefinitionService: { createDraft } as never,
     });
-    const targetRef = { agentId: "6a6a6a6a-1111-2222-3333-444444444444", routineId: null };
+    const targetRef = { agentId: "6a6a6a6a-1111-2222-8333-444444444444", routineId: null };
     const token = new Date(0).toISOString();
 
     expect(await adapter.applyIfVersionMatches("workspace-1", targetRef, payload, token)).toEqual({
@@ -1668,7 +1668,7 @@ describe("routine proposal adapter", () => {
       routineDraftAssistService: {} as never,
       routineDefinitionService: { findCreateConflict } as never,
     });
-    const targetRef = { agentId: "6a6a6a6a-1111-2222-3333-444444444444", routineId: null };
+    const targetRef = { agentId: "6a6a6a6a-1111-2222-8333-444444444444", routineId: null };
 
     const token = await adapter.readVersionToken("workspace-1", targetRef, payload);
 
@@ -1698,7 +1698,7 @@ describe("routine proposal adapter", () => {
       routineDraftAssistService: {} as never,
       routineDefinitionService: { findCreateConflict } as never,
     });
-    const targetRef = { agentId: "6a6a6a6a-1111-2222-3333-444444444444", routineId: null };
+    const targetRef = { agentId: "6a6a6a6a-1111-2222-8333-444444444444", routineId: null };
 
     const token = await adapter.readVersionToken("workspace-1", targetRef, payload);
 
@@ -1722,7 +1722,7 @@ describe("routine proposal adapter", () => {
     });
 
     const preview = await adapter.preview("workspace-1", {
-      agentId: "6a6a6a6a-1111-2222-3333-444444444444",
+      agentId: "6a6a6a6a-1111-2222-8333-444444444444",
       routineId: null,
     }, duplicated) as {
       proposed: {
@@ -1744,14 +1744,14 @@ describe("routine proposal adapter", () => {
     // the edit payload schema can parse it, so routinePayloadKind must recognize it explicitly
     // rather than default it to "create" and let the schema mismatch crash preview() uncaught.
     const { createRoutineCopilotProposalAdapter } = await import("../../../src/modules/operatorCopilot/proposalAdapters.js");
-    const get = vi.fn(async () => ({ id: "6a6a6a6a-1111-2222-3333-444444444446", name: "Return intake", updatedAt: new Date(0) }));
+    const get = vi.fn(async () => ({ id: "6a6a6a6a-1111-2222-8333-444444444446", name: "Return intake", updatedAt: new Date(0) }));
     const adapter = createRoutineCopilotProposalAdapter({
       agentService: {} as never,
       routineDraftAssistService: {} as never,
       routineDefinitionService: { get } as never,
     });
-    const targetRef = { agentId: "6a6a6a6a-1111-2222-3333-444444444444", routineId: "6a6a6a6a-1111-2222-3333-444444444446" };
-    const legacyPayload = { kind: "lifecycle", action: "publish", routineId: "6a6a6a6a-1111-2222-3333-444444444446" };
+    const targetRef = { agentId: "6a6a6a6a-1111-2222-8333-444444444444", routineId: "6a6a6a6a-1111-2222-8333-444444444446" };
+    const legacyPayload = { kind: "lifecycle", action: "publish", routineId: "6a6a6a6a-1111-2222-8333-444444444446" };
 
     const preview = await adapter.preview("workspace-1", targetRef, legacyPayload) as {
       targetLabel: string;
@@ -1774,8 +1774,8 @@ describe("routine proposal adapter", () => {
       // real invocation) if the fix instead tried to apply a "create" against this payload.
       routineDefinitionService: {} as never,
     });
-    const targetRef = { agentId: "6a6a6a6a-1111-2222-3333-444444444444", routineId: "6a6a6a6a-1111-2222-3333-444444444447" };
-    const legacyPayload = { kind: "lifecycle", action: "archive", routineId: "6a6a6a6a-1111-2222-3333-444444444447" };
+    const targetRef = { agentId: "6a6a6a6a-1111-2222-8333-444444444444", routineId: "6a6a6a6a-1111-2222-8333-444444444447" };
+    const legacyPayload = { kind: "lifecycle", action: "archive", routineId: "6a6a6a6a-1111-2222-8333-444444444447" };
 
     await expect(adapter.applyIfVersionMatches("workspace-1", targetRef, legacyPayload, new Date(0).toISOString()))
       .resolves.toEqual({ outcome: "failed", reason: "This proposal type is no longer supported. Dismiss it." });
@@ -1783,8 +1783,8 @@ describe("routine proposal adapter", () => {
 });
 
 describe("agent skill config proposal adapter", () => {
-  const agentSkillAgentId = "6a6a6a6a-1111-2222-3333-444444444444";
-  const existingSkillId = "6a6a6a6a-1111-2222-3333-444444444445";
+  const agentSkillAgentId = "6a6a6a6a-1111-2222-8333-444444444444";
+  const existingSkillId = "6a6a6a6a-1111-2222-8333-444444444445";
 
   const buildAdapter = async (overrides: {
     agentSkills?: Array<{ id: string; name: string; capability: string; target: { kind: string | null; id: string | null }; config: Record<string, unknown>; invocationMode: string; enabled: boolean; updatedAt: string }>;
@@ -2174,8 +2174,8 @@ describe("agent greeting proposal adapter", () => {
 });
 
 describe("context variable proposal adapter", () => {
-  const contextVariableAgentId = "6b6b6b6b-1111-2222-3333-444444444444";
-  const existingVariableId = "6b6b6b6b-1111-2222-3333-444444444445";
+  const contextVariableAgentId = "6b6b6b6b-1111-2222-8333-444444444444";
+  const existingVariableId = "6b6b6b6b-1111-2222-8333-444444444445";
 
   const buildAdapter = async (overrides: {
     variable?: { id: string; workspaceId: string; name: string; description: string | null; valueType: string; trustTier: string; sensitivity: string; defaultSurfacing: string; updatedAt: Date } | null;
@@ -2332,7 +2332,7 @@ describe("context variable proposal adapter", () => {
   // means to change must merge against the stored row itself - otherwise every omitted field
   // (staleness/timeout tuning, a deliberate `enabled: false`) silently resets on the next unrelated
   // enablement edit.
-  const resolverSkillId = "6b6b6b6b-1111-2222-3333-444444444999";
+  const resolverSkillId = "6b6b6b6b-1111-2222-8333-444444444999";
   const storedResolverEnablement = {
     id: "enablement-1",
     agentId: contextVariableAgentId,
@@ -2435,7 +2435,7 @@ describe("context variable proposal adapter", () => {
 
   it("creates a variable and enables it for the agent from a single proposal", async () => {
     const applyProposal = vi.fn(async () => ({ variableId: "created-variable-2" }));
-    const { adapter } = await buildAdapter({ applyProposal, agentSkillIds: ["6b6b6b6b-1111-2222-3333-444444444999"] });
+    const { adapter } = await buildAdapter({ applyProposal, agentSkillIds: ["6b6b6b6b-1111-2222-8333-444444444999"] });
     const targetRef = { agentId: contextVariableAgentId, variableId: null };
 
     const validated = await adapter.validatePayload("workspace-1", targetRef, {
@@ -2444,7 +2444,7 @@ describe("context variable proposal adapter", () => {
       trustTier: "unverified",
       sensitivity: "normal",
       defaultSurfacing: "on_reference",
-      enablement: { source: "resolver", resolverSkillId: "6b6b6b6b-1111-2222-3333-444444444999", surfacing: "operator_only" },
+      enablement: { source: "resolver", resolverSkillId: "6b6b6b6b-1111-2222-8333-444444444999", surfacing: "operator_only" },
     });
     const applied = await adapter.applyIfVersionMatches("workspace-1", targetRef, validated.payload, await adapter.readVersionToken("workspace-1", targetRef, validated.payload));
 
@@ -2452,7 +2452,7 @@ describe("context variable proposal adapter", () => {
     expect(applyProposal).toHaveBeenCalledWith(expect.objectContaining({
       variableId: null,
       definition: expect.objectContaining({ name: "loyalty_tier" }),
-      enablement: expect.objectContaining({ source: "resolver", resolverSkillId: "6b6b6b6b-1111-2222-3333-444444444999" }),
+      enablement: expect.objectContaining({ source: "resolver", resolverSkillId: "6b6b6b6b-1111-2222-8333-444444444999" }),
     }));
   });
 

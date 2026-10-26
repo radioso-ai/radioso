@@ -41,8 +41,8 @@ const routineDefinitionInputSchema = z.object({
 const routineDefinitionOutputSchema = z.object({
   routineCount: z.number().int().nonnegative(),
   routinesTruncated: z.boolean(),
-  routine: z.record(z.unknown()).nullable(),
-  routines: z.array(z.record(z.unknown())),
+  routine: z.record(z.string(), z.unknown()).nullable(),
+  routines: z.array(z.record(z.string(), z.unknown())),
   authoringDetail: z.object({ text: z.string(), nextOffset: z.number().int().nonnegative().nullable(), totalLength: z.number().int().nonnegative(), version: z.string().datetime() }).nullable(),
 });
 const copilotRoutineListLimit = 40;

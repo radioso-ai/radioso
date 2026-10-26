@@ -25,7 +25,7 @@ const slackPostPayloadSchema = z.object({
   installationId: z.string().uuid(),
   channelId: z.string().min(1),
   text: z.string().min(1).max(MAX_SLACK_POST_ACTION_TEXT_LENGTH),
-  blocks: z.array(z.record(z.unknown())).optional(),
+  blocks: z.array(z.record(z.string(), z.unknown())).optional(),
   threadTs: z.string().min(1).optional(),
   conversationRef: z.string().min(1).optional(),
   kind: z.enum(["gap_escalation", "routine_post", "operator_notification", "human_reply"]),

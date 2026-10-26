@@ -93,7 +93,7 @@ const agentSkillSnapshotSchema = z.object({
   id: z.string().uuid(), agentId: z.string().uuid(), workspaceId: z.string().uuid(),
   skillName: z.string(), kind: z.string(), invocationMode: z.string(),
   enabled: z.boolean(), targetType: z.string().nullable().optional(), targetId: z.string().nullable().optional(),
-  config: z.record(z.unknown()).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
   createdAt: persistedDate, updatedAt: persistedDate,
 }).strict();
 // Optional on the snapshot for the same reason as `agentSkills` above: absent means "no

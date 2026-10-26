@@ -64,7 +64,7 @@ const eventsInputSchema = z.object({
 }).strict();
 const eventCountsSchema = z.object({
   window: z.string(),
-  byDisposition: z.record(z.number().int().min(0)),
+  byDisposition: z.record(z.string(), z.number().int().min(0)),
   failed: z.number().int().min(0),
 }).strict();
 const eventsOutputSchema = z.object({
@@ -72,7 +72,7 @@ const eventsOutputSchema = z.object({
   summaries: z.array(z.object({
     mailboxId: z.string(),
     window: z.string(),
-    byDisposition: z.record(z.number().int().min(0)),
+    byDisposition: z.record(z.string(), z.number().int().min(0)),
     failed: z.number().int().min(0),
     lastReceivedAt: z.string().nullable(),
   }).strict()),

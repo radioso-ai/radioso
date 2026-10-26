@@ -16,7 +16,7 @@ const DEFAULT_TOP_K = 5;
 const MAX_TOP_K = 20;
 const DEFAULT_SIMILARITY_THRESHOLD = 0.2;
 
-export interface SemanticSearchToolDeps {
+interface SemanticSearchToolDeps {
   readonly workspaceId: string;
   readonly queryEmbeddings: QueryEmbeddingPort;
   readonly vectorSearch: VectorCandidateSearchPort;
@@ -40,7 +40,7 @@ export interface SemanticSearchToolDeps {
 const inputSchema = z.object({
   query: z.string().min(1, "query must not be empty"),
   topK: z.number().int().min(1).max(MAX_TOP_K).optional(),
-  metadataFilter: z.record(z.unknown()).optional(),
+  metadataFilter: z.record(z.string(), z.unknown()).optional(),
 });
 
 const outputSchema = z.object({

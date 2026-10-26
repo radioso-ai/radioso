@@ -22,7 +22,7 @@ import { boundConversationPayload, boundTurnTracePayload, jsonValueSchema, turnT
 import { asRecord, entity, requiredPageConversation } from "./shared.js";
 
 const idSchema = z.string().uuid();
-const unknownRecord = z.record(z.unknown());
+const unknownRecord = z.record(z.string(), z.unknown());
 const shallowRouteSchema = z.object({
   generator: z.string(),
   routeType: z.enum(["direct", "retrieval"]),

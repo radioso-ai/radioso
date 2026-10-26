@@ -10,7 +10,7 @@ const websiteCrawlTaskSchema = z.object({
 
 const recoveryTaskSchema = z.object({
   maxJobs: z.number().int().min(1).max(50).default(5),
-}).default({});
+}).prefault({});
 
 type CrawlerWorkerTaskRouteDependencies = Pick<AppDependencies, "websiteCrawlWorker">;
 

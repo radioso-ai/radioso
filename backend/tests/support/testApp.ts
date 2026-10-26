@@ -1,3 +1,5 @@
+// First: Zod 4 gives `.openapi()` only to schemas built after this runs; other packages load this harness too.
+import "../../src/app/http/openapi/zodOpenApiExtension.js";
 import { createAgentBundleServices } from "../../src/app/composition/agentBundleComposition.js";
 import { createDefaultApplicationComposition } from "../../src/app/composition/defaultComposition.js";
 import { chatTurnQueuedActionTypes } from "../../src/app/composition/applicationModule.js";

@@ -74,7 +74,7 @@
     "validate:architecture": "node ../scripts/validate-architecture-boundaries.mjs"
   },
   "dependencies": {
-    "@asteasolutions/zod-to-openapi": "^7.3.4",
+    "@asteasolutions/zod-to-openapi": "^8.5.0",
     "@chonkiejs/core": "0.0.10",
     "@google-cloud/storage": "^7.17.2",
     "@google-cloud/tasks": "^5.5.0",
@@ -131,8 +131,7 @@
     "swagger-ui-express": "^5.0.1",
     "undici": "8.12.3",
     "yaml": "^2.8.3",
-    "zod": "^3.25.76",
-    "zod-to-json-schema": "3.25.2"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@radioso/integration-test-support": "workspace:*",

@@ -302,7 +302,7 @@ describe("eval Workbench replay contract", () => {
       code: "bad_request",
       message: "Invalid request body",
     });
-    expect(JSON.stringify(response.body.error.details)).toContain("Array must contain at least 1 element");
+    expect(response.body.error.details).toMatchObject({ fieldErrors: { overrides: [expect.any(String)] } });
   });
 
   it("rejects unknown top-level agent config override fields", async () => {

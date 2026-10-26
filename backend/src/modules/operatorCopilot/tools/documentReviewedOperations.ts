@@ -4,6 +4,7 @@ import {
   describeDocumentReviewedOperationPlan,
   documentReviewedChangeEffect,
   type DocumentReviewedOperationPreparationPort,
+  documentSourceIdSchema,
 } from "../../documents/contracts/index.js";
 import { documentMetadataRecordSchema } from "../../documents/public.js";
 import type { CopilotMcpProposalRecoveryPort, CopilotToolDescriptor } from "../contracts.js";
@@ -24,7 +25,7 @@ const document = z.object({
 const MAX_IMPORT_SERIALIZED_BYTES = 2_000_000;
 const inputSchema = z.object({
   documents: z.array(document).min(1).max(MAX_DOCUMENTS),
-  sourceId: z.string().uuid().optional(),
+  sourceId: documentSourceIdSchema.optional(),
 }).strict().superRefine((input, ctx) => {
   if (Buffer.byteLength(JSON.stringify(input), "utf8") > MAX_IMPORT_SERIALIZED_BYTES) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Document import input exceeds the 2,000,000-byte serialized request budget." });
@@ -90,7 +91,7 @@ export const createDocumentReviewedOperationTools = (deps: DocumentReviewedOpera
 const removalInputSchema = z.object({
   documentIds: z.array(z.string().uuid()).max(200).optional(),
   externalDocumentIds: z.array(z.string().trim().min(1).max(240)).max(200).optional(),
-  sourceId: z.string().uuid().optional(),
+  sourceId: documentSourceIdSchema.optional(),
 }).strict().superRefine((input, ctx) => {
   if ((input.documentIds?.length ?? 0) + (input.externalDocumentIds?.length ?? 0) === 0) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Provide documentIds and/or externalDocumentIds." });
   if (input.externalDocumentIds?.length && !input.sourceId) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "sourceId is required when externalDocumentIds are supplied." });
@@ -128,7 +129,7 @@ function createRemovalTool(deps: DocumentReviewedOperationToolDependencies): Cop
   };
 }
 
-const reprocessInputSchema = z.object({ kind: z.enum(["documents", "source", "all"]), documentIds: z.array(z.string().uuid()).min(1).max(200).optional(), sourceId: z.string().uuid().optional(), all: z.boolean().optional() }).strict().superRefine((input, ctx) => {
+const reprocessInputSchema = z.object({ kind: z.enum(["documents", "source", "all"]), documentIds: z.array(z.string().uuid()).min(1).max(200).optional(), sourceId: documentSourceIdSchema.optional(), all: z.boolean().optional() }).strict().superRefine((input, ctx) => {
   const fields = input.kind === "documents" ? [input.documentIds] : input.kind === "source" ? [input.sourceId] : [input.all === true ? true : undefined];
   if (fields[0] === undefined) ctx.addIssue({ code: z.ZodIssueCode.custom, message: `kind ${input.kind} requires its matching selector.` });
   if (input.kind !== "documents" && input.documentIds !== undefined || input.kind !== "source" && input.sourceId !== undefined || input.kind !== "all" && input.all !== undefined) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Only the selector matching kind may be supplied." });

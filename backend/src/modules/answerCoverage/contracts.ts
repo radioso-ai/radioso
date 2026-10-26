@@ -69,7 +69,7 @@ const compatibleReasonsByCoverage: Record<AnswerCoverage, readonly AnswerCoverag
 };
 
 /** Validation shared by directive and routine authoring; absent stays legacy-compatible. */
-export const answerCoverageCriteriaSchema: z.ZodType<AnswerCoverageCriteria> = z.object({
+export const answerCoverageCriteriaSchema: z.ZodType<AnswerCoverageCriteria, AnswerCoverageCriteria> = z.object({
   coverage: z.array(answerCoverageSchema).min(1).refine(
     (coverage) => new Set(coverage).size === coverage.length,
     "Coverage criteria cannot repeat a coverage value",

@@ -17,6 +17,7 @@ import {
 import { skillDiagnosticSchema } from "../../../../modules/skills/public.js";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
+import { documentSourceIdSchema } from "../../../../modules/documents/contracts/index.js";
 
 export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, schemas: OpenApiSchemaCatalog) => {
   const DocumentStatusSchema = z.string().openapi("DocumentStatus");
@@ -25,7 +26,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
   const DocumentSourceSummarySchema = registry.register(
     "DocumentSourceSummary",
     z.object({
-      id: z.string().uuid(),
+      id: documentSourceIdSchema,
       kind: z.enum(["website", "api", "connector", "upload"]),
       name: z.string(),
       externalId: z.string().nullable(),
@@ -46,7 +47,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
   const DocumentSourceListItemSchema = registry.register(
     "DocumentSourceListItem",
     z.object({
-      id: z.string().uuid(),
+      id: documentSourceIdSchema,
       kind: z.enum(["website", "api", "connector", "upload"]),
       name: z.string(),
       externalId: z.string().nullable(),
@@ -54,7 +55,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       lastSyncedAt: z.string().datetime().nullable(),
       documentCount: z.number().int().min(0),
       documentEnrichmentOverride: z.enum(["inherit", "on", "off"]),
-      documentMetadata: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).default({}).openapi({
+      documentMetadata: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).default({}).openapi({
         description:
           "Tags stamped onto every chunk produced from this source's documents. A document's own metadata wins on key collisions.",
       }),
@@ -87,7 +88,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
   const SourceReprocessResponseSchema = registry.register(
     "SourceReprocessResponse",
     z.object({
-      sourceId: z.string().uuid(),
+      sourceId: documentSourceIdSchema,
       workspaceId: z.string().uuid(),
       queuedDocumentCount: z.number().int().min(0),
       skippedDocumentCount: z.number().int().min(0),
@@ -198,9 +199,9 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       failureReason: z.string().nullable().optional(),
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),
-      metadata: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).default({}),
+      metadata: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).default({}),
       enrichment: z.union([DocumentEnrichmentSchema, z.null()]).optional(),
-      sourceId: z.string().uuid().nullable().optional(),
+      sourceId: documentSourceIdSchema.nullable().optional(),
       source: z.union([DocumentSourceSummarySchema, z.null()]).optional(),
       externalDocumentId: z.string().nullable().optional(),
       sourceKind: z.enum(["inline_text", "uploaded_file"]),
@@ -253,7 +254,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       title: z.string(),
       status: DocumentStatusSchema,
       ragStatus: RagStatusSchema,
-      metadata: z.record(z.unknown()),
+      metadata: z.record(z.string(), z.unknown()),
       score: z.number(),
       rank: z.number().int().min(1),
       matchEvidence: z.array(z.string()),
@@ -291,7 +292,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     "WebsiteCrawlJobResponse",
     z.object({
       jobId: z.string().uuid(),
-      sourceId: z.string().uuid().nullable(),
+      sourceId: documentSourceIdSchema.nullable(),
       requestedUrl: z.string().url(),
       status: z.literal("queued"),
     }),
@@ -340,7 +341,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       requestedUrl: z.string().url(),
       status: WebsiteCrawlJobStatusSchema,
       limit: z.number().int().min(1),
-      sourceId: z.string().uuid().nullable(),
+      sourceId: documentSourceIdSchema.nullable(),
       documentCount: z.number().int().min(0).nullable(),
       failedPageCount: z.number().int().min(0).nullable(),
       skippedPageCount: z.number().int().min(0).nullable(),
@@ -363,7 +364,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     status: WebsiteCrawlJobStatusSchema.optional(),
     sinceMinutes: z.coerce.number().int().min(1).max(1440).optional(),
     limit: z.coerce.number().int().min(1).max(200).optional(),
-    sourceId: z.string().uuid().optional(),
+    sourceId: documentSourceIdSchema.optional(),
   });
 
   const CitationSchema = registry.register(
@@ -461,9 +462,9 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       path: z.string().optional(),
       status: z.enum(["success", "skipped", "blocked", "failed", "fallback", "pending"]).optional(),
       outcome: z.string().optional(),
-      primaryCounts: z.record(z.number()).optional(),
-      assistant: z.record(z.unknown()).optional(),
-      contact: z.record(z.unknown()).optional(),
+      primaryCounts: z.record(z.string(), z.number()).optional(),
+      assistant: z.record(z.string(), z.unknown()).optional(),
+      contact: z.record(z.string(), z.unknown()).optional(),
       execution: RetrievalExecutionMetadataSchema.optional(),
       parsedQuery: ParsedQuerySchema.optional(),
       retrievalSubqueries: z.array(RetrievalSubquerySchema).optional(),
@@ -493,7 +494,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
         "default_hybrid",
         "general_grounding",
       ]).optional(),
-      resolvedSteps: z.array(z.record(z.unknown())).optional(),
+      resolvedSteps: z.array(z.record(z.string(), z.unknown())).optional(),
       skillDiagnostic: skillDiagnosticSchema.optional(),
     }),
   );
@@ -507,10 +508,10 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       status: z.enum(["applied", "skipped", "fallback", "rejected", "unavailable", "failed"]),
       startedAt: z.string().datetime().optional(),
       durationMs: z.number().int().min(0).optional(),
-      settings: z.record(z.unknown()).optional(),
-      inputs: z.record(z.unknown()).optional(),
-      outputs: z.record(z.unknown()).optional(),
-      metrics: z.record(z.number()).optional(),
+      settings: z.record(z.string(), z.unknown()).optional(),
+      inputs: z.record(z.string(), z.unknown()).optional(),
+      outputs: z.record(z.string(), z.unknown()).optional(),
+      metrics: z.record(z.string(), z.number()).optional(),
       reason: z.string().optional(),
     }),
   );
@@ -585,7 +586,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       chunkId: z.string().uuid(),
       title: z.string(),
       content: z.string(),
-      metadata: z.record(z.unknown()).optional(),
+      metadata: z.record(z.string(), z.unknown()).optional(),
       score: z.number().optional(),
       dateFrom: z.string().nullable(),
       dateTo: z.string().nullable(),
@@ -621,7 +622,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       chunkId: z.string().uuid(),
       title: z.string(),
       content: z.string(),
-      metadata: z.record(z.unknown()).optional(),
+      metadata: z.record(z.string(), z.unknown()).optional(),
       score: z.number().optional(),
     }),
   );
@@ -650,7 +651,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
   );
 
   const sourceParamsSchema = z.object({
-    sourceId: z.string().uuid(),
+    sourceId: documentSourceIdSchema,
   });
 
   const DocumentSourceDocumentsQuerySchema = z.object({

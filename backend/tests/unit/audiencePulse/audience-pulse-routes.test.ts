@@ -9,9 +9,9 @@ import {
 import type { AudiencePulseEvidenceAnchor, AudiencePulsePort } from "../../../src/modules/audiencePulse/contracts.js";
 import type { AudiencePulseReadResult, AudiencePulseRefreshResult } from "../../../src/modules/audiencePulse/contracts.js";
 
-const ACCOUNT_ID = "22222222-2222-2222-2222-222222222222";
-const USER_ID = "33333333-3333-3333-3333-333333333333";
-const WORKSPACE_ID = "11111111-1111-1111-1111-111111111111";
+const ACCOUNT_ID = "22222222-2222-2222-8222-222222222222";
+const USER_ID = "33333333-3333-3333-8333-333333333333";
+const WORKSPACE_ID = "11111111-1111-1111-8111-111111111111";
 
 class CapturingService implements AudiencePulsePort {
   reads = 0;
@@ -231,7 +231,7 @@ describe("Audience Pulse routes", () => {
   it("uses a dashboard session and history permission for a body-only bounded evidence anchor", async () => {
     const calls = { bearer: 0, permission: 0, rate: 0, permissions: [] as string[] };
     const service = new CapturingService();
-    const conversationId = "44444444-4444-4444-4444-444444444444";
+    const conversationId = "44444444-4444-4444-8444-444444444444";
     const messageId = "55555555-5555-4555-8555-555555555555";
 
     const response = await request(createApp(service, calls))
@@ -264,7 +264,7 @@ describe("Audience Pulse routes", () => {
       .post("/api/v1/quality/audience-pulse/evidence-anchor")
       .set("Authorization", "Bearer api-token")
       .send({
-        conversationId: "44444444-4444-4444-4444-444444444444",
+        conversationId: "44444444-4444-4444-8444-444444444444",
         messageId: "55555555-5555-4555-8555-555555555555",
       });
 
@@ -283,7 +283,7 @@ describe("Audience Pulse routes", () => {
       .set("Cookie", "radioso_session=valid-session")
       .set("X-Workspace-Id", WORKSPACE_ID)
       .send({
-        conversationId: "44444444-4444-4444-4444-444444444444",
+        conversationId: "44444444-4444-4444-8444-444444444444",
         messageId: "55555555-5555-4555-8555-555555555555",
       });
 

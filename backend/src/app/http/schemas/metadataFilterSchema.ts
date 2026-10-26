@@ -4,7 +4,7 @@ import { normalizeVectorMetadataFilter } from "../../../modules/retrieval/public
 
 const MAX_METADATA_FILTER_BYTES = 16384;
 
-export const metadataFilterSchema = z.record(z.unknown()).optional().superRefine((value, ctx) => {
+export const metadataFilterSchema = z.record(z.string(), z.unknown()).optional().superRefine((value, ctx) => {
   if (!value) {
     return;
   }

@@ -7500,12 +7500,12 @@ export interface components {
             /** @description Operator-authored metadata for the imported document, as a JSON object of string, number, boolean, or null values. 16 KB maximum. */
             metadata?: string;
         };
-        DocumentStatus: string;
         DocumentOperationResponse: {
             /** Format: uuid */
             documentId: string;
             status: components["schemas"]["DocumentStatus"];
         };
+        DocumentStatus: string;
         DocumentEnrichment: {
             /** @enum {string} */
             status: "applied" | "skipped" | "failed";
@@ -7544,7 +7544,6 @@ export interface components {
             /** @description `true` when the run applied the reply an earlier extraction got for the same title, text, and catalog instead of calling the model; `model` names the model that gave that reply. */
             reusedReply?: boolean;
         };
-        RagStatus: string;
         DocumentSummary: {
             /** Format: uuid */
             id: string;
@@ -7578,6 +7577,7 @@ export interface components {
              */
             retrievalExpiresAt: string | null;
         };
+        RagStatus: string;
         DocumentRetrievalUpdateRequest: {
             retrievalEnabled?: boolean;
             /** Format: date-time */
@@ -12594,6 +12594,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                /** @description Required non-simple header for cookie-authenticated API-access mutations. */
                 "X-Radioso-CSRF": "1";
             };
             path: {
@@ -12708,6 +12709,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                /** @description Required non-simple header for cookie-authenticated API-access mutations. */
                 "X-Radioso-CSRF": "1";
             };
             path: {
@@ -12817,6 +12819,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                /** @description Required non-simple header for cookie-authenticated API-access mutations. */
                 "X-Radioso-CSRF": "1";
             };
             path: {
@@ -12928,6 +12931,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                /** @description Required non-simple header for cookie-authenticated API-access mutations. */
                 "X-Radioso-CSRF": "1";
             };
             path: {
@@ -13127,6 +13131,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                /** @description Required non-simple header for cookie-authenticated API-access mutations. */
                 "X-Radioso-CSRF": "1";
             };
             path: {
@@ -13354,6 +13359,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                /** @description Required non-simple header for cookie-authenticated API-access mutations. */
                 "X-Radioso-CSRF": "1";
             };
             path: {
@@ -13455,6 +13461,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                /** @description Required non-simple header for cookie-authenticated API-access mutations. */
                 "X-Radioso-CSRF": "1";
             };
             path: {
@@ -13553,6 +13560,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                /** @description Required non-simple header for cookie-authenticated API-access mutations. */
                 "X-Radioso-CSRF": "1";
             };
             path: {
@@ -13651,6 +13659,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                /** @description Required non-simple header for cookie-authenticated API-access mutations. */
                 "X-Radioso-CSRF": "1";
             };
             path: {
@@ -13857,6 +13866,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                /** @description Required non-simple header for cookie-authenticated API-access mutations. */
                 "X-Radioso-CSRF": "1";
             };
             path: {
@@ -13970,6 +13980,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                /** @description Required non-simple header for cookie-authenticated API-access mutations. */
                 "X-Radioso-CSRF": "1";
             };
             path: {
@@ -14080,6 +14091,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                /** @description Required non-simple header for cookie-authenticated API-access mutations. */
                 "X-Radioso-CSRF": "1";
             };
             path: {
@@ -14192,6 +14204,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                /** @description Required non-simple header for cookie-authenticated API-access mutations. */
                 "X-Radioso-CSRF": "1";
             };
             path: {
@@ -14555,6 +14568,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                /** @description Required non-simple header for cookie-authenticated Operator MCP mutations. */
                 "X-Radioso-CSRF": "1";
             };
             path: {
@@ -14738,6 +14752,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                /** @description Required non-simple header for cookie-authenticated Operator MCP mutations. */
                 "X-Radioso-CSRF": "1";
             };
             path: {
@@ -16772,6 +16787,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                /** @description Required non-simple header for cookie-authenticated agent channel credential mutations. */
                 "X-Radioso-CSRF": "1";
             };
             path: {
@@ -16836,6 +16852,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                /** @description Required non-simple header for cookie-authenticated agent channel credential mutations. */
                 "X-Radioso-CSRF": "1";
             };
             path: {
@@ -16888,6 +16905,7 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                /** @description Required non-simple header for cookie-authenticated agent channel credential mutations. */
                 "X-Radioso-CSRF": "1";
             };
             path: {
@@ -25540,10 +25558,15 @@ export interface operations {
             query?: {
                 limit?: number;
                 offset?: number;
+                /** @description Which conversation sources to include. Defaults to end_user, which excludes operator-driven dashboard test chat and workbench replay conversations. */
                 sourceScope?: "end_user" | "operator_test" | "all";
+                /** @description Narrows to conversations handled by this agent. Narrows results to chat rows only. */
                 agentId?: string;
+                /** @description Exact match on the conversation's site origin. Narrows results to chat rows only. */
                 sourceOrigin?: string;
+                /** @description Narrows to conversations in this outcome bucket: handed_off (a human_owned ownership record exists), in_progress (no such record and updated within the last 10 minutes), or completed (no such record and updated more than 10 minutes ago). Narrows results to chat rows only. */
                 outcome?: "in_progress" | "completed" | "handed_off";
+                /** @description Narrows to conversations whose caller was a person or another AI agent. Narrows results to chat rows only: a contact request has no conversation behind it and so no caller. */
                 callerKind?: "human" | "agent";
             };
             header?: never;
@@ -25656,7 +25679,9 @@ export interface operations {
                 limit?: number;
                 offset?: number;
                 cursor?: string;
+                /** @description Which conversation sources to include. Defaults to end_user, which excludes operator-driven dashboard test chat and workbench replay conversations. */
                 sourceScope?: "end_user" | "operator_test" | "all";
+                /** @description Restrict results to conversations currently owned by a human operator. */
                 ownership?: "human_owned";
                 agentId?: string;
                 channel?: string;
@@ -25833,7 +25858,9 @@ export interface operations {
         parameters: {
             query?: {
                 limit?: number;
+                /** @description The previous tail's `cursor`, or the detail's `tailCursor`, passed back as returned. Without it, the newest page. */
                 cursor?: string;
+                /** @description The previous tail's `activityCursor`, passed back as returned: opaque, and a string no tail returned is refused with 400. The response's `activity` then carries only the events in a recent window, so it can repeat events the caller already holds; without it, the whole timeline. */
                 activityCursor?: string;
             };
             header?: never;
@@ -25888,6 +25915,7 @@ export interface operations {
                 limit?: number;
                 offset?: number;
                 cursor?: string;
+                /** @description A conversation id to exclude from the results — the one already open in the drawer. */
                 exclude?: string;
             };
             header?: never;
@@ -30920,7 +30948,9 @@ export interface operations {
         parameters: {
             query?: never;
             header: {
+                /** @description Must contain the text/event-stream media range. */
                 Accept: string;
+                /** @description Workspace selected by the authenticated dashboard session. */
                 "X-Workspace-Id": string;
             };
             path?: never;

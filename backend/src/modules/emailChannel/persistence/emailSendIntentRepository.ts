@@ -151,7 +151,7 @@ const requestSchema = z.object({
 });
 
 /** Narrows a jsonb column the repository wrote itself; the error names the column, never the content. */
-const readJson = <T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, value: unknown, column: string): T => {
+const readJson = <T>(schema: z.ZodType<T, unknown>, value: unknown, column: string): T => {
   const parsed = schema.safeParse(value);
   if (!parsed.success) {
     throw new Error(`${column} holds a malformed value.`);

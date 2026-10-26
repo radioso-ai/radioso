@@ -4,7 +4,7 @@ import { asError } from "../shared/errors/asError.js";
 
 type ListenerTarget = Pick<NodeJS.EventEmitter, "on" | "off">;
 
-export interface InstallProcessErrorHandlersOptions {
+interface InstallProcessErrorHandlersOptions {
   /** Where fatal process errors are sent (typically the {@link ErrorReportingService}). */
   reporter: ErrorReporter;
   logger: Pick<AppLogger, "error">;
@@ -22,13 +22,6 @@ export interface InstallProcessErrorHandlersOptions {
 }
 
 const DEFAULT_FLUSH_TIMEOUT_MS = 2_000;
-
-const describeError = (error: unknown): { message: string; stack?: string } => {
-  if (error instanceof Error) {
-    return { message: error.message, stack: error.stack };
-  }
-  return { message: typeof error === "string" ? error : String(error) };
-};
 
 /**
  * Races a flush against a timeout. Resolves when the flush settles or the timeout
@@ -83,8 +76,7 @@ export const installProcessErrorHandlers = (
     }
     handling = true;
 
-    const described = describeError(error);
-    logger.error({ role, errorType, err: described.message, stack: described.stack }, "process_fatal_error");
+    logger.error({ role, errorType, err: error }, "process_fatal_error");
 
     void (async () => {
       try {
@@ -94,7 +86,7 @@ export const installProcessErrorHandlers = (
         );
       } catch (reportError) {
         logger.error(
-          { role, errorType, err: reportError instanceof Error ? reportError.message : String(reportError) },
+          { role, errorType, err: reportError },
           "process_error_report_failed",
         );
       } finally {

@@ -1,7 +1,7 @@
 ---
 title: "OSS And SaaS Observability"
 description: "Vendor-neutral observability strategy separating telemetry, analytics, and error reporting via internal contracts with OSS defaults and optional SaaS exporters."
-last_updated: 2026-10-13
+last_updated: 2026-10-26
 ---
 
 # OSS And SaaS Observability
@@ -98,6 +98,10 @@ The Prometheus-style surface is intentionally small and low-cardinality:
 - `radioso_product_events_total`
 - `radioso_errors_total`
 - `radioso_abuse_control_store_fallback_total`
+
+The two HTTP metrics label a request by the route pattern it matched, such as
+`/api/v1/public/chat/:token/messages`. Requests no route matched, a 404 or a
+401 or 429 sent before routing, share `route="unmatched"`.
 
 Additional traces, request-in-flight gauges, and richer chat-specific metrics can
 be layered on later without changing the internal seams.
@@ -422,8 +426,19 @@ OTEL_LOGS_MIN_LEVEL=info
 
 For PostHog, use the regional ingestion host for the project and append
 `/i/v1/logs`. The bearer token is the PostHog project token. Do not use a
-personal API key. The backend bridge redacts sensitive log attributes before
-export and applies `OTEL_LOGS_MIN_LEVEL` before records leave the process.
+personal API key. The bridge applies `OTEL_LOGS_MIN_LEVEL` before records leave
+the process, and exports each record's fields by what their values look like. A
+logged error exports as its class, code, HTTP status, first cause and stack
+frames. Any other field exports when it holds a flag, a number, an id or a short
+lowercase code such as `rate_limited`, and a few named fields take one more
+shape: a class name under `errorType`, `errorName`, `errorClass` or `causeType`,
+an errno or SQLSTATE under `code` or `sqlState`, an HTTP method under `method`,
+a provider's opaque id under `wamid`, `eventId`, `teamId` or `channelId`, and,
+under `route`, only a route pattern a request actually matched.
+`error_recorded`'s `errorEvent` fields export as `errorEvent.<field>` through the
+same checks. A sentence, an email address, a phone number written as text, a raw
+path and any other nested object stay in the process. A bare number or a single
+lowercase word does pass, which is why a call site never logs one a person typed.
 
 The backend adds primitive OpenTelemetry correlation to debug turn traces when
 an active span exists:

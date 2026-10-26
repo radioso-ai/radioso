@@ -37,7 +37,9 @@ export class OperatorNotificationDispatcher {
         kind: notification.kind,
         workspaceId: notification.workspaceId,
         conversationId: notification.conversationId,
-        err: result.reason instanceof Error ? result.reason.message : String(result.reason),
+        // A provider's message can name the recipient; the app logger's serializer keeps only
+        // the error's class, code and status.
+        err: result.reason,
       }, "Operator notification sink failed");
     }
     if (failures.length > 0) {

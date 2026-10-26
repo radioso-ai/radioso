@@ -185,7 +185,7 @@ const loadEffectiveRegistrations = async (
   } catch (error) {
     if (agentRevisionId) throw error;
     dependencies.logger.warn(
-      { agentId, err: error instanceof Error ? error.message : String(error) },
+      { agentId, err: error },
       "Published routine definitions failed to load; continuing without DB-backed routines",
     );
     publishedRegistrations = [];
@@ -202,7 +202,7 @@ const loadEffectiveRegistrations = async (
       });
     } catch (error) {
       dependencies.logger.warn(
-        { agentId, routineIds: previewRoutineIds, err: error instanceof Error ? error.message : String(error) },
+        { agentId, routineIds: previewRoutineIds, err: error },
         "Preview routine definitions failed to load; continuing without workbench draft routines",
       );
     }
@@ -222,7 +222,7 @@ const loadEffectiveRegistrations = async (
   } catch (error) {
     if (agentRevisionId) throw error;
     dependencies.logger.warn(
-      { agentId, routineIds: authoredPins, err: error instanceof Error ? error.message : String(error) },
+      { agentId, routineIds: authoredPins, err: error },
       "Pinned routine definitions failed to load; continuing without resume-only DB-backed routines",
     );
     pinnedRegistrations = [];
@@ -374,7 +374,7 @@ export const createRoutineTurnProvider = (
       }
     } catch (error) {
       dependencies.logger.warn(
-        { agentId, err: error instanceof Error ? error.message : String(error) },
+        { agentId, err: error },
         "Routine-invocable skill names failed to load for routine routing; continuing without webhook, customer email, and Slack skills",
       );
     }
@@ -402,7 +402,7 @@ export const createRoutineTurnProvider = (
       }
     } catch (error) {
       dependencies.logger.warn(
-        { agentId, err: error instanceof Error ? error.message : String(error) },
+        { agentId, err: error },
         "Retrieve and notify skill definitions failed to load for routine routing; continuing without them",
       );
     }

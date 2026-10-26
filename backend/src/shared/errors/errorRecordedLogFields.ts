@@ -3,7 +3,7 @@ import { isStackFrame, logSafeMetadata, type LogSafeValue } from "../observabili
 import type { ErrorEvent } from "./errorTypes.js";
 
 interface ErrorRecordedLogFields {
-  error?: Record<string, string>;
+  errorEvent?: Record<string, string>;
   metadata?: Record<string, LogSafeValue>;
   stack?: string;
 }
@@ -37,7 +37,9 @@ export const errorRecordedLogFields = (event: ErrorEvent): ErrorRecordedLogField
   const stack = stackFrames(event.stack);
 
   return {
-    error: extractErrorLogFields(event),
+    // Not `error`: the logger serializes that key as a caught value (`logger.ts`), which would
+    // reduce this already allow-listed record to its type.
+    errorEvent: extractErrorLogFields(event),
     ...(Object.keys(metadata).length > 0 ? { metadata } : {}),
     ...(stack ? { stack } : {}),
   };

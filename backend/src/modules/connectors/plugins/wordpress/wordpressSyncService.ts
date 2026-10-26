@@ -199,7 +199,7 @@ export const runBackfill = async (
                 workspaceId,
                 type,
                 postId: post.id,
-                err: error instanceof Error ? error.message : String(error),
+                err: error,
               },
               "wordpress backfill ingest failed",
             );
@@ -272,7 +272,7 @@ const markSyncFailed = async (
     deps.logger.error(
       {
         workspaceId,
-        err: persistenceError instanceof Error ? persistenceError.message : String(persistenceError),
+        err: persistenceError,
       },
       "wordpress sync failure detail could not be persisted",
     );
@@ -284,7 +284,7 @@ const markSyncFailed = async (
     deps.logger.error(
       {
         workspaceId,
-        err: persistenceError instanceof Error ? persistenceError.message : String(persistenceError),
+        err: persistenceError,
       },
       "wordpress sync failure status could not be persisted",
     );
@@ -441,7 +441,7 @@ const clearBackfillStarted = async (
  * Per-workspace incremental poll. Fetches posts modified strictly after the
  * stored cursor for each post type, ingests, then advances the cursor.
  */
-export const runPoll = async (
+const runPoll = async (
   deps: WordpressSyncDeps,
   workspaceId: string,
 ): Promise<{ ingested: number }> => {
@@ -489,7 +489,7 @@ export const runPoll = async (
               workspaceId,
               type,
               postId: post.id,
-              err: error instanceof Error ? error.message : String(error),
+              err: error,
             },
             "wordpress poll ingest failed",
           );
@@ -539,7 +539,7 @@ export const startPollingLoop = (deps: WordpressSyncDeps): void => {
   tickHandle = setInterval(() => {
     void tick(deps).catch((error) =>
       deps.logger.error(
-        { err: error instanceof Error ? error.message : String(error) },
+        { err: error },
         "wordpress poll tick failed",
       ),
     );
@@ -581,7 +581,7 @@ const tick = async (deps: WordpressSyncDeps): Promise<void> => {
       deps.logger.error(
         {
           workspaceId: row.workspace_id,
-          err: error instanceof Error ? error.message : String(error),
+          err: error,
         },
         "wordpress requested backfill failed",
       );
@@ -611,7 +611,7 @@ const tick = async (deps: WordpressSyncDeps): Promise<void> => {
       deps.logger.error(
         {
           workspaceId: row.workspace_id,
-          err: error instanceof Error ? error.message : String(error),
+          err: error,
         },
         "wordpress poll workspace failed",
       );

@@ -1,6 +1,7 @@
 import express from "express";
 
 import { createHttpLogger } from "../../shared/observability/logger.js";
+import { createMatchedRouteRecorder } from "../../shared/observability/matchedRoute.js";
 import { createRequestTelemetryMiddleware } from "../../shared/observability/telemetry/telemetryService.js";
 import { badRequest } from "../../shared/domain/errors.js";
 import { createErrorHandler } from "../http/middleware/errorHandler.js";
@@ -19,6 +20,7 @@ export const createCrawlerWorkerTaskApp = (
   const app = express();
 
   app.disable("x-powered-by");
+  app.use(createMatchedRouteRecorder());
   app.use(createHttpLogger(dependencies.logger));
   app.use(createHttpTracingMiddleware());
   app.use(createRequestTelemetryMiddleware(dependencies.telemetryService));

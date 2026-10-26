@@ -97,7 +97,7 @@ export class TtlRetentionWorker {
       return { status: "swept", deleted };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.options.logger.error({ subject: this.options.subject, err: message }, "TTL retention sweep failed");
+      this.options.logger.error({ subject: this.options.subject, err: error }, "TTL retention sweep failed");
       return { status: "failed", error: message };
     } finally {
       this.sweeping = false;
@@ -120,7 +120,7 @@ export class TtlRetentionWorker {
       },
     }).catch((error: unknown) => {
       this.options.logger.error(
-        { subject: this.options.subject, err: error instanceof Error ? error.message : String(error), deleted },
+        { subject: this.options.subject, err: error, deleted },
         "TTL retention audit failed after the delete committed",
       );
     });

@@ -3,6 +3,8 @@ import type { ErrorSink } from "./errorSink.js";
 import type { ErrorEvent } from "./errorTypes.js";
 
 export class AuditErrorSink implements ErrorSink {
+  readonly name = "audit";
+
   constructor(private readonly auditService: AuditService) {}
 
   async record(event: ErrorEvent): Promise<void> {

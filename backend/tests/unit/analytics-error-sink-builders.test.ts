@@ -10,7 +10,7 @@ import type { ErrorSink } from "../../src/shared/errors/errorSink.js";
 
 const auditService = { record: vi.fn() } as unknown as AuditService;
 const opsAnalyticsSink: ProductAnalyticsSink = { emit: vi.fn() };
-const opsErrorSink: ErrorSink = { record: vi.fn() };
+const opsErrorSink: ErrorSink = { name: "ops_webhook", record: vi.fn() };
 
 describe("buildAnalyticsSinks", () => {
   it("always keeps the audit sink as the durable record", () => {

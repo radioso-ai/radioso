@@ -177,7 +177,7 @@ export const buildWorkspaceProviderCredentialsService = (input: {
   service.onDecryptError((error, provider) => {
     input.logger.warn(
       {
-        err: error instanceof Error ? error.message : String(error),
+        err: error,
         provider,
         remediation:
           "Stored credential ciphertext could not be decrypted with CONNECTOR_ENCRYPTION_KEY or any key in CONNECTOR_ENCRYPTION_PREVIOUS_KEYS. If CONNECTOR_ENCRYPTION_KEY was rotated, add the key it replaced to CONNECTOR_ENCRYPTION_PREVIOUS_KEYS (see credential key rotation in the self-hosting operations docs), or re-enter the API key for this provider.",

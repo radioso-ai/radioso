@@ -69,7 +69,7 @@ export interface WebsiteCrawlerAuditPort {
   }): Promise<void>;
 }
 
-export interface WebsiteCrawlPublicationResult {
+interface WebsiteCrawlPublicationResult {
   provider: string;
   runId: string | null;
   status: string | null;
@@ -257,7 +257,7 @@ export class WebsiteCrawlerService {
             workspaceId: input.workspaceId,
             sourceId: documentSource?.id ?? null,
             requestedUrl: safeWebsiteBaseUrl,
-            error: redactSensitiveText(error instanceof Error ? error.message : String(error)),
+            err: error,
           },
           "Failed to persist website crawl checkpoint after crawl failure",
         );
@@ -570,7 +570,7 @@ export class WebsiteCrawlerService {
               workspaceId: input.workspaceId,
               sourceId: documentSource.id,
               requestedUrl: safeWebsiteBaseUrl,
-              error: error instanceof Error ? error.message : String(error),
+              err: error,
             },
             "Failed to reap missing website pages after crawl",
           );
@@ -711,7 +711,7 @@ export class WebsiteCrawlerService {
   }
 }
 
-export const buildWebsiteExternalDocumentId = (input: {
+const buildWebsiteExternalDocumentId = (input: {
   websiteBaseUrl: string;
   pageUrl: string;
 }): string => `website:${redactWebsiteCrawlerUrl(normalizeBaseUrl(input.websiteBaseUrl))}:${redactWebsiteCrawlerUrl(normalizePageUrl(input.pageUrl))}`;
@@ -866,7 +866,7 @@ export const normalizeBaseUrl = (value: string): string => {
   return url.toString().replace(/\/$/, "");
 };
 
-export const normalizePageUrl = (value: string): string => {
+const normalizePageUrl = (value: string): string => {
   const url = parseHttpUrl(value);
   rejectUrlCredentials(url);
   url.hash = "";

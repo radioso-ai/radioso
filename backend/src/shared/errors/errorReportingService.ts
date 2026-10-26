@@ -1,4 +1,5 @@
 import type { AppLogger } from "../observability/logger.js";
+import { matchedRoutePattern } from "../observability/matchedRoute.js";
 import { createRequestCorrelation, type CorrelationFields, type RequestCorrelationSource } from "../observability/telemetry/correlation.js";
 import { redactRecord } from "../observability/telemetry/redactionPolicy.js";
 import { errorRecordedLogFields } from "./errorRecordedLogFields.js";
@@ -93,7 +94,8 @@ export class ErrorReportingService {
       } catch (sinkError) {
         this.options.logger.error(
           {
-            err: sinkError instanceof Error ? sinkError.message : String(sinkError),
+            sinkName: sink.name,
+            err: sinkError,
             errorType: errorEvent.errorType,
           },
           "error_sink_failed",
@@ -109,13 +111,16 @@ export class ErrorReportingService {
     request: RequestCorrelationSource;
     statusCode?: number;
   }): Promise<ErrorEvent | null> {
+    // The matched pattern, never the URL: a path segment can hold a credential. An error raised
+    // before any route matched carries no route at all.
+    const route = matchedRoutePattern(input.request);
     return this.report({
       errorType: "http.request.unhandled",
       correlation: createRequestCorrelation(input.request),
       error: input.error,
       requestContext: {
         method: input.request.method,
-        route: input.request.originalUrl || input.request.path,
+        ...(route ? { route } : {}),
         statusCode: input.statusCode ?? 500,
       },
     });

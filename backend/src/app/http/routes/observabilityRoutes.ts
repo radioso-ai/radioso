@@ -5,6 +5,7 @@ import type { AppDependencies } from "../../server/types.js";
 import { createRateLimitMiddleware } from "../middleware/rateLimit.js";
 import { readRequestSource } from "../middleware/requestSource.js";
 import { validateBody } from "../middleware/validate.js";
+import { isPathShape } from "../../../shared/observability/logging/logSafeValues.js";
 
 const FRONTEND_ERROR_MESSAGE_MAX_LENGTH = 2048;
 const FRONTEND_ERROR_STACK_MAX_LENGTH = 16_384;
@@ -264,7 +265,11 @@ export const createObservabilityRoutes = (
           return;
         }
 
-        const route = req.body.path ? sanitizeFrontendPageViewPath(req.body.path) : undefined;
+        // A browser's own navigation always produces a path; free text a client sends instead
+        // (a visitor's words, an email address) normalizes to something that still is not one,
+        // so the shape check is what actually rules it out, not the normalization alone.
+        const normalizedPath = req.body.path ? sanitizeFrontendPageViewPath(req.body.path) : undefined;
+        const route = normalizedPath && isPathShape(normalizedPath) ? normalizedPath : undefined;
         const event = await dependencies.errorReportingService.report({
           errorType: req.body.errorType,
           message: req.body.message,

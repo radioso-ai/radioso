@@ -421,7 +421,7 @@ describe("handleBillingWebhookEvent", () => {
 
   it("invoice.payment_failed never fails the webhook when the notice email itself errors", async () => {
     const { deps, repository, logger } = createDeps({
-      noticeMail: { send: vi.fn(async () => { throw new Error("mail provider down"); }) },
+      noticeMail: { send: vi.fn(async () => { throw new Error("mail provider rejected owner@example.com"); }) },
     });
     repository.rows.set(accountId, {
       accountId,
@@ -445,10 +445,13 @@ describe("handleBillingWebhookEvent", () => {
     const result = await handleBillingWebhookEvent(event, deps);
 
     expect(result.outcome).toBe("payment_failed");
+    // The error itself, which the app logger's serializer reduces to its class and code: the
+    // provider's message names the recipient.
     expect(logger.warn).toHaveBeenCalledWith(
-      expect.objectContaining({ accountId, eventId: "evt_8b" }),
+      expect.objectContaining({ accountId, eventId: "evt_8b", err: expect.any(Error) }),
       "billing notice email failed",
     );
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("owner@example.com");
   });
 
   it("returns unmapped_price and warns when the product has no catalog plan metadata", async () => {

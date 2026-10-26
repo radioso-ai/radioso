@@ -98,7 +98,7 @@ export class WhatsAppMessageHandler {
       this.pending.delete(key);
       void this.flushBatch(batch.messages).catch((error) => {
         this.options.logger.error(
-          { err: error instanceof Error ? error.message : String(error) },
+          { err: error },
           "WhatsApp batch processing failed",
         );
       });
@@ -406,6 +406,7 @@ export class WhatsAppMessageHandler {
         {
           to: input.waId,
           text: input.responseText,
+          outboundWamid: input.outboundWamid,
         },
       );
 
@@ -414,7 +415,7 @@ export class WhatsAppMessageHandler {
         inboundWamids: input.inboundWamids,
       });
       this.options.logger.info(
-        { workspaceId: input.workspaceId, waId: input.waId, localWamid: input.outboundWamid, providerWamid: outbound.wamid },
+        { workspaceId: input.workspaceId, localWamid: input.outboundWamid, providerWamid: outbound.wamid },
         "WhatsApp outbound delivery completed",
       );
     } catch (error) {

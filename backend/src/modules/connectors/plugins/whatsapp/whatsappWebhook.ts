@@ -209,7 +209,8 @@ export const createWhatsAppWebhookRouter = ({
           payload: message.payload,
         });
         if (!inserted) {
-          logger.info({ workspaceId, waId: message.waId, wamid: message.wamid }, "WhatsApp duplicate webhook skipped");
+          // Named by the message id: the visitor's WhatsApp id is their phone number.
+          logger.info({ workspaceId, wamid: message.wamid }, "WhatsApp duplicate webhook skipped");
           continue;
         }
 
@@ -218,9 +219,8 @@ export const createWhatsAppWebhookRouter = ({
             logger.error(
               {
                 workspaceId: message.workspaceId,
-                waId: message.waId,
                 wamid: message.wamid,
-                err: error instanceof Error ? error.message : String(error),
+                err: error,
               },
               "WhatsApp inbound message processing failed",
             );

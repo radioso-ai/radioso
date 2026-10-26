@@ -29,7 +29,7 @@ import {
 } from "./wordpressSyncService.js";
 import { wordpressSourceFor } from "./wordpressSource.js";
 
-export const WP_CONFIG_KEYS = {
+const WP_CONFIG_KEYS = {
   siteUrl: "site_url",
   username: "wp_username",
   applicationPassword: "wp_application_password",
@@ -245,7 +245,7 @@ export class WordpressConnector implements ConnectorPlugin {
       this.syncDeps.logger.error(
         {
           workspaceId,
-          err: error instanceof Error ? error.message : String(error),
+          err: error,
         },
         "wordpress connector failed to register source on enable",
       );
@@ -257,7 +257,7 @@ export class WordpressConnector implements ConnectorPlugin {
       deps.logger.warn(
         {
           workspaceId,
-          err: error instanceof Error ? error.message : String(error),
+          err: error,
         },
         "wordpress backfill on enable failed",
       );

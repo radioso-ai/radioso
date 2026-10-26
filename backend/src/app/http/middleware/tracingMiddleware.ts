@@ -1,13 +1,7 @@
 import type { RequestHandler } from "express";
 
+import { matchedRoutePattern } from "../../../shared/observability/matchedRoute.js";
 import { setTraceAttributes, traceOperation } from "../../../shared/observability/tracing/operations.js";
-
-const routePath = (req: Parameters<RequestHandler>[0]): string | undefined => {
-  const baseUrl = req.baseUrl || "";
-  const route = req.route as { path?: unknown } | undefined;
-  const routePattern = typeof route?.path === "string" ? route.path : undefined;
-  return routePattern ? `${baseUrl}${routePattern}` : undefined;
-};
 
 const requestId = (req: Parameters<RequestHandler>[0]): string | undefined => {
   const value = (req as { id?: unknown }).id;
@@ -26,7 +20,7 @@ export const createHttpTracingMiddleware = (): RequestHandler => (req, res, next
         const finish = () => {
           setTraceAttributes({
             "http.response.status_code": res.statusCode,
-            "http.route": routePath(req),
+            "http.route": matchedRoutePattern(req),
           });
           resolve();
         };

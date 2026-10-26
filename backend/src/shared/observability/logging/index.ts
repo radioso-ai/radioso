@@ -17,6 +17,8 @@ import {
 
 import type { AppLogger } from "../logger.js";
 import { safeTraceAttributes } from "../tracing/attributePolicy.js";
+import { isRecordedRoutePattern } from "../matchedRoute.js";
+import { safeErrorFields, shapeSafeFields } from "./logSafeValues.js";
 import type { RuntimeRole } from "../runtimeRole.js";
 
 export type LogLevelName = "trace" | "debug" | "info" | "warn" | "error" | "fatal";
@@ -91,12 +93,10 @@ const shouldSkipMessage = (message: string | undefined): boolean =>
   message === "otel_logging_shutdown_failed" ||
   message === "otel_logging_shutdown_timeout";
 
-const errorFields = (error: unknown): Record<string, string> => {
-  if (error instanceof Error) {
-    return { err: error.message };
-  }
-  return { err: String(error) };
-};
+// The bridge's own diagnostics about itself (export/shutdown failures) go through the same real
+// pino logger as every other line, so handing it the raw error lets that logger's `err`
+// serializer (`logger.ts`) keep this safe rather than pre-extracting a message here.
+const errorFields = (error: unknown): Record<string, unknown> => ({ err: error });
 
 class LoggingLogRecordExporter implements LogRecordExporter {
   constructor(
@@ -112,7 +112,7 @@ class LoggingLogRecordExporter implements LogRecordExporter {
       if (result.code !== 0) {
         this.logger?.error(
           {
-            err: result.error instanceof Error ? result.error.message : "log export failed",
+            ...errorFields(result.error ?? new Error("log export failed")),
             logCount: records.length,
           },
           "otel_log_export_failed",
@@ -215,49 +215,72 @@ const messageFromArgs = (args: unknown[]): string | undefined => {
   return undefined;
 };
 
-const errorAttributesFromField = (key: string, error: Error): Record<string, string> => {
-  if (key === "err") {
-    return {
-      err: error.message,
-      errorClass: error.name,
-    };
-  }
+// The two keys the codebase logs a caught value under. Whatever such a key holds — an error, a
+// string, a plain object — exports only through `safeErrorFields`, like the Cloud Logging line.
+const CAUGHT_VALUE_KEYS = new Set(["err", "error"]);
 
-  if (key === "error") {
-    return {
-      errorClass: error.name,
-      errorMessage: error.message,
-    };
-  }
-
+// An error's class, code and HTTP status, its first cause's class and code, and its shape-checked
+// stack frames (`safeErrorFields`): never a message. A caught value under `err`/`error` is named
+// `error…`; an `Error` under any other key keeps that key as its prefix, so two error fields on
+// one record don't collide.
+const errorAttributes = (prefix: string, caught: unknown): Record<string, string | number> => {
+  const safe = safeErrorFields(caught);
   return {
-    [`${key}Class`]: error.name,
-    [`${key}Message`]: error.message,
+    [`${prefix}Class`]: safe.name,
+    ...(safe.code !== undefined ? { [`${prefix}Code`]: safe.code } : {}),
+    ...(safe.status !== undefined ? { [`${prefix}Status`]: safe.status } : {}),
+    ...(safe.cause ? { [`${prefix}CauseClass`]: safe.cause.name } : {}),
+    ...(safe.cause?.code !== undefined ? { [`${prefix}CauseCode`]: safe.cause.code } : {}),
+    ...(safe.stack ? { [`${prefix}Stack`]: safe.stack } : {}),
   };
 };
 
+// A path-shaped string can still hold a token (`/api/v1/auth/invitations/<token>`), so `route`
+// exports only when it is a pattern a request was recorded matching (`matchedRoute.ts`).
+const exportableFields = (record: Record<string, unknown>): Record<string, unknown> => {
+  const { route, ...rest } = record;
+  return {
+    ...shapeSafeFields(rest),
+    ...(typeof route === "string" && isRecordedRoutePattern(route) ? { route } : {}),
+  };
+};
+
+// error_recorded's and audit_event's `errorEvent` is already an allow-listed record on the Cloud
+// Logging line; it exports one level down, as `errorEvent.<field>`, through the same checks.
+const NESTED_RECORD_KEYS = new Set(["errorEvent"]);
+
+// The OpenTelemetry bridge runs on the call's own arguments, before pino's serializers, so it
+// applies its own allow-list: caught values through `safeErrorFields`, everything else only when
+// its value's shape rules out free text (`exportableFields`). Other nested objects never export.
 const attributesFromRecord = (record: Record<string, unknown>): Record<string, unknown> => {
-  const attributes: Record<string, unknown> = {};
+  const errors: Record<string, string | number> = {};
+  const nested: Record<string, unknown> = {};
+  const rest: Record<string, unknown> = {};
 
   for (const [key, value] of Object.entries(record)) {
-    if (value instanceof Error) {
-      Object.assign(attributes, errorAttributesFromField(key, value));
+    if (value === undefined) {
       continue;
     }
-
-    attributes[key] = value;
+    if (CAUGHT_VALUE_KEYS.has(key)) {
+      Object.assign(errors, errorAttributes("error", value));
+    } else if (value instanceof Error) {
+      Object.assign(errors, errorAttributes(key, value));
+    } else if (NESTED_RECORD_KEYS.has(key) && isRecord(value)) {
+      for (const [field, fieldValue] of Object.entries(exportableFields(value))) {
+        nested[`${key}.${field}`] = fieldValue;
+      }
+    } else {
+      rest[key] = value;
+    }
   }
 
-  return attributes;
+  return { ...exportableFields(rest), ...nested, ...errors };
 };
 
 const attributesFromArgs = (args: unknown[]): Record<string, unknown> => {
   const [firstArg] = args;
   if (firstArg instanceof Error) {
-    return {
-      errorClass: firstArg.name,
-      errorMessage: firstArg.message,
-    };
+    return errorAttributes("error", firstArg);
   }
   if (!isRecord(firstArg)) {
     return {};

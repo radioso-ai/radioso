@@ -320,7 +320,7 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
           operation: deltas.operation,
           provider: deltas.provider,
           model: deltas.model,
-          error: error instanceof Error ? error.message : String(error),
+          err: error,
         },
         "Failed to update usage daily rollup after recording usage event",
       );

@@ -78,12 +78,13 @@ export class ModelRerankGateway implements RerankGateway {
     } catch (error) {
       this.logger?.warn(
         {
-          error,
+          // Lengths, never the query or the reply: the model can quote the visitor's question back.
+          err: error,
+          workspaceId: input.workspaceContext?.workspaceId,
           rerankModel: this.client.metadata.model,
           rerankProvider: this.client.metadata.provider,
-          rerankQuery: input.query,
           candidateCount: input.contexts.length,
-          rawResponsePreview: content.slice(0, 500),
+          responseLength: content.length,
         },
         "Rerank response could not be parsed; falling back to fused candidate ordering",
       );
@@ -243,8 +244,8 @@ export class OpenAISemanticRerankGateway implements RerankGateway {
     if (!content) {
       this.logger?.warn(
         {
+          workspaceId: input.workspaceContext?.workspaceId,
           rerankModel: this.model,
-          rerankQuery: input.query,
           candidateCount: input.contexts.length,
           maxOutputTokens,
           responseStatus: response.status,
@@ -381,7 +382,7 @@ export class RerankService {
       if (validScores.length === 0) {
         this.logger?.warn(
           {
-            rerankQuery: input.query,
+            workspaceId: input.workspaceContext?.workspaceId,
             candidateCount: input.contexts.length,
             rerankCandidateCount: input.contexts.length,
             rerankBatchCount: rerankBatches.length,
@@ -414,8 +415,8 @@ export class RerankService {
     } catch (error) {
       this.logger?.warn(
         {
-          error: toLoggableError(error),
-          rerankQuery: input.query,
+          err: error,
+          workspaceId: input.workspaceContext?.workspaceId,
           candidateCount: input.contexts.length,
           rerankCandidateCount: input.contexts.length,
           rerankBatchCount: Math.ceil(input.contexts.length / RETRIEVAL_BEHAVIOR.rerank.maxBatchSize),
@@ -457,38 +458,6 @@ const chunkContexts = (contexts: RetrievedCandidate[], size: number): RetrievedC
     batches.push(contexts.slice(index, index + size));
   }
   return batches;
-};
-
-const toLoggableError = (error: unknown): Record<string, unknown> => {
-  if (!error || typeof error !== "object") {
-    return { message: String(error) };
-  }
-
-  const candidate = error as {
-    name?: unknown;
-    message?: unknown;
-    status?: unknown;
-    code?: unknown;
-    type?: unknown;
-    param?: unknown;
-    request_id?: unknown;
-    headers?: unknown;
-    error?: unknown;
-    cause?: unknown;
-  };
-
-  return {
-    name: candidate.name,
-    message: candidate.message,
-    status: candidate.status,
-    code: candidate.code,
-    type: candidate.type,
-    param: candidate.param,
-    request_id: candidate.request_id,
-    headers: candidate.headers,
-    error: candidate.error,
-    cause: candidate.cause,
-  };
 };
 
 const estimateTokens = (bytes: number): number => Math.max(1, Math.ceil(bytes / 4));

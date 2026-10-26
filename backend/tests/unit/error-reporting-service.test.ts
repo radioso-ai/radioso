@@ -12,6 +12,7 @@ const createLogger = () => ({
 describe("ErrorReportingService", () => {
   it("normalizes unhandled request errors and records them", async () => {
     const sink: ErrorSink = {
+      name: "test-sink",
       record: vi.fn().mockResolvedValue(undefined),
     };
     const logger = createLogger();
@@ -29,7 +30,6 @@ describe("ErrorReportingService", () => {
       request: {
         id: "req-1",
         method: "GET",
-        originalUrl: "/api/v1/settings/retrieval",
         header(name) {
           return name === "x-workspace-id" ? "workspace-1" : undefined;
         },
@@ -47,10 +47,11 @@ describe("ErrorReportingService", () => {
       },
       requestContext: {
         method: "GET",
-        route: "/api/v1/settings/retrieval",
         statusCode: 500,
       },
     });
+    // No route matched this bare request, so none is named (see error-recorded-log-line.test.ts).
+    expect(error?.requestContext).not.toHaveProperty("route");
     expect(logger.error).toHaveBeenCalledOnce();
     expect(sink.record).toHaveBeenCalledWith(expect.objectContaining({
       errorType: "http.request.unhandled",
@@ -66,6 +67,7 @@ describe("ErrorReportingService", () => {
       service: "radioso-api",
       sinks: [
         {
+          name: "test-sink",
           record: vi.fn().mockRejectedValue(new Error("sink down")),
         },
       ],
@@ -82,13 +84,14 @@ describe("ErrorReportingService", () => {
       prompt: "[REDACTED]",
     });
     expect(logger.error).toHaveBeenCalledWith(
-      expect.objectContaining({ err: "sink down", errorType: "test.error" }),
+      expect.objectContaining({ sinkName: "test-sink", err: expect.objectContaining({ message: "sink down" }), errorType: "test.error" }),
       "error_sink_failed",
     );
   });
 
   it("preserves caller-provided sanitized error class and stack", async () => {
     const sink: ErrorSink = {
+      name: "test-sink",
       record: vi.fn().mockResolvedValue(undefined),
     };
     const service = new ErrorReportingService({
@@ -130,11 +133,11 @@ describe("ErrorReportingService", () => {
     await service.report({ errorType: "test.warn", message: "warning", severity: "warn" });
 
     expect(logger.info).toHaveBeenCalledWith(
-      expect.objectContaining({ error: expect.objectContaining({ severity: "info" }) }),
+      expect.objectContaining({ errorEvent: expect.objectContaining({ severity: "info" }) }),
       "error_recorded",
     );
     expect(logger.warn).toHaveBeenCalledWith(
-      expect.objectContaining({ error: expect.objectContaining({ severity: "warn" }) }),
+      expect.objectContaining({ errorEvent: expect.objectContaining({ severity: "warn" }) }),
       "error_recorded",
     );
     expect(logger.error).not.toHaveBeenCalled();

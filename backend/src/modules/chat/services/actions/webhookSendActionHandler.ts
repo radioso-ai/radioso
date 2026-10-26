@@ -11,20 +11,20 @@ import {
 
 export const WEBHOOK_SEND_ACTION_TYPE = "webhook.send";
 
-export type WebhookSendSkipReason =
+type WebhookSendSkipReason =
   | "missing_context"
   | "agent_not_resolved"
   | "capability_disabled";
 
-export type WebhookSendPermissionDecision =
+type WebhookSendPermissionDecision =
   | { allowed: true }
   | { allowed: false; reason: WebhookSendSkipReason };
 
-export interface WebhookSendPermissionResolver {
+interface WebhookSendPermissionResolver {
   canSend(context: ActionHandlerContext): Promise<WebhookSendPermissionDecision>;
 }
 
-export interface WebhookSendDeliveryOutcomeRecorder {
+interface WebhookSendDeliveryOutcomeRecorder {
   recordDeliveryOutcome(
     workspaceId: string,
     destinationId: string,
@@ -32,21 +32,21 @@ export interface WebhookSendDeliveryOutcomeRecorder {
   ): Promise<void>;
 }
 
-export interface WebhookSendTelemetryService {
+interface WebhookSendTelemetryService {
   emit(input: TelemetryEventInput): Promise<unknown>;
 }
 
-export interface WebhookSendConversationLookup {
+interface WebhookSendConversationLookup {
   findByIdAndWorkspaceId(conversationId: string, workspaceId: string): Promise<{ agentId: string | null } | null>;
 }
 
-export interface WebhookSendAgentLookup {
+interface WebhookSendAgentLookup {
   findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<{
     webhookExportsEnabled: boolean;
   } | null>;
 }
 
-export interface WebhookCompletionExportSkillLookup {
+interface WebhookCompletionExportSkillLookup {
   findByName(workspaceId: string, agentId: string, skillName: string): Promise<{
     kind: string;
     enabled: boolean;
@@ -274,7 +274,7 @@ export class WebhookSendActionHandler implements ActionHandler {
           destinationRef,
           status,
           reason: "delivery_outcome_record_failed",
-          err: error instanceof Error ? error.message : String(error),
+          err: error,
         },
         "webhook.send delivery outcome recording failed",
       );
@@ -335,7 +335,7 @@ export class WebhookSendActionHandler implements ActionHandler {
           destinationRef: input.destinationRef,
           outcome: input.outcome,
           reason: "delivery_telemetry_record_failed",
-          err: error instanceof Error ? error.message : String(error),
+          err: error,
         },
         "webhook.send delivery telemetry recording failed",
       );

@@ -3,6 +3,7 @@ import express from "express";
 import swaggerUi from "swagger-ui-express";
 
 import { createHttpLogger } from "../../shared/observability/logger.js";
+import { createMatchedRouteRecorder } from "../../shared/observability/matchedRoute.js";
 import { createRequestTelemetryMiddleware } from "../../shared/observability/telemetry/telemetryService.js";
 import { badRequest, payloadTooLarge } from "../../shared/domain/errors.js";
 import { createErrorHandler } from "../http/middleware/errorHandler.js";
@@ -80,6 +81,7 @@ export const createApp = (dependencies: AppDependencies) => {
   app.set("trust proxy", false);
 
   app.disable("x-powered-by");
+  app.use(createMatchedRouteRecorder());
   app.use(createHttpLogger(dependencies.logger));
   app.use(createRequestAuditContextMiddleware());
   app.use(createHttpTracingMiddleware());

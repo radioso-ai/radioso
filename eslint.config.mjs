@@ -44,6 +44,26 @@ const TYPE_AWARE_RULES = {
   ],
 }
 
+/**
+ * A backend log line lands in Cloud Logging, out of reach of conversation erasure. A call site
+ * hands the logger the caught value as `err` (its serializer keeps the class and code) plus ids,
+ * counts and codes; it never copies out an error's message, `String(error)`, a phone number or
+ * what a person typed. These selectors catch the shapes that kept coming back.
+ */
+const LOG_CALL =
+  'CallExpression[callee.type="MemberExpression"][callee.property.name=/^(trace|debug|info|warn|error|fatal)$/]' +
+  ':matches([callee.object.name=/log/i], [callee.object.property.name=/log/i])'
+const LOG_LINE_MESSAGE =
+  'Log lines reach Cloud Logging, out of reach of conversation erasure. Pass the caught value as `err` ' +
+  '(the logger keeps its class and code) and log ids, counts or codes, never a message, String(error), ' +
+  'a phone number or what a person typed (shared/observability/logging/logSafeValues.ts).'
+const LOG_LINE_RESTRICTIONS = [
+  `${LOG_CALL} > ObjectExpression > Property MemberExpression[property.name="message"]`,
+  `${LOG_CALL} > TemplateLiteral MemberExpression[property.name="message"]`,
+  `${LOG_CALL} > ObjectExpression > Property CallExpression[callee.name="String"]`,
+  `${LOG_CALL} > ObjectExpression > Property[key.name=/^(message|errorMessage|errorReason|rawPayloadBase64|rawResponsePreview|responseText|rerankQuery|query|prompt|waId|phone|phoneNumber|email)$/]`,
+].map((selector) => ({ selector, message: LOG_LINE_MESSAGE }))
+
 export default tseslint.config(
   {
     ignores: [
@@ -142,6 +162,7 @@ export default tseslint.config(
             'This is the socket peer, not the client. Use readRequestSource(req, res) (backend) or the route mount\'s requestSource port (ee).',
         }))),
       ],
+      'no-restricted-syntax': ['error', ...LOG_LINE_RESTRICTIONS],
     },
   },
 

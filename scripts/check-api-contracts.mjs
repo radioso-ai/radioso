@@ -44,8 +44,30 @@ const generateTypes = ({ cwd, source, output }) => {
   }
 };
 
+// The MCP server keeps its own typed view of the backend contract
+// (packages/radioso-mcp-server/src/generated/openapiTypes.ts), generated from the same
+// backend/openapi.json this script already checks above. Its own `check:openapi` script
+// regenerates it in memory and compares against the committed file, so it is the one place that
+// knows how to tell "current" from "stale" for that package.
+const checkMcpServerOpenApiTypes = () => {
+  const result = spawnSync("pnpm", ["run", "check:openapi"], {
+    cwd: path.join(repoRoot, "packages", "radioso-mcp-server"),
+    encoding: "utf8",
+    stdio: "pipe",
+  });
+
+  if (result.status !== 0) {
+    errors.push([
+      "packages/radioso-mcp-server/src/generated/openapiTypes.ts is stale.",
+      "Run `cd packages/radioso-mcp-server && pnpm run sync:openapi` and commit the result.",
+      (result.stderr || result.stdout || "").trim(),
+    ].filter(Boolean).join(" "));
+  }
+};
+
 expectSame(files.backendJson, files.sdkJson, "typescript-sdk/openapi/radioso.json");
 expectSame(files.backendYaml, files.sdkYaml, "typescript-sdk/openapi/radioso.yaml");
+checkMcpServerOpenApiTypes();
 
 const tempDir = mkdtempSync(path.join(os.tmpdir(), "radioso-api-contracts-"));
 try {

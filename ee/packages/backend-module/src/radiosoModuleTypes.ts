@@ -235,6 +235,8 @@ export interface ErrorEvent {
 }
 
 export interface ErrorSink {
+  /** A coded name for this destination, for the backend's `error_sink_failed` log line. */
+  readonly name: string;
   record(event: ErrorEvent): Promise<void>;
 }
 

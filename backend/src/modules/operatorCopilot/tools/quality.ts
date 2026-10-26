@@ -225,7 +225,7 @@ export const createQualityTriageCopilotTools = (
               workspaceId: context.workspaceId,
               assistantMessageId,
               outcome: result.kind,
-              errorMessage: error instanceof Error ? error.message : "unknown",
+              err: error,
             },
             "Recorded a triage transition but could not audit it",
           );

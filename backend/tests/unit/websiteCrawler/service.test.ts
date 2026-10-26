@@ -201,7 +201,7 @@ describe("website crawler service", () => {
         workspaceId: "workspace-1",
         sourceId: "source-1",
         requestedUrl: "https://example.com",
-        error: "checkpoint write failed [redacted]",
+        err: expect.objectContaining({ message: "checkpoint write failed token=checkpoint-secret" }),
       },
       "Failed to persist website crawl checkpoint after crawl failure",
     );
@@ -479,7 +479,7 @@ describe("website crawler service", () => {
         workspaceId: "workspace-1",
         sourceId: "source-1",
         requestedUrl: "https://example.com",
-        error: "checkpoint write failed [redacted]",
+        err: expect.objectContaining({ message: "checkpoint write failed token=checkpoint-secret" }),
       },
       "Failed to persist website crawl checkpoint after crawl failure",
     );
@@ -1517,7 +1517,7 @@ describe("website crawler service", () => {
         role: "website-crawler",
         workspaceId: "workspace-1",
         sourceId: "source-1",
-        error: "delete failed",
+        err: expect.objectContaining({ message: "delete failed" }),
       }),
       "Failed to reap missing website pages after crawl",
     );

@@ -1028,13 +1028,13 @@ export class ChatTurnLifecycle {
     try {
       await input.session.directiveStateStore?.commit();
     } catch (error) {
-      // Name/message only: raw error objects can carry provider response bodies.
+      // The app logger's serializer keeps the error's class and code, never its message or
+      // any other property (a provider response body among them).
       this.logger?.warn(
         {
           event: "directive_state_commit_failed",
           conversationId: input.session.conversation.id,
-          errorType: error instanceof Error ? error.name : typeof error,
-          errorMessage: error instanceof Error ? error.message : undefined,
+          err: error,
         },
         "Failed to persist directive firing state",
       );

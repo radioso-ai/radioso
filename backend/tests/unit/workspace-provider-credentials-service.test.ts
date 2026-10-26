@@ -172,7 +172,7 @@ describe("WorkspaceProviderCredentialsService", () => {
 
       expect(repo.rows.has(`${WORKSPACE_ID}:openai`)).toBe(true);
       await vi.waitFor(() => expect(logger.warn).toHaveBeenCalledWith(
-        { workspaceId: WORKSPACE_ID, err: recoveryError.message },
+        { workspaceId: WORKSPACE_ID, err: recoveryError },
         "Provider credential recovery failed",
       ));
     });

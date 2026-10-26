@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { Writable } from "node:stream";
-import pino from "pino";
 import { describe, expect, it } from "vitest";
 
 import { AuditService } from "../../src/modules/audit/services/auditService.js";
+import { createLogger } from "../../src/shared/observability/logger.js";
 import {
   runWithRequestAuditContext,
   setRequestAuditPrincipal,
@@ -19,7 +19,7 @@ const captureAuditLog = (): { service: AuditService; lines: () => Record<string,
     },
   });
   return {
-    service: new AuditService(pino({ level: "info" }, stream), new InMemoryAuditEventRepository()),
+    service: new AuditService(createLogger("info", stream), new InMemoryAuditEventRepository()),
     lines: () => chunks.map((chunk) => JSON.parse(chunk) as Record<string, unknown>),
     raw: () => chunks.join(""),
   };
@@ -99,7 +99,7 @@ describe("audit_event log line", () => {
     expect(raw()).not.toContain(visitorQuestion);
     expect(raw()).not.toContain(encodeURIComponent(visitorQuestion));
     expect(raw()).not.toContain("Friday prayers");
-    expect(lines()[0]?.error).toMatchObject({ method: "GET", route: "/api/v1/history" });
+    expect(lines()[0]?.errorEvent).toMatchObject({ method: "GET", route: "/api/v1/history" });
   });
 
   it("still logs an event whose error metadata holds a malformed route or class", async () => {
@@ -120,7 +120,7 @@ describe("audit_event log line", () => {
       },
     });
 
-    expect(lines()[0]?.error).toEqual({ errorType: "http.request.unhandled", severity: "error", method: "GET" });
+    expect(lines()[0]?.errorEvent).toEqual({ errorType: "http.request.unhandled", severity: "error", method: "GET" });
   });
 
   it("keeps the ids, counts, flags and statuses a log query correlates on", async () => {
@@ -215,7 +215,7 @@ describe("audit_event log line", () => {
       fallbackApplied: true,
     });
     expect(line?.analytics).toMatchObject({ subjectType: "conversation", subjectId: conversationId, source: "backend" });
-    expect(line?.error).toEqual({
+    expect(line?.errorEvent).toEqual({
       errorType: "retrieval.rerank_failed",
       severity: "warning",
       errorClass: "TypeError",

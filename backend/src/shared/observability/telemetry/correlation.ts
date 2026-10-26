@@ -1,3 +1,5 @@
+import { matchedRoutePattern } from "../matchedRoute.js";
+
 export interface CorrelationFields {
   requestId?: string;
   workspaceId?: string;
@@ -17,8 +19,6 @@ interface HeaderCapable {
 export interface RequestCorrelationSource extends HeaderCapable {
   id?: unknown;
   method?: string;
-  originalUrl?: string;
-  path?: string;
 }
 
 const readHeader = (source: HeaderCapable, name: string): string | undefined => {
@@ -58,6 +58,7 @@ export const createRequestCorrelation = (request: RequestCorrelationSource): Cor
             ? String(request.id)
             : undefined,
     workspaceId: readHeader(request, "x-workspace-id"),
-    route: request.originalUrl || request.path,
+    // The matched pattern, never the URL: a path segment can hold a credential (`matchedRoute.ts`).
+    route: matchedRoutePattern(request),
     method: request.method,
   });

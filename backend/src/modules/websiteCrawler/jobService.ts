@@ -20,12 +20,12 @@ import {
   type WebsiteCrawlPolicy,
 } from "./policy.js";
 
-export interface CrawlPageFailure {
+interface CrawlPageFailure {
   sourceUrl: string;
   reason: string;
 }
 
-export interface WebsiteCrawlJobSummary {
+interface WebsiteCrawlJobSummary {
   id: string;
   requestedUrl: string;
   status: WebsiteCrawlJobStatus;
@@ -221,7 +221,7 @@ export class WebsiteCrawlJobService {
           role: "website-crawl-job-service",
           jobId: job.id,
           workspaceId: job.workspaceId,
-          error: error instanceof Error ? error.message : String(error),
+          err: error,
         },
         "Website crawl job dispatch failed; scheduled recovery remains active",
       );
@@ -291,7 +291,7 @@ export class WebsiteCrawlJobService {
             role: "website-crawl-job-service",
             jobId: job.id,
             workspaceId: job.workspaceId,
-            error: error instanceof Error ? error.message : String(error),
+            err: error,
           },
           "Website crawl job resume dispatch failed; scheduled recovery remains active",
         );

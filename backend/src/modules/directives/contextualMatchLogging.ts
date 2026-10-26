@@ -11,11 +11,6 @@ export type ContextualClassificationSource =
   | "gateway_construction"
   | "model_gateway";
 
-const describeMatchFailure = (error: unknown): { errorType: string; errorMessage: string } =>
-  error instanceof Error
-    ? { errorType: error.name, errorMessage: error.message }
-    : { errorType: typeof error, errorMessage: String(error) };
-
 /**
  * Builds the observer passed to `ProbabilisticDirectiveMatcher`, which degrades to
  * zero contextual matches when its classification call fails. The degradation is
@@ -36,7 +31,9 @@ export const reportContextualMatchUnavailable = (deps: {
       event: "directive_contextual_match_unavailable",
       ...(deps.workspaceId ? { workspaceId: deps.workspaceId } : {}),
       source: deps.source,
-      ...describeMatchFailure(error),
+      // The error itself: the app logger's serializer keeps its class and code, never its
+      // message, which a provider can fill with the text it rejected.
+      err: error,
     },
     "Contextual directive matching unavailable; continuing with deterministic directives",
   );

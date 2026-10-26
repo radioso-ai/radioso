@@ -20,7 +20,7 @@ import type { AppLogger } from "../../../shared/observability/logger.js";
 
 export const WEBHOOK_SKILLS_ADAPTER = "webhook-skills";
 
-export interface WebhookSkillExecutorOptions {
+interface WebhookSkillExecutorOptions {
   skills: Pick<WebhookSkillDefinitionRepositoryPort, "findEnabledByName">;
   destinations: WebhookDestinationResolver & Partial<WebhookDestinationDeliveryOutcomePort>;
   httpClient: WebhookHttpClient;
@@ -112,7 +112,9 @@ export class WebhookSkillExecutor implements SkillExecutorPort {
         agentId,
         destinationId: definition.destinationId,
         skillName: definition.skillName,
-        ...sanitizedErrorFields(error),
+        // The app logger's serializer keeps the error's class, code and status; a receiver's
+        // response text in its message never reaches the line.
+        err: error,
       }, "Webhook skill delivery failed");
       await this.recordDestinationOutcome(workspaceId, definition.destinationId, "failed");
       return settled("failed", { skillName: definition.skillName, reason: "delivery_failed" });
@@ -149,19 +151,6 @@ const buildRuntimePayload = (
 
 const stringContext = (invocation: SkillInvocation, key: string): string | null =>
   typeof invocation.context?.[key] === "string" ? invocation.context[key] : null;
-
-const sanitizedErrorFields = (error: unknown): { errorName: string; errorMessage: string } => {
-  if (error instanceof Error) {
-    return {
-      errorName: error.name,
-      errorMessage: error.message,
-    };
-  }
-  return {
-    errorName: "UnknownError",
-    errorMessage: typeof error === "string" ? error : "Unknown webhook delivery failure",
-  };
-};
 
 const idempotencyKey = (invocation: SkillInvocation, skillName: string): string => {
   const explicit = stringContext(invocation, "idempotencyKey") ?? stringContext(invocation, "requestId");

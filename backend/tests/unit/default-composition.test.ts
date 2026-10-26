@@ -512,7 +512,7 @@ describe("default application composition", () => {
   it("collects optional sink and adapter contributions through module registration", () => {
     const telemetrySink = { emit: vi.fn().mockResolvedValue(undefined) };
     const productAnalyticsSink = { emit: vi.fn().mockResolvedValue(undefined) };
-    const errorSink = { record: vi.fn().mockResolvedValue(undefined) };
+    const errorSink = { name: "test-sink", record: vi.fn().mockResolvedValue(undefined) };
     const websiteEmbedIntegration = {
       buildScriptUrl: vi.fn().mockReturnValue("https://widget.example.com/radioso-embed.js"),
       buildSnippet: vi.fn().mockReturnValue("<script></script>"),

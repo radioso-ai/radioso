@@ -25,18 +25,17 @@ interface IdleConnectionLoss {
   // with it in the serialized JSON, and a consumer could read Postgres's "FATAL" where the
   // logger meant a handled warning.
   postgresSeverity?: string;
-  err: string;
 }
 
 // Only named fields leave the error: pg-pool attaches the lost client, whose connection
-// parameters carry the password.
+// parameters carry the password, and a server message can quote a value. The SQLSTATE and
+// severity say why the connection ended.
 const describeIdleConnectionLoss = (error: Error, applicationName?: string): IdleConnectionLoss => {
   const { code, severity } = error as Error & { code?: unknown; severity?: unknown };
   return {
     applicationName,
     code: typeof code === "string" ? code : undefined,
     postgresSeverity: typeof severity === "string" ? severity : undefined,
-    err: error.message,
   };
 };
 

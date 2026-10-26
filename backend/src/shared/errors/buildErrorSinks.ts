@@ -7,6 +7,8 @@ import type { ErrorSink } from "./errorSink.js";
 import type { ErrorEvent } from "./errorTypes.js";
 
 class MetricsErrorSink implements ErrorSink {
+  readonly name = "metrics";
+
   constructor(private readonly metricsRegistry: MetricsRegistry) {}
 
   async record(event: ErrorEvent): Promise<void> {

@@ -28,7 +28,7 @@ const cosineSimilarity = (left: readonly number[], right: readonly number[]): nu
   return denominator === 0 ? 0 : dot / denominator;
 };
 
-export interface RoutineActivationPrefilterDependencies {
+interface RoutineActivationPrefilterDependencies {
   accountId?: string;
   clusteringEmbeddings: ClusteringEmbeddingPort;
   embeddingModelForWorkspace: (workspaceId: string) => Promise<string>;
@@ -79,7 +79,7 @@ export const createRoutineActivationPrefilter = (
       // pruning to an arbitrary subset on failure would silently lose recall.
       input.logger.warn(
         {
-          err: error instanceof Error ? error.message : String(error),
+          err: error,
           workspaceId: input.workspaceId,
           routineTriggerCount: triggers.length,
         },
@@ -115,7 +115,7 @@ export const createRoutineActivationPrefilter = (
       unscoredIds = triggers.map((trigger) => trigger.routineId);
       input.logger.warn(
         {
-          err: error instanceof Error ? error.message : String(error),
+          err: error,
           workspaceId: input.workspaceId,
           routineTriggerCount: triggers.length,
         },
@@ -148,7 +148,7 @@ export const createRoutineActivationPrefilter = (
         if (mode === "fly_only") {
           input.logger.warn(
             {
-              err: error instanceof Error ? error.message : String(error),
+              err: error,
               workspaceId: input.workspaceId,
               routineTriggerCount: triggers.length,
             },

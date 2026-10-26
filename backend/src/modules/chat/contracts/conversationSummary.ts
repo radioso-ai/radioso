@@ -49,8 +49,7 @@ export const loadConversationSummaryText = async (
       {
         event: "conversation_summary_load_failed",
         conversationId,
-        errorType: error instanceof Error ? error.name : typeof error,
-        errorMessage: error instanceof Error ? error.message : undefined,
+        err: error,
       },
       "Failed to load conversation summary; continuing without it",
     );

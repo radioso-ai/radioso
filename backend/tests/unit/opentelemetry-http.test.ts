@@ -4,6 +4,7 @@ import request from "supertest";
 import { afterEach, describe, expect, it } from "vitest";
 
 import { createHttpTracingMiddleware } from "../../src/app/http/middleware/tracingMiddleware.js";
+import { createMatchedRouteRecorder } from "../../src/shared/observability/matchedRoute.js";
 import { initializeTracing, shutdownTracing } from "../../src/shared/observability/tracing/index.js";
 
 class RecordingExporter implements SpanExporter {
@@ -39,6 +40,7 @@ describe("OpenTelemetry HTTP tracing middleware", () => {
       (req as typeof req & { id: string }).id = "request-1";
       next();
     });
+    app.use(createMatchedRouteRecorder());
     app.use(createHttpTracingMiddleware());
     app.get("/health", (_req, res) => {
       res.status(204).end();
@@ -55,6 +57,34 @@ describe("OpenTelemetry HTTP tracing middleware", () => {
       "radioso.request_id": "request-1",
     });
     expect(JSON.stringify(exporter.spans[0]?.attributes)).not.toContain("secret");
+  });
+
+  it("names the whole route pattern when a route's error leaves its router through next(err)", async () => {
+    const exporter = new RecordingExporter();
+    initializeTracing({
+      enabled: true,
+      environment: "test",
+      otlpEndpoint: "http://localhost:4318/v1/traces",
+      runtimeRole: "api",
+      serviceName: "radioso-api",
+      spanExporter: exporter,
+    });
+    const app = express();
+    app.use(createMatchedRouteRecorder());
+    app.use(createHttpTracingMiddleware());
+    const router = express.Router();
+    router.get("/invitations/:token", (_req, _res, next) => {
+      next(new Error("lookup failed"));
+    });
+    app.use("/api/v1/auth", router);
+    app.use(((_error, _req, res, _next) => {
+      res.status(500).end();
+    }) as express.ErrorRequestHandler);
+
+    await request(app).get("/api/v1/auth/invitations/token-secret").expect(500);
+
+    expect(exporter.spans[0]?.attributes).toMatchObject({ "http.route": "/api/v1/auth/invitations/:token" });
+    expect(JSON.stringify(exporter.spans[0]?.attributes)).not.toContain("token-secret");
   });
 
   it("does not export raw unmatched paths as routes", async () => {

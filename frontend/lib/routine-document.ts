@@ -129,6 +129,14 @@ export function formatBindingLine(
   return `uses ${inputs.length > 0 ? inputs.join(', ') : 'nothing'} → sets ${outputs.length > 0 ? outputs.join(', ') : 'nothing'}`
 }
 
+// The field an input switched to variable mode starts bound to. A sensitive field's value reaches
+// a skill only when its author binds it on purpose (#1543), so the default skips sensitive fields
+// and binds nothing when no other field exists.
+export function defaultVariableBindingRef(availableVariables: readonly string[], sensitiveVariables: readonly string[]): string {
+  const sensitive = new Set(sensitiveVariables)
+  return availableVariables.find((variable) => !sensitive.has(variable)) ?? ''
+}
+
 // The editing schema accepts empty strings for content still being written (an unnamed
 // ending message, an untyped AI condition), but the persistence schema requires present
 // text to be non-empty. Saving therefore translates "still empty" back to "absent" so a

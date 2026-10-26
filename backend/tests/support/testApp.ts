@@ -2592,6 +2592,7 @@ export const createTestDependencies = (overrides: {
       get: routineDefinitionService.get.bind(routineDefinitionService),
       list: routineDefinitionService.list.bind(routineDefinitionService),
       validate: routineDefinitionService.validate.bind(routineDefinitionService),
+      skillInputKeys: routineDefinitionService.skillInputKeys.bind(routineDefinitionService),
     },
     chatHistoryService,
     voiceRecordings: voiceRecordings.recordings,
@@ -2711,6 +2712,7 @@ export const createTestDependencies = (overrides: {
       findCreateConflict: routineDefinitionService.findCreateConflict.bind(routineDefinitionService),
       get: routineDefinitionService.get.bind(routineDefinitionService),
       validateForDraftMutation: routineDefinitionService.validateForDraftMutation.bind(routineDefinitionService),
+      skillInputKeys: routineDefinitionService.skillInputKeys.bind(routineDefinitionService),
     },
     scopedReferences: scopedRoutineReferences,
     reviewedProposalExecution: {

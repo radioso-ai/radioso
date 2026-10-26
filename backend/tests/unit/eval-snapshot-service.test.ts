@@ -1024,6 +1024,68 @@ describe("EvalSnapshotService.capture", () => {
     });
   });
 
+  it("leaves a sensitive slot's value out of the snapshot: its turns' text, the routine's value, and the reply's prompt (#1543)", async () => {
+    const conversation: ConversationRecord = {
+      id: "conv-sensitive",
+      workspaceId: "ws-1",
+      agentId: null,
+      purpose: "production",
+      agentName: null,
+      agentInternalName: null,
+      sourceChannel: null,
+      callerKind: "human" as const,
+      sourceOrigin: null,
+      channelContext: null,
+      anonymousSessionId: null,
+      verifiedCustomerId: null,
+      entryPageUrl: null,
+      title: null,
+      createdAt: fixedDate,
+      updatedAt: fixedDate,
+    };
+    const sensitive = { sensitiveSlotKeys: ["injury"] };
+    const messages: MessageRecord[] = [
+      { id: "m1", conversationId: conversation.id, workspaceId: "ws-1", role: "user", content: "I want to book yoga", createdAt: fixedDate },
+      { id: "m2", conversationId: conversation.id, workspaceId: "ws-1", role: "user", content: "I tore my ACL", metadata: sensitive, createdAt: fixedDate },
+      {
+        id: "m3", conversationId: conversation.id, workspaceId: "ws-1", role: "assistant", content: "Noted, a torn ACL.",
+        metadata: {
+          ...sensitive,
+          composedInstructions: "Confirm the torn ACL.",
+          answerSegments: [{ text: "Noted, a torn ACL." }],
+        },
+        createdAt: fixedDate,
+      },
+    ];
+    const repository = new CapturingEvalRepository();
+    const service = new EvalSnapshotService(
+      new StubConversationRepository(conversation),
+      new StubMessageRepository(messages),
+      new StubAgentRepository(null),
+      new StubRetrievalDefaultsProvider(),
+      createRetrievalSkillSettingsResolver(),
+      repository,
+      undefined,
+      {
+        loadActive: async ({ sessionId }) => ({
+          sessionId,
+          routineId: "book_class",
+          path: ["ask_injury"],
+          variables: { class_name: "Yoga", injury: "torn ACL" },
+          status: "active",
+        }),
+      },
+    );
+
+    const snapshot = await service.capture({ workspaceId: "ws-1", conversationId: conversation.id, messageId: "m3", capturedBy: "account-1" });
+
+    expect(snapshot.messages.map((message) => message.content)).toEqual(["I want to book yoga", "[redacted]", "[redacted]"]);
+    expect(snapshot.messages[2]).not.toHaveProperty("answerSegments");
+    expect(snapshot.originalRoutineState?.variables).toEqual({ class_name: "Yoga", injury: "[redacted]" });
+    expect(snapshot.originalInstructionBlock).toBeNull();
+    expect(JSON.stringify(snapshot)).not.toContain("ACL");
+  });
+
   it("freezes the rolling conversation summary (#866) onto the snapshot at capture time", async () => {
     const conversation: ConversationRecord = {
       id: "conv-summary",

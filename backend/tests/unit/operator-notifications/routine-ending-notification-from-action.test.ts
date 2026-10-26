@@ -34,6 +34,17 @@ describe("routineEndingNotificationFromAction", () => {
     });
   });
 
+  it("reads which collected values were masked as sensitive, keeping only keys the payload collected (#1543)", () => {
+    const notification = routineEndingNotificationFromAction({
+      kind: "handoff",
+      payload: { reason: "routine_handoff", collected: { injury: "[redacted]", name: "Ada" }, sensitiveSlotKeys: ["injury", 7, "absent"] },
+      ids,
+      fallback,
+    });
+
+    expect(notification.sensitiveSlotKeys).toEqual(["injury"]);
+  });
+
   it("trusts the given ids over differing ids the payload carries", () => {
     const notification = routineEndingNotificationFromAction({
       kind: "handoff",

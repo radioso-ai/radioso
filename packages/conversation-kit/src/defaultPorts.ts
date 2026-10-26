@@ -281,7 +281,7 @@ export const createDefaultRoutineSkillDispatcher = (
   handlers: LocalSkillRegistry = new Map(),
   skills: readonly SkillDefinition[] = [],
 ): ConversationRoutineSkillDispatcher => ({
-  async dispatch({ skillName, state, turn, inputBindings }): Promise<RoutineSkillResult> {
+  async dispatch({ skillName, state, turn, inputBindings, sensitiveSlotKeys }): Promise<RoutineSkillResult> {
     const skill = skills.find((candidate) => candidate.name === skillName);
     if (!skill) {
       return routineSkillUnavailable(skillName, "unknown_skill");
@@ -292,13 +292,13 @@ export const createDefaultRoutineSkillDispatcher = (
     }
 
     // An untyped step authors no bindings, so it hands the handler the routine's
-    // collected variables wholesale; a typed step gets exactly what it bound. Same
-    // split the Radioso host makes, so a routine dispatches identically either side
-    // of the kit boundary.
+    // collected variables wholesale, sensitive slots masked; a typed step gets exactly
+    // what it bound. Same split the Radioso host makes, so a routine dispatches
+    // identically either side of the kit boundary.
     const variables = state.variables ?? {};
     const { values: collected, origins: inputOrigins } = inputBindings && Object.keys(inputBindings).length > 0
       ? resolveSkillArguments(inputBindings, variables, contextValuesFromStagedContext(turn.stagedContext))
-      : resolveUntypedSkillArguments(variables);
+      : resolveUntypedSkillArguments(variables, sensitiveSlotKeys);
 
     let result: SkillDispatchResult;
     try {

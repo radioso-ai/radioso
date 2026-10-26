@@ -19,6 +19,7 @@ export {
   type RoutineFieldGuardUnit,
   type RoutineGuardKind,
   type RoutineReentryMode,
+  type RoutineSkillInputKeys,
   type RoutineSlotType,
   type RoutineStepKind,
   type RoutineTerminalKind,
@@ -40,6 +41,7 @@ export { ProbeRoutineReader, type ProbeRoutineReadPort } from "./probeRoutineRea
 export { createRoutineActivationPrefilter } from "./routineActivationPrefilter.js";
 export { createRoutineTurnProvider } from "./turnProvider.js";
 export { createRoutineTurnReporter } from "./routineTurnReporter.js";
+export { sensitiveSlotsAwaited } from "./sensitiveSlots.js";
 export type { RoutineInvocationReport, RoutineTurnReporter, RoutineTurnState } from "./turnReport.js";
 export {
   RoutineSkillExecutorDispatcher,

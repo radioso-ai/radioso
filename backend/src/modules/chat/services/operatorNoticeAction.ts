@@ -55,6 +55,8 @@ export const operatorNoticeActionPayload = (input: {
   stepId?: string;
   /** The routine's declared slot values, forwarded to the operator notice as-is. */
   collected?: Record<string, unknown>;
+  /** The keys of `collected` the runner masked as sensitive (#1543); the notice renders those as sensitive. */
+  sensitiveSlotKeys?: readonly string[];
   notice?: RoutineOperatorNoticeTemplate;
   responseLanguage?: string;
   routineStartMessageId?: string;
@@ -69,6 +71,7 @@ export const operatorNoticeActionPayload = (input: {
   ...(input.responseLanguage ? { responseLanguage: input.responseLanguage } : {}),
   ...(input.routineStartMessageId ? { routineStartMessageId: input.routineStartMessageId } : {}),
   ...(input.collected ? { collected: input.collected } : {}),
+  ...(input.sensitiveSlotKeys?.length ? { sensitiveSlotKeys: [...input.sensitiveSlotKeys] } : {}),
   ...(input.notice?.subject || input.notice?.intro || input.notice?.replyToSlot || input.notice?.includeAiSummary ? { notice: authoredNotice(input.notice) } : {}),
 });
 

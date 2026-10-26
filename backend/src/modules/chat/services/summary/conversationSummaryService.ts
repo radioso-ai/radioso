@@ -11,8 +11,22 @@ import type {
   ConversationSummaryStore,
 } from "../../contracts/conversationSummary.js";
 import { CONVERSATION_TITLE_RULES } from "./titlePromptRules.js";
+import { transcriptCopyContent } from "../../../../shared/domain/sensitiveTranscript.js";
 
 /** The narrow message-read slice the summary regeneration needs. */
+
+/**
+ * The messages up to the latest assistant reply. A visitor message after it belongs to a turn
+ * still running (or one that failed), whose sensitive-value marker (#1543) may not be written
+ * yet, so it waits for the run after the reply that commits it. A conversation with no reply at
+ * all (a thread whose replies are held for review) has no turn in flight to wait for, and is read
+ * whole.
+ */
+const throughLatestReply = (messages: MessageRecord[]): MessageRecord[] => {
+  let end = messages.length;
+  while (end > 0 && messages[end - 1].role !== "assistant") end -= 1;
+  return end === 0 ? messages : messages.slice(0, end);
+};
 export type ConversationSummaryMessageReader = Pick<
   MessageRepositoryPort,
   "countByConversationId" | "listRecentByConversationId"
@@ -241,7 +255,8 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
       // the cheap threshold query above but are filtered out of the input. Only
       // meaningful when the tail holds the whole conversation — a truncated tail
       // already proves the conversation outgrew the window.
-      const conversationMessages = tail.filter((message) => message.role !== "system");
+      const settledTail = throughLatestReply(tail);
+      const conversationMessages = settledTail.filter((message) => message.role !== "system");
       const tailTruncated = tail.length >= this.config.maxSourceMessages;
       if (!previous && tailTruncated) {
         await this.refreshFirstSummaryFromInitialBackfill(input, messageCount, startedAt, signal);
@@ -281,8 +296,8 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
 
       const record: ConversationSummaryRecord = {
         summary,
-        coveredMessageCount: messageCount,
-        coveredThrough: tail.at(-1)?.createdAt ?? new Date(),
+        coveredMessageCount: messageCount - (tail.length - settledTail.length),
+        coveredThrough: settledTail.at(-1)?.createdAt ?? new Date(),
       };
       await this.store.save({ sessionId: input.conversationId, summary: record });
 
@@ -329,7 +344,9 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
       input.conversationId,
       Math.min(messageCount, this.config.maxInitialBackfillMessages),
     );
-    const conversationMessages = allMessages.filter((message) => message.role !== "system");
+    const settledMessages = throughLatestReply(allMessages);
+    const pendingCount = allMessages.length - settledMessages.length;
+    const conversationMessages = settledMessages.filter((message) => message.role !== "system");
     if (conversationMessages.length < this.config.minMessages) {
       this.logger?.debug(
         {
@@ -376,8 +393,8 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
         // The first summary may intentionally use only a bounded recent backfill
         // window. Advance the watermark to the current count so a legacy long
         // conversation does not repeat the capped backfill on every turn.
-        coveredMessageCount: messageCount,
-        coveredThrough: chunk.at(-1)?.createdAt ?? allMessages.at(-1)?.createdAt ?? new Date(),
+        coveredMessageCount: messageCount - pendingCount,
+        coveredThrough: chunk.at(-1)?.createdAt ?? settledMessages.at(-1)?.createdAt ?? new Date(),
       };
     }
 
@@ -386,8 +403,8 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
     }
     const record: ConversationSummaryRecord = {
       ...running,
-      coveredMessageCount: messageCount,
-      coveredThrough: allMessages.at(-1)?.createdAt ?? running.coveredThrough,
+      coveredMessageCount: messageCount - pendingCount,
+      coveredThrough: settledMessages.at(-1)?.createdAt ?? running.coveredThrough,
     };
     await this.store.save({ sessionId: input.conversationId, summary: record });
 
@@ -430,9 +447,11 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
     };
   }
 
+  // A message of a turn whose routine held a sensitive value reads as withheld (#1543): the
+  // summary is a copy of the transcript that outlives the turn and feeds later prompts.
   private buildConversationExcerpt(messages: MessageRecord[]): string {
     return messages
-      .map((message) => `${message.role.toUpperCase()}: ${clampExcerpt(message.content, this.config.maxSourceMessageChars)}`)
+      .map((message) => `${message.role.toUpperCase()}: ${clampExcerpt(transcriptCopyContent(message), this.config.maxSourceMessageChars)}`)
       .join("\n");
   }
 
@@ -521,7 +540,7 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
       input.conversationId,
       this.config.maxSourceMessages,
     );
-    const conversationMessages = tail.filter((message) => message.role !== "system");
+    const conversationMessages = throughLatestReply(tail).filter((message) => message.role !== "system");
     const hasUserAndAssistant =
       conversationMessages.some((message) => message.role === "user") &&
       conversationMessages.some((message) => message.role === "assistant");

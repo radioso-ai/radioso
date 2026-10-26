@@ -76,6 +76,20 @@ describe("AnswerCoverageHeadRecorder.wrapVerdictSink", () => {
     expect(result).toEqual({ decision: "proceed" });
   });
 
+  it("stores the request withheld when the visitor's message is marked as holding a sensitive value (#1543)", async () => {
+    const repository = fakeRepository();
+    const recorder = new AnswerCoverageHeadRecorder(repository);
+    const marked = session();
+    const current = {
+      ...marked,
+      userMessage: { ...marked.userMessage, metadata: { sensitiveSlotKeys: ["injury"] } },
+    } as PreparedSession;
+
+    await recorder.wrapVerdictSink({ getSession: () => current }, fakeSink()).report({ assessment: assessedVerdict });
+
+    expect(repository.saveAssessment).toHaveBeenCalledWith(expect.objectContaining({ contextualizedRequest: "[redacted]" }));
+  });
+
   it("upserts idempotently: a retried report for the same request message converges on the repository's existing row", async () => {
     // `saveAssessment`'s own `onConflict` handling is the repository's job; the
     // recorder just trusts whatever record it gets back.

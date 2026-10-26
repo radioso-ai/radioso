@@ -713,6 +713,37 @@ describeIfDatabase("PostgresAssistantTurnPersistence Kysely integration", () => 
     expect(row.assistant_message_id).toBe(assistantMessageId);
   });
 
+  it("marks the visitor message of a turn whose routine holds a sensitive value, and drops a facet already extracted from it (#1543)", async () => {
+    const { workspace, conversation } = await seedConversation();
+    const visitorMessageId = randomUUID();
+    const otherMessageId = randomUUID();
+    await database.query(
+      "INSERT INTO messages(id, workspace_id, conversation_id, role, content, metadata_json) VALUES ($1, $2, $3, 'user', 'I tore a ligament', '{\"channel\":\"web\"}'::jsonb), ($4, $2, $3, 'user', 'When do you open?', '{}'::jsonb)",
+      [visitorMessageId, workspace.id, conversation.id, otherMessageId],
+    );
+    await database.query(
+      "INSERT INTO message_facets(message_id, workspace_id, facet_text, prompt_version) VALUES ($1, $3, 'asks about an injury', 'v1'), ($2, $3, 'asks about opening hours', 'v1')",
+      [visitorMessageId, otherMessageId, workspace.id],
+    );
+
+    await persistence.completeAssistantTurn({
+      workspaceId: workspace.id,
+      conversationId: conversation.id,
+      sensitiveVisitorMessage: { id: visitorMessageId, sensitiveSlotKeys: ["injury"] },
+      assistantMessage: { id: randomUUID(), conversationId: conversation.id, workspaceId: workspace.id, role: "assistant", content: "Noted." },
+      auditEvent: { eventType: "chat.answer", eventStatus: "success", workspaceId: workspace.id, metadata: {} },
+    });
+
+    const messages = await database.query<{ id: string; metadata_json: Record<string, unknown> }>(
+      "SELECT id, metadata_json FROM messages WHERE id = ANY($1::uuid[])",
+      [[visitorMessageId, otherMessageId]],
+    );
+    expect(messages.find((row) => row.id === visitorMessageId)?.metadata_json).toEqual({ channel: "web", sensitiveSlotKeys: ["injury"] });
+    expect(messages.find((row) => row.id === otherMessageId)?.metadata_json).toEqual({});
+    const facets = await database.query<{ message_id: string }>("SELECT message_id FROM message_facets WHERE workspace_id = $1", [workspace.id]);
+    expect(facets).toEqual([{ message_id: otherMessageId }]);
+  });
+
   it("rolls back assessment confirmation with the cancelled caller-owned assistant turn", async () => {
     const { workspace, conversation } = await seedConversation();
     const requestMessageId = randomUUID();

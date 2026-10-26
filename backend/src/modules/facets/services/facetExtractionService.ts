@@ -17,7 +17,12 @@ import {
   parseFacetExtractionModelOutput,
 } from "./prompt.js";
 
-export interface FacetExtractionServiceDependencies {
+/** A visitor message of a turn whose routine held a sensitive slot value is never a facet (#1543). */
+const SENSITIVE_VALUE_SKIP_REASON = "sensitive_value";
+/** The store refused the facet: the message was deleted, or marked sensitive, while it was extracted. */
+const MESSAGE_UNAVAILABLE_SKIP_REASON = "message_unavailable";
+
+interface FacetExtractionServiceDependencies {
   messages: FacetSourceMessagePort;
   facets: MessageFacetRepositoryPort;
   embeddings: ClusteringEmbeddingPort;
@@ -62,14 +67,17 @@ export class FacetExtractionService implements FacetExtractionPort {
     if (existing) {
       facetText = existing.facetText;
     } else {
-      const question = await this.deps.messages.getContentById({
+      const source = await this.deps.messages.getFacetSource({
         workspaceId: job.workspaceId,
         messageId: job.messageId,
       });
-      if (question === null) {
+      if (source === null) {
         return { status: "skipped", reason: "message_not_found" };
       }
-      const trimmedQuestion = question.trim();
+      if (source.carriesSensitiveValue) {
+        return { status: "skipped", reason: SENSITIVE_VALUE_SKIP_REASON };
+      }
+      const trimmedQuestion = source.content.trim();
       if (trimmedQuestion.length === 0) {
         return { status: "skipped", reason: "empty_message" };
       }
@@ -80,12 +88,15 @@ export class FacetExtractionService implements FacetExtractionPort {
       }
 
       facetText = extracted;
-      await this.deps.facets.upsertFacet({
+      const stored = await this.deps.facets.upsertFacet({
         messageId: job.messageId,
         workspaceId: job.workspaceId,
         facetText,
         promptVersion,
       });
+      if (!stored) {
+        return { status: "skipped", reason: MESSAGE_UNAVAILABLE_SKIP_REASON };
+      }
     }
 
     await this.embedAndAttach(job, facetText);

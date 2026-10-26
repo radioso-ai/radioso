@@ -21,6 +21,7 @@ import {
   renameStep,
   replaceInstruction,
   setEndingNotice,
+  setSlotSensitivity,
   slotReferences,
   targetBranchAtStep,
   updateApproval,
@@ -544,6 +545,21 @@ describe('tool exposure', () => {
   })
 })
 
+describe('slot sensitivity', () => {
+  it('marks a field sensitive, saves it, and sets it back to the absent default (#1543)', () => {
+    const doc = source()
+    const sensitive = setSlotSensitivity(doc, 'email', true)
+
+    expect(draftFromBlockDoc(sensitive).slots[0]?.sensitivity).toBe('sensitive')
+    // The source document is never mutated: the editor keeps immutable snapshots for undo.
+    expect(doc.information[0]).not.toHaveProperty('sensitivity')
+
+    // Normal is the absence of the field, as a saved slot reads back, so setting it back leaves
+    // a document equal to the one before it was marked.
+    expect(setSlotSensitivity(sensitive, 'email', false)).toEqual(doc)
+  })
+})
+
 describe('ending operator notices', () => {
   const branchedToComplete = () => referenceEnding(addBranch(source(), 'ask_email'), 'ask_email', 0, 'complete')
 
@@ -624,6 +640,16 @@ describe('ending operator notices', () => {
       expect(target.kind === 'ending' ? target.ending?.operatorNotice?.replyToSlot : undefined).toBe('email')
 
       expect(addEnding(source(), 'complete').unreferencedEndings.at(-1)).not.toHaveProperty('operatorNotice')
+    })
+
+    it('never replies to a sensitive email field, whose address stays in the conversation (#1543)', () => {
+      expect(newEndingNotice([{ key: 'guest_email', type: 'email', sensitivity: 'sensitive' }])).toEqual({ subject: null, intro: null })
+      expect(newEndingNotice([
+        { key: 'guest_email', type: 'email', sensitivity: 'sensitive' },
+        { key: 'work_email', type: 'email' },
+      ])).toEqual({ subject: null, intro: null, replyToSlot: 'work_email' })
+      const handoff = addEnding(setSlotSensitivity(source(), 'email', true), 'handoff').unreferencedEndings.find((ending) => ending.kind === 'handoff')
+      expect(handoff).not.toHaveProperty('operatorNotice')
     })
 
     it('starts a new hand-off ending with no notice of its own when the routine collects two addresses', () => {

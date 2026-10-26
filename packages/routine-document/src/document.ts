@@ -368,6 +368,7 @@ export function routineToChipDoc(routine: RoutineDraftSource): ProseDoc | null {
       // bare `{ id, name, type }` shape.
       ...(slot.required === false ? { required: false } : {}),
       ...(slot.mutable ? { mutable: true } : {}),
+      ...(slot.sensitivity === 'sensitive' ? { sensitive: true } : {}),
     }))
   const nameByRef = new Map(variables.map((variable) => [variable.id, variable.name]))
 

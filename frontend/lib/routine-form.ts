@@ -23,6 +23,8 @@ export type RoutineSlotForm = {
   required: boolean
   description: string
   mutable: boolean
+  // Whether the field's value may leave the conversation (#1543); the draft carries only "sensitive".
+  sensitive: boolean
 }
 
 type RoutineTransitionForm = {
@@ -254,6 +256,7 @@ export const routineToForm = (routine: RoutineDefinition): RoutineFormState => {
       required: slot.required,
       description: slot.description ?? '',
       mutable: slot.mutable ?? false,
+      sensitive: slot.sensitivity === 'sensitive',
     })),
     steps: [...routine.steps].sort((left, right) => left.ordinal - right.ordinal).map((step) => {
       const kind = normalizeStepKind(step.kind)
@@ -339,6 +342,7 @@ export const formToRoutineDraft = (
         description: nullableText(slot.description),
         ordinal: index,
         ...(slot.mutable ? { mutable: true } : {}),
+        ...(slot.sensitive ? { sensitivity: 'sensitive' as const } : {}),
       }
     }),
     steps: form.steps.map((step, index) => ({

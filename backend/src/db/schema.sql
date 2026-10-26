@@ -3594,8 +3594,10 @@ CREATE TABLE public.routine_slot (
     description text,
     ordinal integer NOT NULL,
     mutable boolean DEFAULT false NOT NULL,
+    sensitivity text DEFAULT 'normal'::text NOT NULL,
     CONSTRAINT routine_slot_key_check CHECK ((NULLIF(btrim(key), ''::text) IS NOT NULL)),
     CONSTRAINT routine_slot_ordinal_check CHECK ((ordinal >= 0)),
+    CONSTRAINT routine_slot_sensitivity_check CHECK ((sensitivity = ANY (ARRAY['normal'::text, 'sensitive'::text]))),
     CONSTRAINT routine_slot_stable_slot_id_check CHECK ((NULLIF(btrim(stable_slot_id), ''::text) IS NOT NULL)),
     CONSTRAINT routine_slot_type_check CHECK ((type = ANY (ARRAY['text'::text, 'number'::text, 'boolean'::text, 'email'::text, 'date'::text])))
 );

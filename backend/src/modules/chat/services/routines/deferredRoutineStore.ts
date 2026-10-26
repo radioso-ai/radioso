@@ -1,8 +1,12 @@
 import type { ConversationRoutineStore, RoutineState } from "@radioso/conversation-contract";
 
+/**
+ * `startedFrom` is the state the turn first read: the step it ran on, which can differ from the
+ * one session preparation saw when another instance advanced the routine in between (#1543).
+ */
 export type CapturedRoutineTransition =
-  | { kind: "save"; state: RoutineState }
-  | { kind: "clear"; sessionId: string };
+  | { kind: "save"; state: RoutineState; startedFrom?: RoutineState }
+  | { kind: "clear"; sessionId: string; startedFrom?: RoutineState };
 
 /**
  * The host-side embodiment of the command-capture model documented on
@@ -18,11 +22,20 @@ export type CapturedRoutineTransition =
  */
 export class DeferredRoutineStore implements ConversationRoutineStore {
   private transition: CapturedRoutineTransition | null = null;
+  private startedFrom: RoutineState | null | undefined;
 
   constructor(private readonly inner: ConversationRoutineStore, private readonly startedMessageId?: string) {}
 
-  loadActive(input: { sessionId: string }): ReturnType<ConversationRoutineStore["loadActive"]> {
-    return this.inner.loadActive(input);
+  async loadActive(input: { sessionId: string }): Promise<RoutineState | null> {
+    const state = await this.inner.loadActive(input);
+    if (this.startedFrom === undefined) {
+      this.startedFrom = state;
+    }
+    return state;
+  }
+
+  private startedFromField(): { startedFrom?: RoutineState } {
+    return this.startedFrom ? { startedFrom: this.startedFrom } : {};
   }
 
   loadCompleted(input: { sessionId: string }): ReturnType<NonNullable<ConversationRoutineStore["loadCompleted"]>> {
@@ -30,11 +43,15 @@ export class DeferredRoutineStore implements ConversationRoutineStore {
   }
 
   async save(state: RoutineState): Promise<void> {
-    this.transition = { kind: "save", state: state.startedMessageId || !this.startedMessageId ? state : { ...state, startedMessageId: this.startedMessageId } };
+    this.transition = {
+      kind: "save",
+      state: state.startedMessageId || !this.startedMessageId ? state : { ...state, startedMessageId: this.startedMessageId },
+      ...this.startedFromField(),
+    };
   }
 
   async clear(input: { sessionId: string }): Promise<void> {
-    this.transition = { kind: "clear", sessionId: input.sessionId };
+    this.transition = { kind: "clear", sessionId: input.sessionId, ...this.startedFromField() };
   }
 
   getTransition(): CapturedRoutineTransition | null {

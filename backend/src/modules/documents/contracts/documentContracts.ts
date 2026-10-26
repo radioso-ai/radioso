@@ -14,7 +14,21 @@ export type DocumentProcessingJobEnrichmentOverride = "on" | "off";
 
 export interface DocumentProcessingJobOptions {
   documentEnrichmentOverride?: DocumentProcessingJobEnrichmentOverride;
+  /**
+   * Ask the extraction model afresh even when the document's stored reply
+   * answered the same request. Set only by a single-document reprocess; a job
+   * row without it reuses the stored reply.
+   */
+  refreshDocumentEnrichment?: boolean;
 }
+
+/**
+ * What a reprocess of many documents may carry. A fresh extraction is asked
+ * for one document at a time, so the bulk paths cannot hold one at all.
+ */
+export type BulkDocumentProcessingJobOptions = Omit<DocumentProcessingJobOptions, "refreshDocumentEnrichment"> & {
+  refreshDocumentEnrichment?: never;
+};
 
 export interface DocumentReviewedWriteGuard {
   readonly expectedDocumentId: string | null;
@@ -298,10 +312,10 @@ export interface DocumentRepositoryPort {
   requeueEligibleAndQueue(
     documentId: string,
     workspaceId: string,
-    options?: DocumentProcessingJobOptions | null,
+    options?: BulkDocumentProcessingJobOptions | null,
     expectedUpdatedAt?: Date,
   ): Promise<{ document: DocumentRecord; queued: boolean }>;
-  requeueAllEligibleAndQueue(workspaceId: string, options?: DocumentProcessingJobOptions | null): Promise<{
+  requeueAllEligibleAndQueue(workspaceId: string, options?: BulkDocumentProcessingJobOptions | null): Promise<{
     queuedDocumentCount: number;
     skippedDocumentCount: number;
     queuedDocuments: Array<{ documentId: string; revision: number }>;
@@ -310,7 +324,7 @@ export interface DocumentRepositoryPort {
     workspaceId: string;
     /** null selects the manually added documents, which have no source row. */
     sourceId: string | null;
-    options?: DocumentProcessingJobOptions | null;
+    options?: BulkDocumentProcessingJobOptions | null;
   }): Promise<{
     queuedDocumentCount: number;
     skippedDocumentCount: number;

@@ -514,6 +514,34 @@ describe("ModelInferencePipelineService", () => {
     });
   });
 
+  it("links a call made for a document to that document and its revision on the durable model event", async () => {
+    const { recorder, events } = recordingUsageRecorder();
+    const client: TextGenerationClient = {
+      metadata: { capability: "chat", provider: "openai", model: "gpt-5.4-mini" },
+      async complete() {
+        return textResult("{}", { inputTokens: 500, outputTokens: 90, cachedInputTokens: 384, totalTokens: 590, quality: "actual" });
+      },
+      stream: () => streamResult(["unused"]),
+    };
+    const pipeline = new ModelInferencePipelineService(client, recorder);
+
+    await pipeline.complete({
+      operation: {
+        workspaceId: "workspace-1",
+        documentId: "doc-1",
+        documentRevision: 4,
+        surface: "documents",
+        operation: "document_enrichment",
+        attemptKey: "document-enrichment:doc-1:4",
+      },
+      prompt: "Private document",
+    });
+    await pipeline.complete({ operation: usageContext, prompt: "Private prompt" });
+
+    expect(events[0]).toMatchObject({ documentId: "doc-1", documentRevision: 4, inputTokens: 500, outputTokens: 90, cachedInputTokens: 384 });
+    expect(events[1]).toMatchObject({ documentId: null, documentRevision: null });
+  });
+
   it("surfaces reasoning and cached input tokens on the model call trace", async () => {
     const { recorder } = recordingUsageRecorder();
     const client: TextGenerationClient = {

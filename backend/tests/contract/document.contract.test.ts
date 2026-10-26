@@ -692,6 +692,37 @@ describe("document contract", () => {
     expect(job?.options).toEqual({ documentEnrichmentOverride: "on" });
   });
 
+  it("asks for a fresh extraction only from a single-document reprocess", async () => {
+    const { app, repositories } = createTestApp();
+    const session = await issueTestSession(app, "document-refresh-extraction@example.com");
+    const createResponse = await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({ title: "Workshop", content: "Dates: July 17-19, 2026." });
+    const documentId = createResponse.body.documentId;
+
+    const reprocessResponse = await request(app)
+      .post(`/api/v1/document/${documentId}/reprocess`)
+      .set(adminSessionHeaders(session))
+      .send({ documentEnrichmentOverride: "on", refreshDocumentEnrichment: true });
+
+    expect(reprocessResponse.status).toBe(202);
+    const job = await repositories.documentProcessingJobRepository.findByDocumentRevision({
+      documentId,
+      workspaceId: session.workspaceId,
+      documentRevision: 2,
+    });
+    expect(job?.options).toEqual({ documentEnrichmentOverride: "on", refreshDocumentEnrichment: true });
+
+    // A source reprocess refuses the field outright; it never queues a refresh.
+    const sourceResponse = await request(app)
+      .post(`/api/v1/document/sources/${MANUALLY_ADDED_DOCUMENTS_SOURCE_ID}/reprocess`)
+      .set(adminSessionHeaders(session))
+      .send({ documentEnrichmentOverride: "on", refreshDocumentEnrichment: true });
+    expect(sourceResponse.status).not.toBe(202);
+    expect(repositories.documentRepository.items.get(documentId)?.revision).toBe(2);
+  });
+
   it("supports cursor pagination for document lists", async () => {
     const { app } = createTestApp();
 

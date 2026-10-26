@@ -15,6 +15,7 @@ type Reply = { output: unknown } | { error: unknown };
 const scriptedGateway = (replies: Reply[]) => {
   const requests: DocumentEnrichmentRequest[] = [];
   const gateway: DocumentEnrichmentGateway = {
+    requestProfile: "test",
     async generate(request) {
       requests.push(request);
       const reply = replies[requests.length - 1];
@@ -333,7 +334,7 @@ describe("DocumentEnrichmentService", () => {
 
   it("makes no request when the catalog renders past its prompt budget", async () => {
     const generate = vi.fn();
-    const service = serviceWith({ generate });
+    const service = serviceWith({ requestProfile: "test", generate });
 
     const result = await service.enrich({
       ...workshopInput(),
@@ -355,5 +356,59 @@ describe("DocumentEnrichmentService", () => {
     expect(generate).not.toHaveBeenCalled();
     expect(result.modelAttemptCount).toBe(0);
     expect(result.provenance.failureReason).toBe("catalog_over_budget");
+  });
+});
+
+describe("DocumentEnrichmentService run outcome", () => {
+  const outcomeOf = async (replies: Reply[], input = workshopInput()) => {
+    const { gateway } = scriptedGateway(replies);
+    return serviceWith(gateway).enrich(input);
+  };
+
+  it("codes each way a run ends, content-free", async () => {
+    const truncated = { error: new EnrichmentReplyUnreadableError("truncated") };
+    const usable = { output: eventOutput([workshopFact()]) };
+
+    expect((await outcomeOf([usable])).outcome).toBe("applied");
+    expect((await outcomeOf([{ error: new EnrichmentReplyUnreadableError("not_json") }, usable])).outcome).toBe("applied");
+    expect((await outcomeOf([truncated, usable])).outcome).toBe("applied_after_truncation");
+    expect((await outcomeOf([truncated, truncated])).outcome).toBe("truncated");
+    expect((await outcomeOf([{ output: ["not", "an", "object"] }, { output: "prose" }])).outcome).toBe("invalid_output");
+    expect((await outcomeOf([{ error: new EnrichmentProviderError() }])).outcome).toBe("provider_error");
+  });
+
+  it("stores nothing from a reply cut off at the output cap twice, and says so", async () => {
+    const truncated = { error: new EnrichmentReplyUnreadableError("truncated") };
+    const input = {
+      ...workshopInput(),
+      document: { ...workshopInput().document, metadata: { dateFrom: "2026-07-17", dateTo: "2026-07-19" } },
+    };
+
+    const result = await outcomeOf([truncated, truncated], input);
+
+    expect(result).toMatchObject({ status: "failed", outcome: "truncated", factCount: 0, appliedChunkCount: 0 });
+    expect(result.documentMetadata).toEqual({ dateFrom: "2026-07-17", dateTo: "2026-07-19" });
+    expect(result.chunks).toEqual(input.chunks);
+  });
+
+  it("codes a catalog over its prompt budget without asking the model", async () => {
+    const result = await serviceWith({ requestProfile: "test", generate: vi.fn() }).enrich({
+      ...workshopInput(),
+      catalog: {
+        revision: "9",
+        types: [{
+          key: "oversized",
+          label: "Oversized",
+          description: "d".repeat(13_000),
+          enabled: true,
+          origin: "operator",
+          payload: "fields",
+          disableable: true,
+          fields: [],
+        }],
+      },
+    });
+
+    expect(result.outcome).toBe("catalog_over_budget");
   });
 });

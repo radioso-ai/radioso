@@ -266,6 +266,7 @@ describe("document subject search text", () => {
           appliedChunkCount: 1,
           modelAttemptCount: 1,
           firstAttemptFailureReason: null,
+          outcome: "applied",
         };
       },
     };

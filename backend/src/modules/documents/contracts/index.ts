@@ -18,6 +18,7 @@ export type {
   DocumentQueueUpdateInput,
   DocumentRecord,
   DocumentRepositoryPort,
+  BulkDocumentProcessingJobOptions,
   DocumentProcessingJobOptions,
   DocumentReviewedOperationApplyPort,
   DocumentReviewedOperationPreparationPort,

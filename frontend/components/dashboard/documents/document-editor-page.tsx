@@ -175,6 +175,7 @@ export function DocumentEditorPage({
     ? [
         ['Status', enrichment.status],
         ['Enriched', formatDateTime(enrichment.enrichedAt)],
+        ['Model call', enrichment.reusedReply ? 'Reused from the last extraction of this content' : null],
       ].filter(([, value]) => value)
     : []
   const readOnlyExplanation = document.sourceKind === 'uploaded_file'

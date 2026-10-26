@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
 
-import { sql, type ExpressionBuilder, type SelectQueryBuilder } from "kysely";
+import { sql, type ExpressionBuilder, type RawBuilder, type SelectQueryBuilder } from "kysely";
 
 import type {
+  BulkDocumentProcessingJobOptions,
   DocumentCreateInput,
   DocumentDerivedContentUpdateInput,
   DocumentEnrichmentMetadataUpdateInput,
@@ -22,7 +23,7 @@ import type { MetadataFieldSuggestion, MetadataValueType } from "../../modules/s
 import { decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 import { conflict, notFound } from "../../shared/domain/errors.js";
 import { anyOf, currentTimestamp, optionalTimestampMatch, toJsonb } from "../../shared/infra/kysely/sqlHelpers.js";
-import type { DB } from "../../shared/infra/kysely/schema.js";
+import type { DB, JsonValue } from "../../shared/infra/kysely/schema.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import {
   collectMetadataPaths,
@@ -34,6 +35,18 @@ import {
   appendVectorFilterUpdatesForDocument,
   appendVectorTombstonesForDocuments,
 } from "./vectorIndexWorkRepository.js";
+
+/**
+ * A document's stored extraction reply quotes its title and text, so a write that changes either
+ * drops it rather than keep quotes of content the document no longer holds.
+ */
+const enrichmentReplyAfterContentWrite = (next: { title?: string; markdownContent: string }): RawBuilder<JsonValue | null> =>
+  next.title === undefined
+    ? sql`CASE WHEN documents.markdown_content IS DISTINCT FROM ${next.markdownContent} THEN NULL ELSE documents.enrichment_reply END`
+    : sql`CASE WHEN documents.markdown_content IS DISTINCT FROM ${next.markdownContent} OR documents.title IS DISTINCT FROM ${next.title} THEN NULL ELSE documents.enrichment_reply END`;
+
+const enrichmentReplyAfterUpsert = (): RawBuilder<JsonValue | null> =>
+  sql`CASE WHEN documents.markdown_content IS DISTINCT FROM excluded.markdown_content OR documents.title IS DISTINCT FROM excluded.title THEN NULL ELSE documents.enrichment_reply END`;
 
 interface QueuedDocumentRow {
   id: string;
@@ -263,6 +276,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
             // provenance describes the old metadata/content and must not own
             // keys on the new revision.
             enrichment: null,
+            enrichment_reply: enrichmentReplyAfterUpsert(),
             source_kind: eb.ref("excluded.source_kind"),
             source_filename: eb.ref("excluded.source_filename"),
             source_mime_type: eb.ref("excluded.source_mime_type"),
@@ -344,6 +358,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
             input.enrichment !== undefined
               ? toJsonb(input.enrichment)
               : eb.ref("enrichment"),
+          enrichment_reply: enrichmentReplyAfterContentWrite(input),
           external_document_id: eb.fn.coalesce(
             eb.val(input.externalDocumentId ?? null),
             "external_document_id",
@@ -585,6 +600,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
         updated_at: currentTimestamp(),
         metadata:
           input.metadata !== undefined ? toJsonb(input.metadata) : eb.ref("metadata"),
+        enrichment_reply: enrichmentReplyAfterContentWrite(input),
         external_document_id: eb.fn.coalesce(
           eb.val(input.externalDocumentId ?? null),
           "external_document_id",
@@ -628,6 +644,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
       .set({
         source_content: input.sourceContent,
         markdown_content: input.markdownContent,
+        enrichment_reply: enrichmentReplyAfterContentWrite({ markdownContent: input.markdownContent }),
         updated_at: currentTimestamp(),
       })
       .where("id", "=", input.documentId)
@@ -764,7 +781,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
   async requeueEligibleAndQueue(
     documentId: string,
     workspaceId: string,
-    options?: DocumentProcessingJobOptions | null,
+    options?: BulkDocumentProcessingJobOptions | null,
     expectedUpdatedAt?: Date,
   ): Promise<{ document: DocumentRecord; queued: boolean }> {
     return this.db.transaction().execute(async (trx) => {
@@ -803,7 +820,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
     });
   }
 
-  async requeueAllEligibleAndQueue(workspaceId: string, options?: DocumentProcessingJobOptions | null): Promise<{
+  async requeueAllEligibleAndQueue(workspaceId: string, options?: BulkDocumentProcessingJobOptions | null): Promise<{
     queuedDocumentCount: number;
     skippedDocumentCount: number;
     queuedDocuments: Array<{ documentId: string; revision: number }>;
@@ -854,7 +871,7 @@ export class DocumentRepository implements DocumentRepositoryPort {
     workspaceId: string;
     /** null selects the manually added documents, which have no source row. */
     sourceId: string | null;
-    options?: DocumentProcessingJobOptions | null;
+    options?: BulkDocumentProcessingJobOptions | null;
   }): Promise<{
     queuedDocumentCount: number;
     skippedDocumentCount: number;

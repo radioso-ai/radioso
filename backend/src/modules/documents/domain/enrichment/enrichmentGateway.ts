@@ -22,6 +22,12 @@ export interface DocumentEnrichmentRequest {
 }
 
 export interface DocumentEnrichmentGateway {
+  /**
+   * The settings the gateway sends with its requests — reasoning effort,
+   * output caps, temperature — as one stable string. A stored reply answers a
+   * request only under the same settings, so changing them re-asks.
+   */
+  readonly requestProfile: string;
   /** Resolves with the reply parsed as JSON; rejects with one of the errors below. */
   generate(request: DocumentEnrichmentRequest): Promise<{ model: string; output: unknown }>;
 }

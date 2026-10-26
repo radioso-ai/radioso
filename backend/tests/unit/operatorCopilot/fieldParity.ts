@@ -147,6 +147,11 @@ const retrievalSettingsOnlyPatchesTheDefaultSkill = permanent(
  * copilot-field-parity.test.ts.
  */
 export const fieldExclusions: Record<string, Record<string, FieldParityExclusion>> = {
+  reprocess_document: {
+    refreshDocumentEnrichment: permanent(
+      "A fresh metadata extraction is an operator's explicit request for one document, from its Properties panel. Ray's reprocess applies the stored extraction reply to unchanged content, so nothing Ray runs can re-bill a model call the document already paid for.",
+    ),
+  },
   document_search: {
     ...fields(["metadataFilter"], documentSearchUnreviewedMetadataFilter),
     ...fields(["includeDebug"], internalDebugTraceNeverToModel),

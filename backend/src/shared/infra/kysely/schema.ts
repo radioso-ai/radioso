@@ -783,6 +783,7 @@ export interface Documents {
   content_size_bytes: Int8 | null;
   created_at: Generated<Timestamp>;
   enrichment: Json | null;
+  enrichment_reply: Json | null;
   external_document_id: string | null;
   failed_at: Timestamp | null;
   failure_reason: string | null;

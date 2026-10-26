@@ -62,6 +62,7 @@ const paragraphChunking: ChunkingStrategy = {
 
 // The model quotes the text that dates each event; the run finds the quote in the body.
 const scriptedGateway = (script: { next: ModelReply }): DocumentEnrichmentGateway => ({
+  requestProfile: "test",
   async generate() {
     const reply = script.next;
     if (reply.kind === "failure") {

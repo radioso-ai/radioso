@@ -177,6 +177,11 @@ export interface DocumentReprocessOptions {
   documentEnrichmentOverride?: "on" | "off";
 }
 
+export interface SingleDocumentReprocessOptions extends DocumentReprocessOptions {
+  /** Ask the extraction model afresh even when the document is unchanged since its last extraction. */
+  refreshDocumentEnrichment?: boolean;
+}
+
 const createUploadBlob = ({ file, mimeType }: DocumentImportFileRequest): Blob => {
   if (file instanceof Blob) {
     if (!mimeType || file.type === mimeType) {
@@ -289,7 +294,7 @@ export const createRadiosoClient = (options: RadiosoClientOptions) => {
       listHistory: (query?: Parameters<GeneratedRadiosoClient["listDocumentSearchHistory"]>[0]) =>
         generated.listDocumentSearchHistory(query),
       getHistory: (searchId: string) => generated.getDocumentSearchHistory(searchId),
-      reprocess: (documentId: string, body?: DocumentReprocessOptions) =>
+      reprocess: (documentId: string, body?: SingleDocumentReprocessOptions) =>
         requestJson<DocumentOperationResponse>(config, {
           method: "POST",
           path: `/api/v1/document/${encodeURIComponent(documentId)}/reprocess`,

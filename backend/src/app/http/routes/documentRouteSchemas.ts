@@ -18,6 +18,13 @@ export const reprocessDocumentBodySchema = z.object({
   documentEnrichmentOverride: documentEnrichmentOverrideSchema.optional(),
 }).strict();
 
+// Only one document at a time can ask for a fresh extraction, so a source or
+// workspace reprocess can never re-bill every document it touches.
+export const reprocessSingleDocumentBodySchema = z.object({
+  documentEnrichmentOverride: documentEnrichmentOverrideSchema.optional(),
+  refreshDocumentEnrichment: z.boolean().optional(),
+}).strict();
+
 export const sourceParamsSchema = z.object({
   sourceId: z.string().uuid(),
 });

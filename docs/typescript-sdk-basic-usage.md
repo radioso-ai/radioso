@@ -1,7 +1,7 @@
 ---
 title: "Radioso TypeScript SDK: Basic Usage"
 description: "SDK tutorial covering documents, settings, skills, agents, authoring, chat, streaming, history, and error handling patterns."
-last_updated: 2026-09-22
+last_updated: 2026-10-25
 ---
 
 # Radioso TypeScript SDK: Basic Usage
@@ -118,6 +118,15 @@ Force enrichment for a single reprocess run:
 ```ts
 await client.documents.reprocess("document-id", {
   documentEnrichmentOverride: "on",
+});
+```
+
+A document whose title, text, and catalog are unchanged since its last extraction gets that extraction's reply applied again, with no model call. To have the model read it afresh, add `refreshDocumentEnrichment` (single-document reprocess only):
+
+```ts
+await client.documents.reprocess("document-id", {
+  documentEnrichmentOverride: "on",
+  refreshDocumentEnrichment: true,
 });
 ```
 

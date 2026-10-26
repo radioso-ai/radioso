@@ -811,7 +811,8 @@ export function DocumentsView({
       return next
     })
     try {
-      await documentsApi.reprocessDocument(documentId, { documentEnrichmentOverride: 'on' })
+      // An operator asking for extraction on one document wants the model to read it again.
+      await documentsApi.reprocessDocument(documentId, { documentEnrichmentOverride: 'on', refreshDocumentEnrichment: true })
       invalidateDashboardQueries(['document.status_changed'])
       await openDocumentPage(documentId)
     } catch (error) {

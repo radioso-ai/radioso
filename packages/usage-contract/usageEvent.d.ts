@@ -65,6 +65,9 @@ export interface ModelUsageEvent {
   copilotConversationId?: string | null;
   /** Ray's own per-turn operator message, distinct from `messageId`: `copilot_messages`, not `messages`. */
   copilotMessageId?: string | null;
+  /** The document a call was made for, such as metadata extraction, with the revision it read. */
+  documentId?: string | null;
+  documentRevision?: number | null;
   surface: string;
   operation: string;
   provider: string;

@@ -34,7 +34,7 @@ const catalog = (
 
 const serviceWith = (output: unknown) =>
   new DocumentEnrichmentService({
-    gateway: { generate: vi.fn().mockResolvedValue({ model: "gpt-5.2", output }) },
+    gateway: { requestProfile: "test", generate: vi.fn().mockResolvedValue({ model: "gpt-5.2", output }) },
     strategyRegistry: createDefaultDocumentEnrichmentStrategyRegistry(),
     now: () => new Date("2026-08-21T12:00:00.000Z"),
   });
@@ -208,7 +208,7 @@ describe("schema-driven enrichment", () => {
 
   it("leaves tags and the generated-key set intact when the run fails", async () => {
     const service = new DocumentEnrichmentService({
-      gateway: { generate: vi.fn().mockRejectedValue(new Error("provider exploded")) },
+      gateway: { requestProfile: "test", generate: vi.fn().mockRejectedValue(new Error("provider exploded")) },
       strategyRegistry: createDefaultDocumentEnrichmentStrategyRegistry(),
       now: () => new Date("2026-08-21T12:00:00.000Z"),
     });
@@ -253,6 +253,7 @@ describe("schema-driven enrichment", () => {
   it("keeps built-in temporal behavior when no operator type matches", async () => {
     const service = new DocumentEnrichmentService({
       gateway: {
+        requestProfile: "test",
         generate: vi.fn().mockResolvedValue({
           model: "gpt-5.2",
           output: {
@@ -278,6 +279,7 @@ describe("disabled built-in types", () => {
   const eventServiceWith = () =>
     new DocumentEnrichmentService({
       gateway: {
+        requestProfile: "test",
         generate: vi.fn().mockResolvedValue({
           model: "gpt-5.2",
           output: {

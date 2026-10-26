@@ -87,6 +87,13 @@ and `messages` and must never hold a Ray id. Both pairs are independently
 `SET NULL` on delete: Ray's own retention sweep and conversation erasure each
 remove only their own link, never the ledger row.
 
+A call made for a document, chunk embedding or metadata generation, carries
+`document_id` and the `document_revision` it read. `document_id` is `SET NULL`
+on delete too, and a document deleted while its call is still recording keeps
+the ledger row with both cleared. Summing `documents` / `document_enrichment`
+rows by account and month gives metadata generation spend beside conversation
+spend.
+
 ## Current Surfaces And Operations
 
 | Surface | Operation | Caller | Lineage |
@@ -115,7 +122,7 @@ remove only their own link, never the ledger row.
 | `documents` | `query_embedding` | Document search semantic query embeddings | workspace, search request |
 | `documents` | `rerank` | Document search model reranking | workspace, search request |
 | `documents` | `semantic_chunking_embedding` | Document processing semantic chunking embeddings | workspace, document job |
-| `documents` | `document_enrichment` | Metadata generation for a processed document | workspace, document, revision |
+| `documents` | `document_enrichment` | Metadata generation for a processed document | account when resolvable, workspace, document, revision |
 | `eval` | `query_interpretation` | Eval replay query rewrite and query interpretation | workspace, eval run |
 | `eval` | `trigger_analysis` | Eval replay metadata trigger analysis | workspace, eval run |
 | `eval` | `query_embedding` | Eval replay semantic query embeddings | workspace, eval run |

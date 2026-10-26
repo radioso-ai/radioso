@@ -212,6 +212,7 @@ export interface OpenApiSchemaCatalog {
   DocumentSourceListItemSchema: z.ZodTypeAny;
   DocumentSourceUpdateRequestSchema: z.ZodTypeAny;
   DocumentReprocessRequestSchema: z.ZodTypeAny;
+  SingleDocumentReprocessRequestSchema: z.ZodTypeAny;
   DocumentRetrievalUpdateRequestSchema: z.ZodTypeAny;
   SourceReprocessResponseSchema: z.ZodTypeAny;
   DocumentSourceListResponseSchema: z.ZodTypeAny;

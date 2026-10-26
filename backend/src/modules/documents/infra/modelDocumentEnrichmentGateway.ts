@@ -24,6 +24,8 @@ const TRUNCATION_RETRY: { maxOutputTokens: number; reasoningEffort: ReasoningEff
   reasoningEffort: "minimal",
 };
 
+const TEMPERATURE = 0;
+
 const stripJsonFence = (value: string): string =>
   value
     .trim()
@@ -47,6 +49,12 @@ const readReply = (result: TextGenerationResult): unknown => {
 };
 
 export class ModelDocumentEnrichmentGateway implements DocumentEnrichmentGateway {
+  readonly requestProfile = JSON.stringify({
+    temperature: TEMPERATURE,
+    firstAttempt: FIRST_ATTEMPT,
+    truncationRetry: TRUNCATION_RETRY,
+  });
+
   constructor(private readonly pipeline: ModelInferencePipeline) {}
 
   async generate(request: DocumentEnrichmentRequest): Promise<{ model: string; output: unknown }> {
@@ -56,7 +64,7 @@ export class ModelDocumentEnrichmentGateway implements DocumentEnrichmentGateway
       result = await this.pipeline.complete({
         prompt: request.documentRepresentation,
         systemPrompt: request.prompt,
-        temperature: 0,
+        temperature: TEMPERATURE,
         ...(request.retry?.after === "truncated" ? TRUNCATION_RETRY : FIRST_ATTEMPT),
         responseFormat: {
           type: "json_schema",
@@ -67,6 +75,8 @@ export class ModelDocumentEnrichmentGateway implements DocumentEnrichmentGateway
         operation: {
           workspaceId: request.workspaceId,
           requestId: request.documentId,
+          documentId: request.documentId,
+          documentRevision: request.documentRevision,
           surface: "documents",
           operation: "document_enrichment",
           // Distinct per attempt, so a retry's usage is recorded rather than deduplicated.

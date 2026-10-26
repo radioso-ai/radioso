@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
+import type { DocumentProcessingJobOptions, DocumentRepositoryPort } from "../../src/modules/documents/contracts/documentContracts.js";
 import { WorkspaceIngestionReprocessService } from "../../src/modules/documents/services/workspaceIngestionReprocessService.js";
 import {
   createAuditService,
@@ -167,5 +168,23 @@ describe("workspace ingestion reprocess", () => {
       }),
     );
     expect(order).toEqual(["publish", "dispatch"]);
+  });
+
+  it("cannot carry a fresh-extraction request on any bulk reprocess path", () => {
+    // Checked by the compiler: each call below must be a type error. A fresh
+    // extraction is asked for one document at a time, never for many.
+    const refreshing: DocumentProcessingJobOptions = { refreshDocumentEnrichment: true };
+    const bulkPaths = (service: WorkspaceIngestionReprocessService, repository: DocumentRepositoryPort) => [
+      // @ts-expect-error a workspace reprocess cannot ask for a fresh extraction
+      service.reprocessWorkspace("workspace-1", refreshing),
+      // @ts-expect-error a workspace requeue cannot ask for a fresh extraction
+      repository.requeueAllEligibleAndQueue("workspace-1", refreshing),
+      // @ts-expect-error a source requeue cannot ask for a fresh extraction
+      repository.requeueSourceEligibleAndQueue({ workspaceId: "workspace-1", sourceId: null, options: refreshing }),
+      // @ts-expect-error an eligibility requeue cannot ask for a fresh extraction
+      repository.requeueEligibleAndQueue("document-1", "workspace-1", refreshing),
+    ];
+
+    expect(bulkPaths).toBeTypeOf("function");
   });
 });

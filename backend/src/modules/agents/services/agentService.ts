@@ -143,14 +143,14 @@ const proposalSettingValue = (settings: object, settingKey: string): unknown =>
   Object.hasOwn(settings, settingKey) ? (settings as Record<string, unknown>)[settingKey] : undefined;
 
 /** An agent whose default locale a write changed, for what keeps a copy of it elsewhere. */
-export interface AgentDefaultLocaleChange {
+interface AgentDefaultLocaleChange {
   readonly workspaceId: string;
   readonly agentId: string;
   readonly defaultLocale: string | null;
 }
 
 /** An agent about to be deleted: its row and everything it owns are still there. */
-export interface AgentDeletion {
+interface AgentDeletion {
   readonly workspaceId: string;
   readonly agentId: string;
 }

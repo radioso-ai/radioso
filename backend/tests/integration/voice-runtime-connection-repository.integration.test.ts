@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { VoiceRuntimeConnectionRepository } from "../../src/modules/voiceChannel/public.js";
 import { Database } from "../../src/shared/infra/database.js";

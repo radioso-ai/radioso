@@ -127,7 +127,7 @@
     "postal-mime": "^4.1.4",
     "re2": "1.26.1",
     "redis": "6.2.1",
-    "sanitize-html": "^2.18.0",
+    "sanitize-html": "^2.18.1",
     "swagger-ui-express": "^5.0.1",
     "undici": "8.12.3",
     "yaml": "^2.8.3",

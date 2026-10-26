@@ -39,9 +39,9 @@ const deps = (overrides: Record<string, unknown> = {}) => {
 };
 
 const service = (d: ReturnType<typeof deps>) => new RequestedDateRangeSearchService(
-  d.queryEmbeddings as never,
-  d.temporalCandidateRetrieval as never,
-  d.retrievalDefaultsProvider as never,
+  d.queryEmbeddings,
+  d.temporalCandidateRetrieval,
+  d.retrievalDefaultsProvider,
 );
 
 describe("RequestedDateRangeSearchService", () => {

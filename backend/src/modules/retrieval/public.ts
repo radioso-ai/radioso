@@ -71,10 +71,7 @@ export type {
   RequestedDateRangeDropReason,
 } from "./domain/temporal/requestedDateRange.js";
 export { readRequestedDateRange } from "./domain/temporal/requestedDateRange.js";
-export type {
-  RequestedDateRangeLookupStatus,
-  RequestedDateRangeLookupSummary,
-} from "./domain/temporal/requestedDateRangeLookupStatus.js";
+export type { RequestedDateRangeLookupSummary } from "./domain/temporal/requestedDateRangeLookupStatus.js";
 export type { RequestedDateRangeSearchPort } from "./services/requestedDateRangeSearchService.js";
 export {
   MetadataRuleFieldReferenceService,

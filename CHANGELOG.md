@@ -9,6 +9,45 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.24.0] - 2026-10-26
+
+### Added
+
+- **mcp:** show the resolved date range in retrieval_probe and accept a period in document_search ([#1640](https://github.com/radioso-ai/radioso/pull/1640))
+- **routines:** sensitive slots, masked wherever the value leaves the conversation ([#1629](https://github.com/radioso-ai/radioso/pull/1629))
+- **privacy:** durable backlog for voice recordings a deletion leaves at the vendor ([#1628](https://github.com/radioso-ai/radioso/pull/1628))
+- **security:** rotate the credential encryption key without re-entering credentials ([#1630](https://github.com/radioso-ai/radioso/pull/1630))
+
+### Fixed
+
+- **chat:** reply in the visitor's language, not their browser's ([#1641](https://github.com/radioso-ai/radioso/pull/1641))
+- **privacy:** keep phone numbers and error messages out of app log lines ([#1631](https://github.com/radioso-ai/radioso/pull/1631))
+
+### Performance
+
+- **retrieval:** keep the lexical some-terms pass inside its budget on mid-sized workspaces ([#1639](https://github.com/radioso-ai/radioso/pull/1639))
+- **documents:** reuse a document's enrichment reply while its content is unchanged ([#1627](https://github.com/radioso-ai/radioso/pull/1627))
+
+### Documentation
+
+- **legal:** list PostHog error tracking as a subprocessor in the DPA ([#1643](https://github.com/radioso-ai/radioso/pull/1643))
+- **legal:** name Resend as the US email subprocessor and fix the transfers paragraph ([#1635](https://github.com/radioso-ai/radioso/pull/1635))
+
+### Internal
+
+- **retrieval:** stop the date-range telemetry test failing on 2026-10-26 ([#1636](https://github.com/radioso-ai/radioso/pull/1636))
+
+### Database migrations
+
+This release adds 4 migrations. They run at service startup, so deploy one stack at a time; overlapping deploys contend on the same DDL lock and stall until one gives up.
+
+- `245_voice_recording_erasures.sql`
+- `246_unwritten_encryption_key_id_columns.sql`
+- `247_document_enrichment_reply.sql`
+- `248_routine_slot_sensitivity.sql`
+
+[1.24.0]: https://github.com/radioso-ai/radioso/compare/v1.23.0...v1.24.0
+
 ## [1.23.0] - 2026-10-25
 
 ### Added

@@ -7905,6 +7905,14 @@ export interface components {
             /** @default false */
             includeDebug: boolean;
         };
+        RequestedDateRange: {
+            dateFrom: string;
+            dateTo: string;
+        };
+        RequestedRangeLookup: {
+            ran: boolean;
+            candidateCount: number;
+        };
         RetrievalSearchEvidence: {
             /** Format: uuid */
             documentId: string;
@@ -7916,6 +7924,10 @@ export interface components {
                 [key: string]: unknown;
             };
             score?: number;
+            dateFrom: string | null;
+            dateTo: string | null;
+            datedInRequestedRange: boolean | null;
+            fromRequestedRangeLookup: boolean;
         };
         RetrievalSearchResponse: {
             /** @enum {string} */
@@ -7925,6 +7937,10 @@ export interface components {
                 semantic: string;
                 lexical: string;
             };
+            requestedDateRange: components["schemas"]["RequestedDateRange"] | null;
+            /** @enum {string|null} */
+            requestedDateRangeDropReason: "invalid" | "too_long" | null;
+            requestedRangeLookup: components["schemas"]["RequestedRangeLookup"];
             results: components["schemas"]["RetrievalSearchEvidence"][];
             debug?: {
                 activitySummary: components["schemas"]["ActivitySummary"];

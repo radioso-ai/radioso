@@ -7,6 +7,15 @@ import {
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { DocumentRepositoryPort, DocumentSummaryRecord } from "./documentIngestionService.js";
 import type { RetrievalPipelineService, ActivityTrace } from "../../retrieval/public.js";
+import {
+  readRequestedDateRange,
+  type RequestedDateRange,
+  type RetrievedChunk,
+  type TemporalCandidateRetrievalPort,
+} from "../../retrieval/public.js";
+import type { QueryEmbeddingPort } from "../../embeddingProfiles/public.js";
+import { badRequest } from "../../../shared/domain/errors.js";
+import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 
 // Not exported: nothing outside this module names a search action directly; callers only ever
 // see it nested inside DocumentSearchAction, which is exported.
@@ -64,6 +73,9 @@ export class DocumentSearchService {
     private readonly auditService: AuditService,
     private readonly workspaceInvalidationPublisher: WorkspaceInvalidationPublisher =
       createNoopWorkspaceInvalidationPublisher(),
+    /** Wired only where the requested-range lookup can run; absent, a range input is refused. */
+    private readonly temporalCandidateRetrieval?: TemporalCandidateRetrievalPort,
+    private readonly queryEmbeddings?: QueryEmbeddingPort,
   ) {}
 
   async search(input: {
@@ -75,8 +87,13 @@ export class DocumentSearchService {
      * `executionSurface` is `"operator_copilot"`; never the assistant's own ids. */
     copilotConversationId?: string;
     copilotMessageId?: string;
+    /** An explicit period to prefer, both or neither. Validated the same way the assistant's
+     * own query interpretation validates a model-resolved range. */
+    dateFrom?: string;
+    dateTo?: string;
   }): Promise<DocumentSearchResponse> {
     const searchId = randomUUID();
+    const requestedDateRange = this.resolveRequestedDateRange(input.dateFrom, input.dateTo);
     const retrieval = await this.retrievalPipeline.run({
       workspaceId: input.workspaceId,
       query: input.query,
@@ -92,31 +109,52 @@ export class DocumentSearchService {
       },
     });
 
-    const matchedDocumentIds = [...new Set(retrieval.contexts.map((context) => context.documentId))];
+    const dateRangeChunks = requestedDateRange
+      ? await this.findRequestedDateRangeChunks(input.workspaceId, input.query, requestedDateRange)
+      : [];
+
+    const matchedDocumentIds = [...new Set([
+      ...dateRangeChunks.map((chunk) => chunk.documentId),
+      ...retrieval.contexts.map((context) => context.documentId),
+    ])];
     const documents = await this.documentRepository.listSummariesByIdsAndWorkspaceId(input.workspaceId, matchedDocumentIds);
     const documentsById = new Map(documents.map((document) => [document.id, document]));
-    const aggregated = new Map<string, { document: DocumentSummaryRecord; score: number; evidence: string[] }>();
+    const aggregated = new Map<string, { document: DocumentSummaryRecord; score: number; evidence: string[]; datedInRequestedRange: boolean }>();
 
-    for (const context of retrieval.contexts) {
-      const document = documentsById.get(context.documentId);
+    const merge = (documentId: string, score: number, content: string, datedInRequestedRange: boolean) => {
+      const document = documentsById.get(documentId);
       if (!document) {
-        continue;
+        return;
       }
 
-      const score = context.relevanceScore ?? context.semanticScore ?? context.similarity ?? 0;
-      const evidence = buildEvidence(context.content);
+      const evidence = buildEvidence(content);
       const current = aggregated.get(document.id);
       if (!current) {
-        aggregated.set(document.id, { document, score, evidence });
-        continue;
+        aggregated.set(document.id, { document, score, evidence, datedInRequestedRange });
+        return;
       }
 
+      current.datedInRequestedRange ||= datedInRequestedRange;
       current.score = Math.max(current.score, score);
       current.evidence = [...current.evidence, ...evidence].slice(0, 3);
+    };
+
+    // Merged first: the requested-range lookup is a calendar match, guaranteed in range by
+    // construction, independent of whatever the similarity search below ranked it.
+    for (const chunk of dateRangeChunks) {
+      merge(chunk.documentId, chunk.similarity ?? 0, chunk.content, true);
+    }
+    for (const context of retrieval.contexts) {
+      merge(context.documentId, context.relevanceScore ?? context.semanticScore ?? context.similarity ?? 0, context.content, false);
     }
 
     const results = [...aggregated.values()]
-      .sort((left, right) => right.score - left.score)
+      .sort((left, right) => {
+        if (left.datedInRequestedRange !== right.datedInRequestedRange) {
+          return left.datedInRequestedRange ? -1 : 1;
+        }
+        return right.score - left.score;
+      })
       .map((entry, index) => this.toResult(entry.document, entry.score, entry.evidence, index + 1));
 
     const response: DocumentSearchResponse = {
@@ -148,6 +186,53 @@ export class DocumentSearchService {
     this.workspaceInvalidationPublisher.enqueue(input.workspaceId, ["search.created"]);
 
     return response;
+  }
+
+  /** Both-or-neither; the same rules `readRequestedDateRange` applies to a model-resolved range. */
+  private resolveRequestedDateRange(dateFrom: string | undefined, dateTo: string | undefined): RequestedDateRange | null {
+    if (dateFrom === undefined && dateTo === undefined) {
+      return null;
+    }
+    if (dateFrom === undefined || dateTo === undefined) {
+      throw badRequest("Provide both dateFrom and dateTo, or neither");
+    }
+
+    const reading = readRequestedDateRange({ dateFrom, dateTo });
+    if (!reading.range) {
+      throw badRequest(
+        reading.dropReason === "too_long"
+          ? "dateFrom to dateTo spans too many days"
+          : "dateFrom and dateTo must be valid ISO calendar dates, with dateFrom on or before dateTo",
+      );
+    }
+    return reading.range;
+  }
+
+  private async findRequestedDateRangeChunks(
+    workspaceId: string,
+    query: string,
+    range: RequestedDateRange,
+  ): Promise<RetrievedChunk[]> {
+    if (!this.temporalCandidateRetrieval || !this.queryEmbeddings) {
+      throw badRequest("Date-range search is unavailable on this surface.", { code: "document_search_date_range_unavailable" });
+    }
+
+    const embedding = await this.queryEmbeddings.embedQueries({
+      workspaceId,
+      texts: [query],
+      usageContext: { workspaceId, surface: "documents", attemptKey: "document_search_date_range", operation: "query_embedding" },
+    });
+    const queryVector = embedding.vectors[0];
+
+    return this.temporalCandidateRetrieval.findInWindow({
+      workspaceId,
+      window: {
+        kind: "requested_range",
+        range,
+        ...(queryVector?.length ? { similarTo: { space: embedding.space, queryVector } } : {}),
+      },
+      topK: RETRIEVAL_BEHAVIOR.temporal.dateRangeLookupDepth,
+    });
   }
 
   private toResult(document: DocumentSummaryRecord, score: number, evidence: string[], rank: number): DocumentSearchResult {

@@ -3,6 +3,7 @@ import type { RetrievalExecutionSurface, ActivityTrace } from "./retrievalPipeli
 import type { ActivitySummary } from "./retrievalPipelineTypes.js";
 import type { RetrievalResponseBehavior } from "../public.js";
 import type { RetrievalSourceScope } from "./retrievalSourceFilter.js";
+import type { RequestedDateRange, RequestedDateRangeDropReason } from "./temporal/requestedDateRange.js";
 
 export interface RetrievalConversationContext {
   previousUserMessages?: string[];
@@ -30,6 +31,12 @@ export interface RetrievalSearchRequest {
   executionSurface?: Extract<RetrievalExecutionSurface, "retrieval" | "mcp_capability">;
 }
 
+/** How many candidates the requested-range structured lookup contributed, and whether it ran at all. */
+export interface RetrievalRequestedRangeLookupSummary {
+  ran: boolean;
+  candidateCount: number;
+}
+
 export interface RetrievalSearchResult {
   outcome: "results";
   agentScope: RetrievalAgentScopeAttribution | null;
@@ -37,6 +44,11 @@ export interface RetrievalSearchResult {
     semantic: string;
     lexical: string;
   };
+  /** The period the question resolved to, or `null` when it named none or the model's range was dropped. */
+  requestedDateRange: RequestedDateRange | null;
+  /** Why a model-returned range was set aside; `null` when one was kept or none was proposed. */
+  requestedDateRangeDropReason: RequestedDateRangeDropReason | null;
+  requestedRangeLookup: RetrievalRequestedRangeLookupSummary;
   results: Array<{
     documentId: string;
     chunkId: string;
@@ -44,6 +56,13 @@ export interface RetrievalSearchResult {
     content: string;
     metadata?: Record<string, unknown>;
     score?: number;
+    /** The chunk's own dates from metadata, independent of whether a range was requested. */
+    dateFrom: string | null;
+    dateTo: string | null;
+    /** Whether the chunk's own dates fall inside `requestedDateRange`; `null` when no range was requested. */
+    datedInRequestedRange: boolean | null;
+    /** Whether this result came from the requested-range structured lookup rather than semantic or lexical search. */
+    fromRequestedRangeLookup: boolean;
   }>;
   activitySummary: ActivitySummary;
   activityTrace: ActivityTrace;

@@ -47,8 +47,6 @@
   "exports|backend/src/modules/integrationOauth/services/oauthRefreshCoordinator.ts|InProcessOauthRefreshCoordinator",
   "exports|backend/src/modules/operatorCopilot/probeBudget.ts|CopilotProbeBudgetExhaustedError",
   "exports|backend/src/modules/operatorCopilot/probeBudget.ts|CopilotVerificationCostError",
-  "exports|backend/src/modules/operatorCopilot/tools/retrievalProbe.ts|retrievalProbeInputSchema",
-  "exports|backend/src/modules/operatorCopilot/tools/retrievalProbe.ts|retrievalProbeOutputSchema",
   "exports|backend/src/modules/quality/domain/resolution.ts|QUALITY_RESOLUTION_NOTE_MAX_LENGTH",
   "exports|backend/src/modules/reporting/usageDetailsQuery.ts|MAX_USAGE_DETAILS_DAYS",
   "exports|backend/src/modules/reporting/usageDetailsRoutes.ts|usageDetailsQuerySchema",

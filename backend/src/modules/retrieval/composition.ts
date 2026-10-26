@@ -85,6 +85,7 @@ export const createDefaultRetrievalServices = (input: {
   skillSettingsResolver?: SkillSettingsResolver;
   agentRetrievalScope?: AgentRetrievalScopePort;
 }) => {
+  const temporalCandidateRetrieval = new PgTemporalCandidateRepository(input.database);
   const retrievalPipeline = new RetrievalPipelineService(
     input.retrievalDefaultsProvider,
     input.queryEmbeddings,
@@ -102,12 +103,13 @@ export const createDefaultRetrievalServices = (input: {
     new RetrievalExecutionTelemetryService(input.telemetryService),
     input.skillSettingsResolver,
     input.chunkHydrator,
-    new PgTemporalCandidateRepository(input.database),
+    temporalCandidateRetrieval,
   );
   const retrievalSearchService = new RetrievalSearchService(retrievalPipeline, input.agentRetrievalScope);
 
   return {
     retrievalPipeline,
     retrievalSearchService,
+    temporalCandidateRetrieval,
   };
 };

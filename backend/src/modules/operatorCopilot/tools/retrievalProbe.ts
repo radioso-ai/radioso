@@ -13,7 +13,7 @@ const MAX_CONTENT_CHARS = 1_200;
 
 const idSchema = z.string().uuid();
 
-export const retrievalProbeInputSchema = z.object({
+const retrievalProbeInputSchema = z.object({
   agentId: idSchema.optional(),
   agentName: z.string().trim().min(1).max(160).optional(),
   query: z.string().trim().min(1).max(2_000),
@@ -27,7 +27,17 @@ const omissionSchema = z.object({
   omittedCount: z.number().int().positive().optional(),
 }).strict();
 
-export const retrievalProbeOutputSchema = z.object({
+const requestedDateRangeSchema = z.object({
+  dateFrom: z.string(),
+  dateTo: z.string(),
+}).strict();
+
+const requestedRangeLookupSchema = z.object({
+  ran: z.boolean(),
+  candidateCount: z.number().int().min(0),
+}).strict();
+
+const retrievalProbeOutputSchema = z.object({
   probe: z.object({
     agentId: idSchema,
     /** False means this agent answers without retrieval, whatever the results below show. */
@@ -37,12 +47,22 @@ export const retrievalProbeOutputSchema = z.object({
       semantic: z.string().max(2_000),
       lexical: z.string().max(2_000),
     }).strict(),
+    /** The period the question resolved to, or `null` when it named none or the model's range was dropped. */
+    requestedDateRange: requestedDateRangeSchema.nullable(),
+    /** Why a model-returned range was set aside; `null` when one was kept or none was proposed. */
+    requestedDateRangeDropReason: z.enum(["invalid", "too_long"]).nullable(),
+    /** Whether the requested-range structured lookup ran, and how many candidates it contributed. */
+    requestedRangeLookup: requestedRangeLookupSchema,
     results: z.array(z.object({
       documentId: z.string().max(160),
       chunkId: z.string().max(160),
       title: z.string().max(240),
       content: z.string().max(MAX_CONTENT_CHARS),
       score: z.number().optional(),
+      dateFrom: z.string().nullable(),
+      dateTo: z.string().nullable(),
+      datedInRequestedRange: z.boolean().nullable(),
+      fromRequestedRangeLookup: z.boolean(),
     }).strict()).max(MAX_RESULTS),
   }).strict(),
   omissions: z.array(omissionSchema).max(4),
@@ -57,7 +77,7 @@ export interface RetrievalProbeCopilotToolDependencies {
   readonly agentLookup: CopilotAgentLookupPort;
 }
 
-const DESCRIPTION = "Run one retrieval-only search with a specific agent's own retrieval settings, source scope, and skill configuration, and return the chunks it would ground on with their scores. Answers 'why was this (not) retrieved' without spending a full agent turn. Results always describe the named agent; `retrievalEnabled: false` means that agent answers without retrieval at all.";
+const DESCRIPTION = "Run one retrieval-only search with a specific agent's own retrieval settings, source scope, and skill configuration, and return the chunks it would ground on with their scores. Answers 'why was this (not) retrieved' without spending a full agent turn. Results always describe the named agent; `retrievalEnabled: false` means that agent answers without retrieval at all. For a date question, check `requestedDateRange` and `requestedRangeLookup` to see the period the query resolved to and whether the structured date lookup ran, rather than reading date handling off result order alone.";
 
 export const createRetrievalProbeCopilotTools = (
   deps: RetrievalProbeCopilotToolDependencies,
@@ -96,6 +116,9 @@ export const createRetrievalProbeCopilotTools = (
           retrievalEnabled: result.retrievalEnabled,
           query: input.query,
           rewrittenQuery: result.rewrittenQuery,
+          requestedDateRange: result.requestedDateRange,
+          requestedDateRangeDropReason: result.requestedDateRangeDropReason,
+          requestedRangeLookup: result.requestedRangeLookup,
           results: projectResults(result.results, omissions),
         },
         omissions,
@@ -123,6 +146,10 @@ const projectResults = (
       title: result.title,
       content: truncated ? `${result.content.slice(0, MAX_CONTENT_CHARS - 1)}…` : result.content,
       ...(result.score !== undefined ? { score: result.score } : {}),
+      dateFrom: result.dateFrom,
+      dateTo: result.dateTo,
+      datedInRequestedRange: result.datedInRequestedRange,
+      fromRequestedRangeLookup: result.fromRequestedRangeLookup,
     };
   });
   if (truncatedContentCount > 0) {

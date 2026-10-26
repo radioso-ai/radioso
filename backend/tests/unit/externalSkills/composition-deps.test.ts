@@ -18,7 +18,7 @@ describe("LiveMcpConnectionLookup", () => {
     const credentialCiphertext = encryptField("tok-123", encryptionKey);
     const lookup = new LiveMcpConnectionLookup(
       repoReturning({ id: "c1", serverUrl: "https://m", authMethod: "access_token", credentialCiphertext }),
-      encryptionKey,
+      { current: encryptionKey, previous: [] },
     );
 
     const result = await lookup.findById("a1", "c1");
@@ -26,14 +26,14 @@ describe("LiveMcpConnectionLookup", () => {
   });
 
   it("returns null when the connection is missing", async () => {
-    const lookup = new LiveMcpConnectionLookup(repoReturning(null), encryptionKey);
+    const lookup = new LiveMcpConnectionLookup(repoReturning(null), { current: encryptionKey, previous: [] });
     expect(await lookup.findById("a1", "c1")).toBeNull();
   });
 
   it("does not resolve an access token for oauth connections (P2)", async () => {
     const lookup = new LiveMcpConnectionLookup(
       repoReturning({ id: "c1", serverUrl: "https://m", authMethod: "oauth", credentialCiphertext: null }),
-      encryptionKey,
+      { current: encryptionKey, previous: [] },
     );
     const result = await lookup.findById("a1", "c1");
     expect(result?.accessToken).toBeUndefined();

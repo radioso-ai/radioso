@@ -14,7 +14,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import request from "supertest";
 import { createApp } from "../../src/app/server/createApp.js";
-import type { Env } from "../../src/app/config/env.js";
+import { connectorEncryptionKeys, type Env } from "../../src/app/config/env.js";
 import { createMailAccountInvitationNotifier } from "../../src/app/composition/accountInvitationNotifier.js";
 import { createConversationOperatorDirectory } from "../../src/app/composition/conversationOperatorDirectory.js";
 import { createTeammateLabelReader } from "../../src/app/composition/teammateLabelReader.js";
@@ -1570,7 +1570,7 @@ export const createTestDependencies = (overrides: {
   const workspaceProviderCredentialsService = new WorkspaceProviderCredentialsService(
     workspaceProviderCredentialsRepository,
     auditService,
-    { key: env.CONNECTOR_ENCRYPTION_KEY },
+    { key: connectorEncryptionKeys(env) },
   );
   const voiceVendorFetch: typeof globalThis.fetch = overrides.voiceVendorFetch ?? (async () => {
     throw new TypeError("Voice vendor calls are disabled in tests");
@@ -1623,7 +1623,7 @@ export const createTestDependencies = (overrides: {
     workspaceAccounts: {
       getAccountId: async (workspaceId) => (await workspaceRepository.findById(workspaceId))?.accountId ?? null,
     },
-    encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
+    encryptionKey: connectorEncryptionKeys(env),
   });
   const slackProvider = buildSlackOauthProviderDefinition({
     clientId: "test-slack-client",
@@ -1667,7 +1667,7 @@ export const createTestDependencies = (overrides: {
       },
       ...(slackProvider ? [slackProvider] : []),
     ]),
-    encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
+    encryptionKey: connectorEncryptionKeys(env),
     appBaseUrl: env.APP_BASE_URL,
     apiBaseUrl: env.CONNECTOR_PUBLIC_BASE_URL ?? env.APP_BASE_URL,
     assertPublicUrl: () => undefined,
@@ -1734,7 +1734,7 @@ export const createTestDependencies = (overrides: {
   const mcpConnectionService = new McpConnectionService({
     repository: mcpConnectionRepository,
     toolServiceFactory: createMockToolServiceFactory(),
-    encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
+    encryptionKey: connectorEncryptionKeys(env),
     // No-op in tests (avoids real DNS); SSRF enforcement is unit-tested directly.
     assertPublicUrl: () => undefined,
     // Deterministic OAuth wiring for route tests (no real authorization server).
@@ -1765,7 +1765,7 @@ export const createTestDependencies = (overrides: {
     managedModelPolicy: overrides.managedModelPolicy ?? new NoopManagedModelPolicy(),
   });
   const connectorRegistry = new ConnectorRegistry();
-  connectorRegistry.setEncryptionKey(env.CONNECTOR_ENCRYPTION_KEY!);
+  connectorRegistry.setEncryptionKey(connectorEncryptionKeys(env)!);
   const connectorDb = new InMemoryConnectorDatabase();
   const agentRevisionRepository = new InMemoryAgentRevisionRepository();
   const agentRepository = new InMemoryAgentRepository(
@@ -1831,7 +1831,7 @@ export const createTestDependencies = (overrides: {
   const webhookDestinations = new DefaultWebhookDestinationAdapter(new WebhookDestinationService({
     repository: webhookDestinationRepository,
     auditService,
-    encryption: { key: env.CONNECTOR_ENCRYPTION_KEY },
+    encryption: { key: connectorEncryptionKeys(env) },
     assertPublicUrl: async () => undefined,
     routineReferences: routineDefinitionRepository,
     skillReferences: {

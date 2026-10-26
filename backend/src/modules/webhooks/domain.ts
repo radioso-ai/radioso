@@ -17,12 +17,11 @@ const webhookDestinationUrlSchema = z.string()
 
 export const webhookDestinationIdSchema = z.string().uuid();
 
+/** Creating and updating a destination take the same body. */
 export const webhookDestinationCreateSchema = z.object({
   name: webhookDestinationNameSchema,
   url: webhookDestinationUrlSchema,
 }).strict();
-
-export const webhookDestinationUpdateSchema = webhookDestinationCreateSchema;
 
 export interface WebhookDestinationRecord {
   id: string;
@@ -30,7 +29,6 @@ export interface WebhookDestinationRecord {
   name: string;
   url: string;
   secretCiphertext: string;
-  encryptionKeyId: string;
   lastDeliveryStatus: string | null;
   lastDeliveryAt: Date | null;
   createdAt: Date;

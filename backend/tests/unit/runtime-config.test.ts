@@ -2,7 +2,12 @@ import { readFile } from "node:fs/promises";
 
 import { describe, expect, it } from "vitest";
 import YAML from "yaml";
-import { emailChannelConfigGaps, getEnv, parseEmailChannelConfig } from "../../src/app/config/env.js";
+import {
+  connectorEncryptionKeys,
+  emailChannelConfigGaps,
+  getEnv,
+  parseEmailChannelConfig,
+} from "../../src/app/config/env.js";
 
 const baseEnv = {
   NODE_ENV: "test",
@@ -458,6 +463,81 @@ describe("runtime configuration", () => {
       CONNECTOR_ENCRYPTION_KEY: key,
     });
     expect(env.CONNECTOR_ENCRYPTION_KEY).toBe(key);
+  });
+
+  describe("credential key ring", () => {
+    const currentKey = Buffer.alloc(32, 0x42).toString("base64");
+    const oldKey = Buffer.alloc(32, 0x43).toString("base64");
+    const olderKey = Buffer.alloc(32, 0x44).toString("base64");
+
+    const thrownMessage = (run: () => unknown): string => {
+      try {
+        run();
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
+      throw new Error("expected the configuration to be rejected");
+    };
+
+    it("is the encryption key alone when no previous keys are set", () => {
+      const env = getEnv({ ...baseEnv, CONNECTOR_ENCRYPTION_KEY: currentKey });
+
+      expect(env.CONNECTOR_ENCRYPTION_PREVIOUS_KEYS).toBeUndefined();
+      expect(connectorEncryptionKeys(env)).toEqual({ current: currentKey, previous: [] });
+    });
+
+    it("is absent when no encryption key is set", () => {
+      expect(connectorEncryptionKeys(getEnv({ ...baseEnv }))).toBeUndefined();
+    });
+
+    it("reads comma-separated previous keys in order", () => {
+      const env = getEnv({
+        ...baseEnv,
+        CONNECTOR_ENCRYPTION_KEY: currentKey,
+        CONNECTOR_ENCRYPTION_PREVIOUS_KEYS: ` ${oldKey} , ${olderKey},`,
+      });
+
+      expect(connectorEncryptionKeys(env)).toEqual({ current: currentKey, previous: [oldKey, olderKey] });
+    });
+
+    it("rejects a previous key listed twice without printing it", () => {
+      const message = thrownMessage(() => getEnv({
+        ...baseEnv,
+        CONNECTOR_ENCRYPTION_KEY: currentKey,
+        CONNECTOR_ENCRYPTION_PREVIOUS_KEYS: `${oldKey},${oldKey}`,
+      }));
+
+      expect(message).toContain("Entries 1 and 2 of CONNECTOR_ENCRYPTION_PREVIOUS_KEYS are the same key");
+      expect(message).not.toContain(oldKey);
+    });
+
+    it("rejects a previous key that repeats the encryption key", () => {
+      const message = thrownMessage(() => getEnv({
+        ...baseEnv,
+        CONNECTOR_ENCRYPTION_KEY: currentKey,
+        CONNECTOR_ENCRYPTION_PREVIOUS_KEYS: currentKey,
+      }));
+
+      expect(message).toContain("Entry 1 of CONNECTOR_ENCRYPTION_PREVIOUS_KEYS is the same key as CONNECTOR_ENCRYPTION_KEY");
+      expect(message).not.toContain(currentKey);
+    });
+
+    it("rejects a malformed previous key without printing it", () => {
+      const message = thrownMessage(() => getEnv({
+        ...baseEnv,
+        CONNECTOR_ENCRYPTION_KEY: currentKey,
+        CONNECTOR_ENCRYPTION_PREVIOUS_KEYS: `${oldKey},not-a-32-byte-key`,
+      }));
+
+      expect(message).toContain("Entry 2 of CONNECTOR_ENCRYPTION_PREVIOUS_KEYS must be base64 of 32 bytes");
+      expect(message).not.toContain("not-a-32-byte-key");
+      expect(message).not.toContain(oldKey);
+    });
+
+    it("rejects previous keys without an encryption key", () => {
+      expect(() => getEnv({ ...baseEnv, CONNECTOR_ENCRYPTION_PREVIOUS_KEYS: oldKey }))
+        .toThrow(/CONNECTOR_ENCRYPTION_PREVIOUS_KEYS.*CONNECTOR_ENCRYPTION_KEY/);
+    });
   });
 
   it("keeps loopback webhook destinations disabled by default", () => {

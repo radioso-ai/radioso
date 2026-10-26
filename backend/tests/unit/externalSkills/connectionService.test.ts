@@ -38,7 +38,7 @@ describe("McpConnectionService (unit)", () => {
     const service = new McpConnectionService({
       repository: new InMemoryMcpConnectionRepository(),
       toolServiceFactory: createMockToolServiceFactory(),
-      encryptionKey,
+      encryptionKey: { current: encryptionKey, previous: [] },
       assertPublicUrl: (url) => {
         if (url.includes("127.0.0.1") || url.includes(".internal")) {
           throw new Error("non-public host");
@@ -74,7 +74,7 @@ describe("McpConnectionService (unit)", () => {
     const service = new McpConnectionService({
       repository,
       toolServiceFactory: createMockToolServiceFactory(),
-      encryptionKey,
+      encryptionKey: { current: encryptionKey, previous: [] },
       oauthRedirectUri: "https://app.example.com/oauth/mcp-callback",
       fetchImpl,
     });
@@ -98,7 +98,7 @@ describe("McpConnectionService (unit)", () => {
     const service = new McpConnectionService({
       repository: new InMemoryMcpConnectionRepository(),
       toolServiceFactory: createMockToolServiceFactory(),
-      encryptionKey,
+      encryptionKey: { current: encryptionKey, previous: [] },
       oauthRedirectUri: "https://app.example.com/oauth/mcp-callback",
       fetchImpl: () => Promise.resolve({ ok: true, status: 200, json: async () => ({ access_token: "x" }) }),
     });
@@ -114,7 +114,7 @@ describe("McpConnectionService (unit)", () => {
     const service = new McpConnectionService({
       repository: new InMemoryMcpConnectionRepository(),
       toolServiceFactory: createMockToolServiceFactory(),
-      encryptionKey,
+      encryptionKey: { current: encryptionKey, previous: [] },
       oauthRedirectUri: "https://app.example.com/oauth/mcp-callback",
     });
     const created = await service.create("agent-1", oauthInput);
@@ -148,7 +148,7 @@ describe("McpConnectionService (unit)", () => {
     const service = new McpConnectionService({
       repository,
       toolServiceFactory,
-      encryptionKey,
+      encryptionKey: { current: encryptionKey, previous: [] },
       oauthRedirectUri: "https://app.example.com/oauth/mcp-callback",
       fetchImpl,
     });
@@ -185,7 +185,7 @@ describe("McpConnectionService (unit)", () => {
     const service = new McpConnectionService({
       repository,
       toolServiceFactory,
-      encryptionKey,
+      encryptionKey: { current: encryptionKey, previous: [] },
       oauthRedirectUri: "https://app.example.com/oauth/mcp-callback",
       fetchImpl,
     });
@@ -225,7 +225,7 @@ describe("McpConnectionService (unit)", () => {
     const service = new McpConnectionService({
       repository,
       toolServiceFactory,
-      encryptionKey,
+      encryptionKey: { current: encryptionKey, previous: [] },
       oauthRedirectUri: "https://app.example.com/oauth/mcp-callback",
       fetchImpl,
     });
@@ -252,7 +252,7 @@ describe("McpConnectionService (unit)", () => {
           listTools: () => Promise.reject(new McpCredentialsRejectedError(401)),
         } as never),
       },
-      encryptionKey,
+      encryptionKey: { current: encryptionKey, previous: [] },
     });
     const created = await service.create("agent-1", baseInput);
 
@@ -277,7 +277,7 @@ describe("McpConnectionService (unit)", () => {
           listTools: () => Promise.reject(new McpServerUnavailableError()),
         } as never),
       },
-      encryptionKey,
+      encryptionKey: { current: encryptionKey, previous: [] },
     });
     const created = await service.create("agent-1", baseInput);
 
@@ -292,7 +292,7 @@ describe("McpConnectionService (unit)", () => {
     const service = new McpConnectionService({
       repository: new InMemoryMcpConnectionRepository(),
       toolServiceFactory: createMockToolServiceFactory(),
-      encryptionKey,
+      encryptionKey: { current: encryptionKey, previous: [] },
       oauthRedirectUri: "https://app.example.com/oauth/mcp-callback",
     });
     const created = await service.create("agent-1", oauthInput);

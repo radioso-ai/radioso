@@ -4268,7 +4268,7 @@ CREATE TABLE public.workspace_webhook_destinations (
     name text NOT NULL,
     url text NOT NULL,
     secret_ciphertext text NOT NULL,
-    encryption_key_id text NOT NULL,
+    encryption_key_id text,
     last_delivery_status text,
     last_delivery_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,

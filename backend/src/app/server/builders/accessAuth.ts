@@ -26,7 +26,7 @@ import type { OrganizationCreationGuard } from "../../../shared/domain/organizat
 import type { AccessGrantLifecycleUnitOfWorkPort } from "../../../modules/accessGrants/ports.js";
 import { type AppLogger } from "../../../shared/observability/logger.js";
 import type { Database } from "../../../shared/infra/database.js";
-import type { Env } from "../../config/env.js";
+import { connectorEncryptionKeys, type Env } from "../../config/env.js";
 import { createMailAccountInvitationNotifier } from "../../composition/accountInvitationNotifier.js";
 import { buildInfrastructure, buildRepositories } from "./infra.js";
 import {
@@ -163,14 +163,14 @@ export const buildAccessServices = (input: {
 
 export const buildWorkspaceProviderCredentialsService = (input: {
   auditService: AuditPort;
-  env: Pick<Env, "CONNECTOR_ENCRYPTION_KEY">;
+  env: Pick<Env, "CONNECTOR_ENCRYPTION_KEY" | "CONNECTOR_ENCRYPTION_PREVIOUS_KEYS">;
   logger: Pick<AppLogger, "warn">;
   repositories: { workspaceProviderCredentialsRepository: WorkspaceProviderCredentialsRepositoryPort; documentProcessingJobRepository?: { requeueProviderCredentialFailures(workspaceId: string): Promise<number> } };
 }): WorkspaceProviderCredentialsService => {
   const service = new WorkspaceProviderCredentialsService(
     input.repositories.workspaceProviderCredentialsRepository,
     input.auditService,
-    { key: input.env.CONNECTOR_ENCRYPTION_KEY },
+    { key: connectorEncryptionKeys(input.env) },
     input.logger,
     input.repositories.documentProcessingJobRepository,
   );
@@ -180,7 +180,7 @@ export const buildWorkspaceProviderCredentialsService = (input: {
         err: error instanceof Error ? error.message : String(error),
         provider,
         remediation:
-          "Stored credential ciphertext could not be decrypted. Re-enter the API key for this provider after rotating CONNECTOR_ENCRYPTION_KEY.",
+          "Stored credential ciphertext could not be decrypted with CONNECTOR_ENCRYPTION_KEY or any key in CONNECTOR_ENCRYPTION_PREVIOUS_KEYS. If CONNECTOR_ENCRYPTION_KEY was rotated, add the key it replaced to CONNECTOR_ENCRYPTION_PREVIOUS_KEYS (see credential key rotation in the self-hosting operations docs), or re-enter the API key for this provider.",
       },
       "Workspace provider credential decrypt failed",
     );

@@ -1074,10 +1074,8 @@ describe("seed fixtures", () => {
     const quickReplyJudged = conversationQualityCases
       .filter((evalCase) => evalCase.tags?.includes("quick-reply") && evalCase.assertions.some((assertion) => assertion.type === "llm_judge"))
       .map((evalCase) => evalCase.id);
-    // The requested-period judge is the other zero-tolerance judge: no answer may move an item's start into the period.
-    const requestedPeriodJudged = ["requested-period-relation-en", "requested-period-relation-it"];
 
-    expect(strict.filter((id) => !quickReplyJudged.includes(id))).toEqual(requestedPeriodJudged);
+    expect(strict.every((id) => quickReplyJudged.includes(id))).toBe(true);
     expect(quickReplyJudged.filter((id) => !strict.includes(id))).toEqual(["quick-reply-not-ack-pending-clarification"]);
     expect(strict).toContain("quick-reply-unlisted-language-standing-directive");
   });

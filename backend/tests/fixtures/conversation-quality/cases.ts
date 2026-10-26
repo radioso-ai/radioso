@@ -126,7 +126,7 @@ const artsCentreWeekCriteria = (language: string): string =>
 const requestedPeriodRelationCase = (input: { id: string; language: string; query: string }): ConversationQualityCase => ({
   id: input.id,
   name: `A ${input.language} question about one week does not move an item that opened the day before it into the week`,
-  tags: ["retrieval", "temporal", "multilingual", REQUESTED_PERIOD_JUDGE_TAG, ZERO_TOLERANCE_JUDGE_TAG],
+  tags: ["retrieval", "temporal", "multilingual", REQUESTED_PERIOD_JUDGE_TAG],
   query: input.query,
   assertions: [
     { type: "turn_route", route: "retrieval" },

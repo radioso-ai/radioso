@@ -8993,13 +8993,17 @@ components:
     RequestedRangeLookup:
       type: object
       properties:
-        ran:
-          type: boolean
+        status:
+          type: string
+          enum:
+            - ran
+            - failed
+            - not_requested
         candidateCount:
           type: integer
           minimum: 0
       required:
-        - ran
+        - status
         - candidateCount
     RetrievalSearchEvidence:
       type: object

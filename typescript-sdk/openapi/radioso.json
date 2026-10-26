@@ -13284,8 +13284,13 @@
       "RequestedRangeLookup": {
         "type": "object",
         "properties": {
-          "ran": {
-            "type": "boolean"
+          "status": {
+            "type": "string",
+            "enum": [
+              "ran",
+              "failed",
+              "not_requested"
+            ]
           },
           "candidateCount": {
             "type": "integer",
@@ -13293,7 +13298,7 @@
           }
         },
         "required": [
-          "ran",
+          "status",
           "candidateCount"
         ]
       },

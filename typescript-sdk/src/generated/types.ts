@@ -7938,7 +7938,8 @@ export interface components {
             dateTo: string;
         };
         RequestedRangeLookup: {
-            ran: boolean;
+            /** @enum {string} */
+            status: "ran" | "failed" | "not_requested";
             candidateCount: number;
         };
         RetrievalSearchEvidence: {

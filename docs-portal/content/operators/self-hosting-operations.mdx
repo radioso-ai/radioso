@@ -1,7 +1,7 @@
 ---
 title: "Self-hosting operations"
 description: "Backup, restore, upgrade, realtime, and worker incident practices for self-hosted Radioso deployments."
-last_updated: 2026-10-25
+last_updated: 2026-10-26
 ---
 
 import { Callout, Steps } from 'nextra/components'
@@ -180,8 +180,9 @@ The document worker is where work that outlives a request runs, so run it wherev
 - extracts message facets for Audience Pulse
 - removes data past its retention window: old Ray conversations, test executions, Slack event ids, and dead-lettered background jobs
 - deletes the stored files of a deleted workspace or organization, so the worker's storage credentials need to list and delete objects (`roles/storage.objectAdmin` on the GCS bucket)
+- deletes at ElevenLabs the call recordings of deleted conversations, visitors, workspaces and organizations, so the worker needs outbound HTTPS to the ElevenLabs API and the same `CONNECTOR_ENCRYPTION_KEY` as the backend
 
-A deployment without a running worker still answers chat, but documents stay queued, routine actions are never sent, conversation summaries and titles stop updating, and a deleted workspace's files wait in storage until a worker runs.
+A deployment without a running worker still answers chat, but documents stay queued, routine actions are never sent, conversation summaries and titles stop updating, and a deleted workspace's files and deleted calls' recordings wait until a worker runs.
 
 Background jobs live in the `background_jobs` table. A completed job is deleted, so the table holds only work that is waiting, running, or has failed for good. A failed job is retried with a growing delay. After its last attempt it stays for 14 days with its kind, key, attempt count, and the class of the error that stopped it, such as `BackgroundJobTimeoutError` or `AppError [provider_unavailable]`. Its payload is dropped when it fails for good, and neither the table nor your error tracking receives the error's message, because a payload or a message can carry conversation text:
 
@@ -191,6 +192,23 @@ FROM background_jobs
 ORDER BY created_at DESC
 LIMIT 20;
 ```
+
+## Call recordings left at ElevenLabs
+
+A deletion writes each call recording to delete into `voice_recording_erasure_items`, beside an encrypted copy of the workspace's ElevenLabs key in `voice_recording_erasures`, and the `voice.recording_erasure` job deletes them, retrying each recording on its own for about a day ([Deleting conversation data](/operators/deleting-conversation-data)). A recording ElevenLabs kept refusing, or one still pending a week after its deletion, stays there with status `failed`, a `reason` and `failed_at`, and its key copy is gone by then.
+
+Each batch of recordings given up on is reported to your error tracking as `voice.recording_left_at_vendor`, with the erasure, organization and workspace ids, the vendor, a count and the reasons, never a recording id or a key. A live organization's owners and admins see their own in `GET /api/v1/account/voice-recordings/left-at-vendor`. Once the organization is deleted, you are the only ones who can see them; list them, newest first, to delete each in ElevenLabs or to tell the organization:
+
+```sql
+SELECT e.account_id, e.workspace_id, i.conversation_id, i.vendor_region,
+       i.vendor_conversation_id, i.failure_reason, i.attempts, i.failed_at
+FROM voice_recording_erasure_items i
+JOIN voice_recording_erasures e ON e.id = i.erasure_id
+WHERE i.status = 'failed'
+ORDER BY i.failed_at DESC;
+```
+
+The organization and workspace ids stay after both are deleted. A row you have dealt with can be deleted; the backlog keeps a failed recording until someone does. Rows with status `pending` are still being worked through, each due again at its `next_attempt_at`. The `voice-recording-erasure-recovery` periodic task (on Cloud Run, the `*-voice-recording-erasure-recovery` Cloud Scheduler job, every 15 minutes) queues the job again for any erasure whose pending recordings are more than 15 minutes overdue. If they still grow old, check that the worker runs and look for `voice.recording_erasure` in `background_jobs`.
 
 ## Stored files of deleted workspaces
 
@@ -286,11 +304,105 @@ Rotate these values deliberately and keep historical impact in mind:
 - `RADIOSO_MCP_SIGNING_SECRET` keys standalone MCP source budgets and source proofs. A single in-memory MCP process can omit it and uses a process-random key that resets budgets on restart. Give the identical value to the backend and standalone MCP whenever the backend must trust source proofs, and always when Redis is configured; changing it starts a new budget window for every source. A backend without standalone MCP derives its source-budget key from `SESSION_COOKIE_SECRET`, so rotating that value has the same budget-window effect.
 - `WORKSPACE_TOKEN_SECRET` derives the per-agent signing keys used for signed visitor identity.
 - `PUBLIC_CHAT_SESSION_SECRET` affects anonymous public-chat sessions and website embeds.
-- `CONNECTOR_ENCRYPTION_KEY` protects both connector secrets and per-workspace LLM provider API keys at rest. The value must be 32 random bytes, base64-encoded — generate one with `openssl rand -base64 32`. The bootstrap command generates a key automatically when `.env` does not already have one. Workspaces that have stored an API key in the UI cannot read it back after the key is changed; operators must coordinate a rotation by clearing or re-entering each affected provider credential.
+- `CONNECTOR_ENCRYPTION_KEY` encrypts stored credentials: workspace provider API keys, connector secrets, OAuth tokens, external MCP credentials, and webhook signing secrets. The value must be 32 random bytes, base64-encoded — generate one with `openssl rand -base64 32`. The bootstrap command generates a key automatically when `.env` does not already have one. Replace it with the procedure in [Rotate the credential encryption key](#rotate-the-credential-encryption-key): swapping the value in place leaves every stored credential unreadable.
 - `RADIOSO_EDGE_PROOF_SECRET` lets the frontend's server-side proxies vouch for a visitor's IP address and geo headers when they forward public chat, embed session, and dashboard `/backend` requests to the backend. At least 32 characters, shared verbatim by both services. Leave it unset and the proof path never runs: the backend still serves every request, but it records that visitor's IP, country, region, and city as unknown instead of trusting an unsigned header, and it budgets relayed requests by a proxy's address rather than the visitor's. `docker-compose.yml` and `docker-compose.dev.yml` already set a matching dev value on both services, so the local stack exercises the signed path with no extra setup.
 - provider API keys affect chat, rewrite, rerank, and embedding calls.
 
 Changing encryption or token secrets without a migration or rotation plan can invalidate existing sessions, tokens, or saved connector credentials.
+
+## Rotate the credential encryption key
+
+Every stored credential is encrypted under `CONNECTOR_ENCRYPTION_KEY`, and the backend also decrypts with each key in `CONNECTOR_ENCRYPTION_PREVIOUS_KEYS`. That lets you replace the key, after a suspected leak or on a schedule, without anyone re-entering a credential: the old key keeps decrypting while the `credentialReencryption` command moves each stored value onto the new one.
+
+Reports name keys by key id, 16 hex characters derived from the key. A key always has the same id, and the id is no help in recovering the key, so the command prints the id of each configured key instead of the key. It finds the key that wrote each value by decrypting it.
+
+Start only when every backend and worker instance runs a release that reads `CONNECTOR_ENCRYPTION_PREVIOUS_KEYS`. An instance without it decrypts with `CONNECTOR_ENCRYPTION_KEY` alone, so it can't read credentials written under the new key.
+
+The command runs only when you run it, with the backend's environment: `DATABASE_URL`, `CONNECTOR_ENCRYPTION_KEY`, `CONNECTOR_ENCRYPTION_PREVIOUS_KEYS`, and the rest of the backend's settings.
+
+- **Container deployments** run it in the backend image: `node ./dist/src/credentialReencryption.js`.
+- **Cloud Run, as the Terraform under `infra/terraform` sets it up**, runs it as a one-off Cloud Run job on the backend image, with the backend's environment and secrets and the backend's VPC connector, because Cloud SQL has only a private address. Pass the arguments below as the job's arguments. That Terraform has no input for `CONNECTOR_ENCRYPTION_PREVIOUS_KEYS`, so give it to the services and the job the same way as `CONNECTOR_ENCRYPTION_KEY`.
+- **From a checkout** with the deployment's environment loaded, `pnpm --dir backend run credentials:reencrypt` takes the same arguments.
+
+The order below keeps every instance able to read every credential at each step, including while a deploy rolls out.
+
+<Steps>
+### Add the new key as a previous key
+
+Generate the new key:
+
+```bash
+openssl rand -base64 32
+```
+
+Add it to `CONNECTOR_ENCRYPTION_PREVIOUS_KEYS` on the backend and on every worker, leave the old key as `CONNECTOR_ENCRYPTION_KEY`, and deploy. Nothing is encrypted under the new key yet. Every instance learns to decrypt with it before any instance writes with it. Several previous keys go in one comma-separated list. The backend refuses to start when an entry isn't a base64 32-byte key, appears twice, or repeats `CONNECTOR_ENCRYPTION_KEY`, and the error names the entry by its position, never by its value.
+
+### Make the new key current
+
+Once that deploy runs on every instance (backend, worker, worker task service, and any job), swap the two: the new key becomes `CONNECTOR_ENCRYPTION_KEY`, and the old key takes its place in `CONNECTOR_ENCRYPTION_PREVIOUS_KEYS`. Deploy. New and edited credentials are written under the new key, and during the rollout every instance, swapped or not, holds both keys. From this deploy until `--apply` has finished, don't roll back to a release that can't read `CONNECTOR_ENCRYPTION_PREVIOUS_KEYS`: it decrypts with `CONNECTOR_ENCRYPTION_KEY` alone, and can't read anything written under the new key.
+
+### Dry run
+
+Once the swap runs on every instance:
+
+```bash
+node ./dist/src/credentialReencryption.js
+```
+
+```text
+Current key: 08ae134562f05a24. Previous keys: ccecbc25ba3365c2.
+connector_configs.config_data
+  previous key ccecbc25ba3365c2: 2 to re-encrypt
+integration_oauth_connections.credential_ciphertext
+  current key 08ae134562f05a24: 1
+  previous key ccecbc25ba3365c2: 3 to re-encrypt
+integration_oauth_connections.oauth_client_ciphertext
+  previous key ccecbc25ba3365c2: 4 to re-encrypt
+integration_oauth_connections.oauth_flow_ciphertext
+  no encrypted values
+mcp_connections.credential_ciphertext
+  previous key ccecbc25ba3365c2: 1 to re-encrypt
+mcp_connections.oauth_client_ciphertext
+  no encrypted values
+mcp_connections.oauth_flow_ciphertext
+  no encrypted values
+workspace_provider_credentials.ciphertext
+  previous key ccecbc25ba3365c2: 7 to re-encrypt
+voice_recording_erasures.sealed_api_key
+  no encrypted values
+workspace_webhook_destinations.secret_ciphertext
+  previous key ccecbc25ba3365c2: 2 to re-encrypt
+To re-encrypt: 19. Unreadable: 0.
+Dry run: nothing was changed. Run again with --apply to re-encrypt these values under the current key.
+```
+
+It reads every encrypted column, works out which configured key decrypts each value, counts them, and changes nothing.
+
+### Apply
+
+```bash
+node ./dist/src/credentialReencryption.js --apply
+```
+
+The command prints the same report, then re-encrypts every value that isn't already under the current key, one row at a time:
+
+```text
+To re-encrypt: 19. Unreadable: 0.
+Re-encrypted 19 values under the current key 08ae134562f05a24.
+```
+
+A credential someone edits while the command runs keeps the edit: the command rewrites a row only if it still holds the value the command read, and reports how many values it left. Running the command again is safe, because values already under the current key stay as they are.
+
+### Confirm nothing is left under the old key
+
+Run the dry run again, with the old key still listed in `CONNECTOR_ENCRYPTION_PREVIOUS_KEYS`. Every column should list only the current key or no values, and the summary should read `To re-encrypt: 0. Unreadable: 0.` Without the old key configured, the command can't count what is left under it: a connector secret under a key no configured key opens looks like a plain setting. The command prints a warning when it runs with no previous keys.
+
+### Remove the old key
+
+Remove the old key from `CONNECTOR_ENCRYPTION_PREVIOUS_KEYS`, or unset the variable, and deploy. Keep the old key itself, stored safely, for as long as you keep database backups taken before the rotation: credentials in such a backup decrypt only under it. After restoring one, list the old key in `CONNECTOR_ENCRYPTION_PREVIOUS_KEYS` again and repeat the dry run and the apply.
+</Steps>
+
+The command exits `1` while any stored credential column holds a value it can't decrypt. It counts those values per column on `unreadable` lines and leaves them as they are. Connector settings are the exception: a connector secret that no configured key opens looks like a plain setting, so the command neither counts it nor fails on it, and the connector's dashboard page shows it as `[re-enter secret]`. Usually the key that wrote an unreadable value was removed from `CONNECTOR_ENCRYPTION_PREVIOUS_KEYS` too early: put it back and run the command again. A value that no key you hold decrypts has to be re-entered in its workspace.
 
 ## Database TLS
 

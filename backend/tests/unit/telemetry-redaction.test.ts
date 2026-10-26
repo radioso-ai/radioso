@@ -1,5 +1,7 @@
+import type { Request, Response } from "express";
 import { describe, expect, it } from "vitest";
 
+import { createMatchedRouteRecorder } from "../../src/shared/observability/matchedRoute.js";
 import { createRequestCorrelation, mergeCorrelation } from "../../src/shared/observability/telemetry/correlation.js";
 import { redactRecord, redactedValue } from "../../src/shared/observability/telemetry/redactionPolicy.js";
 
@@ -34,22 +36,37 @@ describe("telemetry redaction and correlation helpers", () => {
     });
   });
 
-  it("builds request correlation from request-like inputs", () => {
-    const correlation = createRequestCorrelation({
+  it("builds request correlation from request-like inputs, naming the route by the pattern it matched", () => {
+    const request = {
       id: 42,
       method: "GET",
-      originalUrl: "/api/v1/settings/retrieval",
-      header(name) {
+      baseUrl: "/api/v1/settings",
+      params: {},
+      originalUrl: "/api/v1/settings/retrieval?search=private",
+      header(name: string) {
         return name === "x-workspace-id" ? "workspace-123" : undefined;
       },
-    });
+    };
+    createMatchedRouteRecorder()(request as unknown as Request, {} as Response, () => undefined);
+    // Express assigns `req.route` as it dispatches to the matched route.
+    (request as { route?: unknown }).route = { path: "/retrieval" };
 
-    expect(correlation).toEqual({
+    expect(createRequestCorrelation(request)).toEqual({
       requestId: "42",
       workspaceId: "workspace-123",
       route: "/api/v1/settings/retrieval",
       method: "GET",
     });
+  });
+
+  it("names no route for a request no route matched, rather than its URL", () => {
+    const correlation = createRequestCorrelation({
+      id: 7,
+      method: "GET",
+      originalUrl: "/api/v1/auth/invitations/secret-invite-token",
+    } as Parameters<typeof createRequestCorrelation>[0]);
+
+    expect(correlation).toEqual({ requestId: "7", method: "GET" });
   });
 
   it("merges correlation sources without keeping empty values", () => {

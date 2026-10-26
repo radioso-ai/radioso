@@ -17,6 +17,18 @@ const BODY_IDLE_TIMEOUT_MS = 15_000;
 const DEFAULT_AUDIO_TYPE = "audio/mpeg";
 /** What the vendor answers with when it holds no audio under the id: the call is unknown, or has not finished. */
 const NOT_FOUND_STATUSES = new Set([404, 410]);
+
+/** `Retry-After` as delta-seconds or an HTTP date. Header syntax only. */
+const RETRY_AFTER_SECONDS = /^\d+$/;
+
+/** How long the vendor asks to be left alone, in whole seconds from now; undefined when it names no time it can be read as. */
+const retryAfterSecondsOf = (response: Response): number | undefined => {
+  const value = response.headers.get("retry-after")?.trim();
+  if (!value) return undefined;
+  if (RETRY_AFTER_SECONDS.test(value)) return Number(value);
+  const at = Date.parse(value);
+  return Number.isNaN(at) ? undefined : Math.max(0, Math.ceil((at - Date.now()) / 1_000));
+};
 /**
  * A conversation document carries the transcript so far, and the vendor offers no way to ask for
  * the agent alone. Read right after the call opens it is a few kilobytes; a report re-sent as a long
@@ -264,7 +276,7 @@ export const createElevenLabsRecordingSource = (dependencies: {
       exchange.release();
       if (response.ok) return "deleted";
       if (NOT_FOUND_STATUSES.has(response.status)) return "already_absent";
-      throw new VoiceRecordingRequestError("rejected", response.status);
+      throw new VoiceRecordingRequestError("rejected", response.status, undefined, retryAfterSecondsOf(response));
     },
   };
 };

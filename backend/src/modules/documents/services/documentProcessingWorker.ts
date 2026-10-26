@@ -114,7 +114,7 @@ export class DocumentProcessingWorker {
     } catch (error) {
       this.logger.error(
         {
-          err: error instanceof Error ? error.message : String(error),
+          err: error,
           role: "worker",
         },
         "Post-job maintenance failed after document processing",
@@ -127,11 +127,7 @@ export class DocumentProcessingWorker {
         })
         .catch((reportError) => {
           this.logger.error(
-            {
-              err: reportError instanceof Error
-                ? reportError.message
-                : String(reportError),
-            },
+            { err: reportError },
             "Post-job maintenance error report failed",
           );
         });
@@ -395,7 +391,7 @@ export class DocumentProcessingWorker {
             ?.report({ errorType: "document.worker.tick_failed", error, severity: "error" })
             .catch((reportError) => {
               this.logger.error(
-                { err: reportError instanceof Error ? reportError.message : String(reportError) },
+                { err: reportError },
                 "Document processing worker error report failed",
               );
             });

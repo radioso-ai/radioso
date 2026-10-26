@@ -559,7 +559,7 @@ export class RoutineDraftAssistService {
         durationMs,
         status: "failure",
         failureMode: "provider_error",
-        err: error instanceof Error ? error.name : "unknown",
+        err: error,
       }, "routine_draft_assist_llm_call_failed");
       throw error;
     }

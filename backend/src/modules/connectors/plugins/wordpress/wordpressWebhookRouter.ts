@@ -179,9 +179,8 @@ export const createWordpressWebhookRouter = (deps: WebhookDeps): Router => {
       }
       res.status(204).end();
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
       deps.logger.error(
-        { workspaceId, externalDocumentId, event, err: message },
+        { workspaceId, externalDocumentId, event, err: error },
         "wordpress webhook ingest failed",
       );
       res.status(500).json({ error: "Ingest failed" });

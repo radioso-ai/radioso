@@ -51,7 +51,7 @@ export class DrainTriggeringActionOutbox implements EnqueueingActionOutboxPort {
       this.logger?.warn(
         {
           actionType: input.type,
-          err: error instanceof Error ? error.message : String(error),
+          err: error,
         },
         "Action outbox drain push failed; the interval poller or recovery sweep will pick this up",
       );

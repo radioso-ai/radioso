@@ -1,11 +1,13 @@
 import type { RequestHandler } from "express";
 
 import { extractCorrelationLogFields, type AppLogger } from "../logger.js";
+import { shapeSafeFields } from "../logging/logSafeValues.js";
+import { matchedRoutePattern } from "../matchedRoute.js";
 import { createRequestCorrelation, type CorrelationFields, type RequestCorrelationSource } from "./correlation.js";
 import { redactRecord } from "./redactionPolicy.js";
 import type { TelemetryEvent, TelemetrySeverity, TelemetrySink } from "./telemetrySink.js";
 
-export interface TelemetryServiceOptions {
+interface TelemetryServiceOptions {
   enabled?: boolean;
   environment: string;
   logger: AppLogger;
@@ -23,49 +25,16 @@ export interface TelemetryEventInput {
   tags?: Record<string, string>;
 }
 
-interface RequestRouteSource extends RequestCorrelationSource {
-  baseUrl?: string;
-  route?: {
-    path?: string | string[];
-  };
-}
+// Requests no route matched (404s, scanners, a 401 or 429 a middleware sent first) share one
+// label: their raw paths could carry a token, and would give the route label unbounded values.
+const UNMATCHED_ROUTE_LABEL = "unmatched";
 
-const normalizeRouteSegment = (segment: string): string => {
-  if (/^\d+$/.test(segment)) {
-    return ":id";
-  }
-
-  if (/^[0-9a-f]{8}-[0-9a-f-]{27,}$/i.test(segment)) {
-    return ":id";
-  }
-
-  if (segment.length > 24 && /^[a-zA-Z0-9_-]+$/.test(segment)) {
-    return ":id";
-  }
-
-  return segment;
-};
-
-const normalizeRouteLabel = (path: string): string => {
-  const [pathname] = path.split("?");
-  return pathname
-    .split("/")
-    .map((segment) => normalizeRouteSegment(segment))
-    .join("/") || "/";
-};
-
-const buildRouteLabel = (request: RequestRouteSource): string => {
-  if (typeof request.route?.path === "string") {
-    const baseUrl = request.baseUrl ?? "";
-    return `${baseUrl}${request.route.path}` || "/";
-  }
-
-  if (Array.isArray(request.route?.path) && typeof request.route.path[0] === "string") {
-    const baseUrl = request.baseUrl ?? "";
-    return `${baseUrl}${request.route.path[0]}` || "/";
-  }
-
-  return normalizeRouteLabel(request.originalUrl || request.path || "/");
+// The telemetry_event line lands in Cloud Logging, which conversation erasure cannot reach. An
+// emitter's metadata can carry an error message (a failed job's reason), so the line keeps only
+// the entries whose shape rules out free text; the sinks still receive the event whole.
+const telemetryLogMetadata = (metadata: Record<string, unknown> | undefined): Record<string, unknown> | undefined => {
+  const safe = shapeSafeFields(metadata ?? {});
+  return Object.keys(safe).length > 0 ? safe : undefined;
 };
 
 export class TelemetryService {
@@ -94,6 +63,7 @@ export class TelemetryService {
         telemetry: {
           ...event,
           correlation: extractCorrelationLogFields(event.correlation),
+          metadata: telemetryLogMetadata(event.metadata),
         },
       },
       "telemetry_event",
@@ -105,7 +75,7 @@ export class TelemetryService {
       } catch (error) {
         this.options.logger.error(
           {
-            err: error instanceof Error ? error.message : String(error),
+            err: error,
             eventType: event.eventType,
           },
           "telemetry_sink_failed",
@@ -120,7 +90,7 @@ export class TelemetryService {
 export const createRequestTelemetryMiddleware = (telemetryService: TelemetryService): RequestHandler =>
   ((req, res, next) => {
     const startedAt = Date.now();
-    const request = req as RequestRouteSource;
+    const request = req as RequestCorrelationSource;
 
     res.on("finish", () => {
       void telemetryService.emit({
@@ -133,7 +103,7 @@ export const createRequestTelemetryMiddleware = (telemetryService: TelemetryServ
         },
         tags: {
           method: req.method,
-          route: buildRouteLabel(request),
+          route: matchedRoutePattern(req) ?? UNMATCHED_ROUTE_LABEL,
         },
       });
     });

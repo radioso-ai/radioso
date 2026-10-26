@@ -82,7 +82,7 @@ const createAudit = (): AuditPort & { events: Array<{ eventType: string; eventSt
 };
 
 const configWithKey: WorkspaceCredentialsEncryptionConfig = {
-  key: TEST_KEY,
+  key: { current: TEST_KEY, previous: [] },
 };
 
 const configMissingKey: WorkspaceCredentialsEncryptionConfig = {
@@ -172,7 +172,7 @@ describe("WorkspaceProviderCredentialsService", () => {
 
       expect(repo.rows.has(`${WORKSPACE_ID}:openai`)).toBe(true);
       await vi.waitFor(() => expect(logger.warn).toHaveBeenCalledWith(
-        { workspaceId: WORKSPACE_ID, err: recoveryError.message },
+        { workspaceId: WORKSPACE_ID, err: recoveryError },
         "Provider credential recovery failed",
       ));
     });
@@ -379,7 +379,7 @@ describe("WorkspaceProviderCredentialsService", () => {
         actor: { accountId: "acc-1" },
       });
 
-      const reader = new WorkspaceProviderCredentialsService(repo, audit, { key: wrongKey });
+      const reader = new WorkspaceProviderCredentialsService(repo, audit, { key: { current: wrongKey, previous: [] } });
       const onErrorSpy = vi.fn();
       reader.onDecryptError(onErrorSpy);
       const failure = await reader.getApiKey(WORKSPACE_ID, "openai").catch((error) => error);
@@ -530,7 +530,7 @@ describe("WorkspaceProviderCredentialsService", () => {
 
   describe("change listener", () => {
     const actor = { accountId: "account-1" };
-    const configured: WorkspaceCredentialsEncryptionConfig = { key: TEST_KEY };
+    const configured: WorkspaceCredentialsEncryptionConfig = { key: { current: TEST_KEY, previous: [] } };
 
     it("hears every key stored or removed, and nothing for a write that failed or a key that was not there", async () => {
       const service = new WorkspaceProviderCredentialsService(createRepository(), createAudit(), configured);

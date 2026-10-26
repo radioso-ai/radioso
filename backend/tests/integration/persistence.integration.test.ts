@@ -64,6 +64,9 @@ const noopAuditRepository = {
       createdAt: new Date(),
     };
   },
+  async createNamingGoneSubjects() {
+    return undefined;
+  },
   async createIfConversationLive() {
     return {
       id: randomUUID(),

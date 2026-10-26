@@ -215,9 +215,10 @@ describe("createDirectiveMatcher", () => {
     const [payload] = logger.warn.mock.calls[0];
     expect(payload).toMatchObject({
       event: "directive_contextual_match_unavailable",
-      errorType: "Error",
-      errorMessage: "400 Unsupported parameter",
+      // The error itself: the logger's serializer keeps its class and code, never its message.
+      err: expect.any(Error),
     });
+    expect(payload).not.toHaveProperty("errorMessage");
     expect(JSON.stringify(payload)).not.toContain("I want a refund now");
   });
 });

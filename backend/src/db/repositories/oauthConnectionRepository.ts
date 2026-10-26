@@ -13,7 +13,6 @@ export interface OauthConnectionRecord {
   status: OauthConnectionStatus;
   grantedScopes: string[];
   credentialCiphertext: string | null;
-  encryptionKeyId: string | null;
   oauthClientCiphertext: string | null;
   oauthFlowCiphertext: string | null;
   lastRefreshAt: Date | null;
@@ -30,7 +29,6 @@ export interface CreateOauthConnectionInput {
   status?: OauthConnectionStatus;
   grantedScopes?: string[];
   credentialCiphertext?: string | null;
-  encryptionKeyId?: string | null;
   oauthClientCiphertext?: string | null;
 }
 
@@ -40,7 +38,6 @@ export interface UpdateOauthConnectionInput {
   grantedScopes?: string[];
   status?: OauthConnectionStatus;
   credentialCiphertext?: string | null;
-  encryptionKeyId?: string | null;
   oauthClientCiphertext?: string | null;
   oauthFlowCiphertext?: string | null;
   lastErrorCode?: string | null;
@@ -55,7 +52,6 @@ interface OauthConnectionRow {
   status: OauthConnectionStatus;
   granted_scopes: string[];
   credential_ciphertext: string | null;
-  encryption_key_id: string | null;
   oauth_client_ciphertext: string | null;
   oauth_flow_ciphertext: string | null;
   last_refresh_at: Date | null;
@@ -73,7 +69,6 @@ const oauthColumns = [
   "status",
   "granted_scopes",
   "credential_ciphertext",
-  "encryption_key_id",
   "oauth_client_ciphertext",
   "oauth_flow_ciphertext",
   "last_refresh_at",
@@ -91,7 +86,6 @@ const mapRecord = (row: OauthConnectionRow): OauthConnectionRecord => ({
   status: row.status,
   grantedScopes: row.granted_scopes ?? [],
   credentialCiphertext: row.credential_ciphertext,
-  encryptionKeyId: row.encryption_key_id,
   oauthClientCiphertext: row.oauth_client_ciphertext,
   oauthFlowCiphertext: row.oauth_flow_ciphertext,
   lastRefreshAt: row.last_refresh_at ? new Date(row.last_refresh_at) : null,
@@ -120,7 +114,6 @@ export interface OauthConnectionRepositoryPort {
     workspaceId: string,
     id: string,
     credentialCiphertext: string,
-    encryptionKeyId: string | null,
     grantedScopes?: string[],
     providerAccountId?: string | null,
   ): Promise<OauthConnectionRecord | null>;
@@ -142,7 +135,6 @@ export class OauthConnectionRepository implements OauthConnectionRepositoryPort 
         status: input.status ?? "pending",
         granted_scopes: input.grantedScopes ?? [],
         credential_ciphertext: input.credentialCiphertext ?? null,
-        encryption_key_id: input.encryptionKeyId ?? null,
         oauth_client_ciphertext: input.oauthClientCiphertext ?? null,
       })
       .returning(oauthColumns)
@@ -220,10 +212,6 @@ export class OauthConnectionRepository implements OauthConnectionRepositoryPort 
       query = query.set({ credential_ciphertext: input.credentialCiphertext ?? null });
       hasAssignment = true;
     }
-    if ("encryptionKeyId" in input) {
-      query = query.set({ encryption_key_id: input.encryptionKeyId ?? null });
-      hasAssignment = true;
-    }
     if ("oauthClientCiphertext" in input) {
       query = query.set({ oauth_client_ciphertext: input.oauthClientCiphertext ?? null });
       hasAssignment = true;
@@ -274,7 +262,6 @@ export class OauthConnectionRepository implements OauthConnectionRepositoryPort 
     workspaceId: string,
     id: string,
     credentialCiphertext: string,
-    encryptionKeyId: string | null,
     grantedScopes?: string[],
     providerAccountId?: string | null,
   ): Promise<OauthConnectionRecord | null> {
@@ -282,7 +269,6 @@ export class OauthConnectionRepository implements OauthConnectionRepositoryPort 
       .updateTable("integration_oauth_connections")
       .set((eb) => ({
         credential_ciphertext: credentialCiphertext,
-        encryption_key_id: encryptionKeyId,
         // COALESCE(provided, existing): keep current value when the arg is null/undefined.
         granted_scopes: grantedScopes != null ? grantedScopes : eb.ref("granted_scopes"),
         provider_account_id: providerAccountId != null ? providerAccountId : eb.ref("provider_account_id"),

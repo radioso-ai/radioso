@@ -250,10 +250,33 @@ describe("OpenTelemetry tracing helpers", () => {
     });
 
     return shutdownTracing().then(() => {
+      // The error itself, which the app logger's serializer reduces to its class and code: a
+      // collector's message can echo the endpoint or a credential.
       expect(logger.error).toHaveBeenCalledWith(
-        expect.objectContaining({ err: "collector down" }),
+        expect.objectContaining({ err: expect.any(Error) }),
         "otel_shutdown_failed",
       );
     });
+  });
+
+  it("hands a failed span export's error to the logger rather than its message", async () => {
+    const logger = { error: vi.fn(), info: vi.fn() };
+    initializeTracing({
+      ...enabledConfig({
+        export(_spans: ReadableSpan[], callback: Parameters<SpanExporter["export"]>[1]): void {
+          callback({ code: 1, error: new Error("collector rejected token abc123") });
+        },
+        shutdown: () => Promise.resolve(),
+      }),
+      logger,
+    });
+
+    await startActiveSpan("test.span", {}, async () => undefined);
+    await shutdownTracing();
+
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ err: expect.any(Error), spanCount: 1 }),
+      "otel_export_failed",
+    );
   });
 });

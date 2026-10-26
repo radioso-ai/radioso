@@ -459,14 +459,14 @@ const voiceRuntimeChannelCredentials = (grants: VoiceRuntimeGrants): VoiceRuntim
 
 /**
  * The chat-completions base URL a vendor agent posts one agent's turns to, under the deployment's
- * public API base URL; null when the deployment names none. Each vendor speaks the completions
- * dialect of its own name (`agentVoiceRoute.ts` mounts `…/voice/:dialect/v1/chat/completions`).
+ * public API base URL (`env.ts` normalizes it: no trailing slash, no `/api/v1`); null when the
+ * deployment names none. Each vendor speaks the completions dialect of its own name
+ * (`agentVoiceRoute.ts` mounts `…/voice/:dialect/v1/chat/completions`).
  */
 const voiceRuntimeCompletionsAddress = (publicApiBaseUrl: string | undefined) => {
   if (!publicApiBaseUrl) return null;
-  const base = publicApiBaseUrl.replace(/\/+$/u, "");
   return ({ agentId, vendor }: { agentId: string; vendor: VoiceVendor }) =>
-    `${base}/api/v1/agents/${encodeURIComponent(agentId)}/voice/${vendor}/v1`;
+    `${publicApiBaseUrl}/api/v1/agents/${encodeURIComponent(agentId)}/voice/${vendor}/v1`;
 };
 
 /** The audit events a runtime connection leaves: ids, the vendor, its region and closed values. */

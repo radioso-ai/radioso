@@ -322,6 +322,12 @@ variable "radioso_mcp_enabled" {
   default     = false
 }
 
+variable "public_api_origin" {
+  description = "Optional canonical HTTPS origin of the public REST API. The backend's PUBLIC_API_BASE_URL (voice vendor agents post turns there; Connect on the Voice card needs it) and the frontend's RADIOSO_PUBLIC_API_URL."
+  type        = string
+  default     = null
+}
+
 variable "mcp_public_origin" {
   description = "Optional canonical HTTPS origin for standalone MCP in live. GitHub Actions discovers the Cloud Run URL; set this only for a custom domain or direct Terraform run."
   type        = string

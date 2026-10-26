@@ -237,6 +237,8 @@ const authOrRegistration = permanent("Permanent exclusion: authentication and re
 const personalProfile = permanent("Permanent exclusion: a profile is the signed-in person's own identity, not workspace configuration; only that person edits their name.");
 const visitorVoiceSessionStart = permanent("Permanent exclusion: a visitor's page starts a voice session from the website embed's public session. The operator configures what it opens through the agent's voice block (voice.runtime, which propose_agent_setting covers) and the workspace's vendor key in Settings, which the never-list's provider_credential_writes keeps from Ray. Whether the embed's widget shows Talk is its voiceCallsOffered switch, which only the operator turns on in the dashboard (propose_workspace_setting leaves it off its payload, see workspaceSettingAuthoring.ts); the start itself is gated by voice readiness alone.");
 const visitorVoiceVendorConversationReport = permanent("Permanent exclusion: the website embed's page reports the vendor's id for the call it opened, once, from the visitor's public session. It records where the call's recording lives; nothing about it is operator configuration.");
+const voiceRuntimeConnectionWrite = permanent("Permanent exclusion: Connect and Disconnect create or delete a vendor agent in the workspace's own voice vendor account and issue or revoke the REST credential that agent carries, an access grant the never-list's access_grants keeps from Ray. The operator presses them on the agent's Voice card; Ray carries voice.runtime over as stored in propose_agent_setting and never asks for or invents a vendor agent id.");
+const voiceRuntimeConnectionStatus = permanent("Permanent exclusion: the Voice card's dashboard read of whether the runtime is one Radioso maintains; agent_configuration already shows Ray the agent's voice.runtime binding, and only the dashboard acts on the difference.");
 const voiceRecordingAudio = permanent("Permanent exclusion: the response is the call's audio, binary media a teammate listens to in the Inbox with each play audited against them, not a Ray operation. Ray's conversation_transcript says whether a voice conversation has a recording (recordingAvailable), and the transcript carries what was said.");
 const agentDiscoveryDocument = permanent("Permanent exclusion: the public discovery documents are read by a visiting agent, not by an operator. They render what the operator already controls through the agent's card and walk-in settings, which `propose_agent_setting` covers.");
 const copilotUiOnly = permanent("Permanent exclusion: this endpoint is the operator copilot UI/control surface, not a tool Ray may call.");
@@ -567,6 +569,9 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   createPublicVoiceSession: visitorVoiceSessionStart,
   reportPublicVoiceVendorConversation: visitorVoiceVendorConversationReport,
   getConversationRecording: voiceRecordingAudio,
+  getAgentVoiceConnection: voiceRuntimeConnectionStatus,
+  connectAgentVoice: voiceRuntimeConnectionWrite,
+  disconnectAgentVoice: voiceRuntimeConnectionWrite,
 
   listPendingDecisions: "workspace_triage",
   createAgentDirective: "propose_directive",

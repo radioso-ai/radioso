@@ -805,6 +805,20 @@ variable "connector_public_base_url" {
   default     = null
 }
 
+variable "public_api_origin" {
+  description = "Optional canonical HTTPS origin of the public REST API (e.g. https://api.radioso.ai). The backend gets it as PUBLIC_API_BASE_URL, the address voice vendor agents Radioso creates post each turn to (Connect on an agent's Voice card is unavailable without it), and the frontend as RADIOSO_PUBLIC_API_URL, the origin the dashboard shows in API endpoints."
+  type        = string
+  default     = null
+
+  validation {
+    condition = (
+      var.public_api_origin == null ||
+      can(regex("^https://[^/?#]+$", var.public_api_origin))
+    )
+    error_message = "public_api_origin must be an HTTPS origin without a path, query, fragment, or trailing slash."
+  }
+}
+
 variable "radioso_mcp_enabled" {
   description = "Whether Terraform should deploy the standalone public MCP Cloud Run service."
   type        = bool

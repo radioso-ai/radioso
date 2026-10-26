@@ -7,10 +7,12 @@ import { createAgentToolCatalogComposition } from "../composition/agentToolCatal
 import {
   createVoiceChannelComposition,
   createVoiceRecordingComposition,
+  createVoiceRuntimeConnectionComposition,
   createVoiceSessionStartComposition,
+  keepVoiceRuntimesInStepWithAgents,
   refreshEmbedConfigsOnVoiceVendorKeyChange,
 } from "../composition/voiceChannel.js";
-import { VoiceRecordingErasureRepository, VoiceSessionRepository } from "../../modules/voiceChannel/public.js";
+import { VoiceRecordingErasureRepository, VoiceRuntimeConnectionRepository, VoiceSessionRepository } from "../../modules/voiceChannel/public.js";
 import { createPostgresDeliveryFailures } from "../composition/deliveryFailures.js";
 import {
   createEmailChannelComposition,
@@ -1379,6 +1381,21 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     metricsRegistry: infrastructure.metricsRegistry,
     logger,
   });
+  // The vendor agent Radioso creates for an agent's voice channel, kept in step with the agent.
+  const voiceRuntimeConnections = createVoiceRuntimeConnectionComposition({
+    connections: new VoiceRuntimeConnectionRepository(infrastructure.database.kysely),
+    agentRepository: repositories.agentRepository,
+    agentService,
+    accessGrants: access.accessGrantService,
+    credentials: workspaceProviderCredentialsService,
+    // Called through its own receiver, never detached from globalThis.
+    fetch: (url, init) => globalThis.fetch(url, init),
+    publicApiBaseUrl: env.PUBLIC_API_BASE_URL,
+    auditService: infrastructure.auditService,
+    metricsRegistry: infrastructure.metricsRegistry,
+    logger,
+  });
+  keepVoiceRuntimesInStepWithAgents({ agents: agentService, connections: voiceRuntimeConnections });
 
   return {
     env,
@@ -1508,6 +1525,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     voiceSessionAvailability: voiceSessionStarts,
     voiceRecordings: voiceRecordings.recordings,
     voiceRecordingsLeftAtVendor: voiceRecordingErasures,
+    voiceRuntimeConnections,
     assistantHistoryService: chat.assistantHistoryService,
     conversationErasure,
     privacySettingsService,

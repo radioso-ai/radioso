@@ -147,14 +147,17 @@ describe("retrieval execution telemetry service", () => {
       confidence: 0.9,
     };
 
-    await service.create({ ...base, temporalDateRange: { dateFrom: "2026-10-26", dateTo: "2026-11-01" }, rewriteProposal });
+    await service.create({ ...base, temporalDateRange: { dateFrom: "1999-12-27", dateTo: "2000-01-02" }, rewriteProposal });
     await service.create({ ...base, rewriteProposal: { ...rewriteProposal, requestedDateRangeDropReason: "too_long" } });
 
     expect(events.map((event) => event.metadata)).toEqual([
       expect.objectContaining({ temporalDateRangeRequested: true, temporalDateRangeDropReason: "none" }),
       expect.objectContaining({ temporalDateRangeRequested: false, temporalDateRangeDropReason: "too_long" }),
     ]);
-    expect(JSON.stringify(events)).not.toContain("2026-10-26");
+    // Dates far from any run date, so the events' own timestamps can never contain them.
+    const serialized = JSON.stringify(events);
+    expect(serialized).not.toContain("1999-12-27");
+    expect(serialized).not.toContain("2000-01-02");
   });
 
   it("emits retrieval shape tags without raw query or document content", async () => {

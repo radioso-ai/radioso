@@ -156,8 +156,8 @@ interface AgentDeletion {
 }
 
 export class AgentService {
-  private defaultLocaleListener: ((change: AgentDefaultLocaleChange) => Promise<void>) | null = null;
-  private beforeDeleteListener: ((agent: AgentDeletion) => Promise<void>) | null = null;
+  private readonly defaultLocaleListeners: Array<(change: AgentDefaultLocaleChange) => Promise<void>> = [];
+  private readonly beforeDeleteListeners: Array<(agent: AgentDeletion) => Promise<void>> = [];
 
   constructor(
     private readonly agentRepository: AgentRepositoryPort,
@@ -174,21 +174,21 @@ export class AgentService {
   ) {}
 
   /**
-   * Called after any write (a save, a reviewed proposal, an import) changes an agent's default
-   * locale. Not awaited: the write never waits on it, and a listener that rejects is dropped, so a
-   * listener logs its own failures.
+   * Adds a listener called after any write (a save, a reviewed proposal, an import) changes an
+   * agent's default locale. Not awaited: the write never waits on it, and a listener that rejects
+   * is dropped, so a listener logs its own failures.
    */
   onDefaultLocaleChange(listener: (change: AgentDefaultLocaleChange) => Promise<void>): void {
-    this.defaultLocaleListener = listener;
+    this.defaultLocaleListeners.push(listener);
   }
 
   /**
-   * Called once an agent's deletion is allowed and before its row goes, so what lives outside
-   * Radioso for the agent can go first. Awaited; a listener that rejects never stops the deletion,
-   * so a listener logs its own failures.
+   * Adds a listener called once an agent's deletion is allowed and before its row goes, so what
+   * the agent owns elsewhere can let go of it first. Every listener is awaited, together; one that
+   * rejects never stops the others or the deletion, so a listener logs its own failures.
    */
   onBeforeDelete(listener: (agent: AgentDeletion) => Promise<void>): void {
-    this.beforeDeleteListener = listener;
+    this.beforeDeleteListeners.push(listener);
   }
 
   async list(workspaceId: string): Promise<AgentSettingsResource[]> {
@@ -490,7 +490,7 @@ export class AgentService {
       throw badRequest("Cannot delete the last agent in this workspace");
     }
 
-    await this.beforeDeleteListener?.({ workspaceId, agentId }).catch(() => undefined);
+    await Promise.allSettled(this.beforeDeleteListeners.map(async (listener) => listener({ workspaceId, agentId })));
     await this.agentRepository.deleteByIdAndWorkspaceId(agentId, workspaceId);
 
     if (workspace.defaultAgentId === agentId) {
@@ -626,9 +626,9 @@ export class AgentService {
     if (embedToken && this.embedConfigCacheInvalidator) {
       await this.embedConfigCacheInvalidator.invalidateForToken(embedToken);
     }
-    if (this.defaultLocaleListener && previous.assistantDefaultLocale !== updated.assistantDefaultLocale) {
-      void this.defaultLocaleListener({ workspaceId: workspace.id, agentId: updated.id, defaultLocale: updated.assistantDefaultLocale })
-        .catch(() => undefined);
+    if (previous.assistantDefaultLocale !== updated.assistantDefaultLocale) {
+      const change = { workspaceId: workspace.id, agentId: updated.id, defaultLocale: updated.assistantDefaultLocale };
+      for (const listener of this.defaultLocaleListeners) void Promise.resolve().then(() => listener(change)).catch(() => undefined);
     }
   }
 

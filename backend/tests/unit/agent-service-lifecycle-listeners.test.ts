@@ -64,6 +64,21 @@ describe("agent service: what other modules follow of an agent", () => {
     expect(listener).not.toHaveBeenCalled();
   });
 
+  it("tells every listener, not only the last one registered", async () => {
+    const { service, workspaceId, agentId } = await serviceWithWorkspace();
+    const second = await service.create(workspaceId, { name: "Second" });
+    const localeListeners = [vi.fn(async () => undefined), vi.fn(async () => undefined)];
+    const deleteListeners = [vi.fn(async () => { throw new Error("first listener fails"); }), vi.fn(async () => undefined)];
+    for (const listener of localeListeners) service.onDefaultLocaleChange(listener);
+    for (const listener of deleteListeners) service.onBeforeDelete(listener);
+
+    await service.update(workspaceId, agentId, { assistantDefaultLocale: "fr" });
+    await service.delete(workspaceId, second.id);
+
+    for (const listener of localeListeners) expect(listener).toHaveBeenCalledWith({ workspaceId, agentId, defaultLocale: "fr" });
+    for (const listener of deleteListeners) expect(listener).toHaveBeenCalledWith({ workspaceId, agentId: second.id });
+  });
+
   it("deletes the agent even when its listener rejects", async () => {
     const { service, agentRepository, workspaceId } = await serviceWithWorkspace();
     const second = await service.create(workspaceId, { name: "Second" });

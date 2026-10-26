@@ -26,7 +26,7 @@ describe("projectContextForMatching", () => {
     expect(projection.context.customer_email).toBe(REDACTED_VALUE);
   });
 
-  it("projects page context to its locating fields and omits the page excerpt", () => {
+  it("projects page context to its URL and title, without the page excerpt or either locale", () => {
     const projection = projectContextForMatching(
       {
         page_context: {
@@ -44,9 +44,67 @@ describe("projectContextForMatching", () => {
     expect(projection.context.page_context).toEqual({
       pageUrl: "https://shop.example/cart",
       pageTitle: "Your cart",
-      pageLocale: "en-GB",
-      browserLocale: "en-GB",
     });
+  });
+
+  it("projects visitor_request without the browser language", () => {
+    const projection = projectContextForMatching(
+      {
+        visitor_request: {
+          country: "IT",
+          region: "UMB",
+          city: "Assisi",
+          language: "en",
+          referrer: "https://partner.example",
+          entryPageUrl: "https://corsi.ananda.it/",
+        },
+      },
+      roomyBound,
+    );
+
+    expect(projection.context.visitor_request).toEqual({
+      country: "IT",
+      region: "UMB",
+      city: "Assisi",
+      referrer: "https://partner.example",
+      entryPageUrl: "https://corsi.ananda.it/",
+    });
+  });
+
+  it("projects only the visitor_request facts the request carried", () => {
+    const projection = projectContextForMatching(
+      {
+        visitor_request: {
+          country: "IT",
+          region: null,
+          city: null,
+          language: "it",
+          referrer: null,
+          entryPageUrl: null,
+        },
+      },
+      roomyBound,
+    );
+
+    expect(projection.context.visitor_request).toEqual({ country: "IT" });
+  });
+
+  it("omits visitor_request when the browser language was its only fact", () => {
+    const projection = projectContextForMatching(
+      {
+        visitor_request: {
+          country: null,
+          region: null,
+          city: null,
+          language: "en",
+          referrer: null,
+          entryPageUrl: null,
+        },
+      },
+      roomyBound,
+    );
+
+    expect(projection.context).toEqual({});
   });
 
   it("omits page context that resolved no locating fields", () => {

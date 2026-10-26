@@ -129,9 +129,15 @@ describe("ChatSessionPreparer visitor_request wiring (spec 1277 slice 4)", () =>
 
     // Both classification surfaces (matcher + fused planner) read the same projection
     // (spec FR-032): visitorMatchContext backs conversationProcessTurnInput's matcher
-    // input and chatService.planVisitorContext alike.
+    // input and chatService.planVisitorContext alike. The browser language stays out of it:
+    // the fused planner also picks the reply language, from the visitor's own words.
     const matchContext = visitorMatchContext(session);
-    expect(matchContext.context.visitor_request).toEqual(session.resolvedContext.snapshot.visitor_request);
+    expect(matchContext.context.visitor_request).toEqual({
+      country: "DE",
+      region: "BE",
+      city: "Berlin",
+      referrer: "https://partner.example",
+    });
   });
 
   it("omits visitor_request when the conversation carries no request-derived fact at all", async () => {

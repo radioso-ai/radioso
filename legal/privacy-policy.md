@@ -1,6 +1,6 @@
 # Privacy Policy
 
-**Last updated:** 2026-10-25
+**Last updated:** 2026-10-26
 
 > **Fill in before publishing.** Replace every `[...]` placeholder. This document
 > is a drafting aid, not legal advice. Have counsel review it against your actual
@@ -104,9 +104,10 @@ process whatever you choose to share with us for that purpose.
 To produce grounded answers, the Service sends prompts and retrieved context to
 the AI provider configured for your workspace or deployment. On Radioso Cloud,
 workspaces in europe-west1 use OpenAI's models through Microsoft Azure OpenAI in
-the EU, and workspaces in us-central1 use OpenAI directly. A workspace can connect its own account with another provider, such as
-Anthropic or Gemini; that provider is then the workspace's own processor, under
-the workspace's agreement with it.
+the EU, and workspaces in us-central1 use OpenAI directly. A workspace can
+connect its own account with another provider, such as Anthropic or Gemini; that
+provider is then the workspace's own processor, under the workspace's agreement
+with it.
 
 - For **Radioso Cloud**, the active providers are listed in the sub-processor
   table in Section 6.1.
@@ -160,7 +161,7 @@ law, analytics run only after you give consent.
 We share personal data only as needed to run the Service:
 
 - **Sub-processors and service providers** — hosting, database, AI provider,
-  and analytics. The current list is in Section 6.1 below.
+  email, payments, and analytics. The current list is in Section 6.1 below.
 - **Within your organization** — workspace members and operators can see data
   according to the access controls you configure.
 - **Legal and safety** — where required by law, to enforce our terms, or to
@@ -181,7 +182,8 @@ Self-hosted deployments do not use these unless the operator chooses to.
 | Google Cloud EMEA Ltd. (Google Cloud Platform) | Hosting, compute, database and file storage | All Service data | The workspace's region: europe-west1 (Belgium) or us-central1 (United States) |
 | Microsoft Ireland Operations Ltd. (Azure OpenAI) | Language model and embeddings, for workspaces in europe-west1 | Messages, retrieved document passages and instructions sent at answer time | EU (Azure EU Data Zone) |
 | OpenAI Ireland Ltd. | Language model and embeddings, for workspaces in us-central1 | Messages, retrieved document passages and instructions sent at answer time | United States |
-| Lettermint B.V. | Account and notification email; the email channel, when enabled | Recipient address and email content | EU (Netherlands) |
+| Lettermint B.V. | Account and notification email, for workspaces in europe-west1; the email channel, when enabled | Recipient address and email content | EU (Netherlands) |
+| Resend | Account and notification email, for workspaces in us-central1; the email channel, when enabled | Recipient address and email content | United States |
 | PostHog Inc. | Product and website analytics | Usage events, device/browser data, approximate location; no conversation content | EU Cloud (eu.posthog.com), EEA |
 | Slack Technologies | Notifications and handoff, only when a workspace connects Slack | Notification content the workspace configures | United States |
 | Stripe | Payments | Billing details of account holders; no end-user conversation data | United States |
@@ -196,10 +198,10 @@ privacy contact above.
 
 Radioso Cloud is hosted on Google Cloud Platform in two regions: europe-west1
 (Belgium, within the EEA) and us-central1 (United States). A workspace stays in
-the region where it was created. Our analytics (PostHog) run on EU Cloud. The
-For workspaces in europe-west1, hosting, language-model calls and email stay in
-the EU. The main transfers outside the EEA are hosting and language-model calls
-for workspaces in us-central1, payments through Stripe, and Slack when a
+the region where it was created. Our analytics (PostHog) run on EU Cloud. For
+workspaces in europe-west1, hosting, language-model calls and email stay in the
+EU. The main transfers outside the EEA are hosting, language-model calls and
+email for workspaces in us-central1, payments through Stripe, and Slack when a
 workspace connects it.
 Where we transfer personal data outside the EEA, UK, or Switzerland, we rely on a
 lawful transfer mechanism such as the EU Standard Contractual Clauses and the UK

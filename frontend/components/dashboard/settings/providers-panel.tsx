@@ -277,9 +277,9 @@ export function ProvidersPanel({
         id="voice-vendor-credentials"
         icon={<AudioLines className="h-5 w-5 text-primary" />}
         title="Voice runtime keys"
-        description="Radioso starts voice sessions with this key, so pages never hold it. Encrypted at rest and never shown again."
+        description="Radioso sets up your voice agents and starts their sessions with this key, so pages never hold it. Encrypted at rest and never shown again."
         providers={voiceVendorNames}
-        notConfiguredHint="Add a key so pages can start voice sessions on your ElevenLabs agents."
+        notConfiguredHint="Add an ElevenLabs key with the Agents permission (read and write), then connect ElevenLabs on an agent's Voice card."
         encryptionConfigured={encryptionConfigured}
         credentials={credentials}
         envProviderAvailability={{}}

@@ -34,19 +34,23 @@ const save = async (card: ReturnType<Page["locator"]>) => {
   await expect(card.getByText("Saved", { exact: true })).toBeVisible();
 };
 
-test("an operator binds the ElevenLabs agent, writes voice lines in two languages, trims them back, and finds the result after a reload", async ({ page }) => {
+test("an operator connects ElevenLabs, writes voice lines in two languages, trims them back, and finds the result after a reload", async ({ page }) => {
   const agentUpdates: unknown[] = [];
+  const voiceConnectionRequests: string[] = [];
   await seedDashboardStorage(page);
-  await installDashboardApiMocks(page, { agentUpdates });
+  await installDashboardApiMocks(page, {
+    agentUpdates,
+    voiceConnectionRequests,
+    voiceConnection: { vendorKey: "stored", connectVendorAgentId: VENDOR_AGENT_ID, connectRegion: "eu" },
+  });
 
   const card = await openVoiceCard(page);
   const voiceSwitch = card.getByRole("switch", { name: "Voice channel" });
   await expect(voiceSwitch).not.toBeChecked();
   await voiceSwitch.click();
-  await expect(card.getByLabel("Voice runtime")).toContainText("ElevenLabs");
-  await card.getByLabel("ElevenLabs agent id").fill(`  ${VENDOR_AGENT_ID}  `);
-  await card.getByLabel("Data residency").click();
-  await page.getByRole("option", { name: "European Union" }).click();
+  await card.getByRole("button", { name: "Connect ElevenLabs" }).click();
+  await expect(card.getByText("Connected to ElevenLabs · recordings stay in the European Union")).toBeVisible();
+  expect(voiceConnectionRequests).toEqual(["POST"]);
 
   const english = await addLanguage(card, "English");
   await english.getByRole("button", { name: "Add check line" }).click();
@@ -107,8 +111,7 @@ test("an operator binds the ElevenLabs agent, writes voice lines in two language
 
   const reloaded = page.locator("#voice-channel");
   await expect(reloaded.getByRole("switch", { name: "Voice channel" })).toBeChecked();
-  await expect(reloaded.getByLabel("ElevenLabs agent id")).toHaveValue(VENDOR_AGENT_ID);
-  await expect(reloaded.getByLabel("Data residency")).toContainText("European Union");
+  await expect(reloaded.getByText("Connected to ElevenLabs · recordings stay in the European Union")).toBeVisible();
   const reloadedEnglish = reloaded.getByRole("group", { name: "Voice lines: English" });
   await expect(reloadedEnglish.getByRole("textbox", { name: "Check line 1" })).toHaveValue(BRIDGE_LINE);
   await expect(reloadedEnglish.getByRole("textbox", { name: "Check line 2" })).toHaveCount(0);
@@ -119,11 +122,14 @@ test("an operator binds the ElevenLabs agent, writes voice lines in two language
   await expect(reloaded.getByRole("group", { name: /^Voice lines: / })).toHaveCount(1);
 });
 
-test("an operator unbinds the ElevenLabs agent, clears the voice lines, then the quick replies, and each clear is sent as an empty block", async ({ page }) => {
+test("an operator disconnects ElevenLabs, clears the voice lines, then the quick replies, and each clear is sent as an empty block", async ({ page }) => {
   const agentUpdates: unknown[] = [];
+  const voiceConnectionRequests: string[] = [];
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {
     agentUpdates,
+    voiceConnectionRequests,
+    voiceConnection: { vendorKey: "stored", managedVendorAgentId: VENDOR_AGENT_ID },
     agentSettingsOverrides: {
       voice: {
         enabled: true,
@@ -136,8 +142,13 @@ test("an operator unbinds the ElevenLabs agent, clears the voice lines, then the
   });
 
   const card = await openVoiceCard(page);
-  await expect(card.getByLabel("ElevenLabs agent id")).toHaveValue(VENDOR_AGENT_ID);
-  await card.getByLabel("ElevenLabs agent id").fill("");
+  await expect(card.getByText("Connected to ElevenLabs · recordings stay in the European Union")).toBeVisible();
+  await card.getByRole("button", { name: "Disconnect" }).click();
+  const confirm = page.getByRole("alertdialog", { name: "Disconnect ElevenLabs?" });
+  await expect(confirm).toContainText("Radioso deletes the ElevenLabs agent it created for it.");
+  await confirm.getByRole("button", { name: "Disconnect" }).click();
+  await expect(card.getByRole("button", { name: "Connect ElevenLabs" })).toBeEnabled();
+  expect(voiceConnectionRequests).toEqual(["DELETE"]);
   const english = card.getByRole("group", { name: "Voice lines: English" });
   await card.getByRole("switch", { name: "Voice channel" }).click();
   await english.getByRole("button", { name: "Remove check line 1" }).click();
@@ -240,5 +251,68 @@ test("switching to another agent shows that agent's own lines before its voice s
     voice: { enabled: false, bridgeLines: { en: { acknowledge: [], check: [otherBridgeLine] } }, fallbackLine: {}, runtime: null, languageSwitching: false },
     mechanicsReplies: {},
   }]);
+  expect(agentUpdates).toEqual([]);
+});
+
+test("an operator without a stored key is sent to Settings → Providers before Connect", async ({ page }) => {
+  const voiceConnectionRequests: string[] = [];
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { voiceConnectionRequests, voiceConnection: { vendorKey: "missing" } });
+
+  const card = await openVoiceCard(page);
+
+  await expect(card.getByRole("button", { name: "Connect ElevenLabs" })).toBeDisabled();
+  await expect(card.getByText("Add your ElevenLabs API key, with the Agents permission, under")).toBeVisible();
+  await expect(card.getByRole("link", { name: "Settings → Providers" })).toHaveAttribute("href", /\/settings\?tab=providers/);
+  expect(voiceConnectionRequests).toEqual([]);
+});
+
+test("an operator hands an ElevenLabs agent set up by hand over to Radioso, and a save afterwards keeps the new binding", async ({ page }) => {
+  const agentUpdates: unknown[] = [];
+  const voiceConnectionRequests: string[] = [];
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    agentUpdates,
+    voiceConnectionRequests,
+    agentSettingsOverrides: {
+      voice: { enabled: true, bridgeLines: {}, fallbackLine: {}, runtime: { vendor: "elevenlabs", agentId: "agent_by_hand", region: "us" } },
+    },
+    voiceConnection: { vendorKey: "stored", connectVendorAgentId: VENDOR_AGENT_ID, connectRegion: "sg" },
+  });
+
+  const card = await openVoiceCard(page);
+  await expect(card.getByText("Uses an ElevenLabs agent set up outside Radioso.")).toBeVisible();
+  await card.getByRole("button", { name: "Let Radioso manage it" }).click();
+  await expect(card.getByText("Connected to ElevenLabs · recordings stay in Singapore")).toBeVisible();
+  // Connect again repairs the agent Radioso maintains; the binding stays the same.
+  await card.getByRole("button", { name: "Reconnect" }).click();
+  await expect(card.getByText("Connected to ElevenLabs · recordings stay in Singapore")).toBeVisible();
+  expect(voiceConnectionRequests).toEqual(["POST", "POST"]);
+  await save(card);
+
+  // The form took over the binding Connect wrote, so the whole-block save carries it rather than the stale one.
+  expect(agentUpdates).toEqual([
+    {
+      voice: { enabled: true, bridgeLines: {}, fallbackLine: {}, runtime: { vendor: "elevenlabs", agentId: VENDOR_AGENT_ID, region: "sg" }, languageSwitching: false },
+      mechanicsReplies: {},
+    },
+  ]);
+});
+
+test("an operator whose key may not manage agents is told what to change, and nothing is bound", async ({ page }) => {
+  const agentUpdates: unknown[] = [];
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    agentUpdates,
+    voiceConnection: { vendorKey: "stored", connectFailure: { status: 422, code: "voice_vendor_key_lacks_agents_permission" } },
+  });
+
+  const card = await openVoiceCard(page);
+  await card.getByRole("button", { name: "Connect ElevenLabs" }).click();
+
+  await expect(card.getByRole("alert")).toHaveText(
+    "The ElevenLabs key needs the Agents permission, read and write. Turn it on for the key in ElevenLabs, or store a key that has it.",
+  );
+  await expect(card.getByRole("button", { name: "Connect ElevenLabs" })).toBeEnabled();
   expect(agentUpdates).toEqual([]);
 });

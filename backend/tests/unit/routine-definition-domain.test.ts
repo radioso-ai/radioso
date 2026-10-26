@@ -140,6 +140,21 @@ describe("routine mutable slots (issue #746)", () => {
   });
 });
 
+describe("routine sensitive slots (#1543)", () => {
+  it("compiles an authored sensitivity onto the routine slot schema only when the slot is sensitive", () => {
+    const definition = baseDefinition();
+    definition.slots = [
+      { stableSlotId: "slot_name", key: "name", type: "text", required: true, description: null, ordinal: 0, sensitivity: "sensitive" },
+      { stableSlotId: "slot_topic", key: "topic", type: "text", required: true, description: null, ordinal: 1, sensitivity: "normal" },
+    ];
+    const routine = compileRoutineDefinition(definition);
+    expect(routine.slots).toEqual([
+      { id: "slot_name", key: "name", type: "text", required: true, sensitivity: "sensitive" },
+      { id: "slot_topic", key: "topic", type: "text", required: true },
+    ]);
+  });
+});
+
 describe("routine definition compiler and validator", () => {
   it("parses typed skill-step bindings in metadata and preserves author metadata", () => {
     const parsed = routineStepSchema.parse({

@@ -213,6 +213,22 @@ describe("routineEndingEffectsForTurn", () => {
     ]);
   });
 
+  it("queues which collected values were masked as sensitive with the notice, from a notice or a bare hand-off (#1543)", () => {
+    const fromNotice = routineEndingEffectsForTurn({
+      session,
+      workspaceId: "ws_1",
+      turn: { operatorNotice: { routineId: "routine_1", stepId: "done", terminalKind: "complete", collected: { injury: "[redacted]" }, sensitiveSlotKeys: ["injury"] } },
+    });
+    const fromHandoff = routineEndingEffectsForTurn({
+      session,
+      workspaceId: "ws_1",
+      turn: { handoff: { routineId: "routine_1", stepId: "human", terminalKind: "handoff", collected: { injury: "[redacted]" }, sensitiveSlotKeys: ["injury"] } },
+    });
+
+    expect(fromNotice.actions?.[0]?.payload).toEqual(expect.objectContaining({ sensitiveSlotKeys: ["injury"] }));
+    expect(fromHandoff.actions?.[0]?.payload).toEqual(expect.objectContaining({ sensitiveSlotKeys: ["injury"] }));
+  });
+
   it("hands off and notifies with reason routine_stuck for a visitor stuck past the re-ask limit (#1384), through the same handoff.notify action", () => {
     const effects = routineEndingEffectsForTurn({
       session,

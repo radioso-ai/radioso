@@ -225,6 +225,58 @@ test("exposes a routine as a tool, shows the name diagnostic, and saves the corr
   await expect(page.getByRole("status", { name: "Routine valid" })).toBeVisible({ timeout: 15_000 });
 });
 
+test("marks an information field sensitive, saves it, and reads it back after a reload", async ({ page }) => {
+  const routineUpdates: RoutineMutationFixture[] = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, { routineUpdates });
+
+  await page.goto(`/w/${workspaceKey}/agents/${defaultAgentId}?tab=behavior&anchor=assistant-routines`);
+  await expect(page.getByRole("heading", { name: "Routines", level: 1 })).toBeVisible();
+  await page.getByRole("button", { name: "New routine" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Book a class");
+
+  const documentEditor = page.getByRole("article", { name: "Routine document editor" });
+  await documentEditor.getByRole("button", { name: "Starts when", exact: true }).click();
+  await documentEditor.getByLabel("Activation trigger", { exact: true }).fill("a visitor wants to book a class.");
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Chat" }).click();
+  await documentEditor.getByRole("button", { name: "Chat", exact: true }).click();
+  const instruction = documentEditor.getByLabel("Step 1 instruction");
+  await instruction.click();
+  await instruction.pressSequentially("Ask about any @injury");
+  await page.getByRole("option", { name: /Create variable “injury”/ }).click();
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  await documentEditor.getByRole("button", { name: "Toggle details", exact: true }).click();
+  await documentEditor.getByRole("button", { name: "injury", exact: true }).click();
+  await documentEditor.getByRole("switch", { name: "Slot injury sensitive" }).click();
+  await documentEditor.getByRole("button", { name: "Done", exact: true }).click();
+
+  // The reader line says so, and the saved routine carries the authored field.
+  await expect(documentEditor.getByRole("button", { name: "injury", exact: true })).toContainText("sensitive");
+  await expect.poll(
+    () => routineUpdates.filter((update) => update.method === "POST" || update.method === "PATCH").at(-1)?.body?.slots?.find((slot) => slot.key === "injury")?.sensitivity,
+    { timeout: 15_000 },
+  ).toBe("sensitive");
+
+  await page.reload();
+  const reloadedEditor = page.getByRole("article", { name: "Routine document editor" });
+  await reloadedEditor.getByRole("button", { name: "Toggle details", exact: true }).click();
+  await expect(reloadedEditor.getByRole("button", { name: "injury", exact: true })).toContainText("sensitive");
+
+  // Set back to normal, the saved field carries no sensitivity at all.
+  await reloadedEditor.getByRole("button", { name: "injury", exact: true }).click();
+  await reloadedEditor.getByRole("switch", { name: "Slot injury sensitive" }).click();
+  await reloadedEditor.getByRole("button", { name: "Done", exact: true }).click();
+  await expect.poll(
+    () => routineUpdates.filter((update) => update.method === "PATCH").at(-1)?.body?.slots?.find((slot) => slot.key === "injury"),
+    { timeout: 15_000 },
+  ).not.toHaveProperty("sensitivity");
+});
+
 const addChatStep = async (page: Page, documentEditor: Locator, text: string) => {
   await documentEditor.getByRole("button", { name: "Step", exact: true }).click();
   await page.getByRole("menuitem", { name: "Chat" }).click();

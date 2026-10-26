@@ -244,6 +244,8 @@ export class ApprovalResumeTurn {
       actions: decisionEffects.actions,
       ownershipHandoff: routineEnding.ownershipHandoff,
       routineStateTransition,
+      // Marks the resumed reply when the routine holds a sensitive value, as a live turn's is (#1543).
+      routineReporter: routineTurnPorts.reporter,
       pendingDecisionTransition: decisionEffects.pendingDecisionTransition,
       suspended: Boolean(result.awaitingDecision),
       additionalAuditEvent: {

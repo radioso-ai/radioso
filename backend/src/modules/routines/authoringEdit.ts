@@ -4,6 +4,7 @@ import {
   ROUTINE_DEFINITION_LIMITS,
   routineExposureSchema,
   routineReentryModes,
+  routineSlotSensitivities,
   type RoutineDefinition,
   type RoutineDefinitionDraftAuthoringInput,
 } from "./domain.js";
@@ -69,10 +70,13 @@ export const routineFieldPatchSchema = z.object({
     key: z.string().trim().min(1).max(ROUTINE_DEFINITION_LIMITS.slotKey),
     description: z.string().trim().max(ROUTINE_DEFINITION_LIMITS.slotDescription).nullable().optional(),
     required: z.boolean().optional(),
-  }).strict().refine((slot) => slot.description !== undefined || slot.required !== undefined, {
+    // Whether the field's value may leave the conversation (#1543). Only ever the operator's
+    // choice: an edit sets it because they asked, never because of what the field is called.
+    sensitivity: z.enum(routineSlotSensitivities).optional(),
+  }).strict().refine((slot) => slot.description !== undefined || slot.required !== undefined || slot.sensitivity !== undefined, {
     // An entry that names a field and changes nothing about it would still produce a card to apply
     // and a write that only moves the routine's version.
-    message: "an information field edit must set a description or a required flag",
+    message: "an information field edit must set a description, a required flag, or a sensitivity",
   })).min(1), (slot) => slot.key, "information field").optional(),
   // How the routine is offered to a calling agent as a tool. The whole block is replaced: a
   // tool name is frozen once published, so an edit that changes it is refused at publish, not
@@ -178,6 +182,16 @@ const withNoticeRouting = (terminal: DraftTerminal, edit: NoticeRoutingEdit): Dr
   return { ...withoutNotice, operatorNotice: next };
 };
 
+type DraftSlot = NonNullable<RoutineDefinitionDraftAuthoringInput["slots"]>[number];
+
+// Normal is the absence of the field, as a stored slot reads back, so a field set back to normal
+// projects exactly as it did before it was ever marked.
+const withSensitivity = (slot: DraftSlot, sensitivity: DraftSlot["sensitivity"]): DraftSlot => {
+  if (sensitivity === undefined) return slot;
+  const { sensitivity: _previous, ...rest } = slot;
+  return sensitivity === "sensitive" ? { ...rest, sensitivity } : rest;
+};
+
 export const applyRoutineFieldPatch = (
   routine: RoutineDefinition,
   rawPatch: RoutineFieldPatch,
@@ -201,11 +215,11 @@ export const applyRoutineFieldPatch = (
     slots: draft.slots?.map((slot) => {
       const edit = slotEdits.get(slot.key);
       if (!edit) return slot;
-      return {
+      return withSensitivity({
         ...slot,
         ...(edit.description === undefined ? {} : { description: edit.description }),
         ...(edit.required === undefined ? {} : { required: edit.required }),
-      };
+      }, edit.sensitivity);
     }),
     steps: draft.steps.map((step) => {
       const edit = stepEdits.get(step.stableStepId);
@@ -267,6 +281,7 @@ export const projectRoutineForReview = (routine: RoutineDefinitionDraftAuthoring
     required: slot.required,
     description: slot.description ?? null,
     mutable: slot.mutable ?? null,
+    sensitivity: slot.sensitivity ?? "normal",
     ordinal: slot.ordinal,
   }]))),
   steps: Object.fromEntries(uniquelyKeyed(routine.steps.map((step) => [step.stableStepId, {

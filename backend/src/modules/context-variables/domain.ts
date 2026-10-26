@@ -1,8 +1,11 @@
+import type { ValueSensitivity } from "@radioso/conversation-contract";
+
 import type { ContextVariableSurfacing } from "./contextResolutionService.js";
 
 export type ContextVariableValueType = "string" | "json";
 export type ContextVariableTrustTier = "unverified" | "signed";
-export type ContextVariableSensitivity = "normal" | "sensitive";
+/** The same authored sensitivity a routine slot carries, with the same masking rule. */
+export type ContextVariableSensitivity = ValueSensitivity;
 export type ContextVariableSource = "pushed" | "browser" | "resolver" | "request";
 export type ContextVariableScopeType = "session" | "customer" | "agent" | "workspace";
 

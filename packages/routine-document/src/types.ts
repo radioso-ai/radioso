@@ -49,15 +49,17 @@ export type RoutineCompletionExport = NonNullable<RoutineDefinitionDraft["comple
 
 export type RoutineFieldGuardValue = string | number | boolean;
 
-// A variable carried on the chip document. `required`/`mutable` are omitted in the common
-// case (required, non-mutable) so the bare `{ id, name, type }` shape round-trips unchanged;
-// they're only present when the author marks a slot optional or editable-after-completion.
+// A variable carried on the chip document. `required`/`mutable`/`sensitive` are omitted in the
+// common case (required, non-mutable, normal) so the bare `{ id, name, type }` shape round-trips
+// unchanged; they're only present when the author marks a slot optional, editable-after-completion,
+// or sensitive.
 export type ChipDocVariable = {
   id: string;
   name: string;
   type: RoutineSlotType;
   required?: boolean;
   mutable?: boolean;
+  sensitive?: boolean;
 };
 
 // One option of an approval gate, as carried on an `approval` chip: its id/label/optional

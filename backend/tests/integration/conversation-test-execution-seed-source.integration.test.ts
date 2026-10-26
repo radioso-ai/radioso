@@ -135,6 +135,39 @@ describeIntegration("ConversationTestExecutionSeedSource (Postgres)", () => {
     await expect(clarificationStateRepository.loadPending({ sessionId: conversationId })).resolves.toMatchObject({ status: "pending" });
   });
 
+  it("seeds a sensitive value masked, even when the turn that marked it is older than the thread window (#1543)", async () => {
+    const markedConversationId = randomUUID();
+    await database.query(
+      `INSERT INTO conversations (id, workspace_id, agent_id, source_channel) VALUES ($1,$2,$3,$4)`,
+      [markedConversationId, workspaceId, agentId, "website_embed"],
+    );
+    await database.query(
+      `INSERT INTO messages (id, conversation_id, workspace_id, role, content, source, metadata_json, created_at)
+       VALUES
+         ($1, $2, $3, 'user',      'I tore my ACL',      'customer', '{"sensitiveSlotKeys":["injury"]}'::jsonb, '2026-06-01T09:00:01.000Z'),
+         ($4, $2, $3, 'assistant', 'Noted, a torn ACL.', 'ai_agent', '{"sensitiveSlotKeys":["injury"]}'::jsonb, '2026-06-01T09:00:02.000Z'),
+         ($5, $2, $3, 'user',      'Tuesday works',      'customer', '{}'::jsonb,                                '2026-06-01T09:00:03.000Z')`,
+      [randomUUID(), markedConversationId, workspaceId, randomUUID(), randomUUID()],
+    );
+    await routineStateRepository.save({
+      sessionId: markedConversationId,
+      routineId: "book-class",
+      path: ["ask_injury", "ask_day"],
+      variables: { injury: "torn ACL", day: "Tuesday" },
+      status: "active",
+    });
+    try {
+      const seed = await source.loadSeed({ workspaceId, agentId, conversationId: markedConversationId });
+
+      expect(seed?.messages.map((message) => message.content)).toEqual(["[redacted]", "[redacted]", "Tuesday works"]);
+      expect(seed?.continuation).toMatchObject({ routineState: { variables: { injury: "[redacted]", day: "Tuesday" } } });
+      await expect(new MessageRepository(database.kysely).listSensitiveSlotKeys({ workspaceId, conversationId: markedConversationId }))
+        .resolves.toEqual(["injury"]);
+    } finally {
+      await database.query(`DELETE FROM routine_states WHERE session_id = $1`, [markedConversationId]);
+    }
+  });
+
   it("answers null for a conversation in another workspace", async () => {
     await expect(source.loadSeed({ workspaceId: randomUUID(), agentId, conversationId })).resolves.toBeNull();
   });

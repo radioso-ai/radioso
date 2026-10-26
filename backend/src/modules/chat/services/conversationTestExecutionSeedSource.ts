@@ -1,9 +1,10 @@
-import type { PendingClarification, RoutineState } from "@radioso/conversation-contract";
+import { redactSensitiveValues, type PendingClarification, type RoutineState } from "@radioso/conversation-contract";
 
 import type { ConversationRecord } from "../../../db/repositories/conversationRepository.js";
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { DirectiveFiringState } from "../../directives/public.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { carriesSensitiveValue, transcriptCopyContent } from "../../../shared/domain/sensitiveTranscript.js";
 import type {
   TestExecutionSeed,
   TestExecutionSeedMessage,
@@ -21,6 +22,8 @@ export interface SeedConversationReaderPort {
 
 export interface SeedMessageReaderPort {
   listRecentByConversationId(workspaceId: string, conversationId: string, limit: number): Promise<MessageRecord[]>;
+  /** Every sensitive slot key (#1543) the conversation's marked turns name, however long ago. */
+  listSensitiveSlotKeys(input: { workspaceId: string; conversationId: string }): Promise<string[]>;
 }
 
 export interface SeedRoutineStateReaderPort {
@@ -44,10 +47,11 @@ interface ConversationTestExecutionSeedSourceOptions {
 }
 
 // System messages are runtime scaffolding, not part of the human-visible thread an operator
-// continues in a private test.
+// continues in a private test. A message of a turn whose routine held a sensitive value (#1543)
+// is copied withheld: the test execution is a stored copy of the conversation.
 const seedMessage = (message: MessageRecord): TestExecutionSeedMessage | null =>
   message.role === "user" || message.role === "assistant"
-    ? { role: message.role, content: message.content, messageId: message.id, createdAt: message.createdAt }
+    ? { role: message.role, content: transcriptCopyContent(message), messageId: message.id, createdAt: message.createdAt }
     : null;
 
 // A seeded side is replayed in full on every test turn (there is no rolling summary behind
@@ -70,6 +74,24 @@ const seedThread = (fetched: readonly MessageRecord[]): TestExecutionSeedMessage
 };
 
 /**
+ * A pending clarification keeps the visitor message it was asked about as text, so it is seeded
+ * without it when that message is marked (#1543). The row names the message by its text, not its
+ * id; one outside the window cannot be checked, so it is dropped whenever the conversation has a
+ * marked message at all.
+ */
+const seedClarification = (
+  pending: PendingClarification | null,
+  messages: readonly MessageRecord[],
+  sensitiveSlotKeys: readonly string[],
+): PendingClarification | null => {
+  if (!pending?.originalQuery || sensitiveSlotKeys.length === 0) return pending;
+  const originating = messages.filter((message) => message.role === "user" && message.content === pending.originalQuery);
+  if (originating.length > 0 && !originating.some((message) => carriesSensitiveValue(message.metadata))) return pending;
+  const { originalQuery: _withheld, ...rest } = pending;
+  return rest;
+};
+
+/**
  * Seeds a private test execution from a live conversation: the user+assistant thread plus
  * the conversation's CURRENT (post-turn) routine, clarification, and directive position,
  * which is exactly what a forward-continuing test needs. (Eval *replay* deliberately does
@@ -87,12 +109,19 @@ export class ConversationTestExecutionSeedSource implements TestExecutionSeedSou
     if (!source || source.agentId !== input.agentId) return null;
 
     const sessionId = input.conversationId;
-    const [messages, routineState, pendingClarification, directiveState] = await Promise.all([
+    const [messages, activeRoutine, pendingClarificationRow, directiveState, sensitiveSlotKeys] = await Promise.all([
       this.options.messages.listRecentByConversationId(input.workspaceId, input.conversationId, HISTORY_WINDOW + 1),
       this.options.routineStates.loadActive({ sessionId }),
       this.options.clarifications.loadPending({ sessionId }),
       this.options.directiveStates.load({ sessionId }),
+      this.options.messages.listSensitiveSlotKeys({ workspaceId: input.workspaceId, conversationId: input.conversationId }),
     ]);
+    // The run continues from where it stood, a sensitive value read as `[redacted]` (#1543): the
+    // routine keeps its position, and a later step that shows the value shows the marker.
+    const routineState = activeRoutine
+      ? { ...activeRoutine, variables: redactSensitiveValues(activeRoutine.variables, sensitiveSlotKeys) }
+      : null;
+    const pendingClarification = seedClarification(pendingClarificationRow, messages, sensitiveSlotKeys);
 
     return {
       messages: seedThread(messages),

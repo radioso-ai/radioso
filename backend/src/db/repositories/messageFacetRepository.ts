@@ -4,6 +4,9 @@ import type {
   MessageFacetRepositoryPort,
   UpsertFacetInput,
 } from "../../modules/facets/contracts.js";
+import { sql } from "kysely";
+
+import { SENSITIVE_SLOT_KEYS_METADATA_KEY } from "../../shared/domain/sensitiveTranscript.js";
 import { toPgVector } from "../../shared/infra/kysely/pgVectorSql.js";
 import { currentTimestamp } from "../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
@@ -30,15 +33,27 @@ const parseVector = (value: string): number[] => {
 export class MessageFacetRepository implements MessageFacetRepositoryPort {
   constructor(private readonly db: Db) {}
 
-  async upsertFacet(input: UpsertFacetInput): Promise<void> {
-    await this.db
+  async upsertFacet(input: UpsertFacetInput): Promise<boolean> {
+    // The facet row comes from the message row, so a message that is gone or carries a sensitive
+    // value (#1543) stores nothing. FOR SHARE makes the write wait on a turn that is marking the
+    // message right now and re-read the row once it commits, so a marked message is never stored
+    // even when its facet was extracted while the turn ran. The marker is only ever written with
+    // at least one slot key (sensitiveTurnMetadata), so its presence is the test.
+    const result = await this.db
       .insertInto("message_facets")
-      .values({
-        message_id: input.messageId,
-        workspace_id: input.workspaceId,
-        facet_text: input.facetText,
-        prompt_version: input.promptVersion,
-      })
+      .columns(["message_id", "workspace_id", "facet_text", "prompt_version"])
+      .expression((eb) => eb
+        .selectFrom("messages")
+        .select([
+          "messages.id",
+          "messages.workspace_id",
+          eb.val(input.facetText).as("facet_text"),
+          eb.val(input.promptVersion).as("prompt_version"),
+        ])
+        .where("messages.id", "=", input.messageId)
+        .where("messages.workspace_id", "=", input.workspaceId)
+        .where(sql<boolean>`NOT (messages.metadata_json ? ${SENSITIVE_SLOT_KEYS_METADATA_KEY})`)
+        .forShare())
       .onConflict((oc) =>
         oc.column("message_id").doUpdateSet((eb) => ({
           facet_text: eb.ref("excluded.facet_text"),
@@ -50,7 +65,8 @@ export class MessageFacetRepository implements MessageFacetRepositoryPort {
           updated_at: currentTimestamp(),
         })),
       )
-      .execute();
+      .executeTakeFirst();
+    return Number(result.numInsertedOrUpdatedRows ?? 0) > 0;
   }
 
   async attachEmbedding(input: AttachFacetEmbeddingInput): Promise<void> {

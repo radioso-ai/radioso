@@ -56,4 +56,20 @@ describe("resolveUntypedSkillArguments", () => {
       origins: { email: "slot", note: "slot" },
     });
   });
+
+  it("masks a sensitive slot, since no binding named it", () => {
+    expect(resolveUntypedSkillArguments({ email: "sam@example.com", injury: "torn ligament" }, ["injury"])).toEqual({
+      values: { email: "sam@example.com", injury: "[redacted]" },
+      origins: { email: "slot", injury: "slot" },
+    });
+  });
+});
+
+describe("resolveSkillArguments with a sensitive slot", () => {
+  it("passes the value a binding names, because the author bound that slot to the input", () => {
+    expect(resolveSkillArguments(
+      { details: { kind: "variableRef", ref: "injury" } },
+      { injury: "torn ligament" },
+    ).values).toEqual({ details: "torn ligament" });
+  });
 });

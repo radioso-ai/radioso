@@ -573,6 +573,7 @@ export class ChatService {
       agentRevisionRuntimeResolver,
       visitorResolver,
       turnRuntime.metrics,
+      routineStore,
     );
     this.chatTurnAssembly = turnAssemblyFactory?.create({
       chatSessionPreparer: this.chatSessionPreparer,

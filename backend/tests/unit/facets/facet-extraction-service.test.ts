@@ -36,15 +36,15 @@ const buildInferenceFactory = (facet: string): FacetExtractionInferenceFactory =
 });
 
 const buildFacets = (overrides: Partial<MessageFacetRepositoryPort> = {}): MessageFacetRepositoryPort => ({
-  upsertFacet: vi.fn(async () => undefined),
+  upsertFacet: vi.fn(async () => true),
   attachEmbedding: vi.fn(async () => undefined),
   listForWindow: vi.fn(async () => []),
   listMessageIdsMissingCurrentFacet: vi.fn(async () => []),
   ...overrides,
 });
 
-const buildMessages = (content: string | null): FacetSourceMessagePort => ({
-  getContentById: vi.fn(async () => content),
+const buildMessages = (content: string | null, carriesSensitiveValue = false): FacetSourceMessagePort => ({
+  getFacetSource: vi.fn(async () => (content === null ? null : { content, carriesSensitiveValue })),
 });
 
 describe("FacetExtractionService", () => {
@@ -53,6 +53,7 @@ describe("FacetExtractionService", () => {
     const facets = buildFacets({
       upsertFacet: vi.fn(async () => {
         callOrder.push("upsertFacet");
+        return true;
       }),
       attachEmbedding: vi.fn(async () => {
         callOrder.push("attachEmbedding");
@@ -147,7 +148,7 @@ describe("FacetExtractionService", () => {
     const outcome = await service.extract(buildJob({ attemptCount: 2 }));
 
     expect(outcome).toEqual({ status: "extracted" });
-    expect(messages.getContentById).not.toHaveBeenCalled();
+    expect(messages.getFacetSource).not.toHaveBeenCalled();
     expect(inferenceFactory.create).not.toHaveBeenCalled();
     expect(facets.upsertFacet).not.toHaveBeenCalled();
     expect(facets.attachEmbedding).toHaveBeenCalledWith({
@@ -233,5 +234,39 @@ describe("FacetExtractionService", () => {
     expect(outcome).toEqual({ status: "skipped", reason: "empty_message" });
     expect(inferenceFactory.create).not.toHaveBeenCalled();
     expect(facets.upsertFacet).not.toHaveBeenCalled();
+  });
+
+  it("skips a message of a turn whose routine held a sensitive value, without sending it to the model (#1543)", async () => {
+    const facets = buildFacets();
+    const embeddings: ClusteringEmbeddingPort = { embedForClustering: vi.fn() };
+    const inferenceFactory = buildInferenceFactory("unused");
+    const service = new FacetExtractionService({
+      messages: buildMessages("I tore a ligament", true),
+      facets,
+      embeddings,
+      inferenceFactory,
+    });
+
+    const outcome = await service.extract(buildJob());
+
+    expect(outcome).toEqual({ status: "skipped", reason: "sensitive_value" });
+    expect(inferenceFactory.create).not.toHaveBeenCalled();
+    expect(facets.upsertFacet).not.toHaveBeenCalled();
+  });
+
+  it("skips, without embedding, a facet the store refuses because the turn marked its message while it was extracted", async () => {
+    const facets = buildFacets({ upsertFacet: vi.fn(async () => false) });
+    const embeddings: ClusteringEmbeddingPort = { embedForClustering: vi.fn() };
+    const service = new FacetExtractionService({
+      messages: buildMessages("I tore a ligament"),
+      facets,
+      embeddings,
+      inferenceFactory: buildInferenceFactory("asking about an injury"),
+    });
+
+    const outcome = await service.extract(buildJob());
+
+    expect(outcome).toEqual({ status: "skipped", reason: "message_unavailable" });
+    expect(embeddings.embedForClustering).not.toHaveBeenCalled();
   });
 });

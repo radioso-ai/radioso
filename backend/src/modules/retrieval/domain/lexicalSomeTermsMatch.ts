@@ -35,7 +35,7 @@ export const skippedSomeTermsPass = (reason: LexicalSomeTermsPassSkipReason): Le
   durationMs: 0,
 });
 
-export type LexicalTermAlternativeKind = "terms" | "phrase";
+type LexicalTermAlternativeKind = "terms" | "phrase";
 
 /**
  * One text a some-terms search looks for: a query term, two adjacent terms written as
@@ -179,7 +179,7 @@ export const buildSomeTermsLexicalQuery = (plan: LexicalQueryPlan): SomeTermsLex
  * workspace's chunks hold it, so the ranking needs no list of words to ignore in any
  * language: a word on most pages weighs least wherever it comes from.
  */
-export interface SomeTermsRankingPlan {
+interface SomeTermsRankingPlan {
   /** Weight of each query term, by term index; 0 for a term the ranking leaves out. */
   termWeights: number[];
   /** Alternatives covering at least one ranked term: the hits a chunk is scored on. */
@@ -252,6 +252,69 @@ export const planSomeTermsRanking = (input: {
     minimumCoveredWeight,
     everyTermRanked: !query.truncated && rankedTerms.size === query.termCount,
   };
+};
+
+/**
+ * A chunk the some-terms search ranks: it holds an alternative that defines the ranked
+ * set, and clears both weight floors.
+ */
+export interface SomeTermsCandidate {
+  chunkId: string;
+  /** The weight of the ranked terms it holds, summed in term order. */
+  coveredWeight: number;
+  /** It holds every query term by the term's own text. */
+  coversAllTerms: boolean;
+  /** The texts of the scored alternatives it holds, in alternative order: what it is ranked against. */
+  heldText: string;
+}
+
+/**
+ * Scores chunks from the alternatives each one holds, as listed by the search index, so
+ * no chunk's text is read to find out. `alternativeChunkIds[i]` lists the chunks in scope
+ * holding alternative `i`. It must be complete for every alternative the ranking scores,
+ * which the count cap guarantees: a scored alternative covers a weighted term, and every
+ * alternative covering a weighted term matches at most the cap. Lists for other
+ * alternatives are ignored and may be `null`.
+ */
+export const scoreSomeTermsCandidates = (input: {
+  query: SomeTermsLexicalQuery;
+  ranking: SomeTermsRankingPlan;
+  alternativeChunkIds: ReadonlyArray<readonly string[] | null>;
+}): SomeTermsCandidate[] => {
+  const { query, ranking } = input;
+  const heldAlternatives = new Map<string, Set<number>>();
+  for (const alternative of ranking.scoredAlternatives) {
+    for (const chunkId of input.alternativeChunkIds[alternative] ?? []) {
+      const held = heldAlternatives.get(chunkId) ?? new Set<number>();
+      held.add(alternative);
+      heldAlternatives.set(chunkId, held);
+    }
+  }
+  const rankedChunkIds = new Set(ranking.matchingAlternatives.flatMap((alternative) => input.alternativeChunkIds[alternative] ?? []));
+
+  return [...rankedChunkIds].flatMap((chunkId): SomeTermsCandidate[] => {
+    const held = heldAlternatives.get(chunkId) ?? new Set<number>();
+    const holdsTerm = (term: number): boolean =>
+      query.alternatives.some((alternative, index) => held.has(index) && alternative.covers.includes(term));
+    const coveredWeight = ranking.termWeights.reduce(
+      (sum, weight, term) => (weight > 0 && holdsTerm(term) ? sum + weight : sum),
+      0,
+    );
+    if (coveredWeight < ranking.minimumCoveredWeight) {
+      return [];
+    }
+    return [{
+      chunkId,
+      coveredWeight,
+      // The first `termCount` alternatives are the terms' own texts, in term order.
+      coversAllTerms: ranking.everyTermRanked
+        && Array.from({ length: query.termCount }, (_, term) => term).every((term) => held.has(term)),
+      heldText: ranking.scoredAlternatives
+        .filter((alternative) => held.has(alternative))
+        .map((alternative) => query.alternatives[alternative]?.text ?? "")
+        .join(" "),
+    }];
+  });
 };
 
 // A term's chunks are those holding any alternative that covers it, so "super" in

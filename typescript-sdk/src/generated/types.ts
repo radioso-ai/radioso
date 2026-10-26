@@ -6298,6 +6298,8 @@ export interface components {
                 description?: string | null;
                 ordinal: number;
                 mutable?: boolean;
+                /** @enum {string} */
+                sensitivity?: "normal" | "sensitive";
             }[];
             steps: {
                 stableStepId: string;
@@ -6409,6 +6411,8 @@ export interface components {
                 description?: string | null;
                 ordinal: number;
                 mutable?: boolean;
+                /** @enum {string} */
+                sensitivity?: "normal" | "sensitive";
             }[];
             steps: {
                 stableStepId: string;
@@ -6531,6 +6535,8 @@ export interface components {
                 description?: string | null;
                 ordinal: number;
                 mutable?: boolean;
+                /** @enum {string} */
+                sensitivity?: "normal" | "sensitive";
             }[];
             steps: {
                 stableStepId: string;
@@ -6669,6 +6675,8 @@ export interface components {
                     description?: string | null;
                     ordinal: number;
                     mutable?: boolean;
+                    /** @enum {string} */
+                    sensitivity?: "normal" | "sensitive";
                 }[];
                 steps: {
                     stableStepId: string;
@@ -7082,6 +7090,8 @@ export interface components {
                     description?: string | null;
                     ordinal: number;
                     mutable?: boolean;
+                    /** @enum {string} */
+                    sensitivity?: "normal" | "sensitive";
                 }[];
                 steps: {
                     stableStepId: string;

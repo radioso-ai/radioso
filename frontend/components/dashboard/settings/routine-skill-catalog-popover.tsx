@@ -24,6 +24,7 @@ import { contextVariablesApi } from '@/lib/api-context-variables'
 import { routineSkillCatalogApi, type SkillAuthoringDescriptor, type SkillAuthoringInput } from '@/lib/api-routine-skill-catalog'
 import type { OperatorNoticeDestinations } from '@/lib/operator-notice-destinations'
 import { routineContextVariablesFromEnablements, type RoutineEditorContextVariable } from '@/lib/routine-context-variables'
+import { defaultVariableBindingRef } from '@/lib/routine-document'
 import type { RoutineInputBinding, RoutineSkillBindingState, RoutineStepMode } from '@/lib/routine-prose'
 
 // What the agent can reach from a routine: the skills a tool step may call, the context
@@ -166,11 +167,13 @@ function SkillCatalogDetails({
   descriptor,
   bindingState,
   availableVariables,
+  sensitiveVariables,
   onBindingStateChange,
 }: {
   descriptor: SkillAuthoringDescriptor
   bindingState: RoutineSkillBindingState
   availableVariables: string[]
+  sensitiveVariables: string[]
   onBindingStateChange?: (state: RoutineSkillBindingState) => void
 }) {
   const inputBindings = bindingState.inputBindings ?? {}
@@ -241,7 +244,7 @@ function SkillCatalogDetails({
                           } else if (value === 'context') {
                             return
                           } else {
-                            setInputBinding(input, { kind: 'variableRef', ref: availableVariables[0] ?? '' })
+                            setInputBinding(input, { kind: 'variableRef', ref: defaultVariableBindingRef(availableVariables, sensitiveVariables) })
                           }
                         }}
                       >
@@ -361,6 +364,7 @@ export function RoutineSkillCatalogPopover({
   children,
   bindingState = {},
   availableVariables = [],
+  sensitiveVariables = [],
   showStepBindings = true,
   open,
   onOpenChange,
@@ -372,6 +376,8 @@ export function RoutineSkillCatalogPopover({
   children: ReactNode
   bindingState?: RoutineSkillBindingState
   availableVariables?: string[]
+  // Fields marked sensitive (#1543): never bound by default, only when the author picks one.
+  sensitiveVariables?: string[]
   // A routine step wires the skill's inputs and outputs; a bare mention only names it.
   showStepBindings?: boolean
   open?: boolean
@@ -402,6 +408,7 @@ export function RoutineSkillCatalogPopover({
                 descriptor={descriptor}
                 bindingState={bindingState}
                 availableVariables={availableVariables}
+                sensitiveVariables={sensitiveVariables}
                 onBindingStateChange={onBindingStateChange}
               />
             ) : (

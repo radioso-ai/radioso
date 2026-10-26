@@ -1,7 +1,7 @@
 ---
 title: "Deployment"
 description: "Production deployment expectations for Radioso and the standalone docs portal."
-last_updated: 2026-10-25
+last_updated: 2026-10-27
 ---
 
 import { Callout } from 'nextra/components'
@@ -163,6 +163,10 @@ A voice session start opens a session on the workspace's own voice vendor accoun
 - `PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_WINDOW_MS` defaults to 60 seconds.
 
 Workspaces should also set their vendor agent's own concurrency and daily limits, which bound what a started session can cost at the vendor.
+
+## Voice agents Radioso creates
+
+**Connect** on an agent's **Voice** card creates an ElevenLabs agent in the workspace's own ElevenLabs account, and that agent posts every turn to `{PUBLIC_API_BASE_URL}/api/v1/agents/<agent-id>/voice/elevenlabs/v1`. Set `PUBLIC_API_BASE_URL` on the backend to the origin the internet reaches the REST API on, for example `https://api.example.com`; until it is set, the Voice card says Connect is unavailable and Connect answers `503 voice_connection_unavailable`. With the included Terraform workflow, set the GitHub environment variable `PUBLIC_API_ORIGIN` to that origin: Terraform hands it to the backend as `PUBLIC_API_BASE_URL` and to the frontend as `RADIOSO_PUBLIC_API_URL`, the origin the dashboard shows in API endpoints and examples.
 
 ## Agent channel chat rate limits
 

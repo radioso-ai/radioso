@@ -7,7 +7,9 @@ module turns each finished caller utterance into one chat turn on the
 session's conversation and hands the reply back as sentence-sized speech. It
 also starts a session for a page: it opens one on the vendor agent the Radioso
 agent is bound to, with the workspace's own vendor key, and mints the session
-key the runtime sends back on every turn.
+key the runtime sends back on every turn. And it creates and maintains that
+vendor agent: Connect on the agent's Voice card has Radioso set one up on the
+workspace's own vendor account and bind the agent to it.
 
 For the broader repository map, see
 [`docs/architecture/code-map.md`](../../../../docs/architecture/code-map.md).
@@ -17,7 +19,9 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
 ## Boundaries
 
 - `domain.ts` knows sessions, utterances, bridge lines, speech pieces and turn
-  outcomes. It names no vendor and no wire.
+  outcomes, and the vendor agents Radioso maintains (`VoiceRuntimeProvisioner`,
+  `VoiceRuntimeConnection` and the ports a connection needs). It names no
+  vendor and no wire: no secret id, custom LLM, preset or tag.
 - `services/` runs the turn: `voiceTurnService.ts` resolves or binds the
   session's conversation, reads the agent's voice settings and the
   conversation's routine state and owner, starts the chat turn with
@@ -74,6 +78,26 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   `refreshEmbedConfigsOnVoiceVendorKeyChange` drops the workspace's
   CDN-cached embed configs when a voice vendor key is stored or removed, so
   that yes or no follows the key at once.
+  `voiceRuntimeConnectionService.ts` connects an agent's voice channel to a
+  vendor agent Radioso creates and maintains (`VoiceRuntimeConnectionPort`):
+  `connect` reads the vendor key (`VoiceVendorCredentialReader`), finds the
+  key's region (`VoiceRuntimeProvisioner.locateAccount`), reuses the REST
+  credential the connection holds while it is active or issues one
+  (`VoiceRuntimeChannelCredentials`), creates or repairs the vendor agent
+  (`ensureAgent`, minting a credential and asking again when the vendor agent
+  is gone), records the connection (`VoiceRuntimeConnectionStore`), binds
+  `voice.runtime` (`VoiceRuntimeBinder`) and only then revokes a credential it
+  replaced, undoing what the attempt minted or created when a step fails; a key
+  now for another region's account gets a new vendor agent there. `disconnect`
+  releases the vendor agent the connection names, revokes its credential and
+  drops the record (best effort when the vendor or the key is gone, reported
+  as `vendorAgentLeft`), then unbinds; a runtime with no connection, or one
+  naming another vendor agent, is the operator's and is only unbound.
+  `syncPrimaryLanguage` sets a maintained vendor agent up again after its
+  agent's default locale changed (no credential minted; a gone vendor agent
+  waits for Connect), and `releaseForDeletedAgent` releases one before its
+  agent is deleted; neither ever rejects. "Maintained" is a connection whose
+  vendor agent is the bound runtime's.
   `voiceRecordingService.ts` is a call's recording as the operator meets it:
   the page's report of the vendor's conversation id
   (`VoiceVendorConversationReportPort`, stored only once the vendor's
@@ -119,6 +143,12 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   one `INSERT … SELECT`, through the scope filter `voiceSessionScope.ts`
   shares with the session repository's `lockRecordedVendors`. The same
   repository is the organization's `VoiceRecordingsLeftAtVendorReader`.
+  `voiceRuntimeConnectionRepository.ts` is the `VoiceRuntimeConnectionStore`
+  (`agent_voice_runtime_connections`, migration
+  `249_agent_voice_runtime_connections.sql`): one row per agent naming the
+  vendor agent, its account's region and the credential's grant id, outside
+  the operator-written `voice` block; it goes with its agent, and a row naming
+  a vendor or region this version does not know reads as none.
 - `adapters/*` translate one wire to the domain port and back, and nothing
   else. `adapters/openaiCompletions/` is the OpenAI chat-completions wire;
   vendors that share it differ only by a dialect in `dialects.ts`, which is
@@ -138,8 +168,24 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   key in `xi-api-key`, one byte range passed on, a non-audio answer refused,
   and a 5-second limit on the answer that leaves the audio itself unbounded.
   `describeConversation` reads the conversation document (64 KB cap) for its
-  `agent_id`. The audio stops when it stalls for 15 s while the listener
-  waits; a listener who pauses never trips it. Both adapters use the region
+  `agent_id`. `runtimeProvisioner.ts` is the ElevenLabs
+  `VoiceRuntimeProvisioner`: it finds the key's region by asking all four
+  region hosts at once (the one that answers `200` is it; a permission code
+  is a key that may not manage agents; a host that did not answer keeps the
+  key from reading as wrong), creates the agent (a workspace secret holding
+  the credential first, deleted again if the agent is not created), repairs
+  it by reading it and patching back whole each section Radioso owns
+  (`conversation_config.agent`, `language_presets`, `turn`,
+  `platform_settings.overrides`, because a partial nested object is refused),
+  rotates the credential by creating the new secret, pointing the agent at it
+  and only then deleting the old one, and releases the agent before its
+  secret (a secret stays while an agent references it; a `404` agent counts as
+  released). It owns the vendor's preset-language table
+  (`ELEVENLABS_PRESET_LANGUAGES`), maps the agent's default locale onto it
+  (whole tag, then language, else English), and reads both error envelopes
+  (`detail.code`/`detail.status`, and a validation `detail` array), 5 s per
+  region probe and 10 s per management request. The audio stops when it stalls for 15 s while the listener
+  waits; a listener who pauses never trips it. The ElevenLabs adapters use the region
   host table in `hosts.ts` and the body helpers in `fetchHelpers.ts`.
 
 Dependency direction is adapter → `VoiceTurnPort` → chat. The service reaches
@@ -166,7 +212,11 @@ helpers and the shared chat message limit from `app/http`
   `VoiceRecordingErasureDrain`, `voiceRecordingErasureJobHandler`,
   `voiceRecordingErasureRequest`, `recoverStrandedVoiceRecordingErasures`,
   `VoiceRecordingErasureRepository`, `VoiceRecordingsLeftAtVendorReader`,
-  `VoiceRecordingAudit` and `createElevenLabsRecordingSource`.
+  `VoiceRecordingAudit` and `createElevenLabsRecordingSource`;
+  `VoiceRuntimeConnectionPort`, `VoiceRuntimeConnectionService`,
+  `VoiceRuntimeConnectionRepository`, `VoiceRuntimeConnectionError`,
+  `VOICE_RUNTIME_CONNECTION_STATES` and
+  `createElevenLabsRuntimeProvisioner`.
 - `backend/src/app/composition/voiceChannel.ts` — builds the port over a
   session store, `AssistantChatService.streamAnswer`, the agent repository (voice
   settings and default locale), the routine state store, the conversation
@@ -200,6 +250,20 @@ helpers and the shared chat message limit from `app/http`
   reporter, and `erasureRecoveryTask` joins the periodic tasks. The audit
   writes go through `AuditService.recordNamingGoneSubjects`, which names an
   organization or workspace gone since by id in the same insert.
+  `createVoiceRuntimeConnectionComposition` builds the runtime connection over
+  `VoiceRuntimeConnectionRepository`, the agent repository (name, default
+  locale and binding), the ElevenLabs provisioner with `fetch`, the same
+  credential reader, the access grants (an `agent-api` grant on the
+  `agent-api` channel labelled `Voice calls`, no expiry), `AgentService` as
+  the binder (so a binding runs every agent-write side effect), the
+  completions address under `PUBLIC_API_BASE_URL`
+  (`…/api/v1/agents/:agentId/voice/:vendor/v1`; null when unset) and the
+  audit service (`agent.voice_runtime.connected` and
+  `agent.voice_runtime.disconnected`); exposed as
+  `AppDependencies.voiceRuntimeConnections`.
+  `keepVoiceRuntimesInStepWithAgents` registers it on `AgentService`'s
+  `onDefaultLocaleChange` (not awaited) and `onBeforeDelete` (awaited, never
+  failing the deletion) hooks, so the agents module never imports this one.
 - `backend/src/app/http/routes/accountVoiceRecordingRoutes.ts` — mounts
   `GET /api/v1/account/voice-recordings/left-at-vendor` (account session,
   `workspace.history.delete` on the organization: owners and admins), the
@@ -223,6 +287,17 @@ helpers and the shared chat message limit from `app/http`
   import `AgentVoiceSettings` and `VoiceBridgeStyle` as types from
   `agents/public.ts`, and composition hands the turn service the agent's block
   and default locale.
+- `backend/src/app/http/routes/agentVoiceConnectionRoutes.ts` — mounts
+  `GET|POST|DELETE /api/v1/agents/:agentId/voice/connection` (dashboard
+  sessions, `workspace.agents.manage`, `X-Radioso-CSRF` on writes,
+  `sessionOnly` in `apiPrincipalRoutePolicy.ts`) and maps each
+  `VoiceRuntimeConnectionFailure` to its answer (`409`
+  `voice_vendor_key_missing`/`_unreadable`, `422` `voice_vendor_key_rejected`/
+  `voice_vendor_key_lacks_agents_permission`, `502` `voice_vendor_failed`,
+  `503` `voice_vendor_unreachable`/`voice_connection_unavailable`); permanent
+  copilot coverage exclusions (`getAgentVoiceConnection`, `connectAgentVoice`,
+  `disconnectAgentVoice`: Connect and Disconnect issue and revoke an access
+  grant).
 - `backend/src/app/http/routes/agentVoiceRoute.ts` — mounts
   `POST /api/v1/agents/:agentId/voice/:dialect/v1/chat/completions` beside the
   REST agent channel, behind `requireRestAgentChannelCredential` (an
@@ -901,6 +976,20 @@ count under `background_jobs_total{kind="voice.recording_erasure"}`. Otherwise
 never the vendor's conversation id, and never the key, the vendor URL or any
 audio.
 
+A runtime connection logs each operation with `workspaceId`, `agentId`,
+`vendor`, `operation` (`connect`, `disconnect`, `sync`, `agent_deleted`) and
+`outcome`: `Voice runtime connected` and `Voice runtime disconnected` at info
+(`created`, `repaired`; `released`, `unbound`, `vendor_agent_left`), `Voice
+runtime connect failed` and `Voice runtime language sync failed` at warn with
+the `VoiceRuntimeConnectionFailure` (or `error`, `needs_connect`) and the
+vendor error's `reason` and `vendorStatus`; a key now for another region's
+account, a vendor agent left at the vendor (with its `vendorAgentId` and
+`region`), a credential that could not be revoked and a default locale the
+vendor speaks no language of each warn on their own. The
+`voice_runtime_connection_total` counter carries the same `vendor`,
+`operation` and `outcome`. Never the key, the credential's secret, a vendor
+secret id or a URL.
+
 ## Tests
 
 - `cd backend && pnpm exec vitest run tests/unit/voice-channel-*.test.ts` (the
@@ -915,6 +1004,15 @@ audio.
   presenters that keep it out of HTTP responses)
 - `cd backend && pnpm exec vitest run tests/contract/agent-voice-settings.contract.test.ts`
   (the settings round trip and the dashboard-save safety check)
+- `cd backend && pnpm exec vitest run tests/unit/voice-channel-elevenlabs-runtime-provisioner.test.ts tests/unit/voice-channel-runtime-connection-service.test.ts tests/unit/agent-service-lifecycle-listeners.test.ts tests/contract/agent-voice-connection.contract.test.ts`
+  (the ElevenLabs provisioner over a scripted `fetch`: region probes, create,
+  whole-section repair, rotation and release order; the connection's
+  compensation, reuse, region change, disconnect of a maintained and a
+  hand-bound runtime; the agent service's locale and deletion hooks; and the
+  routes over an in-memory ElevenLabs)
+- `cd backend && pnpm exec vitest run tests/integration/voice-runtime-connection-repository.integration.test.ts --no-file-parallelism`
+  (needs the disposable integration database: one connection per agent, the
+  workspace scope, and the grant and agent cascades)
 - `cd backend && pnpm exec vitest run tests/contract/public-voice-session.contract.test.ts tests/contract/settings-credentials.contract.test.ts`
   (the session start through the embed's public session, with a fake vendor
   `fetch`; the ElevenLabs key in the credential store)

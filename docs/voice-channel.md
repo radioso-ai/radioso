@@ -1,7 +1,7 @@
 ---
 title: "Voice Channel"
 description: "Let a voice runtime such as ElevenLabs Agents speak for a Radioso agent through an OpenAI-compatible chat-completions endpoint, with sessions Radioso starts on your vendor key, one conversation per voice session, authored lines that cover the wait in the language of each turn, a call that switches language with its caller, a teammate's Inbox replies spoken to the caller, the call's recording in the Inbox, and the period's call numbers on the Quality page."
-last_updated: 2026-10-26
+last_updated: 2026-10-27
 ---
 
 # Voice Channel
@@ -46,78 +46,148 @@ Activity and the Inbox.
 
 ## Set it up
 
-A voice session runs over two connections. The voice runtime calls Radioso
-on every turn, with a REST credential for the agent. The page where the caller
-presses talk opens the session on the runtime, which takes the vendor's key
-and a session key. Radioso can open that session for the page, so your vendor
-key stays in the workspace; or your own backend can open it.
+A voice call runs over two connections. The voice runtime calls Radioso on
+every turn, with a REST credential for the agent. The page where the caller
+presses Talk opens the session on the runtime, which takes the vendor's key
+and a session key. With ElevenLabs, Radioso sets up both ends: you store your
+ElevenLabs key and press **Connect**, and Radioso creates the ElevenLabs
+agent in your account, gives it a credential, keeps it set up, and opens each
+session for the page, so the key never leaves the workspace.
 
-### Connect the runtime to Radioso
+### Connect ElevenLabs
 
-You need an agent and a REST credential for it.
+1. In ElevenLabs, create an API key that may read and write agents: the key's
+   **Agents** permission with write access (`convai_read` and `convai_write`
+   in the ElevenLabs API). A key without it reads as one that lacks the Agents
+   permission on the Voice card.
+2. In **Settings → Providers**, under **Voice runtime keys**, set the
+   ElevenLabs API key. Radioso encrypts it with `CONNECTOR_ENCRYPTION_KEY`,
+   like the model provider keys, and never shows it again. Workspace owners
+   and admins can set and remove it; `PUT` and `DELETE`
+   `/api/v1/settings/credentials/elevenlabs` do the same from the dashboard
+   session.
+3. On the agent's **Voice** card (**Channels → API**), turn on **Voice
+   channel** and select **Connect ElevenLabs**. The card then reads
+   **Connected to ElevenLabs · recordings stay in the European Union**, or
+   whichever region your account keeps its data in. Connect takes effect at
+   once; the **Voice channel** switch and the lines below it take effect when
+   you select **Save voice settings**.
 
-1. Open the agent's **Channels → API** card and create a REST credential.
-   Copy the secret before you close the result; Radioso stores only its hash.
-2. Point the runtime's custom LLM at the endpoint for your dialect. OpenAI
-   clients, ElevenLabs included, append `/chat/completions` to the URL you
-   configure, so the configured URL ends in `/v1`:
+Connect does four things:
 
-   ```text
-   https://api.radioso.ai/api/v1/agents/<agent-id>/voice/<dialect>/v1
-   ```
+- It finds your account's data residency region from the key. An ElevenLabs
+  account lives on exactly one region's host (`api.elevenlabs.io` for the
+  United States, `api.eu.residency.elevenlabs.io` for the European Union, and
+  the India and Singapore hosts), so Radioso asks all four and the one that
+  knows the key is the region. Calls, recordings and their deletion all go to
+  that host.
+- It issues the agent a REST credential labelled **Voice calls**, with no
+  expiry. It shows on the agent's **API** card next to the credentials you
+  created.
+- It creates an ElevenLabs agent named **Radioso · Front desk** (for an agent
+  called Front desk), tagged `radioso-managed`, with the settings below.
+- It binds the agent's `voice.runtime` to that ElevenLabs agent, the binding
+  a Radioso-started session opens.
 
-   Requests then arrive at `…/voice/<dialect>/v1/chat/completions`. Use
-   `https://api-us.radioso.ai` or your own self-hosted origin instead,
-   matching the host where you created the credential.
-3. Give the runtime the credential secret as its API key. It arrives as
-   `Authorization: Bearer <secret>`.
-4. Make the runtime send one session key per call, where the dialect below
-   reads it. A request without one gets `400`.
+| What Radioso sets on the ElevenLabs agent | Value |
+|---|---|
+| Custom LLM | `https://api.radioso.ai/api/v1/agents/<agent-id>/voice/elevenlabs/v1`, model `radioso`, with the **Voice calls** credential in a workspace secret it sends as the bearer |
+| System prompt and first message | Empty: the agent's own instructions apply, and the caller speaks first |
+| Language | The language of the agent's default locale (`it` for `it-IT`, `pt-br` for `pt-BR`), or English when the agent names none or ElevenLabs Agents doesn't speak it |
+| Language presets | Every other language ElevenLabs Agents offers, so a call can switch to any language an answer is written in |
+| **Detect language** system tool | On. Radioso calls it only while **Switch language with the caller** is on |
+| Backup LLM | Off, so every answer comes from the agent |
+| Speculative turns | Off: each would run as a real turn |
+| Custom LLM extra body | Allowed, so each session carries its session key |
 
-The agent id in the path must match the credential's agent. A credential for
-another agent, an MCP-audience credential, a personal token or a
-service-account credential gets `401`.
+Everything else on the ElevenLabs agent is yours to tune in ElevenLabs: the
+voice, the speech model, speech recognition keywords, and call limits.
+Connect leaves them as they are. Set the agent's concurrency and daily call
+limits there: they bound what a leaked signed URL or a busy day can cost.
 
-### ElevenLabs
+The ElevenLabs agent follows the Radioso agent. When you change the agent's
+default locale, Radioso sets the ElevenLabs agent's language again. Select
+**Reconnect** on the Voice card to set everything in the table again and bind
+the agent once more, for example after a save cleared the binding or after
+someone changed those settings in ElevenLabs. When the **Voice calls**
+credential was revoked, Reconnect issues a new one, points the ElevenLabs
+agent at it, and only then revokes the old one.
 
-ElevenLabs Agents uses the `elevenlabs` dialect. Three settings on the
-ElevenLabs agent connect it to a Radioso agent: the URL, the credential, and
-permission for each session to carry its session key.
+**Disconnect** deletes the ElevenLabs agent and its secret, revokes the
+**Voice calls** credential, and unbinds the agent. When ElevenLabs can't be
+reached, or no readable key is stored, Radioso still revokes the credential
+and unbinds; the card says the ElevenLabs agent is left in your account, and
+you delete it there. Deleting the Radioso agent deletes its ElevenLabs agent
+the same way.
 
-**The URL.** Set the custom LLM URL to
-`https://api.radioso.ai/api/v1/agents/<agent-id>/voice/elevenlabs/v1`.
+When you replace the key with one for an account in another region, the
+next Connect creates a new ElevenLabs agent there and revokes the old agent's
+credential, so the old agent can no longer reach Radioso. The new key can't
+see the old account, so delete the old agent in that account yourself.
 
-**The credential.** ElevenLabs sends the value of one of its workspace
-secrets as the bearer. Create a secret holding the Radioso credential with
-`POST /v1/convai/secrets`:
+Ray doesn't connect ElevenLabs: Connect creates an agent in your ElevenLabs
+account and issues a credential, which is yours to do from the Voice card.
+When Ray drafts a change to the `voice` block, it carries `runtime` over as
+stored. The API key is yours to enter in Settings; Ray never asks for it.
+
+#### When Connect fails
+
+The Voice card names what to fix. From the API, the same answers come from
+`POST /api/v1/agents/:agentId/voice/connection`:
+
+| Status | `error.code` | What it means |
+|---|---|---|
+| `409` | `voice_vendor_key_missing` | No ElevenLabs key is stored under **Voice runtime keys**. |
+| `409` | `voice_vendor_key_unreadable` | A key is stored but no configured key decrypts it; see [Rotate the credential encryption key](../docs-portal/content/operators/self-hosting-operations.mdx#rotate-the-credential-encryption-key), or enter the key again. |
+| `422` | `voice_vendor_key_rejected` | No ElevenLabs region accepts the key. |
+| `422` | `voice_vendor_key_lacks_agents_permission` | ElevenLabs accepts the key, but it may not read and write agents. |
+| `502` | `voice_vendor_failed` | ElevenLabs refused to create or update the agent. |
+| `503` | `voice_vendor_unreachable` | ElevenLabs did not answer, within 5 seconds for the region check and 10 seconds for each change. |
+| `503` | `voice_connection_unavailable` | The deployment has no `PUBLIC_API_BASE_URL`, the public address ElevenLabs posts each turn to. |
+
+A failed attempt cleans up after itself: a credential issued for it is
+revoked again when ElevenLabs refuses the agent, and an ElevenLabs agent
+Radioso could not record is deleted again. Select Connect again after any
+failure; it picks up whatever the last attempt left in place.
+
+`GET`, `POST` and `DELETE /api/v1/agents/:agentId/voice/connection` are the
+Voice card's: dashboard sessions only, with the agent manage permission, and
+`X-Radioso-CSRF: 1` on `POST` and `DELETE`. Each answers where the runtime
+stands:
 
 ```json
-{ "type": "new", "name": "radioso-agent-credential", "value": "<radioso-credential-secret>" }
+{
+  "vendor": "elevenlabs",
+  "state": "connected",
+  "region": "eu",
+  "vendorKey": "stored",
+  "connectAvailable": true,
+  "runtime": { "vendor": "elevenlabs", "agentId": "agent_01jxk2v9qbe8n7r6t5w4", "region": "eu" }
+}
 ```
 
-Then reference it from the agent as
-`conversation_config.agent.prompt.custom_llm.api_key`:
+`state` is `not_connected`, `connected` (an ElevenLabs agent Radioso
+maintains) or `connected_externally` (one you set up yourself; see
+[Use an ElevenLabs agent you set up yourself](#use-an-elevenlabs-agent-you-set-up-yourself)).
+`runtime` is the agent's `voice.runtime` as stored: a client that saves the
+whole `voice` block sends it back, or the save unbinds the agent. `DELETE`
+adds `vendorAgentLeft`, true when the ElevenLabs agent may still be in your
+account.
 
-```json
-{ "secret_id": "<secret-id>" }
-```
+Each connect, disconnect and language update logs one line with the agent,
+vendor, region, `operation` and `outcome` (`Voice runtime connected`,
+`Voice runtime connect failed`, `Voice runtime language sync failed`, and an
+ElevenLabs agent left behind as `Voice runtime vendor agent left at the
+vendor`), never the key, the credential or a URL. The
+`voice_runtime_connection_total` metric counts them by `vendor`,
+`operation` and `outcome`, and the audit trail records
+`agent.voice_runtime.connected` and `agent.voice_runtime.disconnected`.
 
-An agent with no secret sends `Authorization: Bearer not_provided`, which
-Radioso answers with `401`.
-
-**The session key.** ElevenLabs sends no conversation id of its own, so each
-session starts with a session key that ElevenLabs sends back on every turn in
-the custom LLM extra body. Allow that on the agent with
-`platform_settings.overrides.custom_llm_extra_body: true`. Radioso reads
-`elevenlabs_extra_body.session_key`, and `elevenlabs_extra_body.locale` when
-the session names the language the caller starts in.
-
-**Language switching (optional).** For a call that changes language with its
-caller, add ElevenLabs's **Detect language** system tool to the agent
-(`conversation_config.agent.prompt.built_in_tools.language_detection`), list
-every language it may switch to under `conversation_config.language_presets`,
-and turn on **Switch language with the caller** on the Voice card. See
-[Mid-call language](#mid-call-language).
+On a self-hosted deployment, set `PUBLIC_API_BASE_URL` on the backend to the
+origin the internet reaches its REST API on, such as
+`https://api.example.com`. ElevenLabs must reach
+`{PUBLIC_API_BASE_URL}/api/v1/agents/<agent-id>/voice/elevenlabs/v1`; until
+it is set, the Voice card says Connect is unavailable.
 
 ### Start sessions from Radioso
 
@@ -125,27 +195,11 @@ Radioso holds your ElevenLabs API key and opens each session for the page, so
 the page never sees the key and you run no backend of your own for it. The
 page talks to your Radioso app host, the one that serves `/radioso-embed.js`
 (`https://app.radioso.ai` on Radioso Cloud), the same way the website embed
-does.
+does. With the agent's voice connected:
 
-1. In **Settings → Providers**, under **Voice runtime keys**, set the
-   ElevenLabs API key. Radioso encrypts it with `CONNECTOR_ENCRYPTION_KEY`,
-   like the model provider keys, and never shows it again. Workspace owners
-   and admins can set and remove it; `PUT` and `DELETE`
-   `/api/v1/settings/credentials/elevenlabs` do the same from the dashboard
-   session.
-2. On the agent's **Voice** card, turn on **Voice channel**. Under
-   **Runtime**, keep **ElevenLabs**, enter the ElevenLabs agent id (the
-   `agent_…` id of the agent you connected above), and pick the **Data
-   residency** of your ElevenLabs account: United States (the default),
-   European Union, India or Singapore. An account on ElevenLabs data residency
-   lives only on its region's host (`api.eu.residency.elevenlabs.io` for the
-   EU), so a wrong region reads like a wrong key. Then select **Save voice
-   settings**. This is independent of where the agent's own OpenAI calls run;
-   see [Data residency](../docs-portal/content/operators/data-residency.mdx)
-   for that setting.
-3. Add the page's origin to the website embed's allowed origins. Only a
+1. Add the page's origin to the website embed's allowed origins. Only a
    website embed session can start a call, because only its origin is checked.
-4. Put the website embed on the page. Turn on **Offer calls on the website**
+2. Put the website embed on the page. Turn on **Offer calls on the website**
    and the embed shows a **Talk** button and runs the call itself; see
    [Talk from the website embed](#talk-from-the-website-embed). A page with
    its own call controls leaves that switch off, starts a website embed
@@ -227,9 +281,7 @@ Operators tune them with `PUBLIC_VOICE_SESSION_START_RATE_LIMIT_MAX_ATTEMPTS`,
 `PUBLIC_VOICE_SESSION_START_RATE_LIMIT_WINDOW_MS`,
 `PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_MAX_ATTEMPTS` and
 `PUBLIC_VOICE_SESSION_START_WORKSPACE_RATE_LIMIT_WINDOW_MS`. Visitors behind
-one office network share an address, and so share its budget. Set the
-ElevenLabs agent's concurrency and daily call limits too: they bound what a
-leaked signed URL or a busy day can cost.
+one office network share an address, and so share its budget.
 
 | Status | `error.code` | What it means |
 |---|---|---|
@@ -250,18 +302,105 @@ the start or did not answer within 5 seconds; `vendorStatus: 401` means the
 stored key is wrong). The `voice_session_start_total` metric counts the same
 outcomes.
 
-Ray can bind the runtime: ask it to connect the agent to your ElevenLabs agent
-and it drafts the whole `voice` block with `propose_agent_setting` for you to
-review. The API key is yours to enter in Settings; Ray never asks for it.
+### Use an ElevenLabs agent you set up yourself
+
+Set the ElevenLabs agent up by hand when you want to own every setting on it,
+or on a deployment that has no `PUBLIC_API_BASE_URL`. Radioso then answers its
+turns and opens its sessions, and leaves the agent itself to you.
+
+#### Point the agent at Radioso
+
+You need an agent and a REST credential for it.
+
+1. Open the agent's **Channels → API** card and create a REST credential.
+   Copy the secret before you close the result; Radioso stores only its hash.
+2. Point the runtime's custom LLM at the endpoint for your dialect. OpenAI
+   clients, ElevenLabs included, append `/chat/completions` to the URL you
+   configure, so the configured URL ends in `/v1`:
+
+   ```text
+   https://api.radioso.ai/api/v1/agents/<agent-id>/voice/<dialect>/v1
+   ```
+
+   Requests then arrive at `…/voice/<dialect>/v1/chat/completions`. Use
+   `https://api-us.radioso.ai` or your own self-hosted origin instead,
+   matching the host where you created the credential.
+3. Give the runtime the credential secret as its API key. It arrives as
+   `Authorization: Bearer <secret>`.
+4. Make the runtime send one session key per call, where the dialect below
+   reads it. A request without one gets `400`.
+
+The agent id in the path must match the credential's agent. A credential for
+another agent, an MCP-audience credential, a personal token or a
+service-account credential gets `401`.
+
+#### Set up the ElevenLabs agent
+
+ElevenLabs Agents uses the `elevenlabs` dialect. Three settings on the
+ElevenLabs agent connect it to a Radioso agent: the URL, the credential, and
+permission for each session to carry its session key.
+
+**The URL.** Set the custom LLM URL to
+`https://api.radioso.ai/api/v1/agents/<agent-id>/voice/elevenlabs/v1`.
+
+**The credential.** ElevenLabs sends the value of one of its workspace
+secrets as the bearer. Create a secret holding the Radioso credential with
+`POST /v1/convai/secrets`:
+
+```json
+{ "type": "new", "name": "radioso-agent-credential", "value": "<radioso-credential-secret>" }
+```
+
+Then reference it from the agent as
+`conversation_config.agent.prompt.custom_llm.api_key`:
+
+```json
+{ "secret_id": "<secret-id>" }
+```
+
+An agent with no secret sends `Authorization: Bearer not_provided`, which
+Radioso answers with `401`.
+
+**The session key.** ElevenLabs sends no conversation id of its own, so each
+session starts with a session key that ElevenLabs sends back on every turn in
+the custom LLM extra body. Allow that on the agent with
+`platform_settings.overrides.custom_llm_extra_body: true`. Radioso reads
+`elevenlabs_extra_body.session_key`, and `elevenlabs_extra_body.locale` when
+the session names the language the caller starts in.
+
+**Language switching (optional).** For a call that changes language with its
+caller, add ElevenLabs's **Detect language** system tool to the agent
+(`conversation_config.agent.prompt.built_in_tools.language_detection`), list
+every language it may switch to under `conversation_config.language_presets`,
+and turn on **Switch language with the caller** on the Voice card. See
+[Mid-call language](#mid-call-language).
+
+#### Bind it
+
+Bind the Radioso agent to it with `PUT /api/v1/agents/<agent-id>`: send the
+whole `voice` block with `runtime` naming your ElevenLabs agent and its
+account's region (the block is described under
+[Bridge lines and the turn limit](#bridge-lines-and-the-turn-limit)):
+
+```json
+{ "voice": { "enabled": true, "bridgeLines": {}, "fallbackLine": {}, "runtime": { "vendor": "elevenlabs", "agentId": "agent_01jxk2v9qbe8n7r6t5w4", "region": "eu" } } }
+```
+
+An account on ElevenLabs data residency lives only on its region's host
+(`api.eu.residency.elevenlabs.io` for the EU), so a wrong region reads like a
+wrong key. The Voice card then reads **Uses an ElevenLabs agent set up
+outside Radioso**. **Disconnect** only unbinds it and leaves your ElevenLabs
+agent alone; **Let Radioso manage it** connects a new ElevenLabs agent that
+Radioso maintains, and leaves yours alone too.
 
 ### Talk from the website embed
 
 The website embed is a ready-made page for voice calls. Offering them is your
 choice, and it starts off:
 
-1. Get the agent's voice ready: the **Voice channel** on, an ElevenLabs agent
-   bound under **Runtime**, and an ElevenLabs key under **Voice runtime
-   keys**, as above.
+1. Get the agent's voice ready: an ElevenLabs key under **Voice runtime
+   keys**, ElevenLabs connected under **Runtime**, and the **Voice channel**
+   on, as above.
 2. On the agent's **Web chat** page, under **Website widget**, turn on
    **Offer calls on the website**. You can turn it on once voice is ready;
    until then it names the piece still missing. You can turn it off at any
@@ -478,7 +617,7 @@ to 10 for each map. Each style holds up to 5 lines, and every line is 1 to 200
 characters. The lines above follow the
 [first-sentence length rule](#elevenlabs-first-sentence-length) for the
 `elevenlabs` dialect. `runtime` is the vendor agent a Radioso-started session
-opens: `vendor` is `elevenlabs`, `agentId` is the vendor's own agent id, 1 to
+opens, which Connect writes: send it back as you read it. `vendor` is `elevenlabs`, `agentId` is the vendor's own agent id, 1 to
 128 letters, digits, underscores and hyphens, and `region` is the ElevenLabs
 account's data residency region, `us` (the default when you leave it out),
 `eu`, `in` or `sg`; any other key in it is refused, as is any key the `voice`
@@ -793,16 +932,15 @@ language switching on, Radioso makes that call on the turn the caller
 changes language, so the answer to "A che ora aprite domani?" comes in an
 Italian voice rather than in Italian words read by the English one.
 
-Set it up in two places:
-
-1. On the ElevenLabs agent, add the **Detect language** system tool
-   (`conversation_config.agent.prompt.built_in_tools.language_detection`) and
-   list every language the call may switch to under
-   `conversation_config.language_presets`.
-2. On the agent's Voice card, turn on **Switch language with the caller**
-   (`"languageSwitching": true` in the `voice` block). It is off by default,
-   because a switch to a language the vendor agent has no preset for is
-   refused.
+Turn on **Switch language with the caller** on the agent's Voice card
+(`"languageSwitching": true` in the `voice` block). An ElevenLabs agent
+Radioso connected already has the **Detect language** system tool and a
+preset for every language ElevenLabs Agents speaks. On an ElevenLabs agent you
+set up yourself, add the tool
+(`conversation_config.agent.prompt.built_in_tools.language_detection`) and
+list every language the call may switch to under
+`conversation_config.language_presets` first: the switch is off by default
+because a switch to a language with no preset is refused.
 
 On a turn, the agent's plan names the language the turn answers in, as a
 language tag. When its primary subtag (the `it` of `it-IT`) differs from the
@@ -1370,10 +1508,11 @@ stay there until you delete them in ElevenLabs.
 ### Data residency
 
 The recording stays in the data residency region of the ElevenLabs account
-bound under **Runtime**, and Radioso reads and deletes it on that region's
-host only. For a workspace whose data must stay in the EU, use an
-ElevenLabs account on EU data residency and pick **European Union** under
-**Data residency**; a US account keeps EU callers' recordings in the US.
+the agent is connected to, and Radioso reads and deletes it on that region's
+host only. For a workspace whose data must stay in the EU, store the key of
+an ElevenLabs account on EU data residency and connect: Radioso finds the
+region from the key, and the Voice card reads **recordings stay in the
+European Union**. A US account keeps EU callers' recordings in the US.
 
 ### The recording notice
 
@@ -1488,6 +1627,14 @@ phone number, records no notice.
   caller missed.
 - An agent bundle does not carry the `voice` block, so an agent created from a
   bundle import starts with voice off.
+- Two Connects of one agent at the same moment can each create an ElevenLabs
+  agent. The agent is bound to the one recorded last; the other stays in your
+  ElevenLabs account with a **Voice calls** credential of its own. Revoke that
+  credential on the agent's **API** card and delete the extra agent in
+  ElevenLabs.
+- Deleting a workspace or an organization leaves the ElevenLabs agents Radioso
+  created for its agents in your ElevenLabs account, with their credentials
+  gone. Disconnect each agent first to delete them with it.
 - If the runtime hangs up mid-reply, the turn still finishes and is saved,
   the same as a REST agent-channel client that disconnects, and the same
   utterance sent again within 30 seconds hears the saved reply. A turn still

@@ -1,175 +1,96 @@
 import type { VendorHeldConversationDataErasure } from "../../../shared/domain/conversationDataErasure.js";
 import type { VoiceVendor } from "../../../shared/domain/voiceVendor.js";
 import type {
+  VoiceRecordingErasureBacklog,
+  VoiceRecordingErasureHandOff,
   VoiceRecordingErasurePort,
-  VoiceRecordingScope,
-  VoiceRecordingToErase,
-  VoiceVendorCredential,
+  VoiceRecordingStore,
+  VoiceVendorCredentialReader,
+  VoiceVendorCredentialSealer,
 } from "../domain.js";
 import { errorClassOf } from "../../../shared/observability/errorClass.js";
-import { recordingErrorFields, type VoiceRecordingDependencies } from "./voiceRecordingService.js";
+import type { AppLogger } from "../../../shared/observability/logger.js";
 
-/** At most this many vendor deletes run at once, so a large organization does not flood the vendor. */
-const DELETE_CONCURRENCY = 4;
-/**
- * How long one erasure keeps asking the vendor, all of its workspaces together. It runs inside the
- * deletion's request, which must finish; every recording left past it stays at the vendor and is
- * logged with where it is.
- */
-const ERASURE_DEADLINE_MS = 20_000;
-
-type VoiceRecordingDeleteOutcome =
-  | "deleted"
-  | "already_absent"
-  | "vendor_failed"
-  | "credential_missing"
-  | "credential_unreadable"
-  | "credential_read_failed"
-  | "deadline_passed";
-
-/** The workspace's key for one vendor, read at `prepare`, or why the vendor's recordings stay. */
-type VendorCredential = { kind: "present"; credential: VoiceVendorCredential } | { kind: "absent"; outcome: VoiceRecordingDeleteOutcome };
-
-/** One recording to delete, with the scope it came from and the key it is deleted with. */
-interface ErasureItem {
-  scope: VoiceRecordingScope;
-  recording: VoiceRecordingToErase;
-  credential: VendorCredential;
+/** Where the erasure job's runs are queued: inside the deletion's transaction, and woken once it committed. */
+interface VoiceRecordingErasureJobs {
+  /** Queues the run of one erasure with the deletion's own writes. */
+  queue(erasureId: string): Promise<void>;
+  /** Asks a worker to look now. Never rejects. */
+  wake(): Promise<void>;
 }
 
+/** The recordings, the backlog and the job queue, bound to one deletion's transaction; the key reads and the sealer. */
+interface VoiceRecordingErasureHandOffDependencies {
+  recordings: Pick<VoiceRecordingStore, "lockRecordedVendors">;
+  backlog: Pick<VoiceRecordingErasureBacklog, "hold">;
+  credentials: Pick<VoiceVendorCredentialReader, "read">;
+  sealer: Pick<VoiceVendorCredentialSealer, "seal">;
+  jobs: VoiceRecordingErasureJobs;
+  logger: Pick<AppLogger, "warn">;
+}
+
+const NOTHING_HANDED_OFF = { afterCommit: async () => undefined };
+
 /**
- * Deletes recordings at the vendor when Radioso deletes their conversations, a visitor, a workspace
- * or an organization. `prepare` reads each scope's recordings and the workspace's vendor key, in order,
- * while both still exist (a workspace's deletion takes its key with it); `erase` asks the vendor to
- * delete each one after the deletion went through, all scopes in one queue under one concurrency
- * limit and one deadline, and never rejects, so a vendor that refuses or cannot be reached never
- * holds a deletion back. A recording left at the vendor is logged with its conversation and the
- * vendor's id for it, so an operator can delete it there; logs never carry a key.
+ * Hands the recordings in a deletion's scope to the erasure backlog, inside the deletion's
+ * transaction: for each workspace and vendor in scope, the workspace's key for that vendor, sealed,
+ * because a workspace's deletion takes its credential store with it, and the recordings, copied
+ * from the voice sessions that name them (locked first, while they still exist) in one statement,
+ * however many there are. Each hand-off queues its run of the erasure job in the same transaction,
+ * so the deletion and the backlog commit together or not at all; `afterCommit` wakes a worker to
+ * start at once. A call in two scopes of one erasure is held once.
+ *
+ * A read that fails rejects, and the deletion fails whole, to be run again. A workspace with no key,
+ * or one the backend cannot decrypt, still hands its recordings off: the job records each as left
+ * at the vendor, with why.
  */
 export class VoiceRecordingErasureService implements VoiceRecordingErasurePort {
-  constructor(
-    private readonly dependencies: VoiceRecordingDependencies,
-    /** Tests only. */
-    private readonly limits: { deadlineMs?: number; concurrency?: number } = {},
-  ) {}
+  constructor(private readonly dependencies: VoiceRecordingErasureHandOffDependencies) {}
 
-  async prepare(erasure: VendorHeldConversationDataErasure): Promise<{ erase(): Promise<void> }> {
-    const items: ErasureItem[] = [];
-    // A call can be in two scopes at once (a visitor's conversation, started by their key): once is enough.
-    const seen = new Set<string>();
+  async handOff(erasure: VendorHeldConversationDataErasure): Promise<{ afterCommit(): Promise<void> }> {
+    let handedOff = 0;
     for (const scope of erasure.scopes) {
-      for (const item of await this.prepareScope(scope)) {
-        const { vendor, region, vendorConversationId } = item.recording;
-        const key = `${vendor}:${region}:${vendorConversationId}`;
-        if (seen.has(key)) continue;
-        seen.add(key);
-        items.push(item);
+      for (const vendor of await this.lockRecordedVendors(scope)) {
+        const held = await this.dependencies.backlog.hold({
+          accountId: erasure.accountId,
+          workspaceId: scope.workspaceId,
+          vendor,
+          scope,
+          credential: await this.sealedCredential(scope.workspaceId, vendor),
+        });
+        if (!held) continue;
+        await this.dependencies.jobs.queue(held.erasureId);
+        handedOff += held.recordings;
       }
     }
-    if (items.length === 0) return { erase: async () => undefined };
-    return { erase: () => this.erase(erasure, items) };
+    return handedOff > 0 ? { afterCommit: () => this.dependencies.jobs.wake() } : NOTHING_HANDED_OFF;
   }
 
-  private async prepareScope(scope: VoiceRecordingScope): Promise<ErasureItem[]> {
-    let recordings: VoiceRecordingToErase[];
+  private async lockRecordedVendors(scope: VendorHeldConversationDataErasure["scopes"][number]): Promise<VoiceVendor[]> {
     try {
-      recordings = await this.dependencies.recordings.listRecordings(scope);
+      return await this.dependencies.recordings.lockRecordedVendors(scope);
     } catch (error) {
       this.dependencies.logger.warn(
         { workspaceId: scope.workspaceId, scope: scope.kind, errorClass: errorClassOf(error) },
         "Voice recordings to delete could not be read",
       );
-      // An erasure of named conversations or a visitor fails whole rather than lose where their
-      // recordings are; a workspace's deletion goes on without them.
-      if (scope.kind !== "workspace") throw error;
-      return [];
-    }
-    const items: ErasureItem[] = [];
-    for (const vendor of new Set(recordings.map((recording) => recording.vendor))) {
-      // One key read per vendor, while the workspace still holds it.
-      const credential = await this.readCredential(scope.workspaceId, vendor);
-      for (const recording of recordings) {
-        if (recording.vendor === vendor) items.push({ scope, recording, credential });
-      }
-    }
-    return items;
-  }
-
-  private async readCredential(workspaceId: string, vendor: VoiceVendor): Promise<VendorCredential> {
-    try {
-      const reading = await this.dependencies.credentials.read({ workspaceId, vendor });
-      if (reading.kind === "present") return reading;
-      return { kind: "absent", outcome: reading.kind === "missing" ? "credential_missing" : "credential_unreadable" };
-    } catch {
-      return { kind: "absent", outcome: "credential_read_failed" };
+      throw error;
     }
   }
 
   /**
-   * One deadline for the whole erasure: when it passes, the deletes still waiting on the vendor are
-   * let go of and nothing more is asked, and every recording not deleted is left with its ids.
+   * The workspace's key for the vendor, read while the workspace still holds it and sealed for the
+   * backlog. A credential store that cannot be read at all rejects, like the recordings' read.
    */
-  private async erase(erasure: VendorHeldConversationDataErasure, items: readonly ErasureItem[]): Promise<void> {
-    const deadline = new AbortController();
-    const timer = setTimeout(() => deadline.abort(), this.limits.deadlineMs ?? ERASURE_DEADLINE_MS);
-    const queue = [...items];
-    const worker = async (): Promise<void> => {
-      while (!deadline.signal.aborted) {
-        const item = queue.shift();
-        if (!item) return;
-        await this.eraseOne(erasure, item, deadline.signal);
-      }
-    };
+  private async sealedCredential(workspaceId: string, vendor: VoiceVendor): Promise<VoiceRecordingErasureHandOff["credential"]> {
+    let reading;
     try {
-      await Promise.all(Array.from({ length: Math.min(this.limits.concurrency ?? DELETE_CONCURRENCY, queue.length) }, worker));
-    } finally {
-      clearTimeout(timer);
-    }
-    for (const item of queue) this.left(item, "deadline_passed");
-  }
-
-  private async eraseOne(erasure: VendorHeldConversationDataErasure, item: ErasureItem, deadline: AbortSignal): Promise<void> {
-    const { recording, credential } = item;
-    if (credential.kind === "absent") {
-      this.left(item, credential.outcome);
-      return;
-    }
-    let outcome: "deleted" | "already_absent";
-    try {
-      outcome = await this.dependencies.sources[recording.vendor].deleteRecording({
-        vendorConversationId: recording.vendorConversationId,
-        region: recording.region,
-        credential: credential.credential,
-        signal: deadline,
-      });
+      reading = await this.dependencies.credentials.read({ workspaceId, vendor });
     } catch (error) {
-      if (deadline.aborted) this.left(item, "deadline_passed");
-      else this.left(item, "vendor_failed", recordingErrorFields(error));
-      return;
+      this.dependencies.logger.warn({ workspaceId, vendor, errorClass: errorClassOf(error) }, "Voice vendor key to delete recordings with could not be read");
+      throw error;
     }
-    this.record(recording.vendor, outcome);
-    const { workspaceId, conversationId, vendor } = recording;
-    await this.dependencies.audit
-      .deleted({ account: erasure.account, workspaceId, workspaceDeleted: item.scope.kind === "workspace", conversationId, vendor, outcome })
-      .catch((error: unknown) => {
-        this.dependencies.logger.warn({ workspaceId, conversationId, vendor, errorClass: errorClassOf(error) }, "Voice recording deletion could not be audited");
-      });
-  }
-
-  /** A recording that stays at the vendor, with where it is: its conversation and the vendor's id for it. */
-  private left(item: ErasureItem, outcome: VoiceRecordingDeleteOutcome, fields: Record<string, unknown> = {}): void {
-    const { workspaceId, conversationId, vendorConversationId, vendor } = item.recording;
-    this.dependencies.logger.warn(
-      { workspaceId, conversationId, vendorConversationId, vendor, outcome, ...fields },
-      "Voice recording was left at the vendor",
-    );
-    this.record(vendor, outcome);
-  }
-
-  private record(vendor: VoiceVendor, outcome: VoiceRecordingDeleteOutcome): void {
-    this.dependencies.metrics?.incrementCounter("voice_recording_delete_total", {
-      help: "Voice recordings Radioso asked the vendor to delete, by vendor and how the request ended",
-      labels: { vendor, outcome },
-    });
+    if (reading.kind === "present") return { kind: "sealed", sealed: this.dependencies.sealer.seal(reading.credential) };
+    return { kind: "absent", reason: reading.kind === "missing" ? "credential_missing" : "credential_unreadable" };
   }
 }

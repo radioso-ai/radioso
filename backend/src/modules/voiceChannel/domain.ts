@@ -356,15 +356,6 @@ export interface VoiceRecordingRef extends VoiceRecordingLocation {
   conversationId: string;
 }
 
-/**
- * A recording an erasure asks the vendor to delete. `conversationId` is null for a call whose page
- * reported it but whose first turn never came: the vendor still holds it, and Radioso still has to.
- */
-export interface VoiceRecordingToErase extends VoiceRecordingLocation {
-  workspaceId: string;
-  conversationId: string | null;
-}
-
 /** What a report is checked against: the vendor agent and region the reporting session was started on. */
 export interface VoiceReportableSession {
   vendor: VoiceVendor;
@@ -396,12 +387,14 @@ export interface VoiceRecordingStore {
   /** The recording of a conversation of the workspace, when its page reported one. */
   findRecording(input: { workspaceId: string; conversationId: string }): Promise<VoiceRecordingRef | null>;
   /**
-   * Every recording in an erasure's scope: the conversations named, the calls the website embed
-   * started for a visitor's key, or everything the workspace holds, a call whose first turn never
-   * came and a call whose agent was deleted included. Locks every session row in scope for update,
-   * with a recording or without, so a report cannot slip in between the read and the rows' erasure.
+   * Locks every session row in an erasure's scope for update, with a recording or without, so a
+   * report cannot slip in between the hand-off and the rows' erasure, and returns the vendors whose
+   * recordings the scope holds: the conversations named, the calls the website embed started for a
+   * visitor's key, or everything the workspace holds, a call whose first turn never came and a call
+   * whose agent was deleted included. The recordings themselves stay in the database: the backlog
+   * copies them across in one statement.
    */
-  listRecordings(scope: VoiceRecordingScope): Promise<VoiceRecordingToErase[]>;
+  lockRecordedVendors(scope: VoiceRecordingScope): Promise<VoiceVendor[]>;
 }
 
 /**
@@ -445,6 +438,8 @@ export class VoiceRecordingRequestError extends Error {
       | "abandoned",
     readonly vendorStatus?: number,
     readonly contentRange?: string,
+    /** The vendor's `Retry-After`, in seconds, when it named one: how long it asks to be left alone. */
+    readonly retryAfterSeconds?: number,
   ) {
     super(vendorStatus === undefined ? `Voice recording request failed: ${reason}` : `Voice recording request failed: ${reason} (${vendorStatus})`);
     this.name = new.target.name;
@@ -518,9 +513,158 @@ export interface VoiceRecordingPlaybackPort {
 }
 
 /**
- * Deletes recordings at the vendor when Radioso deletes their conversations. `prepare` runs while
- * the conversations, and the workspace's vendor key, still exist; `erase` runs once they are gone,
- * and never rejects: a recording the vendor would not delete is logged, with where it is, and left
- * there.
+ * Deletes recordings at the vendor when Radioso deletes their conversations: `handOff` writes them,
+ * and the workspace's vendor key, to the erasure backlog in the deletion's transaction, while both
+ * still exist; the erasure job deletes them at the vendor once it committed.
  */
 export type VoiceRecordingErasurePort = VendorHeldConversationDataEraser;
+
+/**
+ * A vendor key sealed for the erasure backlog, which outlives the workspace's credential store:
+ * encrypted the way that store encrypts it, and opened only by the job that deletes with it.
+ */
+export interface VoiceVendorCredentialSealer {
+  seal(credential: VoiceVendorCredential): string;
+  /** Rejects when the sealed key cannot be decrypted, such as after the backend's master key changed. */
+  open(sealed: string): VoiceVendorCredential;
+}
+
+/**
+ * Why a recording is still at the vendor: the workspace held no key for it, a key could not be
+ * decrypted, the vendor refused, could not be reached, did not answer in time or answered with
+ * something else, this build knows no host for its vendor or region, it was still pending a week
+ * after its deletion, or the erasure job itself kept failing. A closed code, stored with the backlog and named on the recording's audit event and
+ * in the organization's list; never the vendor's response.
+ */
+export const VOICE_RECORDING_LEFT_REASONS = [
+  "credential_missing",
+  "credential_unreadable",
+  "vendor_rejected",
+  "vendor_unreachable",
+  "vendor_timeout",
+  "vendor_malformed_response",
+  "vendor_failed",
+  "vendor_unsupported",
+  "expired",
+  "drain_failed",
+] as const;
+
+export type VoiceRecordingLeftReason = (typeof VOICE_RECORDING_LEFT_REASONS)[number];
+
+/**
+ * One deletion's recordings in one workspace at one vendor, as the deletion hands them over: the
+ * scope they are copied from, and the workspace's key for the vendor, sealed, or why the deletion
+ * could read none.
+ */
+export interface VoiceRecordingErasureHandOff {
+  accountId: string;
+  workspaceId: string;
+  vendor: VoiceVendor;
+  scope: VoiceRecordingScope;
+  credential: { kind: "sealed"; sealed: string } | { kind: "absent"; reason: "credential_missing" | "credential_unreadable" };
+}
+
+/** A recording the backlog holds, as its records name it. */
+export interface VoiceRecordingErasureEntry {
+  id: string;
+  conversationId: string | null;
+  vendorConversationId: string;
+  /** Asks of the vendor so far, the one a claim is for included. */
+  attempts: number;
+  /** Why the recording was still at the vendor after the last ask, or why no ask can be made. */
+  failureReason: VoiceRecordingLeftReason | null;
+}
+
+/** A recording given up on, with why. */
+export type VoiceRecordingGivenUp = VoiceRecordingErasureEntry & { failureReason: VoiceRecordingLeftReason };
+
+/** A recording a claim may ask the vendor about: an entry whose region this build has a host for. */
+export interface VoiceRecordingErasureItem extends VoiceRecordingErasureEntry {
+  region: VoiceVendorRegion;
+}
+
+/** The erasure a run works on: the organization and workspace its recordings belong to, by id, and the held key. */
+export interface VoiceRecordingErasureSubject {
+  accountId: string;
+  workspaceId: string;
+  /** As stored: a vendor a later build no longer knows is still named, and nothing is asked of it. */
+  vendor: string;
+  /** Null when the deletion could read no key, or once no pending recording needs it. */
+  sealedCredential: string | null;
+}
+
+/**
+ * One claim of an erasure: `gone` when an earlier run drained it; otherwise the recordings claimed
+ * to ask about, and those the claim gave up on at once, each with why: pending a week after its
+ * deletion (`expired`), a vendor or region this build knows no host for (`vendor_unsupported`), or
+ * every pending recording of an erasure that holds no key (`credential_missing` or
+ * `credential_unreadable`, as the deletion found it), all in one write however many.
+ */
+export type VoiceRecordingErasureClaim =
+  | { kind: "gone" }
+  | { kind: "batch"; erasure: VoiceRecordingErasureSubject; items: VoiceRecordingErasureItem[]; givenUp: VoiceRecordingGivenUp[] };
+
+/** A recording an organization's deletion left at the vendor for good, as the organization reads it. */
+export interface VoiceRecordingLeftAtVendor {
+  vendor: string;
+  vendorRegion: string;
+  vendorConversationId: string;
+  conversationId: string | null;
+  workspaceId: string;
+  reason: VoiceRecordingLeftReason;
+  failedAt: Date;
+}
+
+/** The organization's own list of recordings left at the vendor: newest first, with how many there are in all. */
+export interface VoiceRecordingsLeftAtVendorReader {
+  /** `cursor`: the `nextCursor` of the page before; rejects one it cannot read as a bad request. */
+  listForAccount(input: { accountId: string; limit: number; cursor?: string }): Promise<{
+    total: number;
+    recordings: VoiceRecordingLeftAtVendor[];
+    /** Null on the last page. */
+    nextCursor: string | null;
+  }>;
+}
+
+/**
+ * The backlog of recordings deletions left for the vendor to delete: one erasure per workspace and
+ * vendor a deletion reached, with its key, and one item per recording. It names the organization,
+ * workspace and conversation by id only, so it outlives every one of them.
+ */
+export interface VoiceRecordingErasureBacklog {
+  /**
+   * Inside the deletion's transaction: copies the scope's recordings at the vendor straight from
+   * the voice sessions (one statement, however many), skipping any a pending row already holds, and
+   * writes the erasure with its key. Returns its id and how many recordings it holds; null, writing
+   * nothing, when the scope holds none.
+   */
+  hold(handOff: VoiceRecordingErasureHandOff): Promise<{ erasureId: string; recordings: number } | null>;
+  /**
+   * Gives up on what no ask can finish (see `VoiceRecordingErasureClaim`, a pending recording older
+   * than `expireAfterSeconds` included), then claims up to `limit` of the erasure's recordings that
+   * are due, those due first: counts this ask for each, and moves each one's next ask
+   * `leaseSeconds` ahead, so no other run asks about it while this one does.
+   */
+  claim(erasureId: string, claim: { limit: number; leaseSeconds: number; expireAfterSeconds: number }): Promise<VoiceRecordingErasureClaim>;
+  /** The vendor no longer holds the recording: it leaves the backlog. */
+  remove(itemId: string): Promise<void>;
+  /** Asked and still held: kept, with why, for another ask once `delaySeconds` have passed. */
+  keep(itemId: string, reason: VoiceRecordingLeftReason, delaySeconds: number): Promise<void>;
+  /** Claimed and never asked: due again once `delaySeconds` have passed, its claim uncounted. */
+  postpone(itemIds: readonly string[], delaySeconds: number): Promise<void>;
+  /** Given up on: kept for good as left at the vendor, with why. False when the row was no longer pending. */
+  fail(itemId: string, reason: VoiceRecordingLeftReason): Promise<boolean>;
+  /**
+   * Clears the held key once no pending recording needs it, and removes the erasure once it has no
+   * recording left; reports how many are pending and when the next is due, and whether one already is.
+   */
+  release(erasureId: string): Promise<{ pending: number; nextAskAt: Date | null; dueNow: boolean }>;
+  /**
+   * Gives up on the erasure's pending recordings that have had `maxAsks` asks, each with its last
+   * reason (or `drain_failed`); the others stay pending for a later run. Returns the erasure and the
+   * recordings it gave up on, for their records; null when the erasure is gone.
+   */
+  failExhausted(erasureId: string, maxAsks: number): Promise<{ erasure: VoiceRecordingErasureSubject; entries: VoiceRecordingGivenUp[] } | null>;
+  /** Erasures with a pending recording overdue by more than `overdueSeconds`: work no live job is doing. */
+  overdueErasures(overdueSeconds: number, limit: number): Promise<string[]>;
+}

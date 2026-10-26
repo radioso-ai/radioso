@@ -3,6 +3,7 @@ import { ConversationRepository } from "../../../db/repositories/conversationRep
 import { DocumentRepository } from "../../../db/repositories/documentRepository.js";
 import { WorkspaceRepository } from "../../../db/repositories/workspaceRepository.js";
 import { WorkspaceSetupStateRepository } from "../../../db/repositories/workspaceSetupStateRepository.js";
+import type { PersonalCredentialLifecycleRepository } from "../../../db/repositories/personalCredentialLifecycleRepository.js";
 import { AccountAccessService, AccountInvitationService } from "../../../modules/account/public.js";
 import { AccessGrantService, DefaultOriginMatcher } from "../../../modules/accessGrants/public.js";
 import { AuditService } from "../../../modules/audit/composition.js";
@@ -46,9 +47,11 @@ export const buildAccessServices = (input: {
   logger: Pick<AppLogger, "warn">;
   metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
   repositories: ReturnType<typeof buildRepositories>;
+  /** Workspace and organization deletion, with the hand-offs composition gave it. */
+  personalCredentialLifecycle: PersonalCredentialLifecycleRepository;
   lifecycleUnitOfWork: AccessGrantLifecycleUnitOfWorkPort;
 }) => {
-  const { auditService, env, infrastructure, logger, metricsRegistry, repositories, lifecycleUnitOfWork } = input;
+  const { auditService, env, infrastructure, logger, metricsRegistry, repositories, personalCredentialLifecycle, lifecycleUnitOfWork } = input;
   const machineAccessSecurityObserver: MachineAccessSecurityObserver = {
     recordAuthentication(event) {
       metricsRegistry?.incrementCounter("machine_access_authentication_total", {
@@ -114,7 +117,7 @@ export const buildAccessServices = (input: {
     repositories.workspaceGrantRepository,
     repositories.workspaceRepository,
     personalCredentialTenureService,
-    repositories.personalCredentialLifecycleRepository,
+    personalCredentialLifecycle,
   );
   const accountInvitationService = new AccountInvitationService(
     repositories.accountInvitationRepository,
@@ -139,7 +142,7 @@ export const buildAccessServices = (input: {
     }),
     machineAccessSecurityObserver,
     personalCredentialTenureService,
-    personalCredentialLifecycle: repositories.personalCredentialLifecycleRepository,
+    personalCredentialLifecycle,
     credentialExpiryWarningLifecycle: new CredentialExpiryWarningService({
       repository: repositories.machineAccessRepository,
       audit: auditService,
@@ -201,10 +204,6 @@ export const buildWorkspaceServices = (input: {
   env: Env;
   personalCredentialTermination?: import("../../../modules/workspace/services/workspaceService.js").WorkspacePersonalCredentialTerminationPort;
   personalCredentialLifecycle?: import("../../../modules/machineAccess/public.js").PersonalCredentialLifecyclePort;
-  vendorHeldConversationData?: {
-    eraser: import("../../../shared/domain/conversationDataErasure.js").VendorHeldConversationDataEraser;
-    logger: Pick<import("../../../shared/observability/logger.js").AppLogger, "warn">;
-  };
   workspaceRepository: WorkspaceRepository;
   workspaceSetupStateRepository: WorkspaceSetupStateRepository;
 }) => {
@@ -214,7 +213,6 @@ export const buildWorkspaceServices = (input: {
     input.accountMembershipRepository,
     input.personalCredentialTermination,
     input.personalCredentialLifecycle,
-    input.vendorHeldConversationData,
   );
   return {
     workspaceService,

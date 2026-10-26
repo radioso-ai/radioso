@@ -1,7 +1,7 @@
 ---
 title: "Deleting conversation data"
 description: "How to permanently delete a conversation or a visitor, what goes with it, and what Radioso keeps."
-last_updated: 2026-10-25
+last_updated: 2026-10-26
 ---
 
 # Deleting conversation data
@@ -88,11 +88,19 @@ Deletion reaches what Radioso stores. It cannot reach what already left:
 
 Database backups and logs keep deleted data until they age out: on Radioso Cloud, seven daily backups, seven days of point-in-time recovery logs where recovery is on, and 30 days of logs. See [Data retention](/operators/data-retention).
 
-A voice call's recording lives in your ElevenLabs account, so Radioso asks ElevenLabs to delete it after the deletion went through, and the deletion never waits on ElevenLabs for more than 20 seconds. A recording ElevenLabs refuses to delete, or does not delete in time, stays in your ElevenLabs account; the backend log names it as `Voice recording was left at the vendor` with its ElevenLabs conversation id, so you can delete it in ElevenLabs. Each recording Radioso deleted is recorded as a `conversation.recording_deleted` audit event. Once the workspace's ElevenLabs key is removed, or replaced with one for another ElevenLabs account, Radioso cannot delete the old account's recordings at all.
+A voice call's recording lives in your ElevenLabs account, so the deletion writes down each recording to delete, with an encrypted copy of the workspace's ElevenLabs key, in the same database transaction as the deletion itself. A background job then asks ElevenLabs to delete each one, usually within seconds, four at a time, and the deletion itself never waits on ElevenLabs. A recording ElevenLabs no longer holds counts as deleted. Each recording ElevenLabs refuses, or does not answer for, gets its own retries: up to eight asks, waiting a minute, then five, fifteen, an hour, three, six and twelve hours between them, about a day in all. When ElevenLabs answers that it is getting too many requests, the job stops asking for as long as ElevenLabs says, up to an hour (a minute when it doesn't say), and those requests don't count as asks. A recording still waiting a week after its deletion is given up on, whatever its asks. A worker that restarts in between picks up where the last one stopped, and the copy of the key goes as soon as no recording waiting to be deleted needs it.
+
+Each recording deleted is recorded as a `conversation.recording_deleted` audit event with `outcome` `deleted`, or `already_absent` when ElevenLabs no longer held it.
+
+### Recordings left in ElevenLabs
+
+A recording still there after its eighth ask, or a week after its deletion, stays in your ElevenLabs account. So does every recording of a workspace that held no ElevenLabs key when it was deleted, and those are given up on at once, all together. To see them, an owner or admin of the organization calls `GET /api/v1/account/voice-recordings/left-at-vendor` with their dashboard session. It lists every recording your organization's deletions left behind, deleted workspaces included, newest first, up to 500 at a time; pass the `nextCursor` it returns as `cursor` for the next page. Each entry has the ElevenLabs conversation id (`vendorConversationId`), its region, the conversation and workspace it came from, why it was left (`reason`, such as `vendor_rejected`, `credential_missing` or `expired`) and when (`failedAt`). Delete each one in ElevenLabs by that id. Radioso also records each as a `conversation.recording_deleted` event with status `failure`, and reports it to the deployment's error tracking.
+
+Once the organization itself is deleted, nobody in it can call that endpoint. Only the deployment's operators see what its deletion left at ElevenLabs, in their error tracking and in the database ([Self-hosting operations](/operators/self-hosting-operations)). Once the workspace's ElevenLabs key is removed, or replaced with one for another ElevenLabs account, Radioso cannot delete the old account's recordings at all.
 
 ## Deleting everything at once
 
-Deleting a workspace deletes every conversation and visitor in it, with the same cleanup, voice call recordings included. It also deletes the files the workspace stored: the original of every uploaded document and every agent logo. Deleting the organization (**Settings → Workspace → Delete organization**, owners only) deletes every workspace it has, files included.
+Deleting a workspace deletes every conversation and visitor in it, with the same cleanup, voice call recordings included: the list of recordings to delete and the key copy outlive the workspace, and the organization, until the job is done. It also deletes the files the workspace stored: the original of every uploaded document and every agent logo. Deleting the organization (**Settings → Workspace → Delete organization**, owners only) deletes every workspace it has, files included.
 
 The files go once the deletion has gone through. The deletion hands them to the worker in the same database transaction, so the workspace and the hand-off commit together or not at all, and the worker deletes the files in batches as soon as it picks the job up. A delete that storage refuses is tried again, with growing waits, for about a day; a file that is already gone counts as deleted. Each run of that job records one `workspace.stored_files.deleted` audit event with the deleted workspace's id and how many files went, never their names; a workspace with more than 1,000 files takes more than one run.
 
@@ -100,7 +108,8 @@ The files go once the deletion has gone through. The deletion hands them to the 
 
 - **`403`** — the caller lacks `workspace.history.delete`: a member session, or a member credential.
 - **`404`** — the conversation or visitor belongs to another workspace, or is already gone.
-- **`500` on a conversation or visitor with voice calls** — Radioso could not read where the calls' recordings are, so it deleted nothing rather than lose them. Send the same request again.
+- **`500` on a conversation, visitor or workspace with voice calls** — Radioso could not read where the calls' recordings are, or the workspace's ElevenLabs key, so it deleted nothing rather than lose them. Send the same request again.
+- **A recording in `GET /api/v1/account/voice-recordings/left-at-vendor`** — ElevenLabs kept refusing for about a day, or Radioso had no key to ask with. Delete it in ElevenLabs by its `vendorConversationId`.
 - **The Delete conversation button is missing** — your role on this workspace is member: neither your organization role nor a workspace grant makes you an admin here. Ask an owner or admin, or ask for an admin grant on the workspace.
 
 ## Read next

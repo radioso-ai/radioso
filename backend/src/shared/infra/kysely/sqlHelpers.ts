@@ -88,6 +88,8 @@ export const pgErrorMeta = (error: unknown): { code?: string; constraint?: strin
 /** Postgres' unique violation (`23505`): the row would duplicate a unique key. */
 export const isUniqueViolation = (error: unknown): boolean => pgErrorMeta(error).code === "23505";
 
+export const isForeignKeyViolation = (error: unknown): boolean => pgErrorMeta(error).code === "23503";
+
 /**
  * Atomically consumes one abuse-control entry against a sliding window. The `ON CONFLICT`
  * update takes the row lock before it decides whether the window can accept another attempt,

@@ -83,6 +83,7 @@ const declarations: readonly PolicyDeclaration[] = [
   // Account identity and organization administration authenticate exclusively
   // with the account session; machine credentials are workspace-scoped.
   sessionOnly("GET", "/api/v1/account/users", "account.users.manage"),
+  sessionOnly("GET", "/api/v1/account/voice-recordings/left-at-vendor", "workspace.history.delete"),
   sessionOnly("GET", "/api/v1/account/accounts", "account.membership.read"),
   sessionOnly("POST", "/api/v1/account/accounts", "account.organization.create"),
   sessionOnly("POST", "/api/v1/account/invitations", "account.users.manage"),

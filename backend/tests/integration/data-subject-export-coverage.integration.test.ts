@@ -42,6 +42,7 @@ const coverage: Record<string, ExportCoverage> = {
   email_skill_activity: excluded("A record that an email skill sent mail: an outcome and a redacted recipient summary, never the mail."),
   connector_whatsapp_contacts: excluded("The WhatsApp channel's contact row, outside the web, email and Slack identities a lookup finds; a WhatsApp conversation is exported when another identity reaches it."),
   voice_sessions: excluded("Where a call's recording sits at the voice vendor: the vendor's ids for it. The call's transcript is the conversation's messages."),
+  voice_recording_erasure_items: excluded("Bookkeeping for deleting an already erased conversation's recording at the voice vendor: the vendor's ids for it, asks, and coded outcomes, never content. It is written as the conversation is erased, so no lookup reaches it, and the organization reads what is left at the vendor in its own list."),
   conversation_ownership: excluded("Which teammate owns a conversation and since when: the workspace's own workflow, not data about the subject."),
   conversation_activity: excluded("The teammates' activity on a conversation (assignment, closing), which names teammates, not the subject."),
   conversation_delivery_failures: excluded("A reply that may not have reached the subject: provider codes and a teammate's decision, for a reply the export carries as a message."),

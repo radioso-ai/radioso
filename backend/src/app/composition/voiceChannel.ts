@@ -7,16 +7,22 @@ import type {
   VoiceTurnFactsRecorder,
 } from "../../modules/chat/contracts/index.js";
 import {
+  VoiceRecordingErasureDrain,
   VoiceRecordingErasureService,
   VoiceRecordingService,
   VoiceSessionStartService,
   VoiceTurnService,
   createElevenLabsRecordingSource,
   createElevenLabsSessionStarter,
+  recoverStrandedVoiceRecordingErasures,
+  voiceRecordingErasureJobHandler,
+  voiceRecordingErasureRequest,
   type VoiceChatTurnRequest,
   type VoiceRecordingAudit,
+  type VoiceRecordingErasureBacklog,
   type VoiceRecordingStore,
   type VoiceVendorCredentialReader,
+  type VoiceVendorCredentialSealer,
   type VoiceSessionAvailabilityPort,
   type VoiceSessionStartLookup,
   type VoiceSessionStartPort,
@@ -28,7 +34,10 @@ import {
   VOICE_REPLY_INTERRUPTED_EVENT,
 } from "../../modules/voiceChannel/public.js";
 import type { AgentRecord } from "../../modules/agents/public.js";
-import type { AuditPort } from "../../modules/audit/contracts/index.js";
+import type { AuditEventInput, AuditPort } from "../../modules/audit/contracts/index.js";
+import type { BackgroundJobHandlerRegistration, BackgroundJobQueue } from "../../shared/background-jobs/index.js";
+import type { ErrorReporter } from "../../shared/errors/errorReporter.js";
+import type { ApplicationPeriodicTaskHandle } from "./applicationModule.js";
 import { isHumanOwned, type ConversationOwnershipReader } from "../../modules/handoff/public.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
@@ -185,6 +194,18 @@ type VoiceVendorCredentialStore = {
   isEncryptionConfigured(): boolean;
 };
 
+/** The workspace credential store's own encryption, for a key held where the store's rows cannot outlive it. */
+type CredentialSealing = {
+  sealSecret(plaintext: string): string;
+  openSealedSecret(sealed: string): string;
+};
+
+/** A voice vendor's key sealed for the recording erasure backlog the way the credential store seals its own. */
+const voiceVendorCredentialSealer = (store: CredentialSealing): VoiceVendorCredentialSealer => ({
+  seal: ({ apiKey }) => store.sealSecret(apiKey),
+  open: (sealed) => ({ apiKey: store.openSealedSecret(sealed) }),
+});
+
 /**
  * A vendor's key as the voice channel reads it from the workspace credential store: decrypted only
  * by `read`, inside the request that needs it, and `presence` from the stored row and the
@@ -206,28 +227,46 @@ const voiceVendorCredentialReader = (credentials: VoiceVendorCredentialStore): V
   },
 });
 
+/** Audit events about an organization and a workspace that may be gone by the time they are written. */
+type GoneSubjectAudit = {
+  recordNamingGoneSubjects(event: Omit<AuditEventInput, "metadata"> & {
+    accountId: string;
+    workspaceId: string;
+    metadata: readonly Record<string, unknown>[];
+  }): Promise<void>;
+};
+
 /**
- * The audit events a recording leaves, ids only: who played which conversation's recording, and
- * each recording deleted at the vendor, with the organization it belonged to.
+ * The audit events a recording leaves, ids and closed codes only: who played which conversation's
+ * recording, and how each deletion at the vendor ended, with the organization and workspace it
+ * belonged to, named by id alone once either is gone. A recording given up on is the same event as
+ * a failure, with why and the vendor's id for it, so the organization can delete it there.
  */
-const createVoiceRecordingAudit = (auditService: Pick<AuditPort, "record">): VoiceRecordingAudit => ({
+const createVoiceRecordingAudit = (auditService: Pick<AuditPort, "record"> & GoneSubjectAudit): VoiceRecordingAudit => ({
   played: ({ workspaceId, ...metadata }) =>
     auditService.record({ workspaceId, eventType: "conversation.recording_played", eventStatus: "success", metadata }),
-  // A row may only point at a workspace or an organization that still exists; one deleted with the
-  // recording is kept by id in the metadata, where the organization's records can still find it.
-  deleted: ({ account, workspaceId, workspaceDeleted, conversationId, vendor, outcome }) =>
-    auditService.record({
-      accountId: account && !account.deleted ? account.id : null,
-      workspaceId: workspaceDeleted ? null : workspaceId,
+  deleted: ({ accountId, workspaceId, conversationId, vendor, outcome }) =>
+    auditService.recordNamingGoneSubjects({
+      accountId,
+      workspaceId,
       eventType: "conversation.recording_deleted",
       eventStatus: "success",
-      metadata: {
+      metadata: [{ conversationId, vendor, outcome }],
+    }),
+  // One event per recording, written together.
+  left: ({ accountId, workspaceId, vendor, recordings }) =>
+    auditService.recordNamingGoneSubjects({
+      accountId,
+      workspaceId,
+      eventType: "conversation.recording_deleted",
+      eventStatus: "failure",
+      metadata: recordings.map(({ conversationId, vendorConversationId, reason }) => ({
         conversationId,
         vendor,
-        outcome,
-        ...(workspaceDeleted ? { deletedWorkspaceId: workspaceId } : {}),
-        ...(account?.deleted ? { deletedAccountId: account.id } : {}),
-      },
+        outcome: "left_at_vendor",
+        reason,
+        vendorConversationId,
+      })),
     }),
 });
 
@@ -235,38 +274,89 @@ const createVoiceRecordingAudit = (auditService: Pick<AuditPort, "record">): Voi
  * Voice recordings, kept by the vendor: the ElevenLabs recording source over `fetch`, the
  * workspace's vendor key from the workspace credential store, `voice_sessions` for where each
  * recording lives (`VoiceSessionRepository` in production, the same store the session start
- * records into), and the audit service for each play and each deletion. The same dependencies
- * serve the playback and the erasure that follows a deletion.
+ * records into), and the audit service for each play and each deletion. A deletion hands its
+ * recordings, and the key sealed by the credential store's own encryption, to the erasure backlog
+ * in its own transaction (`erasureIn`), with the erasure job queued beside them; the job's handler
+ * deletes them at the vendor through the same source and audit, and reports every recording it
+ * leaves there to the error sinks.
  */
 export const createVoiceRecordingComposition = (deps: {
   recordings: VoiceRecordingStore;
-  /** The same store over another handle: a conversation erasure's transaction. */
+  /** The same store over another handle: a deletion's transaction. */
   recordingsIn: (db: Db) => VoiceRecordingStore;
-  credentials: VoiceVendorCredentialStore;
+  erasures: VoiceRecordingErasureBacklog;
+  /** The same backlog over another handle: a deletion's transaction, or a dead letter's. */
+  erasuresIn: (db: Db) => VoiceRecordingErasureBacklog;
+  credentials: VoiceVendorCredentialStore & CredentialSealing;
   fetch: typeof globalThis.fetch;
-  auditService: Pick<AuditPort, "record">;
+  auditService: Pick<AuditPort, "record"> & GoneSubjectAudit;
+  queue: Pick<BackgroundJobQueue, "enqueue" | "enqueueInTransaction" | "wake">;
+  errorReporter: Pick<ErrorReporter, "report"> | null;
   metricsRegistry: MetricsRegistry | null;
   logger: AppLogger;
 }): {
   recordings: VoiceRecordingService;
-  erasure: VoiceRecordingErasureService;
-  /** The erasure reading and locking the recordings in a conversation erasure's transaction. */
+  /** The hand-off of a deletion's recordings, reading and writing in the deletion's transaction. */
   erasureIn: (db: Db) => VoiceRecordingErasureService;
+  /** Deletes handed-off recordings at the vendor, on the background-job runtime. */
+  erasureJobHandler: BackgroundJobHandlerRegistration;
+  /** Queues a run again for erasures whose pending recordings no job is working on. */
+  erasureRecoveryTask: { id: string; intervalMs: number; handle: ApplicationPeriodicTaskHandle };
 } => {
-  const dependencies = {
-    recordings: deps.recordings,
-    credentials: voiceVendorCredentialReader(deps.credentials),
-    sources: { elevenlabs: createElevenLabsRecordingSource({ fetch: deps.fetch }) },
-    audit: createVoiceRecordingAudit(deps.auditService),
+  const credentials = voiceVendorCredentialReader(deps.credentials);
+  const sealer = voiceVendorCredentialSealer(deps.credentials);
+  const sources = { elevenlabs: createElevenLabsRecordingSource({ fetch: deps.fetch }) };
+  const audit = createVoiceRecordingAudit(deps.auditService);
+  const drain = new VoiceRecordingErasureDrain({
+    backlog: deps.erasures,
+    backlogIn: deps.erasuresIn,
+    sealer,
+    sources,
+    audit,
+    queue: deps.queue,
+    errorReporter: deps.errorReporter,
     metrics: deps.metricsRegistry,
     logger: deps.logger,
-  };
+  });
   return {
-    recordings: new VoiceRecordingService(dependencies),
-    erasure: new VoiceRecordingErasureService(dependencies),
-    erasureIn: (db) => new VoiceRecordingErasureService({ ...dependencies, recordings: deps.recordingsIn(db) }),
+    recordings: new VoiceRecordingService({
+      recordings: deps.recordings,
+      credentials,
+      sources,
+      audit,
+      metrics: deps.metricsRegistry,
+      logger: deps.logger,
+    }),
+    erasureIn: (db) => new VoiceRecordingErasureService({
+      recordings: deps.recordingsIn(db),
+      backlog: deps.erasuresIn(db),
+      credentials,
+      sealer,
+      jobs: {
+        queue: async (erasureId) => {
+          await deps.queue.enqueueInTransaction(db, voiceRecordingErasureRequest(erasureId));
+        },
+        wake: () => deps.queue.wake(),
+      },
+      logger: deps.logger,
+    }),
+    erasureJobHandler: voiceRecordingErasureJobHandler(drain),
+    erasureRecoveryTask: {
+      id: VOICE_RECORDING_ERASURE_RECOVERY_TASK_ID,
+      intervalMs: VOICE_RECORDING_ERASURE_RECOVERY_INTERVAL_MS,
+      handle: {
+        run: async () => {
+          await recoverStrandedVoiceRecordingErasures({ backlog: deps.erasures, queue: deps.queue, logger: deps.logger });
+        },
+      },
+    },
   };
 };
+
+/** The recovery sweep's id: the poll worker's loop and the push worker's task route both run it by this name. */
+const VOICE_RECORDING_ERASURE_RECOVERY_TASK_ID = "voice-recording-erasure-recovery";
+/** Every 15 minutes, matching `voice_recording_erasure_recovery_schedule` in Terraform. */
+const VOICE_RECORDING_ERASURE_RECOVERY_INTERVAL_MS = 15 * 60 * 1_000;
 
 /**
  * The embed config says whether the embed offers calls, which follows the voice vendor key's

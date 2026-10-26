@@ -1,4 +1,4 @@
-import { isVoiceVendor, isVoiceVendorRegion } from "../../../shared/domain/voiceVendor.js";
+import { isVoiceVendor, isVoiceVendorRegion, type VoiceVendor } from "../../../shared/domain/voiceVendor.js";
 import { currentTimestamp, isUniqueViolation } from "../../../shared/infra/kysely/sqlHelpers.js";
 import type { Db } from "../../../shared/infra/kysely/types.js";
 import type {
@@ -6,7 +6,6 @@ import type {
   VoiceRecordingRef,
   VoiceRecordingScope,
   VoiceRecordingStore,
-  VoiceRecordingToErase,
   VoiceReportableSession,
   VoiceSessionRef,
   VoiceSessionStartLookup,
@@ -15,6 +14,7 @@ import type {
   VoiceSessionVisitor,
   VoiceVendorConversationReport,
 } from "../domain.js";
+import { isEmptyScope, voiceSessionsInScope } from "./voiceSessionScope.js";
 
 interface RecordingRow {
   vendor: string;
@@ -180,21 +180,23 @@ export class VoiceSessionRepository implements VoiceSessionStartRegistry, VoiceS
     return location ? { ...location, conversationId: input.conversationId } : null;
   }
 
-  async listRecordings(scope: VoiceRecordingScope): Promise<VoiceRecordingToErase[]> {
-    if (scope.kind === "conversations" && scope.conversationIds.length === 0) return [];
-    let query = this.db
-      .selectFrom("voice_sessions")
-      .select(["conversation_id", "vendor", "vendor_region", "vendor_conversation_id"])
-      .where("workspace_id", "=", scope.workspaceId);
-    if (scope.kind === "conversations") query = query.where("conversation_id", "in", [...scope.conversationIds]);
-    if (scope.kind === "visitor_key") query = query.where("started_visitor_key", "=", scope.visitorKey);
-    // Every row in scope, recorded or not yet, so a report waits for the erasure rather than landing
-    // on a row about to go.
-    const rows = await query.orderBy("created_at", "asc").forUpdate().execute();
-    return rows.flatMap((row) => {
-      const location = locationOf(row);
-      return location ? [{ ...location, workspaceId: scope.workspaceId, conversationId: row.conversation_id }] : [];
-    });
+  async lockRecordedVendors(scope: VoiceRecordingScope): Promise<VoiceVendor[]> {
+    if (isEmptyScope(scope)) return [];
+    // Every row in scope, recorded or not yet, is locked, in id order, so a report waits for the
+    // erasure rather than landing on a row about to go and two erasures never lock in opposite
+    // orders. OFFSET 0 keeps Postgres from pushing the outer recorded-row filter into the locking
+    // subquery, which would leave unrecorded rows unlocked. Only the vendors come back, never the rows.
+    const rows = await this.db
+      .selectFrom(voiceSessionsInScope(this.db, scope)
+        .select(["s.vendor", "s.vendor_conversation_id"])
+        .orderBy("s.id")
+        .offset(0)
+        .forUpdate()
+        .as("locked"))
+      .select("locked.vendor")
+      .distinct()
+      .where("locked.vendor_conversation_id", "is not", null)
+      .execute();
+    return rows.map((row) => row.vendor).filter(isVoiceVendor);
   }
-
 }

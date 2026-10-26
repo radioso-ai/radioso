@@ -60,6 +60,12 @@ locals {
     var.conversation_retention_schedule,
     "*/15 * * * *",
   )
+  # Every 15 minutes, matching VOICE_RECORDING_ERASURE_RECOVERY_INTERVAL_MS in voiceChannel.ts: it only
+  # re-queues erasures nothing is working on, so its cadence bounds how late a stranded one restarts.
+  voice_recording_erasure_recovery_schedule = coalesce(
+    var.voice_recording_erasure_recovery_schedule,
+    "*/15 * * * *",
+  )
   agent_bundle_import_cleanup_schedule = coalesce(
     var.agent_bundle_import_cleanup_schedule,
     "*/5 * * * *",

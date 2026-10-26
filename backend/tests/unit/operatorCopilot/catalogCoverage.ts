@@ -217,6 +217,7 @@ const connectorManualSync = deferred(
 const secretBearingRead = permanent("Permanent exclusion: the response carries secret material itself, so it must never enter a model context.");
 const identityAdministration = permanent("Permanent exclusion: Ray does not administer identity, accounts, or authorization.");
 const accountScope = permanent("Permanent exclusion: this is account-scoped rather than workspace-scoped, and Ray operates on one workspace.");
+const recordingsLeftAtVendor = permanent("Permanent exclusion: the organization-wide list of call recordings its deletions left at the voice vendor spans every workspace, deleted ones included, and Ray operates on one workspace; acting on it means deleting in the vendor's own account, which Radioso cannot do once it has given up.");
 const endUserSurface = permanent("Permanent exclusion: this is an end-user or inbound integration surface, not an operator-copilot tool.");
 const authOrRegistration = permanent("Permanent exclusion: authentication and registration are not an operator-copilot surface.");
 const personalProfile = permanent("Permanent exclusion: a profile is the signed-in person's own identity, not workspace configuration; only that person edits their name.");
@@ -338,6 +339,7 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "listAccessibleAccounts",
     "listAccountUsers",
   ], accountScope),
+  listVoiceRecordingsLeftAtVendor: recordingsLeftAtVendor,
   ...coverage(["deleteWorkspace"], neverListExclusion("workspace_delete")),
   ...coverage([
     "createAccountInvitation",

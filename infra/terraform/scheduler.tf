@@ -27,7 +27,8 @@ locals {
   usage_limit_alert_sweep_url   = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/periodic-tasks/ee-usage-limit-alerts/run" : null
   billing_auto_top_up_sweep_url = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/periodic-tasks/ee-billing-auto-top-up/run" : null
   # Built-in periodic task (`CONVERSATION_RETENTION_TASK_ID`), registered in every edition.
-  conversation_retention_url = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/periodic-tasks/conversation-retention/run" : null
+  conversation_retention_url           = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/periodic-tasks/conversation-retention/run" : null
+  voice_recording_erasure_recovery_url = var.deploy_services ? "${google_cloud_run_v2_service.document_worker[0].uri}/internal/tasks/periodic-tasks/voice-recording-erasure-recovery/run" : null
 }
 
 resource "google_cloud_scheduler_job" "document_worker_recovery" {
@@ -288,6 +289,33 @@ resource "google_cloud_scheduler_job" "conversation_retention" {
     oidc_token {
       service_account_email = data.google_service_account.worker_task_invoker.email
       audience              = local.conversation_retention_url
+    }
+  }
+
+  depends_on = [google_project_service.apis]
+}
+
+# Queues the voice recording erasure job again for any erasure whose recordings are overdue with no
+# job working on them (a lost wake, a dead letter whose hand-back failed). Each run queues at most a
+# bounded batch; the jobs do the vendor deletes.
+resource "google_cloud_scheduler_job" "voice_recording_erasure_recovery" {
+  count            = var.deploy_services ? 1 : 0
+  name             = "${local.resource_name_prefix}-voice-recording-erasure-recovery"
+  region           = var.region
+  schedule         = local.voice_recording_erasure_recovery_schedule
+  attempt_deadline = "300s"
+
+  http_target {
+    http_method = "POST"
+    uri         = local.voice_recording_erasure_recovery_url
+    body        = base64encode(jsonencode({}))
+    headers = {
+      "Content-Type"           = "application/json"
+      "X-Radioso-Worker-Token" = random_password.worker_task_auth_token.result
+    }
+    oidc_token {
+      service_account_email = data.google_service_account.worker_task_invoker.email
+      audience              = local.voice_recording_erasure_recovery_url
     }
   }
 

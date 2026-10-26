@@ -18,10 +18,11 @@ interface InvalidatedCredential {
 
 /**
  * Runs inside a tenancy deletion's transaction, just before its workspaces go, for what a
- * workspace's cascade leaves behind: rows no foreign key reaches, and the stored files it hands to
- * the worker. Composition supplies it.
+ * workspace's cascade leaves behind: rows no foreign key reaches, and what it hands to the worker
+ * (the recordings vendors hold, the stored files). Learns the organization the workspaces belong
+ * to. Composition supplies it.
  */
-type WorkspaceDeletionEraser = (trx: Db, workspaceIds: readonly string[]) => Promise<void>;
+type WorkspaceDeletionEraser = (trx: Db, workspaceIds: readonly string[], deletion: { accountId: string }) => Promise<void>;
 
 /** Runs once a tenancy deletion committed, to wake the worker for what it handed over. Never rejects. */
 type WorkspaceDeletionCommitted = () => Promise<void>;
@@ -97,7 +98,7 @@ export class PersonalCredentialLifecycleRepository implements PersonalCredential
         ...(input.auditEvent ? [this.contextualize(input.auditEvent)] : []),
       ]);
       await this.deleteOperatorMcpWorkspaceHistory(trx, input.workspaceId);
-      await this.eraseWorkspaceData(trx, [input.workspaceId]);
+      await this.eraseWorkspaceData(trx, [input.workspaceId], { accountId: input.accountId });
       const deleted = await trx.deleteFrom("workspaces")
         .where("id", "=", input.workspaceId)
         .where("account_id", "=", input.accountId)
@@ -131,7 +132,7 @@ export class PersonalCredentialLifecycleRepository implements PersonalCredential
       // account->workspace and account->audit cascade paths.
       await this.deleteOperatorMcpAccountHistory(trx, input.accountId);
       const workspaces = await trx.selectFrom("workspaces").select("id").where("account_id", "=", input.accountId).execute();
-      await this.eraseWorkspaceData(trx, workspaces.map((workspace) => workspace.id));
+      await this.eraseWorkspaceData(trx, workspaces.map((workspace) => workspace.id), { accountId: input.accountId });
       await trx.deleteFrom("workspaces").where("account_id", "=", input.accountId).execute();
       const deleted = await trx.deleteFrom("accounts").where("id", "=", input.accountId).executeTakeFirst();
       return Number(deleted.numDeletedRows) === 1;

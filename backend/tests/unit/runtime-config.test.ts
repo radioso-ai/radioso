@@ -1052,6 +1052,10 @@ describe("runtime configuration", () => {
     expect(schedulerTf).toContain('resource "google_cloud_scheduler_job" "conversation_retention"');
     expect(schedulerTf).toContain("schedule         = local.conversation_retention_schedule");
     expect(schedulerTf).toContain("/internal/tasks/periodic-tasks/conversation-retention/run");
+    // So is the voice recording erasure recovery sweep, which restarts erasures no job is working on.
+    expect(schedulerTf).toContain('resource "google_cloud_scheduler_job" "voice_recording_erasure_recovery"');
+    expect(schedulerTf).toContain("schedule         = local.voice_recording_erasure_recovery_schedule");
+    expect(schedulerTf).toContain("/internal/tasks/periodic-tasks/voice-recording-erasure-recovery/run");
     // How long deleted conversation data survives in backups and logs is what the data retention
     // docs state, so the windows are pinned rather than left to provider defaults. Turning
     // point-in-time recovery on restarts the instance, so it stays a per-stack choice defaulting to
@@ -1062,6 +1066,7 @@ describe("runtime configuration", () => {
       expect(env).toMatch(/db_point_in_time_recovery_enabled = var\.db_point_in_time_recovery_enabled/);
     }
     expect(monitoringTf).toContain('"${local.resource_name_prefix}-conversation-retention",');
+    expect(monitoringTf).toContain('"${local.resource_name_prefix}-voice-recording-erasure-recovery",');
     const loggingTf = await readFile(new URL("../../../infra/terraform/logging.tf", import.meta.url), "utf8");
     expect(loggingTf).toMatch(/resource "google_logging_project_bucket_config" "default" \{[\s\S]*?count = var\.manage_project_services \? 1 : 0[\s\S]*?bucket_id\s+= "_Default"[\s\S]*?retention_days = 30/);
     // An environment that keeps its logs in its own region holds them for the same 30 days.

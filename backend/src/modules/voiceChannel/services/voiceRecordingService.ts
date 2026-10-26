@@ -6,6 +6,7 @@ import type { MetricsRegistry } from "../../../shared/observability/metrics/metr
 import {
   VoiceRecordingRequestError,
   type VoiceRecordingAvailabilityPort,
+  type VoiceRecordingLeftReason,
   type VoiceRecordingPlayback,
   type VoiceRecordingPlaybackPort,
   type VoiceRecordingRef,
@@ -18,32 +19,42 @@ import {
 } from "../domain.js";
 
 /**
- * The record a recording leaves: who played which conversation's recording, and which recording
- * was deleted at the vendor. Ids only, never audio. Composition writes them as audit events.
+ * The record a recording leaves: who played which conversation's recording, and how its deletion at
+ * the vendor ended. Ids and closed codes only, never audio. Composition writes them as audit events.
  */
 export interface VoiceRecordingAudit {
   /** `partial`: the audio sent starts past the recording's first byte, as a seek asks for. */
   played(event: { workspaceId: string; conversationId: string; actorUserId: string | null; vendor: VoiceVendor; partial: boolean }): Promise<void>;
   /**
-   * `workspaceDeleted` and `account.deleted`: the workspace or the organization is gone with the
-   * recording, so the event keeps its id without pointing at it. `already_absent`: the vendor held
-   * nothing to delete.
+   * A recording deleted at the vendor, with the organization and workspace it belonged to by id: the
+   * record names either by id alone once it is gone. `already_absent`: the vendor held nothing to
+   * delete.
    */
   deleted(event: {
-    account: { id: string; deleted: boolean } | null;
+    accountId: string;
     workspaceId: string;
-    workspaceDeleted: boolean;
     conversationId: string | null;
     vendor: VoiceVendor;
     outcome: "deleted" | "already_absent";
   }): Promise<void>;
+  /**
+   * Recordings Radioso gave up on, which stay at the vendor, recorded in one write however many:
+   * each with why and the vendor's id for it, so the organization can delete it there. `vendor` is
+   * as stored, which may be one this build no longer knows.
+   */
+  left(event: {
+    accountId: string;
+    workspaceId: string;
+    vendor: string;
+    recordings: ReadonlyArray<{ conversationId: string | null; vendorConversationId: string; reason: VoiceRecordingLeftReason }>;
+  }): Promise<void>;
 }
 
-export interface VoiceRecordingDependencies {
+interface VoiceRecordingDependencies {
   recordings: VoiceRecordingStore;
   credentials: VoiceVendorCredentialReader;
   sources: Readonly<Record<VoiceVendor, VoiceRecordingSource>>;
-  audit: VoiceRecordingAudit;
+  audit: Pick<VoiceRecordingAudit, "played">;
   metrics?: Pick<MetricsRegistry, "incrementCounter"> | null;
   logger: Pick<AppLogger, "warn">;
 }

@@ -306,6 +306,22 @@ describe("ElevenLabs recording source", () => {
     const error = await rejectionOf(source.deleteRecording({ vendorConversationId, region: "us", credential }));
 
     expect(error).toMatchObject({ reason: "rejected", vendorStatus: 500 });
+    expect(error.retryAfterSeconds).toBeUndefined();
+  });
+
+  it("passes on how long a vendor that refuses asks to be left alone, in seconds or as a date", async () => {
+    const inSeconds = sourceWith(async () => new Response("{}", { status: 429, headers: { "retry-after": "120" } }));
+    expect(await rejectionOf(inSeconds.source.deleteRecording({ vendorConversationId, region: "us", credential })))
+      .toMatchObject({ reason: "rejected", vendorStatus: 429, retryAfterSeconds: 120 });
+
+    const at = new Date(Date.now() + 90_000).toUTCString();
+    const asDate = sourceWith(async () => new Response("{}", { status: 503, headers: { "retry-after": at } }));
+    const dated = await rejectionOf(asDate.source.deleteRecording({ vendorConversationId, region: "us", credential }));
+    expect(dated.retryAfterSeconds).toBeGreaterThanOrEqual(85);
+    expect(dated.retryAfterSeconds).toBeLessThanOrEqual(90);
+
+    const unreadable = sourceWith(async () => new Response("{}", { status: 429, headers: { "retry-after": "soon" } }));
+    expect((await rejectionOf(unreadable.source.deleteRecording({ vendorConversationId, region: "us", credential }))).retryAfterSeconds).toBeUndefined();
   });
 
   describe("checking a reported conversation", () => {

@@ -14,6 +14,7 @@ describe("machine-access observability", () => {
       logger: { warn() {} },
       metricsRegistry,
       repositories: {} as never,
+      personalCredentialLifecycle: {} as never,
     });
 
     access.machineAccessSecurityObserver.recordAuthentication({

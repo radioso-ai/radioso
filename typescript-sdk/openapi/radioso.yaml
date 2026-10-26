@@ -7773,7 +7773,7 @@ components:
       properties:
         documentEnrichmentOverride:
           type: string
-          enum: *a35
+          enum: *a36
         refreshDocumentEnrichment:
           type: boolean
           description: Ask the metadata extraction model afresh even when the document's title, text, and catalog are unchanged since its last successful extraction. Without it, an unchanged document applies the reply from that extraction again with no model call. Only this single-document reprocess accepts it.

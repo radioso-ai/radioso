@@ -1,7 +1,7 @@
 ---
 title: "Basic usage"
 description: "Documents, chat, settings, and error handling with the TypeScript SDK."
-last_updated: 2026-09-10
+last_updated: 2026-10-26
 ---
 
 # Basic usage
@@ -410,6 +410,7 @@ try {
 - Skill discovery is exposed through `client.skills.list()` and `client.skills.get(name)`. The catalog describes current assistant, retrieval, document, and MCP contracts; it does not execute skills directly.
 - Retrieval-only clients should use the REST retrieval surfaces, `POST /api/v1/retrieval/search` and `POST /api/v1/retrieval/answer`, when they do not want assistant persona or assistant-owned chat history. These calls run on system defaults and support per-call `metadataFilter`. `retrieval.answer` responses expose shape and resolved-step diagnostics through `activityTrace`; callers do not select shapes directly.
 - Both retrieval calls take an optional `agentId` and run on that agent's source scope, answering instruction, and retrieval skill settings. The response reports what it measured in `agentScope`, so a result can be attributed to the agent that produced it; `agentScope` is `null` for a call that ran on workspace defaults. Scoping needs `workspace.agents.read` in addition to `workspace.retrieval.query`.
+- `retrieval.search` reports the period a question resolved to: `requestedDateRange` (`{dateFrom, dateTo}`, or `null` when the question named no date or a model-proposed range failed validation, with `requestedDateRangeDropReason` saying why) and `requestedRangeLookup` (its `status` — `ran`, `failed`, or `not_requested` — and how many candidates it found; `failed` means the structured lookup errored, not that the range had no matches). Each result carries its own `dateFrom`/`dateTo` from the chunk's metadata, `datedInRequestedRange` for whether those dates fall inside `requestedDateRange`, and `fromRequestedRangeLookup` for whether the structured lookup produced it. `retrieval.answer` does not carry these fields.
 - Shared workspace settings are exposed by the REST platform settings resource, `GET /api/v1/settings` and `PUT /api/v1/settings`, with assistant and channel settings. Ingestion settings are exposed separately through the settings API.
 - Workspace creation, rename, and deletion are not exposed because those routes are session-authenticated rather than token-authenticated.
 - Run `pnpm run sync` in `typescript-sdk/` after backend API changes so the generated types stay up to date.

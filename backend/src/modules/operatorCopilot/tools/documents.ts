@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { documentInventoryStatuses, type ChunkRepositoryPort, type DocumentInventoryPort } from "../../documents/contracts/index.js";
 import { documentMetadataRecordSchema } from "../../documents/public.js";
+import { readRequestedDateRange } from "../../retrieval/public.js";
 import type { CopilotToolDescriptor } from "../contracts.js";
 import { boundPayload, compactForBudget, MAX_STRING_CHARS, truncationRecordSchema, withTruncation } from "../payloadCompaction.js";
 import { copilotPayloadCharBudget } from "../turnBudget.js";
@@ -10,7 +11,33 @@ import { notFound } from "../../../shared/domain/errors.js";
 const unknownRecord = z.record(z.unknown());
 const documentAttentionStatuses = ["failed", "queued", "processing"] as const;
 const documentAttentionLimit = 25;
-const documentSearchInputSchema = z.object({ query: z.string().min(1).max(1000) });
+export const documentSearchInputSchema = z.object({
+  query: z.string().min(1).max(1000),
+  dateFrom: z.string().optional(),
+  dateTo: z.string().optional(),
+}).superRefine((input, issueContext) => {
+  if ((input.dateFrom === undefined) !== (input.dateTo === undefined)) {
+    issueContext.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: "Provide both dateFrom and dateTo, or neither",
+      path: ["dateFrom"],
+    });
+    return;
+  }
+  if (input.dateFrom === undefined || input.dateTo === undefined) {
+    return;
+  }
+  const reading = readRequestedDateRange({ dateFrom: input.dateFrom, dateTo: input.dateTo });
+  if (!reading.range) {
+    issueContext.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: reading.dropReason === "too_long"
+        ? "dateFrom to dateTo spans too many days"
+        : "dateFrom and dateTo must be valid ISO calendar dates, with dateFrom on or before dateTo",
+      path: ["dateFrom"],
+    });
+  }
+});
 const documentSearchOutputSchema = z.object({ results: z.array(unknownRecord), truncation: truncationRecordSchema });
 const documentStatusInputSchema = z.object({});
 const documentStatusOutputSchema = z.object({
@@ -133,6 +160,9 @@ export interface CopilotDocumentSearchPort {
     /** Ray's own conversation and this turn's operator message, never the assistant's ids. */
     copilotConversationId?: string;
     copilotMessageId?: string;
+    /** An explicit period to prefer, both or neither; ranks in-range passages first. */
+    dateFrom?: string;
+    dateTo?: string;
   }): Promise<{ results: ReadonlyArray<unknown> }>;
 }
 export interface CopilotDocumentStatusPort {
@@ -183,12 +213,30 @@ export interface DocumentKnowledgeCopilotToolDependencies {
   readonly documentMaintenance: CopilotDocumentMaintenancePort;
 }
 
+const DOCUMENT_SEARCH_DESCRIPTION = "Search workspace documents and return matching document metadata and quoted evidence snippets — the only document text available to you. For a date question, pass dateFrom and dateTo (both or neither) to rank passages in that period first; a busy range can fill the whole result limit on its own, ahead of any other similarity match. Each result's `datedInRequestedRange` says whether it fell inside the requested range.";
+
 export const createDocumentSearchCopilotTools = (deps: DocumentSearchCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {
     name: "document_search", shape: "read", verificationCost: () => 0, uiLabel: "Searching documents", contributingModule: "documents", dashboardSubject: { type: "document" }, requiredPermissions: ["workspace.documents.read"],
-    description: "Search workspace documents and return matching document metadata and quoted evidence snippets — the only document text available to you.",
+    description: DOCUMENT_SEARCH_DESCRIPTION,
     inputSchema: documentSearchInputSchema, outputSchema: documentSearchOutputSchema,
-    createTool: (context) => ({ name: "document_search", description: "Search workspace documents and return matching document metadata and quoted evidence snippets — the only document text available to you.", inputSchema: documentSearchInputSchema, outputSchema: documentSearchOutputSchema, invoke: async ({ query }) => boundPayload({ results: (await deps.documentSearchService.search({ workspaceId: context.workspaceId, query, executionSurface: "operator_copilot", copilotConversationId: context.copilotConversationId, copilotMessageId: context.copilotMessageId })).results as Record<string, unknown>[] }) }),
+    createTool: (context) => ({
+      name: "document_search",
+      description: DOCUMENT_SEARCH_DESCRIPTION,
+      inputSchema: documentSearchInputSchema,
+      outputSchema: documentSearchOutputSchema,
+      invoke: async ({ query, dateFrom, dateTo }) => boundPayload({
+        results: (await deps.documentSearchService.search({
+          workspaceId: context.workspaceId,
+          query,
+          executionSurface: "operator_copilot",
+          copilotConversationId: context.copilotConversationId,
+          copilotMessageId: context.copilotMessageId,
+          ...(dateFrom !== undefined ? { dateFrom } : {}),
+          ...(dateTo !== undefined ? { dateTo } : {}),
+        })).results as Record<string, unknown>[],
+      }),
+    }),
   },
 ];
 

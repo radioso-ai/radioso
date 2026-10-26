@@ -13301,6 +13301,42 @@
           "query"
         ]
       },
+      "RequestedDateRange": {
+        "type": "object",
+        "properties": {
+          "dateFrom": {
+            "type": "string"
+          },
+          "dateTo": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "dateFrom",
+          "dateTo"
+        ]
+      },
+      "RequestedRangeLookup": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ran",
+              "failed",
+              "not_requested"
+            ]
+          },
+          "candidateCount": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "status",
+          "candidateCount"
+        ]
+      },
       "RetrievalSearchEvidence": {
         "type": "object",
         "properties": {
@@ -13324,13 +13360,38 @@
           },
           "score": {
             "type": "number"
+          },
+          "dateFrom": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "dateTo": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "datedInRequestedRange": {
+            "type": [
+              "boolean",
+              "null"
+            ]
+          },
+          "fromRequestedRangeLookup": {
+            "type": "boolean"
           }
         },
         "required": [
           "documentId",
           "chunkId",
           "title",
-          "content"
+          "content",
+          "dateFrom",
+          "dateTo",
+          "datedInRequestedRange",
+          "fromRequestedRangeLookup"
         ]
       },
       "RetrievalSearchResponse": {
@@ -13360,6 +13421,32 @@
               "lexical"
             ]
           },
+          "requestedDateRange": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RequestedDateRange"
+              },
+              {
+                "type": "null"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "requestedDateRangeDropReason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "invalid",
+              "too_long"
+            ]
+          },
+          "requestedRangeLookup": {
+            "$ref": "#/components/schemas/RequestedRangeLookup"
+          },
           "results": {
             "type": "array",
             "items": {
@@ -13386,6 +13473,9 @@
           "outcome",
           "agentScope",
           "rewrittenQuery",
+          "requestedDateRange",
+          "requestedDateRangeDropReason",
+          "requestedRangeLookup",
           "results"
         ]
       },

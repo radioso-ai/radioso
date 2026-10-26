@@ -39,6 +39,9 @@ export class RetrievalProbeService implements CopilotRetrievalProbePort {
       agentId: result.agentScope.agentId,
       retrievalEnabled: result.agentScope.retrievalEnabled,
       rewrittenQuery: result.rewrittenQuery,
+      requestedDateRange: result.requestedDateRange,
+      requestedDateRangeDropReason: result.requestedDateRangeDropReason,
+      requestedRangeLookup: result.requestedRangeLookup,
       results: result.results,
     };
   }

@@ -264,7 +264,7 @@ describe("ConnectorRegistry", () => {
         { key: "api_key", label: "API Key", type: "secret", required: true },
       ],
     }));
-    registry.setEncryptionKey(Buffer.from("0123456789abcdef0123456789abcdef").toString("base64"));
+    registry.setEncryptionKey({ current: Buffer.from("0123456789abcdef0123456789abcdef").toString("base64"), previous: [] });
 
     const db = {
       query: async <T>() => [{ enabled: true, config_data: { api_key: "legacy-plaintext-token" } } as T],
@@ -283,7 +283,7 @@ describe("ConnectorRegistry", () => {
       ],
       rotateGeneratedSecretsOnUniqueChannelChange: () => true,
     }));
-    registry.setEncryptionKey(encryptionKey);
+    registry.setEncryptionKey({ current: encryptionKey, previous: [] });
 
     let storedConfig = {
       channel_id: "site-one",
@@ -326,7 +326,7 @@ describe("ConnectorRegistry", () => {
       ],
       rotateGeneratedSecretsOnUniqueChannelChange: () => true,
     }));
-    registry.setEncryptionKey(encryptionKey);
+    registry.setEncryptionKey({ current: encryptionKey, previous: [] });
 
     let storedConfig = { channel_id: "site-one", webhook_secret: encryptedSecret };
     const db = {

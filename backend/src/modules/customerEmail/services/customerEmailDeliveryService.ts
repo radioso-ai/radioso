@@ -23,8 +23,7 @@ interface CustomerEmailDeliveryServiceOptions {
   oauthCredentials: CustomerEmailOauthCredentialLookupPort;
   oauthTokenRepository: ResolveFreshAccessTokenInput["repository"];
   providers: CustomerEmailProviderRegistryPort;
-  encryptionKey: string;
-  encryptionKeyId?: string | null;
+  encryptionKey: ResolveFreshAccessTokenInput["encryptionKey"];
   timeoutMs?: number;
   assertPublicUrl?: ResolveFreshAccessTokenInput["assertPublicUrl"];
   fetchImpl?: ResolveFreshAccessTokenInput["fetchImpl"];
@@ -78,7 +77,6 @@ export class CustomerEmailDeliveryService {
         record: credential,
         repository: this.options.oauthTokenRepository,
         encryptionKey: this.options.encryptionKey,
-        encryptionKeyId: this.options.encryptionKeyId ?? null,
         assertPublicUrl: this.options.assertPublicUrl,
         fetchImpl: this.options.fetchImpl,
         logger: this.options.logger,

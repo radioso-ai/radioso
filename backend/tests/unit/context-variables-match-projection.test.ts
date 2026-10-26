@@ -26,7 +26,7 @@ describe("projectContextForMatching", () => {
     expect(projection.context.customer_email).toBe(REDACTED_VALUE);
   });
 
-  it("projects page context to its locating fields, without the page excerpt or the browser language", () => {
+  it("projects page context to its URL and title, without the page excerpt or either locale", () => {
     const projection = projectContextForMatching(
       {
         page_context: {
@@ -44,7 +44,6 @@ describe("projectContextForMatching", () => {
     expect(projection.context.page_context).toEqual({
       pageUrl: "https://shop.example/cart",
       pageTitle: "Your cart",
-      pageLocale: "en-GB",
     });
   });
 
@@ -70,6 +69,24 @@ describe("projectContextForMatching", () => {
       referrer: "https://partner.example",
       entryPageUrl: "https://corsi.ananda.it/",
     });
+  });
+
+  it("projects only the visitor_request facts the request carried", () => {
+    const projection = projectContextForMatching(
+      {
+        visitor_request: {
+          country: "IT",
+          region: null,
+          city: null,
+          language: "it",
+          referrer: null,
+          entryPageUrl: null,
+        },
+      },
+      roomyBound,
+    );
+
+    expect(projection.context.visitor_request).toEqual({ country: "IT" });
   });
 
   it("omits visitor_request when the browser language was its only fact", () => {

@@ -20,9 +20,9 @@ export interface MatchContextProjection {
 
 /**
  * Page fields that locate the visitor. The visible excerpt is deliberately not one of them, and
- * neither is the browser language (see `visitorRequestForMatching`).
+ * neither are the page and browser locales (see `visitorRequestForMatching`).
  */
-const PAGE_LOCATING_FIELDS = ["pageUrl", "pageTitle", "pageLocale"] as const;
+const PAGE_LOCATING_FIELDS = ["pageUrl", "pageTitle"] as const;
 
 const BROWSER_LANGUAGE_FIELD: keyof VisitorRequestFacts = "language";
 
@@ -48,20 +48,23 @@ const pageContextForMatching = (value: unknown): Record<string, string> | undefi
 };
 
 /**
- * The browser language stays out of matching. The fused turn planner judges directive
- * conditions and picks the reply language in the same call, and a browser locale beside the
- * question pulls that choice away from the language the visitor writes in: an Italian
- * question from an English-language browser gets an English reply. With the language
- * removed, a `visitor_request` that carried nothing else is omitted.
+ * Locales stay out of matching. The fused turn planner judges directive conditions and picks
+ * the reply language in the same call, and a browser or page locale beside the question pulls
+ * that choice away from the language the visitor writes in: an Italian question from an
+ * English-language browser gets an English reply. Like page context, `visitor_request`
+ * reaches matching as only the facts the request carried, and not at all when the browser
+ * language was its only one.
  */
 const visitorRequestForMatching = (value: unknown): Record<string, unknown> | undefined => {
   if (typeof value !== "object" || value === null) {
     return undefined;
   }
   const facts = Object.fromEntries(
-    Object.entries(value as Record<string, unknown>).filter(([field]) => field !== BROWSER_LANGUAGE_FIELD),
+    Object.entries(value as Record<string, unknown>).filter(
+      ([field, fact]) => field !== BROWSER_LANGUAGE_FIELD && fact !== null && fact !== undefined,
+    ),
   );
-  return Object.values(facts).some((fact) => fact !== null && fact !== undefined) ? facts : undefined;
+  return Object.keys(facts).length > 0 ? facts : undefined;
 };
 
 const valueForMatching = (name: string, snapshotValue: unknown): unknown => {

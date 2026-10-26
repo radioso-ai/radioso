@@ -137,7 +137,6 @@ describe("ChatSessionPreparer visitor_request wiring (spec 1277 slice 4)", () =>
       region: "BE",
       city: "Berlin",
       referrer: "https://partner.example",
-      entryPageUrl: null,
     });
   });
 

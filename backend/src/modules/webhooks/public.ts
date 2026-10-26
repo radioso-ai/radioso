@@ -2,7 +2,6 @@ export {
   webhookDeliveryOutcomeStatuses,
   webhookDestinationCreateSchema,
   webhookDestinationIdSchema,
-  webhookDestinationUpdateSchema,
   type WebhookDeliveryOutcomeStatus,
   type WebhookDestination,
   type WebhookDestinationRecord,

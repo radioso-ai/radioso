@@ -59,11 +59,10 @@ describeIntegration("McpConnectionRepository (Postgres)", () => {
     const withFlow = await repository.setOauthFlow(agentId, created.id, "flow-cipher");
     expect(withFlow?.oauthFlowCiphertext).toBe("flow-cipher");
 
-    const authorized = await repository.setOauthTokens(agentId, created.id, "cred-cipher", "key-1");
+    const authorized = await repository.setOauthTokens(agentId, created.id, "cred-cipher");
     expect(authorized).toMatchObject({
       status: "authorized",
       credentialCiphertext: "cred-cipher",
-      encryptionKeyId: "key-1",
       oauthFlowCiphertext: null,
     });
   });

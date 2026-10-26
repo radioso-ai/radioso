@@ -158,6 +158,7 @@ describe("email channel composition", () => {
     const handler = factory({
       database: { kysely: fakeDb().db } as never,
       env: workerEnv as never,
+      credentialKeys: undefined,
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
       auditService: { record: vi.fn() } as never,
       telemetryService: {} as never,
@@ -258,6 +259,7 @@ describe("email channel composition", () => {
     const handler = factory({
       database: { kysely: db } as never,
       env: {} as never,
+      credentialKeys: undefined,
       logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() } as never,
       auditService: { record: vi.fn(async () => undefined) } as never,
       telemetryService: {} as never,

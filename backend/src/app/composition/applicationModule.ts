@@ -16,6 +16,7 @@ import type {
 } from "../../modules/documents/contracts/index.js";
 import type { CapabilityPolicy } from "../../shared/domain/capabilityPolicy.js";
 import type { Database } from "../../shared/infra/database.js";
+import type { FieldEncryptionKeyRing } from "../../shared/infra/crypto/fieldEncryption.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
 import type { JobConsumerPort } from "../../shared/domain/jobConsumer.js";
 import type { OrganizationCreationGuard } from "../../shared/domain/organizationCreationGuard.js";
@@ -219,6 +220,8 @@ interface ApplicationActionHandlerRegistration {
         // construct whatever repositories they need.
         database: Database;
         env: Env;
+        // The stored-credential key ring; undefined when CONNECTOR_ENCRYPTION_KEY is unset.
+        credentialKeys: FieldEncryptionKeyRing | undefined;
         logger: AppLogger;
         auditService: AuditService;
         telemetryService: TelemetryService;

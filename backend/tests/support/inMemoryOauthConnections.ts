@@ -31,7 +31,6 @@ export class InMemoryOauthConnectionRepository implements OauthConnectionReposit
       status: input.status ?? "pending",
       grantedScopes: [...(input.grantedScopes ?? [])],
       credentialCiphertext: input.credentialCiphertext ?? null,
-      encryptionKeyId: input.encryptionKeyId ?? null,
       oauthClientCiphertext: input.oauthClientCiphertext ?? null,
       oauthFlowCiphertext: null,
       lastRefreshAt: null,
@@ -87,7 +86,6 @@ export class InMemoryOauthConnectionRepository implements OauthConnectionReposit
     if (input.grantedScopes !== undefined) record.grantedScopes = [...input.grantedScopes];
     if (input.status !== undefined) record.status = input.status;
     if (input.credentialCiphertext !== undefined) record.credentialCiphertext = input.credentialCiphertext;
-    if (input.encryptionKeyId !== undefined) record.encryptionKeyId = input.encryptionKeyId;
     if (input.oauthClientCiphertext !== undefined) record.oauthClientCiphertext = input.oauthClientCiphertext;
     if (input.oauthFlowCiphertext !== undefined) record.oauthFlowCiphertext = input.oauthFlowCiphertext;
     if (input.lastErrorCode !== undefined) record.lastErrorCode = input.lastErrorCode;
@@ -115,7 +113,6 @@ export class InMemoryOauthConnectionRepository implements OauthConnectionReposit
     workspaceId: string,
     id: string,
     credentialCiphertext: string,
-    encryptionKeyId: string | null,
     grantedScopes?: string[],
     providerAccountId?: string | null,
   ): Promise<OauthConnectionRecord | null> {
@@ -124,7 +121,6 @@ export class InMemoryOauthConnectionRepository implements OauthConnectionReposit
       return null;
     }
     record.credentialCiphertext = credentialCiphertext;
-    record.encryptionKeyId = encryptionKeyId;
     record.oauthFlowCiphertext = null;
     record.status = "authorized";
     record.lastRefreshAt = new Date();

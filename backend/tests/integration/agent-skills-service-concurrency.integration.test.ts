@@ -136,7 +136,6 @@ describeIfDatabase("AgentSkillsService.update concurrency (Kysely/Postgres)", ()
       serverUrl: "https://mcp.example.com/rpc",
       authMethod: "access_token",
       credentialCiphertext: "unused-in-this-test",
-      encryptionKeyId: "unused-in-this-test",
       status: "authorized",
     });
     const targetId = connection.id;

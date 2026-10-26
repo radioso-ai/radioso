@@ -15,6 +15,7 @@ import {
 import { OauthConnectionRepository } from "../../../db/repositories/oauthConnectionRepository.js";
 import { IntegrationConnectionRepository } from "../../integrationConnections/public.js";
 import type { Database } from "../../../shared/infra/database.js";
+import type { FieldEncryptionKeyRing } from "../../../shared/infra/crypto/fieldEncryption.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 
 export const SLACK_POST_ACTION_TYPE = "slack.post";
@@ -173,7 +174,7 @@ export class SlackPostActionCredentialResolver implements SlackPostCredentialRes
 
   constructor(input: {
     database: Database;
-    encryptionKey?: string;
+    encryptionKey?: FieldEncryptionKeyRing;
   }) {
     const oauthConnections = new OauthConnectionRepository(input.database.kysely);
     const integrationConnections = new IntegrationConnectionRepository(input.database.kysely);

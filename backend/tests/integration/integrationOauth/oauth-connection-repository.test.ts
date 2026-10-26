@@ -132,13 +132,12 @@ describeIfDatabase("oauth connection repository (postgres)", () => {
     const persistence: OauthTokenPersistencePort = repository;
     expect(persistence).toBe(repository);
     const tokenCiphertext = encryptField(JSON.stringify({ accessToken: "at" }), encryptionKey);
-    const authorized = await repository.setOauthTokens(workspaceId, created.id, tokenCiphertext, "k1");
+    const authorized = await repository.setOauthTokens(workspaceId, created.id, tokenCiphertext);
 
     expect(authorized).toMatchObject({
       status: "authorized",
       credentialCiphertext: tokenCiphertext,
       oauthFlowCiphertext: null,
-      encryptionKeyId: "k1",
       lastErrorCode: null,
     });
     expect(authorized?.lastRefreshAt).toBeInstanceOf(Date);

@@ -1,6 +1,7 @@
 import {
   decryptField,
   encryptField,
+  type FieldEncryptionKeyRing,
 } from "../../../../shared/infra/crypto/fieldEncryption.js";
 import { badRequest, notFound, AppError } from "../../../../shared/domain/errors.js";
 import type {
@@ -17,9 +18,11 @@ const RESIDENCY_PROVIDER: WorkspaceCredentialProvider = "openai";
 
 const KEY_NAME = "CONNECTOR_ENCRYPTION_KEY";
 
+const PREVIOUS_KEYS_NAME = "CONNECTOR_ENCRYPTION_PREVIOUS_KEYS";
+
 export interface WorkspaceCredentialsEncryptionConfig {
-  /** Base64-encoded 32-byte key. Undefined when the operator has not configured one. */
-  key: string | undefined;
+  /** The credential key ring. Undefined when the operator has not configured `CONNECTOR_ENCRYPTION_KEY`. */
+  key: FieldEncryptionKeyRing | undefined;
 }
 
 interface ProviderCredentialFailureRecoveryPort {
@@ -75,7 +78,7 @@ export class WorkspaceProviderCredentialsService {
   ) {}
 
   isEncryptionConfigured(): boolean {
-    return typeof this.encryption.key === "string" && this.encryption.key.length > 0;
+    return this.encryption.key !== undefined && this.encryption.key.current.length > 0;
   }
 
   onDecryptError(listener: (error: unknown, provider: WorkspaceCredentialProvider) => void): void {
@@ -225,12 +228,12 @@ export class WorkspaceProviderCredentialsService {
     } catch (error) {
       this.decryptErrorListener?.(error, provider);
       throw new ProviderConfigurationError(
-        `Workspace credential for "${provider}" could not be decrypted. The ${KEY_NAME} value most likely rotated since the credential was stored; re-enter the API key or restore the previous ${KEY_NAME}.`,
+        `Workspace credential for "${provider}" could not be decrypted with ${KEY_NAME} or any key in ${PREVIOUS_KEYS_NAME}. If ${KEY_NAME} was rotated since the credential was stored, add the key it replaced to ${PREVIOUS_KEYS_NAME}; otherwise re-enter the API key.`,
         {
           kind: "credential_unreadable",
           provider,
           setting: KEY_NAME,
-          remediation: `Re-enter the API key at Settings → Credentials, or restore the previous ${KEY_NAME} value.`,
+          remediation: `Re-enter the API key at Settings → Credentials, or add the key ${KEY_NAME} replaced to ${PREVIOUS_KEYS_NAME}.`,
         },
       );
     }

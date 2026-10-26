@@ -1,7 +1,7 @@
 ---
 title: "Voice Channel"
 description: "Let a voice runtime such as ElevenLabs Agents speak for a Radioso agent through an OpenAI-compatible chat-completions endpoint, with sessions Radioso starts on your vendor key, one conversation per voice session, authored lines that cover the wait in the language of each turn, a call that switches language with its caller, a teammate's Inbox replies spoken to the caller, the call's recording in the Inbox, and the period's call numbers on the Quality page."
-last_updated: 2026-10-24
+last_updated: 2026-10-26
 ---
 
 # Voice Channel
@@ -240,8 +240,11 @@ leaked signed URL or a busy day can cost.
 A visitor sees one `503` whatever the reason. The backend log line `Voice
 session start failed` names it as `outcome`: `credential_missing` (no
 ElevenLabs key under **Voice runtime keys**), `credential_unreadable` (a key
-is stored but cannot be decrypted, usually after `CONNECTOR_ENCRYPTION_KEY`
-changed; enter it again), `credential_read_failed` or `registration_failed`
+is stored but no configured key decrypts it, usually because
+`CONNECTOR_ENCRYPTION_KEY` changed and the key it replaced is missing from
+`CONNECTOR_ENCRYPTION_PREVIOUS_KEYS`: add that key back, as
+[Rotate the credential encryption key](../docs-portal/content/operators/self-hosting-operations.mdx#rotate-the-credential-encryption-key)
+describes, or enter the ElevenLabs key again), `credential_read_failed` or `registration_failed`
 (Radioso could not reach its database), or `vendor_failed` (ElevenLabs refused
 the start or did not answer within 5 seconds; `vendorStatus: 401` means the
 stored key is wrong). The `voice_session_start_total` metric counts the same

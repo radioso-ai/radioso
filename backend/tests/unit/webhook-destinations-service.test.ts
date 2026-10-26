@@ -9,7 +9,7 @@ import {
   type WebhookDestinationRecord,
   type WebhookDestinationRepositoryPort,
 } from "../../src/modules/webhooks/public.js";
-import { decryptField } from "../../src/shared/infra/crypto/fieldEncryption.js";
+import { decryptField, type FieldEncryptionKeyRing } from "../../src/shared/infra/crypto/fieldEncryption.js";
 
 const TEST_KEY = Buffer.from("0123456789abcdef0123456789abcdef").toString("base64");
 const workspaceId = "11111111-1111-4111-8111-111111111111";
@@ -23,7 +23,6 @@ class FakeWebhookDestinationRepository implements WebhookDestinationRepositoryPo
     name: string;
     url: string;
     secretCiphertext: string;
-    encryptionKeyId: string;
   }): Promise<WebhookDestinationRecord> {
     if ([...this.rows.values()].some((row) =>
       row.workspaceId === input.workspaceId && row.name.toLowerCase() === input.name.toLowerCase()
@@ -37,7 +36,6 @@ class FakeWebhookDestinationRepository implements WebhookDestinationRepositoryPo
       name: input.name,
       url: input.url,
       secretCiphertext: input.secretCiphertext,
-      encryptionKeyId: input.encryptionKeyId,
       lastDeliveryStatus: null,
       lastDeliveryAt: null,
       createdAt: now,
@@ -73,7 +71,7 @@ class FakeWebhookDestinationRepository implements WebhookDestinationRepositoryPo
   async updateSecret(
     id: string,
     inputWorkspaceId: string,
-    input: { secretCiphertext: string; encryptionKeyId: string },
+    input: { secretCiphertext: string },
   ): Promise<WebhookDestinationRecord | null> {
     const record = await this.findByIdAndWorkspace(id, inputWorkspaceId);
     if (!record) {
@@ -108,7 +106,7 @@ const audit = () => ({
 });
 
 const createService = (overrides: {
-  key?: string;
+  key?: FieldEncryptionKeyRing;
   assertPublicUrl?: (url: string) => Promise<void>;
   allowHttpLoopback?: boolean;
   referencedRoutineNames?: string[];
@@ -117,7 +115,7 @@ const createService = (overrides: {
   const service = new WebhookDestinationService({
     repository,
     auditService: audit(),
-    encryption: { key: Object.hasOwn(overrides, "key") ? overrides.key : TEST_KEY },
+    encryption: { key: Object.hasOwn(overrides, "key") ? overrides.key : { current: TEST_KEY, previous: [] } },
     assertPublicUrl: overrides.assertPublicUrl ?? (async () => undefined),
     allowHttpLoopback: overrides.allowHttpLoopback,
     routineReferences: {

@@ -93,9 +93,37 @@ describe("workspace provider credentials boot policy", () => {
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({
         provider: "openai",
-        remediation: expect.stringContaining("Re-enter the API key"),
+        remediation: expect.stringContaining("CONNECTOR_ENCRYPTION_PREVIOUS_KEYS"),
       }),
       "Workspace provider credential decrypt failed",
     );
+  });
+
+  it("keeps reading a credential stored under a key rotated into CONNECTOR_ENCRYPTION_PREVIOUS_KEYS", async () => {
+    const repositories = baseRepositories();
+    const logger = { warn: vi.fn(), error: vi.fn(), info: vi.fn() } as any;
+    const writerService = buildWorkspaceProviderCredentialsService({
+      auditService: buildAudit(),
+      env: baseEnv(),
+      logger,
+      repositories,
+    });
+    await writerService.setApiKey({
+      workspaceId: "ws-1",
+      provider: "openai",
+      apiKey: "sk-before-rotation",
+      actor: { accountId: "acc-1" },
+    });
+
+    const rotatedKey = Buffer.from("ffffffffffffffffffffffffffffffff").toString("base64");
+    const readerService = buildWorkspaceProviderCredentialsService({
+      auditService: buildAudit(),
+      env: baseEnv({ CONNECTOR_ENCRYPTION_KEY: rotatedKey, CONNECTOR_ENCRYPTION_PREVIOUS_KEYS: TEST_KEY }),
+      logger,
+      repositories,
+    });
+
+    await expect(readerService.getApiKey("ws-1", "openai")).resolves.toBe("sk-before-rotation");
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 });

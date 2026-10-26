@@ -40,7 +40,7 @@ describe("integration OAuth access token resolver", () => {
       subjectId: "workspace-1",
       record: record({ accessToken: "access-1", refreshToken: "refresh-1", expiresAt: Date.now() + 600_000 }),
       repository,
-      encryptionKey,
+      encryptionKey: { current: encryptionKey, previous: [] },
     })).resolves.toBe("access-1");
 
     expect(repository.setOauthTokens).not.toHaveBeenCalled();
@@ -62,7 +62,7 @@ describe("integration OAuth access token resolver", () => {
       subjectId: "workspace-1",
       record: record({ accessToken: "access-1", refreshToken: "refresh-1", expiresAt: Date.now() - 1 }),
       repository,
-      encryptionKey,
+      encryptionKey: { current: encryptionKey, previous: [] },
       fetchImpl,
     })).resolves.toBe("access-2");
 
@@ -70,7 +70,6 @@ describe("integration OAuth access token resolver", () => {
       "workspace-1",
       "oauth-1",
       expect.any(String),
-      null,
     );
   });
 
@@ -85,7 +84,7 @@ describe("integration OAuth access token resolver", () => {
       subjectId: "workspace-1",
       record: disabledRecord({ accessToken: "access-1", refreshToken: "refresh-1", expiresAt: Date.now() - 1 }),
       repository,
-      encryptionKey,
+      encryptionKey: { current: encryptionKey, previous: [] },
       fetchImpl,
     })).rejects.toBeInstanceOf(OauthNotAuthorizedError);
 
@@ -109,7 +108,7 @@ describe("integration OAuth access token resolver", () => {
       subjectId: "workspace-1",
       record: record({ accessToken: "access-1", refreshToken: "refresh-1", expiresAt: Date.now() - 1 }),
       repository,
-      encryptionKey,
+      encryptionKey: { current: encryptionKey, previous: [] },
       fetchImpl,
     })).rejects.toBeInstanceOf(OauthNotAuthorizedError);
 
@@ -131,7 +130,7 @@ describe("integration OAuth access token resolver", () => {
       subjectId: "workspace-1",
       record: record({ accessToken: "access-1", refreshToken: "refresh-1", expiresAt: Date.now() - 1 }),
       repository,
-      encryptionKey,
+      encryptionKey: { current: encryptionKey, previous: [] },
       fetchImpl,
     }).catch((caught) => caught);
 
@@ -155,7 +154,7 @@ describe("integration OAuth access token resolver", () => {
 
     const expired = () => record({ accessToken: "access-1", refreshToken: "refresh-1", expiresAt: Date.now() - 1 });
     const resolve = () =>
-      resolveFreshAccessToken({ subjectId: "workspace-1", record: expired(), repository, encryptionKey, fetchImpl });
+      resolveFreshAccessToken({ subjectId: "workspace-1", record: expired(), repository, encryptionKey: { current: encryptionKey, previous: [] }, fetchImpl });
 
     const [a, b] = await Promise.all([resolve(), resolve()]);
 

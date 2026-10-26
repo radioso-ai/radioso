@@ -11,6 +11,10 @@ import { SLACK_INBOUND_EVENT_RETENTION_DAYS } from "../../modules/slack/public.j
 import { resolveMailDriverName } from "../../modules/mail/public.js";
 import { OPENAI_DATA_RESIDENCIES } from "../../shared/infra/llm/providerTypes.js";
 import {
+  previousFieldEncryptionKeyProblems,
+  type FieldEncryptionKeyRing,
+} from "../../shared/infra/crypto/fieldEncryption.js";
+import {
   isAzureOpenAIHost,
   isNormalizableAzureOpenAIPath,
   normalizeAzureOpenAIEndpoint,
@@ -41,6 +45,27 @@ const booleanish = (defaultValue: boolean) =>
 
     return value;
   }, z.boolean());
+
+const splitKeyList = (value: string): string[] =>
+  value.split(",").map((entry) => entry.trim()).filter((entry) => entry.length > 0);
+
+const CONNECTOR_KEY_NAMES = {
+  current: "CONNECTOR_ENCRYPTION_KEY",
+  previous: "CONNECTOR_ENCRYPTION_PREVIOUS_KEYS",
+} as const;
+
+/** CONNECTOR_ENCRYPTION_KEY's own format is checked on its field. */
+const connectorEncryptionKeyRingProblems = (value: {
+  CONNECTOR_ENCRYPTION_KEY?: string;
+  CONNECTOR_ENCRYPTION_PREVIOUS_KEYS?: string;
+}): string[] => {
+  const previous = splitKeyList(value.CONNECTOR_ENCRYPTION_PREVIOUS_KEYS ?? "");
+  if (previous.length === 0) return [];
+  if (!value.CONNECTOR_ENCRYPTION_KEY) {
+    return ["CONNECTOR_ENCRYPTION_PREVIOUS_KEYS only decrypts, so it needs CONNECTOR_ENCRYPTION_KEY to encrypt new values"];
+  }
+  return previousFieldEncryptionKeyProblems({ current: value.CONNECTOR_ENCRYPTION_KEY, previous }, CONNECTOR_KEY_NAMES);
+};
 
 const otelTraceSampler = emptyStringToUndefined(z.enum([
   "always_on",
@@ -323,6 +348,9 @@ const envSchema = z.object({
         },
       ),
   ),
+  // Keys CONNECTOR_ENCRYPTION_KEY replaced, comma-separated: they decrypt values stored under them
+  // until the credential re-encryption command moves those values onto the current key.
+  CONNECTOR_ENCRYPTION_PREVIOUS_KEYS: emptyStringToUndefined(z.string()),
   CONNECTOR_PUBLIC_BASE_URL: emptyStringToUndefined(z.string().url()),
   WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK: booleanish(false),
   AUTH_RATE_LIMIT_WINDOW_MS: z.coerce.number().int().positive().default(60_000),
@@ -463,6 +491,10 @@ const envSchema = z.object({
   RADIOSO_WIDGET_ORIGIN: emptyStringToUndefined(z.string().min(1)),
   RADIOSO_APPLICATION_MODULES: emptyStringToUndefined(z.string().min(1)),
 }).superRefine((value, ctx) => {
+  for (const message of connectorEncryptionKeyRingProblems(value)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["CONNECTOR_ENCRYPTION_PREVIOUS_KEYS"], message });
+  }
+
   if (value.METRICS_ENABLED && !value.METRICS_AUTH_TOKEN) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
@@ -700,6 +732,18 @@ export const parseEmailChannelConfig = (
 export const emailChannelConfigGaps = (
   env: Partial<Pick<ParsedEnv, EmailChannelEnvInputKey>>,
 ): EmailChannelConfigGap | null => emailChannelOf(emailChannelEnvSchema.parse(env)).gap;
+
+/**
+ * The credential key ring, or `undefined` when `CONNECTOR_ENCRYPTION_KEY` is unset. Hand this to
+ * whatever encrypts or decrypts stored credentials, rather than the raw key, so values under a
+ * previous key stay readable.
+ */
+export const connectorEncryptionKeys = (
+  env: Pick<Env, "CONNECTOR_ENCRYPTION_KEY" | "CONNECTOR_ENCRYPTION_PREVIOUS_KEYS">,
+): FieldEncryptionKeyRing | undefined =>
+  env.CONNECTOR_ENCRYPTION_KEY
+    ? { current: env.CONNECTOR_ENCRYPTION_KEY, previous: splitKeyList(env.CONNECTOR_ENCRYPTION_PREVIOUS_KEYS ?? "") }
+    : undefined;
 
 let cachedEnv: Env | null = null;
 

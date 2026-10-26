@@ -42,7 +42,6 @@ class InMemoryOauthConnections implements Pick<OauthConnectionRepositoryPort, "c
       status: input.status ?? "pending",
       grantedScopes: input.grantedScopes ?? [],
       credentialCiphertext: input.credentialCiphertext ?? null,
-      encryptionKeyId: input.encryptionKeyId ?? null,
       oauthClientCiphertext: input.oauthClientCiphertext ?? null,
       oauthFlowCiphertext: null,
       lastRefreshAt: null,
@@ -63,7 +62,6 @@ class InMemoryOauthConnections implements Pick<OauthConnectionRepositoryPort, "c
     workspaceId: string,
     id: string,
     credentialCiphertext: string,
-    _encryptionKeyId: string | null,
     grantedScopes?: string[],
     providerAccountId?: string | null,
   ): Promise<OauthConnectionRecord | null> {
@@ -295,7 +293,7 @@ const createService = () => {
     installations,
     bindings,
     workspaceAccounts,
-    encryptionKey,
+    encryptionKey: { current: encryptionKey, previous: [] },
   });
   return { service, oauthConnections, integrationConnections, installations, bindings, workspaceAccounts };
 };

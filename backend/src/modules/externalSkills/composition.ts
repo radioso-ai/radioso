@@ -2,7 +2,7 @@ import { createToolSkillExecutor } from "@radioso/conversation-tools";
 
 import type { Database } from "../../shared/infra/database.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
-import { decryptField } from "../../shared/infra/crypto/fieldEncryption.js";
+import { decryptField, type FieldEncryptionKeyRing } from "../../shared/infra/crypto/fieldEncryption.js";
 import { McpConnectionRepository } from "../../db/repositories/mcpConnectionRepository.js";
 import { ExternalSkillDefinitionRepository } from "../../db/repositories/externalSkillDefinitionRepository.js";
 import { SdkMcpToolService } from "./toolService/sdkMcpToolService.js";
@@ -55,7 +55,6 @@ export const createMcpToolServiceFactory = (
 interface LiveMcpConnectionLookupOptions {
   fetchImpl?: Parameters<typeof resolveFreshAccessToken>[0]["fetchImpl"];
   logger?: AppLogger;
-  encryptionKeyId?: string | null;
   assertPublicUrl?: (url: string) => void | Promise<void>;
   transportFetchImpl?: typeof fetch;
   /** Bound applied to each external skill's `callTool` invocation. */
@@ -72,7 +71,7 @@ interface LiveMcpConnectionLookupOptions {
 export class LiveMcpConnectionLookup implements ConnectionLookup {
   constructor(
     private readonly repository: McpConnectionRepository,
-    private readonly encryptionKey: string,
+    private readonly encryptionKey: FieldEncryptionKeyRing,
     private readonly options: LiveMcpConnectionLookupOptions = {},
   ) {}
 
@@ -92,7 +91,6 @@ export class LiveMcpConnectionLookup implements ConnectionLookup {
             record,
             repository: this.repository,
             encryptionKey: this.encryptionKey,
-            encryptionKeyId: this.options.encryptionKeyId ?? null,
             assertPublicUrl: this.options.assertPublicUrl,
             fetchImpl: this.options.fetchImpl,
             logger: this.options.logger,
@@ -120,7 +118,7 @@ export class LiveMcpConnectionLookup implements ConnectionLookup {
  */
 export const buildExternalSkillsDeps = (
   database: Database,
-  encryptionKey: string,
+  encryptionKey: FieldEncryptionKeyRing,
   assertPublicUrl?: (url: string) => void | Promise<void>,
   options: LiveMcpConnectionLookupOptions = {},
 ): McpSkillExecutorDeps => ({

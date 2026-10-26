@@ -51,6 +51,36 @@ describe("retrieval search contract", () => {
     expect(response.body).not.toHaveProperty("route");
   });
 
+  it("reports no requested date range for a question that names no date", async () => {
+    const { app } = createTestApp();
+    const session = await issueTestSession(app, "retrieval-search-no-date@example.com");
+
+    await request(app)
+      .post("/api/v1/document/")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Course Calendar",
+        content: "The advanced workshop runs next month for returning students.",
+        metadata: { department: "training" },
+      });
+
+    const response = await request(app)
+      .post("/api/v1/retrieval/search")
+      .set(adminSessionHeaders(session))
+      .send({ query: "advanced workshop next month" });
+
+    expect(response.status).toBe(200);
+    expect(response.body.requestedDateRange).toBeNull();
+    expect(response.body.requestedDateRangeDropReason).toBeNull();
+    expect(response.body.requestedRangeLookup).toEqual({ status: "not_requested", candidateCount: 0 });
+    expect(response.body.results[0]).toEqual(expect.objectContaining({
+      dateFrom: null,
+      dateTo: null,
+      datedInRequestedRange: null,
+      fromRequestedRangeLookup: false,
+    }));
+  });
+
   it("returns retrieval search diagnostics only when requested", async () => {
     const { app } = createTestApp();
     const session = await issueTestSession(app, "retrieval-search-debug@example.com");

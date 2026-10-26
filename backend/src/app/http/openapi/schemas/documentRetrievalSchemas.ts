@@ -562,6 +562,22 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
   const RetrievalSearchRequestSchema = registry.register("RetrievalSearchRequest", retrievalSearchSchema);
   const RetrievalAnswerRequestSchema = registry.register("RetrievalAnswerRequest", retrievalAnswerSchema);
 
+  const RequestedDateRangeSchema = registry.register(
+    "RequestedDateRange",
+    z.object({
+      dateFrom: z.string(),
+      dateTo: z.string(),
+    }),
+  );
+
+  const RequestedRangeLookupSchema = registry.register(
+    "RequestedRangeLookup",
+    z.object({
+      status: z.enum(["ran", "failed", "not_requested"]),
+      candidateCount: z.number().int().min(0),
+    }),
+  );
+
   const RetrievalSearchEvidenceSchema = registry.register(
     "RetrievalSearchEvidence",
     z.object({
@@ -571,6 +587,10 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
       content: z.string(),
       metadata: z.record(z.unknown()).optional(),
       score: z.number().optional(),
+      dateFrom: z.string().nullable(),
+      dateTo: z.string().nullable(),
+      datedInRequestedRange: z.boolean().nullable(),
+      fromRequestedRangeLookup: z.boolean(),
     }),
   );
 
@@ -583,6 +603,9 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
         semantic: z.string(),
         lexical: z.string(),
       }),
+      requestedDateRange: z.union([RequestedDateRangeSchema, z.null()]),
+      requestedDateRangeDropReason: z.enum(["invalid", "too_long"]).nullable(),
+      requestedRangeLookup: RequestedRangeLookupSchema,
       results: z.array(RetrievalSearchEvidenceSchema),
       debug: z.object({
         activitySummary: ActivitySummarySchema,

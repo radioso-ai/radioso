@@ -22,6 +22,7 @@ import { RerankService } from "./services/rerankService.js";
 import { RetrievalExecutionTelemetryService } from "./services/retrievalExecutionTelemetryService.js";
 import { RetrievalPipelineService } from "./services/retrievalPipelineService.js";
 import { RetrievalSearchService } from "./services/retrievalSearchService.js";
+import { RequestedDateRangeSearchService } from "./services/requestedDateRangeSearchService.js";
 import type { SkillSettingsResolver } from "./services/retrievalContextStage.js";
 import type { AgentRetrievalScopePort } from "./domain/agentRetrievalScope.js";
 
@@ -85,6 +86,7 @@ export const createDefaultRetrievalServices = (input: {
   skillSettingsResolver?: SkillSettingsResolver;
   agentRetrievalScope?: AgentRetrievalScopePort;
 }) => {
+  const temporalCandidateRetrieval = new PgTemporalCandidateRepository(input.database);
   const retrievalPipeline = new RetrievalPipelineService(
     input.retrievalDefaultsProvider,
     input.queryEmbeddings,
@@ -102,12 +104,19 @@ export const createDefaultRetrievalServices = (input: {
     new RetrievalExecutionTelemetryService(input.telemetryService),
     input.skillSettingsResolver,
     input.chunkHydrator,
-    new PgTemporalCandidateRepository(input.database),
+    temporalCandidateRetrieval,
   );
   const retrievalSearchService = new RetrievalSearchService(retrievalPipeline, input.agentRetrievalScope);
+  const requestedDateRangeSearch = new RequestedDateRangeSearchService(
+    input.queryEmbeddings,
+    temporalCandidateRetrieval,
+    input.retrievalDefaultsProvider,
+  );
 
   return {
     retrievalPipeline,
     retrievalSearchService,
+    temporalCandidateRetrieval,
+    requestedDateRangeSearch,
   };
 };

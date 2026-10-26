@@ -7,6 +7,13 @@ import {
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { DocumentRepositoryPort, DocumentSummaryRecord } from "./documentIngestionService.js";
 import type { RetrievalPipelineService, ActivityTrace } from "../../retrieval/public.js";
+import {
+  readRequestedDateRange,
+  type RequestedDateRange,
+  type RequestedDateRangeLookupSummary,
+  type RequestedDateRangeSearchPort,
+} from "../../retrieval/public.js";
+import { badRequest } from "../../../shared/domain/errors.js";
 
 // Not exported: nothing outside this module names a search action directly; callers only ever
 // see it nested inside DocumentSearchAction, which is exported.
@@ -34,6 +41,9 @@ export interface DocumentSearchResult {
   sourceFilename?: string | null;
   sourceMimeType?: string | null;
   actions: DocumentSearchAction[];
+  /** Whether this document had a chunk the requested-range lookup placed inside the range;
+   * `null` when no range was requested. */
+  datedInRequestedRange: boolean | null;
 }
 
 export interface DocumentSearchResponse {
@@ -42,6 +52,9 @@ export interface DocumentSearchResponse {
   query: string;
   resultCount: number;
   results: DocumentSearchResult[];
+  /** Whether a requested range was asked for, and if so, whether the structured lookup ran,
+   * failed, and how many candidates it contributed. */
+  dateRangeLookup: RequestedDateRangeLookupSummary;
   activityTrace?: ActivityTrace;
 }
 
@@ -53,6 +66,7 @@ interface DocumentSearchAuditMetadata extends Record<string, unknown> {
   resultCount: number;
   query?: string;
   results?: DocumentSearchResult[];
+  dateRangeLookup?: DocumentSearchResponse["dateRangeLookup"];
   activityTrace?: ActivityTrace;
   executionSurface: DocumentSearchExecutionSurface;
 }
@@ -64,6 +78,11 @@ export class DocumentSearchService {
     private readonly auditService: AuditService,
     private readonly workspaceInvalidationPublisher: WorkspaceInvalidationPublisher =
       createNoopWorkspaceInvalidationPublisher(),
+    /** Wired only where the requested-range lookup can run; absent, a range input is refused.
+     * Owns the embedding, dimension guarding, date-order degradation, and depth rule a requested
+     * range needs — this service only resolves the range, merges the port's chunks with the
+     * similarity results, and orders the merge. */
+    private readonly requestedDateRangeSearch?: RequestedDateRangeSearchPort,
   ) {}
 
   async search(input: {
@@ -75,49 +94,82 @@ export class DocumentSearchService {
      * `executionSurface` is `"operator_copilot"`; never the assistant's own ids. */
     copilotConversationId?: string;
     copilotMessageId?: string;
+    /** An explicit period to prefer, both or neither. Validated the same way the assistant's
+     * own query interpretation validates a model-resolved range. */
+    dateFrom?: string;
+    dateTo?: string;
   }): Promise<DocumentSearchResponse> {
     const searchId = randomUUID();
+    const requestedDateRange = this.resolveRequestedDateRange(input.dateFrom, input.dateTo);
+    const usageContext = {
+      workspaceId: input.workspaceId,
+      requestId: searchId,
+      surface: input.executionSurface ?? "documents",
+      attemptKey: "document_search",
+      copilotConversationId: input.copilotConversationId ?? null,
+      copilotMessageId: input.copilotMessageId ?? null,
+    };
     const retrieval = await this.retrievalPipeline.run({
       workspaceId: input.workspaceId,
       query: input.query,
       history: [],
       metadataFilter: input.metadataFilter,
-      usageContext: {
-        workspaceId: input.workspaceId,
-        requestId: searchId,
-        surface: input.executionSurface ?? "documents",
-        attemptKey: "document_search",
-        copilotConversationId: input.copilotConversationId ?? null,
-        copilotMessageId: input.copilotMessageId ?? null,
-      },
+      usageContext,
     });
 
-    const matchedDocumentIds = [...new Set(retrieval.contexts.map((context) => context.documentId))];
+    const dateRangeLookup = requestedDateRange
+      ? await this.resolveDateRangeLookup(input.workspaceId, input.query, requestedDateRange, input.metadataFilter, usageContext)
+      : { status: "not_requested" as const, chunks: [] };
+
+    const matchedDocumentIds = [...new Set([
+      ...dateRangeLookup.chunks.map((chunk) => chunk.documentId),
+      ...retrieval.contexts.map((context) => context.documentId),
+    ])];
     const documents = await this.documentRepository.listSummariesByIdsAndWorkspaceId(input.workspaceId, matchedDocumentIds);
     const documentsById = new Map(documents.map((document) => [document.id, document]));
-    const aggregated = new Map<string, { document: DocumentSummaryRecord; score: number; evidence: string[] }>();
+    const aggregated = new Map<string, { document: DocumentSummaryRecord; score: number; evidence: string[]; datedInRequestedRange: boolean }>();
 
-    for (const context of retrieval.contexts) {
-      const document = documentsById.get(context.documentId);
+    const merge = (documentId: string, score: number, content: string, datedInRequestedRange: boolean) => {
+      const document = documentsById.get(documentId);
       if (!document) {
-        continue;
+        return;
       }
 
-      const score = context.relevanceScore ?? context.semanticScore ?? context.similarity ?? 0;
-      const evidence = buildEvidence(context.content);
+      const evidence = buildEvidence(content);
       const current = aggregated.get(document.id);
       if (!current) {
-        aggregated.set(document.id, { document, score, evidence });
-        continue;
+        aggregated.set(document.id, { document, score, evidence, datedInRequestedRange });
+        return;
       }
 
+      current.datedInRequestedRange ||= datedInRequestedRange;
       current.score = Math.max(current.score, score);
       current.evidence = [...current.evidence, ...evidence].slice(0, 3);
+    };
+
+    // Merged first: the requested-range lookup is a calendar match, guaranteed in range by
+    // construction, independent of whatever the similarity search below ranked it.
+    for (const chunk of dateRangeLookup.chunks) {
+      merge(chunk.documentId, chunk.similarity ?? 0, chunk.content, true);
+    }
+    for (const context of retrieval.contexts) {
+      merge(context.documentId, context.relevanceScore ?? context.semanticScore ?? context.similarity ?? 0, context.content, false);
     }
 
     const results = [...aggregated.values()]
-      .sort((left, right) => right.score - left.score)
-      .map((entry, index) => this.toResult(entry.document, entry.score, entry.evidence, index + 1));
+      .sort((left, right) => {
+        if (left.datedInRequestedRange !== right.datedInRequestedRange) {
+          return left.datedInRequestedRange ? -1 : 1;
+        }
+        return right.score - left.score;
+      })
+      .map((entry, index) => this.toResult(
+        entry.document,
+        entry.score,
+        entry.evidence,
+        index + 1,
+        requestedDateRange ? entry.datedInRequestedRange : null,
+      ));
 
     const response: DocumentSearchResponse = {
       searchId,
@@ -125,6 +177,10 @@ export class DocumentSearchService {
       query: input.query,
       resultCount: results.length,
       results,
+      dateRangeLookup: {
+        status: dateRangeLookup.status,
+        candidateCount: dateRangeLookup.status === "ran" ? dateRangeLookup.chunks.length : 0,
+      },
       activityTrace: retrieval.trace,
     };
 
@@ -135,6 +191,7 @@ export class DocumentSearchService {
       ...(input.executionSurface === "operator_copilot" ? {} : {
         query: response.query,
         results: response.results,
+        dateRangeLookup: response.dateRangeLookup,
         activityTrace: response.activityTrace,
       }),
     };
@@ -150,7 +207,53 @@ export class DocumentSearchService {
     return response;
   }
 
-  private toResult(document: DocumentSummaryRecord, score: number, evidence: string[], rank: number): DocumentSearchResult {
+  /** Both-or-neither; the same rules `readRequestedDateRange` applies to a model-resolved range. */
+  private resolveRequestedDateRange(dateFrom: string | undefined, dateTo: string | undefined): RequestedDateRange | null {
+    if (dateFrom === undefined && dateTo === undefined) {
+      return null;
+    }
+    if (dateFrom === undefined || dateTo === undefined) {
+      throw badRequest("Provide both dateFrom and dateTo, or neither");
+    }
+
+    const reading = readRequestedDateRange({ dateFrom, dateTo });
+    if (!reading.range) {
+      throw badRequest(
+        reading.dropReason === "too_long"
+          ? "dateFrom to dateTo spans too many days"
+          : "dateFrom and dateTo must be valid ISO calendar dates, with dateFrom on or before dateTo",
+      );
+    }
+    return reading.range;
+  }
+
+  private async resolveDateRangeLookup(
+    workspaceId: string,
+    query: string,
+    range: RequestedDateRange,
+    metadataFilter: Record<string, unknown> | undefined,
+    usageContext: { workspaceId: string; requestId: string; surface: string; attemptKey: string; copilotConversationId: string | null; copilotMessageId: string | null },
+  ) {
+    if (!this.requestedDateRangeSearch) {
+      throw badRequest("Date-range search is unavailable on this surface.", { code: "document_search_date_range_unavailable" });
+    }
+
+    return this.requestedDateRangeSearch.search({
+      workspaceId,
+      query,
+      range,
+      ...(metadataFilter ? { metadataFilter } : {}),
+      usageContext,
+    });
+  }
+
+  private toResult(
+    document: DocumentSummaryRecord,
+    score: number,
+    evidence: string[],
+    rank: number,
+    datedInRequestedRange: boolean | null,
+  ): DocumentSearchResult {
     return {
       documentId: document.id,
       title: document.title,
@@ -164,6 +267,7 @@ export class DocumentSearchService {
       sourceFilename: document.sourceFilename ?? null,
       sourceMimeType: document.sourceMimeType ?? null,
       actions: defaultActions("available"),
+      datedInRequestedRange,
     };
   }
 }

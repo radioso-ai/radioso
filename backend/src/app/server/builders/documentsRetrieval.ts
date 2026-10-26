@@ -354,6 +354,7 @@ export const buildRetrievalServices = (input: {
       retrievalPipeline,
       input.auditService,
       input.workspaceInvalidationPublisher,
+      retrieval.requestedDateRangeSearch,
     ),
   };
 };

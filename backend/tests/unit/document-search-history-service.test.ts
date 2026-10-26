@@ -47,7 +47,41 @@ describe("document search history service", () => {
       query: "Legacy search",
       resultCount: 0,
       results: [],
+      dateRangeLookup: { status: "not_requested", candidateCount: 0 },
       activityTrace: undefined,
     });
+  });
+
+  it("replays the date-range lookup a search recorded", async () => {
+    const auditRepository = new InMemoryAuditEventRepository();
+    const service = new DocumentSearchHistoryService(auditRepository, new InMemoryDocumentRepository());
+
+    await auditRepository.create({
+      workspaceId: "workspace-1",
+      eventType: "document.search",
+      eventStatus: "success",
+      metadata: {
+        searchId: "search-ran",
+        query: "workshops in March",
+        resultCount: 0,
+        results: [],
+        dateRangeLookup: { status: "ran", candidateCount: 4 },
+      },
+    });
+    await auditRepository.create({
+      workspaceId: "workspace-1",
+      eventType: "document.search",
+      eventStatus: "success",
+      metadata: {
+        searchId: "search-malformed",
+        query: "workshops in March",
+        resultCount: 0,
+        results: [],
+        dateRangeLookup: { status: "maybe", candidateCount: -1 },
+      },
+    });
+
+    expect((await service.getHistory("workspace-1", "search-ran")).dateRangeLookup).toEqual({ status: "ran", candidateCount: 4 });
+    expect((await service.getHistory("workspace-1", "search-malformed")).dateRangeLookup).toEqual({ status: "not_requested", candidateCount: 0 });
   });
 });

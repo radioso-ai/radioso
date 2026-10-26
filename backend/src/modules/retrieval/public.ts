@@ -66,6 +66,14 @@ export type {
   RetrievedChunk,
   VectorSearchPort,
 } from "./domain/vectorSearch.js";
+export type {
+  RequestedDateRange,
+  RequestedDateRangeDropReason,
+} from "./domain/temporal/requestedDateRange.js";
+export { readRequestedDateRange } from "./domain/temporal/requestedDateRange.js";
+export type { RequestedDateRangeLookupSummary } from "./domain/temporal/requestedDateRangeLookupStatus.js";
+export { isRequestedDateRangeLookupStatus } from "./domain/temporal/requestedDateRangeLookupStatus.js";
+export type { RequestedDateRangeSearchPort } from "./services/requestedDateRangeSearchService.js";
 export {
   MetadataRuleFieldReferenceService,
   type MetadataRuleFieldReferencePort,

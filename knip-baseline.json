@@ -238,7 +238,6 @@
   "types|backend/src/modules/documents/services/documentSourceRecrawlService.ts|DocumentSourceRecrawlResult",
   "types|backend/src/modules/documents/services/documentSourceReprocessService.ts|DocumentSourceReprocessResult",
   "types|backend/src/modules/documents/services/embeddingProfileJobService.ts|EmbeddingProfileJobOutcome",
-  "types|backend/src/modules/documents/services/workspaceIngestionReprocessService.ts|WorkspaceIngestionReprocessResult",
   "types|backend/src/modules/embeddingProfiles/domain/embeddingSpace.ts|EmbeddingSpaceIdentity",
   "types|backend/src/modules/embeddingProfiles/domain/embeddingSpace.ts|EmbeddingSpaceIdentityInput",
   "types|backend/src/modules/embeddingProfiles/domain/embeddingSpace.ts|EmbeddingVectorOption",

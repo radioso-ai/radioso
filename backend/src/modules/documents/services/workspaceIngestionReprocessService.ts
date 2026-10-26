@@ -5,11 +5,11 @@ import {
 
 import type { AuditService } from "../../audit/contracts/index.js";
 import type { DocumentProcessingJobRepositoryPort } from "../../../db/repositories/documentProcessingJobRepository.js";
-import type { DocumentProcessingJobOptions } from "../contracts/documentContracts.js";
+import type { BulkDocumentProcessingJobOptions } from "../contracts/documentContracts.js";
 import type { DocumentRepositoryPort } from "./documentIngestionService.js";
 import { NoopDocumentJobDispatcher, type DocumentJobDispatcherPort } from "./documentJobDispatcher.js";
 
-export interface WorkspaceIngestionReprocessResult {
+interface WorkspaceIngestionReprocessResult {
   workspaceId: string;
   queuedDocumentCount: number;
   skippedDocumentCount: number;
@@ -28,7 +28,7 @@ export class WorkspaceIngestionReprocessService {
 
   async reprocessWorkspace(
     workspaceId: string,
-    options?: DocumentProcessingJobOptions | null,
+    options?: BulkDocumentProcessingJobOptions | null,
   ): Promise<WorkspaceIngestionReprocessResult> {
     const result = await this.documentRepository.requeueAllEligibleAndQueue(workspaceId, options);
     if (result.queuedDocumentCount > 0) {

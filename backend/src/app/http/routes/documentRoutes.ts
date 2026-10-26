@@ -27,6 +27,7 @@ import {
   documentRetrievalUpdateSchema,
   documentSchema,
   reprocessDocumentBodySchema,
+  reprocessSingleDocumentBodySchema,
   documentSearchHistoryParamsSchema,
   documentSearchSchema,
   sourceParamsSchema,
@@ -519,11 +520,12 @@ export const createDocumentRoutes = (dependencies: DocumentRouteDependencies): R
     try {
       const { workspaceId } = res.locals as { workspaceId: string };
       const { documentId } = documentParamsSchema.parse(req.params);
-      const body = reprocessDocumentBodySchema.parse(req.body ?? {});
+      const body = reprocessSingleDocumentBodySchema.parse(req.body ?? {});
       const result = await dependencies.documentIngestionService.reprocess({
         workspaceId,
         documentId,
         documentEnrichmentOverride: body.documentEnrichmentOverride,
+        refreshDocumentEnrichment: body.refreshDocumentEnrichment,
       });
       res.status(202).json(result);
     } catch (error) {

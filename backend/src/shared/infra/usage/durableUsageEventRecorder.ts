@@ -29,6 +29,7 @@ const resolveAccountId = async (
 const MESSAGE_LINK_CONSTRAINT = "usage_events_message_id_fkey";
 const COPILOT_CONVERSATION_LINK_CONSTRAINT = "usage_events_copilot_conversation_id_fkey";
 const COPILOT_MESSAGE_LINK_CONSTRAINT = "usage_events_copilot_message_id_fkey";
+const DOCUMENT_LINK_CONSTRAINT = "usage_events_document_id_fkey";
 
 /** A link's own foreign key rejected it. */
 const violatesLinkConstraint = (error: unknown, constraint: string): boolean =>
@@ -41,11 +42,13 @@ interface UsageEventLinks {
   readonly messageId: string | null;
   readonly copilotConversationId: string | null;
   readonly copilotMessageId: string | null;
+  readonly documentId: string | null;
+  readonly documentRevision: number | null;
 }
 
 /** One per constraint this ledger's optional links can hit, plus one final attempt with every
  * matching link cleared -- never more retries than there are constraints to clear. */
-const MAX_LINK_FALLBACK_ATTEMPTS = 4;
+const MAX_LINK_FALLBACK_ATTEMPTS = 5;
 
 /**
  * Inserts with the event's optional links, dropping whichever one a foreign key rejects and
@@ -57,6 +60,8 @@ const MAX_LINK_FALLBACK_ATTEMPTS = 4;
  * copilot links). A conversation that is gone takes its message with it, so clearing the
  * conversation link also clears the message link rather than leaving an orphaned reference to a
  * row that, if it still exists, no longer means anything without the conversation around it.
+ * A document can be deleted while a call made for it -- embedding or metadata extraction -- is
+ * still recording (the document link, cleared with the revision it qualifies).
  * Either way: the spend is the record, the link is context.
  */
 const withLinkFallback = async <T>(
@@ -82,6 +87,10 @@ const withLinkFallback = async <T>(
     if (links.copilotMessageId && violatesLinkConstraint(error, COPILOT_MESSAGE_LINK_CONSTRAINT)) {
       logger?.warn({ constraint: COPILOT_MESSAGE_LINK_CONSTRAINT }, "Usage event link dropped after its foreign key rejected it");
       return withLinkFallback({ ...links, copilotMessageId: null }, insert, logger, attempt + 1);
+    }
+    if (links.documentId && violatesLinkConstraint(error, DOCUMENT_LINK_CONSTRAINT)) {
+      logger?.warn({ constraint: DOCUMENT_LINK_CONSTRAINT }, "Usage event link dropped after its foreign key rejected it");
+      return withLinkFallback({ ...links, documentId: null, documentRevision: null }, insert, logger, attempt + 1);
     }
     throw error;
   }
@@ -118,6 +127,8 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
         messageId: event.messageId ?? null,
         copilotConversationId: event.copilotConversationId ?? null,
         copilotMessageId: event.copilotMessageId ?? null,
+        documentId: event.documentId ?? null,
+        documentRevision: event.documentRevision ?? null,
       },
       (links) => this.db.transaction().execute(async (trx) => {
       const insertedRow = await trx
@@ -129,8 +140,8 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
           workspace_id: event.workspaceId,
           agent_id: event.agentId ?? null,
           source_id: event.sourceId ?? null,
-          document_id: event.documentId ?? null,
-          document_revision: event.documentRevision ?? null,
+          document_id: links.documentId,
+          document_revision: links.documentRevision,
           conversation_id: event.conversationId ?? null,
           message_id: links.messageId,
           copilot_conversation_id: links.copilotConversationId,
@@ -238,6 +249,8 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
         messageId: event.messageId ?? null,
         copilotConversationId: event.copilotConversationId ?? null,
         copilotMessageId: event.copilotMessageId ?? null,
+        documentId: event.documentId ?? null,
+        documentRevision: event.documentRevision ?? null,
       },
       (links) => this.db.transaction().execute(async (trx) => {
       const insertedRow = await trx
@@ -248,6 +261,8 @@ export class DurableUsageEventRecorder implements UsageEventRecorder {
           account_id: accountId,
           workspace_id: event.workspaceId,
           agent_id: event.agentId ?? null,
+          document_id: links.documentId,
+          document_revision: links.documentRevision,
           conversation_id: event.conversationId ?? null,
           message_id: links.messageId,
           copilot_conversation_id: links.copilotConversationId,

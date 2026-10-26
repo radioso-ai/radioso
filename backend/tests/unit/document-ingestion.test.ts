@@ -431,6 +431,36 @@ describe("document ingestion", () => {
     expect(laterJob?.options).toBeNull();
   });
 
+  it("records on the reprocess audit whether the run asked for a fresh extraction, whether it was queued or failed", async () => {
+    const documentRepository = new InMemoryDocumentRepository();
+    const jobRepository = new InMemoryDocumentProcessingJobRepository(documentRepository);
+    documentRepository.setJobRepository(jobRepository);
+    const auditService = createAuditService();
+    const service = new DocumentIngestionService(documentRepository, auditService, () => jobRepository.getQueueSnapshot(), jobRepository);
+    const created = await documentRepository.create({
+      workspaceId: "workspace-1",
+      title: "Ready",
+      sourceContent: "Ready content",
+      markdownContent: "Ready content",
+      status: "ready",
+    });
+
+    await service.reprocess({ workspaceId: "workspace-1", documentId: created.id, refreshDocumentEnrichment: true });
+    await service.reprocess({ workspaceId: "workspace-1", documentId: created.id });
+    documentRepository.requeueAndQueue = async () => {
+      throw new Error("queue unavailable");
+    };
+    await expect(service.reprocess({ workspaceId: "workspace-1", documentId: created.id, refreshDocumentEnrichment: true }))
+      .rejects.toThrow("queue unavailable");
+
+    const reprocessAudits = auditService.events.filter((event) => event.eventType === "document.reprocess");
+    expect(reprocessAudits.map((event) => [event.eventStatus, event.metadata?.refreshDocumentEnrichment])).toEqual([
+      ["success", true],
+      ["success", false],
+      ["failure", true],
+    ]);
+  });
+
   it.each(["queued", "processing"])(
     "keeps repeated eligible reprocess calls idempotent while a document is %s",
     async (status) => {

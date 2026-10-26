@@ -382,15 +382,18 @@ const mapJob = (row: DocumentProcessingJobRow): DocumentProcessingJobRecord => (
 const normalizeJobKind = (value: unknown): DocumentProcessingJobKind =>
   value === "enrich" || value === "embedding_profile" ? value : "vectorize";
 
+// Rows written before a key existed simply lack it: an absent key is the
+// default, never an error, so in-flight jobs keep running unchanged.
 const mapJobOptions = (value: Record<string, unknown> | null): DocumentProcessingJobOptions | null => {
   if (!value || typeof value !== "object") {
     return null;
   }
   const override = value.documentEnrichmentOverride;
-  if (override !== "on" && override !== "off") {
-    return null;
-  }
-  return { documentEnrichmentOverride: override };
+  const options: DocumentProcessingJobOptions = {
+    ...(override === "on" || override === "off" ? { documentEnrichmentOverride: override } : {}),
+    ...(value.refreshDocumentEnrichment === true ? { refreshDocumentEnrichment: true } : {}),
+  };
+  return Object.keys(options).length > 0 ? options : null;
 };
 
 const documentProcessingJobColumns = [

@@ -20,6 +20,7 @@ import {
   type DocumentSourceRepositoryPort,
 } from "../../../db/repositories/documentSourceRepository.js";
 import type {
+  BulkDocumentProcessingJobOptions,
   DocumentProcessingJobOptions,
   DocumentReviewedWriteGuard,
   DocumentSourceSummary,
@@ -570,6 +571,7 @@ export class DocumentIngestionService implements DocumentInventoryPort {
     workspaceId: string;
     documentId: string;
     documentEnrichmentOverride?: DocumentProcessingJobOptions["documentEnrichmentOverride"];
+    refreshDocumentEnrichment?: boolean;
   }): Promise<{ documentId: string; status: string }> {
     await this.getDocument(input.workspaceId, input.documentId);
 
@@ -585,7 +587,7 @@ export class DocumentIngestionService implements DocumentInventoryPort {
       document = await this.documentRepository.requeueAndQueue(
         input.documentId,
         input.workspaceId,
-        buildDocumentProcessingOptions(input),
+        withDocumentEnrichmentRefresh(buildDocumentProcessingOptions(input), input.refreshDocumentEnrichment),
       );
     } catch (error) {
       await this.auditService.record({
@@ -594,6 +596,7 @@ export class DocumentIngestionService implements DocumentInventoryPort {
         eventStatus: "failure",
         metadata: {
           documentId: input.documentId,
+          refreshDocumentEnrichment: input.refreshDocumentEnrichment === true,
           reason: error instanceof Error ? error.message : "Failed to queue document processing",
         },
       });
@@ -610,6 +613,7 @@ export class DocumentIngestionService implements DocumentInventoryPort {
         revision: document.revision,
         status: document.status,
         documentEnrichmentOverride: input.documentEnrichmentOverride ?? null,
+        refreshDocumentEnrichment: input.refreshDocumentEnrichment === true,
         ...(await this.queueSnapshotMetadata()),
       },
     });
@@ -1139,9 +1143,17 @@ const deriveWebsiteSourceName = (url: string): string => {
   return path ? `${parsed.hostname}/${path}` : parsed.hostname;
 };
 
+// A fresh extraction is asked for one document at a time: only `reprocess`
+// adds it, so no source- or workspace-wide reprocess re-bills every document.
+const withDocumentEnrichmentRefresh = (
+  options: BulkDocumentProcessingJobOptions | null,
+  refresh: boolean | undefined,
+): DocumentProcessingJobOptions | null =>
+  refresh ? { ...(options ?? {}), refreshDocumentEnrichment: true } : options;
+
 export const buildDocumentProcessingOptions = (input: {
   documentEnrichmentOverride?: DocumentProcessingJobOptions["documentEnrichmentOverride"];
-}): DocumentProcessingJobOptions | null =>
+}): BulkDocumentProcessingJobOptions | null =>
   input.documentEnrichmentOverride
     ? { documentEnrichmentOverride: input.documentEnrichmentOverride }
     : null;

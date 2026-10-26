@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, expect, it } from "vitest";
 
 import { deriveLexicalQueryPlan } from "../../src/modules/retrieval/domain/lexicalQueryPlan.js";
+import type { LexicalQueryPlan } from "../../src/modules/retrieval/domain/retrievalPipelineTypes.js";
 import type { LexicalMatchMode } from "../../src/modules/retrieval/domain/lexicalSomeTermsMatch.js";
 import { PgLexicalSearch } from "../../src/modules/retrieval/infra/lexicalSearch.js";
 import { renderSearchText } from "../../src/modules/retrieval/services/searchTextRenderer.js";
@@ -420,8 +421,10 @@ describeIntegration("PgLexicalSearch on a mid-sized bilingual workspace", () => 
   };
 
   // Runs the some-terms statements as usual, and keeps each one's plan for the same
-  // parameters.
-  const searchRecordingPlans = async () => {
+  // parameters; with `analyze`, the plan carries the rows each step actually saw.
+  const searchRecordingPlans = async (
+    options: { query?: string; lexicalPlan?: LexicalQueryPlan; topK?: number; analyze?: boolean } = {},
+  ) => {
     const plans: unknown[] = [];
     const recording = new Database(integrationDatabaseUrl, { poolMax: 1 });
     const runInTransaction = recording.withTransaction.bind(recording);
@@ -432,7 +435,7 @@ describeIntegration("PgLexicalSearch on a mid-sized bilingual workspace", () => 
         }
         return async (sql: string, params?: unknown[]) => {
           if (!sql.startsWith("SELECT set_config")) {
-            const explained = await target.query(`EXPLAIN (FORMAT JSON) ${sql}`, params);
+            const explained = await target.query(`EXPLAIN (${options.analyze ? "ANALYZE, " : ""}FORMAT JSON) ${sql}`, params);
             plans.push((explained.rows[0] as Record<string, unknown>)["QUERY PLAN"]);
           }
           return target.query(sql, params);
@@ -440,16 +443,29 @@ describeIntegration("PgLexicalSearch on a mid-sized bilingual workspace", () => 
       },
     })));
     try {
-      const result = await new PgLexicalSearch(recording, { someTermsTimeoutMs: 10_000 })
-        .search({ workspaceId, query, topK: 20, matchMode: "all_or_some_terms" });
+      const result = await new PgLexicalSearch(recording, { someTermsTimeoutMs: 10_000 }).search({
+        workspaceId,
+        query: options.query ?? query,
+        lexicalPlan: options.lexicalPlan,
+        topK: options.topK ?? 20,
+        matchMode: "all_or_some_terms",
+      });
       return { result, plans };
     } finally {
       await recording.close();
     }
   };
 
-  type PlanNode = { "Relation Name"?: string; Filter?: string; "Node Type"?: string; Plans?: PlanNode[] };
+  type PlanNode = {
+    "Relation Name"?: string;
+    Filter?: string;
+    "Node Type"?: string;
+    "Rows Removed by Filter"?: number;
+    Plans?: PlanNode[];
+  };
   const planNodes = (node: PlanNode): PlanNode[] => [node, ...(node.Plans ?? []).flatMap(planNodes)];
+  const nodesOf = (plan: unknown): PlanNode[] => (plan as Array<{ Plan: PlanNode }>).flatMap(({ Plan }) => planNodes(Plan));
+  const tsvectorParsesPerRow = (node: PlanNode): number => node.Filter?.match(/to_tsvector\(/g)?.length ?? 0;
 
   beforeAll(async () => {
     const [{ remainder } = { remainder: -1 }] = await database.query<{ remainder: number }>(
@@ -519,5 +535,32 @@ describeIntegration("PgLexicalSearch on a mid-sized bilingual workspace", () => 
       .filter((node) => node["Relation Name"]?.startsWith("chunks") && node.Filter?.includes("to_tsvector"))
       .map((node) => `${node["Node Type"]} on ${node["Relation Name"]}: ${node.Filter}`);
     expect(recomputedTsvectorScans).toEqual([]);
+  });
+
+  it("parses each candidate's text once to check all of the query's exclusions", async () => {
+    const excluding = "week of silence -Lago -Sereno -2027";
+    const { result, plans } = await searchRecordingPlans({ query: excluding, lexicalPlan: deriveLexicalQueryPlan(excluding) });
+
+    // The week of silence is at Lago Sereno, in 2027.
+    expect(result.someTermsPass.outcome).toBe("ran");
+    expect(result.matches.map((match) => keyByChunkId.get(match.chunkId))).not.toContain(WEEK_OF_SILENCE_EN_KEY);
+    expect(plans).toHaveLength(2);
+    const [lookup, ranking] = plans;
+    const chunkScans = (plan: unknown) => nodesOf(plan).filter((node) => node["Relation Name"]?.startsWith("chunks"));
+    expect(chunkScans(lookup).every((node) => tsvectorParsesPerRow(node) === 0)).toBe(true);
+    // The candidates' scan checks the three excluded words against one parse of each chunk.
+    expect(chunkScans(ranking).map(tsvectorParsesPerRow).filter((parses) => parses > 0)).toEqual([1]);
+  });
+
+  it("keeps the heaviest chunks, in order, when fewer fit than clear the floors", async () => {
+    const all = await searchRecordingPlans();
+    const { result, plans } = await searchRecordingPlans({ topK: 3, analyze: true });
+
+    expect(all.result.matches.length).toBeGreaterThan(3);
+    expect(result.matches.map((match) => match.chunkId))
+      .toEqual(all.result.matches.slice(0, 3).map((match) => match.chunkId));
+    // The lighter candidates are dropped before their text is parsed for a rank.
+    const cut = nodesOf(plans[1]).find((node) => node.Filter?.includes("covered_weight >="));
+    expect(cut?.["Rows Removed by Filter"]).toBe(all.result.matches.length - 3);
   });
 });

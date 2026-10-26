@@ -207,8 +207,9 @@ pass follows and its hits are appended after the all-terms ones. The agentic
    both floors.
 5. A second statement drops candidates that left the scope or hold an excluded term,
    and ranks the rest by covered weight, then `ts_rank_cd` against the AND of the
-   alternatives each chunk holds, the scale of an all-terms rank. It parses the text
-   only of the chunks heavy enough to make the cut.
+   alternatives each chunk holds, the scale of an all-terms rank. When the query
+   excludes words, it parses each candidate's text once to check all of them
+   together. For the rank, it parses only the chunks heavy enough to make the cut.
 
 The lookup in step 2 goes through the GIN index for every alternative. Each tsquery
 reaches it as a value of its row in an `unnest` of the alternatives, so Postgres

@@ -708,22 +708,27 @@ describe("hybrid retrieval search", () => {
     expect(rankSql).toMatch(/ORDER BY c\.covered_weight DESC, rank DESC, c\.chunk_index ASC/);
   });
 
-  it("keeps chunks holding an excluded term out of the some-terms matches", async () => {
-    // "reset token" expired -revoked: the phrase, expired, and no joins.
+  it("keeps chunks holding any excluded term out of the some-terms matches, parsing each chunk once", async () => {
+    // "reset token" expired -revoked -lapsed: the phrase, expired, and no joins.
     const statements = recordStatements([[], alternativeMatches(1000, [["both", "phrase-0"], ["both", "expired-0"]]), []]);
 
     await new PgLexicalSearch(statements.database).search({
       workspaceId: "a1",
-      query: '"reset token" expired -revoked',
-      lexicalPlan: deriveLexicalQueryPlan('"reset token" expired -revoked'),
+      query: '"reset token" expired -revoked -lapsed',
+      lexicalPlan: deriveLexicalQueryPlan('"reset token" expired -revoked -lapsed'),
       topK: 20,
       matchMode: "all_or_some_terms",
     });
 
     const { sql, params } = statements.calls[2] ?? { sql: "", params: [] };
-    const excluded = params.indexOf("revoked") + 1;
-    expect(excluded).toBeGreaterThan(0);
-    expect(sql).toContain(`AND NOT (plainto_tsquery('simple', $${excluded}) @@ to_tsvector('simple', coalesce(c.search_text, '')))`);
+    const revoked = params.indexOf("revoked") + 1;
+    const lapsed = params.indexOf("lapsed") + 1;
+    expect(revoked).toBeGreaterThan(0);
+    expect(lapsed).toBeGreaterThan(0);
+    expect(sql).toContain(
+      `AND NOT ((plainto_tsquery('simple', $${revoked}) || plainto_tsquery('simple', $${lapsed})) @@ to_tsvector('simple', coalesce(c.search_text, '')))`,
+    );
+    expect(sql.match(/to_tsvector\(/g)).toHaveLength(2);
     // The lookup searches the phrase as a phrase.
     expect(statements.calls[1]?.params).toContainEqual([true, false]);
   });

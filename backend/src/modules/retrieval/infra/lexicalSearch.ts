@@ -364,9 +364,10 @@ export class PgLexicalSearch implements LexicalSearchPort {
     const coveredWeights = bind(candidates.map((candidate) => candidate.coveredWeight));
     const coversAllTerms = bind(candidates.map((candidate) => candidate.coversAllTerms));
     const heldTexts = bind(candidates.map((candidate) => candidate.heldText));
-    const exclusionSql = query.excludedTerms
-      .map((term) => `AND NOT (plainto_tsquery('simple', ${bind(term)}) @@ ${CHUNK_SEARCH_VECTOR_SQL})`)
-      .join("\n             ");
+    // Every excluded word in one tsquery, so each candidate's text is parsed once.
+    const exclusionSql = query.excludedTerms.length > 0
+      ? `AND NOT ((${query.excludedTerms.map((term) => `plainto_tsquery('simple', ${bind(term)})`).join(" || ")}) @@ ${CHUNK_SEARCH_VECTOR_SQL})`
+      : "";
     const rowLimit = bind(limit);
 
     return run<SomeTermsSearchRow>(

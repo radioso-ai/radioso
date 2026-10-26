@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   positionInDateRange,
   readRequestedDateRange,
+  relationToDateRange,
   requestedDateRangeDays,
 } from "../../../src/modules/retrieval/domain/temporal/requestedDateRange.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../src/shared/domain/behaviorConfig.js";
@@ -84,5 +85,108 @@ describe("positionInDateRange", () => {
 
   it("has no position for an undated item", () => {
     expect(positionInDateRange({}, week)).toBeUndefined();
+  });
+});
+
+describe("relationToDateRange", () => {
+  // Monday 7 to Sunday 13 December 2026.
+  const week = { dateFrom: "2026-12-07", dateTo: "2026-12-13" };
+
+  it("places an item that ends before the range entirely before it, counting the days between", () => {
+    expect(relationToDateRange({ dateFrom: "2026-12-01", dateTo: "2026-12-05" }, week)).toEqual({
+      span: { dateFrom: "2026-12-01", dateTo: "2026-12-05" },
+      relation: { kind: "entirely_before", endsDaysBefore: 2 },
+    });
+    expect(relationToDateRange({ dateFrom: "2026-12-01", dateTo: "2026-12-06" }, week)?.relation)
+      .toEqual({ kind: "entirely_before", endsDaysBefore: 1 });
+  });
+
+  it("places an item that begins after the range entirely after it, counting the days between", () => {
+    expect(relationToDateRange({ dateFrom: "2026-12-14", dateTo: "2026-12-14" }, week)?.relation)
+      .toEqual({ kind: "entirely_after", beginsDaysAfter: 1 });
+    expect(relationToDateRange({ dateFrom: "2026-12-20", dateTo: "2026-12-22" }, week)?.relation)
+      .toEqual({ kind: "entirely_after", beginsDaysAfter: 7 });
+  });
+
+  it("places an item that begins and ends within the range inside it, on either edge too", () => {
+    for (const item of [
+      { dateFrom: "2026-12-07", dateTo: "2026-12-13" },
+      { dateFrom: "2026-12-09", dateTo: "2026-12-11" },
+      { dateFrom: "2026-12-07", dateTo: "2026-12-07" },
+      { dateFrom: "2026-12-13", dateTo: "2026-12-13" },
+    ]) {
+      expect(relationToDateRange(item, week)?.relation).toEqual({ kind: "inside" });
+    }
+  });
+
+  it("places an item that begins before the range and ends in it as beginning before, by how many days", () => {
+    expect(relationToDateRange({ dateFrom: "2026-12-06", dateTo: "2026-12-13" }, week)).toEqual({
+      span: { dateFrom: "2026-12-06", dateTo: "2026-12-13" },
+      relation: { kind: "begins_before_ends_inside", beginsDaysBefore: 1 },
+    });
+    expect(relationToDateRange({ dateFrom: "2026-12-01", dateTo: "2026-12-07" }, week)?.relation)
+      .toEqual({ kind: "begins_before_ends_inside", beginsDaysBefore: 6 });
+  });
+
+  it("places an item that begins in the range and ends after it as ending after, by how many days", () => {
+    expect(relationToDateRange({ dateFrom: "2026-12-13", dateTo: "2026-12-20" }, week)?.relation)
+      .toEqual({ kind: "begins_inside_ends_after", endsDaysAfter: 7 });
+    expect(relationToDateRange({ dateFrom: "2026-12-07", dateTo: "2026-12-14" }, week)?.relation)
+      .toEqual({ kind: "begins_inside_ends_after", endsDaysAfter: 1 });
+  });
+
+  it("places an item that begins before the range and ends after it as spanning it, across a year end", () => {
+    expect(relationToDateRange({ dateFrom: "2026-11-01", dateTo: "2027-01-31" }, week)?.relation)
+      .toEqual({ kind: "spans_range", beginsDaysBefore: 36, endsDaysAfter: 49 });
+    expect(relationToDateRange({ dateFrom: "2026-12-06", dateTo: "2026-12-14" }, week)?.relation)
+      .toEqual({ kind: "spans_range", beginsDaysBefore: 1, endsDaysAfter: 1 });
+  });
+
+  it("places items against a single-day range", () => {
+    const day = { dateFrom: "2026-12-07", dateTo: "2026-12-07" };
+
+    expect(relationToDateRange({ dateFrom: "2026-12-07", dateTo: "2026-12-07" }, day)?.relation).toEqual({ kind: "inside" });
+    expect(relationToDateRange({ dateFrom: "2026-12-06", dateTo: "2026-12-07" }, day)?.relation)
+      .toEqual({ kind: "begins_before_ends_inside", beginsDaysBefore: 1 });
+    expect(relationToDateRange({ dateFrom: "2026-12-06", dateTo: "2026-12-08" }, day)?.relation)
+      .toEqual({ kind: "spans_range", beginsDaysBefore: 1, endsDaysAfter: 1 });
+  });
+
+  it("reads an item with one date as that single day", () => {
+    expect(relationToDateRange({ dateTo: "2026-12-10" }, week)).toEqual({
+      span: { dateFrom: "2026-12-10", dateTo: "2026-12-10" },
+      relation: { kind: "inside" },
+    });
+    expect(relationToDateRange({ dateFrom: "2026-12-14" }, week)).toEqual({
+      span: { dateFrom: "2026-12-14", dateTo: "2026-12-14" },
+      relation: { kind: "entirely_after", beginsDaysAfter: 1 },
+    });
+  });
+
+  it("reads an inverted pair as the span between its two dates", () => {
+    expect(relationToDateRange({ dateFrom: "2026-12-10", dateTo: "2026-12-05" }, week)).toEqual({
+      span: { dateFrom: "2026-12-05", dateTo: "2026-12-10" },
+      relation: { kind: "begins_before_ends_inside", beginsDaysBefore: 2 },
+    });
+  });
+
+  it("has no relation for an undated item", () => {
+    expect(relationToDateRange({}, week)).toBeUndefined();
+  });
+
+  it("agrees with positionInDateRange: every relation but entirely before or after overlaps the range", () => {
+    const items = [
+      { dateFrom: "2026-12-01", dateTo: "2026-12-06" },
+      { dateFrom: "2026-12-06", dateTo: "2026-12-07" },
+      { dateFrom: "2026-12-09" },
+      { dateFrom: "2026-12-13", dateTo: "2026-12-14" },
+      { dateFrom: "2026-11-01", dateTo: "2027-01-31" },
+      { dateTo: "2026-12-14" },
+    ];
+    for (const item of items) {
+      const kind = relationToDateRange(item, week)?.relation.kind;
+      const expected = kind === "entirely_before" ? "before" : kind === "entirely_after" ? "after" : "within";
+      expect(positionInDateRange(item, week)).toBe(expected);
+    }
   });
 });

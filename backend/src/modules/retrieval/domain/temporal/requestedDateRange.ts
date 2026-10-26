@@ -87,27 +87,94 @@ export const datesFromMetadata = (
 };
 
 /**
- * Places an item dated by ISO `dateFrom`/`dateTo` against a range. An item with one date is
- * that single day, and an inverted pair is read as the span between its two dates, matching
- * how the structured lookup compares chunk dates. An undated item has no position.
+ * How a dated item's span sits against a range, with the whole days that place it: how long
+ * before the range an item begins or ends, and how long after it an item begins or ends.
  */
-export const positionInDateRange = (
-  item: { dateFrom?: string; dateTo?: string },
-  range: RequestedDateRange,
-): DateRangePosition | undefined => {
-  // ISO dates order as strings.
+export type DateRangeRelation =
+  | { kind: "entirely_before"; endsDaysBefore: number }
+  | { kind: "entirely_after"; beginsDaysAfter: number }
+  | { kind: "inside" }
+  | { kind: "begins_before_ends_inside"; beginsDaysBefore: number }
+  | { kind: "begins_inside_ends_after"; endsDaysAfter: number }
+  | { kind: "spans_range"; beginsDaysBefore: number; endsDaysAfter: number };
+
+/** A dated item's span, first day first (the same day twice for a single-day item), and its relation to a range. */
+export interface DatedItemRelation {
+  span: { dateFrom: string; dateTo: string };
+  relation: DateRangeRelation;
+}
+
+// An item with one date is that single day, and an inverted pair is the span between its two
+// dates, matching how the structured lookup compares chunk dates. ISO dates order as strings.
+const datedSpan = (item: { dateFrom?: string; dateTo?: string }): { dateFrom: string; dateTo: string } | undefined => {
   const dates = [item.dateFrom, item.dateTo]
     .filter((date): date is string => typeof date === "string" && date.length > 0)
     .sort();
   const first = dates[0];
   const last = dates[dates.length - 1];
-  if (first === undefined || last === undefined) {
+  return first === undefined || last === undefined ? undefined : { dateFrom: first, dateTo: last };
+};
+
+const daysBetween = (earlier: string, later: string): number =>
+  Math.round((epochMs(later) - epochMs(earlier)) / DAY_MS);
+
+const relationOfSpan = (span: { dateFrom: string; dateTo: string }, range: RequestedDateRange): DateRangeRelation => {
+  if (span.dateTo < range.dateFrom) {
+    return { kind: "entirely_before", endsDaysBefore: daysBetween(span.dateTo, range.dateFrom) };
+  }
+  if (span.dateFrom > range.dateTo) {
+    return { kind: "entirely_after", beginsDaysAfter: daysBetween(range.dateTo, span.dateFrom) };
+  }
+  const beginsBefore = span.dateFrom < range.dateFrom;
+  const endsAfter = span.dateTo > range.dateTo;
+  if (beginsBefore && endsAfter) {
+    return {
+      kind: "spans_range",
+      beginsDaysBefore: daysBetween(span.dateFrom, range.dateFrom),
+      endsDaysAfter: daysBetween(range.dateTo, span.dateTo),
+    };
+  }
+  if (beginsBefore) {
+    return { kind: "begins_before_ends_inside", beginsDaysBefore: daysBetween(span.dateFrom, range.dateFrom) };
+  }
+  if (endsAfter) {
+    return { kind: "begins_inside_ends_after", endsDaysAfter: daysBetween(range.dateTo, span.dateTo) };
+  }
+  return { kind: "inside" };
+};
+
+/**
+ * Relates an item dated by ISO `dateFrom`/`dateTo` to a range: whether it begins and ends
+ * before, inside, or after it, and by how many days. An item with one date is that single day,
+ * and an inverted pair is read as the span between its two dates. An undated item has no
+ * relation.
+ */
+export const relationToDateRange = (
+  item: { dateFrom?: string; dateTo?: string },
+  range: RequestedDateRange,
+): DatedItemRelation | undefined => {
+  const span = datedSpan(item);
+  return span ? { span, relation: relationOfSpan(span, range) } : undefined;
+};
+
+/**
+ * Places an item dated by ISO `dateFrom`/`dateTo` against a range: `within` for any item that
+ * overlaps it, a multi-day item crossing an edge included. An item with one date is that single
+ * day, and an inverted pair is read as the span between its two dates, matching how the
+ * structured lookup compares chunk dates. An undated item has no position.
+ */
+export const positionInDateRange = (
+  item: { dateFrom?: string; dateTo?: string },
+  range: RequestedDateRange,
+): DateRangePosition | undefined => {
+  const span = datedSpan(item);
+  if (span === undefined) {
     return undefined;
   }
-  if (last < range.dateFrom) {
+  if (span.dateTo < range.dateFrom) {
     return "before";
   }
-  if (first > range.dateTo) {
+  if (span.dateFrom > range.dateTo) {
     return "after";
   }
   return "within";

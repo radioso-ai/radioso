@@ -3,7 +3,12 @@ import { type Clock, formatPromptDateUtc, systemClock } from "../../../shared/do
 import { loadPromptTemplate, renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import type { ResponseIdentity } from "../../../shared/domain/responseIdentity.js";
 import type { FinalPromptContext, ResponseLanguagePolicy } from "../domain/retrievalPipelineTypes.js";
-import type { RequestedDateRange } from "../domain/temporal/requestedDateRange.js";
+import {
+  type DatedItemRelation,
+  datesFromMetadata,
+  relationToDateRange,
+  type RequestedDateRange,
+} from "../domain/temporal/requestedDateRange.js";
 import { resolveContextSourceUrl } from "./contextSourceUrl.js";
 import { renderMetadataPromptText } from "./searchTextRenderer.js";
 import { SharedAnswerInstructionBuilder } from "./sharedAnswerInstructionBuilder.js";
@@ -49,6 +54,7 @@ export class PromptBuilder {
         const metadataLines = [
           sanitizedSourceUrl ? `Source: ${sanitizedSourceUrl}` : "",
           sanitizedMetadataText ? `Attributes: ${sanitizedMetadataText}` : "",
+          input.requestedDateRange ? periodRelationLine(context.metadata, input.requestedDateRange) : "",
         ].filter((line) => line.length > 0);
         const metadataSection = metadataLines.length > 0 ? `${metadataLines.join("\n")}\n` : "";
         return `Result ${index + 1} (${context.title}): ${metadataSection}${context.content}`;
@@ -87,7 +93,7 @@ export class PromptBuilder {
         // their reusable prefix, unchanged.
         requested_period_section: input.requestedDateRange
           ? `${renderPromptTemplate("retrieval/answer-requested-period.md", {
-              period: formatRequestedPeriod(input.requestedDateRange),
+              period: formatDateSpan(input.requestedDateRange),
             })}
 
 `
@@ -102,8 +108,38 @@ export class PromptBuilder {
   }
 }
 
-// "2026-10-24 (Saturday) to 2026-10-25 (Sunday)", or the one day for a single-day period.
-const formatRequestedPeriod = (range: RequestedDateRange): string => {
+// "2026-10-24 (Saturday) to 2026-10-25 (Sunday)", or the one day for a single-day span.
+const formatDateSpan = (span: { dateFrom: string; dateTo: string }): string => {
   const day = (date: string) => formatPromptDateUtc(new Date(`${date}T00:00:00.000Z`));
-  return range.dateFrom === range.dateTo ? day(range.dateFrom) : `${day(range.dateFrom)} to ${day(range.dateTo)}`;
+  return span.dateFrom === span.dateTo ? day(span.dateFrom) : `${day(span.dateFrom)} to ${day(span.dateTo)}`;
+};
+
+const dayCount = (days: number): string => (days === 1 ? "1 day" : `${days} days`);
+
+// English facts for the model, which answers in the visitor's language. The requested-period
+// instructions name the "Period relation" label, so the two change together.
+const describeRelation = ({ span, relation }: DatedItemRelation): string => {
+  switch (relation.kind) {
+    case "entirely_before":
+      return `entirely before the requested period, ending ${dayCount(relation.endsDaysBefore)} before it begins`;
+    case "entirely_after":
+      return `entirely after the requested period, beginning ${dayCount(relation.beginsDaysAfter)} after it ends`;
+    case "inside":
+      return span.dateFrom === span.dateTo ? "inside the requested period" : "begins and ends inside the requested period";
+    case "begins_before_ends_inside":
+      return `begins ${dayCount(relation.beginsDaysBefore)} before the requested period and ends inside it`;
+    case "begins_inside_ends_after":
+      return `begins inside the requested period and ends ${dayCount(relation.endsDaysAfter)} after it`;
+    case "spans_range":
+      return `begins ${dayCount(relation.beginsDaysBefore)} before the requested period and ends ${dayCount(relation.endsDaysAfter)} after it, covering all of it`;
+  }
+};
+
+/**
+ * How a dated excerpt sits against the requested period, computed so the answer transcribes the
+ * relation instead of comparing dates itself. Empty for an excerpt without calendar dates.
+ */
+const periodRelationLine = (metadata: Record<string, unknown> | undefined, range: RequestedDateRange): string => {
+  const related = relationToDateRange(datesFromMetadata(metadata), range);
+  return related ? `Period relation: dated ${formatDateSpan(related.span)}; ${describeRelation(related)}` : "";
 };

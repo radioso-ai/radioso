@@ -70,7 +70,7 @@ export function PublicChatBubbleHeader({
   subtitle,
   avatarUrl,
   actions,
-  showStatus = true,
+  teammatePresent = false,
 }: {
   theme: WebsiteEmbedTheme
   themeOverrides?: WebsiteEmbedThemeOverrides | null
@@ -78,46 +78,48 @@ export function PublicChatBubbleHeader({
   subtitle?: string
   avatarUrl?: string | null
   actions?: ReactNode
-  showStatus?: boolean
+  /** A person from the team is replying; the agent itself is always available, so it gets no dot. */
+  teammatePresent?: boolean
 }) {
   const customSubtitle = subtitle && subtitle.trim() ? subtitle.trim() : null
   return (
     <div
-      className="shrink-0 border-b px-6 py-4"
+      className="shrink-0 border-b px-5 py-3"
       style={{
         borderColor: theme.panelBorder,
-        background: theme.accent,
-        color: theme.accentForeground,
+        background: theme.panelBackground,
+        color: theme.panelForeground,
       }}
     >
-      <div className="flex items-start justify-between gap-4">
+      <div className="flex items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="relative">
             <AssistantAvatar
               avatarUrl={avatarUrl}
               label={workspaceName}
               themeOverrides={themeOverrides}
-              className="size-10"
+              className="size-9"
             />
-            {showStatus ? (
+            {teammatePresent ? (
               <span
                 className="absolute -bottom-0.5 -right-0.5 block size-2.5 rounded-full"
                 style={{
                   background: '#10b981',
-                  boxShadow: `0 0 0 2px ${theme.accent}`,
+                  boxShadow: `0 0 0 2px ${theme.panelBackground}`,
                 }}
-                aria-label="Online"
+                aria-hidden="true"
               />
             ) : null}
           </div>
           <div>
-            <h1 className="text-base font-semibold leading-tight">{workspaceName}</h1>
+            {/* Headings default to the dashboard's display face; customer sites get the system sans. */}
+            <h1 className="font-sans text-[15px] font-semibold leading-tight">{workspaceName}</h1>
             {customSubtitle ? (
-              <p className="text-xs opacity-80">{customSubtitle}</p>
+              <p className="text-xs" style={{ color: theme.mutedForeground }}>{customSubtitle}</p>
             ) : null}
           </div>
         </div>
-        {actions ? <div className="mt-1 flex items-center gap-1">{actions}</div> : null}
+        {actions ? <div className="flex items-center gap-0.5">{actions}</div> : null}
       </div>
     </div>
   )
@@ -274,7 +276,7 @@ export function PublicChatBubbleComposerForm({
         <Button
           type="submit"
           size="icon"
-          className={`${buttonSize} shrink-0 rounded-full hover:opacity-90`}
+          className={`${buttonSize} shrink-0 rounded-full transition-colors hover:opacity-90 disabled:opacity-100`}
           disabled={sendDisabled}
           // Keep focus on the textarea so tapping send on mobile submits on the
           // first tap instead of just dismissing the keyboard. Moving focus to
@@ -284,10 +286,12 @@ export function PublicChatBubbleComposerForm({
           // intact (preventing pointerdown can cancel the synthesized click).
           onMouseDown={(event) => event.preventDefault()}
           tabIndex={readOnly ? -1 : undefined}
-          style={{
-            background: theme.accent,
-            color: theme.accentForeground,
-          }}
+          // Disabled reads as neutral rather than as a faded brand color, which looks broken.
+          style={
+            sendDisabled
+              ? { background: theme.mutedBackground, color: theme.mutedForeground }
+              : { background: theme.accent, color: theme.accentForeground }
+          }
           aria-hidden={readOnly ? 'true' : undefined}
         >
           <Send className={buttonIconSize} />
@@ -309,11 +313,8 @@ export function PublicChatBubbleComposerSurface({
 }) {
   return (
     <div
-      className={`shrink-0 border-t ${compact ? 'px-3 py-2' : 'px-6 pb-3 pt-2'}`}
-      style={{
-        borderColor: theme.panelBorder,
-        background: theme.panelBackground,
-      }}
+      className={`shrink-0 ${compact ? 'px-3 py-2' : 'px-6 pb-3 pt-2'}`}
+      style={{ background: theme.panelBackground }}
     >
       {children}
     </div>
@@ -375,7 +376,7 @@ export function PublicChatConnectingView({
               themeOverrides={themeOverrides}
               className="size-20"
             />
-            <h2 className="text-2xl font-semibold" style={{ color: theme.panelForeground }}>
+            <h2 className="font-sans text-2xl font-semibold" style={{ color: theme.panelForeground }}>
               {workspaceName}
             </h2>
           </div>

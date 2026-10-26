@@ -464,7 +464,7 @@ describe('radioso embed launcher', () => {
     }
 
     const button = collectElements(body, (element) => element.tagName === 'BUTTON')[0]
-    expect(button.children).toHaveLength(2)
+    expect(button.children.some((child) => child.className === 'radioso-launcher-label')).toBe(false)
     expect(button.children.some((child) => child.textContent === 'Claudio')).toBe(false)
     expect(button.querySelector('[data-radioso-launcher-avatar="true"]')?.style.width).toBe('3rem')
   })
@@ -887,7 +887,7 @@ describe('radioso embed launcher', () => {
     expect(host.style.height).toBe('')
     expect(host.style.maxWidth).toBe('calc(100vw - 2rem)')
     expect(panel?.style.width).toBe('min(560px, calc(100vw - 2rem))')
-    expect(panel?.style.borderRadius).toBe('28px')
+    expect(panel?.style.borderRadius).toBe('16px')
     expect(requestAnimationFrame).toHaveBeenCalledTimes(2)
   })
 
@@ -1495,6 +1495,20 @@ describe('radioso embed launcher', () => {
 
       return { button, window, scrollHandler }
     }
+
+    it('turns into a close control while the chat is open', async () => {
+      const { button } = await mountBubbleLauncher()
+      expect(collectElements(button, (element) => element.className === 'radioso-launcher-toggle')).toHaveLength(1)
+      expect(button.dataset.radiosoOpen).toBeUndefined()
+
+      button.dispatchEvent('click')
+      expect(button.getAttribute('aria-expanded')).toBe('true')
+      expect(button.dataset.radiosoOpen).toBe('true')
+
+      button.dispatchEvent('click')
+      expect(button.getAttribute('aria-expanded')).toBe('false')
+      expect(button.dataset.radiosoOpen).toBeUndefined()
+    })
 
     it('collapses to icon-only past 20% scroll progress and expands back below 15% by default', async () => {
       const { button, window, scrollHandler } = await mountBubbleLauncher()

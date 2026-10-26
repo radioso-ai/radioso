@@ -44,7 +44,7 @@ function EmbeddedChatUnavailable({
       >
         <AlertCircle className="h-5 w-5" style={{ color: theme.mutedForeground }} />
       </div>
-      <h1 className="text-lg font-medium">{copy.embeddedChatUnavailableTitle}</h1>
+      <h1 className="font-sans text-lg font-medium">{copy.embeddedChatUnavailableTitle}</h1>
       <p className="mt-1 max-w-sm text-sm" style={{ color: theme.mutedForeground }}>{message}</p>
     </div>
   )

@@ -53,7 +53,7 @@ const dayFormatter = new Intl.DateTimeFormat(undefined, {
 })
 
 const timeFormatter = new Intl.DateTimeFormat(undefined, {
-  hour: 'numeric',
+  hour: '2-digit',
   minute: '2-digit',
 })
 

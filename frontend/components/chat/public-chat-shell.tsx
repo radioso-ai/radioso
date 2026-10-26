@@ -50,6 +50,7 @@ import {
   type WebsiteEmbedPageContext,
 } from '@/lib/api'
 import { editionController } from '@/lib/edition-controller'
+import { teammateHasLatestReply } from '@/lib/reply-attribution'
 import {
   buildWebsiteEmbedSurfaceCssVars,
   formatWebsiteEmbedDisclaimer,
@@ -188,7 +189,7 @@ function ChatUnavailable({
       <div className="mb-4">
         <AssistantAvatar avatarUrl={avatarUrl} label={copy.embeddedChatTitle} themeOverrides={themeOverrides} className="size-12" />
       </div>
-      <h1 className="text-lg font-medium">{copy.publicChatUnavailableTitle}</h1>
+      <h1 className="font-sans text-lg font-medium">{copy.publicChatUnavailableTitle}</h1>
       <p className="mt-1 max-w-sm text-sm" style={{ color: theme.mutedForeground }}>
         {copy.publicChatUnavailableMessage}
       </p>
@@ -251,7 +252,6 @@ function PublicChatOptionsMenu({
   onClear,
   onOpenNewTab,
   className = 'h-8 w-8 hover:opacity-90',
-  iconColor,
 }: {
   copy: ReturnType<typeof getWebsiteEmbedCopy>
   theme: ReturnType<typeof getWebsiteEmbedTheme>
@@ -263,7 +263,6 @@ function PublicChatOptionsMenu({
   onClear: () => void
   onOpenNewTab: () => void
   className?: string
-  iconColor?: string
 }) {
   return (
     <DropdownMenu>
@@ -273,7 +272,7 @@ function PublicChatOptionsMenu({
           size="icon"
           variant="ghost"
           className={className}
-          style={{ color: iconColor ?? theme.mutedForeground }}
+          style={{ color: theme.mutedForeground }}
         >
           <MoreHorizontal className="h-4 w-4" />
           <span className="sr-only">Chat options</span>
@@ -363,7 +362,6 @@ export function PublicChatThreadLoadingView({
               onContact={noop}
               onClear={noop}
               onOpenNewTab={() => onOpenNewTab?.()}
-              iconColor={theme.accentForeground}
             />
             {onOpenFullScreen ? (
               <Button
@@ -372,7 +370,7 @@ export function PublicChatThreadLoadingView({
                 variant="ghost"
                 onClick={onOpenFullScreen}
                 className="h-8 w-8 hover:opacity-90"
-                style={{ color: theme.accentForeground }}
+                style={{ color: theme.mutedForeground }}
               >
                 <Maximize2 className="h-4 w-4" />
                 <span className="sr-only">{copy.publicChatOpenFullScreenLabel}</span>
@@ -385,7 +383,7 @@ export function PublicChatThreadLoadingView({
                 variant="ghost"
                 onClick={onRequestCollapse}
                 className="h-8 w-8 hover:opacity-90"
-                style={{ color: theme.accentForeground }}
+                style={{ color: theme.mutedForeground }}
               >
                 <X className="h-4 w-4" />
                 <span className="sr-only">{copy.publicChatCollapseLabel}</span>
@@ -481,7 +479,7 @@ function PublicChatCenteredIntro({
             className="size-20"
           />
           <div className="flex items-center gap-2">
-            <h2 className="text-2xl font-semibold" style={{ color: theme.panelForeground }}>
+            <h2 className="font-sans text-2xl font-semibold" style={{ color: theme.panelForeground }}>
               {workspaceName}
             </h2>
             <AssistantAiChip
@@ -688,6 +686,7 @@ function PublicChatContent({
   )
   const skillCatalog = useMemo(() => skillCatalogFromPublicIntakeActions(intakeActions), [intakeActions])
   const hasUserMessage = visibleMessages.some((message) => message.role === 'user')
+  const teammatePresent = teammateHasLatestReply(visibleMessages)
   const useCenteredIntro = surface === 'public' && !hasUserMessage && !isCompactKeyboardLayout && !isNarrowLayout
   const greetingMessage = visibleMessages.find((message) => message.role === 'assistant') ?? null
 
@@ -975,6 +974,7 @@ function PublicChatContent({
           workspaceName={resolvedWorkspaceName}
           subtitle={copy.publicChatSubtitle}
           avatarUrl={resolvedAvatarUrl}
+          teammatePresent={teammatePresent}
           actions={
             <>
               <PublicChatOptionsMenu
@@ -987,7 +987,6 @@ function PublicChatContent({
                 onContact={handleManualContact}
                 onClear={() => void handleStartNewChat()}
                 onOpenNewTab={() => onOpenNewTab?.()}
-                iconColor={theme.accentForeground}
               />
               {onRequestCollapse ? (
                 <>
@@ -998,7 +997,7 @@ function PublicChatContent({
                       variant="ghost"
                       onClick={onOpenFullScreen}
                       className="h-8 w-8 hover:opacity-90"
-                      style={{ color: theme.accentForeground }}
+                      style={{ color: theme.mutedForeground }}
                     >
                       <Maximize2 className="h-4 w-4" />
                       <span className="sr-only">{copy.publicChatOpenFullScreenLabel}</span>
@@ -1010,7 +1009,7 @@ function PublicChatContent({
                     variant="ghost"
                     onClick={onRequestCollapse}
                     className="h-8 w-8 hover:opacity-90"
-                    style={{ color: theme.accentForeground }}
+                    style={{ color: theme.mutedForeground }}
                   >
                     <X className="h-4 w-4" />
                     <span className="sr-only">{copy.publicChatCollapseLabel}</span>
@@ -1023,7 +1022,7 @@ function PublicChatContent({
                   variant="ghost"
                   onClick={onOpenFullScreen}
                   className="h-8 w-8 hover:opacity-90"
-                  style={{ color: theme.accentForeground }}
+                  style={{ color: theme.mutedForeground }}
                 >
                   <Maximize2 className="h-4 w-4" />
                   <span className="sr-only">{copy.publicChatOpenFullScreenLabel}</span>
@@ -1075,7 +1074,7 @@ function PublicChatContent({
                 <div className="mb-4">
                   <AssistantAvatar avatarUrl={resolvedAvatarUrl} label={copy.publicChatEmptyTitle} themeOverrides={resolvedThemeOverrides} className="size-12" />
                 </div>
-                <h2 className="mb-1 text-lg font-medium">{copy.publicChatEmptyTitle}</h2>
+                <h2 className="mb-1 font-sans text-lg font-medium">{copy.publicChatEmptyTitle}</h2>
                 <p className="max-w-sm text-sm" style={{ color: theme.mutedForeground }}>
                   {copy.publicChatEmptyMessage}
                 </p>

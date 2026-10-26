@@ -1,7 +1,7 @@
 ---
 title: "Radioso TypeScript SDK: Basic Usage"
 description: "SDK tutorial covering documents, settings, skills, agents, authoring, chat, streaming, history, and error handling patterns."
-last_updated: 2026-09-22
+last_updated: 2026-10-26
 ---
 
 # Radioso TypeScript SDK: Basic Usage
@@ -498,6 +498,7 @@ try {
 - The SDK's OpenAPI snapshot and generated types include the revision, private test-execution, and frozen revision-eval operations. The published high-level client does not currently add resource wrappers for these routes, so call the REST API directly when you need them. Candidate IDs and sample values are operator-private, and publishing remains a separate command after review.
 - Retrieval-only clients should use the REST retrieval surfaces, `POST /api/v1/retrieval/search` and `POST /api/v1/retrieval/answer`, when they do not want assistant persona or assistant-owned chat history. Pass `includeDebug: true` when callers need shape, resolved-step diagnostics, or retrieval answer evidence. Callers do not select shapes directly.
 - Both retrieval calls take an optional `agentId` and run on that agent's source scope, answering instruction, and retrieval skill settings. The response reports what it measured in `agentScope`, so a result can be attributed to the agent that produced it; `agentScope` is `null` for a call that ran on workspace defaults. Scoping needs `workspace.agents.read` in addition to `workspace.retrieval.query`.
+- `retrieval.search` reports the period a question resolved to: `requestedDateRange` (`{dateFrom, dateTo}`, or `null` when the question named no date or a model-proposed range failed validation, with `requestedDateRangeDropReason` saying why) and `requestedRangeLookup` (whether the structured date lookup ran, and how many candidates it found). Each result carries its own `dateFrom`/`dateTo` from the chunk's metadata, `datedInRequestedRange` for whether those dates fall inside `requestedDateRange`, and `fromRequestedRangeLookup` for whether the structured lookup produced it. `retrieval.answer` does not carry these fields.
 - Shared workspace settings are exposed by the REST platform settings resource, `GET /api/v1/settings` and `PUT /api/v1/settings`, with assistant and channel settings. Ingestion settings are exposed separately through the settings API.
 - Workspace creation, rename, and deletion are not exposed because those routes are session-authenticated rather than token-authenticated.
 - Run `pnpm run sync` in [`typescript-sdk/`](../typescript-sdk/) after backend API changes so the generated types stay up to date.

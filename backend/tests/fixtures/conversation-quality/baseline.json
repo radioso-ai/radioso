@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-19T13:33:20.806Z",
+  "generatedAt": "2026-10-26T09:04:19.346Z",
   "passThreshold": 1,
   "cases": {
     "clarification-ambiguous-plan": {
@@ -260,6 +260,16 @@
     "voice-outcome-handoff": {
       "status": "pass",
       "passRate": 1,
+      "samples": 5
+    },
+    "requested-period-relation-en": {
+      "status": "pass",
+      "passRate": 1,
+      "samples": 5
+    },
+    "requested-period-relation-it": {
+      "status": "fail",
+      "passRate": 0.8,
       "samples": 5
     }
   }

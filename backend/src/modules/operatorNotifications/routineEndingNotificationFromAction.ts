@@ -32,6 +32,14 @@ const collectedFromPayload = (value: unknown): Record<string, HandoffCollectedVa
   }));
 };
 
+/** The masked keys the payload names, kept only for values it actually collected. */
+const sensitiveSlotKeysFromPayload = (
+  value: unknown,
+  collected: Record<string, HandoffCollectedValue> | null,
+): string[] => Array.isArray(value) && collected
+  ? value.filter((key): key is string => typeof key === "string" && Object.hasOwn(collected, key))
+  : [];
+
 /**
  * What a routine-ending notice is about, resolved at delivery from the queued row's conversation.
  */
@@ -123,6 +131,7 @@ export const routineEndingNotificationFromAction = (input: {
   const collected = stored ? inDeclaredSlotOrder(stored, input.subject?.routineSlotKeys) : null;
   const notice = noticeFromPayload(input.payload.notice);
   const replyTo = replyToFrom(notice, stored);
+  const sensitiveSlotKeys = sensitiveSlotKeysFromPayload(input.payload.sensitiveSlotKeys, stored);
   return {
     kind: input.kind,
     workspaceId,
@@ -132,6 +141,7 @@ export const routineEndingNotificationFromAction = (input: {
     ...(input.subject ? { agentName: input.subject.agentName } : {}),
     ...(routineId ? { routine: { id: routineId, name: input.subject?.routineName ?? null } } : {}),
     ...(collected ? { collected } : {}),
+    ...(sensitiveSlotKeys.length > 0 ? { sensitiveSlotKeys } : {}),
     ...(notice ? { notice } : {}),
     ...(replyTo ? { replyTo } : {}),
     ...(input.subject?.conversation ? { conversation: input.subject.conversation } : {}),

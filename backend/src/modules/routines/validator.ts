@@ -44,7 +44,22 @@ const safeRoutineValidationMessages: Partial<Record<RoutineValidationCode, strin
   missing_terminal: "The routine needs at least one terminal.",
   declared_unused_slot: declaredUnusedSlotMessage,
   operator_notice_skill_unavailable: "An ending's operator notice is sent with a skill that is not one of this agent's enabled notify skills.",
-  operator_notice_reply_to_slot_invalid: "An ending's operator notice sends replies to a field that is not one of this routine's email fields.",
+  operator_notice_reply_to_slot_invalid: "An ending's operator notice sends replies to a field that is not one of this routine's email fields, or to one marked sensitive.",
+};
+
+const replyToSlotInvalidMessage = (
+  endingId: string,
+  replyToSlot: string,
+  replySlot: RoutineDefinition["slots"][number] | undefined,
+): string => {
+  const prefix = `operator notice reply-to invalid: ending "${endingId}" sends replies to "${replyToSlot}"`;
+  if (!replySlot) {
+    return `${prefix}, which this routine does not collect. Choose one of its email fields, or no reply-to.`;
+  }
+  if (replySlot.type !== "email") {
+    return `${prefix}, which is a ${replySlot.type} field. Choose an email field, or no reply-to.`;
+  }
+  return `${prefix}, which is marked sensitive, so its address never leaves the conversation. Choose an email field that is not sensitive, or no reply-to.`;
 };
 
 /** External diagnostic DTO: preserves only structural location, never authored validation text. */
@@ -611,18 +626,17 @@ export const validateRoutineDefinition = (
     }
     // Replies go to the address in the field the author chose. Only an email field qualifies: its
     // collected value is checked as an address, and a reply sent anywhere else reaches a stranger.
+    // A sensitive field never leaves the conversation, so its address cannot take replies either.
     const replyToSlot = terminal.operatorNotice?.replyToSlot;
     if (replyToSlot) {
       const replySlot = slotByKey.get(replyToSlot);
-      if (replySlot?.type === "email") {
+      if (replySlot?.type === "email" && replySlot.sensitivity !== "sensitive") {
         referencedSlotKeys.add(replyToSlot);
       } else {
         diagnostics.push({
           code: "operator_notice_reply_to_slot_invalid",
           location: `step:${terminal.stableStepId}.operatorNotice.replyToSlot`,
-          message: replySlot
-            ? `operator notice reply-to invalid: ending "${terminal.stableStepId}" sends replies to "${replyToSlot}", which is a ${replySlot.type} field. Choose an email field, or no reply-to.`
-            : `operator notice reply-to invalid: ending "${terminal.stableStepId}" sends replies to "${replyToSlot}", which this routine does not collect. Choose one of its email fields, or no reply-to.`,
+          message: replyToSlotInvalidMessage(terminal.stableStepId, replyToSlot, replySlot),
         });
       }
     }

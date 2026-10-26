@@ -989,6 +989,75 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
     expect(records[0]).toBe(persisted.auditEvent);
   });
 
+  describe("a turn whose routine holds a sensitive slot value (#1543)", () => {
+    const completeWithReporter = async (sensitiveSlotKeysHeld: string[], sensitiveSlotKeysAwaited: string[] = []) => {
+      const assistantTurnPersistence: AssistantTurnPersistencePort = {
+        completeAssistantTurn: vi.fn(async (input) => ({ message: {
+          id: input.assistantMessage.id!,
+          conversationId: input.assistantMessage.conversationId,
+          workspaceId: input.assistantMessage.workspaceId,
+          role: "assistant" as const,
+          content: input.assistantMessage.content,
+          metadata: input.assistantMessage.metadata,
+          createdAt: new Date(),
+        }, committedFacts: { insertedActionTypes: [], decisionCreated: false, ownershipChanged: false } })),
+      };
+      const lifecycle = new ChatTurnLifecycle(
+        { touch: vi.fn(async () => {}) } as unknown as ConversationRepositoryPort,
+        { create: vi.fn() } as unknown as MessageRepositoryPort,
+        createAuditService(new InMemoryAuditEventRepository()),
+        undefined,
+        undefined,
+        assistantTurnPersistence,
+      );
+      const savedState = { sessionId: "conv_1", routineId: "booking", path: ["ask_injury"], variables: { injury: "torn ligament" }, status: "active" as const };
+      const startedState = { sessionId: "conv_1", routineId: "booking", path: ["ask_injury"], variables: {}, status: "active" as const };
+      const reporter = {
+        describe: vi.fn(() => null),
+        describeDeclined: vi.fn(() => null),
+        describeInvocation: vi.fn(() => null),
+        describeRoutineName: vi.fn(() => null),
+        sensitiveSlotKeysHeld: vi.fn(() => sensitiveSlotKeysHeld),
+        sensitiveSlotKeysAwaited: vi.fn(() => sensitiveSlotKeysAwaited),
+      };
+      await lifecycle.completeAssistantTurn({
+        workspaceId: "workspace_1",
+        session: session(),
+        presentation: presentation(),
+        requestReceivedAt: Date.now(),
+        answerStartedAt: Date.now(),
+        stream: false,
+        engineTrace: engineTrace(),
+        routineStateTransition: { kind: "save", state: savedState, startedFrom: startedState },
+        routineReporter: reporter,
+      });
+      expect(reporter.sensitiveSlotKeysHeld).toHaveBeenCalledWith(savedState);
+      expect(reporter.sensitiveSlotKeysAwaited).toHaveBeenCalledWith(startedState);
+      return vi.mocked(assistantTurnPersistence.completeAssistantTurn).mock.calls[0][0];
+    };
+
+    it("marks the visitor message and the reply with the slots' keys", async () => {
+      const persisted = await completeWithReporter(["injury"]);
+
+      expect(persisted.sensitiveVisitorMessage).toEqual({ id: "msg_1", sensitiveSlotKeys: ["injury"] });
+      expect(persisted.assistantMessage.metadata?.sensitiveSlotKeys).toEqual(["injury"]);
+    });
+
+    it("marks the visitor message when the turn started on a step asking for a sensitive field, even when it stored nothing", async () => {
+      // The preparer read an earlier step; the turn ran on the one asking for the injury.
+      const persisted = await completeWithReporter([], ["injury"]);
+
+      expect(persisted.sensitiveVisitorMessage).toEqual({ id: "msg_1", sensitiveSlotKeys: ["injury"] });
+    });
+
+    it("marks neither when the routine holds no sensitive value", async () => {
+      const persisted = await completeWithReporter([]);
+
+      expect(persisted.sensitiveVisitorMessage).toBeUndefined();
+      expect(persisted.assistantMessage.metadata).not.toHaveProperty("sensitiveSlotKeys");
+    });
+  });
+
   it("maps exact committed facts at the application boundary and leaves caller-owned transactions unflushed", async () => {
     const { auditService, conversationRepository, messageRepository } = harness();
     const publisher = {
@@ -2163,6 +2232,22 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
         expect(auditService.record).not.toHaveBeenCalled();
         expect(auditService.logRecorded).toHaveBeenCalledTimes(2);
         expect(published).toEqual([{ workspaceId: "workspace_1", changeKinds: ["conversation.turn_committed"] }]);
+      });
+
+      it("marks the heard part when the visitor's message answered a sensitive field (#1543)", async () => {
+        const { lifecycle, cutReplyStore } = withStore();
+        const base = session();
+        const sensitiveSession = { ...base, userMessage: { ...base.userMessage, metadata: { sensitiveSlotKeys: ["injury"] } } } as PreparedSession;
+
+        await lifecycle.recordSupersession(
+          { workspaceId: "workspace_1", accountId: "account_1", stream: true, deliveredReply: () => heardPart },
+          sensitiveSession,
+          undefined,
+          cutMidReply(),
+        );
+
+        const stored = vi.mocked(cutReplyStore.storeCutReply).mock.calls[0]?.[0];
+        expect(stored?.assistantMessage.metadata).toEqual({ sensitiveSlotKeys: ["injury"] });
       });
 
       it("stores nothing when none of the reply reached the listener, or what did holds no text", async () => {

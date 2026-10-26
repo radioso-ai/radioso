@@ -169,9 +169,11 @@ export interface MessageFacetRepositoryPort {
   /**
    * Insert or update the stored facet for a message. A re-extraction (prompt version
    * bump) always leaves `embedding` null, since the prior embedding was computed
-   * against the old facet text and is no longer valid.
+   * against the old facet text and is no longer valid. Resolves `false`, storing nothing,
+   * when the message is gone or carries a sensitive value (#1543): extraction runs off the
+   * turn's path, so a turn can mark its message while the facet is being extracted.
    */
-  upsertFacet(input: UpsertFacetInput): Promise<void>;
+  upsertFacet(input: UpsertFacetInput): Promise<boolean>;
   /** Sets `embedding` and `dimensions` together so the two are never inconsistent. */
   attachEmbedding(input: AttachFacetEmbeddingInput): Promise<void>;
   /** Every stored facet among `messageIds`; the census read path. */
@@ -196,9 +198,16 @@ export interface MessageFacetRepositoryPort {
  * Narrow read access to the source message's content. Facet extraction needs the text
  * of one message by id; the full chat `MessageRepositoryPort` is a much larger surface
  * than this module should depend on. Returns `null` when the message no longer exists.
+ * `carriesSensitiveValue` marks a message of a turn whose routine held a sensitive slot
+ * value (#1543): it is never restated as a facet.
  */
+export interface FacetSourceMessage {
+  content: string;
+  carriesSensitiveValue: boolean;
+}
+
 export interface FacetSourceMessagePort {
-  getContentById(input: { workspaceId: string; messageId: string }): Promise<string | null>;
+  getFacetSource(input: { workspaceId: string; messageId: string }): Promise<FacetSourceMessage | null>;
 }
 
 /**

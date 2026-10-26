@@ -1,7 +1,7 @@
 ---
 title: "Authoring Routines"
 description: "Create and edit dashboard routines in the Document view, read the Map, connect skills, and try a change in a test chat before it ships."
-last_updated: 2026-10-17
+last_updated: 2026-10-26
 ---
 
 # Authoring Routines
@@ -172,9 +172,63 @@ on a later branch. In **Information**, you can also mark a value:
 - **Optional** when the flow may reach an ending while the value remains empty.
 - **Editable after completion** when a visitor may correct it after the routine
   finishes, such as an email address or a date.
+- **Sensitive** when the value is something the visitor would not want copied
+  around, such as an injury they mention while booking a class. See
+  [Sensitive values](#sensitive-values).
 
 An `@` reference uses the same stored value throughout the routine. A skill
 output can also supply a value that later steps and branches read.
+
+#### Sensitive values
+
+A routine that books a yoga class might ask "Any injuries we should know
+about?" and store the answer in `@injury`. Turn on **Sensitive** for that field
+and the answer stays where the conversation runs: in the routine, where later
+steps and branches still read `@injury`, and in the transcript, where your team
+reads it in the Inbox. Every copy that leaves the conversation shows it masked:
+
+- The operator notice lists the field as `Injury: sensitive, open the
+  conversation to read it`, and a `{{slot.injury}}` in its subject or intro reads
+  `(sensitive)`. The `Open:` line takes your team straight to the conversation.
+  The notice's webhook body, a completion export, and an action step's payload
+  carry `[redacted]` in its place.
+- A skill step with no **uses** bindings hands the routine's values to its skill
+  as they are, with `@injury` as `[redacted]`. A skill receives the value only
+  when the step binds one of its inputs to `@injury` — a webhook skill whose
+  `notes` input you bind to `@injury`, say. The binding shows on the step, so
+  anyone reading the routine sees exactly where the value goes. Switching an
+  input to a variable never picks a sensitive field for you, and Ray's
+  `validate_routine` reports `sensitive_slot_unbound_skill_input` when a step
+  with no bindings runs a skill whose input reads a sensitive field, since that
+  input receives `[redacted]`.
+- A Test Chat trace shows the value as `[redacted]`. **Continue in Test Chat**
+  copies the conversation with its turns withheld and the routine's value as
+  `[redacted]`, so the test picks up at the same step. A branch rule or an AI
+  condition that reads `@injury` then sees `[redacted]`, so the continued test
+  can take a different branch than the conversation did.
+- The visitor's reply to a step that asks for `@injury` is marked as soon as it
+  arrives, and so is every turn after which the routine holds the value, the
+  agent's reply included. Any message sent while that step waits is marked, an
+  off-topic question included, so it stays out of Audience Pulse and eval
+  snapshots too. Marked turns read as `[redacted]` in the conversation
+  summary, Audience Pulse, the AI summary on a notice, and an eval snapshot. The
+  summary also waits for the agent's reply before it reads a visitor message,
+  so a turn still running never reaches it. An eval snapshot captures the
+  routine's own value as `[redacted]` too; to replay the turn with a value, run
+  the case with a `routineStartState` override that carries one of your own.
+
+A sensitive email field can't be a notice's **Replies go to** field, because its
+address never leaves the conversation. Validation reports
+`operator_notice_reply_to_slot_invalid` until you choose another field or
+**No reply-to**.
+
+Only you mark a field sensitive. Radioso never decides it from the field's name
+or from what the visitor wrote, and Ray sets it only when you ask. A few limits
+are worth knowing. The model the agent runs on reads the value, since it is part
+of the conversation. A value the visitor gives while no step is asking for it,
+before its step or as a correction after the routine has finished, is marked only
+when the routine stores it. Once the routine has ended, a later reply that brings
+the value up again is not masked.
 
 #### Read the visitor's context
 
@@ -476,7 +530,8 @@ than declaration order.
 A booking desk that receives a "Book accommodation" notice reads the program,
 dates, and guest name in the notice itself instead of opening the transcript
 first. Slot values that are text, numbers, or yes/no appear in the notice; a slot
-holding a structured value is left out of it. Dates appear as the routine stored
+holding a structured value is left out of it, and a
+[sensitive](#sensitive-values) one is listed without its value. Dates appear as the routine stored
 them (`2026-10-12`), which reads the same in every language on your team. A
 `{{slot.<key>}}` in the subject or intro whose value the routine never collected
 shows a dash (`—`), and the notice still goes out. The email is plain text and

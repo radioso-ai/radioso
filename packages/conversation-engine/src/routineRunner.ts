@@ -29,6 +29,7 @@ import type {
   SteeringRule,
   TurnContext,
 } from "@radioso/conversation-contract";
+import { REDACTED_VALUE, redactSensitiveValues } from "@radioso/conversation-contract";
 
 import {
   collectedSlotsForStep,
@@ -396,15 +397,33 @@ const pendingStepFor = (
     .map((slot) => slot.key),
 });
 
+/** The routine's slot keys its author marked sensitive, in declared order. */
+export const sensitiveSlotKeys = (routine: Routine): string[] =>
+  (routine.slots ?? []).filter((slot) => slot.sensitivity === "sensitive").map((slot) => slot.key);
+
+/**
+ * The variables as a copy that leaves the conversation carries them: a sensitive slot's value
+ * reads as the redaction marker. The run's own state keeps the value, since the routine needs it
+ * to run; every payload, ending, and trace the runner hands out goes through here.
+ */
+const outboundVariables = (
+  routine: Routine,
+  variables: Record<string, unknown>,
+): Record<string, unknown> => redactSensitiveValues(variables, sensitiveSlotKeys(routine));
+
+/** The declared slots' values as they leave the conversation, sensitive ones masked. */
 const declaredSlotVariables = (
   routine: Routine,
   variables: Record<string, unknown>,
 ): Record<string, unknown> =>
-  Object.fromEntries(
-    (routine.slots ?? [])
-      .map((slot) => slot.key)
-      .filter((key) => hasVariable(variables, key))
-      .map((key) => [key, variables[key]]),
+  outboundVariables(
+    routine,
+    Object.fromEntries(
+      (routine.slots ?? [])
+        .map((slot) => slot.key)
+        .filter((key) => hasVariable(variables, key))
+        .map((key) => [key, variables[key]]),
+    ),
   );
 
 /** Per-value character bound for a traced slot value (including the ellipsis), matching the host's output-bounding magnitude. */
@@ -440,6 +459,9 @@ const declaredSlotTraceValues = (
   const kept = filled.slice(0, MAX_TRACE_SLOT_VALUES);
   return {
     slotValues: kept.map((slot) => {
+      if (slot.sensitivity === "sensitive") {
+        return { key: slot.key, type: slot.type, value: REDACTED_VALUE };
+      }
       const { value, truncated } = traceableSlotValue(variables[slot.key]);
       return { key: slot.key, type: slot.type, value, ...(truncated ? { truncated: true } : {}) };
     }),
@@ -503,13 +525,23 @@ const routesToHandoff = (routine: Routine): boolean =>
     return target !== undefined && terminalKindFor(target) === "handoff";
   });
 
+/** The keys of an ending's collected values that were masked as sensitive, reported beside them. */
+const maskedSlotKeys = (
+  routine: Routine,
+  collected: Record<string, unknown>,
+): Pick<NonNullable<ConversationRoutineResumeResult["terminal"]>, "sensitiveSlotKeys"> => {
+  const keys = sensitiveSlotKeys(routine).filter((key) => hasVariable(collected, key));
+  return keys.length > 0 ? { sensitiveSlotKeys: keys } : {};
+};
+
 const terminalResult = (
+  routine: Routine,
   kind: RoutineAuthoredTerminalKind,
   step: RoutineStep,
   collected: Record<string, unknown>,
 ): NonNullable<ConversationRoutineResumeResult["terminal"]> => {
   const operatorNotice = operatorNoticeTemplateFor(step);
-  return { kind, stepId: step.id, collected, ...(operatorNotice ? { operatorNotice } : {}) };
+  return { kind, stepId: step.id, collected, ...maskedSlotKeys(routine, collected), ...(operatorNotice ? { operatorNotice } : {}) };
 };
 
 /**
@@ -1236,7 +1268,12 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         kind: "claimed",
         effects: {
           nextState: null,
-          terminal: { kind: "stuck", stepId: currentStep.id, collected: declaredSlotVariables(routine, variables) },
+          terminal: {
+            kind: "stuck",
+            stepId: currentStep.id,
+            collected: declaredSlotVariables(routine, variables),
+            ...maskedSlotKeys(routine, declaredSlotVariables(routine, variables)),
+          },
           endedVariables: variables,
           trace: {
             routineId: routine.id,
@@ -1281,9 +1318,9 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         if (actionEdges.length === 0) {
           throw new Error(`routine_action_step_no_follow_up:${routine.id}:${step.id}`);
         }
-        // Fire-and-forget: record the request (authored type + the routine's variables)
-        // and auto-advance — there is no result to branch on.
-        actions.push({ type: step.actionType, payload: { ...variables } });
+        // Fire-and-forget: record the request (authored type + the routine's variables, a
+        // sensitive slot's masked) and auto-advance — there is no result to branch on.
+        actions.push({ type: step.actionType, payload: outboundVariables(routine, variables) });
         traceSteps.push({
           stepId: step.id,
           kind: step.kind,
@@ -1305,6 +1342,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         throw new Error(`routine_skill_step_missing_skill:${routine.id}:${step.id}`);
       }
       const skillStateAtStep: RoutineState = { ...state, path, variables, attempts, status: "active" };
+      const sensitiveKeys = sensitiveSlotKeys(routine);
       const occurrenceOrdinal = (skillOccurrences.get(step.id) ?? 0) + 1;
       skillOccurrences.set(step.id, occurrenceOrdinal);
       const skillResult: RoutineSkillResult = await this.skillDispatcher.dispatch({
@@ -1312,6 +1350,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         state: skillStateAtStep,
         turn: stagedContext === turn.stagedContext ? turn : { ...turn, stagedContext },
         ...(step.inputBindings ? { inputBindings: step.inputBindings } : {}),
+        ...(sensitiveKeys.length > 0 ? { sensitiveSlotKeys: sensitiveKeys } : {}),
         stepId: step.id,
         occurrenceOrdinal,
         ...(input.skillDispatchIdempotencyScope
@@ -1516,7 +1555,7 @@ export class DefaultRoutineRunner implements ConversationRoutineRunner {
         // with for the host's record of the ended run.
         ...(step.kind === "terminal" ? { nextState: null, endedVariables: variables } : { nextState }),
         ...(terminalKind
-          ? { terminal: terminalResult(terminalKind, step, declaredSlotVariables(routine, variables)) }
+          ? { terminal: terminalResult(routine, terminalKind, step, declaredSlotVariables(routine, variables)) }
           : {}),
         ...(actions.length > 0 ? { actions } : {}),
         ...(skillsWithExternalEffects.length > 0 ? { skillsWithExternalEffects } : {}),

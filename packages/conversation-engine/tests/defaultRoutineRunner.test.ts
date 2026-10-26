@@ -4728,3 +4728,83 @@ describe("DefaultRoutineRunner on a run whose opening message states no slot val
     expect(result.trace?.steps).toEqual([{ stepId: "ask_category", kind: "chat", event: "rendered", viaSelector: false }]);
   });
 });
+
+describe("DefaultRoutineRunner sensitive slots", () => {
+  // The visitor's injury is collected for the booking, so it stays in the routine's state; every
+  // copy the runner hands out reads as the redaction marker instead.
+  const bookingRoutine: Routine = {
+    id: "booking",
+    rootStepId: "ask_injury",
+    slots: [
+      { id: "slot_email", key: "email", type: "email", required: true },
+      { id: "slot_injury", key: "injury", type: "text", required: true, sensitivity: "sensitive" },
+      { id: "slot_class", key: "class_name", type: "text", required: false, sensitivity: "normal" },
+    ],
+    steps: [
+      { id: "ask_injury", kind: "chat", action: "Ask about {{slot.injury}}.", metadata: { collectsSlots: ["injury"] } },
+      { id: "submit", kind: "action", actionType: "contact.send" },
+      { id: "notify", kind: "skill", skillName: "notify_desk" },
+      { id: "handoff", kind: "terminal", action: "Hand off.", metadata: { terminalKind: "handoff" } },
+    ],
+    transitions: [
+      { from: "ask_injury", to: "submit", condition: "The user provided {{slot.injury}}." },
+      { from: "submit", to: "notify", condition: "after emitting" },
+      { from: "notify", to: "handoff", condition: "notified" },
+    ],
+    completionExport: { enabled: true, destinationRef: "crm", triggerKinds: ["handoff"] },
+  };
+  const held = { email: "a@b.c", injury: "torn ligament", class_name: "Yoga" };
+  const atInjury = (): RoutineState => ({
+    sessionId: "session_1", routineId: "booking", path: ["ask_injury"], variables: { ...held }, status: "active",
+  });
+
+  const run = async (options: { includeSlotValues?: boolean } = {}) => {
+    const dispatch = vi.fn<ConversationRoutineSkillDispatcher["dispatch"]>(async () => ({ status: "completed" as const }));
+    const runner = new DefaultRoutineRunner(
+      [bookingRoutine],
+      { select: vi.fn(async () => ({ nextStepId: "submit" })) },
+      { render: vi.fn(echoRenderer.render) },
+      { dispatch },
+      options,
+    );
+    return { result: await runner.resume({ turn, state: atInjury() }), dispatch };
+  };
+
+  it("masks a sensitive slot's value in what a hand-off carries, and keeps it only in the ended variables", async () => {
+    const { result } = await run();
+
+    expect(result.terminal?.collected).toEqual({ email: "a@b.c", injury: "[redacted]", class_name: "Yoga" });
+    // Which values were masked travels with them, so a notice decides from the slot, never the text.
+    expect(result.terminal?.sensitiveSlotKeys).toEqual(["injury"]);
+    expect(result.endedVariables).toEqual(held);
+  });
+
+  it("masks it in an action step's payload and in the completion export", async () => {
+    const { result } = await run();
+
+    expect(result.actions?.find((action) => action.type === "contact.send")?.payload)
+      .toEqual({ email: "a@b.c", injury: "[redacted]", class_name: "Yoga" });
+    expect(result.actions?.find((action) => action.type === "webhook.send")?.payload)
+      .toEqual(expect.objectContaining({ data: { email: "a@b.c", injury: "[redacted]", class_name: "Yoga" } }));
+  });
+
+  it("masks it in the traced slot values a private test run opts into", async () => {
+    const { result } = await run({ includeSlotValues: true });
+
+    expect(result.trace?.slotValues).toEqual([
+      { key: "email", type: "email", value: "a@b.c" },
+      { key: "injury", type: "text", value: "[redacted]" },
+      { key: "class_name", type: "text", value: "Yoga" },
+    ]);
+  });
+
+  it("tells the skill dispatcher which slots are sensitive, and still hands it the raw state to resolve bindings", async () => {
+    const { dispatch } = await run();
+
+    expect(dispatch).toHaveBeenCalledWith(expect.objectContaining({
+      skillName: "notify_desk",
+      sensitiveSlotKeys: ["injury"],
+      state: expect.objectContaining({ variables: held }),
+    }));
+  });
+});

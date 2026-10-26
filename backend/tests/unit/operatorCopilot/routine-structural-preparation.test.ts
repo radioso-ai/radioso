@@ -18,8 +18,14 @@ const routine = {
   slots: [], transitions: [{ fromStep: "step_collect", toRef: "terminal_done", guardKind: "default", guardText: null, outcomeStatus: null, counterLimit: null, fieldRef: null, fieldOp: null, fieldValue: null, fieldValues: null, fieldUnit: null, ordinal: 0 }], createdAt: new Date("2026-08-01T00:00:00Z"), updatedAt: new Date("2026-09-01T00:00:00Z"),
 };
 
-const createRoutineStructuralPreparationTool = (dependencies: unknown) =>
-  createRoutineStructuralPreparationToolOwner(dependencies as never);
+// Every routines port carries the agent's skill inputs; a case that is not about them gets none.
+const createRoutineStructuralPreparationTool = (dependencies: unknown) => {
+  const given = dependencies as { routines?: Record<string, unknown> };
+  return createRoutineStructuralPreparationToolOwner({
+    ...given,
+    routines: { skillInputKeys: vi.fn(async () => ({})), ...given.routines },
+  } as never);
+};
 
 describe("routine structural preparation", () => {
   const anyDescriptor = () => createRoutineStructuralPreparationTool({

@@ -3,6 +3,7 @@ import type { ModelInferencePipeline } from "../../../../shared/infra/llm/modelI
 import { renderPromptTemplate } from "../../../../shared/infra/prompts/promptLoader.js";
 import type { MessageRecord, MessageRepositoryPort } from "../../../../db/repositories/messageRepository.js";
 import { SharedAnswerInstructionBuilder } from "../../../retrieval/public.js";
+import { transcriptCopyContent } from "../../../../shared/domain/sensitiveTranscript.js";
 
 const MAX_MESSAGES_BEFORE_ENDING = 6;
 // Even empty messages consume more than six rendered characters. Eight hundred rows therefore
@@ -25,7 +26,9 @@ const transcript = (messages: readonly MessageRecord[]): string => {
   let omitted = false;
   for (const message of [...messages].reverse()) {
     if (message.role === "system") continue;
-    const line = `${message.role.toUpperCase()}: ${compact(message.content, MAX_MESSAGE_CHARS)}`;
+    // A turn whose routine held a sensitive value is withheld (#1543); the collected values
+    // already arrive with a sensitive slot masked.
+    const line = `${message.role.toUpperCase()}: ${compact(transcriptCopyContent(message), MAX_MESSAGE_CHARS)}`;
     if (line.length + 1 > remaining) { omitted = true; break; }
     lines.unshift(line);
     remaining -= line.length + 1;

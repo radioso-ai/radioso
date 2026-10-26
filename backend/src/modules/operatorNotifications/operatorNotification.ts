@@ -38,6 +38,11 @@ type RoutineEndingNoticeFields = {
   routine?: { id: string; name: string | null };
   /** The routine's declared slot values keyed by slot key, in the order the routine declares them. */
   collected?: Record<string, HandoffCollectedValue>;
+  /**
+   * The keys of `collected` the routine masked as sensitive (#1543): the notice says one was
+   * collected and never prints the value. Decided from the slot, never from a value's text.
+   */
+  sensitiveSlotKeys?: readonly string[];
   notice?: OperatorNoticeTemplate;
   /**
    * The address replies to the notice go to: the value collected in the field the notice's

@@ -169,6 +169,7 @@ export const compileRoutineDefinition = (definition: RoutineDefinition): Routine
       required: slot.required,
       description: slot.description ?? undefined,
       ...(slot.mutable ? { mutable: true } : {}),
+      ...(slot.sensitivity === "sensitive" ? { sensitivity: "sensitive" as const } : {}),
     }));
   const steps: RoutineStep[] = [
     ...sortedSteps.map((step): RoutineStep => {

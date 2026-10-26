@@ -1,4 +1,4 @@
-import { routineAdvisories, type RoutineAdvisoryCode } from "@radioso/routine-definition";
+import { routineAdvisories, type RoutineAdvisory, type RoutineAdvisoryCode, type RoutineSkillInputKeys } from "@radioso/routine-definition";
 
 type RoutineAdvisoryInput = Parameters<typeof routineAdvisories>[0];
 
@@ -19,26 +19,32 @@ interface RoutineAdvisoryWithMessage {
  * validation, or publish, and sharing a message table would risk a future diagnostic
  * reusing advisory wording by accident.
  *
- * Only email slot KEYS enter the text below, never a collected value.
+ * Only slot KEYS and skill names enter the text below, never a collected value.
  */
-const advisoryMessages: Record<RoutineAdvisoryCode, (stableStepId: string, emailSlotKeys: ReadonlyArray<string>) => string> = {
-  operator_notice_reply_to_unset: (stableStepId, emailSlotKeys) =>
-    `operator notice has no reply-to: ending "${stableStepId}" notifies the team with no reply-to, so a reply to it won't reach the visitor. Set replyToSlot to the email field the team should answer (${emailSlotKeys.join(", ")}), or leave it unset on purpose.`,
+const advisoryMessages: Record<RoutineAdvisoryCode, (advisory: RoutineAdvisory, replyToCandidates: ReadonlyArray<string>) => string> = {
+  operator_notice_reply_to_unset: (advisory, replyToCandidates) =>
+    `operator notice has no reply-to: ending "${advisory.stableStepId}" notifies the team with no reply-to, so a reply to it won't reach the visitor. Set replyToSlot to the email field the team should answer (${replyToCandidates.join(", ")}), or leave it unset on purpose.`,
+  sensitive_slot_unbound_skill_input: (advisory) =>
+    `sensitive field sent masked: step "${advisory.stableStepId}" runs ${advisory.skillName ?? "its skill"} with no input bindings, so its input "${advisory.slotKey ?? ""}" receives the sensitive field as [redacted]. Bind that input to @${advisory.slotKey ?? ""} on the step to send the value, or leave it masked on purpose.`,
 };
 
 /**
  * {@link routineAdvisories}, worded for an operator. `slots` tolerates the pre-parse
  * authoring shape (where an omitted slots array defaults to `[]` only after Zod parses it),
  * so a caller holding `RoutineDefinitionDraftAuthoringInput` can pass it through unchanged.
+ * `skillInputKeys` comes from the agent's skill catalog; without it the advisories that compare
+ * a step against its skill are left out.
  */
 export const routineAdvisoriesWithMessages = (
   definition: Omit<RoutineAdvisoryInput, "slots"> & { readonly slots?: RoutineAdvisoryInput["slots"] | null },
+  options: { readonly skillInputKeys?: RoutineSkillInputKeys } = {},
 ): RoutineAdvisoryWithMessage[] => {
   const slots = definition.slots ?? [];
-  const emailSlotKeys = slots.filter((slot) => slot.type === "email").map((slot) => slot.key);
-  return routineAdvisories({ slots, terminals: definition.terminals }).map((advisory) => ({
+  // A sensitive address never leaves the conversation, so it is never suggested as a reply-to.
+  const replyToCandidates = slots.filter((slot) => slot.type === "email" && slot.sensitivity !== "sensitive").map((slot) => slot.key);
+  return routineAdvisories({ slots, steps: definition.steps, terminals: definition.terminals }, options).map((advisory) => ({
     code: advisory.code,
     location: advisory.location,
-    message: advisoryMessages[advisory.code](advisory.stableStepId, emailSlotKeys),
+    message: advisoryMessages[advisory.code](advisory, replyToCandidates),
   }));
 };

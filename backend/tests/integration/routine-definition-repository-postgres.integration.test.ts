@@ -148,6 +148,8 @@ const createRoutineSchema = async (client: PoolClient, schema: string): Promise<
       description TEXT NULL,
       ordinal INTEGER NOT NULL,
       mutable BOOLEAN NOT NULL DEFAULT FALSE,
+      -- Mirrors migration 248_routine_slot_sensitivity.sql.
+      sensitivity TEXT NOT NULL DEFAULT 'normal' CHECK (sensitivity IN ('normal', 'sensitive')),
       PRIMARY KEY (definition_id, stable_slot_id),
       UNIQUE(definition_id, key),
       UNIQUE(definition_id, ordinal)
@@ -511,6 +513,32 @@ describeIfDatabase("RoutineDefinitionRepository Postgres integration", () => {
     // The persisted gate still validates clean: the decision field guards resolve against
     // the recovered capture key (a dropped captureKey would surface field_guard_unknown_reference).
     expect(validateRoutineDefinition(reloaded!)).toMatchObject({ ok: true });
+  });
+
+  it("round-trips a slot's sensitivity, reading a normal slot back without the field (#1543)", async () => {
+    const repository = new RoutineDefinitionRepository(database.kysely);
+    const base = draftInput("sensitivity-roundtrip");
+    const created = await repository.createDraft(agentId, {
+      ...base,
+      slots: [
+        { ...base.slots[0], sensitivity: "sensitive" },
+        { stableSlotId: "slot_email", key: "email", type: "email", required: false, description: null, ordinal: 1, sensitivity: "normal" },
+      ],
+      steps: [{ ...base.steps[0], instruction: "Collect {{slot.topic}} and {{slot.email}}." }],
+    });
+
+    const reloaded = await repository.findById(agentId, created.id);
+    expect(reloaded?.slots.find((slot) => slot.key === "topic")?.sensitivity).toBe("sensitive");
+    expect(reloaded?.slots.find((slot) => slot.key === "email")).not.toHaveProperty("sensitivity");
+    const stored = await database.query<{ key: string; sensitivity: string }>(
+      `SELECT key, sensitivity FROM routine_slot WHERE definition_id = $1 ORDER BY ordinal`,
+      [created.id],
+    );
+    expect(stored).toEqual([{ key: "topic", sensitivity: "sensitive" }, { key: "email", sensitivity: "normal" }]);
+    await expect(database.execute(
+      `UPDATE routine_slot SET sensitivity = 'secret' WHERE definition_id = $1`,
+      [created.id],
+    )).rejects.toMatchObject({ code: "23514" });
   });
 
   it("repairs dirty pre-existing data before building migration 090 lifecycle indexes", async () => {

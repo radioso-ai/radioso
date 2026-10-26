@@ -833,6 +833,7 @@ function ChipMenu({ nodeKey, kind, refId, label }: { nodeKey: NodeKey; kind: Rou
         // of offering input/output wiring that has nowhere to land.
         showStepBindings={supportsStepBindings}
         availableVariables={supportsStepBindings ? variables.map((variable) => variable.id) : []}
+        sensitiveVariables={variables.filter((variable) => variable.sensitive).map((variable) => variable.id)}
         open={isCatalogOpen}
         onOpenChange={handleCatalogOpenChange}
         onBindingStateChange={updateDraftBindingState}

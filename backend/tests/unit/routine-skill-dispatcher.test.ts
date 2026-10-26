@@ -28,6 +28,8 @@ import { NOTIFY_SKILLS_ADAPTER } from "../../src/modules/notify/public.js";
 import { SLACK_SKILLS_ADAPTER } from "../../src/modules/slackSkills/public.js";
 import { WEBHOOK_SKILLS_ADAPTER } from "../../src/modules/webhookSkills/public.js";
 import { RETRIEVAL_ANSWER_ADAPTER, RetrieveRoutineSkillResolver } from "../../src/modules/retrieval/public.js";
+import { WebhookRoutineSkillResolver, WebhookSkillExecutor } from "../../src/modules/webhookSkills/public.js";
+import { SlackEscalationExecutor, slackRoutineSkillDefinition } from "../../src/modules/slackSkills/public.js";
 import { retrievalContextSkillDefinition } from "../../src/modules/skills/public.js";
 
 const TEST_EXECUTION = { kind: "internal" as const, adapter: "test-adapter" };
@@ -1052,3 +1054,122 @@ const listTypeScriptFiles = async (directory: string): Promise<string[]> => {
   }));
   return nested.flat();
 };
+
+describe("RoutineSkillExecutorDispatcher and a sensitive slot (#1543)", () => {
+  // The visitor's injury is a sensitive slot: a skill receives it only when the step's input
+  // binding names it, never through the wholesale variables of a step with no bindings.
+  const variables = { email: "a@b.com", injury: "torn ligament" };
+  const sensitiveSlotKeys = ["injury"];
+
+  it("masks a sensitive slot in a step with no input bindings, and passes it when a binding names it", async () => {
+    const captured: SkillInvocation[] = [];
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      new StaticRoutineSkillResolver([skillNamed("book_class")]),
+      registryWith(settledExecutor({ status: "completed" } as unknown as SkillOutcome, (invocation) => {
+        captured.push(invocation);
+      })),
+    );
+
+    await dispatcher.dispatch({ skillName: "book_class", state: routineState(variables), turn, sensitiveSlotKeys });
+    await dispatcher.dispatch({
+      skillName: "book_class",
+      state: routineState(variables),
+      turn,
+      sensitiveSlotKeys,
+      inputBindings: { details: { kind: "variableRef", ref: "injury" } },
+    });
+
+    expect(captured[0]?.collected).toEqual({ email: "a@b.com", injury: "[redacted]" });
+    expect(captured[1]?.collected).toEqual({ details: "torn ligament" });
+  });
+
+  it("posts a webhook payload with the sensitive value masked unless the step binds it", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    const registry = new SkillExecutorRegistry();
+    registry.register({
+      kind: "internal",
+      adapter: WEBHOOK_SKILLS_ADAPTER,
+      executor: new WebhookSkillExecutor({
+        skills: {
+          findEnabledByName: async () => ({
+            id: "skill-1",
+            workspaceId: "workspace-1",
+            agentId: "agent-1",
+            destinationId: "33333333-3333-4333-8333-333333333333",
+            skillName: "send_case",
+            boundPayload: {},
+            exposedPayload: { email: { required: true }, injury: { required: true } },
+            enabled: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          }),
+        },
+        destinations: { resolve: async () => ({ url: "https://hooks.example.com/case", secret: "secret" }) },
+        httpClient: { post: async (request: { rawBody: string }) => { bodies.push(JSON.parse(request.rawBody) as Record<string, unknown>); } },
+      }),
+    });
+    const dispatcher = new RoutineSkillExecutorDispatcher(new WebhookRoutineSkillResolver(["send_case"]), registry, { workspaceId: "workspace-1" });
+
+    await dispatcher.dispatch({ skillName: "send_case", state: routineState(variables), turn, sensitiveSlotKeys });
+    await dispatcher.dispatch({
+      skillName: "send_case",
+      state: routineState(variables),
+      turn,
+      sensitiveSlotKeys,
+      inputBindings: { email: { kind: "variableRef", ref: "email" }, injury: { kind: "variableRef", ref: "injury" } },
+    });
+
+    expect(bodies.map((body) => body.data)).toEqual([
+      { email: "a@b.com", injury: "[redacted]" },
+      { email: "a@b.com", injury: "torn ligament" },
+    ]);
+  });
+
+  it("queues a Slack post with the sensitive value masked unless the step binds it", async () => {
+    const texts: string[] = [];
+    const registry = new SkillExecutorRegistry();
+    const definition = slackRoutineSkillDefinition("post_to_desk");
+    if (!definition.execution) throw new Error("Slack skills dispatch through an executor");
+    registry.register({
+      ...definition.execution,
+      executor: new SlackEscalationExecutor({
+        outbox: {
+          enqueue: async (input: { payload: Record<string, unknown> }) => {
+            texts.push(String(input.payload.text));
+            return { id: "action-1", duplicate: false };
+          },
+        },
+        skills: {
+          findEnabledByName: async () => ({
+            id: "skill-1",
+            workspaceId: "workspace-1",
+            agentId: "agent-1",
+            installationId: "11111111-1111-1111-1111-111111111111",
+            skillName: "post_to_desk",
+            boundInputs: { channelId: "CDESK" },
+            exposedInputs: { text: { slotBinding: "injury" } },
+            enabled: true,
+            createdAt: new Date(),
+            updatedAt: new Date(),
+          }),
+        },
+      }),
+    });
+    const dispatcher = new RoutineSkillExecutorDispatcher(
+      new StaticRoutineSkillResolver([definition]),
+      registry,
+      { workspaceId: "workspace-1", accountId: "account-1" },
+    );
+
+    await dispatcher.dispatch({ skillName: "post_to_desk", state: routineState(variables), turn, sensitiveSlotKeys });
+    await dispatcher.dispatch({
+      skillName: "post_to_desk",
+      state: routineState(variables),
+      turn,
+      sensitiveSlotKeys,
+      inputBindings: { injury: { kind: "variableRef", ref: "injury" } },
+    });
+
+    expect(texts).toEqual(["[redacted]", "torn ligament"]);
+  });
+});

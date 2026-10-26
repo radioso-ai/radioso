@@ -8,7 +8,7 @@ import type {
 } from "../../answerCoverage/public.js";
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import { setTraceAttributes } from "../../../shared/observability/tracing/operations.js";
-import { buildContextualizedRequest } from "./contextualizedRequest.js";
+import { storedContextualizedRequest } from "./contextualizedRequest.js";
 import type { RetrievalCoverageVerdictSink } from "../contracts/answerCoverage.js";
 
 const assessmentFromRecord = (record: AnswerCoverageRecord): AnswerCoverageAssessment =>
@@ -64,7 +64,7 @@ export class AnswerCoverageHeadRecorder {
             conversationId: session.conversation.id,
             requestMessageId: session.userMessage.id,
             originatingTurnId: session.userMessage.id,
-            contextualizedRequest: buildContextualizedRequest(session, session.effectiveQuery ?? session.userMessage.content),
+            contextualizedRequest: storedContextualizedRequest(session, session.effectiveQuery ?? session.userMessage.content),
             assessment,
           });
           const recordedAssessment = assessmentFromRecord(saved);

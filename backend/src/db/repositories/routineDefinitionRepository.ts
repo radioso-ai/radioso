@@ -224,7 +224,8 @@ const definitionSelect = sql`
       'required', s.required,
       'description', s.description,
       'ordinal', s.ordinal,
-      'mutable', s.mutable
+      'mutable', s.mutable,
+      'sensitivity', s.sensitivity
     ) ORDER BY s.ordinal ASC, s.stable_slot_id ASC) AS items
     FROM routine_slot s
     WHERE s.definition_id = d.id
@@ -315,6 +316,9 @@ const mapRow = (row: RoutineDefinitionRow): RoutineDefinition => ({
     description: readNullableString(slot, "description"),
     ordinal: readNumber(slot, "ordinal"),
     ...(readBoolean(slot, "mutable") ? { mutable: true } : {}),
+    // Like `mutable`, only the non-default value is carried, so a normal slot reads back in the
+    // shape it had before the column existed and published snapshots stay unchanged.
+    ...(readNullableString(slot, "sensitivity") === "sensitive" ? { sensitivity: "sensitive" as const } : {}),
   })),
   steps: asArray(row.steps).map((step) => {
     // captureKey/options are only valid on approval steps; the domain rejects them on any
@@ -950,6 +954,7 @@ export class RoutineDefinitionRepository {
           description: slot.description,
           ordinal: slot.ordinal,
           mutable: slot.mutable ?? false,
+          sensitivity: slot.sensitivity ?? "normal",
         })
         .execute();
     }

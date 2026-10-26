@@ -64,4 +64,12 @@ export interface RoutineTurnReporter {
    * instance. Null for a routine this turn does not know.
    */
   describeRoutineName(routineId: string): string | null;
+  /**
+   * The routine's sensitive slots (#1543) the state holds a value for, in declared order; empty
+   * for a routine this turn does not know. The host keeps the turns of a routine holding one out
+   * of every copy of the transcript that leaves the conversation.
+   */
+  sensitiveSlotKeysHeld(state: RoutineState): string[];
+  /** The routine's sensitive slots the step a state waits on collects, held or not; empty for an unknown routine. */
+  sensitiveSlotKeysAwaited(state: RoutineState): string[];
 }

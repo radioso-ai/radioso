@@ -1666,6 +1666,7 @@ export interface RoutineSlot {
   mutable: Generated<boolean>;
   ordinal: number;
   required: Generated<boolean>;
+  sensitivity: Generated<string>;
   stable_slot_id: string;
   type: string;
 }

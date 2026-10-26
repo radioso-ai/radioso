@@ -176,6 +176,16 @@ describe('routine block document', () => {
     expect(restored).toEqual(withDocumentOrdinals(input))
   })
 
+  it('carries a slot\'s sensitivity through the document and back (#1543)', () => {
+    const input = draft({
+      slots: [{ stableSlotId: 'account_id', key: 'account_id', type: 'text', required: false, description: 'Customer account', sensitivity: 'sensitive', ordinal: 9 }],
+    })
+    const { projected, restored } = roundTrip(input)
+
+    expect(projected.doc.information[0]?.sensitivity).toBe('sensitive')
+    expect(restored).toEqual(withDocumentOrdinals(input))
+  })
+
   it('carries tool exposure through the document and back, and leaves an absent block absent', () => {
     const exposure = { enabled: true, toolName: 'escalate_account', description: 'Escalate an account to a person.' }
     const exposed = roundTrip(draft({ exposure }))

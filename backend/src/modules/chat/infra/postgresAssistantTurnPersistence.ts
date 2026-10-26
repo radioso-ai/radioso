@@ -21,6 +21,7 @@ import {
 import type { CapturedRoutineTransition } from "../services/routines/deferredRoutineStore.js";
 import type { CapturedClarificationTransition } from "../services/clarification/deferredClarificationStore.js";
 import type { GroundingDiagnosticSnapshot } from "../../../shared/domain/groundingDiagnostic.js";
+import { sensitiveTurnMetadata } from "../../../shared/domain/sensitiveTranscript.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { BackgroundJobQueue, BackgroundJobWakePort } from "../../../shared/background-jobs/index.js";
 
@@ -249,6 +250,29 @@ const applyClarificationTransition = async (
   `.execute(db);
 };
 
+/**
+ * Marks the visitor message of a turn whose routine holds a sensitive slot value (#1543), so every
+ * copy of the transcript that leaves reads it as withheld, and drops a facet the extractor may have
+ * stored from it before this turn committed (the extractor runs off the turn's path; its own write
+ * refuses a marked message once this commits, see MessageFacetRepository.upsertFacet).
+ */
+const markSensitiveVisitorMessage = async (db: Db, input: CompleteAssistantTurnInput): Promise<void> => {
+  const marked = input.sensitiveVisitorMessage;
+  if (!marked) {
+    return;
+  }
+  await sql`
+    UPDATE messages
+    SET metadata_json = metadata_json || ${toJsonb(sensitiveTurnMetadata(marked.sensitiveSlotKeys))}
+    WHERE id = ${marked.id}
+      AND workspace_id = ${input.workspaceId}
+      AND conversation_id = ${input.conversationId}
+  `.execute(db);
+  await sql`
+    DELETE FROM message_facets WHERE message_id = ${marked.id} AND workspace_id = ${input.workspaceId}
+  `.execute(db);
+};
+
 const insertAuditEvent = async (
   db: Db,
   event: CompleteAssistantTurnInput["auditEvent"],
@@ -305,6 +329,7 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
         )
         : null;
       await applyClarificationTransition(db, input.clarificationTransition);
+      await markSensitiveVisitorMessage(db, input);
 
       const messageId = input.assistantMessage.id ?? randomUUID();
       const result = await sql<MessageRow>`

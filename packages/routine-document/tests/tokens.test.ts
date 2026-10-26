@@ -75,3 +75,18 @@ describe('inline chip tokens', () => {
     expect(written).toContain(source)
   })
 })
+
+describe('slot flags in the routine text', () => {
+  it('declares a sensitive slot with a `sensitive` flag and reads it back (#1543)', () => {
+    const text = serializeProseDoc({
+      name: 'Book a class',
+      trigger: 'A visitor wants to book',
+      variables: [{ id: 'injury', name: 'injury', type: 'text', sensitive: true }],
+      paragraphs: [{ segments: [{ kind: 'text', text: 'Ask about any injury.' }] }],
+    })
+
+    expect(text).toContain('vars: injury:text:sensitive')
+    expect(parseProseDoc(text, () => false).variables).toEqual([{ id: 'injury', name: 'injury', type: 'text', sensitive: true }])
+  })
+})
+

@@ -23,6 +23,23 @@ const innerStore = (): ConversationRoutineStore & {
 });
 
 describe("DeferredRoutineStore", () => {
+  it("records the state the turn started on beside the transition it captures (#1543)", async () => {
+    const inner = innerStore();
+    const started = state({ path: ["ask_injury"] });
+    inner.loadActive.mockResolvedValue(started);
+    const store = new DeferredRoutineStore(inner);
+
+    await store.loadActive({ sessionId: "conv_1" });
+    // A later read in the same turn is not where it started.
+    inner.loadActive.mockResolvedValue(state({ path: ["ask_injury", "confirm"] }));
+    await store.loadActive({ sessionId: "conv_1" });
+    await store.save(state({ path: ["ask_injury", "confirm"] }));
+
+    expect(store.getTransition()).toMatchObject({ kind: "save", startedFrom: started });
+    await store.clear({ sessionId: "conv_1" });
+    expect(store.getTransition()).toEqual({ kind: "clear", sessionId: "conv_1", startedFrom: started });
+  });
+
   it("seeds a fresh execution with its activation message and preserves an existing execution's anchor", async () => {
     const inner = innerStore();
     const fresh = new DeferredRoutineStore(inner, "activation-message");

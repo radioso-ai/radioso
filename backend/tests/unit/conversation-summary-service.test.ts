@@ -73,7 +73,7 @@ const fifteenMessages = (): MessageRecord[] =>
   Array.from({ length: 15 }, (_, index) =>
     message({
       id: `m${index}`,
-      role: index % 2 === 0 ? "user" : "assistant",
+      role: index % 2 === 0 ? "assistant" : "user",
       content: `message ${index}`,
       createdAt: new Date(2026, 0, 1, 0, index),
     }),
@@ -159,7 +159,7 @@ describe("ConversationSummaryService", () => {
     const messages = Array.from({ length: 9 }, (_, index) =>
       message({
         id: `m${index}`,
-        role: index % 2 === 0 ? "user" : "assistant",
+        role: index % 2 === 0 ? "assistant" : "user",
         content: `message ${index}`,
         createdAt: new Date(2026, 0, 1, 0, index),
       }),
@@ -201,7 +201,7 @@ describe("ConversationSummaryService", () => {
     const messages = Array.from({ length: 13 }, (_, index) =>
       message({
         id: `m${index}`,
-        role: index % 2 === 0 ? "user" : "assistant",
+        role: index % 2 === 0 ? "assistant" : "user",
         content: `message ${index}`,
         createdAt: new Date(2026, 0, 1, 0, index),
       }),
@@ -313,7 +313,7 @@ describe("ConversationSummaryService", () => {
   it("clamps each source message excerpt in the regeneration input", async () => {
     const messages = [
       ...fifteenMessages().slice(0, 14),
-      message({ id: "long", role: "user", content: "SUPER_LONG_" + "z".repeat(80), createdAt: new Date(2026, 0, 2) }),
+      message({ id: "long", role: "assistant", content: "SUPER_LONG_" + "z".repeat(80), createdAt: new Date(2026, 0, 2) }),
     ];
     let capturedPrompt = "";
     const generator: ConversationSummaryGenerator = {
@@ -331,6 +331,53 @@ describe("ConversationSummaryService", () => {
 
     expect(capturedPrompt).toContain("…");
     expect(capturedPrompt).not.toContain("z".repeat(80));
+  });
+
+  it("withholds the messages of a turn whose routine held a sensitive value from the summary model (#1543)", async () => {
+    const messages = [
+      ...fifteenMessages().slice(0, 13),
+      message({ id: "visitor", role: "user", content: "I tore my ACL skiing", metadata: { sensitiveSlotKeys: ["injury"] }, createdAt: new Date(2026, 0, 2) }),
+      message({ id: "reply", role: "assistant", content: "Noted: torn ACL. Which class?", metadata: { sensitiveSlotKeys: ["injury"] }, createdAt: new Date(2026, 0, 2, 0, 1) }),
+    ];
+    let capturedPrompt = "";
+    const generator: ConversationSummaryGenerator = {
+      generate: vi.fn(async ({ prompt }) => {
+        capturedPrompt = prompt;
+        return { summary: "ok" };
+      }),
+    };
+    const service = new ConversationSummaryService(inMemoryStore(), messageReader(messages), generator, inMemoryTitleWriter(), blankEarlyTitleGenerator(), undefined, config);
+
+    await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
+
+    expect(capturedPrompt).not.toContain("ACL");
+    expect(capturedPrompt).toContain("USER: [redacted]");
+    expect(capturedPrompt).toContain("ASSISTANT: [redacted]");
+    expect(capturedPrompt).toContain("message 12");
+  });
+
+  it("summarizes up to the latest reply, leaving a visitor message whose turn has not committed for the next run (#1543)", async () => {
+    // The visitor's last message belongs to a turn still running, so its sensitive marker may
+    // not be written yet; the summary waits for the reply that commits it.
+    const messages = [
+      ...fifteenMessages(),
+      message({ id: "in_flight", role: "user", content: "I also tore my ACL", createdAt: new Date(2026, 0, 2) }),
+    ];
+    const store = inMemoryStore();
+    let capturedPrompt = "";
+    const generator: ConversationSummaryGenerator = {
+      generate: vi.fn(async ({ prompt }) => {
+        capturedPrompt = prompt;
+        return { summary: "ok" };
+      }),
+    };
+    const service = new ConversationSummaryService(store, messageReader(messages), generator, inMemoryTitleWriter(), blankEarlyTitleGenerator(), undefined, config);
+
+    await service.refresh({ workspaceId: "ws_1", conversationId: "conv_1" });
+
+    expect(capturedPrompt).toContain("ASSISTANT: message 14");
+    expect(capturedPrompt).not.toContain("ACL");
+    expect(store.saved).toMatchObject({ coveredMessageCount: messages.length - 1, coveredThrough: messages[14].createdAt });
   });
 
   it("hard-clamps the generated summary before persisting", async () => {
@@ -509,7 +556,7 @@ describe("ConversationSummaryService title generation", () => {
     const messages = Array.from({ length: 9 }, (_, index) =>
       message({
         id: `m${index}`,
-        role: index % 2 === 0 ? "user" : "assistant",
+        role: index % 2 === 0 ? "assistant" : "user",
         content: `message ${index}`,
         createdAt: new Date(2026, 0, 1, 0, index),
       }),

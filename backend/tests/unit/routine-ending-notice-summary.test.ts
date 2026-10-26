@@ -46,6 +46,25 @@ describe("ModelRoutineEndingNoticeSummaryGenerator", () => {
     }));
   });
 
+  it("withholds the messages of turns whose routine held a sensitive value from the summary model (#1543)", async () => {
+    const complete = vi.fn(async (_request: CompleteInput) => ({ text: "Booking details." }));
+    const sensitive = { sensitiveSlotKeys: ["injury"] };
+    const generator = new ModelRoutineEndingNoticeSummaryGenerator({
+      findByIdAndWorkspaceId: async () => ({ ...message("ending", "user", "My knee is still swollen."), metadata: sensitive }),
+      listBeforeByConversationId: async () => [
+        message("start", "user", "I want to book a yoga class."),
+        { ...message("reply", "assistant", "Sorry about the swollen knee. Which day?"), metadata: sensitive },
+      ],
+    }, { complete } as never);
+
+    await generator.generate({ ...input, collected: { class_name: "Yoga", injury: "[redacted]" } });
+
+    const request = complete.mock.calls[0][0];
+    expect(request.prompt).toContain("I want to book a yoga class.");
+    expect(request.prompt).not.toContain("knee");
+    expect(request.prompt).toContain("USER: [redacted]");
+  });
+
   it("uses the answer path's conversation-language instruction when no explicit language was queued", async () => {
     const complete = vi.fn(async (_request: CompleteInput) => ({ text: "Detail." }));
     const generator = new ModelRoutineEndingNoticeSummaryGenerator({

@@ -4,6 +4,7 @@ import type {
   ConversationRequestContext,
   ConversationTrace,
   MessageSource,
+  RoutineState,
   RoutineTurnYield,
   StagedContext,
 } from "@radioso/conversation-contract";
@@ -49,9 +50,12 @@ import type {
   AgentRecord,
   AgentRevision,
   AgentRevisionRuntimeResolver,
+  AgentRevisionSnapshot,
   AgentService,
 } from "../../agents/public.js";
 import { applyAgentRevisionSnapshot } from "../../agents/public.js";
+import { sensitiveSlotsAwaited } from "../../routines/public.js";
+import { sensitiveTurnMetadata } from "../../../shared/domain/sensitiveTranscript.js";
 import { DEFAULT_CONTACT_REQUEST_DELIVERY, defaultAgentBrandingSettings, defaultAgentVoiceSettings, isAgentRetrievalEnabled, isPrivacyNoticeVersionOf, unpublishedAgentPublicIdentity } from "../../agents/public.js";
 import { defaultWebsiteEmbedSettings } from "../../settings/contracts/websiteEmbed.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
@@ -420,6 +424,8 @@ export class ChatSessionPreparer {
     /** Optional: when wired, resolves the `visitors` row a new conversation belongs to (spec 1277). */
     private readonly visitorResolver?: VisitorResolverPort,
     private readonly metrics?: Pick<MetricsRegistry, "incrementCounter"> | null,
+    /** Optional: when wired, a message answering a sensitive routine field is marked as it is created (#1543). */
+    private readonly routineStates?: { loadActive(input: { sessionId: string }): Promise<RoutineState | null> },
   ) {}
 
   async prepare(input: PrepareChatSessionInput, options: PrepareChatSessionOptions = {}): Promise<PreparedSession> {
@@ -572,16 +578,23 @@ export class ChatSessionPreparer {
       : history;
 
     // An existing message's recorder owns its follow-up work (facet extraction included).
+    const awaitedSensitiveSlotKeys = existingUserMessage
+      ? []
+      : await timed("routineState", () => this.sensitiveSlotsAwaitedFor(conversation, revisionResolved.routines));
+    const userMessageInputMetadata = input.routineInvocation
+      ? routineInvocationInputMetadata(input.routineInvocation)
+      : input.inputMetadata;
     const userMessage = existingUserMessage?.message ?? await timed("userMessage", () => this.messageRepository.create({
       conversationId: persistedConversation.id,
       workspaceId: input.workspaceId,
       role: "user",
       content: input.query,
-      inputMetadata: input.routineInvocation
-        ? routineInvocationInputMetadata(input.routineInvocation)
-        : input.inputMetadata,
+      ...(awaitedSensitiveSlotKeys.length > 0
+        ? { metadata: { ...userMessageInputMetadata, ...sensitiveTurnMetadata(awaitedSensitiveSlotKeys) } }
+        : { inputMetadata: userMessageInputMetadata }),
     }));
-    if (!existingUserMessage) {
+    // A message that answers a sensitive field is never restated as a facet.
+    if (!existingUserMessage && awaitedSensitiveSlotKeys.length === 0) {
       this.enqueueFacetExtraction(userMessage, persistedConversation);
     }
     // The direct-only (non-grounded) base turn. Used as-is when retrieval is
@@ -692,6 +705,8 @@ export class ChatSessionPreparer {
     agent: AgentRecord;
     revisionId: string | null;
     contextVariableEnablements: readonly AgentContextVariableEnablement[] | null;
+    /** The routines the revision serves; empty when the turn runs with no revision. */
+    routines: AgentRevisionSnapshot["routines"];
   }> {
     if (input.preResolvedRevision) {
       if (!input.trustedTestRunner) {
@@ -701,21 +716,23 @@ export class ChatSessionPreparer {
         agent: applyAgentRevisionSnapshot(input.agent, input.preResolvedRevision),
         revisionId: input.preResolvedRevision.id,
         contextVariableEnablements: input.preResolvedRevision.snapshot.contextVariableEnablements,
+        routines: input.preResolvedRevision.snapshot.routines,
       };
     }
     if (!this.agentRevisionRuntimeResolver) {
       if (input.trustedTestRunner || input.trustedHistoricalReplay) {
-        return { agent: input.agent, revisionId: null, contextVariableEnablements: null };
+        return { agent: input.agent, revisionId: null, contextVariableEnablements: null, routines: [] };
       }
       throw agentRevisionRuntimeNotConfigured();
     }
     if (input.conversation?.agentRevisionId) {
-      return this.agentRevisionRuntimeResolver.resolvePinned({
+      const pinned = await this.agentRevisionRuntimeResolver.resolvePinned({
         workspaceId: input.workspaceId,
         agent: input.agent,
         revisionId: input.conversation.agentRevisionId,
         allowCandidate: input.trustedTestRunner,
       });
+      return { ...pinned, routines: pinned.revision.snapshot.routines };
     }
     if (input.conversation && input.conversationHasHistory) {
       // Migration 171 binds attributable legacy conversations to their rollout
@@ -737,10 +754,27 @@ export class ChatSessionPreparer {
       );
       throw conversationRevisionUnavailable();
     }
-    return this.agentRevisionRuntimeResolver.resolveNew({
+    const resolved = await this.agentRevisionRuntimeResolver.resolveNew({
       workspaceId: input.workspaceId,
       agent: input.agent,
     });
+    return { ...resolved, routines: resolved.revision.snapshot.routines };
+  }
+
+  /**
+   * The sensitive slots (#1543) the conversation's active routine waits on. The message this
+   * turn records answers that step, so it is marked as it is created, before a facet job, a
+   * summary job, or an eval capture can copy it, whatever the turn then manages to store.
+   */
+  private async sensitiveSlotsAwaitedFor(
+    conversation: ConversationRecord | null,
+    routines: AgentRevisionSnapshot["routines"],
+  ): Promise<string[]> {
+    if (!conversation || routines.length === 0 || !this.routineStates) {
+      return [];
+    }
+    const active = await this.routineStates.loadActive({ sessionId: conversation.id });
+    return active ? sensitiveSlotsAwaited(routines, active) : [];
   }
 
   /**

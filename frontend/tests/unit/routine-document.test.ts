@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { branchIsImplicitFallThrough, documentDiagnosticText, documentTextToSegments, formatBindingLine, formatBranchTargetLabel, guardToSentence, instructionToProseParagraphs, proseParagraphsToInstruction, sanitizeDraftContentForSave } from '@/lib/routine-document'
+import { branchIsImplicitFallThrough, defaultVariableBindingRef, documentDiagnosticText, documentTextToSegments, formatBindingLine, formatBranchTargetLabel, guardToSentence, instructionToProseParagraphs, proseParagraphsToInstruction, sanitizeDraftContentForSave } from '@/lib/routine-document'
 import type { RoutineBlockBranch, RoutineBlockInstructionSegment } from '@/lib/routine-prose'
 
 describe('routine document helpers', () => {
@@ -284,5 +284,17 @@ describe('step instruction prose mapping', () => {
   it('reads an empty document as a single empty instruction segment', () => {
     expect(proseParagraphsToInstruction([])).toEqual([{ kind: 'text', text: '' }])
     expect(instructionToProseParagraphs([])).toEqual([{ segments: [{ kind: 'text', text: '' }] }])
+  })
+})
+
+describe('defaultVariableBindingRef', () => {
+  it('binds the first field that is not sensitive, never a sensitive one by default (#1543)', () => {
+    expect(defaultVariableBindingRef(['injury', 'email'], ['injury'])).toBe('email')
+    expect(defaultVariableBindingRef(['email', 'injury'], ['injury'])).toBe('email')
+  })
+
+  it('binds nothing when every field is sensitive or there is none', () => {
+    expect(defaultVariableBindingRef(['injury'], ['injury'])).toBe('')
+    expect(defaultVariableBindingRef([], [])).toBe('')
   })
 })

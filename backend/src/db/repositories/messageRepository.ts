@@ -28,6 +28,7 @@ import { clockTimestamp, clockTimestampMinusSeconds, jsonbConcat, toJsonb } from
 import type { Db } from "../../shared/infra/kysely/types.js";
 import { CursorPaginationError, decodeCursorWithKeys, encodeCursor } from "../../shared/domain/cursorPagination.js";
 import type { GroundingDiagnosticSnapshot } from "../../shared/domain/groundingDiagnostic.js";
+import { carriesSensitiveValue, SENSITIVE_SLOT_KEYS_METADATA_KEY } from "../../shared/domain/sensitiveTranscript.js";
 
 export type MessageRole = "user" | "assistant" | "system";
 
@@ -784,20 +785,40 @@ export class MessageRepository
   }
 
   /**
-   * Narrow read used by facet extraction: the content of one message, or `null` when
-   * it no longer exists (deleted conversation, workspace mismatch). Not part of
-   * {@link MessageRepositoryPort} — that interface is a much larger surface than a
-   * per-message background job should depend on; this satisfies the facets module's
-   * own `FacetSourceMessagePort` structurally.
+   * Narrow read used by facet extraction: the content of one message and whether it
+   * carries a sensitive routine value, or `null` when it no longer exists (deleted
+   * conversation, workspace mismatch). Not part of {@link MessageRepositoryPort} — that
+   * interface is a much larger surface than a per-message background job should depend
+   * on; this satisfies the facets module's own `FacetSourceMessagePort` structurally.
    */
-  async getContentById(input: { workspaceId: string; messageId: string }): Promise<string | null> {
+  async getFacetSource(input: {
+    workspaceId: string;
+    messageId: string;
+  }): Promise<{ content: string; carriesSensitiveValue: boolean } | null> {
     const row = await this.db
       .selectFrom("messages")
-      .select("content")
+      .select(["content", "metadata_json"])
       .where("workspace_id", "=", input.workspaceId)
       .where("id", "=", input.messageId)
       .executeTakeFirst();
-    return row?.content ?? null;
+    return row ? { content: row.content, carriesSensitiveValue: carriesSensitiveValue(row.metadata_json) } : null;
+  }
+
+  /**
+   * Every sensitive slot key (#1543) the conversation's marked turns name, in first-seen order. A
+   * copy of the conversation's routine state masks these, wherever in the thread the turn that
+   * marked them sits. Not part of {@link MessageRepositoryPort}: only that copy reads it.
+   */
+  async listSensitiveSlotKeys(input: { workspaceId: string; conversationId: string }): Promise<string[]> {
+    const rows = await this.db
+      .selectFrom("messages")
+      .select(sql<string>`jsonb_array_elements_text(metadata_json -> ${SENSITIVE_SLOT_KEYS_METADATA_KEY})`.as("key"))
+      .where("workspace_id", "=", input.workspaceId)
+      .where("conversation_id", "=", input.conversationId)
+      .where(sql<boolean>`jsonb_typeof(metadata_json -> ${SENSITIVE_SLOT_KEYS_METADATA_KEY}) = 'array'`)
+      .orderBy("created_at", "asc")
+      .execute();
+    return [...new Set(rows.map((row) => row.key))];
   }
 
   async create(input: {

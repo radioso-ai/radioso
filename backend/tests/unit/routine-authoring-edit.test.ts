@@ -96,6 +96,23 @@ describe("routine authoring edits", () => {
     expect(patched.terminals).toEqual([{ stableStepId: "done", kind: "complete", instruction: null, ordinal: 0 }]);
   });
 
+  it("marks a field sensitive and back to normal through the edit patch, and shows the reviewer which (#1543)", () => {
+    const sensitive = applyRoutineFieldPatch(routine(), routineFieldPatchSchema.parse({
+      slots: [{ key: "order_number", sensitivity: "sensitive" }],
+    }));
+    expect(sensitive.slots?.[0]?.sensitivity).toBe("sensitive");
+    expect((projectRoutineForReview(sensitive).slots as Record<string, { sensitivity: string }>).order_number.sensitivity).toBe("sensitive");
+
+    const stored = { ...routine(), slots: routine().slots.map((slot) => ({ ...slot, sensitivity: "sensitive" as const })) };
+    const normal = applyRoutineFieldPatch(stored, routineFieldPatchSchema.parse({
+      slots: [{ key: "order_number", sensitivity: "normal" }],
+    }));
+    // Normal is the absence of the field, so a routine set back reads exactly as it did before.
+    expect(normal.slots).toEqual(routine().slots);
+    expect(describeRoutineFieldPatch(routineFieldPatchSchema.parse({ slots: [{ key: "order_number", sensitivity: "sensitive" }] })))
+      .toBe("field order_number");
+  });
+
   it("takes a routine in or out of service through the same edit patch, leaving the graph untouched", () => {
     const source = routine({ enabled: true });
 
@@ -178,7 +195,7 @@ describe("routine authoring edits", () => {
       enabled: true,
       activation: { triggerDescription: "When the user needs support", gateRef: null, priority: 7, reentryMode: "always" },
       slots: {
-        order_number: { type: "text", required: true, description: "The order it concerns", mutable: null, ordinal: 0 },
+        order_number: { type: "text", required: true, description: "The order it concerns", mutable: null, sensitivity: "normal", ordinal: 0 },
       },
       steps: {
         collect_topic: { kind: "chat", instruction: "Ask how we can help.", toolRef: null, actionType: null, captureKey: null, options: null, ordinal: 0, metadata: { outlineLabel: "collect_topic" } },

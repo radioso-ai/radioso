@@ -17,7 +17,9 @@ import { describe, expect, it } from "vitest";
  * adding a dependency fails this test until someone widens the budget here, which is the
  * intended review moment.
  */
-const CORE = ["@radioso/conversation-defaults", "@radioso/conversation-engine"];
+// The contract is a dependency-free leaf; the engine and defaults read its few runtime values
+// (the redaction marker and the masking rule a sensitive slot shares with context variables).
+const CORE = ["@radioso/conversation-contract", "@radioso/conversation-defaults", "@radioso/conversation-engine"];
 
 const ALLOWED_EXTERNALS: Record<string, readonly string[]> = {
   ".": CORE,

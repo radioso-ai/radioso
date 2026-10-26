@@ -50,6 +50,7 @@ describe("ConversationTestExecutionSeedSource", () => {
 
   let findByIdAndWorkspaceId: ReturnType<typeof vi.fn<SeedConversationReaderPort["findByIdAndWorkspaceId"]>>;
   let listRecentByConversationId: ReturnType<typeof vi.fn<SeedMessageReaderPort["listRecentByConversationId"]>>;
+  let listSensitiveSlotKeys: ReturnType<typeof vi.fn<SeedMessageReaderPort["listSensitiveSlotKeys"]>>;
   let loadActive: ReturnType<typeof vi.fn<SeedRoutineStateReaderPort["loadActive"]>>;
   let loadPending: ReturnType<typeof vi.fn<SeedClarificationReaderPort["loadPending"]>>;
   let loadDirectiveState: ReturnType<typeof vi.fn<SeedDirectiveStateReaderPort["load"]>>;
@@ -58,12 +59,13 @@ describe("ConversationTestExecutionSeedSource", () => {
   beforeEach(() => {
     findByIdAndWorkspaceId = vi.fn(async () => buildConversation({ id: conversationId, workspaceId, agentId }));
     listRecentByConversationId = vi.fn(async () => []);
+    listSensitiveSlotKeys = vi.fn(async () => []);
     loadActive = vi.fn(async () => null);
     loadPending = vi.fn(async () => null);
     loadDirectiveState = vi.fn(async () => null);
     source = new ConversationTestExecutionSeedSource({
       conversations: { findByIdAndWorkspaceId },
-      messages: { listRecentByConversationId },
+      messages: { listRecentByConversationId, listSensitiveSlotKeys },
       routineStates: { loadActive },
       clarifications: { loadPending },
       directiveStates: { load: loadDirectiveState },
@@ -146,6 +148,51 @@ describe("ConversationTestExecutionSeedSource", () => {
       },
       directiveState: { turnSeq: 4, firings: { greet: { lastFiredTurn: 1, count: 1 } } },
     });
+  });
+
+  it("seeds a sensitive value masked: its turns' text and the routine's value, keeping the run's position (#1543)", async () => {
+    listRecentByConversationId.mockResolvedValue([
+      buildMessage({ id: "m-1", role: "user", content: "I want to book yoga", createdAt: new Date(1) }),
+      buildMessage({ id: "m-2", role: "user", content: "I tore my ACL", metadata: { sensitiveSlotKeys: ["injury"] }, createdAt: new Date(2) }),
+      buildMessage({ id: "m-3", role: "assistant", content: "Noted, a torn ACL.", metadata: { sensitiveSlotKeys: ["injury"] }, createdAt: new Date(3) }),
+    ]);
+    listSensitiveSlotKeys.mockResolvedValue(["injury"]);
+    loadActive.mockResolvedValue({
+      sessionId: conversationId,
+      routineId: "book-class",
+      path: ["ask_class", "ask_injury", "confirm"],
+      variables: { class_name: "Yoga", injury: "torn ACL" },
+      status: "active",
+    });
+
+    const seed = await source.loadSeed({ workspaceId, agentId, conversationId });
+
+    expect(listSensitiveSlotKeys).toHaveBeenCalledWith({ workspaceId, conversationId });
+    expect(seed?.messages.map((message) => message.content)).toEqual(["I want to book yoga", "[redacted]", "[redacted]"]);
+    expect(seed?.continuation).toMatchObject({
+      routineState: { path: ["ask_class", "ask_injury", "confirm"], variables: { class_name: "Yoga", injury: "[redacted]" } },
+    });
+    expect(JSON.stringify(seed)).not.toContain("ACL");
+  });
+
+  it("seeds a pending clarification without the question it holds when that visitor message is marked (#1543)", async () => {
+    const pending = (originalQuery: string) => ({
+      sessionId: conversationId, source: "routine", originalQuery, mode: "ask" as const, status: "pending" as const,
+      candidates: [{ id: "a", label: "Knee", confidence: 1, payload: {} }], expiresAt: new Date("2026-06-01T01:00:00.000Z"),
+    });
+    listRecentByConversationId.mockResolvedValue([
+      buildMessage({ id: "m-1", role: "user", content: "Which class suits my torn ACL?", metadata: { sensitiveSlotKeys: ["injury"] }, createdAt: new Date(1) }),
+      buildMessage({ id: "m-2", role: "user", content: "Which class is easiest?", createdAt: new Date(2) }),
+    ]);
+    listSensitiveSlotKeys.mockResolvedValue(["injury"]);
+
+    loadPending.mockResolvedValue(pending("Which class suits my torn ACL?"));
+    const masked = await source.loadSeed({ workspaceId, agentId, conversationId });
+    expect((masked?.continuation as { pendingClarification: object }).pendingClarification).not.toHaveProperty("originalQuery");
+
+    loadPending.mockResolvedValue(pending("Which class is easiest?"));
+    const kept = await source.loadSeed({ workspaceId, agentId, conversationId });
+    expect(kept?.continuation).toMatchObject({ pendingClarification: { originalQuery: "Which class is easiest?" } });
   });
 
   it("leaves the continuation null when the source has no active routine, clarification, or directive memory", async () => {

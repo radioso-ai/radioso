@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch'
 import { defaultNoticeDestinationLabel, describeDailyEmailAllowance, describeNoticeDestination } from '@/lib/operator-notice-destinations'
 import { instructionToProseParagraphs, proseParagraphsToInstruction } from '@/lib/routine-document'
-import { newEndingNotice, type EndingNotice } from '@/lib/routine-document-edits'
+import { newEndingNotice, replyToCandidates, type EndingNotice } from '@/lib/routine-document-edits'
 import { blockSegmentsToInstruction, instructionToBlockSegments, type ChipDocVariable, type ProseParagraph, type RoutineBlockEnding } from '@/lib/routine-prose'
 
 // One notice text, edited with the same chip editor as a step instruction, so `@` inserts a
@@ -90,9 +90,13 @@ function NoticeSenderField({ id, skillName, onChange }: {
 // A slot key starts with a letter or underscore, so this can never name one.
 const NO_REPLY_TO = ':none'
 
-// Which collected address replies to the notice go to. Only the routine's email fields are
-// offered, and only the author picks one. A stored key that is no longer an email field stays
-// visible so the author sees what the routine says; validation reports it.
+// The routine's fields as the reply-to rules read them.
+const noticeFields = (variables: ChipDocVariable[]) =>
+  variables.map((variable) => ({ key: variable.name, type: variable.type, ...(variable.sensitive ? { sensitivity: 'sensitive' as const } : {}) }))
+
+// Which collected address replies to the notice go to. Only the routine's email fields that are
+// not sensitive are offered, and only the author picks one. A stored key that no longer qualifies
+// stays visible so the author sees what the routine says; validation reports it.
 function NoticeReplyToField({ id, ending, variables, onChange }: {
   id: string
   ending: RoutineBlockEnding
@@ -100,12 +104,11 @@ function NoticeReplyToField({ id, ending, variables, onChange }: {
   onChange: (replyToSlot: string | null) => void
 }) {
   const replyToSlot = ending.operatorNotice?.replyToSlot
-  const emailFields = variables.filter((variable) => variable.type === 'email')
-  const unlisted = replyToSlot && !emailFields.some((field) => field.name === replyToSlot) ? replyToSlot : null
-  const advisories = routineAdvisories({
-    slots: variables.map((variable) => ({ key: variable.name, type: variable.type })),
-    terminals: [ending],
-  })
+  const fields = noticeFields(variables)
+  const emailFields = replyToCandidates(fields)
+  const unlisted = replyToSlot && !emailFields.some((field) => field.key === replyToSlot) ? replyToSlot : null
+  const unlistedReason = fields.some((field) => field.key === unlisted && field.type === 'email') ? 'sensitive' : 'not an email field'
+  const advisories = routineAdvisories({ slots: fields, terminals: [ending] })
   return (
     <div className="space-y-1">
       <Label htmlFor={`${id}-reply-to`} className="text-xs font-medium">Replies go to</Label>
@@ -115,8 +118,8 @@ function NoticeReplyToField({ id, ending, variables, onChange }: {
         </SelectTrigger>
         <SelectContent>
           <SelectItem value={NO_REPLY_TO}>No reply-to</SelectItem>
-          {emailFields.map((field) => <SelectItem key={field.id} value={field.name}>{field.name}</SelectItem>)}
-          {unlisted ? <SelectItem value={unlisted}>{`${unlisted} (not an email field)`}</SelectItem> : null}
+          {emailFields.map((field) => <SelectItem key={field.key} value={field.key}>{field.key}</SelectItem>)}
+          {unlisted ? <SelectItem value={unlisted}>{`${unlisted} (${unlistedReason})`}</SelectItem> : null}
         </SelectContent>
       </Select>
       {advisories.length > 0 ? <p className="text-xs text-muted-foreground">Replies won&apos;t reach the visitor. Choose their email field.</p> : null}
@@ -159,7 +162,7 @@ export function RoutineEndingNoticeEditor({ ending, variables, onChange }: {
           id={`${id}-enabled`}
           checked={notifies}
           disabled={handoff}
-          onCheckedChange={(checked) => onChange(checked ? newEndingNotice(variables.map((variable) => ({ key: variable.name, type: variable.type }))) : null)}
+          onCheckedChange={(checked) => onChange(checked ? newEndingNotice(noticeFields(variables)) : null)}
         />
         <Label htmlFor={`${id}-enabled`} className="text-sm">Notify the team</Label>
         {handoff ? <span className="text-xs text-muted-foreground">Always on for a hand-off.</span> : null}

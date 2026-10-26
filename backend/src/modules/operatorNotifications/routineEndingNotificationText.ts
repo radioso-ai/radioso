@@ -45,14 +45,27 @@ const labelForSlotKey = (key: string): string => {
 const renderCollectedValue = (value: HandoffCollectedValue): string =>
   typeof value === "boolean" ? (value ? "yes" : "no") : String(value);
 
-const collectedBlock = (collected: Record<string, HandoffCollectedValue> | undefined): string[] | null => {
+/**
+ * A sensitive slot's value reaches the notice already masked by the routine runner, which names
+ * the slot beside it. The notice says one was collected and leaves the reading to the
+ * conversation, which the sink links to. Which slots read as sensitive comes from those names,
+ * so a visitor who types the marker into a normal field sees it printed as typed.
+ */
+const SENSITIVE_IN_TEXT = "(sensitive)";
+const SENSITIVE_IN_COLLECTED = "sensitive, open the conversation to read it";
+
+const collectedBlock = (
+  collected: Record<string, HandoffCollectedValue> | undefined,
+  sensitiveKeys: ReadonlySet<string>,
+): string[] | null => {
   const entries = Object.entries(collected ?? {});
   if (entries.length === 0) {
     return null;
   }
   return [
     "Collected:",
-    ...entries.map(([key, value]) => `  ${labelForSlotKey(key)}: ${renderCollectedValue(value)}`),
+    ...entries.map(([key, value]) =>
+      `  ${labelForSlotKey(key)}: ${sensitiveKeys.has(key) ? SENSITIVE_IN_COLLECTED : renderCollectedValue(value)}`),
   ];
 };
 
@@ -63,13 +76,16 @@ const collectedBlock = (collected: Record<string, HandoffCollectedValue> | undef
 const renderTemplate = (
   template: string | undefined,
   collected: Record<string, HandoffCollectedValue> | undefined,
-  options: { singleLine: boolean },
+  options: { singleLine: boolean; sensitiveKeys: ReadonlySet<string> },
 ): string | null => {
   if (!template) {
     return null;
   }
   const rendered = template.replace(SLOT_REFERENCE_PATTERN, (_token, key: string) => {
     const value = collected?.[key];
+    if (value !== undefined && options.sensitiveKeys.has(key)) {
+      return SENSITIVE_IN_TEXT;
+    }
     const text = value === undefined ? "" : renderCollectedValue(value).trim();
     const shown = text.length > 0 ? text : MISSING_VALUE;
     return options.singleLine ? shown.replace(LINE_BREAKS, " ") : shown;
@@ -90,7 +106,8 @@ const footerLines = (notification: RoutineEndingOperatorNotification): string[] 
  * One rendering of a routine-ending notice shared by every operator sink, so email, webhook text,
  * and Slack show the same subject, routine name, and collected values. The authored subject
  * replaces the default, the authored intro follows the headline, and every collected value is
- * always listed after the details so a template can never hide what the routine gathered. Sinks
+ * always listed after the details so a template can never hide what the routine gathered; a
+ * sensitive one is listed as collected, without its value. Sinks
  * append transport-specific lines (such as the dashboard link) themselves.
  *
  * The body reads as plain prose for non-technical staff, not a log: no agent, routine, reason,
@@ -106,10 +123,11 @@ export const formatRoutineEndingNotification = (
 ): FormattedRoutineEndingNotification => {
   const defaults = DEFAULT_TEXT[notification.kind];
   const routineName = notification.routine?.name ?? null;
-  const subject = renderTemplate(notification.notice?.subject, notification.collected, { singleLine: true });
-  const intro = renderTemplate(notification.notice?.intro, notification.collected, { singleLine: false });
+  const sensitiveKeys = new Set(notification.sensitiveSlotKeys ?? []);
+  const subject = renderTemplate(notification.notice?.subject, notification.collected, { singleLine: true, sensitiveKeys });
+  const intro = renderTemplate(notification.notice?.intro, notification.collected, { singleLine: false, sensitiveKeys });
   const headline = [defaults.headline, ...(intro ? [intro] : [])];
-  const collected = collectedBlock(notification.collected);
+  const collected = collectedBlock(notification.collected, sensitiveKeys);
   const aiSummary = notification.aiSummary?.trim();
   const sections: string[][] = [headline, ...(collected ? [collected] : []), ...(aiSummary ? [["AI summary:", `  ${aiSummary}`]] : []), footerLines(notification)];
   return {

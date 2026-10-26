@@ -1,7 +1,7 @@
 ---
 title: "Author a routine"
 description: "Build a multi-step flow your agent runs across turns in the dashboard routine editor, then test it and ship it with the agent."
-last_updated: 2026-10-17
+last_updated: 2026-10-26
 ---
 
 # Author a routine
@@ -140,8 +140,9 @@ then continues through the flow.
 
 Choose a type — `text`, `number`, `boolean`, `email`, or `date` — in
 **Information**. Mark a value **Optional** when the flow may reach an ending
-while the value remains empty, or **Editable after completion** when a visitor
-may correct it later.
+while the value remains empty, **Editable after completion** when a visitor
+may correct it later, or **Sensitive** when it is something the visitor would
+not want copied around.
 
 The type decides what the routine keeps. An email has to look like an address,
 a date has to be a real day on the calendar, and a number has to be a number.
@@ -174,6 +175,46 @@ hand-off, and they don't add contact details or links the step doesn't ask
 for. A step that asks for a name and email asks for them even when an
 **Always** directive tells open answers to send booking questions to
 reception. See [Directives on a routine turn](/guides/authoring-directives#directives-on-a-routine-turn).
+
+### Sensitive values
+
+Say a class-booking routine asks "Any injuries we should know about?" and keeps
+the answer in `@injury`. Turn on **Sensitive** for that field, and the answer
+stays where the conversation runs: later steps still read `@injury`, and your
+team still reads it in the Inbox transcript. Every copy that leaves the
+conversation shows it masked:
+
+- The team notice lists the field as `Injury: sensitive, open the conversation
+  to read it`, and a `{{slot.injury}}` in its subject or intro reads
+  `(sensitive)`. The notice's `Open:` link goes straight to the conversation.
+  The notice webhook, a completion export, and an action step's payload carry
+  `[redacted]`.
+- A skill step with no inputs bound hands the routine's values to its skill with
+  `@injury` as `[redacted]`. A skill receives the value only when the step binds
+  one of its inputs to `@injury` — the binding shows on the step, so anyone
+  reading the routine sees where the value goes. Switching an input to a
+  variable never picks a sensitive field for you, and Ray flags a step whose
+  skill would receive one as `[redacted]`.
+- A Test Chat trace shows `[redacted]`, and **Continue in Test Chat** copies the
+  conversation with the sensitive turns withheld and the routine's value as
+  `[redacted]`. A branch rule or AI condition that reads `@injury` then sees
+  `[redacted]`, so the continued test can branch differently than the
+  conversation did.
+- The visitor's reply to a step that asks for `@injury` is marked as soon as it
+  arrives, and so is every turn after which the routine holds the value. Any
+  message sent while that step waits is marked, an off-topic question included,
+  so it stays out of Audience Pulse and eval snapshots too. Marked
+  turns read as `[redacted]` in the conversation summary, Audience Pulse, a
+  notice's AI summary, and an eval snapshot, which also captures the routine's
+  value as `[redacted]`. To replay such a turn with a value, run the case with a
+  routine start state of your own (see [Evals](/guides/evals)).
+
+Only you mark a field sensitive: Radioso never decides it from the field's name
+or the visitor's words, and Ray sets it only when you ask. The model the agent
+runs on still reads the value, since it is part of the conversation. A value the
+visitor gives while no step is asking for it, before its step or as a correction
+after the routine has finished, is marked only when the routine stores it, and
+once the routine has ended a later reply that mentions the value is not masked.
 
 ## Set branches, approvals, and endings
 
@@ -362,10 +403,14 @@ from a test that kept skills off.
   and is on keeps sending, and otherwise the notice goes to the default
   destination, or to the agent's contact settings or the workspace owner when
   `contact_human` is off.
-- The **Replies go to** select shows a field as **(not an email field)**: its
-  type changed after you picked it. Validation reports
-  `operator_notice_reply_to_slot_invalid` until you pick an email field or
-  **No reply-to**.
+- The **Replies go to** select shows a field as **(not an email field)** or
+  **(sensitive)**: its type changed, or it was marked sensitive, after you picked
+  it. A sensitive address never leaves the conversation, so it can't take
+  replies. Validation reports `operator_notice_reply_to_slot_invalid` until you
+  pick another email field or **No reply-to**.
+- A webhook or Slack skill receives `[redacted]` for a value: the field is
+  marked sensitive and the step passes it without a binding. Bind the skill's
+  input to the field on the step, or turn **Sensitive** off.
 - Reception's reply goes nowhere useful, or the email has no reply-to: check
   **Replies go to** on that ending, and that the routine asked for that field
   on the path the visitor took. The editor shows a reminder under the select

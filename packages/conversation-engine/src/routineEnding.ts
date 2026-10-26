@@ -51,6 +51,7 @@ export const routineEndingEffects = (
           stepId: terminal.stepId,
           terminalKind: terminal.kind,
           ...(terminal.collected ? { collected: terminal.collected } : {}),
+          ...(terminal.sensitiveSlotKeys?.length ? { sensitiveSlotKeys: terminal.sensitiveSlotKeys } : {}),
         },
       }
     : {}),
@@ -75,6 +76,7 @@ const operatorNoticeFor = (
       stepId: terminal.stepId,
       terminalKind: terminal.kind,
       ...(terminal.collected ? { collected: terminal.collected } : {}),
+      ...(terminal.sensitiveSlotKeys?.length ? { sensitiveSlotKeys: terminal.sensitiveSlotKeys } : {}),
       ...terminal.operatorNotice,
     },
   };

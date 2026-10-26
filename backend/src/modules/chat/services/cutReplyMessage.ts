@@ -13,7 +13,8 @@ export const cutReplyContent = (text: string): string =>
 
 /**
  * The assistant message that keeps the heard part of a reply a newer input cut off mid-stream,
- * marked cut short from the start with the channel's counts.
+ * marked cut short from the start with the channel's counts. `metadata` carries the turn's
+ * sensitive-value marker (#1543) when its visitor message had one.
  */
 export const cutReplyMessage = (input: {
   id: string;
@@ -22,12 +23,14 @@ export const cutReplyMessage = (input: {
   content: string;
   heardCharacterCount: number;
   spokenCharacterCount: number;
+  metadata?: Record<string, unknown>;
 }): MessageCreateInput & { id: string } => ({
   id: input.id,
   conversationId: input.conversationId,
   workspaceId: input.workspaceId,
   role: "assistant",
   content: input.content,
+  ...(input.metadata && Object.keys(input.metadata).length > 0 ? { metadata: input.metadata } : {}),
   interruption: {
     heardCharacterCount: input.heardCharacterCount,
     spokenCharacterCount: input.spokenCharacterCount,

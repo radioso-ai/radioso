@@ -104,4 +104,17 @@ describe("routineEndingEffects", () => {
       terminalKind: "stuck",
     });
   });
+
+  it("carries which collected values were masked as sensitive onto the hand-off and the notice (#1543)", () => {
+    const effects = routineEndingEffects("routine_1", {
+      kind: "handoff",
+      stepId: "step_handoff",
+      collected: { email: "alex@example.com", injury: "[redacted]" },
+      sensitiveSlotKeys: ["injury"],
+      operatorNotice: {},
+    });
+
+    expect(effects.handoff?.sensitiveSlotKeys).toEqual(["injury"]);
+    expect(effects.operatorNotice?.sensitiveSlotKeys).toEqual(["injury"]);
+  });
 });

@@ -217,10 +217,12 @@ export class RoutineSkillExecutorDispatcher implements ConversationRoutineSkillD
     // reports whether that can reach outside the conversation, even when the executor fails.
     // Typed steps resolve authored input bindings first. During the FR-019
     // compatibility window, untyped/legacy steps still pass captured variables
-    // through so external-skill slotBinding routing keeps working.
+    // through so external-skill slotBinding routing keeps working — a sensitive slot's
+    // masked, since no binding named it. This is the one place a skill's arguments are
+    // built, so every executor (webhook, Slack, email, MCP, notify) gets the same rule.
     const { values: collected, origins: collectedOrigins } = inputBindings && Object.keys(inputBindings).length > 0
       ? resolveSkillArguments(inputBindings, state.variables ?? {}, contextValuesFromStagedContext(turn.stagedContext))
-      : resolveUntypedSkillArguments(state.variables ?? {});
+      : resolveUntypedSkillArguments(state.variables ?? {}, input.sensitiveSlotKeys);
     const execute = async (): Promise<RoutineSkillResult> => {
       let result: SkillDispatchResult;
       this.throwIfCancelled?.();

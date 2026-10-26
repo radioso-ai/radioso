@@ -1193,6 +1193,28 @@ export type RoutineGuard =
 
 export type RoutineSlotType = "text" | "number" | "boolean" | "email" | "date";
 
+/**
+ * Whether a value may leave the conversation as it was given. It is authored on whatever holds
+ * the value (a routine slot, a context variable) and never inferred from a name or the value
+ * itself. A `sensitive` value stays where the conversation runs, in a routine's own state and in
+ * the transcript, and reads as {@link REDACTED_VALUE} in every copy that leaves: a notice, an
+ * action payload, a skill's arguments, a trace.
+ */
+export type ValueSensitivity = "normal" | "sensitive";
+
+/** What a sensitive value reads as wherever a copy of it leaves the conversation. */
+export declare const REDACTED_VALUE: "[redacted]";
+
+/**
+ * The record with the value of every key in `sensitiveKeys` replaced by {@link REDACTED_VALUE}.
+ * A key the record does not hold stays absent, so a masked copy never claims a value was
+ * collected when it was not. The one masking rule routine slots and context variables share.
+ */
+export declare function redactSensitiveValues<TValue>(
+  values: Readonly<Record<string, TValue>>,
+  sensitiveKeys: Iterable<string>,
+): Record<string, TValue | typeof REDACTED_VALUE>;
+
 export interface RoutineSlotSchema {
   id: string;
   key: string;
@@ -1201,6 +1223,8 @@ export interface RoutineSlotSchema {
   description?: string;
   /** When true, the captured value may be corrected after the routine completes. */
   mutable?: boolean;
+  /** Absent means `normal`. A sensitive slot's value is masked in every copy the engine hands out. */
+  sensitivity?: ValueSensitivity;
 }
 
 /**
@@ -1346,6 +1370,12 @@ export interface ConversationRoutineSkillDispatcher {
     occurrenceOrdinal?: number;
     /** Stable identity for this skill step when its enclosing operation is retried. */
     idempotencyKey?: string;
+    /**
+     * The routine's slot keys marked sensitive. A step with no input bindings passes the
+     * routine's variables wholesale, and these read as {@link REDACTED_VALUE} there; a step whose
+     * binding names a sensitive slot passes its value, because its author named it.
+     */
+    sensitiveSlotKeys?: readonly string[];
     // Output→variable assignment is applied by the runner after dispatch (see
     // DefaultRoutineRunner), not by the dispatcher — so it is intentionally not
     // part of the dispatch input.
@@ -1611,6 +1641,7 @@ export interface RoutineTraceRejectedSlot {
 export interface RoutineTraceSlotValue {
   key: string;
   type: RoutineSlotType;
+  /** A sensitive slot's value reads as {@link REDACTED_VALUE}. */
   value: string | number | boolean;
   /** True when `value` was cut to the per-value bound; the stored value ends in "…". */
   truncated?: boolean;
@@ -1655,7 +1686,8 @@ export interface ConversationRoutineResumeResult {
    * How the routine ended, when it did: at an authored terminal step of that kind, or `stuck`
    * on the chat step `stepId` (see {@link RoutineTerminalKind}). `collected` is the routine's
    * declared slot values keyed by slot key — the same projection a completion export sends —
-   * so a handoff can carry what the routine gathered. `operatorNotice` is the template the
+   * so a handoff can carry what the routine gathered; a sensitive slot's value reads as
+   * {@link REDACTED_VALUE} there, and only `endedVariables` keeps it. `operatorNotice` is the template the
    * landed terminal step carries, present exactly when an authored ending notifies operators —
    * a `stuck` ending never carries one, since it lands on no authored terminal step.
    */
@@ -1663,6 +1695,8 @@ export interface ConversationRoutineResumeResult {
     kind: RoutineTerminalKind;
     stepId: string;
     collected?: Record<string, unknown>;
+    /** The keys of `collected` whose values were masked as sensitive; absent when none were. */
+    sensitiveSlotKeys?: string[];
     operatorNotice?: RoutineOperatorNoticeTemplate;
   };
   /**
@@ -2024,6 +2058,8 @@ export interface ProcessTurnResult {
     stepId: string;
     terminalKind: RoutineHandoffTerminalKind;
     collected?: Record<string, unknown>;
+    /** The keys of `collected` whose values were masked as sensitive; absent when none were. */
+    sensitiveSlotKeys?: string[];
   };
   /**
    * Present when a routine ended on a terminal that notifies operators: every hand-off, and a
@@ -2047,6 +2083,11 @@ export interface RoutineOperatorNoticeEffect extends RoutineOperatorNoticeTempla
   stepId: string;
   terminalKind: "complete" | "handoff" | "stuck";
   collected?: Record<string, unknown>;
+  /**
+   * The keys of `collected` whose values were masked as sensitive; absent when none were. A
+   * notice decides what reads as sensitive from these, never from a value's text.
+   */
+  sensitiveSlotKeys?: string[];
 }
 
 export type ProcessTurnStreamEvent =

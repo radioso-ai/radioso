@@ -6,4 +6,4 @@ export * from "@radioso/routine-definition";
 export { resolveSkillArguments, resolveUntypedSkillArguments } from "@radioso/conversation-defaults";
 // When a slot-collection step has nothing left to ask is the runner's rule; status
 // reporting reads it here so "waiting for input" and the runner's skip never disagree.
-export { collectedSlotsForStep, isSlotCollectionStepSatisfied } from "@radioso/conversation-engine";
+export { collectedSlotsForStep, isSlotCollectionStepSatisfied, sensitiveSlotKeys } from "@radioso/conversation-engine";

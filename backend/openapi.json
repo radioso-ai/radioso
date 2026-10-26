@@ -6018,6 +6018,13 @@
                 },
                 "mutable": {
                   "type": "boolean"
+                },
+                "sensitivity": {
+                  "type": "string",
+                  "enum": [
+                    "normal",
+                    "sensitive"
+                  ]
                 }
               },
               "required": [
@@ -6651,6 +6658,13 @@
                     },
                     "mutable": {
                       "type": "boolean"
+                    },
+                    "sensitivity": {
+                      "type": "string",
+                      "enum": [
+                        "normal",
+                        "sensitive"
+                      ]
                     }
                   },
                   "required": [
@@ -7358,6 +7372,13 @@
                 },
                 "mutable": {
                   "type": "boolean"
+                },
+                "sensitivity": {
+                  "type": "string",
+                  "enum": [
+                    "normal",
+                    "sensitive"
+                  ]
                 }
               },
               "required": [
@@ -8063,6 +8084,13 @@
                     },
                     "mutable": {
                       "type": "boolean"
+                    },
+                    "sensitivity": {
+                      "type": "string",
+                      "enum": [
+                        "normal",
+                        "sensitive"
+                      ]
                     }
                   },
                   "required": [
@@ -9865,6 +9893,13 @@
                     },
                     "mutable": {
                       "type": "boolean"
+                    },
+                    "sensitivity": {
+                      "type": "string",
+                      "enum": [
+                        "normal",
+                        "sensitive"
+                      ]
                     }
                   },
                   "required": [

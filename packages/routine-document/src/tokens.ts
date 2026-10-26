@@ -284,7 +284,8 @@ export const serializeProseDoc = (input: {
     !referenced.has(variable.id)
     || variable.type !== 'text'
     || variable.required === false
-    || variable.mutable === true)
+    || variable.mutable === true
+    || variable.sensitive === true)
 
   const front = [FENCE, `grammar: ${GRAMMAR_VERSION}`, `name: ${input.name}`, `trigger: ${input.trigger}`]
   if (input.reentryMode && input.reentryMode !== 'once_per_conversation') {
@@ -309,11 +310,12 @@ export const serializeProseDoc = (input: {
     front.push(`handoff: ${handoffId || 'handoff'}${handoffInstruction ? ` ("${escapeQuoted(handoffInstruction)}")` : ''}`)
   }
   if (declaredVars.length > 0) {
-    // Each declaration is `key:type` plus optional `:optional` / `:mutable` flag tokens.
+    // Each declaration is `key:type` plus optional `:optional` / `:mutable` / `:sensitive` flag tokens.
     front.push(`vars: ${declaredVars.map((variable) => {
       const flags = [
         ...(variable.required === false ? ['optional'] : []),
         ...(variable.mutable === true ? ['mutable'] : []),
+        ...(variable.sensitive === true ? ['sensitive'] : []),
       ]
       return [variable.id, variable.type, ...flags].join(':')
     }).join(', ')}`)
@@ -708,9 +710,9 @@ export const parseProseDoc = (
   let grammarVersion = GRAMMAR_VERSION
   const declaredTypes = new Map<string, RoutineSlotType>()
   const declaredOrder: string[] = []
-  // Slot flags declared alongside the type (`key:type:optional:mutable`). Absent = default
-  // (required, non-mutable), so we only record the non-default flags we actually saw.
-  const declaredFlags = new Map<string, { required?: boolean; mutable?: boolean }>()
+  // Slot flags declared alongside the type (`key:type:optional:mutable:sensitive`). Absent =
+  // default (required, non-mutable, normal), so we only record the non-default flags we saw.
+  const declaredFlags = new Map<string, { required?: boolean; mutable?: boolean; sensitive?: boolean }>()
 
   let bodyStart = 0
   if (lines[0]?.trim() === FENCE) {
@@ -766,10 +768,12 @@ export const parseProseDoc = (
               declaredTypes.set(varKey, varType as RoutineSlotType)
               const required = flags.includes('optional') ? false : undefined
               const mutable = flags.includes('mutable') ? true : undefined
-              if (required !== undefined || mutable !== undefined) {
+              const sensitive = flags.includes('sensitive') ? true : undefined
+              if (required !== undefined || mutable !== undefined || sensitive !== undefined) {
                 declaredFlags.set(varKey, {
                   ...(required !== undefined ? { required } : {}),
                   ...(mutable !== undefined ? { mutable } : {}),
+                  ...(sensitive !== undefined ? { sensitive } : {}),
                 })
               }
             }
@@ -1007,7 +1011,7 @@ const readVarDeclarationDiagnostics = (value: string, line: number): ParseDiagno
       continue
     }
     for (const flag of flags) {
-      if (flag !== 'optional' && flag !== 'mutable') {
+      if (flag !== 'optional' && flag !== 'mutable' && flag !== 'sensitive') {
         diagnostics.push(invalidVarDeclarationDiagnostic(declaration, `invalid flag "${flag}"`, line))
         break
       }

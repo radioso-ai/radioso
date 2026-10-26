@@ -431,6 +431,8 @@ const parseRoutineSlot: Parser<RoutineSlotSchema> = (value) => {
     required: value.required,
     description: typeof value.description === "string" ? value.description : undefined,
     mutable: typeof value.mutable === "boolean" ? value.mutable : undefined,
+    // Only the non-default value is kept, so a sensitive slot stays masked after a reload (#1543).
+    ...(value.sensitivity === "sensitive" ? { sensitivity: "sensitive" as const } : {}),
   };
 };
 

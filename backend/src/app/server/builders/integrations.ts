@@ -37,7 +37,7 @@ import type { MetricsRegistry } from "../../../shared/observability/metrics/metr
 import { AgentSkillRepository } from "../../../modules/agentSkills/public.js";
 import { type AppLogger } from "../../../shared/observability/logger.js";
 import type { ManagedModelPolicy } from "../../../shared/domain/managedModelPolicy.js";
-import type { Env } from "../../config/env.js";
+import { connectorEncryptionKeys, type Env } from "../../config/env.js";
 import { buildInfrastructure, buildRepositories } from "./infra.js";
 import { McpConnectionService } from "../../../modules/externalSkills/services/mcpConnectionService.js";
 import {
@@ -71,7 +71,10 @@ import type { RecipientConfirmationRequester } from "../../../shared/domain/reci
 
 export const buildWebhookDestinationAdapter = (input: {
   auditService: AuditPort;
-  env: Pick<Env, "CONNECTOR_ENCRYPTION_KEY" | "NODE_ENV" | "WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK">;
+  env: Pick<
+    Env,
+    "CONNECTOR_ENCRYPTION_KEY" | "CONNECTOR_ENCRYPTION_PREVIOUS_KEYS" | "NODE_ENV" | "WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK"
+  >;
   logger: Pick<AppLogger, "warn">;
   repositories: {
     webhookDestinationRepository: WebhookDestinationRepositoryPort;
@@ -83,7 +86,7 @@ export const buildWebhookDestinationAdapter = (input: {
   new DefaultWebhookDestinationAdapter(new WebhookDestinationService({
     repository: input.repositories.webhookDestinationRepository,
     auditService: input.auditService,
-    encryption: { key: input.env.CONNECTOR_ENCRYPTION_KEY },
+    encryption: { key: connectorEncryptionKeys(input.env) },
     assertPublicUrl: input.assertPublicUrl,
     allowHttpLoopback: input.env.NODE_ENV !== "production" && input.env.WEBHOOK_DESTINATIONS_ALLOW_HTTP_LOOPBACK === true,
     routineReferences: input.repositories.routineDefinitionRepository,
@@ -182,8 +185,9 @@ export const buildConnectorRegistry = (input: {
     email: input.emailPlugin,
     slackBackgroundJobs: input.slackBackgroundJobs,
   });
-  if (input.env.CONNECTOR_ENCRYPTION_KEY) {
-    connectorRegistry.setEncryptionKey(input.env.CONNECTOR_ENCRYPTION_KEY);
+  const encryptionKeys = connectorEncryptionKeys(input.env);
+  if (encryptionKeys) {
+    connectorRegistry.setEncryptionKey(encryptionKeys);
   } else {
     input.logger.warn(
       {
@@ -205,18 +209,19 @@ export const buildIntegrationServices = (input: {
   recipientConfirmations: RecipientConfirmationRequester;
   repositories: ReturnType<typeof buildRepositories>;
 }) => {
+  const encryptionKeys = connectorEncryptionKeys(input.env);
   const slackInstallationService = new SlackInstallationService({
     oauthConnections: new OauthConnectionRepository(input.infrastructure.database.kysely),
     integrationConnections: input.repositories.integrationConnectionRepository,
     installations: input.repositories.slackInstallationRepository,
     bindings: input.repositories.slackChannelBindingRepository,
     workspaceAccounts: new PostgresWorkspaceAccountLookup(input.infrastructure.database.kysely),
-    encryptionKey: input.env.CONNECTOR_ENCRYPTION_KEY,
+    encryptionKey: encryptionKeys,
   });
   const oauthConnectionService = new OauthConnectionService({
     repository: new OauthConnectionRepository(input.infrastructure.database.kysely),
     providers: new StaticOauthProviderRegistry(input.composition.oauthProviders),
-    encryptionKey: input.env.CONNECTOR_ENCRYPTION_KEY,
+    encryptionKey: encryptionKeys,
     appBaseUrl: input.env.APP_BASE_URL,
     apiBaseUrl: input.env.CONNECTOR_PUBLIC_BASE_URL ?? input.env.APP_BASE_URL,
     assertPublicUrl: input.assertPublicUrl,
@@ -254,7 +259,7 @@ export const buildIntegrationServices = (input: {
   const mcpConnectionService = new McpConnectionService({
     repository: mcpConnectionRepository,
     toolServiceFactory: createMcpToolServiceFactory(input.assertPublicUrl, fetchPublicUrl),
-    encryptionKey: input.env.CONNECTOR_ENCRYPTION_KEY,
+    encryptionKey: encryptionKeys,
     assertPublicUrl: input.assertPublicUrl,
     fetchImpl: fetchPublicUrl,
     oauthRedirectUri: input.env.APP_BASE_URL

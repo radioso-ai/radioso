@@ -2361,6 +2361,7 @@ CREATE TABLE public.documents (
     enrichment jsonb,
     retrieval_enabled boolean DEFAULT true NOT NULL,
     retrieval_expires_at timestamp with time zone,
+    enrichment_reply jsonb,
     CONSTRAINT documents_content_size_bytes_check CHECK (((content_size_bytes IS NULL) OR (content_size_bytes >= 0)))
 );
 
@@ -4048,6 +4049,48 @@ CREATE TABLE public.visitors (
 
 
 --
+-- Name: voice_recording_erasure_items; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.voice_recording_erasure_items (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    erasure_id uuid NOT NULL,
+    conversation_id uuid,
+    vendor_region text NOT NULL,
+    vendor_conversation_id text NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    attempts integer DEFAULT 0 NOT NULL,
+    next_attempt_at timestamp with time zone DEFAULT now() NOT NULL,
+    failure_reason text,
+    failed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT voice_recording_erasure_items_attempts_check CHECK ((attempts >= 0)),
+    CONSTRAINT voice_recording_erasure_items_failed_has_reason CHECK (((status = 'pending'::text) OR (failure_reason IS NOT NULL))),
+    CONSTRAINT voice_recording_erasure_items_failed_has_time CHECK (((status = 'failed'::text) = (failed_at IS NOT NULL))),
+    CONSTRAINT voice_recording_erasure_items_failure_reason_check CHECK (((failure_reason IS NULL) OR ((length(failure_reason) >= 1) AND (length(failure_reason) <= 64)))),
+    CONSTRAINT voice_recording_erasure_items_status_check CHECK ((status = ANY (ARRAY['pending'::text, 'failed'::text]))),
+    CONSTRAINT voice_recording_erasure_items_vendor_conversation_id_check CHECK (((length(vendor_conversation_id) >= 1) AND (length(vendor_conversation_id) <= 128))),
+    CONSTRAINT voice_recording_erasure_items_vendor_region_check CHECK (((length(vendor_region) >= 1) AND (length(vendor_region) <= 16)))
+);
+
+
+--
+-- Name: voice_recording_erasures; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.voice_recording_erasures (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    account_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    vendor text NOT NULL,
+    sealed_api_key text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT voice_recording_erasures_vendor_check CHECK (((length(vendor) >= 1) AND (length(vendor) <= 32)))
+);
+
+
+--
 -- Name: voice_sessions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4226,7 +4269,7 @@ CREATE TABLE public.workspace_webhook_destinations (
     name text NOT NULL,
     url text NOT NULL,
     secret_ciphertext text NOT NULL,
-    encryption_key_id text NOT NULL,
+    encryption_key_id text,
     last_delivery_status text,
     last_delivery_at timestamp with time zone,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
@@ -6361,6 +6404,22 @@ ALTER TABLE ONLY public.vector_index_work
 
 ALTER TABLE ONLY public.visitors
     ADD CONSTRAINT visitors_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: voice_recording_erasure_items voice_recording_erasure_items_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.voice_recording_erasure_items
+    ADD CONSTRAINT voice_recording_erasure_items_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: voice_recording_erasures voice_recording_erasures_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.voice_recording_erasures
+    ADD CONSTRAINT voice_recording_erasures_pkey PRIMARY KEY (id);
 
 
 --
@@ -9000,6 +9059,41 @@ CREATE INDEX usage_events_copilot_message_idx ON public.usage_events USING btree
 --
 
 CREATE INDEX usage_events_message_idx ON public.usage_events USING btree (message_id) WHERE (message_id IS NOT NULL);
+
+
+--
+-- Name: voice_recording_erasure_items_due_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX voice_recording_erasure_items_due_idx ON public.voice_recording_erasure_items USING btree (erasure_id, next_attempt_at) WHERE (status = 'pending'::text);
+
+
+--
+-- Name: voice_recording_erasure_items_erasure_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX voice_recording_erasure_items_erasure_idx ON public.voice_recording_erasure_items USING btree (erasure_id);
+
+
+--
+-- Name: voice_recording_erasure_items_overdue_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX voice_recording_erasure_items_overdue_idx ON public.voice_recording_erasure_items USING btree (next_attempt_at) WHERE (status = 'pending'::text);
+
+
+--
+-- Name: voice_recording_erasure_items_pending_recording_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX voice_recording_erasure_items_pending_recording_idx ON public.voice_recording_erasure_items USING btree (vendor_conversation_id, vendor_region) WHERE (status = 'pending'::text);
+
+
+--
+-- Name: voice_recording_erasures_account_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX voice_recording_erasures_account_idx ON public.voice_recording_erasures USING btree (account_id);
 
 
 --
@@ -12348,6 +12442,14 @@ ALTER TABLE ONLY public.vector_index_work
 
 ALTER TABLE ONLY public.visitors
     ADD CONSTRAINT visitors_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: voice_recording_erasure_items voice_recording_erasure_items_erasure_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.voice_recording_erasure_items
+    ADD CONSTRAINT voice_recording_erasure_items_erasure_id_fkey FOREIGN KEY (erasure_id) REFERENCES public.voice_recording_erasures(id) ON DELETE CASCADE;
 
 
 --

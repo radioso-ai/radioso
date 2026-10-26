@@ -3607,6 +3607,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/account/voice-recordings/left-at-vendor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List call recordings the organization's deletions left at the voice vendor
+         * @description Deleting a conversation, a visitor, a workspace or the organization asks the voice vendor to delete each call's recording, retrying what it refuses for about a day. This lists the recordings it gave up on, across every workspace of the organization, deleted ones included, newest first, so they can be deleted in the vendor account by `vendorConversationId`. Page with `cursor`, from the previous page's `nextCursor`. Each is also recorded as a `conversation.recording_deleted` audit event with status `failure`. Account session only; owners and admins (`workspace.history.delete` on the organization). The response is `Cache-Control: no-store`.
+         */
+        get: operations["listVoiceRecordingsLeftAtVendor"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/delivery-failures": {
         parameters: {
             query?: never;
@@ -7435,6 +7455,12 @@ export interface components {
             /** @enum {string} */
             documentEnrichmentOverride?: "on" | "off";
         };
+        SingleDocumentReprocessRequest: {
+            /** @enum {string} */
+            documentEnrichmentOverride?: "on" | "off";
+            /** @description Ask the metadata extraction model afresh even when the document's title, text, and catalog are unchanged since its last successful extraction. Without it, an unchanged document applies the reply from that extraction again with no model call. Only this single-document reprocess accepts it. */
+            refreshDocumentEnrichment?: boolean;
+        };
         SourceReprocessResponse: {
             /** Format: uuid */
             sourceId: string;
@@ -7505,6 +7531,8 @@ export interface components {
             } | null;
             /** @description Content-free note about a classification fallback on an otherwise successful run. */
             classificationNote?: string | null;
+            /** @description `true` when the run applied the reply an earlier extraction got for the same title, text, and catalog instead of calling the model; `model` names the model that gave that reply. */
+            reusedReply?: boolean;
         };
         RagStatus: string;
         DocumentSummary: {
@@ -10378,6 +10406,42 @@ export interface components {
             }[];
             /** @description One page of the identities' conversations, from the conversation list, for identities that reach more than 200. Every id must be one of theirs. Without it the request covers every conversation they reach. */
             conversationIds?: string[];
+        };
+        VoiceRecordingLeftAtVendor: {
+            /** @description The voice vendor that keeps the recording, such as `elevenlabs`. */
+            vendor: string;
+            /** @description The data residency region of the vendor account the recording is in, such as `eu`. */
+            vendorRegion: string;
+            /** @description The vendor's own id for the call: delete it in the vendor's dashboard or API by this id. */
+            vendorConversationId: string;
+            /**
+             * Format: uuid
+             * @description The deleted conversation's id; null for a call whose first turn never came.
+             */
+            conversationId: string | null;
+            /**
+             * Format: uuid
+             * @description The workspace the call was in, which may itself be deleted.
+             */
+            workspaceId: string;
+            /**
+             * @description Why it is still at the vendor: `credential_missing` (the workspace held no vendor key when it was deleted), `credential_unreadable` (a key could not be decrypted), `vendor_rejected`, `vendor_unreachable`, `vendor_timeout`, `vendor_malformed_response` or `vendor_failed` (the vendor's last answer, after eight asks over about a day), `vendor_unsupported` (this deployment knows no host for the vendor or region), `expired` (still pending a week after its deletion), or `drain_failed` (the deleting job itself kept failing).
+             * @enum {string}
+             */
+            reason: "credential_missing" | "credential_unreadable" | "vendor_rejected" | "vendor_unreachable" | "vendor_timeout" | "vendor_malformed_response" | "vendor_failed" | "vendor_unsupported" | "expired" | "drain_failed";
+            /**
+             * Format: date-time
+             * @description When Radioso gave up on it.
+             */
+            failedAt: string;
+        };
+        VoiceRecordingsLeftAtVendorResponse: {
+            /** @description How many recordings the organization's deletions left at the vendor in all. */
+            total: number;
+            /** @description Newest first, at most `limit`. */
+            recordings: components["schemas"]["VoiceRecordingLeftAtVendor"][];
+            /** @description Pass as `cursor` to read the next page; null on the last page. */
+            nextCursor: string | null;
         };
         DeliveryFailure: {
             /** Format: uuid */
@@ -25178,7 +25242,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SingleDocumentReprocessRequest"];
+            };
+        };
         responses: {
             /** @description Document accepted for reprocessing */
             202: {
@@ -26716,6 +26784,58 @@ export interface operations {
             };
             /** @description `recording_unavailable`: the recording could not be read (the workspace's vendor key is missing or unreadable, or the vendor did not answer) */
             503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listVoiceRecordingsLeftAtVendor: {
+        parameters: {
+            query?: {
+                /** @description How many recordings to return, newest first. Defaults to 100; at most 500. */
+                limit?: number;
+                /** @description The `nextCursor` of the page before, to read the next page. */
+                cursor?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The recordings left at the vendor */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoiceRecordingsLeftAtVendorResponse"];
+                };
+            };
+            /** @description Invalid query or cursor */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Caller is not an owner or admin of the organization */
+            403: {
                 headers: {
                     [name: string]: unknown;
                 };

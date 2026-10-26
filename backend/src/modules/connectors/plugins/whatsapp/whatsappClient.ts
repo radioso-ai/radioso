@@ -35,6 +35,12 @@ export class WhatsAppClient {
     input: {
       to: string;
       text: string;
+      /**
+       * The caller's own local message id. Every log line below names the attempt by this
+       * instead of `to`, the visitor's phone number: it is internal, stable for the attempt
+       * (including its retries), and already how the caller correlates its own records.
+       */
+      outboundWamid: string;
     },
   ): Promise<{ wamid: string }> {
     const url = `https://graph.facebook.com/v21.0/${config.phoneNumberId}/messages`;
@@ -67,21 +73,33 @@ export class WhatsAppClient {
           throw new WhatsAppClientError("WhatsApp response did not include a message id", 502, false);
         }
 
-        this.options.logger.info({ phoneNumberId: config.phoneNumberId, to: input.to, wamid }, "WhatsApp reply sent");
+        this.options.logger.info(
+          { phoneNumberId: config.phoneNumberId, outboundWamid: input.outboundWamid, wamid },
+          "WhatsApp reply sent",
+        );
         return { wamid };
       }
 
       const errorPayload = await this.parseErrorResponse(response);
+      // The provider's own error text can quote the request back (seen above repeating a phone
+      // number) or describe the account's configuration, so it is used only to throw — the caller
+      // reports it through the error sinks — and never appears in this method's own log lines.
       const message = errorPayload?.error?.message ?? `WhatsApp API request failed with status ${response.status}`;
 
       if (response.status === 429 && attempt < 3) {
-        this.options.logger.warn({ to: input.to, delayMs, attempt, statusCode: response.status }, "WhatsApp rate limited");
+        this.options.logger.warn(
+          { outboundWamid: input.outboundWamid, delayMs, attempt, statusCode: response.status },
+          "WhatsApp rate limited",
+        );
         await this.sleep(delayMs);
         delayMs *= 2;
         continue;
       }
 
-      this.options.logger.error({ to: input.to, statusCode: response.status, err: message }, "WhatsApp send failed");
+      this.options.logger.error(
+        { outboundWamid: input.outboundWamid, statusCode: response.status },
+        "WhatsApp send failed",
+      );
       throw new WhatsAppClientError(message, response.status, response.status === 429);
     }
 

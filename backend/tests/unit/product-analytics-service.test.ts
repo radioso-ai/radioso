@@ -79,7 +79,7 @@ describe("ProductAnalyticsService", () => {
       eventName: "chat.completed",
     })).resolves.toBeTruthy();
     expect(logger.error).toHaveBeenCalledWith(
-      expect.objectContaining({ err: "analytics down", eventName: "chat.completed" }),
+      expect.objectContaining({ err: expect.objectContaining({ message: "analytics down" }), eventName: "chat.completed" }),
       "product_analytics_sink_failed",
     );
   });

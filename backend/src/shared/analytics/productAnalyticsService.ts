@@ -55,7 +55,7 @@ export class ProductAnalyticsService implements ProductAnalyticsPort {
       } catch (error) {
         this.options.logger.error(
           {
-            err: error instanceof Error ? error.message : String(error),
+            err: error,
             eventName: event.eventName,
           },
           "product_analytics_sink_failed",

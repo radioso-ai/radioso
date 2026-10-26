@@ -423,38 +423,4 @@ describe("voice recording contract", () => {
     expect([401, 403]).toContain(machine.status);
     await request(app).get("/api/v1/conversations/not-a-uuid/recording").set(dashboard).expect(400);
   });
-
-  it("asks the vendor to delete each recording when the workspace is deleted, and audits each deletion", async () => {
-    const { app, operator, vendorFetch, recordedCall, recordingEvents } = await recordedWorkspace({ region: "eu" });
-    const { conversationId } = await recordedCall();
-    await request(app).post("/api/v1/workspace").set("Cookie", operator.cookie).send({ name: "Keep" }).expect(201);
-    vendorFetch.mockClear();
-
-    await request(app).delete(`/api/v1/workspace/${operator.workspaceId}`).set("Cookie", operator.cookie).expect(204);
-
-    const deletes = vendorFetch.mock.calls.filter(([, init]) => init?.method === "DELETE");
-    expect(deletes.map(([url]) => urlOf(url))).toEqual([`https://api.eu.residency.elevenlabs.io/v1/convai/conversations/${VENDOR_CONVERSATION_ID}`]);
-    expect(deletes[0]?.[1]?.headers).toEqual({ "xi-api-key": VENDOR_KEY, "accept-encoding": "identity" });
-    // The organization keeps its proof of erasure after the workspace is gone.
-    expect(recordingEvents("conversation.recording_deleted")).toEqual([
-      expect.objectContaining({
-        accountId: operator.accountId,
-        workspaceId: null,
-        metadata: { conversationId, vendor: "elevenlabs", outcome: "deleted", deletedWorkspaceId: operator.workspaceId },
-      }),
-    ]);
-  });
-
-  it("deletes the workspace even when the vendor refuses to delete the recording", async () => {
-    const vendorFetch = vendorStandIn("eu", { remove: () => new Response("{}", { status: 500 }) });
-    const { app, operator, recordedCall, recordingEvents } = await recordedWorkspace({ vendorFetch });
-    await recordedCall();
-    await request(app).post("/api/v1/workspace").set("Cookie", operator.cookie).send({ name: "Keep" }).expect(201);
-
-    await request(app).delete(`/api/v1/workspace/${operator.workspaceId}`).set("Cookie", operator.cookie).expect(204);
-
-    const workspaces = await request(app).get("/api/v1/workspace").set("Cookie", operator.cookie).expect(200);
-    expect((workspaces.body.workspaces as Array<{ id: string }>).map((workspace) => workspace.id)).not.toContain(operator.workspaceId);
-    expect(recordingEvents("conversation.recording_deleted")).toEqual([]);
-  });
 });

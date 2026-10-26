@@ -31,6 +31,24 @@ export class AuditService {
     this.logRecorded(attributedEvent);
   }
 
+  /**
+   * Records events about an organization and a workspace that may be gone by the time they are
+   * written, one per `metadata` entry, in one write: a subject still there is pointed at, one gone is
+   * named by id in the metadata instead. The proof a deletion leaves when it finishes after its
+   * subjects are gone. Logs one line for the write.
+   */
+  async recordNamingGoneSubjects(event: Omit<AuditEventInput, "metadata"> & {
+    accountId: string;
+    workspaceId: string;
+    metadata: readonly Record<string, unknown>[];
+  }): Promise<void> {
+    const contextualMetadata = requestAuditMetadata(event.eventType);
+    const metadata = event.metadata.map((entry) => ({ ...entry, ...contextualMetadata }));
+    await this.auditEventRepository.createNamingGoneSubjects({ ...event, metadata });
+    const [only] = metadata;
+    this.logRecorded({ ...event, metadata: metadata.length === 1 && only ? only : { events: metadata.length } });
+  }
+
   async recordForLiveConversation(
     event: AuditEventInput,
     conversation: { workspaceId: string; conversationId: string },
@@ -63,7 +81,8 @@ export class AuditService {
         audit: auditEventLogFields(event),
         retrieval: extractRetrievalLogFields(event.metadata),
         analytics: extractProductAnalyticsLogFields(event.metadata?.analytics),
-        error: extractErrorLogFields(event.metadata?.error),
+        // Not `error`, which the logger serializes as a caught value (`logger.ts`).
+        errorEvent: extractErrorLogFields(event.metadata?.error),
       },
       "audit_event",
     );

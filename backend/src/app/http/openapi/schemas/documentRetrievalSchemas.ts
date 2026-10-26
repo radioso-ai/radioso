@@ -4,6 +4,7 @@ import {
   documentRetrievalUpdateSchema,
   documentSchema,
   reprocessDocumentBodySchema,
+  reprocessSingleDocumentBodySchema,
   documentSearchHistoryParamsSchema,
   documentSearchSchema,
   sourceUpdateSchema,
@@ -71,6 +72,16 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
   const DocumentReprocessRequestSchema = registry.register(
     "DocumentReprocessRequest",
     reprocessDocumentBodySchema,
+  );
+
+  const SingleDocumentReprocessRequestSchema = registry.register(
+    "SingleDocumentReprocessRequest",
+    reprocessSingleDocumentBodySchema.extend({
+      refreshDocumentEnrichment: z.boolean().optional().openapi({
+        description:
+          "Ask the metadata extraction model afresh even when the document's title, text, and catalog are unchanged since its last successful extraction. Without it, an unchanged document applies the reply from that extraction again with no model call. Only this single-document reprocess accepts it.",
+      }),
+    }),
   );
 
   const SourceReprocessResponseSchema = registry.register(
@@ -169,6 +180,10 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
         }),
       classificationNote: z.string().nullable().optional().openapi({
         description: "Content-free note about a classification fallback on an otherwise successful run.",
+      }),
+      reusedReply: z.boolean().optional().openapi({
+        description:
+          "`true` when the run applied the reply an earlier extraction got for the same title, text, and catalog instead of calling the model; `model` names the model that gave that reply.",
       }),
     }),
   );
@@ -658,6 +673,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     DocumentSourceListItemSchema,
     DocumentSourceUpdateRequestSchema,
     DocumentReprocessRequestSchema,
+    SingleDocumentReprocessRequestSchema,
     SourceReprocessResponseSchema,
     DocumentSourceListResponseSchema,
     DocumentImportRequestSchema,

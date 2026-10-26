@@ -60,6 +60,12 @@ export interface DocumentEnrichmentProvenance {
    * for runs that failed.
    */
   classificationNote?: string | null;
+  /**
+   * `true` when the run applied the reply an earlier run got for the same
+   * request instead of asking the model; `model` then names the model that
+   * gave that reply.
+   */
+  reusedReply?: boolean;
 }
 
 // Shape alone is not enough: a model can emit a well-formed but calendar-invalid

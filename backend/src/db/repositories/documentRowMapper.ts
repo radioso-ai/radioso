@@ -177,6 +177,8 @@ const mapDocumentEnrichment = (
           classificationNote:
             typeof record.classificationNote === "string" ? record.classificationNote : null,
         }),
+    // Absent on provenance written before replies were reused.
+    ...(typeof record.reusedReply === "boolean" ? { reusedReply: record.reusedReply } : {}),
   };
 };
 

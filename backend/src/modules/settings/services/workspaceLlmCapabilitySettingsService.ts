@@ -17,7 +17,7 @@ const VALID_PROVIDERS: readonly LlmProviderName[] = [
   "claude",
 ];
 
-export interface WorkspaceLlmCapabilityActor {
+interface WorkspaceLlmCapabilityActor {
   accountId: string;
 }
 
@@ -161,7 +161,7 @@ export class WorkspaceLlmCapabilitySettingsService {
       // security-relevant (they change which provider runs).
       this.logger?.warn(
         {
-          err: error instanceof Error ? error.message : String(error),
+          err: error,
           eventType: input.eventType,
           eventStatus: input.eventStatus,
           capability: input.capability,

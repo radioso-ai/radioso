@@ -131,7 +131,7 @@ export const readAuthorizedSource = async <TRow, TSource extends CopilotTriageSo
     return { report: { source, status: "ok", total: result.total }, items: result.items };
   } catch (error) {
     deps.logger?.warn(
-      { workspaceId: context.workspaceId, source, error: error instanceof Error ? error.message : "unknown" },
+      { workspaceId: context.workspaceId, source, err: error },
       "Escalation source could not be read",
     );
     return { report: { source, status: "failed", total: null }, items: [] };

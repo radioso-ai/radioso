@@ -38,7 +38,6 @@ import { buildWorkspaceServices } from "./accessAuth.js";
 import type { WorkspaceProviderCredentialsService } from "../../../modules/security/credentials/services/workspaceProviderCredentialsService.js";
 import type { Env } from "../../config/env.js";
 import type { WorkspacePersonalCredentialTerminationPort } from "../../../modules/workspace/services/workspaceService.js";
-import type { VendorHeldConversationDataEraser } from "../../../shared/domain/conversationDataErasure.js";
 import type { PersonalCredentialLifecyclePort } from "../../../modules/machineAccess/public.js";
 
 /** Composes the embedding transition, document, and retrieval graph in dependency order. */
@@ -52,8 +51,6 @@ export const buildDocumentRetrievalGraph = (input: {
   workspaceInvalidationPublisher: WorkspaceInvalidationPublisher;
   personalCredentialTermination?: WorkspacePersonalCredentialTerminationPort;
   personalCredentialLifecycle?: PersonalCredentialLifecyclePort;
-  /** What a workspace deletion asks vendors to erase, such as voice call recordings. */
-  vendorHeldConversationData?: { eraser: VendorHeldConversationDataEraser; logger: Pick<AppLogger, "warn"> };
 }) => {
   const { composition, env, infrastructure, logger, repositories } = input;
   const llmRegistry = buildLlmRegistry(env, logger, { metricsRegistry: infrastructure.metricsRegistry });
@@ -130,7 +127,7 @@ export const buildDocumentRetrievalGraph = (input: {
     onIdle: () => vectorTransitionMaintenance.reconcileBuildingTransitions(),
     onLoopError: (error) => {
       logger.error(
-        { backend: "pgvector", err: error instanceof Error ? error.message : String(error) },
+        { backend: "pgvector", err: error },
         "Vector index reconciliation tick failed",
       );
       void infrastructure.errorReportingService.report({
@@ -139,7 +136,7 @@ export const buildDocumentRetrievalGraph = (input: {
         severity: "error",
       }).catch((reportError) => {
         logger.error(
-          { err: reportError instanceof Error ? reportError.message : String(reportError) },
+          { err: reportError },
           "Vector index reconciliation error report failed",
         );
       });
@@ -250,7 +247,6 @@ export const buildDocumentRetrievalGraph = (input: {
     workspaceSetupStateRepository: repositories.workspaceSetupStateRepository,
     personalCredentialTermination: input.personalCredentialTermination,
     personalCredentialLifecycle: input.personalCredentialLifecycle,
-    vendorHeldConversationData: input.vendorHeldConversationData,
   });
   return {
     agentRetrievalScope,

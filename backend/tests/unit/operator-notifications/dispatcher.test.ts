@@ -54,6 +54,9 @@ describe("OperatorNotificationDispatcher", () => {
         event: "operator_notification_sink_failed",
         kind: "approval",
         workspaceId: "ws_1",
+        // The error itself: a provider's message can name the recipient, so it is never copied
+        // out; the app logger's serializer keeps the class and code.
+        err: expect.any(Error),
       }),
       "Operator notification sink failed",
     );

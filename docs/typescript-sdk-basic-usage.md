@@ -121,6 +121,15 @@ await client.documents.reprocess("document-id", {
 });
 ```
 
+A document whose title, text, and catalog are unchanged since its last extraction gets that extraction's reply applied again, with no model call. To have the model read it afresh, add `refreshDocumentEnrichment` (single-document reprocess only):
+
+```ts
+await client.documents.reprocess("document-id", {
+  documentEnrichmentOverride: "on",
+  refreshDocumentEnrichment: true,
+});
+```
+
 Reprocess all eligible documents for one source:
 
 ```ts

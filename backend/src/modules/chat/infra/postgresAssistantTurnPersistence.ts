@@ -477,7 +477,7 @@ export class PostgresAssistantTurnPersistence implements AssistantTurnPersistenc
       await this.actionDrainDispatcher.requestDrain();
     } catch (error) {
       this.logger?.warn(
-        { err: error instanceof Error ? error.message : String(error) },
+        { err: error },
         "Action outbox drain push failed; the interval poller or recovery sweep will pick this up",
       );
     }

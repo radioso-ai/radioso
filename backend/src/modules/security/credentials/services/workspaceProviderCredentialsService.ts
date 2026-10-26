@@ -1,6 +1,7 @@
 import {
   decryptField,
   encryptField,
+  type FieldEncryptionKeyRing,
 } from "../../../../shared/infra/crypto/fieldEncryption.js";
 import { badRequest, notFound, AppError } from "../../../../shared/domain/errors.js";
 import type {
@@ -17,9 +18,11 @@ const RESIDENCY_PROVIDER: WorkspaceCredentialProvider = "openai";
 
 const KEY_NAME = "CONNECTOR_ENCRYPTION_KEY";
 
+const PREVIOUS_KEYS_NAME = "CONNECTOR_ENCRYPTION_PREVIOUS_KEYS";
+
 export interface WorkspaceCredentialsEncryptionConfig {
-  /** Base64-encoded 32-byte key. Undefined when the operator has not configured one. */
-  key: string | undefined;
+  /** The credential key ring. Undefined when the operator has not configured `CONNECTOR_ENCRYPTION_KEY`. */
+  key: FieldEncryptionKeyRing | undefined;
 }
 
 interface ProviderCredentialFailureRecoveryPort {
@@ -75,7 +78,7 @@ export class WorkspaceProviderCredentialsService {
   ) {}
 
   isEncryptionConfigured(): boolean {
-    return typeof this.encryption.key === "string" && this.encryption.key.length > 0;
+    return this.encryption.key !== undefined && this.encryption.key.current.length > 0;
   }
 
   onDecryptError(listener: (error: unknown, provider: WorkspaceCredentialProvider) => void): void {
@@ -194,7 +197,7 @@ export class WorkspaceProviderCredentialsService {
           // Each transaction claims a bounded, revision-fenced batch.
         }
       } catch (error) {
-        this.logger?.warn({ workspaceId, err: error instanceof Error ? error.message : String(error) }, "Provider credential recovery failed");
+        this.logger?.warn({ workspaceId, err: error }, "Provider credential recovery failed");
       }
     })();
   }
@@ -225,15 +228,31 @@ export class WorkspaceProviderCredentialsService {
     } catch (error) {
       this.decryptErrorListener?.(error, provider);
       throw new ProviderConfigurationError(
-        `Workspace credential for "${provider}" could not be decrypted. The ${KEY_NAME} value most likely rotated since the credential was stored; re-enter the API key or restore the previous ${KEY_NAME}.`,
+        `Workspace credential for "${provider}" could not be decrypted with ${KEY_NAME} or any key in ${PREVIOUS_KEYS_NAME}. If ${KEY_NAME} was rotated since the credential was stored, add the key it replaced to ${PREVIOUS_KEYS_NAME}; otherwise re-enter the API key.`,
         {
           kind: "credential_unreadable",
           provider,
           setting: KEY_NAME,
-          remediation: `Re-enter the API key at Settings → Credentials, or restore the previous ${KEY_NAME} value.`,
+          remediation: `Re-enter the API key at Settings → Credentials, or add the key ${KEY_NAME} replaced to ${PREVIOUS_KEYS_NAME}.`,
         },
       );
     }
+  }
+
+  /**
+   * Encrypts a secret the way stored credentials are encrypted, for a holder whose rows must outlive
+   * the workspace's own credentials (the voice recording erasure backlog holds a deleted
+   * workspace's vendor key until its recordings are gone). Rejects without the master key.
+   */
+  sealSecret(plaintext: string): string {
+    if (!this.isEncryptionConfigured()) throw new EncryptionNotConfiguredError();
+    return encryptField(plaintext, this.encryption.key!, { keyName: KEY_NAME });
+  }
+
+  /** Decrypts a secret `sealSecret` encrypted. Rejects without the master key, or when it changed since. */
+  openSealedSecret(sealed: string): string {
+    if (!this.isEncryptionConfigured()) throw new EncryptionNotConfiguredError();
+    return decryptField(sealed, this.encryption.key!, { keyName: KEY_NAME });
   }
 
   /** Presence only. Reads no plaintext, so it works without the master key. */
@@ -293,7 +312,7 @@ export class WorkspaceProviderCredentialsService {
       // kind of silent failure security teams care about. Payload is keyless.
       this.logger?.warn(
         {
-          err: error instanceof Error ? error.message : String(error),
+          err: error,
           eventType: input.eventType,
           eventStatus: input.eventStatus,
           provider: input.provider,

@@ -1,4 +1,4 @@
-import { parseEmailChannelConfig, type Env } from "../config/env.js";
+import { connectorEncryptionKeys, parseEmailChannelConfig, type Env } from "../config/env.js";
 import { registerBuiltInConnectors } from "../../modules/connectors/plugins/index.js";
 import { ConnectorRegistry } from "../../modules/connectors/services/public.js";
 import type { ConnectorPlugin } from "@radioso/connector-api";
@@ -246,7 +246,11 @@ export const createDefaultConnectorRegistry = (
   connectors: ApplicationComposition["connectors"] = [],
   env?: Partial<Pick<
     Env,
-    "SLACK_OAUTH_CLIENT_ID" | "SLACK_OAUTH_CLIENT_SECRET" | "SLACK_SIGNING_SECRET" | "CONNECTOR_ENCRYPTION_KEY"
+    | "SLACK_OAUTH_CLIENT_ID"
+    | "SLACK_OAUTH_CLIENT_SECRET"
+    | "SLACK_SIGNING_SECRET"
+    | "CONNECTOR_ENCRYPTION_KEY"
+    | "CONNECTOR_ENCRYPTION_PREVIOUS_KEYS"
   >>,
   builtIn: {
     email?: ConnectorPlugin | null;
@@ -260,7 +264,7 @@ export const createDefaultConnectorRegistry = (
       SLACK_OAUTH_CLIENT_ID: env?.SLACK_OAUTH_CLIENT_ID,
       SLACK_OAUTH_CLIENT_SECRET: env?.SLACK_OAUTH_CLIENT_SECRET,
       SLACK_SIGNING_SECRET: env?.SLACK_SIGNING_SECRET,
-      encryptionKey: env?.CONNECTOR_ENCRYPTION_KEY,
+      encryptionKey: env ? connectorEncryptionKeys(env) : undefined,
       backgroundJobs: builtIn.slackBackgroundJobs,
     },
     email: builtIn.email,

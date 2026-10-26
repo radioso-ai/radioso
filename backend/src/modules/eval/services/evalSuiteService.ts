@@ -13,14 +13,14 @@ export interface EvalSuiteRunner {
   execute(input: EvalRunInput): Promise<EvalRunOutcome>;
 }
 
-export interface EvalSuiteReplayLoggerPort {
+interface EvalSuiteReplayLoggerPort {
   info(fields: Record<string, unknown>, message: string): void;
 }
 
 /** "skipped" — case had no expectations, so it was not run (nothing to score). */
-export type EvalSuiteCaseStatus = EvalRunStatus | "skipped";
+type EvalSuiteCaseStatus = EvalRunStatus | "skipped";
 
-export interface EvalSuiteCaseResult {
+interface EvalSuiteCaseResult {
   caseId: string;
   name: string;
   status: EvalSuiteCaseStatus;
@@ -29,7 +29,7 @@ export interface EvalSuiteCaseResult {
   error: string | null;
 }
 
-export interface EvalSuiteRunInput {
+interface EvalSuiteRunInput {
   workspaceId: string;
   accountId?: string | null;
   mode?: EvalRunMode;
@@ -40,7 +40,7 @@ export interface EvalSuiteRunInput {
   allowLiveEffects?: boolean;
 }
 
-export interface EvalSuiteRunResult {
+interface EvalSuiteRunResult {
   results: EvalSuiteCaseResult[];
   summary: EvalSuiteSummary;
 }
@@ -133,7 +133,7 @@ export class EvalSuiteService {
         scored: summary.scored,
         passing: summary.passing,
         failing: summary.failing,
-        error: summary.error,
+        errored: summary.error,
         skipped: results.filter((r) => r.status === "skipped").length,
         latencyMs: Date.now() - startedAtMs,
       },

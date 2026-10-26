@@ -8,7 +8,7 @@ interface InteractivityRequest extends Request {
   rawBody?: Buffer;
 }
 
-export interface SlackInteractivityRouterOptions {
+interface SlackInteractivityRouterOptions {
   signingSecret: string;
   handler: SlackInteractivityHandlerPort;
   logger: Pick<AppLogger, "warn" | "info" | "error">;
@@ -75,7 +75,7 @@ export const createSlackInteractivityRouter = (options: SlackInteractivityRouter
             {
               event: "slack_interactivity",
               phase: "block_actions_failed",
-              err: error instanceof Error ? error.message : String(error),
+              err: error,
             },
             "Slack block action processing failed",
           );

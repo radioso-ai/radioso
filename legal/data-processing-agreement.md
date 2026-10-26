@@ -1,6 +1,6 @@
 # Data Processing Agreement
 
-**Last updated:** 2026-10-24
+**Last updated:** 2026-10-26
 
 > **Draft for counsel review.** Bracketed items are decisions for counsel or the
 > owner. Do not send before they are resolved.
@@ -56,11 +56,13 @@ Radioso:
 
 The Controller gives general authorisation for the subprocessors Annex 3 lists
 for the region of each of its workspaces.
-Radioso gives the Controller **at least 30 days' notice by email** before it
-adds or replaces a subprocessor. The Controller may object on reasonable data
-protection grounds within that period. If the parties cannot resolve the
-objection, the Controller may end the affected part of the Service without
-penalty.
+Radioso gives the Controller **at least 14 days' notice by email** before it
+adds or replaces a subprocessor. When a subprocessor must be replaced urgently
+to keep the Service running or secure, Radioso notifies the Controller as soon
+as possible, and no later than when the change takes effect. The Controller may
+object on reasonable data protection grounds within 14 days of either notice.
+If the parties cannot resolve the objection, the Controller may end the
+affected part of the Service without penalty.
 
 Radioso binds each subprocessor to data protection obligations that are at
 least as protective as this DPA, and remains liable for their performance.
@@ -85,8 +87,8 @@ region without the Controller's written instruction.
 - **europe-west1.** Hosting, language-model calls and email stay in the EU.
   Personal data leaves the EU only through Slack, and only when the Controller
   connects it.
-- **us-central1.** Hosting and language-model calls take place in the United
-  States, so the core of the Service is itself a transfer outside the EEA.
+- **us-central1.** Hosting, language-model calls and email take place in the
+  United States, so the core of the Service is itself a transfer outside the EEA.
 
 For every transfer outside the EEA, Radioso relies on the EU-U.S. Data Privacy
 Framework where the subprocessor is certified, and otherwise on the European
@@ -144,10 +146,14 @@ Terms of Service.]
   issue #1601 is live on both stacks.]
 - **Access control.** Workspace data is visible only to that workspace's team,
   by role. Radioso's staff console has no access to workspace conversations.
-- **Logs and telemetry.** Application logs and telemetry carry ids, counts and
-  outcomes, never message content. Logs are kept for 30 days. [Owner: true once
-  issue #1616 is fixed. Until then, WhatsApp log lines carry the visitor's phone
-  number, and some error lines carry the error's message.]
+- **Logs and telemetry.** Application log lines, and the copy exported to
+  Radioso's log tooling, carry ids, counts and coded outcomes, never message
+  content. Google Cloud Run's own request log records each request's URL, which
+  can include an access token in the path and the search term of a Radioso
+  staff member's account search. Logs are kept for 30 days. An error report can
+  carry the error's message, which may quote personal data; error reports are
+  kept in the audit log for 12 months and, where error tracking is enabled, are
+  also sent to PostHog.
 - **Backups.** Daily database backups, the 7 most recent kept.
 - **Erasure and retention.** Deleting a conversation or a visitor removes the
   data and every copy derived from it. Retention windows erase conversations
@@ -175,11 +181,16 @@ Each workspace uses the subprocessors of its region.
 |---|---|---|---|
 | Google Cloud (Google Cloud EMEA Ltd.) | Hosting, database, file storage | All Service data | United States (us-central1, Iowa) |
 | OpenAI (OpenAI Ireland Ltd.) | Language model and embeddings | Messages, retrieved document passages and instructions sent at answer time | United States |
-| Lettermint B.V. | Notification email to the Controller's team; the email channel, when enabled | Recipient address and email content | EU (Netherlands) |
+| Resend | Notification email to the Controller's team; the email channel, when enabled | Recipient address and email content | United States |
 | Slack | Notifications and handoff, only when the Controller connects Slack | Notification content the Controller configures | United States |
 
 Radioso's billing (Stripe) and product analytics (PostHog) handle data Radioso
 controls itself, as its Privacy Policy describes, and are outside this DPA.
+[Owner: both live stacks also send error reports to PostHog
+(`error_sinks = "audit,posthog"`), and an error report can carry an error's
+message quoting a workspace's personal data. Either list PostHog error tracking
+as a subprocessor in both tables above, with its region, or stop sending error
+reports to it.]
 
 Providers the Controller connects with its own account and key, such as its
 own OpenAI, Anthropic, Gemini or ElevenLabs account, are the Controller's own

@@ -77,10 +77,23 @@ describe("ModelDocumentEnrichmentGateway", () => {
       maxOutputTokens: 2_000,
       responseFormat: { type: "json_schema", name: "document_enrichment", strict: true, schema: OUTPUT_SCHEMA },
       operation: expect.objectContaining({
+        workspaceId: "workspace-1",
         requestId: "doc-1",
+        documentId: "doc-1",
+        documentRevision: 11,
         operation: "document_enrichment",
         attemptKey: "document-enrichment:doc-1:11",
       }),
+    });
+  });
+
+  it("names the request settings every attempt is sent with, so a stored reply is reused only under the same ones", () => {
+    const { pipeline } = scriptedPipeline([]);
+
+    expect(JSON.parse(new ModelDocumentEnrichmentGateway(pipeline).requestProfile)).toEqual({
+      temperature: 0,
+      firstAttempt: { maxOutputTokens: 2_000, reasoningEffort: "low" },
+      truncationRetry: { maxOutputTokens: 4_000, reasoningEffort: "minimal" },
     });
   });
 

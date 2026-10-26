@@ -73,6 +73,8 @@ const parseStackTrace = (stack: string | undefined): PosthogStackFrame[] =>
     .filter((frame): frame is PosthogStackFrame => frame !== null);
 
 export class PosthogErrorSink implements ErrorSink {
+  readonly name = "posthog";
+
   private readonly endpoint: string;
   private readonly fetchImpl: typeof fetch;
 

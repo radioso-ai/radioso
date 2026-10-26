@@ -2,12 +2,20 @@ import { randomUUID } from "node:crypto";
 
 import { afterAll, beforeAll, expect, it } from "vitest";
 
+import { deriveLexicalQueryPlan } from "../../src/modules/retrieval/domain/lexicalQueryPlan.js";
 import type { LexicalMatchMode } from "../../src/modules/retrieval/domain/lexicalSomeTermsMatch.js";
 import { PgLexicalSearch } from "../../src/modules/retrieval/infra/lexicalSearch.js";
 import { renderSearchText } from "../../src/modules/retrieval/services/searchTextRenderer.js";
 import type { RetrievedChunk } from "../../src/modules/retrieval/domain/vectorSearch.js";
 import { Database } from "../../src/shared/infra/database.js";
 import { conversationQualityCorpus, MOUNTAIN_COURSE_DOC_ID } from "../fixtures/conversation-quality/corpus.js";
+import {
+  buildForeignEventsWorkspace,
+  buildMidSizedBilingualWorkspace,
+  ORGANISATION,
+  WEEK_OF_SILENCE_EN_KEY,
+  type SyntheticDocument,
+} from "../fixtures/lexical-some-terms/midSizedBilingualCorpus.js";
 import { resolveIntegrationDatabase } from "./support/integrationDatabase.js";
 
 const { describeIntegration, integrationDatabaseUrl } = await resolveIntegrationDatabase();
@@ -274,6 +282,24 @@ describeIntegration("PgLexicalSearch (Postgres full-text search)", () => {
     expect(results[0]?.key).toBe("supercoscienti_stay");
   });
 
+  it("keeps a chunk holding an excluded word out of the partial matches", async () => {
+    // The festival page holds pernottamento, the query's rarest word, and also tenda.
+    expect((await searchFor("pernottamento evento")).map(({ key }) => key)).toContain("festival_stay");
+
+    const { matches, someTermsPass } = await search.search({
+      workspaceId,
+      query: "pernottamento evento -tenda",
+      lexicalPlan: deriveLexicalQueryPlan("pernottamento evento -tenda"),
+      topK: 20,
+      matchMode: "all_or_some_terms",
+    });
+
+    expect(someTermsPass.outcome).toBe("ran");
+    const keys = matches.map(keyOf);
+    expect(keys).toContain("supercoscienti_stay");
+    expect(keys).not.toContain("festival_stay");
+  });
+
   it("stays inside the workspace", async () => {
     const results = await searchFor("pernottamento evento Supercoscienti");
 
@@ -346,5 +372,152 @@ describeIntegration("PgLexicalSearch over the conversation-quality corpus", () =
       expect(await topMatch(query, "all_or_some_terms"))
         .toMatchObject({ document: MOUNTAIN_COURSE_DOC_ID, coverage: "some_terms", outcome: "ran" });
     }
+  });
+});
+
+// Reproduces #1634: on a mid-sized bilingual workspace, the some-terms pass for
+// "<organisation> Europe week of 29 November 2027 events" ran past its budget. The
+// workspace shares its hash partition with another workspace in which "Europe" and
+// "events" are frequent, and the organisation's name is on every one of its own chunks.
+describeIntegration("PgLexicalSearch on a mid-sized bilingual workspace", () => {
+  const database = new Database(integrationDatabaseUrl);
+  const accountId = randomUUID();
+  const workspaceId = randomUUID();
+  const keyByChunkId = new Map<string, string>();
+  let foreignWorkspaceId = randomUUID();
+  const query = `${ORGANISATION} Europe week of 29 November 2027 events`;
+
+  const insertWorkspaceDocuments = async (workspace: string, documents: SyntheticDocument[]) => {
+    const documentIds = documents.map(() => randomUUID());
+    await database.query(
+      `INSERT INTO documents (id, workspace_id, title, source_content, markdown_content, status, metadata, retrieval_enabled)
+       SELECT id, $1, title, body, body, 'ready', '{}'::jsonb, true
+       FROM unnest($2::uuid[], $3::text[], $4::text[]) AS t(id, title, body)`,
+      [
+        workspace,
+        documentIds,
+        documents.map((document) => document.title),
+        documents.map((document) => document.chunks.map((chunk) => chunk.searchText).join("\n")),
+      ],
+    );
+    const chunks = documents.flatMap((document, index) =>
+      document.chunks.map((chunk) => ({ id: randomUUID(), documentId: documentIds[index], chunk })));
+    for (const { id, chunk } of chunks) {
+      keyByChunkId.set(id, chunk.key);
+    }
+    await database.query(
+      `INSERT INTO chunks (id, document_id, workspace_id, chunk_index, content, search_text, metadata)
+       SELECT id, document_id, $1, chunk_index, body, body, '{}'::jsonb
+       FROM unnest($2::uuid[], $3::uuid[], $4::int[], $5::text[]) AS t(id, document_id, chunk_index, body)`,
+      [
+        workspace,
+        chunks.map(({ id }) => id),
+        chunks.map(({ documentId }) => documentId),
+        chunks.map(({ chunk }) => chunk.chunkIndex),
+        chunks.map(({ chunk }) => chunk.searchText),
+      ],
+    );
+  };
+
+  // Runs the some-terms statements as usual, and keeps each one's plan for the same
+  // parameters.
+  const searchRecordingPlans = async () => {
+    const plans: unknown[] = [];
+    const recording = new Database(integrationDatabaseUrl, { poolMax: 1 });
+    const runInTransaction = recording.withTransaction.bind(recording);
+    recording.withTransaction = (callback) => runInTransaction((client) => callback(new Proxy(client, {
+      get(target, property, receiver) {
+        if (property !== "query") {
+          return Reflect.get(target, property, receiver) as unknown;
+        }
+        return async (sql: string, params?: unknown[]) => {
+          if (!sql.startsWith("SELECT set_config")) {
+            const explained = await target.query(`EXPLAIN (FORMAT JSON) ${sql}`, params);
+            plans.push((explained.rows[0] as Record<string, unknown>)["QUERY PLAN"]);
+          }
+          return target.query(sql, params);
+        };
+      },
+    })));
+    try {
+      const result = await new PgLexicalSearch(recording, { someTermsTimeoutMs: 10_000 })
+        .search({ workspaceId, query, topK: 20, matchMode: "all_or_some_terms" });
+      return { result, plans };
+    } finally {
+      await recording.close();
+    }
+  };
+
+  type PlanNode = { "Relation Name"?: string; Filter?: string; "Node Type"?: string; Plans?: PlanNode[] };
+  const planNodes = (node: PlanNode): PlanNode[] => [node, ...(node.Plans ?? []).flatMap(planNodes)];
+
+  beforeAll(async () => {
+    const [{ remainder } = { remainder: -1 }] = await database.query<{ remainder: number }>(
+      `SELECT r AS remainder FROM generate_series(0, 15) AS r
+       WHERE satisfies_hash_partition('public.chunks'::regclass, 16, r, $1::uuid)`,
+      [workspaceId],
+    );
+    // Put the other workspace in the same chunk partition.
+    for (;;) {
+      const [placed] = await database.query<{ same: boolean }>(
+        "SELECT satisfies_hash_partition('public.chunks'::regclass, 16, $2, $1::uuid) AS same",
+        [foreignWorkspaceId, remainder],
+      );
+      if (placed?.same) {
+        break;
+      }
+      foreignWorkspaceId = randomUUID();
+    }
+
+    await database.query(
+      `INSERT INTO accounts (id, name, email, password_hash) VALUES ($1, $2, $3, $4)`,
+      [accountId, "Mid-sized Lexical Co", `lexical-mid-${accountId}@example.com`, "hash"],
+    );
+    await database.query(
+      `INSERT INTO workspaces (id, account_id, name, public_route_key)
+       VALUES ($1, $2, $3, $4), ($5, $2, $6, $7)`,
+      [workspaceId, accountId, "Mid-sized Workspace", `lexical-mid-${workspaceId}`, foreignWorkspaceId, "Events Workspace", `lexical-mid-${foreignWorkspaceId}`],
+    );
+    await insertWorkspaceDocuments(workspaceId, buildMidSizedBilingualWorkspace());
+    await insertWorkspaceDocuments(foreignWorkspaceId, buildForeignEventsWorkspace(3_000));
+
+    // The state autovacuum leaves after an ingestion: fresh statistics, so Postgres knows
+    // which words are frequent in the partition, and the full-text index's pending list
+    // merged into the index.
+    const [partition] = await database.query<{ name: string }>(
+      "SELECT tableoid::regclass::text AS name FROM chunks WHERE workspace_id = $1 LIMIT 1",
+      [workspaceId],
+    );
+    await database.query(`VACUUM ANALYZE ${partition?.name ?? "chunks"}`);
+    await database.query("ANALYZE documents");
+  });
+
+  afterAll(async () => {
+    await database.query("DELETE FROM accounts WHERE id = $1", [accountId]).catch(() => undefined);
+    await database.close().catch(() => undefined);
+  });
+
+  it("finds that week's event page first, as a partial match", async () => {
+    const { result } = await searchRecordingPlans();
+
+    expect(result.someTermsPass.outcome).toBe("ran");
+    const keys = result.matches.map((match) => keyByChunkId.get(match.chunkId));
+    expect(keys[0]).toBe(WEEK_OF_SILENCE_EN_KEY);
+    expect(result.matches.length).toBeGreaterThan(1);
+    expect(result.matches.every((match) => match.lexicalTermCoverage === "some_terms")).toBe(true);
+    expect(keys.some((key) => key?.startsWith("foreign_"))).toBe(false);
+  });
+
+  it("looks each term up through the full-text index instead of re-reading the workspace's chunks", async () => {
+    const { plans } = await searchRecordingPlans();
+
+    expect(plans).toHaveLength(2);
+    // A chunk scan filtering on a recomputed tsvector parses every chunk it reads; the
+    // terms frequent in the partition made Postgres read the whole workspace that way.
+    const recomputedTsvectorScans = plans
+      .flatMap((plan) => (plan as Array<{ Plan: PlanNode }>).flatMap(({ Plan }) => planNodes(Plan)))
+      .filter((node) => node["Relation Name"]?.startsWith("chunks") && node.Filter?.includes("to_tsvector"))
+      .map((node) => `${node["Node Type"]} on ${node["Relation Name"]}: ${node.Filter}`);
+    expect(recomputedTsvectorScans).toEqual([]);
   });
 });

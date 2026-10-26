@@ -87,8 +87,8 @@ imports from `services/` or `infra/`.
 - `infra/pgVectorAdapter.ts`, `infra/chunkCandidateHydrator.ts`, and
   `infra/lexicalSearch.ts`: concrete search and hydration adapters.
   `domain/lexicalSomeTermsMatch.ts` is the pure half of lexical search: the
-  terms, adjacent-word joins, and term weights the adapter's some-terms pass
-  runs on (see Lexical Matching below).
+  terms, adjacent-word joins, term weights, and candidate scores the adapter's
+  some-terms pass runs on (see Lexical Matching below).
 - `infra/hnswIterativeScan.ts`: shared transaction wrapper that enables
   high-recall strict-order HNSW scanning for a filtered vector query, with a
   probe-once fallback for servers whose pgvector predates the setting.
@@ -191,8 +191,9 @@ pass follows and its hits are appended after the all-terms ones. The agentic
    that), adds each pair of adjacent words written as one, and keeps phrases and
    exclusions.
 2. One statement counts the chunks in scope (capped at
-   `lexicalSomeTermsScopeCountCap + 1`) and each alternative's matches in the same
-   scope (capped at `lexicalSomeTermsTermMatchCap + 1`).
+   `lexicalSomeTermsScopeCountCap + 1`) and lists, for each alternative, the chunks in
+   the same scope holding it (up to `lexicalSomeTermsTermMatchCap + 1`; past the cap
+   only the count comes back).
 3. `planSomeTermsRanking` weighs each term ln(chunks in scope / chunks holding it);
    a term that matches nothing or passes the count cap weighs 0. It keeps the
    `lexicalSomeTermsMaxRankedTerms` rarest weighted terms, picks the alternatives
@@ -200,15 +201,29 @@ pass follows and its hits are appended after the all-terms ones. The agentic
    `lexicalSomeTermsRankedChunkBudget`), and sets two floors a chunk must clear: the
    `lexicalSomeTermsMinimumWeightShare` of the ranked weight, and the absolute
    `lexicalSomeTermsMinimumHeldWeight`.
-4. A second statement ranks those chunks by covered weight, then `ts_rank_cd`
-   against the AND of the alternatives each chunk holds, the scale of an all-terms
-   rank.
+4. `scoreSomeTermsCandidates` scores the chunks those alternatives list from the lists
+   alone: the weight of the terms each holds, whether it holds every term by its own
+   text, and the alternatives it is ranked against. It keeps the chunks that clear
+   both floors.
+5. A second statement drops candidates that left the scope or hold an excluded term,
+   and ranks the rest by covered weight, then `ts_rank_cd` against the AND of the
+   alternatives each chunk holds, the scale of an all-terms rank. It parses the text
+   only of the chunks heavy enough to make the cut.
+
+The lookup in step 2 goes through the GIN index for every alternative. Each tsquery
+reaches it as a value of its row in an `unnest` of the alternatives, so Postgres
+plans one lookup for all of them without knowing the word. Planned on a literal
+word, a term frequent elsewhere in the partition and rare in the workspace leads
+Postgres to the workspace index instead, and it then parses the text of every chunk
+in the workspace for that term. `tests/integration/lexical-search.integration.test.ts`
+pins the plan on a mid-sized bilingual workspace that shares its partition with
+another workspace. Right after a large ingestion, while new chunks sit in the GIN
+index's pending list, Postgres can still prefer the workspace index until
+autovacuum merges the list.
 
 Both statements run in one transaction under `lexicalSomeTermsTimeoutMs`, applied
-as a transaction-local `statement_timeout` sized to what is left of the budget.
-Postgres can pick the workspace index over the GIN index for a term frequent in the
-partition and rare in the workspace, and then reads every chunk, so the cap does not
-bound time; the budget does. The pass is skipped while the pool has waiting
+as a transaction-local `statement_timeout` sized to what is left of the budget,
+which bounds those slow cases. The pass is skipped while the pool has waiting
 clients (`connections_busy`). On a timeout or any other error the search keeps its
 all-terms hits, logs a count-only warning (plus the SQLSTATE for a failure), and
 reports the pass as `timed_out` or `failed`. The port returns

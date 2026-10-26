@@ -4,13 +4,13 @@ import { buildPlainLexicalQueryPlan } from "../domain/lexicalQueryPlan.js";
 import {
   buildSomeTermsLexicalQuery,
   planSomeTermsRanking,
+  scoreSomeTermsCandidates,
   skippedSomeTermsPass,
   type LexicalMatchMode,
   type LexicalSomeTermsPassReport,
   type LexicalSomeTermsPassSkipReason,
-  type LexicalTermAlternative,
+  type SomeTermsCandidate,
   type SomeTermsLexicalQuery,
-  type SomeTermsRankingPlan,
 } from "../domain/lexicalSomeTermsMatch.js";
 import type { LexicalQueryPlan } from "../domain/retrievalPipelineTypes.js";
 import type { RetrievalSourceFilter } from "../domain/retrievalSourceFilter.js";
@@ -61,9 +61,12 @@ interface LexicalSearchRow {
   rank: number;
 }
 
-interface AlternativeCountRow {
+interface AlternativeMatchRow {
   scope_count: number | string | null;
-  counts: number[] | null;
+  alternative_index: number;
+  match_count: number | string;
+  /** `null` past the match cap. */
+  chunk_ids: string[] | null;
 }
 
 interface SomeTermsSearchRow extends LexicalSearchRow {
@@ -185,11 +188,11 @@ export class PgLexicalSearch implements LexicalSearchPort {
   }
 
   /**
-   * Counts each alternative's matches, then ranks the chunks the rarer alternatives find
+   * Finds each alternative's matches, then ranks the chunks the rarer alternatives find
    * by the term weight they hold. Both statements run in one transaction under a shared
-   * time budget: a frequent word can make Postgres read every chunk in the workspace.
-   * Whatever goes wrong, the all-terms hits are a sound answer on their own, so a
-   * timeout or a database error in this pass never fails the search.
+   * time budget, the backstop for a slow database. Whatever goes wrong, the all-terms
+   * hits are a sound answer on their own, so a timeout or a database error in this pass
+   * never fails the search.
    */
   private async searchSomeTermsWithinBudget(
     input: LexicalSearchInput,
@@ -239,11 +242,11 @@ export class PgLexicalSearch implements LexicalSearchPort {
     run: SomeTermsStatementRunner,
   ): Promise<RetrievedChunk[]> {
     const behavior = RETRIEVAL_BEHAVIOR.hybrid;
-    const counts = await this.countAlternativeMatches(input, query, behavior.lexicalSomeTermsTermMatchCap, run);
+    const found = await this.findAlternativeMatches(input, query, behavior.lexicalSomeTermsTermMatchCap, run);
     const ranking = planSomeTermsRanking({
       query,
-      alternativeMatchCounts: counts.alternativeMatchCounts,
-      scopeChunkCount: counts.scopeChunkCount,
+      alternativeMatchCounts: found.alternativeMatchCounts,
+      scopeChunkCount: found.scopeChunkCount,
       matchCap: behavior.lexicalSomeTermsTermMatchCap,
       rankedChunkBudget: behavior.lexicalSomeTermsRankedChunkBudget,
       minimumWeightShare: behavior.lexicalSomeTermsMinimumWeightShare,
@@ -253,8 +256,12 @@ export class PgLexicalSearch implements LexicalSearchPort {
     if (!ranking) {
       return [];
     }
+    const candidates = scoreSomeTermsCandidates({ query, ranking, alternativeChunkIds: found.alternativeChunkIds });
+    if (candidates.length === 0) {
+      return [];
+    }
 
-    const rows = await this.rankSomeTermsMatches(input, query, ranking, limit, run);
+    const rows = await this.rankSomeTermsCandidates(input, query, candidates, limit, run);
     return rows.map((row) => ({
       ...toRetrievedChunk(row),
       similarity: Math.max(0, Math.min(1, Number(row.covered_weight) / ranking.totalWeight)),
@@ -262,95 +269,113 @@ export class PgLexicalSearch implements LexicalSearchPort {
     }));
   }
 
-  private async countAlternativeMatches(
+  /**
+   * Counts the chunks in scope, and lists the chunks in scope holding each alternative, up
+   * to the match cap. Every alternative is looked up through the full-text index: each
+   * tsquery reaches the lookup as a value of the row it is built from, not as a literal,
+   * so Postgres plans one lookup for all of them without knowing which word it is. Planned
+   * on a literal word, a word frequent elsewhere in the partition and rare in the workspace
+   * leads Postgres to read the workspace's chunks one by one and parse each one's text,
+   * which no cap bounds.
+   */
+  private async findAlternativeMatches(
     input: LexicalSearchInput,
     query: SomeTermsLexicalQuery,
     matchCap: number,
     run: SomeTermsStatementRunner,
-  ): Promise<{ scopeChunkCount: number; alternativeMatchCounts: number[] }> {
+  ): Promise<{ scopeChunkCount: number; alternativeMatchCounts: number[]; alternativeChunkIds: Array<string[] | null> }> {
     const params: unknown[] = [input.workspaceId];
     const chunkFilterClause = compilePgChunkFilter(input, params);
     const bind = bindParam(params);
-    const countLimit = bind(matchCap + 1);
+    // Alternative text reaches Postgres only as a bound plain-text argument, which
+    // plainto_tsquery and phraseto_tsquery parse as words, never as tsquery operators.
+    const texts = bind(query.alternatives.map((alternative) => alternative.text));
+    const phrases = bind(query.alternatives.map((alternative) => alternative.kind === "phrase"));
+    const matchLimit = bind(matchCap + 1);
+    const cap = bind(matchCap);
     const scopeCountLimit = bind(RETRIEVAL_BEHAVIOR.hybrid.lexicalSomeTermsScopeCountCap + 1);
-    const cappedCount = (condition: string, limit: string, alias: string) => `(
-      SELECT count(*)
-      FROM (
-        SELECT 1
-        FROM chunks c
-        JOIN documents d ON d.id = c.document_id
-        WHERE c.workspace_id = $1
-          AND ${retrievableDocumentPredicateSql("d")}
-          ${chunkFilterClause}
-          ${condition}
-        LIMIT ${limit}
-      ) ${alias}
-    )`;
-    const counts = query.alternatives.map((alternative) =>
-      cappedCount(`AND ${CHUNK_SEARCH_VECTOR_SQL} @@ ${alternativeTsquery(alternative, bind)}`, countLimit, "alternative_matches"));
+    const inScope = `c.workspace_id = $1
+             AND ${retrievableDocumentPredicateSql("d")}
+             ${chunkFilterClause}`;
 
-    const rows = await run<AlternativeCountRow>(
-      `SELECT ${cappedCount("", scopeCountLimit, "scope_chunks")} AS scope_count,
-              ARRAY[${counts.join(",\n")}]::int[] AS counts`,
+    const rows = await run<AlternativeMatchRow>(
+      `WITH alternative AS (
+         SELECT (a.ordinality - 1)::int AS alternative_index,
+                CASE WHEN a.phrase THEN phraseto_tsquery('simple', a.text) ELSE plainto_tsquery('simple', a.text) END AS tsquery
+         FROM unnest(${texts}::text[], ${phrases}::boolean[]) WITH ORDINALITY AS a(text, phrase, ordinality)
+       ),
+       alternative_match AS MATERIALIZED (
+         SELECT alternative.alternative_index,
+                ARRAY(
+                  SELECT c.id
+                  FROM chunks c
+                  JOIN documents d ON d.id = c.document_id
+                  WHERE ${inScope}
+                    AND ${CHUNK_SEARCH_VECTOR_SQL} @@ alternative.tsquery
+                  LIMIT ${matchLimit}
+                ) AS chunk_ids
+         FROM alternative
+       )
+       SELECT (
+                SELECT count(*)
+                FROM (
+                  SELECT 1
+                  FROM chunks c
+                  JOIN documents d ON d.id = c.document_id
+                  WHERE ${inScope}
+                  LIMIT ${scopeCountLimit}
+                ) scope_chunks
+              ) AS scope_count,
+              m.alternative_index,
+              cardinality(m.chunk_ids) AS match_count,
+              -- An alternative past the cap covers only terms that weigh nothing, so its list is not needed.
+              CASE WHEN cardinality(m.chunk_ids) <= ${cap} THEN m.chunk_ids END AS chunk_ids
+       FROM alternative_match m
+       ORDER BY m.alternative_index`,
       params,
     );
-    return {
-      scopeChunkCount: Number(rows[0]?.scope_count ?? 0),
-      alternativeMatchCounts: (rows[0]?.counts ?? []).map(Number),
-    };
+
+    const alternativeMatchCounts = query.alternatives.map(() => 0);
+    const alternativeChunkIds: Array<string[] | null> = query.alternatives.map(() => null);
+    for (const row of rows) {
+      alternativeMatchCounts[row.alternative_index] = Number(row.match_count);
+      alternativeChunkIds[row.alternative_index] = row.chunk_ids;
+    }
+    return { scopeChunkCount: Number(rows[0]?.scope_count ?? 0), alternativeMatchCounts, alternativeChunkIds };
   }
 
-  private async rankSomeTermsMatches(
+  /**
+   * Reads the scored chunks that are still in scope and ranks them by covered weight, then
+   * by `ts_rank_cd` against the AND of the alternatives each one holds, so a some-terms
+   * rank reads on the same scale as an all-terms rank. Only the chunks that can still make
+   * the cut have their text parsed for that rank.
+   */
+  private async rankSomeTermsCandidates(
     input: LexicalSearchInput,
     query: SomeTermsLexicalQuery,
-    ranking: SomeTermsRankingPlan,
+    candidates: SomeTermsCandidate[],
     limit: number,
     run: SomeTermsStatementRunner,
   ): Promise<SomeTermsSearchRow[]> {
     const params: unknown[] = [input.workspaceId];
     const chunkFilterClause = compilePgChunkFilter(input, params);
     const bind = bindParam(params);
-    const textParams = new Map(ranking.scoredAlternatives.map((index) => [index, bind(query.alternatives[index]?.text ?? "")]));
-    const tsqueryOf = (index: number): string => {
-      const alternative = query.alternatives[index];
-      const text = textParams.get(index);
-      return alternative?.kind === "phrase" ? `phraseto_tsquery('simple', ${text})` : `plainto_tsquery('simple', ${text})`;
-    };
-    const hitOf = (index: number): string => `h.alternative_${index}`;
-    const matchingSql = ranking.matchingAlternatives.map(tsqueryOf).join(" || ");
-    const alternativeHitSql = ranking.scoredAlternatives
-      .map((index) => `${tsqueryOf(index)} @@ m.search_vector AS alternative_${index}`);
-    const exclusionSql = query.excludedTerms.length > 0
-      ? query.excludedTerms
-          .map((term) => `NOT (plainto_tsquery('simple', ${bind(term)}) @@ m.search_vector)`)
-          .join(" AND ")
-      : "TRUE";
-    const termWeights = bind(ranking.termWeights);
-    const coveredWeightSql = ranking.termWeights
-      .map((weight, term) => ({ weight, term }))
-      .filter(({ weight }) => weight > 0)
-      .map(({ term }) => {
-        const covering = ranking.scoredAlternatives
-          .filter((index) => query.alternatives[index]?.covers.includes(term))
-          .map(hitOf);
-        return `CASE WHEN ${covering.join(" OR ")} THEN (${termWeights}::float8[])[${term + 1}] ELSE 0 END`;
-      })
-      .join(" + ");
-    // Every term found by its own text, not through a join: the chunk holds the query as
-    // written, on the same footing as an all-terms match.
-    const coversAllTermsSql = ranking.everyTermRanked
-      ? `(${Array.from({ length: query.termCount }, (_, term) => hitOf(term)).join(" AND ")})`
-      : "FALSE";
-    // ts_rank_cd against the AND of the alternatives this chunk holds, so a some-terms
-    // rank reads on the same scale as an all-terms rank.
-    const heldAlternativesSql = ranking.scoredAlternatives
-      .map((index) => `CASE WHEN ${hitOf(index)} THEN ${textParams.get(index)}::text END`)
-      .join(", ");
-    const minimumCoveredWeight = bind(ranking.minimumCoveredWeight);
+    const chunkIds = bind(candidates.map((candidate) => candidate.chunkId));
+    const coveredWeights = bind(candidates.map((candidate) => candidate.coveredWeight));
+    const coversAllTerms = bind(candidates.map((candidate) => candidate.coversAllTerms));
+    const heldTexts = bind(candidates.map((candidate) => candidate.heldText));
+    const exclusionSql = query.excludedTerms
+      .map((term) => `AND NOT (plainto_tsquery('simple', ${bind(term)}) @@ ${CHUNK_SEARCH_VECTOR_SQL})`)
+      .join("\n             ");
     const rowLimit = bind(limit);
 
     return run<SomeTermsSearchRow>(
-      `WITH matched AS MATERIALIZED (
+      `WITH candidate AS (
+         SELECT *
+         FROM unnest(${chunkIds}::uuid[], ${coveredWeights}::float8[], ${coversAllTerms}::boolean[], ${heldTexts}::text[])
+           AS t(chunk_id, covered_weight, covers_all_terms, held_text)
+       ),
+       eligible AS MATERIALIZED (
          SELECT c.id AS chunk_id,
                 c.document_id,
                 d.title,
@@ -360,39 +385,36 @@ export class PgLexicalSearch implements LexicalSearchPort {
                 c.start_offset,
                 c.end_offset,
                 c.metadata,
-                ${CHUNK_SEARCH_VECTOR_SQL} AS search_vector
-         FROM chunks c
+                candidate.covered_weight,
+                candidate.covers_all_terms,
+                candidate.held_text
+         FROM candidate
+         JOIN chunks c ON c.workspace_id = $1 AND c.id = candidate.chunk_id
          JOIN documents d ON d.id = c.document_id
-         WHERE c.workspace_id = $1
-           AND ${retrievableDocumentPredicateSql("d")}
+         WHERE ${retrievableDocumentPredicateSql("d")}
            ${chunkFilterClause}
-           AND ${CHUNK_SEARCH_VECTOR_SQL} @@ (${matchingSql})
+           ${exclusionSql}
        ),
-       alternative_hits AS (
-         SELECT m.*,
-                ${alternativeHitSql.join(",\n                ")}
-         FROM matched m
-         WHERE ${exclusionSql}
-       ),
-       scored AS (
-         SELECT h.chunk_id,
-                h.document_id,
-                h.title,
-                h.content,
-                h.search_text,
-                h.chunk_index,
-                h.start_offset,
-                h.end_offset,
-                h.metadata,
-                ${coveredWeightSql} AS covered_weight,
-                ${coversAllTermsSql} AS covers_all_terms,
-                ts_rank_cd(h.search_vector, plainto_tsquery('simple', concat_ws(' ', ${heldAlternativesSql}))) AS rank
-         FROM alternative_hits h
+       -- The covered weight of the last chunk that fits: no lighter chunk can make the cut.
+       cut AS (
+         SELECT min(covered_weight) AS covered_weight
+         FROM (SELECT covered_weight FROM eligible ORDER BY covered_weight DESC LIMIT ${rowLimit}) heaviest
        )
-       SELECT *
-       FROM scored
-       WHERE covered_weight >= ${minimumCoveredWeight}
-       ORDER BY covered_weight DESC, rank DESC, chunk_index ASC
+       SELECT c.chunk_id,
+              c.document_id,
+              c.title,
+              c.content,
+              c.search_text,
+              c.chunk_index,
+              c.start_offset,
+              c.end_offset,
+              c.metadata,
+              c.covered_weight,
+              c.covers_all_terms,
+              ts_rank_cd(${CHUNK_SEARCH_VECTOR_SQL}, plainto_tsquery('simple', c.held_text)) AS rank
+       FROM eligible c
+       WHERE c.covered_weight >= (SELECT covered_weight FROM cut)
+       ORDER BY c.covered_weight DESC, rank DESC, c.chunk_index ASC
        LIMIT ${rowLimit}`,
       params,
     );
@@ -435,13 +457,6 @@ const bindParam = (params: unknown[]) => (value: unknown): string => {
   params.push(value);
   return `$${params.length}`;
 };
-
-// Alternative text reaches Postgres only as a bound plain-text argument, which
-// plainto_tsquery and phraseto_tsquery parse as words, never as tsquery operators.
-const alternativeTsquery = (alternative: LexicalTermAlternative, bind: (value: unknown) => string): string =>
-  alternative.kind === "phrase"
-    ? `phraseto_tsquery('simple', ${bind(alternative.text)})`
-    : `plainto_tsquery('simple', ${bind(alternative.text)})`;
 
 const normalizeLexicalRank = (rank: number, maxRank: number): number => {
   if (!Number.isFinite(rank) || rank <= 0 || maxRank <= 0) {

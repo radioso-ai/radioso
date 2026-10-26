@@ -10,6 +10,8 @@ export interface ConversationQualityDocument {
   id: string;
   title: string;
   content: string;
+  /** The document's operator metadata, seeded as an operator sets it, e.g. an item's `dateFrom`/`dateTo`. */
+  metadata?: Record<string, string>;
 }
 
 export const REFUND_POLICY_DOC_ID = "22222222-2222-4222-8222-222222222201";
@@ -20,6 +22,103 @@ export const BREATH_COURSE_DOC_ID = "22222222-2222-4222-8222-222222222205";
 export const ARTS_WEEKEND_DOC_ID = "22222222-2222-4222-8222-222222222206";
 export const ONLINE_YOGA_DOC_ID = "22222222-2222-4222-8222-222222222207";
 export const MOUNTAIN_COURSE_DOC_ID = "22222222-2222-4222-8222-222222222208";
+export const TIDAL_LINES_DOC_ID = "22222222-2222-4222-8222-222222222209";
+export const WOVEN_ROOMS_DOC_ID = "22222222-2222-4222-8222-222222222210";
+
+/**
+ * One arts centre's programme around the week of Monday 10 to Sunday 16 March 2031, one item per
+ * page, dated in the page's metadata as an operator dates an event page. The items sit every way
+ * an item can sit against that week: two open the day before it and close on its last day, one
+ * runs from well before it to well after it, one begins on its last day and runs past it, two fall
+ * inside it, and one closes before it. The pages are in English and clear of the residential
+ * courses' words, so the Italian lexical and referent cases keep their own pages.
+ */
+const artsCentreProgramme: ConversationQualityDocument[] = [
+  {
+    id: TIDAL_LINES_DOC_ID,
+    title: "Tidal Lines: photographs of the estuary",
+    content: [
+      "Tidal Lines: photographs of the estuary",
+      "",
+      "Exhibition at Lantern Hall, Gallery 1, from Sunday 9 March to Sunday 16 March 2031.",
+      "Forty large-format photographs of the estuary at low tide, taken over one winter.",
+      "Open daily from 10:00 to 18:00. Free entry.",
+    ].join("\n"),
+    metadata: { dateFrom: "2031-03-09", dateTo: "2031-03-16" },
+  },
+  {
+    id: WOVEN_ROOMS_DOC_ID,
+    title: "Woven Rooms: a textile installation",
+    content: [
+      "Woven Rooms: a textile installation",
+      "",
+      "Installation at Lantern Hall, Gallery 2, from Sunday 9 March to Sunday 16 March 2031.",
+      "Three rooms hung floor to ceiling with hand-woven wool that visitors walk through.",
+      "Open daily from 10:00 to 18:00. Tickets 6 pounds.",
+    ].join("\n"),
+    metadata: { dateFrom: "2031-03-09", dateTo: "2031-03-16" },
+  },
+  {
+    id: "22222222-2222-4222-8222-222222222211",
+    title: "Glass and Light",
+    content: [
+      "Glass and Light",
+      "",
+      "Exhibition at Lantern Hall, Main Hall, from Friday 14 February to Sunday 27 April 2031.",
+      "Blown and stained glass from four studios, lit to throw colour across the hall.",
+      "Open Tuesday to Sunday from 10:00 to 18:00. Tickets 8 pounds.",
+    ].join("\n"),
+    metadata: { dateFrom: "2031-02-14", dateTo: "2031-04-27" },
+  },
+  {
+    id: "22222222-2222-4222-8222-222222222212",
+    title: "Letterpress workshop series",
+    content: [
+      "Letterpress workshop series",
+      "",
+      "Daily workshops at Lantern Hall, Print Room, from Sunday 16 March to Saturday 22 March 2031.",
+      "Set type by hand and print a poster on the hall's restored press. Each workshop runs from 14:00 to 17:00.",
+      "Places 25 pounds per workshop, materials included.",
+    ].join("\n"),
+    metadata: { dateFrom: "2031-03-16", dateTo: "2031-03-22" },
+  },
+  {
+    id: "22222222-2222-4222-8222-222222222213",
+    title: "Printmaking evening",
+    content: [
+      "Printmaking evening",
+      "",
+      "Evening class at Lantern Hall, Print Room, on Wednesday 12 March 2031 from 18:30 to 21:00.",
+      "An introduction to linocut: carve a block and pull your first prints.",
+      "Places 18 pounds, materials included.",
+    ].join("\n"),
+    metadata: { dateFrom: "2031-03-12", dateTo: "2031-03-12" },
+  },
+  {
+    id: "22222222-2222-4222-8222-222222222214",
+    title: "Clay modelling weekend",
+    content: [
+      "Clay modelling weekend",
+      "",
+      "Two-day class at Lantern Hall, Studio 3, on Friday 14 and Saturday 15 March 2031, from 10:00 to 16:00 each day.",
+      "Model a small figure in clay over two days; pieces are fired and ready to collect a week later.",
+      "Places 60 pounds for both days.",
+    ].join("\n"),
+    metadata: { dateFrom: "2031-03-14", dateTo: "2031-03-15" },
+  },
+  {
+    id: "22222222-2222-4222-8222-222222222215",
+    title: "Paper Cities",
+    content: [
+      "Paper Cities",
+      "",
+      "Exhibition at Lantern Hall, Gallery 3, from Saturday 1 February to Saturday 8 March 2031.",
+      "Cut-paper models of imagined cities, each built from a single sheet.",
+      "Open daily from 10:00 to 18:00. Free entry.",
+    ].join("\n"),
+    metadata: { dateFrom: "2031-02-01", dateTo: "2031-03-08" },
+  },
+];
 
 export const conversationQualityCorpus: ConversationQualityDocument[] = [
   {
@@ -118,4 +217,5 @@ export const conversationQualityCorpus: ConversationQualityDocument[] = [
       "Per prenotare scrivi alla reception.",
     ].join("\n"),
   },
+  ...artsCentreProgramme,
 ];

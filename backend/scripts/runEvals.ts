@@ -215,6 +215,7 @@ const seedFixtures = async (
         workspaceId: flags.workspaceId,
         title: document.title,
         content: document.content,
+        ...(document.metadata ? { metadata: document.metadata } : {}),
         externalDocumentId: document.id,
       });
       documentIds.set(document.id, result.documentId);

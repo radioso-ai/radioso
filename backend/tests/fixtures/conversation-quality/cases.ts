@@ -6,6 +6,8 @@ import {
   REFUND_POLICY_DOC_ID,
   SECURITY_DOC_ID,
   MOUNTAIN_COURSE_DOC_ID,
+  TIDAL_LINES_DOC_ID,
+  WOVEN_ROOMS_DOC_ID,
 } from "./corpus.js";
 import { contactFormOnlyDirective, listedLanguagesDirective, pricesFromTheCoursePageDirective } from "./directives.js";
 import {
@@ -103,6 +105,35 @@ const quickReplyCase = (input: {
     { type: "turn_route", route: "direct" },
     { type: "turn_reply_source", source: "turn_planning" },
     { type: "llm_judge", expectedAnswer: input.expectedAnswer, criteria: quickReplyCriteria(input.language) },
+  ],
+});
+
+/** The tag whose judge grades how an answer places each item against a period the question names. */
+const REQUESTED_PERIOD_JUDGE_TAG = "requested-period";
+
+const ARTS_CENTRE_WEEK_REFERENCE =
+  "The reference describes the dates rather than quoting a reply. In the week of Monday 10 to Sunday 16 March 2031: Tidal Lines and Woven Rooms opened on Sunday 9 March, the day before the week, and close on 16 March, its last day; Glass and Light opened on 14 February and runs until 27 April; the printmaking evening is on Wednesday 12 March; the clay modelling weekend is on 14 and 15 March; the letterpress workshop series begins on Sunday 16 March and runs until 22 March. Paper Cities closed on 8 March, before the week.";
+
+/** The judge criterion for a reply in `language` to a question about the arts centre's week. */
+const artsCentreWeekCriteria = (language: string): string =>
+  `Grade only how the reply, written in ${language}, places each item it mentions against the week of 10 to 16 March 2031. FAIL when the reply says or implies that Tidal Lines, Woven Rooms, or Glass and Light starts, opens, begins, or is new during that week or on any day of it (each opened before 10 March), or that the letterpress workshop series ends during the week (it ends on 22 March), or when it states a date for an item that contradicts the reference. Saying an item is running, on view, already open, or continuing during the week, or that Tidal Lines and Woven Rooms close on 16 March, is correct. A reply may leave items out, group them, or add other details from the reference, and is not marked down for any of that.`;
+
+/**
+ * A question about one week whose items include two that open the day before it and close on its
+ * last day, the shape a production answer described as starting in the week (#1632). The date
+ * lookup must fetch those pages, and the answer must not move their start into the week.
+ */
+const requestedPeriodRelationCase = (input: { id: string; language: string; query: string }): ConversationQualityCase => ({
+  id: input.id,
+  name: `A ${input.language} question about one week does not move an item that opened the day before it into the week`,
+  tags: ["retrieval", "temporal", "multilingual", REQUESTED_PERIOD_JUDGE_TAG, ZERO_TOLERANCE_JUDGE_TAG],
+  query: input.query,
+  assertions: [
+    { type: "turn_route", route: "retrieval" },
+    { type: "retrieval_includes_document", documentId: TIDAL_LINES_DOC_ID },
+    { type: "retrieval_includes_document", documentId: WOVEN_ROOMS_DOC_ID },
+    { type: "answer_contains", pattern: "Tidal Lines", matchMode: "substring" },
+    { type: "llm_judge", expectedAnswer: ARTS_CENTRE_WEEK_REFERENCE, criteria: artsCentreWeekCriteria(input.language) },
   ],
 });
 
@@ -522,6 +553,16 @@ export const conversationQualityCases: ConversationQualityCase[] = [
       ...MOUNTAIN_COURSE_FIGURES_ABSENT,
     ],
   },
+  requestedPeriodRelationCase({
+    id: "requested-period-relation-en",
+    language: "English",
+    query: "What's on at Lantern Hall in the week of 10 March 2031?",
+  }),
+  requestedPeriodRelationCase({
+    id: "requested-period-relation-it",
+    language: "Italian",
+    query: "Cosa c'è alla Lantern Hall nella settimana del 10 marzo 2031?",
+  }),
   {
     id: "page-read-summarize",
     name: "A page summary is grounded in the supplied page content",

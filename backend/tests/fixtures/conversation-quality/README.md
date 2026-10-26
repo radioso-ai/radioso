@@ -12,11 +12,11 @@ repo-committed regression suite you run from the CLI.
 
 | File | What it is |
 |------|------------|
-| `corpus.ts` | 8 seed documents with quotable facts (30-day refund, $49 Pro plan, SOC 2 Type II, two residential courses priced differently, and a mountain yoga course whose page lists its fees in euro) |
+| `corpus.ts` | 15 seed documents with quotable facts (30-day refund, $49 Pro plan, SOC 2 Type II, two residential courses priced differently, a mountain yoga course whose page lists its fees in euro, and an arts centre's dated programme around one week in March 2031) |
 | `routines.ts` | 2 seed `RoutineDefinition`s: `contact-support`, `book-demo` |
 | `directives.ts` | 4 seed `AuthoredDirective`s: pricing-precision, refund-empathy, security-precision, maximally-helpful; plus `contact-form-only`, which only the `routine-step-outranks-always-on-handoff-directive` case adds, `listed-languages`, which only the `quick-reply-unlisted-language-standing-directive` case adds, and `prices-from-the-course-page`, which only the two `directive-withholds-figures-*` cases add, all through `agentConfigOverride` |
 | `agent.ts` | the single seed agent (retrieval on, directives attached) all cases run against |
-| `cases.ts` | the 50 seed cases |
+| `cases.ts` | the 52 seed cases |
 | `baseline.json` | committed per-case verdicts; the run diffs against this and fails on regression |
 
 ## Assertion vocabulary
@@ -33,10 +33,11 @@ Two layers (see `src/modules/eval/suite/`):
   drops them unless a case carries a tag passed with `--judge-tag`; those are graded on the
   cheapest text model the configuration resolves (the rerank tier, or `--judge-model`).
   `evals`, `evals:ci`, `evals:update-baseline`, and the nightly workflow all pass
-  `--judge-tag quick-reply --judge-tag unavailable`, so the quick-reply judge assertions and the
-  judge of `page-read-metadata-only-summary-unavailable` (its only assertion: no deterministic
-  check can tell an invented page summary from a real one) gate every run, and the baseline is
-  recorded the way the gate runs. A run refuses any case left with nothing to gate, so a
+  `--judge-tag quick-reply --judge-tag unavailable --judge-tag requested-period`, so the
+  quick-reply judge assertions, the judge of `page-read-metadata-only-summary-unavailable` (its
+  only assertion: no deterministic check can tell an invented page summary from a real one), and
+  the requested-period cases' judge gate every run, and the baseline is recorded the way the gate
+  runs. A run refuses any case left with nothing to gate, so a
   filtered run that selects a judge-only case must grade its tag too.
 
 ## Quick-reply cases
@@ -82,6 +83,25 @@ Run only these cases with:
 
 ```bash
 pnpm run evals -- --tag directive-withholds
+```
+
+## Requested-period cases
+
+The `requested-period`-tagged cases ask, in English and Italian, what is on at an arts centre in
+the week of Monday 10 to Sunday 16 March 2031. The centre's pages carry their dates in operator
+metadata (`dateFrom`/`dateTo`), so the question's period reaches the date lookup and every page
+sits a known way against the week: two exhibitions open on 9 March, the day before it, and close
+on its last day; one runs from February to April; a workshop series begins on its last day and
+runs past it; two classes fall inside it; one exhibition closes before it. The cases check that
+the date lookup fetched the two exhibitions that open the day before, that the answer names one
+of them, and, through the judge, that the answer never describes an item that opened before the
+week as starting in it, or the workshop series as ending in it. The year is far ahead and the
+question names it, so the period resolves the same way whatever day the suite runs.
+
+Run only these cases with:
+
+```bash
+pnpm run evals -- --tag requested-period
 ```
 
 ## Review cases

@@ -188,8 +188,10 @@ Self-hosted deployments do not use these unless the operator chooses to.
 | Slack Technologies | Notifications and handoff, only when a workspace connects Slack | Notification content the workspace configures | United States |
 | Stripe | Payments | Billing details of account holders; no end-user conversation data | United States |
 
-We give customers at least 30 days' notice by email before we add or replace a
-sub-processor. Customers can request our Data Processing Agreement at the
+We give customers at least 14 days' notice by email before we add or replace a
+sub-processor. When a sub-processor must be replaced urgently to keep the
+Service running or secure, we notify customers as soon as possible, and no later
+than when the change takes effect. Customers can request our Data Processing Agreement at the
 privacy contact above.
 
 ---

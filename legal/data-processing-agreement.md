@@ -56,11 +56,13 @@ Radioso:
 
 The Controller gives general authorisation for the subprocessors Annex 3 lists
 for the region of each of its workspaces.
-Radioso gives the Controller **at least 30 days' notice by email** before it
-adds or replaces a subprocessor. The Controller may object on reasonable data
-protection grounds within that period. If the parties cannot resolve the
-objection, the Controller may end the affected part of the Service without
-penalty.
+Radioso gives the Controller **at least 14 days' notice by email** before it
+adds or replaces a subprocessor. When a subprocessor must be replaced urgently
+to keep the Service running or secure, Radioso notifies the Controller as soon
+as possible, and no later than when the change takes effect. The Controller may
+object on reasonable data protection grounds within 14 days of either notice.
+If the parties cannot resolve the objection, the Controller may end the
+affected part of the Service without penalty.
 
 Radioso binds each subprocessor to data protection obligations that are at
 least as protective as this DPA, and remains liable for their performance.

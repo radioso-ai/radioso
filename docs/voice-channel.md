@@ -185,7 +185,9 @@ vendor`), never the key, the credential or a URL. The
 
 On a self-hosted deployment, set `PUBLIC_API_BASE_URL` on the backend to the
 origin the internet reaches its REST API on, such as
-`https://api.example.com`. ElevenLabs must reach
+`https://api.example.com`, with the path prefix it is served under if there is
+one; a trailing `/api/v1` is dropped, so the value `RADIOSO_PUBLIC_API_URL`
+takes works too. ElevenLabs must reach
 `{PUBLIC_API_BASE_URL}/api/v1/agents/<agent-id>/voice/elevenlabs/v1`; until
 it is set, the Voice card says Connect is unavailable.
 

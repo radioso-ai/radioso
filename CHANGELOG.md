@@ -9,6 +9,15 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.24.1] - 2026-10-26
+
+### Fixed
+
+- **deps:** migrate to Zod 4 to close GHSA-mrhx-c7xc-m3w5 ([#1645](https://github.com/radioso-ai/radioso/pull/1645))
+- **deps:** patch critical and high dependency advisories ([#1644](https://github.com/radioso-ai/radioso/pull/1644))
+
+[1.24.1]: https://github.com/radioso-ai/radioso/compare/v1.24.0...v1.24.1
+
 ## [1.24.0] - 2026-10-26
 
 ### Added

@@ -53,7 +53,7 @@ describeIntegration("voice recording erasure backlog (Postgres)", () => {
   const credentials = new WorkspaceProviderCredentialsService(
     new WorkspaceProviderCredentialsRepository(database.kysely),
     auditService,
-    { key: randomBytes(32).toString("base64") },
+    { key: { current: randomBytes(32).toString("base64"), previous: [] } },
   );
   const vendorFetch = vi.fn<typeof globalThis.fetch>(async () => new Response("{}", { status: 200 }));
   const jobs = new BackgroundJobRepository(database.kysely);

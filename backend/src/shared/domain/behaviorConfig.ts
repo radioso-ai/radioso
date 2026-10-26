@@ -308,10 +308,8 @@ export const RETRIEVAL_BEHAVIOR = {
     // Chunks in scope are counted up to this many. Past it the count is a lower bound,
     // which only makes term weights smaller, never larger.
     lexicalSomeTermsScopeCountCap: 10_000,
-    // A term matching more chunks than this cannot find a chunk on its own; it still
-    // counts toward the share a found chunk holds. Each term's count stops at the cap,
-    // but Postgres may still read every chunk in the workspace to reach it (a term
-    // frequent elsewhere in the partition, rare here), so the cap does not bound time.
+    // A term matching more chunks than this weighs nothing, so it cannot find a chunk on
+    // its own. Each alternative's lookup through the full-text index stops at the cap.
     lexicalSomeTermsTermMatchCap: 200,
     // The most chunks a some-terms search ranks, taken from its rarest terms first.
     lexicalSomeTermsRankedChunkBudget: 1000,

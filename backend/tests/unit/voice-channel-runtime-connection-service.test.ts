@@ -31,6 +31,7 @@ interface Setup {
   activeCredentials?: string[];
   completions?: boolean;
   saveError?: Error;
+  bindError?: Error;
 }
 
 /** Every port as an in-memory fake that records what the service asked of it, in order. */
@@ -97,6 +98,7 @@ const serviceWith = (setup: Setup = {}) => {
     binder: {
       bind: async ({ runtime }) => {
         steps.push(`bind:${runtime ? `${runtime.agentId}@${runtime.region}` : "none"}`);
+        if (setup.bindError) throw setup.bindError;
         if (profile) profile = { ...profile, runtime };
       },
     },
@@ -189,7 +191,7 @@ describe("voice runtime connection: connect", () => {
 
     await service.connect({ ...agent, actor });
 
-    expect(steps).toEqual(["locate", "issue:cred-1", "ensure:agent_42:rk_secret_1", "save:agent_42:cred-1", "bind:agent_42@eu", "revoke:cred-old"]);
+    expect(steps).toEqual(["locate", "issue:cred-1", "ensure:agent_42:rk_secret_1", "save:agent_42:cred-1", "revoke:cred-old", "bind:agent_42@eu"]);
     expect(audit.connected).toHaveBeenCalledWith(expect.objectContaining({ outcome: "repaired", credential: "issued" }));
   });
 
@@ -211,8 +213,8 @@ describe("voice runtime connection: connect", () => {
       "issue:cred-1",
       "ensure:agent_42:rk_secret_1",
       "save:agent_new:cred-1",
-      "bind:agent_new@eu",
       "revoke:cred-old",
+      "bind:agent_new@eu",
     ]);
     expect(status.runtime?.agentId).toBe("agent_new");
   });
@@ -222,7 +224,7 @@ describe("voice runtime connection: connect", () => {
 
     const status = await service.connect({ ...agent, actor });
 
-    expect(steps).toEqual(["locate", "issue:cred-1", "ensure:new:rk_secret_1", "save:agent_new:cred-1", "bind:agent_new@eu", "revoke:cred-old"]);
+    expect(steps).toEqual(["locate", "issue:cred-1", "ensure:new:rk_secret_1", "save:agent_new:cred-1", "revoke:cred-old", "bind:agent_new@eu"]);
     expect(status.region).toBe("eu");
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({ workspaceId, agentId, vendor: "elevenlabs", previousRegion: "us", region: "eu" }),
@@ -243,6 +245,31 @@ describe("voice runtime connection: connect", () => {
 
     await expect(service.connect({ ...agent, actor })).rejects.toThrow("database down");
     expect(steps).toEqual(["locate", "issue:cred-1", "ensure:new:rk_secret_1", "save:agent_new:cred-1", "release:agent_new", "revoke:cred-1"]);
+  });
+
+  it("keeps a rotated credential the vendor agent now holds when the connection cannot be recorded, so the next Connect repairs", async () => {
+    const { service, steps } = serviceWith({ connection: managed(), profile: boundTo("agent_42"), activeCredentials: [], saveError: new Error("database down") });
+
+    await expect(service.connect({ ...agent, actor })).rejects.toThrow("database down");
+    expect(steps).toEqual(["locate", "issue:cred-1", "ensure:agent_42:rk_secret_1", "save:agent_42:cred-1"]);
+  });
+
+  it("keeps the credential of a vendor agent it created but could neither record nor delete", async () => {
+    const { service, steps, logger } = serviceWith({
+      saveError: new Error("database down"),
+      releaseError: new VoiceVendorRequestError("unreachable", 503),
+    });
+
+    await expect(service.connect({ ...agent, actor })).rejects.toThrow("database down");
+    expect(steps).toEqual(["locate", "issue:cred-1", "ensure:new:rk_secret_1", "save:agent_new:cred-1", "release:agent_new"]);
+    expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ vendorAgentId: "agent_new" }), expect.any(String));
+  });
+
+  it("revokes the credential it replaced as soon as the new one is recorded, before binding, so a binding that fails loses nothing", async () => {
+    const { service, steps } = serviceWith({ connection: managed(), profile: boundTo("agent_42"), activeCredentials: [], bindError: new Error("agent write failed") });
+
+    await expect(service.connect({ ...agent, actor })).rejects.toThrow("agent write failed");
+    expect(steps).toEqual(["locate", "issue:cred-1", "ensure:agent_42:rk_secret_1", "save:agent_42:cred-1", "revoke:cred-old", "bind:agent_42@eu"]);
   });
 
   it("lets Radioso take over a runtime the operator bound by hand with a vendor agent of its own, leaving theirs alone", async () => {

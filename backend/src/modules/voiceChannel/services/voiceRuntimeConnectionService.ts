@@ -88,8 +88,9 @@ const vendorErrorFields = (error: unknown) => ({
  *
  * Connecting finds the key's region, keeps the REST credential the vendor agent carries (reused
  * while it works, else a new one), creates or repairs the vendor agent, records the connection,
- * binds the agent's `voice.runtime` to it, and only then revokes a credential it replaced. A step
- * that fails undoes what this attempt minted or created. Pressing Connect again repairs: the
+ * revokes a credential it replaced, and binds the agent's `voice.runtime` to it. A credential goes
+ * only once no vendor agent holds it: one minted for a vendor call that failed, or for an agent this
+ * attempt created and deleted again because it could not be recorded. Pressing Connect again repairs: the
  * vendor agent's settings, a binding a save cleared, a credential that was revoked. A key that now
  * belongs to another region's account gets a new vendor agent there; the old one is out of the
  * key's reach and its credential is revoked.
@@ -142,14 +143,18 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
       try {
         await this.dependencies.connections.save(connection);
       } catch (error) {
-        if (ensured.outcome === "created") await this.releaseQuietly(connection, credential);
-        if (minted) await this.revokeQuietly({ ...input, credentialId: minted.credentialId });
+        // The vendor agent now holds the minted credential, so it stays unless that agent goes:
+        // only an agent this attempt created, and could delete again, gives it up.
+        const released = ensured.outcome === "created" && await this.releaseQuietly(connection, credential);
+        if (minted && released) await this.revokeQuietly({ ...input, credentialId: minted.credentialId });
         throw error;
       }
-      const runtime: VoiceRuntimeBinding = { vendor, agentId: ensured.vendorAgentId, region };
-      await this.dependencies.binder.bind({ workspaceId, agentId, runtime });
+      // The saved row makes the minted credential the connection's, so the one it replaced goes
+      // now: a binding that fails below would otherwise lose its id with it still active.
       const replaced = previous?.channelCredentialId;
       if (minted && replaced && replaced !== minted.credentialId) await this.revokeQuietly({ ...input, credentialId: replaced });
+      const runtime: VoiceRuntimeBinding = { vendor, agentId: ensured.vendorAgentId, region };
+      await this.dependencies.binder.bind({ workspaceId, agentId, runtime });
 
       if (!ensured.primaryLocaleSupported) {
         this.dependencies.logger.warn(
@@ -279,7 +284,8 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
 
   /**
    * Creates or repairs the vendor agent with the credential it should carry: the kept one while it
-   * works, else one minted here. A credential minted for an attempt that fails is revoked again.
+   * works, else one minted here. A credential minted for a vendor call that fails is revoked again:
+   * no vendor agent holds it.
    */
   private async ensureAgent(input: AgentRef & {
     actor: VoiceRuntimeConnectionActor;

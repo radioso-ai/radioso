@@ -59,28 +59,27 @@ export type VendorHeldConversationDataScope =
 
 /**
  * One erasure of conversation data a vendor keeps outside Radioso's database, such as a voice call's
- * recording, which the vendor deletes only when Radioso asks it to: its scopes, worked through in
- * order under one budget, and the organization they belong to, which the erasure's record names.
- * `deleted`: the organization goes with them, so the record keeps its id without pointing at it.
+ * recording, which the vendor deletes only when Radioso asks it to: its scopes, and the organization
+ * they belong to, which the record of each deletion at the vendor names.
  */
 export interface VendorHeldConversationDataErasure {
-  readonly account: { readonly id: string; readonly deleted: boolean } | null;
+  readonly accountId: string;
   readonly scopes: readonly VendorHeldConversationDataScope[];
 }
 
 /**
- * Erases what vendors hold, in two steps around the deletion. `prepare` reads what is held and the
- * workspace's vendor keys while the conversations and the keys still exist, before any eraser or
- * cascade removes the rows that say where it is; `erase` asks the vendors to delete it once the
- * deletion has committed. `erase` never rejects, so a vendor that refuses or cannot be reached never
- * holds a deletion back; what is left at a vendor is the eraser's to log.
+ * Hands what vendors hold for a deletion to a durable backlog, inside the deletion's own
+ * transaction, while the rows that say where it is and the workspace's vendor keys still exist.
+ * The backlog outlives the workspace and the organization, keys included, so the deletion and the
+ * backlog commit together or not at all, and a background job asks the vendors to delete it after
+ * the commit, with retries, recording each outcome. `afterCommit` wakes that job once the
+ * transaction committed; it never rejects.
  *
- * Bound to an erasure's transaction, `prepare` reads and locks the rows in scope, so a report that
- * arrives meanwhile waits for the erasure. When it cannot read a `conversations` or `visitor_key`
- * scope it rejects, and the erasure fails whole, to be run again: an erasure of named subjects never
- * goes on without knowing what the vendors hold. For a `workspace` scope it logs and goes on, since
- * a workspace's deletion does not wait on vendors.
+ * Bound to the deletion's transaction, `handOff` reads and locks the rows in scope, so a report
+ * that arrives meanwhile waits for the deletion. When it cannot read them it rejects, and the
+ * deletion fails whole, to be run again: a deletion never goes on without knowing what the vendors
+ * hold.
  */
 export interface VendorHeldConversationDataEraser {
-  prepare(erasure: VendorHeldConversationDataErasure): Promise<{ erase(): Promise<void> }>;
+  handOff(erasure: VendorHeldConversationDataErasure): Promise<{ afterCommit(): Promise<void> }>;
 }

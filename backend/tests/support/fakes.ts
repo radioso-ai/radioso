@@ -5337,6 +5337,17 @@ export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
     return record;
   }
 
+  /** The in-memory store keeps no organizations or workspaces to check: every subject counts as present. */
+  async createNamingGoneSubjects(input: {
+    accountId: string;
+    workspaceId: string;
+    eventType: string;
+    eventStatus: string;
+    metadata: readonly Record<string, unknown>[];
+  }): Promise<void> {
+    for (const metadata of input.metadata) await this.create({ ...input, metadata });
+  }
+
   async createIfConversationLive(input: {
     accountId?: string | null;
     workspaceId: string;

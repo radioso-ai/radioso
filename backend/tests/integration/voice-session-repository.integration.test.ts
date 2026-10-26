@@ -208,7 +208,7 @@ describeIntegration("VoiceSessionRepository (Postgres)", () => {
       await expect(repository.findReportableSession(waiting)).resolves.toBeNull();
     });
 
-    it("keeps a reported recording's session through the agent's deletion, and still finds and lists it", async () => {
+    it("keeps a reported recording's session through the agent's deletion, and still finds it and names its vendor", async () => {
       const doomedAgentId = randomUUID();
       await database.query("INSERT INTO agents (id, workspace_id, name) VALUES ($1, $2, $3)", [doomedAgentId, workspaceId, "Deleted Voice Agent"]);
       const session = { workspaceId, agentId: doomedAgentId, vendor: "elevenlabs", sessionKey: randomUUID() };
@@ -222,8 +222,8 @@ describeIntegration("VoiceSessionRepository (Postgres)", () => {
       await database.query("DELETE FROM agents WHERE id = $1", [doomedAgentId]);
 
       await expect(repository.findRecording({ workspaceId, conversationId })).resolves.toMatchObject({ vendorConversationId });
-      const listed = await repository.listRecordings({ kind: "workspace", workspaceId });
-      expect(listed.map((recording) => recording.vendorConversationId)).toContain(vendorConversationId);
+      await expect(repository.lockRecordedVendors({ kind: "workspace", workspaceId })).resolves.toEqual(["elevenlabs"]);
+      await expect(database.query("SELECT 1 FROM voice_sessions WHERE vendor_conversation_id = $1 AND agent_id IS NULL", [vendorConversationId])).resolves.toHaveLength(1);
     });
 
     it("keeps an expired start whose page reported a recording when the agent's next start clears the others out", async () => {
@@ -257,12 +257,10 @@ describeIntegration("VoiceSessionRepository (Postgres)", () => {
       );
       expect(rows).toEqual([{ conversation_id: null, vendor_conversation_id: vendorConversationId }]);
       await expect(repository.findRecording({ workspaceId, conversationId })).resolves.toBeNull();
-      await expect(repository.listRecordings({ kind: "workspace", workspaceId })).resolves.toContainEqual(
-        { workspaceId, conversationId: null, vendor: "elevenlabs", region: "eu", vendorConversationId },
-      );
+      await expect(repository.lockRecordedVendors({ kind: "workspace", workspaceId })).resolves.toEqual(["elevenlabs"]);
       // The agent's next start keeps it.
       await startedSession();
-      await expect(repository.listRecordings({ kind: "workspace", workspaceId })).resolves.toContainEqual(expect.objectContaining({ vendorConversationId }));
+      await expect(database.query("SELECT 1 FROM voice_sessions WHERE vendor_conversation_id = $1", [vendorConversationId])).resolves.toHaveLength(1);
     });
 
     it("clears out a page's own session whose conversation was deleted at the agent's next start", async () => {
@@ -277,14 +275,11 @@ describeIntegration("VoiceSessionRepository (Postgres)", () => {
       expect(rows).toEqual([]);
     });
 
-    it("lists a workspace's recording whose call never bound a conversation, with no conversation", async () => {
+    it("names the vendor of a workspace's recording whose call never bound a conversation", async () => {
       const { report } = await startedSession();
-      const vendorConversationId = `conv_${randomUUID().replaceAll("-", "")}`;
-      await report(vendorConversationId);
+      await report(`conv_${randomUUID().replaceAll("-", "")}`);
 
-      const listed = await repository.listRecordings({ kind: "workspace", workspaceId });
-
-      expect(listed).toContainEqual({ workspaceId, conversationId: null, vendor: "elevenlabs", region: "eu", vendorConversationId });
+      await expect(repository.lockRecordedVendors({ kind: "workspace", workspaceId })).resolves.toEqual(["elevenlabs"]);
     });
 
     it("finds no recording for a conversation that belongs to another workspace", async () => {
@@ -310,7 +305,20 @@ describeIntegration("VoiceSessionRepository (Postgres)", () => {
       await expect(repository.findRecording({ workspaceId, conversationId })).resolves.toBeNull();
     });
 
-    it("lists the recordings of some conversations, or of the whole workspace", async () => {
+    it("locks every session row in scope while it names the vendors, rows with no recording included", async () => {
+      const recorded = await startedSession();
+      await recorded.report(`conv_${randomUUID().replaceAll("-", "")}`);
+      const unrecorded = await startedSession();
+      const [unrecordedRow] = await database.query<{ id: string }>("SELECT id FROM voice_sessions WHERE session_key = $1", [unrecorded.session.sessionKey]);
+
+      await database.kysely.transaction().execute(async (trx) => {
+        await expect(new VoiceSessionRepository(trx).lockRecordedVendors({ kind: "workspace", workspaceId })).resolves.toEqual(["elevenlabs"]);
+        // Another connection cannot take the row a report would write to until the erasure ends.
+        await expect(database.query("SELECT 1 FROM voice_sessions WHERE id = $1 FOR UPDATE NOWAIT", [unrecordedRow.id])).rejects.toMatchObject({ code: "55P03" });
+      });
+    });
+
+    it("names the vendors whose recordings some conversations or the whole workspace hold, and none for a conversation without one", async () => {
       const bound = await Promise.all([startedSession(), startedSession()].map(async (pending) => {
         const { session, report } = await pending;
         const vendorConversationId = `conv_${randomUUID().replaceAll("-", "")}`;
@@ -320,11 +328,12 @@ describeIntegration("VoiceSessionRepository (Postgres)", () => {
         return { conversationId, vendorConversationId };
       }));
 
-      const some = await repository.listRecordings({ kind: "conversations", workspaceId, conversationIds: [bound[0].conversationId] });
-      expect(some.map((recording) => recording.vendorConversationId)).toEqual([bound[0].vendorConversationId]);
-      const all = await repository.listRecordings({ kind: "workspace", workspaceId });
-      expect(all.map((recording) => recording.vendorConversationId)).toEqual(expect.arrayContaining(bound.map((entry) => entry.vendorConversationId)));
-      await expect(repository.listRecordings({ kind: "conversations", workspaceId, conversationIds: [] })).resolves.toEqual([]);
+      const unrecorded = await insertConversation();
+
+      await expect(repository.lockRecordedVendors({ kind: "conversations", workspaceId, conversationIds: [bound[0].conversationId] })).resolves.toEqual(["elevenlabs"]);
+      await expect(repository.lockRecordedVendors({ kind: "workspace", workspaceId })).resolves.toEqual(["elevenlabs"]);
+      await expect(repository.lockRecordedVendors({ kind: "conversations", workspaceId, conversationIds: [unrecorded] })).resolves.toEqual([]);
+      await expect(repository.lockRecordedVendors({ kind: "conversations", workspaceId, conversationIds: [] })).resolves.toEqual([]);
     });
   });
 });

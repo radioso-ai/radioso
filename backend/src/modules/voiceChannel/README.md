@@ -85,10 +85,12 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   credential the connection holds while it is active or issues one
   (`VoiceRuntimeChannelCredentials`), creates or repairs the vendor agent
   (`ensureAgent`, minting a credential and asking again when the vendor agent
-  is gone), records the connection (`VoiceRuntimeConnectionStore`), binds
-  `voice.runtime` (`VoiceRuntimeBinder`) and only then revokes a credential it
-  replaced, undoing what the attempt minted or created when a step fails; a key
-  now for another region's account gets a new vendor agent there. `disconnect`
+  is gone), records the connection (`VoiceRuntimeConnectionStore`), revokes a
+  credential the recorded one replaced, and binds `voice.runtime`
+  (`VoiceRuntimeBinder`). A minted credential is revoked again only while no
+  vendor agent holds it: its vendor call failed, or the agent this attempt
+  created could not be recorded and was deleted again. A key now for another
+  region's account gets a new vendor agent there. `disconnect`
   releases the vendor agent the connection names, revokes its credential and
   drops the record (best effort when the vendor or the key is gone, reported
   as `vendorAgentLeft`), then unbinds; a runtime with no connection, or one

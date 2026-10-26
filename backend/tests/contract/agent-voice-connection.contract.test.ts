@@ -152,6 +152,19 @@ describe("agent voice connection contract", () => {
     expect(await restCredentials()).toEqual([credential]);
   });
 
+  it("gives the vendor agent a new credential on Connect after the operator revoked its own on the API card", async () => {
+    const { app, dashboard, agentId, connect, vendor, restCredentials } = await operatorWith();
+    await connect().expect(200);
+    const [revoked] = await restCredentials();
+    await request(app).post(`/api/v1/agents/${agentId}/channel-credentials/${revoked.id}/revoke`).set({ ...dashboard, ...csrf }).expect(204);
+
+    await connect().expect(200);
+
+    const [replacement] = await restCredentials();
+    expect(replacement.id).not.toBe(revoked.id);
+    expect(vendor.secretOf("agent_2")?.startsWith(replacement.prefix)).toBe(true);
+  });
+
   it("binds the same vendor agent again after a save that sent no runtime cleared the binding", async () => {
     const { app, dashboard, agentId, connect, status } = await operatorWith();
     await connect().expect(200);

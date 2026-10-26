@@ -409,7 +409,7 @@ export const createVoiceSessionStartComposition = (deps: {
 const VOICE_RUNTIME_CREDENTIAL_LABEL = "Voice calls";
 const VOICE_RUNTIME_CREDENTIAL_REVOKE_REASON = "voice_runtime_connection";
 
-type VoiceRuntimeGrants = Pick<AccessGrantService, "issueGrant" | "revokeGrant" | "findGrantById">;
+type VoiceRuntimeGrants = Pick<AccessGrantService, "issueGrant" | "revokeGrant" | "findGrantById" | "findAdmittingAgentChannelGrant">;
 
 /**
  * The REST agent-channel credential a maintained vendor agent sends, over the access grants: an
@@ -433,17 +433,9 @@ const voiceRuntimeChannelCredentials = (grants: VoiceRuntimeGrants): VoiceRuntim
       });
       return { credentialId: grant.id, secret: token };
     },
-    isActive: async ({ workspaceId, agentId, credentialId }) => {
-      const grant = await grants.findGrantById(credentialId);
-      return grant !== null
-        && grant.workspaceId === workspaceId
-        && grant.agentId === agentId
-        && grant.principalKind === "agent-api"
-        && grant.channel === "agent-api"
-        && grant.enabled
-        && grant.revokedAt === null
-        && (grant.expiresAt === null || grant.expiresAt.getTime() > Date.now());
-    },
+    // The rule the completions route admits the vendor's turns by, from the access grants.
+    isActive: async ({ workspaceId, agentId, credentialId }) =>
+      (await grants.findAdmittingAgentChannelGrant(credentialId, { workspaceId, agentId, channel: "agent-api" })) !== null,
     revoke: async ({ credentialId, actor }) => {
       const grant = await grants.findGrantById(credentialId);
       if (!grant || grant.revokedAt) return;

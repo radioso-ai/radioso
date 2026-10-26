@@ -33,7 +33,7 @@ const requestedDateRangeSchema = z.object({
 }).strict();
 
 const requestedRangeLookupSchema = z.object({
-  ran: z.boolean(),
+  status: z.enum(["ran", "failed", "not_requested"]),
   candidateCount: z.number().int().min(0),
 }).strict();
 
@@ -77,7 +77,7 @@ export interface RetrievalProbeCopilotToolDependencies {
   readonly agentLookup: CopilotAgentLookupPort;
 }
 
-const DESCRIPTION = "Run one retrieval-only search with a specific agent's own retrieval settings, source scope, and skill configuration, and return the chunks it would ground on with their scores. Answers 'why was this (not) retrieved' without spending a full agent turn. Results always describe the named agent; `retrievalEnabled: false` means that agent answers without retrieval at all. For a date question, check `requestedDateRange` and `requestedRangeLookup` to see the period the query resolved to and whether the structured date lookup ran, rather than reading date handling off result order alone.";
+const DESCRIPTION = "Run one retrieval-only search with a specific agent's own retrieval settings, source scope, and skill configuration, and return the chunks it would ground on with their scores. Answers 'why was this (not) retrieved' without spending a full agent turn. Results always describe the named agent; `retrievalEnabled: false` means that agent answers without retrieval at all. For a date question, check `requestedDateRange` and `requestedRangeLookup.status` (`ran`, `failed`, or `not_requested`) to see the period the query resolved to and whether the structured date lookup actually ran, rather than reading date handling off result order alone.";
 
 export const createRetrievalProbeCopilotTools = (
   deps: RetrievalProbeCopilotToolDependencies,

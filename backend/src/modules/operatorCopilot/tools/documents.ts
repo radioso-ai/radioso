@@ -213,7 +213,7 @@ export interface DocumentKnowledgeCopilotToolDependencies {
   readonly documentMaintenance: CopilotDocumentMaintenancePort;
 }
 
-const DOCUMENT_SEARCH_DESCRIPTION = "Search workspace documents and return matching document metadata and quoted evidence snippets — the only document text available to you. For a date question, pass dateFrom and dateTo (both or neither) to rank passages in that period first.";
+const DOCUMENT_SEARCH_DESCRIPTION = "Search workspace documents and return matching document metadata and quoted evidence snippets — the only document text available to you. For a date question, pass dateFrom and dateTo (both or neither) to rank passages in that period first; a busy range can fill the whole result limit on its own, ahead of any other similarity match. Each result's `datedInRequestedRange` says whether it fell inside the requested range.";
 
 export const createDocumentSearchCopilotTools = (deps: DocumentSearchCopilotToolDependencies): ReadonlyArray<CopilotToolDescriptor> => [
   {

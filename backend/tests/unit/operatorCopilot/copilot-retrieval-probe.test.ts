@@ -2,20 +2,20 @@ import { describe, expect, it, vi } from "vitest";
 
 import { admittedAbuseControlDecision } from "../../support/fakes.js";
 import { createRetrievalProbeCopilotTools } from "../../../src/modules/operatorCopilot/tools/retrievalProbe.js";
-import type { CopilotRetrievalProbePort } from "../../../src/modules/operatorCopilot/contracts/retrievalProbe.js";
+import type { CopilotRetrievalProbePort, CopilotRetrievalProbeResult, CopilotRetrievalSearchPort } from "../../../src/modules/operatorCopilot/contracts/retrievalProbe.js";
 import { RetrievalProbeService } from "../../../src/modules/operatorCopilot/services/retrievalProbeService.js";
 import { context } from "./copilot-tools-test-helpers.js";
 
 const AGENT_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const OTHER_AGENT_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 
-const probeResult = (overrides: Record<string, unknown> = {}) => ({
+const probeResult = (overrides: Partial<CopilotRetrievalProbeResult> = {}): CopilotRetrievalProbeResult => ({
   agentId: AGENT_ID,
   retrievalEnabled: true,
   rewrittenQuery: { semantic: "refund window", lexical: "refund" },
   requestedDateRange: null,
   requestedDateRangeDropReason: null,
-  requestedRangeLookup: { ran: false, candidateCount: 0 },
+  requestedRangeLookup: { status: "not_requested", candidateCount: 0 },
   results: [{
     documentId: "11111111-1111-4111-8111-111111111111",
     chunkId: "22222222-2222-4222-8222-222222222222",
@@ -127,7 +127,7 @@ describe("retrieval_probe descriptor", () => {
   it("reports the resolved date range, that the requested-range lookup ran, and which results it contributed", async () => {
     const probe = vi.fn(async () => probeResult({
       requestedDateRange: { dateFrom: "2027-01-03", dateTo: "2027-01-06" },
-      requestedRangeLookup: { ran: true, candidateCount: 2 },
+      requestedRangeLookup: { status: "ran", candidateCount: 2 },
       results: [{
         documentId: "11111111-1111-4111-8111-111111111111",
         chunkId: "22222222-2222-4222-8222-222222222222",
@@ -147,13 +147,13 @@ describe("retrieval_probe descriptor", () => {
     }, toolContext) as {
       probe: {
         requestedDateRange: { dateFrom: string; dateTo: string } | null;
-        requestedRangeLookup: { ran: boolean; candidateCount: number };
+        requestedRangeLookup: { status: string; candidateCount: number };
         results: Array<{ dateFrom: string | null; dateTo: string | null; datedInRequestedRange: boolean | null; fromRequestedRangeLookup: boolean }>;
       };
     };
 
     expect(output.probe.requestedDateRange).toEqual({ dateFrom: "2027-01-03", dateTo: "2027-01-06" });
-    expect(output.probe.requestedRangeLookup).toEqual({ ran: true, candidateCount: 2 });
+    expect(output.probe.requestedRangeLookup).toEqual({ status: "ran", candidateCount: 2 });
     expect(output.probe.results[0]).toEqual(expect.objectContaining({
       dateFrom: "2027-01-03",
       dateTo: "2027-01-06",
@@ -184,12 +184,26 @@ describe("retrieval_probe descriptor", () => {
     const output = await descriptor.createTool(context(AGENT_ID)).invoke({
       query: "refund window",
     }, toolContext) as {
-      probe: { requestedDateRange: unknown; requestedDateRangeDropReason: unknown; requestedRangeLookup: { ran: boolean; candidateCount: number } };
+      probe: { requestedDateRange: unknown; requestedDateRangeDropReason: unknown; requestedRangeLookup: { status: string; candidateCount: number } };
     };
 
     expect(output.probe.requestedDateRange).toBeNull();
     expect(output.probe.requestedDateRangeDropReason).toBeNull();
-    expect(output.probe.requestedRangeLookup).toEqual({ ran: false, candidateCount: 0 });
+    expect(output.probe.requestedRangeLookup).toEqual({ status: "not_requested", candidateCount: 0 });
+  });
+
+  it("reports the lookup as failed rather than ran when it errored", async () => {
+    const probe = vi.fn(async () => probeResult({
+      requestedDateRange: { dateFrom: "2027-01-03", dateTo: "2027-01-06" },
+      requestedRangeLookup: { status: "failed", candidateCount: 0 },
+    }));
+    const descriptor = toolFor({ probe });
+
+    const output = await descriptor.createTool(context(AGENT_ID)).invoke({
+      query: "which courses run from 3 to 6 January 2027",
+    }, toolContext) as { probe: { requestedRangeLookup: { status: string; candidateCount: number } } };
+
+    expect(output.probe.requestedRangeLookup).toEqual({ status: "failed", candidateCount: 0 });
   });
 });
 
@@ -208,12 +222,14 @@ describe("RetrievalProbeService", () => {
     query: "refund window",
   };
 
-  const searchResult = (overrides: Record<string, unknown> = {}) => ({
+  const searchResult = (
+    overrides: Partial<Awaited<ReturnType<CopilotRetrievalSearchPort["search"]>>> = {},
+  ): Awaited<ReturnType<CopilotRetrievalSearchPort["search"]>> => ({
     agentScope: { agentId: AGENT_ID, retrievalEnabled: true },
     rewrittenQuery: { semantic: "refund window", lexical: "refund" },
     requestedDateRange: null,
     requestedDateRangeDropReason: null,
-    requestedRangeLookup: { ran: false, candidateCount: 0 },
+    requestedRangeLookup: { status: "not_requested", candidateCount: 0 },
     results: [],
     ...overrides,
   });
@@ -249,13 +265,13 @@ describe("RetrievalProbeService", () => {
     const dependencies = guard();
     const search = vi.fn(async () => searchResult({
       requestedDateRange: { dateFrom: "2027-01-03", dateTo: "2027-01-06" },
-      requestedRangeLookup: { ran: true, candidateCount: 4 },
+      requestedRangeLookup: { status: "ran", candidateCount: 4 },
     }));
     const service = new RetrievalProbeService({ ...dependencies, retrievalSearch: { search } });
 
     const result = await service.probe(input);
 
     expect(result.requestedDateRange).toEqual({ dateFrom: "2027-01-03", dateTo: "2027-01-06" });
-    expect(result.requestedRangeLookup).toEqual({ ran: true, candidateCount: 4 });
+    expect(result.requestedRangeLookup).toEqual({ status: "ran", candidateCount: 4 });
   });
 });

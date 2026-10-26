@@ -351,8 +351,7 @@ export const buildRetrievalServices = (input: {
       retrievalPipeline,
       input.auditService,
       input.workspaceInvalidationPublisher,
-      retrieval.temporalCandidateRetrieval,
-      input.queryEmbeddings,
+      retrieval.requestedDateRangeSearch,
     ),
   };
 };

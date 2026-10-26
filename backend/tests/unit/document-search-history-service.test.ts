@@ -47,6 +47,7 @@ describe("document search history service", () => {
       query: "Legacy search",
       resultCount: 0,
       results: [],
+      dateRangeLookup: { status: "not_requested", candidateCount: 0 },
       activityTrace: undefined,
     });
   });

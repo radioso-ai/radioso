@@ -7,6 +7,7 @@ import type { RetrievalSearchRequest, RetrievalSearchResult } from "../domain/re
 import { resolveScopedRetrievalRun } from "./scopedRetrievalRun.js";
 import type { AgentRetrievalScopePort } from "../domain/agentRetrievalScope.js";
 import { datesFromMetadata, positionInDateRange, type RequestedDateRange } from "../domain/temporal/requestedDateRange.js";
+import type { RequestedDateRangeLookupStatus } from "../domain/temporal/requestedDateRangeLookupStatus.js";
 
 export class RetrievalSearchService {
   private readonly activitySummaryPresenter = new ActivitySummaryPresenter();
@@ -49,9 +50,17 @@ export class RetrievalSearchService {
       ? null
       : result.diagnostics.rewriteProposal?.requestedDateRangeDropReason ?? null;
     // A requested range always runs through the structured lookup (see
-    // candidateRetrievalStage.ts's planTemporalLookup); the one way it does not is the
-    // workspace-level toggle that turns the whole structured lookup off.
-    const requestedRangeLookupRan = requestedDateRange !== null && result.diagnostics.temporalStructuredLookupEnabled !== false;
+    // candidateRetrievalStage.ts's planTemporalLookup); the two ways it does not: the
+    // workspace-level toggle that turns the whole structured lookup off (not_requested), or the
+    // lookup itself erroring, which the candidate stage swallows into an empty result and
+    // records as a degraded channel rather than surfacing — reading that channel is the only way
+    // to tell a real zero-candidate answer apart from a lookup that silently failed.
+    const requestedRangeLookupStatus: RequestedDateRangeLookupStatus =
+      requestedDateRange === null || result.diagnostics.temporalStructuredLookupEnabled === false
+        ? "not_requested"
+        : result.diagnostics.degradedRetrievalChannels?.includes("temporal")
+          ? "failed"
+          : "ran";
 
     return {
       outcome: "results",
@@ -63,8 +72,8 @@ export class RetrievalSearchService {
       requestedDateRange,
       requestedDateRangeDropReason,
       requestedRangeLookup: {
-        ran: requestedRangeLookupRan,
-        candidateCount: requestedRangeLookupRan ? result.diagnostics.temporalCandidateCount ?? 0 : 0,
+        status: requestedRangeLookupStatus,
+        candidateCount: requestedRangeLookupStatus === "ran" ? result.diagnostics.temporalCandidateCount ?? 0 : 0,
       },
       results: result.contexts
         .slice(0, input.topK ?? result.contexts.length)

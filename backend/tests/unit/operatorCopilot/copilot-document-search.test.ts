@@ -78,4 +78,23 @@ describe("document_search descriptor", () => {
       dateTo: "2027-01-06",
     }));
   });
+
+  it("exposes each result's datedInRequestedRange unchanged", async () => {
+    const search = vi.fn(async () => ({
+      results: [{
+        documentId: "d1",
+        title: "January listing",
+        datedInRequestedRange: true,
+      }],
+    }));
+    const descriptor = toolFor(search);
+
+    const output = await descriptor.createTool(context("agent-1")).invoke({
+      query: "which courses run from 3 to 6 January 2027",
+      dateFrom: "2027-01-03",
+      dateTo: "2027-01-06",
+    }, toolContext) as { results: Array<{ datedInRequestedRange: boolean }> };
+
+    expect(output.results[0]?.datedInRequestedRange).toBe(true);
+  });
 });

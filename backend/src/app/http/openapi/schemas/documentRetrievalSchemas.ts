@@ -558,7 +558,7 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
   const RequestedRangeLookupSchema = registry.register(
     "RequestedRangeLookup",
     z.object({
-      ran: z.boolean(),
+      status: z.enum(["ran", "failed", "not_requested"]),
       candidateCount: z.number().int().min(0),
     }),
   );

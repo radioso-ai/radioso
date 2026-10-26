@@ -4,6 +4,7 @@ import type { ActivitySummary } from "./retrievalPipelineTypes.js";
 import type { RetrievalResponseBehavior } from "../public.js";
 import type { RetrievalSourceScope } from "./retrievalSourceFilter.js";
 import type { RequestedDateRange, RequestedDateRangeDropReason } from "./temporal/requestedDateRange.js";
+import type { RequestedDateRangeLookupSummary } from "./temporal/requestedDateRangeLookupStatus.js";
 
 export interface RetrievalConversationContext {
   previousUserMessages?: string[];
@@ -31,12 +32,6 @@ export interface RetrievalSearchRequest {
   executionSurface?: Extract<RetrievalExecutionSurface, "retrieval" | "mcp_capability">;
 }
 
-/** How many candidates the requested-range structured lookup contributed, and whether it ran at all. */
-export interface RetrievalRequestedRangeLookupSummary {
-  ran: boolean;
-  candidateCount: number;
-}
-
 export interface RetrievalSearchResult {
   outcome: "results";
   agentScope: RetrievalAgentScopeAttribution | null;
@@ -48,7 +43,7 @@ export interface RetrievalSearchResult {
   requestedDateRange: RequestedDateRange | null;
   /** Why a model-returned range was set aside; `null` when one was kept or none was proposed. */
   requestedDateRangeDropReason: RequestedDateRangeDropReason | null;
-  requestedRangeLookup: RetrievalRequestedRangeLookupSummary;
+  requestedRangeLookup: RequestedDateRangeLookupSummary;
   results: Array<{
     documentId: string;
     chunkId: string;

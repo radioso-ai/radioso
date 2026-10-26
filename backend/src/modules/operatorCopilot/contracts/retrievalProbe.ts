@@ -1,4 +1,8 @@
-import type { RequestedDateRange, RequestedDateRangeDropReason } from "../../retrieval/public.js";
+import type {
+  RequestedDateRange,
+  RequestedDateRangeDropReason,
+  RequestedDateRangeLookupSummary,
+} from "../../retrieval/public.js";
 import type { CopilotExpensiveOperationGuardDependencies } from "./expensiveOperation.js";
 
 export interface CopilotRetrievalProbeInput {
@@ -26,12 +30,6 @@ export interface CopilotRetrievalEvidence {
   fromRequestedRangeLookup: boolean;
 }
 
-/** How many candidates the requested-range structured lookup contributed, and whether it ran at all. */
-export interface CopilotRequestedRangeLookupSummary {
-  ran: boolean;
-  candidateCount: number;
-}
-
 export interface CopilotRetrievalProbeResult {
   agentId: string;
   retrievalEnabled: boolean;
@@ -40,7 +38,7 @@ export interface CopilotRetrievalProbeResult {
   requestedDateRange: RequestedDateRange | null;
   /** Why a model-returned range was set aside; `null` when one was kept or none was proposed. */
   requestedDateRangeDropReason: RequestedDateRangeDropReason | null;
-  requestedRangeLookup: CopilotRequestedRangeLookupSummary;
+  requestedRangeLookup: RequestedDateRangeLookupSummary;
   results: ReadonlyArray<CopilotRetrievalEvidence>;
 }
 
@@ -66,7 +64,7 @@ export interface CopilotRetrievalSearchPort {
     rewrittenQuery: { semantic: string; lexical: string };
     requestedDateRange: RequestedDateRange | null;
     requestedDateRangeDropReason: RequestedDateRangeDropReason | null;
-    requestedRangeLookup: CopilotRequestedRangeLookupSummary;
+    requestedRangeLookup: RequestedDateRangeLookupSummary;
     results: ReadonlyArray<CopilotRetrievalEvidence>;
   }>;
 }

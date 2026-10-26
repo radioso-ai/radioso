@@ -540,7 +540,7 @@ callerKind: "human" as const,
         rewrittenQuery: { semantic: "shipping rates italy", lexical: "shipping italy" },
         requestedDateRange: null,
         requestedDateRangeDropReason: null,
-        requestedRangeLookup: { ran: false, candidateCount: 0 },
+        requestedRangeLookup: { status: "not_requested", candidateCount: 0 },
         results: [{
           documentId: COPILOT_EVAL_DOCUMENT_ID,
           chunkId: "77777777-7777-4777-8777-777777777772",

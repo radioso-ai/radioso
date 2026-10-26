@@ -22,6 +22,7 @@ import { RerankService } from "./services/rerankService.js";
 import { RetrievalExecutionTelemetryService } from "./services/retrievalExecutionTelemetryService.js";
 import { RetrievalPipelineService } from "./services/retrievalPipelineService.js";
 import { RetrievalSearchService } from "./services/retrievalSearchService.js";
+import { RequestedDateRangeSearchService } from "./services/requestedDateRangeSearchService.js";
 import type { SkillSettingsResolver } from "./services/retrievalContextStage.js";
 import type { AgentRetrievalScopePort } from "./domain/agentRetrievalScope.js";
 
@@ -106,10 +107,16 @@ export const createDefaultRetrievalServices = (input: {
     temporalCandidateRetrieval,
   );
   const retrievalSearchService = new RetrievalSearchService(retrievalPipeline, input.agentRetrievalScope);
+  const requestedDateRangeSearch = new RequestedDateRangeSearchService(
+    input.queryEmbeddings,
+    temporalCandidateRetrieval,
+    input.retrievalDefaultsProvider,
+  );
 
   return {
     retrievalPipeline,
     retrievalSearchService,
     temporalCandidateRetrieval,
+    requestedDateRangeSearch,
   };
 };

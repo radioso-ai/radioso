@@ -70,6 +70,10 @@ export class DocumentSearchHistoryService {
       query: metadata.query,
       resultCount: metadata.resultCount,
       results,
+      // Historical audit metadata predates the requested-range summary; a replayed search
+      // reports it as not requested even when the original search asked for one. Each result's
+      // own `datedInRequestedRange` still replays correctly, since it travels with the result.
+      dateRangeLookup: { status: "not_requested", candidateCount: 0 },
       activityTrace: metadata.activityTrace,
     };
   }
@@ -112,6 +116,7 @@ const normalizeResult = (value: unknown): DocumentSearchResult | null => {
     sourceFilename: asString(value.sourceFilename) ?? null,
     sourceMimeType: asString(value.sourceMimeType) ?? null,
     actions: defaultActions("unavailable"),
+    datedInRequestedRange: typeof value.datedInRequestedRange === "boolean" ? value.datedInRequestedRange : null,
   };
 };
 

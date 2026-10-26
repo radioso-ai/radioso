@@ -72,7 +72,7 @@ describe("retrieval search contract", () => {
     expect(response.status).toBe(200);
     expect(response.body.requestedDateRange).toBeNull();
     expect(response.body.requestedDateRangeDropReason).toBeNull();
-    expect(response.body.requestedRangeLookup).toEqual({ ran: false, candidateCount: 0 });
+    expect(response.body.requestedRangeLookup).toEqual({ status: "not_requested", candidateCount: 0 });
     expect(response.body.results[0]).toEqual(expect.objectContaining({
       dateFrom: null,
       dateTo: null,

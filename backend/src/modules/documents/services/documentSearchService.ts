@@ -10,12 +10,10 @@ import type { RetrievalPipelineService, ActivityTrace } from "../../retrieval/pu
 import {
   readRequestedDateRange,
   type RequestedDateRange,
-  type RetrievedChunk,
-  type TemporalCandidateRetrievalPort,
+  type RequestedDateRangeLookupSummary,
+  type RequestedDateRangeSearchPort,
 } from "../../retrieval/public.js";
-import type { QueryEmbeddingPort } from "../../embeddingProfiles/public.js";
 import { badRequest } from "../../../shared/domain/errors.js";
-import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
 
 // Not exported: nothing outside this module names a search action directly; callers only ever
 // see it nested inside DocumentSearchAction, which is exported.
@@ -43,6 +41,9 @@ export interface DocumentSearchResult {
   sourceFilename?: string | null;
   sourceMimeType?: string | null;
   actions: DocumentSearchAction[];
+  /** Whether this document had a chunk the requested-range lookup placed inside the range;
+   * `null` when no range was requested. */
+  datedInRequestedRange: boolean | null;
 }
 
 export interface DocumentSearchResponse {
@@ -51,6 +52,9 @@ export interface DocumentSearchResponse {
   query: string;
   resultCount: number;
   results: DocumentSearchResult[];
+  /** Whether a requested range was asked for, and if so, whether the structured lookup ran,
+   * failed, and how many candidates it contributed. */
+  dateRangeLookup: RequestedDateRangeLookupSummary;
   activityTrace?: ActivityTrace;
 }
 
@@ -73,9 +77,11 @@ export class DocumentSearchService {
     private readonly auditService: AuditService,
     private readonly workspaceInvalidationPublisher: WorkspaceInvalidationPublisher =
       createNoopWorkspaceInvalidationPublisher(),
-    /** Wired only where the requested-range lookup can run; absent, a range input is refused. */
-    private readonly temporalCandidateRetrieval?: TemporalCandidateRetrievalPort,
-    private readonly queryEmbeddings?: QueryEmbeddingPort,
+    /** Wired only where the requested-range lookup can run; absent, a range input is refused.
+     * Owns the embedding, dimension guarding, date-order degradation, and depth rule a requested
+     * range needs — this service only resolves the range, merges the port's chunks with the
+     * similarity results, and orders the merge. */
+    private readonly requestedDateRangeSearch?: RequestedDateRangeSearchPort,
   ) {}
 
   async search(input: {
@@ -94,27 +100,28 @@ export class DocumentSearchService {
   }): Promise<DocumentSearchResponse> {
     const searchId = randomUUID();
     const requestedDateRange = this.resolveRequestedDateRange(input.dateFrom, input.dateTo);
+    const usageContext = {
+      workspaceId: input.workspaceId,
+      requestId: searchId,
+      surface: input.executionSurface ?? "documents",
+      attemptKey: "document_search",
+      copilotConversationId: input.copilotConversationId ?? null,
+      copilotMessageId: input.copilotMessageId ?? null,
+    };
     const retrieval = await this.retrievalPipeline.run({
       workspaceId: input.workspaceId,
       query: input.query,
       history: [],
       metadataFilter: input.metadataFilter,
-      usageContext: {
-        workspaceId: input.workspaceId,
-        requestId: searchId,
-        surface: input.executionSurface ?? "documents",
-        attemptKey: "document_search",
-        copilotConversationId: input.copilotConversationId ?? null,
-        copilotMessageId: input.copilotMessageId ?? null,
-      },
+      usageContext,
     });
 
-    const dateRangeChunks = requestedDateRange
-      ? await this.findRequestedDateRangeChunks(input.workspaceId, input.query, requestedDateRange)
-      : [];
+    const dateRangeLookup = requestedDateRange
+      ? await this.resolveDateRangeLookup(input.workspaceId, input.query, requestedDateRange, input.metadataFilter, usageContext)
+      : { status: "not_requested" as const, chunks: [] };
 
     const matchedDocumentIds = [...new Set([
-      ...dateRangeChunks.map((chunk) => chunk.documentId),
+      ...dateRangeLookup.chunks.map((chunk) => chunk.documentId),
       ...retrieval.contexts.map((context) => context.documentId),
     ])];
     const documents = await this.documentRepository.listSummariesByIdsAndWorkspaceId(input.workspaceId, matchedDocumentIds);
@@ -141,7 +148,7 @@ export class DocumentSearchService {
 
     // Merged first: the requested-range lookup is a calendar match, guaranteed in range by
     // construction, independent of whatever the similarity search below ranked it.
-    for (const chunk of dateRangeChunks) {
+    for (const chunk of dateRangeLookup.chunks) {
       merge(chunk.documentId, chunk.similarity ?? 0, chunk.content, true);
     }
     for (const context of retrieval.contexts) {
@@ -155,7 +162,13 @@ export class DocumentSearchService {
         }
         return right.score - left.score;
       })
-      .map((entry, index) => this.toResult(entry.document, entry.score, entry.evidence, index + 1));
+      .map((entry, index) => this.toResult(
+        entry.document,
+        entry.score,
+        entry.evidence,
+        index + 1,
+        requestedDateRange ? entry.datedInRequestedRange : null,
+      ));
 
     const response: DocumentSearchResponse = {
       searchId,
@@ -163,6 +176,10 @@ export class DocumentSearchService {
       query: input.query,
       resultCount: results.length,
       results,
+      dateRangeLookup: {
+        status: dateRangeLookup.status,
+        candidateCount: dateRangeLookup.status === "ran" ? dateRangeLookup.chunks.length : 0,
+      },
       activityTrace: retrieval.trace,
     };
 
@@ -208,34 +225,33 @@ export class DocumentSearchService {
     return reading.range;
   }
 
-  private async findRequestedDateRangeChunks(
+  private async resolveDateRangeLookup(
     workspaceId: string,
     query: string,
     range: RequestedDateRange,
-  ): Promise<RetrievedChunk[]> {
-    if (!this.temporalCandidateRetrieval || !this.queryEmbeddings) {
+    metadataFilter: Record<string, unknown> | undefined,
+    usageContext: { workspaceId: string; requestId: string; surface: string; attemptKey: string; copilotConversationId: string | null; copilotMessageId: string | null },
+  ) {
+    if (!this.requestedDateRangeSearch) {
       throw badRequest("Date-range search is unavailable on this surface.", { code: "document_search_date_range_unavailable" });
     }
 
-    const embedding = await this.queryEmbeddings.embedQueries({
+    return this.requestedDateRangeSearch.search({
       workspaceId,
-      texts: [query],
-      usageContext: { workspaceId, surface: "documents", attemptKey: "document_search_date_range", operation: "query_embedding" },
-    });
-    const queryVector = embedding.vectors[0];
-
-    return this.temporalCandidateRetrieval.findInWindow({
-      workspaceId,
-      window: {
-        kind: "requested_range",
-        range,
-        ...(queryVector?.length ? { similarTo: { space: embedding.space, queryVector } } : {}),
-      },
-      topK: RETRIEVAL_BEHAVIOR.temporal.dateRangeLookupDepth,
+      query,
+      range,
+      ...(metadataFilter ? { metadataFilter } : {}),
+      usageContext,
     });
   }
 
-  private toResult(document: DocumentSummaryRecord, score: number, evidence: string[], rank: number): DocumentSearchResult {
+  private toResult(
+    document: DocumentSummaryRecord,
+    score: number,
+    evidence: string[],
+    rank: number,
+    datedInRequestedRange: boolean | null,
+  ): DocumentSearchResult {
     return {
       documentId: document.id,
       title: document.title,
@@ -249,6 +265,7 @@ export class DocumentSearchService {
       sourceFilename: document.sourceFilename ?? null,
       sourceMimeType: document.sourceMimeType ?? null,
       actions: defaultActions("available"),
+      datedInRequestedRange,
     };
   }
 }

@@ -11,7 +11,7 @@ interface CloudCdnInvalidatorLogger {
   warn?: (payload: Record<string, unknown>, message: string) => void;
 }
 
-export interface CloudCdnEmbedConfigCacheInvalidatorOptions {
+interface CloudCdnEmbedConfigCacheInvalidatorOptions {
   /** GCP project that owns the URL map (from GOOGLE_CLOUD_PROJECT). */
   projectId: string;
   /** Name of the global URL map fronting the frontend (from RADIOSO_CDN_URL_MAP). */
@@ -72,7 +72,7 @@ export const createCloudCdnEmbedConfigCacheInvalidator = (
         }
       } catch (error) {
         options.logger?.warn?.(
-          { urlMap: options.urlMap, error: error instanceof Error ? error.message : String(error) },
+          { urlMap: options.urlMap, err: error },
           "CDN cache invalidation request failed",
         );
       }

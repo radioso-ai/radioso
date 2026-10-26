@@ -81,6 +81,7 @@ import type {
   VoiceSessionStartPort,
   VoiceTurnPort,
   VoiceVendorConversationReportPort,
+  VoiceRecordingsLeftAtVendorReader,
 } from "../../modules/voiceChannel/public.js";
 import type { AbuseControlService } from "../../modules/security/services/abuseControlService.js";
 import type { WorkspaceProviderCredentialsService } from "../../modules/security/credentials/services/workspaceProviderCredentialsService.js";
@@ -378,6 +379,8 @@ export interface AppDependencies {
    * Inbox learns whether a conversation has one, and a teammate plays it.
    */
   voiceRecordings: VoiceVendorConversationReportPort & VoiceRecordingAvailabilityPort & VoiceRecordingPlaybackPort;
+  /** The organization's own list of call recordings its deletions left at the vendor for good. */
+  voiceRecordingsLeftAtVendor: VoiceRecordingsLeftAtVendorReader;
 
   assistantHistoryService: AssistantHistoryService;
   /** Permanent erasure of a conversation, or of a visitor and their conversations. */

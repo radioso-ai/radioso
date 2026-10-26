@@ -61,8 +61,9 @@ const setupApp = (overrides?: {
   const handler = overrides?.handler ?? {
     handleInboundMessage: vi.fn<WhatsAppMessageHandler["handleInboundMessage"]>(async () => {}),
   };
+  const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
   const router = createWhatsAppWebhookRouter({
-    logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+    logger,
     state: {
       getConfig: async () => ({
         enabled: overrides?.enabled ?? true,
@@ -93,8 +94,11 @@ const setupApp = (overrides?: {
   });
   app.use("/api/connectors/whatsapp/:workspaceId/webhook", router);
 
-  return { app, persistence, handler };
+  return { app, persistence, handler, logger };
 };
+
+// The visitor's WhatsApp id is their phone number.
+const visitorPhone = "14155550000";
 
 describe("createWhatsAppWebhookRouter", () => {
   it("completes the GET verification handshake for valid tokens", async () => {
@@ -237,7 +241,7 @@ describe("createWhatsAppWebhookRouter", () => {
     const persistence = createPersistence();
     persistence.createInboundMessageLog.mockResolvedValueOnce(null);
     const handler = { handleInboundMessage: vi.fn(async () => {}) };
-    const { app } = setupApp({ persistence, handler });
+    const { app, logger } = setupApp({ persistence, handler });
     const payload = JSON.stringify({
       object: "whatsapp_business_account",
       entry: [{ changes: [{ value: { contacts: [{ wa_id: "14155550000" }], messages: [{ id: "wamid-race", from: "14155550000", type: "text", text: { body: "Skip" } }] } }] }],
@@ -253,5 +257,30 @@ describe("createWhatsAppWebhookRouter", () => {
     await Promise.resolve();
 
     expect(handler.handleInboundMessage).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalledWith(expect.objectContaining({ wamid: "wamid-race" }), "WhatsApp duplicate webhook skipped");
+    expect(JSON.stringify(logger.info.mock.calls)).not.toContain(visitorPhone);
+  });
+
+  it("names a failed inbound message by its message id, never the visitor's phone number", async () => {
+    const handler = { handleInboundMessage: vi.fn(async () => { throw new Error("handler failed"); }) };
+    const { app, logger } = setupApp({ handler });
+    const payload = JSON.stringify({
+      object: "whatsapp_business_account",
+      entry: [{ changes: [{ value: { contacts: [{ wa_id: visitorPhone }], messages: [{ id: "wamid-failed", from: visitorPhone, type: "text", text: { body: "Hello" } }] } }] }],
+    });
+
+    await request(app)
+      .post("/api/connectors/whatsapp/workspace-failed/webhook")
+      .set("content-type", "application/json")
+      .set("X-Hub-Signature-256", signPayload(payload))
+      .send(payload)
+      .expect(200);
+
+    await vi.waitFor(() => expect(logger.error).toHaveBeenCalled());
+    expect(logger.error).toHaveBeenCalledWith(
+      expect.objectContaining({ wamid: "wamid-failed", err: expect.any(Error) }),
+      "WhatsApp inbound message processing failed",
+    );
+    expect(JSON.stringify(logger.error.mock.calls)).not.toContain(visitorPhone);
   });
 });

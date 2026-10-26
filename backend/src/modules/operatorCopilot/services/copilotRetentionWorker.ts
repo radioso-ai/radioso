@@ -142,7 +142,7 @@ export class CopilotRetentionWorker {
       return { status: "swept", deleted };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.options.logger.error({ err: message }, "Copilot conversation retention sweep failed");
+      this.options.logger.error({ err: error }, "Copilot conversation retention sweep failed");
       return { status: "failed", error: message };
     } finally {
       this.sweeping = false;
@@ -185,7 +185,7 @@ export class CopilotRetentionWorker {
       // answers "where did this conversation go", and losing it silently is how that stops working.
     }).catch((error: unknown) => {
       this.options.logger.error(
-        { err: error instanceof Error ? error.message : String(error), deleted },
+        { err: error, deleted },
         "Copilot conversation retention audit failed after the delete committed",
       );
     });

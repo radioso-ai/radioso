@@ -393,7 +393,7 @@ export class DirectiveAuthorService {
         ...baseFields,
         durationMs,
         status: "failure",
-        err: error instanceof Error ? error.name : "unknown",
+        err: error,
       }, "directive_author_llm_call_failed");
       throw error;
     }

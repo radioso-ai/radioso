@@ -31,7 +31,6 @@ const buildRecord = (tokens: StoredOauthTokens | null): McpConnectionRecord => (
   serverUrl: "https://mcp.example.com",
   authMethod: "oauth",
   credentialCiphertext: tokens ? encryptOauthTokens(tokens, KEY) : null,
-  encryptionKeyId: null,
   oauthClientCiphertext: encryptOauthClientConfig(CONFIG, KEY),
   oauthFlowCiphertext: null,
   status: "authorized",
@@ -68,7 +67,7 @@ describe("resolveFreshAccessToken", () => {
       agentId: "agent-1",
       record: buildRecord({ accessToken: "at-1", refreshToken: "rt-1", expiresAt: 1_000_000 + 600_000 }),
       repository,
-      encryptionKey: KEY,
+      encryptionKey: { current: KEY, previous: [] },
       fetchImpl,
     });
 
@@ -91,7 +90,7 @@ describe("resolveFreshAccessToken", () => {
       agentId: "agent-1",
       record: buildRecord({ accessToken: "at-1", refreshToken: "rt-1", expiresAt: 2_000_000 - 1 }),
       repository,
-      encryptionKey: KEY,
+      encryptionKey: { current: KEY, previous: [] },
       fetchImpl,
     });
 
@@ -120,7 +119,7 @@ describe("resolveFreshAccessToken", () => {
       agentId: "agent-1",
       record: buildRecord({ accessToken: "at-1", refreshToken: "rt-1", expiresAt: 2_000_000 - 1 }),
       repository,
-      encryptionKey: KEY,
+      encryptionKey: { current: KEY, previous: [] },
       assertPublicUrl,
       fetchImpl,
     });
@@ -139,7 +138,7 @@ describe("resolveFreshAccessToken", () => {
         agentId: "agent-1",
         record: buildRecord({ accessToken: "at-1", refreshToken: "rt-1", expiresAt: 3_000_000 - 1 }),
         repository,
-        encryptionKey: KEY,
+        encryptionKey: { current: KEY, previous: [] },
         fetchImpl,
       }),
     ).rejects.toBeInstanceOf(OauthNotAuthorizedError);
@@ -154,7 +153,7 @@ describe("resolveFreshAccessToken", () => {
         agentId: "agent-1",
         record: buildRecord(null),
         repository,
-        encryptionKey: KEY,
+        encryptionKey: { current: KEY, previous: [] },
       }),
     ).rejects.toBeInstanceOf(OauthNotAuthorizedError);
     expect(calls.needsReauth).toBe(1);

@@ -35,7 +35,7 @@ describeIntegration("WebhookDestinationRepository (Postgres)", () => {
   });
 
   const create = (name: string) =>
-    repository.create({ workspaceId, name, url: "https://hooks.example.com", secretCiphertext: "enc", encryptionKeyId: "key-1" });
+    repository.create({ workspaceId, name, url: "https://hooks.example.com", secretCiphertext: "enc" });
 
   it("creates, finds (workspace-scoped), and returns null for a non-uuid id", async () => {
     const created = await create("Hook A");
@@ -55,7 +55,7 @@ describeIntegration("WebhookDestinationRepository (Postgres)", () => {
   it("updates fields, secret, delivery outcome, and deletes", async () => {
     const created = await create("To Update");
     expect((await repository.update(created.id, workspaceId, { name: "Updated", url: "https://x.example.com" }))?.name).toBe("Updated");
-    expect((await repository.updateSecret(created.id, workspaceId, { secretCiphertext: "enc-2", encryptionKeyId: "key-2" }))?.secretCiphertext).toBe("enc-2");
+    expect((await repository.updateSecret(created.id, workspaceId, { secretCiphertext: "enc-2" }))?.secretCiphertext).toBe("enc-2");
 
     await repository.recordDeliveryOutcome(created.id, workspaceId, "success");
     expect((await repository.findByIdAndWorkspace(created.id, workspaceId))?.lastDeliveryStatus).toBe("success");

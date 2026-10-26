@@ -40,6 +40,8 @@ const toLevel = (severity: ErrorEvent["severity"]): "info" | "warning" | "error"
 };
 
 export class SentryErrorSink implements ErrorSink {
+  readonly name = "sentry";
+
   private readonly clientName: string;
   private readonly fetchImpl: typeof fetch;
   private readonly parsedDsn: ParsedSentryDsn;

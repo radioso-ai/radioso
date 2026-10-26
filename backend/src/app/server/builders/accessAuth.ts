@@ -3,6 +3,7 @@ import { ConversationRepository } from "../../../db/repositories/conversationRep
 import { DocumentRepository } from "../../../db/repositories/documentRepository.js";
 import { WorkspaceRepository } from "../../../db/repositories/workspaceRepository.js";
 import { WorkspaceSetupStateRepository } from "../../../db/repositories/workspaceSetupStateRepository.js";
+import type { PersonalCredentialLifecycleRepository } from "../../../db/repositories/personalCredentialLifecycleRepository.js";
 import { AccountAccessService, AccountInvitationService } from "../../../modules/account/public.js";
 import { AccessGrantService, DefaultOriginMatcher } from "../../../modules/accessGrants/public.js";
 import { AuditService } from "../../../modules/audit/composition.js";
@@ -25,7 +26,7 @@ import type { OrganizationCreationGuard } from "../../../shared/domain/organizat
 import type { AccessGrantLifecycleUnitOfWorkPort } from "../../../modules/accessGrants/ports.js";
 import { type AppLogger } from "../../../shared/observability/logger.js";
 import type { Database } from "../../../shared/infra/database.js";
-import type { Env } from "../../config/env.js";
+import { connectorEncryptionKeys, type Env } from "../../config/env.js";
 import { createMailAccountInvitationNotifier } from "../../composition/accountInvitationNotifier.js";
 import { buildInfrastructure, buildRepositories } from "./infra.js";
 import {
@@ -46,9 +47,11 @@ export const buildAccessServices = (input: {
   logger: Pick<AppLogger, "warn">;
   metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
   repositories: ReturnType<typeof buildRepositories>;
+  /** Workspace and organization deletion, with the hand-offs composition gave it. */
+  personalCredentialLifecycle: PersonalCredentialLifecycleRepository;
   lifecycleUnitOfWork: AccessGrantLifecycleUnitOfWorkPort;
 }) => {
-  const { auditService, env, infrastructure, logger, metricsRegistry, repositories, lifecycleUnitOfWork } = input;
+  const { auditService, env, infrastructure, logger, metricsRegistry, repositories, personalCredentialLifecycle, lifecycleUnitOfWork } = input;
   const machineAccessSecurityObserver: MachineAccessSecurityObserver = {
     recordAuthentication(event) {
       metricsRegistry?.incrementCounter("machine_access_authentication_total", {
@@ -114,7 +117,7 @@ export const buildAccessServices = (input: {
     repositories.workspaceGrantRepository,
     repositories.workspaceRepository,
     personalCredentialTenureService,
-    repositories.personalCredentialLifecycleRepository,
+    personalCredentialLifecycle,
   );
   const accountInvitationService = new AccountInvitationService(
     repositories.accountInvitationRepository,
@@ -139,7 +142,7 @@ export const buildAccessServices = (input: {
     }),
     machineAccessSecurityObserver,
     personalCredentialTenureService,
-    personalCredentialLifecycle: repositories.personalCredentialLifecycleRepository,
+    personalCredentialLifecycle,
     credentialExpiryWarningLifecycle: new CredentialExpiryWarningService({
       repository: repositories.machineAccessRepository,
       audit: auditService,
@@ -160,24 +163,24 @@ export const buildAccessServices = (input: {
 
 export const buildWorkspaceProviderCredentialsService = (input: {
   auditService: AuditPort;
-  env: Pick<Env, "CONNECTOR_ENCRYPTION_KEY">;
+  env: Pick<Env, "CONNECTOR_ENCRYPTION_KEY" | "CONNECTOR_ENCRYPTION_PREVIOUS_KEYS">;
   logger: Pick<AppLogger, "warn">;
   repositories: { workspaceProviderCredentialsRepository: WorkspaceProviderCredentialsRepositoryPort; documentProcessingJobRepository?: { requeueProviderCredentialFailures(workspaceId: string): Promise<number> } };
 }): WorkspaceProviderCredentialsService => {
   const service = new WorkspaceProviderCredentialsService(
     input.repositories.workspaceProviderCredentialsRepository,
     input.auditService,
-    { key: input.env.CONNECTOR_ENCRYPTION_KEY },
+    { key: connectorEncryptionKeys(input.env) },
     input.logger,
     input.repositories.documentProcessingJobRepository,
   );
   service.onDecryptError((error, provider) => {
     input.logger.warn(
       {
-        err: error instanceof Error ? error.message : String(error),
+        err: error,
         provider,
         remediation:
-          "Stored credential ciphertext could not be decrypted. Re-enter the API key for this provider after rotating CONNECTOR_ENCRYPTION_KEY.",
+          "Stored credential ciphertext could not be decrypted with CONNECTOR_ENCRYPTION_KEY or any key in CONNECTOR_ENCRYPTION_PREVIOUS_KEYS. If CONNECTOR_ENCRYPTION_KEY was rotated, add the key it replaced to CONNECTOR_ENCRYPTION_PREVIOUS_KEYS (see credential key rotation in the self-hosting operations docs), or re-enter the API key for this provider.",
       },
       "Workspace provider credential decrypt failed",
     );
@@ -201,10 +204,6 @@ export const buildWorkspaceServices = (input: {
   env: Env;
   personalCredentialTermination?: import("../../../modules/workspace/services/workspaceService.js").WorkspacePersonalCredentialTerminationPort;
   personalCredentialLifecycle?: import("../../../modules/machineAccess/public.js").PersonalCredentialLifecyclePort;
-  vendorHeldConversationData?: {
-    eraser: import("../../../shared/domain/conversationDataErasure.js").VendorHeldConversationDataEraser;
-    logger: Pick<import("../../../shared/observability/logger.js").AppLogger, "warn">;
-  };
   workspaceRepository: WorkspaceRepository;
   workspaceSetupStateRepository: WorkspaceSetupStateRepository;
 }) => {
@@ -214,7 +213,6 @@ export const buildWorkspaceServices = (input: {
     input.accountMembershipRepository,
     input.personalCredentialTermination,
     input.personalCredentialLifecycle,
-    input.vendorHeldConversationData,
   );
   return {
     workspaceService,

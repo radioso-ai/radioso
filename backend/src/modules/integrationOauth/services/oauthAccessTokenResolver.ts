@@ -1,3 +1,4 @@
+import type { FieldEncryptionKeyRing } from "../../../shared/infra/crypto/fieldEncryption.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { fetchPublicUrl } from "../../../shared/infra/http/publicUrlFetch.js";
 import type { OauthCredentialRecord, OauthReauthStatus } from "../domain.js";
@@ -22,7 +23,6 @@ export interface OauthTokenPersistencePort {
     subjectId: string,
     id: string,
     credentialCiphertext: string,
-    encryptionKeyId: string | null,
   ): Promise<OauthCredentialRecord | null>;
   updateStatus(subjectId: string, id: string, status: OauthReauthStatus): Promise<OauthCredentialRecord | null>;
 }
@@ -38,8 +38,7 @@ export interface ResolveFreshAccessTokenInput {
   subjectId: string;
   record: OauthCredentialRecord;
   repository: OauthTokenPersistencePort;
-  encryptionKey: string;
-  encryptionKeyId?: string | null;
+  encryptionKey: FieldEncryptionKeyRing;
   assertPublicUrl?: (url: string) => void | Promise<void>;
   fetchImpl?: FetchLike;
   logger?: AppLogger;
@@ -85,7 +84,6 @@ export const resolveFreshAccessToken = async (input: ResolveFreshAccessTokenInpu
         subjectId,
         record.id,
         encryptOauthTokens(refreshed, encryptionKey),
-        input.encryptionKeyId ?? null,
       );
       input.logger?.info(
         { event: "integration.oauth", phase: "refreshed", subjectId, connectionId: record.id, ...input.logContext },

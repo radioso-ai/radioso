@@ -321,7 +321,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
         event: "slack_decision_resolve_failed",
         workspaceId,
         handle: action.handle,
-        err: error instanceof Error ? error.message : String(error),
+        err: error,
       }, "Slack decision resolve failed");
     }
   }
@@ -596,7 +596,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
     } catch (error) {
       this.options.logger?.warn({
         event: "slack_response_url_post_failed",
-        err: error instanceof Error ? error.message : String(error),
+        err: error,
       }, "Slack response_url post failed");
     }
   }
@@ -640,7 +640,7 @@ export class SlackInteractivityHandler implements SlackInteractivityHandlerPort 
         event: "slack_decision_audit_failed",
         workspaceId: input.workspaceId,
         handle: input.handle,
-        err: error instanceof Error ? error.message : String(error),
+        err: error,
       }, "Slack decision audit failed");
     }
   }

@@ -377,6 +377,8 @@ export class ModelInferencePipelineService implements ModelInferencePipeline {
       messageId: input.operation.messageId ?? null,
       copilotConversationId: input.operation.copilotConversationId ?? null,
       copilotMessageId: input.operation.copilotMessageId ?? null,
+      documentId: input.operation.documentId ?? null,
+      documentRevision: input.operation.documentRevision ?? null,
       surface: input.operation.surface,
       operation: input.operation.operation,
       provider,

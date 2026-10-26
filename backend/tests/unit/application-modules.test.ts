@@ -88,7 +88,7 @@ describe("application modules", () => {
     expect(logger.error).toHaveBeenCalledWith(
       {
         moduleId: "broken-module",
-        err: "missing configuration",
+        err: expect.objectContaining({ message: "missing configuration" }),
       },
       "Application module failed to initialize",
     );
@@ -226,7 +226,7 @@ describe("application modules", () => {
     expect(logger.error).toHaveBeenCalledWith(
       {
         moduleId: "broken-module",
-        err: "shutdown failed",
+        err: expect.objectContaining({ message: "shutdown failed" }),
       },
       "Application module failed to shut down",
     );

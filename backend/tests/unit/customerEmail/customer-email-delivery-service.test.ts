@@ -62,7 +62,7 @@ const buildService = (provider: CustomerEmailProviderAdapter, record = connectio
       updateStatus: async () => null,
     },
     providers: new StaticCustomerEmailProviderRegistry([provider]),
-    encryptionKey: key,
+    encryptionKey: { current: key, previous: [] },
     timeoutMs: 5,
   });
   return { service, updates };

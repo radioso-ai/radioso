@@ -12,7 +12,7 @@ import {
   type OpsEventSeverity,
 } from "./opsEventEnvelope.js";
 
-export interface OpsWebhookAnalyticsSinkOptions {
+interface OpsWebhookAnalyticsSinkOptions {
   /** Omit to forward every event; supply a set to narrow a busy stack down to what matters. */
   eventNames?: ReadonlySet<ProductAnalyticsEventName>;
 }
@@ -32,11 +32,13 @@ export class OpsWebhookAnalyticsSink implements ProductAnalyticsSink {
   }
 }
 
-export interface OpsWebhookErrorSinkOptions {
+interface OpsWebhookErrorSinkOptions {
   minSeverity: OpsEventSeverity;
 }
 
 export class OpsWebhookErrorSink implements ErrorSink {
+  readonly name = "ops_webhook";
+
   constructor(
     private readonly dispatcher: OpsEventDispatcher,
     private readonly options: OpsWebhookErrorSinkOptions,

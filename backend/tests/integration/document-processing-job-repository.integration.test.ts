@@ -320,6 +320,30 @@ describeIntegration("DocumentProcessingJobRepository (Postgres)", () => {
     expect(second.options).toEqual({ documentEnrichmentOverride: "on" });
   });
 
+  it("carries a fresh-extraction request to the enrich job, and reads its absence as none", async () => {
+    const documentId = await insertDocument();
+    const otherDocumentId = await insertDocument();
+
+    const refreshing = await repository.ensureEnrichJob({
+      documentId,
+      workspaceId,
+      documentRevision: 1,
+      options: { documentEnrichmentOverride: "on", refreshDocumentEnrichment: true },
+    });
+    const plain = await repository.ensureEnrichJob({
+      documentId: otherDocumentId,
+      workspaceId,
+      documentRevision: 1,
+      options: { refreshDocumentEnrichment: false },
+    });
+
+    expect((await repository.findById(refreshing.id))?.options).toEqual({
+      documentEnrichmentOverride: "on",
+      refreshDocumentEnrichment: true,
+    });
+    expect((await repository.findById(plain.id))?.options).toBeNull();
+  });
+
   it("maps missing and unrecognized options to null", async () => {
     const documentWithoutOptions = await insertDocument();
     const documentWithUnknownOptions = await insertDocument();

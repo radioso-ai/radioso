@@ -83,10 +83,11 @@ describeIntegration("workspace stored-file deletion (Postgres)", () => {
     const logger = quietLogger();
     const jobs = new BackgroundJobRepository(database.kysely);
     const queue = new DefaultBackgroundJobQueue({ writer: jobs, wake, logger });
-    const hooks = createWorkspaceDeletionHooks({ queue });
+    // These workspaces hold no voice recordings; their hand-off is tested in voice-recording-erasure.
+    const hooks = createWorkspaceDeletionHooks({ queue, vendorHeld: () => ({ handOff: async () => ({ afterCommit: async () => undefined }) }) });
     lifecycle = new PersonalCredentialLifecycleRepository(database.kysely, hooks.inTransaction, hooks.afterCommit);
-    rollingBack = new PersonalCredentialLifecycleRepository(database.kysely, async (trx, workspaceIds) => {
-      await hooks.inTransaction(trx, workspaceIds);
+    rollingBack = new PersonalCredentialLifecycleRepository(database.kysely, async (trx, workspaceIds, deletion) => {
+      await hooks.inTransaction(trx, workspaceIds, deletion);
       throw new Error("deletion failed after the hand-off");
     });
     owners = new DocumentStorageOwnerRepository(database.kysely);

@@ -75,12 +75,12 @@ const createFake = (input: {
   const vendorErased: VendorHeldConversationDataErasure[] = [];
   const vendorHeldData: VendorHeldConversationDataEraser | undefined = input.vendorHeld
     ? {
-      prepare: async (erasure) => {
-        order.push("vendor:prepare");
+      handOff: async (erasure) => {
+        order.push("vendor:hand-off");
         if (input.vendorReadFails) throw new Error("voice sessions could not be read");
         vendorPrepared.push(erasure);
-        return { erase: async () => {
-          order.push("vendor:erase");
+        return { afterCommit: async () => {
+          order.push("vendor:wake");
           vendorErased.push(erasure);
         } };
       },
@@ -322,7 +322,7 @@ describe("ConversationErasureService.eraseVisitor", () => {
 });
 
 describe("ConversationErasureService and what vendors hold", () => {
-  it("reads what vendors hold before any eraser runs, and erases it only once the deletion committed", async () => {
+  it("hands what vendors hold off before any eraser runs, and wakes its erasure only once the deletion committed", async () => {
     const fake = createFake({
       conversations: [{ id: "conv-1", workspaceId: WORKSPACE, chatSessionId: null, visitorId: null, messages: 2 }],
       vendorHeld: true,
@@ -330,14 +330,14 @@ describe("ConversationErasureService and what vendors hold", () => {
 
     await fake.service.eraseConversation({ workspaceId: WORKSPACE, conversationId: "conv-1", actor: ACTOR });
 
-    expect(fake.order).toEqual(["lock", "vendor:prepare", "erase:context-variables", "erase:audit", "deleteConversations", "audit", "commit", "vendor:erase"]);
+    expect(fake.order).toEqual(["lock", "vendor:hand-off", "erase:context-variables", "erase:audit", "deleteConversations", "audit", "commit", "vendor:wake"]);
     expect(fake.vendorPrepared).toEqual([{
-      account: { id: ACTOR.accountId, deleted: false },
+      accountId: ACTOR.accountId,
       scopes: [{ kind: "conversations", workspaceId: WORKSPACE, conversationIds: ["conv-1"] }],
     }]);
   });
 
-  it("erases what vendors hold for every conversation of an erased visitor", async () => {
+  it("hands off what vendors hold for every conversation of an erased visitor", async () => {
     const fake = createFake({
       conversations: [
         { id: "conv-b", workspaceId: WORKSPACE, chatSessionId: null, visitorId: "visitor-1", messages: 1 },
@@ -352,7 +352,7 @@ describe("ConversationErasureService and what vendors hold", () => {
     expect(fake.vendorErased.map((erasure) => erasure.scopes)).toEqual([[{ kind: "conversations", workspaceId: WORKSPACE, conversationIds: ["conv-b", "conv-a"] }]]);
   });
 
-  it("reads what a visitor left by their key before any conversation, with no conversation at all, and erases it", async () => {
+  it("hands off what a visitor left by their key before any conversation, with no conversation at all", async () => {
     const fake = createFake({
       conversations: [],
       visitors: [{ id: "visitor-1", workspaceId: WORKSPACE, verifiedCustomerId: null, visitorKey: "visitor-key-1" }],
@@ -362,11 +362,11 @@ describe("ConversationErasureService and what vendors hold", () => {
     const receipt = await fake.service.eraseVisitor({ workspaceId: WORKSPACE, visitorId: "visitor-1", actor: ACTOR });
 
     expect(fake.vendorPrepared.map((erasure) => erasure.scopes)).toEqual([[{ kind: "visitor_key", workspaceId: WORKSPACE, visitorKey: "visitor-key-1" }]]);
-    expect(fake.order).toEqual(["lockVisitor", "vendor:prepare", "visitorKey:voice-channel", "deleteVisitor", "audit", "commit", "vendor:erase"]);
+    expect(fake.order).toEqual(["lockVisitor", "vendor:hand-off", "visitorKey:voice-channel", "deleteVisitor", "audit", "commit", "vendor:wake"]);
     expect(receipt.rowsByOwner).toEqual({ "voice-channel": 1 });
   });
 
-  it("fails the erasure, recording and asking the vendor nothing, when what vendors hold cannot be read", async () => {
+  it("fails the erasure, recording and waking nothing, when what vendors hold cannot be read", async () => {
     const fake = createFake({
       conversations: [{ id: "conv-1", workspaceId: WORKSPACE, chatSessionId: null, visitorId: null, messages: 1 }],
       vendorHeld: true,
@@ -380,7 +380,7 @@ describe("ConversationErasureService and what vendors hold", () => {
     expect(fake.vendorErased).toEqual([]);
   });
 
-  it("asks the vendor nothing when an eraser fails after the read", async () => {
+  it("wakes nothing when an eraser fails after the hand-off", async () => {
     const fake = createFake({
       conversations: [{ id: "conv-1", workspaceId: WORKSPACE, chatSessionId: null, visitorId: null, messages: 1 }],
       vendorHeld: true,
@@ -394,7 +394,7 @@ describe("ConversationErasureService and what vendors hold", () => {
     expect(fake.state().conversations).toHaveLength(1);
   });
 
-  it("asks the vendors nothing for an erasure that was refused, and only once for one that ran again", async () => {
+  it("wakes nothing for an erasure that was refused, and once for one that ran again", async () => {
     const refused = createFake({ conversations: [], vendorHeld: true });
     await expect(refused.service.eraseConversation({ workspaceId: WORKSPACE, conversationId: "conv-missing", actor: ACTOR })).rejects.toThrow();
     expect(refused.vendorErased).toEqual([]);
@@ -471,7 +471,7 @@ describe("ConversationErasureService.eraseInactiveConversations", () => {
     expect(fake.auditLog.logRecorded).not.toHaveBeenCalled();
   });
 
-  it("erases what vendors hold for the expired conversations once the deletion committed", async () => {
+  it("hands off what vendors hold for the expired conversations, and wakes its erasure once the deletion committed", async () => {
     const fake = createFake({
       conversations: [{ id: "conv-old", workspaceId: WORKSPACE, chatSessionId: null, visitorId: null, messages: 1 }],
       vendorHeld: true,
@@ -480,10 +480,10 @@ describe("ConversationErasureService.eraseInactiveConversations", () => {
     await fake.service.eraseInactiveConversations({ ...retention, limit: 10 });
 
     expect(fake.vendorPrepared).toEqual([{
-      account: { id: "acct-1", deleted: false },
+      accountId: "acct-1",
       scopes: [{ kind: "conversations", workspaceId: WORKSPACE, conversationIds: ["conv-old"] }],
     }]);
-    expect(fake.order.indexOf("vendor:prepare")).toBeLessThan(fake.order.indexOf("erase:context-variables"));
-    expect(fake.order.at(-1)).toBe("vendor:erase");
+    expect(fake.order.indexOf("vendor:hand-off")).toBeLessThan(fake.order.indexOf("erase:context-variables"));
+    expect(fake.order.at(-1)).toBe("vendor:wake");
   });
 });

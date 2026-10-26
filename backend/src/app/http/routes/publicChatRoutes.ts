@@ -185,7 +185,7 @@ export const createPublicChatRoutes = (dependencies: PublicChatRouteDependencies
       return actions && actions.length > 0 ? actions : undefined;
     } catch (error) {
       dependencies.logger.warn?.(
-        { err: error instanceof Error ? error.message : String(error), workspaceId: input.workspaceId },
+        { err: error, workspaceId: input.workspaceId },
         "Failed to resolve public chat intake actions",
       );
       return undefined;

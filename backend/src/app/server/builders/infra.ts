@@ -17,6 +17,7 @@ import { ConversationOwnershipRepository } from "../../../db/repositories/conver
 import { DocumentProcessingJobRepository } from "../../../db/repositories/documentProcessingJobRepository.js";
 import { EmbeddingProfileJobRepository } from "../../../db/repositories/embeddingProfileJobRepository.js";
 import { EmbeddingProfileCleanupRepository } from "../../../db/repositories/embeddingProfileCleanupRepository.js";
+import { DocumentEnrichmentReplyRepository } from "../../../db/repositories/documentEnrichmentReplyRepository.js";
 import { DocumentRepository } from "../../../db/repositories/documentRepository.js";
 import { DocumentSourceRepository } from "../../../db/repositories/documentSourceRepository.js";
 import { EmbeddingProfileRepository } from "../../../db/repositories/embeddingProfileRepository.js";
@@ -45,6 +46,8 @@ import { type ApplicationComposition } from "../../composition/index.js";
 import { createWorkspaceDeletionHooks } from "../../composition/workspaceDeletion.js";
 import { DocumentStorageOwnerRepository } from "../../../db/repositories/documentStorageOwnerRepository.js";
 import type { BackgroundJobQueue } from "../../../shared/background-jobs/index.js";
+import type { VendorHeldConversationDataEraser } from "../../../shared/domain/conversationDataErasure.js";
+import type { Db } from "../../../shared/infra/kysely/types.js";
 import { ChunkRepository } from "../../../modules/documents/composition.js";
 import { AbuseControlRepository } from "../../../db/repositories/abuseControlRepository.js";
 import {
@@ -176,12 +179,19 @@ export const buildInfrastructure = (input: {
   };
 };
 
-/** Workspace and organization deletion, with what each deletion does beyond its cascade. */
-const buildPersonalCredentialLifecycleRepository = (
+/**
+ * Workspace and organization deletion, with what each deletion does beyond its cascade: the
+ * hand-offs to the background-job worker (the recordings vendors hold, the stored files) inside its
+ * own transaction.
+ */
+export const buildPersonalCredentialLifecycleRepository = (
   database: Database,
-  backgroundJobs: Pick<BackgroundJobQueue, "enqueueInTransaction" | "wake">,
+  deps: {
+    backgroundJobs: Pick<BackgroundJobQueue, "enqueueInTransaction" | "wake">;
+    vendorHeld: (trx: Db) => VendorHeldConversationDataEraser;
+  },
 ): PersonalCredentialLifecycleRepository => {
-  const workspaceDeletion = createWorkspaceDeletionHooks({ queue: backgroundJobs });
+  const workspaceDeletion = createWorkspaceDeletionHooks({ queue: deps.backgroundJobs, vendorHeld: deps.vendorHeld });
   return new PersonalCredentialLifecycleRepository(
     database.kysely,
     workspaceDeletion.inTransaction,
@@ -194,8 +204,6 @@ export const buildRepositories = (
   options: {
     agentSurfaceExtensions?: AgentSurfaceExtensionRegistry;
     agentSkillSettings?: AgentSkillSettingsRegistry;
-    /** Where a workspace deletion hands its stored files, inside its own transaction. */
-    backgroundJobs: Pick<BackgroundJobQueue, "enqueueInTransaction" | "wake">;
   },
 ) => ({
   accountMembershipRepository: new AccountMembershipRepository(database.kysely),
@@ -211,6 +219,7 @@ export const buildRepositories = (
   conversationActivityRepository: new ConversationActivityRepository(database.kysely),
   conversationOwnershipRepository: new ConversationOwnershipRepository(database.kysely),
   documentProcessingJobRepository: new DocumentProcessingJobRepository(database.kysely),
+  documentEnrichmentReplyRepository: new DocumentEnrichmentReplyRepository(database.kysely),
   documentRepository: new DocumentRepository(database.kysely),
   documentSourceRepository: new DocumentSourceRepository(database.kysely),
   embeddingProfileRepository: new EmbeddingProfileRepository(database.kysely),
@@ -236,7 +245,6 @@ export const buildRepositories = (
   workspaceRepository: new WorkspaceRepository(database.kysely),
   workspaceSetupStateRepository: new WorkspaceSetupStateRepository(database.kysely),
   machineAccessRepository: new MachineAccessRepository(database.kysely),
-  personalCredentialLifecycleRepository: buildPersonalCredentialLifecycleRepository(database, options.backgroundJobs),
   documentStorageOwnerRepository: new DocumentStorageOwnerRepository(database.kysely),
   abuseControlRepository: new AbuseControlRepository(database.kysely),
   accountInvitationRepository: new AccountInvitationRepository(database.kysely),

@@ -121,11 +121,11 @@ describe("database configuration", () => {
         applicationName: "radioso-test",
         code: "57P01",
         postgresSeverity: "FATAL",
-        err: "terminating connection due to administrator command",
       },
       "database_idle_connection_lost",
     );
     expect(JSON.stringify(warn.mock.calls)).not.toContain("s3cret-password");
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("terminating connection");
     await database.close();
   });
 
@@ -186,10 +186,10 @@ describe("database configuration", () => {
         applicationName: "radioso-test",
         code: "57P01",
         postgresSeverity: "FATAL",
-        err: "terminating connection due to administrator command",
       },
       "database_checked_out_connection_lost",
     );
+    expect(JSON.stringify(warn.mock.calls)).not.toContain("terminating connection");
     expect(JSON.stringify(warn.mock.calls)).not.toContain("s3cret-password");
     await database.close();
   });

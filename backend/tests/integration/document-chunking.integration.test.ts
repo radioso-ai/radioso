@@ -205,6 +205,7 @@ Chunking behavior.`,
           appliedChunkCount: 1,
           modelAttemptCount: 1,
           firstAttemptFailureReason: null,
+          outcome: "applied",
         };
       },
     };

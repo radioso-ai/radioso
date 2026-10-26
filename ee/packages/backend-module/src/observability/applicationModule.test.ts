@@ -25,6 +25,8 @@ describe("enterprise observability module", () => {
     expect(productAnalyticsSinks[0]).toBeInstanceOf(PosthogAnalyticsSink);
     expect(errorSinks[0]).toBeInstanceOf(SentryErrorSink);
     expect(errorSinks[1]).toBeInstanceOf(PosthogErrorSink);
+    // The OSS `error_sink_failed` line names a failing sink by this.
+    expect(errorSinks.map((sink) => (sink as { name?: unknown }).name)).toEqual(["sentry", "posthog"]);
   });
 
   it("allows core sink names owned by the OSS backend", () => {

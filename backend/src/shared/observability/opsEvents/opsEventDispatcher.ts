@@ -9,7 +9,7 @@ export interface OpsEventDispatcherLogger {
   error(payload: Record<string, unknown>, message: string): void;
 }
 
-export interface OpsEventDispatcherOptions {
+interface OpsEventDispatcherOptions {
   transport: OpsEventTransport;
   logger: OpsEventDispatcherLogger;
   queueLimit?: number;
@@ -105,7 +105,7 @@ export class OpsEventDispatcher {
               event: "ops_event_delivery_failed",
               eventName: envelope.name,
               attempts: attempt,
-              err: error instanceof Error ? error.message : String(error),
+              err: error,
             },
             "Ops event delivery failed after every attempt",
           );

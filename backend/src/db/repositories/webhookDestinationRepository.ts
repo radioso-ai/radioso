@@ -12,7 +12,6 @@ interface WebhookDestinationRow {
   name: string;
   url: string;
   secret_ciphertext: string;
-  encryption_key_id: string;
   last_delivery_status: string | null;
   last_delivery_at: Date | null;
   created_at: Date;
@@ -25,7 +24,6 @@ const destinationColumns = [
   "name",
   "url",
   "secret_ciphertext",
-  "encryption_key_id",
   "last_delivery_status",
   "last_delivery_at",
   "created_at",
@@ -38,7 +36,6 @@ const mapRow = (row: WebhookDestinationRow): WebhookDestinationRecord => ({
   name: row.name,
   url: row.url,
   secretCiphertext: row.secret_ciphertext,
-  encryptionKeyId: row.encryption_key_id,
   lastDeliveryStatus: row.last_delivery_status,
   lastDeliveryAt: row.last_delivery_at ? new Date(row.last_delivery_at) : null,
   createdAt: new Date(row.created_at),
@@ -57,7 +54,6 @@ export class WebhookDestinationRepository implements WebhookDestinationRepositor
     name: string;
     url: string;
     secretCiphertext: string;
-    encryptionKeyId: string;
   }): Promise<WebhookDestinationRecord> {
     const row = await this.db
       .insertInto("workspace_webhook_destinations")
@@ -66,7 +62,6 @@ export class WebhookDestinationRepository implements WebhookDestinationRepositor
         name: input.name,
         url: input.url,
         secret_ciphertext: input.secretCiphertext,
-        encryption_key_id: input.encryptionKeyId,
       })
       .returning(destinationColumns)
       .executeTakeFirstOrThrow();
@@ -119,7 +114,7 @@ export class WebhookDestinationRepository implements WebhookDestinationRepositor
   async updateSecret(
     id: string,
     workspaceId: string,
-    input: { secretCiphertext: string; encryptionKeyId: string },
+    input: { secretCiphertext: string },
   ): Promise<WebhookDestinationRecord | null> {
     if (!isUuid(id)) {
       return null;
@@ -128,7 +123,6 @@ export class WebhookDestinationRepository implements WebhookDestinationRepositor
       .updateTable("workspace_webhook_destinations")
       .set({
         secret_ciphertext: input.secretCiphertext,
-        encryption_key_id: input.encryptionKeyId,
         updated_at: currentTimestamp(),
       })
       .where("id", "=", id)

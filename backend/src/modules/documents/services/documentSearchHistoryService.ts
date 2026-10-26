@@ -2,6 +2,7 @@ import { notFound } from "../../../shared/domain/errors.js";
 import type { AuditEventRepositoryPort } from "../../../db/repositories/auditEventRepository.js";
 import type { DocumentSearchHistoryEntry, DocumentSearchHistoryPage } from "../contracts/historyTypes.js";
 import type { DocumentRepositoryPort } from "./documentIngestionService.js";
+import { isRequestedDateRangeLookupStatus } from "../../retrieval/public.js";
 import { defaultActions, type DocumentSearchResponse, type DocumentSearchResult } from "./documentSearchService.js";
 
 interface DocumentSearchAuditMetadata extends Record<string, unknown> {
@@ -10,6 +11,7 @@ interface DocumentSearchAuditMetadata extends Record<string, unknown> {
   resultCount: number;
   results: DocumentSearchResult[];
   activityTrace?: import("../../retrieval/public.js").ActivityTrace;
+  dateRangeLookup: DocumentSearchResponse["dateRangeLookup"];
 }
 
 export const toDocumentSearchHistoryEntry = (event: { id: string; metadata: unknown; createdAt: Date }): DocumentSearchHistoryEntry => {
@@ -70,10 +72,7 @@ export class DocumentSearchHistoryService {
       query: metadata.query,
       resultCount: metadata.resultCount,
       results,
-      // Historical audit metadata predates the requested-range summary; a replayed search
-      // reports it as not requested even when the original search asked for one. Each result's
-      // own `datedInRequestedRange` still replays correctly, since it travels with the result.
-      dateRangeLookup: { status: "not_requested", candidateCount: 0 },
+      dateRangeLookup: metadata.dateRangeLookup,
       activityTrace: metadata.activityTrace,
     };
   }
@@ -134,5 +133,12 @@ const normalizeAuditMetadata = (metadata: unknown, fallbackSearchId: string): Do
     activityTrace: isRecord(safeMetadata.activityTrace)
       ? (safeMetadata.activityTrace as unknown as DocumentSearchAuditMetadata["activityTrace"])
       : undefined,
+    dateRangeLookup: normalizeDateRangeLookup(safeMetadata.dateRangeLookup),
   };
 };
+
+// A search recorded before the date-range lookup existed asked for no range.
+const normalizeDateRangeLookup = (value: unknown): DocumentSearchResponse["dateRangeLookup"] =>
+  isRecord(value) && isRequestedDateRangeLookupStatus(value.status)
+    ? { status: value.status, candidateCount: asNumber(value.candidateCount) ?? 0 }
+    : { status: "not_requested", candidateCount: 0 };

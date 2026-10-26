@@ -66,6 +66,7 @@ interface DocumentSearchAuditMetadata extends Record<string, unknown> {
   resultCount: number;
   query?: string;
   results?: DocumentSearchResult[];
+  dateRangeLookup?: DocumentSearchResponse["dateRangeLookup"];
   activityTrace?: ActivityTrace;
   executionSurface: DocumentSearchExecutionSurface;
 }
@@ -190,6 +191,7 @@ export class DocumentSearchService {
       ...(input.executionSurface === "operator_copilot" ? {} : {
         query: response.query,
         results: response.results,
+        dateRangeLookup: response.dateRangeLookup,
         activityTrace: response.activityTrace,
       }),
     };

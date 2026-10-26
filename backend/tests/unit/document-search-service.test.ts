@@ -174,6 +174,10 @@ describe("DocumentSearchService requested date range", () => {
     expect(result.dateRangeLookup).toEqual({ status: "ran", candidateCount: 1 });
     expect(result.results[0]?.datedInRequestedRange).toBe(true);
     expect(result.results[1]?.datedInRequestedRange).toBe(false);
+    // Recorded with the search, so replaying it from history shows the same lookup.
+    expect(deps.audit.record).toHaveBeenCalledWith(expect.objectContaining({
+      metadata: expect.objectContaining({ dateRangeLookup: { status: "ran", candidateCount: 1 } }),
+    }));
   });
 
   it("delegates to the retrieval-owned port with the range, the query, and the usage context", async () => {

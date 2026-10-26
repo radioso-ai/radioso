@@ -73,8 +73,8 @@ export const updateGeneralSettingsSchema = z.object({
   websiteEmbedLauncherLabel: z.string().max(80).optional(),
   websiteEmbedLauncherPosition: z.enum(websiteEmbedLauncherPositions).optional(),
   websiteEmbedTheme: assistantThemeSchema.optional(),
-  websiteEmbedCopy: z.record(z.record(z.string().max(500))).optional(),
-  websiteEmbedExpertOverrides: z.record(z.string().max(500)).optional(),
+  websiteEmbedCopy: z.record(z.string(), z.record(z.string(), z.string().max(500))).optional(),
+  websiteEmbedExpertOverrides: z.record(z.string(), z.string().max(500)).optional(),
 });
 
 export const updatePlatformSettingsSchema = z.object({

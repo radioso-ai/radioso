@@ -62,7 +62,7 @@ export const copilotIngestionSettingsPayloadSchema = z.object({
 /** Ingestion settings are one row per workspace, and the workspace is already the call's scope. */
 export const copilotIngestionSettingsTargetRefSchema = z.object({
   /** Exact draft-time values for the fields this proposal writes. Absent on timestamp-era cards. */
-  expectedFields: z.record(z.unknown()).optional(),
+  expectedFields: z.record(z.string(), z.unknown()).optional(),
 }).strict();
 
 export type CopilotIngestionSettingsPayload = z.infer<typeof copilotIngestionSettingsPayloadSchema>;

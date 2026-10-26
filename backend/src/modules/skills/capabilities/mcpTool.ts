@@ -15,7 +15,7 @@ const mcpToolConfigSchema = z
     boundParams: boundParamsSchema.default({}),
     exposedParams: exposedParamsSchema.default({}),
     declaredOutcomes: z.array(outcomeName).nullable().optional(),
-    outcomeMap: z.record(outcomeName).nullable().optional(),
+    outcomeMap: z.record(z.string(), outcomeName).nullable().optional(),
   })
   .strict()
   .superRefine((value, ctx) => {

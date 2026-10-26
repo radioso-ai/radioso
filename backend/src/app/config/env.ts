@@ -27,7 +27,7 @@ const AGENT_TEST_EVIDENCE_RETENTION_DAYS_DEFAULT = 90;
 const emptyStringToUndefined = <T extends z.ZodTypeAny>(schema: T) =>
   z.preprocess((value) => (value === "" ? undefined : value), schema.optional());
 const emptyStringToDefault = <T extends z.ZodTypeAny>(schema: T, defaultValue: z.input<T>) =>
-  z.preprocess((value) => (value === "" ? undefined : value), schema.default(defaultValue));
+  z.preprocess((value) => (value === "" ? undefined : value), schema.prefault(defaultValue));
 
 const booleanish = (defaultValue: boolean) =>
   z.preprocess((value) => {

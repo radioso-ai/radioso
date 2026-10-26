@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ZodTypeAny } from "zod";
+import type { z } from "zod";
 
 import { copilotCapabilityProvenance } from "../../../src/modules/operatorCopilot/capabilityProvenance.js";
 import { createOpenApiDocument } from "../../../src/app/http/openapi/openApiDocument.js";
@@ -51,38 +51,30 @@ const collectBodyPropertyNames = (doc: OpenApiDocument, schema: unknown, seen: S
   return out;
 };
 
-interface ZodInternals {
-  readonly _def: {
-    readonly typeName?: string;
-    readonly schema?: ZodTypeAny;
-    readonly innerType?: ZodTypeAny;
-    readonly options?: ReadonlyArray<ZodTypeAny>;
-  };
-  readonly shape?: () => Record<string, ZodTypeAny>;
-}
-
 /**
  * Top-level keys of a tool's Zod input schema, or `null` when the schema is not one of the shapes
  * this gate knows how to introspect (a descriptor is expected to fail loudly in that case rather
  * than being skipped — see the "every production descriptor" test below).
  */
-const zodTopLevelKeys = (schema: ZodTypeAny): ReadonlyArray<string> | null => {
-  let current = schema as unknown as ZodInternals;
+const zodTopLevelKeys = (schema: z.core.$ZodType): ReadonlyArray<string> | null => {
+  let def = (schema as z.core.$ZodTypes)._zod.def;
   for (;;) {
-    const typeName = current._def.typeName;
-    if (typeName === "ZodEffects" && current._def.schema) { current = current._def.schema; continue; }
-    if ((typeName === "ZodOptional" || typeName === "ZodDefault") && current._def.innerType) { current = current._def.innerType; continue; }
+    if (def.type === "pipe") {
+      // `.transform()` pipes the shaped schema in; `z.preprocess()` pipes it out.
+      const inner = (def.in as z.core.$ZodTypes)._zod.def.type === "transform" ? def.out : def.in;
+      def = (inner as z.core.$ZodTypes)._zod.def;
+      continue;
+    }
+    if (def.type === "optional" || def.type === "default" || def.type === "prefault") {
+      def = (def.innerType as z.core.$ZodTypes)._zod.def;
+      continue;
+    }
     break;
   }
-  const typeName = current._def.typeName;
-  if (typeName === "ZodObject") {
-    const shape = (current as unknown as { shape: Record<string, ZodTypeAny> }).shape;
-    return Object.keys(shape);
-  }
-  if (typeName === "ZodUnion" || typeName === "ZodDiscriminatedUnion") {
-    const options = current._def.options ?? [];
+  if (def.type === "object") return Object.keys(def.shape);
+  if (def.type === "union") {
     const out = new Set<string>();
-    for (const option of options) {
+    for (const option of def.options) {
       const keys = zodTopLevelKeys(option);
       if (!keys) return null;
       for (const key of keys) out.add(key);

@@ -13,8 +13,8 @@ const outputSchema = z.object({
   proposalId: z.string().uuid(), reviewDigest: z.string().min(1).max(200), expiresAt: z.string().datetime(),
   confirmation: reviewedConfirmationSchema,
   review: z.object({
-    changes: z.array(z.object({ field: z.string().max(200), before: z.unknown(), after: z.unknown() }).strict()).max(25),
-    after: z.record(z.unknown()), effect: z.object({ appliesTo: z.literal("documents_processed_after_execution"), existingDocuments: z.literal("unchanged_until_reprocessed"), embeddingModel: z.literal("unchanged") }).strict(),
+    changes: z.array(z.object({ field: z.string().max(200), before: z.unknown().optional(), after: z.unknown().optional() }).strict()).max(25),
+    after: z.record(z.string(), z.unknown()), effect: z.object({ appliesTo: z.literal("documents_processed_after_execution"), existingDocuments: z.literal("unchanged_until_reprocessed"), embeddingModel: z.literal("unchanged") }).strict(),
   }).strict(),
 }).strict();
 

@@ -56,16 +56,16 @@ const SkillCreateSchema = z.object({
   skillName: z.string(),
   connectionId: z.string().uuid(),
   toolName: z.string(),
-  boundParams: z.record(z.unknown()).optional(),
+  boundParams: z.record(z.string(), z.unknown()).optional(),
   exposedParams: z
-    .record(z.object({
+    .record(z.string(), z.object({
       slotBinding: z.string().optional(),
       description: z.string().optional(),
       required: z.boolean().optional(),
     }))
     .optional(),
   declaredOutcomes: z.array(z.string()).optional(),
-  outcomeMap: z.record(z.string()).optional(),
+  outcomeMap: z.record(z.string(), z.string()).optional(),
   enabled: z.boolean().optional(),
 });
 
@@ -74,10 +74,10 @@ const SkillViewSchema = z.object({
   connectionId: z.string(),
   skillName: z.string(),
   toolName: z.string(),
-  boundParams: z.record(z.unknown()),
-  exposedParams: z.record(z.unknown()),
+  boundParams: z.record(z.string(), z.unknown()),
+  exposedParams: z.record(z.string(), z.unknown()),
   declaredOutcomes: z.array(z.string()).nullable(),
-  outcomeMap: z.record(z.string()).nullable(),
+  outcomeMap: z.record(z.string(), z.string()).nullable(),
   enabled: z.boolean(),
   createdAt: z.string(),
   updatedAt: z.string(),
@@ -89,16 +89,16 @@ const ConnectionUpdateSchema = z.object({
 })
 
 const SkillUpdateSchema = z.object({
-  boundParams: z.record(z.unknown()).optional(),
+  boundParams: z.record(z.string(), z.unknown()).optional(),
   exposedParams: z
-    .record(z.object({
+    .record(z.string(), z.object({
       slotBinding: z.string().optional(),
       description: z.string().optional(),
       required: z.boolean().optional(),
     }))
     .optional(),
   declaredOutcomes: z.array(z.string()).optional(),
-  outcomeMap: z.record(z.string()).optional(),
+  outcomeMap: z.record(z.string(), z.string()).optional(),
   enabled: z.boolean().optional(),
 });
 

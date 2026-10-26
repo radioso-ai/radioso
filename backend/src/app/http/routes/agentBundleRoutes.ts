@@ -30,12 +30,12 @@ const importParamsSchema = z.object({ importId: z.string().uuid() });
  */
 export const agentBundleBodySchema = z.object({
   bundleVersion: z.number().int(),
-  portability: z.record(z.string()).optional(),
+  portability: z.record(z.string(), z.string()).optional(),
   agent: z.object({ schemaVersion: z.number().int() }).passthrough(),
   routines: z.array(z.object({
     name: z.string(),
     version: z.number().int(),
-    definition: z.unknown(),
+    definition: z.unknown().optional(),
   }).passthrough()).default([]),
   contextVariables: z.array(z.object({
     variableName: z.string(),
@@ -51,11 +51,11 @@ export const agentBundleBodySchema = z.object({
     capability: z.string(),
     invocationMode: z.enum(["default_answer", "routine_named", "agent_selectable"]),
     enabled: z.boolean(),
-    config: z.record(z.unknown()).default({}),
+    config: z.record(z.string(), z.unknown()).default({}),
     omittedConfigKeys: z.array(z.string()).default([]),
     target: z.object({
       kind: z.string().nullable(),
-      id: z.unknown().nullable(),
+      id: z.unknown().nullable().optional(),
     }).passthrough(),
   }).passthrough()).default([]),
   idempotencyKey: z.string().min(1).max(200).optional(),

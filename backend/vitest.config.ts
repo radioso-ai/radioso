@@ -11,7 +11,7 @@ export default defineConfig({
     environment: "node",
     include: ["tests/**/*.test.ts"],
     globalSetup: ["./tests/support/integrationDatabaseGlobalSetup.ts"],
-    setupFiles: ["./tests/support/loadEnv.ts"],
+    setupFiles: ["./src/app/http/openapi/zodOpenApiExtension.ts", "./tests/support/loadEnv.ts"],
     testTimeout: 10_000,
     coverage: {
       reporter: ["text", "lcov"],

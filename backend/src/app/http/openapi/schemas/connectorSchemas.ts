@@ -38,7 +38,7 @@ export const registerConnectorSchemas = (registry: OpenAPIRegistry, schemas: Ope
     "ConnectorDetail",
     ConnectorSummarySchema.extend({
       schema: z.array(ConnectorFieldSchema),
-      config: z.record(z.union([z.string(), z.number(), z.boolean()])),
+      config: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])),
       webhookUrl: z.string().url(),
       syncState: z.object({
         backfillCompletedAt: z.string().nullable(),
@@ -62,7 +62,7 @@ export const registerConnectorSchemas = (registry: OpenAPIRegistry, schemas: Ope
   const ConnectorConfigUpdateSchema = registry.register(
     "ConnectorConfigUpdateRequest",
     z.object({
-      config: z.record(z.union([z.string(), z.number(), z.boolean()])),
+      config: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])),
     }),
   );
 

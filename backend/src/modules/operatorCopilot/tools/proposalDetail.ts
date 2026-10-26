@@ -14,14 +14,14 @@ const targetSchema = z.object({
   documentId: z.string().uuid().nullable(),
   settingKey: z.string().max(200).nullable(),
   label: z.string().max(300),
-  reference: z.record(z.union([z.string().max(300), z.boolean(), z.null()])),
+  reference: z.record(z.string(), z.union([z.string().max(300), z.boolean(), z.null()])),
 }).strict();
 const outputSchema = z.object({
   proposalId: z.string().uuid(),
   targetType: z.enum(copilotProposalTargetTypes),
   target: targetSchema,
   summary: z.string().max(2_000),
-  draftedChange: z.unknown(),
+  draftedChange: z.unknown().optional(),
   status: z.enum(["pending", "applied", "dismissed", "failed", "stale"]),
   createdAt: z.string().datetime(),
   decidedAt: z.string().datetime().nullable(),

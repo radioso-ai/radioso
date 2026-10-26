@@ -48,8 +48,8 @@ export const a2aAgentCardSchema = z.object({
   }),
   defaultInputModes: z.array(z.string()),
   defaultOutputModes: z.array(z.string()),
-  securitySchemes: z.record(a2aSecuritySchemeSchema),
-  security: z.array(z.record(z.array(z.string()))),
+  securitySchemes: z.record(z.string(), a2aSecuritySchemeSchema),
+  security: z.array(z.record(z.string(), z.array(z.string()))),
   skills: z.array(a2aAgentSkillSchema),
 });
 

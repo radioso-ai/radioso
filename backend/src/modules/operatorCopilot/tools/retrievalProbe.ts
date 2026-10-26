@@ -18,7 +18,7 @@ const retrievalProbeInputSchema = z.object({
   agentName: z.string().trim().min(1).max(160).optional(),
   query: z.string().trim().min(1).max(2_000),
   topK: z.number().int().min(1).max(MAX_RESULTS).optional(),
-  metadataFilter: z.record(z.unknown()).optional(),
+  metadataFilter: z.record(z.string(), z.unknown()).optional(),
 }).strict();
 
 const omissionSchema = z.object({

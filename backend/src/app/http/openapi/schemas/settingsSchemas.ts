@@ -234,8 +234,8 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
         surface: z.string(),
         text: z.string(),
       }),
-      websiteEmbedCopy: z.record(z.record(z.string())),
-      websiteEmbedExpertOverrides: z.record(z.string()),
+      websiteEmbedCopy: z.record(z.string(), z.record(z.string(), z.string())),
+      websiteEmbedExpertOverrides: z.record(z.string(), z.string()),
     }),
   );
 
@@ -283,8 +283,8 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
         surface: z.string(),
         text: z.string(),
       }),
-      websiteEmbedCopy: z.record(z.record(z.string())),
-      websiteEmbedExpertOverrides: z.record(z.string()),
+      websiteEmbedCopy: z.record(z.string(), z.record(z.string(), z.string())),
+      websiteEmbedExpertOverrides: z.record(z.string(), z.string()),
     }),
   );
 

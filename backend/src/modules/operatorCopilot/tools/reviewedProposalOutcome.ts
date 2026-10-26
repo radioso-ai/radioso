@@ -14,8 +14,8 @@ const outputSchema = z.object({
   reviewDigest: z.string(),
   expiresAt: z.string().datetime().nullable(),
   currentVersionMatches: z.boolean(),
-  appliedRef: z.unknown(),
-  review: z.unknown(),
+  appliedRef: z.unknown().optional(),
+  review: z.unknown().optional(),
   reviewDetail: z.object({ text: z.string(), nextOffset: z.number().int().nullable(), totalLength: z.number().int().nonnegative() }).strict().optional(),
   approval: reviewedApprovalStateSchema,
 }).strict();

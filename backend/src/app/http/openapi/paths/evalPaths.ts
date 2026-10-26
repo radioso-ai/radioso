@@ -83,8 +83,8 @@ const GroundingDiagnosticsSchema = z
 
 const EvalWorkbenchReplayRunResponseSchema = z
   .object({
-    run: z.unknown(),
-    case: z.unknown().nullable(),
+    run: z.unknown().optional(),
+    case: z.unknown().nullable().optional(),
     answer: z.string().optional(),
     citations: z.array(z.unknown()).optional(),
     answerSegments: z.array(z.unknown()).optional(),
@@ -94,12 +94,12 @@ const EvalWorkbenchReplayRunResponseSchema = z
     groundingVerdict: GroundingVerdictSchema.optional(),
     groundingDiagnostics: GroundingDiagnosticsSchema.optional(),
     turnTrace: z.unknown().optional(),
-    resolvedConfig: z.unknown(),
+    resolvedConfig: z.unknown().optional(),
   });
 
 const EvalCaseRunResponseSchema = z.object({
-  run: z.unknown(),
-  case: z.unknown().nullable(),
+  run: z.unknown().optional(),
+  case: z.unknown().nullable().optional(),
 });
 
 const EvalSuiteRunRequestSchema = z
@@ -126,7 +126,7 @@ const EvalSuiteCaseResultSchema = z.object({
   name: z.string(),
   status: z.enum(["pass", "fail", "error", "recorded", "skipped"])
     .describe("\"skipped\" means the case carries no expectations, so it was not run."),
-  run: z.unknown().nullable(),
+  run: z.unknown().nullable().optional(),
   error: z.string().nullable().describe("Set only when the case could not be run at all."),
 });
 
@@ -222,11 +222,11 @@ const EvalSnapshotSchema = z.object({
   messages: z.array(EvalSnapshotMessageSchema),
   originalInstructionBlock: z.string().nullable(),
   originalModelId: z.string().nullable(),
-  originalRetrievalSettings: z.unknown().nullable(),
-  originalAgent: z.unknown().nullable(),
-  originalAgentConfig: z.unknown().nullable(),
+  originalRetrievalSettings: z.unknown().nullable().optional(),
+  originalAgent: z.unknown().nullable().optional(),
+  originalAgentConfig: z.unknown().nullable().optional(),
   sourceAgentId: z.string().uuid().nullable(),
-  originalRoutineState: z.unknown().nullable(),
+  originalRoutineState: z.unknown().nullable().optional(),
   originalRetrievalResult: z.array(z.unknown()).nullable(),
   conversationSummary: z.string().optional(),
   capturedAt: z.string().datetime(),
@@ -280,7 +280,7 @@ export const registerEvalPaths = (
   const RegisteredEvalCaseListSchema = registry.register(
     "EvalCaseList",
     z.object({
-      cases: z.array(RegisteredEvalCaseSchema.and(z.object({ latestRun: z.unknown().nullable() }))),
+      cases: z.array(RegisteredEvalCaseSchema.and(z.object({ latestRun: z.unknown().nullable().optional() }))),
       summary: EvalSuiteSummarySchema,
     }),
   );

@@ -34,7 +34,7 @@ export const agentSkillCreateSchema = z.object({
   name: z.string().trim().min(1).max(120).regex(skillNamePattern, skillNamePatternMessage),
   capability: skillCapabilityIdSchema,
   target: targetSchema,
-  config: z.record(z.unknown()).default({}),
+  config: z.record(z.string(), z.unknown()).default({}),
   invocationMode: z.enum(agentSkillInvocationModes).default("routine_named"),
   enabled: z.boolean().default(true),
 }).strict();
@@ -43,8 +43,8 @@ type AgentSkillCreateInput = z.infer<typeof agentSkillCreateSchema>;
 
 export const agentSkillUpdateSchema = z.object({
   target: targetSchema.optional(),
-  config: z.record(z.unknown()).optional(),
-  replaceConfig: z.record(z.unknown()).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
+  replaceConfig: z.record(z.string(), z.unknown()).optional(),
   invocationMode: z.enum(agentSkillInvocationModes).optional(),
   enabled: z.boolean().optional(),
 }).strict().refine((input) => Object.keys(input).length > 0, {

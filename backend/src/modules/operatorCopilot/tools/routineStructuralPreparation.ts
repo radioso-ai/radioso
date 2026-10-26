@@ -50,7 +50,7 @@ const fieldsPerKind = {
   delete: ["routineId"],
 } as const satisfies Record<string, ReadonlyArray<"routineId" | "operations" | "draft">>;
 const conditionalFields = ["routineId", "operations", "draft"] as const;
-const conditionalFieldTypes = { routineId: "string", operations: "array", draft: "object" } as const satisfies Record<typeof conditionalFields[number], z.ZodParsedType>;
+const conditionalFieldTypes = { routineId: "string", operations: "array", draft: "object" } as const satisfies Record<typeof conditionalFields[number], z.core.$ZodInvalidTypeExpected>;
 
 /**
  * One tagged object rather than a union of three untagged object shapes. A `z.union` serializes to
@@ -102,8 +102,8 @@ const outputSchema = z.object({
   // so a snapshot persisted before this field existed still recovers.
   advisories: z.array(routineFindingSchema).max(40).default([]),
   review: z.object({
-    before: z.record(z.unknown()),
-    after: z.record(z.unknown()),
+    before: z.record(z.string(), z.unknown()),
+    after: z.record(z.string(), z.unknown()),
     truncated: z.boolean(),
     detailAvailable: z.boolean(),
     beforeConnections: z.array(z.object({ fromStep: z.string(), toRef: z.string(), guardKind: z.string(), ordinal: z.number() })).max(40),

@@ -3,6 +3,38 @@ import { OpenApiGeneratorV31 } from "@asteasolutions/zod-to-openapi";
 import { registerOpenApiPaths } from "./openApiPaths.js";
 import { createOpenApiRegistry } from "./openApiRegistry.js";
 
+// An unescaped slash and regex flags closing a pattern: what is left of `/source/flags` once only
+// its leading slash is trimmed. A slash inside a regex literal's source is always escaped.
+const TRAILING_REGEX_FLAGS = /(?<!\\)\/[dgimsuvy]+$/;
+
+const isEmptySchema = (value: unknown): boolean =>
+  typeof value === "object" && value !== null && !Array.isArray(value) && Object.keys(value).length === 0;
+
+/**
+ * Two corrections to what zod-to-openapi emits, so the document states the contract as it always
+ * has:
+ * - It writes a `.regex()` check's `pattern` from the regex's `toString()` with only the slashes
+ *   trimmed, so a flagged literal such as `/^[a-z]+$/u` arrives as `^[a-z]+$/u` — a pattern no
+ *   value matches. JSON Schema patterns carry no flags; this keeps the regex source.
+ * - It spells a passthrough object's open key set as `additionalProperties: {}`, which says
+ *   nothing an object schema without the keyword does not already say. Dropping it keeps generated
+ *   clients from typing those objects with an index signature they never had. A record keeps the
+ *   keyword: there it is the whole description of the values.
+ */
+const normalizeGeneratedSchemas = (node: unknown): void => {
+  if (Array.isArray(node)) {
+    node.forEach(normalizeGeneratedSchemas);
+    return;
+  }
+  if (typeof node !== "object" || node === null) return;
+  const record = node as Record<string, unknown>;
+  if ("properties" in record && isEmptySchema(record.additionalProperties)) delete record.additionalProperties;
+  for (const [key, value] of Object.entries(record)) {
+    if (key === "pattern" && typeof value === "string") record[key] = value.replace(TRAILING_REGEX_FLAGS, "");
+    else normalizeGeneratedSchemas(value);
+  }
+};
+
 export const createOpenApiDocument = (
   options: {
     sessionCookieName?: string;
@@ -53,6 +85,8 @@ export const createOpenApiDocument = (
       { name: "Operator MCP" },
     ],
   });
+
+  normalizeGeneratedSchemas(document);
 
   const sessionCookie = document.components?.securitySchemes?.sessionCookie;
   if (sessionCookie && "name" in sessionCookie) {

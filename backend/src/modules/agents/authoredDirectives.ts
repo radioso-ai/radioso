@@ -120,7 +120,7 @@ export const authoredDirectiveInputSchema = z.object({
   // Reversible off switch: a disabled directive keeps its authored text but is never
   // converted into a runtime Directive (see authoredDirectiveMapper.steeringDirectivesFromAuthored).
   enabled: z.boolean().optional().default(true),
-  metadata: z.record(z.unknown()).optional().default({}),
+  metadata: z.record(z.string(), z.unknown()).optional().default({}),
 }).strict();
 
 /**

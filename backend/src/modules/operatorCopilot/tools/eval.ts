@@ -16,7 +16,7 @@ import { asRecord, describeNamedAgent, entity, requiredCopilotConversation, requ
 
 const idSchema = z.string().uuid();
 const entityNameSchema = z.string().trim().min(1).max(160);
-const unknownRecord = z.record(z.unknown());
+const unknownRecord = z.record(z.string(), z.unknown());
 const MAX_FAILED_ASSERTIONS_PER_CASE = 5;
 const MAX_REPLAY_ANSWER_CHARS = 2_000;
 const MAX_SUITE_CASE_ID_ARGUMENTS = MAX_COPILOT_EVAL_SUITE_CASES * 4;
@@ -74,7 +74,7 @@ const suiteRunInputSchema = z.object({
     if (distinct > MAX_COPILOT_EVAL_SUITE_CASES) {
       context.addIssue({
         code: z.ZodIssueCode.too_big,
-        type: "array",
+        origin: "array",
         maximum: MAX_COPILOT_EVAL_SUITE_CASES,
         inclusive: true,
         message: `At most ${MAX_COPILOT_EVAL_SUITE_CASES} distinct eval cases may be run in one call`,
@@ -151,7 +151,7 @@ const replayOverridesSchema = z.object({
     routineId: z.string().min(1).max(200),
     path: z.array(z.string().min(1).max(200)).min(1).max(200),
     variables: unknownRecord,
-    attempts: z.record(z.number().int()).optional(),
+    attempts: z.record(z.string(), z.number().int()).optional(),
     status: z.enum(["active", "suspended", "completed", "expired"]),
     metadata: unknownRecord.optional(),
   }).strict().optional(),

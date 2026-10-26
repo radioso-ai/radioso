@@ -116,8 +116,8 @@ const exposedParamSpecSchema = z
   })
   .strict();
 
-export const boundParamsSchema = z.record(z.unknown());
-export const exposedParamsSchema = z.record(exposedParamSpecSchema);
+export const boundParamsSchema = z.record(z.string(), z.unknown());
+export const exposedParamsSchema = z.record(z.string(), exposedParamSpecSchema);
 
 export const skillDefinitionInputSchema = z
   .object({
@@ -131,7 +131,7 @@ export const skillDefinitionInputSchema = z
     declaredOutcomes: z
       .array(trimmedText(EXTERNAL_SKILLS_LIMITS.outcomeName).regex(outcomeNamePattern))
       .optional(),
-    outcomeMap: z.record(trimmedText(EXTERNAL_SKILLS_LIMITS.outcomeName).regex(outcomeNamePattern)).optional(),
+    outcomeMap: z.record(z.string(), trimmedText(EXTERNAL_SKILLS_LIMITS.outcomeName).regex(outcomeNamePattern)).optional(),
     enabled: z.boolean().default(true),
   })
   .strict()
@@ -182,7 +182,7 @@ export const skillDefinitionUpdateSchema = z
     declaredOutcomes: z
       .array(trimmedText(EXTERNAL_SKILLS_LIMITS.outcomeName).regex(outcomeNamePattern))
       .optional(),
-    outcomeMap: z.record(trimmedText(EXTERNAL_SKILLS_LIMITS.outcomeName).regex(outcomeNamePattern)).optional(),
+    outcomeMap: z.record(z.string(), trimmedText(EXTERNAL_SKILLS_LIMITS.outcomeName).regex(outcomeNamePattern)).optional(),
     enabled: z.boolean().optional(),
   })
   .strict()

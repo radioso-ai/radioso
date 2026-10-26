@@ -226,7 +226,7 @@ export const parseCopilotEvalCases = (input: unknown): CopilotEvalCase[] => {
     if (seen.has(entry.id)) throw new Error(`Duplicate copilot eval case id: ${entry.id}`);
     seen.add(entry.id);
   }
-  return parsed as CopilotEvalCase[];
+  return parsed;
 };
 
 interface BoundaryContextEntry {

@@ -23,7 +23,7 @@ import { answerCoverageCriteriaSchema } from "../answerCoverage/public.js";
 // Each element is edited once. Two entries for the same id read as two changes and apply as one,
 // silently dropping whichever came first.
 const addressedOnce = <TItem>(
-  schema: z.ZodType<TItem[], z.ZodTypeDef, unknown>,
+  schema: z.ZodType<TItem[], unknown>,
   identify: (item: TItem) => string,
   element: string,
 ) => schema.refine(

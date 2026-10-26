@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-const testValueSchema = z.object({ contextVariableId: z.string().uuid(), value: z.unknown() }).strict();
+const testValueSchema = z.object({ contextVariableId: z.string().uuid(), value: z.unknown().optional() }).strict();
 
 export const revisionListQuerySchema = z.object({ include: z.literal("published").optional() }).strict();
 export const createRevisionCandidateBodySchema = z.object({ expectedDraftGeneration: z.number().int().positive() }).strict();

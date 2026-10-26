@@ -1,10 +1,7 @@
 import { Router } from "express";
 
 import type { AppDependencies } from "../../server/types.js";
-import {
-  webhookDestinationCreateSchema,
-  webhookDestinationUpdateSchema,
-} from "../../../modules/webhooks/public.js";
+import { webhookDestinationCreateSchema } from "../../../modules/webhooks/public.js";
 import { badRequest } from "../../../shared/domain/errors.js";
 import { webhookDestinationIdParamSchema } from "./webhookDestinationRouteSchemas.js";
 import { requireWorkspacePermission } from "../middleware/requirePermission.js";
@@ -85,7 +82,7 @@ export const createSettingsWebhookDestinationRoutes = (
     "/:id",
     workspaceSession,
     settingsManage,
-    validateBody(webhookDestinationUpdateSchema),
+    validateBody(webhookDestinationCreateSchema),
     async (req, res, next) => {
       try {
         const { accountId, workspaceId } = res.locals as { accountId: string; workspaceId: string };

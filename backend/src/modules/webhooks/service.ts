@@ -4,20 +4,19 @@ import { AppError, badRequest, conflict, notFound } from "../../shared/domain/er
 import {
   decryptField,
   encryptField,
+  type FieldEncryptionKeyRing,
 } from "../../shared/infra/crypto/fieldEncryption.js";
 import type { AuditPort } from "../audit/contracts/index.js";
 import {
   toWebhookDestination,
   type WebhookDeliveryOutcomeStatus,
   webhookDestinationCreateSchema,
-  webhookDestinationUpdateSchema,
   type WebhookDestination,
   type WebhookDestinationRecord,
   type WebhookDestinationWithSecret,
 } from "./domain.js";
 
 const KEY_NAME = "CONNECTOR_ENCRYPTION_KEY";
-const ENCRYPTION_KEY_ID = "connector";
 
 export interface WebhookDestinationRepositoryPort {
   create(input: {
@@ -25,14 +24,12 @@ export interface WebhookDestinationRepositoryPort {
     name: string;
     url: string;
     secretCiphertext: string;
-    encryptionKeyId: string;
   }): Promise<WebhookDestinationRecord>;
   listByWorkspace(workspaceId: string): Promise<WebhookDestinationRecord[]>;
   findByIdAndWorkspace(id: string, workspaceId: string): Promise<WebhookDestinationRecord | null>;
   update(id: string, workspaceId: string, input: { name: string; url: string }): Promise<WebhookDestinationRecord | null>;
   updateSecret(id: string, workspaceId: string, input: {
     secretCiphertext: string;
-    encryptionKeyId: string;
   }): Promise<WebhookDestinationRecord | null>;
   recordDeliveryOutcome(id: string, workspaceId: string, status: WebhookDeliveryOutcomeStatus): Promise<void>;
   delete(id: string, workspaceId: string): Promise<boolean>;
@@ -51,7 +48,7 @@ export interface WebhookDestinationExistencePort {
 }
 
 interface WebhookDestinationsEncryptionConfig {
-  key: string | undefined;
+  key: FieldEncryptionKeyRing | undefined;
 }
 
 export interface WebhookDestinationActor {
@@ -139,7 +136,8 @@ export class WebhookDestinationService implements WebhookDestinationExistencePor
   }) {}
 
   isEncryptionConfigured(): boolean {
-    return typeof this.options.encryption.key === "string" && this.options.encryption.key.length > 0;
+    const key = this.options.encryption.key;
+    return key !== undefined && key.current.length > 0;
   }
 
   async create(input: {
@@ -158,7 +156,6 @@ export class WebhookDestinationService implements WebhookDestinationExistencePor
         name: parsed.name,
         url,
         secretCiphertext,
-        encryptionKeyId: ENCRYPTION_KEY_ID,
       });
       await this.recordAudit("workspace_webhook_destination.create", "success", {
         workspaceId: input.workspaceId,
@@ -197,7 +194,7 @@ export class WebhookDestinationService implements WebhookDestinationExistencePor
     url: string;
     actor: WebhookDestinationActor;
   }): Promise<WebhookDestination> {
-    const parsed = webhookDestinationUpdateSchema.parse({ name: input.name, url: input.url });
+    const parsed = webhookDestinationCreateSchema.parse({ name: input.name, url: input.url });
     const url = await this.normalizeAllowedDestinationUrl(parsed.url);
     try {
       const record = await this.options.repository.update(input.id, input.workspaceId, {
@@ -239,7 +236,6 @@ export class WebhookDestinationService implements WebhookDestinationExistencePor
     const secret = this.generateSecret();
     const record = await this.options.repository.updateSecret(id, workspaceId, {
       secretCiphertext: this.encryptSecret(secret),
-      encryptionKeyId: ENCRYPTION_KEY_ID,
     });
     if (!record) {
       throw notFound("Webhook destination not found");

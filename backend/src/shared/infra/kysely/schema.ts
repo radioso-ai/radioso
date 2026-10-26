@@ -1218,6 +1218,9 @@ export interface IntegrationOauthConnections {
   created_at: Generated<Timestamp>;
   credential_ciphertext: string | null;
   display_name: string;
+  /**
+   * Unused: the ciphertext columns name their key. Dropped once no running revision writes it.
+   */
   encryption_key_id: string | null;
   granted_scopes: Generated<string[]>;
   id: string;
@@ -1248,6 +1251,9 @@ export interface McpConnections {
   created_at: Generated<Timestamp>;
   credential_ciphertext: string | null;
   display_name: string;
+  /**
+   * Unused: the ciphertext columns name their key. Dropped once no running revision writes it.
+   */
   encryption_key_id: string | null;
   id: string;
   oauth_client_ciphertext: string | null;
@@ -2085,7 +2091,10 @@ export interface WorkspaceSetupState {
 
 export interface WorkspaceWebhookDestinations {
   created_at: Generated<Timestamp>;
-  encryption_key_id: string;
+  /**
+   * Unused: secret_ciphertext names its key. Dropped once no running revision writes it.
+   */
+  encryption_key_id: string | null;
   id: Generated<string>;
   last_delivery_at: Timestamp | null;
   last_delivery_status: string | null;

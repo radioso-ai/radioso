@@ -151,7 +151,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       installations,
       bindings,
       workspaceAccounts: new PostgresWorkspaceAccountLookup(database.kysely),
-      encryptionKey,
+      encryptionKey: { current: encryptionKey, previous: [] },
     });
     const saved = await installationService.saveInstallation({
       workspaceId,
@@ -274,7 +274,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       installations,
       bindings,
       workspaceAccounts: new PostgresWorkspaceAccountLookup(database.kysely),
-      encryptionKey,
+      encryptionKey: { current: encryptionKey, previous: [] },
     });
     const saved = await installationService.saveInstallation({
       workspaceId,
@@ -419,7 +419,7 @@ describeIfDatabase("Slack DM journey (postgres)", () => {
       installations,
       bindings,
       workspaceAccounts: new PostgresWorkspaceAccountLookup(database.kysely),
-      encryptionKey,
+      encryptionKey: { current: encryptionKey, previous: [] },
     });
     const saved = await installationService.saveInstallation({
       workspaceId,

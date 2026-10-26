@@ -9,9 +9,9 @@ import {
 import type { SlackInstallationRecord } from "../../../src/modules/slack/public.js";
 
 const installation: SlackInstallationRecord = {
-  id: "11111111-1111-1111-1111-111111111111",
-  connectionId: "22222222-2222-2222-2222-222222222222",
-  workspaceId: "33333333-3333-3333-3333-333333333333",
+  id: "11111111-1111-1111-8111-111111111111",
+  connectionId: "22222222-2222-2222-8222-222222222222",
+  workspaceId: "33333333-3333-3333-8333-333333333333",
   accountId: "99999999-9999-4999-8999-999999999999",
   teamId: "T1",
   teamName: "Acme",
@@ -24,7 +24,7 @@ const context = {
   requestId: "request-1",
   workspaceId: installation.workspaceId,
   accountId: installation.accountId,
-  conversationId: "44444444-4444-4444-4444-444444444444",
+  conversationId: "44444444-4444-4444-8444-444444444444",
   idempotencyKey: "slack:gap_escalation:turn-1",
   attempt: 1,
   skillName: null,

@@ -26,7 +26,7 @@ import { contactDeliveryRoutes } from "../../../shared/domain/contactDeliveryRou
 const idSchema = z.string().uuid();
 const entityNameSchema = z.string().trim().min(1).max(160);
 const inputSchema = z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional() });
-const unknownRecord = z.record(z.unknown());
+const unknownRecord = z.record(z.string(), z.unknown());
 const outputSchema = z.object({ skills: z.array(unknownRecord), capabilities: z.array(unknownRecord) });
 
 const skillTargetInputSchema = z.object({ kind: z.string().trim().min(1), id: idSchema.nullable() }).strict();
@@ -37,7 +37,7 @@ const skillConfigInputSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   capability: z.string().trim().min(1).optional(),
   target: skillTargetInputSchema.optional(),
-  config: z.record(z.unknown()).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
   invocationMode: z.string().trim().min(1).optional(),
   enabled: z.boolean().optional(),
   rationale: z.string().trim().min(1).max(1_000).optional(),
@@ -219,7 +219,7 @@ const skillConfigProposalPayloadSchema = z.object({
   name: z.string(),
   capability: z.string(),
   target: skillTargetInputSchema,
-  config: z.record(z.unknown()),
+  config: z.record(z.string(), z.unknown()),
   invocationMode: z.string(),
   enabled: z.boolean(),
   rationale: z.string().optional(),

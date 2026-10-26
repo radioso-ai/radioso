@@ -157,7 +157,7 @@ A profile change that shrinks the grace (a downgrade to a smaller plan, say) nev
 Prepaid credits add conversations to an account's balance on top of its plan limit and only apply to a conversation-metered profile. Each grant expires at its exact 12-month boundary, and the account spends its oldest grant first. A negative balance is grace debt rather than expiring credit: the next grant repays that debt before any conversations become available, and expiry never brings repaid debt back.
 
 ```bash
-curl -X POST https://radioso.example.com/api/v1/ee/usage-limits/accounts/00000000-0000-0000-0000-000000000001/credits \
+curl -X POST https://radioso.example.com/api/v1/ee/usage-limits/accounts/7c9e6679-7425-40de-944b-e07fc1f90ae7/credits \
   -H "Authorization: Bearer $EE_USAGE_ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"conversations": 100, "reference": "evt_1Pxxxxxxxxxxxxxxxx"}'
@@ -277,7 +277,7 @@ When the variable is unset, Radioso uses 10. A request over the cap receives `42
 Operators can set a per-user override through the existing usage-limit admin API. The same `EE_USAGE_ADMIN_TOKEN` bearer token is required.
 
 ```bash
-curl -X PUT https://radioso.example.com/api/v1/ee/usage-limits/org-creation/users/00000000-0000-0000-0000-000000000001 \
+curl -X PUT https://radioso.example.com/api/v1/ee/usage-limits/org-creation/users/9b2f4e1a-3c5d-4e6f-8a7b-1c2d3e4f5a6b \
   -H "Authorization: Bearer $EE_USAGE_ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"monthlyLimit": 25}'
@@ -286,7 +286,7 @@ curl -X PUT https://radioso.example.com/api/v1/ee/usage-limits/org-creation/user
 Use `null` for an unlimited override:
 
 ```bash
-curl -X PUT https://radioso.example.com/api/v1/ee/usage-limits/org-creation/users/00000000-0000-0000-0000-000000000001 \
+curl -X PUT https://radioso.example.com/api/v1/ee/usage-limits/org-creation/users/9b2f4e1a-3c5d-4e6f-8a7b-1c2d3e4f5a6b \
   -H "Authorization: Bearer $EE_USAGE_ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"monthlyLimit": null}'

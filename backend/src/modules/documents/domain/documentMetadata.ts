@@ -6,13 +6,11 @@ import { z } from "zod";
  * writer — inline ingestion, import, the metadata PATCH, source-level tags, and an applied copilot
  * proposal — has to agree on them, not just the ones that happen to arrive over HTTP.
  */
-export const MAX_DOCUMENT_METADATA_BYTES = 16384;
+const MAX_DOCUMENT_METADATA_BYTES = 16384;
 
 export const documentMetadataRecordSchema = z
-  .record(z.union([z.string(), z.number(), z.boolean(), z.null()]))
+  .record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]))
   .refine(
     (value) => Buffer.byteLength(JSON.stringify(value), "utf8") <= MAX_DOCUMENT_METADATA_BYTES,
     { message: "Metadata must be 16 KB or less" },
   );
-
-export type DocumentMetadataRecord = z.infer<typeof documentMetadataRecordSchema>;

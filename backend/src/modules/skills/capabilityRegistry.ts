@@ -1,4 +1,4 @@
-import { z, type SafeParseReturnType, type ZodType } from "zod";
+import { z, type ZodSafeParseResult, type ZodType } from "zod";
 
 import type { AgentSkillInvocationMode, AgentSkillKind } from "../agentSkills/public.js";
 import { retrieveCapability } from "./capabilities/retrieve.js";
@@ -97,7 +97,7 @@ export interface SkillCapabilityDescriptor<
   defaultInvocationMode?: AgentSkillInvocationMode;
   executorAdapter: string;
   configSchema: ZodType<unknown>;
-  validateConfig(config: unknown): SafeParseReturnType<unknown, unknown>;
+  validateConfig(config: unknown): ZodSafeParseResult<unknown>;
 }
 
 export const createSkillCapabilityDescriptor = <

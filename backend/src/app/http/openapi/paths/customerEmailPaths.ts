@@ -57,8 +57,8 @@ const CustomerEmailConnectionSummarySchema = z.object({
   updatedAt: z.string(),
 });
 
-const EmailSkillBoundInputsSchema = z.record(z.unknown());
-const EmailSkillExposedInputsSchema = z.record(z.object({
+const EmailSkillBoundInputsSchema = z.record(z.string(), z.unknown());
+const EmailSkillExposedInputsSchema = z.record(z.string(), z.object({
   description: z.string().optional(),
   slotBinding: z.string().optional(),
   required: z.boolean().optional(),

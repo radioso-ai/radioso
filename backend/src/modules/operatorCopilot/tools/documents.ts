@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { documentInventoryStatuses, type ChunkRepositoryPort, type DocumentInventoryPort } from "../../documents/contracts/index.js";
+import { documentInventoryStatuses, type ChunkRepositoryPort, type DocumentInventoryPort, documentSourceIdSchema } from "../../documents/contracts/index.js";
 import { documentMetadataRecordSchema } from "../../documents/public.js";
 import { readRequestedDateRange } from "../../retrieval/public.js";
 import type { CopilotToolDescriptor } from "../contracts.js";
@@ -8,7 +8,7 @@ import { boundPayload, compactForBudget, MAX_STRING_CHARS, truncationRecordSchem
 import { copilotPayloadCharBudget } from "../turnBudget.js";
 import { notFound } from "../../../shared/domain/errors.js";
 
-const unknownRecord = z.record(z.unknown());
+const unknownRecord = z.record(z.string(), z.unknown());
 const documentAttentionStatuses = ["failed", "queued", "processing"] as const;
 const documentAttentionLimit = 25;
 export const documentSearchInputSchema = z.object({
@@ -56,7 +56,7 @@ const documentInventoryMetadataKeyLimit = 32;
 const DOCUMENT_INVENTORY_DESCRIPTION = `List a bounded, content-free workspace document inventory. Filter by source, processing status, exact external ids or metadata, title text, and retrieval eligibility to confirm an import landed. Returns at most ${documentInventoryResponseLimit} rows per call; follow nextCursor to continue. Returns no document body or chunks.`;
 const documentInventoryMetadataValueSchema = z.union([z.string().max(documentInventoryStringLimit), z.number(), z.boolean(), z.null()]);
 const documentInventoryInputSchema = z.object({
-  sourceId: z.string().uuid().optional(),
+  sourceId: documentSourceIdSchema.optional(),
   status: z.enum(documentInventoryStatuses).optional(),
   externalDocumentIds: z.array(z.string().min(1).max(500)).min(1).max(documentInventoryRequestLimit).optional(),
   titleContains: z.string().trim().min(1).max(500).optional(),
@@ -69,7 +69,7 @@ const documentInventoryOutputSchema = z.object({
   documents: z.array(z.object({
     id: z.string().uuid(),
     title: z.string().max(documentInventoryStringLimit),
-    sourceId: z.string().uuid().nullable(),
+    sourceId: documentSourceIdSchema.nullable(),
     sourceLabel: z.string().max(documentInventoryStringLimit).nullable(),
     externalDocumentId: z.string().max(documentInventoryStringLimit).nullable(),
     status: z.string().max(64),
@@ -127,7 +127,7 @@ const documentChunksCompactionLadder = [
 ];
 const reprocessDocumentInputSchema = z.object({
   documentId: z.string().uuid().optional(),
-  sourceId: z.string().uuid().optional(),
+  sourceId: documentSourceIdSchema.optional(),
   documentEnrichmentOverride: z.enum(["on", "off"]).optional(),
 }).strict().superRefine((input, issueContext) => {
   if ((input.documentId ? 1 : 0) + (input.sourceId ? 1 : 0) !== 1) {
@@ -144,7 +144,7 @@ const reprocessDocumentOutputSchema = z.object({
   queuedDocumentCount: z.number().int().min(0),
   skippedDocumentCount: z.number().int().min(0),
 });
-const recrawlSourceInputSchema = z.object({ sourceId: z.string().uuid() }).strict();
+const recrawlSourceInputSchema = z.object({ sourceId: documentSourceIdSchema }).strict();
 const recrawlSourceOutputSchema = z.object({
   jobId: z.string(),
   sourceId: z.string().nullable(),

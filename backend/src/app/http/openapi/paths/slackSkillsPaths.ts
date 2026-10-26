@@ -6,8 +6,8 @@ import type { OpenApiSchemas, OpenApiSecurity } from "../openApiRegistry.js";
 const AgentParams = z.object({ agentId: z.string().uuid() });
 const SlackSkillParams = AgentParams.extend({ skillId: z.string().uuid() });
 const SlackSkillInputKeySchema = z.enum(["channelId", "text", "threadTs"]);
-const SlackSkillBoundInputsSchema = z.record(SlackSkillInputKeySchema, z.unknown());
-const SlackSkillExposedInputsSchema = z.record(SlackSkillInputKeySchema, z.object({
+const SlackSkillBoundInputsSchema = z.partialRecord(SlackSkillInputKeySchema, z.unknown());
+const SlackSkillExposedInputsSchema = z.partialRecord(SlackSkillInputKeySchema, z.object({
   description: z.string().optional(),
   slotBinding: z.string().optional(),
   required: z.boolean().default(true),

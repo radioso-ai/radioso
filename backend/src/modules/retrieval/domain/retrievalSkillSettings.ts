@@ -13,6 +13,7 @@ import {
   retrievalStrategyPreferences,
 } from "../../settings/contracts/retrieval.js";
 import { RETRIEVAL_BEHAVIOR } from "../../../shared/domain/behaviorConfig.js";
+import { documentSourceIdSchema } from "../../documents/contracts/index.js";
 
 export const retrievalMetadataConditionOverrideSchema = z.object({
   id: z.string().min(1),
@@ -57,7 +58,7 @@ const retrievalSkillSettingsOverrideShape = {
 const retrieveSkillSourceScopeSchema = z.union([
   z.literal("all"),
   z.object({
-    sourceIds: z.array(z.string().uuid()).max(200),
+    sourceIds: z.array(documentSourceIdSchema).max(200),
   }).strict(),
 ]);
 

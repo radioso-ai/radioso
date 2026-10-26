@@ -23,7 +23,7 @@ const jsonValueSchema: z.ZodType<unknown> = z.lazy(() =>
     z.boolean(),
     z.null(),
     z.array(jsonValueSchema),
-    z.record(jsonValueSchema),
+    z.record(z.string(), jsonValueSchema),
   ]),
 );
 
@@ -134,7 +134,7 @@ type ContextVariableRouteDependencies = WorkspaceSessionDependencies & Pick<
   "accountAccessService" | "contextVariableService" | "env"
 >;
 
-const parseParams = <T extends z.AnyZodObject>(schema: T, params: unknown): z.infer<T> => {
+const parseParams = <T extends z.ZodObject>(schema: T, params: unknown): z.infer<T> => {
   const parsed = schema.safeParse(params);
   if (!parsed.success) {
     throw badRequest("Invalid route parameters", parsed.error.flatten());
@@ -142,7 +142,7 @@ const parseParams = <T extends z.AnyZodObject>(schema: T, params: unknown): z.in
   return parsed.data;
 };
 
-const parseQuery = <T extends z.AnyZodObject>(schema: T, query: unknown): z.infer<T> => {
+const parseQuery = <T extends z.ZodObject>(schema: T, query: unknown): z.infer<T> => {
   const parsed = schema.safeParse(query);
   if (!parsed.success) {
     throw badRequest("Invalid query parameters", parsed.error.flatten());

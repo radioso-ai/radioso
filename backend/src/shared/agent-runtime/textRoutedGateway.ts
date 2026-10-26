@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { z, type ZodTypeAny } from "zod";
+import type { z } from "zod";
 
 import type { ModelCallUsageContext } from "../domain/modelCallUsageContext.js";
 import type { ModelInferencePipeline } from "../infra/llm/modelInferencePipeline.js";
@@ -79,52 +79,88 @@ const buildSystemPrompt = (input: ModelToolCallRequest): string => {
 const formatToolForCatalog = (schema: ToolSchema): string =>
   `- ${schema.name}${formatToolSignature(schema.inputSchema)} — ${schema.description}`;
 
-const formatToolSignature = (schema: ZodTypeAny): string => {
+/** Zod's own discriminated view of a schema's definition, so each case below reads typed fields. */
+const definitionOf = (schema: z.core.$ZodType): z.core.$ZodTypes["_zod"]["def"] =>
+  (schema as z.core.$ZodTypes)._zod.def;
+
+const formatToolSignature = (schema: z.core.$ZodType): string => {
   const unwrapped = unwrapSchema(schema);
-  const def = unwrapped._def as { typeName: z.ZodFirstPartyTypeKind };
-  if (def.typeName !== z.ZodFirstPartyTypeKind.ZodObject) {
+  const def = definitionOf(unwrapped);
+  if (def.type !== "object") {
     return "(unknown)";
   }
-  return `(${formatObjectFields(unwrapped as z.ZodObject<z.ZodRawShape>, 0).join(", ")})`;
+  return `(${formatObjectFields(def.shape, 0).join(", ")})`;
 };
 
-const formatObjectFields = (schema: z.ZodObject<z.ZodRawShape>, depth: number): string[] => {
+const formatObjectFields = (shape: z.core.$ZodShape, depth: number): string[] => {
   const fields: string[] = [];
-  for (const [name, child] of Object.entries(schema.shape)) {
-    const childSchema = child;
-    const optional = isOptional(childSchema);
-    fields.push(`${name}${optional ? "?" : ""}: ${formatZodType(unwrapSchema(childSchema), depth)}`);
+  for (const [name, child] of Object.entries(shape)) {
+    const optional = isOptional(child);
+    fields.push(`${name}${optional ? "?" : ""}: ${formatZodType(unwrapSchema(child), depth)}`);
   }
   return fields;
 };
 
 /**
- * Sees through the wrappers that carry no shape of their own — `.optional()`, `.nullable()`,
- * `.default()`, and the `ZodEffects` a `.refine()` produces. A refined object rendered as its
- * wrapper tells a model nothing about what to send.
+ * The schema a pipe carries its shape in. `.transform()` pipes a schema into a transform and
+ * `z.preprocess()` pipes a transform into a schema; either way the transform says nothing about
+ * what to send. A pipe between two schemas (`.pipe()`) has no shape-free side, so it stays whole.
  */
-const unwrapSchema = (schema: ZodTypeAny): ZodTypeAny => {
-  const def = schema._def as { typeName: z.ZodFirstPartyTypeKind; innerType?: ZodTypeAny; schema?: ZodTypeAny };
-  switch (def.typeName) {
-    case z.ZodFirstPartyTypeKind.ZodOptional:
-    case z.ZodFirstPartyTypeKind.ZodNullable:
-    case z.ZodFirstPartyTypeKind.ZodDefault:
-      return def.innerType ? unwrapSchema(def.innerType) : schema;
-    case z.ZodFirstPartyTypeKind.ZodEffects:
-      return def.schema ? unwrapSchema(def.schema) : schema;
+const shapedSideOfPipe = (def: z.core.$ZodPipeDef): z.core.$ZodType | null => {
+  if (definitionOf(def.out).type === "transform") return def.in;
+  if (definitionOf(def.in).type === "transform") return def.out;
+  return null;
+};
+
+/**
+ * Sees through the wrappers that carry no shape of their own — `.optional()`, `.nullable()`,
+ * `.default()`, and the pipe a `.transform()` or `z.preprocess()` produces. A transformed object
+ * rendered as its wrapper tells a model nothing about what to send.
+ */
+const unwrapSchema = (schema: z.core.$ZodType): z.core.$ZodType => {
+  const def = definitionOf(schema);
+  switch (def.type) {
+    case "optional":
+    case "nullable":
+    case "default":
+    case "prefault":
+      return unwrapSchema(def.innerType);
+    case "pipe": {
+      const shaped = shapedSideOfPipe(def);
+      return shaped ? unwrapSchema(shaped) : schema;
+    }
     default:
       return schema;
   }
 };
 
-const isOptional = (schema: ZodTypeAny): boolean => {
-  const typeName = (schema._def as { typeName: z.ZodFirstPartyTypeKind }).typeName;
-  if (typeName === z.ZodFirstPartyTypeKind.ZodOptional || typeName === z.ZodFirstPartyTypeKind.ZodDefault) return true;
-  if (typeName === z.ZodFirstPartyTypeKind.ZodEffects) {
-    const inner = (schema._def as { schema?: ZodTypeAny }).schema;
-    return inner ? isOptional(inner) : false;
+const isOptional = (schema: z.core.$ZodType): boolean => {
+  const def = definitionOf(schema);
+  if (def.type === "optional" || def.type === "default" || def.type === "prefault") return true;
+  if (def.type === "pipe") {
+    const shaped = shapedSideOfPipe(def);
+    return shaped ? isOptional(shaped) : false;
   }
   return false;
+};
+
+/** The first explicit bound of each kind, as written — not the safe-integer range `.int()` implies. */
+const explicitNumberBound = (def: z.core.$ZodNumberDef, check: "greater_than" | "less_than"): number | undefined => {
+  for (const candidate of def.checks ?? []) {
+    const checkDef = candidate._zod.def as { check: string; value?: unknown };
+    if (checkDef.check === check && typeof checkDef.value === "number") return checkDef.value;
+  }
+  return undefined;
+};
+
+const arrayLengthBound = (def: z.core.$ZodArrayDef, check: "min_length" | "max_length"): number | undefined => {
+  for (const candidate of def.checks ?? []) {
+    const checkDef = candidate._zod.def as { check: string; minimum?: unknown; maximum?: unknown };
+    if (checkDef.check !== check) continue;
+    const bound = check === "min_length" ? checkDef.minimum : checkDef.maximum;
+    if (typeof bound === "number") return bound;
+  }
+  return undefined;
 };
 
 // One level of nesting is spelled out, deeper structure collapses to `object`. A tool whose input
@@ -132,51 +168,49 @@ const isOptional = (schema: ZodTypeAny): boolean => {
 // on and invents a shape, which is a rejected call rather than a wrong answer.
 const MAX_SHAPE_DEPTH = 2;
 
-const formatZodType = (schema: ZodTypeAny, depth = 0): string => {
-  const def = schema._def as { typeName: z.ZodFirstPartyTypeKind; [key: string]: unknown };
-  switch (def.typeName) {
-    case z.ZodFirstPartyTypeKind.ZodString:
+const formatZodType = (schema: z.core.$ZodType, depth = 0): string => {
+  const def = definitionOf(schema);
+  switch (def.type) {
+    case "string":
       return "string";
-    case z.ZodFirstPartyTypeKind.ZodNumber: {
-      const checks = (def.checks as Array<{ kind: string; value?: number }> | undefined) ?? [];
-      const isInt = checks.some((c) => c.kind === "int");
-      const min = checks.find((c) => c.kind === "min")?.value;
-      const max = checks.find((c) => c.kind === "max")?.value;
+    case "number": {
+      const isInt = (schema as z.ZodNumber).isInt;
+      const min = explicitNumberBound(def, "greater_than");
+      const max = explicitNumberBound(def, "less_than");
       const base = isInt ? "integer" : "number";
       if (min !== undefined && max !== undefined) return `${base} ${min}..${max}`;
       return base;
     }
-    case z.ZodFirstPartyTypeKind.ZodBoolean:
+    case "boolean":
       return "boolean";
-    case z.ZodFirstPartyTypeKind.ZodArray: {
-      const arrayDef = def as unknown as {
-        type: ZodTypeAny;
-        minLength?: { value: number } | null;
-        maxLength?: { value: number } | null;
-      };
-      const minLength = arrayDef.minLength?.value;
-      const maxLength = arrayDef.maxLength?.value;
+    case "array": {
+      const minLength = arrayLengthBound(def, "min_length");
+      const maxLength = arrayLengthBound(def, "max_length");
       const constraints =
         minLength !== undefined || maxLength !== undefined ? `[${minLength ?? 0}..${maxLength ?? "∞"}]` : "";
-      return `array of ${formatZodType(unwrapSchema(arrayDef.type), depth)}${constraints}`;
+      return `array of ${formatZodType(unwrapSchema(def.element), depth)}${constraints}`;
     }
-    case z.ZodFirstPartyTypeKind.ZodObject: {
+    case "object": {
       if (depth >= MAX_SHAPE_DEPTH) return "object";
-      return `{${formatObjectFields(schema as z.ZodObject<z.ZodRawShape>, depth + 1).join(", ")}}`;
+      return `{${formatObjectFields(def.shape, depth + 1).join(", ")}}`;
     }
-    case z.ZodFirstPartyTypeKind.ZodRecord:
+    case "record":
       return "object";
-    case z.ZodFirstPartyTypeKind.ZodUnion:
-      return "union";
-    case z.ZodFirstPartyTypeKind.ZodLiteral:
-      return JSON.stringify((def as unknown as { value: unknown }).value);
-    case z.ZodFirstPartyTypeKind.ZodEnum:
-      return `enum<${(def as unknown as { values: string[] }).values.join("|")}>`;
-    case z.ZodFirstPartyTypeKind.ZodUnknown:
-    case z.ZodFirstPartyTypeKind.ZodAny:
+    case "union":
+      // The catalog has always named a discriminated union apart from a plain one.
+      return "discriminator" in def ? "discriminatedunion" : "union";
+    case "literal":
+      return def.values.map((value) => JSON.stringify(value)).join("|");
+    case "enum":
+      return `enum<${Object.values(def.entries).join("|")}>`;
+    case "unknown":
+    case "any":
+    case "custom":
       return "any";
+    case "pipe":
+      return "pipeline";
     default:
-      return def.typeName.replace(/^Zod/, "").toLowerCase();
+      return def.type;
   }
 };
 

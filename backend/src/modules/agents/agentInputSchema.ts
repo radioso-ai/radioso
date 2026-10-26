@@ -4,6 +4,7 @@ import { agentSurfacePositions, type AgentInput } from "./domain.js";
 import { agentMechanicsRepliesSchema } from "./mechanicsReplies.js";
 import { agentPrivacyNoticesInputSchema } from "./privacyNotice.js";
 import { agentVoiceSettingsInputSchema } from "./voiceSettings.js";
+import { documentSourceIdSchema } from "../documents/contracts/index.js";
 
 export const agentInputThemeSchema = z.object({
   brand: z.string().regex(/^#[0-9a-fA-F]{6}$/).optional(),
@@ -72,10 +73,10 @@ export const agentInputFieldSchemas = {
     }),
     z.object({
       mode: z.literal("selected"),
-      sourceIds: z.array(z.string().uuid()).max(200),
+      sourceIds: z.array(documentSourceIdSchema).max(200),
     }),
   ]),
-  skillSettings: z.record(z.unknown()),
+  skillSettings: z.record(z.string(), z.unknown()),
   chatModelOverride: agentInputChatModelOverrideSchema,
   surfaceSettings: z.object({
     authenticatedChat: z.object({
@@ -90,11 +91,11 @@ export const agentInputFieldSchemas = {
       launcherLabel: z.string().max(80).optional(),
       launcherPosition: z.enum(agentSurfacePositions).optional(),
       theme: agentInputThemeSchema.optional(),
-      copy: z.record(z.record(z.string().max(500))).optional(),
-      expertOverrides: z.record(z.string().max(500)).optional(),
+      copy: z.record(z.string(), z.record(z.string(), z.string().max(500))).optional(),
+      expertOverrides: z.record(z.string(), z.string().max(500)).optional(),
       voiceCallsOffered: z.boolean().optional(),
     }).optional(),
-    extensions: z.record(z.unknown()).optional(),
+    extensions: z.record(z.string(), z.unknown()).optional(),
   }),
   /** Replaced whole: a value names every line the agent keeps; `runtime` alone defaults, to null. */
   voice: agentVoiceSettingsInputSchema,

@@ -90,7 +90,7 @@ export const copilotWorkspaceSettingPayloadSchema = z.object({
 /** Workspace settings are one surface per workspace, and the workspace is already the call's scope. */
 export const copilotWorkspaceSettingTargetRefSchema = z.object({
   /** Exact draft-time values for fields this proposal changes; absent on timestamp-era cards. */
-  expectedFields: z.record(z.unknown()).optional(),
+  expectedFields: z.record(z.string(), z.unknown()).optional(),
 }).strict();
 
 export type CopilotWorkspaceSettingPayload = z.infer<typeof copilotWorkspaceSettingPayloadSchema>;

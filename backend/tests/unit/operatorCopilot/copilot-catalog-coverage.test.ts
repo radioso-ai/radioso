@@ -148,8 +148,8 @@ describe("operator copilot catalog coverage", () => {
       privacyNotice: { en: { text: "We use your messages to answer you.", url: "https://example.com/privacy" } },
     };
     expect(agentReviewedSettingsPatchSchema.safeParse({ branding }).success).toBe(true);
-    // The notice's shape and its whole-block rule ride the field's own schema, which prepare_agent_settings carries.
-    expect(agentInputFieldSchemas.branding.shape.privacyNotice.description).toContain("Replaced whole");
+    // The notice's shape and its whole-block rule ride the field's own schema (inside its `.optional()`), which prepare_agent_settings carries.
+    expect(agentInputFieldSchemas.branding.shape.privacyNotice.unwrap().description).toContain("Replaced whole");
     expect(agentReviewedSettingsPatchSchema.safeParse({
       branding: { ...branding, privacyNotice: { en: { text: "x".repeat(201), url: "https://example.com/privacy" } } },
     }).success).toBe(false);

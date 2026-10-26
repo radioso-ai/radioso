@@ -35,8 +35,8 @@ const settingsPatch = z.object({
 
 const inspectInput = z.object({ agentId: id }).strict();
 const inspectOutput = z.object({
-  systemDefaults: z.object({ readOnly: z.literal(true), settings: z.unknown() }),
-  agent: z.object({ agentId: id, skillId: id, settingsVersion: z.string().datetime(), settings: z.record(z.unknown()), lifecycle: z.literal("agent_skill_draft") }),
+  systemDefaults: z.object({ readOnly: z.literal(true), settings: z.unknown().optional() }),
+  agent: z.object({ agentId: id, skillId: id, settingsVersion: z.string().datetime(), settings: z.record(z.string(), z.unknown()), lifecycle: z.literal("agent_skill_draft") }),
 });
 const prepareInput = z.object({ agentId: id, patch: settingsPatch }).strict();
 const prepareOutput = z.object({
@@ -45,8 +45,8 @@ const prepareOutput = z.object({
   expiresAt: z.string().datetime(),
   confirmation: reviewedConfirmationSchema,
   target: z.object({ agentId: id, skillId: id, skillName: z.string() }).strict(),
-  before: z.record(z.unknown()),
-  after: z.record(z.unknown()),
+  before: z.record(z.string(), z.unknown()),
+  after: z.record(z.string(), z.unknown()),
   settingsVersion: z.string().datetime(),
   lifecycle: z.literal("agent_skill_draft"),
 });
@@ -82,7 +82,7 @@ export const createRetrievalAuthoringCopilotTools = (
       if (!invocation.operationId) return { status: "conflict" };
       const recovered = await deps.proposalRecovery.recoverOperatorMcpProposal({ invocationId: invocation.id, grantId: invocation.grantId, workspaceId: context.workspaceId, operatorUserId: context.operatorUserId, operationId: invocation.operationId, descriptorName: "prepare_retrieval_settings", inputDigest: invocation.inputDigest, staleBefore, now });
       if (recovered.status !== "recovered" || recovered.proposal.targetType !== "agent_skill" || !recovered.proposal.reviewDigest || !recovered.proposal.expiresAt) return recovered.status === "recovered" ? { status: "conflict" } : recovered;
-      const snapshot = z.object({ target: z.object({ agentId: id, skillId: id, skillName: z.string() }).strict(), before: z.record(z.unknown()), after: z.record(z.unknown()), settingsVersion: z.string().datetime(), lifecycle: z.literal("agent_skill_draft") }).safeParse(recovered.proposal.reviewSnapshot);
+      const snapshot = z.object({ target: z.object({ agentId: id, skillId: id, skillName: z.string() }).strict(), before: z.record(z.string(), z.unknown()), after: z.record(z.string(), z.unknown()), settingsVersion: z.string().datetime(), lifecycle: z.literal("agent_skill_draft") }).safeParse(recovered.proposal.reviewSnapshot);
       const confirmation = reviewedPreparationConfirmation(deps, recovered.proposal);
       if (!snapshot.success || !confirmation) return { status: "conflict" };
       return { status: "recovered", output: { proposalId: recovered.proposal.id, reviewDigest: recovered.proposal.reviewDigest, expiresAt: recovered.proposal.expiresAt.toISOString(), confirmation, ...snapshot.data } };

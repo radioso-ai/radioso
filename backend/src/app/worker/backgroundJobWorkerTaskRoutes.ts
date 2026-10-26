@@ -20,7 +20,7 @@ const DRAIN_BUDGET_MS = BACKGROUND_JOB_DRAIN_BUDGET_SECONDS * 1_000;
 
 const drainSchema = z.object({
   maxJobs: z.number().int().min(1).max(50).default(DEFAULT_DRAIN_MAX_JOBS),
-}).default({});
+}).prefault({});
 
 type BackgroundJobWorkerTaskRouteDependencies = Pick<
   AppDependencies,

@@ -21,7 +21,11 @@ provider behavior, storage adapter logic, or product workflow orchestration.
 - `presenters/`: response mapping from domain/service values to API payloads.
 - `middleware/`: auth, permission, session, rate limit, and validation
   middleware.
-- `openapi/`: OpenAPI document and path registration.
+- `openapi/`: OpenAPI document and path registration. Zod 4 gives `.openapi()`
+  only to schemas built after `openapi/zodOpenApiExtension.ts` runs, so every
+  process or script that builds the document imports it before any other
+  module (the server and worker entrypoints, `scripts/generate*.ts`, the eval
+  runners, `tests/support/testApp.ts`, and vitest's `setupFiles` already do).
 - `shared/`: small HTTP helpers shared across route groups.
 
 ## Route Pattern

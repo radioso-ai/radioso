@@ -30,6 +30,8 @@
  * The deterministic half of this suite runs in normal CI via
  * tests/unit/operatorCopilot/copilot-eval-suite.test.ts; it needs neither a database nor a model.
  */
+// First: Zod 4 gives `.openapi()` only to schemas built after this runs.
+import "../src/app/http/openapi/zodOpenApiExtension.js";
 import { randomUUID } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";

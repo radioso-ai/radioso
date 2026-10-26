@@ -66,7 +66,7 @@ describe("mcpConnectionInputSchema", () => {
 describe("skillDefinitionInputSchema", () => {
   const base = {
     skillName: "handoff_slack",
-    connectionId: "11111111-1111-1111-1111-111111111111",
+    connectionId: "11111111-1111-1111-8111-111111111111",
     toolName: "post_message",
     boundParams: { channel: "#support" },
     exposedParams: { message: {} },

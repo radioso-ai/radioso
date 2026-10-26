@@ -8,11 +8,11 @@ const DEFAULT_MAX_JOBS = 10;
 const drainSchema = z.object({
   maxJobs: z.number().int().min(1).max(50).default(DEFAULT_MAX_JOBS),
   stage: z.enum(["inbound", "review", "reconcile", "all"]).default("all"),
-}).default({});
+}).prefault({});
 
 const sweepSchema = z.object({
   maxJobs: z.number().int().min(1).max(200).default(50),
-}).default({});
+}).prefault({});
 
 /**
  * The email channel's push and schedule triggers (contracts/openapi-additions §5), mounted behind

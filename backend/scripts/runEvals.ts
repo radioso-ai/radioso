@@ -34,6 +34,8 @@
  * `--judge-model` names another. Judging is opt-in per tag because each graded assertion is
  * one more model call per sample, and an ungated judge would make every nightly case pay it.
  */
+// First: Zod 4 gives `.openapi()` only to schemas built after this runs.
+import "../src/app/http/openapi/zodOpenApiExtension.js";
 import { writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

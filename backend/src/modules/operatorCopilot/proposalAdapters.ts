@@ -93,7 +93,7 @@ const settingTargetRefSchema = z.object({
 }).strict();
 const reviewedSettingTargetRefSchema = z.object({
   agentId: z.string().uuid(),
-  expectedFields: z.array(z.object({ key: z.string().min(1).max(200), value: z.unknown() }).strict()).min(1).max(25),
+  expectedFields: z.array(z.object({ key: z.string().min(1).max(200), value: z.unknown().optional() }).strict()).min(1).max(25),
 }).strict();
 const reviewedSettingsPayloadSchema = z.object({
   kind: z.literal("fields"),
@@ -177,14 +177,14 @@ const requiredRoutineId = (targetRef: { routineId: string | null }): string => {
 const diagnosticSummary = (diagnostics: ReadonlyArray<RoutineValidationDiagnostic>): string =>
   diagnostics.map((diagnostic) => diagnostic.message).join(" ");
 const withRationale = (summary: string, rationale?: string): string => rationale ? `${summary} ${rationale}` : summary;
-const settingPayloadSchema = z.object({ value: z.unknown(), rationale: z.string().min(1).max(1_000).optional() }).strict();
+const settingPayloadSchema = z.object({ value: z.unknown().optional(), rationale: z.string().min(1).max(1_000).optional() }).strict();
 const skillTargetRefSchema = z.object({ agentId: z.string().uuid(), skillId: z.string().uuid().nullable() }).strict();
 const skillTargetSchema = z.object({ kind: z.string().trim().min(1), id: z.string().uuid().nullable() }).strict();
 const skillConfigPayloadSchema = z.object({
   name: z.string().trim().min(1).max(120).optional(),
   capability: z.string().trim().min(1).optional(),
   target: skillTargetSchema.optional(),
-  config: z.record(z.unknown()).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
   invocationMode: z.string().trim().min(1).optional(),
   enabled: z.boolean().optional(),
   rationale: z.string().trim().min(1).max(1_000).optional(),
@@ -193,7 +193,7 @@ const skillConfigStoredPayloadSchema = z.object({
   name: z.string(),
   capability: z.string(),
   target: skillTargetSchema,
-  config: z.record(z.unknown()),
+  config: z.record(z.string(), z.unknown()),
   invocationMode: z.string(),
   enabled: z.boolean(),
   rationale: z.string().optional(),
@@ -1195,7 +1195,7 @@ const DIRECTIVE_ENABLEMENT_TARGET_MISSING_NOTICE = "This directive no longer exi
 const directivePayload = (value: unknown): AuthoredDirectiveInput => {
   const draft = z.object({
     name: z.string(),
-    condition: z.unknown(),
+    condition: z.unknown().optional(),
     action: z.string(),
     tags: z.array(z.string()).optional(),
     priority: z.number().nullable().optional(),
@@ -1208,7 +1208,7 @@ const directivePayload = (value: unknown): AuthoredDirectiveInput => {
     binding: z.unknown().optional(),
     lifecycle: z.unknown().optional(),
     coverageCriteria: z.unknown().optional(),
-    metadata: z.record(z.unknown()).optional(),
+    metadata: z.record(z.string(), z.unknown()).optional(),
   }).parse(value);
   return draft as AuthoredDirectiveInput;
 };

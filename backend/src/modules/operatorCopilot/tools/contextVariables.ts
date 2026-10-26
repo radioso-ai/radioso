@@ -27,7 +27,7 @@ const idSchema = z.string().uuid();
 const entityNameSchema = z.string().trim().min(1).max(160);
 
 const readerInputSchema = z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional() }).strict();
-const readerOutputSchema = z.object({ variables: z.array(z.record(z.unknown())), enablements: z.array(z.record(z.unknown())) });
+const readerOutputSchema = z.object({ variables: z.array(z.record(z.string(), z.unknown())), enablements: z.array(z.record(z.string(), z.unknown())) });
 
 const contextVariableValueTypes = ["string", "json"] as const;
 const contextVariableTrustTiers = ["unverified", "signed"] as const;

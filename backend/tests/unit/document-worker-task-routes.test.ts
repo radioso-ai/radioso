@@ -134,7 +134,7 @@ describe("createDocumentWorkerTaskRoutes", () => {
       const response = await request(app)
         .post("/internal/tasks/facet-extraction/drain")
         .send({
-          workspaceId: "11111111-1111-1111-1111-111111111111",
+          workspaceId: "11111111-1111-1111-8111-111111111111",
           analysisStart: "2026-07-01T00:00:00.000Z",
           analysisEnd: "2026-08-01T00:00:00.000Z",
         });
@@ -142,13 +142,13 @@ describe("createDocumentWorkerTaskRoutes", () => {
       expect(response.status).toBe(200);
       expect(response.body).toEqual({ processedJobCount: 100 });
       expect(drainWorkspace).toHaveBeenCalledWith({
-        workspaceId: "11111111-1111-1111-1111-111111111111",
+        workspaceId: "11111111-1111-1111-8111-111111111111",
         analysisStart: new Date("2026-07-01T00:00:00.000Z"),
         analysisEnd: new Date("2026-08-01T00:00:00.000Z"),
         maxJobs: 100,
       });
       expect(requestWorkspaceDrain).toHaveBeenCalledWith({
-        workspaceId: "11111111-1111-1111-1111-111111111111",
+        workspaceId: "11111111-1111-1111-8111-111111111111",
         analysisStart: new Date("2026-07-01T00:00:00.000Z"),
         analysisEnd: new Date("2026-08-01T00:00:00.000Z"),
       });

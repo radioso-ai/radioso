@@ -51,13 +51,13 @@ export const completionsRequestSchema = z.object({
   stream: z.boolean().nullish(),
   model: z.string().nullish(),
   tools: z.array(z.unknown()).nullish(),
-  elevenlabs_extra_body: z.record(z.unknown()).nullish(),
-  metadata: z.record(z.unknown()).nullish(),
+  elevenlabs_extra_body: z.record(z.string(), z.unknown()).nullish(),
+  metadata: z.record(z.string(), z.unknown()).nullish(),
 }).passthrough().superRefine((request, context) => {
   if (utteranceIn(request.messages).length > CHAT_MESSAGE_MAX_LENGTH) {
     context.addIssue({
       code: z.ZodIssueCode.too_big,
-      type: "string",
+      origin: "string",
       maximum: CHAT_MESSAGE_MAX_LENGTH,
       inclusive: true,
       path: ["messages"],

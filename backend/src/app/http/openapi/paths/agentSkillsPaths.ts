@@ -18,15 +18,15 @@ const AgentSkillCreateSchema = z.object({
   name: z.string(),
   capability: CapabilityIdSchema,
   target: AgentSkillTargetSchema,
-  config: z.record(z.unknown()).default({}),
+  config: z.record(z.string(), z.unknown()).default({}),
   invocationMode: InvocationModeSchema.default("routine_named"),
   enabled: z.boolean().default(true),
 });
 
 const AgentSkillUpdateSchema = z.object({
   target: AgentSkillTargetSchema.optional(),
-  config: z.record(z.unknown()).optional(),
-  replaceConfig: z.record(z.unknown()).optional(),
+  config: z.record(z.string(), z.unknown()).optional(),
+  replaceConfig: z.record(z.string(), z.unknown()).optional(),
   invocationMode: InvocationModeSchema.optional(),
   enabled: z.boolean().optional(),
 });
@@ -39,7 +39,7 @@ const AgentSkillSchema = z.object({
   capability: CapabilityIdSchema,
   storedKind: z.string(),
   target: AgentSkillTargetSchema,
-  config: z.record(z.unknown()),
+  config: z.record(z.string(), z.unknown()),
   invocationMode: InvocationModeSchema,
   enabled: z.boolean(),
   createdAt: z.string(),
@@ -84,7 +84,7 @@ const CapabilitySchema = z.object({
   requiresTarget: z.boolean(),
   inputSchema: z.union([
     z.object({ source: z.literal("discovered") }),
-    z.object({ source: z.literal("static"), schema: z.record(z.unknown()) }),
+    z.object({ source: z.literal("static"), schema: z.record(z.string(), z.unknown()) }),
   ]),
   settingsFields: z.array(CapabilitySettingsFieldSchema),
   outcomeVocabulary: z.array(z.string()),

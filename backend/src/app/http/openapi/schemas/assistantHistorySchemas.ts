@@ -29,6 +29,7 @@ import {
   publicConversationParamsSchema,
 } from "../../routes/publicChatRouteSchemas.js";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
+import { nullableComponent } from "../zodOpenApiExtension.js";
 import type { OpenApiSchemaCatalog } from "../openApiRegistry.js";
 import type { SameType } from "../../../../shared/types/sameType.js";
 import { registerAgentReplyEnvelopeSchemas } from "./agentReplyEnvelopeSchemas.js";
@@ -126,7 +127,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       version: z.number(),
       payload: z.unknown().openapi({
         description: "Opaque capability-owned trace payload (e.g. an ActivityTrace). Shape varies by namespace/version.",
-      }),
+      }).optional(),
     }),
   );
 
@@ -138,9 +139,9 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       status: z.enum(["applied", "skipped", "fallback", "rejected", "unavailable", "failed"]),
       startedAt: z.string().optional(),
       completedAt: z.string().optional(),
-      inputs: z.record(z.unknown()).optional(),
-      outputs: z.record(z.unknown()).optional(),
-      metrics: z.record(z.number()).optional(),
+      inputs: z.record(z.string(), z.unknown()).optional(),
+      outputs: z.record(z.string(), z.unknown()).optional(),
+      metrics: z.record(z.string(), z.number()).optional(),
       subTrace: CapabilitySubTraceSchema.optional(),
     }),
   );
@@ -153,7 +154,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       completedAt: z.string().optional(),
       stages: z.array(ConversationTraceStageSchema),
       links: z.array(z.object({ from: z.string(), to: z.string(), kind: z.string() })).optional(),
-      summary: z.record(z.unknown()).optional(),
+      summary: z.record(z.string(), z.unknown()).optional(),
     }),
   );
 
@@ -183,7 +184,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       }),
       spine: ConversationTraceSchema,
       openTelemetry: TurnTraceOpenTelemetryCorrelationSchema.optional(),
-      summary: z.record(z.unknown()).optional(),
+      summary: z.record(z.string(), z.unknown()).optional(),
     }),
   );
 
@@ -404,7 +405,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       // Union-with-null rather than `.nullable()`: `.nullable()` on a registered $ref emits a
       // contradictory `allOf: [$ref, null]` under OpenAPI 3.1, so `channelContext: null` (every
       // non-Slack conversation) would be invalid against the published schema.
-      channelContext: z.union([ConversationChannelContextSchema, z.null()]),
+      channelContext: nullableComponent(ConversationChannelContextSchema),
       anonymousSessionId: z.string().nullable(),
       entryPageUrl: z.string().nullable(),
       visitorCountry: z.string().nullable().openapi({
@@ -436,7 +437,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
         surface: z.string(),
         text: z.string(),
       }).optional(),
-      copy: z.record(z.record(z.string())).optional(),
+      copy: z.record(z.string(), z.record(z.string(), z.string())).optional(),
       branding: z.object({
         hidePoweredBy: z.boolean(),
         privacyPolicyUrl: z.string().nullable(),
@@ -644,7 +645,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       }).optional(),
       routine: z.object({
         toolName: z.string(),
-        input: z.record(z.unknown()),
+        input: z.record(z.string(), z.unknown()),
       }).optional(),
     }),
   );
@@ -801,7 +802,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       role: z.enum(["user", "assistant", "system"]),
       source: z.enum(["customer", "ai_agent", "human_agent", "human_agent_on_behalf_of_ai_agent", "system"]).optional(),
       content: z.string(),
-      metadata: z.record(z.unknown()).optional(),
+      metadata: z.record(z.string(), z.unknown()).optional(),
       inputMetadata: UserMessageInputMetadataSchema.optional(),
       skillName: z.string().optional(),
       skillOutcome: z.string().optional(),
@@ -852,7 +853,7 @@ export const registerAssistantHistorySchemas = (registry: OpenAPIRegistry, schem
       // Union-with-null rather than `.nullable()`: `.nullable()` on a registered $ref emits a
       // contradictory `allOf: [$ref, null]` under OpenAPI 3.1, so `channelContext: null` (every
       // non-Slack conversation) would be invalid against the published schema.
-      channelContext: z.union([ConversationChannelContextSchema, z.null()]),
+      channelContext: nullableComponent(ConversationChannelContextSchema),
       createdAt: z.string().datetime(),
       updatedAt: z.string().datetime(),
       messageCount: z.number().int().min(0),

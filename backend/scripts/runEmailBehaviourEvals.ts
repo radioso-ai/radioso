@@ -25,6 +25,8 @@
  *
  * Application logs (pino, debug level outside production) go to stdout; redirect them to a file.
  */
+// First: Zod 4 gives `.openapi()` only to schemas built after this runs.
+import "../src/app/http/openapi/zodOpenApiExtension.js";
 import { mkdir, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";

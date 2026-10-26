@@ -71,6 +71,9 @@ export function PublicChatBubbleHeader({
   avatarUrl,
   actions,
   teammatePresent = false,
+  divider = true,
+  className = '',
+  ref,
 }: {
   theme: WebsiteEmbedTheme
   themeOverrides?: WebsiteEmbedThemeOverrides | null
@@ -80,14 +83,19 @@ export function PublicChatBubbleHeader({
   actions?: ReactNode
   /** A person from the team is replying; the agent itself is always available, so it gets no dot. */
   teammatePresent?: boolean
+  /** Off while nothing has scrolled under an overlaid header, so it reads as part of the panel. */
+  divider?: boolean
+  className?: string
+  ref?: Ref<HTMLDivElement>
 }) {
   const customSubtitle = subtitle && subtitle.trim() ? subtitle.trim() : null
   return (
     <div
-      className="shrink-0 border-b px-5 py-3"
+      ref={ref}
+      className={`radioso-frosted-header shrink-0 border-b px-5 py-3 transition-colors ${className}`}
       style={{
-        borderColor: theme.panelBorder,
-        background: theme.panelBackground,
+        ['--radioso-header-surface' as string]: theme.panelBackground,
+        borderColor: divider ? theme.panelBorder : 'transparent',
         color: theme.panelForeground,
       }}
     >

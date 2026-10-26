@@ -251,6 +251,26 @@
   background-color: var(--radioso-muted-foreground, rgba(100, 116, 139, 0.6));
 }
 
+/* The chat widget header frosts the messages scrolling under it. It stays opaque where
+   backdrop blur is unsupported or the visitor asks for reduced transparency. */
+.radioso-frosted-header {
+  background: var(--radioso-header-surface);
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .radioso-frosted-header {
+    background: color-mix(in srgb, var(--radioso-header-surface) 80%, transparent);
+    -webkit-backdrop-filter: blur(16px) saturate(1.4);
+    backdrop-filter: blur(16px) saturate(1.4);
+  }
+}
+@media (prefers-reduced-transparency: reduce) {
+  .radioso-frosted-header {
+    background: var(--radioso-header-surface);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
 /* ── Signed-out band ───────────────────────────────────────────────────
    Login, registration, invitations, password reset, and email verification.
    The sun mark broadcasts over a dotted field (the marketing site's hero

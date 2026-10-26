@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 
 import { ExternalLink, Maximize2, MoreHorizontal, RotateCcw, UserRound, X } from 'lucide-react'
 
@@ -36,6 +36,7 @@ import {
 import { ScrollToBottomButton } from '@/components/chat/scroll-to-bottom-button'
 import { VoiceCallBar, VoiceCallNotice, VoiceTalkButton } from '@/components/chat/voice-call-controls'
 import { useChatScroll } from '@/hooks/use-chat-scroll'
+import { useElementHeight } from '@/hooks/use-element-height'
 import { AnonymousChatProvider, useAnonymousChat } from '@/lib/anonymous-chat-context'
 import { skillCatalogFromPublicIntakeActions } from '@/lib/skill-catalog'
 import { useCanAskForMicrophone, useVoiceSession } from '@/lib/use-voice-session'
@@ -67,6 +68,15 @@ import type { WebsiteEmbedAnalyticsInput } from '@/lib/embed-analytics'
 
 type PublicChatSurface = 'public' | 'embed'
 const HUMAN_CONTACT_SKILL_NAME = 'human_contact.request'
+
+// The thread's p-6 edge. Under an overlaid header the thread starts that far below it, and
+// messages fade out over the same distance above the composer.
+const THREAD_EDGE_PX = 24
+
+const overlaidThreadStyle = (headerHeight: number): CSSProperties => {
+  const bottomFade = `linear-gradient(to bottom, #000 calc(100% - ${THREAD_EDGE_PX}px), transparent)`
+  return { paddingTop: headerHeight + THREAD_EDGE_PX, maskImage: bottomFade, WebkitMaskImage: bottomFade }
+}
 const HUMAN_CONTACT_INTENT_NAME = 'explicit_contact_request'
 const noop = () => undefined
 const LOADING_FIRST_MESSAGE: ChatThreadMessage = {
@@ -688,12 +698,17 @@ function PublicChatContent({
   const hasUserMessage = visibleMessages.some((message) => message.role === 'user')
   const teammatePresent = teammateHasLatestReply(visibleMessages)
   const useCenteredIntro = surface === 'public' && !hasUserMessage && !isCompactKeyboardLayout && !isNarrowLayout
+  // The header overlays the thread so messages frost under it as they scroll.
+  const headerShown = !isCompactKeyboardLayout && !useCenteredIntro
+  const [headerRef, headerHeight] = useElementHeight<HTMLDivElement>()
+  const [threadScrolled, setThreadScrolled] = useState(false)
   const greetingMessage = visibleMessages.find((message) => message.role === 'assistant') ?? null
 
   const { isAtBottom, scrollToBottom, scrollToLatestTurn } = useChatScroll({
     messages: scrollMessages,
     containerRef: messagesScrollRef,
     sentinelRef: messagesEndRef,
+    topInsetPx: headerShown ? headerHeight : 0,
     pinUserMessage: !isCompactKeyboardLayout,
   })
   const isAtBottomRef = useRef(isAtBottom)
@@ -967,8 +982,11 @@ function PublicChatContent({
         </div>
       ) : null}
 
-      {!isCompactKeyboardLayout && !useCenteredIntro ? (
+      {headerShown ? (
         <PublicChatBubbleHeader
+          ref={headerRef}
+          className="absolute inset-x-0 top-0 z-10"
+          divider={threadScrolled}
           theme={theme}
           themeOverrides={resolvedThemeOverrides}
           workspaceName={resolvedWorkspaceName}
@@ -1064,10 +1082,14 @@ function PublicChatContent({
         <>
           <div
             ref={messagesScrollRef}
+            onScroll={(event) => setThreadScrolled(event.currentTarget.scrollTop > 0)}
             className={`radioso-themed-scrollbar min-h-0 flex-1 overflow-y-auto ${
               isCompactKeyboardLayout ? (onRequestCollapse ? 'px-3 pb-3 pt-10' : 'p-3') : 'p-6'
             }`}
-            style={{ background: theme.panelBackground }}
+            style={{
+              background: theme.panelBackground,
+              ...(headerShown ? overlaidThreadStyle(headerHeight) : {}),
+            }}
           >
             {threadMessages.length === 0 ? (
               <div className="flex h-full flex-col items-center justify-center text-center">

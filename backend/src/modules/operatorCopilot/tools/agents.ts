@@ -36,7 +36,7 @@ import {
 
 const idSchema = z.string().uuid();
 const entityNameSchema = z.string().trim().min(1).max(160);
-const unknownRecord = z.record(z.unknown());
+const unknownRecord = z.record(z.string(), z.unknown());
 const agentConfigurationInputSchema = z.object({
   mode: z.enum(["auto", "list", "detail"]).optional(),
   agentId: idSchema.optional(),
@@ -298,7 +298,7 @@ export interface AgentSettingProposalCopilotToolDependencies extends CopilotProp
 }
 
 /** Mirrors the payload propose_agent_setting persists (see createAgentSettingCopilotProposalAdapter.validatePayload in proposalAdapters.ts). */
-const agentSettingProposalPayloadSchema = z.object({ value: z.unknown(), rationale: z.string().optional() }).passthrough();
+const agentSettingProposalPayloadSchema = z.object({ value: z.unknown().optional(), rationale: z.string().optional() }).passthrough();
 /** `targetLabel` on this tool's output is the setting key, which lives on the target ref rather than the payload. */
 const agentSettingProposalTargetRefSchema = z.object({ settingKey: z.string() }).passthrough();
 
@@ -310,7 +310,7 @@ export const createAgentSettingProposalCopilotTools = (
     {
       name: "propose_agent_setting", shape: "propose", verificationCost: () => 0, uiLabel: "Drafting a setting change", contributingModule: "agents", dashboardSubject: { type: "proposal" }, requiredPermissions: ["workspace.agents.manage"],
       description: `Draft an agent setting change for the operator to review and apply. This does not change configuration. ${agentSettingReachNote} ${agentSettingWholeBlockNote} ${scopedAgentDraftPublicationNote}`,
-      inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), settingKey: z.string().trim().min(1).max(200), value: z.unknown(), rationale: z.string().trim().min(1).max(1_000).optional(), evidenceIds: citedEvidenceSchema }).strict(),
+      inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), settingKey: z.string().trim().min(1).max(200), value: z.unknown().optional(), rationale: z.string().trim().min(1).max(1_000).optional(), evidenceIds: citedEvidenceSchema }).strict(),
       outputSchema: proposalOutputSchema,
       reconcileMcpInvocation: async ({ invocation, context, staleBefore, now }) => {
         if (!invocation.operationId) return { status: "conflict" };
@@ -344,7 +344,7 @@ export const createAgentSettingProposalCopilotTools = (
       createTool: (context) => ({
         name: "propose_agent_setting",
       description: `Draft an agent setting change for the operator to review and apply. This does not change configuration. ${agentSettingReachNote} ${agentSettingWholeBlockNote} ${scopedAgentDraftPublicationNote}`,
-        inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), settingKey: z.string().trim().min(1).max(200), value: z.unknown(), rationale: z.string().trim().min(1).max(1_000).optional(), evidenceIds: citedEvidenceSchema }).strict(),
+        inputSchema: z.object({ agentId: idSchema.optional(), agentName: entityNameSchema.optional(), settingKey: z.string().trim().min(1).max(200), value: z.unknown().optional(), rationale: z.string().trim().min(1).max(1_000).optional(), evidenceIds: citedEvidenceSchema }).strict(),
         outputSchema: proposalOutputSchema,
         invoke: async ({ agentId, settingKey, value, rationale, evidenceIds }) => {
           const targetRef = { agentId: agentId ?? requiredPageAgent(context.pageContext.agentId), settingKey };

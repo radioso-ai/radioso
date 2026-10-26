@@ -5,12 +5,12 @@ import type { OpenApiSchemas, OpenApiSecurity } from "../openApiRegistry.js";
 
 const AgentParams = z.object({ agentId: z.string().uuid() });
 const WebhookSkillParams = AgentParams.extend({ skillId: z.string().uuid() });
-const WebhookSkillExposedPayloadSchema = z.record(z.object({
+const WebhookSkillExposedPayloadSchema = z.record(z.string(), z.object({
   description: z.string().optional(),
   slotBinding: z.string().optional(),
   required: z.boolean().default(true),
 }));
-const WebhookSkillBoundPayloadSchema = z.record(z.unknown());
+const WebhookSkillBoundPayloadSchema = z.record(z.string(), z.unknown());
 const WebhookSkillOutcomeSchema = z.enum(["delivered", "missing_input", "destination_not_found", "failed"]);
 
 const WebhookSkillDefinitionCreateSchema = z.object({

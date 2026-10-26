@@ -12,7 +12,7 @@ import { ActionDispatchSkippedError, type ActionHandler, type ActionHandlerConte
 
 const actionDispatchJobPayloadSchema: z.ZodType<ActionDispatchJobPayload> = z.object({
   type: z.string(),
-  payload: z.record(z.unknown()),
+  payload: z.record(z.string(), z.unknown()),
   workspaceId: z.string().nullable(),
   accountId: z.string().nullable(),
   conversationId: z.string().nullable(),

@@ -6,6 +6,7 @@ import {
   documentRetrievalUpdateFieldsSchema,
   inlineDocumentFieldsSchema,
 } from "../../../modules/documents/public.js";
+import { documentSourceIdSchema } from "../../../modules/documents/contracts/index.js";
 
 const MAX_DOCUMENT_LIST_LIMIT = 100;
 
@@ -26,7 +27,7 @@ export const reprocessSingleDocumentBodySchema = z.object({
 }).strict();
 
 export const sourceParamsSchema = z.object({
-  sourceId: z.string().uuid(),
+  sourceId: documentSourceIdSchema,
 });
 
 export const sourceUpdateSchema = z.object({
@@ -75,7 +76,7 @@ export const documentParamsSchema = z.object({
 
 export const documentSearchSchema = z.object({
   query: z.string().trim().min(1),
-  metadataFilter: z.record(z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
+  metadataFilter: z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()])).optional(),
   includeDebug: z.boolean().optional().default(false),
 });
 

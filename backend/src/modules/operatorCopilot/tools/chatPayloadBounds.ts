@@ -17,7 +17,7 @@ export const jsonValueSchema: z.ZodType<unknown> = z.lazy(() => z.union([
   z.boolean(),
   z.null(),
   z.array(jsonValueSchema),
-  z.record(jsonValueSchema),
+  z.record(z.string(), jsonValueSchema),
 ]));
 
 const traceStageSchema = z.object({
@@ -26,8 +26,8 @@ const traceStageSchema = z.object({
   status: z.string(),
   startedAt: z.string().optional(),
   completedAt: z.string().optional(),
-  inputs: z.record(jsonValueSchema).optional(),
-  outputs: z.record(jsonValueSchema).optional(),
+  inputs: z.record(z.string(), jsonValueSchema).optional(),
+  outputs: z.record(z.string(), jsonValueSchema).optional(),
   subTrace: jsonValueSchema.optional(),
 }).passthrough();
 
@@ -46,7 +46,7 @@ export const turnTraceEnvelopeSchema = z.object({
     stages: z.array(traceStageSchema),
   }).passthrough(),
   openTelemetry: z.object({ traceId: z.string(), spanId: z.string(), sampled: z.boolean() }).optional(),
-  summary: z.record(jsonValueSchema).optional(),
+  summary: z.record(z.string(), jsonValueSchema).optional(),
   /**
    * Only on a Test Chat turn that ended on a routine ending that notifies operators — the
    * message content (subject and body) that ending's operator notification carries, since a

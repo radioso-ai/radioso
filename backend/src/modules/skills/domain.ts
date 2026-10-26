@@ -196,9 +196,9 @@ export const skillDiagnosticEvidenceSchema = z.object({
   queryShape: z.string().optional(),
   retrievalShape: z.string().optional(),
   retrievalStrategy: z.string().optional(),
-  candidateSourceSummary: z.record(z.unknown()).optional(),
-  ranking: z.record(z.unknown()).optional(),
-  resolvedSteps: z.array(z.record(z.unknown())).optional(),
+  candidateSourceSummary: z.record(z.string(), z.unknown()).optional(),
+  ranking: z.record(z.string(), z.unknown()).optional(),
+  resolvedSteps: z.array(z.record(z.string(), z.unknown())).optional(),
   evidenceStatus: z.enum(["found", "missing", "partial", "not_applicable"]).optional(),
   supportStatus: z.enum(["supported", "unsupported", "not_checked", "not_applicable"]).optional(),
   groundingOutcome: z.string().optional(),
@@ -213,7 +213,7 @@ export const skillDiagnosticSchema = z.object({
   selectionConfidence: z.number().min(0).max(1).optional(),
   callerSurface: skillCallerSurfaceSchema,
   capabilityChecks: z.array(skillCapabilityCheckSchema),
-  parameters: z.record(z.unknown()).optional(),
+  parameters: z.record(z.string(), z.unknown()).optional(),
   fallback: z.object({
     used: z.boolean(),
     reason: z.string().optional(),
@@ -274,7 +274,7 @@ export const validateSkillDiagnostic = (input: unknown) => skillDiagnosticSchema
 
 const skillStepDefinitionSchema = skillStepSummarySchema.extend({
   displayName: z.string().optional(),
-  clauses: z.record(z.unknown()),
+  clauses: z.record(z.string(), z.unknown()),
   trace: z.object({
     expose: z.boolean(),
     redact: z.array(z.string()).optional(),
@@ -286,7 +286,7 @@ const skillStepDefinitionSchema = skillStepSummarySchema.extend({
 });
 
 const skillShapeDefinitionSchema = skillShapeSummarySchema.extend({
-  stepOverrides: z.record(z.record(z.unknown())),
+  stepOverrides: z.record(z.string(), z.record(z.string(), z.unknown())),
 });
 
 export const skillDefinitionSchema = skillCatalogEntrySchema.omit({

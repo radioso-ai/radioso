@@ -125,7 +125,7 @@ describe("AgentSkillsService", () => {
         outcomeVocabulary: ["completed"],
         supportedInvocationModes: ["default_answer"],
         executorAdapter: "external-skills",
-        configSchema: z.record(z.unknown()),
+        configSchema: z.record(z.string(), z.unknown()),
       }),
     ]);
     const serviceWithDefaultAnswerCapability = new AgentSkillsService({

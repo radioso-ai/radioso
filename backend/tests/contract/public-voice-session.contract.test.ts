@@ -330,7 +330,8 @@ describe("public voice session start contract", () => {
     it("serves the readiness gaps the voice domain lists, and no others", () => {
       const document = createOpenApiDocument() as { components: { schemas: Record<string, { properties: Record<string, { enum?: unknown[] }> }> } };
 
-      expect(document.components.schemas.VoiceCallReadiness.properties.missing.enum).toEqual([...VOICE_CALL_READINESS_GAPS]);
+      // `missing` is null when the voice is ready, so the nullable enum lists null beside the gaps.
+      expect(document.components.schemas.VoiceCallReadiness.properties.missing.enum).toEqual([...VOICE_CALL_READINESS_GAPS, null]);
     });
 
     const readReadiness = async (app: Parameters<typeof request>[0], dashboard: Record<string, string>, agentId: string) =>

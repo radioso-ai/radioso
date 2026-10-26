@@ -20,7 +20,7 @@ export const registerAgentToolCatalogSchemas = (registry: OpenAPIRegistry, schem
     "AgentToolInputSchema",
     z.object({
       type: z.literal("object"),
-      properties: z.record(AgentToolInputPropertySchema),
+      properties: z.record(z.string(), AgentToolInputPropertySchema),
       required: z.array(z.string()),
       additionalProperties: z.literal(false),
     }).openapi({

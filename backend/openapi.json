@@ -1600,7 +1600,8 @@
               "text-embedding-3-small",
               "text-embedding-3-large",
               "text-embedding-ada-002",
-              "gemini-embedding-001"
+              "gemini-embedding-001",
+              null
             ]
           },
           "supportedEmbeddingModels": {
@@ -2646,7 +2647,8 @@
               "success",
               "retry",
               "failed",
-              "skipped"
+              "skipped",
+              null
             ]
           },
           "lastDeliveryAt": {
@@ -2901,9 +2903,6 @@
               },
               {
                 "type": "null"
-              },
-              {
-                "type": "null"
               }
             ]
           },
@@ -2934,9 +2933,6 @@
               },
               {
                 "type": "null"
-              },
-              {
-                "type": "null"
               }
             ]
           },
@@ -2964,9 +2960,6 @@
                   "provider",
                   "model"
                 ]
-              },
-              {
-                "type": "null"
               },
               {
                 "type": "null"
@@ -3488,9 +3481,6 @@
                 "required": [
                   "url"
                 ]
-              },
-              {
-                "type": "null"
               }
             ]
           }
@@ -3763,7 +3753,8 @@
               "voice_channel",
               "runtime",
               "vendor_key",
-              "encryption"
+              "encryption",
+              null
             ]
           }
         },
@@ -3794,12 +3785,12 @@
             "version"
           ]
         },
-        "description": "The agent's privacy notice, keyed by language tag (at most 10): one line (`text`, 1 to 200 characters) and a link to the operator's policy (`url`, http or https, at most 500 characters). Chat surfaces show it before the visitor's first message, the first reply of an email conversation carries it, and a voice session start hands it to the call. `version` is derived from the language, line and link: the same notice keeps its version, a changed one gets a new one. Empty until the operator writes one.",
         "propertyNames": {
           "type": "string",
           "pattern": "^[A-Za-z]{2,3}(?:-[A-Za-z]{4})?(?:-(?:[A-Za-z]{2}|[0-9]{3}))?$"
         },
-        "maxProperties": 10
+        "maxProperties": 10,
+        "description": "The agent's privacy notice, keyed by language tag (at most 10): one line (`text`, 1 to 200 characters) and a link to the operator's policy (`url`, http or https, at most 500 characters). Chat surfaces show it before the visitor's first message, the first reply of an email conversation carries it, and a voice session start hands it to the call. `version` is derived from the language, line and link: the same notice keeps its version, a changed one gets a new one. Empty until the operator writes one."
       },
       "ConversationAgent": {
         "allOf": [
@@ -4272,9 +4263,6 @@
                   "provider",
                   "model"
                 ]
-              },
-              {
-                "type": "null"
               }
             ]
           },
@@ -4456,9 +4444,6 @@
               },
               {
                 "type": "null"
-              },
-              {
-                "type": "null"
               }
             ]
           },
@@ -4573,9 +4558,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/ExactContentItem"
-              },
-              {
-                "type": "null"
               },
               {
                 "type": "null"
@@ -5385,9 +5367,6 @@
               },
               {
                 "type": "null"
-              },
-              {
-                "type": "null"
               }
             ]
           },
@@ -5395,9 +5374,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/AuthoredDirectiveLifecycle"
-              },
-              {
-                "type": "null"
               },
               {
                 "type": "null"
@@ -5500,9 +5476,6 @@
               },
               {
                 "type": "null"
-              },
-              {
-                "type": "null"
               }
             ]
           },
@@ -5513,9 +5486,6 @@
               },
               {
                 "type": "null"
-              },
-              {
-                "type": "null"
               }
             ]
           },
@@ -5523,9 +5493,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/AnswerCoverageCriteria"
-              },
-              {
-                "type": "null"
               },
               {
                 "type": "null"
@@ -5725,9 +5692,6 @@
               },
               {
                 "type": "null"
-              },
-              {
-                "type": "null"
               }
             ]
           },
@@ -5735,9 +5699,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/AuthoredDirectiveLifecycle"
-              },
-              {
-                "type": "null"
               },
               {
                 "type": "null"
@@ -6315,7 +6276,8 @@
                     "lt",
                     "lte",
                     "older_than",
-                    "within"
+                    "within",
+                    null
                   ]
                 },
                 "fieldValue": {
@@ -6367,7 +6329,8 @@
                     "days",
                     "weeks",
                     "months",
-                    "years"
+                    "years",
+                    null
                   ]
                 },
                 "ordinal": {
@@ -6955,7 +6918,8 @@
                         "lt",
                         "lte",
                         "older_than",
-                        "within"
+                        "within",
+                        null
                       ]
                     },
                     "fieldValue": {
@@ -7007,7 +6971,8 @@
                         "days",
                         "weeks",
                         "months",
-                        "years"
+                        "years",
+                        null
                       ]
                     },
                     "ordinal": {
@@ -7669,7 +7634,8 @@
                     "lt",
                     "lte",
                     "older_than",
-                    "within"
+                    "within",
+                    null
                   ]
                 },
                 "fieldValue": {
@@ -7721,7 +7687,8 @@
                     "days",
                     "weeks",
                     "months",
-                    "years"
+                    "years",
+                    null
                   ]
                 },
                 "ordinal": {
@@ -8381,7 +8348,8 @@
                         "lt",
                         "lte",
                         "older_than",
-                        "within"
+                        "within",
+                        null
                       ]
                     },
                     "fieldValue": {
@@ -8433,7 +8401,8 @@
                         "days",
                         "weeks",
                         "months",
-                        "years"
+                        "years",
+                        null
                       ]
                     },
                     "ordinal": {
@@ -8957,7 +8926,8 @@
                     ],
                     "enum": [
                       "metadata",
-                      "content"
+                      "content",
+                      null
                     ]
                   },
                   "supportedOperations": {
@@ -9193,9 +9163,6 @@
               },
               {
                 "type": "null"
-              },
-              {
-                "type": "null"
               }
             ]
           },
@@ -9203,9 +9170,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/AuthoredDirectiveLifecycle"
-              },
-              {
-                "type": "null"
               },
               {
                 "type": "null"
@@ -9270,9 +9234,6 @@
                     },
                     {
                       "type": "null"
-                    },
-                    {
-                      "type": "null"
                     }
                   ]
                 },
@@ -9295,9 +9256,6 @@
                       "anyOf": [
                         {
                           "$ref": "#/components/schemas/AgentConfigSecretPlaceholder"
-                        },
-                        {
-                          "type": "null"
                         },
                         {
                           "type": "null"
@@ -9467,9 +9425,6 @@
                   },
                   {
                     "type": "null"
-                  },
-                  {
-                    "type": "null"
                   }
                 ]
               },
@@ -9586,9 +9541,6 @@
                       },
                       {
                         "type": "null"
-                      },
-                      {
-                        "type": "null"
                       }
                     ]
                   }
@@ -9608,9 +9560,6 @@
                     "anyOf": [
                       {
                         "$ref": "#/components/schemas/AgentConfigSecretPlaceholder"
-                      },
-                      {
-                        "type": "null"
                       },
                       {
                         "type": "null"
@@ -10190,7 +10139,8 @@
                         "lt",
                         "lte",
                         "older_than",
-                        "within"
+                        "within",
+                        null
                       ]
                     },
                     "fieldValue": {
@@ -10242,7 +10192,8 @@
                         "days",
                         "weeks",
                         "months",
-                        "years"
+                        "years",
+                        null
                       ]
                     },
                     "ordinal": {
@@ -10504,9 +10455,6 @@
                   },
                   {
                     "type": "null"
-                  },
-                  {
-                    "type": "null"
                   }
                 ]
               }
@@ -10679,9 +10627,6 @@
                   },
                   {
                     "type": "null"
-                  },
-                  {
-                    "type": "null"
                   }
                 ]
               },
@@ -10798,9 +10743,6 @@
                       },
                       {
                         "type": "null"
-                      },
-                      {
-                        "type": "null"
                       }
                     ]
                   }
@@ -10820,9 +10762,6 @@
                     "anyOf": [
                       {
                         "$ref": "#/components/schemas/AgentConfigSecretPlaceholder"
-                      },
-                      {
-                        "type": "null"
                       },
                       {
                         "type": "null"
@@ -11014,9 +10953,6 @@
                   },
                   {
                     "type": "null"
-                  },
-                  {
-                    "type": "null"
                   }
                 ]
               }
@@ -11166,7 +11102,8 @@
             ],
             "enum": [
               "invalid_bundle",
-              "apply_failed"
+              "apply_failed",
+              null
             ]
           },
           "createdAt": {
@@ -11227,9 +11164,6 @@
                 },
                 {
                   "type": "boolean"
-                },
-                {
-                  "type": "null"
                 },
                 {
                   "type": "null"
@@ -11426,9 +11360,6 @@
                 },
                 {
                   "type": "null"
-                },
-                {
-                  "type": "null"
                 }
               ]
             },
@@ -11483,9 +11414,6 @@
                 },
                 {
                   "type": "boolean"
-                },
-                {
-                  "type": "null"
                 },
                 {
                   "type": "null"
@@ -11609,8 +11537,8 @@
         "properties": {
           "file": {
             "type": "string",
-            "description": "Source file to import.",
-            "format": "binary"
+            "format": "binary",
+            "description": "Source file to import."
           },
           "title": {
             "type": "string",
@@ -11633,9 +11561,6 @@
           "file"
         ]
       },
-      "DocumentStatus": {
-        "type": "string"
-      },
       "DocumentOperationResponse": {
         "type": "object",
         "properties": {
@@ -11651,6 +11576,9 @@
           "documentId",
           "status"
         ]
+      },
+      "DocumentStatus": {
+        "type": "string"
       },
       "DocumentEnrichment": {
         "type": "object",
@@ -11699,7 +11627,8 @@
             ],
             "enum": [
               "source_last_sync",
-              "document_created_at"
+              "document_created_at",
+              null
             ]
           },
           "factCount": {
@@ -11801,9 +11730,6 @@
           "status"
         ]
       },
-      "RagStatus": {
-        "type": "string"
-      },
       "DocumentSummary": {
         "type": "object",
         "properties": {
@@ -11849,9 +11775,6 @@
                 },
                 {
                   "type": "null"
-                },
-                {
-                  "type": "null"
                 }
               ]
             },
@@ -11861,9 +11784,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/DocumentEnrichment"
-              },
-              {
-                "type": "null"
               },
               {
                 "type": "null"
@@ -11881,9 +11801,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/DocumentSourceSummary"
-              },
-              {
-                "type": "null"
               },
               {
                 "type": "null"
@@ -11947,6 +11864,9 @@
           "retrievalExpiresAt"
         ]
       },
+      "RagStatus": {
+        "type": "string"
+      },
       "DocumentRetrievalUpdateRequest": {
         "type": "object",
         "properties": {
@@ -11972,9 +11892,6 @@
                 },
                 {
                   "type": "boolean"
-                },
-                {
-                  "type": "null"
                 },
                 {
                   "type": "null"
@@ -12216,9 +12133,6 @@
                 },
                 {
                   "type": "boolean"
-                },
-                {
-                  "type": "null"
                 },
                 {
                   "type": "null"
@@ -13428,9 +13342,6 @@
               },
               {
                 "type": "null"
-              },
-              {
-                "type": "null"
               }
             ]
           },
@@ -13441,7 +13352,8 @@
             ],
             "enum": [
               "invalid",
-              "too_long"
+              "too_long",
+              null
             ]
           },
           "requestedRangeLookup": {
@@ -15216,7 +15128,8 @@
                     ],
                     "enum": [
                       "metadata",
-                      "content"
+                      "content",
+                      null
                     ]
                   },
                   "supportedOperations": {
@@ -15670,9 +15583,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/ConversationChannelContext"
-              },
-              {
-                "type": "null"
               },
               {
                 "type": "null"
@@ -17169,9 +17079,6 @@
               },
               {
                 "type": "null"
-              },
-              {
-                "type": "null"
               }
             ]
           },
@@ -17179,9 +17086,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/ConversationRequestContext"
-              },
-              {
-                "type": "null"
               },
               {
                 "type": "null"
@@ -17207,9 +17111,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/ConversationChannelContext"
-              },
-              {
-                "type": "null"
               },
               {
                 "type": "null"
@@ -17436,9 +17337,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/ConversationChannelContext"
-              },
-              {
-                "type": "null"
               },
               {
                 "type": "null"
@@ -18835,9 +18733,6 @@
               },
               {
                 "type": "null"
-              },
-              {
-                "type": "null"
               }
             ]
           },
@@ -18896,7 +18791,8 @@
               "pass",
               "fail",
               "error",
-              "recorded"
+              "recorded",
+              null
             ]
           },
           "latestRunAt": {
@@ -19073,9 +18969,6 @@
               },
               {
                 "type": "null"
-              },
-              {
-                "type": "null"
               }
             ]
           },
@@ -19090,9 +18983,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/GroundingDiagnostic"
-              },
-              {
-                "type": "null"
               },
               {
                 "type": "null"
@@ -19113,9 +19003,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/QualityVerification"
-              },
-              {
-                "type": "null"
               },
               {
                 "type": "null"
@@ -19431,9 +19318,6 @@
               },
               {
                 "type": "null"
-              },
-              {
-                "type": "null"
               }
             ],
             "description": "The current window's voice calls, for the request's agent. Null when the window has no voice turns, or `channel` names another channel."
@@ -19467,9 +19351,6 @@
               },
               {
                 "type": "null"
-              },
-              {
-                "type": "null"
               }
             ],
             "description": "Optional structured context for terminal states. Omit or send null to close without recording a reason."
@@ -19480,8 +19361,8 @@
               "null"
             ],
             "maxLength": 500,
-            "description": "Compatibility-only free text. It remains opaque and is never classified as a structured resolution reason.",
-            "deprecated": true
+            "deprecated": true,
+            "description": "Compatibility-only free text. It remains opaque and is never classified as a structured resolution reason."
           }
         },
         "required": [
@@ -20897,9 +20778,6 @@
               },
               {
                 "type": "null"
-              },
-              {
-                "type": "null"
               }
             ]
           }
@@ -21239,9 +21117,6 @@
               },
               {
                 "type": "null"
-              },
-              {
-                "type": "null"
               }
             ]
           }
@@ -21287,9 +21162,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/AudiencePulseTopicTransition"
-              },
-              {
-                "type": "null"
               },
               {
                 "type": "null"
@@ -22069,9 +21941,6 @@
               },
               {
                 "type": "null"
-              },
-              {
-                "type": "null"
               }
             ]
           }
@@ -22128,7 +21997,8 @@
             "enum": [
               "operator_only",
               "draft",
-              "auto"
+              "auto",
+              null
             ],
             "description": "The mode a new mailbox gets when none is named; null when the channel is not configured."
           },
@@ -22189,7 +22059,8 @@
             "enum": [
               "ingest_only",
               "run_review_turn",
-              "drop"
+              "drop",
+              null
             ]
           },
           "reason": {
@@ -23200,7 +23071,8 @@
               "acknowledged",
               "later_delivery",
               "provider_evidence",
-              "operator_resolved"
+              "operator_resolved",
+              null
             ]
           }
         },
@@ -23277,7 +23149,8 @@
             "enum": [
               "grounded",
               "degraded",
-              "no_support"
+              "no_support",
+              null
             ],
             "description": "Whether the draft's claims are supported by the sources it cites; null when the turn did not check."
           },
@@ -23485,9 +23358,6 @@
               },
               {
                 "type": "null"
-              },
-              {
-                "type": "null"
               }
             ],
             "description": "The review turn's reasoning; null when its record is not readable."
@@ -23542,9 +23412,6 @@
             "anyOf": [
               {
                 "$ref": "#/components/schemas/HeldReply"
-              },
-              {
-                "type": "null"
               },
               {
                 "type": "null"
@@ -23999,9 +23866,6 @@
                     },
                     {
                       "type": "null"
-                    },
-                    {
-                      "type": "null"
                     }
                   ]
                 }
@@ -24261,9 +24125,6 @@
                               },
                               {
                                 "type": "boolean"
-                              },
-                              {
-                                "type": "null"
                               },
                               {
                                 "type": "null"
@@ -27887,7 +27748,8 @@
                             ],
                             "enum": [
                               "member",
-                              "admin"
+                              "admin",
+                              null
                             ]
                           },
                           "ownerUserId": {
@@ -28118,6 +27980,7 @@
               "description": "Required non-simple header for cookie-authenticated API-access mutations."
             },
             "required": true,
+            "description": "Required non-simple header for cookie-authenticated API-access mutations.",
             "in": "header",
             "name": "X-Radioso-CSRF"
           }
@@ -28192,7 +28055,8 @@
                           ],
                           "enum": [
                             "member",
-                            "admin"
+                            "admin",
+                            null
                           ]
                         },
                         "ownerUserId": {
@@ -28421,6 +28285,7 @@
               "description": "Required non-simple header for cookie-authenticated API-access mutations."
             },
             "required": true,
+            "description": "Required non-simple header for cookie-authenticated API-access mutations.",
             "in": "header",
             "name": "X-Radioso-CSRF"
           }
@@ -28484,7 +28349,8 @@
                       ],
                       "enum": [
                         "member",
-                        "admin"
+                        "admin",
+                        null
                       ]
                     },
                     "ownerUserId": {
@@ -28704,6 +28570,7 @@
               "description": "Required non-simple header for cookie-authenticated API-access mutations."
             },
             "required": true,
+            "description": "Required non-simple header for cookie-authenticated API-access mutations.",
             "in": "header",
             "name": "X-Radioso-CSRF"
           }
@@ -28764,7 +28631,8 @@
                           ],
                           "enum": [
                             "member",
-                            "admin"
+                            "admin",
+                            null
                           ]
                         },
                         "ownerUserId": {
@@ -28993,6 +28861,7 @@
               "description": "Required non-simple header for cookie-authenticated API-access mutations."
             },
             "required": true,
+            "description": "Required non-simple header for cookie-authenticated API-access mutations.",
             "in": "header",
             "name": "X-Radioso-CSRF"
           }
@@ -29031,7 +28900,8 @@
                       ],
                       "enum": [
                         "member",
-                        "admin"
+                        "admin",
+                        null
                       ]
                     },
                     "ownerUserId": {
@@ -29454,6 +29324,7 @@
               "description": "Required non-simple header for cookie-authenticated API-access mutations."
             },
             "required": true,
+            "description": "Required non-simple header for cookie-authenticated API-access mutations.",
             "in": "header",
             "name": "X-Radioso-CSRF"
           }
@@ -29612,7 +29483,8 @@
                           ],
                           "enum": [
                             "member",
-                            "admin"
+                            "admin",
+                            null
                           ]
                         },
                         "ownerUserId": {
@@ -30017,6 +29889,7 @@
               "description": "Required non-simple header for cookie-authenticated API-access mutations."
             },
             "required": true,
+            "description": "Required non-simple header for cookie-authenticated API-access mutations.",
             "in": "header",
             "name": "X-Radioso-CSRF"
           }
@@ -30237,6 +30110,7 @@
               "description": "Required non-simple header for cookie-authenticated API-access mutations."
             },
             "required": true,
+            "description": "Required non-simple header for cookie-authenticated API-access mutations.",
             "in": "header",
             "name": "X-Radioso-CSRF"
           }
@@ -30445,6 +30319,7 @@
               "description": "Required non-simple header for cookie-authenticated API-access mutations."
             },
             "required": true,
+            "description": "Required non-simple header for cookie-authenticated API-access mutations.",
             "in": "header",
             "name": "X-Radioso-CSRF"
           }
@@ -30653,6 +30528,7 @@
               "description": "Required non-simple header for cookie-authenticated API-access mutations."
             },
             "required": true,
+            "description": "Required non-simple header for cookie-authenticated API-access mutations.",
             "in": "header",
             "name": "X-Radioso-CSRF"
           }
@@ -30911,7 +30787,8 @@
                             ],
                             "enum": [
                               "member",
-                              "admin"
+                              "admin",
+                              null
                             ]
                           },
                           "ownerUserId": {
@@ -31151,6 +31028,7 @@
               "description": "Required non-simple header for cookie-authenticated API-access mutations."
             },
             "required": true,
+            "description": "Required non-simple header for cookie-authenticated API-access mutations.",
             "in": "header",
             "name": "X-Radioso-CSRF"
           }
@@ -31217,7 +31095,8 @@
                           ],
                           "enum": [
                             "member",
-                            "admin"
+                            "admin",
+                            null
                           ]
                         },
                         "ownerUserId": {
@@ -31455,6 +31334,7 @@
               "description": "Required non-simple header for cookie-authenticated API-access mutations."
             },
             "required": true,
+            "description": "Required non-simple header for cookie-authenticated API-access mutations.",
             "in": "header",
             "name": "X-Radioso-CSRF"
           }
@@ -31518,7 +31398,8 @@
                       ],
                       "enum": [
                         "member",
-                        "admin"
+                        "admin",
+                        null
                       ]
                     },
                     "ownerUserId": {
@@ -31747,6 +31628,7 @@
               "description": "Required non-simple header for cookie-authenticated API-access mutations."
             },
             "required": true,
+            "description": "Required non-simple header for cookie-authenticated API-access mutations.",
             "in": "header",
             "name": "X-Radioso-CSRF"
           }
@@ -31807,7 +31689,8 @@
                           ],
                           "enum": [
                             "member",
-                            "admin"
+                            "admin",
+                            null
                           ]
                         },
                         "ownerUserId": {
@@ -32045,6 +31928,7 @@
               "description": "Required non-simple header for cookie-authenticated API-access mutations."
             },
             "required": true,
+            "description": "Required non-simple header for cookie-authenticated API-access mutations.",
             "in": "header",
             "name": "X-Radioso-CSRF"
           }
@@ -32083,7 +31967,8 @@
                       ],
                       "enum": [
                         "member",
-                        "admin"
+                        "admin",
+                        null
                       ]
                     },
                     "ownerUserId": {
@@ -32924,6 +32809,7 @@
               "description": "Required non-simple header for cookie-authenticated Operator MCP mutations."
             },
             "required": true,
+            "description": "Required non-simple header for cookie-authenticated Operator MCP mutations.",
             "in": "header",
             "name": "X-Radioso-CSRF"
           }
@@ -33357,6 +33243,7 @@
               "description": "Required non-simple header for cookie-authenticated Operator MCP mutations."
             },
             "required": true,
+            "description": "Required non-simple header for cookie-authenticated Operator MCP mutations.",
             "in": "header",
             "name": "X-Radioso-CSRF"
           }
@@ -36093,6 +35980,7 @@
               "description": "Required non-simple header for cookie-authenticated agent channel credential mutations."
             },
             "required": true,
+            "description": "Required non-simple header for cookie-authenticated agent channel credential mutations.",
             "in": "header",
             "name": "X-Radioso-CSRF"
           }
@@ -36301,6 +36189,7 @@
               "description": "Required non-simple header for cookie-authenticated agent channel credential mutations."
             },
             "required": true,
+            "description": "Required non-simple header for cookie-authenticated agent channel credential mutations.",
             "in": "header",
             "name": "X-Radioso-CSRF"
           }
@@ -36390,6 +36279,7 @@
               "description": "Required non-simple header for cookie-authenticated agent channel credential mutations."
             },
             "required": true,
+            "description": "Required non-simple header for cookie-authenticated agent channel credential mutations.",
             "in": "header",
             "name": "X-Radioso-CSRF"
           }
@@ -41632,7 +41522,8 @@
                             "enum": [
                               "ok",
                               "failed",
-                              "unknown"
+                              "unknown",
+                              null
                             ]
                           },
                           "lastHealthCheckedAt": {
@@ -41821,7 +41712,8 @@
                           "enum": [
                             "ok",
                             "failed",
-                            "unknown"
+                            "unknown",
+                            null
                           ]
                         },
                         "lastHealthCheckedAt": {
@@ -42148,7 +42040,8 @@
                           "enum": [
                             "ok",
                             "failed",
-                            "unknown"
+                            "unknown",
+                            null
                           ]
                         },
                         "lastHealthCheckedAt": {
@@ -42403,7 +42296,8 @@
                           "enum": [
                             "ok",
                             "failed",
-                            "unknown"
+                            "unknown",
+                            null
                           ]
                         },
                         "lastHealthCheckedAt": {
@@ -50645,9 +50539,6 @@
                         },
                         {
                           "type": "null"
-                        },
-                        {
-                          "type": "null"
                         }
                       ]
                     }
@@ -51421,6 +51312,7 @@
               "description": "Which conversation sources to include. Defaults to end_user, which excludes operator-driven dashboard test chat and workbench replay conversations."
             },
             "required": false,
+            "description": "Which conversation sources to include. Defaults to end_user, which excludes operator-driven dashboard test chat and workbench replay conversations.",
             "name": "sourceScope",
             "in": "query"
           },
@@ -51431,6 +51323,7 @@
               "description": "Narrows to conversations handled by this agent. Narrows results to chat rows only."
             },
             "required": false,
+            "description": "Narrows to conversations handled by this agent. Narrows results to chat rows only.",
             "name": "agentId",
             "in": "query"
           },
@@ -51442,6 +51335,7 @@
               "description": "Exact match on the conversation's site origin. Narrows results to chat rows only."
             },
             "required": false,
+            "description": "Exact match on the conversation's site origin. Narrows results to chat rows only.",
             "name": "sourceOrigin",
             "in": "query"
           },
@@ -51456,6 +51350,7 @@
               "description": "Narrows to conversations in this outcome bucket: handed_off (a human_owned ownership record exists), in_progress (no such record and updated within the last 10 minutes), or completed (no such record and updated more than 10 minutes ago). Narrows results to chat rows only."
             },
             "required": false,
+            "description": "Narrows to conversations in this outcome bucket: handed_off (a human_owned ownership record exists), in_progress (no such record and updated within the last 10 minutes), or completed (no such record and updated more than 10 minutes ago). Narrows results to chat rows only.",
             "name": "outcome",
             "in": "query"
           },
@@ -51469,6 +51364,7 @@
               "description": "Narrows to conversations whose caller was a person or another AI agent. Narrows results to chat rows only: a contact request has no conversation behind it and so no caller."
             },
             "required": false,
+            "description": "Narrows to conversations whose caller was a person or another AI agent. Narrows results to chat rows only: a contact request has no conversation behind it and so no caller.",
             "name": "callerKind",
             "in": "query"
           }
@@ -51671,6 +51567,7 @@
               "description": "Which conversation sources to include. Defaults to end_user, which excludes operator-driven dashboard test chat and workbench replay conversations."
             },
             "required": false,
+            "description": "Which conversation sources to include. Defaults to end_user, which excludes operator-driven dashboard test chat and workbench replay conversations.",
             "name": "sourceScope",
             "in": "query"
           },
@@ -51683,6 +51580,7 @@
               "description": "Restrict results to conversations currently owned by a human operator."
             },
             "required": false,
+            "description": "Restrict results to conversations currently owned by a human operator.",
             "name": "ownership",
             "in": "query"
           },
@@ -52000,6 +51898,7 @@
               "description": "The previous tail's `cursor`, or the detail's `tailCursor`, passed back as returned. Without it, the newest page."
             },
             "required": false,
+            "description": "The previous tail's `cursor`, or the detail's `tailCursor`, passed back as returned. Without it, the newest page.",
             "name": "cursor",
             "in": "query"
           },
@@ -52010,6 +51909,7 @@
               "description": "The previous tail's `activityCursor`, passed back as returned: opaque, and a string no tail returned is refused with 400. The response's `activity` then carries only the events in a recent window, so it can repeat events the caller already holds; without it, the whole timeline."
             },
             "required": false,
+            "description": "The previous tail's `activityCursor`, passed back as returned: opaque, and a string no tail returned is refused with 400. The response's `activity` then carries only the events in a recent window, so it can repeat events the caller already holds; without it, the whole timeline.",
             "name": "activityCursor",
             "in": "query"
           }
@@ -52116,6 +52016,7 @@
               "description": "A conversation id to exclude from the results — the one already open in the drawer."
             },
             "required": false,
+            "description": "A conversation id to exclude from the results — the one already open in the drawer.",
             "name": "exclude",
             "in": "query"
           }
@@ -56093,7 +55994,8 @@
                           "quality",
                           "evals",
                           "copilot",
-                          "other"
+                          "other",
+                          null
                         ]
                       },
                       "agentId": {
@@ -57263,9 +57165,6 @@
                                   },
                                   {
                                     "type": "null"
-                                  },
-                                  {
-                                    "type": "null"
                                   }
                                 ]
                               }
@@ -58062,9 +57961,6 @@
                                   },
                                   {
                                     "type": "boolean"
-                                  },
-                                  {
-                                    "type": "null"
                                   },
                                   {
                                     "type": "null"
@@ -59156,9 +59052,6 @@
                               "enum": [
                                 2
                               ]
-                            },
-                            {
-                              "type": "null"
                             },
                             {
                               "type": "null"
@@ -60928,6 +60821,7 @@
               "example": "text/event-stream"
             },
             "required": true,
+            "description": "Must contain the text/event-stream media range.",
             "in": "header",
             "name": "Accept"
           },
@@ -60939,6 +60833,7 @@
               "example": "4d7293c8-d241-4f8f-a4db-3df5b88da44c"
             },
             "required": true,
+            "description": "Workspace selected by the authenticated dashboard session.",
             "in": "header",
             "name": "X-Workspace-Id"
           }

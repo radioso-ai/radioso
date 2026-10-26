@@ -11,7 +11,7 @@ import type { ConnectorDetail, ConnectorSummary, ConnectorValidationIssue } from
 import type { ConnectorManagementPort } from "../services/connectorManagementService.js";
 
 const configUpdateSchema = z.object({
-  config: z.record(z.union([z.string(), z.number(), z.boolean()])),
+  config: z.record(z.string(), z.union([z.string(), z.number(), z.boolean()])),
 });
 
 const presentSummary = (summary: ConnectorSummary) => ({

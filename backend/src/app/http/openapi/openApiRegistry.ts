@@ -1,8 +1,6 @@
-import { z } from "zod";
-import {
-  OpenAPIRegistry,
-  extendZodWithOpenApi,
-} from "@asteasolutions/zod-to-openapi";
+import "./zodOpenApiExtension.js";
+import type { z } from "zod";
+import { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 
 import { registerCommonSchemas } from "./schemas/commonSchemas.js";
 import { registerIdentitySchemas } from "./schemas/identitySchemas.js";
@@ -22,9 +20,7 @@ import { registerAgentWizardSchemas } from "./schemas/agentWizardSchemas.js";
 import { registerAudiencePulseSchemas } from "./schemas/audiencePulseSchemas.js";
 import { registerWorkspaceEventsSchemas } from "./schemas/workspaceEventsSchemas.js";
 
-extendZodWithOpenApi(z);
-
-type RouteParameterSchema = z.AnyZodObject | z.ZodEffects<RouteParameterSchema, unknown, unknown>;
+type RouteParameterSchema = z.ZodObject | z.ZodPipe<z.ZodObject>;
 
 export interface OpenApiSchemaCatalog {
   AccessibleAccountSchema: z.ZodTypeAny;
@@ -307,7 +303,7 @@ export interface OpenApiSchemaCatalog {
   PublicChatConversationDetailSchema: z.ZodTypeAny;
   PublicChatConversationMessageSchema: z.ZodTypeAny;
   PublicConversationListResponseSchema: z.ZodTypeAny;
-  publicConversationParamsSchema: z.AnyZodObject;
+  publicConversationParamsSchema: z.ZodObject;
   PublicConversationSummarySchema: z.ZodTypeAny;
   RagStatusSchema: z.ZodTypeAny;
   RateLimitExceededSchema: z.ZodTypeAny;
@@ -339,7 +335,7 @@ export interface OpenApiSchemaCatalog {
   SkillDiagnosticsSummarySchema: z.ZodTypeAny;
   SkillOutcomeDefinitionSchema: z.ZodTypeAny;
   SkillParamsSchema: RouteParameterSchema;
-  tokenPathParamsSchema: z.AnyZodObject;
+  tokenPathParamsSchema: z.ZodObject;
   /** Registered by the history schemas; reused wherever a turn's trace is returned. */
   TurnTraceEnvelopeSchema: z.ZodTypeAny;
   TriggerAnalysisRuleSchema: z.ZodTypeAny;

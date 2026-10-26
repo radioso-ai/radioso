@@ -192,8 +192,8 @@ export const routineInputBindingSchema = z.discriminatedUnion("kind", [
 export const routineStepModeSchema = z.enum(["typed", "untyped"]);
 
 export const routineStepMetadataSchema = z.object({
-  inputBindings: z.record(routineInputBindingSchema).optional(),
-  outputAssignments: z.record(routineVariableNameSchema).optional(),
+  inputBindings: z.record(z.string(), routineInputBindingSchema).optional(),
+  outputAssignments: z.record(z.string(), routineVariableNameSchema).optional(),
   mode: routineStepModeSchema.optional(),
 }).passthrough();
 

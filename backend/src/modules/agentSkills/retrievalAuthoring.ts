@@ -1,5 +1,6 @@
 
 import { AppError, badRequest } from "../../shared/domain/errors.js";
+import { patchSchemaOf } from "../../shared/domain/patchSchema.js";
 import {
   retrieveSkillConfigSchema,
   type RetrievalDefaultsProvider,
@@ -13,9 +14,7 @@ import type { ReviewedChangeEffect } from "../../shared/domain/reviewedChangeEff
  * change the skill's callable interface, and code-owned defaults are never a
  * patch target.
  */
-const supportedAgentRetrievalPatchSchema = retrieveSkillConfigSchema
-  .omit({ exposedInputs: true })
-  .partial()
+const supportedAgentRetrievalPatchSchema = patchSchemaOf(retrieveSkillConfigSchema.omit({ exposedInputs: true }))
   .strict()
   .refine((patch) => Object.keys(patch).length > 0, "At least one retrieval setting must be provided");
 

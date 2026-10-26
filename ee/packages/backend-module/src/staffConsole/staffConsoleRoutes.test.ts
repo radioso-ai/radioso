@@ -95,7 +95,7 @@ const createApp = (dependencies: RouteDependencies, repositories: {
 
 const createMemoryRepositories = async (initialRole: StaffPrincipal["role"] = "owner") => {
   const staff: StaffUser = {
-    id: "11111111-1111-1111-1111-111111111111",
+    id: "11111111-1111-1111-8111-111111111111",
     email: "owner@example.com",
     name: "Owner",
     passwordHash: await hashStaffPassword("password-123"),
@@ -192,7 +192,7 @@ const createMemoryRepositories = async (initialRole: StaffPrincipal["role"] = "o
         revokedAt: null,
       });
       return {
-        id: "22222222-2222-2222-2222-222222222222",
+        id: "22222222-2222-2222-8222-222222222222",
         staffId: input.staffId,
         sessionTokenHash: input.sessionTokenHash,
         expiresAt: input.expiresAt,
@@ -205,7 +205,7 @@ const createMemoryRepositories = async (initialRole: StaffPrincipal["role"] = "o
         return null;
       }
       return {
-        id: "22222222-2222-2222-2222-222222222222",
+        id: "22222222-2222-2222-8222-222222222222",
         staffId: row.staffId,
         sessionTokenHash: tokenHash,
         expiresAt: row.expiresAt,
@@ -249,7 +249,7 @@ const createMemoryRepositories = async (initialRole: StaffPrincipal["role"] = "o
 const sampleOrganizationRows = {
   rows: [
     {
-      accountId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      accountId: "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",
       name: "Alpha Research",
       ownerEmail: "owner@example.com",
       ownerCount: 2,
@@ -259,7 +259,7 @@ const sampleOrganizationRows = {
       monthlyConversations: null,
     },
     {
-      accountId: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+      accountId: "bbbbbbbb-bbbb-4bbb-bbbb-bbbbbbbbbbbb",
       name: "Comet Customer",
       ownerEmail: "comet@example.com",
       ownerCount: 1,
@@ -279,7 +279,7 @@ const sampleOrganizationRows = {
 };
 
 const sampleUsageSummary: AccountUsageSummary = {
-  accountId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+  accountId: "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",
   profile: {
     key: "starter",
     displayName: "Starter",
@@ -685,7 +685,7 @@ describe("staff console routes and guards", () => {
     }), { users: repositories.users, sessions: repositories.staffSessions, ...readServices });
 
     await request(app)
-      .get("/api/v1/ee/operator-console/organizations/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/usage")
+      .get("/api/v1/ee/operator-console/organizations/aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa/usage")
       .expect(401);
 
     const login = await request(app)
@@ -694,13 +694,13 @@ describe("staff console routes and guards", () => {
       .expect(200);
 
     const response = await request(app)
-      .get("/api/v1/ee/operator-console/organizations/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/usage")
+      .get("/api/v1/ee/operator-console/organizations/aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa/usage")
       .set("Cookie", login.headers["set-cookie"][0])
       .expect(200);
 
     expect(response.body).toEqual({ ...sampleUsageSummary, organizationName: "Alpha Research" });
     expect(readServices.usageLimitService.getAccountUsage).toHaveBeenCalledWith(
-      "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",
     );
   });
 
@@ -798,21 +798,21 @@ describe("staff console routes and guards", () => {
       .expect(200);
 
     const assigned = await request(billingApp)
-      .put("/api/v1/ee/operator-console/organizations/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/tier")
+      .put("/api/v1/ee/operator-console/organizations/aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa/tier")
       .set("Cookie", billingLogin.headers["set-cookie"][0])
       .send({ profileKey: "growth" })
       .expect(200);
     expect(assigned.body).toEqual(sampleGrowthUsageSummary);
-    expect(getAccountUsage).toHaveBeenCalledWith("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
-    expect(assignProfile).toHaveBeenCalledWith("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "growth");
+    expect(getAccountUsage).toHaveBeenCalledWith("aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa");
+    expect(assignProfile).toHaveBeenCalledWith("aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa", "growth");
 
     const unassigned = await request(billingApp)
-      .put("/api/v1/ee/operator-console/organizations/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/tier")
+      .put("/api/v1/ee/operator-console/organizations/aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa/tier")
       .set("Cookie", billingLogin.headers["set-cookie"][0])
       .send({ profileKey: null })
       .expect(200);
     expect(unassigned.body).toEqual(sampleUnassignedUsageSummary);
-    expect(assignProfile).toHaveBeenCalledWith("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", null);
+    expect(assignProfile).toHaveBeenCalledWith("aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa", null);
 
     const readOnlyRepositories = await createMemoryRepositories("support_read");
     const readOnlyAssignProfile = vi.fn(async () => sampleGrowthUsageSummary);
@@ -834,7 +834,7 @@ describe("staff console routes and guards", () => {
       .expect(200);
 
     await request(readOnlyApp)
-      .put("/api/v1/ee/operator-console/organizations/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/tier")
+      .put("/api/v1/ee/operator-console/organizations/aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa/tier")
       .set("Cookie", readOnlyLogin.headers["set-cookie"][0])
       .send({ profileKey: "growth" })
       .expect(403);
@@ -863,13 +863,13 @@ describe("staff console routes and guards", () => {
       .expect(200);
 
     await request(app)
-      .put("/api/v1/ee/operator-console/organizations/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/tier")
+      .put("/api/v1/ee/operator-console/organizations/aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa/tier")
       .set("Cookie", login.headers["set-cookie"][0])
       .send({ profileKey: "growth" })
       .expect(200);
 
     expect(auditRecord).toHaveBeenCalledWith({
-      accountId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      accountId: "aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa",
       workspaceId: null,
       eventType: "staff.tier.assigned",
       eventStatus: "success",
@@ -1078,7 +1078,7 @@ describe("staff console routes and guards", () => {
 
       const tierStatus = role === "support_read" ? 403 : 200;
       await request(app)
-        .put("/api/v1/ee/operator-console/organizations/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa/tier")
+        .put("/api/v1/ee/operator-console/organizations/aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa/tier")
         .set("Cookie", cookie)
         .send({ profileKey: "growth" })
         .expect(tierStatus);

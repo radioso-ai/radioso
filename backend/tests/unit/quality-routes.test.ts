@@ -18,9 +18,9 @@ import type {
   SetTriageStateInput,
 } from "../../src/modules/quality/contracts/index.js";
 
-const WORKSPACE_ID = "11111111-1111-1111-1111-111111111111";
-const ACCOUNT_ID = "22222222-2222-2222-2222-222222222222";
-const USER_ID = "33333333-3333-3333-3333-333333333333";
+const WORKSPACE_ID = "11111111-1111-1111-8111-111111111111";
+const ACCOUNT_ID = "22222222-2222-2222-8222-222222222222";
+const USER_ID = "33333333-3333-3333-8333-333333333333";
 
 const DEFAULT_TRIAGE_RESULT: QualityTriageRecord = {
   state: "resolved",
@@ -368,7 +368,7 @@ describe("quality routes", () => {
     const app = createApp(service);
 
     const response = await request(app)
-      .put("/api/v1/quality/turns/44444444-4444-4444-4444-444444444444/triage")
+      .put("/api/v1/quality/turns/44444444-4444-4444-8444-444444444444/triage")
       .set("Cookie", "radioso_session=valid-session")
       .send({
         state: "resolved",
@@ -385,7 +385,7 @@ describe("quality routes", () => {
       {
         workspaceId: WORKSPACE_ID,
         input: {
-          assistantMessageId: "44444444-4444-4444-4444-444444444444",
+          assistantMessageId: "44444444-4444-4444-8444-444444444444",
           state: "resolved",
           expectedVersion: 2,
           resolution: {
@@ -404,7 +404,7 @@ describe("quality routes", () => {
     const app = createApp(service);
 
     const response = await request(app)
-      .put("/api/v1/quality/turns/44444444-4444-4444-4444-444444444444/triage")
+      .put("/api/v1/quality/turns/44444444-4444-4444-8444-444444444444/triage")
       .set("Cookie", "radioso_session=valid-session")
       .send({ state: "resolved", expectedVersion: 0, reason: "Added knowledge" });
 
@@ -423,7 +423,7 @@ describe("quality routes", () => {
       const app = createApp(service);
 
       const response = await request(app)
-        .put("/api/v1/quality/turns/44444444-4444-4444-4444-444444444444/triage")
+        .put("/api/v1/quality/turns/44444444-4444-4444-8444-444444444444/triage")
         .set("Cookie", "radioso_session=valid-session")
         .send({ state, expectedVersion: 0 });
 
@@ -459,7 +459,7 @@ describe("quality routes", () => {
     const app = createApp(service);
 
     const response = await request(app)
-      .put("/api/v1/quality/turns/44444444-4444-4444-4444-444444444444/triage")
+      .put("/api/v1/quality/turns/44444444-4444-4444-8444-444444444444/triage")
       .set("Cookie", "radioso_session=valid-session")
       .send(body);
 
@@ -475,7 +475,7 @@ describe("quality routes", () => {
     const app = createApp(service);
 
     const response = await request(app)
-      .put("/api/v1/quality/turns/44444444-4444-4444-4444-444444444444/triage")
+      .put("/api/v1/quality/turns/44444444-4444-4444-8444-444444444444/triage")
       .set("Cookie", "radioso_session=valid-session")
       .send({ state: "acknowledged", expectedVersion: 2 });
 
@@ -494,7 +494,7 @@ describe("quality routes", () => {
     const app = createApp(service);
 
     const response = await request(app)
-      .put("/api/v1/quality/turns/44444444-4444-4444-4444-444444444444/triage")
+      .put("/api/v1/quality/turns/44444444-4444-4444-8444-444444444444/triage")
       .set("Cookie", "radioso_session=valid-session")
       .send({ state: "bogus" });
 
@@ -616,7 +616,7 @@ describe("quality routes", () => {
     const app = createApp(service);
 
     const response = await request(app)
-      .put("/api/v1/quality/turns/44444444-4444-4444-4444-444444444444/triage")
+      .put("/api/v1/quality/turns/44444444-4444-4444-8444-444444444444/triage")
       .set("Cookie", "radioso_session=valid-session")
       .send({ state: "acknowledged", expectedVersion: 0 });
 
@@ -655,13 +655,13 @@ describe("quality stats route", () => {
 
     const response = await request(app)
       .get("/api/v1/quality/stats")
-      .query({ range: "7d", agentId: "55555555-5555-5555-5555-555555555555", channel: "embed" })
+      .query({ range: "7d", agentId: "55555555-5555-5555-8555-555555555555", channel: "embed" })
       .set("Authorization", "Bearer valid-token");
 
     expect(response.status).toBe(200);
     expect(service.statsCalls[0]?.input).toEqual({
       range: "7d",
-      agentId: "55555555-5555-5555-5555-555555555555",
+      agentId: "55555555-5555-5555-8555-555555555555",
       channel: "embed",
     });
   });

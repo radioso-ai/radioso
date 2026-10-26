@@ -158,7 +158,7 @@ const documentEnrichmentEnvelopeSchema = z.preprocess(withEnvelopeAliases, z.obj
   ),
   // Read and validated one at a time below: one bad fact, or a facts payload
   // that is not a list, costs only the facts, never the document.
-  facts: z.unknown(),
+  facts: z.unknown().optional(),
   typeKey: z.preprocess((value) => (typeof value === "string" ? value : ""), z.string()),
   // Kept as raw entries: every drop is counted in stage 2, so rejecting a
   // malformed entry here would fail a document that should merely lose a tag.

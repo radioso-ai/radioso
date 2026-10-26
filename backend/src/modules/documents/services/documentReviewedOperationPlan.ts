@@ -1,11 +1,12 @@
 import { z } from "zod";
 import type { ReviewedChangeEffect } from "../../../shared/domain/reviewedChangeEffect.js";
+import { documentSourceIdSchema } from "../domain/sourceConstants.js";
 
 const reviewedImportDocumentSchema = z.object({
   externalDocumentId: z.string().min(1).max(240),
   title: z.string().min(1).max(300),
   content: z.string().min(1).max(20_000),
-  metadata: z.record(z.unknown()).optional(),
+  metadata: z.record(z.string(), z.unknown()).optional(),
   contentHash: z.string().regex(/^[a-f0-9]{64}$/),
   expectedDocumentId: z.string().uuid().nullable(),
   expectedRevision: z.number().int().nullable(),
@@ -16,7 +17,7 @@ const reviewedImportDocumentSchema = z.object({
 }).strict();
 
 export const documentReviewedOperationTargetRefSchema = z.object({
-  sourceId: z.string().uuid().nullable(),
+  sourceId: documentSourceIdSchema.nullable(),
 }).strict();
 
 export const documentReviewedImportPlanSchema = z.object({

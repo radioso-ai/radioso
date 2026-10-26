@@ -4,7 +4,7 @@ import type { CopilotToolDescriptor } from "../contracts.js";
 import { boundPayload } from "../payloadCompaction.js";
 import { asRecord } from "./shared.js";
 
-const unknownRecord = z.record(z.unknown());
+const unknownRecord = z.record(z.string(), z.unknown());
 
 export interface CopilotAudiencePulsePort {
   read(input: { accountId: string; userId: string; workspaceId: string }): Promise<object>;

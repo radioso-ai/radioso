@@ -50,6 +50,7 @@ import {
 import { resolvePublicLaunchLifecycle } from "../../../modules/accessGrants/public.js";
 import type { AccessGrant, AccessGrantSecret } from "../../../modules/accessGrants/domain.js";
 import type { AccessGrantLifecycleActor } from "../../../modules/accessGrants/services/accessGrantService.js";
+import { patchSchemaOf } from "../../../shared/domain/patchSchema.js";
 
 const agentParamsSchema = z.object({
   agentId: z.string().uuid(),
@@ -66,7 +67,7 @@ const agentRoutineParamsSchema = z.object({
 });
 
 const authoredDirectiveBodySchema = authoredDirectiveInputSchema.omit({ routes: true });
-const authoredDirectivePatchBodySchema = authoredDirectiveBodySchema.partial().extend({
+const authoredDirectivePatchBodySchema = patchSchemaOf(authoredDirectiveBodySchema).extend({
   coverageCriteria: z.union([answerCoverageCriteriaSchema, z.null()]).optional(),
 }).strict();
 const routineDefinitionBodySchema = routineDefinitionDraftInputSchema;

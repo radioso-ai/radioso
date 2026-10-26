@@ -175,6 +175,21 @@ describe("Operator MCP retrieval authoring", () => {
     expect(prepared.after).toMatchObject({ vectorTopK: 36, rerankTopK: 8 });
   });
 
+  it("keeps the agent's selected sources when a patch changes only another setting", async () => {
+    const { workspaceId, agentId, skill, skills } = await setup();
+    const selectedScope = skill.config.sourceScope as { sourceIds: string[] };
+    const authoring = new AgentRetrievalAuthoringService({
+      agentSkills: skills,
+      defaults: { getDefaults: () => ({}) as never },
+      documentSources: { findExistingIdsByWorkspaceId: async () => selectedScope.sourceIds },
+    });
+
+    const prepared = await authoring.preparePatch({ workspaceId, agentId, patch: { vectorTopK: 20 } });
+
+    // `sourceScope` defaults to "all" on the full config; a patch that leaves it out must not reset it.
+    expect(prepared.after).toMatchObject({ vectorTopK: 20, sourceScope: selectedScope });
+  });
+
   it("revalidates selected sources at apply time when a reviewed source is no longer in the workspace", async () => {
     const { workspaceId, agentId, skill, skills } = await setup();
     const selectedSourceId = randomUUID();

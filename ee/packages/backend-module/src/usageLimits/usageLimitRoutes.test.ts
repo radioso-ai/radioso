@@ -89,7 +89,7 @@ const createDependencies = (
       return {
         accountId: sessionAccountId,
         userId: sessionUserId,
-        sessionId: "33333333-3333-3333-3333-333333333333",
+        sessionId: "33333333-3333-3333-8333-333333333333",
       };
     },
     async authenticateApiToken() {
@@ -148,8 +148,8 @@ const createSessionApp = (
 
 // Stable session identity reused across the data-backed tests so seeded rows and
 // the authenticated session line up.
-const sessionAccountId = "11111111-1111-1111-1111-111111111111";
-const sessionUserId = "22222222-2222-2222-2222-222222222222";
+const sessionAccountId = "11111111-1111-1111-8111-111111111111";
+const sessionUserId = "22222222-2222-2222-8222-222222222222";
 
 describe("usage limit admin route auth", () => {
   afterEach(() => {

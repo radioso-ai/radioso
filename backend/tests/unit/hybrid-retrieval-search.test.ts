@@ -55,6 +55,22 @@ const recordStatements = (
   };
 };
 
+// Rows of the statement that finds each alternative's matches: the chunks holding it, or,
+// past the match cap, only how many there are.
+const alternativeMatches = (scopeCount: number, matches: Array<string[] | number>) =>
+  matches.map((match, alternativeIndex) => ({
+    scope_count: scopeCount,
+    alternative_index: alternativeIndex,
+    match_count: Array.isArray(match) ? match.length : match,
+    chunk_ids: Array.isArray(match) ? match : null,
+  }));
+
+const chunkIds = (prefix: string, count: number): string[] => Array.from({ length: count }, (_, index) => `${prefix}-${index}`);
+
+// "alfa beta": alfa on 3 of 1,000 chunks, beta on 3, their join on none. Each term clears
+// the floors on its own, so every chunk listed is ranked.
+const alfaBetaMatches = () => alternativeMatches(1000, [["both", "alfa-0", "alfa-1"], ["both", "beta-0", "beta-1"], []]);
+
 const statementTimeout = (): Error => Object.assign(new Error("canceling statement due to statement timeout"), { code: "57014" });
 
 const lexicalRow = (chunkId: string, overrides: Record<string, unknown> = {}) => ({
@@ -299,7 +315,7 @@ describe("hybrid retrieval search", () => {
   // made the tsvector expression differ from chunks_search_text_fts_idx, which cost
   // the GIN index and seq-scanned every chunk partition on every lexical search.
   it("builds its tsvector from search_text alone so the GIN index applies", async () => {
-    const statements = recordStatements([[], [{ scope_count: 1000, counts: [3, 3, 0] }], []]);
+    const statements = recordStatements([[], alfaBetaMatches(), []]);
     const search = new PgLexicalSearch(statements.database);
 
     await search.search({
@@ -309,7 +325,7 @@ describe("hybrid retrieval search", () => {
       matchMode: "all_or_some_terms",
     });
 
-    // All-terms search, some-terms counts, some-terms ranking.
+    // All-terms search, some-terms lookups, some-terms ranking.
     expect(statements.calls).toHaveLength(3);
     for (const { sql } of statements.calls) {
       expect(sql).toContain("to_tsvector('simple', coalesce(c.search_text, ''))");
@@ -426,7 +442,7 @@ describe("hybrid retrieval search", () => {
     const statements = recordStatements([
       [lexicalRow("exact", { rank: 0.05 })],
       // preventivo, completo, pernottamento, evento, then three joins.
-      [{ scope_count: 1000, counts: [0, 120, 4, 201, 0, 0, 0] }],
+      alternativeMatches(1000, [[], chunkIds("complete", 120), ["exact", "stay", "event", "camp"], 201, [], [], []]),
       [
         lexicalRow("exact", { covered_weight: 5, covers_all_terms: false, rank: 0.3 }),
         lexicalRow("stay", { covered_weight: 3, covers_all_terms: false, rank: 0.2 }),
@@ -445,19 +461,16 @@ describe("hybrid retrieval search", () => {
     ]);
     // The all-terms hit keeps its own query-relative score and absolute rank.
     expect(results[0]).toMatchObject({ similarity: 1, lexicalRankScore: 0.05 });
-    // A some-terms hit scores the share of the query's term weight it holds.
-    const termWeights = statements.calls[2]?.params.find(
-      (param): param is number[] => Array.isArray(param) && param.every((value) => typeof value === "number"),
-    );
-    const totalWeight = (termWeights ?? []).reduce((sum, weight) => sum + weight, 0);
-    expect(termWeights).toHaveLength(4);
+    // A some-terms hit scores the share of the query's term weight it holds: completo and
+    // pernottamento weigh; preventivo matches nothing and evento passes the count cap.
+    const totalWeight = Math.log(1000 / 120) + Math.log(1000 / 4);
     expect(results[1]?.similarity).toBeCloseTo(3 / totalWeight);
     expect(results[2]?.similarity).toBeCloseTo(2 / totalWeight);
     expect(results[1]?.lexicalRankScore).toBeCloseTo(0.2);
   });
 
   it("searches terms only as plain text, never as tsquery syntax", async () => {
-    const statements = recordStatements([[], [{ scope_count: 1000, counts: [1, 1, 1, 0, 0, 0] }], []]);
+    const statements = recordStatements([[], alternativeMatches(1000, [["a"], ["b"], ["c"], [], []]), []]);
     const search = new PgLexicalSearch(statements.database);
     const query = "pernottamento & !evento | (coscienti:*";
 
@@ -469,8 +482,8 @@ describe("hybrid retrieval search", () => {
       expect(sql).not.toMatch(/(?<![a-z])to_tsquery\(/);
       expect(sql).not.toContain("::tsquery");
       expect(sql).not.toContain(query);
-      expect(params).toEqual(expect.arrayContaining(["pernottamento", "evento", "coscienti"]));
-      for (const param of params) {
+      expect(params.flat()).toEqual(expect.arrayContaining(["pernottamento", "evento", "coscienti"]));
+      for (const param of params.flat()) {
         if (typeof param === "string" && param !== "a1") {
           expect(param).toMatch(/^[\p{L}\p{M}\p{N}._ ]+$/u);
         }
@@ -488,7 +501,7 @@ describe("hybrid retrieval search", () => {
   });
 
   it("ranks nothing when every term is too common to find a chunk on its own", async () => {
-    const statements = recordStatements([[], [{ scope_count: 1000, counts: [201, 201, 201, 0, 0] }]]);
+    const statements = recordStatements([[], alternativeMatches(1000, [201, 201, 201, [], []])]);
     const search = new PgLexicalSearch(statements.database);
 
     const result = await search.search({ workspaceId: "a1", query: "il di per", topK: 20, matchMode: "all_or_some_terms" });
@@ -523,7 +536,7 @@ describe("hybrid retrieval search", () => {
   });
 
   it("runs the some-terms statements in one transaction, inside what is left of one time budget", async () => {
-    const statements = recordStatements([[], [{ scope_count: 1000, counts: [3, 3, 0] }], [lexicalRow("partial", { covered_weight: 1, covers_all_terms: false })]]);
+    const statements = recordStatements([[], alfaBetaMatches(), [lexicalRow("partial", { covered_weight: 1, covers_all_terms: false })]]);
     const search = new PgLexicalSearch(statements.database);
 
     const result = await search.search({ workspaceId: "a1", query: "alfa beta", topK: 20, matchMode: "all_or_some_terms" });
@@ -545,7 +558,7 @@ describe("hybrid retrieval search", () => {
   it("falls back to the all-terms hits when the some-terms search runs out of time", async () => {
     const warnings: Array<{ fields: Record<string, unknown>; message: string }> = [];
     const statements = recordStatements(
-      [[lexicalRow("exact", { rank: 0.2 })], [{ scope_count: 1000, counts: [3, 3, 0] }]],
+      [[lexicalRow("exact", { rank: 0.2 })], alfaBetaMatches()],
       { failOn: (_, index) => (index === 2 ? statementTimeout() : undefined) },
     );
     const search = new PgLexicalSearch(statements.database, {
@@ -601,26 +614,52 @@ describe("hybrid retrieval search", () => {
   });
 
   it("takes its time budget from the constructor when one is given", async () => {
-    const statements = recordStatements([[], [{ scope_count: 1000, counts: [3, 3, 0] }], []]);
+    const statements = recordStatements([[], alfaBetaMatches(), []]);
     await new PgLexicalSearch(statements.database, { someTermsTimeoutMs: 40 })
       .search({ workspaceId: "a1", query: "alfa beta", topK: 20, matchMode: "all_or_some_terms" });
 
     expect(Number.parseInt(String(statements.timeoutSettings[0]?.params[0]), 10)).toBeLessThanOrEqual(40);
   });
 
-  it("counts the chunks in scope alongside each alternative, under the same scope", async () => {
-    const statements = recordStatements([[], [{ scope_count: 1000, counts: [3, 3, 0] }], []]);
+  it("looks up every alternative in one statement that counts the chunks in scope, under the same scope", async () => {
+    const statements = recordStatements([[], alfaBetaMatches(), []]);
     await new PgLexicalSearch(statements.database)
       .search({ workspaceId: "a1", query: "alfa beta", topK: 20, matchMode: "all_or_some_terms" });
 
-    const countSql = statements.calls[1]?.sql ?? "";
-    expect(countSql).toMatch(/AS scope_count/);
-    expect(countSql.match(/d\.retrieval_enabled = true/g)).toHaveLength(4);
-    expect(statements.calls[1]?.params).toContain(RETRIEVAL_BEHAVIOR.hybrid.lexicalSomeTermsScopeCountCap + 1);
+    const { sql, params } = statements.calls[1] ?? { sql: "", params: [] };
+    expect(sql).toMatch(/AS scope_count/);
+    // Once for the chunks in scope, once for the lookup every alternative shares.
+    expect(sql.match(/d\.retrieval_enabled = true/g)).toHaveLength(2);
+    expect(params).toContainEqual(["alfa", "beta", "alfabeta"]);
+    expect(params).toContainEqual([false, false, false]);
+    expect(params).toContain(RETRIEVAL_BEHAVIOR.hybrid.lexicalSomeTermsTermMatchCap + 1);
+    expect(params).toContain(RETRIEVAL_BEHAVIOR.hybrid.lexicalSomeTermsScopeCountCap + 1);
+  });
+
+  it("looks each alternative up as a value of its row, so its plan never depends on the word", async () => {
+    const statements = recordStatements([[], alfaBetaMatches(), []]);
+    await new PgLexicalSearch(statements.database)
+      .search({ workspaceId: "a1", query: "alfa beta", topK: 20, matchMode: "all_or_some_terms" });
+
+    const lookupSql = statements.calls[1]?.sql ?? "";
+    expect(lookupSql).toContain("to_tsvector('simple', coalesce(c.search_text, '')) @@ alternative.tsquery");
+    expect(lookupSql).toMatch(/unnest\(\$\d+::text\[\], \$\d+::boolean\[\]\) WITH ORDINALITY/);
+  });
+
+  it("reads no chunk to rank when no chunk holds enough of the query", async () => {
+    // alfa sits on 150 of 1,000 chunks and beta on none, so no chunk clears the absolute floor.
+    const statements = recordStatements([[], alternativeMatches(1000, [chunkIds("alfa", 150), [], []])]);
+
+    const result = await new PgLexicalSearch(statements.database)
+      .search({ workspaceId: "a1", query: "alfa beta", topK: 20, matchMode: "all_or_some_terms" });
+
+    expect(statements.calls).toHaveLength(2);
+    expect(result.matches).toEqual([]);
+    expect(result.someTermsPass.outcome).toBe("ran");
   });
 
   it("scopes the some-terms statements to the workspace, retrievable documents, and the turn's filters", async () => {
-    const statements = recordStatements([[], [{ scope_count: 1000, counts: [3, 3, 0] }], []]);
+    const statements = recordStatements([[], alfaBetaMatches(), []]);
     const search = new PgLexicalSearch(statements.database);
 
     await search.search({
@@ -645,27 +684,73 @@ describe("hybrid retrieval search", () => {
   });
 
   it("ranks a some-terms chunk against every alternative it holds, on the all-terms scale", async () => {
-    const statements = recordStatements([[], [{ scope_count: 1000, counts: [3, 3, 0] }], []]);
+    const statements = recordStatements([[], alfaBetaMatches(), []]);
     const search = new PgLexicalSearch(statements.database);
 
     await search.search({ workspaceId: "a1", query: "alfa beta", topK: 20, matchMode: "all_or_some_terms" });
 
+    const { sql, params } = statements.calls[2] ?? { sql: "", params: [] };
+    expect(sql).toContain("ts_rank_cd(to_tsvector('simple', coalesce(c.search_text, '')), plainto_tsquery('simple', c.held_text))");
+    const candidates = params.find((param): param is string[] => Array.isArray(param) && param.includes("both")) ?? [];
+    const heldTexts = params.find((param): param is string[] => Array.isArray(param) && param.includes("alfa beta")) ?? [];
+    expect(heldTexts[candidates.indexOf("both")]).toBe("alfa beta");
+    expect(heldTexts[candidates.indexOf("alfa-0")]).toBe("alfa");
+  });
+
+  it("parses the text only of the chunks that can still make the cut", async () => {
+    const statements = recordStatements([[], alfaBetaMatches(), []]);
+
+    await new PgLexicalSearch(statements.database)
+      .search({ workspaceId: "a1", query: "alfa beta", topK: 20, matchMode: "all_or_some_terms" });
+
     const rankSql = statements.calls[2]?.sql ?? "";
-    expect(rankSql).toMatch(/ts_rank_cd\(h\.search_vector, plainto_tsquery\('simple', concat_ws\(' ',/);
-    expect(rankSql).toContain("CASE WHEN h.alternative_0 THEN $");
+    expect(rankSql).toMatch(/WHERE c\.covered_weight >= \(SELECT covered_weight FROM cut\)/);
+    expect(rankSql).toMatch(/ORDER BY c\.covered_weight DESC, rank DESC, c\.chunk_index ASC/);
+  });
+
+  it("keeps chunks holding any excluded term out of the some-terms matches, parsing each chunk once", async () => {
+    // "reset token" expired -revoked -lapsed: the phrase, expired, and no joins.
+    const statements = recordStatements([[], alternativeMatches(1000, [["both", "phrase-0"], ["both", "expired-0"]]), []]);
+
+    await new PgLexicalSearch(statements.database).search({
+      workspaceId: "a1",
+      query: '"reset token" expired -revoked -lapsed',
+      lexicalPlan: deriveLexicalQueryPlan('"reset token" expired -revoked -lapsed'),
+      topK: 20,
+      matchMode: "all_or_some_terms",
+    });
+
+    const { sql, params } = statements.calls[2] ?? { sql: "", params: [] };
+    const revoked = params.indexOf("revoked") + 1;
+    const lapsed = params.indexOf("lapsed") + 1;
+    expect(revoked).toBeGreaterThan(0);
+    expect(lapsed).toBeGreaterThan(0);
+    expect(sql).toContain(
+      `AND NOT ((plainto_tsquery('simple', $${revoked}) || plainto_tsquery('simple', $${lapsed})) @@ to_tsvector('simple', coalesce(c.search_text, '')))`,
+    );
+    expect(sql.match(/to_tsvector\(/g)).toHaveLength(2);
+    // The lookup searches the phrase as a phrase.
+    expect(statements.calls[1]?.params).toContainEqual([true, false]);
   });
 
   it("can tag a some-terms chunk as holding every term only when the ranking covers every term", async () => {
-    const complete = recordStatements([[], [{ scope_count: 1000, counts: [3, 3, 0] }], []]);
+    const coverageOf = (call: RecordedStatement | undefined) => {
+      const candidates = call?.params.find((param): param is string[] => Array.isArray(param) && param.includes("both")) ?? [];
+      const coverage = call?.params.find((param): param is boolean[] => Array.isArray(param) && typeof param[0] === "boolean") ?? [];
+      return new Map(candidates.map((chunkId, index) => [chunkId, coverage[index]]));
+    };
+
+    const complete = recordStatements([[], alfaBetaMatches(), []]);
     await new PgLexicalSearch(complete.database)
       .search({ workspaceId: "a1", query: "alfa beta", topK: 20, matchMode: "all_or_some_terms" });
-    expect(complete.calls[2]?.sql).toContain("(h.alternative_0 AND h.alternative_1) AS covers_all_terms");
+    expect(coverageOf(complete.calls[2]).get("both")).toBe(true);
+    expect(coverageOf(complete.calls[2]).get("alfa-0")).toBe(false);
 
     // beta matches nothing, so no chunk can hold every term.
-    const partial = recordStatements([[], [{ scope_count: 1000, counts: [3, 0, 0] }], []]);
+    const partial = recordStatements([[], alternativeMatches(1000, [["both", "alfa-0"], [], []]), []]);
     await new PgLexicalSearch(partial.database)
       .search({ workspaceId: "a1", query: "alfa beta", topK: 20, matchMode: "all_or_some_terms" });
-    expect(partial.calls[2]?.sql).toContain("FALSE AS covers_all_terms");
+    expect(coverageOf(partial.calls[2]).get("both")).toBe(false);
   });
 
 });

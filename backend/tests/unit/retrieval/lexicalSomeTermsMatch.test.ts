@@ -4,6 +4,7 @@ import { buildPlainLexicalQueryPlan, deriveLexicalQueryPlan } from "../../../src
 import {
   buildSomeTermsLexicalQuery,
   planSomeTermsRanking,
+  scoreSomeTermsCandidates,
   type SomeTermsLexicalQuery,
 } from "../../../src/modules/retrieval/domain/lexicalSomeTermsMatch.js";
 
@@ -265,5 +266,127 @@ describe("planSomeTermsRanking", () => {
     const counts = Array.from({ length: 32 + 31 }, (_, index) => (index < 32 ? 1 : 0));
 
     expect(planFor(words.join(" "), counts, { maxRankedTerms: 40 }).everyTermRanked).toBe(false);
+  });
+});
+
+describe("scoreSomeTermsCandidates", () => {
+  // Chunk ids named for what they hold; `filler` pads a list to give a term its count.
+  const filler = (prefix: string, count: number): string[] => Array.from({ length: count }, (_, index) => `${prefix}-${index}`);
+
+  const scoreFor = (lexicalQuery: string, alternativeChunkIds: Array<string[] | null>, overrides: Partial<{
+    scopeChunkCount: number;
+    rankedChunkBudget: number;
+    minimumWeightShare: number;
+    minimumHeldWeight: number;
+  }> = {}) => {
+    const query = queryFor(lexicalQuery);
+    const ranking = planSomeTermsRanking({
+      query,
+      alternativeMatchCounts: alternativeChunkIds.map((ids) => ids?.length ?? 201),
+      scopeChunkCount: 2_000,
+      matchCap: 200,
+      rankedChunkBudget: 1000,
+      minimumWeightShare: 1 / 3,
+      minimumHeldWeight: Math.log(10),
+      maxRankedTerms: 12,
+      ...overrides,
+    });
+    if (!ranking) {
+      throw new Error("expected a ranking plan");
+    }
+    const candidates = scoreSomeTermsCandidates({ query, ranking, alternativeChunkIds });
+    return { ranking, byChunk: new Map(candidates.map((candidate) => [candidate.chunkId, candidate])), candidates };
+  };
+
+  it("scores a chunk by the weight of every ranked term it holds", () => {
+    // preventivo, completo, pernottamento, evento, then the three joins.
+    const { ranking, byChunk } = scoreFor("preventivo completo pernottamento evento", [
+      ["stay", ...filler("quote", 29)],
+      filler("complete", 150),
+      ["stay", "festival", "camp", "hostel"],
+      ["stay", "festival", ...filler("event", 188)],
+      [],
+      [],
+      [],
+    ]);
+    const [preventivo, , pernottamento, evento] = ranking.termWeights;
+
+    // Summed in term order, so the weight is exactly what a sum over the terms gives.
+    expect(byChunk.get("stay")?.coveredWeight).toBe((preventivo ?? 0) + (pernottamento ?? 0) + (evento ?? 0));
+    expect(byChunk.get("festival")?.coveredWeight).toBe((pernottamento ?? 0) + (evento ?? 0));
+  });
+
+  it("drops chunks that hold too little of the query's term weight", () => {
+    const { byChunk, ranking } = scoreFor("preventivo completo pernottamento evento", [
+      ["stay", ...filler("quote", 29)],
+      filler("complete", 150),
+      ["stay", "festival", "camp", "hostel"],
+      ["stay", "festival", ...filler("event", 188)],
+      [],
+      [],
+      [],
+    ]);
+
+    // A chunk holding only evento, a word on 190 of 2,000 chunks, falls short of both floors.
+    expect(ranking.termWeights[3]).toBeLessThan(ranking.minimumCoveredWeight);
+    expect(byChunk.has("event-0")).toBe(false);
+    expect([...byChunk.values()].every((candidate) => candidate.coveredWeight >= ranking.minimumCoveredWeight)).toBe(true);
+  });
+
+  it("ranks only chunks holding an alternative that defines the ranked set", () => {
+    // gamma and beta fill the budget, so a chunk holding only alfa is never read, even with
+    // the floors at zero.
+    const { ranking, byChunk } = scoreFor("alfa beta gamma", [filler("alfa", 150), filler("beta", 120), filler("gamma", 90), [], []], {
+      rankedChunkBudget: 250,
+      minimumWeightShare: 0,
+      minimumHeldWeight: 0,
+    });
+
+    expect(ranking.matchingAlternatives).toEqual([2, 1]);
+    expect(byChunk.has("alfa-0")).toBe(false);
+    expect(byChunk.has("beta-0")).toBe(true);
+    expect(byChunk.has("gamma-0")).toBe(true);
+  });
+
+  it("counts a term held through a join, but only a term held by its own text toward holding every term", () => {
+    // super, coscienti, supercoscienti.
+    const { byChunk } = scoreFor("super coscienti", [
+      ["both", ...filler("super", 59)],
+      ["both", "coscienti-page"],
+      ["joined"],
+    ]);
+
+    expect(byChunk.get("joined")).toMatchObject({ coversAllTerms: false });
+    expect(byChunk.get("joined")?.coveredWeight).toBe(byChunk.get("both")?.coveredWeight);
+    expect(byChunk.get("both")).toMatchObject({ coversAllTerms: true });
+  });
+
+  it("never tags a chunk as holding every term when a term is left out of the ranking", () => {
+    // evento passes the count cap, so its list is not read.
+    const { byChunk } = scoreFor("pernottamento evento", [["stay"], null, []]);
+
+    expect(byChunk.get("stay")).toMatchObject({ coversAllTerms: false });
+  });
+
+  it("ranks a chunk against the texts of the alternatives it holds, in alternative order", () => {
+    const { byChunk } = scoreFor("super coscienti", [
+      ["both", ...filler("super", 59)],
+      ["both", "coscienti-page"],
+      ["both", "joined"],
+    ]);
+
+    expect(byChunk.get("both")?.heldText).toBe("super coscienti supercoscienti");
+    expect(byChunk.get("joined")?.heldText).toBe("supercoscienti");
+  });
+
+  it("returns each chunk once, however many alternatives find it", () => {
+    const { candidates } = scoreFor("super coscienti", [
+      ["both", ...filler("super", 59)],
+      ["both", "coscienti-page"],
+      ["both", "joined"],
+    ]);
+
+    const ids = candidates.map((candidate) => candidate.chunkId);
+    expect(ids).toHaveLength(new Set(ids).size);
   });
 });

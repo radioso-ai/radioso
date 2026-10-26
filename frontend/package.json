@@ -67,7 +67,7 @@
     "shiki": "3.23.0",
     "tailwind-merge": "^3.3.1",
     "vaul": "^1.1.2",
-    "zod": "^3.24.1"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@playwright/test": "^1.59.1",

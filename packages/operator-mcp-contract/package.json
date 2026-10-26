@@ -17,7 +17,7 @@
     "check": "pnpm run build && pnpm test",
     "test": "vitest run"
   },
-  "dependencies": { "zod": "^4.1.12" },
+  "dependencies": { "zod": "^4.6.6" },
   "devDependencies": {
     "@types/node": "^24.3.0",
     "typescript": "^5.9.2",

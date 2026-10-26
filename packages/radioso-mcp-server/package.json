@@ -35,7 +35,7 @@
     "@radioso/operator-mcp-contract": "workspace:*",
     "@radioso/product-docs": "workspace:*",
     "redis": "^4.7.0",
-    "zod": "^4.1.12"
+    "zod": "^4.6.6"
   },
   "devDependencies": {
     "@types/node": "^24.3.0",

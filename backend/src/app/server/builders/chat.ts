@@ -494,7 +494,7 @@ export const buildChatServices = (input: {
         input.logger.error(
           {
             providerName,
-            err: error instanceof Error ? error.message : String(error),
+            err: error,
           },
           "Chat action suggestion provider failed",
         );
@@ -613,7 +613,7 @@ export const buildChatServices = (input: {
       });
     } catch (error) {
       input.logger.error(
-        { err: error instanceof Error ? error.message : String(error) },
+        { err: error },
         "Action dispatch queue-depth reporting failed",
       );
     }
@@ -637,7 +637,7 @@ export const buildChatServices = (input: {
           {
             agentId,
             definitionId,
-            err: error instanceof Error ? error.message : String(error),
+            err: error,
           },
           "Published routine definition failed to compile; skipping",
         );
@@ -648,7 +648,7 @@ export const buildChatServices = (input: {
             agentId,
             routineId,
             definitionId,
-            err: error instanceof Error ? error.message : String(error),
+            err: error,
           },
           "Pinned routine definition failed to load or compile; skipping resume-only registration",
         );
@@ -658,7 +658,7 @@ export const buildChatServices = (input: {
           {
             agentId,
             routineId,
-            err: error instanceof Error ? error.message : String(error),
+            err: error,
           },
           "Preview (draft) routine definition failed to load or compile; workbench draft test will not run it",
         );

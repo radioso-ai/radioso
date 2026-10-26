@@ -150,7 +150,7 @@ export class WebsiteCrawlWorker {
           this.scheduleNextTick(processed ? 0 : this.dependencies.pollIntervalMs ?? 5_000);
         } catch (error) {
           this.dependencies.logger.error(
-            { role: "website-crawl-worker", error: error instanceof Error ? error.message : String(error) },
+            { role: "website-crawl-worker", err: error },
             "Website crawl worker tick failed",
           );
           this.scheduleNextTick();
@@ -216,7 +216,7 @@ export class WebsiteCrawlWorker {
       return released.hasMore;
     } catch (error) {
       this.dependencies.logger.error(
-        { role: "website-crawl-worker", error: error instanceof Error ? error.message : String(error) },
+        { role: "website-crawl-worker", err: error },
         "Failed to release stale crawl jobs",
       );
       return false;
@@ -308,7 +308,7 @@ export class WebsiteCrawlWorker {
             role: "website-crawl-worker",
             jobId: job.id,
             workspaceId: job.workspaceId,
-            error: error instanceof Error ? error.message : String(error),
+            err: error,
           },
           "Website crawl continuation dispatch failed",
         );
@@ -334,9 +334,10 @@ export class WebsiteCrawlWorker {
           role: "website-crawl-worker",
           jobId: job.id,
           workspaceId: job.workspaceId,
-          error: failure.kind === "internal"
-            ? "Unexpected internal website crawl failure"
-            : error instanceof Error ? error.message : String(error),
+          failureKind: failure.kind,
+          // The provider's message can quote the crawled URL; it reaches the operator through
+          // the job's failure copy, and the log keeps the error's class and code.
+          err: error,
         },
         "Website crawl job failed",
       );
@@ -357,7 +358,7 @@ export class WebsiteCrawlWorker {
       })
       .catch((reportError) => {
         this.dependencies.logger.error(
-          { role: "website-crawl-worker", error: reportError instanceof Error ? reportError.message : String(reportError) },
+          { role: "website-crawl-worker", err: reportError },
           "Website crawl internal fault report failed",
         );
       });
@@ -374,7 +375,7 @@ export class WebsiteCrawlWorker {
       }
     } catch (error) {
       this.dependencies.logger.warn(
-        { role: "website-crawl-worker", jobId, error: error instanceof Error ? error.message : String(error) },
+        { role: "website-crawl-worker", jobId, err: error },
         "Failed to release paused crawl job claim",
       );
     }
@@ -403,7 +404,7 @@ export class WebsiteCrawlWorker {
           }
         } catch (error) {
           this.dependencies.logger.warn(
-            { role: "website-crawl-worker", jobId: job.id, error: error instanceof Error ? error.message : String(error) },
+            { role: "website-crawl-worker", jobId: job.id, err: error },
             "Failed to check website crawl job cancellation state",
           );
         }

@@ -81,7 +81,8 @@ export class AuditService {
         audit: auditEventLogFields(event),
         retrieval: extractRetrievalLogFields(event.metadata),
         analytics: extractProductAnalyticsLogFields(event.metadata?.analytics),
-        error: extractErrorLogFields(event.metadata?.error),
+        // Not `error`, which the logger serializes as a caught value (`logger.ts`).
+        errorEvent: extractErrorLogFields(event.metadata?.error),
       },
       "audit_event",
     );

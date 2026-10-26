@@ -170,8 +170,7 @@ export class ConnectorRegistry {
         } as Parameters<ConnectorPlugin["initialize"]>[0]);
         this.initialized.add(plugin.id);
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        context.logger.error({ connectorId: plugin.id, err: message }, `Connector "${plugin.id}" failed to initialize`);
+        context.logger.error({ connectorId: plugin.id, err: error }, `Connector "${plugin.id}" failed to initialize`);
       }
     }
   }
@@ -805,6 +804,12 @@ export class ConnectorRegistry {
       mount: (path, router) => {
         const connectorPath = `/${connectorId}`;
         const mountPath = path.startsWith("/") ? path : `/${path}`;
+        // A parameter in the mount path (`/:workspaceId/webhook`) reaches the plugin's routes, and
+        // the route pattern logs and traces name the request by (`matchedRoute.ts`), only through
+        // `mergeParams`, so the host turns it on rather than trusting each plugin to.
+        if (/(^|\/):/u.test(mountPath)) {
+          (router as { mergeParams?: boolean }).mergeParams = true;
+        }
         this.router.use(`${connectorPath}${mountPath}`, router);
       },
     };

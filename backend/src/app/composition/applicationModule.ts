@@ -656,7 +656,7 @@ export class ApplicationModuleCoordinator {
         this.logger.error(
           {
             moduleId: module.id,
-            err: error instanceof Error ? error.message : String(error),
+            err: error,
           },
           "Application module failed to initialize",
         );
@@ -673,7 +673,7 @@ export class ApplicationModuleCoordinator {
         this.logger.error(
           {
             migratorId: migrator.id,
-            err: error instanceof Error ? error.message : String(error),
+            err: error,
           },
           "Application module migrator failed",
         );
@@ -693,7 +693,7 @@ export class ApplicationModuleCoordinator {
         this.logger.error(
           {
             moduleId: module.id,
-            err: error instanceof Error ? error.message : String(error),
+            err: error,
           },
           "Application module failed to shut down",
         );

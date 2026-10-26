@@ -672,6 +672,10 @@ export type AgentSettingsUpdate = ApiSchemas['ConversationAgentRequest'] & {
   assistantLinkUtmEnabled?: boolean
 }
 export type AgentVoiceSettings = ApiSchemas['AgentVoiceSettings']
+/** Where an agent's voice runtime stands, as `GET`/`POST /agents/:agentId/voice/connection` answer. */
+export type AgentVoiceConnection = ApiSchemas['AgentVoiceConnection']
+/** The same after `DELETE /agents/:agentId/voice/connection`, with whether the vendor agent may still be there. */
+export type AgentVoiceDisconnection = ApiSchemas['AgentVoiceDisconnection']
 export type AgentMechanicsReplies = ApiSchemas['AgentMechanicsReplies']
 const hashLogoCacheKeyPart = (value: string): string => {
   let hash = 5381

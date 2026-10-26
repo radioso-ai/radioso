@@ -1,4 +1,3 @@
-import { voiceVendorNames, type VoiceVendorName } from '@/lib/api-llm-providers'
 import type { AgentMechanicsReplies, AgentVoiceSettings } from '@/lib/api-types'
 
 export const VOICE_BRIDGE_STYLES = ['check', 'acknowledge'] as const
@@ -26,27 +25,11 @@ export const isBelowElevenLabsSpokenFloor = (line: string): boolean => {
   return text.length > 0 && Array.from(text).length < ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS
 }
 
+/** The vendor agent a Radioso-started voice session opens, as the agent stores it. */
+export type VoiceRuntimeBinding = NonNullable<AgentVoiceSettings['runtime']>
+
 /** The data residency regions a vendor account can be in, from the generated contract. */
-export type VoiceRuntimeRegion = NonNullable<AgentVoiceSettings['runtime']>['region']
-const listEveryRegion = <const Regions extends readonly VoiceRuntimeRegion[]>(
-  regions: Regions & (Exclude<VoiceRuntimeRegion, Regions[number]> extends never ? unknown : never),
-) => regions
-/** In the order the card offers them; `us` is the vendor's default region. */
-export const VOICE_RUNTIME_REGIONS = listEveryRegion(['us', 'eu', 'in', 'sg'])
-
-/**
- * The agent settings API's bound on a vendor agent id. Mirrors `maxLength` on
- * `AgentVoiceSettings.runtime.agentId` in the OpenAPI contract; `tests/unit/voice-settings-form.test.ts`
- * pins the two together.
- */
-export const VOICE_RUNTIME_AGENT_ID_MAX_LENGTH = 128
-
-/** The vendor agent a Radioso-started voice session opens; a blank `agentId` binds none. */
-export interface VoiceRuntimeForm {
-  vendor: VoiceVendorName
-  agentId: string
-  region: VoiceRuntimeRegion
-}
+export type VoiceRuntimeRegion = VoiceRuntimeBinding['region']
 
 /** One language's lines across the `voice` and `mechanicsReplies` blocks. */
 export interface VoiceLanguageLines {
@@ -60,7 +43,11 @@ export interface VoiceLanguageLines {
 
 export interface VoiceSettingsForm {
   enabled: boolean
-  runtime: VoiceRuntimeForm
+  /**
+   * The binding as stored, which only Connect and Disconnect change. A save sends it back as it is:
+   * the block is replaced whole, so leaving it out would unbind the agent.
+   */
+  runtime: VoiceRuntimeBinding | null
   /** Lets the agent switch the call's voice and transcription when the caller's language changes mid-call. */
   languageSwitching: boolean
   languages: VoiceLanguageLines[]
@@ -88,7 +75,7 @@ export const voiceSettingsFormFromAgent = (voice: AgentVoiceSettings, mechanicsR
   ])]
   return {
     enabled: voice.enabled,
-    runtime: voice.runtime ? { ...voice.runtime } : { vendor: voiceVendorNames[0], agentId: '', region: VOICE_RUNTIME_REGIONS[0] },
+    runtime: voice.runtime ? { ...voice.runtime } : null,
     languageSwitching: voice.languageSwitching ?? false,
     languages: locales.map((locale) => ({
       locale,
@@ -112,9 +99,7 @@ const authoredLinesOf = <Kind extends string>(kinds: readonly Kind[], source: Re
  * them. Blank lines are dropped, and a language with nothing in a block is left out of that block.
  */
 export const voiceSettingsUpdateFromForm = (form: VoiceSettingsForm): { voice: AgentVoiceSettings; mechanicsReplies: AgentMechanicsReplies } => {
-  const agentId = form.runtime.agentId.trim()
-  const runtime = agentId ? { vendor: form.runtime.vendor, agentId, region: form.runtime.region } : null
-  const voice: AgentVoiceSettings = { enabled: form.enabled, bridgeLines: {}, fallbackLine: {}, runtime, languageSwitching: form.languageSwitching }
+  const voice: AgentVoiceSettings = { enabled: form.enabled, bridgeLines: {}, fallbackLine: {}, runtime: form.runtime, languageSwitching: form.languageSwitching }
   const recordingNotice: Record<string, string> = {}
   const mechanicsReplies: AgentMechanicsReplies = {}
   for (const language of form.languages) {

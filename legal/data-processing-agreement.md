@@ -173,6 +173,7 @@ Each workspace uses the subprocessors of its region.
 | Google Cloud (Google Cloud EMEA Ltd.) | Hosting, database, file storage | All Service data | EU (europe-west1, Belgium) |
 | Microsoft Azure OpenAI (Microsoft Ireland Operations Ltd.) | Language model and embeddings | Messages, retrieved document passages and instructions sent at answer time | EU (Azure EU Data Zone; resource in Germany West Central) |
 | Lettermint B.V. | Notification email to the Controller's team; the email channel, when enabled | Recipient address and email content | EU (Netherlands) |
+| PostHog Inc. | Error tracking and application log storage for Radioso's operations | Error reports, which can carry an error's message quoting personal data; log records with ids, counts and coded outcomes | EU (PostHog EU Cloud) |
 | Slack | Notifications and handoff, only when the Controller connects Slack | Notification content the Controller configures | United States |
 
 ### Workspaces in us-central1
@@ -182,15 +183,12 @@ Each workspace uses the subprocessors of its region.
 | Google Cloud (Google Cloud EMEA Ltd.) | Hosting, database, file storage | All Service data | United States (us-central1, Iowa) |
 | OpenAI (OpenAI Ireland Ltd.) | Language model and embeddings | Messages, retrieved document passages and instructions sent at answer time | United States |
 | Resend | Notification email to the Controller's team; the email channel, when enabled | Recipient address and email content | United States |
+| PostHog Inc. | Error tracking and application log storage for Radioso's operations | Error reports, which can carry an error's message quoting personal data; log records with ids, counts and coded outcomes | EU (PostHog EU Cloud) |
 | Slack | Notifications and handoff, only when the Controller connects Slack | Notification content the Controller configures | United States |
 
-Radioso's billing (Stripe) and product analytics (PostHog) handle data Radioso
-controls itself, as its Privacy Policy describes, and are outside this DPA.
-[Owner: both live stacks also send error reports to PostHog
-(`error_sinks = "audit,posthog"`), and an error report can carry an error's
-message quoting a workspace's personal data. Either list PostHog error tracking
-as a subprocessor in both tables above, with its region, or stop sending error
-reports to it.]
+Radioso's billing (Stripe) and its product analytics (also PostHog) handle data
+Radioso controls itself, as its Privacy Policy describes, and are outside this
+DPA.
 
 Providers the Controller connects with its own account and key, such as its
 own OpenAI, Anthropic, Gemini or ElevenLabs account, are the Controller's own

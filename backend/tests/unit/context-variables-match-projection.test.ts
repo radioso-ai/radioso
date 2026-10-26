@@ -26,7 +26,7 @@ describe("projectContextForMatching", () => {
     expect(projection.context.customer_email).toBe(REDACTED_VALUE);
   });
 
-  it("projects page context to its locating fields and omits the page excerpt", () => {
+  it("projects page context to its locating fields, without the page excerpt or the browser language", () => {
     const projection = projectContextForMatching(
       {
         page_context: {
@@ -45,8 +45,49 @@ describe("projectContextForMatching", () => {
       pageUrl: "https://shop.example/cart",
       pageTitle: "Your cart",
       pageLocale: "en-GB",
-      browserLocale: "en-GB",
     });
+  });
+
+  it("projects visitor_request without the browser language", () => {
+    const projection = projectContextForMatching(
+      {
+        visitor_request: {
+          country: "IT",
+          region: "UMB",
+          city: "Assisi",
+          language: "en",
+          referrer: "https://partner.example",
+          entryPageUrl: "https://corsi.ananda.it/",
+        },
+      },
+      roomyBound,
+    );
+
+    expect(projection.context.visitor_request).toEqual({
+      country: "IT",
+      region: "UMB",
+      city: "Assisi",
+      referrer: "https://partner.example",
+      entryPageUrl: "https://corsi.ananda.it/",
+    });
+  });
+
+  it("omits visitor_request when the browser language was its only fact", () => {
+    const projection = projectContextForMatching(
+      {
+        visitor_request: {
+          country: null,
+          region: null,
+          city: null,
+          language: "en",
+          referrer: null,
+          entryPageUrl: null,
+        },
+      },
+      roomyBound,
+    );
+
+    expect(projection.context).toEqual({});
   });
 
   it("omits page context that resolved no locating fields", () => {

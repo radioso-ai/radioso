@@ -1,7 +1,7 @@
 ---
 title: Context variables
 description: How operators configure page, identity, and host-defined context for agent turns.
-last_updated: 2026-09-22
+last_updated: 2026-10-26
 ---
 
 # Context variables
@@ -251,6 +251,12 @@ directive condition such as "when the visitor is in Germany, mention that
 shipping to the EU takes 3-5 days" reads `visitor_request.country` the same
 way it would read any other context variable.
 
+Conditions see every field except `language`. The step that judges conditions
+also picks the language of the reply, and it picks it from the words the
+visitor writes, so an Italian question from a browser set to English gets an
+Italian answer. A `visitor_request` whose only fact is `language` is left out
+of condition matching altogether.
+
 ## Surfacing
 
 Surfacing controls whether a resolved value is shown to the model as part of
@@ -302,8 +308,8 @@ prompt. Two limits are worth knowing when you write a condition:
   hinge on something deep inside a large JSON blob are unreliable. Push the fact
   the condition needs as its own variable.
 
-Page context reaches conditions as the URL, title, and locale. The visible page
-excerpt is not part of it.
+Page context reaches conditions as the URL, title, and page language. The
+visible page excerpt and the browser language are not part of it.
 
 ## Pushing values
 

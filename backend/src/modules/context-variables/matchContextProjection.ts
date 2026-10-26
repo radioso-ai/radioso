@@ -9,6 +9,7 @@ import {
   type ContextVariableRenderCandidate,
 } from "./contextVariablesBound.js";
 import type { ContextVariableSnapshot } from "./redaction.js";
+import { VISITOR_REQUEST_VARIABLE_NAME, type VisitorRequestFacts } from "./visitorRequestFacts.js";
 
 export interface MatchContextProjection {
   /** Variable name to bounded value; empty when the turn resolved no usable context. */
@@ -17,8 +18,13 @@ export interface MatchContextProjection {
   clamped: ContextVariableBoundClamp[];
 }
 
-/** Page fields that locate the visitor. The visible excerpt is deliberately not one of them. */
-const PAGE_LOCATING_FIELDS = ["pageUrl", "pageTitle", "pageLocale", "browserLocale"] as const;
+/**
+ * Page fields that locate the visitor. The visible excerpt is deliberately not one of them, and
+ * neither is the browser language (see `visitorRequestForMatching`).
+ */
+const PAGE_LOCATING_FIELDS = ["pageUrl", "pageTitle", "pageLocale"] as const;
+
+const BROWSER_LANGUAGE_FIELD: keyof VisitorRequestFacts = "language";
 
 /**
  * Page context reaches matching as the fields that say *where the visitor is*.
@@ -42,6 +48,33 @@ const pageContextForMatching = (value: unknown): Record<string, string> | undefi
 };
 
 /**
+ * The browser language stays out of matching. The fused turn planner judges directive
+ * conditions and picks the reply language in the same call, and a browser locale beside the
+ * question pulls that choice away from the language the visitor writes in: an Italian
+ * question from an English-language browser gets an English reply. With the language
+ * removed, a `visitor_request` that carried nothing else is omitted.
+ */
+const visitorRequestForMatching = (value: unknown): Record<string, unknown> | undefined => {
+  if (typeof value !== "object" || value === null) {
+    return undefined;
+  }
+  const facts = Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).filter(([field]) => field !== BROWSER_LANGUAGE_FIELD),
+  );
+  return Object.values(facts).some((fact) => fact !== null && fact !== undefined) ? facts : undefined;
+};
+
+const valueForMatching = (name: string, snapshotValue: unknown): unknown => {
+  if (name === PAGE_CONTEXT_VARIABLE_NAME) {
+    return pageContextForMatching(snapshotValue);
+  }
+  if (name === VISITOR_REQUEST_VARIABLE_NAME) {
+    return visitorRequestForMatching(snapshotValue);
+  }
+  return snapshotValue;
+};
+
+/**
  * Projects the turn's resolved context variables into the bounded record handed
  * to directive matching, so an operator's prose condition can reference visitor
  * state ("the visitor's cart is worth more than EUR 100").
@@ -60,8 +93,7 @@ export const projectContextForMatching = (
   const candidates: ContextVariableRenderCandidate[] = [];
 
   for (const [name, snapshotValue] of Object.entries(snapshot)) {
-    const value =
-      name === PAGE_CONTEXT_VARIABLE_NAME ? pageContextForMatching(snapshotValue) : snapshotValue;
+    const value = valueForMatching(name, snapshotValue);
     const serialized = JSON.stringify(value);
     if (value === undefined || serialized === undefined) {
       continue;

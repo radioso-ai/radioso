@@ -103,17 +103,9 @@ const buildSampler = (sampler: TraceSamplerName | undefined, samplerArg: string 
   return buildRootSampler(sampler, samplerArg);
 };
 
-const errorFields = (error: unknown): Record<string, string> => {
-  if (error instanceof Error) {
-    return {
-      err: error.message,
-    };
-  }
-
-  return {
-    err: String(error),
-  };
-};
+// The tracer's own diagnostics go through the app logger, whose `err` serializer (`logger.ts`)
+// keeps an error's class and code: a collector's message can echo its endpoint or a credential.
+const errorFields = (error: unknown): Record<string, unknown> => ({ err: error });
 
 class LoggingSpanExporter implements SpanExporter {
   constructor(
@@ -129,7 +121,7 @@ class LoggingSpanExporter implements SpanExporter {
       if (result.code !== 0) {
         this.logger?.error(
           {
-            err: result.error instanceof Error ? result.error.message : "span export failed",
+            ...errorFields(result.error ?? new Error("span export failed")),
             spanCount: spans.length,
           },
           "otel_export_failed",

@@ -191,3 +191,81 @@ describeIntegration("AuditEventRepository (Postgres)", () => {
     expect((await repository.findDocumentSearchEventBySearchId(workspaceId, first.id))?.id).toBe(first.id); // id::text branch
   });
 });
+
+describeIntegration("AuditEventRepository: events about subjects that may be gone (Postgres)", () => {
+  const database = new Database(integrationDatabaseUrl);
+  const repository = new AuditEventRepository(database.kysely);
+  const accountId = randomUUID();
+
+  beforeAll(async () => {
+    await database.query(`INSERT INTO accounts (id, name, email, password_hash) VALUES ($1,$2,$3,$4)`, [accountId, "Gone Co", `gone-${accountId}@example.com`, "hash"]);
+    // Holds the first insert of a race event open after its read, so a deletion can commit before its key check.
+    await database.query(`
+      CREATE OR REPLACE FUNCTION test_hold_workspace_race_insert() RETURNS trigger AS $$
+      BEGIN
+        IF NEW.event_type = 'test.workspace_race' AND NEW.workspace_id IS NOT NULL THEN
+          PERFORM pg_sleep(1);
+        END IF;
+        RETURN NEW;
+      END $$ LANGUAGE plpgsql`);
+    await database.query(`
+      CREATE TRIGGER test_hold_workspace_race_insert BEFORE INSERT ON audit_events
+      FOR EACH ROW EXECUTE FUNCTION test_hold_workspace_race_insert()`);
+  });
+
+  afterAll(async () => {
+    await database.query("DROP TRIGGER IF EXISTS test_hold_workspace_race_insert ON audit_events").catch(() => undefined);
+    await database.query("DROP FUNCTION IF EXISTS test_hold_workspace_race_insert()").catch(() => undefined);
+    await database.query(`DELETE FROM audit_events WHERE account_id = $1`, [accountId]).catch(() => undefined);
+    await database.query(`DELETE FROM accounts WHERE id = $1`, [accountId]).catch(() => undefined);
+    await database.close().catch(() => undefined);
+  });
+
+  const seedWorkspace = async () => {
+    const workspaceId = randomUUID();
+    await database.query(`INSERT INTO workspaces (id, account_id, name, public_route_key) VALUES ($1,$2,$3,$4)`, [workspaceId, accountId, "Gone Workspace", `route-${workspaceId}`]);
+    return workspaceId;
+  };
+  const eventsOf = (eventType: string) => database.query<{ account_id: string | null; workspace_id: string | null; metadata_json: Record<string, unknown> }>(
+    "SELECT account_id, workspace_id, metadata_json FROM audit_events WHERE event_type = $1 AND account_id = $2 ORDER BY metadata_json->>'n'",
+    [eventType, accountId],
+  );
+
+  it("points at subjects that exist and names gone ones by id, one row per event, in one write", async () => {
+    const workspaceId = await seedWorkspace();
+    await database.query("DELETE FROM workspaces WHERE id = $1", [workspaceId]);
+
+    await repository.createNamingGoneSubjects({
+      accountId,
+      workspaceId,
+      eventType: "test.gone_subjects",
+      eventStatus: "success",
+      metadata: [{ n: "1" }, { n: "2" }],
+    });
+
+    await expect(eventsOf("test.gone_subjects")).resolves.toEqual([
+      { account_id: accountId, workspace_id: null, metadata_json: { n: "1", deletedWorkspaceId: workspaceId } },
+      { account_id: accountId, workspace_id: null, metadata_json: { n: "2", deletedWorkspaceId: workspaceId } },
+    ]);
+  });
+
+  it("writes again, naming the workspace by id, when a deletion commits between the insert's read and its key check", async () => {
+    const workspaceId = await seedWorkspace();
+
+    const written = repository.createNamingGoneSubjects({
+      accountId,
+      workspaceId,
+      eventType: "test.workspace_race",
+      eventStatus: "success",
+      metadata: [{ n: "1" }],
+    });
+    // The insert read the workspace and is held by the trigger; the deletion commits meanwhile.
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    await database.query("DELETE FROM workspaces WHERE id = $1", [workspaceId]);
+    await written;
+
+    await expect(eventsOf("test.workspace_race")).resolves.toEqual([
+      { account_id: accountId, workspace_id: null, metadata_json: { n: "1", deletedWorkspaceId: workspaceId } },
+    ]);
+  });
+});

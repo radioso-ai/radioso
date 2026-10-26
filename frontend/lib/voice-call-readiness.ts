@@ -7,7 +7,8 @@ const HINTS: Record<VoiceCallReadinessGap, (vendorName: string) => string> = {
   voice_channel: () => 'Turn on the voice channel on the API page first.',
   runtime: () => 'Bind a voice runtime on the Voice card first.',
   vendor_key: (vendorName) => `Store the ${vendorName} key under Settings → Providers first.`,
-  encryption: (vendorName) => `Radioso cannot read the stored ${vendorName} key. Set CONNECTOR_ENCRYPTION_KEY, then enter the key again.`,
+  encryption: (vendorName) =>
+    `Radioso cannot read the stored ${vendorName} key. Check CONNECTOR_ENCRYPTION_KEY; after a key rotation, list the key it replaced in CONNECTOR_ENCRYPTION_PREVIOUS_KEYS. Otherwise enter the key again.`,
 }
 
 /**

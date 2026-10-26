@@ -48,6 +48,7 @@
     "db:schema:check": "bash ./scripts/dump-schema.sh --check",
     "operator-mcp:rotate-credential-state": "tsx ./scripts/rotateOperatorMcpCredentialState.ts",
     "storage:sweep-orphans": "tsx ./src/workspaceStorageSweep.ts",
+    "credentials:reencrypt": "tsx ./src/credentialReencryption.ts",
     "email:dev": "tsx ./scripts/emailChannelDev.ts",
     "db:types": "bash ./scripts/generate-kysely-types.sh",
     "db:types:check": "bash ./scripts/generate-kysely-types.sh --check",

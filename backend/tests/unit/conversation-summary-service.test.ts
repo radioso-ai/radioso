@@ -428,6 +428,10 @@ describe("ConversationSummaryService", () => {
     // The log payload never carries summary/message content.
     const [payload] = logger.warn.mock.calls[0];
     expect(JSON.stringify(payload)).not.toContain("message 14");
+    // Nor the provider's message: the error goes to the app logger's serializer, which keeps its
+    // class and code.
+    expect(payload).toMatchObject({ err: expect.any(Error) });
+    expect(payload).not.toHaveProperty("errorMessage");
   });
 });
 
@@ -746,6 +750,8 @@ describe("ConversationSummaryService early title generation", () => {
     // Content-free: the log payload never carries message content.
     for (const [payload] of logger.warn.mock.calls) {
       expect(JSON.stringify(payload)).not.toContain("meditation");
+      expect(payload).toMatchObject({ err: expect.any(Error) });
+      expect(payload).not.toHaveProperty("errorMessage");
     }
   });
 

@@ -104,12 +104,17 @@ export const documentsApi = {
     }, { withSession: true })
   },
 
-  async reprocessDocument(documentId: string, input?: { documentEnrichmentOverride?: 'on' | 'off' }): Promise<DocumentCreateResponse> {
+  async reprocessDocument(
+    documentId: string,
+    input?: { documentEnrichmentOverride?: 'on' | 'off'; refreshDocumentEnrichment?: boolean },
+  ): Promise<DocumentCreateResponse> {
+    const body = {
+      ...(input?.documentEnrichmentOverride ? { documentEnrichmentOverride: input.documentEnrichmentOverride } : {}),
+      ...(input?.refreshDocumentEnrichment ? { refreshDocumentEnrichment: true } : {}),
+    }
     return request<DocumentCreateResponse>(`/document/${documentId}/reprocess`, {
       method: "POST",
-      ...(input?.documentEnrichmentOverride
-        ? { body: JSON.stringify({ documentEnrichmentOverride: input.documentEnrichmentOverride }) }
-        : {}),
+      ...(Object.keys(body).length > 0 ? { body: JSON.stringify(body) } : {}),
     }, { withSession: true })
   },
 

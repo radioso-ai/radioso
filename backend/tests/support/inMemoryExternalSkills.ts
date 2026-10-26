@@ -34,7 +34,6 @@ export class InMemoryMcpConnectionRepository implements McpConnectionRepositoryP
       serverUrl: input.serverUrl,
       authMethod: input.authMethod,
       credentialCiphertext: input.credentialCiphertext ?? null,
-      encryptionKeyId: input.encryptionKeyId ?? null,
       oauthClientCiphertext: input.oauthClientCiphertext ?? null,
       oauthFlowCiphertext: null,
       status: input.status ?? "unconfigured",
@@ -71,7 +70,6 @@ export class InMemoryMcpConnectionRepository implements McpConnectionRepositoryP
     }
     if (input.displayName !== undefined) record.displayName = input.displayName;
     if (input.credentialCiphertext !== undefined) record.credentialCiphertext = input.credentialCiphertext;
-    if (input.encryptionKeyId !== undefined) record.encryptionKeyId = input.encryptionKeyId;
     if (input.status !== undefined) record.status = input.status;
     record.updatedAt = new Date();
     return { ...record };
@@ -91,14 +89,12 @@ export class InMemoryMcpConnectionRepository implements McpConnectionRepositoryP
     agentId: string,
     id: string,
     credentialCiphertext: string,
-    encryptionKeyId: string | null,
   ): Promise<McpConnectionRecord | null> {
     const record = this.rows.get(id);
     if (!record || record.agentId !== agentId) {
       return null;
     }
     record.credentialCiphertext = credentialCiphertext;
-    record.encryptionKeyId = encryptionKeyId;
     record.oauthFlowCiphertext = null;
     record.status = "authorized";
     record.updatedAt = new Date();

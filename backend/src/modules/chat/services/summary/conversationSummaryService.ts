@@ -317,16 +317,15 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
       );
     } catch (error) {
       // Rethrown so the background job that runs this retries and, past its budget,
-      // dead-letters: the turn that asked for it has already answered. Name/message
-      // only: provider errors carry raw response bodies (which can echo credentials),
-      // and this logger applies no redaction to custom keys.
+      // dead-letters: the turn that asked for it has already answered. The app logger's
+      // serializer keeps the error's class and code, never its message or a provider's
+      // raw response body (which can echo credentials).
       this.logger?.warn(
         {
           event: "conversation_summary_generation_failed",
           conversationId: input.conversationId,
           durationMs: Date.now() - startedAt,
-          errorType: error instanceof Error ? error.name : typeof error,
-          errorMessage: error instanceof Error ? error.message : undefined,
+          err: error,
         },
         "Failed to regenerate conversation summary",
       );
@@ -495,8 +494,7 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
         {
           event: "conversation_title_write_failed",
           conversationId: input.conversationId,
-          errorType: error instanceof Error ? error.name : typeof error,
-          errorMessage: error instanceof Error ? error.message : undefined,
+          err: error,
         },
         "Failed to persist conversation title",
       );
@@ -572,16 +570,15 @@ export class ConversationSummaryService implements ConversationSummaryUpdater {
         signal,
       });
     } catch (error) {
-      // Name/message only: provider errors carry raw response bodies (which can
-      // echo credentials), and this logger applies no redaction to custom keys.
+      // The app logger's serializer keeps the error's class and code, never its
+      // message or a provider's raw response body (which can echo credentials).
       this.logger?.warn(
         {
           event: "conversation_early_title_generation_failed",
           conversationId: input.conversationId,
           durationMs: Date.now() - startedAt,
           attempt: attemptNumber,
-          errorType: error instanceof Error ? error.name : typeof error,
-          errorMessage: error instanceof Error ? error.message : undefined,
+          err: error,
         },
         "Failed to generate an early conversation title",
       );

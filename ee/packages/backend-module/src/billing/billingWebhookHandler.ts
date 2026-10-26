@@ -148,13 +148,15 @@ const sendBillingNotice = async (
     for (const result of results) {
       if (result.status === "rejected") {
         deps.logger.warn(
-          { accountId: input.accountId, eventId: input.eventId, error: String(result.reason) },
+          // The error itself: the app logger's serializer keeps its class and code, never the
+          // provider's message, which can name the recipient.
+          { accountId: input.accountId, eventId: input.eventId, err: result.reason },
           "billing notice email failed",
         );
       }
     }
   } catch (error) {
-    deps.logger.warn({ accountId: input.accountId, eventId: input.eventId, error: String(error) }, "billing notice email failed");
+    deps.logger.warn({ accountId: input.accountId, eventId: input.eventId, err: error }, "billing notice email failed");
   }
 };
 

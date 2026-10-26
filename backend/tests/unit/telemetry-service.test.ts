@@ -67,7 +67,7 @@ describe("TelemetryService", () => {
 
     await expect(service.emit({ eventType: "test.event" })).resolves.toBeTruthy();
     expect(logger.error).toHaveBeenCalledWith(
-      expect.objectContaining({ err: "down", eventType: "test.event" }),
+      expect.objectContaining({ err: expect.objectContaining({ message: "down" }), eventType: "test.event" }),
       "telemetry_sink_failed",
     );
   });

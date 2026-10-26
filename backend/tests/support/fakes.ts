@@ -2117,7 +2117,6 @@ export class InMemoryWebhookDestinationRepository implements WebhookDestinationR
     name: string;
     url: string;
     secretCiphertext: string;
-    encryptionKeyId: string;
   }): Promise<WebhookDestinationRecord> {
     const duplicate = [...this.items.values()].some((item) =>
       item.workspaceId === input.workspaceId && item.name.toLowerCase() === input.name.toLowerCase()
@@ -2134,7 +2133,6 @@ export class InMemoryWebhookDestinationRepository implements WebhookDestinationR
       name: input.name,
       url: input.url,
       secretCiphertext: input.secretCiphertext,
-      encryptionKeyId: input.encryptionKeyId,
       lastDeliveryStatus: null,
       lastDeliveryAt: null,
       createdAt: now,
@@ -2182,7 +2180,7 @@ export class InMemoryWebhookDestinationRepository implements WebhookDestinationR
   async updateSecret(
     id: string,
     workspaceId: string,
-    input: { secretCiphertext: string; encryptionKeyId: string },
+    input: { secretCiphertext: string },
   ): Promise<WebhookDestinationRecord | null> {
     const item = await this.findByIdAndWorkspace(id, workspaceId);
     if (!item) {
@@ -5337,6 +5335,17 @@ export class InMemoryAuditEventRepository implements AuditEventRepositoryPort {
     };
     this.items.push(record);
     return record;
+  }
+
+  /** The in-memory store keeps no organizations or workspaces to check: every subject counts as present. */
+  async createNamingGoneSubjects(input: {
+    accountId: string;
+    workspaceId: string;
+    eventType: string;
+    eventStatus: string;
+    metadata: readonly Record<string, unknown>[];
+  }): Promise<void> {
+    for (const metadata of input.metadata) await this.create({ ...input, metadata });
   }
 
   async createIfConversationLive(input: {

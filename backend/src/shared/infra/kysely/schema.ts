@@ -783,6 +783,7 @@ export interface Documents {
   content_size_bytes: Int8 | null;
   created_at: Generated<Timestamp>;
   enrichment: Json | null;
+  enrichment_reply: Json | null;
   external_document_id: string | null;
   failed_at: Timestamp | null;
   failure_reason: string | null;
@@ -1218,6 +1219,9 @@ export interface IntegrationOauthConnections {
   created_at: Generated<Timestamp>;
   credential_ciphertext: string | null;
   display_name: string;
+  /**
+   * Unused: the ciphertext columns name their key. Dropped once no running revision writes it.
+   */
   encryption_key_id: string | null;
   granted_scopes: Generated<string[]>;
   id: string;
@@ -1248,6 +1252,9 @@ export interface McpConnections {
   created_at: Generated<Timestamp>;
   credential_ciphertext: string | null;
   display_name: string;
+  /**
+   * Unused: the ciphertext columns name their key. Dropped once no running revision writes it.
+   */
   encryption_key_id: string | null;
   id: string;
   oauth_client_ciphertext: string | null;
@@ -1955,6 +1962,30 @@ export interface Visitors {
   workspace_id: string;
 }
 
+export interface VoiceRecordingErasureItems {
+  attempts: Generated<number>;
+  conversation_id: string | null;
+  created_at: Generated<Timestamp>;
+  erasure_id: string;
+  failed_at: Timestamp | null;
+  failure_reason: string | null;
+  id: Generated<string>;
+  next_attempt_at: Generated<Timestamp>;
+  status: Generated<string>;
+  updated_at: Generated<Timestamp>;
+  vendor_conversation_id: string;
+  vendor_region: string;
+}
+
+export interface VoiceRecordingErasures {
+  account_id: string;
+  created_at: Generated<Timestamp>;
+  id: Generated<string>;
+  sealed_api_key: string | null;
+  vendor: string;
+  workspace_id: string;
+}
+
 export interface VoiceSessions {
   agent_id: string | null;
   conversation_id: string | null;
@@ -2086,7 +2117,10 @@ export interface WorkspaceSetupState {
 
 export interface WorkspaceWebhookDestinations {
   created_at: Generated<Timestamp>;
-  encryption_key_id: string;
+  /**
+   * Unused: secret_ciphertext names its key. Dropped once no running revision writes it.
+   */
+  encryption_key_id: string | null;
   id: Generated<string>;
   last_delivery_at: Timestamp | null;
   last_delivery_status: string | null;
@@ -2227,6 +2261,8 @@ export interface DB {
   vector_index_checkpoints: VectorIndexCheckpoints;
   vector_index_work: VectorIndexWork;
   visitors: Visitors;
+  voice_recording_erasure_items: VoiceRecordingErasureItems;
+  voice_recording_erasures: VoiceRecordingErasures;
   voice_sessions: VoiceSessions;
   website_crawl_jobs: WebsiteCrawlJobs;
   workspace_embedding_profiles: WorkspaceEmbeddingProfiles;

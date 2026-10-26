@@ -32,6 +32,22 @@ describe('document enrichment API adapters', () => {
     vi.unstubAllGlobals()
   })
 
+  it('asks for a fresh extraction when reprocessing one document with refresh', async () => {
+    vi.stubGlobal('window', { localStorage: createLocalStorage() })
+    const fetchMock = vi.fn().mockResolvedValue(createJsonResponse({ documentId: 'doc-1', status: 'queued' }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    await documentsApi.reprocessDocument('doc-1', { documentEnrichmentOverride: 'on', refreshDocumentEnrichment: true })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/backend/api/v1/document/doc-1/reprocess',
+      expect.objectContaining({
+        method: 'POST',
+        body: JSON.stringify({ documentEnrichmentOverride: 'on', refreshDocumentEnrichment: true }),
+      }),
+    )
+  })
+
   it('sends a one-run enrichment override when reprocessing one document', async () => {
     vi.stubGlobal('window', { localStorage: createLocalStorage() })
     const fetchMock = vi.fn().mockResolvedValue(createJsonResponse({ documentId: 'doc-1', status: 'queued' }))

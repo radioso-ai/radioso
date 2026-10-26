@@ -107,7 +107,6 @@ describeIfDatabase("external skills repositories (postgres)", () => {
       serverUrl: "https://mcp.example.com",
       authMethod: "access_token",
       credentialCiphertext: ciphertext,
-      encryptionKeyId: "k1",
     });
     expect(created.status).toBe("unconfigured");
 
@@ -137,7 +136,7 @@ describeIfDatabase("external skills repositories (postgres)", () => {
     expect(withFlow?.oauthFlowCiphertext).toBe(flowCiphertext);
 
     const tokenCiphertext = encryptField(JSON.stringify({ accessToken: "at" }), encryptionKey);
-    const authorized = await connections.setOauthTokens(agentId, created.id, tokenCiphertext, "k1");
+    const authorized = await connections.setOauthTokens(agentId, created.id, tokenCiphertext);
     expect(authorized?.status).toBe("authorized");
     expect(authorized?.credentialCiphertext).toBe(tokenCiphertext);
     // The transient flow is cleared once authorized.

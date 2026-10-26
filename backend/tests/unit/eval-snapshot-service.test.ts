@@ -814,7 +814,6 @@ describe("EvalSnapshotService.capture", () => {
             serverUrl: "https://mcp.slack.example.com",
             authMethod: "access_token" as const,
             credentialCiphertext: "encrypted-token",
-            encryptionKeyId: null,
             oauthClientCiphertext: null,
             oauthFlowCiphertext: null,
             status: "authorized" as const,

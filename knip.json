@@ -41,6 +41,7 @@
         "src/crawlerWorker.ts",
         "src/crawlerWorkerServer.ts",
         "src/workspaceStorageSweep.ts",
+        "src/credentialReencryption.ts",
         "scripts/**/*.{ts,mjs}",
         "tests/**/*.test.ts",
         "tests/support/**/*.ts",

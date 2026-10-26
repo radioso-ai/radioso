@@ -10,7 +10,7 @@ import {
   createVoiceSessionStartComposition,
   refreshEmbedConfigsOnVoiceVendorKeyChange,
 } from "../composition/voiceChannel.js";
-import { VoiceSessionRepository } from "../../modules/voiceChannel/public.js";
+import { VoiceRecordingErasureRepository, VoiceSessionRepository } from "../../modules/voiceChannel/public.js";
 import { createPostgresDeliveryFailures } from "../composition/deliveryFailures.js";
 import {
   createEmailChannelComposition,
@@ -64,6 +64,7 @@ import type { AppDependencies } from "./types.js";
 import {
   buildInfrastructure,
   buildLogger,
+  buildPersonalCredentialLifecycleRepository,
   buildRepositories,
 } from "./builders/infra.js";
 import {
@@ -213,13 +214,45 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const repositories = buildRepositories(infrastructure.database, {
     agentSurfaceExtensions,
     agentSkillSettings,
-    backgroundJobs: backgroundJobs.queue,
   });
   const abuseControlComposition = createAbuseControlComposition({
     env,
     logger,
     metricsRegistry: infrastructure.metricsRegistry,
     postgresRepository: repositories.abuseControlRepository,
+  });
+  const workspaceProviderCredentialsService = buildWorkspaceProviderCredentialsService({
+    auditService: infrastructure.auditService,
+    env,
+    logger,
+    repositories,
+  });
+  // One store for voice sessions: the turn's bindings, the starts the turn and the session start
+  // share, and where each call's recording lives.
+  const voiceSessions = new VoiceSessionRepository(infrastructure.database.kysely);
+  // Recordings stay with the vendor; the Inbox plays them through the backend with the workspace's
+  // key, Ray reads whether one exists, and a deletion hands them, with the key sealed, to the
+  // erasure backlog the background-job worker drains.
+  const voiceRecordingErasures = new VoiceRecordingErasureRepository(infrastructure.database.kysely);
+  const voiceRecordings = createVoiceRecordingComposition({
+    recordings: voiceSessions,
+    recordingsIn: (db) => new VoiceSessionRepository(db),
+    erasures: voiceRecordingErasures,
+    erasuresIn: (db) => new VoiceRecordingErasureRepository(db),
+    credentials: workspaceProviderCredentialsService,
+    // Called through its own receiver, never detached from globalThis.
+    fetch: (url, init) => globalThis.fetch(url, init),
+    auditService: infrastructure.auditService,
+    queue: backgroundJobs.queue,
+    errorReporter: infrastructure.errorReportingService,
+    metricsRegistry: infrastructure.metricsRegistry,
+    logger,
+  });
+  // Workspace and organization deletion, with what each hands off in its own transaction: the
+  // recordings vendors hold, and the stored files.
+  const personalCredentialLifecycle = buildPersonalCredentialLifecycleRepository(infrastructure.database, {
+    backgroundJobs: backgroundJobs.queue,
+    vendorHeld: (trx) => voiceRecordings.erasureIn(trx),
   });
   const access = buildAccessServices({
     auditService: infrastructure.auditService,
@@ -228,13 +261,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     metricsRegistry: infrastructure.metricsRegistry,
     repositories,
+    personalCredentialLifecycle,
     lifecycleUnitOfWork: new AccessGrantLifecycleUnitOfWork(infrastructure.database.kysely),
-  });
-  const workspaceProviderCredentialsService = buildWorkspaceProviderCredentialsService({
-    auditService: infrastructure.auditService,
-    env,
-    logger,
-    repositories,
   });
   const notificationRecipientSuppressions = new NotificationRecipientStateRepository(infrastructure.database.kysely);
   const notificationRecipientPolicy = buildNotificationRecipientPolicy({
@@ -277,21 +305,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     notificationRecipientPolicy,
     infrastructure.usageLimitPolicy,
   );
-  // One store for voice sessions: the turn's bindings, the starts the turn and the session start
-  // share, and where each call's recording lives.
-  const voiceSessions = new VoiceSessionRepository(infrastructure.database.kysely);
-  // Recordings stay with the vendor; the Inbox plays them through the backend with the workspace's
-  // key, Ray reads whether one exists, and a deletion asks the vendor to delete them.
-  const voiceRecordings = createVoiceRecordingComposition({
-    recordings: voiceSessions,
-    recordingsIn: (db) => new VoiceSessionRepository(db),
-    credentials: workspaceProviderCredentialsService,
-    // Called through its own receiver, never detached from globalThis.
-    fetch: (url, init) => globalThis.fetch(url, init),
-    auditService: infrastructure.auditService,
-    metricsRegistry: infrastructure.metricsRegistry,
-    logger,
-  });
   const documentRetrievalGraph = buildDocumentRetrievalGraph({
     composition,
     env,
@@ -300,7 +313,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     repositories,
     personalCredentialTermination: access.personalCredentialTenureService,
     personalCredentialLifecycle: access.personalCredentialLifecycle,
-    vendorHeldConversationData: { eraser: voiceRecordings.erasure, logger },
     workspaceInvalidationPublisher: realtimePublisherComposition.publisher,
     workspaceProviderCredentialsService,
   });
@@ -1294,6 +1306,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
       logger,
       metrics: infrastructure.metricsRegistry,
     })),
+    // Built in: recordings a deletion left pending with no job working on them are queued again.
+    voiceRecordings.erasureRecoveryTask,
     ...composition.periodicTaskRegistrations.map((registration) => ({
       id: registration.id,
       intervalMs: registration.intervalMs,
@@ -1343,6 +1357,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   const backgroundJobRuntime = backgroundJobs.createRuntime([
     ...chat.backgroundJobHandlers,
     ...slackInboundJobs.backgroundJobHandlers,
+    // The recordings a deletion handed off, deleted at the voice vendor with the key held beside them.
+    voiceRecordings.erasureJobHandler,
     // A deleted workspace's stored files: handed off by its deletion, or queued by an operator.
     workspaceStoragePurgeHandler({
       storage: documents.documentStorage,
@@ -1491,6 +1507,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     voiceSessionStarts,
     voiceSessionAvailability: voiceSessionStarts,
     voiceRecordings: voiceRecordings.recordings,
+    voiceRecordingsLeftAtVendor: voiceRecordingErasures,
     assistantHistoryService: chat.assistantHistoryService,
     conversationErasure,
     privacySettingsService,

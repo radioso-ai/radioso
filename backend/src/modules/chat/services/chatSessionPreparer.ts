@@ -797,7 +797,7 @@ export class ChatSessionPreparer {
       .catch((error: unknown) => {
         this.logger?.warn(
           {
-            err: error instanceof Error ? error.message : String(error),
+            err: error,
             workspaceId: userMessage.workspaceId,
             messageId: userMessage.id,
           },

@@ -14,7 +14,7 @@ import { setTimeout as delay } from "node:timers/promises";
 
 import request from "supertest";
 import { createApp } from "../../src/app/server/createApp.js";
-import type { Env } from "../../src/app/config/env.js";
+import { connectorEncryptionKeys, type Env } from "../../src/app/config/env.js";
 import { createMailAccountInvitationNotifier } from "../../src/app/composition/accountInvitationNotifier.js";
 import { createConversationOperatorDirectory } from "../../src/app/composition/conversationOperatorDirectory.js";
 import { createTeammateLabelReader } from "../../src/app/composition/teammateLabelReader.js";
@@ -57,7 +57,7 @@ import { RetrievalTurnController } from "../../src/modules/chat/services/retriev
 import { AssistantChatService } from "../../src/modules/chat/services/assistantChatService.js";
 import {
   type VoiceRecordingStore,
-  type VoiceRecordingToErase,
+  type VoiceRecordingsLeftAtVendorReader,
   type VoiceSessionRef,
   type VoiceSessionStartLookup,
   type VoiceSessionStartRegistry,
@@ -867,7 +867,10 @@ const createInMemoryVoiceSessions = (): VoiceSessionStore & VoiceSessionStartReg
   const started = new Map<string, InMemoryVoiceStart>();
   const keyOf = (session: { workspaceId: string; agentId: string; vendor: string; sessionKey: string }) =>
     JSON.stringify([session.workspaceId, session.agentId, session.vendor, session.sessionKey]);
-  const recordings = (): Array<{ recording: VoiceRecordingToErase; visitorKey: string | null }> =>
+  const recordings = (): Array<{
+    recording: { workspaceId: string; conversationId: string | null; vendor: "elevenlabs"; region: VoiceSessionVendorAgent["region"]; vendorConversationId: string };
+    visitorKey: string | null;
+  }> =>
     [...started.entries()].flatMap(([key, start]) => start.vendorConversationId
       ? [{
         recording: {
@@ -915,13 +918,14 @@ const createInMemoryVoiceSessions = (): VoiceSessionStore & VoiceSessionStartReg
         .find((candidate) => candidate.workspaceId === workspaceId && candidate.conversationId === conversationId);
       return recording ? { conversationId, vendor: recording.vendor, region: recording.region, vendorConversationId: recording.vendorConversationId } : null;
     },
-    listRecordings: async (scope) =>
+    lockRecordedVendors: async (scope) => [...new Set(
       recordings()
         .filter(({ recording, visitorKey }) => recording.workspaceId === scope.workspaceId
           && (scope.kind === "workspace"
             || (scope.kind === "conversations" && recording.conversationId !== null && scope.conversationIds.includes(recording.conversationId))
             || (scope.kind === "visitor_key" && visitorKey === scope.visitorKey)))
-        .map(({ recording }) => recording),
+        .map(({ recording }) => recording.vendor),
+    )],
     findStartedVisitor: async (session) => {
       const start = started.get(keyOf(session));
       if (!start || bound.has(keyOf(session)) || start.expiresAt.getTime() <= Date.now()) return null;
@@ -966,6 +970,8 @@ export const createTestDependencies = (overrides: {
   heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;
   /** The `fetch` voice vendor session starters call; omitted means every vendor call fails as unreachable. */
   voiceVendorFetch?: typeof globalThis.fetch;
+  /** The organization's list of recordings left at the vendor; the in-memory app keeps none by default. */
+  voiceRecordingsLeftAtVendor?: VoiceRecordingsLeftAtVendorReader;
   /** Writes chat's line for a turn a person owns before a teammate has replied; omitted means no line. */
   handoffWaitingMessageGenerator?: ChatServiceOptions["handoffWaitingMessageGenerator"];
   /** Keeps the heard part of a reply cut off mid-stream; omitted means the in-memory store over the test repositories. */
@@ -1564,18 +1570,38 @@ export const createTestDependencies = (overrides: {
   const workspaceProviderCredentialsService = new WorkspaceProviderCredentialsService(
     workspaceProviderCredentialsRepository,
     auditService,
-    { key: env.CONNECTOR_ENCRYPTION_KEY },
+    { key: connectorEncryptionKeys(env) },
   );
   const voiceVendorFetch: typeof globalThis.fetch = overrides.voiceVendorFetch ?? (async () => {
     throw new TypeError("Voice vendor calls are disabled in tests");
   });
+  // The in-memory app has no transactions and runs no background jobs, so no deletion in it hands
+  // recordings to the erasure backlog: the backlog and the job queue refuse to be used.
+  const noErasureBacklog = async (): Promise<never> => {
+    throw new Error("The in-memory app keeps no voice recording erasure backlog");
+  };
+  const erasureBacklog = {
+    hold: noErasureBacklog,
+    claim: noErasureBacklog,
+    remove: noErasureBacklog,
+    keep: noErasureBacklog,
+    fail: noErasureBacklog,
+    release: noErasureBacklog,
+    failExhausted: noErasureBacklog,
+    postpone: noErasureBacklog,
+    overdueErasures: noErasureBacklog,
+  };
   const voiceRecordings = createVoiceRecordingComposition({
     recordings: voiceSessions,
     // The in-memory app has no transactions: every handle reads the same store.
     recordingsIn: () => voiceSessions,
+    erasures: erasureBacklog,
+    erasuresIn: () => erasureBacklog,
     credentials: workspaceProviderCredentialsService,
     fetch: voiceVendorFetch,
     auditService,
+    queue: { enqueue: noErasureBacklog, enqueueInTransaction: noErasureBacklog, wake: async () => undefined },
+    errorReporter: null,
     metricsRegistry,
     logger,
   });
@@ -1583,9 +1609,6 @@ export const createTestDependencies = (overrides: {
     workspaceRepository,
     auditService,
     accountMembershipRepository,
-    undefined,
-    undefined,
-    { eraser: voiceRecordings.erasure, logger },
   );
   const workspaceSessionService = new WorkspaceSessionService(workspaceService);
   const oauthConnectionRepository = new InMemoryOauthConnectionRepository();
@@ -1600,7 +1623,7 @@ export const createTestDependencies = (overrides: {
     workspaceAccounts: {
       getAccountId: async (workspaceId) => (await workspaceRepository.findById(workspaceId))?.accountId ?? null,
     },
-    encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
+    encryptionKey: connectorEncryptionKeys(env),
   });
   const slackProvider = buildSlackOauthProviderDefinition({
     clientId: "test-slack-client",
@@ -1644,7 +1667,7 @@ export const createTestDependencies = (overrides: {
       },
       ...(slackProvider ? [slackProvider] : []),
     ]),
-    encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
+    encryptionKey: connectorEncryptionKeys(env),
     appBaseUrl: env.APP_BASE_URL,
     apiBaseUrl: env.CONNECTOR_PUBLIC_BASE_URL ?? env.APP_BASE_URL,
     assertPublicUrl: () => undefined,
@@ -1711,7 +1734,7 @@ export const createTestDependencies = (overrides: {
   const mcpConnectionService = new McpConnectionService({
     repository: mcpConnectionRepository,
     toolServiceFactory: createMockToolServiceFactory(),
-    encryptionKey: env.CONNECTOR_ENCRYPTION_KEY,
+    encryptionKey: connectorEncryptionKeys(env),
     // No-op in tests (avoids real DNS); SSRF enforcement is unit-tested directly.
     assertPublicUrl: () => undefined,
     // Deterministic OAuth wiring for route tests (no real authorization server).
@@ -1742,7 +1765,7 @@ export const createTestDependencies = (overrides: {
     managedModelPolicy: overrides.managedModelPolicy ?? new NoopManagedModelPolicy(),
   });
   const connectorRegistry = new ConnectorRegistry();
-  connectorRegistry.setEncryptionKey(env.CONNECTOR_ENCRYPTION_KEY!);
+  connectorRegistry.setEncryptionKey(connectorEncryptionKeys(env)!);
   const connectorDb = new InMemoryConnectorDatabase();
   const agentRevisionRepository = new InMemoryAgentRevisionRepository();
   const agentRepository = new InMemoryAgentRepository(
@@ -1808,7 +1831,7 @@ export const createTestDependencies = (overrides: {
   const webhookDestinations = new DefaultWebhookDestinationAdapter(new WebhookDestinationService({
     repository: webhookDestinationRepository,
     auditService,
-    encryption: { key: env.CONNECTOR_ENCRYPTION_KEY },
+    encryption: { key: connectorEncryptionKeys(env) },
     assertPublicUrl: async () => undefined,
     routineReferences: routineDefinitionRepository,
     skillReferences: {
@@ -3076,6 +3099,7 @@ export const createTestDependencies = (overrides: {
     voiceSessionStarts,
     voiceSessionAvailability: voiceSessionStarts,
     voiceRecordings: voiceRecordings.recordings,
+    voiceRecordingsLeftAtVendor: overrides.voiceRecordingsLeftAtVendor ?? { listForAccount: async () => ({ total: 0, recordings: [], nextCursor: null }) },
     assistantHistoryService,
     conversationErasure: overrides.conversationErasure ?? {
       // The in-memory app has no transaction to erase in; the Postgres erasure is covered by
@@ -3218,6 +3242,8 @@ export const createTestApp = (overrides: {
   dataSubjectAccess?: AppDependencies["dataSubjectAccess"];
   heldReplies?: AppDependencies["heldReplies"] & CopilotHeldReplyQueuePort;
   voiceVendorFetch?: typeof globalThis.fetch;
+  /** The organization's list of recordings left at the vendor; the in-memory app keeps none by default. */
+  voiceRecordingsLeftAtVendor?: VoiceRecordingsLeftAtVendorReader;
   handoffWaitingMessageGenerator?: ChatServiceOptions["handoffWaitingMessageGenerator"];
   cutReplyStore?: ChatServiceOptions["cutReplyStore"];
   turnPlanCoordinator?: ChatServiceOptions["turnPlanCoordinator"];

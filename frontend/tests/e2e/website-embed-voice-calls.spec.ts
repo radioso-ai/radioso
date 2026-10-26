@@ -67,7 +67,7 @@ test("the switch stays off with one line naming what voice still needs", async (
 
 for (const [missing, hint] of [
   ["vendor_key", "Store the ElevenLabs key under Settings → Providers first."],
-  ["encryption", "Radioso cannot read the stored ElevenLabs key. Set CONNECTOR_ENCRYPTION_KEY, then enter the key again."],
+  ["encryption", "Radioso cannot read the stored ElevenLabs key. Check CONNECTOR_ENCRYPTION_KEY; after a key rotation, list the key it replaced in CONNECTOR_ENCRYPTION_PREVIOUS_KEYS. Otherwise enter the key again."],
 ] as const) test(`a bound runtime whose ${missing} is missing says so`, async ({ page }) => {
   await seedDashboardStorage(page);
   await installDashboardApiMocks(page, {

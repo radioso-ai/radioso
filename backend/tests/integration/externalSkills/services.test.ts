@@ -109,8 +109,7 @@ describeIfDatabase("external skills services (postgres)", () => {
     connections = new McpConnectionService({
       repository: new McpConnectionRepository(database.kysely),
       toolServiceFactory: mockToolServiceFactory,
-      encryptionKey,
-      encryptionKeyId: "k1",
+      encryptionKey: { current: encryptionKey, previous: [] },
     });
     skills = new ExternalSkillDefinitionService(new ExternalSkillDefinitionRepository(database.kysely), connections);
   });

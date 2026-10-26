@@ -4,6 +4,7 @@ import { readBuildIdentity } from "../../config/buildIdentity.js";
 import type { AppDependencies } from "../../server/types.js";
 import { createAccountRoutes } from "./accountRoutes.js";
 import { createAccountUserRoutes } from "./accountUserRoutes.js";
+import { createAccountVoiceRecordingRoutes } from "./accountVoiceRecordingRoutes.js";
 import { createAuthRoutes } from "./authRoutes.js";
 import { createConversationActivityRoutes } from "./conversationActivityRoutes.js";
 import { createConversationOwnershipRoutes } from "./conversationOwnershipRoutes.js";
@@ -70,6 +71,7 @@ export const createApiRouteMounts = (_dependencies: AppDependencies): readonly A
   { path: "/api/connectors/email", createRouter: createNotificationDeliveryWebhookRoutes },
   { path: "/api/v1/account", createRouter: createAccountRoutes },
   { path: "/api/v1/account", createRouter: createAccountUserRoutes },
+  { path: "/api/v1/account", createRouter: createAccountVoiceRecordingRoutes },
   { path: "/api/v1/account", createRouter: createApiAccessRoutes },
   { path: "/api/v1", createRouter: createOperatorMcpSetupRoutes },
   { path: "/api/v1", createRouter: createOperatorMcpDashboardRoutes },

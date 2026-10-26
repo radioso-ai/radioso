@@ -319,9 +319,10 @@ describe("route-scoped directive steering", () => {
     expect(payload).toMatchObject({
       event: "directive_contextual_match_unavailable",
       workspaceId: "w1",
-      errorType: "Error",
-      errorMessage: "400 Unsupported parameter",
+      // The error itself: the logger's serializer keeps its class and code, never its message.
+      err: expect.any(Error),
     });
+    expect(payload).not.toHaveProperty("errorMessage");
     // Observability constraint: the directive turn context never reaches the log.
     expect(JSON.stringify(payload)).not.toContain("Can I get a refund?");
   });
@@ -375,9 +376,10 @@ describe("route-scoped directive steering", () => {
       event: "directive_contextual_match_unavailable",
       workspaceId: "w1",
       source: "gateway_construction",
-      errorType: "Error",
-      errorMessage: "no chat capability configured for workspace",
+      // The error itself: the logger's serializer keeps its class and code, never its message.
+      err: expect.any(Error),
     });
+    expect(payload).not.toHaveProperty("errorMessage");
     expect(JSON.stringify(payload)).not.toContain("Can I get a refund?");
   });
 

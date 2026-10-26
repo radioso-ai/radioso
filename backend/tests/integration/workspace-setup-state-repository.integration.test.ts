@@ -106,7 +106,6 @@ describeIntegration("WorkspaceSetupStateRepository (Postgres)", () => {
       name: "Setup notifications",
       url: "https://example.com/setup-events",
       secretCiphertext: "ciphertext",
-      encryptionKeyId: "test-key",
     });
 
     await expect(repository.getOutcomeFlags(workspaceId)).resolves.toMatchObject({

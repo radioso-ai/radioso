@@ -488,6 +488,13 @@ const envSchema = z.object({
    * this plus `/a/{publicId}`. Discovery documents refuse to render without it.
    */
   PUBLIC_MCP_CONVERSE_URL: emptyStringToUndefined(z.string().url()),
+  /**
+   * Public base URL of this backend's REST API as the internet reaches it, e.g.
+   * `https://api.radioso.ai`. A voice vendor agent Radioso creates posts each turn to
+   * `{this}/api/v1/agents/{agentId}/voice/{vendor}/v1`, so Connect on an agent's Voice card
+   * refuses to run without it.
+   */
+  PUBLIC_API_BASE_URL: emptyStringToUndefined(z.string().url()),
   RADIOSO_WIDGET_ORIGIN: emptyStringToUndefined(z.string().min(1)),
   RADIOSO_APPLICATION_MODULES: emptyStringToUndefined(z.string().min(1)),
 }).superRefine((value, ctx) => {

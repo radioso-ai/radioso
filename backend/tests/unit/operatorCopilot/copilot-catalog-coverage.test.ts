@@ -102,6 +102,11 @@ describe("operator copilot catalog coverage", () => {
       reason: expect.stringContaining("vendor-facing wire adapter"),
     });
   });
+  it("keeps Connect and Disconnect of the agent's voice runtime outside Ray's catalog: they mint and revoke an access grant", () => {
+    expect(catalogCoverage.connectAgentVoice).toMatchObject({ disposition: "permanent", reason: expect.stringContaining("access_grants") });
+    expect(catalogCoverage.disconnectAgentVoice).toEqual(catalogCoverage.connectAgentVoice);
+    expect(catalogCoverage.getAgentVoiceConnection).toMatchObject({ disposition: "permanent" });
+  });
   it("keeps the visitor's voice session start outside Ray's catalog, with the settings it reads named as Ray's to propose", () => {
     expect(catalogCoverage.createPublicVoiceSession).toMatchObject({
       disposition: "permanent",
@@ -127,8 +132,12 @@ describe("operator copilot catalog coverage", () => {
       const description = catalog.find((descriptor) => descriptor.name === name)?.description;
       expect(description).toContain("replace the stored block whole");
       expect(description).toContain(`bridge or fallback line shorter than ${ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS} characters`);
-      // The runtime binding is Ray's to propose; the vendor key it needs is a secret Ray never writes.
+      // Connect on the Voice card writes the runtime binding, so Ray carries it over as stored; the
+      // vendor key it needs is a secret Ray never writes.
       expect(description).toContain("voice.runtime binds the agent to one vendor agent");
+      expect(description).toContain("Connect on the agent's Voice card");
+      expect(description).toContain("carry voice.runtime over exactly as stored");
+      expect(description).toContain("never ask for or invent a vendor agent id");
       expect(description).toContain("the operator enters the vendor's API key in Settings");
       // The recording notice rides the same whole block, so leaving it out of a write removes it.
       expect(description).toContain("voice.recordingNotice");

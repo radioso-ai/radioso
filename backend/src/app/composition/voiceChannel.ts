@@ -10,9 +10,11 @@ import {
   VoiceRecordingErasureDrain,
   VoiceRecordingErasureService,
   VoiceRecordingService,
+  VoiceRuntimeConnectionService,
   VoiceSessionStartService,
   VoiceTurnService,
   createElevenLabsRecordingSource,
+  createElevenLabsRuntimeProvisioner,
   createElevenLabsSessionStarter,
   recoverStrandedVoiceRecordingErasures,
   voiceRecordingErasureJobHandler,
@@ -21,6 +23,9 @@ import {
   type VoiceRecordingAudit,
   type VoiceRecordingErasureBacklog,
   type VoiceRecordingStore,
+  type VoiceRuntimeChannelCredentials,
+  type VoiceRuntimeConnectionAudit,
+  type VoiceRuntimeConnectionStore,
   type VoiceVendorCredentialReader,
   type VoiceVendorCredentialSealer,
   type VoiceSessionAvailabilityPort,
@@ -33,7 +38,8 @@ import {
   type VoiceTurnPort,
   VOICE_REPLY_INTERRUPTED_EVENT,
 } from "../../modules/voiceChannel/public.js";
-import type { AgentRecord } from "../../modules/agents/public.js";
+import type { AccessGrantService } from "../../modules/accessGrants/public.js";
+import type { AgentRecord, AgentService } from "../../modules/agents/public.js";
 import type { AuditEventInput, AuditPort } from "../../modules/audit/contracts/index.js";
 import type { BackgroundJobHandlerRegistration, BackgroundJobQueue } from "../../shared/background-jobs/index.js";
 import type { ErrorReporter } from "../../shared/errors/errorReporter.js";
@@ -398,3 +404,134 @@ export const createVoiceSessionStartComposition = (deps: {
     metrics: deps.metricsRegistry,
     logger: deps.logger,
   });
+
+/** The label the dashboard's REST credential list shows for the credential a maintained vendor agent carries. */
+const VOICE_RUNTIME_CREDENTIAL_LABEL = "Voice calls";
+const VOICE_RUNTIME_CREDENTIAL_REVOKE_REASON = "voice_runtime_connection";
+
+type VoiceRuntimeGrants = Pick<AccessGrantService, "issueGrant" | "revokeGrant" | "findGrantById">;
+
+/**
+ * The REST agent-channel credential a maintained vendor agent sends, over the access grants: an
+ * `agent-api` grant on the `agent-api` channel, admitting any origin, that never expires (the
+ * vendor holds it, and Radioso rotates it on Connect), listed on the agent's API card like any other.
+ */
+const voiceRuntimeChannelCredentials = (grants: VoiceRuntimeGrants): VoiceRuntimeChannelCredentials => {
+  const lifecycleActor = (userId: string | null) => (userId ? { kind: "user" as const, id: userId } : null);
+  return {
+    issue: async ({ workspaceId, agentId, actor }) => {
+      const { grant, token } = await grants.issueGrant({
+        agentId,
+        workspaceId,
+        accountId: actor.accountId,
+        actor: lifecycleActor(actor.userId),
+        principalKind: "agent-api",
+        channel: "agent-api",
+        originConstraint: { mode: "allow-all", origins: [] },
+        label: VOICE_RUNTIME_CREDENTIAL_LABEL,
+        expiresAt: null,
+      });
+      return { credentialId: grant.id, secret: token };
+    },
+    isActive: async ({ workspaceId, agentId, credentialId }) => {
+      const grant = await grants.findGrantById(credentialId);
+      return grant !== null
+        && grant.workspaceId === workspaceId
+        && grant.agentId === agentId
+        && grant.principalKind === "agent-api"
+        && grant.channel === "agent-api"
+        && grant.enabled
+        && grant.revokedAt === null
+        && (grant.expiresAt === null || grant.expiresAt.getTime() > Date.now());
+    },
+    revoke: async ({ credentialId, actor }) => {
+      const grant = await grants.findGrantById(credentialId);
+      if (!grant || grant.revokedAt) return;
+      await grants.revokeGrant({
+        grantId: credentialId,
+        accountId: actor.accountId,
+        actor: lifecycleActor(actor.userId),
+        reason: VOICE_RUNTIME_CREDENTIAL_REVOKE_REASON,
+      });
+    },
+  };
+};
+
+/**
+ * The chat-completions base URL a vendor agent posts one agent's turns to, under the deployment's
+ * public API base URL; null when the deployment names none. Each vendor speaks the completions
+ * dialect of its own name (`agentVoiceRoute.ts` mounts `…/voice/:dialect/v1/chat/completions`).
+ */
+const voiceRuntimeCompletionsAddress = (publicApiBaseUrl: string | undefined) => {
+  if (!publicApiBaseUrl) return null;
+  const base = publicApiBaseUrl.replace(/\/+$/u, "");
+  return ({ agentId, vendor }: { agentId: string; vendor: VoiceVendor }) =>
+    `${base}/api/v1/agents/${encodeURIComponent(agentId)}/voice/${vendor}/v1`;
+};
+
+/** The audit events a runtime connection leaves: ids, the vendor, its region and closed values. */
+const createVoiceRuntimeConnectionAudit = (auditService: Pick<AuditPort, "record">): VoiceRuntimeConnectionAudit => ({
+  connected: ({ accountId, workspaceId, ...metadata }) =>
+    auditService.record({ accountId, workspaceId, eventType: "agent.voice_runtime.connected", eventStatus: "success", metadata }),
+  disconnected: ({ accountId, workspaceId, ...metadata }) =>
+    auditService.record({ accountId, workspaceId, eventType: "agent.voice_runtime.disconnected", eventStatus: "success", metadata }),
+});
+
+type AgentRuntimeProfileRepository = {
+  findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<Pick<AgentRecord, "name" | "voice" | "assistantDefaultLocale"> | null>;
+};
+
+/**
+ * Connects agents' voice channels to vendor agents Radioso creates and maintains: the ElevenLabs
+ * provisioner over `fetch`, the workspace's vendor key from the credential store, the connection
+ * records, the access grants for the REST credential each vendor agent carries, and the agent
+ * service as the binding's writer, so a binding is an agent write like any other.
+ */
+export const createVoiceRuntimeConnectionComposition = (deps: {
+  connections: VoiceRuntimeConnectionStore;
+  agentRepository: AgentRuntimeProfileRepository;
+  agentService: Pick<AgentService, "get" | "update">;
+  accessGrants: VoiceRuntimeGrants;
+  credentials: VoiceVendorCredentialStore;
+  fetch: typeof globalThis.fetch;
+  /** `PUBLIC_API_BASE_URL`; unset, nothing can be connected. */
+  publicApiBaseUrl: string | undefined;
+  auditService: Pick<AuditPort, "record">;
+  metricsRegistry: MetricsRegistry | null;
+  logger: AppLogger;
+}): VoiceRuntimeConnectionService =>
+  new VoiceRuntimeConnectionService({
+    agents: {
+      findRuntimeProfile: async ({ workspaceId, agentId }) => {
+        const agent = await deps.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
+        return agent ? { name: agent.name, defaultLocale: agent.assistantDefaultLocale, runtime: agent.voice.runtime } : null;
+      },
+    },
+    connections: deps.connections,
+    credentials: voiceVendorCredentialReader(deps.credentials),
+    provisioners: { elevenlabs: createElevenLabsRuntimeProvisioner({ fetch: deps.fetch }) },
+    channelCredentials: voiceRuntimeChannelCredentials(deps.accessGrants),
+    binder: {
+      bind: async ({ workspaceId, agentId, runtime }) => {
+        const agent = await deps.agentService.get(workspaceId, agentId);
+        await deps.agentService.update(workspaceId, agentId, { voice: { ...agent.voice, runtime } });
+      },
+    },
+    completionsAddress: voiceRuntimeCompletionsAddress(deps.publicApiBaseUrl),
+    audit: createVoiceRuntimeConnectionAudit(deps.auditService),
+    metrics: deps.metricsRegistry,
+    logger: deps.logger,
+  });
+
+/**
+ * Keeps each maintained vendor agent in step with its agent: a write that changes the agent's
+ * default locale sets the vendor agent's language again, and an agent about to be deleted takes
+ * its vendor agent and credential with it. Neither ever fails the agent write.
+ */
+export const keepVoiceRuntimesInStepWithAgents = (deps: {
+  agents: Pick<AgentService, "onDefaultLocaleChange" | "onBeforeDelete">;
+  connections: Pick<VoiceRuntimeConnectionService, "syncPrimaryLanguage" | "releaseForDeletedAgent">;
+}): void => {
+  deps.agents.onDefaultLocaleChange(({ workspaceId, agentId }) => deps.connections.syncPrimaryLanguage({ workspaceId, agentId }));
+  deps.agents.onBeforeDelete((agent) => deps.connections.releaseForDeletedAgent(agent));
+};

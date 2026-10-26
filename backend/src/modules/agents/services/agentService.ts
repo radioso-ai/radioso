@@ -142,7 +142,23 @@ const proposalSettingPatch = (settingKey: string, value: unknown): AgentInput =>
 const proposalSettingValue = (settings: object, settingKey: string): unknown =>
   Object.hasOwn(settings, settingKey) ? (settings as Record<string, unknown>)[settingKey] : undefined;
 
+/** An agent whose default locale a write changed, for what keeps a copy of it elsewhere. */
+export interface AgentDefaultLocaleChange {
+  readonly workspaceId: string;
+  readonly agentId: string;
+  readonly defaultLocale: string | null;
+}
+
+/** An agent about to be deleted: its row and everything it owns are still there. */
+export interface AgentDeletion {
+  readonly workspaceId: string;
+  readonly agentId: string;
+}
+
 export class AgentService {
+  private defaultLocaleListener: ((change: AgentDefaultLocaleChange) => Promise<void>) | null = null;
+  private beforeDeleteListener: ((agent: AgentDeletion) => Promise<void>) | null = null;
+
   constructor(
     private readonly agentRepository: AgentRepositoryPort,
     private readonly workspaceRepository: Pick<WorkspaceRepositoryPort, "findById" | "updateGeneralSettings">,
@@ -156,6 +172,24 @@ export class AgentService {
     private readonly audit?: Pick<AuditService, "record">,
     private readonly recipientConfirmations?: RecipientConfirmationRequester,
   ) {}
+
+  /**
+   * Called after any write (a save, a reviewed proposal, an import) changes an agent's default
+   * locale. Not awaited: the write never waits on it, and a listener that rejects is dropped, so a
+   * listener logs its own failures.
+   */
+  onDefaultLocaleChange(listener: (change: AgentDefaultLocaleChange) => Promise<void>): void {
+    this.defaultLocaleListener = listener;
+  }
+
+  /**
+   * Called once an agent's deletion is allowed and before its row goes, so what lives outside
+   * Radioso for the agent can go first. Awaited; a listener that rejects never stops the deletion,
+   * so a listener logs its own failures.
+   */
+  onBeforeDelete(listener: (agent: AgentDeletion) => Promise<void>): void {
+    this.beforeDeleteListener = listener;
+  }
 
   async list(workspaceId: string): Promise<AgentSettingsResource[]> {
     const [workspace, agents] = await Promise.all([
@@ -456,6 +490,7 @@ export class AgentService {
       throw badRequest("Cannot delete the last agent in this workspace");
     }
 
+    await this.beforeDeleteListener?.({ workspaceId, agentId }).catch(() => undefined);
     await this.agentRepository.deleteByIdAndWorkspaceId(agentId, workspaceId);
 
     if (workspace.defaultAgentId === agentId) {
@@ -590,6 +625,10 @@ export class AgentService {
     const embedToken = getWebsiteEmbedSurfaceSettings(updated).token;
     if (embedToken && this.embedConfigCacheInvalidator) {
       await this.embedConfigCacheInvalidator.invalidateForToken(embedToken);
+    }
+    if (this.defaultLocaleListener && previous.assistantDefaultLocale !== updated.assistantDefaultLocale) {
+      void this.defaultLocaleListener({ workspaceId: workspace.id, agentId: updated.id, defaultLocale: updated.assistantDefaultLocale })
+        .catch(() => undefined);
     }
   }
 

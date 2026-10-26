@@ -33,6 +33,7 @@ import { registerConversationActivityPaths } from "./paths/conversationActivityP
 import { registerConversationOwnershipPaths } from "./paths/conversationOwnershipPaths.js";
 import { registerConversationRecordingPaths } from "./paths/conversationRecordingPaths.js";
 import { registerAccountVoiceRecordingPaths } from "./paths/accountVoiceRecordingPaths.js";
+import { registerAgentVoiceConnectionPaths } from "./paths/agentVoiceConnectionPaths.js";
 import { registerDeliveryFailurePaths } from "./paths/deliveryFailurePaths.js";
 import { registerHeldReplyPaths } from "./paths/heldReplyPaths.js";
 import { registerDecisionPaths } from "./paths/decisionPaths.js";
@@ -64,6 +65,7 @@ export const registerOpenApiPaths = (
   registerWorkspacePaths(registry, schemas, security);
   registerSettingsPaths(registry, schemas, security);
   registerAgentsPaths(registry, schemas, security);
+  registerAgentVoiceConnectionPaths(registry, schemas, security);
   registerAgentWizardPaths(registry, schemas, security);
   registerContextVariablePaths(registry, schemas, security);
   registerRetrievalSearchPaths(registry, schemas, security);

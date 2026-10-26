@@ -21992,6 +21992,118 @@
         "description": "A server-sent event stream with named ready, invalidate, and resync events. Each data field is JSON matching the corresponding WorkspaceEvent*Data schema. Heartbeat records are SSE comments (`: heartbeat`) and carry no data. Protocol version 1 has no event ID, cursor, replay, timestamp, or resource identifier.",
         "example": "event: ready\ndata: {\"protocolVersion\":1}\n\nevent: invalidate\ndata: {\"protocolVersion\":1,\"changeKinds\":[\"document.status_changed\"]}\n\nevent: resync\ndata: {\"protocolVersion\":1}\n"
       },
+      "AgentVoiceConnection": {
+        "type": "object",
+        "properties": {
+          "vendor": {
+            "type": "string",
+            "enum": [
+              "elevenlabs"
+            ],
+            "description": "The voice vendor the agent's runtime is on: the bound runtime's, else the one Connect sets up."
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "not_connected",
+              "connected",
+              "connected_externally"
+            ],
+            "description": "`not_connected`: no runtime is bound. `connected`: the runtime is a vendor agent Radioso created and maintains. `connected_externally`: the runtime names a vendor agent set up outside Radioso."
+          },
+          "region": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "us",
+              "eu",
+              "in",
+              "sg",
+              null
+            ],
+            "description": "The data residency region of the bound vendor account, where the vendor keeps the call's recording; null when no runtime is bound."
+          },
+          "vendorKey": {
+            "type": "string",
+            "enum": [
+              "stored",
+              "missing",
+              "unreadable"
+            ],
+            "description": "Whether the workspace stores the vendor's API key under Settings → Providers: `unreadable` is a key the backend cannot decrypt with its master key."
+          },
+          "connectAvailable": {
+            "type": "boolean",
+            "description": "False when this deployment has no `PUBLIC_API_BASE_URL`, the public address a vendor agent posts each turn to; Connect then answers `503`."
+          },
+          "runtime": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "properties": {
+              "vendor": {
+                "type": "string",
+                "enum": [
+                  "elevenlabs"
+                ]
+              },
+              "agentId": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128,
+                "pattern": "^[A-Za-z0-9_-]+$"
+              },
+              "region": {
+                "type": "string",
+                "enum": [
+                  "us",
+                  "eu",
+                  "in",
+                  "sg"
+                ]
+              }
+            },
+            "required": [
+              "vendor",
+              "agentId",
+              "region"
+            ],
+            "description": "The agent's `voice.runtime` as stored after the request. A client that saves the whole `voice` block sends this value, or the save unbinds the agent."
+          }
+        },
+        "required": [
+          "vendor",
+          "state",
+          "region",
+          "vendorKey",
+          "connectAvailable",
+          "runtime"
+        ],
+        "description": "Where the agent's voice runtime stands."
+      },
+      "AgentVoiceDisconnection": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/AgentVoiceConnection"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "vendorAgentLeft": {
+                "type": "boolean",
+                "description": "True when the vendor agent Radioso created may still be in the vendor account: the vendor did not delete it, or no readable key was stored. Its credential is revoked either way."
+              }
+            },
+            "required": [
+              "vendorAgentLeft"
+            ]
+          }
+        ],
+        "description": "Where the agent's voice runtime stands after Disconnect."
+      },
       "EmailDnsRecord": {
         "type": "object",
         "properties": {
@@ -38397,6 +38509,275 @@
           },
           "409": {
             "description": "An import with this idempotency key is still applying",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/agents/{agentId}/voice/connection": {
+      "get": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Read where the agent's voice runtime stands",
+        "description": "Whether the agent's voice runtime is a vendor agent Radioso maintains, one set up outside Radioso, or none, with the bound account's region and whether the workspace's vendor key is stored. Dashboard session only.",
+        "operationId": "getAgentVoiceConnection",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The voice runtime's state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentVoiceConnection"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required; API tokens are refused, this is for dashboard sessions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent manage permission required, or the CSRF header is missing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Connect the agent's voice channel to a vendor agent Radioso maintains",
+        "description": "Creates an ElevenLabs agent on the workspace's own ElevenLabs account, with the key stored under Settings → Providers, and binds the agent's `voice.runtime` to it. The account's data residency region is found from the key. The ElevenLabs agent posts each turn to `{PUBLIC_API_BASE_URL}/api/v1/agents/{agentId}/voice/elevenlabs/v1` with a REST credential Radioso issues for it (labelled `Voice calls`, no expiry), starts calls in the agent's default language, and can switch to any language ElevenLabs Agents speaks. Calling it again repairs the connection: the ElevenLabs agent's settings, a binding a save cleared, a credential that was revoked (a new one replaces it). A runtime bound by hand is replaced by one Radioso maintains; the hand-made ElevenLabs agent is left alone. Records an `agent.voice_runtime.connected` audit event. Dashboard session only.",
+        "operationId": "connectAgentVoice",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ],
+              "description": "Required on writes from the dashboard session."
+            },
+            "required": true,
+            "description": "Required on writes from the dashboard session.",
+            "name": "x-radioso-csrf",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Connected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentVoiceConnection"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required; API tokens are refused, this is for dashboard sessions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent manage permission required, or the CSRF header is missing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "`voice_vendor_key_missing`: no vendor key is stored; `voice_vendor_key_unreadable`: the stored key cannot be decrypted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "`voice_vendor_key_rejected`: the vendor does not accept the key; `voice_vendor_key_lacks_agents_permission`: the key may not read and write the vendor's agents",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "`voice_vendor_failed`: the vendor refused to set up the agent",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "`voice_vendor_unreachable`: the vendor did not answer; `voice_connection_unavailable`: the deployment has no `PUBLIC_API_BASE_URL`",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Agents"
+        ],
+        "summary": "Disconnect the agent's voice runtime",
+        "description": "Unbinds the agent's `voice.runtime`. A vendor agent Radioso created is deleted from the vendor account with its stored credential, and the credential is revoked; a runtime bound by hand is only unbound, and its vendor agent left alone. Unbinding never waits on the vendor: `vendorAgentLeft` says when the vendor agent may still be there. Records an `agent.voice_runtime.disconnected` audit event when there was something to disconnect. Dashboard session only.",
+        "operationId": "disconnectAgentVoice",
+        "security": [
+          {
+            "sessionCookie": [],
+            "workspaceSelection": []
+          }
+        ],
+        "parameters": [
+          {
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "required": true,
+            "name": "agentId",
+            "in": "path"
+          },
+          {
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1"
+              ],
+              "description": "Required on writes from the dashboard session."
+            },
+            "required": true,
+            "description": "Required on writes from the dashboard session.",
+            "name": "x-radioso-csrf",
+            "in": "header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Disconnected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgentVoiceDisconnection"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required; API tokens are refused, this is for dashboard sessions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Agent manage permission required, or the CSRF header is missing",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Agent not found",
             "content": {
               "application/json": {
                 "schema": {

@@ -130,8 +130,17 @@ imports from `services/` or `infra/`.
   range answer's pool and the selector's quotas (the reserve outside the range,
   `temporal.dateRangeReservedOutsidePassages`, then the range, then a fill to
   `finalContextTopK`), and `PromptContextSelectorService.selectInStages` applies
-  them. `services/temporal/` boosts and orders by the same range. Integration coverage lives in
-  `tests/integration/retrieval-temporal-candidates.integration.test.ts`.
+  them. `services/temporal/` boosts and orders by the same range. `promptBuilder.ts`
+  puts the range in the answer request (`prompts/retrieval/answer-requested-period.md`)
+  and gives each dated excerpt a `Period relation:` line from `relationToDateRange`:
+  entirely before or after the range, inside it, begins before and ends inside,
+  begins inside and ends after, or spans it, with day counts. The answer reads how
+  an item sits against the period from that line instead of comparing dates, and
+  the line lives in the request, so the standing instructions' cached prefix holds.
+  `positionInDateRange` stays the overlap test (`within` is any overlap) that
+  ordering, boosting, and range composition use. Integration coverage lives in
+  `tests/integration/retrieval-temporal-candidates.integration.test.ts`; the
+  prompt lines in `tests/unit/retrieval/promptBuilder.test.ts`.
 - Diagnostics: `retrievalActivityTraceAssembler.ts`,
   `retrievalPipelineActivityTraceBuilder.ts`,
   `retrievalDiagnosticsStage.ts`.

@@ -65,7 +65,7 @@ When deterministic temporal sort is enabled, selected dated event contexts are o
 
 ### Prompt assembly and diagnostics
 
-Radioso builds the final prompt, generates citations, and captures diagnostics and a retrieval trace. The prompt carries today's date with its weekday, and, when the question names a period, a requested-period line in the answer request that asks the model to answer for that period. Chat then uses that result to generate the answer.
+Radioso builds the final prompt, generates citations, and captures diagnostics and a retrieval trace. The prompt carries today's date with its weekday, and, when the question names a period, a requested-period line in the answer request that asks the model to answer for that period. Each dated passage then carries its relation to the period, computed from its `dateFrom` and `dateTo`: entirely before or after it, inside it, beginning before it and ending inside, beginning inside and ending after, or spanning it, with the day counts. The model reads how an item sits against the period from that relation instead of comparing dates itself. Chat then uses that result to generate the answer.
 
 Each retrieval branch is timed around its own work, so the trace shows the semantic and lexical spans as they actually ran. Read them as overlapping: the two stages can start at different moments, and because they run concurrently their durations can add up to more than the retrieval stage that contains them.
 </Steps>

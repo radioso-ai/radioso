@@ -1,7 +1,7 @@
 ---
 title: "Temporal Structured Lookup"
 description: "How retrieval uses event dates to list, boost, and order events for upcoming-event and date-range questions."
-last_updated: 2026-10-21
+last_updated: 2026-10-26
 ---
 
 # Temporal Structured Lookup
@@ -14,7 +14,7 @@ Use event dates on documents to retrieve, boost, and order dated events.
 
 Temporal retrieval reads the `dateFrom` and `dateTo` dates on a document's chunks, whether you set them in the document's metadata or metadata extraction found them. It answers questions such as "What are the next events?", "What's on the week of 7 December?", or "Che corsi ci sono a marzo 2027?".
 
-When a question names a date or a period, the query rewrite resolves it against today's date (UTC) into an inclusive date range: "the week of 7 December", asked in October 2026, becomes `2026-12-07` to `2026-12-13`. The model resolves the period in whatever language the question uses, with today's weekday in hand for questions like "this weekend". The answer is told the same period and answers for it: passages dated outside it are background, mentioned only when nothing in the period matches or the visitor asks about other dates. A range longer than a year, or one that isn't a real calendar range, is set aside: the question is then answered by text search alone, with no date lookup and no upcoming-events ordering, since it asked about a period rather than about what's coming up.
+When a question names a date or a period, the query rewrite resolves it against today's date (UTC) into an inclusive date range: "the week of 7 December", asked in October 2026, becomes `2026-12-07` to `2026-12-13`. The model resolves the period in whatever language the question uses, with today's weekday in hand for questions like "this weekend". The answer is told the same period and answers for it: passages dated outside it are background, mentioned only when nothing in the period matches or the visitor asks about other dates. Each dated passage reaches the answer with how it sits against the period, worked out from its dates rather than left to the model: asked about the week of 7 December, an exhibition dated 6 to 13 December begins one day before the week and ends inside it, so the answer says it's already running that week instead of saying it opens then. Whether your visitors care more about what starts in a period or about everything that's on is yours to decide, with a directive. A range longer than a year, or one that isn't a real calendar range, is set aside: the question is then answered by text search alone, with no date lookup and no upcoming-events ordering, since it asked about a period rather than about what's coming up.
 
 ### Structured Lookup
 

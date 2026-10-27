@@ -170,8 +170,10 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   a vendor or region this version does not know reads as none.
   `voiceRuntimeConnectionLock.ts` is the `VoiceRuntimeConnectionLock`: a
   Postgres session advisory lock keyed `radioso:voice-runtime-connection:<agentId>`
-  (`trySessionAdvisoryLock`), held on one pinned connection while the work
-  runs, so every instance sees it; a dropped connection releases it.
+  (`withSessionAdvisoryLock` in `shared/infra/database.ts`), held on one pinned
+  connection while the work runs, so every instance sees it; a dropped
+  connection releases it, and a connection whose unlock fails is closed rather
+  than returned to the pool, which releases it too.
 - `adapters/*` translate one wire to the domain port and back, and nothing
   else. `adapters/openaiCompletions/` is the OpenAI chat-completions wire;
   vendors that share it differ only by a dialect in `dialects.ts`, which is

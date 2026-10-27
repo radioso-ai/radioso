@@ -46,15 +46,17 @@ export class WorkspaceLlmCapabilitySettingsService {
     return all.find((entry) => entry.capability === capability) ?? null;
   }
 
-  /** Per provider, the catalog models this workspace can run; `openai-compatible` stays free-form (empty). */
+  /**
+   * Per provider, the models this workspace can pick: the availability's list where it restricts
+   * the provider, otherwise the whole catalog (`openai-compatible` stays free-form, so empty).
+   */
   async runnableModelsByProvider(workspaceId: string): Promise<Record<LlmProviderName, string[]>> {
     const entries = await Promise.all(
       VALID_PROVIDERS.map(async (provider) => {
-        const catalog = knownModelsByProvider[provider];
         const runnable = this.modelAvailability
           ? await this.modelAvailability.runnableModels(workspaceId, provider)
           : null;
-        return [provider, catalog.filter((model) => runnable === null || runnable.includes(model))] as const;
+        return [provider, [...(runnable ?? knownModelsByProvider[provider])]] as const;
       }),
     );
     return Object.fromEntries(entries) as Record<LlmProviderName, string[]>;

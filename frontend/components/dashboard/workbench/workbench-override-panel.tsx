@@ -216,15 +216,20 @@ export function WorkbenchOverridePanel({
   variant?: 'sidebar' | 'embedded' | 'drawer'
 }) {
   const [runnableModels, setRunnableModels] = useState<KnownModelsByProvider>(emptyKnownModelsByProvider)
+  const [knownModels, setKnownModels] = useState<KnownModelsByProvider>(emptyKnownModelsByProvider)
 
   useEffect(() => {
     let cancelled = false
     void llmProvidersApi.getModels()
       .then((response) => {
-        if (!cancelled) setRunnableModels(response.runnableModelsByProvider)
+        if (cancelled) return
+        setRunnableModels(response.runnableModelsByProvider)
+        setKnownModels(response.knownModelsByProvider)
       })
       .catch(() => {
-        if (!cancelled) setRunnableModels(emptyKnownModelsByProvider)
+        if (cancelled) return
+        setRunnableModels(emptyKnownModelsByProvider)
+        setKnownModels(emptyKnownModelsByProvider)
       })
     return () => {
       cancelled = true
@@ -323,6 +328,7 @@ export function WorkbenchOverridePanel({
               inputId="workbench-model"
               provider={provider}
               runnableModelsByProvider={runnableModels}
+              knownModelsByProvider={knownModels}
               value={model}
               disabled={!state.touched.chatModelOverride}
               onChange={(next) => dispatch({ type: 'set-model', value: { provider, model: next } })}

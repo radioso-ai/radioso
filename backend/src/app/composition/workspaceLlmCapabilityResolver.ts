@@ -18,8 +18,8 @@ import type {
 } from "../../modules/settings/contracts/llmCapability.js";
 import { platformOpenAIEndpointFields, ProviderConfigurationError } from "../../shared/infra/llm/providerTypes.js";
 import type { ManagedModelPolicy } from "../../shared/domain/managedModelPolicy.js";
+import type { WorkspaceModelAvailability } from "../../shared/domain/workspaceModelAvailability.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
-import { PlatformAwareWorkspaceModelAvailability } from "./workspaceModelAvailability.js";
 
 interface WorkspaceCapabilityPreferencePort {
   getPreference(
@@ -58,6 +58,11 @@ interface WorkspaceLlmCapabilityResolverDependencies {
   envBaseUrls?: { "openai-compatible"?: string };
   /** Absent means every workspace picks freely (self-host). */
   managedModelPolicy?: ManagedModelPolicy;
+  /**
+   * Which models the workspace can run; the same instance the settings and agent write paths
+   * read. Absent means every selection runs as chosen.
+   */
+  modelAvailability?: Pick<WorkspaceModelAvailability, "canRun">;
   logger?: Pick<AppLogger, "debug" | "info" | "warn">;
 }
 
@@ -98,15 +103,14 @@ interface CandidateSelection {
   resolvedBy: UnmanagedResolvedBy;
 }
 
-export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
-  private readonly modelAvailability: PlatformAwareWorkspaceModelAvailability;
+interface CapabilityDecision {
+  selection: LlmCapabilitySelection;
+  /** The selection the platform key could not serve, when `selection` is the default run in its place. */
+  replaced?: LlmCapabilitySelection;
+}
 
-  constructor(private readonly deps: WorkspaceLlmCapabilityResolverDependencies) {
-    this.modelAvailability = new PlatformAwareWorkspaceModelAvailability({
-      defaults: deps.defaults,
-      credentials: deps.credentials,
-    });
-  }
+export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
+  constructor(private readonly deps: WorkspaceLlmCapabilityResolverDependencies) {}
 
   async resolve(
     capability: LlmCapabilityName,
@@ -114,7 +118,20 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
   ): Promise<LlmCapabilityConfig> {
     const envDefault = this.deps.defaults[capability];
 
-    const { provider, model, resolvedBy } = await this.resolveSelection(capability, input);
+    const { selection, replaced } = await this.decide(capability, input);
+    if (replaced) {
+      // Logged here, where a call runs, and not on a settings read asking what would run.
+      this.deps.logger?.warn(
+        {
+          ...selectionLogFields(capability, input.workspaceId, selection),
+          overrode: replaced.resolvedBy,
+          requestedProvider: replaced.provider,
+          requestedModel: replaced.model,
+        },
+        "Platform key cannot serve the requested LLM model; running the environment default",
+      );
+    }
+    const { provider, model, resolvedBy } = selection;
 
     const { apiKey, source } = await this.resolveApiKey(input.workspaceId, provider, capability);
     const { baseUrl, openAIDataResidency, openAIAzureBaseUrl } = await this.resolveProviderEndpoint(
@@ -142,6 +159,13 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
     capability: LlmCapabilityName,
     input: LlmCapabilityResolveInput,
   ): Promise<LlmCapabilitySelection> {
+    return (await this.decide(capability, input)).selection;
+  }
+
+  private async decide(
+    capability: LlmCapabilityName,
+    input: LlmCapabilityResolveInput,
+  ): Promise<CapabilityDecision> {
     const candidate = await this.resolveCandidate(capability, input);
     const managed = await this.resolveManaged(capability, input.workspaceId, candidate.provider);
     const planned: LlmCapabilitySelection = managed
@@ -159,9 +183,12 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
       );
     }
 
-    const selection = await this.withinPlatformAvailability(capability, input.workspaceId, planned);
-    this.deps.logger?.debug(selectionLogFields(capability, input.workspaceId, selection), "Resolved LLM capability");
-    return selection;
+    const decision = await this.withinPlatformAvailability(capability, input.workspaceId, planned);
+    this.deps.logger?.debug(
+      selectionLogFields(capability, input.workspaceId, decision.selection),
+      "Resolved LLM capability",
+    );
+    return decision;
   }
 
   /**
@@ -174,29 +201,20 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
     capability: LlmCapabilityName,
     workspaceId: string,
     requested: LlmCapabilitySelection,
-  ): Promise<LlmCapabilitySelection> {
+  ): Promise<CapabilityDecision> {
+    const availability = this.deps.modelAvailability;
     if (
-      !isWorkspaceCapability(capability)
-      || await this.modelAvailability.canRun(workspaceId, requested.provider, requested.model)
+      !availability
+      || !isWorkspaceCapability(capability)
+      || await availability.canRun(workspaceId, requested.provider, requested.model)
     ) {
-      return requested;
+      return { selection: requested };
     }
     const envDefault = this.deps.defaults[capability];
-    const fallback: LlmCapabilitySelection = {
-      provider: envDefault.provider,
-      model: envDefault.model,
-      resolvedBy: "environment_default",
+    return {
+      selection: { provider: envDefault.provider, model: envDefault.model, resolvedBy: "environment_default" },
+      replaced: requested,
     };
-    this.deps.logger?.warn(
-      {
-        ...selectionLogFields(capability, workspaceId, fallback),
-        overrode: requested.resolvedBy,
-        requestedProvider: requested.provider,
-        requestedModel: requested.model,
-      },
-      "Platform key cannot serve the requested LLM model; running the environment default",
-    );
-    return fallback;
   }
 
   private async resolveCandidate(

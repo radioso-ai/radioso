@@ -1274,6 +1274,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     agentRepository: repositories.agentRepository,
     mcpConnectionRepository,
     externalSkillDefinitionRepository,
+    modelAvailability: workspaceModelAvailability,
   });
   // Shared by the agent-facing catalog route and the public discovery documents, which
   // describe the same published release and must not drift apart.

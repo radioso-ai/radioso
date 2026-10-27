@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { WorkspaceLlmCapabilityResolver } from "../../src/app/composition/workspaceLlmCapabilityResolver.js";
+import { PlatformAwareWorkspaceModelAvailability } from "../../src/app/composition/workspaceModelAvailability.js";
 import type {
   WorkspaceLlmCapability,
   WorkspaceLlmCapabilityPreference,
@@ -580,13 +581,16 @@ describe("WorkspaceLlmCapabilityResolver models the platform endpoint does not s
     updatedAt: new Date(),
   });
   const buildLogger = () => ({ debug: vi.fn(), info: vi.fn(), warn: vi.fn() });
+  const availabilityFor = (defaults: ResolvedLlmConfig, credentials: ReturnType<typeof buildCredentials>) =>
+    new PlatformAwareWorkspaceModelAvailability({ defaults, credentials });
 
-  it("runs the capability's environment default instead of an undeployed workspace preference, and warns once", async () => {
+  it("runs the capability's environment default instead of an undeployed workspace preference, and warns once per call", async () => {
     const logger = buildLogger();
     const resolver = new WorkspaceLlmCapabilityResolver({
       defaults: azureDefaults,
       settings: buildSettings([nanoPreference("chat"), nanoPreference("rerank")]),
       credentials: buildCredentials({}),
+      modelAvailability: availabilityFor(azureDefaults, buildCredentials({})),
       envKeys: envKeyResolver({ openai: "env-openai" }),
       logger,
     });
@@ -596,7 +600,8 @@ describe("WorkspaceLlmCapabilityResolver models the platform endpoint does not s
 
     expect(chat).toMatchObject({ provider: "openai", model: "gpt-5.2", apiKey: "env-openai", resolvedBy: "environment_default" });
     expect(rerank).toEqual({ provider: "openai", model: "gpt-5-mini", resolvedBy: "environment_default" });
-    expect(logger.warn).toHaveBeenCalledTimes(2);
+    // Only the call that runs warns; a settings read asking what would run (resolveSelection) does not.
+    expect(logger.warn).toHaveBeenCalledTimes(1);
     expect(logger.warn.mock.calls[0]?.[0]).toEqual({
       capability: "chat",
       workspaceId: "ws-1",
@@ -615,16 +620,17 @@ describe("WorkspaceLlmCapabilityResolver models the platform endpoint does not s
       defaults: azureDefaults,
       settings: buildSettings([]),
       credentials: buildCredentials({}),
+      modelAvailability: availabilityFor(azureDefaults, buildCredentials({})),
       envKeys: envKeyResolver({ openai: "env-openai" }),
       logger,
     });
 
-    const selection = await resolver.resolveSelection("chat", {
+    const config = await resolver.resolve("chat", {
       workspaceId: "ws-1",
       capabilityOverride: { provider: "openai", model: "gpt-5.4-nano" },
     });
 
-    expect(selection).toEqual({ provider: "openai", model: "gpt-5.2", resolvedBy: "environment_default" });
+    expect(config).toMatchObject({ provider: "openai", model: "gpt-5.2", resolvedBy: "environment_default" });
     expect(logger.warn.mock.calls[0]?.[0]).toMatchObject({ overrode: "agent_override", requestedModel: "gpt-5.4-nano" });
   });
 
@@ -634,15 +640,50 @@ describe("WorkspaceLlmCapabilityResolver models the platform endpoint does not s
       defaults: azureDefaults,
       settings: buildSettings([]),
       credentials: buildCredentials({}),
+      modelAvailability: availabilityFor(azureDefaults, buildCredentials({})),
       envKeys: envKeyResolver({ openai: "env-openai" }),
       managedModelPolicy: managedPolicy({ chat: { provider: "openai", model: "gpt-5.6-luna" } }),
+      logger,
+    });
+
+    const config = await resolver.resolve("chat", { workspaceId: "ws-1" });
+
+    expect(config).toMatchObject({ provider: "openai", model: "gpt-5.2", resolvedBy: "environment_default" });
+    expect(logger.warn.mock.calls[0]?.[0]).toMatchObject({ overrode: "managed_plan", requestedModel: "gpt-5.6-luna" });
+  });
+
+  it("answers a selection read with the substituted model, logging it only at debug", async () => {
+    const logger = buildLogger();
+    const resolver = new WorkspaceLlmCapabilityResolver({
+      defaults: azureDefaults,
+      settings: buildSettings([nanoPreference("chat")]),
+      credentials: buildCredentials({}),
+      modelAvailability: availabilityFor(azureDefaults, buildCredentials({})),
+      envKeys: envKeyResolver({ openai: "env-openai" }),
       logger,
     });
 
     const selection = await resolver.resolveSelection("chat", { workspaceId: "ws-1" });
 
     expect(selection).toEqual({ provider: "openai", model: "gpt-5.2", resolvedBy: "environment_default" });
-    expect(logger.warn.mock.calls[0]?.[0]).toMatchObject({ overrode: "managed_plan", requestedModel: "gpt-5.6-luna" });
+    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.debug).toHaveBeenCalledWith(
+      { capability: "chat", workspaceId: "ws-1", resolvedBy: "environment_default", provider: "openai", model: "gpt-5.2" },
+      expect.any(String),
+    );
+  });
+
+  it("runs every pick as authored when no availability is wired", async () => {
+    const resolver = new WorkspaceLlmCapabilityResolver({
+      defaults: azureDefaults,
+      settings: buildSettings([nanoPreference("chat")]),
+      credentials: buildCredentials({}),
+      envKeys: envKeyResolver({ openai: "env-openai" }),
+    });
+
+    const selection = await resolver.resolveSelection("chat", { workspaceId: "ws-1" });
+
+    expect(selection).toEqual({ provider: "openai", model: "gpt-5.4-nano", resolvedBy: "workspace_preference" });
   });
 
   it("keeps a deployed pick as authored, without warning", async () => {
@@ -651,6 +692,7 @@ describe("WorkspaceLlmCapabilityResolver models the platform endpoint does not s
       defaults: azureDefaults,
       settings: buildSettings([{ ...nanoPreference("chat"), model: "gpt-5-mini" }]),
       credentials: buildCredentials({}),
+      modelAvailability: availabilityFor(azureDefaults, buildCredentials({})),
       envKeys: envKeyResolver({ openai: "env-openai" }),
       logger,
     });
@@ -667,6 +709,7 @@ describe("WorkspaceLlmCapabilityResolver models the platform endpoint does not s
       defaults: azureDefaults,
       settings: buildSettings([nanoPreference("chat")]),
       credentials: buildCredentials({ "ws-1:openai": "ws-openai-key" }),
+      modelAvailability: availabilityFor(azureDefaults, buildCredentials({ "ws-1:openai": "ws-openai-key" })),
       envKeys: envKeyResolver({ openai: "env-openai" }),
       logger,
     });
@@ -682,6 +725,7 @@ describe("WorkspaceLlmCapabilityResolver models the platform endpoint does not s
       defaults: azureDefaults,
       settings: buildSettings([{ ...nanoPreference("chat"), provider: "claude", model: "claude-sonnet-4-5" }]),
       credentials: buildCredentials({}),
+      modelAvailability: availabilityFor(azureDefaults, buildCredentials({})),
       envKeys: envKeyResolver({ openai: "env-openai", claude: "env-claude" }),
     });
 
@@ -696,6 +740,7 @@ describe("WorkspaceLlmCapabilityResolver models the platform endpoint does not s
       defaults: azureDefaults,
       settings: buildSettings([]),
       credentials: buildCredentials({}),
+      modelAvailability: availabilityFor(azureDefaults, buildCredentials({})),
       envKeys: envKeyResolver({ openai: "env-openai" }),
       logger,
     });
@@ -714,6 +759,7 @@ describe("WorkspaceLlmCapabilityResolver models the platform endpoint does not s
       defaults: { ...envConfig, openAIPlatformEndpoint: { kind: "openai", residency: "eu" } },
       settings: buildSettings([nanoPreference("chat")]),
       credentials: buildCredentials({}),
+      modelAvailability: availabilityFor({ ...envConfig, openAIPlatformEndpoint: { kind: "openai", residency: "eu" } }, buildCredentials({})),
       envKeys: envKeyResolver({ openai: "env-openai" }),
     });
 

@@ -13,6 +13,7 @@ import type { ContextVariableService } from "../../modules/context-variables/pub
 import type { RoutineDefinitionService } from "../../modules/routines/public.js";
 import type { SkillCapabilityRegistry } from "../../modules/skills/public.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
+import type { WorkspaceModelAvailability } from "../../shared/domain/workspaceModelAvailability.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import type { AgentBundleImportRepositoryPort } from "../../modules/agentBundle/public.js";
 import type { AuditService } from "../../modules/audit/contracts/index.js";
@@ -44,6 +45,7 @@ interface AgentBundleCompositionDependencies {
   };
   mcpConnectionRepository: { listByAgent(agentId: string): Promise<ExternalSkillSources["connections"]> };
   externalSkillDefinitionRepository: { listByAgent(agentId: string): Promise<ExternalSkillSources["skills"]> };
+  modelAvailability: WorkspaceModelAvailability;
 }
 
 export const createAgentBundleServices = (deps: AgentBundleCompositionDependencies) => {
@@ -141,6 +143,7 @@ export const createAgentBundleServices = (deps: AgentBundleCompositionDependenci
   const importService = new AgentBundleImportService({
     logger: deps.logger,
     imports: deps.imports,
+    modelAvailability: deps.modelAvailability,
     agents: agentWriter,
     directives: {
       create: async (workspaceId, agentId, directive) => {

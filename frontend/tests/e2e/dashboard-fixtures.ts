@@ -1078,7 +1078,10 @@ export const installDashboardApiMocks = async (
     llmManagedModels?: Partial<Record<"chat" | "rewrite" | "rerank", { provider: string; model: string } | null>>;
     /** Per capability, the stored model preference. Defaults to none. */
     llmModels?: Partial<Record<"chat" | "rewrite" | "rerank", { provider: string; model: string } | null>>;
-    /** Per provider, the catalog models the workspace can run. Defaults to the whole catalog. */
+    /**
+     * Per provider, the catalog models the deployment's shared key runs. Defaults to the whole
+     * catalog; a provider the workspace stores its own key for runs the whole catalog, as on the backend.
+     */
     runnableModelsByProvider?: Partial<Record<"openai" | "openai-compatible" | "gemini" | "claude", string[]>>;
     ingestionSettings?: IngestionSettingsFixture;
     ingestionSettingsUpdates?: unknown[];
@@ -1182,7 +1185,14 @@ export const installDashboardApiMocks = async (
     rewrite: options.llmModels?.rewrite ?? null,
     rerank: options.llmModels?.rerank ?? null,
   };
-  const runnableModelsByProvider = { ...knownModelsByProvider, ...options.runnableModelsByProvider };
+  const runnableModelsByProvider = () => Object.fromEntries(
+    Object.entries(knownModelsByProvider).map(([provider, catalog]) => [
+      provider,
+      providerCredentials[provider]
+        ? catalog
+        : options.runnableModelsByProvider?.[provider as keyof typeof knownModelsByProvider] ?? catalog,
+    ]),
+  );
   const llmModelUpdates = options.llmModelUpdates;
   const llmManagedModels = {
     chat: options.llmManagedModels?.chat ?? null,
@@ -2881,7 +2891,12 @@ export const installDashboardApiMocks = async (
     }
 
     if (request.method() === "GET" && path === "/settings/llm-models") {
-      await json(route, { ...llmModels, managed: llmManagedModels, knownModelsByProvider, runnableModelsByProvider });
+      await json(route, {
+        ...llmModels,
+        managed: llmManagedModels,
+        knownModelsByProvider,
+        runnableModelsByProvider: runnableModelsByProvider(),
+      });
       return;
     }
 
@@ -2893,7 +2908,12 @@ export const installDashboardApiMocks = async (
         rewrite: 'rewrite' in body ? body.rewrite ?? null : llmModels.rewrite,
         rerank: 'rerank' in body ? body.rerank ?? null : llmModels.rerank,
       };
-      await json(route, { ...llmModels, managed: llmManagedModels, knownModelsByProvider, runnableModelsByProvider });
+      await json(route, {
+        ...llmModels,
+        managed: llmManagedModels,
+        knownModelsByProvider,
+        runnableModelsByProvider: runnableModelsByProvider(),
+      });
       return;
     }
 

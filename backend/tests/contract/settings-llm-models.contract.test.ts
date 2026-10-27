@@ -237,7 +237,14 @@ describe("settings llm-models contract", () => {
         .send({ chat: { provider: "openai", model: "gpt-5.4-nano" } });
 
       expect(response.status).toBe(400);
-      expect(response.body.error?.message ?? response.body.message).toContain("gpt-5-mini");
+      expect(response.body.error.message).toContain("gpt-5-mini");
+      // The same list the GET reports: chat-capable catalog models, never the embedding deployment.
+      expect(response.body.error.message).not.toContain("text-embedding-3-small");
+      expect(response.body.error.details).toEqual({
+        provider: "openai",
+        model: "gpt-5.4-nano",
+        runnableModels: ["gpt-5-mini"],
+      });
     });
 
     it("accepts any catalog openai model once the workspace holds its own openai key", async () => {

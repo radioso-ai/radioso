@@ -76,6 +76,7 @@ function ChatModelOverrideBlock({
   const model = value?.model ?? ''
   const enabled = value !== null
   const [runnableModelsByProvider, setRunnableModelsByProvider] = useState<KnownModelsByProvider>(emptyKnownModelsByProvider)
+  const [knownModelsByProvider, setKnownModelsByProvider] = useState<KnownModelsByProvider>(emptyKnownModelsByProvider)
   const [credentialProviders, setCredentialProviders] = useState<ReadonlySet<CredentialProviderName>>(() => new Set())
   const [envProviderAvailability, setEnvProviderAvailability] = useState<EnvProviderAvailability>(
     emptyEnvProviderAvailability,
@@ -87,6 +88,7 @@ function ChatModelOverrideBlock({
       .then(([modelsResponse, credentialsResponse]) => {
         if (!active) return
         setRunnableModelsByProvider(modelsResponse.runnableModelsByProvider)
+        setKnownModelsByProvider(modelsResponse.knownModelsByProvider)
         setCredentialProviders(new Set(credentialsResponse.credentials.map((c) => c.provider)))
         setEnvProviderAvailability(credentialsResponse.envProviderAvailability)
       })
@@ -169,6 +171,7 @@ function ChatModelOverrideBlock({
             inputId="agentChatModel"
             provider={provider}
             runnableModelsByProvider={runnableModelsByProvider}
+            knownModelsByProvider={knownModelsByProvider}
             value={model}
             onChange={(next) => setModel(next.slice(0, 200))}
             disabled={!enabled && model.length === 0}

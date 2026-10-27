@@ -202,6 +202,12 @@ export function ProvidersPanel({
     return next
   }, [])
 
+  // A workspace key changes which models the workspace can run, so the model pickers reload with it.
+  const reloadCredentialsAndModels = useCallback(
+    () => Promise.all([reloadCredentials(), reloadModels()]),
+    [reloadCredentials, reloadModels],
+  )
+
   const reloadIngestionSettings = useCallback(async () => {
     const next = await settingsApi.getIngestionSettings()
     setIngestionSettings(next)
@@ -270,7 +276,7 @@ export function ProvidersPanel({
         encryptionConfigured={encryptionConfigured}
         credentials={credentials}
         envProviderAvailability={envProviderAvailability}
-        onChange={reloadCredentials}
+        onChange={reloadCredentialsAndModels}
         emitSaveState={emitSaveState}
       />
       <CredentialsCard
@@ -652,6 +658,7 @@ function ModelsCard({
               credentialProviders={credentialProviders}
               availableProviders={availableProviders}
               runnableModelsByProvider={models.runnableModelsByProvider}
+              knownModelsByProvider={models.knownModelsByProvider}
               onChange={onChange}
               emitSaveState={emitSaveState}
             />
@@ -678,6 +685,7 @@ function ModelRow({
   credentialProviders,
   availableProviders,
   runnableModelsByProvider,
+  knownModelsByProvider,
   onChange,
   emitSaveState,
 }: {
@@ -687,6 +695,7 @@ function ModelRow({
   credentialProviders: ReadonlySet<CredentialProviderName>
   availableProviders: Set<LlmProviderName>
   runnableModelsByProvider: KnownModelsByProvider
+  knownModelsByProvider: KnownModelsByProvider
   onChange: () => Promise<unknown>
   emitSaveState: (state: SaveState) => void
 }) {
@@ -836,6 +845,7 @@ function ModelRow({
           inputId={`model-${capability}`}
           provider={provider}
           runnableModelsByProvider={pickerModels}
+          knownModelsByProvider={knownModelsByProvider}
           value={model}
           onChange={setModel}
           onCommit={handleModelCommit}

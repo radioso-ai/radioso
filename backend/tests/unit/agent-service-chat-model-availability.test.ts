@@ -10,6 +10,8 @@ import { InMemoryAgentRepository, InMemoryWorkspaceRepository } from "../support
 const azureOnly: WorkspaceModelAvailability = {
   runnableModels: vi.fn(async (_workspaceId: string, provider: LlmProviderName) =>
     provider === "openai" ? ["gpt-5.4-mini"] : null),
+  canRun: vi.fn(async (_workspaceId: string, provider: LlmProviderName, model: string) =>
+    provider !== "openai" || model === "gpt-5.4-mini"),
 };
 
 const setup = async () => {

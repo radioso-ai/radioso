@@ -126,6 +126,7 @@ export const buildLlmCapabilityResolver = (input: {
   settings: WorkspaceLlmCapabilitySettingsService;
   credentials: WorkspaceProviderCredentialsService;
   managedModelPolicy: ManagedModelPolicy;
+  modelAvailability: WorkspaceModelAvailability;
   logger: Pick<AppLogger, "debug" | "info" | "warn">;
 }): LlmCapabilityResolver => {
   const keys = envApiKeyMap(input.env);
@@ -140,6 +141,7 @@ export const buildLlmCapabilityResolver = (input: {
       getOpenAIResidency: (workspaceId) => input.credentials.getOpenAIResidency(workspaceId),
     },
     managedModelPolicy: input.managedModelPolicy,
+    modelAvailability: input.modelAvailability,
     logger: input.logger,
     envKeys: {
       resolveEnvApiKey: (provider) => keys[provider],

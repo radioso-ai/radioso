@@ -16,7 +16,8 @@ import type { KnownModelsByProvider, LlmProviderName } from '@/lib/api-llm-provi
  * - Closed-set providers (openai / gemini / claude) render a Select sourced
  *   from `runnableModelsByProvider`: the catalog models this workspace can run,
  *   which the backend owns as the single source of truth. A saved model outside
- *   that list still shows in the trigger, listed but not selectable.
+ *   that list still shows in the trigger, listed but not selectable; one the
+ *   catalog has but this workspace cannot run is answered by another model.
  * - `openai-compatible` renders a free-form text input because self-hosted
  *   endpoints (vLLM / Ollama / LMStudio / ...) advertise arbitrary identifiers.
  */
@@ -24,6 +25,7 @@ export function ModelPicker({
   inputId,
   provider,
   runnableModelsByProvider,
+  knownModelsByProvider,
   value,
   onChange,
   onCommit,
@@ -33,6 +35,7 @@ export function ModelPicker({
   inputId: string
   provider: LlmProviderName | ''
   runnableModelsByProvider: KnownModelsByProvider
+  knownModelsByProvider: KnownModelsByProvider
   value: string
   onChange: (next: string) => void
   onCommit?: (next: string) => void
@@ -75,6 +78,8 @@ export function ModelPicker({
   const savedOutsideOptions = value !== '' && !options.includes(value)
   // An empty list means the catalog has not loaded yet, not that the saved model stopped running.
   const savedUnavailable = savedOutsideOptions && options.length > 0
+  // In the catalog but not runnable here: the shared key cannot serve it, so another model answers.
+  const savedOnUnservedSharedKey = savedUnavailable && (knownModelsByProvider[provider] ?? []).includes(value)
   return (
     <>
       <Select
@@ -101,9 +106,9 @@ export function ModelPicker({
           ))}
         </SelectContent>
       </Select>
-      {savedUnavailable ? (
+      {savedOnUnservedSharedKey ? (
         <p className="text-xs text-amber-600 dark:text-amber-400">
-          This model isn&apos;t available on this deployment&apos;s shared key, so calls run on the deployment default. Pick an available model, or add your own key in Providers settings.
+          Not available on this deployment&apos;s shared key, so another model answers in its place. Pick an available model, or add your own key in Providers settings.
         </p>
       ) : null}
     </>

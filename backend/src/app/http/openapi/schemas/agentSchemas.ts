@@ -1103,6 +1103,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
       "skill_config_not_portable",
       "directive_binding_unbound",
       "contact_delivery_unbound",
+      "chat_model_unavailable",
     ]).openapi({
       description: [
         "Why a bundle element could not be fully applied to the target workspace. Every element is reported",
@@ -1120,6 +1121,7 @@ export const registerAgentSchemas = (registry: OpenAPIRegistry, schemas: OpenApi
         "- skill_config_not_portable: a skill setting whose value the capability keeps inside its own workspace.",
         "- directive_binding_unbound: a directive bound to a skill that did not survive import; kept, but disabled.",
         "- contact_delivery_unbound: contact requests are on but their destination stayed in the source workspace.",
+        "- chat_model_unavailable: the agent's chat model override is one this workspace cannot run; the agent imports without it.",
       ].join("\n"),
     }),
   );

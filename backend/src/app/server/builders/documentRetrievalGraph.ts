@@ -174,8 +174,7 @@ export const buildDocumentRetrievalGraph = (input: {
   const chunkHydrator = new PostgresChunkCandidateHydrator(infrastructure.database.kysely);
   const vectorSearch = pgVectorAdapter.search;
   const llmDefaults = resolveLlmConfig(env);
-  // The write-path half of the rule the capability resolver applies per call, built from the
-  // same defaults and credential service the resolver below receives.
+  // One instance for what a call runs (the resolver) and what a write accepts (settings, agents).
   const workspaceModelAvailability = new PlatformAwareWorkspaceModelAvailability({
     defaults: llmDefaults,
     credentials: input.workspaceProviderCredentialsService,
@@ -192,6 +191,7 @@ export const buildDocumentRetrievalGraph = (input: {
     settings: workspaceLlmCapabilitySettingsService,
     credentials: input.workspaceProviderCredentialsService,
     managedModelPolicy: infrastructure.managedModelPolicy,
+    modelAvailability: workspaceModelAvailability,
     logger,
   });
   llmRegistry.setResolver(llmCapabilityResolver);

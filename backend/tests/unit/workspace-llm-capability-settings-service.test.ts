@@ -248,6 +248,8 @@ describe("WorkspaceLlmCapabilitySettingsService platform model availability", ()
   // workspace holds no openai key of its own.
   const azureOnly = (runnable: Partial<Record<LlmProviderName, readonly string[] | null>>): WorkspaceModelAvailability => ({
     runnableModels: vi.fn(async (_workspaceId: string, provider: LlmProviderName) => runnable[provider] ?? null),
+    canRun: vi.fn(async (_workspaceId: string, provider: LlmProviderName, model: string) =>
+      (runnable[provider] ?? null)?.includes(model) ?? true),
   });
 
   it("rejects a model the workspace cannot run, naming the runnable models and the own-key alternative", async () => {
@@ -285,12 +287,12 @@ describe("WorkspaceLlmCapabilitySettingsService platform model availability", ()
     ).resolves.toMatchObject({ model: "gpt-5.4-nano" });
   });
 
-  it("lists, per provider, the catalog models this workspace can run", async () => {
+  it("lists, per provider, the models this workspace can run, and the whole catalog where nothing restricts it", async () => {
     const service = new WorkspaceLlmCapabilitySettingsService(
       createRepository(),
       createAudit(),
       undefined,
-      azureOnly({ openai: ["gpt-5.4-mini", "text-embedding-3-small"] }),
+      azureOnly({ openai: ["gpt-5.4-mini"] }),
     );
 
     const runnable = await service.runnableModelsByProvider("ws-1");

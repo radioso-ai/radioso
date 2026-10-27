@@ -1773,6 +1773,7 @@ export const createTestDependencies = (overrides: {
     credentials: workspaceProviderCredentialsService,
     envKeys: { resolveEnvApiKey: () => undefined },
     managedModelPolicy: overrides.managedModelPolicy ?? new NoopManagedModelPolicy(),
+    modelAvailability: workspaceModelAvailability,
   });
   const connectorRegistry = new ConnectorRegistry();
   connectorRegistry.setEncryptionKey(connectorEncryptionKeys(env)!);
@@ -2845,6 +2846,7 @@ export const createTestDependencies = (overrides: {
     agentRepository,
     mcpConnectionRepository,
     externalSkillDefinitionRepository,
+    modelAvailability: workspaceModelAvailability,
   });
   // By default the same live definitions the test routine provider activates from, so
   // the catalog a calling agent reads matches what a tool call can admit; a test may

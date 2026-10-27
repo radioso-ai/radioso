@@ -6,6 +6,7 @@ import { dirname, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
+import { isMainModule } from "./isMainModule.mjs";
 import allowlist from "./unboundMethodAllowlist.json" with { type: "json" };
 
 const BOUND_RECEIVER_MEMBERS = new Set(["bind", "call", "apply"]);
@@ -212,4 +213,4 @@ const run = () => {
   process.exitCode = 1;
 };
 
-if (import.meta.url === `file://${process.argv[1]}`) run();
+if (isMainModule(import.meta.url)) run();

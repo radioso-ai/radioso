@@ -68,7 +68,8 @@ module.exports = {
         ],
       },
       to: {
-        path: "^@radioso/crawler$",
+        // Unbuilt workspace packages stay unresolved (the bare name); built ones resolve into dist.
+        path: "^(?:@radioso/crawler|\\.\\./packages/crawler/dist/index\\.js)$",
       },
     },
     {
@@ -314,18 +315,19 @@ module.exports = {
       },
     },
     {
-      name: "no-opentelemetry-sdk-outside-tracing",
+      name: "no-opentelemetry-sdk-outside-observability",
       severity: "error",
       comment:
-        "OpenTelemetry SDK/API imports are isolated to shared observability tracing. Product modules must use the tracing operations facade.",
+        "OpenTelemetry SDK/API imports are isolated to shared observability tracing and its log bridge. Product modules must use the tracing operations facade and the app logger.",
       from: {
         path: "^src/",
         pathNot: [
-          "^src/shared/observability/tracing/",
+          "^src/shared/observability/(tracing|logging)/",
         ],
       },
       to: {
-        path: "^@opentelemetry/",
+        // Resolved npm dependencies are node_modules paths, never the bare package name.
+        path: "(?:^|/)node_modules/@opentelemetry/",
       },
     },
     {

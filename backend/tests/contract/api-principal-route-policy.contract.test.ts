@@ -10,17 +10,7 @@ import {
 import { createDefaultApplicationComposition } from "../../src/app/composition/defaultComposition.js";
 import { createApiRouteMounts } from "../../src/app/http/routes/index.js";
 import { createTestApp } from "../support/testApp.js";
-
-type RouterLayer = {
-  handle?: unknown;
-  regexp?: { fast_slash?: boolean };
-  fast_slash?: boolean;
-  route?: {
-    path: string;
-    methods: Record<string, boolean>;
-    stack: readonly { handle?: unknown }[];
-  };
-};
+import { routerLayers, type RouterLayer } from "./openApiRouteCoverageInventory.js";
 
 type DiscoveredRoute = {
   key: string;
@@ -32,23 +22,15 @@ type RouteDiscovery = {
   unregisteredNestedRouters: string[];
 };
 
-const routerLayers = (router: unknown): readonly RouterLayer[] =>
-  (typeof router === "object" || typeof router === "function")
-  && router !== null
-  && "stack" in router
-  && Array.isArray(router.stack)
-    ? router.stack as RouterLayer[]
-    : [];
-
 const routeAuthentication = (layer: RouterLayer, inherited: ApiPrincipalAuthenticationMode | null) =>
   inherited ?? layer.route?.stack
-    .map(({ handle }) => apiPrincipalAuthenticationMode(handle))
+    ?.map(({ handle }) => apiPrincipalAuthenticationMode(handle))
     .find((mode): mode is ApiPrincipalAuthenticationMode => mode !== null)
     ?? null;
 
 const containsApiPrincipalAuthentication = (router: unknown): boolean => routerLayers(router).some((layer) =>
   apiPrincipalAuthenticationMode(layer.handle) !== null
-  || layer.route?.stack.some(({ handle }) => apiPrincipalAuthenticationMode(handle) !== null)
+  || layer.route?.stack?.some(({ handle }) => apiPrincipalAuthenticationMode(handle) !== null)
   || containsApiPrincipalAuthentication(layer.handle));
 
 const collectAuthenticatedRoutes = (

@@ -15,7 +15,9 @@
     "lint:fix": "NODE_OPTIONS=--max-old-space-size=8192 eslint . --fix",
     "lint:dead-code": "NODE_OPTIONS=--max-old-space-size=8192 knip",
     "lint:dead-code:ci": "node scripts/knip-ratchet.mjs",
-    "lint:dead-code:baseline": "node scripts/knip-ratchet.mjs --update"
+    "lint:dead-code:baseline": "node scripts/knip-ratchet.mjs --update",
+    "lint:file-size": "node scripts/file-size-ratchet.mjs",
+    "lint:file-size:baseline": "node scripts/file-size-ratchet.mjs --update"
   },
   "pnpm": {
     "overrides": {

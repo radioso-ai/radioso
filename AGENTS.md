@@ -69,8 +69,8 @@ Full local stack:
 ./run-dev.sh
 ```
 
-Workspace checks. Lint and the dead-code ratchet cover every area from one config, so run them
-from the repo root, not inside a package. See `docs/code-quality-gates.md`.
+Workspace checks. Lint and the dead-code and file-size ratchets cover every area from one config,
+so run them from the repo root, not inside a package. See `docs/code-quality-gates.md`.
 
 ```bash
 pnpm run lint
@@ -78,6 +78,8 @@ pnpm run lint:fix
 pnpm run lint:dead-code             # full report
 pnpm run lint:dead-code:ci          # the gate: no new dead code, and none left in files you touched
 pnpm run lint:dead-code:baseline    # re-record knip-baseline.json after deleting some
+pnpm run lint:file-size             # the gate: no new file over 1,000 lines, no baselined file grows
+pnpm run lint:file-size:baseline    # re-record file-size-baseline.json after shrinking a file
 ```
 
 Backend:
@@ -87,6 +89,8 @@ cd backend
 pnpm run dev
 pnpm run dev:worker
 pnpm run build
+pnpm run lint                       # boundary rules plus the architecture ratchet
+pnpm run lint:architecture:baseline # re-record the module-cycle/direction baseline after fixing an edge
 pnpm test
 pnpm run test:unit
 pnpm run test:integration
@@ -225,7 +229,7 @@ Orchestrate on the strong tier and fan work out on cheaper ones. A subagent runn
 
 Before editing `readme.md`, files under `docs/`, files under `docs-portal/content/`, or settings docs used by the product UI, read `docs/document-writer-prompt.md` and follow it.
 
-`docs/code-quality-gates.md` covers the lint and dead-code gates: what each catches, the rules that are deliberately scoped, and what to do when the ratchet fails.
+`docs/code-quality-gates.md` covers the lint gate and the dead-code, file-size, and architecture ratchets: what each catches, the rules that are deliberately scoped, and what to do when a ratchet fails.
 
 For context-efficient feature work, start with `docs/agent-context-workflow.md`, then use `docs/architecture/code-map.md` to find the owning area, public entry points, focused tests, and related specs before reading broad directories.
 

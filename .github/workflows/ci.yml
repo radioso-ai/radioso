@@ -238,6 +238,12 @@ jobs:
       - name: Check for dead code
         run: pnpm run lint:dead-code:ci -- --base="$KNIP_BASE_REF"
 
+      - name: Test the ratchet scripts
+        run: node --test tests/ratchets/*.test.mjs
+
+      - name: Check file sizes
+        run: pnpm run lint:file-size
+
   release-tooling:
     name: Release Tooling
     runs-on: ubuntu-latest

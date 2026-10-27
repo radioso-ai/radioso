@@ -196,10 +196,12 @@ vendor`), never the key, the credential or a URL. The
 
 ElevenLabs reaches this backend the same way every dashboard and embed
 request already does, through the dashboard's own `/backend` proxy, at
-`{APP_BASE_URL}/backend/api/v1/agents/<agent-id>/voice/elevenlabs/v1`. On a
-self-hosted deployment, `APP_BASE_URL` needs to be an address the public
-internet can reach — not `localhost`, a private network address, or a
-`.local`/`.internal` name; until it is, the Voice card says Connect is
+`{APP_BASE_URL}/backend/api/v1/agents/<agent-id>/voice/elevenlabs/v1`. That
+request carries the agent's bearer credential, so on a self-hosted
+deployment, `APP_BASE_URL` needs to be an HTTPS address the public internet
+can reach — not `localhost`, a private network address, a
+`.local`/`.internal` name, or a single-label host name like a Docker or
+Kubernetes service name; until it is, the Voice card says Connect is
 unavailable.
 
 ### Start sessions from Radioso

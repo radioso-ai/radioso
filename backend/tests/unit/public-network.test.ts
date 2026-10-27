@@ -31,6 +31,9 @@ describe("isPubliclyReachableHostname", () => {
     "my-service.local",
     "backend.internal",
     "sub.backend.internal",
+    "backend",
+    "frontend",
+    "radioso",
   ])("reads %s as not reachable from the public internet", (hostname) => {
     expect(isPubliclyReachableHostname(hostname)).toBe(false);
   });

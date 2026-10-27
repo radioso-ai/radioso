@@ -57,6 +57,9 @@ describe("isAppBaseUrlPubliclyReachable", () => {
     "http://127.0.0.1:3000",
     "http://backend.internal",
     "not a url",
+    "http://app.example.com",
+    "https://backend",
+    "https://radioso",
   ])("reads %s as not reachable", (value) => {
     expect(isAppBaseUrlPubliclyReachable(value)).toBe(false);
   });

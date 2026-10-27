@@ -27,15 +27,21 @@ const fakeReq = (): Request => ({ method: "GET", originalUrl: "/stream", path: "
 /** A response that already flushed headers (the SSE case: `res.headersSent` is true). */
 const fakeSentRes = (): Response => {
   let ended = false;
+  let destroyedFlag = false;
   return {
     headersSent: true,
     statusCode: 200,
-    destroyed: false,
+    get destroyed() {
+      return destroyedFlag;
+    },
     get writableEnded() {
       return ended;
     },
     end: vi.fn(() => {
       ended = true;
+    }),
+    destroy: vi.fn(() => {
+      destroyedFlag = true;
     }),
   } as unknown as Response;
 };
@@ -53,7 +59,7 @@ describe("createErrorHandler — headers already sent (SSE mid-stream failure)",
     await vi.waitFor(() => expect(sink.record).toHaveBeenCalledOnce());
 
     expect(next).not.toHaveBeenCalled();
-    expect(res.end).toHaveBeenCalledOnce();
+    expect(res.destroy).toHaveBeenCalledOnce();
   });
 
   it("does not report the same error object twice when a caller already reported it", async () => {
@@ -75,7 +81,7 @@ describe("createErrorHandler — headers already sent (SSE mid-stream failure)",
 
     expect(sink.record).toHaveBeenCalledOnce();
     expect(next).not.toHaveBeenCalled();
-    expect(res.end).toHaveBeenCalledOnce();
+    expect(res.destroy).toHaveBeenCalledOnce();
   });
 
   it("never reports a client-facing AppError under 500 (an already-handled, expected outcome)", async () => {
@@ -91,7 +97,7 @@ describe("createErrorHandler — headers already sent (SSE mid-stream failure)",
 
     expect(sink.record).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
-    expect(res.end).toHaveBeenCalledOnce();
+    expect(res.destroy).toHaveBeenCalledOnce();
   });
 
   it("never reports a disconnect-abort turn despite its 500 status (an expected client-driven outcome)", async () => {
@@ -107,7 +113,7 @@ describe("createErrorHandler — headers already sent (SSE mid-stream failure)",
 
     expect(sink.record).not.toHaveBeenCalled();
     expect(next).not.toHaveBeenCalled();
-    expect(res.end).toHaveBeenCalledOnce();
+    expect(res.destroy).toHaveBeenCalledOnce();
   });
 
   it("reports a platform misconfiguration (ProviderConfigurationError, AppError 503) — a platform fault, not a client outcome", async () => {
@@ -122,7 +128,7 @@ describe("createErrorHandler — headers already sent (SSE mid-stream failure)",
     await vi.waitFor(() => expect(sink.record).toHaveBeenCalledOnce());
 
     expect(next).not.toHaveBeenCalled();
-    expect(res.end).toHaveBeenCalledOnce();
+    expect(res.destroy).toHaveBeenCalledOnce();
   });
 
   it("reports a normalized provider-credential rejection (AppError 503) — the same incident class as an undeployed model", async () => {
@@ -137,15 +143,17 @@ describe("createErrorHandler — headers already sent (SSE mid-stream failure)",
     await vi.waitFor(() => expect(sink.record).toHaveBeenCalledOnce());
 
     expect(next).not.toHaveBeenCalled();
-    expect(res.end).toHaveBeenCalledOnce();
+    expect(res.destroy).toHaveBeenCalledOnce();
   });
 
-  it("ends the response exactly once even if it was already ended", async () => {
+  it("closes the response exactly once — never again once it already ended on its own", async () => {
     const sink: ErrorSink = { name: "test-sink", record: vi.fn().mockResolvedValue(undefined) };
     const service = buildService(sink);
     const handler = createErrorHandler(service);
     const next = vi.fn() as unknown as NextFunction;
     const res = fakeSentRes();
+    // Simulates sendChatSse's own `finally` already ending the SSE stream before the
+    // error ever reaches this middleware — the common case in production.
     res.end();
     (res.end as ReturnType<typeof vi.fn>).mockClear();
 
@@ -153,15 +161,19 @@ describe("createErrorHandler — headers already sent (SSE mid-stream failure)",
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(res.end).not.toHaveBeenCalled();
+    expect(res.destroy).not.toHaveBeenCalled();
   });
 
-  it("over real HTTP: an SSE stream that fails after flushing headers reports once and closes cleanly", async () => {
+  it("over real HTTP: an SSE stream that already ended itself (sendChatSse's finally) reports once and the client sees a clean 200", async () => {
     const sink: ErrorSink = { name: "test-sink", record: vi.fn().mockResolvedValue(undefined) };
     const service = buildService(sink);
     const app = express();
     app.get("/stream", (_req, res, next) => {
       res.writeHead(200, { "Content-Type": "text/event-stream" });
       res.write("event: status\n\n");
+      // Mirrors sendChatSse's own `finally`: the SSE response is already ended by the
+      // time the error reaches this middleware, so closeOpenResponse is a no-op here.
+      res.end();
       next(Object.assign(new Error("Azure OpenAI chat failed"), { status: 404, code: "DeploymentNotFound" }));
     });
     app.use(createErrorHandler(service));
@@ -171,5 +183,73 @@ describe("createErrorHandler — headers already sent (SSE mid-stream failure)",
     expect(response.status).toBe(200);
     await vi.waitFor(() => expect(sink.record).toHaveBeenCalledOnce());
     expect(sink.record).toHaveBeenCalledWith(expect.objectContaining({ errorType: "http.request.unhandled" }));
+  });
+
+  it("over real HTTP: a non-SSE response that fails mid-body (not yet ended) reports once and resets the connection instead of a silently truncated body", async () => {
+    const sink: ErrorSink = { name: "test-sink", record: vi.fn().mockResolvedValue(undefined) };
+    const service = buildService(sink);
+    const app = express();
+    app.get("/stream", (_req, res, next) => {
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.write('{"partial":');
+      // Never ends its own response — the error reaches this middleware mid-body.
+      next(Object.assign(new Error("Azure OpenAI chat failed"), { status: 404, code: "DeploymentNotFound" }));
+    });
+    app.use(createErrorHandler(service));
+
+    // A destroyed connection looks like a socket error to the client, not a
+    // successful (if truncated) response — the honest outcome for a body that never
+    // finished, same as what Express's own finalhandler would do here.
+    await expect(request(app).get("/stream")).rejects.toThrow();
+    await vi.waitFor(() => expect(sink.record).toHaveBeenCalledOnce());
+    expect(sink.record).toHaveBeenCalledWith(expect.objectContaining({ errorType: "http.request.unhandled" }));
+  });
+});
+
+/** A response that never sent headers — the normal (non-streaming) JSON error path. */
+const fakeUnsentRes = (): Response => {
+  const res: any = {
+    headersSent: false,
+    destroyed: false,
+    writableEnded: false,
+  };
+  res.status = vi.fn(() => res);
+  res.json = vi.fn(() => res);
+  return res as Response;
+};
+
+describe("createErrorHandler — headers not sent (the unhandled-error fallback branch)", () => {
+  it("does not report the same error twice when ChatTurnLifecycle.recordFailure already reported it (a stream:false chat turn)", async () => {
+    const sink: ErrorSink = { name: "test-sink", record: vi.fn().mockResolvedValue(undefined) };
+    const service = buildService(sink);
+    const error = Object.assign(new Error("Azure OpenAI chat failed"), { status: 404, code: "DeploymentNotFound" });
+    // Simulates ChatTurnLifecycle.recordFailure reporting this exact error before
+    // ChatService rethrows it, which a stream:false route's catch then hands to
+    // next(error) — reaching this branch with headers never sent.
+    await service.report({ errorType: "chat.turn_failed", error });
+    expect(sink.record).toHaveBeenCalledOnce();
+
+    const handler = createErrorHandler(service);
+    const next = vi.fn() as unknown as NextFunction;
+    const res = fakeUnsentRes();
+
+    handler(error, fakeReq(), res, next);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(sink.record).toHaveBeenCalledOnce();
+    expect(res.status).toHaveBeenCalledWith(500);
+  });
+
+  it("still reports an unreported, unstructured error once", async () => {
+    const sink: ErrorSink = { name: "test-sink", record: vi.fn().mockResolvedValue(undefined) };
+    const service = buildService(sink);
+    const handler = createErrorHandler(service);
+    const next = vi.fn() as unknown as NextFunction;
+    const res = fakeUnsentRes();
+
+    handler(new Error("boom"), fakeReq(), res, next);
+    await vi.waitFor(() => expect(sink.record).toHaveBeenCalledOnce());
+
+    expect(res.status).toHaveBeenCalledWith(500);
   });
 });

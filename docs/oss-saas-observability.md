@@ -267,25 +267,38 @@ not limited to the HTTP request path:
 - **Unhandled HTTP request failures** — the error handler middleware in
   [`backend/src/app/http/middleware/errorHandler.ts`](../backend/src/app/http/middleware/errorHandler.ts)
   (`errorType: http.request.unhandled`). A request whose response already started
-  (an SSE chat turn failing mid-stream) still gets exactly one report there
-  instead of falling through to Express's own unhandled-error logging — one, not
-  two, because it skips reporting a failure a caller already reported, such as a
-  chat turn (next bullet).
+  (an SSE chat turn failing mid-stream, or any other response that started
+  writing its body) still gets exactly one report there instead of falling
+  through to Express's own unhandled-error logging — one, not two, whether the
+  request completed without streaming at all or a caller upstream (such as a
+  chat turn, next bullet) already reported this exact failure. If that response
+  never finished on its own, the middleware closes the connection rather than
+  ending it gracefully, so a client sees a dropped connection instead of reading
+  a truncated body as a complete one; an SSE turn already ends its own stream
+  before an error reaches this far, so this never fires for one.
 - **Chat turn failures** — `ChatTurnLifecycle.recordFailure` in
   [`backend/src/modules/chat/services/chatTurnLifecycle.ts`](../backend/src/modules/chat/services/chatTurnLifecycle.ts)
   (`errorType: chat.turn_failed`), for a turn that ends on anything other than an
   already-handled, client-facing outcome — a usage limit, a validation error, a
-  cancelled or superseded turn, or a disconnected client. A platform fault that
-  happens to surface as an `AppError`, such as a misconfigured provider or a
-  rejected platform credential, is still reported: `isReportableFault`
-  (`backend/src/shared/domain/errors.ts`) is the rule, not a bare `AppError`
-  check. The report carries a bounded failure kind (`model_unavailable`,
-  `auth_rejected`, `rate_limited`, `provider_unavailable`, or
-  `provider_rejected`) plus the provider's HTTP status and machine code when the
-  failure came from an LLM call — found by walking the error's `.cause` chain
-  when a wrapper such as a routine activation failure hides it — never the
-  prompt or the model's answer. The same fields ride on the `chat.failed`
-  product analytics event.
+  cancelled or superseded turn, or a disconnected client. `isReportableFault`
+  (`backend/src/shared/domain/errors.ts`) is the rule: a client-facing error under
+  HTTP 500 is expected and never reported, whether it is a real `AppError` or an
+  Enterprise module's plain `Error` shaped the same way (`statusCode`, `code`,
+  `message` — EE deliberately avoids importing the OSS `AppError` class); a `500`
+  or higher is reported even when it is an `AppError`, such as a misconfigured
+  provider or a rejected platform credential, unless its own `isExpectedOutcome`
+  marker says the client caused it (a dropped connection). Reporting never waits
+  on the sink: it is fire-and-forget, so a slow exporter cannot hold up the
+  turn's response. The report carries a bounded failure kind
+  (`model_unavailable`, `auth_rejected`, `rate_limited`, `provider_unavailable`,
+  or `provider_rejected`) plus the provider's HTTP status and machine code, only
+  once the failure is confirmed to be an actual LLM provider call — the OpenAI
+  SDK's own error types, this backend's `ProviderHttpError` for the Gemini/Claude
+  adapters, or one wrapped a hop or two down a routine activation failure's
+  `.cause` chain — never a database or connector error that merely looks the
+  same shape. Both the report's message and the matching `chat.failed` product
+  analytics event carry a fixed string naming the failure kind in place of the
+  provider's own error text, which can echo back the customer's rejected prompt.
 - **Browser errors** — posted to `/api/v1/observability/frontend-errors`
   (`frontend.*.unhandled`).
 - **Process-level crashes** — every entrypoint installs

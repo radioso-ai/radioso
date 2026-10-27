@@ -26,7 +26,13 @@ const GENERIC_PROVIDER_HTTP_ERROR_CODE = "provider_http_error";
 // Structural shape of a machine code (`RESOURCE_EXHAUSTED`, `overloaded_error`), never prose.
 const MACHINE_CODE_SHAPE = /^[A-Za-z0-9][A-Za-z0-9_.:-]{0,63}$/;
 
-const machineCode = (value: string | undefined): string | undefined =>
+/**
+ * `undefined` unless `value` has the shape of a machine code (`RESOURCE_EXHAUSTED`,
+ * `overloaded_error`) — never a sentence a provider echoed back from the request.
+ * Exported so other provider-adjacent code (the LLM failure classifier) applies the
+ * same filter to a field it did not itself construct, such as a raw SDK error's `code`.
+ */
+export const machineCode = (value: string | undefined): string | undefined =>
   value !== undefined && MACHINE_CODE_SHAPE.test(value) ? value : undefined;
 
 /**

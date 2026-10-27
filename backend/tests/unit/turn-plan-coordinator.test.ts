@@ -113,7 +113,7 @@ describe("TurnPlanCoordinator.plan", () => {
 
     expect(service.plan).toHaveBeenCalledWith(expect.objectContaining({
       history: history.slice(-10),
-    }), expect.anything());
+    }), expect.anything(), expect.anything());
   });
 
   it("bypasses when routine candidates exceed the bound", async () => {
@@ -163,7 +163,7 @@ describe("TurnPlanCoordinator.plan", () => {
   it("fails when the service returns no plan", async () => {
     const service = serviceReturning(null);
     const outcome = await new TurnPlanCoordinator(service).plan(inputs());
-    expect(outcome).toEqual({ status: "failed", reason: "invalid_or_error" });
+    expect(outcome).toEqual({ status: "failed", reason: "invalid_or_error", failureSource: "invalid_output" });
   });
 
   it("keeps the failed outcome's classification when the service's call threw a provider error", async () => {
@@ -177,8 +177,20 @@ describe("TurnPlanCoordinator.plan", () => {
     expect(outcome).toEqual({
       status: "failed",
       reason: "invalid_or_error",
+      failureSource: "threw",
       failure: { kind: "model_unavailable", status: 404, code: "DeploymentNotFound" },
     });
+  });
+
+  it("sets failureSource to timeout when the planner's own bound timed out, not threw", async () => {
+    const service = {
+      plan: vi.fn(async (_request: unknown, _onFailure?: (failure: unknown) => void, onTimeout?: () => void) => {
+        onTimeout?.();
+        return null;
+      }),
+    } as unknown as TurnPlanService;
+    const outcome = await new TurnPlanCoordinator(service).plan(inputs());
+    expect(outcome).toEqual({ status: "failed", reason: "invalid_or_error", failureSource: "timeout" });
   });
 
   it("logs the classified failure kind/status/code on the outcome log, never the model output", async () => {
@@ -195,6 +207,7 @@ describe("TurnPlanCoordinator.plan", () => {
       expect.objectContaining({
         outcome: "fallback",
         reason: "invalid_or_error",
+        failureSource: "threw",
         failureKind: "model_unavailable",
         providerStatus: 404,
         providerCode: "DeploymentNotFound",
@@ -207,11 +220,26 @@ describe("TurnPlanCoordinator.plan", () => {
     const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
     const outcome = await new TurnPlanCoordinator(serviceReturning(null), logger as unknown as AppLogger).plan(inputs());
 
-    expect(outcome).toEqual({ status: "failed", reason: "invalid_or_error" });
+    expect(outcome).toEqual({ status: "failed", reason: "invalid_or_error", failureSource: "invalid_output" });
     const call = logger.info.mock.calls.find((args) => args[1] === "chat.turn_planning.outcome");
+    expect(call?.[0]).toMatchObject({ failureSource: "invalid_output" });
     expect(call?.[0]).not.toHaveProperty("failureKind");
     expect(call?.[0]).not.toHaveProperty("providerStatus");
     expect(call?.[0]).not.toHaveProperty("providerCode");
+  });
+
+  it("logs failureSource: timeout distinctly from a clean miss and from an unclassified throw", async () => {
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const service = {
+      plan: vi.fn(async (_request: unknown, _onFailure?: (failure: unknown) => void, onTimeout?: () => void) => {
+        onTimeout?.();
+        return null;
+      }),
+    } as unknown as TurnPlanService;
+    await new TurnPlanCoordinator(service, logger as unknown as AppLogger).plan(inputs());
+
+    const call = logger.info.mock.calls.find((args) => args[1] === "chat.turn_planning.outcome");
+    expect(call?.[0]).toMatchObject({ reason: "invalid_or_error", failureSource: "timeout" });
   });
 
   it("does not enter staged fallback after the caller cancels planning", async () => {
@@ -664,7 +692,7 @@ describe("quick-reply lane", () => {
 
     expect(service.plan).toHaveBeenCalledWith(expect.objectContaining({
       quickReplyLane: { standingInstructions },
-    }), expect.anything());
+    }), expect.anything(), expect.anything());
   });
 
   it("never opens the lane when composition turns it off, whatever the standing instructions", async () => {

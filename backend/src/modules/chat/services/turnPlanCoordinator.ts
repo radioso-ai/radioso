@@ -50,6 +50,15 @@ export type TurnPlanBypassReason =
 export type TurnPlanFailureReason = "invalid_or_error";
 
 /**
+ * How a `failed` outcome arose, for the outcome log only — `reason` stays the single
+ * bare `"invalid_or_error"` on purpose (a stable metric label; see the comment on
+ * `TurnPlanFailureReason`'s one value). Before this existed, a clean parse miss
+ * (`invalid_output`), the planner's own call timing out (`timeout`), and any other
+ * thrown error (`threw`) were one indistinguishable line.
+ */
+export type TurnPlanFailureSource = "threw" | "invalid_output" | "timeout";
+
+/**
  * The per-turn plan outcome, memoized on the session. `planned` carries the plan
  * plus the SAME rankable routine candidates sent to the planner, so the routine
  * activator applies the precomputed rankings to the identical prepared set.
@@ -62,7 +71,9 @@ export type TurnPlanOutcome =
   | {
     status: "failed";
     reason: TurnPlanFailureReason;
-    /** Absent for a clean miss (malformed output); present when the planner call threw. */
+    /** Always set by `resolvePlan`; optional only so a fixture that does not exercise this stays valid. */
+    failureSource?: TurnPlanFailureSource;
+    /** Absent for a clean miss or a timeout; present when the planner call threw something classifiable. */
     failure?: LlmProviderFailureClassification;
   };
 
@@ -267,9 +278,18 @@ export class TurnPlanCoordinator {
     }
 
     let failure: LlmProviderFailureClassification | null = null;
-    const plan = await this.service.plan(request, (classified) => {
-      failure = classified;
-    });
+    let threw = false;
+    let timedOut = false;
+    const plan = await this.service.plan(
+      request,
+      (classified) => {
+        threw = true;
+        failure = classified;
+      },
+      () => {
+        timedOut = true;
+      },
+    );
     // An external turn cancellation is not a planner failure. Propagate it so the
     // host stops the turn instead of starting the four staged fallback calls after
     // the planner request was aborted.
@@ -277,7 +297,8 @@ export class TurnPlanCoordinator {
       throw signal.reason ?? new Error("chat_turn_aborted");
     }
     if (!plan) {
-      return { status: "failed", reason: "invalid_or_error", ...(failure ? { failure } : {}) };
+      const failureSource: TurnPlanFailureSource = timedOut ? "timeout" : threw ? "threw" : "invalid_output";
+      return { status: "failed", reason: "invalid_or_error", failureSource, ...(failure ? { failure } : {}) };
     }
     return { status: "planned", plan, prepared };
   }
@@ -328,6 +349,7 @@ export class TurnPlanCoordinator {
       {
         outcome: metricOutcome,
         reason: outcome.status === "planned" ? undefined : outcome.reason,
+        failureSource: outcome.status === "failed" ? outcome.failureSource : undefined,
         latencyMs,
         routineCandidateCount,
         directiveCandidateCount: input?.directiveCandidates.length ?? 0,

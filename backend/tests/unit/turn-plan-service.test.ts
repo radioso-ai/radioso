@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import OpenAI from "openai";
 
 import type { MessageRecord } from "../../src/db/repositories/messageRepository.js";
 import {
@@ -1066,6 +1067,43 @@ describe("TurnPlanService", () => {
     expect(plan).toBeNull();
   });
 
+  it("classifies a provider failure through the optional onFailure sink, without changing the null fallback", async () => {
+    const client = {
+      complete: vi.fn(async () => {
+        // A real OpenAI SDK error — what client.complete actually throws in production.
+        throw new OpenAI.NotFoundError(404, { code: "DeploymentNotFound" }, "message", new Headers());
+      }),
+    };
+    const onFailure = vi.fn();
+    const plan = await new TurnPlanService(factory(client)).plan(request(), onFailure);
+    expect(plan).toBeNull();
+    expect(onFailure).toHaveBeenCalledWith({ kind: "model_unavailable", status: 404, code: "DeploymentNotFound" });
+  });
+
+  it("never calls onFailure for malformed (non-provider) output — parsing fails without throwing", async () => {
+    const client = { complete: vi.fn(async () => ({ text: "<<<garbage>>>" })) };
+    const onFailure = vi.fn();
+    const plan = await new TurnPlanService(factory(client)).plan(request(), onFailure);
+    expect(plan).toBeNull();
+    expect(onFailure).not.toHaveBeenCalled();
+  });
+
+  it("calls onFailure with a null classification when a thrown error has no provider shape", async () => {
+    const client = { complete: vi.fn(async () => { throw new Error("boom"); }) };
+    const onFailure = vi.fn();
+    const plan = await new TurnPlanService(factory(client)).plan(request(), onFailure);
+    expect(plan).toBeNull();
+    expect(onFailure).toHaveBeenCalledWith(null);
+  });
+
+  it("never calls onFailure when the plan resolves successfully", async () => {
+    const client = { complete: vi.fn(async () => ({ text: validPlanJson() })) };
+    const onFailure = vi.fn();
+    const plan = await new TurnPlanService(factory(client)).plan(request(), onFailure);
+    expect(plan).not.toBeNull();
+    expect(onFailure).not.toHaveBeenCalled();
+  });
+
   it("returns null (not a rejection) when the timeout fires, aborting the call", async () => {
     const client = {
       complete: vi.fn(
@@ -1081,6 +1119,24 @@ describe("TurnPlanService", () => {
     };
     const service = new TurnPlanService(factory(client), { timeoutMs: 5 });
     await expect(service.plan(request())).resolves.toBeNull();
+  });
+
+  it("calls onTimeout when its own bound times out, distinct from any other thrown error", async () => {
+    const client = {
+      complete: vi.fn(
+        (req: { signal?: AbortSignal }) =>
+          new Promise<{ text: string }>((_resolve, reject) => {
+            req.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+          }),
+      ),
+    };
+    const service = new TurnPlanService(factory(client), { timeoutMs: 5 });
+    const onFailure = vi.fn();
+    const onTimeout = vi.fn();
+    await expect(service.plan(request(), onFailure, onTimeout)).resolves.toBeNull();
+    expect(onTimeout).toHaveBeenCalledOnce();
+    // The abort error itself carries no provider shape, same as any other abort.
+    expect(onFailure).toHaveBeenCalledWith(null);
   });
 
   it("propagates an external abort into the gateway call without rejecting", async () => {
@@ -1103,6 +1159,34 @@ describe("TurnPlanService", () => {
     controller.abort();
     await expect(planPromise).resolves.toBeNull();
     expect(observedSignal?.aborted).toBe(true);
+  });
+
+  it("does not call onTimeout for an external cancellation signal abort — only its own bound", async () => {
+    const controller = new AbortController();
+    const client = {
+      complete: vi.fn(
+        (req: { signal?: AbortSignal }) =>
+          new Promise<{ text: string }>((_resolve, reject) => {
+            if (req.signal?.aborted) {
+              reject(new Error("aborted"));
+              return;
+            }
+            req.signal?.addEventListener("abort", () => reject(new Error("aborted")), { once: true });
+          }),
+      ),
+    };
+    const onTimeout = vi.fn();
+    const planPromise = new TurnPlanService(factory(client)).plan(request({ signal: controller.signal }), undefined, onTimeout);
+    controller.abort();
+    await expect(planPromise).resolves.toBeNull();
+    expect(onTimeout).not.toHaveBeenCalled();
+  });
+
+  it("does not call onTimeout for an ordinary (non-abort) provider error", async () => {
+    const client = { complete: vi.fn(async () => { throw new Error("provider down"); }) };
+    const onTimeout = vi.fn();
+    await expect(new TurnPlanService(factory(client)).plan(request(), undefined, onTimeout)).resolves.toBeNull();
+    expect(onTimeout).not.toHaveBeenCalled();
   });
 });
 

@@ -143,3 +143,45 @@ describe("ErrorReportingService", () => {
     expect(logger.error).not.toHaveBeenCalled();
   });
 });
+
+describe("ErrorReportingService.wasReported", () => {
+  const buildService = (enabled = true) =>
+    new ErrorReportingService({
+      enabled,
+      environment: "test",
+      logger: createLogger() as any,
+      service: "radioso-api",
+    });
+
+  it("is false before an error has been reported", () => {
+    const service = buildService();
+    expect(service.wasReported(new Error("boom"))).toBe(false);
+  });
+
+  it("is true for the exact error object after report() runs", async () => {
+    const service = buildService();
+    const error = new Error("boom");
+    await service.report({ errorType: "test.error", error });
+    expect(service.wasReported(error)).toBe(true);
+  });
+
+  it("does not mark a different error object with the same message", async () => {
+    const service = buildService();
+    await service.report({ errorType: "test.error", error: new Error("boom") });
+    expect(service.wasReported(new Error("boom"))).toBe(false);
+  });
+
+  it("stays false when reporting is disabled, since report() is a no-op", async () => {
+    const service = buildService(false);
+    const error = new Error("boom");
+    await service.report({ errorType: "test.error", error });
+    expect(service.wasReported(error)).toBe(false);
+  });
+
+  it("returns false for non-object error values without throwing", () => {
+    const service = buildService();
+    expect(service.wasReported("boom")).toBe(false);
+    expect(service.wasReported(null)).toBe(false);
+    expect(service.wasReported(undefined)).toBe(false);
+  });
+});

@@ -18,6 +18,7 @@ import { GENERATION_SURFACE } from "../../../shared/domain/generationSurface.js"
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import { addressesSurface } from "../../../shared/domain/steeringRule.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
+import type { LlmProviderFailureClassification } from "../../../shared/infra/llm/llmProviderFailureClassification.js";
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
@@ -49,6 +50,15 @@ export type TurnPlanBypassReason =
 export type TurnPlanFailureReason = "invalid_or_error";
 
 /**
+ * How a `failed` outcome arose, for the outcome log only — `reason` stays the single
+ * bare `"invalid_or_error"` on purpose (a stable metric label; see the comment on
+ * `TurnPlanFailureReason`'s one value). Before this existed, a clean parse miss
+ * (`invalid_output`), the planner's own call timing out (`timeout`), and any other
+ * thrown error (`threw`) were one indistinguishable line.
+ */
+export type TurnPlanFailureSource = "threw" | "invalid_output" | "timeout";
+
+/**
  * The per-turn plan outcome, memoized on the session. `planned` carries the plan
  * plus the SAME rankable routine candidates sent to the planner, so the routine
  * activator applies the precomputed rankings to the identical prepared set.
@@ -58,7 +68,14 @@ export type TurnPlanFailureReason = "invalid_or_error";
 export type TurnPlanOutcome =
   | { status: "planned"; plan: TurnPlan; prepared: RankableRoutineCandidates | null }
   | { status: "bypassed"; reason: TurnPlanBypassReason }
-  | { status: "failed"; reason: TurnPlanFailureReason };
+  | {
+    status: "failed";
+    reason: TurnPlanFailureReason;
+    /** Always set by `resolvePlan`; optional only so a fixture that does not exercise this stays valid. */
+    failureSource?: TurnPlanFailureSource;
+    /** Absent for a clean miss or a timeout; present when the planner call threw something classifiable. */
+    failure?: LlmProviderFailureClassification;
+  };
 
 /**
  * The lazy, memoized per-turn plan handle that rides on the session. Computation
@@ -260,7 +277,19 @@ export class TurnPlanCoordinator {
       throw signal.reason ?? new Error("chat_turn_aborted");
     }
 
-    const plan = await this.service.plan(request);
+    let failure: LlmProviderFailureClassification | null = null;
+    let threw = false;
+    let timedOut = false;
+    const plan = await this.service.plan(
+      request,
+      (classified) => {
+        threw = true;
+        failure = classified;
+      },
+      () => {
+        timedOut = true;
+      },
+    );
     // An external turn cancellation is not a planner failure. Propagate it so the
     // host stops the turn instead of starting the four staged fallback calls after
     // the planner request was aborted.
@@ -268,7 +297,8 @@ export class TurnPlanCoordinator {
       throw signal.reason ?? new Error("chat_turn_aborted");
     }
     if (!plan) {
-      return { status: "failed", reason: "invalid_or_error" };
+      const failureSource: TurnPlanFailureSource = timedOut ? "timeout" : threw ? "threw" : "invalid_output";
+      return { status: "failed", reason: "invalid_or_error", failureSource, ...(failure ? { failure } : {}) };
     }
     return { status: "planned", plan, prepared };
   }
@@ -308,13 +338,22 @@ export class TurnPlanCoordinator {
         "chat.turn_planning.quick_reply_discarded": outcome.plan.quickReplyDiscarded === true,
       });
     }
+    // The classified failure kind/status/code, only when the planner call threw — a clean
+    // miss (malformed output) stays indistinguishable from itself, but no longer from a
+    // provider outage: the fields below are absent either way, unlike before this existed,
+    // when both reasons collapsed into the same bare "invalid_or_error".
+    const failureFields = outcome.status === "failed" && outcome.failure
+      ? { failureKind: outcome.failure.kind, providerStatus: outcome.failure.status, providerCode: outcome.failure.code }
+      : {};
     this.logger?.info(
       {
         outcome: metricOutcome,
         reason: outcome.status === "planned" ? undefined : outcome.reason,
+        failureSource: outcome.status === "failed" ? outcome.failureSource : undefined,
         latencyMs,
         routineCandidateCount,
         directiveCandidateCount: input?.directiveCandidates.length ?? 0,
+        ...failureFields,
         ...quickReply,
       },
       "chat.turn_planning.outcome",

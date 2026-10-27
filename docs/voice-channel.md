@@ -148,7 +148,7 @@ The Voice card names what to fix. From the API, the same answers come from
 | `422` | `voice_vendor_key_lacks_agents_permission` | ElevenLabs accepts the key, but it may not read and write agents. |
 | `502` | `voice_vendor_failed` | ElevenLabs refused to create or update the agent. |
 | `503` | `voice_vendor_unreachable` | ElevenLabs did not answer, within 5 seconds for the region check and 10 seconds for each change. |
-| `503` | `voice_connection_unavailable` | The deployment has no `PUBLIC_API_BASE_URL`, the public address ElevenLabs posts each turn to. |
+| `503` | `voice_connection_unavailable` | This deployment's `APP_BASE_URL` is unset or not reachable from the public internet, so ElevenLabs could not reach it. |
 
 A failed attempt cleans up after itself: a credential issued for it is
 revoked again when ElevenLabs refuses the agent, and an ElevenLabs agent
@@ -194,13 +194,13 @@ vendor`), never the key, the credential or a URL. The
 `operation` and `outcome`, and the audit trail records
 `agent.voice_runtime.connected` and `agent.voice_runtime.disconnected`.
 
-On a self-hosted deployment, set `PUBLIC_API_BASE_URL` on the backend to the
-origin the internet reaches its REST API on, such as
-`https://api.example.com`, with the path prefix it is served under if there is
-one; a trailing `/api/v1` is dropped, so the value `RADIOSO_PUBLIC_API_URL`
-takes works too. ElevenLabs must reach
-`{PUBLIC_API_BASE_URL}/api/v1/agents/<agent-id>/voice/elevenlabs/v1`; until
-it is set, the Voice card says Connect is unavailable.
+ElevenLabs reaches this backend the same way every dashboard and embed
+request already does, through the dashboard's own `/backend` proxy, at
+`{APP_BASE_URL}/backend/api/v1/agents/<agent-id>/voice/elevenlabs/v1`. On a
+self-hosted deployment, `APP_BASE_URL` needs to be an address the public
+internet can reach — not `localhost`, a private network address, or a
+`.local`/`.internal` name; until it is, the Voice card says Connect is
+unavailable.
 
 ### Start sessions from Radioso
 
@@ -327,8 +327,9 @@ outcomes.
 ### Use an ElevenLabs agent you set up yourself
 
 Set the ElevenLabs agent up by hand when you want to own every setting on it,
-or on a deployment that has no `PUBLIC_API_BASE_URL`. Radioso then answers its
-turns and opens its sessions, and leaves the agent itself to you.
+or on a deployment whose `APP_BASE_URL` is not reachable from the public
+internet. Radioso then answers its turns and opens its sessions, and leaves
+the agent itself to you.
 
 #### Point the agent at Radioso
 

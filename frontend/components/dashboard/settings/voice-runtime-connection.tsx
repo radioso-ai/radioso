@@ -42,7 +42,7 @@ const CONNECT_FAILURES: Record<string, (vendor: string) => string> = {
   voice_vendor_failed: (vendor) => `${vendor} wouldn’t set up the agent. Try again; if it keeps failing, contact support.`,
   voice_connection_busy: () => 'Another Connect or Disconnect of this agent is still running. Try again in a moment.',
   voice_connection_unavailable: (vendor) =>
-    `This deployment has no public API address ${vendor} can reach, so Radioso can’t set up the agent. Ask your administrator to set PUBLIC_API_BASE_URL.`,
+    `${vendor} can’t reach this Radioso deployment: its address (APP_BASE_URL) isn’t reachable from the internet. Ask your administrator to fix it.`,
 }
 
 type Action = 'connect' | 'disconnect'
@@ -169,7 +169,7 @@ export function VoiceRuntimeConnection({
           ) : null}
           {status.state !== 'connected' && !keyMissing && !status.connectAvailable ? (
             <p className="text-sm text-muted-foreground">
-              This deployment has no public API address {vendor} can reach, so Radioso can’t set up the agent. Ask your administrator to set PUBLIC_API_BASE_URL.
+              {vendor} can’t reach this Radioso deployment: its address (APP_BASE_URL) isn’t reachable from the internet. Ask your administrator to fix it.
             </p>
           ) : null}
           <div className="flex flex-wrap items-center gap-2">

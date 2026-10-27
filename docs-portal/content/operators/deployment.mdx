@@ -166,7 +166,7 @@ Workspaces should also set their vendor agent's own concurrency and daily limits
 
 ## Voice agents Radioso creates
 
-**Connect** on an agent's **Voice** card creates an ElevenLabs agent in the workspace's own ElevenLabs account, and that agent posts every turn to `{PUBLIC_API_BASE_URL}/api/v1/agents/<agent-id>/voice/elevenlabs/v1`. Set `PUBLIC_API_BASE_URL` on the backend to the origin the internet reaches the REST API on, for example `https://api.example.com`, with the path prefix it is served under if there is one (a trailing `/api/v1` is dropped); until it is set, the Voice card says Connect is unavailable and Connect answers `503 voice_connection_unavailable`. With the included Terraform workflow, set the GitHub environment variable `PUBLIC_API_ORIGIN` to that origin: Terraform hands it to the backend as `PUBLIC_API_BASE_URL` and to the frontend as `RADIOSO_PUBLIC_API_URL`, the origin the dashboard shows in API endpoints and examples.
+**Connect** on an agent's **Voice** card creates an ElevenLabs agent in the workspace's own ElevenLabs account, and that agent posts every turn back to this deployment through the same `/backend` path the dashboard and website embed already use: `{APP_BASE_URL}/backend/api/v1/agents/<agent-id>/voice/elevenlabs/v1`. ElevenLabs is on the public internet, so Connect needs `APP_BASE_URL` set to an address it can reach — not `localhost`, a private network address, or a `.local`/`.internal` name. Until it is, the Voice card says Connect is unavailable and Connect answers `503 voice_connection_unavailable`.
 
 ## Agent channel chat rate limits
 

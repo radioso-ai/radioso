@@ -7,7 +7,7 @@ import type { Env } from "../../src/app/config/env.js";
 import { adminSessionHeaders, createTestApp, issueTestToken } from "../support/testApp.js";
 
 const VENDOR_KEY = "xi-workspace-secret-0123456789";
-const PUBLIC_API = "https://api.radioso.test";
+const DASHBOARD_ORIGIN = "https://api.radioso.test";
 const EU = "https://api.eu.residency.elevenlabs.io";
 const csrf = { "X-Radioso-CSRF": "1" };
 
@@ -85,7 +85,7 @@ const operatorWith = async (options: { vendor?: ReturnType<typeof fakeElevenLabs
   const vendor = options.vendor ?? fakeElevenLabs();
   const { app } = createTestApp({
     voiceVendorFetch: vendor.fetch,
-    envOverrides: { PUBLIC_API_BASE_URL: PUBLIC_API, ...options.envOverrides },
+    envOverrides: { APP_BASE_URL: DASHBOARD_ORIGIN, ...options.envOverrides },
   });
   const operator = await issueTestToken(app, `voice-connection-${randomUUID()}@example.com`);
   const dashboard = adminSessionHeaders(operator);
@@ -134,7 +134,7 @@ describe("agent voice connection contract", () => {
     expect((await agent()).voice.runtime).toEqual(runtime);
     expect((await status().expect(200)).body.state).toBe("connected");
     const created = vendor.agents.get("agent_2") as { conversation_config: { agent: { prompt: { custom_llm: { url: string } } } } };
-    expect(created.conversation_config.agent.prompt.custom_llm.url).toBe(`${PUBLIC_API}/api/v1/agents/${agentId}/voice/elevenlabs/v1`);
+    expect(created.conversation_config.agent.prompt.custom_llm.url).toBe(`${DASHBOARD_ORIGIN}/backend/api/v1/agents/${agentId}/voice/elevenlabs/v1`);
     const credentials = await restCredentials();
     expect(credentials).toEqual([expect.objectContaining({ label: "Voice calls", status: "active", expiresAt: null })]);
     expect(vendor.secretOf("agent_2")?.startsWith(credentials[0].prefix)).toBe(true);
@@ -253,7 +253,8 @@ describe("agent voice connection contract", () => {
 
   it.each([
     ["no key is stored", { vendorKey: null }, 409, "voice_vendor_key_missing"],
-    ["the deployment has no public API origin", { envOverrides: { PUBLIC_API_BASE_URL: undefined } }, 503, "voice_connection_unavailable"],
+    ["the deployment's APP_BASE_URL is unset", { envOverrides: { APP_BASE_URL: undefined } }, 503, "voice_connection_unavailable"],
+    ["the deployment's APP_BASE_URL is not reachable from the internet", { envOverrides: { APP_BASE_URL: "http://localhost:3000" } }, 503, "voice_connection_unavailable"],
     ["ElevenLabs rejects the key", { vendor: fakeElevenLabs({ probe: () => json(401, { detail: { code: "invalid_api_key" } }) }) }, 422, "voice_vendor_key_rejected"],
     [
       "the key may not manage agents",

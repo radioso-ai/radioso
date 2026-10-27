@@ -139,7 +139,7 @@ describe("public voice session start contract", () => {
     const { app, dashboard, agentId, visitor } = await embedWorkspace({
       vendorFetch: vendor.fetch,
       chatGateway,
-      envOverrides: { PUBLIC_API_BASE_URL: "https://api.radioso.test" },
+      envOverrides: { APP_BASE_URL: "https://api.radioso.test" },
       voice: { ...boundVoice, runtime: null, recordingNotice: { it: "Questa chiamata viene registrata." } },
     });
     await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({ name: "Marta", proactiveGreetingEnabled: true }).expect(200);

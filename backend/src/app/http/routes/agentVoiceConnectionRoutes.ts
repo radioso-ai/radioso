@@ -32,7 +32,7 @@ const FAILURE_ANSWERS: Readonly<Record<VoiceRuntimeConnectionFailure, { status: 
   connection_unavailable: {
     status: 503,
     code: "voice_connection_unavailable",
-    message: "This deployment has no public API address a voice vendor can reach; set PUBLIC_API_BASE_URL",
+    message: "This deployment's APP_BASE_URL is unset or not reachable from the public internet, so a voice vendor cannot reach it",
   },
   vendor_key_missing: { status: 409, code: "voice_vendor_key_missing", message: "Store the voice vendor's API key under Settings → Providers first" },
   vendor_key_unreadable: {

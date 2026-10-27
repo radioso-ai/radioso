@@ -50,7 +50,6 @@ jobs:
       GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
       APP_BASE_URL: ${{ vars.APP_BASE_URL }}
       CONNECTOR_PUBLIC_BASE_URL: ${{ vars.CONNECTOR_PUBLIC_BASE_URL }}
-      PUBLIC_API_ORIGIN: ${{ vars.PUBLIC_API_ORIGIN }}
       PUBLIC_CHAT_BASE_URL: ${{ vars.PUBLIC_CHAT_BASE_URL }}
       RADIOSO_MCP_ENABLED: ${{ vars.RADIOSO_MCP_ENABLED }}
       MCP_PUBLIC_ORIGIN: ${{ vars.MCP_PUBLIC_ORIGIN }}
@@ -427,13 +426,6 @@ jobs:
           # backend falls back to APP_BASE_URL (single-origin deployments).
           if [ -n "${CONNECTOR_PUBLIC_BASE_URL:-}" ]; then
             echo "TF_VAR_connector_public_base_url=${CONNECTOR_PUBLIC_BASE_URL}" >> "$GITHUB_ENV"
-          fi
-          # Canonical public REST API origin (e.g. https://api.radioso.ai): the backend's
-          # PUBLIC_API_BASE_URL, which voice vendor agents Radioso creates post turns to, and the
-          # dashboard's RADIOSO_PUBLIC_API_URL. Left null when unset; Connect on the Voice card
-          # then answers 503.
-          if [ -n "${PUBLIC_API_ORIGIN:-}" ]; then
-            echo "TF_VAR_public_api_origin=${PUBLIC_API_ORIGIN%/}" >> "$GITHUB_ENV"
           fi
           echo "TF_VAR_worker_tasks_service_url_override=${WORKER_URL}" >> "$GITHUB_ENV"
 

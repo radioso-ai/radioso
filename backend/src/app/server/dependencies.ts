@@ -1368,7 +1368,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     credentials: workspaceProviderCredentialsService,
     // Called through its own receiver, never detached from globalThis.
     fetch: (url, init) => globalThis.fetch(url, init),
-    publicApiBaseUrl: env.PUBLIC_API_BASE_URL,
+    appBaseUrl: env.APP_BASE_URL,
     auditService: infrastructure.auditService,
     metricsRegistry: infrastructure.metricsRegistry,
     logger,

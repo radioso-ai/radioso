@@ -1040,7 +1040,8 @@ A runtime connection logs each operation with `workspaceId`, `agentId`,
 `outcome`: `Voice runtime connected`, `Voice runtime disconnected` and `Voice
 runtime released after its agent was deleted` at info (`created`, `repaired`;
 `released`, `unbound`, `vendor_agent_left`), `Voice
-runtime connect failed` and `Voice runtime language sync failed` at warn with
+runtime connect failed`, `Voice runtime disconnect failed` and `Voice runtime
+language sync failed` at warn with
 the `VoiceRuntimeConnectionFailure` (or `error`, `needs_connect`;
 `connection_busy` for a sync skipped while a Connect or Disconnect held the
 agent) and the

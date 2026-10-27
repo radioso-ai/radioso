@@ -111,20 +111,13 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
   }
 
   async connect(input: AgentRef & { actor: VoiceRuntimeConnectionActor }): Promise<VoiceRuntimeConnectionStatus> {
-    const { workspaceId, agentId } = input;
     const attempt: { vendor: VoiceVendor } = { vendor: CONNECT_VENDOR };
     try {
       const held = await this.dependencies.lock.run(input, () => this.connectHoldingLock(input, attempt));
       if (!held.ran) throw new VoiceRuntimeConnectionError("connection_busy");
       return held.value;
     } catch (error) {
-      const failure = failureOf(error);
-      this.dependencies.logger.warn(
-        { workspaceId, agentId, vendor: attempt.vendor, operation: "connect", outcome: failure ?? "error", ...vendorErrorFields(error) },
-        "Voice runtime connect failed",
-      );
-      this.record(attempt.vendor, "connect", failure ?? "error");
-      throw failure && !(error instanceof VoiceRuntimeConnectionError) ? new VoiceRuntimeConnectionError(failure) : error;
+      throw this.failed("connect", input, attempt.vendor, error);
     }
   }
 
@@ -204,21 +197,26 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
   }
 
   async disconnect(input: AgentRef & { actor: VoiceRuntimeConnectionActor }): Promise<VoiceRuntimeDisconnection> {
-    const held = await this.dependencies.lock.run(input, () => this.disconnectHoldingLock(input));
-    if (held.ran) return held.value;
-    this.dependencies.logger.warn(
-      { workspaceId: input.workspaceId, agentId: input.agentId, operation: "disconnect", outcome: "connection_busy" },
-      "Voice runtime disconnect refused: another change of the connection is running",
-    );
-    this.record(CONNECT_VENDOR, "disconnect", "connection_busy");
-    throw new VoiceRuntimeConnectionError("connection_busy");
+    const attempt: { vendor: VoiceVendor } = { vendor: CONNECT_VENDOR };
+    try {
+      const held = await this.dependencies.lock.run(input, () => this.disconnectHoldingLock(input, attempt));
+      if (!held.ran) throw new VoiceRuntimeConnectionError("connection_busy");
+      return held.value;
+    } catch (error) {
+      throw this.failed("disconnect", input, attempt.vendor, error);
+    }
   }
 
-  private async disconnectHoldingLock(input: AgentRef & { actor: VoiceRuntimeConnectionActor }): Promise<VoiceRuntimeDisconnection> {
+  /** Disconnect's own work, run while the agent's lock is held. `attempt.vendor` follows the vendor it disconnects, for the caller's log. */
+  private async disconnectHoldingLock(
+    input: AgentRef & { actor: VoiceRuntimeConnectionActor },
+    attempt: { vendor: VoiceVendor },
+  ): Promise<VoiceRuntimeDisconnection> {
     const { workspaceId, agentId, actor } = input;
     const profile = await this.requireProfile(input);
     const connection = await this.dependencies.connections.find(input);
     const vendor = profile.runtime?.vendor ?? connection?.vendor ?? CONNECT_VENDOR;
+    attempt.vendor = vendor;
     if (!connection && !profile.runtime) return { ...await this.statusOf(workspaceId, null, null), vendorAgentLeft: false };
 
     const released = connection ? await this.forget(connection, actor) : false;
@@ -464,6 +462,20 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
       connectAvailable: this.dependencies.completionsAddress !== null,
       runtime,
     };
+  }
+
+  /**
+   * Logs and counts a Connect or Disconnect that failed, and hands back what to throw: a vendor's
+   * refusal as the operator's reason, anything else as it came.
+   */
+  private failed(operation: "connect" | "disconnect", agent: AgentRef, vendor: VoiceVendor, error: unknown): unknown {
+    const failure = failureOf(error);
+    this.dependencies.logger.warn(
+      { workspaceId: agent.workspaceId, agentId: agent.agentId, vendor, operation, outcome: failure ?? "error", ...vendorErrorFields(error) },
+      `Voice runtime ${operation} failed`,
+    );
+    this.record(vendor, operation, failure ?? "error");
+    return failure && !(error instanceof VoiceRuntimeConnectionError) ? new VoiceRuntimeConnectionError(failure) : error;
   }
 
   /** Labels are closed values: the vendor, the operation and how it ended. */

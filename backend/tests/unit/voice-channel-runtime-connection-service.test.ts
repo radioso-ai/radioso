@@ -451,6 +451,32 @@ describe("voice runtime connection: disconnect", () => {
     expect(steps).toEqual(["release:agent_42", "revoke:cred-old", "remove", "bind:none"]);
   });
 
+  it("logs and counts a Disconnect that fails, naming the agent, and lets the failure through", async () => {
+    const { service, logger, metrics } = serviceWith({ connection: managed(), profile: boundTo("agent_42"), bindError: new Error("agent write failed") });
+
+    await expect(service.disconnect({ ...agent, actor })).rejects.toThrow("agent write failed");
+    expect(logger.warn).toHaveBeenCalledWith(
+      { workspaceId, agentId, vendor: "elevenlabs", operation: "disconnect", outcome: "error", errorClass: "Error" },
+      "Voice runtime disconnect failed",
+    );
+    expect(metrics.incrementCounter).toHaveBeenCalledWith("voice_runtime_connection_total", expect.objectContaining({
+      labels: { vendor: "elevenlabs", operation: "disconnect", outcome: "error" },
+    }));
+  });
+
+  it("names the failure of a Disconnect for an agent that does not exist", async () => {
+    const { service, logger, metrics } = serviceWith({ profile: null });
+
+    expect(await failureOf(service.disconnect({ ...agent, actor }))).toBe("agent_not_found");
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceId, agentId, operation: "disconnect", outcome: "agent_not_found" }),
+      "Voice runtime disconnect failed",
+    );
+    expect(metrics.incrementCounter).toHaveBeenCalledWith("voice_runtime_connection_total", expect.objectContaining({
+      labels: { vendor: "elevenlabs", operation: "disconnect", outcome: "agent_not_found" },
+    }));
+  });
+
   it("does nothing for an agent with no runtime and no connection", async () => {
     const { service, steps, audit } = serviceWith();
 

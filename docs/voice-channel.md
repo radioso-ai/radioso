@@ -181,7 +181,8 @@ account.
 
 Each connect, disconnect and language update logs one line with the agent,
 vendor, region, `operation` and `outcome` (`Voice runtime connected`,
-`Voice runtime connect failed`, `Voice runtime language sync failed`, and an
+`Voice runtime connect failed`, `Voice runtime disconnect failed`,
+`Voice runtime language sync failed`, and an
 ElevenLabs agent left behind as `Voice runtime vendor agent left at the
 vendor`), never the key, the credential or a URL. The
 `voice_runtime_connection_total` metric counts them by `vendor`,

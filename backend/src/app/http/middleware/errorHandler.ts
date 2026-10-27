@@ -13,6 +13,24 @@ const isPayloadTooLargeError = (error: unknown): error is { status?: number; typ
       (("status" in error && error.status === 413) || ("type" in error && error.type === "entity.too.large")),
   );
 
+/**
+ * A write to the document collection or one document's own body — `POST /api/v1/document` or
+ * `PUT /api/v1/document/{documentId}` — as opposed to a sub-resource such as `/import`. Matches
+ * the bare path itself, not just paths with something after a trailing slash, so a client that
+ * calls the collection route without a trailing slash (every first-party caller does) is still
+ * recognized.
+ */
+const isInlineDocumentMutationRequest = (req: Request): boolean => {
+  const requestPath = req.originalUrl || req.path;
+  const isDocumentCollectionPath = requestPath === "/api/v1/document" || requestPath.startsWith("/api/v1/document/");
+  return Boolean(
+    isDocumentCollectionPath &&
+    !requestPath.includes("/import") &&
+    (req.method === "POST" || req.method === "PUT") &&
+    req.is("application/json"),
+  );
+};
+
 const isStructuredAppError = (error: unknown): error is {
   statusCode: number;
   code: string;
@@ -39,16 +57,10 @@ export const createErrorHandler = (errorReportingService?: ErrorReportingService
     }
 
     if (error instanceof AppError && error.code === "payload_too_large") {
-      const requestPath = req.originalUrl || req.path;
-      const isInlineDocumentMutation =
-        requestPath.startsWith("/api/v1/document/") &&
-        !requestPath.includes("/import") &&
-        (req.method === "POST" || req.method === "PUT") &&
-        req.is("application/json");
       res.status(413).json({
         error: {
           code: "payload_too_large",
-          message: isInlineDocumentMutation
+          message: isInlineDocumentMutationRequest(req)
             ? "Document content exceeds the inline size limit. Import the file instead."
             : error.message,
         },
@@ -95,16 +107,10 @@ export const createErrorHandler = (errorReportingService?: ErrorReportingService
     }
 
     if (isPayloadTooLargeError(error)) {
-      const requestPath = req.originalUrl || req.path;
-      const isInlineDocumentMutation =
-        requestPath.startsWith("/api/v1/document/") &&
-        !requestPath.includes("/import") &&
-        (req.method === "POST" || req.method === "PUT") &&
-        req.is("application/json");
       res.status(413).json({
         error: {
           code: "payload_too_large",
-          message: isInlineDocumentMutation
+          message: isInlineDocumentMutationRequest(req)
             ? "Document content exceeds the inline size limit. Import the file instead."
             : "Request body exceeds maximum size",
         },

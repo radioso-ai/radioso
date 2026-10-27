@@ -443,6 +443,27 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/account": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete the current organization
+         * @description Permanently deletes the organization, every workspace it owns, and all derived data. Only the organization owner may call this. Ends the caller's session.
+         */
+        delete: operations["deleteOrganization"];
+        options?: never;
+        head?: never;
+        /** Rename the current organization */
+        patch: operations["renameOrganization"];
+        trace?: never;
+    };
     "/api/v1/account/switch": {
         parameters: {
             query?: never;
@@ -1390,7 +1411,11 @@ export interface paths {
         /** Update a workspace agent */
         put: operations["updateAgent"];
         post?: never;
-        delete?: never;
+        /**
+         * Delete a workspace agent
+         * @description Refuses to delete the last remaining agent in a workspace.
+         */
+        delete: operations["deleteAgent"];
         options?: never;
         head?: never;
         patch?: never;
@@ -1459,6 +1484,46 @@ export interface paths {
         put?: never;
         /** Revoke an agent channel credential */
         post: operations["revokeAgentChannelCredential"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/anonymous-chat-token/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate an agent's anonymous chat token
+         * @description Replaces the token that authorizes this agent's anonymous (non-embedded) public chat link. Every caller holding the previous token loses access immediately.
+         */
+        post: operations["rotateAgentAnonymousChatToken"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/agents/{agentId}/website-embed-token/rotate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rotate an agent's website embed token
+         * @description Replaces the token that authorizes this agent's website embed surface. Every embedded session holding the previous token loses access immediately. Not found when the website-embed surface extension is not registered for this deployment.
+         */
+        post: operations["rotateAgentWebsiteEmbedToken"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2900,7 +2965,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/document/": {
+    "/api/v1/document": {
         parameters: {
             query?: never;
             header?: never;
@@ -3146,6 +3211,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/document/{documentId}/chunks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List a document's chunks */
+        get: operations["listDocumentChunks"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/document/{documentId}/chunks/{chunkId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a single document chunk */
+        get: operations["getDocumentChunk"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/assistant/chat": {
         parameters: {
             query?: never;
@@ -3384,6 +3483,40 @@ export interface paths {
         };
         /** Replay one historical document search */
         get: operations["getHistorySearch"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/history/contact": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List contact requests */
+        get: operations["listContactRequests"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/history/contact/{requestId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get a contact request and its conversation */
+        get: operations["getContactRequest"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4790,6 +4923,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/public/chat/{token}/embed-config": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the website embed's bootstrap configuration
+         * @description Unauthenticated: the launch token alone selects the agent. 404 when the token is unknown or the website embed surface is disabled. Cacheable per allow-listed origin.
+         */
+        get: operations["getPublicChatEmbedConfig"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/public/chat/{token}/assistant-logo": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read the public widget's assistant logo image
+         * @description Unauthenticated: the launch token alone selects the agent. Sibling of the dashboard-only GET /api/v1/agents/{agentId}/assistant-logo, serving the same stored bytes.
+         */
+        get: operations["getPublicChatAssistantLogo"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/events": {
         parameters: {
             query?: never;
@@ -5012,6 +5185,14 @@ export interface components {
         AccountMembershipRoleUpdateRequest: {
             /** @enum {string} */
             role: "admin" | "member";
+        };
+        OrganizationRenameRequest: {
+            organizationName: string;
+        };
+        OrganizationRenameResponse: {
+            /** Format: uuid */
+            accountId: string;
+            organizationName: string;
         };
         WorkspaceGrantRequest: {
             /** @enum {string} */
@@ -7594,6 +7775,43 @@ export interface components {
         DocumentDetails: components["schemas"]["DocumentSummary"] & {
             content: string;
         };
+        DocumentChunkSummary: {
+            /** Format: uuid */
+            id: string;
+            chunkIndex: number;
+            contentPreview: string;
+            contentLength: number;
+            startOffset: number;
+            endOffset: number;
+            dateFrom: string | null;
+            dateTo: string | null;
+        };
+        DocumentChunkListResponse: {
+            /** Format: uuid */
+            documentId: string;
+            chunks: components["schemas"]["DocumentChunkSummary"][];
+        };
+        DocumentChunk: {
+            /** Format: uuid */
+            id: string;
+            /** Format: uuid */
+            documentId: string;
+            /** Format: uuid */
+            workspaceId: string;
+            chunkIndex: number;
+            content: string;
+            searchText: string | null;
+            startOffset: number;
+            endOffset: number;
+            metadata: {
+                [key: string]: unknown;
+            };
+            dateFrom?: string | null;
+            dateTo?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            embeddingDimensions: number | null;
+        };
         DocumentListResponse: {
             documents: components["schemas"]["DocumentSummary"][];
             total: number;
@@ -9144,6 +9362,47 @@ export interface components {
         };
         /** @description A chat turn carries the agent reply envelope core beside the answer; a bootstrap greeting (`startConversation`) has no turn and carries none. */
         AgentChannelChatResponse: components["schemas"]["AgentChannelChatTurnResponse"] | components["schemas"]["ChatBootstrapResponse"];
+        ContactHistorySummary: {
+            /** Format: uuid */
+            id: string;
+            /** Format: date-time */
+            sortAt: string;
+            /** Format: uuid */
+            workspaceId: string;
+            /** Format: uuid */
+            conversationId: string;
+            /** Format: uuid */
+            assistantMessageId: string | null;
+            sourceChannel: string | null;
+            sourceOrigin: string | null;
+            userEmail: string;
+            messagePreview: string;
+            triggerSource: string;
+            triggerReason: string | null;
+            /** @enum {string} */
+            status: "pending" | "delivering" | "delivered" | "failed";
+            attempts: number;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
+            activitySummary?: components["schemas"]["ActivitySummary"];
+        };
+        ContactHistoryListResponse: {
+            contacts: components["schemas"]["ContactHistorySummary"][];
+            total: number;
+            nextCursor: null;
+            hasMore: boolean;
+        };
+        ContactHistoryDetail: components["schemas"]["ContactHistorySummary"] & {
+            message: string;
+            finalDeliveryError: string | null;
+            activityTrace?: components["schemas"]["ActivityTrace"];
+        };
+        ContactHistoryDetailResponse: {
+            contact: components["schemas"]["ContactHistoryDetail"];
+            conversation: components["schemas"]["ChatConversationDetail"];
+        };
         /** @description JSON Schema for the tool's input: one property per declared routine slot (`text`→string, `number`, `boolean`, `email`→string/format=email, `date`→string/format=date), `required` from the slot. */
         AgentToolInputSchema: {
             /** @enum {string} */
@@ -12349,6 +12608,102 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    deleteOrganization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Organization deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Only the organization owner can delete the organization */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Organization could not be deleted */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    renameOrganization: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OrganizationRenameRequest"];
+            };
+        };
+        responses: {
+            /** @description Organization renamed */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OrganizationRenameResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
             };
         };
     };
@@ -16695,6 +17050,62 @@ export interface operations {
             };
         };
     };
+    deleteAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Cannot delete the last agent in this workspace */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent delete permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     getAgentChannelsLifecycle: {
         parameters: {
             query?: never;
@@ -16947,6 +17358,104 @@ export interface operations {
                 };
             };
             /** @description Agent or channel credential not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    rotateAgentAnonymousChatToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent with its replacement anonymous chat token */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationAgent"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    rotateAgentWebsiteEmbedToken: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                agentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Agent with its replacement website embed token */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ConversationAgent"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent manage permission required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Agent not found, or the website-embed surface extension is not registered for this deployment */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -25311,6 +25820,87 @@ export interface operations {
             };
         };
     };
+    listDocumentChunks: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                documentId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Chunk summaries returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentChunkListResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Document not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getDocumentChunk: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                documentId: string;
+                chunkId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Chunk returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentChunk"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Chunk not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     createAssistantChatResponse: {
         parameters: {
             query?: never;
@@ -26119,6 +26709,101 @@ export interface operations {
                 };
             };
             /** @description Search history entry not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    listContactRequests: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number | null;
+                sourceScope?: "end_user" | "operator_test" | "all";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Contact requests returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContactHistoryListResponse"];
+                };
+            };
+            /** @description Invalid query */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getContactRequest: {
+        parameters: {
+            query?: {
+                limit?: number;
+                offset?: number | null;
+                cursor?: string;
+            };
+            header?: never;
+            path: {
+                requestId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Contact request and conversation detail returned */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ContactHistoryDetailResponse"];
+                };
+            };
+            /** @description Request validation failed */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Authentication required */
+            401: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Contact request not found */
             404: {
                 headers: {
                     [name: string]: unknown;
@@ -30939,6 +31624,115 @@ export interface operations {
                 };
             };
             /** @description Conversation not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getPublicChatEmbedConfig: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Embed bootstrap configuration */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        launcherLabel: string;
+                        /** @enum {string} */
+                        launcherPosition: "bottom-right" | "bottom-left";
+                        assistantName: string;
+                        theme: {
+                            brand: string;
+                            brandText: string;
+                            surface: string;
+                            text: string;
+                        };
+                        branding: {
+                            hidePoweredBy: boolean;
+                            privacyPolicyUrl: string | null;
+                            privacyNotice: components["schemas"]["AgentPrivacyNotices"];
+                        };
+                        copy: {
+                            [key: string]: {
+                                [key: string]: string;
+                            };
+                        };
+                        expertOverrides: {
+                            [key: string]: string;
+                        };
+                        assistantLogoUrl: string | null;
+                        proactiveGreetingEnabled: boolean;
+                        voice: {
+                            /** @description Whether the embed shows a Talk button: the operator offers calls and the agent's voice is ready. */
+                            available: boolean;
+                        };
+                        /**
+                         * Format: uri
+                         * @description Present only when the agent publishes an A2A agent card.
+                         */
+                        agentCardUrl?: string;
+                    };
+                };
+            };
+            /** @description The requesting origin is not approved to host the embedded assistant */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Launch token unknown, or the website embed surface is disabled */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getPublicChatAssistantLogo: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                token: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Logo image */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": string;
+                    "image/jpeg": string;
+                    "image/webp": string;
+                    "image/gif": string;
+                };
+            };
+            /** @description Launch token unknown, or the agent has no logo */
             404: {
                 headers: {
                     [name: string]: unknown;

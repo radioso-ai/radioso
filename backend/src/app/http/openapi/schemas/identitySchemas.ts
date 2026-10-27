@@ -16,6 +16,7 @@ import {
   accountSwitchSchema,
   createAccountSchema,
   createAccountInvitationSchema,
+  renameAccountSchema,
   updateMembershipRoleSchema,
   workspaceGrantParamsSchema,
   workspaceGrantSchema,
@@ -186,6 +187,14 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
   const UserProfileUpdateRequestSchema = registry.register("UserProfileUpdateRequest", profileUpdateSchema);
   const AccountInvitationCreateRequestSchema = registry.register("AccountInvitationCreateRequest", createAccountInvitationSchema);
   const AccountMembershipRoleUpdateRequestSchema = registry.register("AccountMembershipRoleUpdateRequest", updateMembershipRoleSchema);
+  const OrganizationRenameRequestSchema = registry.register("OrganizationRenameRequest", renameAccountSchema);
+  const OrganizationRenameResponseSchema = registry.register(
+    "OrganizationRenameResponse",
+    z.object({
+      accountId: z.string().uuid(),
+      organizationName: z.string(),
+    }),
+  );
   const WorkspaceGrantRequestSchema = registry.register("WorkspaceGrantRequest", workspaceGrantSchema);
   const WorkspaceCreateRequestSchema = registry.register("WorkspaceCreateRequest", createWorkspaceSchema);
   const WorkspaceRenameRequestSchema = registry.register("WorkspaceRenameRequest", renameWorkspaceSchema);
@@ -314,6 +323,8 @@ export const registerIdentitySchemas = (registry: OpenAPIRegistry, schemas: Open
     InvitationAcceptRequestSchema,
     AccountInvitationCreateRequestSchema,
     AccountMembershipRoleUpdateRequestSchema,
+    OrganizationRenameRequestSchema,
+    OrganizationRenameResponseSchema,
     WorkspaceGrantRequestSchema,
     WorkspaceCreateRequestSchema,
     WorkspaceRenameRequestSchema,

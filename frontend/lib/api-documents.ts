@@ -27,7 +27,7 @@ const normalizeDocumentSearchResponse = (payload: DocumentSearchResponse): Docum
 
 export const documentsApi = {
   async createDocument(data: DocumentCreateRequest): Promise<DocumentCreateResponse> {
-    return request<DocumentCreateResponse>("/document/", {
+    return request<DocumentCreateResponse>("/document", {
       method: "POST",
       body: JSON.stringify(data),
     }, { withSession: true })
@@ -55,7 +55,7 @@ export const documentsApi = {
   },
 
   async listDocuments(input?: { limit?: number; offset?: number; cursor?: string }, signal?: AbortSignal): Promise<DocumentListResponse> {
-    return request<DocumentListResponse>(withQuery('/document/', {
+    return request<DocumentListResponse>(withQuery('/document', {
       limit: input?.limit,
       offset: input?.offset,
       cursor: input?.cursor,

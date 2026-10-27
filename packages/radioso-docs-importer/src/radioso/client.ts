@@ -21,7 +21,7 @@ export interface RadiosoDocsClient {
   deleteSource(sourceId: string): Promise<void>;
 }
 
-export interface HttpClientConfig {
+interface HttpClientConfig {
   baseUrl: string;
   apiToken: string;
   pageSize?: number;
@@ -56,7 +56,7 @@ export function createRadiosoDocsClient(config: HttpClientConfig): RadiosoDocsCl
         if (cursor) {
           query.set("cursor", cursor);
         }
-        const response = await request("GET", `/api/v1/document/?${query.toString()}`);
+        const response = await request("GET", `/api/v1/document?${query.toString()}`);
         const page = (await response.json()) as {
           documents: Array<Omit<ExistingDocument, "sourceId"> & { sourceId?: string | null }>;
           nextCursor?: string | null;
@@ -69,7 +69,7 @@ export function createRadiosoDocsClient(config: HttpClientConfig): RadiosoDocsCl
     },
 
     async create(input) {
-      const response = await request("POST", "/api/v1/document/", {
+      const response = await request("POST", "/api/v1/document", {
         title: input.title,
         content: input.content,
         metadata: input.metadata,

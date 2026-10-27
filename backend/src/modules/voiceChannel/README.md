@@ -20,8 +20,11 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
 
 - `domain.ts` knows sessions, utterances, bridge lines, speech pieces and turn
   outcomes, and the vendor agents Radioso maintains (`VoiceRuntimeProvisioner`,
-  `VoiceRuntimeConnection` and the ports a connection needs). It names no
-  vendor and no wire: no secret id, custom LLM, preset or tag.
+  `VoiceRuntimeConnection` and the ports a connection needs, and
+  `isMaintainedRuntime`, the one rule for whether a binding is one of them). It
+  names no vendor and no wire: no secret id, custom LLM, preset or tag. The
+  agent's greeting reaches it as `VoiceGreetingSource` (words in a language, or
+  none), so it knows nothing of how chat greets.
 - `services/` runs the turn: `voiceTurnService.ts` resolves or binds the
   session's conversation, reads the agent's voice settings and the
   conversation's routine state and owner, starts the chat turn with
@@ -67,6 +70,14 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   `voice.enabled` and `voice.runtime`, the workspace's key for that vendor
   through `VoiceVendorCredentialReader`, asks that vendor's
   `VoiceSessionStarter` for the session, and mints the session key (a UUID).
+  On a vendor agent Radioso maintains (`isMaintainedRuntime` over
+  `VoiceRuntimeConnectionStore.find`) the start also hands back the call's
+  `firstMessage`: `sessionFirstMessage.ts` reads the connection and the
+  agent's greeting in the session's language (`VoiceGreetingSource`) while the
+  vendor opens the session, waits `VOICE_BEHAVIOR.sessionGreetingWaitMs` (2.5 s)
+  for the greeting, and joins the recording notice and the greeting, each
+  through `speechText.ts`'s `spokenText`, a paragraph apart. A greeting that is
+  late or fails, or a connection that cannot be read, never fails the start.
   The same service is the `VoiceSessionAvailabilityPort`: by the gate a start
   passes (`voice.enabled`, a bound `voice.runtime`) and the presence of that
   vendor's key (`presence`, which decrypts nothing and reads `unreadable`
@@ -104,7 +115,8 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   deleted, revokes the credential and forgets the connection (database only)
   and deletes the vendor agent in the background, so a deletion never waits on
   the vendor; neither ever rejects. "Maintained" is a connection whose
-  vendor agent is the bound runtime's.
+  vendor agent is the bound runtime's (`isMaintainedRuntime`, which the session
+  start reads by too).
   `voiceRecordingService.ts` is a call's recording as the operator meets it:
   the page's report of the vendor's conversation id
   (`VoiceVendorConversationReportPort`, stored only once the vendor's
@@ -217,7 +229,7 @@ helpers and the shared chat message limit from `app/http`
 
 - `public.ts` — `VoiceTurnPort`, `VoiceTurnService`, `VoiceSessionRepository`,
   `registerOpenAiCompletionsRoute`; `VoiceSessionStartPort`,
-  `VoiceSessionStartResult`, `VoiceSessionStartService`,
+  `VoiceSessionStartResult`, `VoiceGreetingSource`, `VoiceSessionStartService`,
   `createElevenLabsSessionStarter`; the recording ports,
   `VoiceRecordingService`, `VoiceRecordingErasureService`,
   `VoiceRecordingErasureDrain`, `voiceRecordingErasureJobHandler`,
@@ -243,8 +255,12 @@ helpers and the shared chat message limit from `app/http`
   through the same function.
   `createVoiceSessionStartComposition` in the same file builds the session
   start over the agent repository, the ElevenLabs starter with `fetch`, the
-  workspace credential store's `getApiKey` as the credential reader, and the
-  start registry; exposed as `AppDependencies.voiceSessionStarts`.
+  workspace credential store's `getApiKey` as the credential reader, the
+  start registry, the runtime connections (the same
+  `VoiceRuntimeConnectionRepository` the connection service writes) and chat's
+  `AgentGreetingReader` (`ChatBootstrapService.readGreeting`, asked on the
+  `voice` surface) as the `VoiceGreetingSource`; exposed as
+  `AppDependencies.voiceSessionStarts`.
   `app/server/dependencies.ts` builds one `VoiceSessionRepository` and hands it
   to both: the turn reads bindings and starts from it, and the start records
   into it. `createVoiceRecordingComposition` builds the recording services
@@ -399,9 +415,27 @@ helpers and the shared chat message limit from `app/http`
   deletes no recording. The route is a permanent coverage exclusion
   (`getConversationRecording`: binary audio a teammate hears); Ray's
   `conversation_transcript` carries `recordingAvailable`. The agent's
-  optional `voice.recordingNotice` is shown by the embed, not spoken: the
-  session start hands it to the page in the call's language, else the
-  agent's default, else English, else the first one written.
+  optional `voice.recordingNotice` is shown by the embed: the session start
+  hands it to the page in the call's language, else the agent's default, else
+  English, else the first one written. On a maintained vendor agent the same
+  line opens the call's `firstMessage` (next decision), so it is also spoken.
+- **The call's first message.** A maintained vendor agent keeps no first
+  message of its own and allows the session to set one (the ElevenLabs
+  provisioner allows `conversation_config_override.agent.first_message`), so a
+  session Radioso starts on it says the recording notice and then the agent's
+  greeting, and a session that sets none waits for the caller. The page sets it
+  only from the start's `firstMessage`, which is present only on a maintained
+  vendor agent: ElevenLabs closes a session (1008) that sets a first message its
+  agent does not allow, and a `{{variable}}` in the agent's own first message
+  closes every session that does not send it, so the greeting is never
+  templated into the agent. The greeting is the one the web chat shows in the
+  same language (chat's bootstrap: the published exact words, else the
+  generated greeting cached per agent and locale, generated and cached on a
+  miss with its usage reserved on the `voice` surface), without its chips,
+  spoken as plain text. It is read with no conversation, delivery record,
+  `chat.bootstrap` audit event or `chat.started` analytics event, and it is not
+  added to the call's conversation. The privacy notice stays on screen: it
+  carries a policy link.
 - **The session key is a correlation handle.** The start mints it (a UUID) and
   records it in `voice_sessions` with the visitor's public session and visitor
   key until `VOICE_BEHAVIOR.sessionStartTtlMs` (60 minutes: the signed URL's
@@ -926,6 +960,18 @@ frame ends with one generic OpenAI error frame. Never the utterance, the reply
 or an internal error message. Chat-side spans, metrics and failure logs cover the
 turn itself.
 
+A started session on a maintained vendor agent records
+`voice_session_greeting_total` (`vendor`; `outcome`: `spoken`, `none`,
+`timed_out`, `failed`) and logs `Voice session greeting prepared` at info
+(`spoken`, `none`) with `workspaceId`, `agentId`, `vendor`, `outcome`,
+`recordingNotice` (whether the agent had one for the call) and `durationMs`;
+`Voice session greeting was not ready in time; the call starts without it` at
+warn with `waitMs`; or `Voice session greeting could not be read; the call
+starts without it` at warn with `step` (`greeting`, or `connection` when the
+runtime connection could not be read, which leaves the call with no first
+message at all, and counts `failed`) and `errorClass`. Never the greeting, the
+notice or the first message. A start whose vendor call fails records none.
+
 A session start records `voice_session_start_total` (`vendor`: the bound
 vendor or `none`; `outcome`: `started`, `agent_not_found`, `voice_off`,
 `no_runtime`, `credential_missing`, `credential_unreadable`,
@@ -1030,7 +1076,12 @@ secret id or a URL.
   two pools, refused at once while held)
 - `cd backend && pnpm exec vitest run tests/contract/public-voice-session.contract.test.ts tests/contract/settings-credentials.contract.test.ts`
   (the session start through the embed's public session, with a fake vendor
-  `fetch`; the ElevenLabs key in the credential store)
+  `fetch`, including a session after Connect that carries `firstMessage`; the
+  ElevenLabs key in the credential store)
+- `cd backend && pnpm exec vitest run tests/unit/voice-channel-session-start.test.ts tests/unit/chat-bootstrap-service.test.ts`
+  (the first message: maintained or not, notice and greeting as speech, the
+  greeting's wait, failure and outcome counts; and chat's `readGreeting`, which
+  shares the web chat's greeting cache and records nothing)
 - `cd backend && pnpm exec vitest run tests/contract/voice-operator-reply.contract.test.ts`
   (an Inbox reply on a human-owned call spoken on the next turn, then marked
   and audited; a reply pending at hand-back spoken before the agent's answer)

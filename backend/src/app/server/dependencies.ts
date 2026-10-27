@@ -1376,10 +1376,13 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     }),
   ]);
   refreshEmbedConfigsOnVoiceVendorKeyChange({ credentials: workspaceProviderCredentialsService, embedConfigs: agentService });
+  const voiceRuntimeConnectionStore = new VoiceRuntimeConnectionRepository(infrastructure.database.kysely);
   // One service starts sessions and tells the website embed whether to offer them, by the same gate.
   const voiceSessionStarts = createVoiceSessionStartComposition({
     agentRepository: repositories.agentRepository,
     starts: voiceSessions,
+    connections: voiceRuntimeConnectionStore,
+    greetings: chat.chatBootstrapService,
     credentials: workspaceProviderCredentialsService,
     // Called through its own receiver, never detached from globalThis.
     fetch: (url, init) => globalThis.fetch(url, init),
@@ -1388,7 +1391,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   });
   // The vendor agent Radioso creates for an agent's voice channel, kept in step with the agent.
   const voiceRuntimeConnections = createVoiceRuntimeConnectionComposition({
-    connections: new VoiceRuntimeConnectionRepository(infrastructure.database.kysely),
+    connections: voiceRuntimeConnectionStore,
     lock: new PostgresVoiceRuntimeConnectionLock(infrastructure.database.kysely),
     agentRepository: repositories.agentRepository,
     agentService,

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type {
+  AgentGreetingReader,
   ChatStreamEvent,
   OperatorReplySpeechClaims,
   ReplyInterruptionMarker,
@@ -20,6 +21,7 @@ import {
   voiceRecordingErasureJobHandler,
   voiceRecordingErasureRequest,
   type VoiceChatTurnRequest,
+  type VoiceGreetingSource,
   type VoiceRecordingAudit,
   type VoiceRecordingErasureBacklog,
   type VoiceRecordingStore,
@@ -381,16 +383,30 @@ export const refreshEmbedConfigsOnVoiceVendorKeyChange = (deps: {
 };
 
 /**
+ * The greeting a call says first, read from chat: the words the agent's web chat opens with in the
+ * same language, so a visitor who opened the panel hears the greeting they were shown. A generated
+ * greeting reserves its usage on the `voice` surface.
+ */
+const voiceGreetingSource = (greetings: AgentGreetingReader): VoiceGreetingSource => ({
+  greetingFor: ({ workspaceId, agentId, locale }) => greetings.readGreeting({ workspaceId, agentId, locale, surface: "voice" }),
+});
+
+/**
  * Starts voice sessions on the vendor agent each Radioso agent is bound to: the ElevenLabs session
  * starter over `fetch`, the workspace's vendor key from the workspace credential store, and a
  * registry of started sessions (`VoiceSessionRepository` in production). A vendor key is always the workspace's own; there is no
- * deployment fallback, so a workspace without one gets no session. The same service tells a page
+ * deployment fallback, so a workspace without one gets no session. On a vendor agent Radioso
+ * maintains (the runtime connections, `VoiceRuntimeConnectionRepository` in production) the start
+ * also hands the page the call's first message, with the agent's greeting from chat's
+ * `AgentGreetingReader` (`ChatBootstrapService`). The same service tells a page
  * whether to offer sessions, from the key's presence alone (`hasCredentials` decrypts nothing) and
  * whether the backend holds the master key to read it.
  */
 export const createVoiceSessionStartComposition = (deps: {
   agentRepository: AgentVoiceProfileRepository;
   starts: VoiceSessionStartRegistry;
+  connections: Pick<VoiceRuntimeConnectionStore, "find">;
+  greetings: AgentGreetingReader;
   credentials: VoiceVendorCredentialStore;
   fetch: typeof globalThis.fetch;
   metricsRegistry: MetricsRegistry | null;
@@ -401,6 +417,8 @@ export const createVoiceSessionStartComposition = (deps: {
     credentials: voiceVendorCredentialReader(deps.credentials),
     starters: { elevenlabs: createElevenLabsSessionStarter({ fetch: deps.fetch }) },
     starts: deps.starts,
+    connections: deps.connections,
+    greetings: voiceGreetingSource(deps.greetings),
     newSessionKey: randomUUID,
     metrics: deps.metricsRegistry,
     logger: deps.logger,

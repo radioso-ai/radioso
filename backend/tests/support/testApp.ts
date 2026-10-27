@@ -63,6 +63,7 @@ import {
   type VoiceRecordingStore,
   type VoiceRecordingsLeftAtVendorReader,
   type VoiceRuntimeConnection,
+  type VoiceRuntimeConnectionStore,
   type VoiceSessionRef,
   type VoiceSessionStartLookup,
   type VoiceSessionStartRegistry,
@@ -2852,30 +2853,33 @@ export const createTestDependencies = (overrides: {
         listPublished: ({ agentId }) => routineDefinitionRepository.listActiveByAgent(agentId),
       },
     });
+  // `agent_voice_runtime_connections` in memory, keyed by agent, and its per-agent lock.
+  const voiceRuntimeConnectionRows = new Map<string, VoiceRuntimeConnection>();
+  const lockedVoiceRuntimeAgents = new Set<string>();
+  const voiceRuntimeConnectionStore: VoiceRuntimeConnectionStore = {
+    find: async ({ workspaceId, agentId }) => {
+      const row = voiceRuntimeConnectionRows.get(agentId);
+      return row?.workspaceId === workspaceId ? row : null;
+    },
+    save: async (connection) => {
+      voiceRuntimeConnectionRows.set(connection.agentId, connection);
+    },
+    remove: async ({ workspaceId, agentId }) => {
+      if (voiceRuntimeConnectionRows.get(agentId)?.workspaceId === workspaceId) voiceRuntimeConnectionRows.delete(agentId);
+    },
+  };
   const voiceSessionStarts = createVoiceSessionStartComposition({
     agentRepository,
     starts: voiceSessions,
+    connections: voiceRuntimeConnectionStore,
+    greetings: chatBootstrapService,
     credentials: workspaceProviderCredentialsService,
     fetch: voiceVendorFetch,
     metricsRegistry,
     logger,
   });
-  // `agent_voice_runtime_connections` in memory, keyed by agent, and its per-agent lock.
-  const voiceRuntimeConnectionRows = new Map<string, VoiceRuntimeConnection>();
-  const lockedVoiceRuntimeAgents = new Set<string>();
   const voiceRuntimeConnections = createVoiceRuntimeConnectionComposition({
-    connections: {
-      find: async ({ workspaceId, agentId }) => {
-        const row = voiceRuntimeConnectionRows.get(agentId);
-        return row?.workspaceId === workspaceId ? row : null;
-      },
-      save: async (connection) => {
-        voiceRuntimeConnectionRows.set(connection.agentId, connection);
-      },
-      remove: async ({ workspaceId, agentId }) => {
-        if (voiceRuntimeConnectionRows.get(agentId)?.workspaceId === workspaceId) voiceRuntimeConnectionRows.delete(agentId);
-      },
-    },
+    connections: voiceRuntimeConnectionStore,
     lock: {
       run: async (agent, work) => {
         if (lockedVoiceRuntimeAgents.has(agent.agentId)) return { ran: false };

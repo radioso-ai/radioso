@@ -1,4 +1,5 @@
 export type {
+  VoiceGreetingSource,
   VoiceRecordingAvailabilityPort,
   VoiceRecordingErasureBacklog,
   VoiceRecordingPlaybackPort,

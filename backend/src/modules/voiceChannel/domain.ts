@@ -325,6 +325,14 @@ export interface VoiceRuntimeConnection {
   channelCredentialId: string | null;
 }
 
+/**
+ * Whether the agent's runtime binding is the vendor agent Radioso created and keeps for it: a
+ * connection naming the bound vendor and vendor agent. A binding the operator wrote by hand, or a
+ * connection the binding has moved away from, is not.
+ */
+export const isMaintainedRuntime = (runtime: VoiceRuntimeBinding | null, connection: VoiceRuntimeConnection | null): boolean =>
+  runtime !== null && connection !== null && runtime.vendor === connection.vendor && runtime.agentId === connection.vendorAgentId;
+
 export interface VoiceRuntimeConnectionStore {
   find(agent: { workspaceId: string; agentId: string }): Promise<VoiceRuntimeConnection | null>;
   /** One per agent: saving replaces the agent's connection. */
@@ -505,6 +513,16 @@ export interface VoiceSessionStartLookup {
 }
 
 /**
+ * The words an agent greets a caller with in a language: the same greeting the agent's web chat
+ * opens with in it, as written for reading (it may hold markdown, which a call does not say). Null
+ * when the agent greets no one in that language. `locale` is the session's language tag as the page
+ * named it; null asks for the agent's default. Rejects when the greeting cannot be read.
+ */
+export interface VoiceGreetingSource {
+  greetingFor(input: { workspaceId: string; agentId: string; locale: string | null }): Promise<string | null>;
+}
+
+/**
  * How a session start ended. `started` carries what the page needs to open the session: the
  * vendor's URL, the session key the voice runtime sends back on every turn, and the caller's
  * language. `unavailable`: the agent takes no voice sessions (it is gone, voice is off, or no vendor
@@ -521,6 +539,12 @@ export type VoiceSessionStartResult =
     expiresAt?: Date;
     /** The agent's recording notice in the session's language, for the page to show as the call starts. */
     recordingNotice?: string;
+    /**
+     * What the call says first, for the page to hand the vendor as the session's first message: the
+     * recording notice, then the agent's greeting, as plain speech. Present only on a vendor agent
+     * Radioso maintains, which allows the session to set it, and only when there is something to say.
+     */
+    firstMessage?: string;
   }
 
   | { kind: "unavailable" }

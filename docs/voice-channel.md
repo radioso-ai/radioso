@@ -92,13 +92,14 @@ Connect does four things:
 | What Radioso sets on the ElevenLabs agent | Value |
 |---|---|
 | Custom LLM | `https://api.radioso.ai/api/v1/agents/<agent-id>/voice/elevenlabs/v1`, model `radioso`, with the **Voice calls** credential in a workspace secret it sends as the bearer |
-| System prompt and first message | Empty: the agent's own instructions apply, and the caller speaks first |
+| System prompt and first message | Empty: the agent's own instructions apply. Each session Radioso starts sets the first message: the recording notice, then the agent's greeting (see [What the call says first](#what-the-call-says-first)) |
 | Language | The language of the agent's default locale (`it` for `it-IT`, `pt-br` for `pt-BR`), or English when the agent names none or ElevenLabs Agents doesn't speak it |
 | Language presets | Every other language ElevenLabs Agents offers, so a call can switch to any language an answer is written in |
 | **Detect language** system tool | On. Radioso calls it only while **Switch language with the caller** is on |
 | Backup LLM | Off, so every answer comes from the agent |
 | Speculative turns | Off: each would run as a real turn |
 | Custom LLM extra body | Allowed, so each session carries its session key |
+| First message override | Allowed, so each session can open with the agent's greeting |
 
 Everything else on the ElevenLabs agent is yours to tune in ElevenLabs: the
 voice, the speech model, speech recognition keywords, and call limits.
@@ -231,6 +232,7 @@ does. With the agent's voice connected:
    const conversation = await Conversation.startSession({
      signedUrl: start.signedUrl,
      customLlmExtraBody: { session_key: start.sessionKey, locale: start.locale },
+     ...(start.firstMessage ? { overrides: { agent: { firstMessage: start.firstMessage } } } : {}),
    })
 
    await fetch(`${appHost}/api/public/chat/${launchToken}/voice/sessions/${start.sessionKey}/vendor-conversation`, {
@@ -255,7 +257,8 @@ The start answers with the session the page opens:
   "sessionKey": "3f0c2a8e-5b1d-4c47-9a1e-0d6b2f7c9e41",
   "locale": "it",
   "expiresAt": "2026-10-16T12:15:00.000Z",
-  "recordingNotice": "Questa chiamata viene registrata per il nostro team."
+  "recordingNotice": "Questa chiamata viene registrata per il nostro team.",
+  "firstMessage": "Questa chiamata viene registrata per il nostro team.\n\nCiao, sono Marta! Come posso aiutarti?"
 }
 ```
 
@@ -277,6 +280,13 @@ another (see [Mid-call language](#mid-call-language)); leave it out and the
 response carries the agent's default locale, or `en`. `recordingNotice` is the agent's
 recording notice for the call, present when the agent wrote one: show it to
 the caller as the call starts. See [The recording notice](#the-recording-notice).
+`firstMessage` is what the call says first, present only when the agent is
+connected to an ElevenLabs agent Radioso maintains and there is something to
+say. Pass it as the session's first-message override
+(`overrides.agent.firstMessage` in the ElevenLabs client), and pass no override
+when it is absent: an ElevenLabs agent that doesn't allow the override closes
+the session (WebSocket close code `1008`, "Override for field 'first_message'
+is not allowed by config"). See [What the call says first](#what-the-call-says-first).
 
 Every start opens a session ElevenLabs bills to your account, so starts spend
 their own small budgets before ElevenLabs is called: by default 3 per visitor
@@ -452,6 +462,9 @@ When a visitor presses **Talk**:
    **Listening** while the visitor talks and **Speaking** while the agent
    answers, with **End call** beside it. When the agent has a recording
    notice for the call's language, it sits above the bar for the whole call.
+   On an agent connected from the Voice card, the agent speaks first: the
+   notice, then its greeting (see
+   [What the call says first](#what-the-call-says-first)).
    Once ElevenLabs has opened the session, the embed tells Radioso which
    ElevenLabs conversation it is, so the Inbox can play the call later. The visitor can talk over the agent:
    ElevenLabs stops the reply, and the Inbox marks it as interrupted.
@@ -515,6 +528,12 @@ const conversation = await Conversation.startSession({
   customLlmExtraBody: { session_key: crypto.randomUUID(), locale: 'it' },
 })
 ```
+
+Such a call starts with the ElevenLabs agent's own first message. On an
+ElevenLabs agent Radioso maintains that is empty, so the caller speaks first
+unless your page sets one with `overrides.agent.firstMessage`, which that agent
+allows; an agent you set up yourself takes the override only when you allow it
+there.
 
 Over the WebSocket API, send the same object as `custom_llm_extra_body` in
 the `conversation_initiation_client_data` message. ElevenLabs then sends it
@@ -1532,10 +1551,38 @@ call's language, the session locale, as the call starts; a caller who
 switches language later keeps the notice they were shown. When the agent has
 none in that language, it is in the
 agent's default language, then English, then whichever notice you wrote
-first, so a caller is always told when the agent has a notice at all. The
-agent does not speak it: the caller first hears ElevenLabs's own first
-message, so to have the call say it out loud, put the same words in the
-ElevenLabs agent's first message.
+first, so a caller is always told when the agent has a notice at all. On an
+agent connected to an ElevenLabs agent Radioso maintains, the call also says
+the notice out loud before the greeting; see
+[What the call says first](#what-the-call-says-first). On an ElevenLabs agent
+you set up yourself, the caller first hears that agent's own first message,
+so to have the call say the notice, put the same words there.
+
+### What the call says first
+
+A call to an agent connected from the Voice card opens with the agent
+speaking: the recording notice for the call's language, when the agent has
+one, then the agent's greeting in that language. The greeting is the one the
+website embed shows a visitor in the same language: your published exact
+words for that language, or else the greeting Radioso writes for the agent
+and keeps for the language, written on the spot when no visitor has opened
+the panel in it yet. Talk lives in the panel, so a visitor has usually seen
+that greeting before pressing it. The call says the greeting's text alone, as
+plain speech: its suggested replies, link targets and formatting are left out.
+With **Proactive first greeting** off for the agent, the call says the notice
+alone, and with no notice either, the caller speaks first.
+
+Radioso waits up to 2.5 seconds for the greeting while ElevenLabs opens the
+session. A greeting that takes longer, or can't be read, leaves the call to
+open with the notice alone, or with the caller speaking first; the call itself
+always starts. The backend logs `Voice session greeting prepared`, or a warn
+when the greeting was late or failed, and counts each started call in
+`voice_session_greeting_total` by `outcome` (`spoken`, `none`, `timed_out`,
+`failed`), with ids and timings only, never the words.
+
+The greeting the call says is not part of the call's conversation: the Inbox
+and Activity show the call from the caller's first words. The embed's panel
+shows it as the first line of the call, as ElevenLabs reports it.
 
 ### The privacy notice
 
@@ -1545,8 +1592,11 @@ agent) sits in the embed's panel before the visitor's first message, so a
 visitor who presses **Talk** has it in front of them. The embed also hands it
 to the call: the line as the `radioso_privacy_notice` dynamic variable, and
 its version as `privacy_notice_version` in the custom LLM extra body, beside
-`session_key` and `locale`. To have the call say the line before the
-greeting, start the ElevenLabs agent's first message with the variable:
+`session_key` and `locale`. A call to an agent connected from the Voice card
+doesn't say the privacy notice: it carries a link, so it stays on screen in
+the panel. On an ElevenLabs agent you set up yourself, you can have the call
+say the line before your greeting by starting that agent's first message with
+the variable:
 
 ```text
 {{radioso_privacy_notice}} Hi, I'm Claudio. How can I help?

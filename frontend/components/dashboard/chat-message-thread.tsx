@@ -26,7 +26,7 @@ import {
   createFrontendProductAnalyticsEmitter,
 } from '@/lib/product-analytics'
 import type { WebsiteEmbedAnalyticsInput } from '@/lib/embed-analytics'
-import { humanReplyAuthor, type ReplyAttributionAudience } from '@/lib/reply-attribution'
+import { humanReplyAuthor, isHumanAuthoredSource, type ReplyAttributionAudience } from '@/lib/reply-attribution'
 import { heardPercent } from '@/lib/reply-interruption'
 import { activityLine, placeActivity, threadDayBreaks } from '@/lib/conversation-activity'
 import type { ConversationActivityEntry, OperatorReplySpeech, ReplyInterruption } from '@/lib/api-types'
@@ -52,10 +52,7 @@ const dayFormatter = new Intl.DateTimeFormat(undefined, {
   dateStyle: 'medium',
 })
 
-const timeFormatter = new Intl.DateTimeFormat(undefined, {
-  hour: 'numeric',
-  minute: '2-digit',
-})
+const timeFormatter = new Intl.DateTimeFormat(undefined, { timeStyle: 'short' })
 
 const NO_ACTIVITY: readonly ConversationActivityEntry[] = []
 
@@ -776,7 +773,7 @@ export function ChatMessageThread({
 
   const renderMessage = (message: ChatThreadMessage, index: number) => {
         const sourceBadgeLabel =
-          message.source === 'human_agent' || message.source === 'human_agent_on_behalf_of_ai_agent'
+          isHumanAuthoredSource(message.source)
             ? `👤 ${humanReplyAuthor(message, audience)}`
             : message.source === 'system'
               ? 'System'

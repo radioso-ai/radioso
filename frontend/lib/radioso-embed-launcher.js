@@ -3,6 +3,7 @@
   const DEFAULT_LABEL = 'Chat with us'
   const DEFAULT_POSITION = 'bottom-right'
   const DEFAULT_ICON = 'chat'
+  const BUBBLE_PANEL_RADIUS = '16px'
   const DEFAULT_DISPLAY_MODE = 'bubble'
   const DEFAULT_INITIAL_STATE = 'collapsed'
   const READY_MESSAGE = 'radioso:embed:ready'
@@ -720,6 +721,15 @@
       '.radioso-launcher[data-radioso-collapsed="true"] .radioso-launcher-avatar { width: 3rem !important; height: 3rem !important; border-radius: 0.85rem !important; }',
       '.radioso-launcher-dot { position: absolute; top: 9px; right: 12px; width: 10px; height: 10px; border-radius: 9999px; background: var(--radioso-dot-color, #ef4444); border: 2px solid var(--radioso-dot-border, #ffffff); opacity: 0; transform: scale(0.6); transition: opacity 180ms ease, transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1); pointer-events: none; }',
       '.radioso-launcher-dot[data-visible="true"] { opacity: 1; transform: scale(1); }',
+      // While the chat is open the bubble launcher shows a close chevron in place of the avatar, so
+      // it reads as the toggle it is. The label folds away the same way collapse-on-scroll folds it.
+      '.radioso-launcher-toggle { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; opacity: 0; transform: rotate(-90deg) scale(0.6); transition: opacity 160ms ease, transform 200ms ease; pointer-events: none; }',
+      // Host pages style bare svg elements; the chevron is a stroke and must stay one.
+      '.radioso-launcher-toggle svg { width: 24px !important; height: 24px !important; fill: none !important; stroke: currentColor !important; stroke-width: 2.25 !important; }',
+      '.radioso-launcher[data-radioso-open="true"] { gap: 0 !important; }',
+      '.radioso-launcher[data-radioso-open="true"] .radioso-launcher-label { max-width: 0 !important; opacity: 0 !important; margin: 0 !important; }',
+      '.radioso-launcher[data-radioso-open="true"] .radioso-launcher-avatar { opacity: 0; transform: rotate(90deg) scale(0.6); }',
+      '.radioso-launcher[data-radioso-open="true"] .radioso-launcher-toggle { opacity: 1; transform: none; }',
       '.radioso-teaser { position: relative; max-width: 280px; padding: 12px 14px; border-radius: 16px; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 14px; line-height: 1.4; cursor: pointer; pointer-events: auto; opacity: 0; transform: translateY(8px) scale(0.96); transform-origin: bottom right; animation: radioso-teaser-in 280ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }',
       '.radioso-teaser[data-position="bottom-left"] { transform-origin: bottom left; }',
       '.radioso-teaser-identity { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; padding-right: 14px; font-size: 11px; line-height: 1; opacity: 0.7; }',
@@ -734,7 +744,9 @@
       '  .radioso-launcher[data-radioso-typing="true"] .radioso-launcher-avatar { animation: none !important; }',
       '  .radioso-launcher-label { transition: none !important; }',
       '  .radioso-launcher-avatar { transition: none !important; }',
+      '  .radioso-launcher-toggle { transition: none !important; }',
       '  .radioso-launcher[data-radioso-collapsed] { transition: none !important; }',
+      '  .radioso-launcher[data-radioso-open] { transition: none !important; }',
       '  .radioso-teaser { animation: none !important; opacity: 1; transform: none; }',
       '  .radioso-comet-square { display: none !important; animation: none !important; }',
       '}',
@@ -1043,7 +1055,7 @@
     container.style.height = isLarge ? '3rem' : '2.5rem'
     container.style.overflow = 'hidden'
     container.style.borderRadius = isLarge ? '0.85rem' : '0.8rem'
-    container.style.transition = 'width 200ms ease, height 200ms ease, border-radius 200ms ease'
+    container.style.transition = 'width 200ms ease, height 200ms ease, border-radius 200ms ease, opacity 160ms ease, transform 200ms ease'
     container.style.flexShrink = '0'
     container.style.background = theme.mutedBackground
     container.style.color = theme.accent
@@ -1123,7 +1135,7 @@
     panel.style.width = `min(${DESKTOP_PANEL_CONTENT_WIDTH}px, calc(100vw - 2rem))`
     panel.style.height = '100%'
     panel.style.maxHeight = `min(${DESKTOP_BUBBLE_MAX_HEIGHT}px, calc(100vh - 2rem))`
-    panel.style.borderRadius = '28px'
+    panel.style.borderRadius = BUBBLE_PANEL_RADIUS
     panel.style.display = 'none'
     return panel
   }
@@ -1351,6 +1363,12 @@
       labelNode.textContent = label
       button.appendChild(labelNode)
     }
+
+    const toggle = document.createElement('span')
+    toggle.className = 'radioso-launcher-toggle'
+    toggle.setAttribute('aria-hidden', 'true')
+    toggle.innerHTML = '<svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>'
+    button.appendChild(toggle)
 
     const dot = document.createElement('span')
     dot.className = 'radioso-launcher-dot'
@@ -1896,7 +1914,7 @@
       panel.style.width = `min(${DESKTOP_PANEL_CONTENT_WIDTH}px, calc(100vw - 2rem))`
       panel.style.height = '100%'
       panel.style.maxHeight = `min(${DESKTOP_BUBBLE_MAX_HEIGHT}px, calc(100vh - 2rem))`
-      panel.style.borderRadius = '28px'
+      panel.style.borderRadius = BUBBLE_PANEL_RADIUS
       panel.style.left = ''
       panel.style.right = ''
       panel.style.borderLeft = ''
@@ -2156,8 +2174,12 @@
           animateBubblePanel(isOpen || isFullscreenOpen)
         }
         button.style.display = isFullscreenOpen ? 'none' : 'inline-flex'
-        button.style.opacity = isOpen ? '0.94' : '1'
         button.style.pointerEvents = isFullscreenOpen ? 'none' : 'auto'
+        if (isOpen) {
+          button.dataset.radiosoOpen = 'true'
+        } else {
+          delete button.dataset.radiosoOpen
+        }
       }
       panel.setAttribute('aria-hidden', isOpen ? 'false' : 'true')
       button.setAttribute('aria-expanded', isOpen ? 'true' : 'false')

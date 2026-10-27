@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 
 /**
  * Minimal message shape this scroll manager reads. Any chat message with an id,
@@ -50,11 +50,14 @@ export function useChatScroll({
   containerRef,
   sentinelRef,
   pinUserMessage = true,
+  topInsetPx = 0,
 }: {
   messages: ChatScrollMessage[]
   containerRef?: RefObject<HTMLElement | null>
   sentinelRef: RefObject<HTMLElement | null>
   pinUserMessage?: boolean
+  /** Height of chrome overlaying the top of the container; pinned messages land just below it. */
+  topInsetPx?: number
 }) {
   const [isAtBottom, setIsAtBottom] = useState(true)
   const resolvedContainerRef = useRef<HTMLElement | null>(null)
@@ -66,6 +69,12 @@ export function useChatScroll({
   // Timestamp until which scroll events should be treated as the result of our
   // own programmatic scroll, not a user gesture.
   const programmaticScrollUntilRef = useRef(0)
+  // Pins run a frame after they are scheduled; by then a header that mounted in the same render
+  // has been measured, so they read the inset from here rather than from their closure.
+  const topInsetRef = useRef(topInsetPx)
+  useLayoutEffect(() => {
+    topInsetRef.current = topInsetPx
+  }, [topInsetPx])
 
   const resolveContainer = useCallback(() => {
     if (containerRef?.current) {
@@ -136,7 +145,7 @@ export function useChatScroll({
       }
       const containerRect = container.getBoundingClientRect()
       const nodeRect = node.getBoundingClientRect()
-      const target = container.scrollTop + (nodeRect.top - containerRect.top)
+      const target = container.scrollTop + (nodeRect.top - containerRect.top) - topInsetRef.current
       scrollContainerTo(Math.max(0, target), behavior)
     },
     [findLastUserMessageId, resolveContainer, scrollContainerTo, scrollToBottom],
@@ -243,7 +252,7 @@ export function useChatScroll({
 
     const containerRect = container.getBoundingClientRect()
     const nodeRect = node.getBoundingClientRect()
-    const offsetFromTop = nodeRect.top - containerRect.top
+    const offsetFromTop = nodeRect.top - containerRect.top - topInsetPx
 
     // Only pull the message UP toward the top. If it's already at or above the
     // top edge, leave the user where they are.
@@ -251,7 +260,7 @@ export function useChatScroll({
       const target = container.scrollTop + offsetFromTop
       scrollContainerTo(Math.max(0, target), 'auto')
     }
-  }, [findLastUserMessageId, isStreaming, messages, pinUserMessage, resolveContainer, scrollContainerTo])
+  }, [findLastUserMessageId, isStreaming, messages, pinUserMessage, resolveContainer, scrollContainerTo, topInsetPx])
 
   return { isAtBottom, scrollToBottom, scrollToLatestTurn }
 }

@@ -397,7 +397,6 @@
   "types|frontend/components/providers/dashboard-query-provider.tsx|DashboardLiveInterestSignal",
   "types|frontend/components/providers/dashboard-query-provider.tsx|DashboardQueryPolicy",
   "types|frontend/components/theme-provider.tsx|ThemeProviderProps",
-  "types|frontend/hooks/use-chat-scroll.ts|ChatScrollMessage",
   "types|frontend/hooks/use-paged-list.ts|PagedListState",
   "types|frontend/lib/agent-bundle.ts|AgentBundleReadResult",
   "types|frontend/lib/agent-bundle.ts|AgentBundleUnresolvedKind",

@@ -174,7 +174,7 @@ export function ChatPreview({
 
   return (
     <div
-      className="flex h-[min(40rem,calc(100vh-6rem))] min-h-[24rem] flex-col overflow-hidden rounded-2xl border shadow-sm"
+      className="radioso-visitor-surface flex h-[min(40rem,calc(100vh-6rem))] min-h-[24rem] flex-col overflow-hidden rounded-2xl border shadow-sm"
       style={{
         ...surfaceVars,
         backgroundColor: embedTheme.panelBackground,
@@ -197,7 +197,7 @@ export function ChatPreview({
               className="h-8 w-8 pointer-events-none"
               tabIndex={-1}
               aria-hidden="true"
-              style={{ color: embedTheme.accentForeground }}
+              style={{ color: embedTheme.mutedForeground }}
             >
               <MoreHorizontal className="h-4 w-4" />
             </Button>
@@ -208,7 +208,7 @@ export function ChatPreview({
               className="h-8 w-8 pointer-events-none"
               tabIndex={-1}
               aria-hidden="true"
-              style={{ color: embedTheme.accentForeground }}
+              style={{ color: embedTheme.mutedForeground }}
             >
               <Maximize2 className="h-4 w-4" />
             </Button>
@@ -219,7 +219,7 @@ export function ChatPreview({
               className="h-8 w-8 pointer-events-none"
               tabIndex={-1}
               aria-hidden="true"
-              style={{ color: embedTheme.accentForeground }}
+              style={{ color: embedTheme.mutedForeground }}
             >
               <X className="h-4 w-4" />
             </Button>

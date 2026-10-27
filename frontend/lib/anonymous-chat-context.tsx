@@ -15,6 +15,7 @@ import { normalizeWebsiteEmbedLocale, type WebsiteEmbedThemeOverrides } from '@/
 import { createClientId } from '@/lib/client-id'
 import { contrastRatio, mixHex, mixHexRgba, pickForeground, relativeLuminance } from '@/lib/color'
 import { consumePublicChatSessionHandoffHash } from '@/lib/public-chat-session-handoff'
+import { isHumanAuthoredSource } from '@/lib/reply-attribution'
 
 const MIN_LEGIBLE_CONTRAST = 3
 const ensureLegibleForeground = (background: string, foreground: string) =>
@@ -245,8 +246,7 @@ const toChatMessages = (
 ): ChatMessage[] => toChatMessagesFromTurns(detail.messages, chatSessionId)
 
 const isHumanAgentReply = (message: ChatConversationDetail['messages'][number]) =>
-  message.role === 'assistant' &&
-  (message.source === 'human_agent' || message.source === 'human_agent_on_behalf_of_ai_agent')
+  message.role === 'assistant' && isHumanAuthoredSource(message.source)
 
 const clearMessageSuggestions = (messages: ChatMessage[]): ChatMessage[] =>
   messages.map((message) =>

@@ -10,5 +10,5 @@ export default function EmbeddedChatFrameLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <div className="flex h-screen overflow-hidden">{children}</div>;
+  return <div className="radioso-visitor-surface flex h-screen overflow-hidden">{children}</div>;
 }

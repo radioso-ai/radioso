@@ -65,6 +65,9 @@ interface VoiceRuntimeConnectionServiceDependencies {
 
 type AgentRef = { workspaceId: string; agentId: string };
 
+/** No person: the credential goes because its agent does. */
+const SYSTEM_ACTOR: VoiceRuntimeConnectionActor = { accountId: null, userId: null };
+
 /** The binding names the vendor agent Radioso created and keeps for this agent. */
 const isMaintained = (runtime: VoiceRuntimeBinding | null, connection: VoiceRuntimeConnection | null): boolean =>
   runtime !== null && connection !== null && runtime.vendor === connection.vendor && runtime.agentId === connection.vendorAgentId;
@@ -252,33 +255,60 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
   }
 
   /**
-   * Deletes the vendor agent Radioso created for an agent about to be deleted, and revokes its
-   * credential, so neither outlives the agent. Never rejects: the deletion goes on whatever happens
-   * here, and a vendor agent left behind is logged.
+   * Lets go of the vendor agent Radioso created for an agent about to be deleted. In the deletion's
+   * own time it does only database work: it revokes the credential, so the vendor agent can no
+   * longer reach Radioso, and forgets the connection. The vendor agent itself is deleted in the
+   * background, so the deletion never waits on the vendor; how that ends is logged, counted and
+   * audited. Never rejects.
    */
   async releaseForDeletedAgent(agent: AgentRef): Promise<void> {
     const { workspaceId, agentId } = agent;
+    let connection: VoiceRuntimeConnection | null;
     try {
-      const connection = await this.dependencies.connections.find(agent);
+      connection = await this.dependencies.connections.find(agent);
       if (!connection) return;
-      const released = await this.forget(connection, { accountId: null, userId: null });
-      await this.dependencies.audit.disconnected({
-        accountId: null,
-        workspaceId,
-        agentId,
-        vendor: connection.vendor,
-        region: connection.region,
-        released,
-        vendorAgentLeft: !released,
-        cause: "agent_deleted",
-      });
-      this.record(connection.vendor, "agent_deleted", released ? "released" : "vendor_agent_left");
+      if (connection.channelCredentialId) {
+        await this.revokeQuietly({ workspaceId, agentId, actor: SYSTEM_ACTOR, credentialId: connection.channelCredentialId });
+      }
+      await this.dependencies.connections.remove(connection);
     } catch (error) {
       this.dependencies.logger.warn(
         { workspaceId, agentId, operation: "agent_deleted", outcome: "error", errorClass: errorClassOf(error) },
         "Voice runtime release before agent deletion failed",
       );
       this.record(CONNECT_VENDOR, "agent_deleted", "error");
+      return;
+    }
+    void this.releaseDeletedAgentsVendorAgent(connection);
+  }
+
+  /** The background half of `releaseForDeletedAgent`. Never rejects. */
+  private async releaseDeletedAgentsVendorAgent(connection: VoiceRuntimeConnection): Promise<void> {
+    const { workspaceId, agentId, vendor, region } = connection;
+    try {
+      const reading = await this.dependencies.credentials.read({ workspaceId, vendor }).catch(() => ({ kind: "unreadable" as const }));
+      const released = reading.kind === "present"
+        ? await this.releaseQuietly(connection, reading.credential)
+        : this.vendorAgentLeftWithoutKey(connection, reading.kind);
+      await this.dependencies.audit.disconnected({
+        accountId: null,
+        workspaceId,
+        agentId,
+        vendor,
+        region,
+        released,
+        vendorAgentLeft: !released,
+        cause: "agent_deleted",
+      });
+      const outcome: ConnectionOutcome = released ? "released" : "vendor_agent_left";
+      this.dependencies.logger.info({ workspaceId, agentId, vendor, region, operation: "agent_deleted", outcome }, "Voice runtime released after its agent was deleted");
+      this.record(vendor, "agent_deleted", outcome);
+    } catch (error) {
+      this.dependencies.logger.warn(
+        { workspaceId, agentId, vendor, operation: "agent_deleted", outcome: "error", errorClass: errorClassOf(error) },
+        "Voice runtime release after agent deletion failed",
+      );
+      this.record(vendor, "agent_deleted", "error");
     }
   }
 
@@ -325,18 +355,22 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
   private async forget(connection: VoiceRuntimeConnection, actor: VoiceRuntimeConnectionActor): Promise<boolean> {
     const { workspaceId, agentId, vendor } = connection;
     const reading = await this.dependencies.credentials.read({ workspaceId, vendor }).catch(() => ({ kind: "unreadable" as const }));
-    let released = false;
-    if (reading.kind === "present") {
-      released = await this.releaseQuietly(connection, reading.credential);
-    } else {
-      this.dependencies.logger.warn(
-        { workspaceId, agentId, vendor, region: connection.region, vendorAgentId: connection.vendorAgentId, credential: reading.kind },
-        "Voice runtime vendor agent left at the vendor: no key to delete it with",
-      );
-    }
+    const released = reading.kind === "present"
+      ? await this.releaseQuietly(connection, reading.credential)
+      : this.vendorAgentLeftWithoutKey(connection, reading.kind);
     if (connection.channelCredentialId) await this.revokeQuietly({ workspaceId, agentId, actor, credentialId: connection.channelCredentialId });
     await this.dependencies.connections.remove(connection);
     return released;
+  }
+
+  /** Logs a vendor agent there was no key to delete with; false, for "not released". */
+  private vendorAgentLeftWithoutKey(connection: VoiceRuntimeConnection, credential: "missing" | "unreadable"): false {
+    const { workspaceId, agentId, vendor, region, vendorAgentId } = connection;
+    this.dependencies.logger.warn(
+      { workspaceId, agentId, vendor, region, vendorAgentId, credential },
+      "Voice runtime vendor agent left at the vendor: no key to delete it with",
+    );
+    return false;
   }
 
   private async releaseQuietly(connection: VoiceRuntimeConnection, credential: VoiceVendorCredential): Promise<boolean> {

@@ -97,8 +97,10 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   naming another vendor agent, is the operator's and is only unbound.
   `syncPrimaryLanguage` sets a maintained vendor agent up again after its
   agent's default locale changed (no credential minted; a gone vendor agent
-  waits for Connect), and `releaseForDeletedAgent` releases one before its
-  agent is deleted; neither ever rejects. "Maintained" is a connection whose
+  waits for Connect), and `releaseForDeletedAgent`, before its agent is
+  deleted, revokes the credential and forgets the connection (database only)
+  and deletes the vendor agent in the background, so a deletion never waits on
+  the vendor; neither ever rejects. "Maintained" is a connection whose
   vendor agent is the bound runtime's.
   `voiceRecordingService.ts` is a call's recording as the operator meets it:
   the page's report of the vendor's conversation id
@@ -980,8 +982,9 @@ audio.
 
 A runtime connection logs each operation with `workspaceId`, `agentId`,
 `vendor`, `operation` (`connect`, `disconnect`, `sync`, `agent_deleted`) and
-`outcome`: `Voice runtime connected` and `Voice runtime disconnected` at info
-(`created`, `repaired`; `released`, `unbound`, `vendor_agent_left`), `Voice
+`outcome`: `Voice runtime connected`, `Voice runtime disconnected` and `Voice
+runtime released after its agent was deleted` at info (`created`, `repaired`;
+`released`, `unbound`, `vendor_agent_left`), `Voice
 runtime connect failed` and `Voice runtime language sync failed` at warn with
 the `VoiceRuntimeConnectionFailure` (or `error`, `needs_connect`) and the
 vendor error's `reason` and `vendorStatus`; a key now for another region's

@@ -220,7 +220,7 @@ describe("agent voice connection contract", () => {
     });
   });
 
-  it("deletes the vendor agent Radioso created when its agent is deleted", async () => {
+  it("deletes the vendor agent Radioso created when its agent is deleted, after the deletion answers", async () => {
     const { app, dashboard, vendor } = await operatorWith();
     const second = await request(app).post("/api/v1/agents").set(dashboard).send({ name: "Second" }).expect(201);
     await request(app).post(`/api/v1/agents/${second.body.id}/voice/connection`).set({ ...dashboard, ...csrf }).expect(200);
@@ -228,7 +228,8 @@ describe("agent voice connection contract", () => {
 
     await request(app).delete(`/api/v1/agents/${second.body.id}`).set(dashboard).expect(204);
 
-    expect(vendor.agents.size).toBe(0);
+    // The deletion answers without waiting on ElevenLabs; the vendor agent goes right after.
+    await vi.waitFor(() => expect(vendor.agents.size).toBe(0));
   });
 
   it.each([

@@ -117,8 +117,9 @@ agent at it, and only then revokes the old one.
 **Voice calls** credential, and unbinds the agent. When ElevenLabs can't be
 reached, or no readable key is stored, Radioso still revokes the credential
 and unbinds; the card says the ElevenLabs agent is left in your account, and
-you delete it there. Deleting the Radioso agent deletes its ElevenLabs agent
-the same way.
+you delete it there. Deleting the Radioso agent revokes the credential at once
+and deletes its ElevenLabs agent right after; the deletion never waits on
+ElevenLabs.
 
 When you replace the key with one for an account in another region, the
 next Connect creates a new ElevenLabs agent there and revokes the old agent's

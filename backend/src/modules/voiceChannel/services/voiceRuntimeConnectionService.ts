@@ -91,13 +91,15 @@ const vendorErrorFields = (error: unknown) => ({
  * never meets the vendor agent's id, its LLM URL, its secrets or the account's region.
  *
  * Connecting finds the key's region, keeps the REST credential the vendor agent carries (reused
- * while the vendor's copy of its secret still works, else a new one), creates or repairs the vendor agent, records the connection,
- * revokes a credential it replaced, and binds the agent's `voice.runtime` to it. A credential goes
- * only once no vendor agent holds it: one minted for a vendor call that failed, or for an agent this
- * attempt created and deleted again because it could not be recorded. Pressing Connect again repairs: the
- * vendor agent's settings, a binding a save cleared, a credential that was revoked. A key that now
- * belongs to another region's account gets a new vendor agent there; the old one is out of the
- * key's reach and its credential is revoked.
+ * while the vendor's copy of its secret still works, else a new one), creates or repairs the vendor
+ * agent, records the connection, revokes a credential it replaced, and binds the agent's
+ * `voice.runtime` to it. A credential goes only once no vendor agent holds it (one minted for a
+ * vendor call that failed, or for an agent this attempt created and deleted again because it could
+ * not be recorded) or once no record can name it: a repair that could not be recorded revokes what
+ * it minted and what the record names, so the next Connect issues a fresh one. Pressing Connect
+ * again repairs: the vendor agent's settings, a binding a save cleared, a credential that was
+ * revoked or rotated. A key that now belongs to another region's account gets a new vendor agent
+ * there; the old one is out of the key's reach and its credential is revoked.
  *
  * Disconnecting deletes the vendor agent Radioso created and its credential, and unbinds. A runtime
  * the operator bound by hand is only unbound: Radioso never deletes a vendor agent it did not create.
@@ -161,10 +163,7 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
     try {
       await this.dependencies.connections.save(connection);
     } catch (error) {
-      // The vendor agent now holds the minted credential, so it stays unless that agent goes:
-      // only an agent this attempt created, and could delete again, gives it up.
-      const released = ensured.outcome === "created" && await this.releaseQuietly(connection, credential);
-      if (minted && released) await this.revokeQuietly({ ...input, credentialId: minted.id });
+      await this.undoUnrecorded({ ...input, connection, ensured, minted, previous, credential, error });
       throw error;
     }
     // The saved row makes the minted credential the connection's, so the one it replaced goes
@@ -382,6 +381,44 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
       if (issued.credential) await this.revokeQuietly({ ...input, credentialId: issued.credential.id });
       throw error;
     }
+  }
+
+  /**
+   * Takes back what an attempt gave the vendor when the connection it set up could not be
+   * recorded, so no credential it minted is left admitting turns untracked and the next Connect
+   * starts over. An agent this attempt created is deleted again, and its credential revoked once
+   * it is gone. A repaired agent keeps running on the secret just minted while the record names
+   * the credential it replaced, so both are revoked: its calls stop, and the next Connect finds no
+   * credential that works, issues a fresh one and points the agent at it.
+   */
+  private async undoUnrecorded(input: AgentRef & {
+    actor: VoiceRuntimeConnectionActor;
+    connection: VoiceRuntimeConnection;
+    ensured: Extract<VoiceRuntimeAgentEnsured, { vendorAgentId: string }>;
+    minted: VoiceRuntimeHeldCredential | null;
+    previous: VoiceRuntimeConnection | null;
+    credential: VoiceVendorCredential;
+    error: unknown;
+  }): Promise<void> {
+    const { connection, ensured, minted } = input;
+    let cleanup: "vendor_agent_deleted" | "vendor_agent_left" | "credentials_revoked" | "none";
+    if (ensured.outcome === "created") {
+      const released = await this.releaseQuietly(connection, input.credential);
+      if (minted && released) await this.revokeQuietly({ ...input, credentialId: minted.id });
+      cleanup = released ? "vendor_agent_deleted" : "vendor_agent_left";
+    } else if (minted) {
+      await this.revokeQuietly({ ...input, credentialId: minted.id });
+      const recorded = input.previous?.channelCredential?.id;
+      if (recorded && recorded !== minted.id) await this.revokeQuietly({ ...input, credentialId: recorded });
+      cleanup = "credentials_revoked";
+    } else {
+      cleanup = "none";
+    }
+    const { workspaceId, agentId, vendor, region, vendorAgentId } = connection;
+    this.dependencies.logger.warn(
+      { workspaceId, agentId, vendor, region, vendorAgentId, outcome: ensured.outcome, cleanup, errorClass: errorClassOf(input.error) },
+      "Voice runtime connection could not be recorded",
+    );
   }
 
   /**

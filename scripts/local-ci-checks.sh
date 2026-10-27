@@ -258,6 +258,8 @@ run pnpm install --frozen-lockfile
 run_sh "pnpm --filter './packages/*' --filter './ee/packages/*' run build"
 run_sh "pnpm run lint"
 run_sh "pnpm run lint:dead-code:ci"
+run_sh "node --test tests/ratchets/*.test.mjs"
+run_sh "pnpm run lint:file-size"
 run_sh "node --test tests/release/*.test.mjs"
 
 if [ "$bootstrap" = true ]; then

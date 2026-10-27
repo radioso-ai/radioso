@@ -184,6 +184,65 @@ test("a managed plan shows the plan's model read-only and says how to choose", a
   expect(llmModelUpdates.at(-1)).toMatchObject({ rerank: { provider: "openai", model: "gpt-5-mini" } });
 });
 
+test("the model picker offers only models the deployment's shared key runs and flags a saved one it no longer runs", async ({ page }) => {
+  const llmModelUpdates: Array<unknown> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    platformSettings: basePlatformSettings(),
+    llmModelUpdates,
+    llmModels: {
+      chat: { provider: "openai", model: "gpt-5.2" },
+      rewrite: { provider: "claude", model: "claude-retired-1" },
+    },
+    runnableModelsByProvider: { openai: ["gpt-5-mini"] },
+  });
+
+  await page.goto(`/w/${workspaceKey}/settings?tab=providers`);
+  await expect(page.getByRole("heading", { name: "Models" })).toBeVisible();
+
+  // A saved model the catalog no longer lists still shows, without claiming what answers instead.
+  const rewriteRow = page.getByTestId("llm-model-row-rewrite");
+  await expect(page.locator("#model-rewrite")).toContainText("claude-retired-1");
+  await expect(rewriteRow.getByText(/another model answers in its place/)).toHaveCount(0);
+
+  // The saved pick still shows, with the line that says what runs instead and how to fix it.
+  const chatRow = page.getByTestId("llm-model-row-chat");
+  await expect(page.locator("#model-chat")).toContainText("gpt-5.2");
+  await expect(chatRow.getByText(/another model answers in its place/)).toBeVisible();
+
+  await page.locator("#model-chat").click();
+  await expect(page.getByRole("option", { name: "gpt-5.2 (unavailable)" })).toBeDisabled();
+  await page.getByRole("option", { name: "gpt-5-mini" }).click();
+
+  await expect.poll(() => llmModelUpdates.length).toBeGreaterThanOrEqual(1);
+  expect(llmModelUpdates.at(-1)).toMatchObject({ chat: { provider: "openai", model: "gpt-5-mini" } });
+  await expect(chatRow.getByText(/another model answers in its place/)).toHaveCount(0);
+});
+
+test("adding the workspace's own OpenAI key makes every OpenAI model pickable without a reload", async ({ page }) => {
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    platformSettings: basePlatformSettings(),
+    llmModels: { chat: { provider: "openai", model: "gpt-5.2" } },
+    runnableModelsByProvider: { openai: ["gpt-5-mini"] },
+  });
+
+  await page.goto(`/w/${workspaceKey}/settings?tab=providers`);
+  const chatRow = page.getByTestId("llm-model-row-chat");
+  await expect(chatRow.getByText(/another model answers in its place/)).toBeVisible();
+
+  const openAiRow = page.locator("#provider-credentials li").filter({ has: page.getByText("OpenAI", { exact: true }) });
+  await openAiRow.getByRole("button", { name: "Set key" }).click();
+  await openAiRow.getByPlaceholder("OpenAI API key").fill("sk-test-openai-123");
+  await openAiRow.getByRole("button", { name: "Save" }).click();
+  await expect(openAiRow.getByRole("button", { name: "Replace" })).toBeVisible();
+
+  await expect(chatRow.getByText(/another model answers in its place/)).toHaveCount(0);
+  await page.locator("#model-chat").click();
+  await expect(page.getByRole("option", { name: "gpt-5.2", exact: true })).toBeEnabled();
+});
+
 test("provider settings keep exactly the existing four embedding choices and no advanced vector controls", async ({ page }) => {
   const ingestionSettingsUpdates: unknown[] = [];
 

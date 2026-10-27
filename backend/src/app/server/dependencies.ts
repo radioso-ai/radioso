@@ -79,6 +79,7 @@ import { buildChatServices } from "./builders/chat.js";
 import { buildConnectorRegistry, buildSlackInboundJobComposition } from "./builders/integrations.js";
 import { buildIntegrationServices } from "./builders/integrations.js";
 import { buildDocumentRetrievalGraph } from "./builders/documentRetrievalGraph.js";
+import { buildRetentionWorkers } from "./builders/retentionWorkers.js";
 import {
   buildRoutineAuthoringServices,
   buildSkillCatalogServices,
@@ -99,15 +100,12 @@ import {
   EvalCaseCaptureService,
   EvalCaseReplayService,
   EvalSuiteProbeService,
-  CopilotRetentionWorker,
   OperatorCopilotService,
   ReplyDraftProbeService,
   RetrievalProbeService,
   TestChatService,
 } from "../../modules/operatorCopilot/public.js";
 import { AgenticCapabilityRunner, DefaultAgentRuntime } from "../../shared/agent-runtime/index.js";
-import { TtlRetentionWorker } from "../../shared/domain/ttlRetentionWorker.js";
-import { ApprovalResumeEffectJournalRepository } from "../../db/repositories/approvalResumeEffectJournalRepository.js";
 import { loadPromptTemplate } from "../../shared/infra/prompts/promptLoader.js";
 import { createCopilotDocumentAuthoringPort, createCopilotToolCatalog, createCopilotWorkspaceAccountResolver, createCopilotWorkspaceRouteKeyResolver, createCopilotWorkspaceSettingPort } from "../composition/copilotToolCatalog.js";
 import { ProbeConversationReader, ReplyDraftRunner } from "../../modules/chat/composition.js";
@@ -161,7 +159,6 @@ import { buildConversationLinkResolver } from "../composition/conversationLinkRe
 import { buildNotificationRecipientPolicy, buildOperatorNoticeDestinationsReader } from "../composition/contactDelivery.js";
 import { resolveWorkspaceManagedLlmModels } from "../../shared/infra/llm/workspaceManagedModels.js";
 import type { OperatorMcpClientMetadataSnapshot } from "../../modules/operatorMcpAuthorization/public.js";
-import { PostgresSlackInboundEventRetention } from "../../modules/slack/public.js";
 import { NotificationRecipientStateRepository } from "../../db/repositories/notificationRecipientStateRepository.js";
 import { createAccountAdministratorDirectory } from "../composition/accountAdministratorDirectory.js";
 import { createNoticeMailAdapter } from "../composition/noticeMail.js";
@@ -330,6 +327,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     vectorIndexReconciler,
     workspace,
     workspaceLlmCapabilitySettingsService,
+    workspaceModelAvailability,
   } = documentRetrievalGraph;
   // Field suggestions for metadata rules are the catalog's declarations unioned
   // with the keys already observed on document metadata; the advisory reference
@@ -352,6 +350,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     agentSkillRepository,
     infrastructure.auditService,
     notificationRecipientPolicy,
+    workspaceModelAvailability,
   );
   // Shared by routine publishing (write-time trigger embedding) and the chat
   // activation prefilter (lazy self-heal of unembedded/stale rows) so both
@@ -1215,37 +1214,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
         }),
     },
   });
-  // Retention runs in the worker process: it is periodic maintenance with no request behind it,
-  // and the HTTP process must not do it once per replica.
-  const copilotRetentionWorker = new CopilotRetentionWorker({
-    retention: repositories.copilotRepository,
-    audit: infrastructure.auditService,
-    logger,
-    retentionDays: env.COPILOT_CONVERSATION_RETENTION_DAYS,
-  });
-  const testExecutionRetentionWorker = new TtlRetentionWorker({
-    subject: "agent_test_execution",
-    sweep: { deleteBefore: (input) => repositories.testExecutionRepository.deleteExecutionsUpdatedBefore(input) },
-    audit: infrastructure.auditService,
-    logger,
-    retentionDays: env.AGENT_TEST_EXECUTION_RETENTION_DAYS,
-  });
-  const approvalResumeEffectJournalRetentionWorker = new TtlRetentionWorker({
-    subject: "approval_resume_effect_journal",
-    sweep: new ApprovalResumeEffectJournalRepository(infrastructure.database.kysely),
-    audit: infrastructure.auditService,
-    logger,
-    retentionDays: 30,
-  });
-  // Slack event ids exist only to deduplicate redelivery; channel subscriptions write one per
-  // message in every joined channel, so the ledger is swept on the same timer machinery.
-  const slackInboundEventRetentionWorker = new TtlRetentionWorker({
-    subject: "slack_inbound_event",
-    sweep: new PostgresSlackInboundEventRetention(infrastructure.database.kysely),
-    audit: infrastructure.auditService,
-    logger,
-    retentionDays: env.SLACK_INBOUND_EVENT_RETENTION_DAYS,
-  });
+  const retentionWorkers = buildRetentionWorkers({ env, infrastructure, logger, repositories });
   const operatorMcp = buildOperatorMcpServices({
     env,
     database: infrastructure.database,
@@ -1272,6 +1241,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     agentRepository: repositories.agentRepository,
     mcpConnectionRepository,
     externalSkillDefinitionRepository,
+    modelAvailability: workspaceModelAvailability,
   });
   // Shared by the agent-facing catalog route and the public discovery documents, which
   // describe the same published release and must not drift apart.
@@ -1569,11 +1539,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     connectorDb: infrastructure.database,
     chatInferencePipeline,
     operatorCopilotService,
-    copilotRetentionWorker,
-    testExecutionRetentionWorker,
-    approvalResumeEffectJournalRetentionWorker,
+    ...retentionWorkers,
     revisionEvalRunRetentionWorker,
-    slackInboundEventRetentionWorker,
     copilotToolCatalog,
     copilotCapabilityRunner,
     copilotPrompt,

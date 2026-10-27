@@ -22,6 +22,7 @@ import {
   runOpenAIResidencyStartupCheck,
 } from "../../src/runtime/openAIResidencyStartupCheck.js";
 import { getEnv } from "../../src/app/config/env.js";
+import { resolveLlmConfig } from "../../src/shared/infra/llm/providerConfig.js";
 
 // Chat, rewrite, and rerank are kept on claude here so the single-target (embeddings-only) tests
 // below stay focused on exactly one probe call, matching their pre-Azure shape. Dedicated tests
@@ -349,24 +350,57 @@ describe("runOpenAIResidencyStartupCheck", () => {
       expect(outcome).toBe("ok");
       expect(callEmbeddings).toHaveBeenCalledWith({
         apiKey: "env-azure-key",
-        endpoint: { kind: "azure", baseUrl: azureBaseUrl },
+        endpoint: { kind: "azure", baseUrl: azureBaseUrl, deployments: ["gpt-5.4-mini", "text-embedding-3-small"] },
         model: "text-embedding-3-small",
       });
       expect(callChatCompletion).toHaveBeenCalledWith({
         apiKey: "env-azure-key",
-        endpoint: { kind: "azure", baseUrl: azureBaseUrl },
+        endpoint: { kind: "azure", baseUrl: azureBaseUrl, deployments: ["gpt-5.4-mini", "text-embedding-3-small"] },
         model: "gpt-5.4-mini",
       });
       expect(callChatCompletion).toHaveBeenCalledTimes(1);
       expect(callResponses).toHaveBeenCalledWith({
         apiKey: "env-azure-key",
-        endpoint: { kind: "azure", baseUrl: azureBaseUrl },
+        endpoint: { kind: "azure", baseUrl: azureBaseUrl, deployments: ["gpt-5.4-mini", "text-embedding-3-small"] },
         model: "gpt-5.4-mini",
       });
       expect(callResponses).toHaveBeenCalledTimes(1);
       expect(logger.info).toHaveBeenCalledWith(
         { openai: "azure", azureHost: "radioso-eu-1.openai.azure.com", probe: "ok" },
         "Resolved provider residency",
+      );
+    });
+
+    it("probes exactly the models the Azure endpoint reports it serves, so the probed and served sets cannot drift", async () => {
+      const env = getEnv({
+        NODE_ENV: "test",
+        DATABASE_URL: "postgres://test:test@localhost:5432/test",
+        OPENAI_API_KEY: "env-azure-key",
+        ANTHROPIC_API_KEY: "env-claude-key",
+        SESSION_COOKIE_SECRET: "0123456789abcdef0123456789abcdef",
+        AZURE_OPENAI_ENDPOINT: azureBaseUrl,
+        LLM_CHAT_MODEL: "gpt-5.5",
+        LLM_REWRITE_PROVIDER: "claude",
+        LLM_RERANK_MODEL: "gpt-5.4-mini",
+        LLM_EMBEDDING_MODEL: "text-embedding-3-large",
+      });
+      const probed = new Set<string>();
+      const record = async ({ model }: { model: string }) => {
+        probed.add(model);
+        return {};
+      };
+
+      await runOpenAIResidencyStartupCheck(env, {
+        logger: buildLogger(),
+        callEmbeddings: vi.fn(record),
+        callChatCompletion: vi.fn(record),
+        callResponses: vi.fn(record),
+      });
+
+      const platform = resolveLlmConfig(env).openAIPlatformEndpoint;
+      expect(platform?.kind).toBe("azure");
+      expect([...probed].sort()).toEqual(
+        platform?.kind === "azure" ? [...platform.deployments].sort() : [],
       );
     });
 

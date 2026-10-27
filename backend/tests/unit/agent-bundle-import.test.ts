@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { AGENT_CONFIG_SCHEMA_VERSION } from "../../src/modules/agents/agentConfig.js";
+import type { AgentInput } from "../../src/modules/agents/public.js";
 import {
   AGENT_BUNDLE_SCHEMA_VERSION,
   AgentBundleImportService,
@@ -68,7 +69,10 @@ const harness = (over: {
   /** Diagnostics returned for one specific created routine id (e.g. "routine-2"). */
   routineDiagnosticsByRoutineId?: Record<string, string[]>;
   createDirectiveThrows?: boolean;
+  /** The models the target workspace can run per provider; absent means every model. */
+  runnableModels?: Partial<Record<string, string[]>>;
 } = {}) => {
+  const agentInputs: AgentInput[] = [];
   const created: Array<{ agentId: string; skill: unknown }> = [];
   const createdSkillNames = new Set<string>();
   const directivesWritten: Array<{ name: string; enabled?: boolean }> = [];
@@ -88,9 +92,19 @@ const harness = (over: {
 
   const service = new AgentBundleImportService({
     agents: {
-      create: async () => ({ agentId: "new-agent" }),
+      create: async (_workspaceId, input) => {
+        agentInputs.push(input);
+        return { agentId: "new-agent" };
+      },
       delete: async (_workspaceId, agentId) => { deleted.push(agentId); },
     },
+    ...(over.runnableModels
+      ? {
+          modelAvailability: {
+            runnableModels: async (_workspaceId: string, provider: string) => over.runnableModels?.[provider] ?? null,
+          },
+        }
+      : {}),
     directives: {
       create: async (_workspaceId, _agentId, directive) => {
         if (over.createDirectiveThrows) {
@@ -133,7 +147,7 @@ const harness = (over: {
     },
   });
 
-  return { service, created, enabled, drafts, parkedRoutines, deleted, directivesWritten, writeOrder, validateManySpy };
+  return { service, agentInputs, created, enabled, drafts, parkedRoutines, deleted, directivesWritten, writeOrder, validateManySpy };
 };
 
 describe("AgentBundleImportService", () => {
@@ -161,6 +175,33 @@ describe("AgentBundleImportService", () => {
     const result = await importBundle(service, "workspace-1", bundle({ agent: legacy as never }));
 
     expect(result.agentId).toBe("new-agent");
+  });
+
+  it("imports an agent whose chat model the target cannot run without the override, and says so", async () => {
+    const { service, agentInputs } = harness({ runnableModels: { openai: ["gpt-5.4-mini"] } });
+
+    const result = await importBundle(service, "workspace-1", bundle({
+      agent: agentConfig({ chatModelOverride: { provider: "openai", model: "gpt-5.4-nano" } }),
+    }));
+
+    expect(result.agentId).toBe("new-agent");
+    expect(agentInputs[0]?.chatModelOverride).toBeNull();
+    expect(result.unresolved).toContainEqual(expect.objectContaining({
+      kind: "chat_model_unavailable",
+      element: "chatModelOverride",
+    }));
+    expect(result.unresolved.find((entry) => entry.kind === "chat_model_unavailable")?.detail).toContain("gpt-5.4-nano");
+  });
+
+  it("keeps a chat model override the target can run", async () => {
+    const { service, agentInputs } = harness({ runnableModels: { openai: ["gpt-5.4-mini"] } });
+
+    const result = await importBundle(service, "workspace-1", bundle({
+      agent: agentConfig({ chatModelOverride: { provider: "openai", model: "gpt-5.4-mini" } }),
+    }));
+
+    expect(agentInputs[0]?.chatModelOverride).toEqual({ provider: "openai", model: "gpt-5.4-mini" });
+    expect(result.unresolved).toEqual([]);
   });
 
   it("imports a skill whose connection did not travel as disabled, and says so", async () => {

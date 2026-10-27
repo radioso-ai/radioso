@@ -40,6 +40,39 @@ describe("agent bundle routes", () => {
     )).toHaveLength(1);
   });
 
+  it("imports an agent whose chat model the target deployment cannot run, dropping the override and reporting it", async () => {
+    const source = await setup();
+    const target = createTestApp({
+      envOverrides: { AZURE_OPENAI_ENDPOINT: "https://radioso-eu-1.openai.azure.com/openai/v1" },
+    });
+    const targetSession = await issueTestSession(target.app, "bundle-azure-target@example.com");
+    const created = await request(source.app)
+      .post("/api/v1/agents")
+      .set(adminSessionHeaders(source.session))
+      .send({ name: "Nano agent", chatModelOverride: { provider: "openai", model: "gpt-5.4-nano" } })
+      .expect(201);
+    const exported = await request(source.app)
+      .get(`/api/v1/agents/${created.body.id}/bundle`)
+      .set(adminSessionHeaders(source.session))
+      .expect(200);
+
+    const imported = await request(target.app)
+      .post("/api/v1/agents/bundle")
+      .set(adminSessionHeaders(targetSession))
+      .send(exported.body)
+      .expect(201);
+
+    expect(imported.body.unresolved).toContainEqual(expect.objectContaining({
+      kind: "chat_model_unavailable",
+      element: "chatModelOverride",
+    }));
+    const agent = await request(target.app)
+      .get(`/api/v1/agents/${imported.body.agentId}`)
+      .set(adminSessionHeaders(targetSession))
+      .expect(200);
+    expect(agent.body.chatModelOverride).toBeNull();
+  });
+
   it("exports an agent and imports it back as a behaviourally equivalent agent", async () => {
     const { app, session } = await setup();
 

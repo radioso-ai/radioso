@@ -41,9 +41,10 @@ const buildWorkspaceLlmModelsResponse = async (
   dependencies: Pick<SettingsLlmRouteDependencies, "workspaceLlmCapabilitySettingsService" | "llmCapabilityResolver">,
   workspaceId: string,
 ) => {
-  const [preferences, managed] = await Promise.all([
+  const [preferences, managed, runnableModelsByProvider] = await Promise.all([
     dependencies.workspaceLlmCapabilitySettingsService.listForWorkspace(workspaceId),
     resolveWorkspaceManagedLlmModels(dependencies.llmCapabilityResolver, workspaceId),
+    dependencies.workspaceLlmCapabilitySettingsService.runnableModelsByProvider(workspaceId),
   ]);
   const indexed = Object.fromEntries(
     preferences.map((entry) => [entry.capability, { provider: entry.provider, model: entry.model }]),
@@ -59,6 +60,7 @@ const buildWorkspaceLlmModelsResponse = async (
       gemini: [...knownModelsByProvider.gemini],
       claude: [...knownModelsByProvider.claude],
     },
+    runnableModelsByProvider,
   };
 };
 

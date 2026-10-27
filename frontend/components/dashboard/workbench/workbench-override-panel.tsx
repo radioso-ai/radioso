@@ -215,16 +215,21 @@ export function WorkbenchOverridePanel({
   routines?: RoutineDefinition[]
   variant?: 'sidebar' | 'embedded' | 'drawer'
 }) {
+  const [runnableModels, setRunnableModels] = useState<KnownModelsByProvider>(emptyKnownModelsByProvider)
   const [knownModels, setKnownModels] = useState<KnownModelsByProvider>(emptyKnownModelsByProvider)
 
   useEffect(() => {
     let cancelled = false
     void llmProvidersApi.getModels()
       .then((response) => {
-        if (!cancelled) setKnownModels(response.knownModelsByProvider)
+        if (cancelled) return
+        setRunnableModels(response.runnableModelsByProvider)
+        setKnownModels(response.knownModelsByProvider)
       })
       .catch(() => {
-        if (!cancelled) setKnownModels(emptyKnownModelsByProvider)
+        if (cancelled) return
+        setRunnableModels(emptyKnownModelsByProvider)
+        setKnownModels(emptyKnownModelsByProvider)
       })
     return () => {
       cancelled = true
@@ -235,7 +240,7 @@ export function WorkbenchOverridePanel({
     ? state.values.chatModelOverride
     : baseline.chatModelOverride
   const provider = effectiveModel?.provider ?? 'openai'
-  const model = effectiveModel?.model ?? knownModels[provider]?.[0] ?? ''
+  const model = effectiveModel?.model ?? runnableModels[provider]?.[0] ?? ''
   const retrieval = state.touched.retrievalSkillSettings
     ? { ...baseline.retrievalSkillSettings, ...state.values.retrievalSkillSettings }
     : baseline.retrievalSkillSettings
@@ -305,7 +310,7 @@ export function WorkbenchOverridePanel({
                   type: 'set-model',
                   value: {
                     provider: nextProvider,
-                    model: knownModels[nextProvider]?.[0] ?? '',
+                    model: runnableModels[nextProvider]?.[0] ?? '',
                   },
                 })
               }}
@@ -322,6 +327,7 @@ export function WorkbenchOverridePanel({
             <ModelPicker
               inputId="workbench-model"
               provider={provider}
+              runnableModelsByProvider={runnableModels}
               knownModelsByProvider={knownModels}
               value={model}
               disabled={!state.touched.chatModelOverride}

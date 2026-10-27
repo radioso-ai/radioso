@@ -1,5 +1,6 @@
 import { normalizeProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
 import { classifyLlmProviderFailure } from "../../../shared/infra/llm/llmProviderFailureClassification.js";
+import { routineActivationFailureFields } from "./turnFailureReporting.js";
 import { setTraceAttributes, traceAsyncIterable, traceOperation } from "../../../shared/observability/tracing/operations.js";
 import {
   createModelCallTraceCollector,
@@ -417,21 +418,6 @@ const chatReviewResultFor = (outcome: ChatTurnOutcome): ChatReviewResult => {
     draft: outcome.completedTurn.draft,
     facts: outcome.completedTurn.facts,
   });
-};
-
-const routineActivationFailureFields = (error: unknown): Record<string, string> | undefined => {
-  if (!(error instanceof Error) || error.name !== "RoutineActivationFailure") {
-    return undefined;
-  }
-  const phase = "phase" in error && typeof error.phase === "string" ? error.phase : "unknown";
-  const cause = error.cause;
-  const causeFailure = classifyLlmProviderFailure(cause);
-  return {
-    event: "routine_activation_failed",
-    phase,
-    causeType: cause instanceof Error ? cause.name : typeof cause,
-    ...(causeFailure ? { causeFailureKind: causeFailure.kind } : {}),
-  };
 };
 
 export class ChatService {
@@ -1063,6 +1049,31 @@ export class ChatService {
     return result.kind === "draft" ? { ...result, draft: withReplyLanguageTag(result.draft, await turnLanguage.tag) } : result;
   }
 
+  /**
+   * The shared tail of every turn-ending catch block that is not a cancellation.
+   * `answer()` and `streamAnswer()` both reach here with the identical sequence;
+   * this is the one place it is written. Classifies `preferredError` (not the
+   * normalized one, which carries no `.cause` back to the original — see
+   * classifyLlmProviderFailure's own doc) before normalizing and rethrowing it.
+   */
+  private async failTurn(
+    preferredError: unknown,
+    input: Parameters<ChatTurnLifecycle["recordFailure"]>[0],
+    session: PreparedSession | null,
+    assistantMessageId: string | undefined,
+    workflowPolicy: ReturnType<typeof assertInteractiveAssistantWorkflow>,
+  ): Promise<never> {
+    const normalizedError = normalizeProviderCredentialError(preferredError);
+    const providerFailure = classifyLlmProviderFailure(preferredError);
+    const activationFailure = routineActivationFailureFields(preferredError);
+    if (activationFailure) {
+      const conversationId = session?.conversation.id ?? input.conversationId;
+      this.logger?.warn({ ...activationFailure, workspaceId: input.workspaceId, conversationId }, "Routine activation failed");
+    }
+    await this.chatTurnLifecycle.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy, providerFailure);
+    throw normalizedError;
+  }
+
   private async runTurn(input: ChatTurnInput, entry: ChatTurnEntry): Promise<ChatTurnOutcome> {
     const requestReceivedAt = Date.now();
     const coordination: TurnCoordinationState = {
@@ -1416,18 +1427,7 @@ export class ChatService {
         await this.chatTurnLifecycle.recordSupersession(input, session, assistantMessageId, preferredError, workflowPolicy);
         throw preferredError;
       }
-      const normalizedError = normalizeProviderCredentialError(preferredError);
-      const providerFailure = classifyLlmProviderFailure(preferredError);
-      const activationFailure = routineActivationFailureFields(preferredError);
-      if (activationFailure) {
-        this.logger?.warn({
-          ...activationFailure,
-          workspaceId: input.workspaceId,
-          conversationId: session?.conversation.id ?? input.conversationId,
-        }, "Routine activation failed");
-      }
-      await this.chatTurnLifecycle.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy, providerFailure);
-      throw normalizedError;
+      return this.failTurn(preferredError, input, session, assistantMessageId, workflowPolicy);
     }
   }
 
@@ -2169,18 +2169,7 @@ export class ChatService {
         };
         return;
       }
-      const normalizedError = normalizeProviderCredentialError(preferredError);
-      const providerFailure = classifyLlmProviderFailure(preferredError);
-      const activationFailure = routineActivationFailureFields(preferredError);
-      if (activationFailure) {
-        this.logger?.warn({
-          ...activationFailure,
-          workspaceId: input.workspaceId,
-          conversationId: session?.conversation.id ?? input.conversationId,
-        }, "Routine activation failed");
-      }
-      await this.chatTurnLifecycle.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy, providerFailure);
-      throw normalizedError;
+      await this.failTurn(preferredError, input, session, assistantMessageId, workflowPolicy);
     } finally {
       await releaseUsageReservation();
     }

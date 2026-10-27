@@ -29,6 +29,7 @@ import {
   classifyLlmProviderFailure,
   type LlmProviderFailureClassification,
 } from "../../../shared/infra/llm/llmProviderFailureClassification.js";
+import { withTimeout } from "./turnPlanTimeout.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { parseStructuredRewrite, type StructuredRewriteResult } from "../../retrieval/public.js";
 import {
@@ -972,37 +973,6 @@ export const turnPlanDirectiveClassifications = (plan: TurnPlan): DirectiveClass
     .filter((classification) => classification.matched)
     .map((classification) => ({ name: classification.name, confidence: classification.confidence }));
 
-const withTimeout = (
-  signal: AbortSignal | undefined,
-  timeoutMs: number,
-): { signal: AbortSignal; dispose: () => void; timedOut: () => boolean } => {
-  const controller = new AbortController();
-  // Set only when THIS call's own bound fires, as opposed to the caller's `signal`
-  // aborting (a turn cancellation) — both abort the same `controller`, so the thrown
-  // error looks identical either way; this is the one place that still knows which.
-  let didTimeOut = false;
-  const onAbort = () => controller.abort();
-  if (signal) {
-    if (signal.aborted) {
-      controller.abort();
-    } else {
-      signal.addEventListener("abort", onAbort, { once: true });
-    }
-  }
-  const timer = setTimeout(() => {
-    didTimeOut = true;
-    controller.abort();
-  }, timeoutMs);
-  return {
-    signal: controller.signal,
-    dispose: () => {
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", onAbort);
-    },
-    timedOut: () => didTimeOut,
-  };
-};
-
 /**
  * One fused chat-tier LLM call that replaces the four staged fresh-turn
  * classification calls. It owns the prompt, the strict parse, and semantic
@@ -1022,17 +992,12 @@ export class TurnPlanService {
   ) {}
 
   /**
-   * `onFailure` and `onTimeout` are pure observability sinks, never control-flow
-   * signals: the fallback (resolving to `null`) is identical with or without them.
-   * Both fire only when `plan()` threw — a clean miss (malformed output,
-   * `parseTurnPlan` returning `null`) never reaches the catch below, so neither is
-   * called. `onFailure` never receives the model's output or prompt, only the bounded
-   * classification (or `null` when the thrown error carries no provider shape at all,
-   * which is also what a plain abort looks like — see `onTimeout`). `onTimeout` fires
-   * when this specific call's own bound timed out, as opposed to any other thrown
-   * error (an external turn cancellation included) — the caller's `recordOutcome` log
-   * would otherwise show this identically to malformed output: both are an
-   * unclassifiable `null`.
+   * `onFailure`/`onTimeout` are pure observability sinks, never control-flow: the
+   * fallback (`null`) is identical with or without them. Both fire only when `plan()`
+   * threw, never for a clean miss (`parseTurnPlan` returning `null`). `onTimeout`
+   * distinguishes this call's own bound timing out from any other thrown error (an
+   * external cancellation included), which `onFailure` alone cannot: both look like
+   * an unclassifiable `null` to it, same as malformed output would without `onTimeout`.
    */
   async plan(
     request: TurnPlanRequest,

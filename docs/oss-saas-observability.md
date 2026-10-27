@@ -274,13 +274,18 @@ not limited to the HTTP request path:
 - **Chat turn failures** — `ChatTurnLifecycle.recordFailure` in
   [`backend/src/modules/chat/services/chatTurnLifecycle.ts`](../backend/src/modules/chat/services/chatTurnLifecycle.ts)
   (`errorType: chat.turn_failed`), for a turn that ends on anything other than an
-  already-handled `AppError` — a usage limit, a validation error, a cancelled or
-  superseded turn, a disconnected client. The report carries a bounded failure
-  kind (`model_unavailable`, `auth_rejected`, `rate_limited`,
-  `provider_unavailable`, or `provider_rejected`) plus the provider's HTTP status
-  and machine code when the failure came from an LLM call, never the prompt or
-  the model's answer. The same fields ride on the `chat.failed` product analytics
-  event.
+  already-handled, client-facing outcome — a usage limit, a validation error, a
+  cancelled or superseded turn, or a disconnected client. A platform fault that
+  happens to surface as an `AppError`, such as a misconfigured provider or a
+  rejected platform credential, is still reported: `isReportableFault`
+  (`backend/src/shared/domain/errors.ts`) is the rule, not a bare `AppError`
+  check. The report carries a bounded failure kind (`model_unavailable`,
+  `auth_rejected`, `rate_limited`, `provider_unavailable`, or
+  `provider_rejected`) plus the provider's HTTP status and machine code when the
+  failure came from an LLM call — found by walking the error's `.cause` chain
+  when a wrapper such as a routine activation failure hides it — never the
+  prompt or the model's answer. The same fields ride on the `chat.failed`
+  product analytics event.
 - **Browser errors** — posted to `/api/v1/observability/frontend-errors`
   (`frontend.*.unhandled`).
 - **Process-level crashes** — every entrypoint installs

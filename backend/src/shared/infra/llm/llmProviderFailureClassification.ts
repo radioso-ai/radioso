@@ -67,12 +67,10 @@ const networkErrorCode = (error: ProviderErrorShape): string | undefined => {
 };
 
 /**
- * Classifies why an LLM provider call failed, from status codes and provider/transport
- * error codes only — never from message text. Returns `null` when `error` carries none
- * of these signals, i.e. it is not a provider-call failure at all (a programming error,
- * an `AppError`, or anything else the caller already handles on its own terms).
+ * Classifies a single error value by its own shape — never its `.cause`. Split out of
+ * {@link classifyLlmProviderFailure} so that function owns the one place the chain walks.
  */
-export const classifyLlmProviderFailure = (error: unknown): LlmProviderFailureClassification | null => {
+const classifySingleError = (error: unknown): LlmProviderFailureClassification | null => {
   if (isProviderRequestTimeoutError(error)) {
     return { kind: "provider_unavailable" };
   }
@@ -102,6 +100,40 @@ export const classifyLlmProviderFailure = (error: unknown): LlmProviderFailureCl
   }
   if (status !== undefined && status >= 400) {
     return { kind: "provider_rejected", status, code };
+  }
+  return null;
+};
+
+// How many `.cause` hops past the original error this still looks at. A generic turn-
+// level wrapper (`RoutineActivationFailure`, a plain `Error` with no provider shape of
+// its own) carries the real provider error one hop down; this stays small because a
+// cause chain is attacker- or library-controlled depth, not something to walk unbounded.
+const MAX_CAUSE_CHAIN_DEPTH = 3;
+
+/**
+ * Classifies why an LLM provider call failed, walking `.cause` (bounded, cycle-safe) when
+ * the error itself carries no provider shape — a turn-level wrapper such as
+ * `RoutineActivationFailure` is a plain `Error` whose `.cause` is the actual provider
+ * error. Classifies from status codes and provider/transport error codes only, never
+ * from message text at any depth. Returns `null` when nothing in the chain carries a
+ * provider shape, i.e. none of it is a provider-call failure (a programming error, an
+ * `AppError`, or anything else the caller already handles on its own terms).
+ */
+export const classifyLlmProviderFailure = (error: unknown): LlmProviderFailureClassification | null => {
+  const visited = new Set<unknown>();
+  let current = error;
+  for (let depth = 0; depth <= MAX_CAUSE_CHAIN_DEPTH; depth += 1) {
+    if (current === null || current === undefined || visited.has(current)) {
+      return null;
+    }
+    visited.add(current);
+
+    const classified = classifySingleError(current);
+    if (classified) {
+      return classified;
+    }
+
+    current = typeof current === "object" && "cause" in current ? (current as { cause?: unknown }).cause : undefined;
   }
   return null;
 };

@@ -7,8 +7,10 @@ import { createAuditService, InMemoryAuditEventRepository } from "../support/fak
 import type { ConversationRepositoryPort } from "../../src/db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../src/db/repositories/messageRepository.js";
 import { AppError } from "../../src/shared/domain/errors.js";
+import { ProviderConfigurationError } from "../../src/shared/infra/llm/providerTypes.js";
+import { normalizeProviderCredentialError } from "../../src/shared/infra/llm/providerErrors.js";
 import type { ErrorReporter } from "../../src/shared/errors/errorReporter.js";
-import { ChatTurnSupersededError } from "../../src/modules/chat/services/conversationTurnRegistry.js";
+import { ChatTurnDisconnectAbortError, ChatTurnSupersededError } from "../../src/modules/chat/services/conversationTurnRegistry.js";
 import {
   buildTurnTraceForPresentation,
   ChatTurnLifecycle,
@@ -2542,7 +2544,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       }));
     });
 
-    it("never reports an AppError — an already-handled, expected outcome", async () => {
+    it("never reports a client-facing AppError under 500 — an already-handled, expected outcome", async () => {
       const report = vi.fn().mockResolvedValue(undefined);
       const { lifecycle } = harness(undefined, { report });
 
@@ -2556,7 +2558,7 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       expect(report).not.toHaveBeenCalled();
     });
 
-    it("never reports a cancellation/disconnect error (both extend AppError)", async () => {
+    it("never reports a superseded turn (409, a client-facing outcome)", async () => {
       const report = vi.fn().mockResolvedValue(undefined);
       const { lifecycle } = harness(undefined, { report });
 
@@ -2568,6 +2570,51 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       );
 
       expect(report).not.toHaveBeenCalled();
+    });
+
+    it("never reports a disconnect-abort turn despite its 500 status — an expected client-driven outcome", async () => {
+      const report = vi.fn().mockResolvedValue(undefined);
+      const { lifecycle } = harness(undefined, { report });
+
+      await lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: false },
+        null,
+        undefined,
+        new ChatTurnDisconnectAbortError("conv_1", "rendering"),
+      );
+
+      expect(report).not.toHaveBeenCalled();
+    });
+
+    it("reports a platform misconfiguration (ProviderConfigurationError, AppError 503) — a platform fault, not a client outcome", async () => {
+      const report = vi.fn().mockResolvedValue(undefined);
+      const { lifecycle } = harness(undefined, { report });
+      const error = new ProviderConfigurationError('No API key configured for provider "openai".', { kind: "missing_api_key" });
+
+      await lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: false },
+        null,
+        undefined,
+        error,
+      );
+
+      expect(report).toHaveBeenCalledOnce();
+      expect(report).toHaveBeenCalledWith(expect.objectContaining({ errorType: "chat.turn_failed", error }));
+    });
+
+    it("reports a normalized provider-credential rejection (AppError 503) — the same incident class as an undeployed model", async () => {
+      const report = vi.fn().mockResolvedValue(undefined);
+      const { lifecycle } = harness(undefined, { report });
+      const normalized = normalizeProviderCredentialError({ status: 401, code: "invalid_api_key" });
+
+      await lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: false },
+        null,
+        undefined,
+        normalized,
+      );
+
+      expect(report).toHaveBeenCalledOnce();
     });
 
     it("skips reporting for safe_test/review turns the same way it skips analytics", async () => {

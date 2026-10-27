@@ -4,7 +4,7 @@ import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
 import { createErrorHandler } from "../../src/app/http/middleware/errorHandler.js";
-import { AppError } from "../../src/shared/domain/errors.js";
+import { AppError, serviceUnavailable } from "../../src/shared/domain/errors.js";
 import { ChatTurnDisconnectAbortError } from "../../src/modules/chat/services/conversationTurnRegistry.js";
 import { ProviderConfigurationError } from "../../src/shared/infra/llm/providerTypes.js";
 import { normalizeProviderCredentialError } from "../../src/shared/infra/llm/providerErrors.js";
@@ -251,5 +251,98 @@ describe("createErrorHandler — headers not sent (the unhandled-error fallback 
     await vi.waitFor(() => expect(sink.record).toHaveBeenCalledOnce());
 
     expect(res.status).toHaveBeenCalledWith(500);
+  });
+
+  it("reports a 5xx AppError once with its status, and still answers with the AppError's own body", async () => {
+    const sink: ErrorSink = { name: "test-sink", record: vi.fn().mockResolvedValue(undefined) };
+    const service = buildService(sink);
+    const handler = createErrorHandler(service);
+    const res = fakeUnsentRes();
+
+    handler(serviceUnavailable("Access grants are not configured."), fakeReq(), res, vi.fn());
+    await vi.waitFor(() => expect(sink.record).toHaveBeenCalledOnce());
+
+    expect(vi.mocked(sink.record).mock.calls[0]?.[0]).toMatchObject({
+      errorType: "http.request.unhandled",
+      requestContext: { statusCode: 503 },
+    });
+    expect(res.status).toHaveBeenCalledWith(503);
+    expect(res.json).toHaveBeenCalledWith({
+      error: { code: "service_unavailable", message: "Access grants are not configured.", details: undefined },
+    });
+  });
+
+  it("reports a platform misconfiguration (ProviderConfigurationError, AppError 503) answered before any byte was sent", async () => {
+    const sink: ErrorSink = { name: "test-sink", record: vi.fn().mockResolvedValue(undefined) };
+    const service = buildService(sink);
+    const handler = createErrorHandler(service);
+    const res = fakeUnsentRes();
+    const error = new ProviderConfigurationError("No API key configured for provider \"openai\".", {
+      kind: "missing_api_key",
+      provider: "openai",
+      capability: "chat",
+      remediation: "Add a workspace credential.",
+    });
+
+    handler(error, fakeReq(), res, vi.fn());
+    await vi.waitFor(() => expect(sink.record).toHaveBeenCalledOnce());
+
+    expect(res.status).toHaveBeenCalledWith(503);
+  });
+
+  it("reports a 5xx structured error that is not an AppError instance (the Enterprise error shape)", async () => {
+    const sink: ErrorSink = { name: "test-sink", record: vi.fn().mockResolvedValue(undefined) };
+    const service = buildService(sink);
+    const handler = createErrorHandler(service);
+    const res = fakeUnsentRes();
+    const error = Object.assign(new Error("Billing provider unavailable"), { statusCode: 502, code: "bad_gateway" });
+
+    handler(error, fakeReq(), res, vi.fn());
+    await vi.waitFor(() => expect(sink.record).toHaveBeenCalledOnce());
+
+    expect(vi.mocked(sink.record).mock.calls[0]?.[0]).toMatchObject({ requestContext: { statusCode: 502 } });
+    expect(res.status).toHaveBeenCalledWith(502);
+  });
+
+  it("never reports a client-facing error under 500, AppError or structured", async () => {
+    const sink: ErrorSink = { name: "test-sink", record: vi.fn().mockResolvedValue(undefined) };
+    const service = buildService(sink);
+    const handler = createErrorHandler(service);
+
+    handler(new AppError(400, "validation_error", "bad input"), fakeReq(), fakeUnsentRes(), vi.fn());
+    handler(
+      Object.assign(new Error("Usage limit reached"), { statusCode: 429, code: "usage_limit_exceeded" }),
+      fakeReq(),
+      fakeUnsentRes(),
+      vi.fn(),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(sink.record).not.toHaveBeenCalled();
+  });
+
+  it("never reports a 5xx error marked as an expected outcome (a disconnect-abort turn)", async () => {
+    const sink: ErrorSink = { name: "test-sink", record: vi.fn().mockResolvedValue(undefined) };
+    const service = buildService(sink);
+    const handler = createErrorHandler(service);
+    const res = fakeUnsentRes();
+
+    handler(new ChatTurnDisconnectAbortError("conv_1", "rendering"), fakeReq(), res, vi.fn());
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(sink.record).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(500);
+  });
+
+  it("does not report a 5xx AppError a caller already reported", async () => {
+    const sink: ErrorSink = { name: "test-sink", record: vi.fn().mockResolvedValue(undefined) };
+    const service = buildService(sink);
+    const error = serviceUnavailable("Public chat response is unavailable.");
+    await service.report({ errorType: "chat.turn_failed", error });
+
+    createErrorHandler(service)(error, fakeReq(), fakeUnsentRes(), vi.fn());
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(sink.record).toHaveBeenCalledOnce();
   });
 });

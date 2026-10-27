@@ -295,8 +295,9 @@ helpers and the shared chat message limit from `app/http`
   the grant's token prefix, so a rotation on the API card reads as a secret the
   vendor no longer holds), `AgentService` as
   the binder (so a binding runs every agent-write side effect), the
-  completions address under `PUBLIC_API_BASE_URL`
-  (`…/api/v1/agents/:agentId/voice/:vendor/v1`; null when unset) and the
+  completions address under `APP_BASE_URL`'s `/backend` proxy path
+  (`voiceRuntimeCompletionsAddress.ts`: `…/backend/api/v1/agents/:agentId/voice/:vendor/v1`;
+  null when `APP_BASE_URL` is unset or its host is not reachable from the public internet) and the
   audit service (`agent.voice_runtime.connected` and
   `agent.voice_runtime.disconnected`); exposed as
   `AppDependencies.voiceRuntimeConnections`.

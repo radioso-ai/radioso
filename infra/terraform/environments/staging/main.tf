@@ -102,7 +102,6 @@ module "radioso" {
   session_ttl_hours                         = var.session_ttl_hours
   metrics_enabled                           = var.metrics_enabled
   connector_public_base_url                 = var.connector_public_base_url
-  public_api_origin                         = var.public_api_origin
   radioso_mcp_enabled                       = var.radioso_mcp_enabled
   mcp_public_origin                         = var.mcp_public_origin
   operator_mcp_credential_epoch             = var.operator_mcp_credential_epoch

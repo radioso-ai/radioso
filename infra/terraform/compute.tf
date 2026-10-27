@@ -689,15 +689,6 @@ resource "google_cloud_run_v2_service" "backend" {
           value = env.value
         }
       }
-      # The address voice vendor agents Radioso creates post each turn to. Without it, Connect
-      # on an agent's Voice card answers 503 rather than create an agent that cannot reach us.
-      dynamic "env" {
-        for_each = var.public_api_origin == null ? [] : [var.public_api_origin]
-        content {
-          name  = "PUBLIC_API_BASE_URL"
-          value = env.value
-        }
-      }
       dynamic "env" {
         for_each = local.operator_mcp_configured ? [var.operator_mcp_credential_epoch] : []
         content {
@@ -976,15 +967,6 @@ resource "google_cloud_run_v2_service" "frontend" {
         for_each = local.operator_mcp_configured ? ["${var.mcp_public_origin}/operator/mcp"] : []
         content {
           name  = "RADIOSO_OPERATOR_MCP_PUBLIC_URL"
-          value = env.value
-        }
-      }
-      # The same public API origin the backend hands voice vendor agents, shown in the
-      # dashboard's API endpoints and examples.
-      dynamic "env" {
-        for_each = var.public_api_origin == null ? [] : [var.public_api_origin]
-        content {
-          name  = "RADIOSO_PUBLIC_API_URL"
           value = env.value
         }
       }

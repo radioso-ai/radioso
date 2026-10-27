@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 
+import { voiceRuntimeCompletionsAddress } from "./voiceRuntimeCompletionsAddress.js";
 import type {
   AgentGreetingReader,
   ChatStreamEvent,
@@ -511,18 +512,6 @@ const voiceRuntimeChannelCredentials = (grants: VoiceRuntimeGrants): VoiceRuntim
   };
 };
 
-/**
- * The chat-completions base URL a vendor agent posts one agent's turns to, under the deployment's
- * public API base URL (`env.ts` normalizes it: no trailing slash, no `/api/v1`); null when the
- * deployment names none. Each vendor speaks the completions dialect of its own name
- * (`agentVoiceRoute.ts` mounts `…/voice/:dialect/v1/chat/completions`).
- */
-const voiceRuntimeCompletionsAddress = (publicApiBaseUrl: string | undefined) => {
-  if (!publicApiBaseUrl) return null;
-  return ({ agentId, vendor }: { agentId: string; vendor: VoiceVendor }) =>
-    `${publicApiBaseUrl}/api/v1/agents/${encodeURIComponent(agentId)}/voice/${vendor}/v1`;
-};
-
 /** The audit events a runtime connection leaves: ids, the vendor, its region and closed values. */
 const createVoiceRuntimeConnectionAudit = (auditService: Pick<AuditPort, "record">): VoiceRuntimeConnectionAudit => ({
   connected: ({ accountId, workspaceId, ...metadata }) =>
@@ -550,8 +539,8 @@ export const createVoiceRuntimeConnectionComposition = (deps: {
   accessGrants: VoiceRuntimeGrants;
   credentials: VoiceVendorCredentialStore;
   fetch: typeof globalThis.fetch;
-  /** `PUBLIC_API_BASE_URL`; unset, nothing can be connected. */
-  publicApiBaseUrl: string | undefined;
+  /** `APP_BASE_URL`; unset, or its host unreachable from the public internet, nothing can be connected. */
+  appBaseUrl: string | undefined;
   auditService: Pick<AuditPort, "record">;
   metricsRegistry: MetricsRegistry | null;
   logger: AppLogger;
@@ -574,7 +563,7 @@ export const createVoiceRuntimeConnectionComposition = (deps: {
         await deps.agentService.update(workspaceId, agentId, { voice: { ...agent.voice, runtime } });
       },
     },
-    completionsAddress: voiceRuntimeCompletionsAddress(deps.publicApiBaseUrl),
+    completionsAddress: voiceRuntimeCompletionsAddress(deps.appBaseUrl),
     audit: createVoiceRuntimeConnectionAudit(deps.auditService),
     metrics: deps.metricsRegistry,
     logger: deps.logger,
@@ -610,8 +599,8 @@ export const wireVoiceRuntimeConnections = (deps: {
   accessGrants: VoiceRuntimeGrants;
   credentials: VoiceVendorCredentialStore;
   fetch: typeof globalThis.fetch;
-  /** `PUBLIC_API_BASE_URL`; unset, nothing can be connected. */
-  publicApiBaseUrl: string | undefined;
+  /** `APP_BASE_URL`; unset, or its host unreachable from the public internet, nothing can be connected. */
+  appBaseUrl: string | undefined;
   auditService: Pick<AuditPort, "record">;
   metricsRegistry: MetricsRegistry | null;
   logger: AppLogger;
@@ -635,7 +624,7 @@ export const wireVoiceRuntimeConnections = (deps: {
     accessGrants: deps.accessGrants,
     credentials: deps.credentials,
     fetch: deps.fetch,
-    publicApiBaseUrl: deps.publicApiBaseUrl,
+    appBaseUrl: deps.appBaseUrl,
     auditService: deps.auditService,
     metricsRegistry: deps.metricsRegistry,
     logger: deps.logger,

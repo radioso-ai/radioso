@@ -31,6 +31,22 @@ export const assertPublicHttpUrl = (value: string | URL): URL => {
   return url;
 };
 
+/**
+ * Whether a hostname is, by its literal form alone, reachable from the public internet: no DNS
+ * lookup. {@link assertPublicHttpUrl} pairs with a live DNS resolution elsewhere (the outbound-
+ * fetch SSRF guard) to catch an ordinary domain name that resolves to a private address; this has
+ * no such pairing, so it also rejects the conventional non-public suffixes `.local` and
+ * `.internal` that a bare structural check on an IP literal would miss. An ordinary domain name is
+ * otherwise assumed reachable. Rejects loopback (`localhost`, `*.localhost`, 127.0.0.0/8, `::1`),
+ * private and link-local IPv4/IPv6 ranges, and those two suffixes.
+ */
+export const isPubliclyReachableHostname = (hostname: string): boolean => {
+  const normalized = stripIpv6Brackets(hostname.toLowerCase());
+  if (normalized === "localhost" || normalized.endsWith(".localhost")) return false;
+  if (normalized.endsWith(".local") || normalized.endsWith(".internal")) return false;
+  return isIP(normalized) === 0 || isPublicNetworkAddress(normalized);
+};
+
 export const isPublicNetworkAddress = (address: string): boolean => {
   const normalizedAddress = stripIpv6Brackets(address.toLowerCase());
   return normalizedAddress.includes(":")

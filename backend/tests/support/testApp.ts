@@ -2896,7 +2896,7 @@ export const createTestDependencies = (overrides: {
     accessGrants: accessGrantService,
     credentials: workspaceProviderCredentialsService,
     fetch: voiceVendorFetch,
-    publicApiBaseUrl: env.PUBLIC_API_BASE_URL,
+    appBaseUrl: env.APP_BASE_URL,
     auditService,
     metricsRegistry,
     logger,

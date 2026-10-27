@@ -1785,7 +1785,7 @@ export interface paths {
         put?: never;
         /**
          * Connect the agent's voice channel to a vendor agent Radioso maintains
-         * @description Creates an ElevenLabs agent on the workspace's own ElevenLabs account, with the key stored under Settings → Providers, and binds the agent's `voice.runtime` to it. The account's data residency region is found from the key. The ElevenLabs agent posts each turn to `{PUBLIC_API_BASE_URL}/api/v1/agents/{agentId}/voice/elevenlabs/v1` with a REST credential Radioso issues for it (labelled `Voice calls`, no expiry), starts calls in the agent's default language, and can switch to any language ElevenLabs Agents speaks. Calling it again repairs the connection: the ElevenLabs agent's settings, a binding a save cleared, a credential that was revoked (a new one replaces it). A runtime bound by hand is replaced by one Radioso maintains; the hand-made ElevenLabs agent is left alone. One Connect or Disconnect of an agent runs at a time, across every backend instance; another one meanwhile answers `409 voice_connection_busy` at once. Records an `agent.voice_runtime.connected` audit event. Dashboard session only.
+         * @description Creates an ElevenLabs agent on the workspace's own ElevenLabs account, with the key stored under Settings → Providers, and binds the agent's `voice.runtime` to it. The account's data residency region is found from the key. The ElevenLabs agent posts each turn to `{APP_BASE_URL}/backend/api/v1/agents/{agentId}/voice/elevenlabs/v1`, through the same proxy every dashboard and embed request reaches this API by, with a REST credential Radioso issues for it (labelled `Voice calls`, no expiry), starts calls in the agent's default language, and can switch to any language ElevenLabs Agents speaks. Calling it again repairs the connection: the ElevenLabs agent's settings, a binding a save cleared, a credential that was revoked (a new one replaces it). A runtime bound by hand is replaced by one Radioso maintains; the hand-made ElevenLabs agent is left alone. One Connect or Disconnect of an agent runs at a time, across every backend instance; another one meanwhile answers `409 voice_connection_busy` at once. Records an `agent.voice_runtime.connected` audit event. Dashboard session only.
          */
         post: operations["connectAgentVoice"];
         /**
@@ -10417,7 +10417,7 @@ export interface components {
              * @enum {string}
              */
             vendorKey: "stored" | "missing" | "unreadable";
-            /** @description False when this deployment has no `PUBLIC_API_BASE_URL`, the public address a vendor agent posts each turn to; Connect then answers `503`. */
+            /** @description False when this deployment's `APP_BASE_URL` is unset or its host is not reachable from the public internet, so a vendor agent could not reach it; Connect then answers `503`. */
             connectAvailable: boolean;
             /** @description The agent's `voice.runtime` as stored after the request. A client that saves the whole `voice` block sends this value, or the save unbinds the agent. */
             runtime: {
@@ -18633,7 +18633,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description `voice_vendor_unreachable`: the vendor did not answer; `voice_connection_unavailable`: the deployment has no `PUBLIC_API_BASE_URL` */
+            /** @description `voice_vendor_unreachable`: the vendor did not answer; `voice_connection_unavailable`: this deployment's `APP_BASE_URL` is unset or not reachable from the public internet */
             503: {
                 headers: {
                     [name: string]: unknown;

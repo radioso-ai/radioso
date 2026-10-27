@@ -21,19 +21,6 @@ import {
   tryParseUrl,
 } from "../../shared/infra/llm/azureOpenAIEndpoint.js";
 
-/** Where the REST API is mounted under a deployment's public API base. */
-const PUBLIC_API_PATH = "/api/v1";
-
-/**
- * A public API base as routes are appended to it: trailing slashes dropped, and the API's own
- * `/api/v1` dropped too, so the value `RADIOSO_PUBLIC_API_URL` takes works here as well. A path
- * prefix the API is served under (a reverse proxy's, for example) stays.
- */
-const publicApiBaseOf = (value: string): string => {
-  const trimmed = value.replace(/\/+$/u, "");
-  return trimmed.endsWith(PUBLIC_API_PATH) ? trimmed.slice(0, -PUBLIC_API_PATH.length).replace(/\/+$/u, "") : trimmed;
-};
-
 /** Shared default for both agent-revision test/eval evidence retention knobs; see their env entries. */
 const AGENT_TEST_EVIDENCE_RETENTION_DAYS_DEFAULT = 90;
 
@@ -501,25 +488,6 @@ const envSchema = z.object({
    * this plus `/a/{publicId}`. Discovery documents refuse to render without it.
    */
   PUBLIC_MCP_CONVERSE_URL: emptyStringToUndefined(z.string().url()),
-  /**
-   * Public base URL of this backend's REST API as the internet reaches it, e.g.
-   * `https://api.radioso.ai`, optionally with the path prefix it is served under; a trailing
-   * `/api/v1` is dropped. A voice vendor agent Radioso creates posts each turn to
-   * `{this}/api/v1/agents/{agentId}/voice/{vendor}/v1`, so Connect on an agent's Voice card
-   * refuses to run without it.
-   */
-  PUBLIC_API_BASE_URL: emptyStringToUndefined(
-    z.string()
-      .url({ message: "PUBLIC_API_BASE_URL must be a URL such as https://api.example.com" })
-      .refine(
-        (value) => {
-          const url = tryParseUrl(value);
-          return url !== undefined && url.search === "" && url.hash === "";
-        },
-        { message: "PUBLIC_API_BASE_URL must be the API's public origin, optionally with a path prefix, and no query or fragment" },
-      )
-      .transform(publicApiBaseOf),
-  ),
   RADIOSO_WIDGET_ORIGIN: emptyStringToUndefined(z.string().min(1)),
   RADIOSO_APPLICATION_MODULES: emptyStringToUndefined(z.string().min(1)),
 }).superRefine((value, ctx) => {

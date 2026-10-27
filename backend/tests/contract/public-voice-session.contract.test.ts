@@ -4,6 +4,7 @@ import request from "supertest";
 import { describe, expect, it, vi } from "vitest";
 
 import type { Env } from "../../src/app/config/env.js";
+import type { ChatGateway } from "../../src/modules/chat/contracts/index.js";
 import { createOpenApiDocument } from "../../src/app/http/openapi/openApiDocument.js";
 import { VOICE_CALL_READINESS_GAPS } from "../../src/modules/voiceChannel/public.js";
 import { adminSessionHeaders, createTestApp, issueTestSession } from "../support/testApp.js";
@@ -30,11 +31,13 @@ const embedWorkspace = async (options: {
   vendorFetch?: VendorFetch;
   envOverrides?: Partial<Env>;
   embedConfigCacheInvalidator?: { invalidateForToken(token: string): Promise<void> };
+  chatGateway?: ChatGateway;
 } = {}) => {
   const created = createTestApp({
     voiceVendorFetch: options.vendorFetch,
     envOverrides: options.envOverrides,
     embedConfigCacheInvalidator: options.embedConfigCacheInvalidator,
+    ...(options.chatGateway ? { chatGateway: options.chatGateway } : {}),
   });
   const { app } = created;
   const operator = await issueTestSession(app, `voice-start-${randomUUID()}@example.com`);
@@ -79,6 +82,29 @@ const embedWorkspace = async (options: {
 const startOutcomes = (metrics: string): string[] =>
   metrics.split("\n").filter((line) => line.startsWith("radioso_voice_session_start_total{"));
 
+const MANAGED_SIGNED_URL = "wss://api.elevenlabs.io/v1/convai/conversation?agent_id=agent_managed&conversation_signature=sig";
+
+/**
+ * ElevenLabs as Connect and a start meet a US account: the region probe answers on the US host
+ * alone, then a secret, a new agent, and a signed URL for it.
+ */
+const connectableVendor = () => {
+  const calls: Array<{ method: string; url: string; body: Record<string, unknown> | undefined }> = [];
+  const json = (status: number, body: unknown) => new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
+  const fetch = vi.fn<VendorFetch>(async (input, init) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
+    const method = init?.method ?? "GET";
+    calls.push({ method, url, body: typeof init?.body === "string" ? JSON.parse(init.body) as Record<string, unknown> : undefined });
+    if (!url.startsWith("https://api.elevenlabs.io/")) return json(400, { detail: { type: "authentication_error", code: "invalid_api_key" } });
+    if (url.endsWith("/v1/convai/agents?page_size=1")) return json(200, { agents: [], next_cursor: null });
+    if (method === "POST" && url.endsWith("/v1/convai/secrets")) return json(200, { secret_id: "sec_1" });
+    if (method === "POST" && url.endsWith("/v1/convai/agents/create")) return json(200, { agent_id: "agent_managed" });
+    if (url.includes("/v1/convai/conversation/get-signed-url?agent_id=agent_managed")) return json(200, { signed_url: MANAGED_SIGNED_URL });
+    return json(404, { detail: { type: "not_found" } });
+  });
+  return { fetch, calls };
+};
+
 describe("public voice session start contract", () => {
   it("starts a session on the agent's ElevenLabs agent with the workspace's key and hands the page what it needs, never the key", async () => {
     const vendorFetch = vendorAnswering(200, { signed_url: SIGNED_URL });
@@ -100,6 +126,39 @@ describe("public voice session start contract", () => {
     const [url, init] = vendorFetch.mock.calls[0];
     expect(url).toBe("https://api.elevenlabs.io/v1/convai/conversation/get-signed-url?agent_id=agent_42");
     expect(init?.headers).toEqual({ "xi-api-key": VENDOR_KEY });
+  });
+
+  it("hands a session on the ElevenLabs agent Radioso connected what the call says first: the recording notice, then the agent's greeting", async () => {
+    const vendor = connectableVendor();
+    const chatGateway: ChatGateway = {
+      answer: vi.fn(async () => "Ciao! Sono **Marta**: come posso aiutarti?"),
+      streamAnswer: async function* () {
+        yield "";
+      },
+    };
+    const { app, dashboard, agentId, visitor } = await embedWorkspace({
+      vendorFetch: vendor.fetch,
+      chatGateway,
+      envOverrides: { PUBLIC_API_BASE_URL: "https://api.radioso.test" },
+      voice: { ...boundVoice, runtime: null, recordingNotice: { it: "Questa chiamata viene registrata." } },
+    });
+    await request(app).put(`/api/v1/agents/${agentId}`).set(dashboard).send({ name: "Marta", proactiveGreetingEnabled: true }).expect(200);
+    await request(app).post(`/api/v1/agents/${agentId}/voice/connection`).set({ ...dashboard, "X-Radioso-CSRF": "1" }).expect(200);
+    const create = vendor.calls.find((call) => call.url.endsWith("/v1/convai/agents/create"));
+    expect(create?.body).toMatchObject({ platform_settings: { overrides: { conversation_config_override: { agent: { first_message: true } } } } });
+    const { startVoiceSession } = await visitor();
+
+    const first = await startVoiceSession({ locale: "it" }).expect(200);
+    const second = await startVoiceSession({ locale: "it" }).expect(200);
+
+    expect(first.body).toMatchObject({
+      signedUrl: MANAGED_SIGNED_URL,
+      recordingNotice: "Questa chiamata viene registrata.",
+      firstMessage: "Questa chiamata viene registrata.\n\nCiao! Sono Marta: come posso aiutarti?",
+    });
+    // The greeting is generated once and read from the cache after, as the web chat reads it.
+    expect(second.body.firstMessage).toBe(first.body.firstMessage);
+    expect(chatGateway.answer).toHaveBeenCalledOnce();
   });
 
   it("starts an EU-residency account's session on the EU host", async () => {

@@ -5,6 +5,7 @@ import type { MetricsRegistry } from "../../../shared/observability/metrics/metr
 import {
   VoiceRuntimeConnectionError,
   VoiceVendorRequestError,
+  isMaintainedRuntime,
   type VoiceRuntimeAgentEnsured,
   type VoiceRuntimeAgentProfileSource,
   type VoiceRuntimeAgentSpec,
@@ -70,10 +71,6 @@ type AgentRef = { workspaceId: string; agentId: string };
 
 /** No person: the credential goes because its agent does. */
 const SYSTEM_ACTOR: VoiceRuntimeConnectionActor = { accountId: null, userId: null };
-
-/** The binding names the vendor agent Radioso created and keeps for this agent. */
-const isMaintained = (runtime: VoiceRuntimeBinding | null, connection: VoiceRuntimeConnection | null): boolean =>
-  runtime !== null && connection !== null && runtime.vendor === connection.vendor && runtime.agentId === connection.vendorAgentId;
 
 const failureOf = (error: unknown): VoiceRuntimeConnectionFailure | null => {
   if (error instanceof VoiceRuntimeConnectionError) return error.reason;
@@ -279,7 +276,7 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
     const vendor = connection.vendor;
     sync.vendor = vendor;
     const profile = await this.dependencies.agents.findRuntimeProfile(agent);
-    if (!profile || !isMaintained(profile.runtime, connection)) return "not_maintained";
+    if (!profile || !isMaintainedRuntime(profile.runtime, connection)) return "not_maintained";
     const completionsAddress = this.dependencies.completionsAddress;
     if (!completionsAddress) return "connection_unavailable";
     const reading = await this.dependencies.credentials.read({ workspaceId, vendor });
@@ -461,7 +458,7 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
     const vendorKey = await this.dependencies.credentials.presence({ workspaceId, vendor });
     return {
       vendor,
-      state: runtime === null ? "not_connected" : isMaintained(runtime, connection) ? "connected" : "connected_externally",
+      state: runtime === null ? "not_connected" : isMaintainedRuntime(runtime, connection) ? "connected" : "connected_externally",
       region: runtime?.region ?? null,
       vendorKey,
       connectAvailable: this.dependencies.completionsAddress !== null,

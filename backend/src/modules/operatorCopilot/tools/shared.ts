@@ -143,7 +143,7 @@ export const agentSettingWholeBlockNote = "voice and mechanicsReplies replace th
   + "voice.runtime binds the agent to one vendor agent ({ vendor, agentId, region }) or to none (null); sessions need voice.enabled and a runtime. "
   + "Operators connect ElevenLabs with Connect on the agent's Voice card, which creates and maintains the ElevenLabs agent and writes voice.runtime: carry voice.runtime over exactly as stored (leaving it out unbinds the agent), and never ask for or invent a vendor agent id or region. "
   + "Connect needs the vendor's key: the operator enters the vendor's API key in Settings, and you never ask for or write it. "
-  + "voice.recordingNotice is the optional line per language the website embed shows a caller as a call starts, to say the call is recorded; it is part of the same whole block, so carry it over as stored: leaving it out removes every notice. "
+  + "voice.recordingNotice is the optional line per language saying the call is recorded: shown as a website call starts, said first on a call to an agent connected on the Voice card; carry it over as stored: leaving it out removes every notice. "
   + "voice.languageSwitching (default false) lets a call switch its voice to the caller's language; an agent connected on the Voice card is already set up for it. Carry it over as stored. "
   + "branding (privacyNotice too) replaces whole.";
 

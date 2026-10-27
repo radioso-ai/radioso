@@ -30,6 +30,7 @@ const presentStartedSession = (result: Extract<VoiceSessionStartResult, { kind: 
   locale: result.locale,
   ...(result.expiresAt ? { expiresAt: result.expiresAt.toISOString() } : {}),
   ...(result.recordingNotice ? { recordingNotice: result.recordingNotice } : {}),
+  ...(result.firstMessage ? { firstMessage: result.firstMessage } : {}),
 });
 
 /**

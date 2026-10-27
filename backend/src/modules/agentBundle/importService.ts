@@ -1,6 +1,10 @@
 import { randomUUID } from "node:crypto";
 
 import { AppError, badRequest } from "../../shared/domain/errors.js";
+import {
+  workspaceCanPickModel,
+  type WorkspaceModelAvailability,
+} from "../../shared/domain/workspaceModelAvailability.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import { AGENT_CONFIG_SCHEMA_VERSION } from "../agents/public.js";
 import {
@@ -11,6 +15,7 @@ import {
   type AgentBundleSkill,
   type AgentBundleUnresolvedReference,
 } from "./domain.js";
+import type { AgentInput } from "../agents/public.js";
 import { projectAgentConfigForImport } from "./importProjection.js";
 import type {
   AgentBundleAgentWriterPort,
@@ -30,6 +35,8 @@ interface AgentBundleImportServiceOptions {
   routines: AgentBundleRoutineWriterPort;
   /** Optional only for narrow module tests that exercise bundle projection without persistence. */
   imports?: AgentBundleImportRepositoryPort;
+  /** Which models the target workspace can pick. Absent means every model. */
+  modelAvailability?: Pick<WorkspaceModelAvailability, "runnableModels">;
 }
 
 interface AgentBundleImportInput {
@@ -94,6 +101,7 @@ export class AgentBundleImportService {
     try {
       const projection = projectAgentConfigForImport(bundle.agent);
       const unresolved: AgentBundleUnresolvedReference[] = [...projection.unresolved];
+      const agentInput = await this.withRunnableChatModel(workspaceId, projection.input, unresolved);
       // Persist the ID before creation. If the process stops after `create` but
       // before its next await, the stale job still names the exact agent the sweep
       // must delete.
@@ -102,7 +110,7 @@ export class AgentBundleImportService {
         cleanupOwnsAgent = true;
         throw importReclaimed(importId);
       }
-      const created = await this.options.agents.create(workspaceId, projection.input, agentId);
+      const created = await this.options.agents.create(workspaceId, agentInput, agentId);
       agentCreated = true;
       if (created.agentId !== agentId && await this.imports.setCreatedAgent(importId, created.agentId) === false) {
         cleanupOwnsAgent = true;
@@ -211,6 +219,32 @@ export class AgentBundleImportService {
         });
       }
     }
+  }
+
+  /**
+   * A chat model this workspace cannot run (on an Azure platform key, one with no deployment)
+   * would refuse the whole agent, so it imports without the override and runs the workspace's
+   * chat model instead — reported, never silently dropped.
+   */
+  private async withRunnableChatModel(
+    workspaceId: string,
+    input: AgentInput,
+    unresolved: AgentBundleUnresolvedReference[],
+  ): Promise<AgentInput> {
+    const override = input.chatModelOverride;
+    if (
+      !override
+      || !this.options.modelAvailability
+      || await workspaceCanPickModel(this.options.modelAvailability, workspaceId, override)
+    ) {
+      return input;
+    }
+    unresolved.push({
+      kind: "chat_model_unavailable",
+      element: "chatModelOverride",
+      detail: `The agent ran on ${override.provider} model "${override.model}", which this deployment's shared ${override.provider} key does not serve, so it imports using the workspace's chat model. Pick a chat model on the agent, or add this workspace's own ${override.provider} API key under Settings → Providers.`,
+    });
+    return { ...input, chatModelOverride: null };
   }
 
   private async importSkills(

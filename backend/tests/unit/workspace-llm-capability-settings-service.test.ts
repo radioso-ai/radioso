@@ -10,6 +10,9 @@ import type {
   WorkspaceLlmCapabilityPreferencesRepositoryPort,
 } from "../../src/modules/settings/contracts/services.js";
 import type { AuditPort } from "../../src/modules/audit/contracts/index.js";
+import type { WorkspaceModelAvailability } from "../../src/shared/domain/workspaceModelAvailability.js";
+import type { LlmProviderName } from "../../src/shared/infra/llm/providerTypes.js";
+import { knownModelsByProvider } from "../../src/shared/infra/llm/knownModels.js";
 
 const createRepository = (): WorkspaceLlmCapabilityPreferencesRepositoryPort & {
   rows: Map<string, Map<WorkspaceLlmCapability, WorkspaceLlmCapabilityPreference>>;
@@ -237,5 +240,74 @@ describe("WorkspaceLlmCapabilitySettingsService", () => {
       }),
       "Workspace LLM capability settings audit write failed",
     );
+  });
+});
+
+describe("WorkspaceLlmCapabilitySettingsService platform model availability", () => {
+  // The staging shape: the platform openai key is an Azure key with one chat deployment, and the
+  // workspace holds no openai key of its own.
+  const azureOnly = (runnable: Partial<Record<LlmProviderName, readonly string[] | null>>): WorkspaceModelAvailability => ({
+    runnableModels: vi.fn(async (_workspaceId: string, provider: LlmProviderName) => runnable[provider] ?? null),
+    canRun: vi.fn(async (_workspaceId: string, provider: LlmProviderName, model: string) =>
+      (runnable[provider] ?? null)?.includes(model) ?? true),
+  });
+
+  it("rejects a model the workspace cannot run, naming the runnable models and the own-key alternative", async () => {
+    const repo = createRepository();
+    const audit = createAudit();
+    const service = new WorkspaceLlmCapabilitySettingsService(repo, audit, undefined, azureOnly({ openai: ["gpt-5.4-mini"] }));
+
+    const attempt = service.setPreference("ws-1", "chat", { provider: "openai", model: "gpt-5.4-nano" }, { accountId: "acc-1" });
+
+    await expect(attempt).rejects.toMatchObject({ statusCode: 400 });
+    await expect(attempt).rejects.toThrow(/gpt-5\.4-nano[\s\S]*gpt-5\.4-mini[\s\S]*own openai API key/);
+    expect(repo.rows.size).toBe(0);
+    expect(audit.events).toEqual([]);
+  });
+
+  it("accepts any catalog model when the workspace can run every model the provider offers", async () => {
+    const repo = createRepository();
+    const service = new WorkspaceLlmCapabilitySettingsService(repo, createAudit(), undefined, azureOnly({ openai: null }));
+
+    await service.setPreference("ws-1", "chat", { provider: "openai", model: "gpt-5.4-nano" }, { accountId: "acc-1" });
+
+    expect(await service.getPreference("ws-1", "chat")).toMatchObject({ provider: "openai", model: "gpt-5.4-nano" });
+  });
+
+  it("keeps a stored model readable and re-writable after it stops being runnable", async () => {
+    const repo = createRepository();
+    await repo.setPreference("ws-1", "chat", { provider: "openai", model: "gpt-5.4-nano" });
+    const service = new WorkspaceLlmCapabilitySettingsService(repo, createAudit(), undefined, azureOnly({ openai: ["gpt-5.4-mini"] }));
+
+    expect(await service.listForWorkspace("ws-1")).toEqual([
+      expect.objectContaining({ capability: "chat", provider: "openai", model: "gpt-5.4-nano" }),
+    ]);
+    await expect(
+      service.setPreference("ws-1", "chat", { provider: "openai", model: " gpt-5.4-nano " }, { accountId: "acc-1" }),
+    ).resolves.toMatchObject({ model: "gpt-5.4-nano" });
+  });
+
+  it("lists, per provider, the models this workspace can run, and the whole catalog where nothing restricts it", async () => {
+    const service = new WorkspaceLlmCapabilitySettingsService(
+      createRepository(),
+      createAudit(),
+      undefined,
+      azureOnly({ openai: ["gpt-5.4-mini"] }),
+    );
+
+    const runnable = await service.runnableModelsByProvider("ws-1");
+
+    expect(runnable).toEqual({
+      openai: ["gpt-5.4-mini"],
+      "openai-compatible": [],
+      gemini: [...knownModelsByProvider.gemini],
+      claude: [...knownModelsByProvider.claude],
+    });
+  });
+
+  it("lists the whole catalog when no availability is wired (a deployment that serves every model)", async () => {
+    const service = new WorkspaceLlmCapabilitySettingsService(createRepository(), createAudit());
+
+    expect((await service.runnableModelsByProvider("ws-1")).openai).toEqual([...knownModelsByProvider.openai]);
   });
 });

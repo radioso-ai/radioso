@@ -103,4 +103,29 @@ describe("agent chat model override contract", () => {
 
     expect(response.status).toBe(400);
   });
+
+  it("rejects an openai override the platform's Azure endpoint has no deployment for", async () => {
+    const { app } = createTestApp({
+      envOverrides: { AZURE_OPENAI_ENDPOINT: "https://radioso-eu-1.openai.azure.com/openai/v1" },
+    });
+    const session = await issueTestSession(app, "agent-chat-azure@example.com");
+    const list = await request(app)
+      .get("/api/v1/agents")
+      .set(adminSessionHeaders(session));
+    const agentId = list.body.agents[0].id;
+
+    const rejected = await request(app)
+      .put(`/api/v1/agents/${agentId}`)
+      .set(adminSessionHeaders(session))
+      .send({ chatModelOverride: { provider: "openai", model: "gpt-5.4-nano" } });
+    const accepted = await request(app)
+      .put(`/api/v1/agents/${agentId}`)
+      .set(adminSessionHeaders(session))
+      .send({ chatModelOverride: { provider: "openai", model: "gpt-5-mini" } });
+
+    expect(rejected.status).toBe(400);
+    expect(rejected.body.error?.message ?? rejected.body.message).toContain("gpt-5-mini");
+    expect(accepted.status).toBe(200);
+    expect(accepted.body.chatModelOverride).toEqual({ provider: "openai", model: "gpt-5-mini" });
+  });
 });

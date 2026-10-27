@@ -15,6 +15,10 @@ import { generateApiToken } from "../../auth/contracts/index.js";
 import type { EmbedConfigCacheInvalidator } from "./embedConfigCacheInvalidator.js";
 import { MANUALLY_ADDED_DOCUMENTS_SOURCE_ID } from "../../documents/contracts/index.js";
 import { badRequest, notFound } from "../../../shared/domain/errors.js";
+import {
+  assertWorkspaceCanRunModel,
+  type WorkspaceModelAvailability,
+} from "../../../shared/domain/workspaceModelAvailability.js";
 import { canonicalContentHash } from "../../../shared/domain/canonicalContentHash.js";
 import { fieldProposalVersion } from "../../../shared/domain/fieldProposalVersion.js";
 import { validateExactContentItem, type ExactContentValidationResult } from "../../../shared/domain/exactContent.js";
@@ -155,6 +159,8 @@ export class AgentService {
     private readonly agentSkills?: Pick<AgentSkillRepositoryPort, "findByName">,
     private readonly audit?: Pick<AuditService, "record">,
     private readonly recipientConfirmations?: RecipientConfirmationRequester,
+    /** Absent means every catalog model runs (a deployment whose platform keys serve every model). */
+    private readonly modelAvailability?: WorkspaceModelAvailability,
   ) {}
 
   async list(workspaceId: string): Promise<AgentSettingsResource[]> {
@@ -215,6 +221,7 @@ export class AgentService {
   async create(workspaceId: string, input: AgentInput, options: { agentId?: string } = {}): Promise<AgentSettingsResource> {
     const workspace = await this.requireWorkspace(workspaceId);
     await this.validateSourceScope(workspaceId, input);
+    await this.assertChatModelRunnable(workspaceId, input, null);
     const existingDefault = workspace.defaultAgentId
       ? await this.agentRepository.findByIdAndWorkspaceId(workspace.defaultAgentId, workspaceId)
       : await this.agentRepository.findDefaultByWorkspaceId(workspaceId);
@@ -234,6 +241,7 @@ export class AgentService {
     if (!existing) {
       throw notFound("Agent not found");
     }
+    await this.assertChatModelRunnable(workspaceId, input, existing);
     // Minting rides the same write that flips the flag, so a card can never be published for an
     // agent that has no id to publish it under. Every writer — the dashboard, a bundle import,
     // Ray's applied proposal — goes through here.
@@ -261,6 +269,13 @@ export class AgentService {
   ): Promise<AgentProposalCasOutcome & { readonly followUp?: "side_effects_incomplete" }> {
     const workspace = await this.requireWorkspace(workspaceId);
     await this.validateSourceScope(workspaceId, input);
+    if (input.chatModelOverride) {
+      await this.assertChatModelRunnable(
+        workspaceId,
+        input,
+        await this.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId),
+      );
+    }
     const outcome = await this.agentRepository.applyProposalPatch(agentId, workspaceId, input, guard);
     if (outcome.outcome !== "applied") {
       return outcome;
@@ -295,6 +310,7 @@ export class AgentService {
     if (!Object.hasOwn(normalized, input.settingKey)) {
       throw badRequest(`Unknown agent setting: ${input.settingKey}`);
     }
+    await this.assertChatModelRunnable(workspaceId, { chatModelOverride: normalized.chatModelOverride }, current);
     const proposed = proposalSettingValue(normalized, input.settingKey);
     const previous = proposalSettingValue(current, input.settingKey);
     return {
@@ -628,6 +644,27 @@ export class AgentService {
       previous: previousRecipients,
       next: updated.contactRequestDelivery.recipientEmails,
     });
+  }
+
+  /**
+   * An override the workspace cannot run is refused when it is written, so the operator, or Ray
+   * proposing it, hears why. A stored override that stopped being runnable stays writable as-is,
+   * so saving any other field keeps working; the capability resolver runs the default in its place.
+   */
+  private async assertChatModelRunnable(
+    workspaceId: string,
+    input: Pick<AgentInput, "chatModelOverride">,
+    current: Pick<AgentRecord, "chatModelOverride"> | null,
+  ): Promise<void> {
+    const pick = input.chatModelOverride;
+    if (!this.modelAvailability || !pick) {
+      return;
+    }
+    const model = pick.model.trim();
+    if (current?.chatModelOverride?.provider === pick.provider && current.chatModelOverride.model === model) {
+      return;
+    }
+    await assertWorkspaceCanRunModel(this.modelAvailability, workspaceId, { provider: pick.provider, model });
   }
 
   private async validateSourceScope(workspaceId: string, input: AgentInput): Promise<void> {

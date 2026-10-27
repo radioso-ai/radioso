@@ -37,6 +37,7 @@ import type { MetricsRegistry } from "../../../shared/observability/metrics/metr
 import { AgentSkillRepository } from "../../../modules/agentSkills/public.js";
 import { type AppLogger } from "../../../shared/observability/logger.js";
 import type { ManagedModelPolicy } from "../../../shared/domain/managedModelPolicy.js";
+import type { WorkspaceModelAvailability } from "../../../shared/domain/workspaceModelAvailability.js";
 import { connectorEncryptionKeys, type Env } from "../../config/env.js";
 import { buildInfrastructure, buildRepositories } from "./infra.js";
 import { McpConnectionService } from "../../../modules/externalSkills/services/mcpConnectionService.js";
@@ -103,11 +104,13 @@ export const buildWorkspaceLlmCapabilitySettingsService = (input: {
   auditService: AuditPort;
   capabilityRepository: WorkspaceLlmCapabilityPreferencesRepositoryPort;
   logger?: Pick<AppLogger, "warn">;
+  modelAvailability: WorkspaceModelAvailability;
 }): WorkspaceLlmCapabilitySettingsService =>
   new WorkspaceLlmCapabilitySettingsService(
     input.capabilityRepository,
     input.auditService,
     input.logger,
+    input.modelAvailability,
   );
 
 const envApiKeyMap = (env: Env): Partial<Record<LlmProviderName, string>> => ({
@@ -123,7 +126,8 @@ export const buildLlmCapabilityResolver = (input: {
   settings: WorkspaceLlmCapabilitySettingsService;
   credentials: WorkspaceProviderCredentialsService;
   managedModelPolicy: ManagedModelPolicy;
-  logger: Pick<AppLogger, "debug" | "info">;
+  modelAvailability: WorkspaceModelAvailability;
+  logger: Pick<AppLogger, "debug" | "info" | "warn">;
 }): LlmCapabilityResolver => {
   const keys = envApiKeyMap(input.env);
   return new WorkspaceLlmCapabilityResolver({
@@ -137,6 +141,7 @@ export const buildLlmCapabilityResolver = (input: {
       getOpenAIResidency: (workspaceId) => input.credentials.getOpenAIResidency(workspaceId),
     },
     managedModelPolicy: input.managedModelPolicy,
+    modelAvailability: input.modelAvailability,
     logger: input.logger,
     envKeys: {
       resolveEnvApiKey: (provider) => keys[provider],

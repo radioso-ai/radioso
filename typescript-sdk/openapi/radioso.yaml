@@ -2058,12 +2058,39 @@ components:
             - openai-compatible
             - gemini
             - claude
+          description: Every model Radioso supports, per provider. `openai-compatible` is empty because it accepts any model identifier.
+        runnableModelsByProvider:
+          type: object
+          properties:
+            openai:
+              type: array
+              items:
+                type: string
+            openai-compatible:
+              type: array
+              items:
+                type: string
+            gemini:
+              type: array
+              items:
+                type: string
+            claude:
+              type: array
+              items:
+                type: string
+          required:
+            - openai
+            - openai-compatible
+            - gemini
+            - claude
+          description: "The catalog models this workspace can run, per provider: all of them on a provider the workspace holds its own key for, otherwise the ones the deployment's shared key serves. A preference or agent override outside this list is rejected; one stored before it left the list runs on the deployment default."
       required:
         - chat
         - rewrite
         - rerank
         - managed
         - knownModelsByProvider
+        - runnableModelsByProvider
     UpdateWorkspaceLlmModelsRequest:
       type: object
       properties:
@@ -7452,6 +7479,7 @@ components:
         - skill_config_not_portable
         - directive_binding_unbound
         - contact_delivery_unbound
+        - chat_model_unavailable
       description: |-
         Why a bundle element could not be fully applied to the target workspace. Every element is reported
         rather than silently dropped: a bundle that imports quietly minus a skill binding is an agent that
@@ -7468,6 +7496,7 @@ components:
         - skill_config_not_portable: a skill setting whose value the capability keeps inside its own workspace.
         - directive_binding_unbound: a directive bound to a skill that did not survive import; kept, but disabled.
         - contact_delivery_unbound: contact requests are on but their destination stayed in the source workspace.
+        - chat_model_unavailable: the agent's chat model override is one this workspace cannot run; the agent imports without it.
     AgentBundleUnresolvedReference:
       type: object
       properties:

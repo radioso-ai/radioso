@@ -119,9 +119,43 @@ describe("resolveLlmConfig Azure OpenAI endpoint", () => {
     }
   });
 
-  it("derives openAIPlatformEndpoint as the azure kind", () => {
+  it("derives openAIPlatformEndpoint as the azure kind, serving exactly the distinct platform openai models", () => {
     const config = resolveLlmConfig({ ...baseEnv, AZURE_OPENAI_ENDPOINT: azureBaseUrl });
-    expect(config.openAIPlatformEndpoint).toEqual({ kind: "azure", baseUrl: azureBaseUrl });
+    expect(config.openAIPlatformEndpoint).toEqual({
+      kind: "azure",
+      baseUrl: azureBaseUrl,
+      deployments: ["gpt-5.4-mini", "text-embedding-3-small"],
+    });
+  });
+
+  it("lists every capability's own openai model as an Azure deployment, and never a non-openai capability's", () => {
+    const config = resolveLlmConfig({
+      ...baseEnv,
+      ANTHROPIC_API_KEY: "claude-test",
+      AZURE_OPENAI_ENDPOINT: azureBaseUrl,
+      LLM_CHAT_MODEL: "gpt-5.5",
+      LLM_REWRITE_PROVIDER: "claude",
+      LLM_RERANK_MODEL: "gpt-5.4-mini",
+      LLM_EMBEDDING_MODEL: "text-embedding-3-large",
+    });
+    expect(config.openAIPlatformEndpoint).toEqual({
+      kind: "azure",
+      baseUrl: azureBaseUrl,
+      deployments: ["gpt-5.5", "gpt-5.4-mini", "text-embedding-3-large"],
+    });
+  });
+
+  it("serves the supplemental openai embedding model from Azure when the primary embeddings provider is not openai", () => {
+    const config = resolveLlmConfig({
+      ...baseEnv,
+      LLM_EMBEDDING_PROVIDER: "gemini",
+      GEMINI_API_KEY: "gemini-test",
+      AZURE_OPENAI_ENDPOINT: azureBaseUrl,
+    });
+    expect(config.openAIPlatformEndpoint).toMatchObject({
+      kind: "azure",
+      deployments: ["gpt-5.4-mini", "text-embedding-3-small"],
+    });
   });
 
   it("carries the Azure base URL onto the supplemental openai embedding config", () => {

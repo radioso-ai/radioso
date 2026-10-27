@@ -14,14 +14,17 @@ import type { KnownModelsByProvider, LlmProviderName } from '@/lib/api-llm-provi
  * Single component for choosing a model id for a given provider.
  *
  * - Closed-set providers (openai / gemini / claude) render a Select sourced
- *   from `knownModelsByProvider`, which the backend owns as the single source
- *   of truth.
+ *   from `runnableModelsByProvider`: the catalog models this workspace can run,
+ *   which the backend owns as the single source of truth. A saved model outside
+ *   that list still shows in the trigger, listed but not selectable; one the
+ *   catalog has but this workspace cannot run is answered by another model.
  * - `openai-compatible` renders a free-form text input because self-hosted
  *   endpoints (vLLM / Ollama / LMStudio / ...) advertise arbitrary identifiers.
  */
 export function ModelPicker({
   inputId,
   provider,
+  runnableModelsByProvider,
   knownModelsByProvider,
   value,
   onChange,
@@ -31,6 +34,7 @@ export function ModelPicker({
 }: {
   inputId: string
   provider: LlmProviderName | ''
+  runnableModelsByProvider: KnownModelsByProvider
   knownModelsByProvider: KnownModelsByProvider
   value: string
   onChange: (next: string) => void
@@ -70,26 +74,43 @@ export function ModelPicker({
     )
   }
 
-  const options = knownModelsByProvider[provider] ?? []
+  const options = runnableModelsByProvider[provider] ?? []
+  const savedOutsideOptions = value !== '' && !options.includes(value)
+  // An empty list means the catalog has not loaded yet, not that the saved model stopped running.
+  const savedUnavailable = savedOutsideOptions && options.length > 0
+  // In the catalog but not runnable here: the shared key cannot serve it, so another model answers.
+  const savedOnUnservedSharedKey = savedUnavailable && (knownModelsByProvider[provider] ?? []).includes(value)
   return (
-    <Select
-      value={value}
-      onValueChange={(next) => {
-        onChange(next)
-        onCommit?.(next)
-      }}
-      disabled={disabled || options.length === 0}
-    >
-      <SelectTrigger id={inputId} className={className}>
-        <SelectValue placeholder="Choose a model" />
-      </SelectTrigger>
-      <SelectContent>
-        {options.map((option) => (
-          <SelectItem key={option} value={option}>
-            {option}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+    <>
+      <Select
+        value={value}
+        onValueChange={(next) => {
+          onChange(next)
+          onCommit?.(next)
+        }}
+        disabled={disabled || options.length === 0}
+      >
+        <SelectTrigger id={inputId} className={className}>
+          <SelectValue placeholder="Choose a model" />
+        </SelectTrigger>
+        <SelectContent>
+          {savedOutsideOptions ? (
+            <SelectItem value={value} disabled>
+              {savedUnavailable ? `${value} (unavailable)` : value}
+            </SelectItem>
+          ) : null}
+          {options.map((option) => (
+            <SelectItem key={option} value={option}>
+              {option}
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+      {savedOnUnservedSharedKey ? (
+        <p className="text-xs text-amber-600 dark:text-amber-400">
+          Not available on this deployment&apos;s shared key, so another model answers in its place. Pick an available model, or add your own key in Providers settings.
+        </p>
+      ) : null}
+    </>
   )
 }

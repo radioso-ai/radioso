@@ -103,4 +103,66 @@ describe("classifyLlmProviderFailure", () => {
     expect(result).not.toHaveProperty("message");
     expect(JSON.stringify(result)).not.toContain("customer prompt leaked here");
   });
+
+  describe("walking the .cause chain", () => {
+    /** Mirrors `RoutineActivationFailure`: a plain Error whose own shape carries no provider signal. */
+    class WrappingFailure extends Error {
+      constructor(message: string, cause: unknown) {
+        super(message, { cause });
+      }
+    }
+
+    it("classifies a RoutineActivationFailure-shaped wrapper by its cause (the incident's first failure)", () => {
+      const providerError = Object.assign(new Error("Azure OpenAI chat failed"), { status: 404, code: "DeploymentNotFound" });
+      const wrapped = new WrappingFailure("Routine selection failed", providerError);
+      expect(classifyLlmProviderFailure(wrapped)).toEqual({
+        kind: "model_unavailable",
+        status: 404,
+        code: "DeploymentNotFound",
+      });
+    });
+
+    it("classifies up to 3 cause hops deep", () => {
+      const providerError = { status: 429, code: "rate_limit_exceeded" };
+      const wrapped = new WrappingFailure("l1", new WrappingFailure("l2", new WrappingFailure("l3", providerError)));
+      expect(classifyLlmProviderFailure(wrapped)).toEqual({
+        kind: "rate_limited",
+        status: 429,
+        code: "rate_limit_exceeded",
+      });
+    });
+
+    it("does not classify a cause buried deeper than the bound", () => {
+      const providerError = { status: 429, code: "rate_limit_exceeded" };
+      const tooDeep = new WrappingFailure("l1", new WrappingFailure("l2", new WrappingFailure("l3", new WrappingFailure("l4", providerError))));
+      expect(classifyLlmProviderFailure(tooDeep)).toBeNull();
+    });
+
+    it("stops at a cause cycle instead of looping forever", () => {
+      const cyclic: { cause?: unknown } = new Error("cyclic");
+      cyclic.cause = cyclic;
+      expect(classifyLlmProviderFailure(cyclic)).toBeNull();
+    });
+
+    it("prefers the top-level error's own classification over its cause", () => {
+      const cause = { status: 404, code: "DeploymentNotFound" };
+      const wrapped = Object.assign(new Error("rejected"), { status: 401, code: "invalid_api_key", cause });
+      expect(classifyLlmProviderFailure(wrapped)?.kind).toBe("auth_rejected");
+    });
+
+    it("returns null when nothing in the chain carries a provider shape", () => {
+      expect(classifyLlmProviderFailure(new WrappingFailure("l1", new Error("boom")))).toBeNull();
+    });
+
+    it("still classifies a raw credential error by itself, computed before AppError normalization wraps it", async () => {
+      const { normalizeProviderCredentialError } = await import("../../src/shared/infra/llm/providerErrors.js");
+      const rawCredentialError = { status: 401, code: "invalid_api_key" };
+      // The classification the caller must use: computed on the raw error, before
+      // normalizeProviderCredentialError rebuilds it into an AppError with no cause
+      // chain back to the original. Classifying the normalized AppError loses the signal.
+      expect(classifyLlmProviderFailure(rawCredentialError)?.kind).toBe("auth_rejected");
+      const normalized = normalizeProviderCredentialError(rawCredentialError);
+      expect(classifyLlmProviderFailure(normalized)).toBeNull();
+    });
+  });
 });

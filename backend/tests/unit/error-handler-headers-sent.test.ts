@@ -5,6 +5,9 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createErrorHandler } from "../../src/app/http/middleware/errorHandler.js";
 import { AppError } from "../../src/shared/domain/errors.js";
+import { ChatTurnDisconnectAbortError } from "../../src/modules/chat/services/conversationTurnRegistry.js";
+import { ProviderConfigurationError } from "../../src/shared/infra/llm/providerTypes.js";
+import { normalizeProviderCredentialError } from "../../src/shared/infra/llm/providerErrors.js";
 import { ErrorReportingService } from "../../src/shared/errors/errorReportingService.js";
 import type { ErrorSink } from "../../src/shared/errors/errorSink.js";
 
@@ -75,18 +78,64 @@ describe("createErrorHandler — headers already sent (SSE mid-stream failure)",
     expect(res.end).toHaveBeenCalledOnce();
   });
 
-  it("never reports an AppError (an already-handled, expected outcome)", async () => {
+  it("never reports a client-facing AppError under 500 (an already-handled, expected outcome)", async () => {
     const sink: ErrorSink = { name: "test-sink", record: vi.fn().mockResolvedValue(undefined) };
     const service = buildService(sink);
     const handler = createErrorHandler(service);
     const next = vi.fn() as unknown as NextFunction;
     const res = fakeSentRes();
-    const error = new AppError(503, "service_unavailable", "The AI provider rejected the credentials.");
+    const error = new AppError(429, "usage_limit_exceeded", "Monthly message limit reached");
 
     handler(error, fakeReq(), res, next);
     await new Promise((resolve) => setTimeout(resolve, 10));
 
     expect(sink.record).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    expect(res.end).toHaveBeenCalledOnce();
+  });
+
+  it("never reports a disconnect-abort turn despite its 500 status (an expected client-driven outcome)", async () => {
+    const sink: ErrorSink = { name: "test-sink", record: vi.fn().mockResolvedValue(undefined) };
+    const service = buildService(sink);
+    const handler = createErrorHandler(service);
+    const next = vi.fn() as unknown as NextFunction;
+    const res = fakeSentRes();
+    const error = new ChatTurnDisconnectAbortError("conv_1", "rendering");
+
+    handler(error, fakeReq(), res, next);
+    await new Promise((resolve) => setTimeout(resolve, 10));
+
+    expect(sink.record).not.toHaveBeenCalled();
+    expect(next).not.toHaveBeenCalled();
+    expect(res.end).toHaveBeenCalledOnce();
+  });
+
+  it("reports a platform misconfiguration (ProviderConfigurationError, AppError 503) — a platform fault, not a client outcome", async () => {
+    const sink: ErrorSink = { name: "test-sink", record: vi.fn().mockResolvedValue(undefined) };
+    const service = buildService(sink);
+    const handler = createErrorHandler(service);
+    const next = vi.fn() as unknown as NextFunction;
+    const res = fakeSentRes();
+    const error = new ProviderConfigurationError('No API key configured for provider "openai".', { kind: "missing_api_key" });
+
+    handler(error, fakeReq(), res, next);
+    await vi.waitFor(() => expect(sink.record).toHaveBeenCalledOnce());
+
+    expect(next).not.toHaveBeenCalled();
+    expect(res.end).toHaveBeenCalledOnce();
+  });
+
+  it("reports a normalized provider-credential rejection (AppError 503) — the same incident class as an undeployed model", async () => {
+    const sink: ErrorSink = { name: "test-sink", record: vi.fn().mockResolvedValue(undefined) };
+    const service = buildService(sink);
+    const handler = createErrorHandler(service);
+    const next = vi.fn() as unknown as NextFunction;
+    const res = fakeSentRes();
+    const error = normalizeProviderCredentialError({ status: 401, code: "invalid_api_key" });
+
+    handler(error, fakeReq(), res, next);
+    await vi.waitFor(() => expect(sink.record).toHaveBeenCalledOnce());
+
     expect(next).not.toHaveBeenCalled();
     expect(res.end).toHaveBeenCalledOnce();
   });

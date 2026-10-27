@@ -12,7 +12,7 @@ import {
 import type { AuditEventInput, AuditService } from "../../audit/contracts/index.js";
 import { DefaultAllowCapabilityPolicy, type CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.js";
 import type { ActionCapabilityMap } from "../../../shared/domain/actionCapabilities.js";
-import { AppError } from "../../../shared/domain/errors.js";
+import { isReportableFault } from "../../../shared/domain/errors.js";
 import type { ErrorReporter } from "../../../shared/errors/errorReporter.js";
 import type { LlmProviderFailureClassification } from "../../../shared/infra/llm/llmProviderFailureClassification.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
@@ -764,7 +764,7 @@ export class ChatTurnLifecycle {
     // Optional: when wired, a reply a newer input cut off mid-stream keeps the part its listener
     // heard. Absent, such a turn stores no reply.
     private readonly cutReplyStore?: CutReplyStore,
-    // Optional: when wired, an unexpected (non-`AppError`) turn failure is reported once
+    // Optional: when wired, a turn failure `isReportableFault` finds is reported once
     // through this narrow port. Absent leaves `recordFailure`'s audit/analytics behavior
     // unchanged — no error tracking, as before this existed.
     private readonly errorReporter?: Pick<ErrorReporter, "report">,
@@ -1265,13 +1265,14 @@ export class ChatTurnLifecycle {
     const providerFailureProperties = providerFailure
       ? { failureKind: providerFailure.kind, providerStatus: providerFailure.status, providerCode: providerFailure.code }
       : {};
-    // An `AppError` is already an expected, fully-handled outcome (quota/validation limits,
-    // turn cancellation, client disconnect — see `ChatTurnSupersededError`/
-    // `ChatTurnDisconnectAbortError`, both `AppError` subclasses) with its own client-facing
-    // code and message; it is never a fault worth a page. Anything else reaching here is
-    // unexpected — the chat equivalent of the error middleware's unhandled-error branch — and
-    // gets reported exactly once.
-    if (!(error instanceof AppError)) {
+    // `isReportableFault` draws the line, not a bare `AppError` check: a quota/validation
+    // limit or a superseded turn (`ChatTurnSupersededError`, `< 500`) is an expected,
+    // client-facing outcome, never a fault — but a `>= 500` AppError (a platform
+    // misconfiguration, a rejected platform credential) still is one, unless its own
+    // `isExpectedOutcome` marker says it is a lost client instead
+    // (`ChatTurnDisconnectAbortError`). Anything reaching here as a fault gets reported
+    // exactly once.
+    if (isReportableFault(error)) {
       try {
         await this.errorReporter?.report({
           errorType: "chat.turn_failed",

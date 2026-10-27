@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import multer from "multer";
 
 import type { ErrorReportingService } from "../../../shared/errors/errorReportingService.js";
-import { AppError } from "../../../shared/domain/errors.js";
+import { AppError, isReportableFault } from "../../../shared/domain/errors.js";
 import { applyRetryAfterFromError } from "../rateLimitHeaders.js";
 import { markHttpResponseFailed } from "./httpResponseCompletion.js";
 
@@ -62,11 +62,13 @@ export const createErrorHandler = (errorReportingService?: ErrorReportingService
       // Headers already went out (an SSE turn mid-stream, most often), so there is no
       // response left to shape — only whether this fault reaches error tracking. Express's
       // own finalhandler would otherwise just console.error the raw stack with nothing
-      // reaching PostHog; an AppError is an already-handled, expected outcome (quota,
-      // validation, cancellation, disconnect) and never reported; anything else is
-      // reported once, skipped here if the caller already reported this exact error object
-      // (e.g. ChatTurnLifecycle.recordFailure, upstream in the same request).
-      if (!(error instanceof AppError) && !errorReportingService?.wasReported(error)) {
+      // reaching PostHog. `isReportableFault` draws the line (see shared/domain/errors.ts):
+      // a client-facing AppError under 500, or one marked `isExpectedOutcome` (a lost
+      // client), is never reported; anything else — including a `>= 500` AppError such as
+      // a misconfigured provider or a rejected platform credential — is reported once,
+      // skipped here if the caller already reported this exact error object (e.g.
+      // ChatTurnLifecycle.recordFailure, upstream in the same request).
+      if (isReportableFault(error) && !errorReportingService?.wasReported(error)) {
         void errorReportingService?.reportUnhandledRequestError({ error, request: req });
       }
       endOpenResponse(res);

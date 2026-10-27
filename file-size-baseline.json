@@ -2,7 +2,7 @@
   "backend/src/app/http/openapi/paths/documentsPaths.ts": 1035,
   "backend/src/app/http/openapi/schemas/assistantHistorySchemas.ts": 1044,
   "backend/src/app/server/builders/chat.ts": 1053,
-  "backend/src/app/server/dependencies.ts": 1557,
+  "backend/src/app/server/dependencies.ts": 1552,
   "backend/src/db/repositories/agentRepository.ts": 1295,
   "backend/src/db/repositories/documentProcessingJobRepository.ts": 1156,
   "backend/src/db/repositories/documentRepository.ts": 1267,

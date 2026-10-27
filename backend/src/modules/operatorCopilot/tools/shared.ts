@@ -134,15 +134,17 @@ export const agentSettingReachNote = "Two settings change who can reach the agen
 
 /**
  * `voice` and `mechanicsReplies` are nested blocks with no merge: a value is the whole new block.
- * `voice.runtime` is a binding Ray may propose; the vendor key a session start also needs is a
- * secret (the never-list's `provider_credential_writes`), so the note sends the operator to Settings.
+ * `voice.runtime` is normally the vendor agent Radioso created on Connect, which Ray must carry over
+ * untouched; the vendor key Connect and a session start need is a secret (the never-list's
+ * `provider_credential_writes`), so the note sends the operator to Settings and the Voice card.
  */
 export const agentSettingWholeBlockNote = "voice and mechanicsReplies replace the stored block whole, so send every line the agent keeps, as agent_configuration shows them. "
   + `On the elevenlabs voice dialect a bridge or fallback line shorter than ${ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS} characters waits for the answer, so write each as one full sentence at least that long. `
-  + "voice.runtime binds the agent to one vendor agent ({ vendor: \"elevenlabs\", agentId: the ElevenLabs agent id, region: the data residency region of the ElevenLabs account, \"us\" (the default), \"eu\", \"in\" or \"sg\" }) or to none (null), and a page can start voice sessions only while voice.enabled is true and a runtime is bound; "
-  + "keep the stored runtime unless the operator asks to change it. Starting a session also needs the workspace's key for that vendor: the operator enters the vendor's API key in Settings, and you never ask for or write it. "
-  + "voice.recordingNotice is the optional line per language the website embed shows a caller as a call starts, to say the call is recorded; it is part of the same whole block, so carry it over as stored: leaving it out removes every notice. "
-  + "voice.languageSwitching (default false) lets a call switch its voice to the caller's language; the vendor agent needs Detect language and the language presets. Carry it over as stored. "
+  + "voice.runtime binds the agent to one vendor agent ({ vendor, agentId, region }) or to none (null); sessions need voice.enabled and a runtime. "
+  + "Operators connect ElevenLabs with Connect on the agent's Voice card, which creates and maintains the ElevenLabs agent and writes voice.runtime: carry voice.runtime over exactly as stored (leaving it out unbinds the agent), and never ask for or invent a vendor agent id or region. "
+  + "Connect needs the vendor's key: the operator enters the vendor's API key in Settings, and you never ask for or write it. "
+  + "voice.recordingNotice is the optional line per language saying the call is recorded: shown as a website call starts, said first on a call to an agent connected on the Voice card; carry it over as stored: leaving it out removes every notice. "
+  + "voice.languageSwitching (default false) lets a call switch its voice to the caller's language; an agent connected on the Voice card is already set up for it. Carry it over as stored. "
   + "branding (privacyNotice too) replaces whole.";
 
 export const scopedAgentDraftPublicationNote = "It drafts a proposal for operator review and changes nothing until the operator applies it. Applying a scoped authoring change saves a private agent draft. The current published revision and ongoing conversations are retained; use Review & Publish before new customer conversations use the change. Unversioned/live fields remain live.";

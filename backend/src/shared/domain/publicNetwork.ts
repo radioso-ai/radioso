@@ -10,6 +10,20 @@ export class PublicNetworkPolicyError extends Error {
 export const stripIpv6Brackets = (value: string): string =>
   value.startsWith("[") && value.endsWith("]") ? value.slice(1, -1) : value;
 
+/**
+ * The loopback and IP-literal judgment {@link assertPublicHttpUrl} and
+ * {@link isPubliclyReachableHostname} share: true for `localhost`/`*.localhost`, and for an IP
+ * literal outside the publicly routable ranges. False for an ordinary (non-IP) domain name —
+ * callers that need an ordinary domain held to a stricter shape (a reserved suffix, a single-label
+ * name) check that themselves, since an http-or-https fetch policy and a no-DNS reachability
+ * guess do not agree on one.
+ */
+const isLoopbackOrNonPublicIpLiteral = (hostname: string): boolean => {
+  const normalized = stripIpv6Brackets(hostname.toLowerCase());
+  if (normalized === "localhost" || normalized.endsWith(".localhost")) return true;
+  return isIP(normalized) !== 0 && !isPublicNetworkAddress(normalized);
+};
+
 export const assertPublicHttpUrl = (value: string | URL): URL => {
   let url: URL;
   try {
@@ -20,15 +34,28 @@ export const assertPublicHttpUrl = (value: string | URL): URL => {
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new PublicNetworkPolicyError("URL must use http or https");
   }
-
-  const hostname = stripIpv6Brackets(url.hostname.toLowerCase());
-  if (hostname === "localhost" || hostname.endsWith(".localhost")) {
-    throw new PublicNetworkPolicyError();
-  }
-  if (isIP(hostname) !== 0 && !isPublicNetworkAddress(hostname)) {
+  if (isLoopbackOrNonPublicIpLiteral(url.hostname)) {
     throw new PublicNetworkPolicyError();
   }
   return url;
+};
+
+/**
+ * Whether a hostname is, by its literal form alone, reachable from the public internet: no DNS
+ * lookup. {@link assertPublicHttpUrl} pairs with a live DNS resolution elsewhere (the outbound-
+ * fetch SSRF guard) to catch an ordinary domain name that resolves to a private address; this has
+ * no such pairing, so it also rejects what a bare structural check on an IP literal would miss: the
+ * conventional non-public suffixes `.local` and `.internal`, and a single-label name (no dot) —
+ * the shape of a Docker or Kubernetes service name (`frontend`, `radioso`), never a public domain.
+ * An ordinary multi-label domain name is otherwise assumed reachable. Rejects loopback
+ * (`localhost`, `*.localhost`, 127.0.0.0/8, `::1`), private and link-local IPv4/IPv6 ranges, those
+ * two suffixes, and single-label names.
+ */
+export const isPubliclyReachableHostname = (hostname: string): boolean => {
+  if (isLoopbackOrNonPublicIpLiteral(hostname)) return false;
+  const normalized = stripIpv6Brackets(hostname.toLowerCase());
+  if (normalized.endsWith(".local") || normalized.endsWith(".internal")) return false;
+  return isIP(normalized) !== 0 || normalized.includes(".");
 };
 
 export const isPublicNetworkAddress = (address: string): boolean => {

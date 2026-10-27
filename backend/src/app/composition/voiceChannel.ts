@@ -1,26 +1,39 @@
 import { randomUUID } from "node:crypto";
 
+import { voiceRuntimeCompletionsAddress } from "./voiceRuntimeCompletionsAddress.js";
 import type {
+  AgentGreetingReader,
   ChatStreamEvent,
   OperatorReplySpeechClaims,
   ReplyInterruptionMarker,
   VoiceTurnFactsRecorder,
 } from "../../modules/chat/contracts/index.js";
 import {
+  PostgresVoiceRuntimeConnectionLock,
   VoiceRecordingErasureDrain,
+  VoiceRecordingErasureRepository,
   VoiceRecordingErasureService,
   VoiceRecordingService,
+  VoiceRuntimeConnectionRepository,
+  VoiceRuntimeConnectionService,
+  VoiceSessionRepository,
   VoiceSessionStartService,
   VoiceTurnService,
   createElevenLabsRecordingSource,
+  createElevenLabsRuntimeProvisioner,
   createElevenLabsSessionStarter,
   recoverStrandedVoiceRecordingErasures,
   voiceRecordingErasureJobHandler,
   voiceRecordingErasureRequest,
   type VoiceChatTurnRequest,
+  type VoiceGreetingSource,
   type VoiceRecordingAudit,
   type VoiceRecordingErasureBacklog,
   type VoiceRecordingStore,
+  type VoiceRuntimeChannelCredentials,
+  type VoiceRuntimeConnectionAudit,
+  type VoiceRuntimeConnectionLock,
+  type VoiceRuntimeConnectionStore,
   type VoiceVendorCredentialReader,
   type VoiceVendorCredentialSealer,
   type VoiceSessionAvailabilityPort,
@@ -33,7 +46,8 @@ import {
   type VoiceTurnPort,
   VOICE_REPLY_INTERRUPTED_EVENT,
 } from "../../modules/voiceChannel/public.js";
-import type { AgentRecord } from "../../modules/agents/public.js";
+import type { AccessGrantService } from "../../modules/accessGrants/public.js";
+import type { AgentRecord, AgentService } from "../../modules/agents/public.js";
 import type { AuditEventInput, AuditPort } from "../../modules/audit/contracts/index.js";
 import type { BackgroundJobHandlerRegistration, BackgroundJobQueue } from "../../shared/background-jobs/index.js";
 import type { ErrorReporter } from "../../shared/errors/errorReporter.js";
@@ -41,6 +55,7 @@ import type { ApplicationPeriodicTaskHandle } from "./applicationModule.js";
 import { isHumanOwned, type ConversationOwnershipReader } from "../../modules/handoff/public.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
+import type { PinnableDatabase } from "../../shared/infra/database.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import { isHumanAuthoredMessageSource } from "../../shared/domain/messageAuthorship.js";
 import { isVoiceVendor, type VoiceVendor } from "../../shared/domain/voiceVendor.js";
@@ -359,6 +374,40 @@ const VOICE_RECORDING_ERASURE_RECOVERY_TASK_ID = "voice-recording-erasure-recove
 const VOICE_RECORDING_ERASURE_RECOVERY_INTERVAL_MS = 15 * 60 * 1_000;
 
 /**
+ * One store for voice sessions: the turn's bindings, the starts the turn and the session start
+ * share, and where each call's recording lives. Recordings stay with the vendor; the Inbox plays
+ * them through the backend with the workspace's key, Ray reads whether one exists, and a deletion
+ * hands them, with the key sealed, to the erasure backlog the background-job worker drains.
+ */
+export const wireVoiceRecordings = (deps: {
+  database: PinnableDatabase;
+  credentials: VoiceVendorCredentialStore & CredentialSealing;
+  fetch: typeof globalThis.fetch;
+  auditService: Pick<AuditPort, "record"> & GoneSubjectAudit;
+  queue: Pick<BackgroundJobQueue, "enqueue" | "enqueueInTransaction" | "wake">;
+  errorReporter: Pick<ErrorReporter, "report"> | null;
+  metricsRegistry: MetricsRegistry | null;
+  logger: AppLogger;
+}) => {
+  const voiceSessions = new VoiceSessionRepository(deps.database.kysely);
+  const voiceRecordingErasures = new VoiceRecordingErasureRepository(deps.database.kysely);
+  const voiceRecordings = createVoiceRecordingComposition({
+    recordings: voiceSessions,
+    recordingsIn: (db) => new VoiceSessionRepository(db),
+    erasures: voiceRecordingErasures,
+    erasuresIn: (db) => new VoiceRecordingErasureRepository(db),
+    credentials: deps.credentials,
+    fetch: deps.fetch,
+    auditService: deps.auditService,
+    queue: deps.queue,
+    errorReporter: deps.errorReporter,
+    metricsRegistry: deps.metricsRegistry,
+    logger: deps.logger,
+  });
+  return { voiceSessions, voiceRecordingErasures, voiceRecordings };
+};
+
+/**
  * The embed config says whether the embed offers calls, which follows the voice vendor key's
  * presence, and a CDN may hold it for minutes: storing or removing a voice vendor key drops the
  * workspace's cached embed configs, so the Talk button follows at once. Model provider keys leave
@@ -374,16 +423,30 @@ export const refreshEmbedConfigsOnVoiceVendorKeyChange = (deps: {
 };
 
 /**
+ * The greeting a call says first, read from chat: the words the agent's web chat opens with in the
+ * same language, so a visitor who opened the panel hears the greeting they were shown. A generated
+ * greeting reserves its usage on the `voice` surface.
+ */
+const voiceGreetingSource = (greetings: AgentGreetingReader): VoiceGreetingSource => ({
+  greetingFor: ({ workspaceId, agentId, locale }) => greetings.readGreeting({ workspaceId, agentId, locale, surface: "voice" }),
+});
+
+/**
  * Starts voice sessions on the vendor agent each Radioso agent is bound to: the ElevenLabs session
  * starter over `fetch`, the workspace's vendor key from the workspace credential store, and a
  * registry of started sessions (`VoiceSessionRepository` in production). A vendor key is always the workspace's own; there is no
- * deployment fallback, so a workspace without one gets no session. The same service tells a page
+ * deployment fallback, so a workspace without one gets no session. On a vendor agent Radioso
+ * maintains (the runtime connections, `VoiceRuntimeConnectionRepository` in production) the start
+ * also hands the page the call's first message, with the agent's greeting from chat's
+ * `AgentGreetingReader` (`ChatBootstrapService`). The same service tells a page
  * whether to offer sessions, from the key's presence alone (`hasCredentials` decrypts nothing) and
  * whether the backend holds the master key to read it.
  */
 export const createVoiceSessionStartComposition = (deps: {
   agentRepository: AgentVoiceProfileRepository;
   starts: VoiceSessionStartRegistry;
+  connections: Pick<VoiceRuntimeConnectionStore, "find">;
+  greetings: AgentGreetingReader;
   credentials: VoiceVendorCredentialStore;
   fetch: typeof globalThis.fetch;
   metricsRegistry: MetricsRegistry | null;
@@ -394,7 +457,178 @@ export const createVoiceSessionStartComposition = (deps: {
     credentials: voiceVendorCredentialReader(deps.credentials),
     starters: { elevenlabs: createElevenLabsSessionStarter({ fetch: deps.fetch }) },
     starts: deps.starts,
+    connections: deps.connections,
+    greetings: voiceGreetingSource(deps.greetings),
     newSessionKey: randomUUID,
     metrics: deps.metricsRegistry,
     logger: deps.logger,
   });
+
+/** The label the dashboard's REST credential list shows for the credential a maintained vendor agent carries. */
+const VOICE_RUNTIME_CREDENTIAL_LABEL = "Voice calls";
+const VOICE_RUNTIME_CREDENTIAL_REVOKE_REASON = "voice_runtime_connection";
+
+type VoiceRuntimeGrants = Pick<AccessGrantService, "issueGrant" | "revokeGrant" | "findGrantById" | "findAdmittingAgentChannelGrant">;
+
+/**
+ * The REST agent-channel credential a maintained vendor agent sends, over the access grants: an
+ * `agent-api` grant on the `agent-api` channel, admitting any origin, that never expires (the
+ * vendor holds it, and Radioso rotates it on Connect), listed on the agent's API card like any other.
+ * Its fingerprint is the grant's token prefix, the part of the secret the API card shows.
+ */
+const voiceRuntimeChannelCredentials = (grants: VoiceRuntimeGrants): VoiceRuntimeChannelCredentials => {
+  const lifecycleActor = (userId: string | null) => (userId ? { kind: "user" as const, id: userId } : null);
+  return {
+    issue: async ({ workspaceId, agentId, actor }) => {
+      const { grant, token } = await grants.issueGrant({
+        agentId,
+        workspaceId,
+        accountId: actor.accountId,
+        actor: lifecycleActor(actor.userId),
+        principalKind: "agent-api",
+        channel: "agent-api",
+        originConstraint: { mode: "allow-all", origins: [] },
+        label: VOICE_RUNTIME_CREDENTIAL_LABEL,
+        expiresAt: null,
+      });
+      return { credential: { id: grant.id, fingerprint: grant.tokenPrefix }, secret: token };
+    },
+    // The rule the completions route admits the vendor's turns by, from the access grants, for the
+    // secret the vendor was handed: a rotation on the API card keeps the grant and swaps its secret.
+    admitsHeldSecret: async ({ workspaceId, agentId, credential }) => {
+      const grant = await grants.findAdmittingAgentChannelGrant(credential.id, { workspaceId, agentId, channel: "agent-api" });
+      return grant !== null && grant.tokenPrefix === credential.fingerprint;
+    },
+    revoke: async ({ credentialId, actor }) => {
+      const grant = await grants.findGrantById(credentialId);
+      if (!grant || grant.revokedAt) return;
+      await grants.revokeGrant({
+        grantId: credentialId,
+        accountId: actor.accountId,
+        actor: lifecycleActor(actor.userId),
+        reason: VOICE_RUNTIME_CREDENTIAL_REVOKE_REASON,
+      });
+    },
+  };
+};
+
+/** The audit events a runtime connection leaves: ids, the vendor, its region and closed values. */
+const createVoiceRuntimeConnectionAudit = (auditService: Pick<AuditPort, "record">): VoiceRuntimeConnectionAudit => ({
+  connected: ({ accountId, workspaceId, ...metadata }) =>
+    auditService.record({ accountId, workspaceId, eventType: "agent.voice_runtime.connected", eventStatus: "success", metadata }),
+  disconnected: ({ accountId, workspaceId, ...metadata }) =>
+    auditService.record({ accountId, workspaceId, eventType: "agent.voice_runtime.disconnected", eventStatus: "success", metadata }),
+});
+
+type AgentRuntimeProfileRepository = {
+  findByIdAndWorkspaceId(agentId: string, workspaceId: string): Promise<Pick<AgentRecord, "name" | "voice" | "assistantDefaultLocale"> | null>;
+};
+
+/**
+ * Connects agents' voice channels to vendor agents Radioso creates and maintains: the ElevenLabs
+ * provisioner over `fetch`, the workspace's vendor key from the credential store, the connection
+ * records and their per-agent lock, the access grants for the REST credential each vendor agent carries, and the agent
+ * service as the binding's writer, so a binding is an agent write like any other.
+ */
+export const createVoiceRuntimeConnectionComposition = (deps: {
+  connections: VoiceRuntimeConnectionStore;
+  /** One change of an agent's connection at a time across instances (`PostgresVoiceRuntimeConnectionLock` in production). */
+  lock: VoiceRuntimeConnectionLock;
+  agentRepository: AgentRuntimeProfileRepository;
+  agentService: Pick<AgentService, "get" | "update">;
+  accessGrants: VoiceRuntimeGrants;
+  credentials: VoiceVendorCredentialStore;
+  fetch: typeof globalThis.fetch;
+  /** `APP_BASE_URL`; unset, or its host unreachable from the public internet, nothing can be connected. */
+  appBaseUrl: string | undefined;
+  auditService: Pick<AuditPort, "record">;
+  metricsRegistry: MetricsRegistry | null;
+  logger: AppLogger;
+}): VoiceRuntimeConnectionService =>
+  new VoiceRuntimeConnectionService({
+    lock: deps.lock,
+    agents: {
+      findRuntimeProfile: async ({ workspaceId, agentId }) => {
+        const agent = await deps.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);
+        return agent ? { name: agent.name, defaultLocale: agent.assistantDefaultLocale, runtime: agent.voice.runtime } : null;
+      },
+    },
+    connections: deps.connections,
+    credentials: voiceVendorCredentialReader(deps.credentials),
+    provisioners: { elevenlabs: createElevenLabsRuntimeProvisioner({ fetch: deps.fetch }) },
+    channelCredentials: voiceRuntimeChannelCredentials(deps.accessGrants),
+    binder: {
+      bind: async ({ workspaceId, agentId, runtime }) => {
+        const agent = await deps.agentService.get(workspaceId, agentId);
+        await deps.agentService.update(workspaceId, agentId, { voice: { ...agent.voice, runtime } });
+      },
+    },
+    completionsAddress: voiceRuntimeCompletionsAddress(deps.appBaseUrl),
+    audit: createVoiceRuntimeConnectionAudit(deps.auditService),
+    metrics: deps.metricsRegistry,
+    logger: deps.logger,
+  });
+
+/**
+ * Keeps each maintained vendor agent in step with its agent: a write that changes the agent's
+ * default locale sets the vendor agent's language again, and an agent about to be deleted takes
+ * its vendor agent and credential with it. Neither ever fails the agent write.
+ */
+export const keepVoiceRuntimesInStepWithAgents = (deps: {
+  agents: Pick<AgentService, "onDefaultLocaleChange" | "onBeforeDelete">;
+  connections: Pick<VoiceRuntimeConnectionService, "syncPrimaryLanguage" | "releaseForDeletedAgent">;
+}): void => {
+  deps.agents.onDefaultLocaleChange(({ workspaceId, agentId }) => deps.connections.syncPrimaryLanguage({ workspaceId, agentId }));
+  deps.agents.onBeforeDelete((agent) => deps.connections.releaseForDeletedAgent(agent));
+};
+
+/**
+ * Starts voice sessions on each agent's vendor agent and, over the same voice-runtime-connection
+ * store, connects agents to vendor agents Radioso creates and maintains, keeping each maintained
+ * vendor agent in step with its agent from then on. One store and one per-agent lock
+ * (`VoiceRuntimeConnectionRepository`/`PostgresVoiceRuntimeConnectionLock` in production) back
+ * both compositions, since a session start reads a maintained vendor agent's binding to hand the
+ * page its first message, and the connection composition writes that same binding.
+ */
+export const wireVoiceRuntimeConnections = (deps: {
+  database: PinnableDatabase;
+  starts: VoiceSessionStartRegistry;
+  greetings: AgentGreetingReader;
+  agentRepository: AgentRuntimeProfileRepository;
+  agentService: AgentService;
+  accessGrants: VoiceRuntimeGrants;
+  credentials: VoiceVendorCredentialStore;
+  fetch: typeof globalThis.fetch;
+  /** `APP_BASE_URL`; unset, or its host unreachable from the public internet, nothing can be connected. */
+  appBaseUrl: string | undefined;
+  auditService: Pick<AuditPort, "record">;
+  metricsRegistry: MetricsRegistry | null;
+  logger: AppLogger;
+}) => {
+  const voiceRuntimeConnectionStore = new VoiceRuntimeConnectionRepository(deps.database.kysely);
+  const voiceSessionStarts = createVoiceSessionStartComposition({
+    agentRepository: deps.agentRepository,
+    starts: deps.starts,
+    connections: voiceRuntimeConnectionStore,
+    greetings: deps.greetings,
+    credentials: deps.credentials,
+    fetch: deps.fetch,
+    metricsRegistry: deps.metricsRegistry,
+    logger: deps.logger,
+  });
+  const voiceRuntimeConnections = createVoiceRuntimeConnectionComposition({
+    connections: voiceRuntimeConnectionStore,
+    lock: new PostgresVoiceRuntimeConnectionLock(deps.database),
+    agentRepository: deps.agentRepository,
+    agentService: deps.agentService,
+    accessGrants: deps.accessGrants,
+    credentials: deps.credentials,
+    fetch: deps.fetch,
+    appBaseUrl: deps.appBaseUrl,
+    auditService: deps.auditService,
+    metricsRegistry: deps.metricsRegistry,
+    logger: deps.logger,
+  });
+  keepVoiceRuntimesInStepWithAgents({ agents: deps.agentService, connections: voiceRuntimeConnections });
+  return { voiceSessionStarts, voiceRuntimeConnections };
+};

@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { AgentVoiceSettings } from "../../src/modules/agents/public.js";
 import {
   VoiceVendorRequestError,
+  type VoiceGreetingSource,
+  type VoiceRuntimeConnection,
   type VoiceSessionStarter,
   type VoiceSessionStartRegistry,
   type VoiceVendorCredentialPresence,
@@ -26,6 +28,16 @@ const boundVoice: AgentVoiceSettings = {
   runtime: { vendor: "elevenlabs", agentId: "agent_42", region: "eu" },
 };
 
+/** The connection Radioso keeps for the agent when it created the bound vendor agent. */
+const maintainedConnection: VoiceRuntimeConnection = {
+  workspaceId,
+  agentId,
+  vendor: "elevenlabs",
+  region: "eu",
+  vendorAgentId: "agent_42",
+  channelCredential: { id: "66666666-6666-4666-8666-666666666666", fingerprint: "radioso_66666666" },
+};
+
 const serviceWith = (overrides: {
   voice?: AgentVoiceSettings | null;
   defaultLocale?: string | null;
@@ -33,8 +45,12 @@ const serviceWith = (overrides: {
   starter?: VoiceSessionStarter["startSession"];
   register?: VoiceSessionStartRegistry["register"];
   stored?: VoiceVendorCredentialPresence | Error;
+  /** The agent's runtime connection; none unless a case names one. */
+  connection?: VoiceRuntimeConnection | null | Error;
+  greeting?: VoiceGreetingSource["greetingFor"];
+  greetingWaitMs?: number;
 } = {}) => {
-  const logger = { warn: vi.fn() };
+  const logger = { info: vi.fn(), warn: vi.fn() };
   const metrics = { incrementCounter: vi.fn() };
   const startSession = vi.fn<VoiceSessionStarter["startSession"]>(overrides.starter ?? (async () => ({ signedUrl, expiresAt })));
   const register = vi.fn<VoiceSessionStartRegistry["register"]>(overrides.register ?? (async () => undefined));
@@ -48,6 +64,12 @@ const serviceWith = (overrides: {
     if (stored instanceof Error) throw stored;
     return stored;
   });
+  const findConnection = vi.fn(async (): Promise<VoiceRuntimeConnection | null> => {
+    const connection = overrides.connection ?? null;
+    if (connection instanceof Error) throw connection;
+    return connection;
+  });
+  const greetingFor = vi.fn<VoiceGreetingSource["greetingFor"]>(overrides.greeting ?? (async () => null));
   const voice = overrides.voice === undefined ? boundVoice : overrides.voice;
   const service = new VoiceSessionStartService({
     agents: {
@@ -56,13 +78,21 @@ const serviceWith = (overrides: {
     credentials: { read, presence },
     starters: { elevenlabs: { startSession } },
     starts: { register },
+    connections: { find: findConnection },
+    greetings: { greetingFor },
+    ...(overrides.greetingWaitMs === undefined ? {} : { greetingWaitMs: overrides.greetingWaitMs }),
     newSessionKey: () => sessionKey,
     now: () => now,
     metrics,
     logger,
   });
-  return { service, logger, metrics, startSession, read, presence, register };
+  return { service, logger, metrics, startSession, read, presence, register, findConnection, greetingFor };
 };
+
+const greetingOutcomes = (metrics: { incrementCounter: ReturnType<typeof vi.fn> }) =>
+  metrics.incrementCounter.mock.calls
+    .filter(([name]) => name === "voice_session_greeting_total")
+    .map(([, options]) => (options as { labels: Record<string, string> }).labels);
 
 const startOutcomes = (metrics: { incrementCounter: ReturnType<typeof vi.fn> }) =>
   metrics.incrementCounter.mock.calls
@@ -201,6 +231,158 @@ describe("voice session start", () => {
       { workspaceId, agentId, vendor: "elevenlabs", outcome: "vendor_failed", errorClass: "TypeError" },
       "Voice session start failed",
     );
+  });
+});
+
+describe("voice session start: the call's first message", () => {
+  const noticed: AgentVoiceSettings = { ...boundVoice, recordingNotice: { en: "This call is recorded.", it: "Questa chiamata viene registrata." } };
+  const greeting = "Ciao! Sono **Marta**, la tua guida. [Prenota](https://museo.example/prenota) una visita [1].";
+
+  it("opens a call on a vendor agent Radioso maintains with the agent's greeting in the session's language, as words to say", async () => {
+    const { service, greetingFor, findConnection, metrics, logger } = serviceWith({ connection: maintainedConnection, greeting: async () => greeting });
+
+    const result = await service.start({ workspaceId, agentId, visitor, locale: "it-CH" });
+
+    expect(result).toMatchObject({ kind: "started", firstMessage: "Ciao! Sono Marta, la tua guida. Prenota una visita." });
+    expect(findConnection).toHaveBeenCalledWith({ workspaceId, agentId });
+    expect(greetingFor).toHaveBeenCalledWith({ workspaceId, agentId, locale: "it-CH" });
+    expect(greetingOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "spoken" }]);
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceId, agentId, vendor: "elevenlabs", outcome: "spoken", recordingNotice: false }),
+      "Voice session greeting prepared",
+    );
+    expect(JSON.stringify([logger.info.mock.calls, logger.warn.mock.calls])).not.toContain("Marta");
+  });
+
+  it("asks for the agent's default language's greeting when the page names no language", async () => {
+    const { service, greetingFor } = serviceWith({ connection: maintainedConnection, greeting: async () => "Hello!" });
+
+    await service.start({ workspaceId, agentId, visitor });
+
+    expect(greetingFor).toHaveBeenCalledWith({ workspaceId, agentId, locale: null });
+  });
+
+  it("says the recording notice for the session's language before the greeting", async () => {
+    const { service } = serviceWith({ voice: noticed, connection: maintainedConnection, greeting: async () => greeting });
+
+    const result = await service.start({ workspaceId, agentId, visitor, locale: "it" });
+
+    expect(result).toMatchObject({
+      recordingNotice: "Questa chiamata viene registrata.",
+      firstMessage: "Questa chiamata viene registrata.\n\nCiao! Sono Marta, la tua guida. Prenota una visita.",
+    });
+  });
+
+  it("says the recording notice alone when the agent has no greeting for the call", async () => {
+    const { service, metrics } = serviceWith({ voice: noticed, connection: maintainedConnection, greeting: async () => null });
+
+    expect(await service.start({ workspaceId, agentId, visitor, locale: "en" })).toMatchObject({ firstMessage: "This call is recorded." });
+    expect(greetingOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "none" }]);
+  });
+
+  it("carries no first message when there is nothing to say", async () => {
+    const { service, metrics } = serviceWith({ connection: maintainedConnection, greeting: async () => " **  ** " });
+
+    const result = await service.start({ workspaceId, agentId, visitor });
+
+    expect(result).toMatchObject({ kind: "started" });
+    expect(result).not.toHaveProperty("firstMessage");
+    expect(greetingOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "none" }]);
+  });
+
+  it.each([
+    ["Radioso keeps no connection for the agent", null],
+    ["the bound vendor agent is another than the one Radioso created", { ...maintainedConnection, vendorAgentId: "agent_7" }],
+  ])("carries no first message, and asks for no greeting, when %s: the vendor closes a session that sets one its agent does not allow", async (_case, connection) => {
+    const { service, greetingFor, metrics } = serviceWith({ voice: noticed, connection, greeting: async () => greeting });
+
+    const result = await service.start({ workspaceId, agentId, visitor, locale: "en" });
+
+    expect(result).toMatchObject({ kind: "started", recordingNotice: "This call is recorded." });
+    expect(result).not.toHaveProperty("firstMessage");
+    expect(greetingFor).not.toHaveBeenCalled();
+    expect(greetingOutcomes(metrics)).toEqual([]);
+  });
+
+  it("starts the call without the greeting when it is not ready in time, and says so", async () => {
+    const { service, metrics, logger } = serviceWith({
+      voice: noticed,
+      connection: maintainedConnection,
+      greeting: () => new Promise<string | null>(() => undefined),
+      greetingWaitMs: 10,
+    });
+
+    const result = await service.start({ workspaceId, agentId, visitor, locale: "en" });
+
+    expect(result).toMatchObject({ kind: "started", firstMessage: "This call is recorded." });
+    expect(greetingOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "timed_out" }]);
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceId, agentId, vendor: "elevenlabs", outcome: "timed_out", waitMs: 10 }),
+      "Voice session greeting was not ready in time; the call starts without it",
+    );
+  });
+
+  it("starts the call without the greeting when it cannot be read, and says so", async () => {
+    const { service, metrics, logger } = serviceWith({
+      connection: maintainedConnection,
+      greeting: async () => {
+        throw new Error("model unavailable");
+      },
+    });
+
+    const result = await service.start({ workspaceId, agentId, visitor });
+
+    expect(result).toMatchObject({ kind: "started" });
+    expect(result).not.toHaveProperty("firstMessage");
+    expect(greetingOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "failed" }]);
+    expect(logger.warn).toHaveBeenCalledWith(
+      { workspaceId, agentId, vendor: "elevenlabs", outcome: "failed", step: "greeting", errorClass: "Error" },
+      "Voice session greeting could not be read; the call starts without it",
+    );
+  });
+
+  it("starts the call with no first message at all when the connection cannot be read", async () => {
+    const { service, greetingFor, metrics, logger } = serviceWith({ voice: noticed, connection: new Error("connection terminated") });
+
+    const result = await service.start({ workspaceId, agentId, visitor, locale: "en" });
+
+    expect(result).toMatchObject({ kind: "started", recordingNotice: "This call is recorded." });
+    expect(result).not.toHaveProperty("firstMessage");
+    expect(greetingFor).not.toHaveBeenCalled();
+    expect(greetingOutcomes(metrics)).toEqual([{ vendor: "elevenlabs", outcome: "failed" }]);
+    expect(logger.warn).toHaveBeenCalledWith(
+      { workspaceId, agentId, vendor: "elevenlabs", outcome: "failed", step: "connection", errorClass: "Error" },
+      "Voice session greeting could not be read; the call starts without it",
+    );
+  });
+
+  it("reads the greeting while the vendor opens the session", async () => {
+    let openSession!: () => void;
+    const vendorOpening = new Promise<void>((resolve) => {
+      openSession = resolve;
+    });
+    const { service, greetingFor } = serviceWith({
+      connection: maintainedConnection,
+      greeting: async () => "Hello!",
+      starter: async () => {
+        await vendorOpening;
+        return { signedUrl, expiresAt };
+      },
+    });
+
+    const started = service.start({ workspaceId, agentId, visitor });
+    await vi.waitFor(() => expect(greetingFor).toHaveBeenCalled());
+    openSession();
+
+    expect(await started).toMatchObject({ kind: "started", firstMessage: "Hello!" });
+  });
+
+  it("asks for no greeting for a start that fails", async () => {
+    const { service, findConnection, greetingFor } = serviceWith({ connection: maintainedConnection, credential: { kind: "missing" } });
+
+    expect(await service.start({ workspaceId, agentId, visitor })).toEqual({ kind: "failed" });
+    expect(findConnection).not.toHaveBeenCalled();
+    expect(greetingFor).not.toHaveBeenCalled();
   });
 });
 

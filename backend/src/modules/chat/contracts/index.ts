@@ -20,6 +20,9 @@ export type { ConversationIngestInput, ConversationIngestPort } from "./conversa
 // Read-only conversation starters (greeting chips) for channels that show them outside a
 // conversation, such as Slack's agent pane; the connector registry carries this port.
 export type { AgentStarterPromptReader } from "./agentStarterPrompts.js";
+// The words an agent greets with, for channels that say them outside a conversation, such as a
+// voice call's first message; `ChatBootstrapService` implements it.
+export type { AgentGreetingReader } from "./agentGreeting.js";
 export type { WorkbenchReplayResult } from "../services/workbenchReplayRunner.js";
 export type { PublicConversationEventBus } from "../services/publicConversationEventBus.js";
 // The resumption read surface: a calling agent comes back to a conversation it cannot

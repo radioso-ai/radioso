@@ -666,3 +666,113 @@ describe("chat bootstrap service — exact greeting", () => {
     expect(chatGateway.answer).toHaveBeenCalledOnce();
   });
 });
+
+describe("chat bootstrap service — reading the greeting for a channel that says it", () => {
+  const setUp = async (options: {
+    proactiveGreetingEnabled?: boolean;
+    revision?: AgentRevision | null;
+    answer?: () => Promise<string>;
+  } = {}) => {
+    const workspaceRepository = new InMemoryWorkspaceRepository();
+    const workspace = await workspaceRepository.create("account-1", "Workspace");
+    await workspaceRepository.updateAssistantBootstrapSettings(workspace.id, {
+      assistantName: "Marta",
+      greetingInstruction: "Warm and concise",
+      assistantDefaultLocale: "en",
+      proactiveGreetingEnabled: options.proactiveGreetingEnabled ?? true,
+    });
+    const greetingCache = new InMemoryBootstrapGreetingCacheRepository();
+    const save = vi.spyOn(greetingCache, "save");
+    const chatGateway = { answer: vi.fn(options.answer ?? (async () => "Ciao! Sono Marta, la tua guida del museo.")), streamAnswer: vi.fn() };
+    const auditService = createAuditService();
+    const productAnalyticsService = createProductAnalyticsService();
+    const usage = createUsageLimitPolicy();
+    const agentService = createAgentService(workspaceRepository);
+    const agent = await agentService.resolve(workspace.id);
+    const service = new ChatBootstrapService(
+      workspaceRepository,
+      greetingCache,
+      chatGateway,
+      auditService,
+      usage.policy,
+      productAnalyticsService,
+      agentService,
+      options.revision === undefined ? undefined : createAgentRevisionRuntimeResolver(options.revision),
+    );
+    const read = (locale: string | null) => service.readGreeting({ workspaceId: workspace.id, agentId: agent.id, locale, surface: "voice" });
+    return { service, workspace, agent, read, chatGateway, auditService, productAnalyticsService, usage, save };
+  };
+
+  it("reads the greeting the web chat showed for the locale, and starts, records and audits nothing", async () => {
+    const { service, workspace, read, chatGateway, auditService, productAnalyticsService, save } = await setUp();
+    const shown = await service.startConversation({ workspaceId: workspace.id, sourceChannel: "website_embed", userExpectedLocale: "it-IT" });
+    const auditedBefore = auditService.events.length;
+
+    expect(await read("it-IT")).toBe(shown?.answer);
+
+    expect(chatGateway.answer).toHaveBeenCalledOnce();
+    expect(save).toHaveBeenCalledOnce();
+    expect(auditService.events).toHaveLength(auditedBefore);
+    expect(productAnalyticsService.track).toHaveBeenCalledOnce();
+  });
+
+  it("generates and caches the greeting when none is cached, reserving it as a greeting on the surface that asked", async () => {
+    const { service, workspace, read, chatGateway, usage, auditService, productAnalyticsService } = await setUp();
+
+    expect(await read("it-IT")).toBe("Ciao! Sono Marta, la tua guida del museo.");
+    expect(usage.reserveAnswer).toHaveBeenCalledWith(expect.objectContaining({ workspaceId: workspace.id, surface: "voice", usage: "greeting" }));
+    expect(usage.commit).toHaveBeenCalledOnce();
+    expect(auditService.events).toHaveLength(0);
+    expect(productAnalyticsService.track).not.toHaveBeenCalled();
+
+    // The web chat then opens with the same words, from the cache.
+    const shown = await service.startConversation({ workspaceId: workspace.id, userExpectedLocale: "it-IT" });
+    expect(shown?.answer).toBe("Ciao! Sono Marta, la tua guida del museo.");
+    expect(chatGateway.answer).toHaveBeenCalledOnce();
+  });
+
+  it("reads the agent's default locale's greeting when the channel names no locale", async () => {
+    const { service, workspace, read, chatGateway } = await setUp();
+    const shown = await service.startConversation({ workspaceId: workspace.id });
+
+    expect(await read(null)).toBe(shown?.answer);
+    expect(chatGateway.answer).toHaveBeenCalledOnce();
+  });
+
+  it("says the published exact words for the locale, without their chips and without a delivery record", async () => {
+    const revision = buildRevision({
+      exactWordsEnabled: true,
+      exactContent: buildExactContent({
+        chips: ["book"],
+        variants: [
+          { locale: "en", body: "Hi there.", chipLabels: { book: "Book now" } },
+          { locale: "it", body: "Ciao!", chipLabels: { book: "Prenota" } },
+        ],
+      }),
+    });
+    const { read, chatGateway, usage, save } = await setUp({ revision });
+
+    expect(await read("it-CH")).toBe("Ciao!");
+    expect(await read("de")).toBe("Hi there.");
+    expect(chatGateway.answer).not.toHaveBeenCalled();
+    expect(usage.reserveAnswer).not.toHaveBeenCalled();
+    expect(save).not.toHaveBeenCalled();
+  });
+
+  it("has no greeting when the agent's greeting is off, or the model wrote nothing", async () => {
+    expect(await (await setUp({ proactiveGreetingEnabled: false })).read("en")).toBeNull();
+
+    const silent = await setUp({ answer: async () => "   " });
+    expect(await silent.read("en")).toBeNull();
+    expect(silent.usage.release).toHaveBeenCalledOnce();
+    expect(silent.save).not.toHaveBeenCalled();
+  });
+
+  it("rejects when the greeting cannot be generated, and gives the reservation back", async () => {
+    const { read, usage } = await setUp({ answer: async () => { throw new Error("model unavailable"); } });
+
+    await expect(read("en")).rejects.toThrow("model unavailable");
+    expect(usage.release).toHaveBeenCalledOnce();
+    expect(usage.commit).not.toHaveBeenCalled();
+  });
+});

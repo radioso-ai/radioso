@@ -253,6 +253,10 @@ const declarations: readonly PolicyDeclaration[] = [
   sessionOnly("GET", "/api/v1/agents/:agentId/channel-credentials", "workspace.agents.manage"),
   sessionOnly("POST", "/api/v1/agents/:agentId/channel-credentials/:credentialId/rotate", "workspace.agents.manage"),
   sessionOnly("POST", "/api/v1/agents/:agentId/channel-credentials/:credentialId/revoke", "workspace.agents.manage"),
+  // Connect issues the managed voice runtime's access grant and Disconnect revokes it.
+  sessionOnly("GET", "/api/v1/agents/:agentId/voice/connection", "workspace.agents.manage"),
+  sessionOnly("POST", "/api/v1/agents/:agentId/voice/connection", "workspace.agents.manage"),
+  sessionOnly("DELETE", "/api/v1/agents/:agentId/voice/connection", "workspace.agents.manage"),
 
   // Credential-management and operator surfaces intentionally have an explicit
   // session-only policy rather than relying on default denial. This makes new

@@ -13,9 +13,20 @@ const isStartedSession = (body: unknown): body is PublicVoiceSessionResponse => 
   return isVoiceVendor(vendor) && typeof signedUrl === 'string' && typeof sessionKey === 'string' && typeof locale === 'string'
 }
 
-/** What the page keeps of the answer: the expiry is the vendor's to enforce. */
-const startedSessionOf = ({ vendor, signedUrl, sessionKey, locale, recordingNotice }: PublicVoiceSessionResponse): StartedVoiceSession =>
-  ({ vendor, signedUrl, sessionKey, locale, ...(typeof recordingNotice === 'string' && recordingNotice.trim() ? { recordingNotice } : {}) })
+const hasText = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0
+
+/**
+ * What the page keeps of the answer: the expiry is the vendor's to enforce. `firstMessage` is kept
+ * only when the start names one, since a vendor agent that does not allow it closes the session.
+ */
+const startedSessionOf = ({ vendor, signedUrl, sessionKey, locale, recordingNotice, firstMessage }: PublicVoiceSessionResponse): StartedVoiceSession => ({
+  vendor,
+  signedUrl,
+  sessionKey,
+  locale,
+  ...(hasText(recordingNotice) ? { recordingNotice } : {}),
+  ...(hasText(firstMessage) ? { firstMessage } : {}),
+})
 
 /**
  * Asks Radioso to start a voice session for the website embed's visitor, with the public session

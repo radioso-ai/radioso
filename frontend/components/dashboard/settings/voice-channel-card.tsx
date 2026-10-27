@@ -6,22 +6,19 @@ import { AudioLines } from 'lucide-react'
 import { AddLanguageField, LanguageGroup, LineListEditor, LineWarning } from '@/components/dashboard/settings/locale-lines-editor'
 import { SettingsCard } from '@/components/dashboard/settings/settings-card'
 import { useSettingsSaveStatus } from '@/components/dashboard/settings/use-settings-save-status'
+import { VoiceRuntimeConnection } from '@/components/dashboard/settings/voice-runtime-connection'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Switch } from '@/components/ui/switch'
 import { agentsApi } from '@/lib/api'
 import { getApiErrorMessage } from '@/lib/api-error'
-import { providerDisplayName, voiceVendorNames } from '@/lib/api-llm-providers'
 import {
   AGENT_VOICE_SAVED_EVENT,
   ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS,
   VOICE_MAX_LANGUAGES,
   VOICE_MAX_LINE_LENGTH,
   VOICE_MAX_LINES,
-  VOICE_RUNTIME_AGENT_ID_MAX_LENGTH,
-  VOICE_RUNTIME_REGIONS,
   emptyVoiceLanguageLines,
   isBelowElevenLabsSpokenFloor,
   voiceSettingsFormAfterSave,
@@ -30,17 +27,8 @@ import {
   type MechanicsReplyKind,
   type VoiceBridgeStyle,
   type VoiceLanguageLines,
-  type VoiceRuntimeForm,
-  type VoiceRuntimeRegion,
   type VoiceSettingsForm,
 } from '@/lib/voice-settings-form'
-
-const VOICE_RUNTIME_REGION_LABELS: Record<VoiceRuntimeRegion, string> = {
-  us: 'United States (default)',
-  eu: 'European Union',
-  in: 'India',
-  sg: 'Singapore',
-}
 
 const BRIDGE_STYLE_LABELS: ReadonlyArray<[VoiceBridgeStyle, string]> = [
   ['check', 'Check'],
@@ -103,7 +91,7 @@ function VoiceLanguageEditor({
         </div>
         <div className="space-y-2">
           <Label htmlFor={noticeId} className="text-foreground">Recording notice</Label>
-          <p className="text-xs text-muted-foreground">Shown to the caller as a website call starts. Leave it blank to show none.</p>
+          <p className="text-xs text-muted-foreground">Shown to the caller as a website call starts, and said before the greeting when Radioso manages the voice agent. Leave it blank for none.</p>
           <Input
             id={noticeId}
             value={language.recordingNotice}
@@ -130,60 +118,6 @@ function VoiceLanguageEditor({
   )
 }
 
-/** The vendor agent a page's voice session opens; the vendor's key lives in workspace Settings. */
-function VoiceRuntimeEditor({ runtime, onChange }: { runtime: VoiceRuntimeForm; onChange: (next: VoiceRuntimeForm) => void }) {
-  const vendorLabel = providerDisplayName[runtime.vendor]
-  return (
-    <div className="space-y-3">
-      <div className="space-y-0.5">
-        <h4 className="text-sm font-semibold text-foreground">Runtime</h4>
-        <p className="text-xs text-muted-foreground">
-          Calls open on this {vendorLabel} agent. Add the {vendorLabel} API key under Settings → Providers.
-        </p>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="space-y-2">
-          <Label htmlFor="voiceRuntimeVendor" className="text-foreground">Voice runtime</Label>
-          <Select value={runtime.vendor} onValueChange={(value) => onChange({ ...runtime, vendor: voiceVendorNames.find((vendor) => vendor === value) ?? runtime.vendor })}>
-            <SelectTrigger id="voiceRuntimeVendor" className="w-full min-w-0">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {voiceVendorNames.map((vendor) => (
-                <SelectItem key={vendor} value={vendor}>{providerDisplayName[vendor]}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="voiceRuntimeAgentId" className="text-foreground">{vendorLabel} agent id</Label>
-          <Input
-            id="voiceRuntimeAgentId"
-            value={runtime.agentId}
-            maxLength={VOICE_RUNTIME_AGENT_ID_MAX_LENGTH}
-            placeholder="agent_…"
-            autoComplete="off"
-            onChange={(event) => onChange({ ...runtime, agentId: event.target.value })}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="voiceRuntimeRegion" className="text-foreground">Data residency</Label>
-          <Select value={runtime.region} onValueChange={(value) => onChange({ ...runtime, region: VOICE_RUNTIME_REGIONS.find((region) => region === value) ?? runtime.region })}>
-            <SelectTrigger id="voiceRuntimeRegion" className="w-full min-w-0">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {VOICE_RUNTIME_REGIONS.map((region) => (
-                <SelectItem key={region} value={region}>{VOICE_RUNTIME_REGION_LABELS[region]}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 /**
  * The agent's `voice` and `mechanicsReplies` blocks, saved together and replaced whole. Render it
  * keyed by `agentId`: a save replaces both blocks, so one agent's form must never outlive a switch
@@ -192,6 +126,8 @@ function VoiceRuntimeEditor({ runtime, onChange }: { runtime: VoiceRuntimeForm; 
 export function VoiceChannelCard({ agentId }: { agentId: string }) {
   const [form, setForm] = useState<VoiceSettingsForm | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  // While Connect or Disconnect runs, a save would send the binding it is about to replace.
+  const [runtimeBusy, setRuntimeBusy] = useState(false)
   const { saveState, saveError, beginSave, isCurrentSave, markSaved, markError, resetSaveState } = useSettingsSaveStatus()
 
   useEffect(() => {
@@ -232,7 +168,7 @@ export function VoiceChannelCard({ agentId }: { agentId: string }) {
       id="voice-channel"
       icon={<AudioLines className="h-5 w-5 text-primary" />}
       title="Voice"
-      description="The vendor agent calls open on, bridge lines for calls, and word-for-word quick replies on every channel."
+      description="Let visitors talk to this agent out loud, and write the lines it says word for word."
     >
       {loadError ? <p className="text-sm text-destructive" role="alert">{loadError}</p> : null}
       {!form && !loadError ? <p className="text-sm text-muted-foreground">Loading voice settings…</p> : null}
@@ -251,7 +187,7 @@ export function VoiceChannelCard({ agentId }: { agentId: string }) {
             <div className="space-y-0.5">
               <Label htmlFor="voiceLanguageSwitching" className="text-foreground">Switch language with the caller</Label>
               <p id="voiceLanguageSwitchingHint" className="text-xs text-muted-foreground">
-                The voice runtime agent needs language detection and each language&rsquo;s voice set up to switch mid-call.
+                A call switches its voice and transcription to the caller&rsquo;s language.
               </p>
             </div>
             <Switch
@@ -261,7 +197,13 @@ export function VoiceChannelCard({ agentId }: { agentId: string }) {
               onCheckedChange={(languageSwitching) => edit({ ...form, languageSwitching })}
             />
           </div>
-          <VoiceRuntimeEditor runtime={form.runtime} onChange={(runtime) => edit({ ...form, runtime })} />
+          <VoiceRuntimeConnection
+            agentId={agentId}
+            disabled={saveState === 'saving'}
+            // The binding is already stored; the form takes it over so its next save keeps it.
+            onRuntimeChange={(runtime) => setForm((current) => (current ? { ...current, runtime } : current))}
+            onBusyChange={setRuntimeBusy}
+          />
           {form.languages.map((language, index) => (
             <VoiceLanguageEditor
               key={language.locale}
@@ -278,7 +220,7 @@ export function VoiceChannelCard({ agentId }: { agentId: string }) {
           />
           </fieldset>
           <div className="flex items-center gap-3">
-            <Button type="button" size="sm" onClick={() => void save(form)} loading={saveState === 'saving'}>
+            <Button type="button" size="sm" onClick={() => void save(form)} loading={saveState === 'saving'} disabled={runtimeBusy}>
               Save voice settings
             </Button>
             {saveState === 'saved' ? <span className="text-xs text-muted-foreground">Saved</span> : null}

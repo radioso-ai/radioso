@@ -1,12 +1,9 @@
-import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 import type { AgentMechanicsReplies, AgentVoiceSettings } from '@/lib/api-types'
 import {
   ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS,
   MECHANICS_REPLY_KINDS,
-  VOICE_RUNTIME_AGENT_ID_MAX_LENGTH,
-  VOICE_RUNTIME_REGIONS,
   VOICE_BRIDGE_STYLES,
   emptyVoiceLanguageLines,
   isBelowElevenLabsSpokenFloor,
@@ -28,7 +25,7 @@ const voice: AgentVoiceSettings = {
   runtime: { vendor: 'elevenlabs', agentId: 'agent_01jxk2v9qbe8n7r6t5w4', region: 'eu' },
   languageSwitching: false,
 }
-const unbound = { vendor: 'elevenlabs', agentId: '', region: 'us' } as const
+const unbound = null
 const mechanicsReplies: AgentMechanicsReplies = {
   'pt-BR': { greeting: ['Olá! Como posso ajudar?'], thanks: [], farewell: [], acknowledgement: [] },
   en: { greeting: ['Hi! How can I help?'], thanks: ['You are welcome!'], farewell: [], acknowledgement: [] },
@@ -159,12 +156,12 @@ describe('voice settings form', () => {
     expect(voiceSettingsFormFromAgent(voice, mechanicsReplies).runtime).toEqual({ vendor: 'elevenlabs', agentId: 'agent_01jxk2v9qbe8n7r6t5w4', region: 'eu' })
   })
 
-  it('binds the trimmed vendor agent id, and binds none when the id is blank', () => {
+  it('carries the binding over exactly as the form holds it: Connect writes it, a save only keeps it', () => {
     const form = voiceSettingsFormFromAgent(voice, mechanicsReplies)
+    const connected = { vendor: 'elevenlabs', agentId: 'agent_42', region: 'in' } as const
 
-    expect(voiceSettingsUpdateFromForm({ ...form, runtime: { vendor: 'elevenlabs', agentId: '  agent_42  ', region: 'in' } }).voice.runtime)
-      .toEqual({ vendor: 'elevenlabs', agentId: 'agent_42', region: 'in' })
-    expect(voiceSettingsUpdateFromForm({ ...form, runtime: { vendor: 'elevenlabs', agentId: '   ', region: 'eu' } }).voice.runtime).toBeNull()
+    expect(voiceSettingsUpdateFromForm({ ...form, runtime: connected }).voice.runtime).toEqual(connected)
+    expect(voiceSettingsUpdateFromForm({ ...form, runtime: null }).voice.runtime).toBeNull()
   })
 
   it('flags a line shorter than the ElevenLabs first-sentence floor, counting characters rather than code units', () => {
@@ -175,15 +172,5 @@ describe('voice settings form', () => {
     expect(isBelowElevenLabsSpokenFloor('😀'.repeat(44))).toBe(true)
     // Nothing written yet is not a short line.
     expect(isBelowElevenLabsSpokenFloor('   ')).toBe(false)
-  })
-
-  it('mirrors the API contract: the vendor agent id bound and every data residency region it names', () => {
-    const contract = JSON.parse(readFileSync(new URL('../../../typescript-sdk/openapi/radioso.json', import.meta.url), 'utf8')) as {
-      components: { schemas: { AgentVoiceSettings: { properties: { runtime: { properties: { agentId: { maxLength: number }; region: { enum: string[] } } } } } } }
-    }
-    const runtime = contract.components.schemas.AgentVoiceSettings.properties.runtime.properties
-
-    expect(VOICE_RUNTIME_AGENT_ID_MAX_LENGTH).toBe(runtime.agentId.maxLength)
-    expect([...VOICE_RUNTIME_REGIONS].sort()).toEqual([...runtime.region.enum].sort())
   })
 })

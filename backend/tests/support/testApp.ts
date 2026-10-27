@@ -7,7 +7,9 @@ import { createAgentPublicProfileComposition } from "../../src/app/composition/a
 import {
   createVoiceChannelComposition,
   createVoiceRecordingComposition,
+  createVoiceRuntimeConnectionComposition,
   createVoiceSessionStartComposition,
+  keepVoiceRuntimesInStepWithAgents,
   refreshEmbedConfigsOnVoiceVendorKeyChange,
 } from "../../src/app/composition/voiceChannel.js";
 import { createDefaultVisitorGeoResolver } from "../../src/app/composition/visitorGeoResolver.js";
@@ -60,6 +62,8 @@ import { AssistantChatService } from "../../src/modules/chat/services/assistantC
 import {
   type VoiceRecordingStore,
   type VoiceRecordingsLeftAtVendorReader,
+  type VoiceRuntimeConnection,
+  type VoiceRuntimeConnectionStore,
   type VoiceSessionRef,
   type VoiceSessionStartLookup,
   type VoiceSessionStartRegistry,
@@ -2863,14 +2867,55 @@ export const createTestDependencies = (overrides: {
         listPublished: ({ agentId }) => routineDefinitionRepository.listActiveByAgent(agentId),
       },
     });
+  // `agent_voice_runtime_connections` in memory, keyed by agent, and its per-agent lock.
+  const voiceRuntimeConnectionRows = new Map<string, VoiceRuntimeConnection>();
+  const lockedVoiceRuntimeAgents = new Set<string>();
+  const voiceRuntimeConnectionStore: VoiceRuntimeConnectionStore = {
+    find: async ({ workspaceId, agentId }) => {
+      const row = voiceRuntimeConnectionRows.get(agentId);
+      return row?.workspaceId === workspaceId ? row : null;
+    },
+    save: async (connection) => {
+      voiceRuntimeConnectionRows.set(connection.agentId, connection);
+    },
+    remove: async ({ workspaceId, agentId }) => {
+      if (voiceRuntimeConnectionRows.get(agentId)?.workspaceId === workspaceId) voiceRuntimeConnectionRows.delete(agentId);
+    },
+  };
   const voiceSessionStarts = createVoiceSessionStartComposition({
     agentRepository,
     starts: voiceSessions,
+    connections: voiceRuntimeConnectionStore,
+    greetings: chatBootstrapService,
     credentials: workspaceProviderCredentialsService,
     fetch: voiceVendorFetch,
     metricsRegistry,
     logger,
   });
+  const voiceRuntimeConnections = createVoiceRuntimeConnectionComposition({
+    connections: voiceRuntimeConnectionStore,
+    lock: {
+      run: async (agent, work) => {
+        if (lockedVoiceRuntimeAgents.has(agent.agentId)) return { ran: false };
+        lockedVoiceRuntimeAgents.add(agent.agentId);
+        try {
+          return { ran: true, value: await work() };
+        } finally {
+          lockedVoiceRuntimeAgents.delete(agent.agentId);
+        }
+      },
+    },
+    agentRepository,
+    agentService,
+    accessGrants: accessGrantService,
+    credentials: workspaceProviderCredentialsService,
+    fetch: voiceVendorFetch,
+    appBaseUrl: env.APP_BASE_URL,
+    auditService,
+    metricsRegistry,
+    logger,
+  });
+  keepVoiceRuntimesInStepWithAgents({ agents: agentService, connections: voiceRuntimeConnections });
   const dependencies: AppDependencies = {
     env,
     noticeMail: { send: async () => ({ dispatched: false }) },
@@ -3116,6 +3161,7 @@ export const createTestDependencies = (overrides: {
     voiceSessionAvailability: voiceSessionStarts,
     voiceRecordings: voiceRecordings.recordings,
     voiceRecordingsLeftAtVendor: overrides.voiceRecordingsLeftAtVendor ?? { listForAccount: async () => ({ total: 0, recordings: [], nextCursor: null }) },
+    voiceRuntimeConnections,
     assistantHistoryService,
     conversationErasure: overrides.conversationErasure ?? {
       // The in-memory app has no transaction to erase in; the Postgres erasure is covered by

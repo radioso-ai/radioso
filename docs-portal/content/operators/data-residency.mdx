@@ -41,7 +41,7 @@ Claude and Gemini each take either a platform-held key (`ANTHROPIC_API_KEY`, `GE
 
 ## ElevenLabs (voice channel)
 
-A voice runtime key is a workspace's own ElevenLabs account, set under Settings → Providers → Voice runtime keys. The agent's **Voice** card picks that account's **Data residency** — United States (the default), European Union, India, or Singapore — and it has to match whichever region the ElevenLabs account itself is provisioned for. EU residency needs an Enterprise ElevenLabs account; picking it on an account that isn't Enterprise reads like a wrong key, because the account's data only ever lives on its region's host.
+A voice runtime key is a workspace's own ElevenLabs account, set under Settings → Providers → Voice runtime keys. The region is the account's own: an ElevenLabs account lives on exactly one region's host — United States (the default), European Union, India, or Singapore — so when you press **Connect** on an agent's **Voice** card, Radioso asks each host and works with the one that knows the key. The card then names it, for example **recordings stay in the European Union**, and calls, recordings and their deletion all go to that host. EU residency needs an Enterprise ElevenLabs account; to keep callers' recordings in the EU, store the key of an account provisioned there and connect again.
 
 ## Resend (email)
 

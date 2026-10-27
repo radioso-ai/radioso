@@ -58,8 +58,13 @@ export interface VoiceCallPrivacyNotice {
 }
 
 export interface VoiceRuntime {
+  /**
+   * `firstMessage` is what the call says first, which the session sets on the vendor agent; it is
+   * given only when the session start returned one, which it does only for a vendor agent that
+   * allows it.
+   */
   open: (
-    input: { signedUrl: string; sessionKey: string; locale: string; privacyNotice?: VoiceCallPrivacyNotice },
+    input: { signedUrl: string; sessionKey: string; locale: string; privacyNotice?: VoiceCallPrivacyNotice; firstMessage?: string },
     callbacks: VoiceRuntimeCallbacks,
     signal: AbortSignal,
   ) => Promise<VoiceRuntimeSession>

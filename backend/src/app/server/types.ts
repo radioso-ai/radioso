@@ -78,6 +78,7 @@ import type {
   VoiceRecordingAvailabilityPort,
   VoiceRecordingPlaybackPort,
   VoiceSessionAvailabilityPort,
+  VoiceRuntimeConnectionPort,
   VoiceSessionStartPort,
   VoiceTurnPort,
   VoiceVendorConversationReportPort,
@@ -381,6 +382,8 @@ export interface AppDependencies {
   voiceRecordings: VoiceVendorConversationReportPort & VoiceRecordingAvailabilityPort & VoiceRecordingPlaybackPort;
   /** The organization's own list of call recordings its deletions left at the vendor for good. */
   voiceRecordingsLeftAtVendor: VoiceRecordingsLeftAtVendorReader;
+  /** The vendor agent Radioso creates and maintains for an agent's voice channel; the Voice card's Connect. */
+  voiceRuntimeConnections: VoiceRuntimeConnectionPort;
 
   assistantHistoryService: AssistantHistoryService;
   /** Permanent erasure of a conversation, or of a visitor and their conversations. */

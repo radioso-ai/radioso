@@ -386,10 +386,11 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
   /**
    * Takes back what an attempt gave the vendor when the connection it set up could not be
    * recorded, so no credential it minted is left admitting turns untracked and the next Connect
-   * starts over. An agent this attempt created is deleted again, and its credential revoked once
-   * it is gone. A repaired agent keeps running on the secret just minted while the record names
-   * the credential it replaced, so both are revoked: its calls stop, and the next Connect finds no
-   * credential that works, issues a fresh one and points the agent at it.
+   * starts over. An agent this attempt created is deleted again, and its credential revoked
+   * either way: a vendor agent the vendor would not delete is inert once its one credential can
+   * no longer admit turns. A repaired agent keeps running on the secret just minted while the
+   * record names the credential it replaced, so both are revoked: its calls stop, and the next
+   * Connect finds no credential that works, issues a fresh one and points the agent at it.
    */
   private async undoUnrecorded(input: AgentRef & {
     actor: VoiceRuntimeConnectionActor;
@@ -404,7 +405,10 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
     let cleanup: "vendor_agent_deleted" | "vendor_agent_left" | "credentials_revoked" | "none";
     if (ensured.outcome === "created") {
       const released = await this.releaseQuietly(connection, input.credential);
-      if (minted && released) await this.revokeQuietly({ ...input, credentialId: minted.id });
+      // Revoked whether or not the vendor agent itself could be deleted: a vendor agent left
+      // behind is inert once its one credential cannot admit turns, so nothing is left active
+      // and untracked.
+      if (minted) await this.revokeQuietly({ ...input, credentialId: minted.id });
       cleanup = released ? "vendor_agent_deleted" : "vendor_agent_left";
     } else if (minted) {
       await this.revokeQuietly({ ...input, credentialId: minted.id });

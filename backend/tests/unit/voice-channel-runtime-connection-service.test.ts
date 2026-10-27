@@ -360,14 +360,15 @@ describe("voice runtime connection: connect", () => {
     expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ outcome: "repaired", cleanup: "none" }), "Voice runtime connection could not be recorded");
   });
 
-  it("keeps the credential of a vendor agent it created but could neither record nor delete", async () => {
-    const { service, steps, logger } = serviceWith({
+  it("revokes the credential it minted for a vendor agent it created even when deleting that vendor agent also fails, so nothing is left active and untracked", async () => {
+    const { service, steps, logger, activeNow } = serviceWith({
       saveError: new Error("database down"),
       releaseError: new VoiceVendorRequestError("unreachable", 503),
     });
 
     await expect(service.connect({ ...agent, actor })).rejects.toThrow("database down");
-    expect(steps).toEqual(["locate", "issue:cred-1", "ensure:new:rk_secret_1", "save:agent_new:cred-1", "release:agent_new"]);
+    expect(steps).toEqual(["locate", "issue:cred-1", "ensure:new:rk_secret_1", "save:agent_new:cred-1", "release:agent_new", "revoke:cred-1"]);
+    expect(activeNow()).toEqual([]);
     expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ vendorAgentId: "agent_new" }), "Voice runtime vendor agent left at the vendor: deleting it failed");
     expect(logger.warn).toHaveBeenCalledWith(
       expect.objectContaining({ vendorAgentId: "agent_new", outcome: "created", cleanup: "vendor_agent_left" }),

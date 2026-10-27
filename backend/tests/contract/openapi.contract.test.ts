@@ -336,7 +336,7 @@ describe("openapi contract", () => {
     });
     expect(sessionCookie).toBeDefined();
     expect(bearerAuth).not.toEqual(sessionCookie);
-    expect(document.paths?.["/api/v1/document/"]?.post?.security).toEqual([{ bearerAuth: [] }]);
+    expect(document.paths?.["/api/v1/document"]?.post?.security).toEqual([{ bearerAuth: [] }]);
   });
 
   it("documents typed status events without modeling the SSE body as one JSON object", () => {

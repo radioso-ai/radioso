@@ -124,7 +124,7 @@ const createWorkloadExecutors = async ({ profile, backendBaseUrl, email, passwor
       return {
         concurrency: workload.concurrency ?? 1,
         async execute({ workerIndex, iteration }) {
-          await context.client.request("/api/v1/document/", {
+          await context.client.request("/api/v1/document", {
             method: "POST",
             headers: { "X-Workspace-Id": context.workspaceId },
             json: {

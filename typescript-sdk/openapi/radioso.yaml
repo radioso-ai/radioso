@@ -560,6 +560,26 @@ components:
             - member
       required:
         - role
+    OrganizationRenameRequest:
+      type: object
+      properties:
+        organizationName:
+          type: string
+          minLength: 1
+          maxLength: 80
+      required:
+        - organizationName
+    OrganizationRenameResponse:
+      type: object
+      properties:
+        accountId:
+          type: string
+          format: uuid
+        organizationName:
+          type: string
+      required:
+        - accountId
+        - organizationName
     WorkspaceGrantRequest:
       type: object
       properties:
@@ -8417,6 +8437,114 @@ components:
               type: string
           required:
             - content
+    DocumentChunkSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        chunkIndex:
+          type: integer
+          minimum: 0
+        contentPreview:
+          type: string
+        contentLength:
+          type: integer
+          minimum: 0
+        startOffset:
+          type: integer
+          minimum: 0
+        endOffset:
+          type: integer
+          minimum: 0
+        dateFrom:
+          type:
+            - string
+            - "null"
+        dateTo:
+          type:
+            - string
+            - "null"
+      required:
+        - id
+        - chunkIndex
+        - contentPreview
+        - contentLength
+        - startOffset
+        - endOffset
+        - dateFrom
+        - dateTo
+    DocumentChunkListResponse:
+      type: object
+      properties:
+        documentId:
+          type: string
+          format: uuid
+        chunks:
+          type: array
+          items:
+            $ref: "#/components/schemas/DocumentChunkSummary"
+      required:
+        - documentId
+        - chunks
+    DocumentChunk:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        documentId:
+          type: string
+          format: uuid
+        workspaceId:
+          type: string
+          format: uuid
+        chunkIndex:
+          type: integer
+          minimum: 0
+        content:
+          type: string
+        searchText:
+          type:
+            - string
+            - "null"
+        startOffset:
+          type: integer
+          minimum: 0
+        endOffset:
+          type: integer
+          minimum: 0
+        metadata:
+          type: object
+          additionalProperties: {}
+        dateFrom:
+          type:
+            - string
+            - "null"
+        dateTo:
+          type:
+            - string
+            - "null"
+        createdAt:
+          type: string
+          format: date-time
+        embeddingDimensions:
+          type:
+            - integer
+            - "null"
+          minimum: 0
+      required:
+        - id
+        - documentId
+        - workspaceId
+        - chunkIndex
+        - content
+        - searchText
+        - startOffset
+        - endOffset
+        - metadata
+        - createdAt
+        - embeddingDimensions
     DocumentListResponse:
       type: object
       properties:
@@ -12533,6 +12661,123 @@ components:
         - $ref: "#/components/schemas/AgentChannelChatTurnResponse"
         - $ref: "#/components/schemas/ChatBootstrapResponse"
       description: A chat turn carries the agent reply envelope core beside the answer; a bootstrap greeting (`startConversation`) has no turn and carries none.
+    ContactHistorySummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        sortAt:
+          type: string
+          format: date-time
+        workspaceId:
+          type: string
+          format: uuid
+        conversationId:
+          type: string
+          format: uuid
+        assistantMessageId:
+          type:
+            - string
+            - "null"
+          format: uuid
+        sourceChannel:
+          type:
+            - string
+            - "null"
+        sourceOrigin:
+          type:
+            - string
+            - "null"
+        userEmail:
+          type: string
+        messagePreview:
+          type: string
+        triggerSource:
+          type: string
+        triggerReason:
+          type:
+            - string
+            - "null"
+        status:
+          type: string
+          enum:
+            - pending
+            - delivering
+            - delivered
+            - failed
+        attempts:
+          type: integer
+          minimum: 0
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        activitySummary:
+          $ref: "#/components/schemas/ActivitySummary"
+      required:
+        - id
+        - sortAt
+        - workspaceId
+        - conversationId
+        - assistantMessageId
+        - sourceChannel
+        - sourceOrigin
+        - userEmail
+        - messagePreview
+        - triggerSource
+        - triggerReason
+        - status
+        - attempts
+        - createdAt
+        - updatedAt
+    ContactHistoryListResponse:
+      type: object
+      properties:
+        contacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/ContactHistorySummary"
+        total:
+          type: integer
+          minimum: 0
+        nextCursor:
+          type: "null"
+        hasMore:
+          type: boolean
+      required:
+        - contacts
+        - total
+        - nextCursor
+        - hasMore
+    ContactHistoryDetail:
+      allOf:
+        - $ref: "#/components/schemas/ContactHistorySummary"
+        - type: object
+          properties:
+            message:
+              type: string
+            finalDeliveryError:
+              type:
+                - string
+                - "null"
+            activityTrace:
+              $ref: "#/components/schemas/ActivityTrace"
+          required:
+            - message
+            - finalDeliveryError
+    ContactHistoryDetailResponse:
+      type: object
+      properties:
+        contact:
+          $ref: "#/components/schemas/ContactHistoryDetail"
+        conversation:
+          $ref: "#/components/schemas/ChatConversationDetail"
+      required:
+        - contact
+        - conversation
     AgentToolInputSchema:
       type: object
       properties:
@@ -19233,6 +19478,74 @@ paths:
       responses:
         "204":
           description: Workspace grant removed
+  /api/v1/account:
+    delete:
+      tags:
+        - Account
+      summary: Delete the current organization
+      description: Permanently deletes the organization, every workspace it owns, and all derived data. Only the organization owner may call this. Ends the caller's session.
+      operationId: deleteOrganization
+      security:
+        - sessionCookie: []
+      responses:
+        "204":
+          description: Organization deleted
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Only the organization owner can delete the organization
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "409":
+          description: Organization could not be deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+    patch:
+      tags:
+        - Account
+      summary: Rename the current organization
+      operationId: renameOrganization
+      security:
+        - sessionCookie: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrganizationRenameRequest"
+      responses:
+        "200":
+          description: Organization renamed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OrganizationRenameResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/account/switch:
     post:
       tags:
@@ -24747,6 +25060,48 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
+    delete:
+      tags:
+        - Agents
+      summary: Delete a workspace agent
+      description: Refuses to delete the last remaining agent in a workspace.
+      operationId: deleteAgent
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+      responses:
+        "204":
+          description: Agent deleted
+        "400":
+          description: Cannot delete the last agent in this workspace
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Agent delete permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/agents/{agentId}/channels/lifecycle:
     get:
       tags:
@@ -25002,6 +25357,88 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Agent or channel credential not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/agents/{agentId}/anonymous-chat-token/rotate:
+    post:
+      tags:
+        - Agents
+      summary: Rotate an agent's anonymous chat token
+      description: Replaces the token that authorizes this agent's anonymous (non-embedded) public chat link. Every caller holding the previous token loses access immediately.
+      operationId: rotateAgentAnonymousChatToken
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+      responses:
+        "200":
+          description: Agent with its replacement anonymous chat token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationAgent"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Agent manage permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/agents/{agentId}/website-embed-token/rotate:
+    post:
+      tags:
+        - Agents
+      summary: Rotate an agent's website embed token
+      description: Replaces the token that authorizes this agent's website embed surface. Every embedded session holding the previous token loses access immediately. Not found when the website-embed surface extension is not registered for this deployment.
+      operationId: rotateAgentWebsiteEmbedToken
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: agentId
+          in: path
+      responses:
+        "200":
+          description: Agent with its replacement website embed token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConversationAgent"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Agent manage permission required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Agent not found, or the website-embed surface extension is not registered for this deployment
           content:
             application/json:
               schema:
@@ -33204,7 +33641,7 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ErrorResponse"
-  /api/v1/document/:
+  /api/v1/document:
     get:
       tags:
         - Documents
@@ -34065,6 +34502,80 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/document/{documentId}/chunks:
+    get:
+      tags:
+        - Documents
+      summary: List a document's chunks
+      operationId: listDocumentChunks
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: documentId
+          in: path
+      responses:
+        "200":
+          description: Chunk summaries returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentChunkListResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Document not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/document/{documentId}/chunks/{chunkId}:
+    get:
+      tags:
+        - Documents
+      summary: Get a single document chunk
+      operationId: getDocumentChunk
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: documentId
+          in: path
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: chunkId
+          in: path
+      responses:
+        "200":
+          description: Chunk returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DocumentChunk"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Chunk not found
           content:
             application/json:
               schema:
@@ -34944,6 +35455,122 @@ paths:
                 $ref: "#/components/schemas/ErrorResponse"
         "404":
           description: Search history entry not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/history/contact:
+    get:
+      tags:
+        - History
+      summary: List contact requests
+      operationId: listContactRequests
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+          required: false
+          name: limit
+          in: query
+        - schema:
+            type:
+              - integer
+              - "null"
+            minimum: 0
+          required: false
+          name: offset
+          in: query
+        - schema:
+            type: string
+            enum:
+              - end_user
+              - operator_test
+              - all
+            default: end_user
+          required: false
+          name: sourceScope
+          in: query
+      responses:
+        "200":
+          description: Contact requests returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactHistoryListResponse"
+        "400":
+          description: Invalid query
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/history/contact/{requestId}:
+    get:
+      tags:
+        - History
+      summary: Get a contact request and its conversation
+      operationId: getContactRequest
+      security:
+        - bearerAuth: []
+      parameters:
+        - schema:
+            type: string
+            format: uuid
+          required: true
+          name: requestId
+          in: path
+        - schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 50
+          required: false
+          name: limit
+          in: query
+        - schema:
+            type:
+              - integer
+              - "null"
+            minimum: 0
+          required: false
+          name: offset
+          in: query
+        - schema:
+            type: string
+            minLength: 1
+          required: false
+          name: cursor
+          in: query
+      responses:
+        "200":
+          description: Contact request and conversation detail returned
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ContactHistoryDetailResponse"
+        "400":
+          description: Request validation failed
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Authentication required
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Contact request not found
           content:
             application/json:
               schema:
@@ -40272,6 +40899,159 @@ paths:
         Anonymous session continuity is maintained by an HttpOnly cookie set by the server.
 
         The cookie name is workspace-specific (`anon_session_<workspaceId>`) and should be preserved by a browser or cookie jar rather than configured as a fixed client credential.
+  /api/v1/public/chat/{token}/embed-config:
+    get:
+      tags:
+        - Assistant
+      summary: Read the website embed's bootstrap configuration
+      description: "Unauthenticated: the launch token alone selects the agent. 404 when the token is unknown or the website embed surface is disabled. Cacheable per allow-listed origin."
+      operationId: getPublicChatEmbedConfig
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: token
+          in: path
+      responses:
+        "200":
+          description: Embed bootstrap configuration
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  launcherLabel:
+                    type: string
+                  launcherPosition:
+                    type: string
+                    enum:
+                      - bottom-right
+                      - bottom-left
+                  assistantName:
+                    type: string
+                  theme:
+                    type: object
+                    properties:
+                      brand:
+                        type: string
+                      brandText:
+                        type: string
+                      surface:
+                        type: string
+                      text:
+                        type: string
+                    required:
+                      - brand
+                      - brandText
+                      - surface
+                      - text
+                  branding:
+                    type: object
+                    properties:
+                      hidePoweredBy:
+                        type: boolean
+                      privacyPolicyUrl:
+                        type:
+                          - string
+                          - "null"
+                      privacyNotice:
+                        $ref: "#/components/schemas/AgentPrivacyNotices"
+                    required:
+                      - hidePoweredBy
+                      - privacyPolicyUrl
+                      - privacyNotice
+                  copy:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      additionalProperties:
+                        type: string
+                  expertOverrides:
+                    type: object
+                    additionalProperties:
+                      type: string
+                  assistantLogoUrl:
+                    type:
+                      - string
+                      - "null"
+                  proactiveGreetingEnabled:
+                    type: boolean
+                  voice:
+                    type: object
+                    properties:
+                      available:
+                        type: boolean
+                        description: "Whether the embed shows a Talk button: the operator offers calls and the agent's voice is ready."
+                    required:
+                      - available
+                  agentCardUrl:
+                    type: string
+                    format: uri
+                    description: Present only when the agent publishes an A2A agent card.
+                required:
+                  - launcherLabel
+                  - launcherPosition
+                  - assistantName
+                  - theme
+                  - branding
+                  - copy
+                  - expertOverrides
+                  - assistantLogoUrl
+                  - proactiveGreetingEnabled
+                  - voice
+        "400":
+          description: The requesting origin is not approved to host the embedded assistant
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: Launch token unknown, or the website embed surface is disabled
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /api/v1/public/chat/{token}/assistant-logo:
+    get:
+      tags:
+        - Assistant
+      summary: Read the public widget's assistant logo image
+      description: "Unauthenticated: the launch token alone selects the agent. Sibling of the dashboard-only GET /api/v1/agents/{agentId}/assistant-logo, serving the same stored bytes."
+      operationId: getPublicChatAssistantLogo
+      parameters:
+        - schema:
+            type: string
+            minLength: 1
+          required: true
+          name: token
+          in: path
+      responses:
+        "200":
+          description: Logo image
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+            image/webp:
+              schema:
+                type: string
+                format: binary
+            image/gif:
+              schema:
+                type: string
+                format: binary
+        "404":
+          description: Launch token unknown, or the agent has no logo
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
   /api/v1/events:
     get:
       tags:

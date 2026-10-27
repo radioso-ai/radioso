@@ -1,7 +1,7 @@
 ---
 title: "Chat and history"
 description: "Ask one agent questions with a channel credential, then inspect saved history with workspace access."
-last_updated: 2026-10-24
+last_updated: 2026-10-27
 ---
 
 # Chat and history
@@ -122,6 +122,24 @@ Use `DELETE /api/v1/history/chat/{conversationId}` to permanently delete a conve
 
 To answer one person's access or erasure request across the website, email and Slack, use the data subject routes under `/api/v1/privacy/data-subjects`: a lookup by verified customer id, email address or Slack member id, then a conversation list, a JSON export and an erasure over the identities you confirm. [Answering a data subject request](/operators/data-subject-requests) walks through them.
 
+## Contact request history
+
+A [contact request](/api/agents-and-skills#contact-requests) is a "someone asked to be contacted" row, separate from the chat conversation it came from. List the account's requests:
+
+```text
+GET /api/v1/history/contact
+```
+
+It takes the same `limit`, `offset`, and `sourceScope` as `GET /api/v1/history`. Each row carries delivery `status` (`pending`, `delivering`, `delivered`, or `failed`), `attempts`, and a preview of the message.
+
+Read one request in full, with the conversation it came from:
+
+```text
+GET /api/v1/history/contact/{requestId}
+```
+
+The response pairs the request — its full message and, when delivery failed, `finalDeliveryError` — with the same conversation detail `GET /api/v1/history/chat/{conversationId}` returns.
+
 ## Answer feedback
 
 Persisted assistant answers accept thumbs-up or thumbs-down feedback in the dashboard, public chat, and website embed. A thumbs-down request may include an optional `comment` of up to 2000 characters. Authenticated callers set and clear feedback on a message:
@@ -160,6 +178,8 @@ GET  /api/v1/history/chat
 GET  /api/v1/history/chat/{conversationId}
 DELETE /api/v1/history/chat/{conversationId}
 GET  /api/v1/history/chat/{conversationId}/tail
+GET  /api/v1/history/contact
+GET  /api/v1/history/contact/{requestId}
 GET  /api/v1/history/visitors/{visitorId}/conversations
 DELETE /api/v1/history/visitors/{visitorId}
 POST /api/v1/privacy/data-subjects/lookup

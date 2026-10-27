@@ -1,7 +1,7 @@
 ---
 title: "Agents and skills"
 description: "Configure workspace agents, directives, named agent skills, revisions, and inspect the read-only skills catalog exposed by the API."
-last_updated: 2026-10-21
+last_updated: 2026-10-27
 ---
 
 # Agents and skills
@@ -105,6 +105,17 @@ Retrieval answer configuration lives on the agent's default-answer `retrieve` sk
 The read-only `GET /api/v1/settings/retrieval-defaults` endpoint returns those inherited retrieval defaults plus workspace metadata field suggestions for the Skills tab. It does not update retrieval behavior.
 
 If an agent has `retrievalEnabled: true`, assistant chat may use retrieval and return citations. If `retrievalEnabled: false`, the agent answers through the direct assistant path and returns diagnostics with `retrievalInvoked: false`.
+
+Delete an agent with `DELETE /api/v1/agents/{agentId}`. A workspace always keeps at least one agent, so deleting the last one returns `400`. Deleting the default agent hands that role to another agent in the workspace.
+
+An agent's anonymous chat and website embed each carry their own launch token. Rotate either one directly on the agent, independently of the other and of the workspace-wide tokens in [Settings](/api/settings#general-settings):
+
+```text
+POST /api/v1/agents/{agentId}/anonymous-chat-token/rotate
+POST /api/v1/agents/{agentId}/website-embed-token/rotate
+```
+
+Both return the updated agent. The old link or install code stops launching new sessions the moment the token changes. Website embed token rotation requires the website-embed surface extension; without it the route answers `404`.
 
 ## Directives
 
@@ -568,6 +579,9 @@ GET    /api/v1/agents
 POST   /api/v1/agents
 GET    /api/v1/agents/{agentId}
 PUT    /api/v1/agents/{agentId}
+DELETE /api/v1/agents/{agentId}
+POST   /api/v1/agents/{agentId}/anonymous-chat-token/rotate
+POST   /api/v1/agents/{agentId}/website-embed-token/rotate
 GET    /api/v1/agents/{agentId}/assistant-logo
 POST   /api/v1/agents/{agentId}/assistant-logo
 DELETE /api/v1/agents/{agentId}/assistant-logo

@@ -1,7 +1,7 @@
 ---
 title: "Website Crawler Provider"
 description: "API and provider contract for website ingestion including crawl policy, job management, deployment topology, and disabling."
-last_updated: 2026-09-01
+last_updated: 2026-10-27
 ---
 
 # Website Crawler Provider
@@ -174,7 +174,7 @@ The dashboard banner uses this endpoint when the user clicks the dismiss button 
 GET /api/v1/document/sources/{sourceId}/documents
 ```
 
-Returns a paginated list of documents belonging to a source. Supports the same `limit`, `offset`, and `cursor` query parameters as `GET /api/v1/document/`. The synthetic "Manually added documents" source ID (`00000000-0000-0000-0000-000000000001`) returns documents with no source.
+Returns a paginated list of documents belonging to a source. Supports the same `limit`, `offset`, and `cursor` query parameters as `GET /api/v1/document`. The synthetic "Manually added documents" source ID (`00000000-0000-0000-0000-000000000001`) returns documents with no source.
 
 ### Re-crawling a website source
 

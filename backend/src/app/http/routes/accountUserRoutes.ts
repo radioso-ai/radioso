@@ -29,7 +29,7 @@ export const createAccountSchema = z.object({
   organizationName: z.string().trim().min(1).max(80),
 });
 
-const renameAccountSchema = z.object({
+export const renameAccountSchema = z.object({
   organizationName: z.string().trim().min(1).max(80),
 });
 

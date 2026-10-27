@@ -154,7 +154,7 @@ await client.documents.create({
   content: 'Radioso can answer questions grounded in uploaded content.',
 })`
 
-const buildCreateFromTextCurlSnippet = () => `curl -sS -X POST http://localhost:8080/api/v1/document/ \\
+const buildCreateFromTextCurlSnippet = () => `curl -sS -X POST http://localhost:8080/api/v1/document \\
   -H "Authorization: Bearer ${curlApiToken()}" \\
   -H "Content-Type: application/json" \\
   -d '{"title":"Support FAQ","content":"Radioso can answer questions grounded in uploaded content."}'`

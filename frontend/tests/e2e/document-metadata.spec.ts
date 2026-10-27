@@ -28,7 +28,7 @@ const createdDocument = {
   content: "Course body",
 };
 
-const documentsPath = "/backend/api/v1/document/";
+const documentsPath = "/backend/api/v1/document";
 const importPath = "/backend/api/v1/document/import";
 
 /**
@@ -249,7 +249,7 @@ test("operator retags an imported document without gaining access to its content
   });
 
   await page.route(
-    (url) => url.pathname === `${documentsPath}${importedDocument.id}`,
+    (url) => url.pathname === `${documentsPath}/${importedDocument.id}`,
     async (route) => {
       if (route.request().method() !== "PATCH") {
         await route.fallback();
@@ -320,7 +320,7 @@ test("operator clears the last tag from an inline document and the update persis
   });
 
   await page.route(
-    (url) => url.pathname === `${documentsPath}${taggedDocument.id}`,
+    (url) => url.pathname === `${documentsPath}/${taggedDocument.id}`,
     async (route) => {
       if (route.request().method() !== "PUT") {
         await route.fallback();

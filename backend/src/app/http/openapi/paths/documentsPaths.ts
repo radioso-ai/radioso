@@ -130,7 +130,7 @@ export const registerDocumentsPaths = (
 
   registry.registerPath({
     method: "get",
-    path: "/api/v1/document/",
+    path: "/api/v1/document",
     tags: ["Documents"],
     summary: "List documents for the authenticated workspace",
     operationId: "listDocuments",
@@ -468,7 +468,7 @@ export const registerDocumentsPaths = (
 
   registry.registerPath({
     method: "post",
-    path: "/api/v1/document/",
+    path: "/api/v1/document",
     tags: ["Documents"],
     summary: "Queue a document for background processing",
     operationId: "createDocument",

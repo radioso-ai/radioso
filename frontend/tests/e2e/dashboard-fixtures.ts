@@ -1650,7 +1650,7 @@ export const installDashboardApiMocks = async (
       return;
     }
 
-    if (request.method() === "GET" && path === "/document/") {
+    if (request.method() === "GET" && path === "/document") {
       await json(route, documents);
       return;
     }

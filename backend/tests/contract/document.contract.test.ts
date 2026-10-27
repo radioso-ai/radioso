@@ -590,6 +590,28 @@ describe("document contract", () => {
     });
   });
 
+  it("gives the same clear client error when the create call carries no trailing slash", async () => {
+    const { app } = createTestApp();
+
+    const session = await issueTestSession(app, "document-inline-too-large-no-slash@example.com");
+
+    const response = await request(app)
+      .post("/api/v1/document")
+      .set(adminSessionHeaders(session))
+      .send({
+        title: "Large inline document",
+        content: "a".repeat(1024 * 1024 + 1),
+      });
+
+    expect(response.status).toBe(413);
+    expect(response.body).toMatchObject({
+      error: {
+        code: "payload_too_large",
+        message: "Document content exceeds the inline size limit. Import the file instead.",
+      },
+    });
+  });
+
   it("returns, updates, and reprocesses a document for a session-authenticated workspace", async () => {
     const { app } = createTestApp();
 

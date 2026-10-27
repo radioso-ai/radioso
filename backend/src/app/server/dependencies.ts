@@ -12,7 +12,12 @@ import {
   keepVoiceRuntimesInStepWithAgents,
   refreshEmbedConfigsOnVoiceVendorKeyChange,
 } from "../composition/voiceChannel.js";
-import { VoiceRecordingErasureRepository, VoiceRuntimeConnectionRepository, VoiceSessionRepository } from "../../modules/voiceChannel/public.js";
+import {
+  PostgresVoiceRuntimeConnectionLock,
+  VoiceRecordingErasureRepository,
+  VoiceRuntimeConnectionRepository,
+  VoiceSessionRepository,
+} from "../../modules/voiceChannel/public.js";
 import { createPostgresDeliveryFailures } from "../composition/deliveryFailures.js";
 import {
   createEmailChannelComposition,
@@ -1384,6 +1389,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   // The vendor agent Radioso creates for an agent's voice channel, kept in step with the agent.
   const voiceRuntimeConnections = createVoiceRuntimeConnectionComposition({
     connections: new VoiceRuntimeConnectionRepository(infrastructure.database.kysely),
+    lock: new PostgresVoiceRuntimeConnectionLock(infrastructure.database.kysely),
     agentRepository: repositories.agentRepository,
     agentService,
     accessGrants: access.accessGrantService,

@@ -24,6 +24,11 @@ const agentParamsSchema = z.object({ agentId: z.string().uuid() });
  */
 const FAILURE_ANSWERS: Readonly<Record<VoiceRuntimeConnectionFailure, { status: number; code: string; message: string }>> = {
   agent_not_found: { status: 404, code: "not_found", message: "Agent not found" },
+  connection_busy: {
+    status: 409,
+    code: "voice_connection_busy",
+    message: "Another Connect or Disconnect of this agent's voice runtime is running; try again when it finishes",
+  },
   connection_unavailable: {
     status: 503,
     code: "voice_connection_unavailable",

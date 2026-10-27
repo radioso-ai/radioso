@@ -34,6 +34,8 @@ interface Setup {
   completions?: boolean;
   saveError?: Error;
   bindError?: Error;
+  /** Another Connect or Disconnect of the agent holds its connection lock. */
+  lockHeld?: boolean;
 }
 
 /** Every port as an in-memory fake that records what the service asked of it, in order. */
@@ -65,7 +67,24 @@ const serviceWith = (setup: Setup = {}) => {
   const audit = { connected: vi.fn(async () => undefined), disconnected: vi.fn(async () => undefined) };
   const logger = { info: vi.fn(), warn: vi.fn() };
   const metrics = { incrementCounter: vi.fn() };
+  /** Every step taken while the agent's connection lock was held, by the operation that held it. */
+  const held: string[] = [];
+  let holding = false;
+  const lock = {
+    run: async <T,>(_agent: { workspaceId: string; agentId: string }, work: () => Promise<T>) => {
+      if (setup.lockHeld || holding) return { ran: false as const };
+      holding = true;
+      const before = steps.length;
+      try {
+        return { ran: true as const, value: await work() };
+      } finally {
+        holding = false;
+        held.push(...steps.slice(before));
+      }
+    },
+  };
   const service = new VoiceRuntimeConnectionService({
+    lock,
     agents: { findRuntimeProfile: async () => profile },
     connections: {
       find: async () => connection,
@@ -110,7 +129,7 @@ const serviceWith = (setup: Setup = {}) => {
     metrics,
     logger,
   });
-  return { service, steps, provisioner, audit, logger, metrics, connectionNow: () => connection, profileNow: () => profile };
+  return { service, steps, held, provisioner, audit, logger, metrics, connectionNow: () => connection, profileNow: () => profile };
 };
 
 const failureOf = async (promise: Promise<unknown>): Promise<string> => {
@@ -515,5 +534,70 @@ describe("voice runtime connection: following the agent", () => {
       expect(audit.disconnected).toHaveBeenCalledWith(expect.objectContaining({ cause: "agent_deleted", released: false, vendorAgentLeft: true }));
       expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ vendorAgentId: "agent_42", reason: "timeout" }), expect.any(String));
     });
+  });
+});
+
+describe("voice runtime connection: one change at a time per agent", () => {
+  it("runs Connect holding the agent's connection lock", async () => {
+    const { service, steps, held } = serviceWith();
+
+    await service.connect({ ...agent, actor });
+
+    expect(held).toEqual(steps);
+  });
+
+  it("refuses a Connect while another Connect or Disconnect of the agent runs, touching nothing", async () => {
+    const { service, steps, metrics } = serviceWith({ lockHeld: true });
+
+    expect(await failureOf(service.connect({ ...agent, actor }))).toBe("connection_busy");
+    expect(steps).toEqual([]);
+    expect(metrics.incrementCounter).toHaveBeenCalledWith("voice_runtime_connection_total", expect.objectContaining({
+      labels: { vendor: "elevenlabs", operation: "connect", outcome: "connection_busy" },
+    }));
+  });
+
+  it("refuses a Disconnect while another change of the agent runs, touching nothing", async () => {
+    const { service, steps } = serviceWith({ connection: managed(), profile: boundTo("agent_42"), lockHeld: true });
+
+    expect(await failureOf(service.disconnect({ ...agent, actor }))).toBe("connection_busy");
+    expect(steps).toEqual([]);
+  });
+
+  it("runs Disconnect holding the lock", async () => {
+    const { service, steps, held } = serviceWith({ connection: managed(), profile: boundTo("agent_42") });
+
+    await service.disconnect({ ...agent, actor });
+
+    expect(held).toEqual(steps);
+    expect(steps).toContain("release:agent_42");
+  });
+
+  it("lets two Connects started together create one vendor agent: the second is refused", async () => {
+    let releaseCreate = () => {};
+    const created = new Promise<void>((resolve) => { releaseCreate = resolve; });
+    const { service, steps } = serviceWith({
+      ensure: async () => {
+        await created;
+        return { outcome: "created", vendorAgentId: "agent_new", primaryLocaleSupported: true };
+      },
+    });
+
+    const first = service.connect({ ...agent, actor });
+    await vi.waitFor(() => expect(steps).toContain("ensure:new:rk_secret_1"));
+    const second = failureOf(service.connect({ ...agent, actor }));
+    releaseCreate();
+
+    expect(await second).toBe("connection_busy");
+    expect((await first).runtime?.agentId).toBe("agent_new");
+    expect(steps.filter((step) => step.startsWith("ensure:"))).toHaveLength(1);
+  });
+
+  it("skips a language sync while a Connect or Disconnect holds the agent, and logs it", async () => {
+    const { service, steps, logger } = serviceWith({ connection: managed(), profile: boundTo("agent_42"), lockHeld: true });
+
+    await expect(service.syncPrimaryLanguage(agent)).resolves.toBeUndefined();
+
+    expect(steps).toEqual([]);
+    expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ operation: "sync", outcome: "connection_busy" }), expect.any(String));
   });
 });

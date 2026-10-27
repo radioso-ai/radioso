@@ -79,8 +79,11 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   CDN-cached embed configs when a voice vendor key is stored or removed, so
   that yes or no follows the key at once.
   `voiceRuntimeConnectionService.ts` connects an agent's voice channel to a
-  vendor agent Radioso creates and maintains (`VoiceRuntimeConnectionPort`):
-  `connect` reads the vendor key (`VoiceVendorCredentialReader`), finds the
+  vendor agent Radioso creates and maintains (`VoiceRuntimeConnectionPort`).
+  `connect`, `disconnect` and `syncPrimaryLanguage` each run holding the
+  agent's `VoiceRuntimeConnectionLock`, which never waits: while another holds
+  it, Connect and Disconnect fail as `connection_busy` having changed nothing,
+  and a sync is skipped and logged. `connect` reads the vendor key (`VoiceVendorCredentialReader`), finds the
   key's region (`VoiceRuntimeProvisioner.locateAccount`), reuses the REST
   credential the connection holds while it is active or issues one
   (`VoiceRuntimeChannelCredentials`), creates or repairs the vendor agent
@@ -153,6 +156,10 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   vendor agent, its account's region and the credential's grant id, outside
   the operator-written `voice` block; it goes with its agent, and a row naming
   a vendor or region this version does not know reads as none.
+  `voiceRuntimeConnectionLock.ts` is the `VoiceRuntimeConnectionLock`: a
+  Postgres session advisory lock keyed `radioso:voice-runtime-connection:<agentId>`
+  (`trySessionAdvisoryLock`), held on one pinned connection while the work
+  runs, so every instance sees it; a dropped connection releases it.
 - `adapters/*` translate one wire to the domain port and back, and nothing
   else. `adapters/openaiCompletions/` is the OpenAI chat-completions wire;
   vendors that share it differ only by a dialect in `dialects.ts`, which is
@@ -219,7 +226,7 @@ helpers and the shared chat message limit from `app/http`
   `VoiceRecordingAudit` and `createElevenLabsRecordingSource`;
   `VoiceRuntimeConnectionPort`, `VoiceRuntimeConnectionService`,
   `VoiceRuntimeConnectionRepository`, `VoiceRuntimeConnectionError`,
-  `VOICE_RUNTIME_CONNECTION_STATES` and
+  `VOICE_RUNTIME_CONNECTION_STATES`, `PostgresVoiceRuntimeConnectionLock` and
   `createElevenLabsRuntimeProvisioner`.
 - `backend/src/app/composition/voiceChannel.ts` — builds the port over a
   session store, `AssistantChatService.streamAnswer`, the agent repository (voice
@@ -255,7 +262,7 @@ helpers and the shared chat message limit from `app/http`
   writes go through `AuditService.recordNamingGoneSubjects`, which names an
   organization or workspace gone since by id in the same insert.
   `createVoiceRuntimeConnectionComposition` builds the runtime connection over
-  `VoiceRuntimeConnectionRepository`, the agent repository (name, default
+  `VoiceRuntimeConnectionRepository`, `PostgresVoiceRuntimeConnectionLock`, the agent repository (name, default
   locale and binding), the ElevenLabs provisioner with `fetch`, the same
   credential reader, the access grants (an `agent-api` grant on the
   `agent-api` channel labelled `Voice calls`, no expiry), `AgentService` as
@@ -296,7 +303,7 @@ helpers and the shared chat message limit from `app/http`
   sessions, `workspace.agents.manage`, `X-Radioso-CSRF` on writes,
   `sessionOnly` in `apiPrincipalRoutePolicy.ts`) and maps each
   `VoiceRuntimeConnectionFailure` to its answer (`409`
-  `voice_vendor_key_missing`/`_unreadable`, `422` `voice_vendor_key_rejected`/
+  `voice_connection_busy`, `voice_vendor_key_missing`/`_unreadable`, `422` `voice_vendor_key_rejected`/
   `voice_vendor_key_lacks_agents_permission`, `502` `voice_vendor_failed`,
   `503` `voice_vendor_unreachable`/`voice_connection_unavailable`); permanent
   copilot coverage exclusions (`getAgentVoiceConnection`, `connectAgentVoice`,
@@ -986,7 +993,9 @@ A runtime connection logs each operation with `workspaceId`, `agentId`,
 runtime released after its agent was deleted` at info (`created`, `repaired`;
 `released`, `unbound`, `vendor_agent_left`), `Voice
 runtime connect failed` and `Voice runtime language sync failed` at warn with
-the `VoiceRuntimeConnectionFailure` (or `error`, `needs_connect`) and the
+the `VoiceRuntimeConnectionFailure` (or `error`, `needs_connect`;
+`connection_busy` for a sync skipped while a Connect or Disconnect held the
+agent) and the
 vendor error's `reason` and `vendorStatus`; a key now for another region's
 account, a vendor agent left at the vendor (with its `vendorAgentId` and
 `region`), a credential that could not be revoked and a default locale the
@@ -1015,9 +1024,10 @@ secret id or a URL.
   compensation, reuse, region change, disconnect of a maintained and a
   hand-bound runtime; the agent service's locale and deletion hooks; and the
   routes over an in-memory ElevenLabs)
-- `cd backend && pnpm exec vitest run tests/integration/voice-runtime-connection-repository.integration.test.ts --no-file-parallelism`
+- `cd backend && pnpm exec vitest run tests/integration/voice-runtime-connection-repository.integration.test.ts tests/integration/voice-runtime-connection-lock.integration.test.ts --no-file-parallelism`
   (needs the disposable integration database: one connection per agent, the
-  workspace scope, and the grant and agent cascades)
+  workspace scope, the grant and agent cascades; and the per-agent lock across
+  two pools, refused at once while held)
 - `cd backend && pnpm exec vitest run tests/contract/public-voice-session.contract.test.ts tests/contract/settings-credentials.contract.test.ts`
   (the session start through the embed's public session, with a fake vendor
   `fetch`; the ElevenLabs key in the credential store)

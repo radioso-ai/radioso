@@ -1780,7 +1780,7 @@ export interface paths {
         put?: never;
         /**
          * Connect the agent's voice channel to a vendor agent Radioso maintains
-         * @description Creates an ElevenLabs agent on the workspace's own ElevenLabs account, with the key stored under Settings → Providers, and binds the agent's `voice.runtime` to it. The account's data residency region is found from the key. The ElevenLabs agent posts each turn to `{PUBLIC_API_BASE_URL}/api/v1/agents/{agentId}/voice/elevenlabs/v1` with a REST credential Radioso issues for it (labelled `Voice calls`, no expiry), starts calls in the agent's default language, and can switch to any language ElevenLabs Agents speaks. Calling it again repairs the connection: the ElevenLabs agent's settings, a binding a save cleared, a credential that was revoked (a new one replaces it). A runtime bound by hand is replaced by one Radioso maintains; the hand-made ElevenLabs agent is left alone. Records an `agent.voice_runtime.connected` audit event. Dashboard session only.
+         * @description Creates an ElevenLabs agent on the workspace's own ElevenLabs account, with the key stored under Settings → Providers, and binds the agent's `voice.runtime` to it. The account's data residency region is found from the key. The ElevenLabs agent posts each turn to `{PUBLIC_API_BASE_URL}/api/v1/agents/{agentId}/voice/elevenlabs/v1` with a REST credential Radioso issues for it (labelled `Voice calls`, no expiry), starts calls in the agent's default language, and can switch to any language ElevenLabs Agents speaks. Calling it again repairs the connection: the ElevenLabs agent's settings, a binding a save cleared, a credential that was revoked (a new one replaces it). A runtime bound by hand is replaced by one Radioso maintains; the hand-made ElevenLabs agent is left alone. One Connect or Disconnect of an agent runs at a time, across every backend instance; another one meanwhile answers `409 voice_connection_busy` at once. Records an `agent.voice_runtime.connected` audit event. Dashboard session only.
          */
         post: operations["connectAgentVoice"];
         /**
@@ -18599,7 +18599,7 @@ export interface operations {
                     "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-            /** @description `voice_vendor_key_missing`: no vendor key is stored; `voice_vendor_key_unreadable`: the stored key cannot be decrypted */
+            /** @description `voice_vendor_key_missing`: no vendor key is stored; `voice_vendor_key_unreadable`: the stored key cannot be decrypted; `voice_connection_busy`: another Connect or Disconnect of this agent is running, and this one changed nothing */
             409: {
                 headers: {
                     [name: string]: unknown;
@@ -18680,6 +18680,15 @@ export interface operations {
             };
             /** @description Agent not found */
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description `voice_connection_busy`: another Connect or Disconnect of this agent is running, and this one changed nothing */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

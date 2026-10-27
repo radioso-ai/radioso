@@ -2860,8 +2860,9 @@ export const createTestDependencies = (overrides: {
     metricsRegistry,
     logger,
   });
-  // `agent_voice_runtime_connections` in memory, keyed by agent.
+  // `agent_voice_runtime_connections` in memory, keyed by agent, and its per-agent lock.
   const voiceRuntimeConnectionRows = new Map<string, VoiceRuntimeConnection>();
+  const lockedVoiceRuntimeAgents = new Set<string>();
   const voiceRuntimeConnections = createVoiceRuntimeConnectionComposition({
     connections: {
       find: async ({ workspaceId, agentId }) => {
@@ -2873,6 +2874,17 @@ export const createTestDependencies = (overrides: {
       },
       remove: async ({ workspaceId, agentId }) => {
         if (voiceRuntimeConnectionRows.get(agentId)?.workspaceId === workspaceId) voiceRuntimeConnectionRows.delete(agentId);
+      },
+    },
+    lock: {
+      run: async (agent, work) => {
+        if (lockedVoiceRuntimeAgents.has(agent.agentId)) return { ran: false };
+        lockedVoiceRuntimeAgents.add(agent.agentId);
+        try {
+          return { ran: true, value: await work() };
+        } finally {
+          lockedVoiceRuntimeAgents.delete(agent.agentId);
+        }
       },
     },
     agentRepository,

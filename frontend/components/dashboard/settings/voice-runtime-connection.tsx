@@ -118,8 +118,8 @@ export function VoiceRuntimeConnection({
   const keyMissing = status !== null && status.vendorKey !== 'stored'
   const canConnect = status !== null && !keyMissing && status.connectAvailable && !disabled && busy === null
 
-  const connectButton = (label: string) => (
-    <Button type="button" size="sm" disabled={!canConnect} loading={busy === 'connect'} onClick={() => void run('connect')}>
+  const connectButton = (label: string, variant?: 'outline') => (
+    <Button type="button" size="sm" variant={variant} disabled={!canConnect} loading={busy === 'connect'} onClick={() => void run('connect')}>
       {label}
     </Button>
   )
@@ -132,13 +132,13 @@ export function VoiceRuntimeConnection({
   return (
     <div className="space-y-3" data-testid="voice-runtime-connection">
       <div className="space-y-0.5">
-        <h4 className="text-sm font-semibold text-foreground">Runtime</h4>
+        <h4 className="text-sm font-semibold text-foreground">Voice provider</h4>
         <p className="text-xs text-muted-foreground">
-          Calls run on an {vendor} agent in your own {vendor} account. Connect, and Radioso creates it, keeps it set up for this agent, and finds where your account keeps its data from the key.
+          Calls run on your own {vendor} account. Radioso sets up the {vendor} side for this agent and keeps it in step.
         </p>
       </div>
       {loadError ? <p className="text-sm text-destructive" role="alert">{loadError}</p> : null}
-      {!status && !loadError ? <p className="text-sm text-muted-foreground">Checking the voice runtime…</p> : null}
+      {!status && !loadError ? <p className="text-sm text-muted-foreground">Checking the {vendor} connection…</p> : null}
       {status ? (
         <div className="space-y-3">
           {status.state === 'connected' && status.region ? (
@@ -165,7 +165,7 @@ export function VoiceRuntimeConnection({
             {status.state === 'not_connected' ? connectButton(`Connect ${vendor}`) : null}
             {status.state === 'connected_externally' ? connectButton('Let Radioso manage it') : null}
             {/* Connect again repairs: the vendor agent's settings, and a credential that was revoked. */}
-            {status.state === 'connected' ? connectButton('Reconnect') : null}
+            {status.state === 'connected' ? connectButton('Reconnect', 'outline') : null}
             {status.state !== 'not_connected' ? disconnectButton : null}
           </div>
           {vendorAgentLeft ? (

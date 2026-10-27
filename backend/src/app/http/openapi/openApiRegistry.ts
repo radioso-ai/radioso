@@ -11,6 +11,7 @@ import { registerAgentToolCatalogSchemas } from "./schemas/agentToolCatalogSchem
 import { registerConverseMessagesSchemas } from "./schemas/converseMessagesSchemas.js";
 import { registerDocumentRetrievalSchemas } from "./schemas/documentRetrievalSchemas.js";
 import { registerAssistantHistorySchemas } from "./schemas/assistantHistorySchemas.js";
+import { registerHistoryContactSchemas } from "./schemas/historyContactSchemas.js";
 import { registerConnectorSchemas } from "./schemas/connectorSchemas.js";
 import { registerQualitySchemas } from "./schemas/qualitySchemas.js";
 import { registerUsageTrendSchemas } from "./schemas/usageTrendSchemas.js";
@@ -30,6 +31,8 @@ export interface OpenApiSchemaCatalog {
   accountInvitationParamsSchema: RouteParameterSchema;
   accountMembershipParamsSchema: RouteParameterSchema;
   AccountMembershipRoleUpdateRequestSchema: z.ZodTypeAny;
+  OrganizationRenameRequestSchema: z.ZodTypeAny;
+  OrganizationRenameResponseSchema: z.ZodTypeAny;
   accountSwitchSchema: z.ZodTypeAny;
   AccountUserSchema: z.ZodTypeAny;
   AccountUsersResponseSchema: z.ZodTypeAny;
@@ -187,6 +190,10 @@ export interface OpenApiSchemaCatalog {
   ConversationVisitorProfileSchema: z.ZodTypeAny;
   VisitorConversationsResponseSchema: z.ZodTypeAny;
   CreateAccountInvitationResponseSchema: z.ZodTypeAny;
+  chunkParamsSchema: RouteParameterSchema;
+  DocumentChunkSchema: z.ZodTypeAny;
+  DocumentChunkSummarySchema: z.ZodTypeAny;
+  DocumentChunkListResponseSchema: z.ZodTypeAny;
   DocumentCreateRequestSchema: z.ZodTypeAny;
   DocumentDetailsSchema: z.ZodTypeAny;
   DocumentEnrichmentSchema: z.ZodTypeAny;
@@ -221,6 +228,13 @@ export interface OpenApiSchemaCatalog {
   HealthResponseSchema: z.ZodTypeAny;
   HistoryItemSchema: z.ZodTypeAny;
   HistoryItemsResponseSchema: z.ZodTypeAny;
+  historyContactParamsSchema: RouteParameterSchema;
+  historyItemsPageQuerySchema: RouteParameterSchema;
+  conversationWindowQuerySchema: RouteParameterSchema;
+  ContactHistorySummarySchema: z.ZodTypeAny;
+  ContactHistoryListResponseSchema: z.ZodTypeAny;
+  ContactHistoryDetailSchema: z.ZodTypeAny;
+  ContactHistoryDetailResponseSchema: z.ZodTypeAny;
   HumanReplyMessageResponseSchema: z.ZodTypeAny;
   HumanReplyMessageSchema: z.ZodTypeAny;
   LowQualityTurnSchema: z.ZodTypeAny;
@@ -438,6 +452,7 @@ export const createOpenApiRegistry = () => {
   registerAgentSchemas(registry, schemas);
   registerDocumentRetrievalSchemas(registry, schemas);
   registerAssistantHistorySchemas(registry, schemas);
+  registerHistoryContactSchemas(registry, schemas);
   registerAgentToolCatalogSchemas(registry, schemas);
   registerConverseMessagesSchemas(registry, schemas);
   registerAgentCardSchemas(registry, schemas);

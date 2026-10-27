@@ -380,6 +380,98 @@ export const registerAccountManagementPaths = (
       },
     },
   });
+
+  registry.registerPath({
+    method: "delete",
+    path: "/api/v1/account",
+    tags: ["Account"],
+    summary: "Delete the current organization",
+    description: "Permanently deletes the organization, every workspace it owns, and all derived data. Only the organization owner may call this. Ends the caller's session.",
+    operationId: "deleteOrganization",
+    security: [{ [security.sessionCookieScheme.name]: [] }],
+    responses: {
+      204: {
+        description: "Organization deleted",
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      403: {
+        description: "Only the organization owner can delete the organization",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      409: {
+        description: "Organization could not be deleted",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "patch",
+    path: "/api/v1/account",
+    tags: ["Account"],
+    summary: "Rename the current organization",
+    operationId: "renameOrganization",
+    security: [{ [security.sessionCookieScheme.name]: [] }],
+    request: {
+      body: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: schemas.OrganizationRenameRequestSchema,
+          },
+        },
+      },
+    },
+    responses: {
+      200: {
+        description: "Organization renamed",
+        content: {
+          "application/json": {
+            schema: schemas.OrganizationRenameResponseSchema,
+          },
+        },
+      },
+      400: {
+        description: "Request validation failed",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      401: {
+        description: "Authentication required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      403: {
+        description: "Permission required",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
 };
 
 export const registerAccountSessionPaths = (

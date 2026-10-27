@@ -203,7 +203,7 @@ export class GeneratedRadiosoClient {
   listDocuments(query?: DocumentListQuery): Promise<DocumentListResponse> {
     return requestJson(this.config, {
       method: "GET",
-      path: "/api/v1/document/",
+      path: "/api/v1/document",
       query: query as Record<string, string | number | boolean | null | undefined> | undefined,
     });
   }
@@ -211,7 +211,7 @@ export class GeneratedRadiosoClient {
   createDocument(body: DocumentCreateRequest): Promise<DocumentOperationResponse> {
     return requestJson(this.config, {
       method: "POST",
-      path: "/api/v1/document/",
+      path: "/api/v1/document",
       body,
     });
   }

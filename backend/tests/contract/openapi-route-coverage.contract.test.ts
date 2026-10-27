@@ -41,29 +41,6 @@ const HTTP_METHODS = new Set(["get", "post", "put", "patch", "delete", "options"
  * "legacy" or "for now" do not qualify.
  */
 const undocumentedRouteExclusions: Record<string, string> = {
-  // --- Undocumented — should be added to OpenAPI. Genuine operator/public API surface that
-  // was never registered. Unlike every group below, this is not an intentional non-API surface;
-  // it is a documentation gap. Do not grow this group without also filing it as a gap — the
-  // reason names what is missing, not why it's acceptable.
-  "DELETE /api/v1/account": "undocumented — should be added to OpenAPI: organization delete, sibling of the documented account/organization operations",
-  "PATCH /api/v1/account": "undocumented — should be added to OpenAPI: organization rename, sibling of the documented account/organization operations",
-  "DELETE /api/v1/agents/{param}": "undocumented — should be added to OpenAPI: agent delete; every other CRUD verb on this resource (get/create/update) is documented",
-  "GET /api/v1/document/{param}/chunks": "undocumented — should be added to OpenAPI: lists a document's chunks; the frontend document detail view calls this",
-  "GET /api/v1/document/{param}/chunks/{param}": "undocumented — should be added to OpenAPI: reads a single chunk; the frontend document detail view calls this",
-  "GET /api/v1/history/contact": "undocumented — should be added to OpenAPI: lists contact requests; the frontend history view calls this",
-  "GET /api/v1/history/contact/{param}": "undocumented — should be added to OpenAPI: reads a single contact request; the frontend history view calls this",
-  "GET /api/v1/public/chat/{param}/assistant-logo": "undocumented — should be added to OpenAPI: public widget logo asset, sibling of the already-documented public chat token operations",
-  "GET /api/v1/public/chat/{param}/embed-config": "undocumented — should be added to OpenAPI: public widget bootstrap config, sibling of the already-documented public chat token operations",
-  "POST /api/v1/agents/{param}/anonymous-chat-token/rotate": "undocumented — should be added to OpenAPI: per-agent token rotation; the documented rotation route at /api/v1/settings/general/anonymous-chat-token/rotate is this operation's older, workspace-wide sibling",
-  "POST /api/v1/agents/{param}/website-embed-token/rotate": "undocumented — should be added to OpenAPI: per-agent token rotation; the documented rotation route at /api/v1/settings/general/website-embed-token/rotate is this operation's older, workspace-wide sibling",
-
-  // --- Known OpenAPI path-string bug, not a true absence: these document list/create operations
-  // are registered at "/api/v1/document/" with a trailing slash the mounted route does not
-  // carry. Tracked as a reverse mismatch below instead of silently slash-normalized, so the
-  // mismatch stays visible rather than disappearing into the comparison logic.
-  "GET /api/v1/document": "documented as GET /api/v1/document/ (operationId listDocuments) with a trailing-slash path string; see the reverse-mismatch table",
-  "POST /api/v1/document": "documented as POST /api/v1/document/ (operationId createDocument) with a trailing-slash path string; see the reverse-mismatch table",
-
   // --- Email link landing pages. RFC 8058 one-click confirm/unsubscribe/resume links clicked
   // from an email client. A signed, single-use query-string token authenticates them and they
   // render an HTML form page, not JSON, so they are not an SDK/MCP operation.
@@ -118,8 +95,6 @@ const outOfScopeMountPrefixes: Record<string, string> = {
  * actually lives.
  */
 const reverseRouteMismatches: Record<string, string> = {
-  "GET /api/v1/document/": "mounted as GET /api/v1/document (operationId listDocuments); OpenAPI documents a trailing-slash path string the Express route does not carry — Express's non-strict routing still serves it, but the literal path strings differ",
-  "POST /api/v1/document/": "mounted as POST /api/v1/document (operationId createDocument); OpenAPI documents a trailing-slash path string the Express route does not carry — Express's non-strict routing still serves it, but the literal path strings differ",
   "GET /api/v1/events": "the documented dashboard SSE stream (operationId streamWorkspaceEvents) is mounted on the separate realtime server process (src/runtime/realtimeServer.ts), not the main Express app this test builds",
 };
 

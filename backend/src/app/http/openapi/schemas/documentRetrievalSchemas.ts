@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  chunkParamsSchema,
   documentParamsSchema,
   documentRetrievalUpdateSchema,
   documentSchema,
@@ -226,6 +227,47 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     "DocumentDetails",
     DocumentSummarySchema.extend({
       content: z.string(),
+    }),
+  );
+
+  const DocumentChunkSummarySchema = registry.register(
+    "DocumentChunkSummary",
+    z.object({
+      id: z.string().uuid(),
+      chunkIndex: z.number().int().min(0),
+      contentPreview: z.string(),
+      contentLength: z.number().int().min(0),
+      startOffset: z.number().int().min(0),
+      endOffset: z.number().int().min(0),
+      dateFrom: z.string().nullable(),
+      dateTo: z.string().nullable(),
+    }),
+  );
+
+  const DocumentChunkListResponseSchema = registry.register(
+    "DocumentChunkListResponse",
+    z.object({
+      documentId: z.string().uuid(),
+      chunks: z.array(DocumentChunkSummarySchema),
+    }),
+  );
+
+  const DocumentChunkSchema = registry.register(
+    "DocumentChunk",
+    z.object({
+      id: z.string().uuid(),
+      documentId: z.string().uuid(),
+      workspaceId: z.string().uuid(),
+      chunkIndex: z.number().int().min(0),
+      content: z.string(),
+      searchText: z.string().nullable(),
+      startOffset: z.number().int().min(0),
+      endOffset: z.number().int().min(0),
+      metadata: z.record(z.string(), z.unknown()),
+      dateFrom: z.string().nullable().optional(),
+      dateTo: z.string().nullable().optional(),
+      createdAt: z.string().datetime(),
+      embeddingDimensions: z.number().int().min(0).nullable(),
     }),
   );
 
@@ -664,6 +706,10 @@ export const registerDocumentRetrievalSchemas = (registry: OpenAPIRegistry, sche
     documentParamsSchema,
     documentSchema,
     documentSearchHistoryParamsSchema,
+    chunkParamsSchema,
+    DocumentChunkSummarySchema,
+    DocumentChunkListResponseSchema,
+    DocumentChunkSchema,
     sourceParamsSchema,
     DocumentSourceDocumentsQuerySchema,
     DocumentStatusSchema,

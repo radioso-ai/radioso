@@ -246,6 +246,58 @@ export const registerAgentsPaths = (
   });
 
   registry.registerPath({
+    method: "delete",
+    path: "/api/v1/agents/{agentId}",
+    tags: ["Agents"],
+    summary: "Delete a workspace agent",
+    description: "Refuses to delete the last remaining agent in a workspace.",
+    operationId: "deleteAgent",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.AgentParamsSchema },
+    responses: {
+      204: { description: "Agent deleted" },
+      400: { description: "Cannot delete the last agent in this workspace", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      403: { description: "Agent delete permission required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/agents/{agentId}/anonymous-chat-token/rotate",
+    tags: ["Agents"],
+    summary: "Rotate an agent's anonymous chat token",
+    description: "Replaces the token that authorizes this agent's anonymous (non-embedded) public chat link. Every caller holding the previous token loses access immediately.",
+    operationId: "rotateAgentAnonymousChatToken",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.AgentParamsSchema },
+    responses: {
+      200: { description: "Agent with its replacement anonymous chat token", content: { "application/json": { schema: schemas.ConversationAgentSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      403: { description: "Agent manage permission required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent not found", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
+    method: "post",
+    path: "/api/v1/agents/{agentId}/website-embed-token/rotate",
+    tags: ["Agents"],
+    summary: "Rotate an agent's website embed token",
+    description: "Replaces the token that authorizes this agent's website embed surface. Every embedded session holding the previous token loses access immediately. Not found when the website-embed surface extension is not registered for this deployment.",
+    operationId: "rotateAgentWebsiteEmbedToken",
+    security: [{ [security.bearerAuthScheme.name]: [] }],
+    request: { params: schemas.AgentParamsSchema },
+    responses: {
+      200: { description: "Agent with its replacement website embed token", content: { "application/json": { schema: schemas.ConversationAgentSchema } } },
+      401: { description: "Authentication required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      403: { description: "Agent manage permission required", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+      404: { description: "Agent not found, or the website-embed surface extension is not registered for this deployment", content: { "application/json": { schema: schemas.ErrorResponseSchema } } },
+    },
+  });
+
+  registry.registerPath({
     method: "post",
     path: "/api/v1/agents/{agentId}/public-id/rotate",
     tags: ["Agents"],

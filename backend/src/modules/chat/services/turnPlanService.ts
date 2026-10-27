@@ -975,8 +975,12 @@ export const turnPlanDirectiveClassifications = (plan: TurnPlan): DirectiveClass
 const withTimeout = (
   signal: AbortSignal | undefined,
   timeoutMs: number,
-): { signal: AbortSignal; dispose: () => void } => {
+): { signal: AbortSignal; dispose: () => void; timedOut: () => boolean } => {
   const controller = new AbortController();
+  // Set only when THIS call's own bound fires, as opposed to the caller's `signal`
+  // aborting (a turn cancellation) — both abort the same `controller`, so the thrown
+  // error looks identical either way; this is the one place that still knows which.
+  let didTimeOut = false;
   const onAbort = () => controller.abort();
   if (signal) {
     if (signal.aborted) {
@@ -985,13 +989,17 @@ const withTimeout = (
       signal.addEventListener("abort", onAbort, { once: true });
     }
   }
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const timer = setTimeout(() => {
+    didTimeOut = true;
+    controller.abort();
+  }, timeoutMs);
   return {
     signal: controller.signal,
     dispose: () => {
       clearTimeout(timer);
       signal?.removeEventListener("abort", onAbort);
     },
+    timedOut: () => didTimeOut,
   };
 };
 
@@ -1014,19 +1022,25 @@ export class TurnPlanService {
   ) {}
 
   /**
-   * `onFailure` is a pure observability sink, never a control-flow signal: the fallback
-   * (resolving to `null`) is identical with or without it. It fires only when `plan()`
-   * threw — a clean miss (malformed output, `parseTurnPlan` returning `null`) never calls
-   * it, since that path never reaches the catch below. Never receives the model's output
-   * or prompt, only the bounded classification (or `null` when the thrown error carries
-   * no provider shape at all, e.g. a bug in this method's own code).
+   * `onFailure` and `onTimeout` are pure observability sinks, never control-flow
+   * signals: the fallback (resolving to `null`) is identical with or without them.
+   * Both fire only when `plan()` threw — a clean miss (malformed output,
+   * `parseTurnPlan` returning `null`) never reaches the catch below, so neither is
+   * called. `onFailure` never receives the model's output or prompt, only the bounded
+   * classification (or `null` when the thrown error carries no provider shape at all,
+   * which is also what a plain abort looks like — see `onTimeout`). `onTimeout` fires
+   * when this specific call's own bound timed out, as opposed to any other thrown
+   * error (an external turn cancellation included) — the caller's `recordOutcome` log
+   * would otherwise show this identically to malformed output: both are an
+   * unclassifiable `null`.
    */
   async plan(
     request: TurnPlanRequest,
     onFailure?: (failure: LlmProviderFailureClassification | null) => void,
+    onTimeout?: () => void,
   ): Promise<TurnPlan | null> {
     const timeoutMs = this.options.timeoutMs ?? CHAT_BEHAVIOR.turnPlanning.timeoutMs;
-    const { signal, dispose } = withTimeout(request.signal, timeoutMs);
+    const { signal, dispose, timedOut } = withTimeout(request.signal, timeoutMs);
     try {
       const client = await this.gatewayFactory.create({
         workspaceContext: request.workspaceContext,
@@ -1060,6 +1074,9 @@ export class TurnPlanService {
       });
       return plan;
     } catch (error) {
+      if (timedOut()) {
+        onTimeout?.();
+      }
       onFailure?.(classifyLlmProviderFailure(error));
       return null;
     } finally {

@@ -12,6 +12,13 @@ export interface ErrorReporter {
   report(input: {
     errorType: string;
     error?: unknown;
+    /**
+     * Overrides the error's own message, when a caller has already reduced it to
+     * something bounded and safe (a classified provider failure, say) — the default
+     * otherwise is the thrown error's own message, which a provider can echo back with
+     * customer content.
+     */
+    message?: string;
     severity?: ErrorSeverity;
     correlation?: CorrelationFields;
     metadata?: Record<string, unknown>;

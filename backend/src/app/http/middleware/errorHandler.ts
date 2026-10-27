@@ -2,7 +2,7 @@ import type { NextFunction, Request, Response } from "express";
 import multer from "multer";
 
 import type { ErrorReportingService } from "../../../shared/errors/errorReportingService.js";
-import { AppError, isReportableFault } from "../../../shared/domain/errors.js";
+import { AppError, isReportableFault, isStructuredAppError } from "../../../shared/domain/errors.js";
 import { applyRetryAfterFromError } from "../rateLimitHeaders.js";
 import { markHttpResponseFailed } from "./httpResponseCompletion.js";
 
@@ -31,27 +31,18 @@ const isInlineDocumentMutationRequest = (req: Request): boolean => {
   );
 };
 
-const isStructuredAppError = (error: unknown): error is {
-  statusCode: number;
-  code: string;
-  message: string;
-  details?: unknown;
-} =>
-  Boolean(
-    error &&
-      typeof error === "object" &&
-      "statusCode" in error &&
-      typeof error.statusCode === "number" &&
-      "code" in error &&
-      typeof error.code === "string" &&
-      "message" in error &&
-      typeof error.message === "string",
-  );
-
-/** Ends an already-started response (SSE, chunked) if it has not finished on its own. */
-const endOpenResponse = (res: Response): void => {
+/**
+ * Closes an already-started response that never finished on its own. Destroys rather
+ * than ending it: ending a response mid-body here would read to the client as a
+ * complete, if truncated, body — indistinguishable from success — where destroying the
+ * connection is the honest outcome, matching what Express's own finalhandler does when
+ * it cannot send a response. A no-op for the common case this guards (an SSE turn):
+ * `sendChatSse`'s own `finally` already ends that response before this ever runs, so
+ * `writableEnded` is already true by the time this checks.
+ */
+const closeOpenResponse = (res: Response): void => {
   if (!res.writableEnded && !res.destroyed) {
-    res.end();
+    res.destroy();
   }
 };
 
@@ -71,7 +62,7 @@ export const createErrorHandler = (errorReportingService?: ErrorReportingService
       if (isReportableFault(error) && !errorReportingService?.wasReported(error)) {
         void errorReportingService?.reportUnhandledRequestError({ error, request: req });
       }
-      endOpenResponse(res);
+      closeOpenResponse(res);
       return;
     }
 
@@ -137,11 +128,16 @@ export const createErrorHandler = (errorReportingService?: ErrorReportingService
       return;
     }
 
-    void errorReportingService?.reportUnhandledRequestError({
-      error,
-      request: req,
-      statusCode: 500,
-    });
+    // Headers never sent, so this is the last chance to report — unless a caller
+    // already did (e.g. a stream: false chat turn, where ChatTurnLifecycle.recordFailure
+    // reports before rethrowing to this same next(error)).
+    if (!errorReportingService?.wasReported(error)) {
+      void errorReportingService?.reportUnhandledRequestError({
+        error,
+        request: req,
+        statusCode: 500,
+      });
+    }
 
     res.status(500).json({
       error: {

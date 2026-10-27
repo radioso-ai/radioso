@@ -1265,6 +1265,12 @@ export class ChatTurnLifecycle {
     const providerFailureProperties = providerFailure
       ? { failureKind: providerFailure.kind, providerStatus: providerFailure.status, providerCode: providerFailure.code }
       : {};
+    // Bounded and provider-agnostic, in place of the error's own message, when it is
+    // classified: a provider's error text can echo the customer's rejected prompt back
+    // (see shared/infra/llm/providerErrors.ts), so a classified failure's message never
+    // leaves this process. An unclassified failure keeps its own message (the existing
+    // behavior) — most such errors are this codebase's own, not provider echoes.
+    const boundedErrorMessage = providerFailure ? `LLM provider call failed: ${providerFailure.kind}` : undefined;
     // `isReportableFault` draws the line, not a bare `AppError` check: a quota/validation
     // limit or a superseded turn (`ChatTurnSupersededError`, `< 500`) is an expected,
     // client-facing outcome, never a fault — but a `>= 500` AppError (a platform
@@ -1273,21 +1279,27 @@ export class ChatTurnLifecycle {
     // (`ChatTurnDisconnectAbortError`). Anything reaching here as a fault gets reported
     // exactly once.
     if (isReportableFault(error)) {
-      try {
-        await this.errorReporter?.report({
-          errorType: "chat.turn_failed",
-          error,
-          metadata: {
-            workspaceId: input.workspaceId,
-            conversationId: failedConversationId,
-            stage: "chat.answer",
-            executionMode: input.executionMode ?? "live",
-            ...providerFailureProperties,
-          },
-        });
-      } catch {
+      // Fire-and-forget, like every other error-reporter caller: a sink (PostHog, say)
+      // has no fetch timeout, and awaiting it here would hold the turn's rethrow, its
+      // SSE response end, and the next turn's `waitForPredecessor` lease hostage to a
+      // stalled network call. The dedup this enables for the HTTP error handler's
+      // `wasReported` check still holds without awaiting: `ErrorReportingService.report`
+      // marks the WeakSet synchronously, before its own first await, so the mark has
+      // already happened by the time this line finishes — not after the call settles.
+      void this.errorReporter?.report({
+        errorType: "chat.turn_failed",
+        error,
+        ...(boundedErrorMessage ? { message: boundedErrorMessage } : {}),
+        metadata: {
+          workspaceId: input.workspaceId,
+          conversationId: failedConversationId,
+          stage: "chat.answer",
+          executionMode: input.executionMode ?? "live",
+          ...providerFailureProperties,
+        },
+      }).catch(() => {
         // Error reporting is observational; it must not change failure behavior.
-      }
+      });
     }
     try {
       await this.productAnalyticsService.track({
@@ -1298,7 +1310,7 @@ export class ChatTurnLifecycle {
         subjectId: failedConversationId,
         properties: {
           stream: input.stream,
-          errorMessage: error instanceof Error ? error.message : "Unknown error",
+          errorMessage: boundedErrorMessage ?? (error instanceof Error ? error.message : "Unknown error"),
           ...providerFailureProperties,
         },
         source: "backend",

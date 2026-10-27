@@ -306,6 +306,7 @@ export interface AgentTestExecutionTurns {
 
 export interface AgentVoiceRuntimeConnections {
   agent_id: string;
+  channel_credential_fingerprint: string | null;
   channel_credential_id: string | null;
   created_at: Generated<Timestamp>;
   region: string;

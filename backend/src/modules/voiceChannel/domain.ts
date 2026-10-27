@@ -311,9 +311,20 @@ export interface VoiceRuntimeProvisioner {
 export type VoiceRuntimeBinding = NonNullable<AgentVoiceSettings["runtime"]>;
 
 /**
+ * The REST credential a vendor agent carries: its id, and a fingerprint of the secret Radioso
+ * handed the vendor, which names that secret without revealing it. A rotation keeps the id and
+ * changes the secret, so only the fingerprint tells whether the vendor's copy is still the one the
+ * credential admits.
+ */
+export interface VoiceRuntimeHeldCredential {
+  id: string;
+  fingerprint: string;
+}
+
+/**
  * A vendor agent Radioso created for one Radioso agent, and the REST credential it carries. System
  * owned: the operator's `voice` block names the binding, and a write of that block (a save, a Ray
- * proposal, an import) never touches this. `channelCredentialId` is null once the credential's row
+ * proposal, an import) never touches this. `channelCredential` is null once the credential's row
  * is gone.
  */
 export interface VoiceRuntimeConnection {
@@ -322,7 +333,7 @@ export interface VoiceRuntimeConnection {
   vendor: VoiceVendor;
   region: VoiceVendorRegion;
   vendorAgentId: string;
-  channelCredentialId: string | null;
+  channelCredential: VoiceRuntimeHeldCredential | null;
 }
 
 /**
@@ -357,13 +368,16 @@ export interface VoiceRuntimeConnectionActor {
 
 /**
  * The REST agent-channel credential a maintained vendor agent sends on every turn. `issue` returns
- * the secret once; Radioso keeps only its hash. `revoke` treats a credential already revoked or gone
- * as revoked.
+ * the secret once, beside the credential the vendor will hold; Radioso keeps only its hash. `revoke`
+ * treats a credential already revoked or gone as revoked.
  */
 export interface VoiceRuntimeChannelCredentials {
-  issue(input: { workspaceId: string; agentId: string; actor: VoiceRuntimeConnectionActor }): Promise<{ credentialId: string; secret: string }>;
-  /** True while the credential admits the agent's turns: not revoked, disabled or expired. */
-  isActive(input: { workspaceId: string; agentId: string; credentialId: string }): Promise<boolean>;
+  issue(input: { workspaceId: string; agentId: string; actor: VoiceRuntimeConnectionActor }): Promise<{ credential: VoiceRuntimeHeldCredential; secret: string }>;
+  /**
+   * True while the secret the vendor was handed admits the agent's turns: the credential is not
+   * revoked, disabled or expired, and its secret is still the one the fingerprint names.
+   */
+  admitsHeldSecret(input: { workspaceId: string; agentId: string; credential: VoiceRuntimeHeldCredential }): Promise<boolean>;
   revoke(input: { credentialId: string; actor: VoiceRuntimeConnectionActor }): Promise<void>;
 }
 

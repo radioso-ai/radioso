@@ -35,7 +35,7 @@ const maintainedConnection: VoiceRuntimeConnection = {
   vendor: "elevenlabs",
   region: "eu",
   vendorAgentId: "agent_42",
-  channelCredentialId: "66666666-6666-4666-8666-666666666666",
+  channelCredential: { id: "66666666-6666-4666-8666-666666666666", fingerprint: "radioso_66666666" },
 };
 
 const serviceWith = (overrides: {

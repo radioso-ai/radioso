@@ -91,7 +91,7 @@ function VoiceLanguageEditor({
         </div>
         <div className="space-y-2">
           <Label htmlFor={noticeId} className="text-foreground">Recording notice</Label>
-          <p className="text-xs text-muted-foreground">Shown to the caller as a website call starts. Leave it blank to show none.</p>
+          <p className="text-xs text-muted-foreground">Shown to the caller as a website call starts, and said before the greeting when Radioso manages the voice agent. Leave it blank for none.</p>
           <Input
             id={noticeId}
             value={language.recordingNotice}

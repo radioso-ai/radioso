@@ -892,6 +892,7 @@ export const buildChatServices = (input: {
     actionCapabilities: input.composition.actionCapabilityMap,
     capabilityPolicy: input.composition.capabilityPolicy,
     logger: input.logger,
+    errorReporter: input.errorReporter,
     conversationTurnRegistry: new InMemoryConversationTurnRegistry(
       new LoggingConversationTurnInterruptionObserver(input.logger, input.metricsRegistry),
     ),

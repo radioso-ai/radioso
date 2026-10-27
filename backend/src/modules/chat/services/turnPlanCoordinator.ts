@@ -18,6 +18,7 @@ import { GENERATION_SURFACE } from "../../../shared/domain/generationSurface.js"
 import type { ModelCallUsageContext } from "../../../shared/domain/modelCallUsageContext.js";
 import { addressesSurface } from "../../../shared/domain/steeringRule.js";
 import type { LlmCapabilityResolveInput } from "../../../shared/infra/llm/workspaceContext.js";
+import type { LlmProviderFailureClassification } from "../../../shared/infra/llm/llmProviderFailureClassification.js";
 import type { MessageRecord } from "../../../db/repositories/messageRepository.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
@@ -58,7 +59,12 @@ export type TurnPlanFailureReason = "invalid_or_error";
 export type TurnPlanOutcome =
   | { status: "planned"; plan: TurnPlan; prepared: RankableRoutineCandidates | null }
   | { status: "bypassed"; reason: TurnPlanBypassReason }
-  | { status: "failed"; reason: TurnPlanFailureReason };
+  | {
+    status: "failed";
+    reason: TurnPlanFailureReason;
+    /** Absent for a clean miss (malformed output); present when the planner call threw. */
+    failure?: LlmProviderFailureClassification;
+  };
 
 /**
  * The lazy, memoized per-turn plan handle that rides on the session. Computation
@@ -260,7 +266,10 @@ export class TurnPlanCoordinator {
       throw signal.reason ?? new Error("chat_turn_aborted");
     }
 
-    const plan = await this.service.plan(request);
+    let failure: LlmProviderFailureClassification | null = null;
+    const plan = await this.service.plan(request, (classified) => {
+      failure = classified;
+    });
     // An external turn cancellation is not a planner failure. Propagate it so the
     // host stops the turn instead of starting the four staged fallback calls after
     // the planner request was aborted.
@@ -268,7 +277,7 @@ export class TurnPlanCoordinator {
       throw signal.reason ?? new Error("chat_turn_aborted");
     }
     if (!plan) {
-      return { status: "failed", reason: "invalid_or_error" };
+      return { status: "failed", reason: "invalid_or_error", ...(failure ? { failure } : {}) };
     }
     return { status: "planned", plan, prepared };
   }
@@ -308,6 +317,13 @@ export class TurnPlanCoordinator {
         "chat.turn_planning.quick_reply_discarded": outcome.plan.quickReplyDiscarded === true,
       });
     }
+    // The classified failure kind/status/code, only when the planner call threw — a clean
+    // miss (malformed output) stays indistinguishable from itself, but no longer from a
+    // provider outage: the fields below are absent either way, unlike before this existed,
+    // when both reasons collapsed into the same bare "invalid_or_error".
+    const failureFields = outcome.status === "failed" && outcome.failure
+      ? { failureKind: outcome.failure.kind, providerStatus: outcome.failure.status, providerCode: outcome.failure.code }
+      : {};
     this.logger?.info(
       {
         outcome: metricOutcome,
@@ -315,6 +331,7 @@ export class TurnPlanCoordinator {
         latencyMs,
         routineCandidateCount,
         directiveCandidateCount: input?.directiveCandidates.length ?? 0,
+        ...failureFields,
         ...quickReply,
       },
       "chat.turn_planning.outcome",

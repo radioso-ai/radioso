@@ -1,4 +1,5 @@
 import { normalizeProviderCredentialError } from "../../../shared/infra/llm/providerErrors.js";
+import { classifyLlmProviderFailure } from "../../../shared/infra/llm/llmProviderFailureClassification.js";
 import { setTraceAttributes, traceAsyncIterable, traceOperation } from "../../../shared/observability/tracing/operations.js";
 import {
   createModelCallTraceCollector,
@@ -22,6 +23,7 @@ import type {
 } from "@radioso/conversation-contract";
 import type { WorkspaceInvalidationPublisher } from "@radioso/workspace-invalidation-contract";
 import type { AuditService } from "../../audit/contracts/index.js";
+import type { ErrorReporter } from "../../../shared/errors/errorReporter.js";
 import type { CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.js";
 import type { SuppressedSkillEffect } from "../../../shared/domain/suppressedSkillEffect.js";
 import type { ActionCapabilityMap } from "../../../shared/domain/actionCapabilities.js";
@@ -255,6 +257,8 @@ export interface ChatServiceOptions {
   actionCapabilities?: ActionCapabilityMap;
   capabilityPolicy?: CapabilityPolicy;
   logger?: Pick<AppLogger, "warn" | "info">;
+  /** Optional: when wired, an unexpected (non-`AppError`) turn failure is reported once. */
+  errorReporter?: Pick<ErrorReporter, "report">;
   /** Optional: when wired, an eligible visitor message enqueues a facet extraction job (spec 956). */
   facetExtractionJobs?: Pick<FacetExtractionJobStore, "enqueue">;
   conversationOwnershipRepository?: ConversationOwnershipRepository;
@@ -421,10 +425,12 @@ const routineActivationFailureFields = (error: unknown): Record<string, string> 
   }
   const phase = "phase" in error && typeof error.phase === "string" ? error.phase : "unknown";
   const cause = error.cause;
+  const causeFailure = classifyLlmProviderFailure(cause);
   return {
     event: "routine_activation_failed",
     phase,
     causeType: cause instanceof Error ? cause.name : typeof cause,
+    ...(causeFailure ? { causeFailureKind: causeFailure.kind } : {}),
   };
 };
 
@@ -489,6 +495,7 @@ export class ChatService {
       actionCapabilities,
       capabilityPolicy,
       logger,
+      errorReporter,
       facetExtractionJobs,
       conversationOwnershipRepository,
       routineStore,
@@ -556,6 +563,7 @@ export class ChatService {
       turnRuntime.metrics,
       workspaceInvalidationPublisher,
       cutReplyStore,
+      errorReporter,
     );
     this.chatSessionPreparer = new ChatSessionPreparer(
       conversationRepository,
@@ -1409,6 +1417,7 @@ export class ChatService {
         throw preferredError;
       }
       const normalizedError = normalizeProviderCredentialError(preferredError);
+      const providerFailure = classifyLlmProviderFailure(preferredError);
       const activationFailure = routineActivationFailureFields(preferredError);
       if (activationFailure) {
         this.logger?.warn({
@@ -1417,7 +1426,7 @@ export class ChatService {
           conversationId: session?.conversation.id ?? input.conversationId,
         }, "Routine activation failed");
       }
-      await this.chatTurnLifecycle.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy);
+      await this.chatTurnLifecycle.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy, providerFailure);
       throw normalizedError;
     }
   }
@@ -2161,6 +2170,7 @@ export class ChatService {
         return;
       }
       const normalizedError = normalizeProviderCredentialError(preferredError);
+      const providerFailure = classifyLlmProviderFailure(preferredError);
       const activationFailure = routineActivationFailureFields(preferredError);
       if (activationFailure) {
         this.logger?.warn({
@@ -2169,7 +2179,7 @@ export class ChatService {
           conversationId: session?.conversation.id ?? input.conversationId,
         }, "Routine activation failed");
       }
-      await this.chatTurnLifecycle.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy);
+      await this.chatTurnLifecycle.recordFailure(input, session, assistantMessageId, normalizedError, workflowPolicy, providerFailure);
       throw normalizedError;
     } finally {
       await releaseUsageReservation();

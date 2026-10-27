@@ -6,6 +6,8 @@ import type { AuditService } from "../../src/modules/audit/contracts/index.js";
 import { createAuditService, InMemoryAuditEventRepository } from "../support/fakes.js";
 import type { ConversationRepositoryPort } from "../../src/db/repositories/conversationRepository.js";
 import type { MessageRepositoryPort } from "../../src/db/repositories/messageRepository.js";
+import { AppError } from "../../src/shared/domain/errors.js";
+import type { ErrorReporter } from "../../src/shared/errors/errorReporter.js";
 import { ChatTurnSupersededError } from "../../src/modules/chat/services/conversationTurnRegistry.js";
 import {
   buildTurnTraceForPresentation,
@@ -36,10 +38,16 @@ interface RecordedAudit {
   metadata: Record<string, unknown>;
 }
 
-const harness = (metrics?: { incrementCounter: MetricsRegistry["incrementCounter"] }) => {
+const harness = (
+  metrics?: { incrementCounter: MetricsRegistry["incrementCounter"] },
+  errorReporter?: Pick<ErrorReporter, "report">,
+) => {
   const records: RecordedAudit[] = [];
   const auditService = {
     record: vi.fn(async (event: RecordedAudit) => {
+      records.push(event);
+    }),
+    recordForLiveConversation: vi.fn(async (event: RecordedAudit) => {
       records.push(event);
     }),
     logRecorded: vi.fn(),
@@ -67,6 +75,9 @@ const harness = (metrics?: { incrementCounter: MetricsRegistry["incrementCounter
     undefined,
     undefined,
     metrics,
+    undefined,
+    undefined,
+    errorReporter,
   );
   return { lifecycle, records, auditService, messageRepository, conversationRepository };
 };
@@ -2499,6 +2510,124 @@ describe("ChatTurnLifecycle — engine turn envelope", () => {
       );
 
       expect(chatAnswerEvents(auditRepository)).toHaveLength(0);
+    });
+  });
+
+  describe("recordFailure — error reporting", () => {
+    it("reports an unexpected (non-AppError) turn failure once, with its classification", async () => {
+      const report = vi.fn().mockResolvedValue(undefined);
+      const { lifecycle } = harness(undefined, { report });
+      const error = Object.assign(new Error("Azure OpenAI chat failed"), { status: 404, code: "DeploymentNotFound" });
+
+      await lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: false },
+        null,
+        undefined,
+        error,
+        undefined,
+        { kind: "model_unavailable", status: 404, code: "DeploymentNotFound" },
+      );
+
+      expect(report).toHaveBeenCalledOnce();
+      expect(report).toHaveBeenCalledWith(expect.objectContaining({
+        errorType: "chat.turn_failed",
+        error,
+        metadata: expect.objectContaining({
+          workspaceId: "workspace_1",
+          conversationId: "conv_1",
+          failureKind: "model_unavailable",
+          providerStatus: 404,
+          providerCode: "DeploymentNotFound",
+        }),
+      }));
+    });
+
+    it("never reports an AppError — an already-handled, expected outcome", async () => {
+      const report = vi.fn().mockResolvedValue(undefined);
+      const { lifecycle } = harness(undefined, { report });
+
+      await lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: false },
+        null,
+        undefined,
+        new AppError(429, "usage_limit_exceeded", "Monthly message limit reached"),
+      );
+
+      expect(report).not.toHaveBeenCalled();
+    });
+
+    it("never reports a cancellation/disconnect error (both extend AppError)", async () => {
+      const report = vi.fn().mockResolvedValue(undefined);
+      const { lifecycle } = harness(undefined, { report });
+
+      await lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: false },
+        null,
+        undefined,
+        new ChatTurnSupersededError("conv_1", "rendering"),
+      );
+
+      expect(report).not.toHaveBeenCalled();
+    });
+
+    it("skips reporting for safe_test/review turns the same way it skips analytics", async () => {
+      const report = vi.fn().mockResolvedValue(undefined);
+      const { lifecycle } = harness(undefined, { report });
+
+      await lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: false, executionMode: "safe_test" },
+        null,
+        undefined,
+        new Error("boom"),
+      );
+
+      expect(report).not.toHaveBeenCalled();
+    });
+
+    it("never fails turn-failure recording when the error reporter itself rejects", async () => {
+      const report = vi.fn().mockRejectedValue(new Error("sink down"));
+      const { lifecycle } = harness(undefined, { report });
+
+      await expect(lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: false },
+        null,
+        undefined,
+        new Error("boom"),
+      )).resolves.toBeUndefined();
+    });
+
+    it("carries the classified failure kind on chat.failed analytics", async () => {
+      const auditService = {
+        record: vi.fn(async () => {}),
+        recordForLiveConversation: vi.fn(async () => {}),
+      } as unknown as AuditService;
+      const conversationRepository = { touch: vi.fn(async () => {}) } as unknown as ConversationRepositoryPort;
+      const messageRepository = {} as unknown as MessageRepositoryPort;
+      const track = vi.fn(async () => null);
+      const lifecycle = new ChatTurnLifecycle(
+        conversationRepository,
+        messageRepository,
+        auditService,
+        { track },
+      );
+
+      await lifecycle.recordFailure(
+        { workspaceId: "workspace_1", conversationId: "conv_1", stream: false },
+        null,
+        undefined,
+        { status: 429, code: "rate_limit_exceeded" },
+        undefined,
+        { kind: "rate_limited", status: 429, code: "rate_limit_exceeded" },
+      );
+
+      expect(track).toHaveBeenCalledWith(expect.objectContaining({
+        eventName: "chat.failed",
+        properties: expect.objectContaining({
+          failureKind: "rate_limited",
+          providerStatus: 429,
+          providerCode: "rate_limit_exceeded",
+        }),
+      }));
     });
   });
 });

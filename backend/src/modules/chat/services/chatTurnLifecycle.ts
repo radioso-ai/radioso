@@ -12,6 +12,9 @@ import {
 import type { AuditEventInput, AuditService } from "../../audit/contracts/index.js";
 import { DefaultAllowCapabilityPolicy, type CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.js";
 import type { ActionCapabilityMap } from "../../../shared/domain/actionCapabilities.js";
+import { AppError } from "../../../shared/domain/errors.js";
+import type { ErrorReporter } from "../../../shared/errors/errorReporter.js";
+import type { LlmProviderFailureClassification } from "../../../shared/infra/llm/llmProviderFailureClassification.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageCreateInput, MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
@@ -761,6 +764,10 @@ export class ChatTurnLifecycle {
     // Optional: when wired, a reply a newer input cut off mid-stream keeps the part its listener
     // heard. Absent, such a turn stores no reply.
     private readonly cutReplyStore?: CutReplyStore,
+    // Optional: when wired, an unexpected (non-`AppError`) turn failure is reported once
+    // through this narrow port. Absent leaves `recordFailure`'s audit/analytics behavior
+    // unchanged — no error tracking, as before this existed.
+    private readonly errorReporter?: Pick<ErrorReporter, "report">,
   ) {
     this.capabilityPolicy = capabilityPolicy ?? new DefaultAllowCapabilityPolicy();
   }
@@ -1187,6 +1194,10 @@ export class ChatTurnLifecycle {
     existingAssistantMessageId: string | undefined,
     error: unknown,
     workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn"),
+    // The caller's classification of `error` against the LLM provider call it came from
+    // (shared/infra/llm, computed before any AppError normalization). `null` when the
+    // caller has none, or the failure never reached a provider call at all.
+    providerFailure: LlmProviderFailureClassification | null = null,
   ) {
     if (session && existingAssistantMessageId) {
       await this.conversationRepository.touch(session.conversation.id, input.workspaceId);
@@ -1247,7 +1258,35 @@ export class ChatTurnLifecycle {
       await this.auditService.record(failureAuditEvent);
     }
     if (turnExecutionCapabilities(input.executionMode).turnBookkeeping === "skip") {
+      // A safe_test/review turn is a preview, not a production incident: neither error
+      // tracking nor analytics hears about it, same gate as below for the live case.
       return;
+    }
+    const providerFailureProperties = providerFailure
+      ? { failureKind: providerFailure.kind, providerStatus: providerFailure.status, providerCode: providerFailure.code }
+      : {};
+    // An `AppError` is already an expected, fully-handled outcome (quota/validation limits,
+    // turn cancellation, client disconnect — see `ChatTurnSupersededError`/
+    // `ChatTurnDisconnectAbortError`, both `AppError` subclasses) with its own client-facing
+    // code and message; it is never a fault worth a page. Anything else reaching here is
+    // unexpected — the chat equivalent of the error middleware's unhandled-error branch — and
+    // gets reported exactly once.
+    if (!(error instanceof AppError)) {
+      try {
+        await this.errorReporter?.report({
+          errorType: "chat.turn_failed",
+          error,
+          metadata: {
+            workspaceId: input.workspaceId,
+            conversationId: failedConversationId,
+            stage: "chat.answer",
+            executionMode: input.executionMode ?? "live",
+            ...providerFailureProperties,
+          },
+        });
+      } catch {
+        // Error reporting is observational; it must not change failure behavior.
+      }
     }
     try {
       await this.productAnalyticsService.track({
@@ -1255,10 +1294,11 @@ export class ChatTurnLifecycle {
         workspaceId: input.workspaceId,
         accountId: input.accountId,
         subjectType: "conversation",
-        subjectId: session?.conversation.id ?? input.conversationId,
+        subjectId: failedConversationId,
         properties: {
           stream: input.stream,
           errorMessage: error instanceof Error ? error.message : "Unknown error",
+          ...providerFailureProperties,
         },
         source: "backend",
       });

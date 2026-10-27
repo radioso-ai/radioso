@@ -5714,7 +5714,15 @@ export interface components {
                 rewrite: components["schemas"]["WorkspaceLlmManagedModel"];
                 rerank: components["schemas"]["WorkspaceLlmManagedModel"];
             };
+            /** @description Every model Radioso supports, per provider. `openai-compatible` is empty because it accepts any model identifier. */
             knownModelsByProvider: {
+                openai: string[];
+                "openai-compatible": string[];
+                gemini: string[];
+                claude: string[];
+            };
+            /** @description The catalog models this workspace can run, per provider: all of them on a provider the workspace holds its own key for, otherwise the ones the deployment's shared key serves. A preference or agent override outside this list is rejected; one stored before it left the list runs on the deployment default. */
+            runnableModelsByProvider: {
                 openai: string[];
                 "openai-compatible": string[];
                 gemini: string[];

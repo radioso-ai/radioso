@@ -226,10 +226,15 @@ export interface LlmCapabilityDefault extends LlmProviderMetadata {
  * `AZURE_OPENAI_ENDPOINT` is set alongside a non-global `OPENAI_DATA_RESIDENCY` — so this union
  * is the one place "which platform endpoint" is ever represented, instead of two independent
  * optional fields that could disagree.
+ *
+ * On Azure the request's `model` must name a deployment, and only the platform's own default
+ * models are deployed, so the Azure variant carries the models it serves: the distinct native
+ * `openai` models across the platform capability defaults (`platformOpenAIModelCalls`), the same
+ * list the residency startup probe verifies. OpenAI's own hosts serve every model.
  */
 export type PlatformOpenAIEndpoint =
   | { kind: "openai"; residency: OpenAIDataResidency }
-  | { kind: "azure"; baseUrl: string };
+  | { kind: "azure"; baseUrl: string; deployments: readonly string[] };
 
 /**
  * Flattens a {@link PlatformOpenAIEndpoint} into the `LlmCapabilityDefault`/`LlmCapabilityConfig`

@@ -3,7 +3,7 @@ import {
   callOpenAIResidencyProbeEmbeddings,
   callOpenAIResidencyProbeResponses,
 } from "../shared/infra/llm/openAIResidencyProbeClient.js";
-import { resolveLlmConfig } from "../shared/infra/llm/providerConfig.js";
+import { platformOpenAIModelCalls, resolveLlmConfig } from "../shared/infra/llm/providerConfig.js";
 import {
   type LlmCapabilityName,
   platformOpenAIEndpointLogFields,
@@ -81,10 +81,6 @@ const PROBE_SURFACE_BY_CAPABILITY: Record<LlmCapabilityName, ProbeSurface> = {
   rerank: "responses",
 };
 
-/** Every capability `ResolvedLlmConfig` carries a default for — iterated generically below so a
- *  capability can never be silently left out of the probe the way `rewrite` previously was. */
-const ALL_CAPABILITY_NAMES: readonly LlmCapabilityName[] = ["chat", "rewrite", "rerank", "embeddings"];
-
 interface ResidencyProbeTarget {
   model: string;
   capabilities: LlmCapabilityName[];
@@ -114,43 +110,24 @@ const defaultCallResponses: Required<OpenAIResidencyStartupCheckDependencies>["c
 
 /**
  * Every distinct (API surface, model) pair this deployment's platform OpenAI key is configured
- * to call, across every capability `ResolvedLlmConfig` carries a default for — chat, rewrite,
- * rerank, and embeddings, iterated generically so a future capability is probed automatically
- * rather than needing a line added here. Embeddings also folds in the supplemental openai
- * embedding config even when the primary embeddings provider is not openai — the owner
- * requirement is embeddings must never fail, and `resolveLlmConfig` always makes an
- * openai-embeddings capability latently available alongside a platform key, since a workspace or
- * an embedding profile can request it explicitly at any time. A model configured for both chat
- * and rewrite (the common case) is probed once on the shared `chat_completion` surface, naming
- * both capabilities if it is ever rejected; rerank never dedupes with them even on the same
- * model, since it calls a different surface (`responses`).
+ * to call, taken from `platformOpenAIModelCalls` — the same list the Azure endpoint's
+ * `deployments` is derived from, so every model the platform claims to serve is one this probe
+ * verified. A model configured for both chat and rewrite (the common case) is probed once on the
+ * shared `chat_completion` surface, naming both capabilities if it is ever rejected; rerank never
+ * dedupes with them even on the same model, since it calls a different surface (`responses`).
  */
 const resolveProbeTargets = (config: ResolvedLlmConfig): ResidencyProbeTarget[] => {
   const targetsBySurfaceAndModel = new Map<string, ResidencyProbeTarget>();
 
-  const addTarget = (capability: LlmCapabilityName, model: string): void => {
+  for (const { capability, model } of platformOpenAIModelCalls(config)) {
     const surface = PROBE_SURFACE_BY_CAPABILITY[capability];
     const key = `${surface}:${model}`;
     const existing = targetsBySurfaceAndModel.get(key);
     if (existing) {
       existing.capabilities.push(capability);
-      return;
+      continue;
     }
     targetsBySurfaceAndModel.set(key, { model, capabilities: [capability], surface });
-  };
-
-  for (const capability of ALL_CAPABILITY_NAMES) {
-    const capabilityConfig = config[capability];
-    if (capabilityConfig.provider === "openai") {
-      addTarget(capability, capabilityConfig.model);
-    }
-  }
-
-  const supplementalEmbeddingModel = config.embeddingProviderConfigs.find(
-    (entry) => entry.provider === "openai",
-  )?.model;
-  if (supplementalEmbeddingModel) {
-    addTarget("embeddings", supplementalEmbeddingModel);
   }
 
   return [...targetsBySurfaceAndModel.values()];

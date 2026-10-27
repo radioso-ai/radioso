@@ -152,8 +152,11 @@ The Voice card names what to fix. From the API, the same answers come from
 
 A failed attempt cleans up after itself: a credential issued for it is
 revoked again when ElevenLabs refuses the agent, and an ElevenLabs agent
-Radioso could not record is deleted again. Select Connect again after any
-failure; it picks up whatever the last attempt left in place.
+Radioso could not record is deleted again. When Radioso can't record a
+Reconnect that already gave the ElevenLabs agent a new credential, it revokes
+that credential and the one it replaced, so calls stop until the next Connect
+issues a fresh one. Select Connect again after any failure; it picks up
+whatever the last attempt left in place.
 
 `GET`, `POST` and `DELETE /api/v1/agents/:agentId/voice/connection` are the
 Voice card's: dashboard sessions only, with the agent manage permission, and

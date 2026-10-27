@@ -35,6 +35,8 @@ interface Setup {
   rotatedCredentials?: string[];
   completions?: boolean;
   saveError?: Error;
+  /** How many saves fail with `saveError`; every one when unset. */
+  saveFailures?: number;
   bindError?: Error;
   /** Another Connect or Disconnect of the agent holds its connection lock. */
   lockHeld?: boolean;
@@ -54,6 +56,7 @@ const serviceWith = (setup: Setup = {}) => {
     ...(setup.rotatedCredentials ?? []).map((id) => [id, `${fingerprintOf(id)}-rotated`] as const),
   ]);
   let issued = 0;
+  let saveFailures = setup.saveFailures ?? Number.POSITIVE_INFINITY;
   const provisioner = {
     locateAccount: vi.fn<VoiceRuntimeProvisioner["locateAccount"]>(async () => {
       steps.push("locate");
@@ -99,7 +102,10 @@ const serviceWith = (setup: Setup = {}) => {
       find: async () => connection,
       save: async (next) => {
         steps.push(`save:${next.vendorAgentId}:${next.channelCredential?.id ?? null}`);
-        if (setup.saveError) throw setup.saveError;
+        if (setup.saveError && saveFailures > 0) {
+          saveFailures -= 1;
+          throw setup.saveError;
+        }
         connection = next;
       },
       remove: async () => {
@@ -138,7 +144,19 @@ const serviceWith = (setup: Setup = {}) => {
     metrics,
     logger,
   });
-  return { service, steps, held, provisioner, audit, logger, metrics, connectionNow: () => connection, profileNow: () => profile };
+  return {
+    service,
+    steps,
+    held,
+    provisioner,
+    audit,
+    logger,
+    metrics,
+    connectionNow: () => connection,
+    profileNow: () => profile,
+    /** The credentials that admit the agent's turns now, by id. */
+    activeNow: () => [...active.keys()],
+  };
 };
 
 const failureOf = async (promise: Promise<unknown>): Promise<string> => {
@@ -282,17 +300,64 @@ describe("voice runtime connection: connect", () => {
   });
 
   it("releases the vendor agent it created and revokes the credential when the connection cannot be recorded", async () => {
-    const { service, steps } = serviceWith({ saveError: new Error("database down") });
+    const { service, steps, logger } = serviceWith({ saveError: new Error("database down") });
 
     await expect(service.connect({ ...agent, actor })).rejects.toThrow("database down");
     expect(steps).toEqual(["locate", "issue:cred-1", "ensure:new:rk_secret_1", "save:agent_new:cred-1", "release:agent_new", "revoke:cred-1"]);
+    expect(logger.warn).toHaveBeenCalledWith(
+      { workspaceId, agentId, vendor: "elevenlabs", region: "eu", vendorAgentId: "agent_new", outcome: "created", cleanup: "vendor_agent_deleted", errorClass: "Error" },
+      "Voice runtime connection could not be recorded",
+    );
   });
 
-  it("keeps a rotated credential the vendor agent now holds when the connection cannot be recorded, so the next Connect repairs", async () => {
-    const { service, steps } = serviceWith({ connection: managed(), profile: boundTo("agent_42"), activeCredentials: [], saveError: new Error("database down") });
+  it("revokes the credential a repair gave the vendor agent and the one the record names when the repair cannot be recorded", async () => {
+    const { service, steps, logger, connectionNow, activeNow } = serviceWith({
+      connection: managed(),
+      profile: boundTo("agent_42"),
+      rotatedCredentials: ["cred-old"],
+      saveError: new Error("database down"),
+    });
 
     await expect(service.connect({ ...agent, actor })).rejects.toThrow("database down");
-    expect(steps).toEqual(["locate", "issue:cred-1", "ensure:agent_42:rk_secret_1", "save:agent_42:cred-1"]);
+
+    expect(steps).toEqual(["locate", "issue:cred-1", "ensure:agent_42:rk_secret_1", "save:agent_42:cred-1", "revoke:cred-1", "revoke:cred-old"]);
+    // Nothing minted is left admitting turns untracked; the record still names the old credential.
+    expect(activeNow()).toEqual([]);
+    expect(connectionNow()).toEqual(managed());
+    expect(logger.warn).toHaveBeenCalledWith(
+      { workspaceId, agentId, vendor: "elevenlabs", region: "eu", vendorAgentId: "agent_42", outcome: "repaired", cleanup: "credentials_revoked", errorClass: "Error" },
+      "Voice runtime connection could not be recorded",
+    );
+  });
+
+  it("gives the vendor agent a fresh credential on the Connect after a repair that could not be recorded", async () => {
+    const { service, steps, connectionNow, activeNow } = serviceWith({
+      connection: managed(),
+      profile: boundTo("agent_42"),
+      activeCredentials: ["cred-old"],
+      ensure: async (input) => (input.bearer === null
+        ? { outcome: "needs_bearer" }
+        : { outcome: "repaired", vendorAgentId: "agent_42", primaryLocaleSupported: true }),
+      saveError: new Error("database down"),
+      saveFailures: 1,
+    });
+    await expect(service.connect({ ...agent, actor })).rejects.toThrow("database down");
+    steps.length = 0;
+
+    await service.connect({ ...agent, actor });
+
+    expect(steps).toEqual(["locate", "issue:cred-2", "ensure:agent_42:rk_secret_2", "save:agent_42:cred-2", "revoke:cred-old", "bind:agent_42@eu"]);
+    expect(connectionNow()?.channelCredential?.id).toBe("cred-2");
+    expect(activeNow()).toEqual(["cred-2"]);
+  });
+
+  it("leaves the credentials alone when a repair that minted nothing cannot be recorded", async () => {
+    const { service, steps, logger } = serviceWith({ connection: managed(), profile: boundTo("agent_42"), activeCredentials: ["cred-old"], saveError: new Error("database down") });
+
+    await expect(service.connect({ ...agent, actor })).rejects.toThrow("database down");
+
+    expect(steps).toEqual(["locate", "ensure:agent_42:kept", "save:agent_42:cred-old"]);
+    expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ outcome: "repaired", cleanup: "none" }), "Voice runtime connection could not be recorded");
   });
 
   it("keeps the credential of a vendor agent it created but could neither record nor delete", async () => {
@@ -303,7 +368,11 @@ describe("voice runtime connection: connect", () => {
 
     await expect(service.connect({ ...agent, actor })).rejects.toThrow("database down");
     expect(steps).toEqual(["locate", "issue:cred-1", "ensure:new:rk_secret_1", "save:agent_new:cred-1", "release:agent_new"]);
-    expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ vendorAgentId: "agent_new" }), expect.any(String));
+    expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ vendorAgentId: "agent_new" }), "Voice runtime vendor agent left at the vendor: deleting it failed");
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ vendorAgentId: "agent_new", outcome: "created", cleanup: "vendor_agent_left" }),
+      "Voice runtime connection could not be recorded",
+    );
   });
 
   it("revokes the credential it replaced as soon as the new one is recorded, before binding, so a binding that fails loses nothing", async () => {

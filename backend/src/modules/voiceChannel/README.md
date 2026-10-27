@@ -103,9 +103,13 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   (`ensureAgent`, minting a credential and asking again when the vendor agent
   is gone), records the connection (`VoiceRuntimeConnectionStore`), revokes a
   credential the recorded one replaced, and binds `voice.runtime`
-  (`VoiceRuntimeBinder`). A minted credential is revoked again only while no
+  (`VoiceRuntimeBinder`). A minted credential is revoked again while no
   vendor agent holds it: its vendor call failed, or the agent this attempt
-  created could not be recorded and was deleted again. A key now for another
+  created could not be recorded and was deleted again. A repair whose record
+  fails after it minted revokes both the minted credential and the one the
+  record names, since no record can name the first: the vendor agent's calls
+  stop, and the next Connect finds no credential that works and issues a
+  fresh one. A key now for another
   region's account gets a new vendor agent there. `disconnect`
   releases the vendor agent the connection names, revokes its credential and
   drops the record (best effort when the vendor or the key is gone, reported
@@ -1053,7 +1057,10 @@ the `VoiceRuntimeConnectionFailure` (or `error`, `needs_connect`;
 agent) and the
 vendor error's `reason` and `vendorStatus`; a key now for another region's
 account, a vendor agent left at the vendor (with its `vendorAgentId` and
-`region`), a credential that could not be revoked and a default locale the
+`region`), a credential that could not be revoked, a connection that could
+not be recorded (`Voice runtime connection could not be recorded`, with the
+attempt's `outcome` and its `cleanup`: `vendor_agent_deleted`,
+`vendor_agent_left`, `credentials_revoked` or `none`) and a default locale the
 vendor speaks no language of each warn on their own. The
 `voice_runtime_connection_total` counter carries the same `vendor`,
 `operation` and `outcome`. Never the key, the credential's secret, a vendor

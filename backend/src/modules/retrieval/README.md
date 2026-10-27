@@ -58,7 +58,6 @@ report those codes but must not include provider errors, queries, or vectors.
 - `public.ts`: general retrieval-owned contracts and helpers for production code
   outside this module.
 - `composition.ts`: construction helpers used by application composition.
-- `llmAdapters.ts`: LLM-provider wiring used by composition and provider setup.
 - `domain/`: retrieval domain types and pure domain services.
 
 Production code outside this module should prefer these entry points over direct

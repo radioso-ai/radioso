@@ -405,7 +405,7 @@ The website embed is a ready-made page for voice calls. Offering them is your
 choice, and it starts off:
 
 1. Get the agent's voice ready: an ElevenLabs key under **Voice runtime
-   keys**, ElevenLabs connected under **Runtime**, and the **Voice channel**
+   keys**, ElevenLabs connected under **Voice provider**, and the **Voice channel**
    on, as above.
 2. On the agent's **Web chat** page, under **Website widget**, turn on
    **Offer calls on the website**. You can turn it on once voice is ready;

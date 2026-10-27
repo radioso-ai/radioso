@@ -168,7 +168,7 @@ export function VoiceChannelCard({ agentId, providersHref }: { agentId: string; 
       id="voice-channel"
       icon={<AudioLines className="h-5 w-5 text-primary" />}
       title="Voice"
-      description="The voice runtime calls run on, bridge lines for calls, and word-for-word quick replies on every channel."
+      description="Let visitors talk to this agent out loud, and write the lines it says word for word."
     >
       {loadError ? <p className="text-sm text-destructive" role="alert">{loadError}</p> : null}
       {!form && !loadError ? <p className="text-sm text-muted-foreground">Loading voice settings…</p> : null}
@@ -187,7 +187,7 @@ export function VoiceChannelCard({ agentId, providersHref }: { agentId: string; 
             <div className="space-y-0.5">
               <Label htmlFor="voiceLanguageSwitching" className="text-foreground">Switch language with the caller</Label>
               <p id="voiceLanguageSwitchingHint" className="text-xs text-muted-foreground">
-                A call switches its voice and transcription to the caller&rsquo;s language. An ElevenLabs agent you set up yourself needs Detect language and a preset for each language.
+                A call switches its voice and transcription to the caller&rsquo;s language.
               </p>
             </div>
             <Switch

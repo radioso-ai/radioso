@@ -110,9 +110,11 @@ The ElevenLabs agent follows the Radioso agent. When you change the agent's
 default locale, Radioso sets the ElevenLabs agent's language again. Select
 **Reconnect** on the Voice card to set everything in the table again and bind
 the agent once more, for example after a save cleared the binding or after
-someone changed those settings in ElevenLabs. When the **Voice calls**
-credential was revoked, Reconnect issues a new one, points the ElevenLabs
-agent at it, and only then revokes the old one.
+someone changed those settings in ElevenLabs. Revoking or rotating the
+**Voice calls** credential on the API card leaves ElevenLabs with a secret
+Radioso no longer accepts, so calls stop until you select Reconnect: it issues
+a new credential, points the ElevenLabs agent at it, and only then revokes the
+old one.
 
 **Disconnect** deletes the ElevenLabs agent and its secret, revokes the
 **Voice calls** credential, and unbinds the agent. When ElevenLabs can't be

@@ -166,6 +166,24 @@ describe("agent voice connection contract", () => {
     expect(vendor.secretOf("agent_2")?.startsWith(replacement.prefix)).toBe(true);
   });
 
+  it("gives the vendor agent a new credential on Connect after the operator rotated its own on the API card", async () => {
+    const { app, dashboard, agentId, connect, vendor, restCredentials } = await operatorWith();
+    await connect().expect(200);
+    const [rotated] = await restCredentials();
+    const rotation = await request(app).post(`/api/v1/agents/${agentId}/channel-credentials/${rotated.id}/rotate`).set({ ...dashboard, ...csrf }).expect(200);
+    // ElevenLabs still holds the secret Radioso handed it, which the rotation retired.
+    expect(vendor.secretOf("agent_2")?.startsWith(rotated.prefix)).toBe(true);
+
+    await connect().expect(200);
+
+    const credentials = await restCredentials();
+    expect(credentials).toHaveLength(1);
+    const [replacement] = credentials;
+    expect(replacement.id).not.toBe(rotated.id);
+    expect(vendor.secretOf("agent_2")?.startsWith(replacement.prefix)).toBe(true);
+    expect(vendor.secretOf("agent_2")).not.toBe((rotation.body as { secret: string }).secret);
+  });
+
   it("binds the same vendor agent again after a save that sent no runtime cleared the binding", async () => {
     const { app, dashboard, agentId, connect, status } = await operatorWith();
     await connect().expect(200);

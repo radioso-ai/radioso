@@ -51,23 +51,30 @@ describeIntegration("VoiceRuntimeConnectionRepository (Postgres)", () => {
     const agentId = await insertAgent();
     const firstGrant = await insertGrant(agentId);
     const secondGrant = await insertGrant(agentId);
-    const connection = { workspaceId, agentId, vendor: "elevenlabs" as const, region: "eu" as const, vendorAgentId: "agent_first", channelCredentialId: firstGrant };
+    const connection = {
+      workspaceId,
+      agentId,
+      vendor: "elevenlabs" as const,
+      region: "eu" as const,
+      vendorAgentId: "agent_first",
+      channelCredential: { id: firstGrant, fingerprint: "radioso_first000" },
+    };
 
     await expect(repository.find({ workspaceId, agentId })).resolves.toBeNull();
     await repository.save(connection);
-    await repository.save({ ...connection, region: "us", vendorAgentId: "agent_second", channelCredentialId: secondGrant });
+    await repository.save({ ...connection, region: "us", vendorAgentId: "agent_second", channelCredential: { id: secondGrant, fingerprint: "radioso_second00" } });
 
     await expect(repository.find({ workspaceId, agentId })).resolves.toEqual({
       ...connection,
       region: "us",
       vendorAgentId: "agent_second",
-      channelCredentialId: secondGrant,
+      channelCredential: { id: secondGrant, fingerprint: "radioso_second00" },
     });
   });
 
   it("reads a connection only in its own workspace, and removes it there", async () => {
     const agentId = await insertAgent();
-    await repository.save({ workspaceId, agentId, vendor: "elevenlabs", region: "us", vendorAgentId: "agent_42", channelCredentialId: null });
+    await repository.save({ workspaceId, agentId, vendor: "elevenlabs", region: "us", vendorAgentId: "agent_42", channelCredential: null });
 
     await expect(repository.find({ workspaceId: otherWorkspaceId, agentId })).resolves.toBeNull();
     await repository.remove({ workspaceId: otherWorkspaceId, agentId });
@@ -79,14 +86,24 @@ describeIntegration("VoiceRuntimeConnectionRepository (Postgres)", () => {
   it("forgets the credential when its grant row is deleted, and goes with its agent", async () => {
     const agentId = await insertAgent();
     const grantId = await insertGrant(agentId);
-    await repository.save({ workspaceId, agentId, vendor: "elevenlabs", region: "sg", vendorAgentId: "agent_42", channelCredentialId: grantId });
+    await repository.save({ workspaceId, agentId, vendor: "elevenlabs", region: "sg", vendorAgentId: "agent_42", channelCredential: { id: grantId, fingerprint: "radioso_test0000" } });
 
     await database.query("DELETE FROM agent_access_grants WHERE id = $1", [grantId]);
-    await expect(repository.find({ workspaceId, agentId })).resolves.toMatchObject({ channelCredentialId: null });
+    await expect(repository.find({ workspaceId, agentId })).resolves.toMatchObject({ channelCredential: null });
 
     await database.query("DELETE FROM agents WHERE id = $1", [agentId]);
     const rows = await database.query("SELECT 1 FROM agent_voice_runtime_connections WHERE agent_id = $1", [agentId]);
     expect(rows).toEqual([]);
+  });
+
+  it("refuses a credential id recorded without the fingerprint of the secret the vendor holds", async () => {
+    const agentId = await insertAgent();
+    const grantId = await insertGrant(agentId);
+
+    await expect(database.query(
+      "INSERT INTO agent_voice_runtime_connections (agent_id, workspace_id, vendor, region, vendor_agent_id, channel_credential_id) VALUES ($1, $2, 'elevenlabs', 'eu', 'agent_42', $3)",
+      [agentId, workspaceId, grantId],
+    )).rejects.toThrow(/agent_voice_runtime_connections_credential_fingerprint_check/);
   });
 
   it("reads a row naming a vendor or region this version does not know as no connection", async () => {

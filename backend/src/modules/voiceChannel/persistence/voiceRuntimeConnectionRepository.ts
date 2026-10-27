@@ -14,7 +14,7 @@ export class VoiceRuntimeConnectionRepository implements VoiceRuntimeConnectionS
   async find(agent: { workspaceId: string; agentId: string }): Promise<VoiceRuntimeConnection | null> {
     const row = await this.db
       .selectFrom("agent_voice_runtime_connections")
-      .select(["vendor", "region", "vendor_agent_id", "channel_credential_id"])
+      .select(["vendor", "region", "vendor_agent_id", "channel_credential_id", "channel_credential_fingerprint"])
       .where("agent_id", "=", agent.agentId)
       .where("workspace_id", "=", agent.workspaceId)
       .executeTakeFirst();
@@ -25,7 +25,10 @@ export class VoiceRuntimeConnectionRepository implements VoiceRuntimeConnectionS
       vendor: row.vendor,
       region: row.region,
       vendorAgentId: row.vendor_agent_id,
-      channelCredentialId: row.channel_credential_id,
+      // A deleted credential row clears only the id; the fingerprint means nothing without it.
+      channelCredential: row.channel_credential_id && row.channel_credential_fingerprint
+        ? { id: row.channel_credential_id, fingerprint: row.channel_credential_fingerprint }
+        : null,
     };
   }
 
@@ -34,7 +37,8 @@ export class VoiceRuntimeConnectionRepository implements VoiceRuntimeConnectionS
       vendor: connection.vendor,
       region: connection.region,
       vendor_agent_id: connection.vendorAgentId,
-      channel_credential_id: connection.channelCredentialId,
+      channel_credential_id: connection.channelCredential?.id ?? null,
+      channel_credential_fingerprint: connection.channelCredential?.fingerprint ?? null,
     };
     await this.db
       .insertInto("agent_voice_runtime_connections")

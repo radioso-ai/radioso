@@ -434,6 +434,7 @@ type VoiceRuntimeGrants = Pick<AccessGrantService, "issueGrant" | "revokeGrant" 
  * The REST agent-channel credential a maintained vendor agent sends, over the access grants: an
  * `agent-api` grant on the `agent-api` channel, admitting any origin, that never expires (the
  * vendor holds it, and Radioso rotates it on Connect), listed on the agent's API card like any other.
+ * Its fingerprint is the grant's token prefix, the part of the secret the API card shows.
  */
 const voiceRuntimeChannelCredentials = (grants: VoiceRuntimeGrants): VoiceRuntimeChannelCredentials => {
   const lifecycleActor = (userId: string | null) => (userId ? { kind: "user" as const, id: userId } : null);
@@ -450,11 +451,14 @@ const voiceRuntimeChannelCredentials = (grants: VoiceRuntimeGrants): VoiceRuntim
         label: VOICE_RUNTIME_CREDENTIAL_LABEL,
         expiresAt: null,
       });
-      return { credentialId: grant.id, secret: token };
+      return { credential: { id: grant.id, fingerprint: grant.tokenPrefix }, secret: token };
     },
-    // The rule the completions route admits the vendor's turns by, from the access grants.
-    isActive: async ({ workspaceId, agentId, credentialId }) =>
-      (await grants.findAdmittingAgentChannelGrant(credentialId, { workspaceId, agentId, channel: "agent-api" })) !== null,
+    // The rule the completions route admits the vendor's turns by, from the access grants, for the
+    // secret the vendor was handed: a rotation on the API card keeps the grant and swaps its secret.
+    admitsHeldSecret: async ({ workspaceId, agentId, credential }) => {
+      const grant = await grants.findAdmittingAgentChannelGrant(credential.id, { workspaceId, agentId, channel: "agent-api" });
+      return grant !== null && grant.tokenPrefix === credential.fingerprint;
+    },
     revoke: async ({ credentialId, actor }) => {
       const grant = await grants.findGrantById(credentialId);
       if (!grant || grant.revokedAt) return;

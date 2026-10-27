@@ -31,6 +31,8 @@ interface Setup {
   /** Holds every release until it resolves. */
   releaseGate?: Promise<void>;
   activeCredentials?: string[];
+  /** Credentials still active, but rotated since the vendor was handed their secret. */
+  rotatedCredentials?: string[];
   completions?: boolean;
   saveError?: Error;
   bindError?: Error;
@@ -38,12 +40,19 @@ interface Setup {
   lockHeld?: boolean;
 }
 
+/** The fingerprint of the secret a credential was issued with. */
+const fingerprintOf = (credentialId: string): string => `fp-${credentialId}`;
+
 /** Every port as an in-memory fake that records what the service asked of it, in order. */
 const serviceWith = (setup: Setup = {}) => {
   const steps: string[] = [];
   let profile = setup.profile === undefined ? { name: "Front desk", defaultLocale: "it", runtime: null } : setup.profile;
   let connection = setup.connection ?? null;
-  const active = new Set(setup.activeCredentials ?? []);
+  /** Each active credential by id, with the fingerprint of its current secret. */
+  const active = new Map<string, string>([
+    ...(setup.activeCredentials ?? []).map((id) => [id, fingerprintOf(id)] as const),
+    ...(setup.rotatedCredentials ?? []).map((id) => [id, `${fingerprintOf(id)}-rotated`] as const),
+  ]);
   let issued = 0;
   const provisioner = {
     locateAccount: vi.fn<VoiceRuntimeProvisioner["locateAccount"]>(async () => {
@@ -89,7 +98,7 @@ const serviceWith = (setup: Setup = {}) => {
     connections: {
       find: async () => connection,
       save: async (next) => {
-        steps.push(`save:${next.vendorAgentId}:${next.channelCredentialId}`);
+        steps.push(`save:${next.vendorAgentId}:${next.channelCredential?.id ?? null}`);
         if (setup.saveError) throw setup.saveError;
         connection = next;
       },
@@ -106,12 +115,12 @@ const serviceWith = (setup: Setup = {}) => {
     channelCredentials: {
       issue: async () => {
         issued += 1;
-        const credentialId = `cred-${issued}`;
-        steps.push(`issue:${credentialId}`);
-        active.add(credentialId);
-        return { credentialId, secret: `rk_secret_${issued}` };
+        const credential = { id: `cred-${issued}`, fingerprint: fingerprintOf(`cred-${issued}`) };
+        steps.push(`issue:${credential.id}`);
+        active.set(credential.id, credential.fingerprint);
+        return { credential, secret: `rk_secret_${issued}` };
       },
-      isActive: async ({ credentialId }) => active.has(credentialId),
+      admitsHeldSecret: async ({ credential }) => active.get(credential.id) === credential.fingerprint,
       revoke: async ({ credentialId }) => {
         steps.push(`revoke:${credentialId}`);
         active.delete(credentialId);
@@ -144,7 +153,7 @@ const managed = (overrides: Partial<VoiceRuntimeConnection> = {}): VoiceRuntimeC
   vendor: "elevenlabs",
   region: "eu",
   vendorAgentId: "agent_42",
-  channelCredentialId: "cred-old",
+  channelCredential: { id: "cred-old", fingerprint: fingerprintOf("cred-old") },
   ...overrides,
 });
 const boundTo = (vendorAgentId: string, region: VoiceRuntimeBinding["region"] = "eu"): Profile => ({
@@ -165,7 +174,7 @@ describe("voice runtime connection: connect", () => {
       credential: { apiKey },
       spec: { displayName: "Front desk", completionsBaseUrl, primaryLocale: "it" },
     }));
-    expect(connectionNow()).toEqual(managed({ vendorAgentId: "agent_new", channelCredentialId: "cred-1" }));
+    expect(connectionNow()).toEqual(managed({ vendorAgentId: "agent_new", channelCredential: { id: "cred-1", fingerprint: fingerprintOf("cred-1") } }));
     expect(status).toEqual({
       vendor: "elevenlabs",
       state: "connected",
@@ -214,6 +223,16 @@ describe("voice runtime connection: connect", () => {
     await service.connect({ ...agent, actor });
 
     expect(steps).toEqual(["locate", "issue:cred-1", "ensure:agent_42:rk_secret_1", "save:agent_42:cred-1", "revoke:cred-old", "bind:agent_42@eu"]);
+    expect(audit.connected).toHaveBeenCalledWith(expect.objectContaining({ outcome: "repaired", credential: "issued" }));
+  });
+
+  it("rotates a credential rotated since the vendor got it: the vendor's copy no longer works, so it gets a new one and the old one is revoked", async () => {
+    const { service, steps, audit, connectionNow } = serviceWith({ connection: managed(), profile: boundTo("agent_42"), rotatedCredentials: ["cred-old"] });
+
+    await service.connect({ ...agent, actor });
+
+    expect(steps).toEqual(["locate", "issue:cred-1", "ensure:agent_42:rk_secret_1", "save:agent_42:cred-1", "revoke:cred-old", "bind:agent_42@eu"]);
+    expect(connectionNow()?.channelCredential).toEqual({ id: "cred-1", fingerprint: fingerprintOf("cred-1") });
     expect(audit.connected).toHaveBeenCalledWith(expect.objectContaining({ outcome: "repaired", credential: "issued" }));
   });
 

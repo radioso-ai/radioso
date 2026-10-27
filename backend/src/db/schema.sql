@@ -843,8 +843,11 @@ CREATE TABLE public.agent_voice_runtime_connections (
     region text NOT NULL,
     vendor_agent_id text NOT NULL,
     channel_credential_id uuid,
+    channel_credential_fingerprint text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT agent_voice_runtime_connections_credential_fingerprint_check CHECK (((channel_credential_id IS NULL) OR (channel_credential_fingerprint IS NOT NULL))),
+    CONSTRAINT agent_voice_runtime_connections_fingerprint_length_check CHECK (((length(channel_credential_fingerprint) >= 1) AND (length(channel_credential_fingerprint) <= 64))),
     CONSTRAINT agent_voice_runtime_connections_region_check CHECK (((length(region) >= 1) AND (length(region) <= 16))),
     CONSTRAINT agent_voice_runtime_connections_vendor_agent_id_check CHECK (((length(vendor_agent_id) >= 1) AND (length(vendor_agent_id) <= 128))),
     CONSTRAINT agent_voice_runtime_connections_vendor_check CHECK (((length(vendor) >= 1) AND (length(vendor) <= 32)))

@@ -96,8 +96,10 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   it, Connect and Disconnect fail as `connection_busy` having changed nothing,
   and a sync is skipped and logged. `connect` reads the vendor key (`VoiceVendorCredentialReader`), finds the
   key's region (`VoiceRuntimeProvisioner.locateAccount`), reuses the REST
-  credential the connection holds while it is active or issues one
-  (`VoiceRuntimeChannelCredentials`), creates or repairs the vendor agent
+  credential the connection holds while the vendor's copy of its secret still
+  admits the agent's turns (`VoiceRuntimeChannelCredentials.admitsHeldSecret`:
+  not revoked, disabled or expired, and not rotated since, by the fingerprint
+  the connection keeps) or issues one, creates or repairs the vendor agent
   (`ensureAgent`, minting a credential and asking again when the vendor agent
   is gone), records the connection (`VoiceRuntimeConnectionStore`), revokes a
   credential the recorded one replaced, and binds `voice.runtime`
@@ -165,7 +167,9 @@ are [`docs/voice-channel.md`](../../../../docs/voice-channel.md).
   `voiceRuntimeConnectionRepository.ts` is the `VoiceRuntimeConnectionStore`
   (`agent_voice_runtime_connections`, migration
   `249_agent_voice_runtime_connections.sql`): one row per agent naming the
-  vendor agent, its account's region and the credential's grant id, outside
+  vendor agent, its account's region, the credential's grant id and the
+  fingerprint of the secret the vendor holds (`VoiceRuntimeHeldCredential`;
+  read as no credential once the grant row is gone), outside
   the operator-written `voice` block; it goes with its agent, and a row naming
   a vendor or region this version does not know reads as none.
   `voiceRuntimeConnectionLock.ts` is the `VoiceRuntimeConnectionLock`: a
@@ -283,7 +287,9 @@ helpers and the shared chat message limit from `app/http`
   `VoiceRuntimeConnectionRepository`, `PostgresVoiceRuntimeConnectionLock`, the agent repository (name, default
   locale and binding), the ElevenLabs provisioner with `fetch`, the same
   credential reader, the access grants (an `agent-api` grant on the
-  `agent-api` channel labelled `Voice calls`, no expiry), `AgentService` as
+  `agent-api` channel labelled `Voice calls`, no expiry, whose fingerprint is
+  the grant's token prefix, so a rotation on the API card reads as a secret the
+  vendor no longer holds), `AgentService` as
   the binder (so a binding runs every agent-write side effect), the
   completions address under `PUBLIC_API_BASE_URL`
   (`…/api/v1/agents/:agentId/voice/:vendor/v1`; null when unset) and the

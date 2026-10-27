@@ -22,6 +22,7 @@ import {
   type VoiceRuntimeConnectionStatus,
   type VoiceRuntimeConnectionStore,
   type VoiceRuntimeDisconnection,
+  type VoiceRuntimeHeldCredential,
   type VoiceRuntimeProvisioner,
   type VoiceVendorCredential,
   type VoiceVendorCredentialReader,
@@ -90,7 +91,7 @@ const vendorErrorFields = (error: unknown) => ({
  * never meets the vendor agent's id, its LLM URL, its secrets or the account's region.
  *
  * Connecting finds the key's region, keeps the REST credential the vendor agent carries (reused
- * while it works, else a new one), creates or repairs the vendor agent, records the connection,
+ * while the vendor's copy of its secret still works, else a new one), creates or repairs the vendor agent, records the connection,
  * revokes a credential it replaced, and binds the agent's `voice.runtime` to it. A credential goes
  * only once no vendor agent holds it: one minted for a vendor call that failed, or for an agent this
  * attempt created and deleted again because it could not be recorded. Pressing Connect again repairs: the
@@ -145,8 +146,8 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
       );
     }
     const kept = previous && previous.region === region ? previous : null;
-    const reusable = kept?.channelCredentialId
-      ? await this.dependencies.channelCredentials.isActive({ workspaceId, agentId, credentialId: kept.channelCredentialId })
+    const reusable = kept?.channelCredential
+      ? await this.dependencies.channelCredentials.admitsHeldSecret({ workspaceId, agentId, credential: kept.channelCredential })
       : false;
     const spec: VoiceRuntimeAgentSpec = {
       displayName: profile.name,
@@ -155,21 +156,21 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
     };
 
     const { ensured, minted } = await this.ensureAgent({ ...input, provisioner, region, credential, spec, kept, reusable });
-    const channelCredentialId = minted?.credentialId ?? kept?.channelCredentialId ?? null;
-    const connection: VoiceRuntimeConnection = { workspaceId, agentId, vendor, region, vendorAgentId: ensured.vendorAgentId, channelCredentialId };
+    const channelCredential = minted ?? kept?.channelCredential ?? null;
+    const connection: VoiceRuntimeConnection = { workspaceId, agentId, vendor, region, vendorAgentId: ensured.vendorAgentId, channelCredential };
     try {
       await this.dependencies.connections.save(connection);
     } catch (error) {
       // The vendor agent now holds the minted credential, so it stays unless that agent goes:
       // only an agent this attempt created, and could delete again, gives it up.
       const released = ensured.outcome === "created" && await this.releaseQuietly(connection, credential);
-      if (minted && released) await this.revokeQuietly({ ...input, credentialId: minted.credentialId });
+      if (minted && released) await this.revokeQuietly({ ...input, credentialId: minted.id });
       throw error;
     }
     // The saved row makes the minted credential the connection's, so the one it replaced goes
     // now: a binding that fails below would otherwise lose its id with it still active.
-    const replaced = previous?.channelCredentialId;
-    if (minted && replaced && replaced !== minted.credentialId) await this.revokeQuietly({ ...input, credentialId: replaced });
+    const replaced = previous?.channelCredential?.id;
+    if (minted && replaced && replaced !== minted.id) await this.revokeQuietly({ ...input, credentialId: replaced });
     const runtime: VoiceRuntimeBinding = { vendor, agentId: ensured.vendorAgentId, region };
     await this.dependencies.binder.bind({ workspaceId, agentId, runtime });
 
@@ -302,8 +303,8 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
     try {
       connection = await this.dependencies.connections.find(agent);
       if (!connection) return;
-      if (connection.channelCredentialId) {
-        await this.revokeQuietly({ workspaceId, agentId, actor: SYSTEM_ACTOR, credentialId: connection.channelCredentialId });
+      if (connection.channelCredential) {
+        await this.revokeQuietly({ workspaceId, agentId, actor: SYSTEM_ACTOR, credentialId: connection.channelCredential.id });
       }
       await this.dependencies.connections.remove(connection);
     } catch (error) {
@@ -360,12 +361,13 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
     spec: VoiceRuntimeAgentSpec;
     kept: VoiceRuntimeConnection | null;
     reusable: boolean;
-  }): Promise<{ ensured: Extract<VoiceRuntimeAgentEnsured, { vendorAgentId: string }>; minted: { credentialId: string } | null }> {
+  }): Promise<{ ensured: Extract<VoiceRuntimeAgentEnsured, { vendorAgentId: string }>; minted: VoiceRuntimeHeldCredential | null }> {
     const { provisioner, region, credential, spec, kept } = input;
-    const issued: { credential: { credentialId: string; secret: string } | null } = { credential: null };
+    const issued: { credential: VoiceRuntimeHeldCredential | null } = { credential: null };
     const mint = async (): Promise<string> => {
-      issued.credential = await this.dependencies.channelCredentials.issue({ workspaceId: input.workspaceId, agentId: input.agentId, actor: input.actor });
-      return issued.credential.secret;
+      const { credential: minted, secret } = await this.dependencies.channelCredentials.issue({ workspaceId: input.workspaceId, agentId: input.agentId, actor: input.actor });
+      issued.credential = minted;
+      return secret;
     };
     try {
       let ensured = kept
@@ -375,9 +377,9 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
         ensured = await provisioner.ensureAgent({ region, credential, spec, vendorAgentId: kept.vendorAgentId, bearer: await mint() });
       }
       if (ensured.outcome === "needs_bearer") throw new VoiceRuntimeConnectionError("vendor_failed");
-      return { ensured, minted: issued.credential ? { credentialId: issued.credential.credentialId } : null };
+      return { ensured, minted: issued.credential };
     } catch (error) {
-      if (issued.credential) await this.revokeQuietly({ ...input, credentialId: issued.credential.credentialId });
+      if (issued.credential) await this.revokeQuietly({ ...input, credentialId: issued.credential.id });
       throw error;
     }
   }
@@ -393,7 +395,7 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
     const released = reading.kind === "present"
       ? await this.releaseQuietly(connection, reading.credential)
       : this.vendorAgentLeftWithoutKey(connection, reading.kind);
-    if (connection.channelCredentialId) await this.revokeQuietly({ workspaceId, agentId, actor, credentialId: connection.channelCredentialId });
+    if (connection.channelCredential) await this.revokeQuietly({ workspaceId, agentId, actor, credentialId: connection.channelCredential.id });
     await this.dependencies.connections.remove(connection);
     return released;
   }

@@ -8,13 +8,18 @@
  *
  *   - Modules must not form import cycles. Dependency direction only means something when the
  *     module graph is acyclic; inside a cycle every module can reach every other.
- *   - Dependency direction: `src/modules` never imports `src/app`, and `src/shared` never imports
- *     `src/modules` (DIRECTION_RULES below).
+ *   - Dependency direction: `src/modules` never imports `src/app`, and `src/shared` imports
+ *     neither (DIRECTION_RULES below).
  *
  * This records today's offences in architectureRatchetBaseline.json and fails on any new one.
  * Cycles are checked between modules, not files: a file-level cycle baseline names the exact
  * cycle, which shifts whenever an unrelated import creates a shorter path through the same
- * files.
+ * files. A module edge is a direct import from one module's files into another's; a path that
+ * runs through `src/db` repositories (which import module types, and are imported by modules)
+ * is outside this check.
+ *
+ * Direction findings are keyed by the importing area (`modules/auth`, `shared/infra`) and the
+ * imported file, so splitting or moving a file inside its module keeps its baselined entry.
  *
  * The baseline only shrinks. An entry that no longer occurs fails the build until it is
  * re-recorded with `--update`, so a fixed edge cannot quietly re-exempt the same edge later.
@@ -25,6 +30,8 @@ import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import { isMainModule } from "./isMainModule.mjs";
 
 export const DIRECTION_RULES = [
   {
@@ -41,10 +48,24 @@ export const DIRECTION_RULES = [
     remedy:
       "src/shared sits below every module, so it never imports one; move the shared type into src/shared, or move the code that needs the module into that module",
   },
+  {
+    name: "no-shared-imports-app",
+    from: /^src\/shared\//,
+    to: /^src\/app\//,
+    remedy:
+      "src/shared sits below the application layer, so it never imports it; take configuration as an argument from the caller in src/app/",
+  },
 ];
 
 const MODULE_CYCLE = "module-cycle";
 const MODULE_PATH = /^src\/modules\/([^/]+)\//;
+const IMPORTING_AREA = /^src\/(modules|shared)\/(?:([^/]+)\/)?/;
+
+/** `src/modules/auth/services/x.ts` -> `modules/auth`; `src/shared/infra/llm/y.ts` -> `shared/infra`. */
+const importingAreaOf = (source) => {
+  const [, layer, area] = IMPORTING_AREA.exec(source) ?? [];
+  return area ? `${layer}/${area}` : layer;
+};
 
 const byKey = (left, right) => left.key.localeCompare(right.key);
 const sortedUnique = (values) => [...new Set(values)].sort();
@@ -145,7 +166,7 @@ export const directionViolationsFrom = (cruiseResult) =>
       for (const module of cruiseResult.modules) {
         if (!rule.from.test(module.source)) continue;
         for (const dependency of module.dependencies) {
-          if (rule.to.test(dependency.resolved)) keys.push(`${module.source} -> ${dependency.resolved}`);
+          if (rule.to.test(dependency.resolved)) keys.push(`${importingAreaOf(module.source)} -> ${dependency.resolved}`);
         }
       }
       return [rule.name, sortedUnique(keys)];
@@ -265,4 +286,4 @@ const run = () => {
   process.exitCode = 1;
 };
 
-if (import.meta.url === `file://${process.argv[1]}`) run();
+if (isMainModule(import.meta.url)) run();

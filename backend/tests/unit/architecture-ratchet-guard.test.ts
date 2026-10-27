@@ -19,7 +19,7 @@ const cruise = (modules: Array<{ source: string; imports: string[] }>): CruiseRe
 
 const emptyBaseline = (): ArchitectureBaseline => ({
   moduleCycleEdges: [],
-  violations: { "no-module-imports-app": [], "no-shared-imports-modules": [] },
+  violations: { "no-module-imports-app": [], "no-shared-imports-modules": [], "no-shared-imports-app": [] },
 });
 
 describe("moduleEdgesFrom", () => {
@@ -61,20 +61,36 @@ describe("findCyclicModuleEdges", () => {
 });
 
 describe("directionViolationsFrom", () => {
-  it("reports modules importing the application layer and shared code importing a module, keyed by file pair", () => {
+  it("reports upward imports keyed by importing area and imported file", () => {
     const violations = directionViolationsFrom(
       cruise([
         { source: "src/modules/eval/routes.ts", imports: ["src/app/http/auth.ts", "src/shared/y.ts"] },
-        { source: "src/shared/analytics/sink.ts", imports: ["src/modules/audit/contracts/index.ts"] },
+        { source: "src/shared/analytics/sink.ts", imports: ["src/modules/audit/contracts/index.ts", "src/app/config/env.ts"] },
+        { source: "src/shared/clock.ts", imports: ["src/app/config/env.ts"] },
         { source: "src/app/server/deps.ts", imports: ["src/modules/eval/routes.ts"] },
         { source: "src/modules/a/x.ts", imports: ["src/modules/b/public.ts"] },
       ]),
     );
 
     expect(violations).toEqual({
-      "no-module-imports-app": ["src/modules/eval/routes.ts -> src/app/http/auth.ts"],
-      "no-shared-imports-modules": ["src/shared/analytics/sink.ts -> src/modules/audit/contracts/index.ts"],
+      "no-module-imports-app": ["modules/eval -> src/app/http/auth.ts"],
+      "no-shared-imports-modules": ["shared/analytics -> src/modules/audit/contracts/index.ts"],
+      "no-shared-imports-app": ["shared -> src/app/config/env.ts", "shared/analytics -> src/app/config/env.ts"],
     });
+  });
+
+  it("keeps one entry when a file carrying a baselined import is split or moved within its module", () => {
+    const before = directionViolationsFrom(
+      cruise([{ source: "src/modules/auth/services/authService.ts", imports: ["src/app/config/env.ts"] }]),
+    );
+    const after = directionViolationsFrom(
+      cruise([
+        { source: "src/modules/auth/services/signIn.ts", imports: ["src/app/config/env.ts"] },
+        { source: "src/modules/auth/domain/passwordReset.ts", imports: ["src/app/config/env.ts"] },
+      ]),
+    );
+
+    expect(after).toEqual(before);
   });
 });
 

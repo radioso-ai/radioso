@@ -1,20 +1,24 @@
 import { apiPrincipalRouteMountPath } from "../../src/app/http/apiPrincipalRoutePolicy.js";
 
 /**
- * Structural view of an Express router layer, mirroring the shape
- * `api-principal-route-policy.contract.test.ts` walks (Express does not export these internals).
+ * Structural view of an Express router layer (Express does not export these internals). The
+ * single owner of this shape and the walk below; `api-principal-route-policy.contract.test.ts`
+ * imports both rather than declaring its own copy. `route.stack` — the per-route middleware
+ * stack — is optional because this module's own walk never reads it; only the route-policy
+ * test, which inspects middleware to find the api-principal-auth layer, does.
  */
-type RouterLayer = {
+export type RouterLayer = {
   handle?: unknown;
   regexp?: { fast_slash?: boolean };
   fast_slash?: boolean;
   route?: {
     path: string;
     methods: Record<string, boolean>;
+    stack?: readonly { handle?: unknown }[];
   };
 };
 
-const routerLayers = (router: unknown): readonly RouterLayer[] =>
+export const routerLayers = (router: unknown): readonly RouterLayer[] =>
   (typeof router === "object" || typeof router === "function")
   && router !== null
   && "stack" in router
@@ -97,23 +101,6 @@ export const normalizeRouteKey = (rawKey: string): string => {
   return routeKey(rawKey.slice(0, separatorIndex), rawKey.slice(separatorIndex + 1));
 };
 
-/**
- * The set of mount prefixes the OpenAPI document actually covers (e.g. `/api/v1`, `/health`,
- * `/.well-known`), read from the document's own paths rather than hard-coded. A mounted route
- * outside every one of these prefixes is outside the surface OpenAPI documents at all (for
- * example, dynamically-registered connector plugin routes under `/api/connectors`), so route
- * coverage never has to enumerate it or carry an exclusion for it.
- */
-export const openApiDocumentedPrefixes = (paths: readonly string[]): ReadonlySet<string> => {
-  const prefixes = new Set<string>();
-  for (const path of paths) {
-    const segments = path.split("/").filter((segment) => segment.length > 0);
-    if (segments.length === 0) continue;
-    const prefix = segments[0] === "api" && segments.length > 1 ? `/${segments[0]}/${segments[1]}` : `/${segments[0]}`;
-    prefixes.add(prefix);
-  }
-  return prefixes;
-};
-
+/** Whether `path` falls under any of `prefixes` — an exact segment match, not a string-prefix match (`/api/v11` does not match `/api/v1`). */
 export const pathStartsWithPrefix = (path: string, prefixes: ReadonlySet<string>): boolean =>
   [...prefixes].some((prefix) => path === prefix || path.startsWith(`${prefix}/`));

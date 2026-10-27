@@ -106,8 +106,8 @@ Files already past the limit are recorded in `file-size-baseline.json` with thei
 
 Two rules from `AGENTS.md` are tracked by `backend/scripts/checkArchitectureRatchet.mjs` instead, because existing code breaks them:
 
-- **Modules form no import cycles.** Imports are collapsed to module-to-module edges (`chat -> retrieval`), and any edge that lies on a cycle is a finding. Dependency direction only means something when the module graph is acyclic.
-- **Dependencies point down.** `src/modules` never imports `src/app` (`no-module-imports-app`), and `src/shared` never imports `src/modules` (`no-shared-imports-modules`). Findings are keyed by file pair.
+- **Modules form no import cycles.** Imports from one module's files into another's are collapsed to module-to-module edges (`chat -> retrieval`), and any edge that lies on a cycle is a finding. Dependency direction only means something when the module graph is acyclic. The check follows direct module-to-module imports; a path that runs through the repositories in `src/db`, which modules import and which import module types, is outside it.
+- **Dependencies point down.** `src/modules` never imports `src/app` (`no-module-imports-app`), and `src/shared` imports neither `src/modules` (`no-shared-imports-modules`) nor `src/app` (`no-shared-imports-app`). A finding is keyed by the importing area and the imported file — `modules/auth -> src/app/config/env.ts` — so splitting or moving a file inside its module keeps its baselined entry.
 
 Type-only imports count for both, the same as for the boundary rules.
 
@@ -126,11 +126,11 @@ To fix one, invert the dependency: have the lower-level module own the port or t
 
 The OpenAPI document built by `backend/src/app/http/openapi/openApiDocument.ts` is the contract three other things are generated or checked from: the TypeScript SDK snapshot, the MCP server's generated types, and the operator copilot's coverage map. A route that's mounted but never registered there is invisible to all three.
 
-`backend/tests/contract/openapi-route-coverage.contract.test.ts` builds the real app, walks every mounted router, and compares the routes under OpenAPI's own path prefixes (`/api/v1`, `/.well-known`, `/health`) with the document's operations, in both directions:
+`backend/tests/contract/openapi-route-coverage.contract.test.ts` builds the real app, walks every mounted router, and compares every route it finds with the document's operations, in both directions. Routes that sit outside the API contract altogether, such as connector webhooks under `/api/connectors`, are listed by prefix in `outOfScopeMountPrefixes` with a reason. A route under any other prefix, including a brand-new one, is checked like the rest:
 
 - **A mounted route with no OpenAPI operation fails the test** unless it's in `undocumentedRouteExclusions` with a specific reason. The groups there are email-link landing pages, OAuth protocol endpoints, internal service calls, the voice vendor callback, frontend telemetry beacons, and a "should be added to OpenAPI" group that lists real API surface still waiting for its registration.
 - **An OpenAPI operation with no mounted route fails the test** unless it's in `reverseRouteMismatches`, which names where the route actually lives — the workspace event stream, for example, is served by the realtime process.
-- **An exclusion that no longer matches a route fails the test**, so it can't sit there and exempt an unrelated route later.
+- **An exclusion or out-of-scope prefix that no longer matches a route fails the test**, so it can't sit there and exempt an unrelated route later.
 
 When you add a route, register it in the OpenAPI registry, then run `cd typescript-sdk && pnpm run sync` and give its operationId an entry in `backend/tests/unit/operatorCopilot/catalogCoverage.ts`. Add an exclusion only when the route isn't an API operation at all, and say why in the reason.
 

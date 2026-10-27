@@ -62,6 +62,9 @@ export class ChatTurnDisconnectAbortError extends AppError {
       "chat_turn_aborted_after_disconnect",
       "Chat turn aborted: the client disconnected and the turn did not settle within the presenter's ceiling.",
       { conversationId, reason: "disconnect_timeout", stage },
+      // A lost client, not a platform fault: its 500 status is for the (nonexistent)
+      // caller, not a signal that something on this side broke.
+      { isExpectedOutcome: true },
     );
     this.name = "ChatTurnDisconnectAbortError";
     this.conversationId = conversationId;

@@ -1,9 +1,8 @@
 {
   "backend/src/app/http/openapi/paths/documentsPaths.ts": 1035,
-  "backend/src/app/http/openapi/schemas/agentSchemas.ts": 1310,
   "backend/src/app/http/openapi/schemas/assistantHistorySchemas.ts": 1044,
   "backend/src/app/server/builders/chat.ts": 1078,
-  "backend/src/app/server/dependencies.ts": 1590,
+  "backend/src/app/server/dependencies.ts": 1557,
   "backend/src/db/repositories/agentRepository.ts": 1295,
   "backend/src/db/repositories/documentProcessingJobRepository.ts": 1156,
   "backend/src/db/repositories/documentRepository.ts": 1267,
@@ -36,7 +35,6 @@
   "frontend/components/dashboard/quality-view.tsx": 1834,
   "frontend/components/dashboard/settings/assistant-directives-section.tsx": 1443,
   "frontend/components/dashboard/settings/assistant-routines-section.tsx": 1024,
-  "frontend/components/dashboard/settings/providers-panel.tsx": 1154,
   "frontend/components/dashboard/settings/routine-chip-node.tsx": 1346,
   "frontend/components/dashboard/settings/skills/SkillForm.tsx": 1122,
   "frontend/components/dashboard/settings/workspace-assistant-channels-tab.tsx": 1403,

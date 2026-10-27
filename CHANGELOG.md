@@ -9,6 +9,27 @@ Cut a release with the **Cut Release** workflow. It reads the commits since the 
 tag, writes the entry above this line, tags the commit, and publishes a GitHub Release. A
 deploy then ships a release that already exists; it never mints one.
 
+## [1.25.0] - 2026-10-27
+
+### Added
+
+- **embed:** modernize the chat widget header, composer, and launcher ([#1649](https://github.com/radioso-ai/radioso/pull/1649))
+
+### Fixed
+
+- **chat:** answer from the default skill when a directive-bound skill fails, and show why in the trace ([#1657](https://github.com/radioso-ai/radioso/pull/1657))
+- **api:** register undocumented routes in the OpenAPI contract ([#1653](https://github.com/radioso-ai/radioso/pull/1653))
+
+### Documentation
+
+- refresh the package layout and architecture code map ([#1652](https://github.com/radioso-ai/radioso/pull/1652))
+
+### Internal
+
+- ratchet module cycles, dependency direction, file size, and OpenAPI route coverage ([#1650](https://github.com/radioso-ai/radioso/pull/1650))
+
+[1.25.0]: https://github.com/radioso-ai/radioso/compare/v1.24.1...v1.25.0
+
 ## [1.24.1] - 2026-10-26
 
 ### Fixed

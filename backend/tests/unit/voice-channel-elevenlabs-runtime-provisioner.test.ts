@@ -195,7 +195,10 @@ describe("ElevenLabs runtime provisioner: keeping the agent", () => {
     expect(Object.keys(body.conversation_config.language_presets).sort()).toEqual(ELEVENLABS_PRESET_LANGUAGES.filter((code) => code !== "it").sort());
     expect(body.conversation_config.language_presets.de).toEqual({ overrides: {} });
     expect(body.conversation_config.turn).toEqual({ speculative_turn: false });
-    expect(body.platform_settings).toEqual({ overrides: { custom_llm_extra_body: true } });
+    // The vendor default says nothing; a session Radioso starts may open with the agent's greeting.
+    expect(body.platform_settings).toEqual({
+      overrides: { custom_llm_extra_body: true, conversation_config_override: { agent: { first_message: true } } },
+    });
   });
 
   it("names the agent Radioso alone when the Radioso agent has no name", async () => {
@@ -280,7 +283,26 @@ describe("ElevenLabs runtime provisioner: keeping the agent", () => {
     expect(patch.conversation_config.turn).toEqual({ turn_timeout: 7, speculative_turn: false });
     expect(Object.hasOwn(patch.conversation_config.language_presets, "de")).toBe(true);
     expect(patch.conversation_config.language_presets.de).toEqual({ overrides: {} });
-    expect(patch.platform_settings.overrides).toEqual({ custom_llm_extra_body: true, conversation_config_override: { agent: { language: true } } });
+    // The override sections go back whole, the session's first message allowed beside what the vendor served.
+    expect(patch.platform_settings.overrides).toEqual({
+      custom_llm_extra_body: true,
+      conversation_config_override: { agent: { language: true, first_message: true } },
+    });
+  });
+
+  it("allows the session's first message on an agent whose overrides name no section", async () => {
+    const stored = { ...storedAgent(), platform_settings: { overrides: { custom_llm_extra_body: true } } };
+    const { calls, provisioner } = fakeElevenLabs([
+      ["GET", `${US}/v1/convai/agents/agent_42`, () => json(200, stored)],
+      ["PATCH", `${US}/v1/convai/agents/agent_42`, () => json(200, { agent_id: "agent_42" })],
+    ]);
+
+    await provisioner.ensureAgent({ region: "us", credential, spec, vendorAgentId: "agent_42", bearer: null });
+
+    expect((calls[1].body as { platform_settings: { overrides: unknown } }).platform_settings.overrides).toEqual({
+      custom_llm_extra_body: true,
+      conversation_config_override: { agent: { first_message: true } },
+    });
   });
 
   it("keeps the agent's tags without adding Radioso's twice", async () => {

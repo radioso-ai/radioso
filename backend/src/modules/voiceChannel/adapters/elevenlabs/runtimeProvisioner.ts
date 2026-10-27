@@ -168,9 +168,25 @@ const parseStoredAgent = (text: string | null): StoredAgent | null => {
 };
 
 /**
+ * The overrides with every one Radioso owns allowed, and everything else as stored: the custom LLM
+ * extra body, which carries each session's key, and the agent's first message, which a session
+ * Radioso starts sets to the agent's greeting. Each nested section goes back whole, since the
+ * vendor refuses one given in part. A session that sets the first message on an agent that does
+ * not allow it is closed by the vendor, so only an agent Radioso maintains is sent one.
+ */
+const ownedOverrides = (stored: JsonRecord): JsonRecord => {
+  const configOverride = recordOr(stored.conversation_config_override);
+  return {
+    ...stored,
+    custom_llm_extra_body: true,
+    conversation_config_override: { ...configOverride, agent: { ...recordOr(configOverride.agent), first_message: true } },
+  };
+};
+
+/**
  * The agent section with every field Radioso owns set, and everything else as stored. Radioso
- * writes the agent's instructions, its first words (none: the caller speaks first) and the language
- * calls start in, and points its LLM at Radioso.
+ * writes the agent's instructions, its first words (none of its own: a session Radioso starts sets
+ * them, else the caller speaks first) and the language calls start in, and points its LLM at Radioso.
  */
 const ownedAgentSection = (stored: JsonRecord, prompt: JsonRecord, input: { spec: VoiceRuntimeAgentSpec; secretId: string; language: string }): JsonRecord => ({
   ...stored,
@@ -200,7 +216,7 @@ const withTimeout = (timeoutMs: number) => AbortSignal.timeout(timeoutMs);
  * language the vendor offers but the one calls start in, so a mid-call switch can reach any
  * language an answer is written in), `turn` (no speculative turns: each one would be a real
  * Radioso turn) and `platform_settings.overrides` (the custom LLM extra body that carries the
- * session key). The REST credential's secret lives in a workspace secret the agent references; a
+ * session key, and the first message a session sets). The REST credential's secret lives in a workspace secret the agent references; a
  * secret stays while an agent references it, so a rotation points the agent at the new one first
  * and a release deletes the agent first.
  */
@@ -316,7 +332,7 @@ export const createElevenLabsRuntimeProvisioner = (dependencies: {
             language_presets: languagePresetsWithout(language),
             turn: { speculative_turn: false },
           },
-          platform_settings: { overrides: { custom_llm_extra_body: true } },
+          platform_settings: { overrides: ownedOverrides({}) },
         },
       });
       return { outcome: "created", vendorAgentId, primaryLocaleSupported: supported };
@@ -346,7 +362,7 @@ export const createElevenLabsRuntimeProvisioner = (dependencies: {
         language_presets: languagePresetsWithout(input.language),
         turn: { ...recordOr(input.stored.conversationConfig.turn), speculative_turn: false },
       },
-      platform_settings: { overrides: { ...recordOr(input.stored.platformSettings.overrides), custom_llm_extra_body: true } },
+      platform_settings: { overrides: ownedOverrides(recordOr(input.stored.platformSettings.overrides)) },
     },
   });
 

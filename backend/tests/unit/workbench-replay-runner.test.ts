@@ -1870,7 +1870,7 @@ describe("WorkbenchReplayRunner", () => {
 
   it("logs a failed Test Chat language detection and renders the handoff from the visitor's message", async () => {
     const { calls, gateway } = recordingChatGateway("La reception confermerà disponibilità e prezzo via email.");
-    const logger = { warn: vi.fn() };
+    const logger = { warn: vi.fn(), info: vi.fn() };
     const runner = new WorkbenchReplayRunner({
       retrievalTurn: retrievalTurn([]),
       auditService: createAuditService(),
@@ -1994,7 +1994,7 @@ describe("WorkbenchReplayRunner", () => {
         return null;
       },
       async processTurn(input: ProcessTurnInput): Promise<ProcessTurnResult> {
-        const outcome = await input.dispatcher.dispatch({ skill: { name: "replay.answer" } } as never);
+        const outcome = await input.dispatcher.dispatch({ skill: { name: "replay.answer" }, selected: { skillName: "replay.answer" } } as never);
         await input.composer.compose({ outcomes: [outcome], turn: { steering: [] } } as never);
         return { trace: emptyTrace(), decision: { reason: "answered" }, actions: [] } as unknown as ProcessTurnResult;
       },

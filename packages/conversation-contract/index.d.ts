@@ -1,9 +1,3 @@
-/**
- * Contract note for clarification capability 085: this file now exposes the
- * generic clarification contracts and widens ConversationRoutineActivator to return
- * an activation/clarification union for routine activation clarification.
- */
-
 export type ConversationRole = "system" | "user" | "assistant" | "tool";
 
 /** Provider-neutral semantic state for whether a request is resolved by admitted evidence. */
@@ -575,6 +569,8 @@ export interface SelectedSkill {
   input?: unknown;
   reason?: string;
   metadata?: Record<string, unknown>;
+  /** Registered skill the engine dispatches in place of this one when it settles without completing. */
+  fallbackSkillName?: string;
 }
 
 export type SkillInputValue = string | number | boolean;

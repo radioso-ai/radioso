@@ -192,9 +192,13 @@ it.
 
 When a directive with an external MCP binding matches a non-routine turn, the
 turn selector routes to the bound skill if that skill is available as a runtime
-turn skill. When a directive with a retrieval binding matches, the answer loop
-receives a lookup tool for that skill. The directive action still steers the
-answer. A non-matching directive has no selection effect.
+turn skill. If the bound skill then fails, times out, returns no answer text, or
+is kept off by a private test, the agent answers through normal selection
+without claiming the tool's results, and the turn trace records the failure
+reason on the bound skill's dispatch. When a directive with a retrieval binding
+matches, the answer loop receives a lookup tool for that skill. The directive
+action still steers the answer. A non-matching directive has no selection
+effect.
 
 When multiple matched directives bind skills, one binding wins:
 

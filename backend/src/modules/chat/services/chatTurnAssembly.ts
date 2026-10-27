@@ -345,7 +345,7 @@ export interface ChatTurnAssemblyOptions {
   retrievalSenseDetector?: RetrievalSenseDetectorPort;
   retrievalSenseClarificationPolicy: ClarificationPolicy;
   agentSkillTurnSkillProvider?: AgentSkillTurnSkillProvider;
-  logger?: Pick<AppLogger, "warn">;
+  logger?: Pick<AppLogger, "warn" | "info">;
   /** Host-owned post-evidence semantic assessment; absent preserves every legacy turn. */
   coverageHeadRecorder?: AnswerCoverageHeadRecorder;
   /** Off-critical-path #1260 shadow; absent (replay/draft, or the flag disabled) never calls the old assessor. */
@@ -392,6 +392,17 @@ export class ChatTurnAssembly {
   private readonly answerSupport = new ChatAnswerSupport();
 
   constructor(private readonly options: ChatTurnAssemblyOptions) {}
+
+  /** The adapter ports every prepared-turn run shares, whole or streamed. */
+  private engineTurnPorts() {
+    return {
+      engine: this.options.conversationEngine,
+      chatAnswerPresenter: this.options.chatAnswerPresenter,
+      directiveRuntime: this.options.directiveRuntime,
+      directiveStateStore: this.options.directiveStateStore,
+      logger: this.options.logger,
+    };
+  }
 
   private logCoverageRoutineFailure(trace: ConversationTrace | undefined, session: PreparedSession): void {
     const stage = trace?.stages.find((entry) => entry.id === "answer_coverage_routine_activation");
@@ -784,13 +795,10 @@ export class ChatTurnAssembly {
       coordination: input.coordination,
     });
     const { presentation, result } = await runPreparedChatTurnWithConversationEngine({
-      engine: this.options.conversationEngine,
+      ...this.engineTurnPorts(),
       session,
-      chatAnswerPresenter: this.options.chatAnswerPresenter,
       turnSkillSelector,
       turnSkills,
-      directiveRuntime: this.options.directiveRuntime,
-      directiveStateStore: this.options.directiveStateStore,
       query: input.query,
       userExpectedLocale: input.userExpectedLocale,
       accountId: input.accountId,
@@ -861,14 +869,11 @@ export class ChatTurnAssembly {
       clarification: input.clarification,
     });
     const { presentation, result } = await runPreparedChatTurnWithConversationEngine({
-      engine: this.options.conversationEngine,
+      ...this.engineTurnPorts(),
       session: sessionRef.current,
-      chatAnswerPresenter: this.options.chatAnswerPresenter,
       getSession: () => sessionRef.current,
       turnSkillSelector,
       turnSkills,
-      directiveRuntime: this.options.directiveRuntime,
-      directiveStateStore: this.options.directiveStateStore,
       turnInterpreter,
       retrievalWork,
       beforeRender: async () => {
@@ -920,13 +925,10 @@ export class ChatTurnAssembly {
       coordination: input.coordination,
     });
     for await (const event of runPreparedChatTurnStreamWithConversationEngine({
-      engine: this.options.conversationEngine,
+      ...this.engineTurnPorts(),
       session,
-      chatAnswerPresenter: this.options.chatAnswerPresenter,
       turnSkillSelector,
       turnSkills,
-      directiveRuntime: this.options.directiveRuntime,
-      directiveStateStore: this.options.directiveStateStore,
       query: input.query,
       userExpectedLocale: input.userExpectedLocale,
       accountId: input.accountId,
@@ -998,14 +1000,11 @@ export class ChatTurnAssembly {
       clarification: input.clarification,
     });
     for await (const event of runPreparedChatTurnStreamWithConversationEngine({
-      engine: this.options.conversationEngine,
+      ...this.engineTurnPorts(),
       session: sessionRef.current,
-      chatAnswerPresenter: this.options.chatAnswerPresenter,
       getSession: () => sessionRef.current,
       turnSkillSelector,
       turnSkills,
-      directiveRuntime: this.options.directiveRuntime,
-      directiveStateStore: this.options.directiveStateStore,
       turnInterpreter,
       retrievalWork,
       beforeRender: async () => {

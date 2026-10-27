@@ -3,6 +3,7 @@
 import type { ConversationTraceStage } from '@/lib/api'
 import { normalizeAnswerCoverageCore, normalizeAnswerCoverageHeadStageFields } from '@/lib/answer-coverage'
 import { spineStageLabel, spineStageTelemetry } from '@/lib/turn-trace'
+import { skillDispatchOutcome, skillOutcomeLabel } from '@/lib/skill-dispatch-outcome'
 import { AnswerCoverageSection } from './turn-inspector/answer-coverage-section'
 
 /**
@@ -914,6 +915,8 @@ interface RoutineTraceStepView {
   skillStatus?: string
   /** Failure reason for a failed tool step, e.g. `suppressed_for_safe_test`, `mcp_timeout`. */
   skillReason?: string
+  /** How the tool call ended, in the words the skill dispatch stage uses too. */
+  skillOutcome?: string
   /** The next-step selector's own reading of this turn, when a model call ran here. */
   selection?: RoutineStepSelectionView
   /** Slot keys whose returned value did not fit the slot's type and was not stored (#1374). */
@@ -966,6 +969,7 @@ export const buildRoutineRunTrace = (
         ...(asString(entry.skillName) ? { skillName: asString(entry.skillName) } : {}),
         ...(asString(entry.skillStatus) ? { skillStatus: asString(entry.skillStatus) } : {}),
         ...(asString(entry.skillReason) ? { skillReason: asString(entry.skillReason) } : {}),
+        skillOutcome: skillOutcomeLabel({ status: asString(entry.skillStatus), reason: asString(entry.skillReason) }),
         ...(selection ? { selection } : {}),
         ...(rejectedSlotKeys.length > 0 ? { rejectedSlotKeys } : {}),
         ...(entry.readOpeningMessage === true ? { readOpeningMessage: true } : {}),
@@ -1108,15 +1112,7 @@ function RoutineStepsTimeline({ trace }: { trace: RoutineRunTraceView }) {
               {step.skillName ? (
                 <p className="text-[11px] text-muted-foreground">
                   Tool <code className="text-foreground">{step.skillName}</code>
-                  {step.skillReason === 'suppressed_for_safe_test'
-                    ? ' → not called (skills are off in this test)'
-                    : step.skillReason === 'requires_durable_conversation'
-                      ? ' → not called (needs a saved conversation; runs after publish)'
-                      : step.skillReason
-                        ? ` → ${step.skillStatus} (${step.skillReason.replace(/_/g, ' ')})`
-                        : step.skillStatus
-                          ? ` → ${step.skillStatus}`
-                          : ''}
+                  {step.skillOutcome ? ` → ${step.skillOutcome}` : ''}
                 </p>
               ) : null}
               {step.capturedSlotKeys.length > 0 ? (
@@ -1254,10 +1250,14 @@ function GenericStageDetail({ stage }: { stage: ConversationTraceStage }) {
   const inputs = (stage.inputs ?? {}) as Record<string, unknown>
   const outputs = (stage.outputs ?? {}) as Record<string, unknown>
   const metrics = (stage.metrics ?? {}) as Record<string, unknown>
+  const dispatched = stage.kind === 'skill_dispatch' ? skillDispatchOutcome(outputs) : undefined
 
   return (
     <div className="space-y-4">
       <StageHeader stage={stage} />
+      {[dispatched?.outcome, dispatched?.fallbackNote].filter(Boolean).map((line) => (
+        <p key={line} className="text-sm text-muted-foreground">{line}</p>
+      ))}
 
       {Object.keys(outputs).length ? (
         <Section label="Outputs">

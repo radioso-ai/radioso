@@ -14,12 +14,12 @@ import {
 } from "./directiveBindingResolution.js";
 
 /** The terminal skill that claims a turn, with the engine-shaped decision behind it. */
-export interface TurnSkillSelection {
+interface TurnSkillSelection {
   skill: TurnSkill;
   decision: SelectionDecision;
 }
 
-export interface ChatTurnSkillSelectorOptions {
+interface ChatTurnSkillSelectorOptions {
   agentSkillStates?: ReadonlyMap<string, DirectiveBindingSkillState>;
   logger?: {
     warn(payload: Record<string, unknown>, message: string): void;
@@ -190,6 +190,9 @@ export class ChatTurnSkillSelector {
     });
     const reason = binding.winner ? `directive:${binding.winner.directiveName}` : undefined;
     const considerations = bindingConsiderations(binding);
+    // A bound skill that settles without completing hands the turn to the skill that
+    // would have claimed it unbound, so the visitor still gets an answer.
+    const fallbackSkillName = binding.winner ? this.resolveDefaultSkill(session).definition.name : undefined;
     return {
       skill,
       decision: {
@@ -197,6 +200,7 @@ export class ChatTurnSkillSelector {
           skillName: skill.definition.name,
           reason: reason ?? "turn_selection_strategy",
           ...(binding.winner ? { metadata: selectedBindingMetadata(binding.winner) } : {}),
+          ...(fallbackSkillName && fallbackSkillName !== skill.definition.name ? { fallbackSkillName } : {}),
         }],
         ...(considerations.length > 0 ? { considered: considerations } : {}),
         reason: reason ?? (candidates.length > 0 ? `candidates:${candidates.join(",")}` : "turn_selection_strategy"),

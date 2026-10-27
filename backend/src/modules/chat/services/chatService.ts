@@ -254,7 +254,7 @@ export interface ChatServiceOptions {
   cutReplyStore?: CutReplyStore;
   actionCapabilities?: ActionCapabilityMap;
   capabilityPolicy?: CapabilityPolicy;
-  logger?: Pick<AppLogger, "warn">;
+  logger?: Pick<AppLogger, "warn" | "info">;
   /** Optional: when wired, an eligible visitor message enqueues a facet extraction job (spec 956). */
   facetExtractionJobs?: Pick<FacetExtractionJobStore, "enqueue">;
   conversationOwnershipRepository?: ConversationOwnershipRepository;
@@ -439,7 +439,7 @@ export class ChatService {
   private readonly chatTurnLifecycle: ChatTurnLifecycle;
   private readonly approvalResumeTurn: ApprovalResumeTurn;
   private readonly turnSkills: TurnSkill[];
-  private readonly logger?: Pick<AppLogger, "warn">;
+  private readonly logger?: Pick<AppLogger, "warn" | "info">;
   private readonly answerSupport = new ChatAnswerSupport();
   private readonly routineStore?: ConversationRoutineStore;
   private readonly suspendedRoutineReader?: SuspendedRoutineReader;

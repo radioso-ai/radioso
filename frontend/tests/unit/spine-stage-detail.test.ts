@@ -277,6 +277,7 @@ describe('buildRoutineRunTrace', () => {
       skillName: 'send_notification',
       skillStatus: 'failed',
       skillReason: 'suppressed_for_safe_test',
+      skillOutcome: 'not called (skills are off in this test)',
     })
   })
 

@@ -100,15 +100,15 @@ import { freezePageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
 const DISPATCH_STAGE_ID_PREFIX = "dispatch:";
 
 /**
- * Hang the retrieval activity trace on the engine spine's terminal dispatch stage.
- * The stage is found by kind (an assistant turn dispatches one terminal skill), so
- * this is robust to the presentation skill name being reclassified (grounded-miss).
+ * Hang the retrieval activity trace on the spine's last dispatch stage: the skill whose outcome
+ * was rendered, which is the fallback when a bound skill did not answer. Found by kind, so it
+ * is robust to the presentation skill name being reclassified (grounded-miss).
  */
 const attachRetrievalActivityTrace = (
   spine: ConversationTrace,
   activityTrace: ActivityTrace,
 ): ConversationTrace => {
-  const dispatchStage = spine.stages.find((stage) => stage.kind === "skill_dispatch");
+  const dispatchStage = spine.stages.filter((stage) => stage.kind === "skill_dispatch").at(-1);
   if (!dispatchStage) {
     return spine;
   }

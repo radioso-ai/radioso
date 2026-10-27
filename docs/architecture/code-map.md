@@ -1471,6 +1471,9 @@ Primary internals:
   coverage verdict: directive applicability from the head, coverage routine
   candidate evaluation and ranked activation, and reaction recording all run
   from here, returning `proceed` or `yield_turn` — #1260)
+- `packages/conversation-engine/src/skillFallback.ts` (the skill a selection's
+  `fallbackSkillName` dispatches when the selected skill does not complete, and
+  the dispatch stage's `failureReason` and `fallbackFor` outputs)
 
 Useful searches:
 
@@ -2385,6 +2388,8 @@ Turn debug view entry points:
   in execution order, tone, measured durations, folded capability steps
 - `frontend/lib/activity-stage-presentation.ts` — activity-stage labels, summaries,
   and attention flags shared by the Flow and the stage list
+- `frontend/lib/skill-dispatch-outcome.ts` — how a skill call ended, in words, shared
+  by the Flow, the dispatch stage detail, and the routine step timeline
 - `frontend/components/dashboard/turn-flow-graph.tsx` and `turn-flow-overlay.tsx` —
   the draw layer and its full-screen host
 - `cd frontend && pnpm exec vitest run tests/unit/turn-flow.test.ts`

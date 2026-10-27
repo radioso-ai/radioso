@@ -1,7 +1,7 @@
 ---
 title: "Code Map"
 description: "Navigation map from product areas to public surfaces, owners, tests, and related docs for focused feature work."
-last_updated: 2026-10-26
+last_updated: 2026-10-27
 ---
 
 # Code Map
@@ -158,9 +158,9 @@ typed query builder) on the shared `pg.Pool`; Postgres-specific fragments live i
 (`pnpm run db:types`). Raw `pg` SQL is confined to a small allowlist — the migration runner,
 the `Database` pool wrapper, the pgvector/full-text adapters, and the connector files bound to
 the published `@radioso/connector-api` contract — enforced by `pnpm run lint:no-raw-sql`
-(`scripts/checkNoRawSql.mjs`). Migrations themselves stay raw `.sql`.
+(`backend/scripts/checkNoRawSql.mjs`). Migrations themselves stay raw `.sql`.
 
-`pnpm run lint:unbound-methods` (`scripts/checkUnboundMethods.mjs`) catches a class or
+`pnpm run lint:unbound-methods` (`backend/scripts/checkUnboundMethods.mjs`) catches a class or
 interface method being passed or stored without its receiver, including first-party
 workspace packages. Bind the method or pass an arrow that calls it with its owner;
 reviewed structural-port exceptions use a path, member, and receiver fingerprint in
@@ -195,7 +195,7 @@ Credentials encrypted under `CONNECTOR_ENCRYPTION_KEY`:
   application modules get it as `credentialKeys` in their action handler factory context.
 - `backend/src/db/repositories/encryptedFieldRepository.ts` — `ENCRYPTED_FIELD_LOCATIONS`, every
   encrypted column. A new encrypted column adds an entry there; name it `*_ciphertext` and
-  `tests/unit/encrypted-field-locations.test.ts` checks the schema against the list (any column
+  `backend/tests/unit/encrypted-field-locations.test.ts` checks the schema against the list (any column
   named `*ciphertext*`, `*sealed*` or `*encrypted*`, less the commented exclusions).
 - `backend/src/credentialReencryption.ts` and `app/cli/credentialReencryptionCommand.ts` — the key
   rotation CLI (`pnpm run credentials:reencrypt`). A deploy-time CLI with no HTTP route, so it sits
@@ -211,6 +211,81 @@ Useful searches:
 Focused checks:
 
 - `cd backend && pnpm run db:schema:check` (drift gate; runs in CI + `ci:local`, needs Docker)
+
+## Audit
+
+Owns durable audit-event persistence and the shared metadata shape a write path
+attaches to a logged event (retrieval diagnostics, product analytics, errors).
+Other modules call into it to record an actor-attributed event; it does not
+decide what is audit-worthy.
+
+Public surfaces and key files:
+
+- `backend/src/modules/audit/contracts/index.ts`
+- `backend/src/modules/audit/composition.ts`
+- `backend/src/modules/audit/services/auditService.ts`
+- `backend/src/modules/audit/requestAuditContext.ts`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/audit-event-log-line.test.ts tests/unit/audit-analytics-sink.test.ts tests/unit/audit-event-retention.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/audit-event-repository.integration.test.ts`
+
+## Security
+
+Owns abuse-control rate limiting (sliding-window attempt counters, with Redis
+and in-memory fallback adapters) and encrypted workspace provider credentials
+for bring-your-own model and provider API keys.
+
+Public surfaces and key files:
+
+- `backend/src/modules/security/contracts/abuseControl.ts`
+- `backend/src/modules/security/services/abuseControlService.ts`
+- `backend/src/modules/security/infrastructure/redisAbuseControlRepository.ts`,
+  `fallbackAbuseControlRepository.ts`
+- `backend/src/modules/security/credentials/services/workspaceProviderCredentialsService.ts`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/abuse-control-service.test.ts tests/unit/abuse-control-composition.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/abuse-controls.integration.test.ts tests/integration/redis-abuse-control-repository.integration.test.ts`
+
+## Machine Access
+
+Owns personal API credentials and service accounts for the Agent API and MCP:
+credential issuance, expiry and tenure policy, and the principal authenticator
+that resolves a presented credential to a caller.
+
+Public surfaces and key files:
+
+- `backend/src/modules/machineAccess/public.ts`
+- `backend/src/modules/machineAccess/services/apiPrincipalAuthenticator.ts`
+- `backend/src/modules/machineAccess/services/personalCredentialService.ts`,
+  `serviceAccountService.ts`, `credentialExpiryWarningService.ts`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/machineAccess/personal-credential-service.test.ts tests/unit/machineAccess/service-account-service.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/machine-access-repository.integration.test.ts tests/integration/personal-credential-lifecycle.integration.test.ts`
+
+## Access Grants
+
+Owns the credential a visitor-facing surface (embed widget, public link, MCP
+Converse, Agent API) presents to reach an agent: origin constraints, role,
+expiry, revocation, and evaluation of a presented grant against its
+constraints.
+
+Public surfaces and key files:
+
+- `backend/src/modules/accessGrants/public.ts`
+- `backend/src/modules/accessGrants/domain.ts`
+- `backend/src/modules/accessGrants/originMatcher.ts`
+- `backend/src/modules/accessGrants/services/accessGrantService.ts`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/access-grant-service.test.ts tests/unit/access-grant-evaluate-origin.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/access-grant-repository.integration.test.ts`
 
 ## Customer Email
 
@@ -479,6 +554,8 @@ Public surfaces and key files:
 
 - `backend/src/modules/agentSkills/public.ts` (spine vocabulary + shared type)
 - `backend/src/modules/integrationOauth/public.ts` (OAuth lifecycle)
+- `backend/src/modules/externalSkills/public.ts` (MCP skill executor and routine resolver)
+- `backend/src/modules/webhookSkills/public.ts` (webhook skill executor and routine resolver)
 - `backend/src/db/repositories/externalSkillDefinitionRepository.ts`, `emailSkillDefinitionRepository.ts`, `webhookSkillDefinitionRepository.ts`, and `backend/src/modules/slackSkills/repository.ts`
 - `backend/src/db/migrations/099_agent_skills_spine.sql`, `100_email_skills_into_spine.sql`, `101_agent_skills_generic_targets.sql`
 
@@ -486,6 +563,76 @@ Focused checks (real Postgres via `INTEGRATION_DATABASE_URL`):
 
 - `cd backend && pnpm exec vitest run tests/integration/externalSkills/repositories.test.ts`
 - `cd backend && pnpm exec vitest run tests/integration/customerEmail/email-skill-definition-repository.test.ts`
+
+## Integration Connections
+
+Owns the generic record of an OAuth-backed integration connection's lifecycle
+status (authorized, disabled, needs reauth, error) and health, independent of
+which provider or skill kind uses it.
+
+Public surfaces and key files:
+
+- `backend/src/modules/integrationConnections/domain.ts`
+- `backend/src/modules/integrationConnections/public.ts`
+- `backend/src/modules/integrationConnections/repository.ts`
+- `backend/src/modules/integrationConnections/stateMachine.ts`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/integrationConnections/integration-connection-state-machine.test.ts tests/unit/integrationConnections/integration-connection-provider-scope.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/integrationConnections/integration-connection-repository.test.ts`
+
+## Webhooks
+
+Owns outbound webhook destinations: signed delivery, destination CRUD, and the
+adapter a routine's webhook action resolves a destination through.
+
+Public surfaces and key files:
+
+- `backend/src/modules/webhooks/public.ts`
+- `backend/src/modules/webhooks/service.ts`
+- `backend/src/modules/webhooks/delivery.ts`
+- `backend/src/modules/webhooks/resolver.ts`, `adapters.ts`
+- `backend/src/app/http/routes/settingsWebhookDestinationRoutes.ts`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/webhook-destinations-service.test.ts tests/unit/webhook-delivery.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/webhook-destination-repository.integration.test.ts`
+
+## Notify
+
+Owns the built-in operator-notification routine action: a skill-shaped adapter
+and routine-skill resolver that let a routine step notify operators without a
+webhook or email skill definition.
+
+Public surfaces and key files:
+
+- `backend/src/modules/notify/public.ts`
+- `backend/src/modules/notify/notifyExecutor.ts`
+- `backend/src/modules/notify/routineSkillResolver.ts`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/notify-executor.test.ts tests/unit/notify/notify-routine-skill-resolver.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/notify/notify-skill-routine-dispatch.test.ts`
+
+## Customer Reply Delivery
+
+Owns routing a composed reply to the customer-facing channel (email, Slack, web
+chat) a conversation arrived on, and recording delivery failures for retry and
+operator visibility.
+
+Public surfaces and key files:
+
+- `backend/src/modules/customerReplyDelivery/public.ts`
+- `backend/src/modules/customerReplyDelivery/customerReplyDelivery.ts`
+- `backend/src/modules/customerReplyDelivery/deliveryFailures.ts`,
+  `deliveryFailureDecisions.ts`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/customer-reply-delivery.test.ts`
 
 ## Shared Agent Runtime
 
@@ -630,7 +777,7 @@ Public and tool surfaces:
 - `backend/src/modules/operatorCopilot/tools/agentTurnProbe.ts` (`test_agent_turn` contract and projection)
 - `backend/src/modules/operatorCopilot/tools/testChat.ts`, `contracts/testChat.ts`, and `services/testChatService.ts` (`test_chat_sessions`, `test_chat_transcript`, `test_chat_turn_trace`, `send_test_chat_message`), which add spend, bounds, and surface policy over test-execution's own turn reads, list summaries, and default-revision start in `backend/src/modules/test-execution/`; the turn trace reuses `turn_trace`'s envelope schema and bound from `tools/chatPayloadBounds.ts`
 - `backend/src/modules/operatorCopilot/tools/routines.ts` (`routine_definition`, `validate_routine`, `propose_routine`, `propose_routine_edit`, `propose_routine_exposure`)
-- `backend/src/app/composition/copilotProposalAdapters.ts` (proposal adapters: directive, agent setting, and the routine edit apply rules)
+- `backend/src/modules/operatorCopilot/proposalAdapters.ts` (proposal adapters: directive, agent setting, and the routine edit apply rules)
 - `backend/src/app/composition/copilotToolCatalog.ts` (default wiring and contributed-tool assembly)
 - `backend/src/modules/operatorCopilot/contribution.ts` (what a contributing module declares)
 - `ee/packages/backend-module/src/usageLimits/copilotTools.ts` (`workspace_usage_limits`, the Enterprise contribution)
@@ -683,6 +830,79 @@ Related docs, specs, and issues:
 - `backend/tests/fixtures/copilot-evals/README.md`
 - `specs/104-in-product-operator-copilot/`
 - Issues `#1036`, `#1041`, `#1043`, `#1044`, and `#1054`
+
+## Operator MCP Authorization
+
+Owns the OAuth protocol operators use to connect an MCP client (for example
+Claude Desktop) to their workspace's Operator Copilot server: authorization
+and token endpoints, grant records, and per-client scope and redirect-URI
+validation.
+
+Public surfaces and key files:
+
+- `backend/src/modules/operatorMcpAuthorization/public.ts`
+- `backend/src/modules/operatorMcpAuthorization/routes.ts` (OAuth authorize/token endpoints)
+- `backend/src/modules/operatorMcpAuthorization/dashboardRoutes.ts` (grant management)
+- `backend/src/modules/operatorMcpAuthorization/authorizationService.ts`, `grantService.ts`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/operatorMcp/operator-mcp-authorization-service.test.ts tests/unit/operatorMcp/operator-mcp-grant-service.test.ts`
+- `cd backend && pnpm exec vitest run tests/contract/operator-mcp-oauth.contract.test.ts`
+
+Related docs:
+
+- [Operator MCP OAuth Access](../operator-mcp.md)
+
+## Operator MCP Setup
+
+Owns the dashboard's per-client connection instructions for the Operator MCP
+server: setup artifacts (status, command, configuration snippet) a workspace
+admin copies into an MCP client.
+
+Public surfaces and key files:
+
+- `backend/src/modules/operatorMcpSetup/routes.ts`
+- `backend/src/modules/operatorMcpSetup/setupArtifacts.ts`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/operatorMcp/operator-mcp-setup-artifacts.test.ts`
+
+## Approvals
+
+Owns the generic approval-gate primitive a routine step or Operator Copilot
+tool call pauses on: a pending decision proposal, its content hash, and the
+resume path once an operator decides.
+
+Public surfaces and key files:
+
+- `backend/src/modules/approvals/public.ts`
+- `backend/src/modules/approvals/decisionProposal.ts`
+- `backend/src/modules/approvals/service.ts`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/approval-decision-service.test.ts tests/unit/approval-request-action-handler.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/operatorMcp/operator-mcp-reviewed-approval.integration.test.ts`
+
+## Operator Notifications
+
+Owns notifying operators outside the dashboard (email) about conversation and
+routine events: recipient confirmation and tokens, delivery admission policy,
+provider suppression handling, and routine-ending notification text.
+
+Public surfaces and key files:
+
+- `backend/src/modules/operatorNotifications/public.ts`
+- `backend/src/modules/operatorNotifications/operatorNotificationDispatcher.ts`
+- `backend/src/modules/operatorNotifications/notificationRecipientConfirmationMailer.ts`,
+  `notificationRecipientPolicy.ts`
+- `backend/src/modules/operatorNotifications/routineEndingNotificationFromAction.ts`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/operator-notifications`
 
 ## Agent Bundle (portable agent export/import)
 
@@ -1166,6 +1386,29 @@ Related docs:
 - [Human Takeover](../human-takeover.md)
 - [MCP Client Setup](../mcp-client-setup.md)
 
+## Realtime
+
+Owns pushing workspace change notifications (document status, crawl progress,
+conversation turns, HITL decisions, quality triage) to the dashboard over
+Server-Sent Events: workspace interest subscriptions, admission control, and
+the Postgres and Redis transports a change fans out through.
+
+Public surfaces and key files:
+
+- `backend/src/modules/realtime/domain/contracts.ts`
+- `backend/src/modules/realtime/application/workspaceGateway.ts`
+- `backend/src/modules/realtime/http/workspaceEventsRoutes.ts`, `ssePresenter.ts`
+- `backend/src/app/composition/realtimeComposition.ts`, `realtimePublisherComposition.ts`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/realtime/workspace-gateway.test.ts tests/unit/realtime/sse-presenter.test.ts tests/unit/realtime/runtime.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/realtime/standalone-redis.integration.test.ts`
+
+Related docs and specs:
+
+- `specs/1042-scalable-realtime-updates/`
+
 ## Conversation Engine Contracts
 
 Owns product-independent conversation runtime contracts: agents, input events,
@@ -1288,6 +1531,49 @@ Related docs and specs:
 - `specs/055-message-queue-support/`
 - `specs/024-ingestion-settings/`
 
+## Document Types
+
+Owns the catalog of built-in and operator-defined document types: per-type
+field schemas, the dated-field keys retrieval's temporal lookup depends on, and
+the prompt rendering of the catalog for skill and routine authoring.
+
+Public surfaces and key files:
+
+- `backend/src/modules/documentTypes/public.ts`
+- `backend/src/modules/documentTypes/contracts/documentTypeCatalog.ts`
+- `backend/src/modules/documentTypes/domain/builtInDocumentTypes.ts`,
+  `documentTypeCatalogPrompt.ts`, `documentTypeCatalogValidation.ts`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/documentTypes/document-type-catalog-prompt.test.ts tests/unit/documentTypes/document-type-catalog-validation.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/document-type-catalog-repository.integration.test.ts`
+
+## Website Crawler
+
+Owns crawling and publishing a workspace's own website into documents: crawl
+job dispatch and queueing, same-origin URL policy, and the document-ingestion
+port a crawled page is published through. The crawl implementation itself
+lives in `@radioso/crawler`; this module provides the Radioso-specific
+provider, job lifecycle, and copilot-facing crawl proposals.
+
+Public surfaces and key files:
+
+- `backend/src/modules/websiteCrawler/public.ts`
+- `backend/src/modules/websiteCrawler/service.ts`
+- `backend/src/modules/websiteCrawler/jobService.ts`, `jobDispatcher.ts`, `jobQueue.ts`
+- `backend/src/modules/websiteCrawler/radiosoCrawlerProvider.ts`
+- `backend/src/modules/websiteCrawler/routes.ts`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/website-crawler-ingestion-port.test.ts tests/unit/amqp-website-crawl-job-queue.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/website-crawl-job-repository.integration.test.ts`
+
+Related docs:
+
+- [Website Crawler Provider](../website-crawler.md)
+
 ## Retrieval
 
 Owns query interpretation, lexical and vector candidate retrieval, metadata
@@ -1304,7 +1590,6 @@ Public surfaces and contracts:
 - `backend/src/modules/retrieval/README.md`
 - `backend/src/modules/retrieval/public.ts`
 - `backend/src/modules/retrieval/composition.ts`
-- `backend/src/modules/retrieval/llmAdapters.ts`
 - `backend/src/modules/retrieval/domain/`
 - `backend/src/app/composition/retrievalDefaultsProvider.ts`
 - `backend/src/app/composition/agentRetrievalScope.ts`
@@ -1372,6 +1657,31 @@ Related docs and specs:
 - `specs/009-hybrid-retrieval/`
 - `specs/032-split-rewrite-queries/`
 - `specs/065-agent-runtime-and-agentic-retrieval/`
+
+## Embedding Profiles
+
+Owns immutable embedding-space identity and a workspace's transitions between
+spaces: model compatibility, dimensions, canonical vector versions, rebuild
+fencing, and promotion readiness. It also owns shared embedding generation and
+the purpose-specific ports (`QueryEmbeddingPort`, `DocumentEmbeddingPort`,
+`ClusteringEmbeddingPort`) that keep retrieval and documents from becoming
+accidental general embedding APIs.
+
+Public surfaces and key files:
+
+- `backend/src/modules/embeddingProfiles/README.md`
+- `backend/src/modules/embeddingProfiles/public.ts`
+- `backend/src/modules/embeddingProfiles/services/`
+- `backend/src/modules/embeddingProfiles/domain/`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/embeddingProfiles/embeddingTransitionCoordinator.test.ts tests/unit/embeddingProfiles/embeddingProfileReadinessService.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/embedding-profile-repositories.integration.test.ts tests/integration/vector-index-readiness.integration.test.ts`
+
+Related docs:
+
+- [Embedding Coverage](../embedding-coverage.md)
 
 ## Chat And Assistant
 
@@ -1514,8 +1824,9 @@ Public surfaces and contracts:
 
 Primary internals:
 
-- `backend/src/modules/directives/directiveMatcher.ts` (deterministic always-match)
-- `backend/src/modules/directives/probabilisticDirectiveMatcher.ts` (LLM contextual match)
+- `packages/conversation-defaults/src/directiveMatcher.ts` (deterministic always-match)
+- `packages/conversation-defaults/src/probabilisticDirectiveMatcher.ts` (LLM contextual match)
+- `packages/conversation-defaults/src/compositeDirectiveMatcher.ts` (concatenates the deterministic and probabilistic matchers' results)
 - `backend/src/modules/directives/directiveSteeringService.ts`
 - `backend/src/modules/chat/services/directiveTracePresenter.ts`
 - `backend/src/modules/context-variables/matchContextProjection.ts` (bounded, redacted visitor context for conditions)
@@ -1889,7 +2200,7 @@ Operator configuration:
 Focused checks:
 
 - `cd backend && pnpm exec vitest run tests/unit/background-jobs tests/unit/conversation-summary-lifecycle.test.ts`
-- `tests/integration/background-job-repository.integration.test.ts`
+- `backend/tests/integration/background-job-repository.integration.test.ts`
 
 ## Facet Extraction Jobs
 
@@ -2129,7 +2440,7 @@ Primary paths:
 - `packages/radioso-mcp-server/tests/`
 - `packages/radioso-mcp-server/src/tools/productDocsTools.ts` (`radioso_docs`, `radioso_doc_page`)
 - `packages/radioso-mcp-server/src/tools/routineTools.ts` (one tool per exposed routine descriptor; `routineToolSchema.ts` hands the descriptor's JSON Schema to the SDK) and `src/http/sessionServerManager.ts` (servers cached per session catalog key, read once at exchange in `src/auth/authService.ts`)
-- `packages/product-docs/` (the documentation corpus both surfaces read; `scripts/buildCorpus.ts` compiles `docs-portal/content` into the committed `src/generated/corpus.json` through `@radioso/docs-importer`'s MDX converter, and `pnpm --filter @radioso/product-docs run sync` refreshes it — the CI docs job and `backend`'s contract suite both fail on drift)
+- `packages/product-docs/` (the documentation corpus both surfaces read; `packages/product-docs/scripts/buildCorpus.ts` compiles `docs-portal/content` into the committed `src/generated/corpus.json` through `@radioso/docs-importer`'s MDX converter, and `pnpm --filter @radioso/product-docs run sync` refreshes it — the CI docs job and `backend`'s contract suite both fail on drift)
 - `packages/mcp-source-proof/src/index.ts`
 - `packages/mcp-source-proof/tests/`
 - `packages/edge-proof/src/` (`envelope.ts` generic sign/verify, `edgeFacts.ts` request-facts proof, `geoHeaders.ts` well-known header names)
@@ -2215,6 +2526,25 @@ Focused checks:
 - `cd docs-portal && pnpm run build`
 - `cd docs-portal && pnpm run lint`
 
+## Reporting
+
+Owns dashboard-facing usage reporting: message and embedding usage trends over
+a date range and granularity, and the paginated usage-details query the
+Enterprise billing module's self-serve ceiling and top-up features read from.
+
+Public surfaces and key files:
+
+- `backend/src/modules/reporting/composition.ts`
+- `backend/src/modules/reporting/routes.ts`, `usageDetailsRoutes.ts`
+- `backend/src/modules/reporting/service.ts`
+- `backend/src/modules/reporting/usageTrendsQuery.ts`, `usageDetailsQuery.ts`
+
+Focused checks:
+
+- `cd backend && pnpm exec vitest run tests/unit/usage-trends-periods.test.ts`
+- `cd backend && pnpm exec vitest run tests/contract/usage-trends.contract.test.ts tests/contract/usage-details.contract.test.ts`
+- `cd backend && pnpm exec vitest run tests/integration/usage-trends.integration.test.ts tests/integration/usage-details.integration.test.ts`
+
 ## Enterprise Edition
 
 Owns commercial packages, Enterprise-specific runtime behavior, licensing, and
@@ -2233,7 +2563,7 @@ Primary paths:
   top-up, managed service, the managed-plan model set, whether prices include
   VAT). Entry point `src/index.ts`
   (`PLAN_CATALOG`, `findPlan`, `formatPrice`); data in `src/plans.json`; focused
-  test `tests/planCatalog.test.ts`.
+  test `ee/packages/plan-catalog/tests/planCatalog.test.ts`.
 - `ee/packages/backend-module/src/billing/` — publishes the plan catalog over
   HTTP and runs self-serve Stripe checkout, the customer portal, and the
   Stripe webhook. Entry point `applicationModule.ts`
@@ -2338,8 +2668,8 @@ Primary paths:
   cases run on (`scriptedBrains.ts`), and the deterministic runner that drives
   those two through a test composition's own planner and composer and the others
   through a real `VoiceTurnService` over a scripted chat backend
-- `backend/scripts/runEvals.ts`, `scripts/evalRunnerAdapter.ts` and
-  `scripts/evalRunnerSupport.ts` (the live scope, the baseline file, agent
+- `backend/scripts/runEvals.ts`, `backend/scripts/evalRunnerAdapter.ts` and
+  `backend/scripts/evalRunnerSupport.ts` (the live scope, the baseline file, agent
   preparation and shutdown the runner, its tests and the deterministic harness
   share) — headless CLI that seeds fixtures (voice settings and the voice-eval routine included,
   when a voice case is selected; publishes the agent, as a review case does),

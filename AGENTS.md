@@ -250,23 +250,39 @@ radioso/
 |   `-- tests/
 |-- frontend/                    # Next.js application
 |-- packages/
+|   |-- census/                 # clusters embeddings into topic groups and tracks topic identity across runs
+|   |-- connector-api/          # connector contract package
 |   |-- conversation-contract/  # reusable conversation engine contracts
+|   |-- conversation-defaults/  # default directive, routine, and skill-catalog implementations for the engine contracts
 |   |-- conversation-engine/    # pure conversation engine runtime loop
+|   |-- conversation-kit/       # composable wiring that assembles the engine into a standalone runtime
+|   |-- conversation-tools/     # tool adapters (local function, MCP, OpenAPI) for engine skill execution
+|   |-- crawler/                # website crawling core, persistence, and publishing used by the website connector
+|   |-- document-parser/        # local parser package
 |   |-- edge-proof/             # generic HMAC envelope + request-facts schema shared by frontend and backend
-|   |-- mcp-source-proof/       # signed source provenance shared by MCP edge and backend
 |   |-- integration-test-support/ # shared disposable integration-database policy
-|   |-- radioso-mcp-server/      # standalone MCP server package
-|   |-- document-parser/         # local parser package
-|   |-- product-docs/            # published documentation compiled for Ray and MCP
-|   |-- connector-api/           # connector contract package
-|   `-- ui/                      # shared shadcn primitives (frontend + docs-portal)
+|   |-- mcp-source-proof/       # signed source provenance shared by MCP edge and backend
+|   |-- operator-mcp-contract/  # operator MCP protocol constants, scopes, and wire types shared by edge and backend
+|   |-- product-docs/           # published documentation compiled for Ray and MCP
+|   |-- radioso-docs-importer/  # imports the docs portal and API reference into a workspace as grounding documents
+|   |-- radioso-mcp-server/     # standalone MCP server package
+|   |-- routine-definition/     # shared schema, limits, and validation for authored routine definitions
+|   |-- routine-document/       # routine block-document types and conversion to and from routine instructions
+|   |-- skill-contract/         # shared skill definition and execution contract types
+|   |-- ui/                     # shared shadcn primitives (frontend + docs-portal)
+|   |-- usage-contract/         # shared usage-event types for billing and metering
+|   |-- wordpress-companion/    # WordPress plugin that pushes site content to a workspace via signed webhook
+|   `-- workspace-invalidation-contract/ # workspace cache-invalidation envelope schema shared by backend and frontend realtime
 |-- typescript-sdk/              # first-party TypeScript SDK
 |-- docs/                        # product, SDK, MCP, and settings docs
 |   `-- architecture/            # durable architecture maps and boundaries
 |-- docs-portal/                 # public documentation site
 |-- ee/                          # commercial Enterprise Edition packages and license
 |   `-- packages/
-|       `-- plan-catalog/        # Radioso Cloud plan numbers: prices, quotas, managed models
+|       |-- auth-frontend/    # enterprise auth route manifest read by the EE frontend route generator
+|       |-- backend-module/   # enterprise backend features (billing, managed models, org creation, staff console) wired into the OSS backend
+|       |-- operator-console/ # enterprise-only staff Operator Console frontend package
+|       `-- plan-catalog/     # Radioso Cloud plan numbers: prices, quotas, managed models
 |-- infra/                       # Docker Compose and Terraform
 |-- scripts/                     # bootstrap and performance scripts
 |-- specs/                       # Speckit feature artifacts

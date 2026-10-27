@@ -16,6 +16,7 @@ import {
   type VoiceRuntimeConnectionActor,
   type VoiceRuntimeConnectionAudit,
   type VoiceRuntimeConnectionFailure,
+  type VoiceRuntimeConnectionLock,
   type VoiceRuntimeConnectionPort,
   type VoiceRuntimeConnectionStatus,
   type VoiceRuntimeConnectionStore,
@@ -50,6 +51,8 @@ type ConnectionOutcome =
   | VoiceRuntimeConnectionFailure;
 
 interface VoiceRuntimeConnectionServiceDependencies {
+  /** Serializes Connect, Disconnect and a language sync per agent, across instances. */
+  lock: VoiceRuntimeConnectionLock;
   agents: VoiceRuntimeAgentProfileSource;
   connections: VoiceRuntimeConnectionStore;
   credentials: VoiceVendorCredentialReader;
@@ -111,87 +114,110 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
   }
 
   async connect(input: AgentRef & { actor: VoiceRuntimeConnectionActor }): Promise<VoiceRuntimeConnectionStatus> {
-    const { workspaceId, agentId, actor } = input;
-    let vendor: VoiceVendor = CONNECT_VENDOR;
+    const { workspaceId, agentId } = input;
+    const attempt: { vendor: VoiceVendor } = { vendor: CONNECT_VENDOR };
     try {
-      const completionsAddress = this.dependencies.completionsAddress;
-      if (!completionsAddress) throw new VoiceRuntimeConnectionError("connection_unavailable");
-      const profile = await this.requireProfile(input);
-      vendor = profile.runtime?.vendor ?? CONNECT_VENDOR;
-      const credential = await this.requireCredential(workspaceId, vendor);
-      const provisioner = this.dependencies.provisioners[vendor];
-      const { region } = await provisioner.locateAccount({ credential });
-
-      const stored = await this.dependencies.connections.find(input);
-      const previous = stored?.vendor === vendor ? stored : null;
-      if (previous && previous.region !== region) {
-        this.dependencies.logger.warn(
-          { workspaceId, agentId, vendor, previousRegion: previous.region, region, vendorAgentId: previous.vendorAgentId },
-          "Voice runtime key belongs to another region now; creating a vendor agent there and leaving the old one",
-        );
-      }
-      const kept = previous && previous.region === region ? previous : null;
-      const reusable = kept?.channelCredentialId
-        ? await this.dependencies.channelCredentials.isActive({ workspaceId, agentId, credentialId: kept.channelCredentialId })
-        : false;
-      const spec: VoiceRuntimeAgentSpec = {
-        displayName: profile.name,
-        completionsBaseUrl: completionsAddress({ agentId, vendor }),
-        primaryLocale: profile.defaultLocale,
-      };
-
-      const { ensured, minted } = await this.ensureAgent({ ...input, provisioner, region, credential, spec, kept, reusable });
-      const channelCredentialId = minted?.credentialId ?? kept?.channelCredentialId ?? null;
-      const connection: VoiceRuntimeConnection = { workspaceId, agentId, vendor, region, vendorAgentId: ensured.vendorAgentId, channelCredentialId };
-      try {
-        await this.dependencies.connections.save(connection);
-      } catch (error) {
-        // The vendor agent now holds the minted credential, so it stays unless that agent goes:
-        // only an agent this attempt created, and could delete again, gives it up.
-        const released = ensured.outcome === "created" && await this.releaseQuietly(connection, credential);
-        if (minted && released) await this.revokeQuietly({ ...input, credentialId: minted.credentialId });
-        throw error;
-      }
-      // The saved row makes the minted credential the connection's, so the one it replaced goes
-      // now: a binding that fails below would otherwise lose its id with it still active.
-      const replaced = previous?.channelCredentialId;
-      if (minted && replaced && replaced !== minted.credentialId) await this.revokeQuietly({ ...input, credentialId: replaced });
-      const runtime: VoiceRuntimeBinding = { vendor, agentId: ensured.vendorAgentId, region };
-      await this.dependencies.binder.bind({ workspaceId, agentId, runtime });
-
-      if (!ensured.primaryLocaleSupported) {
-        this.dependencies.logger.warn(
-          { workspaceId, agentId, vendor, defaultLocale: profile.defaultLocale },
-          "Voice runtime vendor speaks no language of the agent's default locale; calls start in English",
-        );
-      }
-      await this.dependencies.audit.connected({
-        accountId: actor.accountId,
-        workspaceId,
-        agentId,
-        vendor,
-        region,
-        outcome: ensured.outcome,
-        credential: minted ? "issued" : "reused",
-      });
-      this.dependencies.logger.info(
-        { workspaceId, agentId, vendor, region, operation: "connect", outcome: ensured.outcome, credential: minted ? "issued" : "reused" },
-        "Voice runtime connected",
-      );
-      this.record(vendor, "connect", ensured.outcome);
-      return this.statusOf(workspaceId, runtime, connection);
+      const held = await this.dependencies.lock.run(input, () => this.connectHoldingLock(input, attempt));
+      if (!held.ran) throw new VoiceRuntimeConnectionError("connection_busy");
+      return held.value;
     } catch (error) {
       const failure = failureOf(error);
       this.dependencies.logger.warn(
-        { workspaceId, agentId, vendor, operation: "connect", outcome: failure ?? "error", ...vendorErrorFields(error) },
+        { workspaceId, agentId, vendor: attempt.vendor, operation: "connect", outcome: failure ?? "error", ...vendorErrorFields(error) },
         "Voice runtime connect failed",
       );
-      this.record(vendor, "connect", failure ?? "error");
+      this.record(attempt.vendor, "connect", failure ?? "error");
       throw failure && !(error instanceof VoiceRuntimeConnectionError) ? new VoiceRuntimeConnectionError(failure) : error;
     }
   }
 
+  /** Connect's own work, run while the agent's lock is held. `attempt.vendor` follows the vendor it connects, for the caller's log. */
+  private async connectHoldingLock(
+    input: AgentRef & { actor: VoiceRuntimeConnectionActor },
+    attempt: { vendor: VoiceVendor },
+  ): Promise<VoiceRuntimeConnectionStatus> {
+    const { workspaceId, agentId, actor } = input;
+    const completionsAddress = this.dependencies.completionsAddress;
+    if (!completionsAddress) throw new VoiceRuntimeConnectionError("connection_unavailable");
+    const profile = await this.requireProfile(input);
+    const vendor = profile.runtime?.vendor ?? CONNECT_VENDOR;
+    attempt.vendor = vendor;
+    const credential = await this.requireCredential(workspaceId, vendor);
+    const provisioner = this.dependencies.provisioners[vendor];
+    const { region } = await provisioner.locateAccount({ credential });
+
+    const stored = await this.dependencies.connections.find(input);
+    const previous = stored?.vendor === vendor ? stored : null;
+    if (previous && previous.region !== region) {
+      this.dependencies.logger.warn(
+        { workspaceId, agentId, vendor, previousRegion: previous.region, region, vendorAgentId: previous.vendorAgentId },
+        "Voice runtime key belongs to another region now; creating a vendor agent there and leaving the old one",
+      );
+    }
+    const kept = previous && previous.region === region ? previous : null;
+    const reusable = kept?.channelCredentialId
+      ? await this.dependencies.channelCredentials.isActive({ workspaceId, agentId, credentialId: kept.channelCredentialId })
+      : false;
+    const spec: VoiceRuntimeAgentSpec = {
+      displayName: profile.name,
+      completionsBaseUrl: completionsAddress({ agentId, vendor }),
+      primaryLocale: profile.defaultLocale,
+    };
+
+    const { ensured, minted } = await this.ensureAgent({ ...input, provisioner, region, credential, spec, kept, reusable });
+    const channelCredentialId = minted?.credentialId ?? kept?.channelCredentialId ?? null;
+    const connection: VoiceRuntimeConnection = { workspaceId, agentId, vendor, region, vendorAgentId: ensured.vendorAgentId, channelCredentialId };
+    try {
+      await this.dependencies.connections.save(connection);
+    } catch (error) {
+      // The vendor agent now holds the minted credential, so it stays unless that agent goes:
+      // only an agent this attempt created, and could delete again, gives it up.
+      const released = ensured.outcome === "created" && await this.releaseQuietly(connection, credential);
+      if (minted && released) await this.revokeQuietly({ ...input, credentialId: minted.credentialId });
+      throw error;
+    }
+    // The saved row makes the minted credential the connection's, so the one it replaced goes
+    // now: a binding that fails below would otherwise lose its id with it still active.
+    const replaced = previous?.channelCredentialId;
+    if (minted && replaced && replaced !== minted.credentialId) await this.revokeQuietly({ ...input, credentialId: replaced });
+    const runtime: VoiceRuntimeBinding = { vendor, agentId: ensured.vendorAgentId, region };
+    await this.dependencies.binder.bind({ workspaceId, agentId, runtime });
+
+    if (!ensured.primaryLocaleSupported) {
+      this.dependencies.logger.warn(
+        { workspaceId, agentId, vendor, defaultLocale: profile.defaultLocale },
+        "Voice runtime vendor speaks no language of the agent's default locale; calls start in English",
+      );
+    }
+    await this.dependencies.audit.connected({
+      accountId: actor.accountId,
+      workspaceId,
+      agentId,
+      vendor,
+      region,
+      outcome: ensured.outcome,
+      credential: minted ? "issued" : "reused",
+    });
+    this.dependencies.logger.info(
+      { workspaceId, agentId, vendor, region, operation: "connect", outcome: ensured.outcome, credential: minted ? "issued" : "reused" },
+      "Voice runtime connected",
+    );
+    this.record(vendor, "connect", ensured.outcome);
+    return this.statusOf(workspaceId, runtime, connection);
+  }
+
   async disconnect(input: AgentRef & { actor: VoiceRuntimeConnectionActor }): Promise<VoiceRuntimeDisconnection> {
+    const held = await this.dependencies.lock.run(input, () => this.disconnectHoldingLock(input));
+    if (held.ran) return held.value;
+    this.dependencies.logger.warn(
+      { workspaceId: input.workspaceId, agentId: input.agentId, operation: "disconnect", outcome: "connection_busy" },
+      "Voice runtime disconnect refused: another change of the connection is running",
+    );
+    this.record(CONNECT_VENDOR, "disconnect", "connection_busy");
+    throw new VoiceRuntimeConnectionError("connection_busy");
+  }
+
+  private async disconnectHoldingLock(input: AgentRef & { actor: VoiceRuntimeConnectionActor }): Promise<VoiceRuntimeDisconnection> {
     const { workspaceId, agentId, actor } = input;
     const profile = await this.requireProfile(input);
     const connection = await this.dependencies.connections.find(input);
@@ -224,34 +250,48 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
    */
   async syncPrimaryLanguage(agent: AgentRef): Promise<void> {
     const { workspaceId, agentId } = agent;
-    let vendor: VoiceVendor = CONNECT_VENDOR;
+    const sync: { vendor: VoiceVendor } = { vendor: CONNECT_VENDOR };
     const warn = (outcome: ConnectionOutcome, fields: Record<string, unknown> = {}) => {
-      this.dependencies.logger.warn({ workspaceId, agentId, vendor, operation: "sync", outcome, ...fields }, "Voice runtime language sync failed");
-      this.record(vendor, "sync", outcome);
+      this.dependencies.logger.warn({ workspaceId, agentId, vendor: sync.vendor, operation: "sync", outcome, ...fields }, "Voice runtime language sync failed");
+      this.record(sync.vendor, "sync", outcome);
     };
     try {
-      const connection = await this.dependencies.connections.find(agent);
-      if (!connection) return;
-      vendor = connection.vendor;
-      const profile = await this.dependencies.agents.findRuntimeProfile(agent);
-      if (!profile || !isMaintained(profile.runtime, connection)) return;
-      const completionsAddress = this.dependencies.completionsAddress;
-      if (!completionsAddress) return warn("connection_unavailable");
-      const reading = await this.dependencies.credentials.read({ workspaceId, vendor });
-      if (reading.kind !== "present") return warn(reading.kind === "missing" ? "vendor_key_missing" : "vendor_key_unreadable");
-      const ensured = await this.dependencies.provisioners[vendor].ensureAgent({
-        region: connection.region,
-        credential: reading.credential,
-        spec: { displayName: profile.name, completionsBaseUrl: completionsAddress({ agentId, vendor }), primaryLocale: profile.defaultLocale },
-        vendorAgentId: connection.vendorAgentId,
-        bearer: null,
-      });
-      if (ensured.outcome === "needs_bearer") return warn("needs_connect");
-      this.dependencies.logger.info({ workspaceId, agentId, vendor, operation: "sync", outcome: "synced" }, "Voice runtime language synced");
-      this.record(vendor, "sync", "synced");
+      // A Connect or Disconnect running now sets the vendor agent up itself, or removes it.
+      const held = await this.dependencies.lock.run(agent, () => this.syncHoldingLock(agent, sync));
+      if (!held.ran) return warn("connection_busy");
+      if (held.value === "not_maintained") return;
+      if (held.value !== "synced") return warn(held.value);
+      this.dependencies.logger.info({ workspaceId, agentId, vendor: sync.vendor, operation: "sync", outcome: "synced" }, "Voice runtime language synced");
+      this.record(sync.vendor, "sync", "synced");
     } catch (error) {
       warn(failureOf(error) ?? "error", vendorErrorFields(error));
     }
+  }
+
+  /** The sync's own work, run while the agent's lock is held. `sync.vendor` follows the connection's vendor, for the caller's log. */
+  private async syncHoldingLock(
+    agent: AgentRef,
+    sync: { vendor: VoiceVendor },
+  ): Promise<"synced" | "not_maintained" | "needs_connect" | VoiceRuntimeConnectionFailure> {
+    const { workspaceId, agentId } = agent;
+    const connection = await this.dependencies.connections.find(agent);
+    if (!connection) return "not_maintained";
+    const vendor = connection.vendor;
+    sync.vendor = vendor;
+    const profile = await this.dependencies.agents.findRuntimeProfile(agent);
+    if (!profile || !isMaintained(profile.runtime, connection)) return "not_maintained";
+    const completionsAddress = this.dependencies.completionsAddress;
+    if (!completionsAddress) return "connection_unavailable";
+    const reading = await this.dependencies.credentials.read({ workspaceId, vendor });
+    if (reading.kind !== "present") return reading.kind === "missing" ? "vendor_key_missing" : "vendor_key_unreadable";
+    const ensured = await this.dependencies.provisioners[vendor].ensureAgent({
+      region: connection.region,
+      credential: reading.credential,
+      spec: { displayName: profile.name, completionsBaseUrl: completionsAddress({ agentId, vendor }), primaryLocale: profile.defaultLocale },
+      vendorAgentId: connection.vendorAgentId,
+      bearer: null,
+    });
+    return ensured.outcome === "needs_bearer" ? "needs_connect" : "synced";
   }
 
   /**

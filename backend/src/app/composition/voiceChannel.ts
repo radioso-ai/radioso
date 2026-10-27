@@ -25,6 +25,7 @@ import {
   type VoiceRecordingStore,
   type VoiceRuntimeChannelCredentials,
   type VoiceRuntimeConnectionAudit,
+  type VoiceRuntimeConnectionLock,
   type VoiceRuntimeConnectionStore,
   type VoiceVendorCredentialReader,
   type VoiceVendorCredentialSealer,
@@ -476,11 +477,13 @@ type AgentRuntimeProfileRepository = {
 /**
  * Connects agents' voice channels to vendor agents Radioso creates and maintains: the ElevenLabs
  * provisioner over `fetch`, the workspace's vendor key from the credential store, the connection
- * records, the access grants for the REST credential each vendor agent carries, and the agent
+ * records and their per-agent lock, the access grants for the REST credential each vendor agent carries, and the agent
  * service as the binding's writer, so a binding is an agent write like any other.
  */
 export const createVoiceRuntimeConnectionComposition = (deps: {
   connections: VoiceRuntimeConnectionStore;
+  /** One change of an agent's connection at a time across instances (`PostgresVoiceRuntimeConnectionLock` in production). */
+  lock: VoiceRuntimeConnectionLock;
   agentRepository: AgentRuntimeProfileRepository;
   agentService: Pick<AgentService, "get" | "update">;
   accessGrants: VoiceRuntimeGrants;
@@ -493,6 +496,7 @@ export const createVoiceRuntimeConnectionComposition = (deps: {
   logger: AppLogger;
 }): VoiceRuntimeConnectionService =>
   new VoiceRuntimeConnectionService({
+    lock: deps.lock,
     agents: {
       findRuntimeProfile: async ({ workspaceId, agentId }) => {
         const agent = await deps.agentRepository.findByIdAndWorkspaceId(agentId, workspaceId);

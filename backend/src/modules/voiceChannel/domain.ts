@@ -332,6 +332,15 @@ export interface VoiceRuntimeConnectionStore {
   remove(agent: { workspaceId: string; agentId: string }): Promise<void>;
 }
 
+/**
+ * One change of an agent's runtime connection at a time, across every instance: Connect, Disconnect
+ * and a language sync each run holding the agent's lock. `run` never waits for it: while another
+ * holder has the agent it runs nothing and answers `ran: false`.
+ */
+export interface VoiceRuntimeConnectionLock {
+  run<T>(agent: { workspaceId: string; agentId: string }, work: () => Promise<T>): Promise<{ ran: true; value: T } | { ran: false }>;
+}
+
 /** Who connected or disconnected the runtime, for the credential's lifecycle record and the audit trail. */
 export interface VoiceRuntimeConnectionActor {
   accountId: string | null;
@@ -428,11 +437,12 @@ export interface VoiceRuntimeConnectionStatus {
 export type VoiceRuntimeDisconnection = VoiceRuntimeConnectionStatus & { vendorAgentLeft: boolean };
 
 /**
- * Why a connect did not finish, as closed codes the HTTP layer maps to its answers. Nothing is
- * left half done: a credential minted for the attempt is revoked again.
+ * Why a Connect or Disconnect did not finish, as closed codes the HTTP layer maps to its answers.
+ * `connection_busy`: another change of the agent's connection was running, so this one ran nothing.
  */
 export const VOICE_RUNTIME_CONNECTION_FAILURES = [
   "agent_not_found",
+  "connection_busy",
   "connection_unavailable",
   "vendor_key_missing",
   "vendor_key_unreadable",
@@ -456,7 +466,11 @@ export interface VoiceRuntimeConnectionPort {
   status(agent: { workspaceId: string; agentId: string }): Promise<VoiceRuntimeConnectionStatus>;
   /** Creates or repairs the vendor agent and binds it. Rejects with `VoiceRuntimeConnectionError`. */
   connect(input: { workspaceId: string; agentId: string; actor: VoiceRuntimeConnectionActor }): Promise<VoiceRuntimeConnectionStatus>;
-  /** Unbinds the runtime, and removes the vendor agent when Radioso created it. Rejects with `VoiceRuntimeConnectionError` only for an agent that does not exist. */
+  /**
+   * Unbinds the runtime, and removes the vendor agent when Radioso created it. Rejects with
+   * `VoiceRuntimeConnectionError` only for an agent that does not exist, or while another change of
+   * its connection runs.
+   */
   disconnect(input: { workspaceId: string; agentId: string; actor: VoiceRuntimeConnectionActor }): Promise<VoiceRuntimeDisconnection>;
 }
 

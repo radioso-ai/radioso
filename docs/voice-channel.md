@@ -139,6 +139,7 @@ The Voice card names what to fix. From the API, the same answers come from
 | Status | `error.code` | What it means |
 |---|---|---|
 | `409` | `voice_vendor_key_missing` | No ElevenLabs key is stored under **Voice runtime keys**. |
+| `409` | `voice_connection_busy` | Another Connect or Disconnect of the agent is running, from another tab or teammate. This one changed nothing; try again when it finishes. |
 | `409` | `voice_vendor_key_unreadable` | A key is stored but no configured key decrypts it; see [Rotate the credential encryption key](../docs-portal/content/operators/self-hosting-operations.mdx#rotate-the-credential-encryption-key), or enter the key again. |
 | `422` | `voice_vendor_key_rejected` | No ElevenLabs region accepts the key. |
 | `422` | `voice_vendor_key_lacks_agents_permission` | ElevenLabs accepts the key, but it may not read and write agents. |
@@ -153,7 +154,9 @@ failure; it picks up whatever the last attempt left in place.
 
 `GET`, `POST` and `DELETE /api/v1/agents/:agentId/voice/connection` are the
 Voice card's: dashboard sessions only, with the agent manage permission, and
-`X-Radioso-CSRF: 1` on `POST` and `DELETE`. Each answers where the runtime
+`X-Radioso-CSRF: 1` on `POST` and `DELETE`. One `POST` or `DELETE` of an
+agent runs at a time, across every backend instance; another one meanwhile
+answers `409 voice_connection_busy` at once. Each answers where the runtime
 stands:
 
 ```json
@@ -1630,11 +1633,6 @@ phone number, records no notice.
   caller missed.
 - An agent bundle does not carry the `voice` block, so an agent created from a
   bundle import starts with voice off.
-- Two Connects of one agent at the same moment can each create an ElevenLabs
-  agent. The agent is bound to the one recorded last; the other stays in your
-  ElevenLabs account with a **Voice calls** credential of its own. Revoke that
-  credential on the agent's **API** card and delete the extra agent in
-  ElevenLabs.
 - Deleting a workspace or an organization leaves the ElevenLabs agents Radioso
   created for its agents in your ElevenLabs account, with their credentials
   gone. Disconnect each agent first to delete them with it.

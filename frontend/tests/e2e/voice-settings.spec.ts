@@ -316,3 +316,21 @@ test("an operator whose key may not manage agents is told what to change, and no
   await expect(card.getByRole("button", { name: "Connect ElevenLabs" })).toBeEnabled();
   expect(agentUpdates).toEqual([]);
 });
+
+test("an operator who presses Connect while another Connect of the agent runs is asked to wait, and nothing is bound", async ({ page }) => {
+  const agentUpdates: unknown[] = [];
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    agentUpdates,
+    voiceConnection: { vendorKey: "stored", connectFailure: { status: 409, code: "voice_connection_busy" } },
+  });
+
+  const card = await openVoiceCard(page);
+  await card.getByRole("button", { name: "Connect ElevenLabs" }).click();
+
+  await expect(card.getByRole("alert")).toHaveText(
+    "Another Connect or Disconnect of this agent is still running. Try again in a moment.",
+  );
+  await expect(card.getByRole("button", { name: "Connect ElevenLabs" })).toBeEnabled();
+  expect(agentUpdates).toEqual([]);
+});

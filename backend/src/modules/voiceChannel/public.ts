@@ -12,6 +12,7 @@ export type {
   VoiceRuntimeChannelCredentials,
   VoiceRuntimeConnection,
   VoiceRuntimeConnectionActor,
+  VoiceRuntimeConnectionLock,
   VoiceRuntimeConnectionAudit,
   VoiceRuntimeConnectionFailure,
   VoiceRuntimeConnectionPort,
@@ -53,5 +54,6 @@ export { VoiceSessionRepository } from "./persistence/voiceSessionRepository.js"
 export { VoiceSessionEraser } from "./persistence/voiceSessionEraser.js";
 export { VoiceRecordingErasureRepository } from "./persistence/voiceRecordingErasureRepository.js";
 export { VoiceRuntimeConnectionRepository } from "./persistence/voiceRuntimeConnectionRepository.js";
+export { PostgresVoiceRuntimeConnectionLock } from "./persistence/voiceRuntimeConnectionLock.js";
 export { registerOpenAiCompletionsRoute } from "./adapters/openaiCompletions/route.js";
 export { ELEVENLABS_MIN_RELEASABLE_SENTENCE_CHARS } from "./adapters/openaiCompletions/dialects.js";

@@ -25,7 +25,7 @@ const invalidKeyOnOtherHost = () => json(400, { detail: { type: "authentication_
  * ElevenLabs as a small in-memory account on the EU residency host: probes, secrets and agents,
  * with each agent document kept so a read after a write sees the write.
  */
-const fakeElevenLabs = (options: { probe?: () => Response } = {}) => {
+const fakeElevenLabs = (options: { probe?: () => Response; createGate?: Promise<void> } = {}) => {
   const calls: VendorCall[] = [];
   const agents = new Map<string, Record<string, unknown>>();
   const secrets = new Map<string, string>();
@@ -52,6 +52,7 @@ const fakeElevenLabs = (options: { probe?: () => Response } = {}) => {
       return new Response(null, { status: 204 });
     }
     if (method === "POST" && path === "/v1/convai/agents/create") {
+      await options.createGate;
       counter += 1;
       const agentId = `agent_${counter}`;
       agents.set(agentId, { agent_id: agentId, ...body });
@@ -252,6 +253,26 @@ describe("agent voice connection contract", () => {
     expect(JSON.stringify(refused.body)).not.toContain(VENDOR_KEY);
     expect((await agent()).voice.runtime).toBeNull();
     expect(await restCredentials()).toEqual([]);
+  });
+
+  it("refuses a second Connect or a Disconnect while a Connect runs, so one ElevenLabs agent and one credential come of it", async () => {
+    let releaseCreate = () => {};
+    const createGate = new Promise<void>((resolve) => { releaseCreate = resolve; });
+    const { connect, disconnect, vendor, restCredentials } = await operatorWith({ vendor: fakeElevenLabs({ createGate }) });
+
+    const first = connect();
+    const firstDone = first.then((response) => response);
+    await vi.waitFor(() => expect(vendor.calls.some((call) => call.url.endsWith("/v1/convai/agents/create"))).toBe(true));
+
+    const second = await connect().expect(409);
+    const disconnecting = await disconnect().expect(409);
+    releaseCreate();
+
+    expect(second.body.error.code).toBe("voice_connection_busy");
+    expect(disconnecting.body.error.code).toBe("voice_connection_busy");
+    expect((await firstDone).status).toBe(200);
+    expect(vendor.agents.size).toBe(1);
+    expect(await restCredentials()).toHaveLength(1);
   });
 
   it("asks for the CSRF header on Connect and Disconnect", async () => {

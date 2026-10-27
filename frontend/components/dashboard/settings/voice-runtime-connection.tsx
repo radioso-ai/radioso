@@ -28,7 +28,7 @@ const REGION_LABELS: Record<VoiceRuntimeRegion, string> = {
   sg: 'Singapore',
 }
 
-/** What the card says for each way Connect can fail; the API's `error.code` names the way. */
+/** What the card says for each way Connect or Disconnect can fail; the API's `error.code` names the way. */
 const CONNECT_FAILURES: Record<string, (vendor: string) => string> = {
   voice_vendor_key_missing: (vendor) => `Add your ${vendor} API key under Settings → Providers first.`,
   voice_vendor_key_unreadable: (vendor) => `Radioso can’t read the stored ${vendor} key. Enter it again under Settings → Providers.`,
@@ -37,6 +37,7 @@ const CONNECT_FAILURES: Record<string, (vendor: string) => string> = {
     `The ${vendor} key needs the Agents permission, read and write. Turn it on for the key in ${vendor}, or store a key that has it.`,
   voice_vendor_unreachable: (vendor) => `${vendor} didn’t answer. Try again in a moment.`,
   voice_vendor_failed: (vendor) => `${vendor} wouldn’t set up the agent. Try again; if it keeps failing, contact support.`,
+  voice_connection_busy: () => 'Another Connect or Disconnect of this agent is still running. Try again in a moment.',
   voice_connection_unavailable: (vendor) =>
     `This deployment has no public API address ${vendor} can reach, so Radioso can’t set up the agent. Ask your administrator to set PUBLIC_API_BASE_URL.`,
 }

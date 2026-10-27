@@ -497,7 +497,6 @@
   "types|packages/radioso-docs-importer/src/mdx/convertMdx.ts|ConvertedMdxDocument",
   "types|packages/radioso-docs-importer/src/openapi/convertOpenApi.ts|ConvertOpenApiOptions",
   "types|packages/radioso-docs-importer/src/openapi/convertOpenApi.ts|OpenApiDocument",
-  "types|packages/radioso-docs-importer/src/radioso/client.ts|HttpClientConfig",
   "types|packages/radioso-docs-importer/src/readme/buildReadmeDocuments.ts|BuildReadmeDocumentsOptions",
   "types|packages/radioso-mcp-server/src/audit/auditLogger.ts|AuditOutcome",
   "types|packages/radioso-mcp-server/src/http/expressAdapter.ts|ExpressLikeMcpMiddleware",

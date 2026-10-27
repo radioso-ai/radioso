@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { OpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
 
 import type { OpenApiSchemas, OpenApiSecurity } from "../openApiRegistry.js";
+import { agentSurfacePositions } from "../../../../modules/agents/public.js";
 
 const assistantChatSseSchema = (name: string) => z.string().openapi(name, {
   description: [
@@ -688,6 +689,102 @@ export const registerAssistantPublicChatPaths = (
       },
       404: {
         description: "Conversation not found",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/public/chat/{token}/embed-config",
+    tags: ["Assistant"],
+    summary: "Read the website embed's bootstrap configuration",
+    description: "Unauthenticated: the launch token alone selects the agent. 404 when the token is unknown or the website embed surface is disabled. Cacheable per allow-listed origin.",
+    operationId: "getPublicChatEmbedConfig",
+    request: {
+      params: schemas.tokenPathParamsSchema,
+    },
+    responses: {
+      200: {
+        description: "Embed bootstrap configuration",
+        content: {
+          "application/json": {
+            schema: z.object({
+              launcherLabel: z.string(),
+              launcherPosition: z.enum(agentSurfacePositions),
+              assistantName: z.string(),
+              theme: z.object({
+                brand: z.string(),
+                brandText: z.string(),
+                surface: z.string(),
+                text: z.string(),
+              }),
+              branding: z.object({
+                hidePoweredBy: z.boolean(),
+                privacyPolicyUrl: z.string().nullable(),
+                privacyNotice: schemas.AgentPrivacyNoticesSchema,
+              }),
+              copy: z.record(z.string(), z.record(z.string(), z.string())),
+              expertOverrides: z.record(z.string(), z.string()),
+              assistantLogoUrl: z.string().nullable(),
+              proactiveGreetingEnabled: z.boolean(),
+              voice: z.object({
+                available: z.boolean().openapi({
+                  description: "Whether the embed shows a Talk button: the operator offers calls and the agent's voice is ready.",
+                }),
+              }),
+              agentCardUrl: z.string().url().optional().openapi({
+                description: "Present only when the agent publishes an A2A agent card.",
+              }),
+            }),
+          },
+        },
+      },
+      400: {
+        description: "The requesting origin is not approved to host the embedded assistant",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+      404: {
+        description: "Launch token unknown, or the website embed surface is disabled",
+        content: {
+          "application/json": {
+            schema: schemas.ErrorResponseSchema,
+          },
+        },
+      },
+    },
+  });
+
+  registry.registerPath({
+    method: "get",
+    path: "/api/v1/public/chat/{token}/assistant-logo",
+    tags: ["Assistant"],
+    summary: "Read the public widget's assistant logo image",
+    description: "Unauthenticated: the launch token alone selects the agent. Sibling of the dashboard-only GET /api/v1/agents/{agentId}/assistant-logo, serving the same stored bytes.",
+    operationId: "getPublicChatAssistantLogo",
+    request: {
+      params: schemas.tokenPathParamsSchema,
+    },
+    responses: {
+      200: {
+        description: "Logo image",
+        content: {
+          "image/png": { schema: { type: "string", format: "binary" } },
+          "image/jpeg": { schema: { type: "string", format: "binary" } },
+          "image/webp": { schema: { type: "string", format: "binary" } },
+          "image/gif": { schema: { type: "string", format: "binary" } },
+        },
+      },
+      404: {
+        description: "Launch token unknown, or the agent has no logo",
         content: {
           "application/json": {
             schema: schemas.ErrorResponseSchema,

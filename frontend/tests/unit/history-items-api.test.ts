@@ -166,7 +166,7 @@ describe('offset-backed list APIs', () => {
     await documentsApi.listDocuments({ limit: 100, offset: 200 })
 
     expect(fetchMock).toHaveBeenCalledWith(
-      '/backend/api/v1/document/?limit=100&offset=200',
+      '/backend/api/v1/document?limit=100&offset=200',
       expect.objectContaining({ method: 'GET' }),
     )
   })

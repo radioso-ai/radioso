@@ -72,7 +72,11 @@ describe("operator copilot catalog coverage", () => {
   //   mail reaches which agent, so each needs a proposal card. Ray reads the channel instead.
   //   111 -> 112 reconcileEmailDomain joins them: adopting a provider registration another
   //   writer may hold is an operator's explicit decision, deferred with the other domain writes.
-  const maxDeferredCatalogExclusions = 112;
+  //   2026-10-27: 112 -> 114 listContactRequests/getContactRequest, newly registered in the public
+  //   contract (closing the #1650 OpenAPI coverage gap), have no Ray reader yet: conversation_transcript
+  //   reads the conversation a contact request came from, but not the request record (delivery
+  //   status, attempts, final error) itself.
+  const maxDeferredCatalogExclusions = 114;
 
   it("keeps provider input-token caching outside Ray's operation catalog", () => {
     expect(internalRuntimeCoverageExclusions.providerInputTokenCaching).toMatchObject({

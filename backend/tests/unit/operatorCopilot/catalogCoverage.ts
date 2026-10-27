@@ -31,6 +31,8 @@ const catalogToolCoverage = {
   listDocuments: "list_documents",
   listDocumentSources: "document_status",
   listDocumentsBySource: "document_status",
+  listDocumentChunks: "document_chunks",
+  getDocumentChunk: "document_chunks",
   recrawlDocumentSource: "recrawl_source",
   reprocessDocumentSource: "reprocess_document",
   reprocessDocument: "reprocess_document",
@@ -119,6 +121,18 @@ const snapshotOnlyReplay = deferred(
 );
 const workspaceLifecycle = permanent(
   "Permanent exclusion: creating or renaming a workspace changes the container Ray operates inside, not the behaviour it tunes within one.",
+);
+const organizationLifecycle = permanent(
+  "Permanent exclusion: renaming the organization changes the account-level container every workspace sits inside, not the behaviour Ray tunes within one workspace.",
+);
+const organizationDeleteIsDestructive = permanent(
+  "Permanent exclusion: deleting the organization is irreversible and removes every workspace it owns, the same destructive-deletion boundary workspace_delete and agent_delete set at the workspace and agent level.",
+);
+// No Ray reader exposes a past contact request's own record — its delivery status, attempt
+// count, or final error — only the conversation it came from (conversation_transcript). A
+// request-history reader is a plausible future tool, not a boundary Ray must never cross.
+const contactRequestHistory = deferred(
+  "Deferred: contact request history (who asked to be contacted, their message, and delivery status) has no Ray reader yet. conversation_transcript reads the conversation a request came from, but not the request record itself.",
 );
 const dashboardWorkspaceResolution = permanent(
   "Permanent exclusion: this is the dashboard resolving which workspace a URL points at, which Ray is handed already resolved.",
@@ -341,6 +355,10 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
   ], accountScope),
   listVoiceRecordingsLeftAtVendor: recordingsLeftAtVendor,
   ...coverage(["deleteWorkspace"], neverListExclusion("workspace_delete")),
+  ...coverage(["deleteAgent"], neverListExclusion("agent_delete")),
+  ...coverage(["renameOrganization"], organizationLifecycle),
+  ...coverage(["deleteOrganization"], organizationDeleteIsDestructive),
+  ...coverage(["listContactRequests", "getContactRequest"], contactRequestHistory),
   ...coverage([
     "createAccountInvitation",
     "revokeAccountInvitation",
@@ -359,6 +377,8 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "rotateWebhookDestinationSecret",
     "rotateAnonymousChatToken",
     "rotateWebsiteEmbedToken",
+    "rotateAgentAnonymousChatToken",
+    "rotateAgentWebsiteEmbedToken",
     "rotateAgentChannelCredential",
     "rotateAgentPublicId",
     "rotateEmailMailboxRelayToken",
@@ -539,6 +559,10 @@ export const catalogCoverage: Record<string, CatalogCoverageEntry> = {
     "getPublicChatHistoryConversation",
     "tailPublicChatHistoryConversation",
     "streamPublicChatConversationEvents",
+    // The public widget's own bootstrap config and logo asset, read unauthenticated by the
+    // visitor's browser to render the launcher before any session exists.
+    "getPublicChatEmbedConfig",
+    "getPublicChatAssistantLogo",
   ], endUserSurface),
   createPublicVoiceSession: visitorVoiceSessionStart,
   reportPublicVoiceVendorConversation: visitorVoiceVendorConversationReport,

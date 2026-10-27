@@ -8,10 +8,14 @@ import type {
   VoiceTurnFactsRecorder,
 } from "../../modules/chat/contracts/index.js";
 import {
+  PostgresVoiceRuntimeConnectionLock,
   VoiceRecordingErasureDrain,
+  VoiceRecordingErasureRepository,
   VoiceRecordingErasureService,
   VoiceRecordingService,
+  VoiceRuntimeConnectionRepository,
   VoiceRuntimeConnectionService,
+  VoiceSessionRepository,
   VoiceSessionStartService,
   VoiceTurnService,
   createElevenLabsRecordingSource,
@@ -50,6 +54,7 @@ import type { ApplicationPeriodicTaskHandle } from "./applicationModule.js";
 import { isHumanOwned, type ConversationOwnershipReader } from "../../modules/handoff/public.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
 import type { Db } from "../../shared/infra/kysely/types.js";
+import type { PinnableDatabase } from "../../shared/infra/database.js";
 import type { MetricsRegistry } from "../../shared/observability/metrics/metricsRegistry.js";
 import { isHumanAuthoredMessageSource } from "../../shared/domain/messageAuthorship.js";
 import { isVoiceVendor, type VoiceVendor } from "../../shared/domain/voiceVendor.js";
@@ -368,6 +373,40 @@ const VOICE_RECORDING_ERASURE_RECOVERY_TASK_ID = "voice-recording-erasure-recove
 const VOICE_RECORDING_ERASURE_RECOVERY_INTERVAL_MS = 15 * 60 * 1_000;
 
 /**
+ * One store for voice sessions: the turn's bindings, the starts the turn and the session start
+ * share, and where each call's recording lives. Recordings stay with the vendor; the Inbox plays
+ * them through the backend with the workspace's key, Ray reads whether one exists, and a deletion
+ * hands them, with the key sealed, to the erasure backlog the background-job worker drains.
+ */
+export const wireVoiceRecordings = (deps: {
+  database: PinnableDatabase;
+  credentials: VoiceVendorCredentialStore & CredentialSealing;
+  fetch: typeof globalThis.fetch;
+  auditService: Pick<AuditPort, "record"> & GoneSubjectAudit;
+  queue: Pick<BackgroundJobQueue, "enqueue" | "enqueueInTransaction" | "wake">;
+  errorReporter: Pick<ErrorReporter, "report"> | null;
+  metricsRegistry: MetricsRegistry | null;
+  logger: AppLogger;
+}) => {
+  const voiceSessions = new VoiceSessionRepository(deps.database.kysely);
+  const voiceRecordingErasures = new VoiceRecordingErasureRepository(deps.database.kysely);
+  const voiceRecordings = createVoiceRecordingComposition({
+    recordings: voiceSessions,
+    recordingsIn: (db) => new VoiceSessionRepository(db),
+    erasures: voiceRecordingErasures,
+    erasuresIn: (db) => new VoiceRecordingErasureRepository(db),
+    credentials: deps.credentials,
+    fetch: deps.fetch,
+    auditService: deps.auditService,
+    queue: deps.queue,
+    errorReporter: deps.errorReporter,
+    metricsRegistry: deps.metricsRegistry,
+    logger: deps.logger,
+  });
+  return { voiceSessions, voiceRecordingErasures, voiceRecordings };
+};
+
+/**
  * The embed config says whether the embed offers calls, which follows the voice vendor key's
  * presence, and a CDN may hold it for minutes: storing or removing a voice vendor key drops the
  * workspace's cached embed configs, so the Talk button follows at once. Model provider keys leave
@@ -552,4 +591,55 @@ export const keepVoiceRuntimesInStepWithAgents = (deps: {
 }): void => {
   deps.agents.onDefaultLocaleChange(({ workspaceId, agentId }) => deps.connections.syncPrimaryLanguage({ workspaceId, agentId }));
   deps.agents.onBeforeDelete((agent) => deps.connections.releaseForDeletedAgent(agent));
+};
+
+/**
+ * Starts voice sessions on each agent's vendor agent and, over the same voice-runtime-connection
+ * store, connects agents to vendor agents Radioso creates and maintains, keeping each maintained
+ * vendor agent in step with its agent from then on. One store and one per-agent lock
+ * (`VoiceRuntimeConnectionRepository`/`PostgresVoiceRuntimeConnectionLock` in production) back
+ * both compositions, since a session start reads a maintained vendor agent's binding to hand the
+ * page its first message, and the connection composition writes that same binding.
+ */
+export const wireVoiceRuntimeConnections = (deps: {
+  database: PinnableDatabase;
+  starts: VoiceSessionStartRegistry;
+  greetings: AgentGreetingReader;
+  agentRepository: AgentRuntimeProfileRepository;
+  agentService: AgentService;
+  accessGrants: VoiceRuntimeGrants;
+  credentials: VoiceVendorCredentialStore;
+  fetch: typeof globalThis.fetch;
+  /** `PUBLIC_API_BASE_URL`; unset, nothing can be connected. */
+  publicApiBaseUrl: string | undefined;
+  auditService: Pick<AuditPort, "record">;
+  metricsRegistry: MetricsRegistry | null;
+  logger: AppLogger;
+}) => {
+  const voiceRuntimeConnectionStore = new VoiceRuntimeConnectionRepository(deps.database.kysely);
+  const voiceSessionStarts = createVoiceSessionStartComposition({
+    agentRepository: deps.agentRepository,
+    starts: deps.starts,
+    connections: voiceRuntimeConnectionStore,
+    greetings: deps.greetings,
+    credentials: deps.credentials,
+    fetch: deps.fetch,
+    metricsRegistry: deps.metricsRegistry,
+    logger: deps.logger,
+  });
+  const voiceRuntimeConnections = createVoiceRuntimeConnectionComposition({
+    connections: voiceRuntimeConnectionStore,
+    lock: new PostgresVoiceRuntimeConnectionLock(deps.database),
+    agentRepository: deps.agentRepository,
+    agentService: deps.agentService,
+    accessGrants: deps.accessGrants,
+    credentials: deps.credentials,
+    fetch: deps.fetch,
+    publicApiBaseUrl: deps.publicApiBaseUrl,
+    auditService: deps.auditService,
+    metricsRegistry: deps.metricsRegistry,
+    logger: deps.logger,
+  });
+  keepVoiceRuntimesInStepWithAgents({ agents: deps.agentService, connections: voiceRuntimeConnections });
+  return { voiceSessionStarts, voiceRuntimeConnections };
 };

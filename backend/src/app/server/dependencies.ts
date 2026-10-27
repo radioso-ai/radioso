@@ -6,18 +6,10 @@ import { createAgentPublicProfileComposition } from "../composition/agentDiscove
 import { createAgentToolCatalogComposition } from "../composition/agentToolCatalog.js";
 import {
   createVoiceChannelComposition,
-  createVoiceRecordingComposition,
-  createVoiceRuntimeConnectionComposition,
-  createVoiceSessionStartComposition,
-  keepVoiceRuntimesInStepWithAgents,
   refreshEmbedConfigsOnVoiceVendorKeyChange,
+  wireVoiceRecordings,
+  wireVoiceRuntimeConnections,
 } from "../composition/voiceChannel.js";
-import {
-  PostgresVoiceRuntimeConnectionLock,
-  VoiceRecordingErasureRepository,
-  VoiceRuntimeConnectionRepository,
-  VoiceSessionRepository,
-} from "../../modules/voiceChannel/public.js";
 import { createPostgresDeliveryFailures } from "../composition/deliveryFailures.js";
 import {
   createEmailChannelComposition,
@@ -234,18 +226,8 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     logger,
     repositories,
   });
-  // One store for voice sessions: the turn's bindings, the starts the turn and the session start
-  // share, and where each call's recording lives.
-  const voiceSessions = new VoiceSessionRepository(infrastructure.database.kysely);
-  // Recordings stay with the vendor; the Inbox plays them through the backend with the workspace's
-  // key, Ray reads whether one exists, and a deletion hands them, with the key sealed, to the
-  // erasure backlog the background-job worker drains.
-  const voiceRecordingErasures = new VoiceRecordingErasureRepository(infrastructure.database.kysely);
-  const voiceRecordings = createVoiceRecordingComposition({
-    recordings: voiceSessions,
-    recordingsIn: (db) => new VoiceSessionRepository(db),
-    erasures: voiceRecordingErasures,
-    erasuresIn: (db) => new VoiceRecordingErasureRepository(db),
+  const { voiceSessions, voiceRecordingErasures, voiceRecordings } = wireVoiceRecordings({
+    database: infrastructure.database,
     credentials: workspaceProviderCredentialsService,
     // Called through its own receiver, never detached from globalThis.
     fetch: (url, init) => globalThis.fetch(url, init),
@@ -1376,23 +1358,10 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     }),
   ]);
   refreshEmbedConfigsOnVoiceVendorKeyChange({ credentials: workspaceProviderCredentialsService, embedConfigs: agentService });
-  const voiceRuntimeConnectionStore = new VoiceRuntimeConnectionRepository(infrastructure.database.kysely);
-  // One service starts sessions and tells the website embed whether to offer them, by the same gate.
-  const voiceSessionStarts = createVoiceSessionStartComposition({
-    agentRepository: repositories.agentRepository,
+  const { voiceSessionStarts, voiceRuntimeConnections } = wireVoiceRuntimeConnections({
+    database: infrastructure.database,
     starts: voiceSessions,
-    connections: voiceRuntimeConnectionStore,
     greetings: chat.chatBootstrapService,
-    credentials: workspaceProviderCredentialsService,
-    // Called through its own receiver, never detached from globalThis.
-    fetch: (url, init) => globalThis.fetch(url, init),
-    metricsRegistry: infrastructure.metricsRegistry,
-    logger,
-  });
-  // The vendor agent Radioso creates for an agent's voice channel, kept in step with the agent.
-  const voiceRuntimeConnections = createVoiceRuntimeConnectionComposition({
-    connections: voiceRuntimeConnectionStore,
-    lock: new PostgresVoiceRuntimeConnectionLock(infrastructure.database),
     agentRepository: repositories.agentRepository,
     agentService,
     accessGrants: access.accessGrantService,
@@ -1404,7 +1373,6 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     metricsRegistry: infrastructure.metricsRegistry,
     logger,
   });
-  keepVoiceRuntimesInStepWithAgents({ agents: agentService, connections: voiceRuntimeConnections });
 
   return {
     env,

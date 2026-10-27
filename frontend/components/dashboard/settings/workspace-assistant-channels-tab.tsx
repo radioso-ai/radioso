@@ -1079,18 +1079,7 @@ export function WorkspaceAssistantChannelsTab({
           {mode === 'channels' && !isAnonLoading && resolvedChannel === 'api-channel' ? (
           <section id="api-channel" className="space-y-6 scroll-mt-24">
             {agentId ? <ApiChannelCard agentId={agentId} /> : null}
-            {agentId ? (
-              <VoiceChannelCard
-                key={agentId}
-                agentId={agentId}
-                providersHref={buildDashboardHref(accountId, {
-                  section: 'settings',
-                  settingsTab: 'providers',
-                  workspaceId: activeWorkspaceId ?? undefined,
-                  workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
-                })}
-              />
-            ) : null}
+            {agentId ? <VoiceChannelCard key={agentId} agentId={agentId} /> : null}
           </section>
           ) : null}
 

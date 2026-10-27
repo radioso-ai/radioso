@@ -1,3 +1,5 @@
+import type { SelectedSkill } from "@radioso/conversation-contract";
+
 import { resolveContextSourceUrl } from "../../retrieval/public.js";
 import {
   AnswerPresentationService,
@@ -45,6 +47,11 @@ export interface ChatPresentedAnswer {
   skillName: string;
   skillOutcome: string;
   skillStatus: SkillTurnOutcome["status"];
+  /**
+   * Set when this answer was written in place of a directive-bound skill that failed:
+   * that skill and how it settled. The turn records the bound skill's failure from it.
+   */
+  fallbackFor?: SelectedSkill["fallbackFor"];
   answerOutcome?: AssistantTurnOutcome;
   // Computed from the v2 manifest and inline assertions. Raw envelope JSON is
   // deliberately never carried beyond generation finalization.

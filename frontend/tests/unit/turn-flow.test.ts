@@ -467,6 +467,31 @@ describe('envelopeToFlowGraph', () => {
     expect(edge(graph, 'skill', 'spine:answer_coverage_head')).toBeDefined()
   })
 
+  it('says why a bound skill did not answer and shows the fallback that answered in its place', () => {
+    const base = retrievalTurn()
+    const dispatchIndex = base.spine.stages.findIndex((stage) => stage.kind === 'skill_dispatch')
+    const answered = base.spine.stages[dispatchIndex]
+    answered.outputs = { ...answered.outputs, fallbackFor: 'order_lookup' }
+    base.spine.stages.splice(dispatchIndex, 0, {
+      id: 'dispatch:order_lookup',
+      kind: 'skill_dispatch',
+      status: 'fallback',
+      startedAt: answered.startedAt,
+      completedAt: answered.startedAt,
+      outputs: { skillName: 'order_lookup', outcomeStatus: 'failed', failureReason: 'suppressed_for_safe_test' },
+    })
+
+    const graph = envelopeToFlowGraph(base)
+
+    expect(node(graph, 'skill')).toMatchObject({
+      label: 'order_lookup',
+      sublabel: 'not called (skills are off in this test)',
+    })
+    expect(node(graph, 'skill:1')).toMatchObject({ label: 'Retrieval', note: 'in place of order_lookup' })
+    // The Act phase is named for the skill that answered, not the one that failed.
+    expect(graph.phases.find((phase) => phase.id === 'act')?.label).toBe('Retrieval')
+  })
+
   it('draws a routine turn as the routine that ran, steered by its directives', () => {
     const graph = envelopeToFlowGraph(routineTurn())
 

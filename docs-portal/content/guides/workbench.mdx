@@ -1,7 +1,7 @@
 ---
 title: "Test your agent in the workbench"
 description: "Chat with your agent as an operator, inspect a turn, and capture an answer as an eval case from the dashboard Chat workbench."
-last_updated: 2026-10-07
+last_updated: 2026-10-27
 ---
 
 # Test your agent in the workbench
@@ -20,7 +20,7 @@ The answer streams in as the agent writes it, the way a visitor sees it in the c
 
 If your agent uses context variables, open the three-dot menu beside the title (labelled **Test chat actions** to assistive technology) and choose **Test context**. Supply sample values, such as a customer’s plan or locale, to check how they affect the answer. These values belong to the private test and stay with its history. This menu item appears only when the selected versions use context variables.
 
-Skills with outward effects — an external MCP tool, a webhook, or a customer email or Slack skill — stay off by default in a private test. A tool step that would call one reports `failed` with the reason *skills are off in this test*, and the routine takes its failed branch, so you can see that path without sending anything real. Choose **Run skills for real** in the same menu to start a fresh private test where every skill runs exactly as it would for a customer. Retrieval skills run in both modes, and test values still stand in for context variables either way. Action steps, handoffs, and completion export stay off in every private test.
+Skills with outward effects — an external MCP tool, a webhook, or a customer email or Slack skill — stay off by default in a private test. A tool step that would call one reports `failed` with the reason *skills are off in this test*, and the routine takes its failed branch, so you can see that path without sending anything real. A directive bound to one of these skills behaves the same way: the skill isn't called, and the agent answers from your documents and instructions instead, without claiming anything the tool would have returned. In the turn's trace, the skill reads *not called (skills are off in this test)*, and the step that answered reads *in place of* that skill. Choose **Run skills for real** in the same menu to start a fresh private test where every skill runs exactly as it would for a customer. Retrieval skills run in both modes, and test values still stand in for context variables either way. Action steps, handoffs, and completion export stay off in every private test.
 
 A notify skill delivers through the saved conversation, so it stays off even when you turn skills on. **Retry** on a failed attempt re-runs the turn, so a skill the first attempt already fired fires again. **Run evals** from Test Chat always replays with skills off, and you can only capture an eval case from a test that kept skills off.
 

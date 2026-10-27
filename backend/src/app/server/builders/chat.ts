@@ -798,13 +798,13 @@ export const buildChatServices = (input: {
     logger: input.logger,
     metrics: input.metricsRegistry ?? null,
   });
-  // One agent-skill turn runtime shared by the live chat turn and workbench replay,
-  // so a replayed directive-bound turn selects and dispatches exactly like production.
+  // One agent-skill turn runtime for live chat and workbench replay, so a replayed bound turn dispatches like production.
   const agentSkillTurnSkillProvider = new RepositoryAgentSkillTurnSkillProvider({
     agentSkills: new AgentSkillRepository(input.database.kysely),
     executorRegistry: input.composition.skillExecutorRegistry,
     capabilityPolicy: input.composition.capabilityPolicy,
     metricsRegistry: input.metricsRegistry,
+    logger: input.logger,
   });
   const turnClarificationPolicy = {
     floor: 0,

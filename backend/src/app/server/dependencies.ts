@@ -330,6 +330,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     vectorIndexReconciler,
     workspace,
     workspaceLlmCapabilitySettingsService,
+    workspaceModelAvailability,
   } = documentRetrievalGraph;
   // Field suggestions for metadata rules are the catalog's declarations unioned
   // with the keys already observed on document metadata; the advisory reference
@@ -352,6 +353,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
     agentSkillRepository,
     infrastructure.auditService,
     notificationRecipientPolicy,
+    workspaceModelAvailability,
   );
   // Shared by routine publishing (write-time trigger embedding) and the chat
   // activation prefilter (lazy self-heal of unembedded/stale rows) so both

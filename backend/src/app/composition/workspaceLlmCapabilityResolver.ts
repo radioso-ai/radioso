@@ -19,6 +19,7 @@ import type {
 import { platformOpenAIEndpointFields, ProviderConfigurationError } from "../../shared/infra/llm/providerTypes.js";
 import type { ManagedModelPolicy } from "../../shared/domain/managedModelPolicy.js";
 import type { AppLogger } from "../../shared/observability/logger.js";
+import { PlatformAwareWorkspaceModelAvailability } from "./workspaceModelAvailability.js";
 
 interface WorkspaceCapabilityPreferencePort {
   getPreference(
@@ -57,11 +58,23 @@ interface WorkspaceLlmCapabilityResolverDependencies {
   envBaseUrls?: { "openai-compatible"?: string };
   /** Absent means every workspace picks freely (self-host). */
   managedModelPolicy?: ManagedModelPolicy;
-  logger?: Pick<AppLogger, "debug" | "info">;
+  logger?: Pick<AppLogger, "debug" | "info" | "warn">;
 }
 
 const isWorkspaceCapability = (capability: LlmCapabilityName): capability is WorkspaceLlmCapability =>
   capability === "chat" || capability === "rewrite" || capability === "rerank";
+
+const selectionLogFields = (
+  capability: LlmCapabilityName,
+  workspaceId: string,
+  selection: LlmCapabilitySelection,
+) => ({
+  capability,
+  workspaceId,
+  resolvedBy: selection.resolvedBy,
+  provider: selection.provider,
+  model: selection.model,
+});
 
 type UnmanagedResolvedBy = Exclude<LlmCapabilityResolvedBy, "managed_plan">;
 
@@ -86,7 +99,14 @@ interface CandidateSelection {
 }
 
 export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
-  constructor(private readonly deps: WorkspaceLlmCapabilityResolverDependencies) {}
+  private readonly modelAvailability: PlatformAwareWorkspaceModelAvailability;
+
+  constructor(private readonly deps: WorkspaceLlmCapabilityResolverDependencies) {
+    this.modelAvailability = new PlatformAwareWorkspaceModelAvailability({
+      defaults: deps.defaults,
+      credentials: deps.credentials,
+    });
+  }
 
   async resolve(
     capability: LlmCapabilityName,
@@ -124,22 +144,13 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
   ): Promise<LlmCapabilitySelection> {
     const candidate = await this.resolveCandidate(capability, input);
     const managed = await this.resolveManaged(capability, input.workspaceId, candidate.provider);
-    const selection: LlmCapabilitySelection = managed
+    const planned: LlmCapabilitySelection = managed
       ? { provider: managed.provider, model: managed.model, resolvedBy: "managed_plan" }
       : candidate;
-
-    const logFields = {
-      capability,
-      workspaceId: input.workspaceId,
-      resolvedBy: selection.resolvedBy,
-      provider: selection.provider,
-      model: selection.model,
-    };
-    this.deps.logger?.debug(logFields, "Resolved LLM capability");
     if (managed && candidate.resolvedBy !== "environment_default") {
       this.deps.logger?.info(
         {
-          ...logFields,
+          ...selectionLogFields(capability, input.workspaceId, planned),
           overrode: candidate.resolvedBy,
           requestedProvider: candidate.provider,
           requestedModel: candidate.model,
@@ -147,7 +158,45 @@ export class WorkspaceLlmCapabilityResolver implements LlmCapabilityResolver {
         "Managed plan replaced the requested LLM model",
       );
     }
+
+    const selection = await this.withinPlatformAvailability(capability, input.workspaceId, planned);
+    this.deps.logger?.debug(selectionLogFields(capability, input.workspaceId, selection), "Resolved LLM capability");
     return selection;
+  }
+
+  /**
+   * A model the platform key cannot serve fails every call (on Azure, 404 DeploymentNotFound), so
+   * a text capability runs its environment default instead — always served, since the platform's
+   * deployments are derived from those defaults. Embeddings never swap: a different embedding
+   * model is a different vector space.
+   */
+  private async withinPlatformAvailability(
+    capability: LlmCapabilityName,
+    workspaceId: string,
+    requested: LlmCapabilitySelection,
+  ): Promise<LlmCapabilitySelection> {
+    if (
+      !isWorkspaceCapability(capability)
+      || await this.modelAvailability.canRun(workspaceId, requested.provider, requested.model)
+    ) {
+      return requested;
+    }
+    const envDefault = this.deps.defaults[capability];
+    const fallback: LlmCapabilitySelection = {
+      provider: envDefault.provider,
+      model: envDefault.model,
+      resolvedBy: "environment_default",
+    };
+    this.deps.logger?.warn(
+      {
+        ...selectionLogFields(capability, workspaceId, fallback),
+        overrode: requested.resolvedBy,
+        requestedProvider: requested.provider,
+        requestedModel: requested.model,
+      },
+      "Platform key cannot serve the requested LLM model; running the environment default",
+    );
+    return fallback;
   }
 
   private async resolveCandidate(

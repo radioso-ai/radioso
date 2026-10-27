@@ -75,7 +75,7 @@ function ChatModelOverrideBlock({
   const provider: LlmProviderName | '' = value?.provider ?? ''
   const model = value?.model ?? ''
   const enabled = value !== null
-  const [knownModelsByProvider, setKnownModelsByProvider] = useState<KnownModelsByProvider>(emptyKnownModelsByProvider)
+  const [runnableModelsByProvider, setRunnableModelsByProvider] = useState<KnownModelsByProvider>(emptyKnownModelsByProvider)
   const [credentialProviders, setCredentialProviders] = useState<ReadonlySet<CredentialProviderName>>(() => new Set())
   const [envProviderAvailability, setEnvProviderAvailability] = useState<EnvProviderAvailability>(
     emptyEnvProviderAvailability,
@@ -86,7 +86,7 @@ function ChatModelOverrideBlock({
     void Promise.all([llmProvidersApi.getModels(), llmProvidersApi.listCredentials()])
       .then(([modelsResponse, credentialsResponse]) => {
         if (!active) return
-        setKnownModelsByProvider(modelsResponse.knownModelsByProvider)
+        setRunnableModelsByProvider(modelsResponse.runnableModelsByProvider)
         setCredentialProviders(new Set(credentialsResponse.credentials.map((c) => c.provider)))
         setEnvProviderAvailability(credentialsResponse.envProviderAvailability)
       })
@@ -168,7 +168,7 @@ function ChatModelOverrideBlock({
           <ModelPicker
             inputId="agentChatModel"
             provider={provider}
-            knownModelsByProvider={knownModelsByProvider}
+            runnableModelsByProvider={runnableModelsByProvider}
             value={model}
             onChange={(next) => setModel(next.slice(0, 200))}
             disabled={!enabled && model.length === 0}

@@ -215,16 +215,16 @@ export function WorkbenchOverridePanel({
   routines?: RoutineDefinition[]
   variant?: 'sidebar' | 'embedded' | 'drawer'
 }) {
-  const [knownModels, setKnownModels] = useState<KnownModelsByProvider>(emptyKnownModelsByProvider)
+  const [runnableModels, setRunnableModels] = useState<KnownModelsByProvider>(emptyKnownModelsByProvider)
 
   useEffect(() => {
     let cancelled = false
     void llmProvidersApi.getModels()
       .then((response) => {
-        if (!cancelled) setKnownModels(response.knownModelsByProvider)
+        if (!cancelled) setRunnableModels(response.runnableModelsByProvider)
       })
       .catch(() => {
-        if (!cancelled) setKnownModels(emptyKnownModelsByProvider)
+        if (!cancelled) setRunnableModels(emptyKnownModelsByProvider)
       })
     return () => {
       cancelled = true
@@ -235,7 +235,7 @@ export function WorkbenchOverridePanel({
     ? state.values.chatModelOverride
     : baseline.chatModelOverride
   const provider = effectiveModel?.provider ?? 'openai'
-  const model = effectiveModel?.model ?? knownModels[provider]?.[0] ?? ''
+  const model = effectiveModel?.model ?? runnableModels[provider]?.[0] ?? ''
   const retrieval = state.touched.retrievalSkillSettings
     ? { ...baseline.retrievalSkillSettings, ...state.values.retrievalSkillSettings }
     : baseline.retrievalSkillSettings
@@ -305,7 +305,7 @@ export function WorkbenchOverridePanel({
                   type: 'set-model',
                   value: {
                     provider: nextProvider,
-                    model: knownModels[nextProvider]?.[0] ?? '',
+                    model: runnableModels[nextProvider]?.[0] ?? '',
                   },
                 })
               }}
@@ -322,7 +322,7 @@ export function WorkbenchOverridePanel({
             <ModelPicker
               inputId="workbench-model"
               provider={provider}
-              knownModelsByProvider={knownModels}
+              runnableModelsByProvider={runnableModels}
               value={model}
               disabled={!state.touched.chatModelOverride}
               onChange={(next) => dispatch({ type: 'set-model', value: { provider, model: next } })}

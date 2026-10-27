@@ -1076,6 +1076,10 @@ export const installDashboardApiMocks = async (
     llmModelUpdates?: Array<unknown>;
     /** Per capability, the model the plan runs instead of the preference. Defaults to none. */
     llmManagedModels?: Partial<Record<"chat" | "rewrite" | "rerank", { provider: string; model: string } | null>>;
+    /** Per capability, the stored model preference. Defaults to none. */
+    llmModels?: Partial<Record<"chat" | "rewrite" | "rerank", { provider: string; model: string } | null>>;
+    /** Per provider, the catalog models the workspace can run. Defaults to the whole catalog. */
+    runnableModelsByProvider?: Partial<Record<"openai" | "openai-compatible" | "gemini" | "claude", string[]>>;
     ingestionSettings?: IngestionSettingsFixture;
     ingestionSettingsUpdates?: unknown[];
     ingestionSettingsUpdateError?: string;
@@ -1173,7 +1177,12 @@ export const installDashboardApiMocks = async (
     chat: { provider: string; model: string } | null;
     rewrite: { provider: string; model: string } | null;
     rerank: { provider: string; model: string } | null;
-  } = { chat: null, rewrite: null, rerank: null };
+  } = {
+    chat: options.llmModels?.chat ?? null,
+    rewrite: options.llmModels?.rewrite ?? null,
+    rerank: options.llmModels?.rerank ?? null,
+  };
+  const runnableModelsByProvider = { ...knownModelsByProvider, ...options.runnableModelsByProvider };
   const llmModelUpdates = options.llmModelUpdates;
   const llmManagedModels = {
     chat: options.llmManagedModels?.chat ?? null,
@@ -2872,7 +2881,7 @@ export const installDashboardApiMocks = async (
     }
 
     if (request.method() === "GET" && path === "/settings/llm-models") {
-      await json(route, { ...llmModels, managed: llmManagedModels, knownModelsByProvider });
+      await json(route, { ...llmModels, managed: llmManagedModels, knownModelsByProvider, runnableModelsByProvider });
       return;
     }
 
@@ -2884,7 +2893,7 @@ export const installDashboardApiMocks = async (
         rewrite: 'rewrite' in body ? body.rewrite ?? null : llmModels.rewrite,
         rerank: 'rerank' in body ? body.rerank ?? null : llmModels.rerank,
       };
-      await json(route, { ...llmModels, managed: llmManagedModels, knownModelsByProvider });
+      await json(route, { ...llmModels, managed: llmManagedModels, knownModelsByProvider, runnableModelsByProvider });
       return;
     }
 

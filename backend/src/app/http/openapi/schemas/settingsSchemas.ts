@@ -419,6 +419,17 @@ export const registerSettingsSchemas = (registry: OpenAPIRegistry, schemas: Open
         "openai-compatible": z.array(z.string()),
         gemini: z.array(z.string()),
         claude: z.array(z.string()),
+      }).openapi({
+        description: "Every model Radioso supports, per provider. `openai-compatible` is empty because it accepts any model identifier.",
+      }),
+      runnableModelsByProvider: z.object({
+        openai: z.array(z.string()),
+        "openai-compatible": z.array(z.string()),
+        gemini: z.array(z.string()),
+        claude: z.array(z.string()),
+      }).openapi({
+        description:
+          "The catalog models this workspace can run, per provider: all of them on a provider the workspace holds its own key for, otherwise the ones the deployment's shared key serves. A preference or agent override outside this list is rejected; one stored before it left the list runs on the deployment default.",
       }),
     }),
   );

@@ -50,7 +50,7 @@ describe("buildLlmCapabilityResolver OpenAI data residency wiring", () => {
       settings,
       credentials,
       managedModelPolicy: noopManagedModelPolicy,
-      logger: { debug: vi.fn(), info: vi.fn() },
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
     });
 
     const config = await resolver.resolve("chat", { workspaceId: "ws-1" });

@@ -36,6 +36,8 @@ type WorkspaceLlmPreferences = Record<LlmCapabilityName, LlmCapabilityPreference
 export interface WorkspaceLlmModels extends WorkspaceLlmPreferences {
   managed: Record<LlmCapabilityName, LlmManagedModel | null>
   knownModelsByProvider: KnownModelsByProvider
+  /** The catalog models this workspace can run: what model pickers offer. */
+  runnableModelsByProvider: KnownModelsByProvider
 }
 
 export interface ProviderCredentialSummary {

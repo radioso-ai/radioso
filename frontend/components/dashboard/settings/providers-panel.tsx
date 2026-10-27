@@ -651,7 +651,7 @@ function ModelsCard({
               managed={managed}
               credentialProviders={credentialProviders}
               availableProviders={availableProviders}
-              knownModelsByProvider={models.knownModelsByProvider}
+              runnableModelsByProvider={models.runnableModelsByProvider}
               onChange={onChange}
               emitSaveState={emitSaveState}
             />
@@ -677,7 +677,7 @@ function ModelRow({
   managed,
   credentialProviders,
   availableProviders,
-  knownModelsByProvider,
+  runnableModelsByProvider,
   onChange,
   emitSaveState,
 }: {
@@ -686,7 +686,7 @@ function ModelRow({
   managed: LlmManagedModel | null
   credentialProviders: ReadonlySet<CredentialProviderName>
   availableProviders: Set<LlmProviderName>
-  knownModelsByProvider: KnownModelsByProvider
+  runnableModelsByProvider: KnownModelsByProvider
   onChange: () => Promise<unknown>
   emitSaveState: (state: SaveState) => void
 }) {
@@ -700,17 +700,17 @@ function ModelRow({
   const locked = managed !== null
   const hasValue = value !== null
   const savedProviderUnavailable = !locked && value !== null && !availableProviders.has(value.provider)
-  // A managed model outside the deployment catalog still has to be visible in
+  // A managed model outside the runnable list still has to be visible in
   // the closed-set picker.
   const pickerModels = useMemo(() => {
-    if (!managed || knownModelsByProvider[managed.provider]?.includes(managed.model)) {
-      return knownModelsByProvider
+    if (!managed || runnableModelsByProvider[managed.provider]?.includes(managed.model)) {
+      return runnableModelsByProvider
     }
     return {
-      ...knownModelsByProvider,
-      [managed.provider]: [managed.model, ...(knownModelsByProvider[managed.provider] ?? [])],
+      ...runnableModelsByProvider,
+      [managed.provider]: [managed.model, ...(runnableModelsByProvider[managed.provider] ?? [])],
     }
-  }, [managed, knownModelsByProvider])
+  }, [managed, runnableModelsByProvider])
 
   const persistModel = async (nextProvider: LlmProviderName, nextModel: string) => {
     setBusy(true)
@@ -835,7 +835,7 @@ function ModelRow({
         <ModelPicker
           inputId={`model-${capability}`}
           provider={provider}
-          knownModelsByProvider={pickerModels}
+          runnableModelsByProvider={pickerModels}
           value={model}
           onChange={setModel}
           onCommit={handleModelCommit}

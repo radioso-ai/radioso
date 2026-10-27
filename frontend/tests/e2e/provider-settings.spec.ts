@@ -184,6 +184,34 @@ test("a managed plan shows the plan's model read-only and says how to choose", a
   expect(llmModelUpdates.at(-1)).toMatchObject({ rerank: { provider: "openai", model: "gpt-5-mini" } });
 });
 
+test("the model picker offers only models the deployment's shared key runs and flags a saved one it no longer runs", async ({ page }) => {
+  const llmModelUpdates: Array<unknown> = [];
+
+  await seedDashboardStorage(page);
+  await installDashboardApiMocks(page, {
+    platformSettings: basePlatformSettings(),
+    llmModelUpdates,
+    llmModels: { chat: { provider: "openai", model: "gpt-5.2" } },
+    runnableModelsByProvider: { openai: ["gpt-5-mini"] },
+  });
+
+  await page.goto(`/w/${workspaceKey}/settings?tab=providers`);
+  await expect(page.getByRole("heading", { name: "Models" })).toBeVisible();
+
+  // The saved pick still shows, with the line that says what runs instead and how to fix it.
+  const chatRow = page.getByTestId("llm-model-row-chat");
+  await expect(page.locator("#model-chat")).toContainText("gpt-5.2");
+  await expect(chatRow.getByText(/calls run on the deployment default/)).toBeVisible();
+
+  await page.locator("#model-chat").click();
+  await expect(page.getByRole("option", { name: "gpt-5.2 (unavailable)" })).toBeDisabled();
+  await page.getByRole("option", { name: "gpt-5-mini" }).click();
+
+  await expect.poll(() => llmModelUpdates.length).toBeGreaterThanOrEqual(1);
+  expect(llmModelUpdates.at(-1)).toMatchObject({ chat: { provider: "openai", model: "gpt-5-mini" } });
+  await expect(chatRow.getByText(/calls run on the deployment default/)).toHaveCount(0);
+});
+
 test("provider settings keep exactly the existing four embedding choices and no advanced vector controls", async ({ page }) => {
   const ingestionSettingsUpdates: unknown[] = [];
 

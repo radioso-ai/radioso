@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 
 import { createOpenApiDocument } from "../../src/app/http/openapi/openApiDocument.js";
 import { createDefaultApplicationComposition } from "../../src/app/composition/defaultComposition.js";
@@ -7,7 +7,6 @@ import { createTestApp } from "../support/testApp.js";
 import {
   collectMountedRoutes,
   normalizeRouteKey,
-  openApiDocumentedPrefixes,
   pathStartsWithPrefix,
   routeKey,
   type MountedRoute,
@@ -21,6 +20,11 @@ import {
  * actually mounted — the way `api-principal-route-policy.contract.test.ts` does, by building the
  * real app and walking its router stacks — and checks it against the OpenAPI document, in both
  * directions.
+ *
+ * Every mounted route is in scope unless it falls under `outOfScopeMountPrefixes` below. There is
+ * no "derive scope from what OpenAPI already documents" step — that would let a route mounted
+ * under a brand-new, never-documented prefix escape the gate entirely, which defeats the gate's
+ * purpose.
  *
  * Nothing here regenerates OpenAPI or the SDK: a route found missing goes in
  * `undocumentedRouteExclusions` with a specific reason, not into the registry.
@@ -98,6 +102,16 @@ const undocumentedRouteExclusions: Record<string, string> = {
 };
 
 /**
+ * Mount prefixes that sit outside the API contract altogether, not just a single undocumented
+ * route under a documented one — so a route under one of these is never checked against OpenAPI
+ * or the exclusion table above. Every entry must match at least one mounted route; one that
+ * matches nothing is exempting a route that no longer exists and must be retired.
+ */
+const outOfScopeMountPrefixes: Record<string, string> = {
+  "/api/connectors": "connector webhook and dynamically-registered connector-plugin callback routes (e.g. the email delivery webhook, and per-connector routes plugins mount at runtime keyed by connector id); not Radioso API operations and not enumerable as fixed OpenAPI paths",
+};
+
+/**
  * OpenAPI operations with no mounted route in the app this test builds. A documented path with
  * no backing route would publish a lie in the generated SDK, so this table stays empty unless an
  * entry names a specific, verified reason — including, when relevant, exactly where the route
@@ -135,11 +149,23 @@ const documentedRouteKeys = (document: OpenApiDocument): ReadonlySet<string> => 
 };
 
 describe("OpenAPI route coverage", () => {
-  it("documents, or explicitly and specifically excludes, every mounted route under an OpenAPI-documented prefix", () => {
-    const document = createOpenApiDocument();
-    const documentedPrefixes = openApiDocumentedPrefixes(Object.keys(document.paths ?? {}));
-    const { routes, unidentifiedNestedRouters } = buildMountedRouteInventory();
+  // Built once and shared: both tests below need the same composition, test app, route
+  // inventory, and OpenAPI document, and building each a second time is pure waste.
+  let document: OpenApiDocument;
+  let routes: readonly MountedRoute[];
+  let unidentifiedNestedRouters: readonly string[];
+  let inScopeRoutes: readonly MountedRoute[];
 
+  beforeAll(() => {
+    document = createOpenApiDocument();
+    const inventory = buildMountedRouteInventory();
+    routes = inventory.routes;
+    unidentifiedNestedRouters = inventory.unidentifiedNestedRouters;
+    const outOfScopePrefixes = new Set(Object.keys(outOfScopeMountPrefixes));
+    inScopeRoutes = routes.filter((route) => !pathStartsWithPrefix(route.path, outOfScopePrefixes));
+  });
+
+  it("documents, or explicitly and specifically excludes, every mounted route", () => {
     // A nested router this walk cannot place structurally would silently vanish from coverage,
     // so treat it the same as a coverage failure rather than skipping past it.
     expect(unidentifiedNestedRouters).toEqual([]);
@@ -149,14 +175,13 @@ describe("OpenAPI route coverage", () => {
     const exclusionKeys = new Set(Object.keys(undocumentedRouteExclusions).map(normalizeRouteKey));
     expect(exclusionKeys.size).toBe(Object.keys(undocumentedRouteExclusions).length);
 
-    const mountedKeysInScope = new Set<string>();
+    const inScopeKeys = new Set<string>();
     const undocumentedUnexcused: string[] = [];
     const documentedAndExcluded: string[] = [];
 
-    for (const route of routes) {
-      if (!pathStartsWithPrefix(route.path, documentedPrefixes)) continue;
+    for (const route of inScopeRoutes) {
       const key = routeKey(route.method, route.path);
-      mountedKeysInScope.add(key);
+      inScopeKeys.add(key);
 
       const isDocumented = documented.has(key);
       const isExcluded = exclusionKeys.has(key);
@@ -170,19 +195,19 @@ describe("OpenAPI route coverage", () => {
     // A stale exclusion (its route renamed, removed, or already documented) must not sit there
     // ready to quietly re-exempt a future, unrelated route that happens to normalize to the
     // same key.
-    const staleExclusions = [...exclusionKeys].filter((key) => !mountedKeysInScope.has(key));
+    const staleExclusions = [...exclusionKeys].filter((key) => !inScopeKeys.has(key));
     expect(staleExclusions).toEqual([]);
+
+    // Same contract for the out-of-scope table itself: an entry matching no mounted route is
+    // exempting a route that no longer exists.
+    const staleOutOfScopePrefixes = Object.keys(outOfScopeMountPrefixes).filter(
+      (prefix) => !routes.some((route) => pathStartsWithPrefix(route.path, new Set([prefix]))),
+    );
+    expect(staleOutOfScopePrefixes).toEqual([]);
   });
 
   it("keeps the reverse table honest: every OpenAPI operation either has a mounted route or a specific, named exclusion", () => {
-    const document = createOpenApiDocument();
-    const documentedPrefixes = openApiDocumentedPrefixes(Object.keys(document.paths ?? {}));
-    const { routes } = buildMountedRouteInventory();
-    const mountedKeysInScope = new Set(
-      routes
-        .filter((route) => pathStartsWithPrefix(route.path, documentedPrefixes))
-        .map((route) => routeKey(route.method, route.path)),
-    );
+    const mountedKeysInScope = new Set(inScopeRoutes.map((route) => routeKey(route.method, route.path)));
 
     const reverseMismatchKeys = new Set(Object.keys(reverseRouteMismatches).map(normalizeRouteKey));
     expect(reverseMismatchKeys.size).toBe(Object.keys(reverseRouteMismatches).length);

@@ -16,6 +16,8 @@ import { join, relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import ts from "typescript";
 
+import { isMainModule } from "./isMainModule.mjs";
+
 export const ALLOWLIST = new Set([
   "db/runMigrations.ts", // migration runner: migrations stay raw .sql by design
   "shared/infra/database.ts", // the pg Pool wrapper the runner uses
@@ -117,7 +119,7 @@ export const findPgVectorSqlViolations = (srcDir) => {
 };
 
 // CLI entry (skipped when imported by the fixture test).
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   const srcDir = fileURLToPath(new URL("../src", import.meta.url));
   const offenders = findRawSqlViolations(srcDir);
   const pgvectorOffenders = findPgVectorSqlViolations(srcDir);

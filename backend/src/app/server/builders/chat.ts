@@ -1,4 +1,5 @@
 import { ActionRequestRepository } from "../../../db/repositories/actionRequestRepository.js";
+import { createActionOutboxQueueStateReporter } from "./chatActionOutboxTelemetry.js";
 import { ContextVariableRepository } from "../../../db/repositories/contextVariableRepository.js";
 import { RoutineDefinitionRepository } from "../../../db/repositories/routineDefinitionRepository.js";
 import { RoutineStateRepository } from "../../../db/repositories/routineStateRepository.js";
@@ -590,34 +591,7 @@ export const buildChatServices = (input: {
     metrics: input.metricsRegistry,
     errorReporter: input.errorReporter,
   });
-  // Outbox depth / oldest-pending-age — the operator-alertable signal for a stuck outbox.
-  // Shared by the poll worker's own interval (below, `ActionDispatchWorker`'s old 5 s carried
-  // over unchanged) and the push worker's task route (`actionDispatchWorkerTaskRoutes.ts`),
-  // which has no interval of its own — Cloud Run's push worker only runs while a request is in
-  // flight, so without this call after every pushed drain and sweep, production never emits
-  // this signal at all. Best-effort and self-contained: never throws, so a reporting failure
-  // never fails the drain or sweep request it rides on.
-  const reportActionOutboxQueueState = async (): Promise<void> => {
-    try {
-      const snapshot = await actionOutbox.getPendingDepthSnapshot();
-      const oldestPendingAgeMs = snapshot.oldestPendingCreatedAt
-        ? Math.max(0, Date.now() - snapshot.oldestPendingCreatedAt.getTime())
-        : 0;
-      await input.telemetryService.emit({
-        eventType: "action.dispatch.queue_state",
-        metrics: {
-          pendingCount: snapshot.pendingCount,
-          inProgressCount: snapshot.inProgressCount,
-          oldestPendingAgeMs,
-        },
-      });
-    } catch (error) {
-      input.logger.error(
-        { err: error },
-        "Action dispatch queue-depth reporting failed",
-      );
-    }
-  };
+  const reportActionOutboxQueueState = createActionOutboxQueueStateReporter(actionOutbox, input.telemetryService, input.logger);
   // Reported on its own interval in the poll worker, not tied to a drain: unlike an
   // edge-triggered log, a permanently stuck backlog never produces another claim to report on,
   // so a stale gauge would hide it.

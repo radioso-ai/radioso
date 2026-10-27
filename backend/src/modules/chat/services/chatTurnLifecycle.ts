@@ -12,7 +12,12 @@ import {
 import type { AuditEventInput, AuditService } from "../../audit/contracts/index.js";
 import { DefaultAllowCapabilityPolicy, type CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.js";
 import type { ActionCapabilityMap } from "../../../shared/domain/actionCapabilities.js";
-import { isReportableFault } from "../../../shared/domain/errors.js";
+import {
+  executionModeAuditMetadata,
+  turnFailureAnalyticsProperties,
+  turnFailureAuditEvent,
+  turnFailureReportInput,
+} from "./turnFailureReporting.js";
 import type { ErrorReporter } from "../../../shared/errors/errorReporter.js";
 import type { LlmProviderFailureClassification } from "../../../shared/infra/llm/llmProviderFailureClassification.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
@@ -93,7 +98,7 @@ import {
   reviewTurnFacts,
   type ReviewTurnCorrelation,
 } from "./reviewDraft.js";
-import { reviewedTurnAuditEvent, reviewTurnFailureAuditEvent } from "./reviewTurnAudit.js";
+import { reviewedTurnAuditEvent } from "./reviewTurnAudit.js";
 import type {
   PageReadCandidateSource,
   PageReadDecision,
@@ -203,22 +208,6 @@ interface DraftAssistantTurn {
 
 /** How a turn ended once completed; its execution mode's `completion` capability picks the arm. */
 export type CompletedAssistantTurn = PersistedAssistantTurn | DraftAssistantTurn;
-
-/**
- * A turn that returns its reply as a draft answers a customer's message with a reply nobody has
- * approved, so its audit records neither: only the review audit's fields (FR-045).
- */
-const auditsWithoutContent = (executionMode: TurnExecutionMode | undefined): boolean =>
-  turnExecutionCapabilities(executionMode).completion === "return_draft";
-
-/** Labels a non-live turn's audit records with its execution mode and the surface that ran it. */
-const executionModeAuditMetadata = (
-  executionMode: TurnExecutionMode | undefined,
-  surface: string | null | undefined,
-): Record<string, unknown> | null =>
-  executionMode === undefined || executionMode === "live"
-    ? null
-    : { executionMode, ...(surface ? { surface } : {}) };
 
 export interface AssistantTurnCommittedFacts {
   insertedActionTypes: readonly string[];
@@ -1203,47 +1192,18 @@ export class ChatTurnLifecycle {
       await this.conversationRepository.touch(session.conversation.id, input.workspaceId);
     }
 
-    const failureEvent: AuditEventInput = {
-      accountId: input.accountId,
+    const failureAuditEvent = turnFailureAuditEvent({
       workspaceId: input.workspaceId,
-      eventType: "chat.answer",
-      eventStatus: "failure",
-      metadata: {
-        stage: "chat.answer",
-        workflow: workflowPolicy.workflow,
-        executionClass: workflowPolicy.executionClass,
-        conversationId: session?.conversation.id ?? input.conversationId,
-        userMessageId: session?.userMessage.id,
-        assistantMessageId: existingAssistantMessageId,
-        stream: input.stream,
-        citationCount: 0,
-        retrieval: session?.retrieval.diagnostics,
-        activityTrace: session?.retrieval.trace
-          ? this.activityTracePresenter.appendAnswerOutcome({
-              trace: session.retrieval.trace,
-              summary: this.activitySummaryPresenter.present(session.retrieval.diagnostics, {
-                execution: {
-                  surface: "assistant",
-                  path: getChatTurnRoute(session).type === "direct" ? "assistant_direct" : "assistant_retrieval",
-                  retrievalInvoked: getChatTurnRoute(session).type === "retrieval",
-                },
-              }),
-              outcome: {
-                answer: "",
-                stream: input.stream,
-                hadContexts: session.retrieval.contexts.length > 0,
-                retrievalSkipped: session.retrieval.diagnostics.retrievalSkipped,
-                durationMs: 0,
-              },
-            })
-          : undefined,
-        errorMessage: error instanceof Error ? error.message : "Unknown error",
-        ...executionModeAuditMetadata(input.executionMode, session?.conversation.sourceChannel),
-      },
-    };
-    const failureAuditEvent = auditsWithoutContent(input.executionMode)
-      ? reviewTurnFailureAuditEvent(failureEvent, error)
-      : failureEvent;
+      accountId: input.accountId,
+      conversationId: input.conversationId,
+      stream: input.stream,
+      executionMode: input.executionMode,
+      session,
+      existingAssistantMessageId,
+      error,
+      workflowPolicy,
+      route: session ? getChatTurnRoute(session) : undefined,
+    });
     const failedConversationId = session?.conversation.id ?? input.conversationId;
     if (failedConversationId) {
       // Keyed to the conversation so a turn failing while its conversation is mid-erasure
@@ -1262,23 +1222,18 @@ export class ChatTurnLifecycle {
       // tracking nor analytics hears about it, same gate as below for the live case.
       return;
     }
-    const providerFailureProperties = providerFailure
-      ? { failureKind: providerFailure.kind, providerStatus: providerFailure.status, providerCode: providerFailure.code }
-      : {};
-    // Bounded and provider-agnostic, in place of the error's own message, when it is
-    // classified: a provider's error text can echo the customer's rejected prompt back
-    // (see shared/infra/llm/providerErrors.ts), so a classified failure's message never
-    // leaves this process. An unclassified failure keeps its own message (the existing
-    // behavior) — most such errors are this codebase's own, not provider echoes.
-    const boundedErrorMessage = providerFailure ? `LLM provider call failed: ${providerFailure.kind}` : undefined;
-    // `isReportableFault` draws the line, not a bare `AppError` check: a quota/validation
-    // limit or a superseded turn (`ChatTurnSupersededError`, `< 500`) is an expected,
-    // client-facing outcome, never a fault — but a `>= 500` AppError (a platform
-    // misconfiguration, a rejected platform credential) still is one, unless its own
-    // `isExpectedOutcome` marker says it is a lost client instead
-    // (`ChatTurnDisconnectAbortError`). Anything reaching here as a fault gets reported
-    // exactly once.
-    if (isReportableFault(error)) {
+    // The report input is `null` exactly when `isReportableFault` says `error` is an
+    // already-handled, expected outcome (a quota/validation limit, a superseded turn,
+    // or an AppError marked `isExpectedOutcome` such as a lost client) rather than a
+    // fault — see turnFailureReporting.ts and shared/domain/errors.ts.
+    const reportInput = turnFailureReportInput({
+      workspaceId: input.workspaceId,
+      conversationId: failedConversationId,
+      executionMode: input.executionMode,
+      error,
+      providerFailure,
+    });
+    if (reportInput) {
       // Fire-and-forget, like every other error-reporter caller: a sink (PostHog, say)
       // has no fetch timeout, and awaiting it here would hold the turn's rethrow, its
       // SSE response end, and the next turn's `waitForPredecessor` lease hostage to a
@@ -1286,18 +1241,7 @@ export class ChatTurnLifecycle {
       // `wasReported` check still holds without awaiting: `ErrorReportingService.report`
       // marks the WeakSet synchronously, before its own first await, so the mark has
       // already happened by the time this line finishes — not after the call settles.
-      void this.errorReporter?.report({
-        errorType: "chat.turn_failed",
-        error,
-        ...(boundedErrorMessage ? { message: boundedErrorMessage } : {}),
-        metadata: {
-          workspaceId: input.workspaceId,
-          conversationId: failedConversationId,
-          stage: "chat.answer",
-          executionMode: input.executionMode ?? "live",
-          ...providerFailureProperties,
-        },
-      }).catch(() => {
+      void this.errorReporter?.report(reportInput).catch(() => {
         // Error reporting is observational; it must not change failure behavior.
       });
     }
@@ -1308,11 +1252,7 @@ export class ChatTurnLifecycle {
         accountId: input.accountId,
         subjectType: "conversation",
         subjectId: failedConversationId,
-        properties: {
-          stream: input.stream,
-          errorMessage: boundedErrorMessage ?? (error instanceof Error ? error.message : "Unknown error"),
-          ...providerFailureProperties,
-        },
+        properties: turnFailureAnalyticsProperties({ stream: input.stream, error, providerFailure }),
         source: "backend",
       });
     } catch {

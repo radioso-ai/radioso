@@ -34,7 +34,7 @@ export class AppError extends Error {
  * shape (the error handler's response-building, `isReportableFault`) read one type
  * instead of an `instanceof` check plus a duck-typed fallback.
  */
-export interface StructuredAppError {
+interface StructuredAppError {
   statusCode: number;
   code: string;
   message: string;

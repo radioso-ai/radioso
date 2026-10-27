@@ -1066,6 +1066,42 @@ describe("TurnPlanService", () => {
     expect(plan).toBeNull();
   });
 
+  it("classifies a provider failure through the optional onFailure sink, without changing the null fallback", async () => {
+    const client = {
+      complete: vi.fn(async () => {
+        throw Object.assign(new Error("Azure OpenAI chat failed"), { status: 404, code: "DeploymentNotFound" });
+      }),
+    };
+    const onFailure = vi.fn();
+    const plan = await new TurnPlanService(factory(client)).plan(request(), onFailure);
+    expect(plan).toBeNull();
+    expect(onFailure).toHaveBeenCalledWith({ kind: "model_unavailable", status: 404, code: "DeploymentNotFound" });
+  });
+
+  it("never calls onFailure for malformed (non-provider) output — parsing fails without throwing", async () => {
+    const client = { complete: vi.fn(async () => ({ text: "<<<garbage>>>" })) };
+    const onFailure = vi.fn();
+    const plan = await new TurnPlanService(factory(client)).plan(request(), onFailure);
+    expect(plan).toBeNull();
+    expect(onFailure).not.toHaveBeenCalled();
+  });
+
+  it("calls onFailure with a null classification when a thrown error has no provider shape", async () => {
+    const client = { complete: vi.fn(async () => { throw new Error("boom"); }) };
+    const onFailure = vi.fn();
+    const plan = await new TurnPlanService(factory(client)).plan(request(), onFailure);
+    expect(plan).toBeNull();
+    expect(onFailure).toHaveBeenCalledWith(null);
+  });
+
+  it("never calls onFailure when the plan resolves successfully", async () => {
+    const client = { complete: vi.fn(async () => ({ text: validPlanJson() })) };
+    const onFailure = vi.fn();
+    const plan = await new TurnPlanService(factory(client)).plan(request(), onFailure);
+    expect(plan).not.toBeNull();
+    expect(onFailure).not.toHaveBeenCalled();
+  });
+
   it("returns null (not a rejection) when the timeout fires, aborting the call", async () => {
     const client = {
       complete: vi.fn(

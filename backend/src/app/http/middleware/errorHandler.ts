@@ -48,11 +48,28 @@ const isStructuredAppError = (error: unknown): error is {
       typeof error.message === "string",
   );
 
+/** Ends an already-started response (SSE, chunked) if it has not finished on its own. */
+const endOpenResponse = (res: Response): void => {
+  if (!res.writableEnded && !res.destroyed) {
+    res.end();
+  }
+};
+
 export const createErrorHandler = (errorReportingService?: ErrorReportingService) =>
-  (error: unknown, req: Request, res: Response, next: NextFunction): void => {
+  (error: unknown, req: Request, res: Response, _next: NextFunction): void => {
     markHttpResponseFailed(res);
     if (res.headersSent) {
-      next(error);
+      // Headers already went out (an SSE turn mid-stream, most often), so there is no
+      // response left to shape — only whether this fault reaches error tracking. Express's
+      // own finalhandler would otherwise just console.error the raw stack with nothing
+      // reaching PostHog; an AppError is an already-handled, expected outcome (quota,
+      // validation, cancellation, disconnect) and never reported; anything else is
+      // reported once, skipped here if the caller already reported this exact error object
+      // (e.g. ChatTurnLifecycle.recordFailure, upstream in the same request).
+      if (!(error instanceof AppError) && !errorReportingService?.wasReported(error)) {
+        void errorReportingService?.reportUnhandledRequestError({ error, request: req });
+      }
+      endOpenResponse(res);
       return;
     }
 

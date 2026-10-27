@@ -113,7 +113,7 @@ describe("TurnPlanCoordinator.plan", () => {
 
     expect(service.plan).toHaveBeenCalledWith(expect.objectContaining({
       history: history.slice(-10),
-    }));
+    }), expect.anything());
   });
 
   it("bypasses when routine candidates exceed the bound", async () => {
@@ -164,6 +164,54 @@ describe("TurnPlanCoordinator.plan", () => {
     const service = serviceReturning(null);
     const outcome = await new TurnPlanCoordinator(service).plan(inputs());
     expect(outcome).toEqual({ status: "failed", reason: "invalid_or_error" });
+  });
+
+  it("keeps the failed outcome's classification when the service's call threw a provider error", async () => {
+    const service = {
+      plan: vi.fn(async (_request: unknown, onFailure?: (failure: unknown) => void) => {
+        onFailure?.({ kind: "model_unavailable", status: 404, code: "DeploymentNotFound" });
+        return null;
+      }),
+    } as unknown as TurnPlanService;
+    const outcome = await new TurnPlanCoordinator(service).plan(inputs());
+    expect(outcome).toEqual({
+      status: "failed",
+      reason: "invalid_or_error",
+      failure: { kind: "model_unavailable", status: 404, code: "DeploymentNotFound" },
+    });
+  });
+
+  it("logs the classified failure kind/status/code on the outcome log, never the model output", async () => {
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const service = {
+      plan: vi.fn(async (_request: unknown, onFailure?: (failure: unknown) => void) => {
+        onFailure?.({ kind: "model_unavailable", status: 404, code: "DeploymentNotFound" });
+        return null;
+      }),
+    } as unknown as TurnPlanService;
+    await new TurnPlanCoordinator(service, logger as unknown as AppLogger).plan(inputs());
+
+    expect(logger.info).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: "fallback",
+        reason: "invalid_or_error",
+        failureKind: "model_unavailable",
+        providerStatus: 404,
+        providerCode: "DeploymentNotFound",
+      }),
+      "chat.turn_planning.outcome",
+    );
+  });
+
+  it("logs no failure fields for a clean miss (malformed output, never thrown)", async () => {
+    const logger = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
+    const outcome = await new TurnPlanCoordinator(serviceReturning(null), logger as unknown as AppLogger).plan(inputs());
+
+    expect(outcome).toEqual({ status: "failed", reason: "invalid_or_error" });
+    const call = logger.info.mock.calls.find((args) => args[1] === "chat.turn_planning.outcome");
+    expect(call?.[0]).not.toHaveProperty("failureKind");
+    expect(call?.[0]).not.toHaveProperty("providerStatus");
+    expect(call?.[0]).not.toHaveProperty("providerCode");
   });
 
   it("does not enter staged fallback after the caller cancels planning", async () => {
@@ -616,7 +664,7 @@ describe("quick-reply lane", () => {
 
     expect(service.plan).toHaveBeenCalledWith(expect.objectContaining({
       quickReplyLane: { standingInstructions },
-    }));
+    }), expect.anything());
   });
 
   it("never opens the lane when composition turns it off, whatever the standing instructions", async () => {

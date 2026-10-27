@@ -59,11 +59,26 @@ const serializeError = (
 };
 
 export class ErrorReportingService {
+  // Identity-keyed, not content-keyed: two distinct errors with the same message must
+  // never collide. Lets a caller that already reported an error (e.g. a chat turn
+  // failure) tell a later handler on the same error object (e.g. the HTTP error
+  // middleware, reached after headers were already sent) not to report it again.
+  private readonly reportedErrors = new WeakSet<object>();
+
   constructor(private readonly options: ErrorReportingServiceOptions) {}
+
+  /** Whether `report()` has already recorded this exact error object. */
+  wasReported(error: unknown): boolean {
+    return typeof error === "object" && error !== null && this.reportedErrors.has(error);
+  }
 
   async report(input: ErrorInput): Promise<ErrorEvent | null> {
     if (this.options.enabled === false) {
       return null;
+    }
+
+    if (input.error && typeof input.error === "object") {
+      this.reportedErrors.add(input.error);
     }
 
     const serializedError = serializeError(input.error);

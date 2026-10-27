@@ -1,7 +1,7 @@
 ---
 title: "OSS And SaaS Observability"
 description: "Vendor-neutral observability strategy separating telemetry, analytics, and error reporting via internal contracts with OSS defaults and optional SaaS exporters."
-last_updated: 2026-10-26
+last_updated: 2026-10-27
 ---
 
 # OSS And SaaS Observability
@@ -261,12 +261,26 @@ This keeps external crash tooling optional without weakening the product's defau
 ### Current implementation
 
 Errors reach the shared error service (and therefore every configured sink,
-including the optional PostHog/Sentry exporters) from four places, so capture is
+including the optional PostHog/Sentry exporters) from five places, so capture is
 not limited to the HTTP request path:
 
 - **Unhandled HTTP request failures** — the error handler middleware in
   [`backend/src/app/http/middleware/errorHandler.ts`](../backend/src/app/http/middleware/errorHandler.ts)
-  (`errorType: http.request.unhandled`).
+  (`errorType: http.request.unhandled`). A request whose response already started
+  (an SSE chat turn failing mid-stream) still gets exactly one report there
+  instead of falling through to Express's own unhandled-error logging — one, not
+  two, because it skips reporting a failure a caller already reported, such as a
+  chat turn (next bullet).
+- **Chat turn failures** — `ChatTurnLifecycle.recordFailure` in
+  [`backend/src/modules/chat/services/chatTurnLifecycle.ts`](../backend/src/modules/chat/services/chatTurnLifecycle.ts)
+  (`errorType: chat.turn_failed`), for a turn that ends on anything other than an
+  already-handled `AppError` — a usage limit, a validation error, a cancelled or
+  superseded turn, a disconnected client. The report carries a bounded failure
+  kind (`model_unavailable`, `auth_rejected`, `rate_limited`,
+  `provider_unavailable`, or `provider_rejected`) plus the provider's HTTP status
+  and machine code when the failure came from an LLM call, never the prompt or
+  the model's answer. The same fields ride on the `chat.failed` product analytics
+  event.
 - **Browser errors** — posted to `/api/v1/observability/frontend-errors`
   (`frontend.*.unhandled`).
 - **Process-level crashes** — every entrypoint installs

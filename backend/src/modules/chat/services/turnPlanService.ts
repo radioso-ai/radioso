@@ -25,6 +25,10 @@ import type {
 } from "../../../shared/infra/llm/providerTypes.js";
 import { createReusableInputBoundary } from "../../../shared/infra/llm/inputTokenCaching.js";
 import type { TurnPlanGatewayFactory } from "../../../shared/infra/llm/turnPlanGateway.js";
+import {
+  classifyLlmProviderFailure,
+  type LlmProviderFailureClassification,
+} from "../../../shared/infra/llm/llmProviderFailureClassification.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { parseStructuredRewrite, type StructuredRewriteResult } from "../../retrieval/public.js";
 import {
@@ -1009,7 +1013,18 @@ export class TurnPlanService {
     } = {},
   ) {}
 
-  async plan(request: TurnPlanRequest): Promise<TurnPlan | null> {
+  /**
+   * `onFailure` is a pure observability sink, never a control-flow signal: the fallback
+   * (resolving to `null`) is identical with or without it. It fires only when `plan()`
+   * threw — a clean miss (malformed output, `parseTurnPlan` returning `null`) never calls
+   * it, since that path never reaches the catch below. Never receives the model's output
+   * or prompt, only the bounded classification (or `null` when the thrown error carries
+   * no provider shape at all, e.g. a bug in this method's own code).
+   */
+  async plan(
+    request: TurnPlanRequest,
+    onFailure?: (failure: LlmProviderFailureClassification | null) => void,
+  ): Promise<TurnPlan | null> {
     const timeoutMs = this.options.timeoutMs ?? CHAT_BEHAVIOR.turnPlanning.timeoutMs;
     const { signal, dispose } = withTimeout(request.signal, timeoutMs);
     try {
@@ -1044,7 +1059,8 @@ export class TurnPlanService {
         quickReplyLane: request.quickReplyLane,
       });
       return plan;
-    } catch {
+    } catch (error) {
+      onFailure?.(classifyLlmProviderFailure(error));
       return null;
     } finally {
       dispose();

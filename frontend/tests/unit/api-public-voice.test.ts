@@ -87,6 +87,20 @@ describe('public voice session start: recording notice', () => {
 
     expect(result).toMatchObject({ kind: 'started', session: { recordingNotice: 'Questa chiamata viene registrata.' } })
   })
+
+  it("keeps what the call says first for the vendor, and leaves it out when the start names none", async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => respond(200, { ...session, firstMessage: 'Ciao! Sono Marta.' })))
+    expect(await startPublicVoiceSession('token', { locale: 'it' }))
+      .toMatchObject({ kind: 'started', session: { firstMessage: 'Ciao! Sono Marta.' } })
+
+    vi.stubGlobal('fetch', vi.fn(async () => respond(200, { ...session, firstMessage: '  ' })))
+    const blank = await startPublicVoiceSession('token', { locale: 'it' })
+    expect(blank.kind === 'started' ? blank.session : null).not.toHaveProperty('firstMessage')
+
+    vi.stubGlobal('fetch', vi.fn(async () => respond(200, session)))
+    const none = await startPublicVoiceSession('token', { locale: 'it' })
+    expect(none.kind === 'started' ? none.session : null).not.toHaveProperty('firstMessage')
+  })
 })
 
 describe('vendor conversation report', () => {

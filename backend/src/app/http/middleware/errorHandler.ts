@@ -49,19 +49,22 @@ const closeOpenResponse = (res: Response): void => {
 export const createErrorHandler = (errorReportingService?: ErrorReportingService) =>
   (error: unknown, req: Request, res: Response, _next: NextFunction): void => {
     markHttpResponseFailed(res);
+    // Every branch below reports through here, so the line between a fault and a client
+    // outcome is drawn once: `isReportableFault` (see shared/domain/errors.ts) never reports
+    // an error under 500 or one marked `isExpectedOutcome` (a lost client), and anything
+    // else — any 5xx, AppError or not — is reported once. A caller that already reported
+    // this exact error object (e.g. ChatTurnLifecycle.recordFailure) is not reported again.
+    const reportFault = (statusCode?: number): void => {
+      if (isReportableFault(error) && !errorReportingService?.wasReported(error)) {
+        void errorReportingService?.reportUnhandledRequestError({ error, request: req, statusCode });
+      }
+    };
+
     if (res.headersSent) {
       // Headers already went out (an SSE turn mid-stream, most often), so there is no
-      // response left to shape — only whether this fault reaches error tracking. Express's
-      // own finalhandler would otherwise just console.error the raw stack with nothing
-      // reaching PostHog. `isReportableFault` draws the line (see shared/domain/errors.ts):
-      // a client-facing AppError under 500, or one marked `isExpectedOutcome` (a lost
-      // client), is never reported; anything else — including a `>= 500` AppError such as
-      // a misconfigured provider or a rejected platform credential — is reported once,
-      // skipped here if the caller already reported this exact error object (e.g.
-      // ChatTurnLifecycle.recordFailure, upstream in the same request).
-      if (isReportableFault(error) && !errorReportingService?.wasReported(error)) {
-        void errorReportingService?.reportUnhandledRequestError({ error, request: req });
-      }
+      // response left to shape. Express's own finalhandler would otherwise just
+      // console.error the raw stack with nothing reaching PostHog.
+      reportFault();
       closeOpenResponse(res);
       return;
     }
@@ -85,6 +88,7 @@ export const createErrorHandler = (errorReportingService?: ErrorReportingService
     }
 
     if (error instanceof AppError) {
+      reportFault(error.statusCode);
       res.status(error.statusCode).json({
         error: {
           code: error.code,
@@ -96,6 +100,7 @@ export const createErrorHandler = (errorReportingService?: ErrorReportingService
     }
 
     if (isStructuredAppError(error)) {
+      reportFault(error.statusCode);
       res.status(error.statusCode).json({
         error: {
           code: error.code,
@@ -128,16 +133,7 @@ export const createErrorHandler = (errorReportingService?: ErrorReportingService
       return;
     }
 
-    // Headers never sent, so this is the last chance to report — unless a caller
-    // already did (e.g. a stream: false chat turn, where ChatTurnLifecycle.recordFailure
-    // reports before rethrowing to this same next(error)).
-    if (!errorReportingService?.wasReported(error)) {
-      void errorReportingService?.reportUnhandledRequestError({
-        error,
-        request: req,
-        statusCode: 500,
-      });
-    }
+    reportFault(500);
 
     res.status(500).json({
       error: {

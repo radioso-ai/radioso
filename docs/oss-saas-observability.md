@@ -266,12 +266,17 @@ not limited to the HTTP request path:
 
 - **Unhandled HTTP request failures** — the error handler middleware in
   [`backend/src/app/http/middleware/errorHandler.ts`](../backend/src/app/http/middleware/errorHandler.ts)
-  (`errorType: http.request.unhandled`). A request whose response already started
-  (an SSE chat turn failing mid-stream, or any other response that started
-  writing its body) still gets exactly one report there instead of falling
-  through to Express's own unhandled-error logging — one, not two, whether the
-  request completed without streaming at all or a caller upstream (such as a
-  chat turn, next bullet) already reported this exact failure. If that response
+  (`errorType: http.request.unhandled`). Every request that ends in a server
+  error is reported once with its status: an `AppError` of 500 or higher (a
+  `503 service_unavailable` for a missing configuration, a `502` from an
+  upstream service) while the client still gets that error's own code and
+  message, an Enterprise error shaped the same way, or an unexpected exception
+  answered with a generic `500`. The same `isReportableFault` rule as chat turns
+  (next bullet) decides what counts: anything under 500 stays a client outcome.
+  A request whose response already started (an SSE chat turn failing
+  mid-stream, or any other response that started writing its body) also gets
+  exactly one report there. Each failure is reported once, even when a caller
+  upstream (such as a chat turn) already reported that exact error. If that response
   never finished on its own, the middleware closes the connection rather than
   ending it gracefully, so a client sees a dropped connection instead of reading
   a truncated body as a complete one; an SSE turn already ends its own stream

@@ -132,7 +132,9 @@ export type AgentBundleUnresolvedKind =
   /** A directive bound to a skill that did not survive import; kept, but disabled. */
   | "directive_binding_unbound"
   /** Contact requests are on but their destination stayed in the source workspace. */
-  | "contact_delivery_unbound";
+  | "contact_delivery_unbound"
+  /** The agent's chat model is one this workspace cannot run; the agent imports without the override. */
+  | "chat_model_unavailable";
 
 export interface AgentBundleUnresolvedReference {
   kind: AgentBundleUnresolvedKind;

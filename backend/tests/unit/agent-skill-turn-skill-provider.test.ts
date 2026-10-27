@@ -162,6 +162,7 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
       outcome: { status: "completed", answer: "escaped" },
     }));
     const metricsRegistry = new MetricsRegistry();
+    const logger = { warn: vi.fn() };
     const provider = new RepositoryAgentSkillTurnSkillProvider({
       agentSkills: repositoryWith([agentSkill({ skillName: "order_lookup" })]),
       executorRegistry: new SkillExecutorRegistry([{
@@ -171,6 +172,7 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
       }]),
       capabilityPolicy: new DefaultAllowCapabilityPolicy(),
       metricsRegistry,
+      logger,
     });
     const session = sessionWithBinding("order_lookup");
     session.skillEffects = "suppressed";
@@ -190,8 +192,11 @@ describe("RepositoryAgentSkillTurnSkillProvider", () => {
       outcome: {
         status: "failed",
         outputs: { skill: "order_lookup", reason: "suppressed_for_safe_test" },
+        error: { code: "suppressed_for_safe_test" },
       },
     });
+    // Suppression is the turn's policy, not a failure: its counter already records it.
+    expect(logger.warn).not.toHaveBeenCalled();
     expect(metricsRegistry.renderPrometheus()).toContain('reason="suppressed_for_safe_test"');
     expect(metricsRegistry.renderPrometheus()).toContain('skill_kind="external_mcp"');
     expect(metricsRegistry.renderPrometheus()).not.toContain("order_lookup");
@@ -660,5 +665,111 @@ describe("RepositoryAgentSkillTurnSkillProvider suppressed-effects collector", (
 
     expect(firstTurn.suppressedEffects()).toEqual([{ skillName: "order_lookup", site: "turn" }]);
     expect(secondTurn.suppressedEffects()).toEqual([]);
+  });
+});
+
+describe("RepositoryAgentSkillTurnSkillProvider dispatch failures", () => {
+  const dispatchBoundSkill = async (
+    executor: SkillExecutorPort["dispatch"] | null,
+  ) => {
+    const logger = { warn: vi.fn() };
+    const provider = new RepositoryAgentSkillTurnSkillProvider({
+      agentSkills: repositoryWith([agentSkill({ skillName: "order_lookup" })]),
+      executorRegistry: new SkillExecutorRegistry(executor
+        ? [{ kind: "internal", adapter: EXTERNAL_SKILLS_ADAPTER, executor: { dispatch: executor } }]
+        : []),
+      capabilityPolicy: new DefaultAllowCapabilityPolicy(),
+      logger,
+    });
+    const session = sessionWithBinding("order_lookup");
+    const runtime = await provider.forSession(session);
+    const outcome = await new ChatTurnSkillSelector(
+      [defaultTurnSkill, ...runtime.turnSkills],
+      strategy,
+      { agentSkillStates: runtime.skillStates },
+    ).select(session).skill.dispatch(session);
+    return { outcome, logger };
+  };
+
+  const failureLog = (reason: string) => [
+    expect.objectContaining({
+      event: "agent_skill_turn_dispatch_failed",
+      workspaceId,
+      agentId,
+      conversationId,
+      skillName: "order_lookup",
+      kind: "external_mcp",
+      reason,
+    }),
+    expect.any(String),
+  ];
+
+  it("settles a completed outcome with no answer text as failed, because a terminal skill must answer", async () => {
+    const { outcome, logger } = await dispatchBoundSkill(async () => ({
+      disposition: "settled",
+      outcome: { status: "completed", answer: "  ", outputs: { structuredContent: { orders: [] } } },
+    }));
+
+    expect(outcome.outcome).toMatchObject({
+      status: "failed",
+      outputs: { skill: "order_lookup", reason: "empty_answer" },
+      error: { code: "empty_answer" },
+    });
+    expect(logger.warn).toHaveBeenCalledWith(...failureLog("empty_answer"));
+  });
+
+  it("passes an executor's failed outcome through without a second warn, since the executor logs its own", async () => {
+    const { outcome, logger } = await dispatchBoundSkill(async () => ({
+      disposition: "settled",
+      outcome: { status: "failed", error: { code: "mcp_timeout", message: "Tool call timed out" } },
+    }));
+
+    expect(outcome.outcome).toMatchObject({ status: "failed", error: { code: "mcp_timeout" } });
+    expect(logger.warn).not.toHaveBeenCalled();
+  });
+
+  it("settles a skill with no registered executor as no_executor", async () => {
+    const { outcome, logger } = await dispatchBoundSkill(null);
+
+    expect(outcome.outcome).toMatchObject({ status: "failed", error: { code: "no_executor" } });
+    expect(logger.warn).toHaveBeenCalledWith(...failureLog("no_executor"));
+  });
+
+  it("settles a deferred dispatch as failed, because a terminal turn skill must answer now", async () => {
+    const { outcome, logger } = await dispatchBoundSkill(async () => ({
+      disposition: "deferred",
+      ticket: { ticketId: "ticket-1" },
+    }));
+
+    expect(outcome.outcome).toMatchObject({ status: "failed", error: { code: "deferred" } });
+    expect(logger.warn).toHaveBeenCalledWith(...failureLog("deferred"));
+    expect(JSON.stringify(logger.warn.mock.calls)).not.toContain("Where is order 123?");
+  });
+
+  it("reports a thrown executor error as executor_error and logs it instead of swallowing it", async () => {
+    const thrown = new Error("connect ECONNREFUSED");
+    const { outcome, logger } = await dispatchBoundSkill(async () => {
+      throw thrown;
+    });
+
+    expect(outcome.outcome).toMatchObject({
+      status: "failed",
+      outputs: { reason: "executor_error" },
+      error: { code: "executor_error" },
+    });
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "agent_skill_turn_dispatch_failed", reason: "executor_error", err: thrown }),
+      expect.any(String),
+    );
+  });
+
+  it("does not log a completed outcome that answers", async () => {
+    const { outcome, logger } = await dispatchBoundSkill(async () => ({
+      disposition: "settled",
+      outcome: { status: "completed", answer: "Order 123 is in transit." },
+    }));
+
+    expect(outcome.outcome).toEqual({ status: "completed", answer: "Order 123 is in transit." });
+    expect(logger.warn).not.toHaveBeenCalled();
   });
 });

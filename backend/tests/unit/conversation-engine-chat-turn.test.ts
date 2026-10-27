@@ -20,8 +20,8 @@ import {
   runPreparedChatTurnWithConversationEngine,
 } from "../../src/modules/chat/services/conversationEngineChatTurn.js";
 import type { ChatAnswerPresenter, ChatPresentedAnswer } from "../../src/modules/chat/services/chatAnswerPresenter.js";
-import type { ProcessTurnResult } from "@radioso/conversation-contract";
-import type { TurnSkill } from "../../src/modules/chat/services/turnOutcome.js";
+import type { ProcessTurnResult, TurnOutcome } from "@radioso/conversation-contract";
+import { GenericTurnOutcomeRenderer, type TurnSkill } from "../../src/modules/chat/services/turnOutcome.js";
 import {
   RETRIEVAL_OUTCOME_KIND,
   RETRIEVAL_TURN_SKILL,
@@ -1370,6 +1370,149 @@ describe("runPreparedChatTurnWithConversationEngine", () => {
 
     expect(dispatched).toEqual(["booking.create"]);
     expect(presentation).toMatchObject({ answer: "Booked.", skillName: "booking.create" });
+  });
+
+  describe("a directive-bound skill that does not answer", () => {
+    const boundSkillName = "order_lookup";
+    const boundSession = (): PreparedSession => {
+      const prepared = session();
+      prepared.directiveSteering = {
+        rules: [{ id: "d1", directiveName: "order-status", action: "Look up the order.", source: "directive", lifespan: "response" }],
+        omissions: [],
+        matches: [{
+          directive: {
+            name: "order-status",
+            condition: { kind: "always" },
+            action: "Look up the order.",
+            binding: { kind: "skill", skillName: boundSkillName },
+          },
+          selectionMode: "deterministic",
+          selectionReason: "always",
+        }],
+      };
+      return prepared;
+    };
+    const boundSkill = (outcome: TurnOutcome["outcome"]): TurnSkill => ({
+      definition: { name: boundSkillName, outcomeKinds: ["agent_skill"] },
+      selects: () => false,
+      dispatch: () => ({
+        kind: "agent_skill",
+        skillName: boundSkillName,
+        outcome,
+        stagedContext: [],
+        steering: [],
+        trace: { traceId: "t", startedAt: "2026-01-01T00:00:00.000Z", stages: [] },
+      }),
+      renderer: new GenericTurnOutcomeRenderer(),
+    });
+    const suppressed: TurnOutcome["outcome"] = {
+      status: "failed",
+      outputs: { skill: boundSkillName, reason: "suppressed_for_safe_test" },
+      error: { code: "suppressed_for_safe_test", message: "Agent skill did not answer the turn." },
+    };
+    // Renders the rules it was handed, so a test can see what the answer prompt saw.
+    const defaultSkill: TurnSkill = {
+      definition: { name: RETRIEVAL_TURN_SKILL, outcomeKinds: [RETRIEVAL_OUTCOME_KIND] },
+      selects: () => true,
+      dispatch: (s) => buildRetrievalTurnOutcome(s),
+      renderer: {
+        supports: (outcome) => outcome.kind === RETRIEVAL_OUTCOME_KIND,
+        render: async (_outcome, ctx) => ({
+          answer: `Grounded answer under ${ctx.session.directiveSteering?.rules.length ?? 0} rules.`,
+          skillName: RETRIEVAL_TURN_SKILL,
+          skillOutcome: "completed",
+          skillStatus: "completed",
+        }),
+      },
+    };
+    const turnInput = (prepared: PreparedSession, bound: TurnSkill, logger = { info: vi.fn() }) => {
+      const turnSkills = [defaultSkill, bound];
+      return {
+        engine: new DefaultConversationEngine(),
+        session: prepared,
+        chatAnswerPresenter,
+        turnSkillSelector: new ChatTurnSkillSelector(turnSkills, new DefaultTurnSelectionStrategy(), {
+          agentSkillStates: new Map([[boundSkillName, { enabled: true, turnCapable: true, stagingCapable: false }]]),
+        }),
+        turnSkills,
+        query: "Where is order 123?",
+        logger,
+      };
+    };
+    const unavailableNotes = (prepared: PreparedSession) =>
+      (prepared.directiveSteering?.rules ?? []).filter((rule) => rule.source !== "directive");
+
+    it("answers from the default skill, told the bound skill could not be consulted", async () => {
+      const prepared = boundSession();
+      const logger = { info: vi.fn() };
+
+      const { presentation, result } = await runPreparedChatTurnWithConversationEngine(
+        turnInput(prepared, boundSkill(suppressed), logger),
+      );
+
+      expect(presentation).toMatchObject({ answer: "Grounded answer under 2 rules.", skillName: RETRIEVAL_TURN_SKILL });
+      // The host persists the bound skill's failure from this, so Quality still sees it.
+      expect(presentation.fallbackFor).toEqual({
+        skillName: boundSkillName,
+        outcomeStatus: "failed",
+        failureReason: "suppressed_for_safe_test",
+      });
+      const notes = unavailableNotes(prepared);
+      expect(notes).toEqual([expect.objectContaining({ source: "skill", lifespan: "response" })]);
+      expect(notes[0]?.action).toContain(boundSkillName);
+      // Not an authored directive, so the answer is never asked to attest to it.
+      expect(notes[0]).not.toHaveProperty("id");
+      expect(notes[0]).not.toHaveProperty("directiveName");
+      expect(attestableSteering(prepared.directiveSteering?.rules).filter((rule) => rule.id)).toHaveLength(1);
+      expect(result.trace.stages.filter((stage) => stage.kind === "skill_dispatch").map((stage) => stage.outputs)).toEqual([
+        expect.objectContaining({ skillName: boundSkillName, failureReason: "suppressed_for_safe_test" }),
+        expect.objectContaining({ skillName: RETRIEVAL_TURN_SKILL, fallbackFor: boundSkillName }),
+      ]);
+      expect(logger.info).toHaveBeenCalledOnce();
+      expect(logger.info).toHaveBeenCalledWith({
+        event: "chat_turn_skill_fallback",
+        workspaceId: "workspace_1",
+        agentId: "agent_1",
+        conversationId: "conv_1",
+        skillName: boundSkillName,
+        fallbackSkillName: RETRIEVAL_TURN_SKILL,
+        failureReason: "suppressed_for_safe_test",
+      }, expect.any(String));
+    });
+
+    it("answers from the default skill on the streamed path too", async () => {
+      const prepared = boundSession();
+      const events: RunPreparedChatTurnStreamWithConversationEngineEvent[] = [];
+
+      for await (const event of runPreparedChatTurnStreamWithConversationEngine(turnInput(prepared, boundSkill(suppressed)))) {
+        events.push(event);
+      }
+
+      const final = events.find((event) => event.type === "final");
+      if (!final || final.type !== "final") {
+        throw new Error("expected final event");
+      }
+      expect(final.presentation).toMatchObject({
+        answer: "Grounded answer under 2 rules.",
+        skillName: RETRIEVAL_TURN_SKILL,
+        fallbackFor: { skillName: boundSkillName, outcomeStatus: "failed" },
+      });
+      expect(unavailableNotes(prepared)).toHaveLength(1);
+    });
+
+    it("adds no note when the bound skill answers", async () => {
+      const prepared = boundSession();
+      const logger = { info: vi.fn() };
+
+      const { presentation } = await runPreparedChatTurnWithConversationEngine(
+        turnInput(prepared, boundSkill({ status: "completed", answer: "Order 123 is in transit." }), logger),
+      );
+
+      expect(presentation).toMatchObject({ answer: "Order 123 is in transit.", skillName: boundSkillName });
+      expect(presentation).not.toHaveProperty("fallbackFor");
+      expect(unavailableNotes(prepared)).toEqual([]);
+      expect(logger.info).not.toHaveBeenCalled();
+    });
   });
 
   it("runs directive matching and terminal skill selection inside the engine loop", async () => {

@@ -52,6 +52,7 @@ const requireOpenAIDataResidency = (value: OpenAIDataResidency | undefined): Ope
 const requirePlatformOpenAIEndpoint = (
   residency: OpenAIDataResidency,
   azureEndpoint: string | undefined,
+  capabilityDefaults: PlatformCapabilityDefaults,
 ): PlatformOpenAIEndpoint => {
   if (!azureEndpoint) {
     return { kind: "openai", residency };
@@ -61,7 +62,40 @@ const requirePlatformOpenAIEndpoint = (
       `AZURE_OPENAI_ENDPOINT cannot be combined with OPENAI_DATA_RESIDENCY=${residency}; Azure OpenAI is reached only at the default (global) residency.`,
     );
   }
-  return { kind: "azure", baseUrl: azureEndpoint };
+  const deployments = [...new Set(platformOpenAIModelCalls(capabilityDefaults).map((call) => call.model))];
+  return { kind: "azure", baseUrl: azureEndpoint, deployments };
+};
+
+type PlatformCapabilityDefaults = Pick<
+  ResolvedLlmConfig,
+  "chat" | "rewrite" | "rerank" | "embeddings" | "embeddingProviderConfigs"
+>;
+
+/** Every capability `ResolvedLlmConfig` carries a default for — iterated generically so a
+ *  capability can never be silently left out of the platform's model calls. */
+const ALL_CAPABILITY_NAMES: readonly LlmCapabilityName[] = ["chat", "rewrite", "rerank", "embeddings"];
+
+/**
+ * Every (capability, model) the platform-held OpenAI key is configured to call: each capability
+ * default on native `openai`, plus the supplemental openai embedding config even when the
+ * primary embeddings provider is not openai — `resolveLlmConfig` keeps an openai-embeddings
+ * capability latently available alongside a platform key, since a workspace or an embedding
+ * profile can request it explicitly at any time. The one list both the Azure endpoint's
+ * `deployments` and the residency startup probe's targets are derived from, so the models the
+ * platform serves and the models startup verifies are the same set.
+ */
+export const platformOpenAIModelCalls = (
+  defaults: PlatformCapabilityDefaults,
+): Array<{ capability: LlmCapabilityName; model: string }> => {
+  const calls = ALL_CAPABILITY_NAMES.flatMap((capability) =>
+    defaults[capability].provider === "openai" ? [{ capability, model: defaults[capability].model }] : [],
+  );
+  const supplementalEmbeddingModel = defaults.embeddingProviderConfigs.find(
+    (entry) => entry.provider === "openai",
+  )?.model;
+  return supplementalEmbeddingModel
+    ? [...calls, { capability: "embeddings", model: supplementalEmbeddingModel }]
+    : calls;
 };
 
 const asProvider = (value: string | number | boolean | undefined, field: string): LlmProviderName | undefined => {
@@ -115,30 +149,32 @@ const resolveBaseUrl = (provider: LlmProviderName, env: ProviderEnv): string | u
 };
 
 /**
- * Fields a native `openai` capability default carries for its resolved platform endpoint.
- * Omitted entirely at the default (`global`) residency, matching `baseUrl`'s own
- * present-only-when-it-matters convention — a workspace's (BYOK) key never reaches this
- * module at all, so there is no "ignore it for BYOK" branch to keep in sync here.
+ * Stamps a native `openai` capability default with the fields of its resolved platform
+ * endpoint; other providers pass through. The fields are omitted entirely at the default
+ * (`global`) residency, matching `baseUrl`'s own present-only-when-it-matters convention — a
+ * workspace's (BYOK) key never reaches this module at all, so there is no "ignore it for BYOK"
+ * branch to keep in sync here.
  *
  * `platformEndpoint` is the single value `resolveLlmConfig` already derived from env; passing
  * it in means every capability default agrees with `ResolvedLlmConfig.openAIPlatformEndpoint`
  * and with what `WorkspaceLlmCapabilityResolver` would actually use — never stamping an endpoint
  * where nothing downstream would read it.
  */
-const openAIResidencyFields = (
+const withPlatformEndpointFields = (
   platformEndpoint: PlatformOpenAIEndpoint | undefined,
-): Pick<LlmCapabilityDefault, "baseUrl" | "openAIDataResidency" | "openAIAzureBaseUrl"> =>
-  platformEndpoint ? platformOpenAIEndpointFields(platformEndpoint) : {};
+) => (capabilityDefault: LlmCapabilityDefault): LlmCapabilityDefault =>
+  capabilityDefault.provider === "openai" && platformEndpoint
+    ? { ...capabilityDefault, ...platformOpenAIEndpointFields(platformEndpoint) }
+    : capabilityDefault;
 
 const resolveCapability = (
   capability: LlmCapabilityName,
   provider: LlmProviderName,
   model: string,
   env: ProviderEnv,
-  platformEndpoint?: PlatformOpenAIEndpoint,
 ): LlmCapabilityDefault => {
   if (provider === "openai") {
-    return { capability, provider, model, ...openAIResidencyFields(platformEndpoint) };
+    return { capability, provider, model };
   }
   const baseUrl = resolveBaseUrl(provider, env);
   return {
@@ -214,14 +250,13 @@ const hasRequiredProviderCredentials = (provider: LlmProviderName, env: Provider
 const resolveSupplementalEmbeddingConfigs = (
   primary: LlmCapabilityDefault,
   env: ProviderEnv,
-  platformEndpoint: PlatformOpenAIEndpoint | undefined,
 ): LlmCapabilityDefault[] => {
   const configs = new Map<LlmProviderName, LlmCapabilityDefault>();
   configs.set(primary.provider, primary);
 
   if (!configs.has("openai") && hasRequiredProviderCredentials("openai", env)) {
     const model = resolveEmbeddingModel("openai", undefined, env.OPENAI_VECTOR_MODEL);
-    configs.set("openai", resolveCapability("embeddings", "openai", model, env, platformEndpoint));
+    configs.set("openai", resolveCapability("embeddings", "openai", model, env));
   }
 
   if (!configs.has("openai-compatible") && hasRequiredProviderCredentials("openai-compatible", env)) {
@@ -237,40 +272,46 @@ const resolveSupplementalEmbeddingConfigs = (
 };
 
 export const resolveLlmConfig = (env: ProviderEnv): ResolvedLlmConfig => {
-  // Derived once, here, from the raw env values: every capability default below, and
-  // ResolvedLlmConfig.openAIPlatformEndpoint, agree with this single value instead of each
-  // re-reading or re-validating OPENAI_DATA_RESIDENCY / AZURE_OPENAI_ENDPOINT on their own.
-  const platformEndpoint = hasRequiredProviderCredentials("openai", env)
-    ? requirePlatformOpenAIEndpoint(requireOpenAIDataResidency(env.OPENAI_DATA_RESIDENCY), env.AZURE_OPENAI_ENDPOINT)
-    : undefined;
-
   const sharedProvider = asProvider(env.LLM_PROVIDER, "LLM_PROVIDER") ?? DEFAULT_PROVIDER;
 
   const chatProvider = asProvider(env.LLM_CHAT_PROVIDER, "LLM_CHAT_PROVIDER") ?? sharedProvider;
   const chatModel = resolveTextModel(chatProvider, env.LLM_CHAT_MODEL, env.OPENAI_CHAT_MODEL);
-  const chat = resolveCapability("chat", chatProvider, chatModel, env, platformEndpoint);
+  const chat = resolveCapability("chat", chatProvider, chatModel, env);
 
   const rewriteProvider = asProvider(env.LLM_REWRITE_PROVIDER, "LLM_REWRITE_PROVIDER") ?? sharedProvider;
   const rewriteModel = resolveTextModel(rewriteProvider, env.LLM_REWRITE_MODEL, env.OPENAI_CHAT_MODEL);
-  const rewrite = resolveCapability("rewrite", rewriteProvider, rewriteModel, env, platformEndpoint);
+  const rewrite = resolveCapability("rewrite", rewriteProvider, rewriteModel, env);
 
   const rerankProvider = asProvider(env.LLM_RERANK_PROVIDER, "LLM_RERANK_PROVIDER") ?? sharedProvider;
   const rerankModel = resolveTextModel(rerankProvider, env.LLM_RERANK_MODEL, env.OPENAI_RERANK_MODEL ?? env.OPENAI_CHAT_MODEL);
-  const rerank = resolveCapability("rerank", rerankProvider, rerankModel, env, platformEndpoint);
+  const rerank = resolveCapability("rerank", rerankProvider, rerankModel, env);
 
   const defaultEmbeddingProvider = sharedProvider === "claude" ? DEFAULT_PROVIDER : sharedProvider;
   const embeddingProvider = asProvider(env.LLM_EMBEDDING_PROVIDER, "LLM_EMBEDDING_PROVIDER")
     ?? defaultEmbeddingProvider;
   const embeddingModel = resolveEmbeddingModel(embeddingProvider, env.LLM_EMBEDDING_MODEL, env.OPENAI_VECTOR_MODEL);
-  const embeddings = resolveCapability("embeddings", embeddingProvider, embeddingModel, env, platformEndpoint);
-  const embeddingProviderConfigs = resolveSupplementalEmbeddingConfigs(embeddings, env, platformEndpoint);
+  const embeddings = resolveCapability("embeddings", embeddingProvider, embeddingModel, env);
+  const embeddingProviderConfigs = resolveSupplementalEmbeddingConfigs(embeddings, env);
+
+  // Derived once, here, from the raw env values and the capability defaults above: every
+  // stamped capability default, and ResolvedLlmConfig.openAIPlatformEndpoint, agree with this
+  // single value instead of each re-reading or re-validating OPENAI_DATA_RESIDENCY /
+  // AZURE_OPENAI_ENDPOINT on their own.
+  const platformEndpoint = hasRequiredProviderCredentials("openai", env)
+    ? requirePlatformOpenAIEndpoint(
+      requireOpenAIDataResidency(env.OPENAI_DATA_RESIDENCY),
+      env.AZURE_OPENAI_ENDPOINT,
+      { chat, rewrite, rerank, embeddings, embeddingProviderConfigs },
+    )
+    : undefined;
+  const stamp = withPlatformEndpointFields(platformEndpoint);
 
   return {
-    chat,
-    rewrite,
-    rerank,
-    embeddings,
-    embeddingProviderConfigs,
+    chat: stamp(chat),
+    rewrite: stamp(rewrite),
+    rerank: stamp(rerank),
+    embeddings: stamp(embeddings),
+    embeddingProviderConfigs: embeddingProviderConfigs.map(stamp),
     providerApiKeys: Object.fromEntries(
       PROVIDERS.flatMap((provider) => {
         const apiKey = resolveApiKey(provider, env);

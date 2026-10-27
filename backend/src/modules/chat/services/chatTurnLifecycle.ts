@@ -12,6 +12,14 @@ import {
 import type { AuditEventInput, AuditService } from "../../audit/contracts/index.js";
 import { DefaultAllowCapabilityPolicy, type CapabilityPolicy } from "../../../shared/domain/capabilityPolicy.js";
 import type { ActionCapabilityMap } from "../../../shared/domain/actionCapabilities.js";
+import {
+  executionModeAuditMetadata,
+  turnFailureAnalyticsProperties,
+  turnFailureAuditEvent,
+  turnFailureReportInput,
+} from "./turnFailureReporting.js";
+import type { ErrorReporter } from "../../../shared/errors/errorReporter.js";
+import type { LlmProviderFailureClassification } from "../../../shared/infra/llm/llmProviderFailureClassification.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import type { ConversationRepositoryPort } from "../../../db/repositories/conversationRepository.js";
 import type { MessageCreateInput, MessageRecord, MessageRepositoryPort } from "../../../db/repositories/messageRepository.js";
@@ -49,6 +57,7 @@ import type { ChatResponse, ChatRoute, ChatSuggestion, ChatTurnHandoff, ChatTurn
 import type { PreparedSession } from "./chatSessionPreparer.js";
 import type { ChatPresentedAnswer } from "./chatAnswerPresenter.js";
 import { appendDirectiveSteeringStage } from "./directiveTracePresenter.js";
+import { presentedSkillTurnOutcome } from "./presentedSkillTurn.js";
 import { appendConversationSummaryStage } from "./conversationSummaryTracePresenter.js";
 import {
   attachCapabilitySubTrace,
@@ -89,7 +98,7 @@ import {
   reviewTurnFacts,
   type ReviewTurnCorrelation,
 } from "./reviewDraft.js";
-import { reviewedTurnAuditEvent, reviewTurnFailureAuditEvent } from "./reviewTurnAudit.js";
+import { reviewedTurnAuditEvent } from "./reviewTurnAudit.js";
 import type {
   PageReadCandidateSource,
   PageReadDecision,
@@ -100,15 +109,15 @@ import { freezePageReadOutcome } from "./pageRead/pageReadSessionOutcome.js";
 const DISPATCH_STAGE_ID_PREFIX = "dispatch:";
 
 /**
- * Hang the retrieval activity trace on the engine spine's terminal dispatch stage.
- * The stage is found by kind (an assistant turn dispatches one terminal skill), so
- * this is robust to the presentation skill name being reclassified (grounded-miss).
+ * Hang the retrieval activity trace on the spine's last dispatch stage: the skill whose outcome
+ * was rendered, which is the fallback when a bound skill did not answer. Found by kind, so it
+ * is robust to the presentation skill name being reclassified (grounded-miss).
  */
 const attachRetrievalActivityTrace = (
   spine: ConversationTrace,
   activityTrace: ActivityTrace,
 ): ConversationTrace => {
-  const dispatchStage = spine.stages.find((stage) => stage.kind === "skill_dispatch");
+  const dispatchStage = spine.stages.filter((stage) => stage.kind === "skill_dispatch").at(-1);
   if (!dispatchStage) {
     return spine;
   }
@@ -200,22 +209,6 @@ interface DraftAssistantTurn {
 /** How a turn ended once completed; its execution mode's `completion` capability picks the arm. */
 export type CompletedAssistantTurn = PersistedAssistantTurn | DraftAssistantTurn;
 
-/**
- * A turn that returns its reply as a draft answers a customer's message with a reply nobody has
- * approved, so its audit records neither: only the review audit's fields (FR-045).
- */
-const auditsWithoutContent = (executionMode: TurnExecutionMode | undefined): boolean =>
-  turnExecutionCapabilities(executionMode).completion === "return_draft";
-
-/** Labels a non-live turn's audit records with its execution mode and the surface that ran it. */
-const executionModeAuditMetadata = (
-  executionMode: TurnExecutionMode | undefined,
-  surface: string | null | undefined,
-): Record<string, unknown> | null =>
-  executionMode === undefined || executionMode === "live"
-    ? null
-    : { executionMode, ...(surface ? { surface } : {}) };
-
 export interface AssistantTurnCommittedFacts {
   insertedActionTypes: readonly string[];
   decisionCreated: boolean;
@@ -250,12 +243,6 @@ export const actionIdempotencyKey = (
   payload: Record<string, unknown>,
 ): string =>
   `routine-action:${conversationId}:${type}:${createHash("sha256").update(JSON.stringify(payload)).digest("hex")}`;
-
-const toPresentationSkillTurnOutcome = (presentation: ChatPresentedAnswer): SkillTurnOutcome => ({
-  skillName: presentation.skillName,
-  outcome: presentation.skillOutcome,
-  status: presentation.skillStatus,
-});
 
 
 class RoutineActionAuthorizationError extends Error {
@@ -435,7 +422,7 @@ export const buildTurnTraceForPresentation = (
   const activitySummaryPresenter = new ActivitySummaryPresenter();
   const activityTracePresenter = new ActivityTracePresenter();
   const route = getChatTurnRoute(input.session, input.engineTrace);
-  const skillTurnOutcome = toPresentationSkillTurnOutcome(input.presentation);
+  const skillTurnOutcome = presentedSkillTurnOutcome(input.presentation);
   const retrieval = input.presentation.effectiveRetrieval ?? input.session.retrieval;
   const execution = {
     surface: "assistant" as const,
@@ -766,6 +753,10 @@ export class ChatTurnLifecycle {
     // Optional: when wired, a reply a newer input cut off mid-stream keeps the part its listener
     // heard. Absent, such a turn stores no reply.
     private readonly cutReplyStore?: CutReplyStore,
+    // Optional: when wired, a turn failure `isReportableFault` finds is reported once
+    // through this narrow port. Absent leaves `recordFailure`'s audit/analytics behavior
+    // unchanged — no error tracking, as before this existed.
+    private readonly errorReporter?: Pick<ErrorReporter, "report">,
   ) {
     this.capabilityPolicy = capabilityPolicy ?? new DefaultAllowCapabilityPolicy();
   }
@@ -1192,52 +1183,27 @@ export class ChatTurnLifecycle {
     existingAssistantMessageId: string | undefined,
     error: unknown,
     workflowPolicy = assertInteractiveAssistantWorkflow("chat.turn"),
+    // The caller's classification of `error` against the LLM provider call it came from
+    // (shared/infra/llm, computed before any AppError normalization). `null` when the
+    // caller has none, or the failure never reached a provider call at all.
+    providerFailure: LlmProviderFailureClassification | null = null,
   ) {
     if (session && existingAssistantMessageId) {
       await this.conversationRepository.touch(session.conversation.id, input.workspaceId);
     }
 
-    const failureEvent: AuditEventInput = {
-      accountId: input.accountId,
+    const failureAuditEvent = turnFailureAuditEvent({
       workspaceId: input.workspaceId,
-      eventType: "chat.answer",
-      eventStatus: "failure",
-      metadata: {
-        stage: "chat.answer",
-        workflow: workflowPolicy.workflow,
-        executionClass: workflowPolicy.executionClass,
-        conversationId: session?.conversation.id ?? input.conversationId,
-        userMessageId: session?.userMessage.id,
-        assistantMessageId: existingAssistantMessageId,
-        stream: input.stream,
-        citationCount: 0,
-        retrieval: session?.retrieval.diagnostics,
-        activityTrace: session?.retrieval.trace
-          ? this.activityTracePresenter.appendAnswerOutcome({
-              trace: session.retrieval.trace,
-              summary: this.activitySummaryPresenter.present(session.retrieval.diagnostics, {
-                execution: {
-                  surface: "assistant",
-                  path: getChatTurnRoute(session).type === "direct" ? "assistant_direct" : "assistant_retrieval",
-                  retrievalInvoked: getChatTurnRoute(session).type === "retrieval",
-                },
-              }),
-              outcome: {
-                answer: "",
-                stream: input.stream,
-                hadContexts: session.retrieval.contexts.length > 0,
-                retrievalSkipped: session.retrieval.diagnostics.retrievalSkipped,
-                durationMs: 0,
-              },
-            })
-          : undefined,
-        errorMessage: error instanceof Error ? error.message : "Unknown error",
-        ...executionModeAuditMetadata(input.executionMode, session?.conversation.sourceChannel),
-      },
-    };
-    const failureAuditEvent = auditsWithoutContent(input.executionMode)
-      ? reviewTurnFailureAuditEvent(failureEvent, error)
-      : failureEvent;
+      accountId: input.accountId,
+      conversationId: input.conversationId,
+      stream: input.stream,
+      executionMode: input.executionMode,
+      session,
+      existingAssistantMessageId,
+      error,
+      workflowPolicy,
+      route: session ? getChatTurnRoute(session) : undefined,
+    });
     const failedConversationId = session?.conversation.id ?? input.conversationId;
     if (failedConversationId) {
       // Keyed to the conversation so a turn failing while its conversation is mid-erasure
@@ -1252,7 +1218,32 @@ export class ChatTurnLifecycle {
       await this.auditService.record(failureAuditEvent);
     }
     if (turnExecutionCapabilities(input.executionMode).turnBookkeeping === "skip") {
+      // A safe_test/review turn is a preview, not a production incident: neither error
+      // tracking nor analytics hears about it, same gate as below for the live case.
       return;
+    }
+    // The report input is `null` exactly when `isReportableFault` says `error` is an
+    // already-handled, expected outcome (a quota/validation limit, a superseded turn,
+    // or an AppError marked `isExpectedOutcome` such as a lost client) rather than a
+    // fault — see turnFailureReporting.ts and shared/domain/errors.ts.
+    const reportInput = turnFailureReportInput({
+      workspaceId: input.workspaceId,
+      conversationId: failedConversationId,
+      executionMode: input.executionMode,
+      error,
+      providerFailure,
+    });
+    if (reportInput) {
+      // Fire-and-forget, like every other error-reporter caller: a sink (PostHog, say)
+      // has no fetch timeout, and awaiting it here would hold the turn's rethrow, its
+      // SSE response end, and the next turn's `waitForPredecessor` lease hostage to a
+      // stalled network call. The dedup this enables for the HTTP error handler's
+      // `wasReported` check still holds without awaiting: `ErrorReportingService.report`
+      // marks the WeakSet synchronously, before its own first await, so the mark has
+      // already happened by the time this line finishes — not after the call settles.
+      void this.errorReporter?.report(reportInput).catch(() => {
+        // Error reporting is observational; it must not change failure behavior.
+      });
     }
     try {
       await this.productAnalyticsService.track({
@@ -1260,11 +1251,8 @@ export class ChatTurnLifecycle {
         workspaceId: input.workspaceId,
         accountId: input.accountId,
         subjectType: "conversation",
-        subjectId: session?.conversation.id ?? input.conversationId,
-        properties: {
-          stream: input.stream,
-          errorMessage: error instanceof Error ? error.message : "Unknown error",
-        },
+        subjectId: failedConversationId,
+        properties: turnFailureAnalyticsProperties({ stream: input.stream, error, providerFailure }),
         source: "backend",
       });
     } catch {

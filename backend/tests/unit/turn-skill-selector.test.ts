@@ -93,6 +93,8 @@ describe("ChatTurnSkillSelector", () => {
       {
         skillName: "order.lookup",
         reason: "directive:order-status",
+        // The skill the turn would have answered with unbound stands in if the bound one fails.
+        fallbackSkillName: "retrieval.answer",
         metadata: {
           directiveBinding: {
             directiveName: "order-status",
@@ -119,6 +121,33 @@ describe("ChatTurnSkillSelector", () => {
         },
       },
     ]);
+  });
+
+  it("names the skill that claims the turn by default as the bound skill's fallback", () => {
+    const orderLookup = skillStub("order.lookup", () => false);
+    const boundSelector = new ChatTurnSkillSelector([retrieval, social, orderLookup], strategy, {
+      agentSkillStates: new Map([
+        ["order.lookup", { enabled: true, turnCapable: true, stagingCapable: false }],
+      ]),
+    });
+
+    const { decision } = boundSelector.select(sessionWithBoundDirective("direct"));
+
+    expect(decision.selected[0]).toMatchObject({ skillName: "order.lookup", fallbackSkillName: "direct.answer" });
+  });
+
+  it("names no fallback when the bound skill is also the default", () => {
+    const orderLookup = skillStub("order.lookup", () => false);
+    const boundSelector = new ChatTurnSkillSelector([orderLookup], strategy, {
+      agentSkillStates: new Map([
+        ["order.lookup", { enabled: true, turnCapable: true, stagingCapable: false }],
+      ]),
+    });
+
+    const { decision } = boundSelector.select(sessionWithBoundDirective("retrieval"));
+
+    expect(decision.selected[0]?.skillName).toBe("order.lookup");
+    expect(decision.selected[0]).not.toHaveProperty("fallbackSkillName");
   });
 
   it("lets a forced skill override directive bindings for host-owned terminal turns", () => {

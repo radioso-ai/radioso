@@ -25,6 +25,11 @@ import type {
 } from "../../../shared/infra/llm/providerTypes.js";
 import { createReusableInputBoundary } from "../../../shared/infra/llm/inputTokenCaching.js";
 import type { TurnPlanGatewayFactory } from "../../../shared/infra/llm/turnPlanGateway.js";
+import {
+  classifyLlmProviderFailure,
+  type LlmProviderFailureClassification,
+} from "../../../shared/infra/llm/llmProviderFailureClassification.js";
+import { withTimeout } from "./turnPlanTimeout.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
 import { parseStructuredRewrite, type StructuredRewriteResult } from "../../retrieval/public.js";
 import {
@@ -968,29 +973,6 @@ export const turnPlanDirectiveClassifications = (plan: TurnPlan): DirectiveClass
     .filter((classification) => classification.matched)
     .map((classification) => ({ name: classification.name, confidence: classification.confidence }));
 
-const withTimeout = (
-  signal: AbortSignal | undefined,
-  timeoutMs: number,
-): { signal: AbortSignal; dispose: () => void } => {
-  const controller = new AbortController();
-  const onAbort = () => controller.abort();
-  if (signal) {
-    if (signal.aborted) {
-      controller.abort();
-    } else {
-      signal.addEventListener("abort", onAbort, { once: true });
-    }
-  }
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  return {
-    signal: controller.signal,
-    dispose: () => {
-      clearTimeout(timer);
-      signal?.removeEventListener("abort", onAbort);
-    },
-  };
-};
-
 /**
  * One fused chat-tier LLM call that replaces the four staged fresh-turn
  * classification calls. It owns the prompt, the strict parse, and semantic
@@ -1009,9 +991,21 @@ export class TurnPlanService {
     } = {},
   ) {}
 
-  async plan(request: TurnPlanRequest): Promise<TurnPlan | null> {
+  /**
+   * `onFailure`/`onTimeout` are pure observability sinks, never control-flow: the
+   * fallback (`null`) is identical with or without them. Both fire only when `plan()`
+   * threw, never for a clean miss (`parseTurnPlan` returning `null`). `onTimeout`
+   * distinguishes this call's own bound timing out from any other thrown error (an
+   * external cancellation included), which `onFailure` alone cannot: both look like
+   * an unclassifiable `null` to it, same as malformed output would without `onTimeout`.
+   */
+  async plan(
+    request: TurnPlanRequest,
+    onFailure?: (failure: LlmProviderFailureClassification | null) => void,
+    onTimeout?: () => void,
+  ): Promise<TurnPlan | null> {
     const timeoutMs = this.options.timeoutMs ?? CHAT_BEHAVIOR.turnPlanning.timeoutMs;
-    const { signal, dispose } = withTimeout(request.signal, timeoutMs);
+    const { signal, dispose, timedOut } = withTimeout(request.signal, timeoutMs);
     try {
       const client = await this.gatewayFactory.create({
         workspaceContext: request.workspaceContext,
@@ -1044,7 +1038,11 @@ export class TurnPlanService {
         quickReplyLane: request.quickReplyLane,
       });
       return plan;
-    } catch {
+    } catch (error) {
+      if (timedOut()) {
+        onTimeout?.();
+      }
+      onFailure?.(classifyLlmProviderFailure(error));
       return null;
     } finally {
       dispose();

@@ -19,6 +19,7 @@ import {
   ProfileBoundEmbeddingPorts,
 } from "../../../modules/embeddingProfiles/public.js";
 import { resolveLlmConfig } from "../../../shared/infra/llm/providerConfig.js";
+import { PlatformAwareWorkspaceModelAvailability } from "../../composition/workspaceModelAvailability.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 import { PgVectorAdapter, PostgresChunkCandidateHydrator, VectorIndexReconciler } from "../../../modules/retrieval/composition.js";
 import { buildInfrastructure, buildRepositories } from "./infra.js";
@@ -172,17 +173,25 @@ export const buildDocumentRetrievalGraph = (input: {
   );
   const chunkHydrator = new PostgresChunkCandidateHydrator(infrastructure.database.kysely);
   const vectorSearch = pgVectorAdapter.search;
+  const llmDefaults = resolveLlmConfig(env);
+  // One instance for what a call runs (the resolver) and what a write accepts (settings, agents).
+  const workspaceModelAvailability = new PlatformAwareWorkspaceModelAvailability({
+    defaults: llmDefaults,
+    credentials: input.workspaceProviderCredentialsService,
+  });
   const workspaceLlmCapabilitySettingsService = buildWorkspaceLlmCapabilitySettingsService({
     auditService: infrastructure.auditService,
     capabilityRepository: repositories.retrievalSettingsRepository,
     logger,
+    modelAvailability: workspaceModelAvailability,
   });
   const llmCapabilityResolver = buildLlmCapabilityResolver({
     env,
-    defaults: resolveLlmConfig(env),
+    defaults: llmDefaults,
     settings: workspaceLlmCapabilitySettingsService,
     credentials: input.workspaceProviderCredentialsService,
     managedModelPolicy: infrastructure.managedModelPolicy,
+    modelAvailability: workspaceModelAvailability,
     logger,
   });
   llmRegistry.setResolver(llmCapabilityResolver);
@@ -264,5 +273,6 @@ export const buildDocumentRetrievalGraph = (input: {
     workspace,
     workspaceIngestionReprocessService,
     workspaceLlmCapabilitySettingsService,
+    workspaceModelAvailability,
   };
 };

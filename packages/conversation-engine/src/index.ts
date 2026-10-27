@@ -33,6 +33,7 @@ import type {
 import { resumeAwaitingDecision } from "./awaitingDecision.js";
 import { attemptRoutine, claimRoutine } from "./routineActivation.js";
 import { createCoverageVerdictSink, type CoverageVerdictSinkDeps } from "./coverageVerdictSink.js";
+import { dispatchStageOutputs, fallbackSelectionFor } from "./skillFallback.js";
 import { buildResolvedSteering, resolveDirectiveMatches } from "./steering.js";
 import {
   createInputEvent,
@@ -408,9 +409,13 @@ export class DefaultConversationEngine implements ConversationEngine {
     const asksForSkillInput = !hasFailedResolution && awaitingSkillInput.length > 0;
     const outcomes: TurnOutcome[] = [...preflightOutcomes];
     let mergedSteering = [...selectedTurn.steering];
-    if (!hasFailedResolution && awaitingSkillInput.length === 0) {
-      for (const { skill, selected } of resolvedSelections) {
-
+    // Dispatches one skill against the turn as it stands, records its stage, and folds its
+    // guidance into the steering every later dispatch and compose see.
+    const dispatchSkill = async (
+      skill: SkillDefinition,
+      selected: SelectedSkill,
+      fallbackFor?: string,
+    ): Promise<TurnOutcome> => {
       const turnForSkill: TurnContext = {
         ...selectedTurn,
         stagedContext: [...selectedTurn.stagedContext, ...mergeStagedContext(outcomes)],
@@ -428,22 +433,30 @@ export class DefaultConversationEngine implements ConversationEngine {
         guidanceToSteering(guidance, outcome.outcome.control?.lifespan === "session" ? 100 : undefined)
       );
       mergedSteering = [...mergedSteering, ...skillGuidance];
-      outcomes.push({
-        ...outcome,
-        steering: [...outcome.steering, ...skillGuidance],
-      });
       stages.push(timedStage(dispatchStartedAt, dispatchCompletedAt, {
         id: `dispatch:${selected.skillName}`,
         kind: "skill_dispatch",
         status: outcome.outcome.status === "completed" ? "applied" : "fallback",
-        outputs: {
+        outputs: dispatchStageOutputs({
           skillName: selected.skillName,
-          outcomeStatus: outcome.outcome.status,
+          outcome,
           guidanceCount: skillGuidance.length,
-        },
+          fallbackFor,
+        }),
         // A capability's domain trace rides through opaquely; the engine never inspects it.
         ...(outcome.subTrace ? { subTrace: outcome.subTrace } : {}),
       }));
+      return { ...outcome, steering: [...outcome.steering, ...skillGuidance] };
+    };
+    if (!hasFailedResolution && awaitingSkillInput.length === 0) {
+      for (const { skill, selected } of resolvedSelections) {
+        const outcome = await dispatchSkill(skill, selected);
+        // A skill that settles without completing stays visible on its own dispatch stage;
+        // the fallback's outcome takes its place among the outcomes compose renders.
+        const fallback = fallbackSelectionFor(input.skills, selected, outcome);
+        outcomes.push(fallback
+          ? await dispatchSkill(fallback.skill, fallback.selected, selected.skillName)
+          : outcome);
       }
     } else if (asksForSkillInput) {
       mergedSteering = [...mergedSteering, skillInputSteering(awaitingSkillInput)];

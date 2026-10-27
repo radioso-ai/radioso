@@ -1,4 +1,5 @@
 import { ActionRequestRepository } from "../../../db/repositories/actionRequestRepository.js";
+import { createActionOutboxQueueStateReporter } from "./chatActionOutboxTelemetry.js";
 import { ContextVariableRepository } from "../../../db/repositories/contextVariableRepository.js";
 import { RoutineDefinitionRepository } from "../../../db/repositories/routineDefinitionRepository.js";
 import { RoutineStateRepository } from "../../../db/repositories/routineStateRepository.js";
@@ -590,34 +591,7 @@ export const buildChatServices = (input: {
     metrics: input.metricsRegistry,
     errorReporter: input.errorReporter,
   });
-  // Outbox depth / oldest-pending-age — the operator-alertable signal for a stuck outbox.
-  // Shared by the poll worker's own interval (below, `ActionDispatchWorker`'s old 5 s carried
-  // over unchanged) and the push worker's task route (`actionDispatchWorkerTaskRoutes.ts`),
-  // which has no interval of its own — Cloud Run's push worker only runs while a request is in
-  // flight, so without this call after every pushed drain and sweep, production never emits
-  // this signal at all. Best-effort and self-contained: never throws, so a reporting failure
-  // never fails the drain or sweep request it rides on.
-  const reportActionOutboxQueueState = async (): Promise<void> => {
-    try {
-      const snapshot = await actionOutbox.getPendingDepthSnapshot();
-      const oldestPendingAgeMs = snapshot.oldestPendingCreatedAt
-        ? Math.max(0, Date.now() - snapshot.oldestPendingCreatedAt.getTime())
-        : 0;
-      await input.telemetryService.emit({
-        eventType: "action.dispatch.queue_state",
-        metrics: {
-          pendingCount: snapshot.pendingCount,
-          inProgressCount: snapshot.inProgressCount,
-          oldestPendingAgeMs,
-        },
-      });
-    } catch (error) {
-      input.logger.error(
-        { err: error },
-        "Action dispatch queue-depth reporting failed",
-      );
-    }
-  };
+  const reportActionOutboxQueueState = createActionOutboxQueueStateReporter(actionOutbox, input.telemetryService, input.logger);
   // Reported on its own interval in the poll worker, not tied to a drain: unlike an
   // edge-triggered log, a permanently stuck backlog never produces another claim to report on,
   // so a stale gauge would hide it.
@@ -798,13 +772,13 @@ export const buildChatServices = (input: {
     logger: input.logger,
     metrics: input.metricsRegistry ?? null,
   });
-  // One agent-skill turn runtime shared by the live chat turn and workbench replay,
-  // so a replayed directive-bound turn selects and dispatches exactly like production.
+  // One agent-skill turn runtime for live chat and workbench replay, so a replayed bound turn dispatches like production.
   const agentSkillTurnSkillProvider = new RepositoryAgentSkillTurnSkillProvider({
     agentSkills: new AgentSkillRepository(input.database.kysely),
     executorRegistry: input.composition.skillExecutorRegistry,
     capabilityPolicy: input.composition.capabilityPolicy,
     metricsRegistry: input.metricsRegistry,
+    logger: input.logger,
   });
   const turnClarificationPolicy = {
     floor: 0,
@@ -892,6 +866,7 @@ export const buildChatServices = (input: {
     actionCapabilities: input.composition.actionCapabilityMap,
     capabilityPolicy: input.composition.capabilityPolicy,
     logger: input.logger,
+    errorReporter: input.errorReporter,
     conversationTurnRegistry: new InMemoryConversationTurnRegistry(
       new LoggingConversationTurnInterruptionObserver(input.logger, input.metricsRegistry),
     ),

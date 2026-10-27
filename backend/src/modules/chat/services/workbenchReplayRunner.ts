@@ -201,7 +201,7 @@ interface WorkbenchReplayRunnerOptions {
    * routines can fire, exactly as in a live turn) without any durable write.
    */
   coverageHeadRecorder?: ChatTurnAssemblyOptions["coverageHeadRecorder"];
-  logger?: Pick<AppLogger, "warn">;
+  logger?: Pick<AppLogger, "warn" | "info">;
   /** Records a streamed replay's time to its first answer chunk; latency only, never content. */
   streamMetrics?: Pick<MetricsRegistry, "observeHistogram"> | null;
 }

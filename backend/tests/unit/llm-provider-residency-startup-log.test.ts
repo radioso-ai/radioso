@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { buildLlmCapabilityResolver, buildLlmRegistry } from "../../src/app/server/builders/integrations.js";
 import { getEnv } from "../../src/app/config/env.js";
+import { PlatformAwareWorkspaceModelAvailability } from "../../src/app/composition/workspaceModelAvailability.js";
 import { resolveLlmConfig } from "../../src/shared/infra/llm/providerConfig.js";
 import type { ManagedModelPolicy } from "../../src/shared/domain/managedModelPolicy.js";
 import { WorkspaceLlmCapabilitySettingsService } from "../../src/modules/settings/composition.js";
@@ -50,7 +51,8 @@ describe("buildLlmCapabilityResolver OpenAI data residency wiring", () => {
       settings,
       credentials,
       managedModelPolicy: noopManagedModelPolicy,
-      logger: { debug: vi.fn(), info: vi.fn() },
+      modelAvailability: new PlatformAwareWorkspaceModelAvailability({ defaults, credentials }),
+      logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn() },
     });
 
     const config = await resolver.resolve("chat", { workspaceId: "ws-1" });

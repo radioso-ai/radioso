@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createAgentBundleServices } from "../../src/app/composition/agentBundleComposition.js";
+import { PlatformAwareWorkspaceModelAvailability } from "../../src/app/composition/workspaceModelAvailability.js";
 import { AccountRepository } from "../../src/db/repositories/accountRepository.js";
 import { AgentRepository } from "../../src/db/repositories/agentRepository.js";
 import { AgentBundleImportRepository } from "../../src/db/repositories/agentBundleImportRepository.js";
@@ -367,6 +368,11 @@ describeIfDatabase("agent bundle round trip against Postgres", () => {
       importOrphanAgeMs: 15 * 60 * 1_000,
       mcpConnectionRepository: { listByAgent: async () => [] },
       externalSkillDefinitionRepository: { listByAgent: async () => [] },
+      // A deployment whose platform keys serve every model.
+      modelAvailability: new PlatformAwareWorkspaceModelAvailability({
+        defaults: {},
+        credentials: { hasCredentials: async () => false },
+      }),
     });
   }
 });

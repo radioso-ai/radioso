@@ -1,4 +1,8 @@
 import { badRequest } from "../../../shared/domain/errors.js";
+import {
+  assertWorkspaceCanRunModel,
+  type WorkspaceModelAvailability,
+} from "../../../shared/domain/workspaceModelAvailability.js";
 import type { AuditPort } from "../../audit/contracts/index.js";
 import type {
   WorkspaceLlmCapability,
@@ -6,7 +10,7 @@ import type {
   WorkspaceLlmCapabilityPreferenceInput,
 } from "../contracts/llmCapability.js";
 import type { WorkspaceLlmCapabilityPreferencesRepositoryPort } from "../contracts/services.js";
-import { isKnownModelForProvider } from "../../../shared/infra/llm/knownModels.js";
+import { isKnownModelForProvider, knownModelsByProvider } from "../../../shared/infra/llm/knownModels.js";
 import type { LlmProviderName } from "../../../shared/infra/llm/providerTypes.js";
 import type { AppLogger } from "../../../shared/observability/logger.js";
 
@@ -26,6 +30,8 @@ export class WorkspaceLlmCapabilitySettingsService {
     private readonly repository: WorkspaceLlmCapabilityPreferencesRepositoryPort,
     private readonly auditService: AuditPort,
     private readonly logger?: Pick<AppLogger, "warn">,
+    /** Absent means every catalog model runs (a deployment whose platform keys serve every model). */
+    private readonly modelAvailability?: WorkspaceModelAvailability,
   ) {}
 
   async listForWorkspace(workspaceId: string): Promise<WorkspaceLlmCapabilityPreference[]> {
@@ -40,6 +46,22 @@ export class WorkspaceLlmCapabilitySettingsService {
     return all.find((entry) => entry.capability === capability) ?? null;
   }
 
+  /**
+   * Per provider, the models this workspace can pick: the availability's list where it restricts
+   * the provider, otherwise the whole catalog (`openai-compatible` stays free-form, so empty).
+   */
+  async runnableModelsByProvider(workspaceId: string): Promise<Record<LlmProviderName, string[]>> {
+    const entries = await Promise.all(
+      VALID_PROVIDERS.map(async (provider) => {
+        const runnable = this.modelAvailability
+          ? await this.modelAvailability.runnableModels(workspaceId, provider)
+          : null;
+        return [provider, [...(runnable ?? knownModelsByProvider[provider])]] as const;
+      }),
+    );
+    return Object.fromEntries(entries) as Record<LlmProviderName, string[]>;
+  }
+
   async setPreference(
     workspaceId: string,
     capability: WorkspaceLlmCapability,
@@ -47,6 +69,7 @@ export class WorkspaceLlmCapabilitySettingsService {
     actor: WorkspaceLlmCapabilityActor,
   ): Promise<WorkspaceLlmCapabilityPreference> {
     this.assertValidInput(input);
+    await this.assertRunnable(workspaceId, capability, { provider: input.provider, model: input.model.trim() });
     try {
       // Capability preferences are stored on the retrieval_settings row. Ensure
       // the row exists before writing one of the capability columns; otherwise
@@ -130,6 +153,25 @@ export class WorkspaceLlmCapabilitySettingsService {
         `Model "${input.model.trim()}" is not supported for provider "${input.provider}". See the workspace LLM models settings for the current catalog.`,
       );
     }
+  }
+
+  /**
+   * A stored pick that stopped being runnable stays re-writable as-is, so a client re-sending the
+   * stored value is never refused; the capability resolver runs the default in its place.
+   */
+  private async assertRunnable(
+    workspaceId: string,
+    capability: WorkspaceLlmCapability,
+    pick: { provider: LlmProviderName; model: string },
+  ): Promise<void> {
+    if (!this.modelAvailability) {
+      return;
+    }
+    const stored = await this.getPreference(workspaceId, capability);
+    if (stored?.provider === pick.provider && stored.model === pick.model) {
+      return;
+    }
+    await assertWorkspaceCanRunModel(this.modelAvailability, workspaceId, pick);
   }
 
   private async recordAudit(input: {

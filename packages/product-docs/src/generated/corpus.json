@@ -2038,7 +2038,7 @@
         {
           "id": "voice-agents-radioso-creates",
           "heading": "Voice agents Radioso creates",
-          "body": "**Connect** on an agent's **Voice** card creates an ElevenLabs agent in the workspace's own ElevenLabs account, and that agent posts every turn back to this deployment through the same `/backend` path the dashboard and website embed already use: `{APP_BASE_URL}/backend/api/v1/agents/<agent-id>/voice/elevenlabs/v1`. ElevenLabs is on the public internet, so Connect needs `APP_BASE_URL` set to an address it can reach — not `localhost`, a private network address, or a `.local`/`.internal` name. Until it is, the Voice card says Connect is unavailable and Connect answers `503 voice_connection_unavailable`."
+          "body": "**Connect** on an agent's **Voice** card creates an ElevenLabs agent in the workspace's own ElevenLabs account, and that agent posts every turn, carrying the agent's bearer credential, back to this deployment through the same `/backend` path the dashboard and website embed already use: `{APP_BASE_URL}/backend/api/v1/agents/<agent-id>/voice/elevenlabs/v1`. ElevenLabs is on the public internet, so Connect needs `APP_BASE_URL` set to an HTTPS address reachable from the internet — not `localhost`, a private network address, a `.local`/`.internal` name, or a single-label host name like a Docker or Kubernetes service name. Until it is, the Voice card says Connect is unavailable and Connect answers `503 voice_connection_unavailable`."
         },
         {
           "id": "agent-channel-chat-rate-limits",

@@ -8,7 +8,8 @@ const API_PATH = "/api/v1";
 
 /**
  * Whether `APP_BASE_URL` names an address the public internet — and so a vendor agent — can
- * reach. Judged structurally, from the URL's hostname alone: no network call.
+ * reach. Judged structurally, from the URL's scheme and hostname alone: no network call. A vendor
+ * agent sends the agent's bearer credential to this address, so only `https:` qualifies.
  */
 export const isAppBaseUrlPubliclyReachable = (appBaseUrl: string): boolean => {
   let url: URL;
@@ -17,7 +18,7 @@ export const isAppBaseUrlPubliclyReachable = (appBaseUrl: string): boolean => {
   } catch {
     return false;
   }
-  return isPubliclyReachableHostname(url.hostname);
+  return url.protocol === "https:" && isPubliclyReachableHostname(url.hostname);
 };
 
 /**

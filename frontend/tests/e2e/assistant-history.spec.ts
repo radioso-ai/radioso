@@ -1513,7 +1513,7 @@ test("documents direct page links request only the target offset page", async ({
   await expect(page.getByRole("heading", { name: "Documents", exact: true })).toBeVisible();
   await expect(page.getByRole("table", { name: "Documents" })).toBeVisible();
 
-  expect(requestLog).toContain("GET /document/?limit=100&offset=200");
-  expect(requestLog).not.toContain("GET /document/?limit=100&offset=100");
-  expect(requestLog.some((request) => request.startsWith("GET /document/?limit=100&cursor="))).toBe(false);
+  expect(requestLog).toContain("GET /document?limit=100&offset=200");
+  expect(requestLog).not.toContain("GET /document?limit=100&offset=100");
+  expect(requestLog.some((request) => request.startsWith("GET /document?limit=100&cursor="))).toBe(false);
 });

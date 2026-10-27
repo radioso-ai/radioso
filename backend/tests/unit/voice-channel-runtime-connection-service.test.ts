@@ -82,8 +82,11 @@ const serviceWith = (setup: Setup = {}) => {
   /** Every step taken while the agent's connection lock was held, by the operation that held it. */
   const held: string[] = [];
   let holding = false;
+  /** How many times the agent's connection lock was taken at all, held or not. */
+  let lockRunCount = 0;
   const lock = {
     run: async <T,>(_agent: { workspaceId: string; agentId: string }, work: () => Promise<T>) => {
+      lockRunCount += 1;
       if (setup.lockHeld || holding) return { ran: false as const };
       holding = true;
       const before = steps.length;
@@ -156,6 +159,7 @@ const serviceWith = (setup: Setup = {}) => {
     profileNow: () => profile,
     /** The credentials that admit the agent's turns now, by id. */
     activeNow: () => [...active.keys()],
+    lockRunCount: () => lockRunCount,
   };
 };
 
@@ -588,12 +592,21 @@ describe("voice runtime connection: following the agent", () => {
   it.each([
     ["no connection", null, boundTo("agent_theirs")],
     ["a runtime bound by hand", managed(), boundTo("agent_theirs")],
-  ])("leaves an agent with %s alone", async (_label, connection, profile) => {
-    const { service, steps } = serviceWith({ connection, profile });
+  ])("leaves an agent with %s alone, and never pins a lock for it", async (_label, connection, profile) => {
+    const { service, steps, lockRunCount } = serviceWith({ connection, profile });
 
     await service.syncPrimaryLanguage(agent);
 
     expect(steps).toEqual([]);
+    expect(lockRunCount()).toBe(0);
+  });
+
+  it("never takes the agent's connection lock for an agent with no voice runtime connection at all", async () => {
+    const { service, lockRunCount } = serviceWith({ connection: null, profile: { name: "Front desk", defaultLocale: "it", runtime: null } });
+
+    await service.syncPrimaryLanguage(agent);
+
+    expect(lockRunCount()).toBe(0);
   });
 
   it("never rejects, and logs a sync the vendor refused", async () => {

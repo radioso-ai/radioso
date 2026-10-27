@@ -242,6 +242,11 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
    * Sets the vendor agent Radioso maintains up again after the agent's default locale changed, so
    * calls start in the new language. Never rejects: a sync that fails is logged and counted, and
    * Connect repairs it. It mints nothing: a vendor agent that is gone needs Connect.
+   *
+   * Most agents carry no voice runtime connection, so this reads the connection row unlocked
+   * first and returns before taking the agent's connection lock — which pins a pool connection —
+   * when there is plainly nothing to sync. `syncHoldingLock` repeats the same check once the lock
+   * is held, against a possibly stale read.
    */
   async syncPrimaryLanguage(agent: AgentRef): Promise<void> {
     const { workspaceId, agentId } = agent;
@@ -251,6 +256,7 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
       this.record(sync.vendor, "sync", outcome);
     };
     try {
+      if (!(await this.maintainedConnection(agent, sync))) return;
       // A Connect or Disconnect running now sets the vendor agent up itself, or removes it.
       const held = await this.dependencies.lock.run(agent, () => this.syncHoldingLock(agent, sync));
       if (!held.ran) return warn("connection_busy");
@@ -261,6 +267,18 @@ export class VoiceRuntimeConnectionService implements VoiceRuntimeConnectionPort
     } catch (error) {
       warn(failureOf(error) ?? "error", vendorErrorFields(error));
     }
+  }
+
+  /**
+   * Whether the agent has a voice runtime connection Radioso maintains, read without the lock.
+   * Sets `sync.vendor` to the connection's vendor once one is found, for the caller's log.
+   */
+  private async maintainedConnection(agent: AgentRef, sync: { vendor: VoiceVendor }): Promise<boolean> {
+    const connection = await this.dependencies.connections.find(agent);
+    if (!connection) return false;
+    sync.vendor = connection.vendor;
+    const profile = await this.dependencies.agents.findRuntimeProfile(agent);
+    return profile !== null && isMaintainedRuntime(profile.runtime, connection);
   }
 
   /** The sync's own work, run while the agent's lock is held. `sync.vendor` follows the connection's vendor, for the caller's log. */

@@ -18,6 +18,9 @@ import { agentVoiceConnectionApi } from '@/lib/api-agent-voice-connection'
 import { getApiErrorCode, getApiErrorMessage } from '@/lib/api-error'
 import { providerDisplayName } from '@/lib/api-llm-providers'
 import type { AgentVoiceConnection } from '@/lib/api-types'
+import { useAuth } from '@/lib/auth-context'
+import { buildDashboardHref } from '@/lib/dashboard-routes'
+import { useWorkspace } from '@/lib/workspace-context'
 import { AGENT_VOICE_SAVED_EVENT, type VoiceRuntimeBinding, type VoiceRuntimeRegion } from '@/lib/voice-settings-form'
 
 /** Where the vendor keeps a call's recording, by the account's data residency region. */
@@ -52,19 +55,27 @@ type Action = 'connect' | 'disconnect'
  */
 export function VoiceRuntimeConnection({
   agentId,
-  providersHref,
   disabled,
   onRuntimeChange,
   onBusyChange,
 }: {
   agentId: string
-  /** Settings → Providers, where the vendor key is stored. */
-  providersHref?: string
   /** True while the card saves its form: the binding must not change under the save. */
   disabled: boolean
   onRuntimeChange: (runtime: VoiceRuntimeBinding | null) => void
   onBusyChange: (busy: boolean) => void
 }) {
+  const { user } = useAuth()
+  const { activeWorkspaceId, activeWorkspace } = useWorkspace()
+  // Settings → Providers, where the vendor key is stored.
+  const providersHref = user
+    ? buildDashboardHref(user.accountId, {
+      section: 'settings',
+      settingsTab: 'providers',
+      workspaceId: activeWorkspaceId ?? undefined,
+      workspacePublicRouteKey: activeWorkspace?.publicRouteKey,
+    })
+    : undefined
   const [status, setStatus] = useState<AgentVoiceConnection | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [busy, setBusy] = useState<Action | null>(null)

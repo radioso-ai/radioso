@@ -123,7 +123,7 @@ function VoiceLanguageEditor({
  * keyed by `agentId`: a save replaces both blocks, so one agent's form must never outlive a switch
  * to another agent.
  */
-export function VoiceChannelCard({ agentId, providersHref }: { agentId: string; providersHref?: string }) {
+export function VoiceChannelCard({ agentId }: { agentId: string }) {
   const [form, setForm] = useState<VoiceSettingsForm | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
   // While Connect or Disconnect runs, a save would send the binding it is about to replace.
@@ -199,7 +199,6 @@ export function VoiceChannelCard({ agentId, providersHref }: { agentId: string; 
           </div>
           <VoiceRuntimeConnection
             agentId={agentId}
-            providersHref={providersHref}
             disabled={saveState === 'saving'}
             // The binding is already stored; the form takes it over so its next save keeps it.
             onRuntimeChange={(runtime) => setForm((current) => (current ? { ...current, runtime } : current))}

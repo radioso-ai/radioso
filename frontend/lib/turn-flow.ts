@@ -14,6 +14,7 @@ import {
   type StageTone,
 } from '@/lib/activity-stage-presentation'
 import { answerCoverageOutcomePresentation, answerCoverageReasonLabel } from '@/lib/answer-coverage'
+import { skillDispatchOutcome } from '@/lib/skill-dispatch-outcome'
 import {
   answerCoverageFromTurnTrace,
   getCapabilitySubTrace,
@@ -610,7 +611,8 @@ export const envelopeToFlowGraph = (
         break
       }
       case 'skill_dispatch': {
-        steps.dispatch ??= stage
+        // The last dispatch is the one whose outcome was rendered: a fallback follows the skill it replaced.
+        steps.dispatch = stage
         const scope = dispatchCount === 0 ? '' : `${dispatchCount}:`
         const skillId = dispatchCount === 0 ? 'skill' : `skill:${dispatchCount}`
         dispatchCount += 1
@@ -626,7 +628,8 @@ export const envelopeToFlowGraph = (
         const span = capabilitySpan(leaf?.kind === 'activity-trace' ? leaf.trace : undefined, stage)
         const durationMs = spanMs(span)
         const flagged = flaggedStep(path?.nodes ?? [])
-        const outcomeStatus = asString(stage.outputs?.outcomeStatus)
+        const dispatched = skillDispatchOutcome(stage.outputs)
+        const note = flagged.note ?? dispatched.fallbackNote
         const skill = step(
           {
             id: skillId,
@@ -634,8 +637,8 @@ export const envelopeToFlowGraph = (
             label: leaf ? titleCase(leaf.namespace) : skillName,
             sublabel:
               (leaf?.kind === 'activity-trace' ? activityTraceSummary(leaf.trace) : undefined)
-              ?? (leaf ? skillName : outcomeStatus ? spaced(outcomeStatus) : undefined),
-            ...(flagged.note ? { note: flagged.note } : {}),
+              ?? (leaf ? skillName : dispatched.outcome),
+            ...(note ? { note } : {}),
             status: stage.status,
             tone: worstTone([statusTone(stage.status), flagged.tone]),
             ...(durationMs === undefined ? {} : { durationMs }),
@@ -645,7 +648,7 @@ export const envelopeToFlowGraph = (
           stage.kind,
           span,
         )
-        phaseLabels.act ??= skill.label
+        phaseLabels.act = skill.label
         if (path?.nodes.length) {
           for (const pathNode of path.nodes) flow.add(pathNode)
           flow.edges.push(...path.edges)

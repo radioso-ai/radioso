@@ -24,6 +24,8 @@ export interface SkillTurnOutcome {
   skillName: string;
   outcome: string;
   status: SkillTurnStatus;
+  /** Set when this skill failed and another skill wrote the reply in its place. */
+  fallback?: { skillName: string; failureReason?: string };
 }
 
 /**

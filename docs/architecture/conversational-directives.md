@@ -1,7 +1,7 @@
 ---
 title: "Conversational Directives"
 description: "Rules that shape how the assistant behaves per turn by matching conditions, injecting steering instructions, and optionally routing to a skill."
-last_updated: 2026-09-30
+last_updated: 2026-10-27
 ---
 
 # Conversational Directives
@@ -127,6 +127,26 @@ turn falls back to normal selection, the directive action still steers the
 reply, and the trace records the skipped binding with the reason. The backend
 also writes a warn log with workspace, agent, conversation, directive name,
 skill name, and reason. It does not log message text or document content.
+
+A bound external MCP skill that is selected but fails — the call fails or
+times out, it returns no answer text, or the turn keeps skills off — hands the
+turn to the skill normal selection would have chosen. A skill still in progress
+(awaiting a confirmation or a tool) keeps the turn. The answer carries a
+steering rule saying the tool could not be consulted, so it answers from the
+agent's other sources without claiming the tool's results. The trace shows the
+bound skill's dispatch with its `failureReason` and the dispatch that answered
+with `fallbackFor` naming it. The reply's message row records the bound skill
+with status `failed`, so Quality's skill-failure signal counts the turn, and its
+`skillTurn` metadata names the skill that answered under `fallback`.
+
+Each fallback writes a `chat_turn_skill_fallback` info log with `workspaceId`,
+`agentId`, `conversationId`, `skillName` (the bound skill), `fallbackSkillName`,
+and `failureReason`. A failure the backend decides itself (no execution
+configured, no executor, an executor error, a deferred result, or an empty
+answer) also writes an `agent_skill_turn_dispatch_failed` warn log with
+`workspaceId`, `agentId`, `conversationId`, `skillName`, `kind`, and `reason`.
+An MCP failure is logged by the executor as `external_skill_dispatch_failed`.
+Neither log carries message text, tool results, or error messages.
 
 If a bound retrieval skill is later disabled, removed, no longer
 agent-selectable, or requires a capability the workspace policy denies

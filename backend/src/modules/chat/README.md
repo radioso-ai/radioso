@@ -820,6 +820,15 @@ imports from `services/`.
   on the agent's turn — planner, answer, coverage assessment — so the agent's
   `chatModelOverride` reaches all of them), `preparedTurnOutcome.ts`,
   `chatAnswerErrors.ts`.
+  A directive-bound skill's selection names the default skill as its
+  `fallbackSkillName`; when the bound skill fails, the engine dispatches that
+  skill in its place, and the adapter's dispatcher first adds the
+  `chat/turn-skill-unavailable.md` rule (`turnSkillFallbackSteering.ts`) to the
+  session's directive steering. The rendered answer carries `fallbackFor`, and
+  `presentedSkillTurn.ts` records the bound skill's failure on the reply row.
+  Tests: `tests/unit/conversation-engine-chat-turn.test.ts`,
+  `tests/unit/turn-skill-selector.test.ts`, and
+  `tests/unit/turn-skill-fallback-steering.test.ts`.
 
 ## Tests
 

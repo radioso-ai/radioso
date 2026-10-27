@@ -195,8 +195,6 @@
   "types|backend/src/modules/chat/services/replyDraftRunner.ts|ChatReplyDraftInput",
   "types|backend/src/modules/chat/services/replyDraftRunner.ts|ChatReplyDraftResult",
   "types|backend/src/modules/chat/services/retrievalTurnDispatch.ts|RetrievalTurnDispatchPort",
-  "types|backend/src/modules/chat/services/turnSkillSelector.ts|ChatTurnSkillSelectorOptions",
-  "types|backend/src/modules/chat/services/turnSkillSelector.ts|TurnSkillSelection",
   "types|backend/src/modules/connectors/plugins/wordpress/wordpressClient.ts|FetchPostsOptions",
   "types|backend/src/modules/connectors/plugins/wordpress/wordpressClient.ts|FetchPostsResult",
   "types|backend/src/modules/connectors/plugins/wordpress/wordpressClient.ts|WordpressClientConfig",

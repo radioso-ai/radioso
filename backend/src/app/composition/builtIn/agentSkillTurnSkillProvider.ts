@@ -18,6 +18,7 @@ import {
 } from "../../../modules/chat/composition.js";
 import {
   noopSkillEmitPort,
+  type SkillDispatchResult,
   type SkillExecution,
   type SkillExecutorRegistry,
 } from "../../../modules/skills/public.js";
@@ -48,12 +49,14 @@ import {
   type SuppressedSkillEffectsSource,
 } from "../../../shared/domain/suppressedSkillEffect.js";
 import type { MetricsRegistry } from "../../../shared/observability/metrics/metricsRegistry.js";
+import type { AppLogger } from "../../../shared/observability/logger.js";
 
 interface RepositoryAgentSkillTurnSkillProviderOptions {
   agentSkills: Pick<AgentSkillRepositoryPort, "listByAgent">;
   executorRegistry: SkillExecutorRegistry;
   capabilityPolicy: CapabilityPolicy;
   metricsRegistry?: Pick<MetricsRegistry, "incrementCounter"> | null;
+  logger?: Pick<AppLogger, "warn">;
 }
 
 const AGENT_SKILL_OUTCOME_KIND = "agent_skill";
@@ -145,11 +148,49 @@ const outcomeFor = (
   outcome,
 });
 
+/**
+ * A dispatch that did not produce an answer. The reason rides both on `outputs`, which the
+ * routine and replay views read, and on the contract's generic `error.code`, which the
+ * engine records on the dispatch stage. The message is for operators, never the visitor.
+ */
 const settledFailure = (session: PreparedSession, skillName: string, reason: string): TurnOutcome =>
   outcomeFor(session, skillName, {
     status: "failed",
     outputs: { skill: skillName, reason },
+    error: { code: reason, message: `Agent skill "${skillName}" did not answer the turn (${reason}).` },
   });
+
+const hasAnswerText = (answer: string | undefined): boolean => typeof answer === "string" && answer.trim().length > 0;
+
+/**
+ * Records one directive-bound dispatch that failed for a reason this provider decided. An
+ * outcome the executor settled is logged by the executor; a policy outcome (suppression,
+ * an ephemeral conversation) is the turn working as configured and is not logged here.
+ */
+type ReportDispatchFailure = (
+  session: PreparedSession,
+  agentSkill: AgentSkillSpine,
+  reason: string,
+  error?: unknown,
+) => void;
+
+/**
+ * Identity and reason only: never the collected input, the tool's result, or the error's
+ * message, which the logger's `err` serializer reduces to its class and code.
+ */
+const dispatchFailureReporter = (logger: Pick<AppLogger, "warn"> | undefined): ReportDispatchFailure =>
+  (session, agentSkill, reason, error) => {
+    logger?.warn({
+      event: "agent_skill_turn_dispatch_failed",
+      workspaceId: session.agent.workspaceId,
+      agentId: session.agent.id,
+      conversationId: session.conversation.id,
+      skillName: agentSkill.skillName,
+      kind: agentSkill.kind,
+      reason,
+      ...(error === undefined ? {} : { err: error }),
+    }, "Agent skill turn dispatch failed");
+  };
 
 const collectedTurnInput = (session: PreparedSession): Record<string, unknown> => ({
   query: session.effectiveQuery,
@@ -331,6 +372,7 @@ const turnSkillForAgentSkill = (
   skillEffects: SkillEffectPolicy | undefined,
   conversationDurability: ConversationDurability | undefined,
   recordSuppression: RecordSkillEffectSuppression,
+  reportFailure: ReportDispatchFailure,
 ): TurnSkill => {
   const skill = runtimeSkillDefinitionForAgentSkill(agentSkill);
   const renderer = new GenericTurnOutcomeRenderer();
@@ -338,9 +380,15 @@ const turnSkillForAgentSkill = (
     definition: { name: agentSkill.skillName, outcomeKinds: [AGENT_SKILL_OUTCOME_KIND] },
     selects: () => false,
     async dispatch(session) {
+      const fail = (reason: string, error?: unknown): TurnOutcome => {
+        reportFailure(session, agentSkill, reason, error);
+        return settledFailure(session, agentSkill.skillName, reason);
+      };
       if (!skill.execution) {
-        return settledFailure(session, agentSkill.skillName, "no_execution");
+        return fail("no_execution");
       }
+      // Suppression and an ephemeral conversation are the turn's execution policy, not
+      // failures; suppression's counters record it.
       if (shouldSuppressSkillEffect(skillEffects, agentSkill, skill.execution)) {
         return settledFailure(session, agentSkill.skillName, recordSuppression(agentSkill, "turn"));
       }
@@ -349,38 +397,48 @@ const turnSkillForAgentSkill = (
       }
       const executor = executorRegistry.resolve(skill.execution);
       if (!executor) {
-        return settledFailure(session, agentSkill.skillName, "no_executor");
+        return fail("no_executor");
       }
       throwIfCancelled();
-      const result = await executor.dispatch({
-        skill,
-        collected: collectedTurnInput(session),
-        context: {
-          workspaceId: session.agent.workspaceId,
-          agentId: session.agent.id,
-          sessionId: session.conversation.id,
-          conversationId: session.conversation.id,
-          conversationDurability: conversationDurability ?? "durable",
-          messageId: session.userMessage.id,
-          turn: {
-            agent: toConversationAgentConfig(session.agent),
+      let result: SkillDispatchResult;
+      try {
+        result = await executor.dispatch({
+          skill,
+          collected: collectedTurnInput(session),
+          context: {
+            workspaceId: session.agent.workspaceId,
+            agentId: session.agent.id,
             sessionId: session.conversation.id,
-            inputEvent: {
-              ...toConversationInputEvent(session.userMessage),
-              content: session.effectiveQuery,
+            conversationId: session.conversation.id,
+            conversationDurability: conversationDurability ?? "durable",
+            messageId: session.userMessage.id,
+            turn: {
+              agent: toConversationAgentConfig(session.agent),
+              sessionId: session.conversation.id,
+              inputEvent: {
+                ...toConversationInputEvent(session.userMessage),
+                content: session.effectiveQuery,
+              },
+              history: toConversationMessages(session.history),
+              stagedContext: session.stagedContext,
+              steering: session.directiveSteering?.rules ?? [],
             },
-            history: toConversationMessages(session.history),
-            stagedContext: session.stagedContext,
-            steering: session.directiveSteering?.rules ?? [],
           },
-        },
-        emit: noopSkillEmitPort,
-      }).catch(() => null);
-      if (!result) {
-        return settledFailure(session, agentSkill.skillName, "executor_error");
+          emit: noopSkillEmitPort,
+        });
+      } catch (error) {
+        return fail("executor_error", error);
       }
       if (result.disposition !== "settled") {
-        return settledFailure(session, agentSkill.skillName, "deferred");
+        return fail("deferred");
+      }
+      // The executor logs the outcomes it settles (`external_skill_dispatch_failed`).
+      if (result.outcome.status !== "completed") {
+        return outcomeFor(session, agentSkill.skillName, result.outcome);
+      }
+      // A terminal turn skill answers the visitor; structured content alone renders a blank reply.
+      if (!hasAnswerText(result.outcome.answer)) {
+        return fail("empty_answer");
       }
       return outcomeFor(session, agentSkill.skillName, result.outcome);
     },
@@ -525,6 +583,7 @@ export class RepositoryAgentSkillTurnSkillProvider implements AgentSkillTurnSkil
       suppressedEffects,
       session.executionMode,
     );
+    const reportFailure = dispatchFailureReporter(this.options.logger);
     // Directives read from the conversation's frozen revision snapshot
     // (session.agent.authoredDirectives) so a pinned turn cannot see an operator's
     // in-flight live edit. Agent-selectable skills must be frozen the same way: only
@@ -557,6 +616,7 @@ export class RepositoryAgentSkillTurnSkillProvider implements AgentSkillTurnSkil
           session.skillEffects,
           session.conversationDurability,
           recordSuppression,
+          reportFailure,
         ));
       }
       if (!capabilityDenied && stagingCapable) {

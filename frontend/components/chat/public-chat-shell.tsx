@@ -75,7 +75,13 @@ const THREAD_EDGE_PX = 24
 
 const overlaidThreadStyle = (headerHeight: number): CSSProperties => {
   const bottomFade = `linear-gradient(to bottom, #000 calc(100% - ${THREAD_EDGE_PX}px), transparent)`
-  return { paddingTop: headerHeight + THREAD_EDGE_PX, maskImage: bottomFade, WebkitMaskImage: bottomFade }
+  return {
+    paddingTop: headerHeight + THREAD_EDGE_PX,
+    // Keeps focus and anchor scrolling from landing content under the header.
+    scrollPaddingTop: headerHeight,
+    maskImage: bottomFade,
+    WebkitMaskImage: bottomFade,
+  }
 }
 const HUMAN_CONTACT_INTENT_NAME = 'explicit_contact_request'
 const noop = () => undefined
@@ -199,7 +205,7 @@ function ChatUnavailable({
       <div className="mb-4">
         <AssistantAvatar avatarUrl={avatarUrl} label={copy.embeddedChatTitle} themeOverrides={themeOverrides} className="size-12" />
       </div>
-      <h1 className="font-sans text-lg font-medium">{copy.publicChatUnavailableTitle}</h1>
+      <h1 className="text-lg font-medium">{copy.publicChatUnavailableTitle}</h1>
       <p className="mt-1 max-w-sm text-sm" style={{ color: theme.mutedForeground }}>
         {copy.publicChatUnavailableMessage}
       </p>
@@ -489,7 +495,7 @@ function PublicChatCenteredIntro({
             className="size-20"
           />
           <div className="flex items-center gap-2">
-            <h2 className="font-sans text-2xl font-semibold" style={{ color: theme.panelForeground }}>
+            <h2 className="text-2xl font-semibold" style={{ color: theme.panelForeground }}>
               {workspaceName}
             </h2>
             <AssistantAiChip
@@ -702,6 +708,10 @@ function PublicChatContent({
   const headerShown = !isCompactKeyboardLayout && !useCenteredIntro
   const [headerRef, headerHeight] = useElementHeight<HTMLDivElement>()
   const [threadScrolled, setThreadScrolled] = useState(false)
+  // The centered intro replaces the thread, which comes back unscrolled.
+  if (useCenteredIntro && threadScrolled) {
+    setThreadScrolled(false)
+  }
   const greetingMessage = visibleMessages.find((message) => message.role === 'assistant') ?? null
 
   const { isAtBottom, scrollToBottom, scrollToLatestTurn } = useChatScroll({
@@ -1096,7 +1106,7 @@ function PublicChatContent({
                 <div className="mb-4">
                   <AssistantAvatar avatarUrl={resolvedAvatarUrl} label={copy.publicChatEmptyTitle} themeOverrides={resolvedThemeOverrides} className="size-12" />
                 </div>
-                <h2 className="mb-1 font-sans text-lg font-medium">{copy.publicChatEmptyTitle}</h2>
+                <h2 className="mb-1 text-lg font-medium">{copy.publicChatEmptyTitle}</h2>
                 <p className="max-w-sm text-sm" style={{ color: theme.mutedForeground }}>
                   {copy.publicChatEmptyMessage}
                 </p>

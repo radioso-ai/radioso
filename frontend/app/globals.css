@@ -181,6 +181,10 @@
   [data-slot='drawer-title'] {
     font-family: var(--font-display);
   }
+  /* Visitor chat renders on customer sites, so its headings, agent answers included, keep the sans stack. */
+  .radioso-visitor-surface :is(h1, h2, h3, h4, h5, h6) {
+    font-family: var(--font-sans);
+  }
 }
 
 @layer components {
@@ -256,7 +260,7 @@
 .radioso-frosted-header {
   background: var(--radioso-header-surface);
 }
-@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) and (color: color-mix(in srgb, red 50%, transparent)) {
   .radioso-frosted-header {
     background: color-mix(in srgb, var(--radioso-header-surface) 80%, transparent);
     -webkit-backdrop-filter: blur(16px) saturate(1.4);

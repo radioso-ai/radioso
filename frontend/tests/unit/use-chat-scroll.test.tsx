@@ -31,6 +31,7 @@ function renderChatScroll({
   messages: ChatScrollMessage[]
   topInsetPx?: number
 }) {
+  let inset = topInsetPx
   const host = document.createElement('div')
   document.body.appendChild(host)
   const root = createRoot(host)
@@ -39,7 +40,7 @@ function renderChatScroll({
   let latest: ReturnType<typeof useChatScroll> | null = null
 
   function Harness({ thread }: { thread: ChatScrollMessage[] }) {
-    latest = useChatScroll({ messages: thread, containerRef, sentinelRef, topInsetPx })
+    latest = useChatScroll({ messages: thread, containerRef, sentinelRef, topInsetPx: inset })
     return null
   }
 
@@ -52,7 +53,8 @@ function renderChatScroll({
       if (!latest) throw new Error('hook did not render')
       return latest
     },
-    rerender(thread: ChatScrollMessage[]) {
+    rerender(thread: ChatScrollMessage[], nextInset = inset) {
+      inset = nextInset
       act(() => {
         root.render(<Harness thread={thread} />)
       })
@@ -95,6 +97,22 @@ describe('useChatScroll', () => {
     act(() => scroll.scrollToLatestTurn('auto'))
 
     expect(scrollTo).toHaveBeenLastCalledWith({ top: 339, behavior: 'auto' })
+  })
+
+  it('pins below a header measured after the pin was scheduled', () => {
+    const { container, scrollTo } = mountScrollableThread()
+    const thread = renderChatScroll({ container, messages: turn.slice(0, 2), topInsetPx: 0 })
+    const frames: FrameRequestCallback[] = []
+    vi.mocked(window.requestAnimationFrame).mockImplementation((callback) => {
+      frames.push(callback)
+      return frames.length
+    })
+
+    thread.rerender(turn, 0)
+    thread.rerender(turn, 61)
+    act(() => frames.forEach((frame) => frame(0)))
+
+    expect(scrollTo).toHaveBeenLastCalledWith({ top: 339, behavior: 'smooth' })
   })
 
   it('keeps pulling the message up to just below the overlay while the reply streams', () => {

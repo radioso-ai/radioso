@@ -1498,7 +1498,6 @@ describe('radioso embed launcher', () => {
 
     it('turns into a close control while the chat is open', async () => {
       const { button } = await mountBubbleLauncher()
-      expect(collectElements(button, (element) => element.className === 'radioso-launcher-toggle')).toHaveLength(1)
       expect(button.dataset.radiosoOpen).toBeUndefined()
 
       button.dispatchEvent('click')

@@ -41,6 +41,11 @@ describe('teammateHasLatestReply', () => {
     expect(teammateHasLatestReply([visitor, { role: 'assistant', source: 'human_agent_on_behalf_of_ai_agent' }])).toBe(true)
   })
 
+  it('keeps the teammate while a reply is pending or failed', () => {
+    expect(teammateHasLatestReply([teammate, visitor, { role: 'assistant', status: 'streaming' }])).toBe(true)
+    expect(teammateHasLatestReply([teammate, visitor, { role: 'assistant', status: 'error' }])).toBe(true)
+  })
+
   it('is false once the agent replies again', () => {
     expect(teammateHasLatestReply([teammate, visitor, agent])).toBe(false)
   })

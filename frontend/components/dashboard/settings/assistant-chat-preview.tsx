@@ -174,7 +174,7 @@ export function ChatPreview({
 
   return (
     <div
-      className="flex h-[min(40rem,calc(100vh-6rem))] min-h-[24rem] flex-col overflow-hidden rounded-2xl border shadow-sm"
+      className="radioso-visitor-surface flex h-[min(40rem,calc(100vh-6rem))] min-h-[24rem] flex-col overflow-hidden rounded-2xl border shadow-sm"
       style={{
         ...surfaceVars,
         backgroundColor: embedTheme.panelBackground,

@@ -724,10 +724,11 @@
       // While the chat is open the bubble launcher shows a close chevron in place of the avatar, so
       // it reads as the toggle it is. The label folds away the same way collapse-on-scroll folds it.
       '.radioso-launcher-toggle { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; opacity: 0; transform: rotate(-90deg) scale(0.6); transition: opacity 160ms ease, transform 200ms ease; pointer-events: none; }',
-      '.radioso-launcher-toggle svg { width: 24px; height: 24px; }',
-      '.radioso-launcher[data-radioso-open="true"] { padding: 0.5rem !important; border-radius: 24px !important; gap: 0 !important; }',
+      // Host pages style bare svg elements; the chevron is a stroke and must stay one.
+      '.radioso-launcher-toggle svg { width: 24px !important; height: 24px !important; fill: none !important; stroke: currentColor !important; stroke-width: 2.25 !important; }',
+      '.radioso-launcher[data-radioso-open="true"] { gap: 0 !important; }',
       '.radioso-launcher[data-radioso-open="true"] .radioso-launcher-label { max-width: 0 !important; opacity: 0 !important; margin: 0 !important; }',
-      '.radioso-launcher[data-radioso-open="true"] .radioso-launcher-avatar { width: 3rem !important; height: 3rem !important; opacity: 0; transform: rotate(90deg) scale(0.6); }',
+      '.radioso-launcher[data-radioso-open="true"] .radioso-launcher-avatar { opacity: 0; transform: rotate(90deg) scale(0.6); }',
       '.radioso-launcher[data-radioso-open="true"] .radioso-launcher-toggle { opacity: 1; transform: none; }',
       '.radioso-teaser { position: relative; max-width: 280px; padding: 12px 14px; border-radius: 16px; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 14px; line-height: 1.4; cursor: pointer; pointer-events: auto; opacity: 0; transform: translateY(8px) scale(0.96); transform-origin: bottom right; animation: radioso-teaser-in 280ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }',
       '.radioso-teaser[data-position="bottom-left"] { transform-origin: bottom left; }',
@@ -745,6 +746,7 @@
       '  .radioso-launcher-avatar { transition: none !important; }',
       '  .radioso-launcher-toggle { transition: none !important; }',
       '  .radioso-launcher[data-radioso-collapsed] { transition: none !important; }',
+      '  .radioso-launcher[data-radioso-open] { transition: none !important; }',
       '  .radioso-teaser { animation: none !important; opacity: 1; transform: none; }',
       '  .radioso-comet-square { display: none !important; animation: none !important; }',
       '}',
@@ -1365,7 +1367,7 @@
     const toggle = document.createElement('span')
     toggle.className = 'radioso-launcher-toggle'
     toggle.setAttribute('aria-hidden', 'true')
-    toggle.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>'
+    toggle.innerHTML = '<svg viewBox="0 0 24 24" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>'
     button.appendChild(toggle)
 
     const dot = document.createElement('span')

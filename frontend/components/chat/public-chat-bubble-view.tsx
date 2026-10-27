@@ -120,8 +120,7 @@ export function PublicChatBubbleHeader({
             ) : null}
           </div>
           <div>
-            {/* Headings default to the dashboard's display face; customer sites get the system sans. */}
-            <h1 className="font-sans text-[15px] font-semibold leading-tight">{workspaceName}</h1>
+            <h1 className="text-[15px] font-semibold leading-tight">{workspaceName}</h1>
             {customSubtitle ? (
               <p className="text-xs" style={{ color: theme.mutedForeground }}>{customSubtitle}</p>
             ) : null}
@@ -170,7 +169,8 @@ export function PublicChatBubbleDisclaimer({
         key="powered-by"
         href={POWERED_BY_URL}
         target="_blank"
-        rel="noopener noreferrer"
+        // Search engines treat links distributed in widgets as link schemes unless they are nofollow.
+        rel="nofollow noopener noreferrer"
         className="inline-flex items-center gap-1 underline-offset-2 hover:underline"
         style={linkStyle}
       >
@@ -384,7 +384,7 @@ export function PublicChatConnectingView({
               themeOverrides={themeOverrides}
               className="size-20"
             />
-            <h2 className="font-sans text-2xl font-semibold" style={{ color: theme.panelForeground }}>
+            <h2 className="text-2xl font-semibold" style={{ color: theme.panelForeground }}>
               {workspaceName}
             </h2>
           </div>

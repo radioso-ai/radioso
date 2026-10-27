@@ -28,6 +28,8 @@ interface Setup {
   locateError?: Error;
   ensure?: (input: Parameters<VoiceRuntimeProvisioner["ensureAgent"]>[0]) => Promise<VoiceRuntimeAgentEnsured>;
   releaseError?: Error;
+  /** Holds every release until it resolves. */
+  releaseGate?: Promise<void>;
   activeCredentials?: string[];
   completions?: boolean;
   saveError?: Error;
@@ -56,6 +58,7 @@ const serviceWith = (setup: Setup = {}) => {
     }),
     releaseAgent: vi.fn<VoiceRuntimeProvisioner["releaseAgent"]>(async (input) => {
       steps.push(`release:${input.vendorAgentId}`);
+      await setup.releaseGate;
       if (setup.releaseError) throw setup.releaseError;
     }),
   };
@@ -483,18 +486,34 @@ describe("voice runtime connection: following the agent", () => {
     expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ operation: "sync", outcome: "needs_connect" }), expect.any(String));
   });
 
-  it("removes the vendor agent Radioso created before its agent is deleted, and never rejects", async () => {
-    const { service, steps, audit } = serviceWith({ connection: managed(), profile: boundTo("agent_42") });
+  it("revokes the credential and forgets the connection before its agent is deleted, then deletes the vendor agent in the background", async () => {
+    const { service, steps, audit, connectionNow } = serviceWith({ connection: managed(), profile: boundTo("agent_42") });
 
     await service.releaseForDeletedAgent(agent);
 
-    expect(steps).toEqual(["release:agent_42", "revoke:cred-old", "remove"]);
-    expect(audit.disconnected).toHaveBeenCalledWith(expect.objectContaining({ cause: "agent_deleted", released: true }));
+    expect(steps.slice(0, 2)).toEqual(["revoke:cred-old", "remove"]);
+    expect(connectionNow()).toBeNull();
+    await vi.waitFor(() => {
+      expect(steps).toEqual(["revoke:cred-old", "remove", "release:agent_42"]);
+      expect(audit.disconnected).toHaveBeenCalledWith(expect.objectContaining({ cause: "agent_deleted", released: true, vendorAgentLeft: false }));
+    });
   });
 
-  it("lets the deletion go on when the vendor cannot be reached", async () => {
-    const { service } = serviceWith({ connection: managed(), profile: boundTo("agent_42"), releaseError: new VoiceVendorRequestError("timeout") });
+  it("never makes the deletion wait on the vendor", async () => {
+    const { service, steps } = serviceWith({ connection: managed(), profile: boundTo("agent_42"), releaseGate: new Promise<void>(() => {}) });
 
     await expect(service.releaseForDeletedAgent(agent)).resolves.toBeUndefined();
+    await vi.waitFor(() => expect(steps).toEqual(["revoke:cred-old", "remove", "release:agent_42"]));
+  });
+
+  it("logs and audits a vendor agent the background release left behind, and never rejects", async () => {
+    const { service, audit, logger } = serviceWith({ connection: managed(), profile: boundTo("agent_42"), releaseError: new VoiceVendorRequestError("timeout") });
+
+    await expect(service.releaseForDeletedAgent(agent)).resolves.toBeUndefined();
+
+    await vi.waitFor(() => {
+      expect(audit.disconnected).toHaveBeenCalledWith(expect.objectContaining({ cause: "agent_deleted", released: false, vendorAgentLeft: true }));
+      expect(logger.warn).toHaveBeenCalledWith(expect.objectContaining({ vendorAgentId: "agent_42", reason: "timeout" }), expect.any(String));
+    });
   });
 });

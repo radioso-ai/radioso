@@ -833,6 +833,28 @@ CREATE TABLE public.agent_test_executions (
 
 
 --
+-- Name: agent_voice_runtime_connections; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.agent_voice_runtime_connections (
+    agent_id uuid NOT NULL,
+    workspace_id uuid NOT NULL,
+    vendor text NOT NULL,
+    region text NOT NULL,
+    vendor_agent_id text NOT NULL,
+    channel_credential_id uuid,
+    channel_credential_fingerprint text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT agent_voice_runtime_connections_credential_fingerprint_check CHECK (((channel_credential_id IS NULL) OR (channel_credential_fingerprint IS NOT NULL))),
+    CONSTRAINT agent_voice_runtime_connections_fingerprint_length_check CHECK (((length(channel_credential_fingerprint) >= 1) AND (length(channel_credential_fingerprint) <= 64))),
+    CONSTRAINT agent_voice_runtime_connections_region_check CHECK (((length(region) >= 1) AND (length(region) <= 16))),
+    CONSTRAINT agent_voice_runtime_connections_vendor_agent_id_check CHECK (((length(vendor_agent_id) >= 1) AND (length(vendor_agent_id) <= 128))),
+    CONSTRAINT agent_voice_runtime_connections_vendor_check CHECK (((length(vendor) >= 1) AND (length(vendor) <= 32)))
+);
+
+
+--
 -- Name: agents; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -4777,6 +4799,14 @@ ALTER TABLE ONLY public.agent_test_executions
 
 
 --
+-- Name: agent_voice_runtime_connections agent_voice_runtime_connections_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_voice_runtime_connections
+    ADD CONSTRAINT agent_voice_runtime_connections_pkey PRIMARY KEY (agent_id);
+
+
+--
 -- Name: agents agents_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6569,6 +6599,13 @@ CREATE UNIQUE INDEX agent_skills_one_default_answer ON public.agent_skills USING
 --
 
 CREATE UNIQUE INDEX agent_test_executions_idempotency_key_key ON public.agent_test_executions USING btree (workspace_id, agent_id, idempotency_key);
+
+
+--
+-- Name: agent_voice_runtime_connections_credential_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX agent_voice_runtime_connections_credential_idx ON public.agent_voice_runtime_connections USING btree (channel_credential_id) WHERE (channel_credential_id IS NOT NULL);
 
 
 --
@@ -10524,6 +10561,30 @@ ALTER TABLE ONLY public.agent_test_executions
 
 ALTER TABLE ONLY public.agent_test_executions
     ADD CONSTRAINT agent_test_executions_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_voice_runtime_connections agent_voice_runtime_connections_agent_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_voice_runtime_connections
+    ADD CONSTRAINT agent_voice_runtime_connections_agent_id_fkey FOREIGN KEY (agent_id) REFERENCES public.agents(id) ON DELETE CASCADE;
+
+
+--
+-- Name: agent_voice_runtime_connections agent_voice_runtime_connections_channel_credential_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_voice_runtime_connections
+    ADD CONSTRAINT agent_voice_runtime_connections_channel_credential_id_fkey FOREIGN KEY (channel_credential_id) REFERENCES public.agent_access_grants(id) ON DELETE SET NULL;
+
+
+--
+-- Name: agent_voice_runtime_connections agent_voice_runtime_connections_workspace_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_voice_runtime_connections
+    ADD CONSTRAINT agent_voice_runtime_connections_workspace_id_fkey FOREIGN KEY (workspace_id) REFERENCES public.workspaces(id) ON DELETE CASCADE;
 
 
 --

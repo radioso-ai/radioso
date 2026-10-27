@@ -6,6 +6,7 @@ import type { AgentService, ConversationAgent } from "../../agents/public.js";
 import { isAgentBootstrapActive } from "../../agents/public.js";
 import type { BootstrapGreetingCacheRepositoryPort } from "../../../db/repositories/bootstrapGreetingCacheRepository.js";
 import { renderPromptTemplate } from "../../../shared/infra/prompts/promptLoader.js";
+import type { AgentGreetingReader } from "../contracts/agentGreeting.js";
 import type { ChatGateway } from "../contracts/chatGateway.js";
 import type { ChatBootstrapResponse } from "../types/chatResponses.js";
 import type { AssistantPageContext } from "../types/assistantApi.js";
@@ -15,7 +16,11 @@ import {
 } from "../../settings/contracts/assistantBootstrap.js";
 import { assertInteractiveAssistantWorkflow } from "./chatExecutionPolicy.js";
 import { isValidLocaleHint, resolveChatLocale } from "./chatLocale.js";
-import { NoopUsageLimitPolicy, type UsageLimitPolicy } from "../../../shared/domain/usageLimitPolicy.js";
+import {
+  NoopUsageLimitPolicy,
+  type UsageLimitPolicy,
+  type UsageLimitReservation,
+} from "../../../shared/domain/usageLimitPolicy.js";
 import {
   NoopProductAnalyticsService,
   type ProductAnalyticsPort,
@@ -63,7 +68,15 @@ const emptyChatResponse = (answer: string): ChatBootstrapResponse => ({
   },
 });
 
-export class ChatBootstrapService {
+/** An automatic greeting and where it came from; a generated one holds its usage reservation until the caller settles it. */
+interface AutomaticGreeting {
+  text: string;
+  recordId: string;
+  cacheHit: boolean;
+  reservation: UsageLimitReservation | null;
+}
+
+export class ChatBootstrapService implements AgentGreetingReader {
   constructor(
     private readonly workspaceRepository: WorkspaceRepositoryPort,
     private readonly bootstrapGreetingCacheRepository: BootstrapGreetingCacheRepositoryPort,
@@ -150,52 +163,20 @@ export class ChatBootstrapService {
       revisionId: input.revisionId,
     });
 
-    let usageReservation: Awaited<ReturnType<UsageLimitPolicy["reserveAnswer"]>> | null = null;
+    let usageReservation: UsageLimitReservation | null = null;
     try {
-      const cachedGreeting = await this.bootstrapGreetingCacheRepository.findByWorkspaceAgentAndFingerprint(
-        input.workspaceId,
-        agent.id,
+      const greeting = await this.automaticGreeting({
+        accountId: input.accountId,
+        workspaceId: input.workspaceId,
+        agent,
+        localeUsed,
         fingerprint,
-      );
-      usageReservation = cachedGreeting
-        ? null
-        : await this.usageLimitPolicy.reserveAnswer({
-            accountId: input.accountId,
-            workspaceId: input.workspaceId,
-            surface: input.sourceChannel ?? "chat.bootstrap",
-            usage: "greeting",
-          });
-      const normalizedAnswer = cachedGreeting?.greetingText
-        ?? (await this.chatGateway.answer({
-            query: "",
-            history: [],
-            usageContext: {
-              accountId: input.accountId ?? null,
-              workspaceId: input.workspaceId,
-              requestId: `bootstrap:${agent.id}:${fingerprint}`,
-              surface: "assistant",
-              operation: "bootstrap_greeting",
-              attemptKey: fingerprint,
-            },
-            prompt: buildBootstrapPrompt({
-              assistantName: agent.name,
-              customInstruction: agent.customInstruction,
-              localeUsed,
-            }),
-        })).trim();
-      if (!normalizedAnswer) {
-        await usageReservation?.release();
+        surface: input.sourceChannel ?? "chat.bootstrap",
+      });
+      if (!greeting) {
         return null;
       }
-
-      const greetingRecord = cachedGreeting
-        ?? await this.bootstrapGreetingCacheRepository.save({
-          workspaceId: input.workspaceId,
-          agentId: agent.id,
-          fingerprint,
-          localeUsed,
-          greetingText: normalizedAnswer,
-        });
+      usageReservation = greeting.reservation;
 
       await this.auditService.record({
         accountId: input.accountId,
@@ -208,7 +189,7 @@ export class ChatBootstrapService {
           sourceChannel: input.sourceChannel ?? null,
           sourceOrigin: input.sourceOrigin ?? null,
           localeUsed,
-          cacheHit: Boolean(cachedGreeting),
+          cacheHit: greeting.cacheHit,
           fingerprint,
           proactiveGreetingEnabled: true,
           greetingMode: "automatic",
@@ -229,7 +210,7 @@ export class ChatBootstrapService {
             sourceChannel: input.sourceChannel ?? null,
             sourceOrigin: input.sourceOrigin ?? null,
             localeUsed,
-            cacheHit: Boolean(cachedGreeting),
+            cacheHit: greeting.cacheHit,
             proactiveGreetingEnabled: true,
           },
           source: "backend",
@@ -240,9 +221,9 @@ export class ChatBootstrapService {
       await usageReservation?.commit();
 
       return {
-        ...emptyChatResponse(normalizedAnswer),
+        ...emptyChatResponse(greeting.text),
         ...(agent ? { agentId: agent.id, agentName: agent.name } : {}),
-        bootstrapGreetingId: greetingRecord.id,
+        bootstrapGreetingId: greeting.recordId,
       };
     } catch (error) {
       await usageReservation?.release();
@@ -271,6 +252,105 @@ export class ChatBootstrapService {
         },
       });
       return null;
+    }
+  }
+
+  /**
+   * The greeting a channel says outside a conversation (`AgentGreetingReader`): the words the web
+   * chat shows for the same locale, without chips. Exact words come verbatim with no delivery
+   * record; an automatic greeting comes from the same cache, generated and cached on a miss, with
+   * its usage committed at once. No audit event and no `chat.started`: nothing starts here.
+   */
+  async readGreeting(input: { workspaceId: string; agentId: string; locale: string | null; surface: string }): Promise<string | null> {
+    const agent = await this.agentService.resolve(input.workspaceId, input.agentId);
+    if (!isAgentBootstrapActive(agent)) {
+      return null;
+    }
+    const requestedLocale = isValidLocaleHint(input.locale) ? input.locale : null;
+    const exactContent = exactGreetingContent(await resolveRevisionGreeting(this.agentRevisionRuntimeResolver, {
+      workspaceId: input.workspaceId,
+      agent,
+      trustedRevision: false,
+    }));
+    if (exactContent) {
+      const outcome = resolveExactGreeting(exactContent, { agent, requestedLocale });
+      return outcome.kind === "resolved" ? outcome.body : null;
+    }
+    const localeUsed = resolveChatLocale({ userExpectedLocale: requestedLocale, assistantDefaultLocale: agent.assistantDefaultLocale });
+    const greeting = await this.automaticGreeting({
+      workspaceId: input.workspaceId,
+      agent,
+      localeUsed,
+      fingerprint: createBootstrapFingerprint({
+        assistantName: agent.name,
+        customInstruction: agent.customInstruction,
+        assistantDefaultLocale: agent.assistantDefaultLocale,
+        localeUsed,
+      }),
+      surface: input.surface,
+    });
+    await greeting?.reservation?.commit();
+    return greeting?.text ?? null;
+  }
+
+  /**
+   * The automatic greeting for an agent and locale: the cached one, else one the model writes,
+   * cached for every later start. A generated greeting comes with its usage reservation for the
+   * caller to commit once it is delivered, or release; null, with the reservation released, when
+   * the model wrote nothing. A failure after the reservation releases it before rejecting.
+   */
+  private async automaticGreeting(input: {
+    accountId?: string;
+    workspaceId: string;
+    agent: ConversationAgent;
+    localeUsed: string | null;
+    fingerprint: string;
+    surface: string;
+  }): Promise<AutomaticGreeting | null> {
+    const { workspaceId, agent, localeUsed, fingerprint } = input;
+    const cachedGreeting = await this.bootstrapGreetingCacheRepository.findByWorkspaceAgentAndFingerprint(workspaceId, agent.id, fingerprint);
+    if (cachedGreeting) {
+      return { text: cachedGreeting.greetingText, recordId: cachedGreeting.id, cacheHit: true, reservation: null };
+    }
+    const reservation = await this.usageLimitPolicy.reserveAnswer({
+      accountId: input.accountId,
+      workspaceId,
+      surface: input.surface,
+      usage: "greeting",
+    });
+    try {
+      const text = (await this.chatGateway.answer({
+        query: "",
+        history: [],
+        usageContext: {
+          accountId: input.accountId ?? null,
+          workspaceId,
+          requestId: `bootstrap:${agent.id}:${fingerprint}`,
+          surface: "assistant",
+          operation: "bootstrap_greeting",
+          attemptKey: fingerprint,
+        },
+        prompt: buildBootstrapPrompt({
+          assistantName: agent.name,
+          customInstruction: agent.customInstruction,
+          localeUsed,
+        }),
+      })).trim();
+      if (!text) {
+        await reservation.release();
+        return null;
+      }
+      const record = await this.bootstrapGreetingCacheRepository.save({
+        workspaceId,
+        agentId: agent.id,
+        fingerprint,
+        localeUsed,
+        greetingText: text,
+      });
+      return { text, recordId: record.id, cacheHit: false, reservation };
+    } catch (error) {
+      await reservation.release();
+      throw error;
     }
   }
 

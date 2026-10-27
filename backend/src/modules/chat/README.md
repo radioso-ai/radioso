@@ -662,6 +662,15 @@ imports from `services/`.
   `services/agentStarterPromptReader.ts` — the read-only port (exported from
   `composition.ts`) channels use to show an agent's greeting chips outside a
   conversation, such as Slack's agent pane. It starts, records, and reserves nothing.
+  `ChatBootstrapService.readGreeting` is `AgentGreetingReader`
+  (`contracts/agentGreeting.ts`), the greeting's words for a channel that says
+  them outside a conversation, such as a voice call's first message: the exact
+  words for the locale verbatim, else the automatic greeting from the same
+  `bootstrap_greeting_cache` entry the web chat reads (same fingerprint),
+  generated and cached on a miss with its usage reserved on the caller's
+  `surface`. It starts no conversation and writes no delivery record,
+  `chat.bootstrap` audit event or `chat.started` analytics event. Composition
+  hands it to the voice channel, which never imports chat for it.
 - Seed a private test execution from a conversation:
   `services/conversationTestExecutionSeedSource.ts` implements the test-execution
   module's `TestExecutionSeedSource` port. It reads the user+assistant thread (system

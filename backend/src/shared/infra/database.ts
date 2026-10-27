@@ -1,9 +1,10 @@
-import type { Kysely } from "kysely";
+import type { Kysely, RawBuilder } from "kysely";
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
 
 import type { AppLogger } from "../observability/logger.js";
 import { createKyselyDatabase } from "./kysely/kyselyDatabase.js";
 import type { DB } from "./kysely/schema.js";
+import { sessionAdvisoryUnlock, trySessionAdvisoryLock } from "./kysely/sqlHelpers.js";
 
 interface DatabaseOptions {
   poolMax?: number;
@@ -143,3 +144,58 @@ export class Database {
     await this.pool.end();
   }
 }
+
+/** pg-pool closes a client released with an error instead of pooling it. */
+const asError = (error: unknown): Error => (error instanceof Error ? error : new Error(String(error)));
+
+/** One of the shared Kysely statements, run on a client pinned from the pool. */
+const runPinned = async <R extends QueryResultRow>(
+  client: PoolClient,
+  kysely: Kysely<DB>,
+  statement: RawBuilder<R>,
+): Promise<R | undefined> => {
+  const compiled = statement.compile(kysely);
+  return (await client.query<R>(compiled.sql, [...compiled.parameters])).rows[0];
+};
+
+/** What a session advisory lock runs on: a pool to pin one connection from, and Kysely to compile the shared statements. */
+export interface PinnableDatabase {
+  pool: { connect(): Promise<PoolClient> };
+  kysely: Kysely<DB>;
+}
+
+/**
+ * Runs `work` holding a session advisory lock on one pooled connection pinned for the whole run,
+ * so every process on this database sees it. While another session holds the key it runs nothing
+ * and answers `ran: false` at once. A connection whose lock statement fails may still hold the
+ * lock, so it is closed rather than returned to the pool: a closed session releases every lock it
+ * held, where a pooled one would keep the key taken for as long as it lives.
+ */
+export const withSessionAdvisoryLock = async <T>(
+  database: PinnableDatabase,
+  key: string,
+  work: () => Promise<T>,
+): Promise<{ ran: true; value: T } | { ran: false }> => {
+  const client = await database.pool.connect();
+  let acquired: boolean;
+  try {
+    acquired = (await runPinned(client, database.kysely, trySessionAdvisoryLock(key)))?.acquired ?? false;
+  } catch (error) {
+    client.release(asError(error));
+    throw error;
+  }
+  if (!acquired) {
+    client.release();
+    return { ran: false };
+  }
+  try {
+    return { ran: true, value: await work() };
+  } finally {
+    try {
+      await runPinned(client, database.kysely, sessionAdvisoryUnlock(key));
+      client.release();
+    } catch (error) {
+      client.release(asError(error));
+    }
+  }
+};

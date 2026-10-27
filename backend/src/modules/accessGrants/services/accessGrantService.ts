@@ -66,6 +66,10 @@ interface PublicLaunchMigrationInput {
   channel?: AccessGrantChannel;
 }
 
+/** An agent channel credential for one audience: the only grants that admit agent-channel turns there. */
+const isAgentChannelGrantOn = (grant: AccessGrant, channel: AccessGrantChannel): boolean =>
+  grant.principalKind === "agent-api" && grant.channel === channel;
+
 export class AccessGrantService {
   constructor(private readonly dependencies: AccessGrantServiceDependencies) {}
 
@@ -255,14 +259,23 @@ export class AccessGrantService {
     channel: Extract<AccessGrantChannel, "mcp-converse" | "agent-api">,
   ): Promise<AccessGrant | null> {
     const grant = await this.dependencies.repository.findByTokenHash(sha256(token));
-    if (
-      !grant ||
-      grant.principalKind !== "agent-api" ||
-      grant.channel !== channel
-    ) {
-      return null;
-    }
-    return grant;
+    return grant && isAgentChannelGrantOn(grant, channel) ? grant : null;
+  }
+
+  /**
+   * An agent's channel credential by id, while it admits that agent's turns on `channel`: the
+   * principal and channel `resolveAgentChannelGrant` checks, then `evaluate` (not revoked, not
+   * disabled, not expired). Null otherwise, so a holder that keeps a copy of the secret can tell
+   * whether the copy still works without seeing it.
+   */
+  async findAdmittingAgentChannelGrant(
+    grantId: string,
+    scope: { workspaceId: string; agentId: string; channel: Extract<AccessGrantChannel, "mcp-converse" | "agent-api"> },
+  ): Promise<AccessGrant | null> {
+    const grant = await this.dependencies.repository.findById(grantId);
+    if (!grant || grant.workspaceId !== scope.workspaceId || grant.agentId !== scope.agentId) return null;
+    if (!isAgentChannelGrantOn(grant, scope.channel)) return null;
+    return this.evaluate(grant, {}).allowed ? grant : null;
   }
 
   async resolveOrCreatePublicLaunchGrant(input: PublicLaunchMigrationInput): Promise<AccessGrant> {

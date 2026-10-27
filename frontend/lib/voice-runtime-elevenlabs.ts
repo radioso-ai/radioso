@@ -72,9 +72,12 @@ const PRIVACY_NOTICE_VARIABLE = 'radioso_privacy_notice'
  * ElevenLabs Agents in the browser. The session key, the caller's language and the version of the
  * privacy notice the panel showed travel in the custom LLM extra body, where Radioso's `elevenlabs`
  * dialect reads them on every turn; the notice's line is a dynamic variable the first message says.
+ * A first message from the session start is the session's first-message override, which only an
+ * agent that allows it accepts: the vendor closes a session that sets one its agent does not allow,
+ * so a session without one sets no override at all.
  */
 export const elevenLabsVoiceRuntime: VoiceRuntime = {
-  async open({ signedUrl, sessionKey, locale, privacyNotice }, callbacks, signal) {
+  async open({ signedUrl, sessionKey, locale, privacyNotice, firstMessage }, callbacks, signal) {
     // Until the session opens, aborting abandons its handshake; once it is open, the session's own
     // `end` closes it.
     let abandonHandshake: (() => void) | null = null
@@ -99,6 +102,7 @@ export const elevenLabsVoiceRuntime: VoiceRuntime = {
           ...(privacyNotice ? { privacy_notice_version: privacyNotice.version } : {}),
         },
         dynamicVariables: { [PRIVACY_NOTICE_VARIABLE]: privacyNotice?.text ?? '' },
+        ...(firstMessage ? { overrides: { agent: { firstMessage } } } : {}),
         workletPaths: WORKLET_PATHS,
         libsampleratePath: LIBSAMPLERATE_PATH,
         onConnect: () => callbacks.onConnected(),

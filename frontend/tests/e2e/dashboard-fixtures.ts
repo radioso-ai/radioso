@@ -1072,6 +1072,23 @@ export const installDashboardApiMocks = async (
     providerEncryptionConfigured?: boolean;
     /** What `GET /agents/:id` says of the agent's voice readiness. Defaults to the voice channel missing. */
     voiceCallReadiness?: ApiSchemas["VoiceCallReadiness"];
+    /**
+     * The default agent's managed voice runtime (`/agents/:id/voice/connection`). `managedVendorAgentId`
+     * is the vendor agent Radioso maintains; a bound runtime naming another reads as set up outside
+     * Radioso. Connect binds `connectVendorAgentId` in `connectRegion`, or answers `connectFailure`.
+     * Defaults to no key stored and no managed agent.
+     */
+    voiceConnection?: {
+      vendorKey?: ApiSchemas["AgentVoiceConnection"]["vendorKey"];
+      connectAvailable?: boolean;
+      managedVendorAgentId?: string | null;
+      connectVendorAgentId?: string;
+      connectRegion?: NonNullable<ApiSchemas["AgentVoiceConnection"]["region"]>;
+      connectFailure?: { status: number; code: string };
+      vendorAgentLeftOnDisconnect?: boolean;
+    };
+    /** Every `POST`/`DELETE /agents/:id/voice/connection`, as `METHOD`. */
+    voiceConnectionRequests?: string[];
     providerCredentialUpdates?: Array<{ method: "PUT" | "DELETE"; provider: string; body?: unknown }>;
     llmModelUpdates?: Array<unknown>;
     /** Per capability, the model the plan runs instead of the preference. Defaults to none. */
@@ -1203,6 +1220,7 @@ export const installDashboardApiMocks = async (
   const settingsUpdates = options.settingsUpdates;
   const ingestionSettingsUpdates = options.ingestionSettingsUpdates;
   const agentUpdates = options.agentUpdates;
+  const voiceConnection = { ...options.voiceConnection };
   let directives: AuthoredDirectiveFixture[] = (options.directives ?? []).map(buildDirective);
   const builtIns = options.builtIns ?? baseBuiltInDirectives();
   let nextDirectiveIndex = 1;
@@ -3043,6 +3061,45 @@ export const installDashboardApiMocks = async (
     if (request.method() === "GET" && path === `/agents/${defaultAgentId}/mcp-connections`) {
       await json(route, { connections: mcpConnections });
       return;
+    }
+
+    if (path === `/agents/${defaultAgentId}/voice/connection`) {
+      const connectionStatus = () => {
+        const bound = agentSettings.voice?.runtime ?? null;
+        return {
+          vendor: "elevenlabs" as const,
+          state: bound === null ? "not_connected" as const : bound.agentId === voiceConnection.managedVendorAgentId ? "connected" as const : "connected_externally" as const,
+          region: bound?.region ?? null,
+          vendorKey: voiceConnection.vendorKey ?? "missing",
+          connectAvailable: voiceConnection.connectAvailable ?? true,
+          runtime: bound,
+        };
+      };
+      if (request.method() === "GET") {
+        await json(route, connectionStatus());
+        return;
+      }
+      options.voiceConnectionRequests?.push(request.method());
+      if (request.method() === "POST") {
+        if (voiceConnection.connectFailure) {
+          await json(route, { error: { code: voiceConnection.connectFailure.code, message: "Connect failed" } }, voiceConnection.connectFailure.status);
+          return;
+        }
+        const vendorAgentId = voiceConnection.connectVendorAgentId ?? "agent_managed_1";
+        voiceConnection.managedVendorAgentId = vendorAgentId;
+        agentSettings = {
+          ...agentSettings,
+          voice: { ...agentSettings.voice, runtime: { vendor: "elevenlabs", agentId: vendorAgentId, region: voiceConnection.connectRegion ?? "eu" } },
+        };
+        await json(route, connectionStatus());
+        return;
+      }
+      if (request.method() === "DELETE") {
+        voiceConnection.managedVendorAgentId = null;
+        agentSettings = { ...agentSettings, voice: { ...agentSettings.voice, runtime: null } };
+        await json(route, { ...connectionStatus(), state: "not_connected", region: null, runtime: null, vendorAgentLeft: voiceConnection.vendorAgentLeftOnDisconnect ?? false });
+        return;
+      }
     }
 
     if (request.method() === "GET" && path === `/agents/${defaultAgentId}/channel-credentials`) {

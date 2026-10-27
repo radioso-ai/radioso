@@ -415,6 +415,13 @@ export const VOICE_BEHAVIOR = {
   // expired first would let that call join no visitor, silently, so it outlives the URL by a wide
   // margin. An expired record only ever costs that correlation.
   sessionStartTtlMs: 60 * 60_000,
+  // A session start on a vendor agent Radioso maintains waits this long for the agent's greeting,
+  // which the call says first; it reads it while the vendor opens the session. The panel has
+  // usually generated and cached the greeting before the visitor presses Talk, so the wait is a
+  // cache read; a miss generates it (a planner-sized model call, 1 to 2 s), and one that takes
+  // longer starts the call without it rather than keep the visitor on Connecting. The greeting
+  // still lands in the cache for the next call.
+  sessionGreetingWaitMs: 2_500,
 } as const;
 
 export const DOCUMENT_BEHAVIOR = {

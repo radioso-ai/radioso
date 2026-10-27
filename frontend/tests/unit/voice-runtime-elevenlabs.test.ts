@@ -72,6 +72,15 @@ describe('ElevenLabs voice runtime', () => {
     expect((startSession.mock.calls[1][0] as CapturedOptions).customLlmExtraBody).toEqual({ session_key: 'k', locale: 'en' })
   })
 
+  it("opens the call with the start's first message as the session's override, and sets none without one", async () => {
+    await elevenLabsVoiceRuntime.open({ signedUrl: 'wss://vendor.test', sessionKey: 'k', locale: 'it', firstMessage: 'Ciao! Sono Marta.' }, callbacks(), openSignal())
+    expect((startSession.mock.calls[0][0] as { overrides?: unknown }).overrides).toEqual({ agent: { firstMessage: 'Ciao! Sono Marta.' } })
+
+    // An agent set up outside Radioso closes a session that sets a first message it does not allow.
+    await elevenLabsVoiceRuntime.open({ signedUrl: 'wss://vendor.test', sessionKey: 'k', locale: 'it' }, callbacks(), openSignal())
+    expect(startSession.mock.calls[1][0]).not.toHaveProperty('overrides')
+  })
+
   it("names the vendor's id for the call once the session is open, and none when the client has none", async () => {
     startSession.mockResolvedValueOnce({ endSession, getId: () => 'conv_01jx8k2m' })
     const named = await elevenLabsVoiceRuntime.open({ signedUrl: 'wss://vendor.test', sessionKey: 'k', locale: 'en' }, callbacks(), openSignal())

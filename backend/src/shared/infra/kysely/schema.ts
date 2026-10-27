@@ -304,6 +304,18 @@ export interface AgentTestExecutionTurns {
   updated_at: Generated<Timestamp>;
 }
 
+export interface AgentVoiceRuntimeConnections {
+  agent_id: string;
+  channel_credential_fingerprint: string | null;
+  channel_credential_id: string | null;
+  created_at: Generated<Timestamp>;
+  region: string;
+  updated_at: Generated<Timestamp>;
+  vendor: string;
+  vendor_agent_id: string;
+  workspace_id: string;
+}
+
 export interface AnswerCoverageAssessments {
   assessed_at: Generated<Timestamp>;
   assistant_message_id: string | null;
@@ -2151,6 +2163,7 @@ export interface DB {
   agent_test_execution_sides: AgentTestExecutionSides;
   agent_test_execution_turns: AgentTestExecutionTurns;
   agent_test_executions: AgentTestExecutions;
+  agent_voice_runtime_connections: AgentVoiceRuntimeConnections;
   agents: Agents;
   answer_coverage_assessments: AnswerCoverageAssessments;
   answer_coverage_reaction_traces: AnswerCoverageReactionTraces;

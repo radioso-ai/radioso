@@ -10,6 +10,7 @@ import {
 import { presentRevisionState } from "./agentRevisionPresenters.js";
 import { registerAgentChannelChatRoute } from "./agentChannelChatRoute.js";
 import { registerAgentVoiceRoutes } from "./agentVoiceRoute.js";
+import { registerAgentVoiceConnectionRoutes } from "./agentVoiceConnectionRoutes.js";
 import { errorClassOf } from "../../../shared/observability/errorClass.js";
 import { acceptWorkspaceIdFromQuery } from "../middleware/acceptWorkspaceIdFromQuery.js";
 import { requireWorkspaceSession } from "../middleware/requireWorkspaceSession.js";
@@ -116,7 +117,7 @@ export const agentBodySchema = z.object({
   surfaceSettings: agentInputFieldSchemas.surfaceSettings.omit({ extensions: true }).optional(),
 });
 
-type AgentRouteDependencies = AgentRevisionRouteDependencies & Pick<AppDependencies, "accountAccessService" | "accessGrantService" | "agentRepository" | "agentService" | "agentToolCatalog" | "assistantChatService" | "conversationRepository" | "authoredDirectiveService" | "directiveAuthorService" | "skillAuthoringCatalog" | "routineDefinitionService" | "routineDraftAssistService" | "agentSurfaceExtensions" | "documentStorage" | "logger" | "metricsRegistry" | "visitorGeoResolver" | "abuseControlService" | "auditService" | "voiceTurns" | "voiceSessionAvailability">;
+type AgentRouteDependencies = AgentRevisionRouteDependencies & Pick<AppDependencies, "accountAccessService" | "accessGrantService" | "agentRepository" | "agentService" | "agentToolCatalog" | "assistantChatService" | "conversationRepository" | "authoredDirectiveService" | "directiveAuthorService" | "skillAuthoringCatalog" | "routineDefinitionService" | "routineDraftAssistService" | "agentSurfaceExtensions" | "documentStorage" | "logger" | "metricsRegistry" | "visitorGeoResolver" | "abuseControlService" | "auditService" | "voiceTurns" | "voiceSessionAvailability" | "voiceRuntimeConnections">;
 
 const proposedAgentRecipientEmails = (body: unknown): string[] | null => {
   if (!body || typeof body !== "object" || Array.isArray(body)
@@ -293,6 +294,7 @@ export const createAgentRoutes = (dependencies: AgentRouteDependencies): Router 
 
   registerAgentChannelChatRoute(router, dependencies);
   registerAgentVoiceRoutes(router, dependencies);
+  registerAgentVoiceConnectionRoutes(router, dependencies);
 
   router.get("/:agentId", workspaceSession, agentRead, async (req, res, next) => {
     try {

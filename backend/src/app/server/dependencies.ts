@@ -1392,7 +1392,7 @@ export const buildDependencies = (env: Env = getEnv(), options: BuildDependencie
   // The vendor agent Radioso creates for an agent's voice channel, kept in step with the agent.
   const voiceRuntimeConnections = createVoiceRuntimeConnectionComposition({
     connections: voiceRuntimeConnectionStore,
-    lock: new PostgresVoiceRuntimeConnectionLock(infrastructure.database.kysely),
+    lock: new PostgresVoiceRuntimeConnectionLock(infrastructure.database),
     agentRepository: repositories.agentRepository,
     agentService,
     accessGrants: access.accessGrantService,
